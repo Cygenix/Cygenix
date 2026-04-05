@@ -642,76 +642,102 @@ async function startAnalysis() {
     contentSnippet: f.contentSnippet || null
   }));
 
+  const resetBtn = () => {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 3 3.5.5-2.5 2.5.5 3.5L7 9l-3 1.5.5-3.5L2 4.5 5.5 4z" stroke="currentColor" stroke-width="1.2"/></svg> Analyse & Generate SQL with Claude';
+  };
+  const showError = (msg) => {
+    $('analysis-body').textContent = msg;
+    $('analysis-title').textContent = 'Analysis failed';
+    $('ai-dot').style.background = 'var(--red)';
+    $('ai-dot').style.animationPlayState = 'paused';
+    resetBtn();
+  };
+
+  let res;
   try {
-    const res = await fetch(`${API_BASE}/api/analyse`, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
+    res = await fetch(`${API_BASE}/api/analyse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         files: filesPayload,
         jobName,
         targetServer: state.selectedTarget,
         sourceSystem: $('job-source-input').value.trim()
       })
     });
-
-    if (!res.ok) {
-      const err = await res.json().catch(()=>({error:res.statusText}));
-      throw new Error(err.error || res.statusText);
-    }
-
-    const data = await res.json();
-    const text = data.analysis || 'No analysis returned.';
-    const schemaSQL = data.schemaSQL || '';
-    const migrationSQL = data.migrationSQL || '';
-
-    $('analysis-title').textContent = 'SQL Migration Package Ready';
-    $('ai-dot').style.animationPlayState = 'paused';
-    $('ai-dot').style.background = 'var(--green)';
-
-    // Stream full report
-    let i = 0;
-    const stream = setInterval(() => {
-      $('analysis-body').textContent += text[i]||'';
-      i++;
-      if (i >= text.length) {
-        clearInterval(stream);
-
-        // Populate SQL tabs
-        $('schema-code').textContent = schemaSQL || extractSection(text, 'SQL SERVER SCHEMA', 'MIGRATION SQL');
-        $('migration-code').textContent = migrationSQL || extractSection(text, 'MIGRATION SQL', 'DATA TYPE MAPPING');
-        $('result-tabs').style.display = 'flex';
-
-        // Action buttons
-        $('analysis-cta').innerHTML = `
-          <button class="btn btn-teal btn-sm" onclick="downloadSQL('schema','${escapeAttr(jobName)}')">⬇ Schema .sql</button>
-          <button class="btn btn-primary btn-sm" onclick="downloadSQL('migration','${escapeAttr(jobName)}')">⬇ Migration .sql</button>`;
-
-        // Save job
-        const job = {
-          id:'job_'+Date.now(), name:jobName,
-          source:$('job-source-input').value.trim(),
-          target:state.selectedTarget,
-          files:[...state.files.map(f=>({name:f.name,size:f.size}))],
-          analysis:text, schemaSQL, migrationSQL,
-          status:'complete', created:new Date().toISOString()
-        };
-        state.jobs.unshift(job);
-        state.totalFilesProcessed += state.files.length;
-        addAudit(`Job "${jobName}" complete — schema + migration SQL generated for ${state.files.length} file(s)`);
-        updateStats();
-        btn.disabled = false;
-        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 3 3.5.5-2.5 2.5.5 3.5L7 9l-3 1.5.5-3.5L2 4.5 5.5 4z" stroke="currentColor" stroke-width="1.2"/></svg> Analyse & Generate SQL with Claude';
-      }
-    }, 6);
-
-  } catch(err) {
-    $('analysis-body').textContent = 'Error: ' + err.message;
-    $('analysis-title').textContent = 'Analysis failed';
-    $('ai-dot').style.background = 'var(--red)';
-    $('ai-dot').style.animationPlayState = 'paused';
-    btn.disabled = false;
-    btn.textContent = 'Analyse & Generate SQL with Claude';
+  } catch(networkErr) {
+    showError(
+      'Network error — could not reach the Netlify function.\n\n' +
+      'Possible causes:\n' +
+      '• The /api/analyse redirect is missing from netlify.toml\n' +
+      '• The function file netlify/functions/analyse.js is missing from your repo\n' +
+      '• Netlify has not redeployed since the last commit\n\n' +
+      'Error detail: ' + networkErr.message
+    );
+    return;
   }
+
+  // Read the raw body so we always have something to show
+  const rawBody = await res.text();
+
+  if (!res.ok) {
+    let detail = rawBody;
+    try { detail = JSON.parse(rawBody).error || JSON.parse(rawBody).detail || rawBody; } catch {}
+    showError(
+      `Server returned HTTP ${res.status}\n\n${detail}\n\n` +
+      'Common fixes:\n' +
+      '• HTTP 500 with "API key" message → add ANTHROPIC_API_KEY in Netlify → Environment variables\n' +
+      '• HTTP 502/504 → function timed out, try a smaller file first\n' +
+      '• HTTP 401 → your API key is invalid, check console.anthropic.com'
+    );
+    return;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(rawBody);
+  } catch(e) {
+    showError('Could not parse response from server.\n\nRaw response:\n' + rawBody.slice(0, 500));
+    return;
+  }
+
+  const text = data.analysis || 'No analysis returned.';
+  const schemaSQL = data.schemaSQL || '';
+  const migrationSQL = data.migrationSQL || '';
+
+  $('analysis-title').textContent = 'SQL Migration Package Ready';
+  $('ai-dot').style.animationPlayState = 'paused';
+  $('ai-dot').style.background = 'var(--green)';
+
+  // Stream full report character by character
+  let i = 0;
+  const stream = setInterval(() => {
+    $('analysis-body').textContent += text[i] || '';
+    i++;
+    if (i >= text.length) {
+      clearInterval(stream);
+      $('schema-code').textContent = schemaSQL || extractSection(text, 'SQL SERVER SCHEMA', 'MIGRATION SQL');
+      $('migration-code').textContent = migrationSQL || extractSection(text, 'MIGRATION SQL', 'DATA TYPE MAPPING');
+      $('result-tabs').style.display = 'flex';
+      $('analysis-cta').innerHTML = `
+        <button class="btn btn-teal btn-sm" onclick="downloadSQL('schema','${escapeAttr(jobName)}')">⬇ Schema .sql</button>
+        <button class="btn btn-primary btn-sm" onclick="downloadSQL('migration','${escapeAttr(jobName)}')">⬇ Migration .sql</button>`;
+      const job = {
+        id: 'job_'+Date.now(), name: jobName,
+        source: $('job-source-input').value.trim(),
+        target: state.selectedTarget,
+        files: state.files.map(f=>({name:f.name,size:f.size})),
+        analysis: text, schemaSQL, migrationSQL,
+        status: 'complete', created: new Date().toISOString()
+      };
+      state.jobs.unshift(job);
+      state.totalFilesProcessed += state.files.length;
+      addAudit(`Job "${jobName}" complete — schema + migration SQL generated for ${state.files.length} file(s)`);
+      updateStats();
+      resetBtn();
+    }
+  }, 6);
 }
 
 function extractSection(text, startMarker, endMarker) {

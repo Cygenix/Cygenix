@@ -1,93 +1,84 @@
 // netlify/functions/analyse.js
-// Reads uploaded database export file content and uses Claude to:
-// 1. Suggest a SQL Server schema (CREATE TABLE statements)
-// 2. Generate migration SQL (INSERT statements or conversion scripts)
 
 exports.handler = async function (event) {
+  const headers = {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  };
+
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: '' };
+  }
+
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
+    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
   if (!ANTHROPIC_API_KEY) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'API key not configured. Add ANTHROPIC_API_KEY in Netlify environment variables.' })
+      headers,
+      body: JSON.stringify({ error: 'ANTHROPIC_API_KEY environment variable is not set in Netlify.' })
     };
   }
 
   let body;
   try {
-    body = JSON.parse(event.body);
-  } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
+    body = JSON.parse(event.body || '{}');
+  } catch (e) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON in request body: ' + e.message }) };
   }
 
-  const { files, jobName, targetServer } = body;
+  const { files, jobName, targetServer, sourceSystem } = body;
 
   if (!files || !Array.isArray(files) || files.length === 0) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'No files provided' }) };
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'No files provided in request.' }) };
   }
 
-  // Build a detailed description of each file including any content snippet
   const fileDescriptions = files.map(f => {
     let desc = `FILE: ${f.name}\n  Size: ${formatSize(f.size)}\n  Type: ${f.type || getExt(f.name)}`;
-    if (f.contentSnippet) {
-      desc += `\n  Content preview (first 3000 chars):\n${f.contentSnippet.slice(0, 3000)}`;
+    if (f.contentSnippet && f.contentSnippet.trim().length > 0) {
+      const snippet = f.contentSnippet.trim().slice(0, 2000);
+      desc += `\n  Content preview:\n${snippet}`;
+    } else {
+      desc += `\n  (Binary file — use filename and type for schema guidance)`;
     }
     return desc;
-  }).join('\n\n');
+  }).join('\n\n---\n\n');
 
   const target = targetServer || 'Microsoft SQL Server (on-premises)';
+  const source = sourceSystem ? `Source system: ${sourceSystem}\n` : '';
 
-  const prompt = `You are Cygenix, an expert database migration assistant specialising in ${target}. 
+  const prompt = `You are Cygenix, an expert database migration assistant specialising in ${target}.
 
 A user wants to migrate the following database export file(s) into ${target}.
-
+${source}
 ${fileDescriptions}
 
-Your task is to analyse the file(s) and produce a complete, professional migration package. Structure your response with these exact sections:
+Produce a complete SQL Server migration package with these exact sections:
 
----
 ## 1. SOURCE ANALYSIS
-Describe what you found in the source file(s): database type, tables detected, estimated row counts, data types used, relationships/foreign keys, indexes, and any notable quirks or issues.
+Describe what you found: database type, tables detected, estimated row counts, data types, relationships, indexes, and any quirks.
 
----
 ## 2. SQL SERVER SCHEMA
-Provide complete, executable SQL Server CREATE TABLE statements for all detected tables. Use appropriate SQL Server data types (e.g. NVARCHAR, INT, DATETIME2, DECIMAL, BIT). Include:
-- Primary keys
-- Foreign key constraints
-- Indexes on likely query columns
-- NULL/NOT NULL constraints
-- Default values where appropriate
+Complete executable SQL Server CREATE TABLE statements. Use SQL Server types (NVARCHAR, INT, DATETIME2, DECIMAL, BIT etc). Include primary keys, foreign keys, indexes, NULL constraints, defaults. Use proper SQL comments.
 
-Format as clean, commented SQL code blocks.
-
----
 ## 3. MIGRATION SQL
-Provide the migration SQL to move the data into SQL Server. Depending on the source:
-- For .sql dumps: provide adapted INSERT statements with SQL Server syntax
-- For .mdb (Access): provide OPENROWSET or linked server queries, or equivalent INSERT/SELECT
-- For .bak: provide RESTORE DATABASE commands and any schema adjustments needed
-Include any necessary USE, GO, SET IDENTITY_INSERT statements.
+The actual migration SQL for SQL Server. For .sql dumps: adapted INSERT statements. For .mdb/Access: OPENROWSET or SSMA guidance. For .bak: RESTORE commands and schema adjustments. Include USE, GO, SET IDENTITY_INSERT where needed.
 
----
 ## 4. DATA TYPE MAPPING
-A clear table showing how source data types map to SQL Server equivalents.
+Table showing source types mapped to SQL Server equivalents.
 
----
 ## 5. MIGRATION CHECKLIST
-Step-by-step instructions for an IT team to execute this migration on an on-premises SQL Server instance, including:
-- Prerequisites (SQL Server version, permissions needed)
-- Order of operations
-- How to verify row counts after migration
-- Rollback steps if something goes wrong
+Step-by-step for an IT team including prerequisites, order of operations, row count verification, and rollback steps.
 
----
 ## 6. RISK FLAGS
-Any data quality issues, encoding problems, reserved keyword conflicts, or compatibility warnings the team should know about before running the migration.
+Data quality issues, encoding problems, reserved keywords, or compatibility warnings.
 
-Be specific and technical. Generate real, runnable SQL — not placeholders.`;
+Generate real runnable SQL — not placeholders.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -104,32 +95,51 @@ Be specific and technical. Generate real, runnable SQL — not placeholders.`;
       }),
     });
 
+    const rawText = await response.text();
+
     if (!response.ok) {
-      const err = await response.text();
-      return { statusCode: response.status, body: JSON.stringify({ error: 'Anthropic API error', detail: err }) };
+      return {
+        statusCode: response.status,
+        headers,
+        body: JSON.stringify({
+          error: `Anthropic API returned status ${response.status}`,
+          detail: rawText.slice(0, 500)
+        })
+      };
     }
 
-    const data = await response.json();
-    const analysis = data.content?.map(b => b.text || '').join('') || 'No analysis returned.';
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (e) {
+      return {
+        statusCode: 500,
+        headers,
+        body: JSON.stringify({ error: 'Failed to parse Anthropic response', detail: rawText.slice(0, 300) })
+      };
+    }
 
-    // Extract the schema SQL and migration SQL as separate fields for the UI
+    const analysis = data.content?.map(b => b.text || '').join('') || 'No analysis returned.';
     const schemaMatch = analysis.match(/## 2\. SQL SERVER SCHEMA([\s\S]*?)(?=## 3\.)/i);
     const migrationMatch = analysis.match(/## 3\. MIGRATION SQL([\s\S]*?)(?=## 4\.)/i);
 
     return {
       statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         analysis,
-        schemaSQL: schemaMatch ? schemaMatch[1].trim() : null,
-        migrationSQL: migrationMatch ? migrationMatch[1].trim() : null,
+        schemaSQL: schemaMatch ? schemaMatch[1].trim() : '',
+        migrationSQL: migrationMatch ? migrationMatch[1].trim() : '',
       }),
     };
 
   } catch (err) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'Server error', detail: err.message })
+      headers,
+      body: JSON.stringify({
+        error: 'Function error: ' + err.message,
+      })
     };
   }
 };
