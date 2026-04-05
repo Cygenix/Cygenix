@@ -1,0 +1,11 @@
+{
+  "name": "cygenix-migration-platform",
+  "version": "1.0.0",
+  "description": "Cygenix SQL migration platform — Netlify functions",
+  "dependencies": {
+    "mssql": "^10.0.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
