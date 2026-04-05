@@ -1,12 +1,11 @@
 // netlify/functions/health.js
 exports.handler = async function () {
-  const hasKey = !!process.env.ANTHROPIC_API_KEY;
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       status: 'ok',
-      apiKeyConfigured: hasKey,
+      apiKeyConfigured: !!process.env.ANTHROPIC_API_KEY,
       timestamp: new Date().toISOString(),
     }),
   };
