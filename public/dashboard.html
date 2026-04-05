@@ -260,6 +260,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         Supported Formats
       </div>
+      <div class="nav-item" onclick="showView('diagnostics')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Diagnostics
+      </div>
     </div>
   </div>
 
@@ -441,6 +445,18 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
 
   </div>
+    <!-- DIAGNOSTICS -->
+    <div id="view-diagnostics" class="view">
+      <div class="panel-header">
+        <div class="panel-title">Connection Diagnostics</div>
+        <button class="btn btn-primary" onclick="runDiagnostics()">Run Tests</button>
+      </div>
+      <div id="diag-output" style="font-family:var(--mono);font-size:12px;line-height:2;color:var(--text2)">
+        <div style="color:var(--text3)">Click "Run Tests" to check your Netlify function setup.</div>
+      </div>
+    </div>
+
+
 </div>
 
 <!-- JOB DETAIL MODAL -->
@@ -471,7 +487,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 </div>
 
 <script>
-const API_BASE = '';
+const ANALYSE_URL = '/.netlify/functions/analyse';
+const HEALTH_URL  = '/.netlify/functions/health';
 const state = {
   jobs:[], files:[], selectedTarget:'Microsoft SQL Server (on-premises)',
   totalFilesProcessed:0, auditLog:[], currentJob:null
@@ -483,7 +500,7 @@ function $(id){return document.getElementById(id)}
 async function checkHealth() {
   const badge = $('conn-badge');
   try {
-    const res = await fetch(`${API_BASE}/api/health`, {signal:AbortSignal.timeout(6000)});
+    const res = await fetch(HEALTH_URL, {signal:AbortSignal.timeout(6000)});
     const data = await res.json();
     if (data.apiKeyConfigured) {
       badge.textContent = 'Claude AI · Connected';
@@ -505,7 +522,7 @@ function showView(v) {
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
   $('view-'+v).classList.add('active');
   document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const map={dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6};
+  const map={dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6,diagnostics:7};
   document.querySelectorAll('.nav-item')[map[v]??0]?.classList.add('active');
   if(v==='jobs') renderAllJobs();
   if(v==='schema') renderSchemaLibrary();
@@ -656,7 +673,7 @@ async function startAnalysis() {
 
   let res;
   try {
-    res = await fetch(`${API_BASE}/api/analyse`, {
+    res = await fetch(ANALYSE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -878,6 +895,117 @@ function renderAuditLog() {
 }
 
 function escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+
+// ── Diagnostics ───────────────────────────────────────────────────────────────
+async function runDiagnostics() {
+  const out = $('diag-output');
+  out.innerHTML = '';
+
+  const log = (msg, color) => {
+    const line = document.createElement('div');
+    line.style.color = color || 'var(--text2)';
+    line.textContent = msg;
+    out.appendChild(line);
+  };
+
+  const ok  = (msg) => log('✓ ' + msg, 'var(--green)');
+  const err = (msg) => log('✗ ' + msg, 'var(--red)');
+  const inf = (msg) => log('  ' + msg, 'var(--text3)');
+  const hdr = (msg) => log('\n▸ ' + msg, 'var(--accent)');
+
+  log('Running diagnostics…', 'var(--amber)');
+
+  // Test 1: health function
+  hdr('Test 1: Health function (/.netlify/functions/health)');
+  try {
+    const r = await fetch(HEALTH_URL, {signal: AbortSignal.timeout(8000)});
+    const txt = await r.text();
+    inf('HTTP status: ' + r.status);
+    inf('Response: ' + txt.slice(0, 200));
+    if (r.ok) {
+      let data;
+      try { data = JSON.parse(txt); } catch {}
+      if (data && data.apiKeyConfigured) {
+        ok('Health function reachable and API key is set');
+      } else if (data && data.apiKeyConfigured === false) {
+        err('Health function reachable BUT API key is NOT set in Netlify environment variables');
+        inf('Fix: Netlify → Site configuration → Environment variables → Add ANTHROPIC_API_KEY → Redeploy');
+      } else {
+        ok('Health function reachable (key status unknown)');
+      }
+    } else {
+      err('Health function returned HTTP ' + r.status);
+      inf('Response body: ' + txt.slice(0, 300));
+    }
+  } catch(e) {
+    err('Could not reach health function: ' + e.message);
+    inf('This means /.netlify/functions/health does not exist on your deployment');
+    inf('Check that netlify/functions/health.js is committed to your GitHub repo');
+  }
+
+  // Test 2: analyse function with tiny payload
+  hdr('Test 2: Analyse function (/.netlify/functions/analyse)');
+  try {
+    const r = await fetch(ANALYSE_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        files: [{name: 'test.sql', size: 100, type: 'text/plain', contentSnippet: 'CREATE TABLE test (id INT PRIMARY KEY, name VARCHAR(100));'}],
+        jobName: 'Diagnostic Test',
+        targetServer: 'Microsoft SQL Server (on-premises)'
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+    const txt = await r.text();
+    inf('HTTP status: ' + r.status);
+    if (r.ok) {
+      ok('Analyse function returned HTTP 200 — everything is working!');
+      inf('Response length: ' + txt.length + ' chars');
+      try {
+        const d = JSON.parse(txt);
+        if (d.analysis) inf('Analysis preview: ' + d.analysis.slice(0, 150) + '…');
+      } catch {}
+    } else {
+      err('Analyse function returned HTTP ' + r.status);
+      inf('Response: ' + txt.slice(0, 400));
+      if (r.status === 500 && txt.includes('API key')) {
+        err('→ Root cause: ANTHROPIC_API_KEY not set in Netlify environment variables');
+      } else if (r.status === 401) {
+        err('→ Root cause: API key is invalid. Get a fresh key from console.anthropic.com');
+      } else if (r.status === 504 || r.status === 502) {
+        err('→ Root cause: Function timed out. The request took too long.');
+      }
+    }
+  } catch(e) {
+    err('Could not reach analyse function: ' + e.message);
+    inf('Check netlify/functions/analyse.js is in your GitHub repo');
+  }
+
+  // Test 3: redirect check
+  hdr('Test 3: /api/analyse redirect');
+  try {
+    const r = await fetch('/api/analyse', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({files:[],jobName:'redirect-test'}),
+      signal: AbortSignal.timeout(8000)
+    });
+    inf('HTTP status: ' + r.status);
+    if (r.status === 400) {
+      ok('Redirect is working (got 400 = function reached, rejected empty files as expected)');
+    } else if (r.status === 404) {
+      err('Redirect NOT working — /api/analyse returns 404');
+      inf('Fix: make sure netlify.toml is in the root of your repo with the [[redirects]] section');
+    } else {
+      ok('Redirect responded with HTTP ' + r.status);
+    }
+  } catch(e) {
+    err('Redirect test failed: ' + e.message);
+  }
+
+  log('\nDiagnostics complete.', 'var(--amber)');
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · '+new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
