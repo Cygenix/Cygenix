@@ -2,7 +2,13 @@
   publish = "public"
   functions = "netlify/functions"
 
+# Edge functions have no timeout on free plan
+[[edge_functions]]
+  path = "/api/analyse"
+  function = "analyse"
+
+# Keep the regular function redirect for health check
 [[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/:splat"
+  from = "/api/health"
+  to = "/.netlify/functions/health"
   status = 200
