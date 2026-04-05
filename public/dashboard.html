@@ -293,7 +293,13 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
 
       <div class="alert alert-amber" id="key-alert">
-        <strong>⚠ API key not configured.</strong> Add <code>ANTHROPIC_API_KEY</code> in Netlify → Site configuration → Environment variables, then redeploy.
+        <strong>⚠ Anthropic API key required.</strong> Enter your API key from
+        <a href="https://console.anthropic.com" target="_blank" style="color:var(--amber)">console.anthropic.com</a>
+        — it stays in your browser session only and is never stored on any server.<br><br>
+        <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.5rem;flex-wrap:wrap">
+          <input id="api-key-input" type="password" class="form-input" placeholder="sk-ant-api03-..." style="flex:1;min-width:200px;max-width:420px;font-family:var(--mono);font-size:12px" />
+          <button class="btn btn-primary" onclick="saveApiKey()" style="flex-shrink:0">Save &amp; Connect</button>
+        </div>
       </div>
 
       <div class="two-col">
@@ -497,8 +503,29 @@ const state = {
 function $(id){return document.getElementById(id)}
 
 // ── Health ────────────────────────────────────────────────────────────────────
+function saveApiKey() {
+  const key = $('api-key-input') ? $('api-key-input').value.trim() : '';
+  if (!key || !key.startsWith('sk-ant-')) {
+    alert('Please enter a valid Anthropic API key starting with sk-ant-');
+    return;
+  }
+  setApiKey(key);
+  $('key-alert').classList.remove('visible');
+  const badge = $('conn-badge');
+  badge.textContent = 'Claude AI · Connected';
+  badge.className = 'conn-badge ok';
+}
+
 async function checkHealth() {
   const badge = $('conn-badge');
+  // Check if user has stored an API key in this session
+  if (getApiKey()) {
+    badge.textContent = 'Claude AI · Connected';
+    badge.className = 'conn-badge ok';
+    $('key-alert').classList.remove('visible');
+    return;
+  }
+  // Otherwise check if Netlify env key is configured
   try {
     const res = await fetch(HEALTH_URL, {signal:AbortSignal.timeout(6000)});
     const data = await res.json();
@@ -507,13 +534,14 @@ async function checkHealth() {
       badge.className = 'conn-badge ok';
       $('key-alert').classList.remove('visible');
     } else {
-      badge.textContent = 'API key missing';
+      badge.textContent = 'Enter API key';
       badge.className = 'conn-badge err';
       $('key-alert').classList.add('visible');
     }
   } catch {
-    badge.textContent = 'Function error';
+    badge.textContent = 'Enter API key';
     badge.className = 'conn-badge err';
+    $('key-alert').classList.add('visible');
   }
 }
 
@@ -652,16 +680,7 @@ async function startAnalysis() {
   $('ai-dot').style.background = 'var(--accent)';
   $('ai-dot').style.animationPlayState = 'running';
 
-  // Trim snippets to 3000 chars each so the JSON payload stays manageable
-  const MAX_SNIPPET = 3000;
-  const filesPayload = state.files.map(f => ({
-    name: f.name,
-    size: f.size,
-    type: f.type || getExt(f.name),
-    contentSnippet: f.contentSnippet ? f.contentSnippet.slice(0, MAX_SNIPPET) : null
-  }));
-  const payloadSize = JSON.stringify(filesPayload).length;
-  $('analysis-body').textContent = `Sending ${state.files.length} file(s) to Claude (payload: ${(payloadSize/1024).toFixed(1)}KB)…\nPlease wait, this may take 20-40 seconds.`;
+  $('analysis-body').textContent = 'Preparing files for Claude analysis…\nPlease wait, this may take 20-40 seconds.';
 
   const resetBtn = () => {
     btn.disabled = false;
@@ -675,48 +694,85 @@ async function startAnalysis() {
     resetBtn();
   };
 
-  // 90 second timeout — edge functions have no server-side limit
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90000);
-
-  let res;
-  try {
-    res = await fetch(ANALYSE_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        files: filesPayload,
-        jobName,
-        targetServer: state.selectedTarget,
-        sourceSystem: $('job-source-input').value.trim()
-      })
-    });
-    clearTimeout(timeoutId);
-  } catch(networkErr) {
-    clearTimeout(timeoutId);
-    if (networkErr.name === 'AbortError') {
-      showError('Request timed out after 90 seconds.\n\nThe edge function may still be processing — try again with a smaller file.');
-    } else {
-      showError(
-        'Network error: ' + networkErr.message + '\n\n' +
-        'Make sure netlify/edge-functions/analyse.js is in your GitHub repo\n' +
-        'and netlify.toml has the [[edge_functions]] section.'
-      );
-    }
+  // Get API key — from session storage (user-entered) or prompt
+  let apiKey = getApiKey();
+  if (!apiKey) {
+    showError('No API key set.\n\nPlease enter your Anthropic API key in the box above and click Save & Connect.');
+    $('key-alert').classList.add('visible');
     return;
   }
 
-  // Read the raw body so we always have something to show
+  // Build the Claude prompt
+  const MAX_SNIPPET = 3000;
+  const fileDescriptions = state.files.map(f => {
+    let desc = `FILE: ${f.name}\n  Size: ${formatSize(f.size)}\n  Type: ${f.type || getExt(f.name)}`;
+    if (f.contentSnippet) desc += `\n  Content preview:\n${f.contentSnippet.slice(0, MAX_SNIPPET)}`;
+    else desc += `\n  (Binary file — use filename and type for schema guidance)`;
+    return desc;
+  }).join('\n\n---\n\n');
+
+  const prompt = `You are Cygenix, an expert database migration assistant specialising in ${state.selectedTarget}.
+
+A user wants to migrate these database export file(s) into ${state.selectedTarget}.
+${$('job-source-input').value.trim() ? 'Source system: ' + $('job-source-input').value.trim() : ''}
+
+${fileDescriptions}
+
+Produce a complete SQL Server migration package:
+
+## 1. SOURCE ANALYSIS
+Database type, tables detected, data types, relationships, row count estimates, quirks.
+
+## 2. SQL SERVER SCHEMA
+Complete executable CREATE TABLE statements with SQL Server types (NVARCHAR, INT, DATETIME2, DECIMAL, BIT). Include PKs, FKs, indexes, NULL constraints, defaults.
+
+## 3. MIGRATION SQL
+Executable migration SQL — INSERT statements, RESTORE commands, or OPENROWSET queries as appropriate. Include USE, GO, SET IDENTITY_INSERT where needed.
+
+## 4. DATA TYPE MAPPING
+Source types → SQL Server equivalents table.
+
+## 5. MIGRATION CHECKLIST
+Step-by-step for IT team: prerequisites, execution order, row count verification, rollback steps.
+
+## 6. RISK FLAGS
+Data quality issues, encoding problems, reserved keywords, compatibility warnings.
+
+Generate real runnable SQL — no placeholders.`;
+
+  // Call Anthropic API directly from the browser — no server timeout possible
+  let res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+  } catch(networkErr) {
+    showError('Network error calling Anthropic API: ' + networkErr.message);
+    return;
+  }
+
   const rawBody = await res.text();
 
   if (!res.ok) {
     let detail = rawBody;
-    try {
-      const parsed = JSON.parse(rawBody);
-      detail = parsed.error || parsed.detail || parsed.message || rawBody;
-    } catch {}
-    showError(`HTTP ${res.status} error from edge function:\n\n${detail}\n\nRaw response:\n${rawBody.slice(0, 600)}`);
+    try { detail = JSON.parse(rawBody).error?.message || rawBody; } catch {}
+    if (res.status === 401) {
+      showError('Invalid API key (401).\n\nCheck your key at console.anthropic.com and re-enter it above.');
+      $('key-alert').classList.add('visible');
+    } else {
+      showError(`Anthropic API error (HTTP ${res.status}):\n\n${detail}`);
+    }
     return;
   }
 
@@ -724,13 +780,16 @@ async function startAnalysis() {
   try {
     data = JSON.parse(rawBody);
   } catch(e) {
-    showError('Could not parse response from server.\n\nRaw response:\n' + rawBody.slice(0, 500));
+    showError('Could not parse Anthropic response:\n' + rawBody.slice(0, 400));
     return;
   }
 
-  const text = data.analysis || 'No analysis returned.';
-  const schemaSQL = data.schemaSQL || '';
-  const migrationSQL = data.migrationSQL || '';
+  const text = data.content?.map(b => b.text || '').join('') || 'No analysis returned.';
+  // Extract schema and migration SQL sections
+  const schemaMatch = text.match(/## 2\.\s*SQL SERVER SCHEMA([\s\S]*?)(?=## 3\.)/i);
+  const migrationMatch = text.match(/## 3\.\s*MIGRATION SQL([\s\S]*?)(?=## 4\.)/i);
+  const schemaSQL = schemaMatch ? schemaMatch[1].trim() : '';
+  const migrationSQL = migrationMatch ? migrationMatch[1].trim() : '';
 
   $('analysis-title').textContent = 'SQL Migration Package Ready';
   $('ai-dot').style.animationPlayState = 'paused';
