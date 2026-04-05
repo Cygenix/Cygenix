@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix Diagnostics v2</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Courier New', monospace; background: #0d0f14; color: #e8eaf0; padding: 2rem; font-size: 14px; line-height: 2; }
+h1 { font-family: sans-serif; font-size: 1.3rem; color: #3d7eff; margin-bottom: 0.25rem; }
+.sub { font-size: 12px; color: #555a6a; margin-bottom: 1.5rem; }
+.btns { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }
+button { background: #3d7eff; color: #fff; border: none; padding: 0.6rem 1.5rem; font-size: 13px; border-radius: 6px; cursor: pointer; font-family: sans-serif; }
+button:hover { background: #2563eb; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.secondary { background: #1a1e28; border: 1px solid #3d7eff; color: #3d7eff; }
+#output { white-space: pre-wrap; }
+.ok   { color: #22c97a; }
+.err  { color: #f04646; }
+.inf  { color: #8b90a0; }
+.hdr  { color: #3d7eff; }
+.warn { color: #f59e0b; }
+</style>
+</head>
+<body>
+<h1>Cygenix — Diagnostics v2</h1>
+<p class="sub">Tests edge function at /api/analyse (no timeout) and regular function health check</p>
+<div class="btns">
+  <button id="btn-all" onclick="runAll()">▶ Run All Tests</button>
+  <button class="secondary" onclick="testEdge()">Test Edge Function Only</button>
+  <button class="secondary" onclick="testHealth()">Test Health Only</button>
+</div>
+<div id="output"><span style="color:#555a6a">Click a button above to start…</span></div>
+
+<script>
+const out = document.getElementById('output');
+
+function log(msg, cls) {
+  const s = document.createElement('span');
+  s.className = cls || '';
+  s.textContent = msg + '\n';
+  out.appendChild(s);
+}
+function clear() { out.innerHTML = ''; }
+const ok   = m => log('✓ ' + m, 'ok');
+const fail = m => log('✗ ' + m, 'err');
+const inf  = m => log('  ' + m, 'inf');
+const warn = m => log('⚠ ' + m, 'warn');
+const hdr  = m => log('\n━━ ' + m + ' ━━', 'hdr');
+
+function setButtons(disabled) {
+  document.querySelectorAll('button').forEach(b => b.disabled = disabled);
+}
+
+async function testHealth() {
+  clear();
+  setButtons(true);
+  hdr('Health function — /.netlify/functions/health');
+  try {
+    const r = await fetch('/.netlify/functions/health', { signal: AbortSignal.timeout(8000) });
+    inf('Status: ' + r.status);
+    const txt = await r.text();
+    inf('Body: ' + txt);
+    if (r.ok) {
+      const d = JSON.parse(txt);
+      if (d.apiKeyConfigured) ok('API key is set and health function works');
+      else { fail('API key NOT configured'); warn('Fix: Netlify → Site config → Environment variables → Add ANTHROPIC_API_KEY → Redeploy'); }
+    } else {
+      fail('HTTP ' + r.status);
+    }
+  } catch(e) {
+    fail('Error: ' + e.message);
+  }
+  setButtons(false);
+}
+
+async function testEdge() {
+  clear();
+  setButtons(true);
+  hdr('Edge function — /api/analyse');
+  log('Sending test payload to /api/analyse (this may take 15-30 seconds)…', 'warn');
+  try {
+    const start = Date.now();
+    const r = await fetch('/api/analyse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: [{
+          name: 'test.sql',
+          size: 83,
+          type: 'text/plain',
+          contentSnippet: 'CREATE TABLE customers (id INT PRIMARY KEY, name VARCHAR(100), email VARCHAR(200));'
+        }],
+        jobName: 'Diagnostic Test',
+        targetServer: 'Microsoft SQL Server (on-premises)'
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    inf('Status: ' + r.status + ' (took ' + elapsed + 's)');
+    const txt = await r.text();
+    inf('Response length: ' + txt.length + ' chars');
+    inf('First 300 chars: ' + txt.slice(0, 300));
+
+    if (r.ok) {
+      try {
+        const d = JSON.parse(txt);
+        if (d.analysis && d.analysis.length > 50) {
+          ok('Edge function working! Claude responded successfully.');
+          ok('Analysis length: ' + d.analysis.length + ' chars');
+          log('\n✓✓✓ EVERYTHING WORKS — go back to /dashboard.html and try uploading a file', 'ok');
+        } else {
+          warn('Got 200 but analysis is empty — ' + txt.slice(0, 200));
+        }
+      } catch { warn('Response not JSON: ' + txt.slice(0, 200)); }
+    } else if (r.status === 404) {
+      fail('404 — Edge function not found at /api/analyse');
+      warn('Check 1: netlify/edge-functions/analyse.js exists in your GitHub repo');
+      warn('Check 2: netlify.toml has [[edge_functions]] section pointing to it');
+      warn('Check 3: Netlify redeployed AFTER you pushed those files');
+    } else if (r.status === 500) {
+      fail('500 error from edge function');
+      warn('Response: ' + txt.slice(0, 400));
+      if (txt.includes('API key') || txt.includes('ANTHROPIC')) {
+        warn('Root cause: ANTHROPIC_API_KEY not set — add it in Netlify environment variables');
+      }
+    } else {
+      fail('Unexpected status ' + r.status);
+      warn('Response: ' + txt.slice(0, 400));
+    }
+  } catch(e) {
+    fail('Request failed: ' + e.message);
+    if (e.name === 'TimeoutError') {
+      warn('Timed out after 60s — the edge function may not be deployed yet');
+      warn('Or the edge function file has a syntax error — check Netlify function logs');
+    } else {
+      warn('Network error — the /api/analyse route is not responding at all');
+      warn('Most likely: netlify/edge-functions/analyse.js is not in your repo yet');
+    }
+  }
+  setButtons(false);
+}
+
+async function runAll() {
+  clear();
+  setButtons(true);
+  log('Cygenix Diagnostics v2 — ' + new Date().toLocaleString(), 'warn');
+  inf('URL: ' + window.location.href);
+
+  await testHealthInline();
+  await testEdgeInline();
+  await testOldFunction();
+
+  log('\nDone. Share this output if you need help.', 'warn');
+  setButtons(false);
+}
+
+async function testHealthInline() {
+  hdr('Test 1 — /.netlify/functions/health');
+  try {
+    const r = await fetch('/.netlify/functions/health', { signal: AbortSignal.timeout(8000) });
+    inf('Status: ' + r.status);
+    const txt = await r.text();
+    inf('Body: ' + txt);
+    if (r.ok) {
+      const d = JSON.parse(txt);
+      d.apiKeyConfigured ? ok('Health OK — API key is set') : fail('Health OK but API key NOT set');
+    } else fail('HTTP ' + r.status);
+  } catch(e) { fail('Error: ' + e.message); }
+}
+
+async function testEdgeInline() {
+  hdr('Test 2 — Edge function /api/analyse (allow 60s)');
+  warn('Calling Claude via edge function — please wait…');
+  try {
+    const start = Date.now();
+    const r = await fetch('/api/analyse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: [{ name: 'test.sql', size: 83, type: 'text/plain', contentSnippet: 'CREATE TABLE customers (id INT PRIMARY KEY, name VARCHAR(100), email VARCHAR(200));' }],
+        jobName: 'Diagnostic Test',
+        targetServer: 'Microsoft SQL Server (on-premises)'
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+    inf('Status: ' + r.status + ' (' + elapsed + 's)');
+    const txt = await r.text();
+    inf('Response (' + txt.length + ' chars): ' + txt.slice(0, 200));
+    if (r.ok && JSON.parse(txt).analysis?.length > 50) {
+      ok('Edge function WORKS — Claude responded!');
+      log('\n✓✓✓ Upload a file in the dashboard — it should work now', 'ok');
+    } else if (r.status === 404) {
+      fail('404 — edge function not found');
+      warn('netlify/edge-functions/analyse.js may not be in your GitHub repo');
+      warn('Or netlify.toml [[edge_functions]] section is missing');
+    } else {
+      fail('Status ' + r.status + ': ' + txt.slice(0, 300));
+    }
+  } catch(e) {
+    fail(e.name === 'TimeoutError' ? 'Timed out after 60s' : 'Error: ' + e.message);
+    warn('If 404: push netlify/edge-functions/analyse.js to GitHub');
+    warn('If timeout: check Netlify function logs for errors in the edge function');
+  }
+}
+
+async function testOldFunction() {
+  hdr('Test 3 — Old function /.netlify/functions/analyse (expect timeout)');
+  inf('This is the OLD slow function — expected to timeout on free plan');
+  try {
+    const r = await fetch('/.netlify/functions/analyse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: [{ name: 'test.sql', size: 10, type: 'text/plain', contentSnippet: 'SELECT 1;' }], jobName: 'test' }),
+      signal: AbortSignal.timeout(12000)
+    });
+    inf('Status: ' + r.status + ' — if this worked, great; if Test 2 also works, use edge function');
+  } catch(e) {
+    e.name === 'TimeoutError' ? warn('Timed out as expected — this is why we use the edge function') : fail('Error: ' + e.message);
+  }
+}
+</script>
+</body>
+</html>
