@@ -487,7 +487,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 </div>
 
 <script>
-const ANALYSE_URL = '/api/analyse'; // routes to edge function via netlify.toml
+const ANALYSE_URL = '/api/analyse'; // edge function — no timeout limit
 const HEALTH_URL  = '/.netlify/functions/health'; // regular function
 const state = {
   jobs:[], files:[], selectedTarget:'Microsoft SQL Server (on-premises)',
@@ -652,12 +652,16 @@ async function startAnalysis() {
   $('ai-dot').style.background = 'var(--accent)';
   $('ai-dot').style.animationPlayState = 'running';
 
+  // Trim snippets to 3000 chars each so the JSON payload stays manageable
+  const MAX_SNIPPET = 3000;
   const filesPayload = state.files.map(f => ({
     name: f.name,
     size: f.size,
     type: f.type || getExt(f.name),
-    contentSnippet: f.contentSnippet || null
+    contentSnippet: f.contentSnippet ? f.contentSnippet.slice(0, MAX_SNIPPET) : null
   }));
+  const payloadSize = JSON.stringify(filesPayload).length;
+  $('analysis-body').textContent = `Sending ${state.files.length} file(s) to Claude (payload: ${(payloadSize/1024).toFixed(1)}KB)…\nPlease wait, this may take 20-40 seconds.`;
 
   const resetBtn = () => {
     btn.disabled = false;
@@ -671,11 +675,16 @@ async function startAnalysis() {
     resetBtn();
   };
 
+  // 90 second timeout — edge functions have no server-side limit
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 90000);
+
   let res;
   try {
     res = await fetch(ANALYSE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         files: filesPayload,
         jobName,
@@ -683,15 +692,18 @@ async function startAnalysis() {
         sourceSystem: $('job-source-input').value.trim()
       })
     });
+    clearTimeout(timeoutId);
   } catch(networkErr) {
-    showError(
-      'Network error — could not reach the Netlify function.\n\n' +
-      'Possible causes:\n' +
-      '• The /api/analyse redirect is missing from netlify.toml\n' +
-      '• The function file netlify/functions/analyse.js is missing from your repo\n' +
-      '• Netlify has not redeployed since the last commit\n\n' +
-      'Error detail: ' + networkErr.message
-    );
+    clearTimeout(timeoutId);
+    if (networkErr.name === 'AbortError') {
+      showError('Request timed out after 90 seconds.\n\nThe edge function may still be processing — try again with a smaller file.');
+    } else {
+      showError(
+        'Network error: ' + networkErr.message + '\n\n' +
+        'Make sure netlify/edge-functions/analyse.js is in your GitHub repo\n' +
+        'and netlify.toml has the [[edge_functions]] section.'
+      );
+    }
     return;
   }
 
@@ -700,14 +712,11 @@ async function startAnalysis() {
 
   if (!res.ok) {
     let detail = rawBody;
-    try { detail = JSON.parse(rawBody).error || JSON.parse(rawBody).detail || rawBody; } catch {}
-    showError(
-      `Server returned HTTP ${res.status}\n\n${detail}\n\n` +
-      'Common fixes:\n' +
-      '• HTTP 500 with "API key" message → add ANTHROPIC_API_KEY in Netlify → Environment variables\n' +
-      '• HTTP 502/504 → function timed out, try a smaller file first\n' +
-      '• HTTP 401 → your API key is invalid, check console.anthropic.com'
-    );
+    try {
+      const parsed = JSON.parse(rawBody);
+      detail = parsed.error || parsed.detail || parsed.message || rawBody;
+    } catch {}
+    showError(`HTTP ${res.status} error from edge function:\n\n${detail}\n\nRaw response:\n${rawBody.slice(0, 600)}`);
     return;
   }
 
