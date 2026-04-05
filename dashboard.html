@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Migration Console</title>
+<meta name="description" content="Cygenix AI-powered migration console. Upload, analyse and migrate files to the cloud.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+
+.app{display:grid;grid-template-columns:220px 1fr;grid-template-rows:52px 1fr;height:100vh}
+
+/* TOPBAR */
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
+.logo-link{text-decoration:none}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;letter-spacing:-0.02em;color:var(--text)}
+.logo span{color:var(--accent)}
+.logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
+.topbar-right{display:flex;align-items:center;gap:1rem}
+.topbar-badge{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);color:var(--accent);font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--bg4);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--text2)}
+.back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px;transition:color 0.15s}
+.back-link:hover{color:var(--text2)}
+
+/* SIDEBAR */
+.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto}
+.nav-section{margin-bottom:1.5rem}
+.nav-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 1.25rem;margin-bottom:0.5rem}
+.nav-item{display:flex;align-items:center;gap:10px;padding:0.5rem 1.25rem;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent;user-select:none}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
+.nav-item.active{color:var(--accent);background:var(--accent-glow);border-left-color:var(--accent)}
+.nav-icon{width:16px;height:16px;opacity:0.7;flex-shrink:0}
+.nav-item.active .nav-icon{opacity:1}
+.nav-count{margin-left:auto;background:var(--bg4);color:var(--text3);font-size:10px;padding:1px 6px;border-radius:100px;font-family:var(--mono)}
+
+/* MAIN */
+.main{padding:1.75rem;overflow-y:auto;background:var(--bg)}
+.main::-webkit-scrollbar{width:4px}
+.main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+/* STAT CARDS */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.75rem}
+.stat-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.25rem}
+.stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem}
+.stat-val{font-size:1.6rem;font-weight:600;color:var(--text);line-height:1;margin-bottom:0.25rem}
+.stat-sub{font-size:11px;color:var(--text3)}
+.stat-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
+
+/* PANEL */
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+.panel-title{font-size:15px;font-weight:600;color:var(--text)}
+.panel-sub{font-size:12px;color:var(--text3);margin-top:2px}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem}
+
+/* UPLOAD */
+.upload-zone{border:1.5px dashed var(--border2);border-radius:var(--r-lg);padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:1.25rem;background:var(--bg2)}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--accent-glow)}
+.upload-zone h3{font-size:14px;color:var(--text);margin-bottom:0.3rem;margin-top:0.75rem}
+.upload-zone p{font-size:12px;color:var(--text3)}
+.upload-zone input{display:none}
+.upload-icon{width:36px;height:36px;margin:0 auto;opacity:0.35}
+
+/* FILE LIST */
+.file-list{margin-bottom:1rem}
+.file-item{display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.75rem;background:var(--bg3);border-radius:var(--r);margin-bottom:0.4rem;border:0.5px solid var(--border)}
+.file-info{display:flex;align-items:center;gap:8px}
+.file-ext{font-size:10px;font-weight:500;font-family:var(--mono);padding:2px 6px;border-radius:4px;background:var(--bg4);color:var(--text3)}
+.file-name{font-size:12px;color:var(--text)}
+.file-size{font-size:11px;color:var(--text3);font-family:var(--mono)}
+
+/* TARGETS */
+.target-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:0.6rem;margin:1rem 0}
+.target-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s;text-align:center}
+.target-card:hover{border-color:var(--border2);background:var(--bg4)}
+.target-card.selected{border-color:var(--accent);background:var(--accent-glow)}
+.target-card .t-name{font-size:12px;font-weight:500;color:var(--text);margin-top:0.3rem}
+.target-card .t-icon{font-size:20px}
+
+/* JOBS TABLE */
+.jobs-table{width:100%;border-collapse:collapse}
+.jobs-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;border-bottom:0.5px solid var(--border)}
+.jobs-table td{padding:0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.jobs-table tr:last-child td{border-bottom:none}
+.jobs-table tr:hover td{background:rgba(255,255,255,0.02)}
+.job-name{font-size:13px;font-weight:500;color:var(--text)}
+.job-meta{font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border-radius:100px;font-weight:500}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-blue{background:var(--accent-glow);color:var(--accent)}
+.badge-purple{background:var(--purple-bg);color:var(--purple)}
+.badge-gray{background:rgba(255,255,255,0.05);color:var(--text2)}
+
+/* PROGRESS */
+.progress-bar{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;min-width:80px}
+.progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width 0.5s ease}
+.progress-fill.green{background:var(--green)}
+
+/* BUTTONS */
+.btn{padding:0.45rem 1rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}
+.btn-ghost:hover{color:var(--text);background:rgba(255,255,255,0.04)}
+.btn-sm{padding:0.3rem 0.75rem;font-size:11px}
+.btn-full{width:100%;padding:0.7rem}
+
+/* ANALYSIS PANEL */
+.analysis-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-top:1.25rem;display:none}
+.analysis-panel.visible{display:block}
+.analysis-header{display:flex;align-items:center;gap:10px;margin-bottom:1rem}
+.ai-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:aipulse 1.5s infinite;flex-shrink:0}
+@keyframes aipulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.3)}}
+.analysis-title{font-size:13px;font-weight:500;color:var(--accent);flex:1}
+.analysis-body{font-size:12px;color:var(--text2);line-height:1.8;font-family:var(--mono);white-space:pre-wrap;max-height:280px;overflow-y:auto}
+.analysis-body::-webkit-scrollbar{width:4px}
+.analysis-body::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.75rem;width:460px;max-width:95vw}
+.modal-title{font-size:16px;font-weight:600;margin-bottom:0.3rem}
+.modal-sub{font-size:12px;color:var(--text3);margin-bottom:1.25rem}
+.form-row{margin-bottom:1rem}
+.form-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;display:block}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+.modal-actions{display:flex;gap:0.75rem;justify-content:flex-end;margin-top:1.5rem}
+
+/* TWO COL */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+
+/* EMPTY */
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--text3)}
+.empty-state h3{font-size:14px;color:var(--text2);margin-bottom:0.4rem}
+.empty-state p{font-size:12px}
+
+/* VIEWS */
+.view{display:none}
+.view.active{display:block}
+
+@media(max-width:768px){
+  .app{grid-template-columns:1fr;grid-template-rows:52px auto 1fr}
+  .sidebar{display:none}
+  .stats-row{grid-template-columns:1fr 1fr}
+  .two-col{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:1.25rem">
+      <a href="index.html" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back
+      </a>
+      <a href="index.html" class="logo-link"><span class="logo">Cyge<span>nix</span><span class="logo-console">Migration Console</span></span></a>
+    </div>
+    <div class="topbar-right">
+      <div class="topbar-badge">Claude AI · Connected</div>
+      <div class="avatar">IT</div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="nav-section">
+      <div class="nav-label">Workspace</div>
+      <div class="nav-item active" onclick="showView('dashboard')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" onclick="showView('new-job')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        New Migration
+      </div>
+      <div class="nav-item" onclick="showView('jobs')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        All Jobs
+        <span class="nav-count" id="jobs-count">0</span>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Reports</div>
+      <div class="nav-item" onclick="showView('analysis')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 12l4-4 3 3 5-6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        AI Analysis
+      </div>
+      <div class="nav-item" onclick="showView('audit')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Audit Log
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Settings</div>
+      <div class="nav-item" onclick="showView('targets')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Cloud Targets
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main" id="main-content">
+
+    <!-- DASHBOARD -->
+    <div id="view-dashboard" class="view active">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Overview</div>
+          <div class="panel-sub" id="today-date"></div>
+        </div>
+        <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All time</div></div>
+        <div class="stat-card"><div class="stat-label">In Progress</div><div class="stat-val" id="stat-running" style="color:var(--accent)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--accent)"></span>Active now</div></div>
+        <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Verified</div></div>
+        <div class="stat-card"><div class="stat-label">Files Analysed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
+      </div>
+      <div class="panel-header"><div class="panel-title">Recent Jobs</div></div>
+      <div id="dashboard-jobs"></div>
+    </div>
+
+    <!-- NEW JOB -->
+    <div id="view-new-job" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">New Migration Job</div>
+          <div class="panel-sub">Upload files · Claude analyses them · choose your target</div>
+        </div>
+      </div>
+      <div class="two-col">
+        <div>
+          <div class="panel" style="margin-bottom:1rem">
+            <div class="panel-header" style="margin-bottom:1rem"><div class="panel-title" style="font-size:13px">Job Details</div></div>
+            <div class="form-row">
+              <label class="form-label">Job Name</label>
+              <input class="form-input" id="job-name-input" placeholder="e.g. Q1 Finance Documents" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Description (optional)</label>
+              <input class="form-input" id="job-desc-input" placeholder="Brief description of this migration" />
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-header" style="margin-bottom:0.75rem"><div class="panel-title" style="font-size:13px">Cloud Target</div></div>
+            <div class="target-grid">
+              <div class="target-card selected" onclick="selectTarget(this,'AWS S3')"><div class="t-icon">🟧</div><div class="t-name">AWS S3</div></div>
+              <div class="target-card" onclick="selectTarget(this,'Azure Blob')"><div class="t-icon">🔷</div><div class="t-name">Azure Blob</div></div>
+              <div class="target-card" onclick="selectTarget(this,'Google Cloud')"><div class="t-icon">🟦</div><div class="t-name">Google Cloud</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header" style="margin-bottom:1rem"><div class="panel-title" style="font-size:13px">Upload Files</div></div>
+          <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+            <input type="file" id="file-input" multiple onchange="handleFiles(this.files)">
+            <svg class="upload-icon" viewBox="0 0 36 36" fill="none"><path d="M18 24V12M12 18l6-6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="3" width="30" height="30" rx="6" stroke="currentColor" stroke-width="1.2"/></svg>
+            <h3>Drop files here or click to browse</h3>
+            <p>Any file type · Claude will analyse structure &amp; metadata</p>
+          </div>
+          <div class="file-list" id="file-list"></div>
+          <div id="analyse-btn-wrap" style="display:none">
+            <button class="btn btn-primary btn-full" onclick="startAnalysis()">Analyse with Claude AI →</button>
+          </div>
+        </div>
+      </div>
+      <div class="analysis-panel" id="analysis-panel">
+        <div class="analysis-header">
+          <div class="ai-dot" id="ai-dot"></div>
+          <div class="analysis-title" id="analysis-title">Claude is analysing your files…</div>
+          <div id="analysis-cta"></div>
+        </div>
+        <div class="analysis-body" id="analysis-body"></div>
+      </div>
+    </div>
+
+    <!-- ALL JOBS -->
+    <div id="view-jobs" class="view">
+      <div class="panel-header">
+        <div class="panel-title">All Migration Jobs</div>
+        <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
+      </div>
+      <div id="all-jobs"></div>
+    </div>
+
+    <!-- ANALYSIS REPORTS -->
+    <div id="view-analysis" class="view">
+      <div class="panel-header"><div class="panel-title">AI Analysis Reports</div></div>
+      <div id="analysis-reports"></div>
+    </div>
+
+    <!-- AUDIT LOG -->
+    <div id="view-audit" class="view">
+      <div class="panel-header"><div class="panel-title">Audit Log</div></div>
+      <div id="audit-log-wrap"></div>
+    </div>
+
+    <!-- CLOUD TARGETS -->
+    <div id="view-targets" class="view">
+      <div class="panel-header"><div class="panel-title">Cloud Targets</div></div>
+      <div class="two-col">
+        <div class="panel"><div style="font-size:20px;margin-bottom:0.5rem">🟧</div><div style="font-size:14px;font-weight:600;margin-bottom:0.25rem">AWS S3</div><div style="font-size:12px;color:var(--text3);margin-bottom:1rem">Amazon Web Services object storage</div><span class="badge badge-green">Configured</span></div>
+        <div class="panel"><div style="font-size:20px;margin-bottom:0.5rem">🔷</div><div style="font-size:14px;font-weight:600;margin-bottom:0.25rem">Azure Blob Storage</div><div style="font-size:12px;color:var(--text3);margin-bottom:1rem">Microsoft Azure cloud storage</div><span class="badge badge-amber">Not configured</span></div>
+        <div class="panel"><div style="font-size:20px;margin-bottom:0.5rem">🟦</div><div style="font-size:14px;font-weight:600;margin-bottom:0.25rem">Google Cloud Storage</div><div style="font-size:12px;color:var(--text3);margin-bottom:1rem">Google Cloud object storage</div><span class="badge badge-amber">Not configured</span></div>
+        <div class="panel" style="border-style:dashed;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:0.5rem;min-height:100px"><div style="font-size:20px">+</div><div style="font-size:13px;color:var(--text3)">Add custom S3-compatible target</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MIGRATE MODAL -->
+<div class="modal-overlay" id="migrate-modal">
+  <div class="modal">
+    <div class="modal-title">Start Migration</div>
+    <div class="modal-sub" id="modal-sub">Files will be migrated to your selected cloud target.</div>
+    <div class="form-row">
+      <label class="form-label">Target Bucket / Container</label>
+      <input class="form-input" id="modal-bucket" placeholder="e.g. cygenix-prod-docs" />
+    </div>
+    <div class="form-row">
+      <label class="form-label">Target Path Prefix (optional)</label>
+      <input class="form-input" id="modal-prefix" placeholder="e.g. finance/2024/" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmMigrate()">Start Migration</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const state={jobs:[],files:[],selectedTarget:'AWS S3',pendingJobName:'',totalFilesAnalysed:0,auditLog:[]};
+
+function $(id){return document.getElementById(id)}
+
+function showView(v){
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  $('view-'+v).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+  const map={dashboard:0,'new-job':1,jobs:2,analysis:3,audit:4,targets:5};
+  const items=document.querySelectorAll('.nav-item');
+  if(items[map[v]!==undefined?map[v]:0]) items[map[v]!==undefined?map[v]:0].classList.add('active');
+  if(v==='jobs') renderAllJobs();
+  if(v==='analysis') renderAnalysisReports();
+  if(v==='audit') renderAuditLog();
+  if(v==='dashboard') renderDashboard();
+}
+
+function selectTarget(el,name){
+  document.querySelectorAll('.target-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  state.selectedTarget=name;
+}
+
+function handleDragOver(e){e.preventDefault();$('upload-zone').classList.add('drag')}
+function handleDragLeave(){$('upload-zone').classList.remove('drag')}
+function handleDrop(e){e.preventDefault();$('upload-zone').classList.remove('drag');handleFiles(e.dataTransfer.files)}
+
+function handleFiles(fileList){
+  Array.from(fileList).forEach(f=>{
+    if(!state.files.find(x=>x.name===f.name)) state.files.push({name:f.name,size:f.size,type:f.type||'unknown',file:f});
+  });
+  renderFileList();
+}
+
+function formatSize(b){
+  if(b<1024) return b+'B';
+  if(b<1048576) return (b/1024).toFixed(1)+'KB';
+  return (b/1048576).toFixed(1)+'MB';
+}
+
+function getExt(name){return name.split('.').pop().toUpperCase().slice(0,4)||'FILE'}
+
+function renderFileList(){
+  $('file-list').innerHTML=state.files.map((f,i)=>`
+    <div class="file-item">
+      <div class="file-info">
+        <span class="file-ext">${getExt(f.name)}</span>
+        <span class="file-name">${f.name}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem">
+        <span class="file-size">${formatSize(f.size)}</span>
+        <button class="btn btn-ghost btn-sm" onclick="removeFile(${i})" style="padding:2px 8px">✕</button>
+      </div>
+    </div>`).join('');
+  $('analyse-btn-wrap').style.display=state.files.length>0?'block':'none';
+}
+
+function removeFile(i){state.files.splice(i,1);renderFileList()}
+
+async function startAnalysis(){
+  const jobName=$('job-name-input').value.trim()||'Untitled Migration';
+  if(!state.files.length){alert('Please upload at least one file.');return;}
+  const panel=$('analysis-panel');
+  panel.classList.add('visible');
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  $('analysis-title').textContent='Claude is analysing your files…';
+  $('analysis-body').textContent='';
+  $('ai-dot').style.background='var(--accent)';
+  $('ai-dot').style.animationPlayState='running';
+  $('analysis-cta').innerHTML='';
+
+  const fileDetails=state.files.map(f=>`  - ${f.name} (${formatSize(f.size)}, type: ${f.type||getExt(f.name)})`).join('\n');
+  const prompt=`You are Cygenix, an AI-powered cloud data migration assistant. Analyse the following list of files that a user wants to migrate to ${state.selectedTarget}.
+
+Files:
+${fileDetails}
+
+Provide a structured migration analysis report with these sections:
+1. FILE INVENTORY SUMMARY — count, total size estimate, file type breakdown
+2. FOLDER STRUCTURE RECOMMENDATION — suggested cloud folder hierarchy for these files
+3. METADATA TAGGING — recommended tags/labels for each file type
+4. RISK FLAGS — any files that may contain sensitive data (PII, financial, legal) based on filename patterns
+5. MIGRATION PLAN — step-by-step migration sequence with priority order
+6. ESTIMATED MIGRATION TIME — rough estimate based on file count and types
+
+Be specific, practical, and concise. Use plain text formatting with clear section headers.`;
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:prompt}]})
+    });
+    const data=await res.json();
+    const text=data.content?.map(b=>b.text||'').join('')||'No analysis returned.';
+    $('analysis-title').textContent='Claude AI Analysis Complete';
+    $('ai-dot').style.animationPlayState='paused';
+    $('ai-dot').style.background='var(--green)';
+    let i=0;
+    const stream=setInterval(()=>{
+      $('analysis-body').textContent+=text[i]||'';
+      i++;
+      if(i>=text.length){
+        clearInterval(stream);
+        $('analysis-cta').innerHTML=`<button class="btn btn-primary btn-sm" onclick="openMigrateModal('${jobName.replace(/'/g,"\\'")}')">Start Migration →</button>`;
+        const job={id:'job_'+Date.now(),name:jobName,desc:$('job-desc-input').value.trim(),target:state.selectedTarget,files:state.files.map(f=>({name:f.name,size:f.size})),analysis:text,status:'analysed',progress:0,created:new Date().toISOString()};
+        state.jobs.unshift(job);
+        state.totalFilesAnalysed+=state.files.length;
+        addAudit(`Job "${jobName}" analysed — ${state.files.length} files mapped by Claude`);
+        updateStats();
+      }
+    },8);
+  }catch(e){
+    $('analysis-body').textContent='Error connecting to Claude API. Please try again.\n\n'+e.message;
+    $('analysis-title').textContent='Analysis failed';
+    $('ai-dot').style.background='var(--red)';
+    $('ai-dot').style.animationPlayState='paused';
+  }
+}
+
+function openMigrateModal(jobName){
+  state.pendingJobName=jobName;
+  $('modal-sub').textContent=`Migrating files for "${jobName}" → ${state.selectedTarget}`;
+  $('migrate-modal').classList.add('open');
+}
+function closeModal(){$('migrate-modal').classList.remove('open')}
+
+function confirmMigrate(){
+  const bucket=$('modal-bucket').value.trim()||'cygenix-default';
+  const job=state.jobs.find(j=>j.name===state.pendingJobName);
+  if(job){
+    job.status='running';job.progress=0;job.bucket=bucket;job.prefix=$('modal-prefix').value.trim();
+    addAudit(`Migration started for "${job.name}" → ${job.target}/${bucket}`);
+    simulateMigration(job);
+  }
+  closeModal();
+  showView('jobs');
+  updateStats();
+}
+
+function simulateMigration(job){
+  const tick=setInterval(()=>{
+    job.progress=Math.min(100,job.progress+Math.floor(Math.random()*8+3));
+    if(job.progress>=100){job.progress=100;job.status='complete';addAudit(`Migration complete for "${job.name}" — all files verified`);clearInterval(tick);}
+    updateStats();
+    if($('view-jobs').classList.contains('active')) renderAllJobs();
+    if($('view-dashboard').classList.contains('active')) renderDashboard();
+  },600);
+}
+
+function addAudit(msg){state.auditLog.unshift({time:new Date().toLocaleTimeString(),msg})}
+
+function updateStats(){
+  $('stat-total').textContent=state.jobs.length;
+  $('stat-running').textContent=state.jobs.filter(j=>j.status==='running').length;
+  $('stat-done').textContent=state.jobs.filter(j=>j.status==='complete').length;
+  $('stat-files').textContent=state.totalFilesAnalysed;
+  $('jobs-count').textContent=state.jobs.length;
+}
+
+function statusBadge(s){
+  return {analysed:'<span class="badge badge-purple">Analysed</span>',running:'<span class="badge badge-blue">Migrating</span>',complete:'<span class="badge badge-green">Complete</span>',failed:'<span class="badge badge-red">Failed</span>'}[s]||`<span class="badge badge-gray">${s}</span>`;
+}
+
+function jobsTableHTML(jobs){
+  if(!jobs.length) return `<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first migration to get started.</p></div>`;
+  return `<table class="jobs-table"><thead><tr><th>Job Name</th><th>Target</th><th>Files</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead><tbody>`+
+    jobs.map(j=>`<tr>
+      <td><div class="job-name">${j.name}</div><div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div></td>
+      <td><span style="font-size:12px;color:var(--text2)">${j.target}</span></td>
+      <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.files.length}</span></td>
+      <td>${statusBadge(j.status)}</td>
+      <td><div class="progress-bar"><div class="progress-fill ${j.status==='complete'?'green':''}" style="width:${j.progress}%"></div></div></td>
+      <td style="white-space:nowrap">
+        ${j.status==='analysed'?`<button class="btn btn-primary btn-sm" onclick="openMigrateModal('${j.name.replace(/'/g,"\\'")}')">Migrate →</button>`:''}
+        ${j.analysis?`<button class="btn btn-ghost btn-sm" onclick="showView('analysis')" style="margin-left:4px">Report</button>`:''}
+      </td>
+    </tr>`).join('')+'</tbody></table>';
+}
+
+function renderDashboard(){$('dashboard-jobs').innerHTML=jobsTableHTML(state.jobs.slice(0,5));updateStats()}
+function renderAllJobs(){$('all-jobs').innerHTML=jobsTableHTML(state.jobs)}
+
+function renderAnalysisReports(){
+  const withAnalysis=state.jobs.filter(j=>j.analysis);
+  $('analysis-reports').innerHTML=withAnalysis.length?
+    withAnalysis.map(j=>`<div class="panel" style="margin-bottom:1rem"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem"><div style="font-size:14px;font-weight:600">${j.name}</div><span class="badge badge-purple">Claude AI</span></div><div style="font-size:12px;color:var(--text2);font-family:var(--mono);white-space:pre-wrap;line-height:1.8;max-height:200px;overflow-y:auto">${j.analysis}</div></div>`).join('')
+    :'<div class="empty-state"><h3>No analysis reports yet</h3><p>Run a migration analysis to see reports here.</p></div>';
+}
+
+function renderAuditLog(){
+  $('audit-log-wrap').innerHTML=state.auditLog.length?
+    `<div class="panel"><table class="jobs-table"><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>`+
+    state.auditLog.map(e=>`<tr><td style="font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap">${e.time}</td><td style="font-size:12px;color:var(--text2)">${e.msg}</td></tr>`).join('')+
+    '</tbody></table></div>'
+    :'<div class="empty-state"><h3>No audit entries yet</h3><p>Actions will appear here as you run migrations.</p></div>';
+}
+
+// Init
+$('today-date').textContent='Migration workspace · '+new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+renderDashboard();
+</script>
+</body>
+</html>
