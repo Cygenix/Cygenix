@@ -493,137 +493,141 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 </div>
 
 <script>
-const ANALYSE_URL = '/api/analyse'; // edge function — no timeout limit
-const HEALTH_URL  = '/.netlify/functions/health'; // regular function
+// ── Config ────────────────────────────────────────────────────────────────────
+const HEALTH_URL = '/.netlify/functions/health';
+
+// API key lives in sessionStorage — entered once per browser session
+function getApiKey() { return sessionStorage.getItem('cygenix_api_key') || ''; }
+function setApiKey(k) { sessionStorage.setItem('cygenix_api_key', k.trim()); }
+
 const state = {
   jobs:[], files:[], selectedTarget:'Microsoft SQL Server (on-premises)',
   totalFilesProcessed:0, auditLog:[], currentJob:null
 };
 
-function $(id){return document.getElementById(id)}
+function $(id){ return document.getElementById(id); }
 
-// ── Health ────────────────────────────────────────────────────────────────────
+// ── API Key ───────────────────────────────────────────────────────────────────
 function saveApiKey() {
-  const key = $('api-key-input') ? $('api-key-input').value.trim() : '';
-  if (!key || !key.startsWith('sk-ant-')) {
-    alert('Please enter a valid Anthropic API key starting with sk-ant-');
+  const input = $('api-key-input');
+  const key = input ? input.value.trim() : '';
+  if (!key.startsWith('sk-ant-')) {
+    alert('Please paste a valid Anthropic API key — it starts with sk-ant-');
     return;
   }
   setApiKey(key);
+  input.value = '';
+  setBadge('ok');
   $('key-alert').classList.remove('visible');
+}
+
+function setBadge(state) {
   const badge = $('conn-badge');
-  badge.textContent = 'Claude AI · Connected';
-  badge.className = 'conn-badge ok';
+  if (state === 'ok') {
+    badge.textContent = 'Claude AI · Connected';
+    badge.className = 'conn-badge ok';
+  } else if (state === 'err') {
+    badge.textContent = 'Enter API key ↓';
+    badge.className = 'conn-badge err';
+  } else {
+    badge.textContent = 'Checking…';
+    badge.className = 'conn-badge checking';
+  }
 }
 
 async function checkHealth() {
-  const badge = $('conn-badge');
-  // Check if user has stored an API key in this session
-  if (getApiKey()) {
-    badge.textContent = 'Claude AI · Connected';
-    badge.className = 'conn-badge ok';
-    $('key-alert').classList.remove('visible');
-    return;
-  }
-  // Otherwise check if Netlify env key is configured
+  if (getApiKey()) { setBadge('ok'); $('key-alert').classList.remove('visible'); return; }
   try {
-    const res = await fetch(HEALTH_URL, {signal:AbortSignal.timeout(6000)});
-    const data = await res.json();
-    if (data.apiKeyConfigured) {
-      badge.textContent = 'Claude AI · Connected';
-      badge.className = 'conn-badge ok';
-      $('key-alert').classList.remove('visible');
+    const res = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(6000) });
+    const d = await res.json();
+    if (d.apiKeyConfigured) {
+      // Netlify env key exists — we still need it in the browser for direct calls
+      // Store a sentinel so we know it's configured server-side
+      setBadge('err'); // user still needs to enter it for direct browser calls
+      $('key-alert').classList.add('visible');
     } else {
-      badge.textContent = 'Enter API key';
-      badge.className = 'conn-badge err';
+      setBadge('err');
       $('key-alert').classList.add('visible');
     }
   } catch {
-    badge.textContent = 'Enter API key';
-    badge.className = 'conn-badge err';
+    setBadge('err');
     $('key-alert').classList.add('visible');
   }
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showView(v) {
-  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
-  $('view-'+v).classList.add('active');
-  document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
-  const map={dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6,diagnostics:7};
-  document.querySelectorAll('.nav-item')[map[v]??0]?.classList.add('active');
-  if(v==='jobs') renderAllJobs();
-  if(v==='schema') renderSchemaLibrary();
-  if(v==='migration-sql') renderMigrationLibrary();
-  if(v==='audit') renderAuditLog();
-  if(v==='dashboard') renderDashboard();
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  const viewEl = $('view-' + v);
+  if (viewEl) viewEl.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const map = {dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6,diagnostics:7};
+  document.querySelectorAll('.nav-item')[map[v] ?? 0]?.classList.add('active');
+  if (v==='jobs') renderAllJobs();
+  if (v==='schema') renderSchemaLibrary();
+  if (v==='migration-sql') renderMigrationLibrary();
+  if (v==='audit') renderAuditLog();
+  if (v==='dashboard') renderDashboard();
 }
 
 // ── Target ────────────────────────────────────────────────────────────────────
 function selectTarget(el, name) {
-  document.querySelectorAll('.target-card').forEach(c=>c.classList.remove('selected'));
+  document.querySelectorAll('.target-card').forEach(c => c.classList.remove('selected'));
   el.classList.add('selected');
   state.selectedTarget = name;
 }
 
 // ── Files ─────────────────────────────────────────────────────────────────────
-function handleDragOver(e){e.preventDefault();$('upload-zone').classList.add('drag')}
-function handleDragLeave(){$('upload-zone').classList.remove('drag')}
-function handleDrop(e){e.preventDefault();$('upload-zone').classList.remove('drag');handleFiles(e.dataTransfer.files)}
+function handleDragOver(e) { e.preventDefault(); $('upload-zone').classList.add('drag'); }
+function handleDragLeave() { $('upload-zone').classList.remove('drag'); }
+function handleDrop(e) { e.preventDefault(); $('upload-zone').classList.remove('drag'); handleFiles(e.dataTransfer.files); }
 
 function handleFiles(fileList) {
   Array.from(fileList).forEach(f => {
-    if (!state.files.find(x=>x.name===f.name)) {
-      state.files.push({name:f.name, size:f.size, type:f.type||'', fileObj:f, contentSnippet:null, readStatus:'pending'});
-      readFileContent(state.files[state.files.length-1]);
-    }
+    if (!state.files.find(x => x.name === f.name))
+      state.files.push({ name:f.name, size:f.size, type:f.type||'', fileObj:f, contentSnippet:null, readStatus:'pending' });
+    readFileContent(state.files[state.files.length - 1]);
   });
   renderFileList();
 }
 
-// Read text-based files so Claude can analyse actual content
-function readFileContent(fileEntry) {
-  const textExtensions = ['sql','csv','txt','json','tsv','sqlite','db'];
-  const ext = fileEntry.name.split('.').pop().toLowerCase();
-  if (!textExtensions.includes(ext)) {
-    fileEntry.readStatus = 'metadata-only';
-    renderFileList();
-    return;
-  }
+function readFileContent(entry) {
+  const textExts = ['sql','csv','txt','json','tsv','sqlite','db'];
+  const ext = entry.name.split('.').pop().toLowerCase();
+  if (!textExts.includes(ext)) { entry.readStatus = 'metadata-only'; renderFileList(); return; }
   const reader = new FileReader();
-  reader.onload = e => {
-    fileEntry.contentSnippet = e.target.result;
-    fileEntry.readStatus = 'read';
-    renderFileList();
-  };
-  reader.onerror = () => { fileEntry.readStatus = 'metadata-only'; renderFileList(); };
-  // Read up to 200KB — plenty for Claude to analyse schema
-  const blob = fileEntry.fileObj.slice(0, 200 * 1024);
-  reader.readAsText(blob);
+  reader.onload = e => { entry.contentSnippet = e.target.result; entry.readStatus = 'read'; renderFileList(); };
+  reader.onerror = () => { entry.readStatus = 'metadata-only'; renderFileList(); };
+  reader.readAsText(entry.fileObj.slice(0, 100 * 1024)); // read up to 100KB
 }
 
-function formatSize(b){if(!b)return'0B';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
-function getExt(name){return name?.split('.').pop().toLowerCase()||'';}
+function formatSize(b) {
+  if (!b) return '0B';
+  if (b < 1024) return b + 'B';
+  if (b < 1048576) return (b/1024).toFixed(1) + 'KB';
+  return (b/1048576).toFixed(1) + 'MB';
+}
+function getExt(name) { return name?.split('.').pop().toLowerCase() || ''; }
+function getExtUpper(name) { return getExt(name).toUpperCase().slice(0,4) || 'FILE'; }
 
 function extClass(name) {
   const e = getExt(name);
-  if(e==='sql') return 'ext-sql';
-  if(e==='bak') return 'ext-bak';
-  if(e==='mdb'||e==='accdb') return 'ext-mdb';
+  if (e==='sql') return 'ext-sql';
+  if (e==='bak') return 'ext-bak';
+  if (e==='mdb'||e==='accdb') return 'ext-mdb';
   return 'ext-default';
 }
-
-function removeFile(i){state.files.splice(i,1);renderFileList();}
+function removeFile(i) { state.files.splice(i,1); renderFileList(); }
 
 function renderFileList() {
   $('file-list').innerHTML = state.files.map((f,i) => `
     <div class="file-item">
       <div class="file-info">
-        <span class="file-ext ${extClass(f.name)}">${getExt(f.name).toUpperCase()}</span>
+        <span class="file-ext ${extClass(f.name)}">${getExtUpper(f.name)}</span>
         <span class="file-name">${f.name}</span>
-        ${f.readStatus==='read'?'<span class="file-read-indicator file-read-ok">content read</span>':''}
-        ${f.readStatus==='metadata-only'?'<span class="file-read-indicator file-read-meta">metadata only</span>':''}
-        ${f.readStatus==='pending'?'<span class="file-read-indicator" style="background:var(--bg4);color:var(--text3)">reading…</span>':''}
+        ${f.readStatus==='read' ? '<span class="file-read-indicator file-read-ok">content read</span>' : ''}
+        ${f.readStatus==='metadata-only' ? '<span class="file-read-indicator file-read-meta">metadata only</span>' : ''}
+        ${f.readStatus==='pending' ? '<span class="file-read-indicator" style="color:var(--text3)">reading…</span>' : ''}
       </div>
       <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
         <span class="file-size">${formatSize(f.size)}</span>
@@ -635,58 +639,56 @@ function renderFileList() {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 function switchTab(t) {
-  ['full','schema','migration'].forEach(n => {
-    $('tab-'+n).style.display = n===t ? 'block' : 'none';
-  });
+  ['full','schema','migration'].forEach(n => { $('tab-'+n).style.display = n===t ? 'block':'none'; });
   document.querySelectorAll('#result-tabs .tab').forEach((el,i) => {
     el.classList.toggle('active', ['full','schema','migration'][i]===t);
   });
 }
-
 function switchModalTab(t) {
-  ['full-report','schema-sql','migration-sql-tab'].forEach(n => {
-    $('modal-tab-'+n).style.display = n===t ? 'block' : 'none';
-  });
+  ['full-report','schema-sql','migration-sql-tab'].forEach(n => { $('modal-tab-'+n).style.display = n===t ? 'block':'none'; });
   document.querySelectorAll('#job-modal .tab').forEach((el,i) => {
     el.classList.toggle('active', ['full-report','schema-sql','migration-sql-tab'][i]===t);
   });
 }
 
-// ── Copy ──────────────────────────────────────────────────────────────────────
 function copyCode(elId) {
-  const text = $(elId).textContent;
-  navigator.clipboard.writeText(text).then(() => {
+  navigator.clipboard.writeText($(elId).textContent).then(() => {
     const btn = $(elId).parentElement.querySelector('.copy-btn');
-    if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy SQL',2000);}
+    if (btn) { btn.textContent='Copied!'; setTimeout(()=>btn.textContent='Copy SQL',2000); }
   });
 }
 
-// ── Analysis ──────────────────────────────────────────────────────────────────
+// ── Analysis — calls Anthropic DIRECTLY from browser, no server timeout ───────
 async function startAnalysis() {
   const jobName = $('job-name-input').value.trim() || 'Untitled Migration';
   if (!state.files.length) { alert('Please upload at least one database file.'); return; }
 
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    $('key-alert').classList.add('visible');
+    alert('Please enter your Anthropic API key first — see the yellow box above.');
+    return;
+  }
+
   const panel = $('analysis-panel');
-  const btn = $('analyse-btn');
+  const btn   = $('analyse-btn');
   panel.classList.add('visible');
-  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
   btn.disabled = true;
   btn.textContent = 'Analysing…';
-  $('analysis-title').textContent = 'Claude is reading your database files and generating SQL…';
-  $('analysis-body').textContent = '';
+  $('analysis-title').textContent = 'Claude is analysing your files…';
+  $('analysis-body').textContent  = 'Calling Claude API directly — please wait, this takes 20–40 seconds…';
   $('analysis-cta').innerHTML = '';
   $('result-tabs').style.display = 'none';
   switchTab('full');
   $('ai-dot').style.background = 'var(--accent)';
   $('ai-dot').style.animationPlayState = 'running';
 
-  $('analysis-body').textContent = 'Preparing files for Claude analysis…\nPlease wait, this may take 20-40 seconds.';
-
   const resetBtn = () => {
     btn.disabled = false;
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 3 3.5.5-2.5 2.5.5 3.5L7 9l-3 1.5.5-3.5L2 4.5 5.5 4z" stroke="currentColor" stroke-width="1.2"/></svg> Analyse & Generate SQL with Claude';
+    btn.textContent = 'Analyse & Generate SQL with Claude';
   };
-  const showError = (msg) => {
+  const showError = msg => {
     $('analysis-body').textContent = msg;
     $('analysis-title').textContent = 'Analysis failed';
     $('ai-dot').style.background = 'var(--red)';
@@ -694,53 +696,43 @@ async function startAnalysis() {
     resetBtn();
   };
 
-  // Get API key — from session storage (user-entered) or prompt
-  let apiKey = getApiKey();
-  if (!apiKey) {
-    showError('No API key set.\n\nPlease enter your Anthropic API key in the box above and click Save & Connect.');
-    $('key-alert').classList.add('visible');
-    return;
-  }
-
-  // Build the Claude prompt
-  const MAX_SNIPPET = 3000;
+  // Build file descriptions — cap each snippet at 3000 chars
   const fileDescriptions = state.files.map(f => {
-    let desc = `FILE: ${f.name}\n  Size: ${formatSize(f.size)}\n  Type: ${f.type || getExt(f.name)}`;
-    if (f.contentSnippet) desc += `\n  Content preview:\n${f.contentSnippet.slice(0, MAX_SNIPPET)}`;
-    else desc += `\n  (Binary file — use filename and type for schema guidance)`;
-    return desc;
+    let d = `FILE: ${f.name}\n  Size: ${formatSize(f.size)}\n  Type: ${f.type || getExtUpper(f.name)}`;
+    if (f.contentSnippet) d += `\n  Content preview:\n${f.contentSnippet.slice(0, 3000)}`;
+    else d += `\n  (Binary file — use filename/type for schema guidance)`;
+    return d;
   }).join('\n\n---\n\n');
 
   const prompt = `You are Cygenix, an expert database migration assistant specialising in ${state.selectedTarget}.
 
-A user wants to migrate these database export file(s) into ${state.selectedTarget}.
+A user wants to migrate these database export files into ${state.selectedTarget}.
 ${$('job-source-input').value.trim() ? 'Source system: ' + $('job-source-input').value.trim() : ''}
 
 ${fileDescriptions}
 
-Produce a complete SQL Server migration package:
+Produce a complete SQL Server migration package with these exact sections:
 
 ## 1. SOURCE ANALYSIS
 Database type, tables detected, data types, relationships, row count estimates, quirks.
 
 ## 2. SQL SERVER SCHEMA
-Complete executable CREATE TABLE statements with SQL Server types (NVARCHAR, INT, DATETIME2, DECIMAL, BIT). Include PKs, FKs, indexes, NULL constraints, defaults.
+Complete executable CREATE TABLE statements. Use SQL Server types (NVARCHAR, INT, DATETIME2, DECIMAL, BIT). Include PKs, FKs, indexes, NULL constraints, defaults.
 
 ## 3. MIGRATION SQL
-Executable migration SQL — INSERT statements, RESTORE commands, or OPENROWSET queries as appropriate. Include USE, GO, SET IDENTITY_INSERT where needed.
+Executable migration SQL. INSERT statements, RESTORE commands, or OPENROWSET as appropriate. Include USE, GO, SET IDENTITY_INSERT where needed.
 
 ## 4. DATA TYPE MAPPING
-Source types → SQL Server equivalents table.
+Source types → SQL Server equivalents.
 
 ## 5. MIGRATION CHECKLIST
-Step-by-step for IT team: prerequisites, execution order, row count verification, rollback steps.
+Step-by-step: prerequisites, execution order, row count verification, rollback.
 
 ## 6. RISK FLAGS
 Data quality issues, encoding problems, reserved keywords, compatibility warnings.
 
 Generate real runnable SQL — no placeholders.`;
 
-  // Call Anthropic API directly from the browser — no server timeout possible
   let res;
   try {
     res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -754,11 +746,11 @@ Generate real runnable SQL — no placeholders.`;
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role:'user', content:prompt }]
       })
     });
-  } catch(networkErr) {
-    showError('Network error calling Anthropic API: ' + networkErr.message);
+  } catch(e) {
+    showError('Network error: ' + e.message + '\n\nCheck your internet connection and try again.');
     return;
   }
 
@@ -768,8 +760,10 @@ Generate real runnable SQL — no placeholders.`;
     let detail = rawBody;
     try { detail = JSON.parse(rawBody).error?.message || rawBody; } catch {}
     if (res.status === 401) {
-      showError('Invalid API key (401).\n\nCheck your key at console.anthropic.com and re-enter it above.');
+      showError('Invalid API key (401 Unauthorised).\n\nPlease re-enter your key in the yellow box above.');
       $('key-alert').classList.add('visible');
+      sessionStorage.removeItem('cygenix_api_key');
+      setBadge('err');
     } else {
       showError(`Anthropic API error (HTTP ${res.status}):\n\n${detail}`);
     }
@@ -777,44 +771,42 @@ Generate real runnable SQL — no placeholders.`;
   }
 
   let data;
-  try {
-    data = JSON.parse(rawBody);
-  } catch(e) {
-    showError('Could not parse Anthropic response:\n' + rawBody.slice(0, 400));
+  try { data = JSON.parse(rawBody); } catch(e) {
+    showError('Could not parse Anthropic response:\n' + rawBody.slice(0, 300));
     return;
   }
 
-  const text = data.content?.map(b => b.text || '').join('') || 'No analysis returned.';
-  // Extract schema and migration SQL sections
-  const schemaMatch = text.match(/## 2\.\s*SQL SERVER SCHEMA([\s\S]*?)(?=## 3\.)/i);
+  const text = data.content?.map(b => b.text||'').join('') || 'No analysis returned.';
+  const schemaMatch    = text.match(/## 2\.\s*SQL SERVER SCHEMA([\s\S]*?)(?=## 3\.)/i);
   const migrationMatch = text.match(/## 3\.\s*MIGRATION SQL([\s\S]*?)(?=## 4\.)/i);
-  const schemaSQL = schemaMatch ? schemaMatch[1].trim() : '';
+  const schemaSQL    = schemaMatch    ? schemaMatch[1].trim()    : '';
   const migrationSQL = migrationMatch ? migrationMatch[1].trim() : '';
 
   $('analysis-title').textContent = 'SQL Migration Package Ready';
   $('ai-dot').style.animationPlayState = 'paused';
   $('ai-dot').style.background = 'var(--green)';
 
-  // Stream full report character by character
+  // Stream text character by character
+  $('analysis-body').textContent = '';
   let i = 0;
   const stream = setInterval(() => {
     $('analysis-body').textContent += text[i] || '';
     i++;
     if (i >= text.length) {
       clearInterval(stream);
-      $('schema-code').textContent = schemaSQL || extractSection(text, 'SQL SERVER SCHEMA', 'MIGRATION SQL');
-      $('migration-code').textContent = migrationSQL || extractSection(text, 'MIGRATION SQL', 'DATA TYPE MAPPING');
-      $('result-tabs').style.display = 'flex';
+      $('schema-code').textContent    = schemaSQL    || extractSection(text, 'SQL SERVER SCHEMA', 'MIGRATION SQL');
+      $('migration-code').textContent = migrationSQL || extractSection(text, 'MIGRATION SQL',     'DATA TYPE MAPPING');
+      $('result-tabs').style.display  = 'flex';
       $('analysis-cta').innerHTML = `
         <button class="btn btn-teal btn-sm" onclick="downloadSQL('schema','${escapeAttr(jobName)}')">⬇ Schema .sql</button>
         <button class="btn btn-primary btn-sm" onclick="downloadSQL('migration','${escapeAttr(jobName)}')">⬇ Migration .sql</button>`;
       const job = {
-        id: 'job_'+Date.now(), name: jobName,
+        id: 'job_'+Date.now(), name:jobName,
         source: $('job-source-input').value.trim(),
         target: state.selectedTarget,
         files: state.files.map(f=>({name:f.name,size:f.size})),
-        analysis: text, schemaSQL, migrationSQL,
-        status: 'complete', created: new Date().toISOString()
+        analysis:text, schemaSQL, migrationSQL,
+        status:'complete', created:new Date().toISOString()
       };
       state.jobs.unshift(job);
       state.totalFilesProcessed += state.files.length;
@@ -825,24 +817,36 @@ Generate real runnable SQL — no placeholders.`;
   }, 6);
 }
 
-function extractSection(text, startMarker, endMarker) {
-  const re = new RegExp(startMarker + '([\\s\\S]*?)(?=' + endMarker + '|$)', 'i');
+function extractSection(text, start, end) {
+  const re = new RegExp(start + '([\\s\\S]*?)(?=' + end + '|$)', 'i');
   const m = text.match(re);
   return m ? m[1].trim() : '';
 }
-function escapeAttr(s){return s.replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+function escapeAttr(s) { return s.replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
-// ── Download SQL ──────────────────────────────────────────────────────────────
+// ── Download ──────────────────────────────────────────────────────────────────
 function downloadSQL(type, jobName) {
   const el = type==='schema' ? $('schema-code') : $('migration-code');
   const content = el?.textContent || '';
   if (!content) { alert('No SQL generated yet.'); return; }
-  const suffix = type==='schema' ? '_schema' : '_migration';
-  const filename = (jobName||'migration').replace(/[^a-z0-9]/gi,'_') + suffix + '.sql';
+  const name = (jobName||'migration').replace(/[^a-z0-9]/gi,'_');
   const blob = new Blob([content], {type:'text/plain'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = filename;
+  a.download = name + (type==='schema' ? '_schema' : '_migration') + '.sql';
+  a.click();
+}
+
+function downloadJobSQL(jobId, type) {
+  const job = state.jobs.find(j=>j.id===jobId);
+  if (!job) return;
+  const content = type==='schema' ? job.schemaSQL : job.migrationSQL;
+  if (!content) { alert('No SQL available for this job.'); return; }
+  const name = job.name.replace(/[^a-z0-9]/gi,'_');
+  const blob = new Blob([content], {type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + (type==='schema'?'_schema':'_migration') + '.sql';
   a.click();
 }
 
@@ -852,11 +856,10 @@ function downloadModalSQL(type) {
   if (!content) { alert('No SQL available.'); return; }
   const job = state.currentJob;
   const name = (job?.name||'migration').replace(/[^a-z0-9]/gi,'_');
-  const suffix = type==='schema' ? '_schema' : '_migration';
   const blob = new Blob([content], {type:'text/plain'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = name + suffix + '.sql';
+  a.download = name + (type==='schema'?'_schema':'_migration') + '.sql';
   a.click();
 }
 
@@ -867,216 +870,103 @@ function openJobModal(jobId) {
   state.currentJob = job;
   $('modal-job-name').textContent = job.name;
   $('modal-job-meta').textContent = `${job.target} · ${new Date(job.created).toLocaleDateString('en-GB')} · ${job.files.length} file(s)`;
-  $('modal-full-text').textContent = job.analysis || '';
-  $('modal-schema-code').textContent = job.schemaSQL || extractSection(job.analysis||'','SQL SERVER SCHEMA','MIGRATION SQL');
-  $('modal-migration-code').textContent = job.migrationSQL || extractSection(job.analysis||'','MIGRATION SQL','DATA TYPE MAPPING');
+  $('modal-full-text').textContent    = job.analysis || '';
+  $('modal-schema-code').textContent  = job.schemaSQL || '';
+  $('modal-migration-code').textContent = job.migrationSQL || '';
   switchModalTab('full-report');
   $('job-modal').classList.add('open');
 }
-function closeModal(){$('job-modal').classList.remove('open')}
+function closeModal() { $('job-modal').classList.remove('open'); }
 
 // ── Render ────────────────────────────────────────────────────────────────────
-function addAudit(msg){state.auditLog.unshift({time:new Date().toLocaleTimeString(),msg});}
-function updateStats(){
-  $('stat-total').textContent=state.jobs.length;
-  $('stat-analysed').textContent=state.jobs.length;
-  $('stat-done').textContent=state.jobs.filter(j=>j.status==='complete').length;
-  $('stat-files').textContent=state.totalFilesProcessed;
-  $('jobs-count').textContent=state.jobs.length;
+function addAudit(msg) { state.auditLog.unshift({time:new Date().toLocaleTimeString(), msg}); }
+function updateStats() {
+  $('stat-total').textContent    = state.jobs.length;
+  $('stat-analysed').textContent = state.jobs.length;
+  $('stat-done').textContent     = state.jobs.filter(j=>j.status==='complete').length;
+  $('stat-files').textContent    = state.totalFilesProcessed;
+  $('jobs-count').textContent    = state.jobs.length;
+}
+
+function statusBadge(s) {
+  return ({complete:'<span class="badge badge-green">SQL Ready</span>',failed:'<span class="badge badge-red">Failed</span>'})[s]
+    || '<span class="badge badge-gray">'+s+'</span>';
 }
 
 function jobsTableHTML(jobs) {
-  if(!jobs.length) return`<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>`;
-  return`<table class="jobs-table"><thead><tr><th>Job Name</th><th>Source</th><th>Target</th><th>Files</th><th>Status</th><th>Actions</th></tr></thead><tbody>`+
-    jobs.map(j=>`<tr>
+  if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
+  return '<table class="jobs-table"><thead><tr><th>Job Name</th><th>Source</th><th>Target</th><th>Files</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
+    jobs.map(j => `<tr>
       <td><div class="job-name">${j.name}</div><div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div></td>
       <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
       <td><span style="font-size:12px;color:var(--text2)">${j.target}</span></td>
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.files.length}</span></td>
-      <td><span class="badge badge-green">SQL Ready</span></td>
+      <td>${statusBadge(j.status)}</td>
       <td style="white-space:nowrap;display:flex;gap:6px;padding-top:0.75rem">
-        <button class="btn btn-ghost btn-sm" onclick="openJobModal('${j.id}')">View SQL</button>
+        <button class="btn btn-ghost btn-sm" onclick="openJobModal('${j.id}')">View</button>
         <button class="btn btn-teal btn-sm" onclick="downloadJobSQL('${j.id}','schema')">⬇ Schema</button>
         <button class="btn btn-primary btn-sm" onclick="downloadJobSQL('${j.id}','migration')">⬇ Migration</button>
-      </td></tr>`).join('')+'</tbody></table>';
+      </td></tr>`).join('') + '</tbody></table>';
 }
 
-function downloadJobSQL(jobId, type) {
-  const job = state.jobs.find(j=>j.id===jobId);
-  if (!job) return;
-  const content = type==='schema'
-    ? (job.schemaSQL || extractSection(job.analysis||'','SQL SERVER SCHEMA','MIGRATION SQL'))
-    : (job.migrationSQL || extractSection(job.analysis||'','MIGRATION SQL','DATA TYPE MAPPING'));
-  if (!content) { alert('No SQL available for this job.'); return; }
-  const name = job.name.replace(/[^a-z0-9]/gi,'_');
-  const suffix = type==='schema' ? '_schema' : '_migration';
-  const blob = new Blob([content], {type:'text/plain'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = name + suffix + '.sql';
-  a.click();
-}
-
-function renderDashboard(){$('dashboard-jobs').innerHTML=jobsTableHTML(state.jobs.slice(0,5));updateStats();}
-function renderAllJobs(){$('all-jobs').innerHTML=jobsTableHTML(state.jobs);}
+function renderDashboard()         { $('dashboard-jobs').innerHTML = jobsTableHTML(state.jobs.slice(0,5)); updateStats(); }
+function renderAllJobs()           { $('all-jobs').innerHTML = jobsTableHTML(state.jobs); }
 
 function renderSchemaLibrary() {
-  const w = state.jobs.filter(j=>j.schemaSQL||j.analysis);
-  $('schema-library').innerHTML = w.length ? w.map(j=>`
-    <div class="panel" style="margin-bottom:1rem">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
-        <div style="font-size:14px;font-weight:600">${j.name}</div>
-        <div style="display:flex;gap:0.5rem">
-          <span class="badge badge-teal">Schema SQL</span>
+  const w = state.jobs.filter(j => j.schemaSQL);
+  $('schema-library').innerHTML = w.length
+    ? w.map(j => `<div class="panel" style="margin-bottom:1rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.5rem;flex-wrap:wrap">
+          <div style="font-size:14px;font-weight:600">${j.name}</div>
           <button class="btn btn-ghost btn-sm" onclick="downloadJobSQL('${j.id}','schema')">⬇ Download</button>
         </div>
-      </div>
-      <div style="position:relative"><button class="copy-btn" onclick="this.nextElementSibling.textContent&&navigator.clipboard.writeText(this.nextElementSibling.textContent)">Copy</button>
-      <div class="code-block">${escHtml(j.schemaSQL||extractSection(j.analysis||'','SQL SERVER SCHEMA','MIGRATION SQL'))}</div></div>
-    </div>`).join('')
-    :'<div class="empty-state"><h3>No schema SQL yet</h3><p>Run a migration analysis to generate SQL Server schema.</p></div>';
+        <div style="position:relative"><button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">Copy</button>
+        <div class="code-block">${escHtml(j.schemaSQL)}</div></div>
+      </div>`).join('')
+    : '<div class="empty-state"><h3>No schema SQL yet</h3><p>Run a migration analysis to generate SQL Server schema.</p></div>';
 }
 
 function renderMigrationLibrary() {
-  const w = state.jobs.filter(j=>j.migrationSQL||j.analysis);
-  $('migration-library').innerHTML = w.length ? w.map(j=>`
-    <div class="panel" style="margin-bottom:1rem">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
-        <div style="font-size:14px;font-weight:600">${j.name}</div>
-        <div style="display:flex;gap:0.5rem">
-          <span class="badge badge-blue">Migration SQL</span>
+  const w = state.jobs.filter(j => j.migrationSQL);
+  $('migration-library').innerHTML = w.length
+    ? w.map(j => `<div class="panel" style="margin-bottom:1rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.5rem;flex-wrap:wrap">
+          <div style="font-size:14px;font-weight:600">${j.name}</div>
           <button class="btn btn-primary btn-sm" onclick="downloadJobSQL('${j.id}','migration')">⬇ Download</button>
         </div>
-      </div>
-      <div style="position:relative"><button class="copy-btn" onclick="this.nextElementSibling.textContent&&navigator.clipboard.writeText(this.nextElementSibling.textContent)">Copy</button>
-      <div class="code-block">${escHtml(j.migrationSQL||extractSection(j.analysis||'','MIGRATION SQL','DATA TYPE MAPPING'))}</div></div>
-    </div>`).join('')
-    :'<div class="empty-state"><h3>No migration SQL yet</h3><p>Run a migration analysis to generate INSERT/RESTORE scripts.</p></div>';
+        <div style="position:relative"><button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">Copy</button>
+        <div class="code-block">${escHtml(j.migrationSQL)}</div></div>
+      </div>`).join('')
+    : '<div class="empty-state"><h3>No migration SQL yet</h3><p>Run a migration analysis to generate scripts.</p></div>';
 }
 
 function renderAuditLog() {
   $('audit-log-wrap').innerHTML = state.auditLog.length
-    ?`<div class="panel"><table class="jobs-table"><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>`+
-      state.auditLog.map(e=>`<tr><td style="font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap">${e.time}</td><td style="font-size:12px;color:var(--text2)">${e.msg}</td></tr>`).join('')+
+    ? '<div class="panel"><table class="jobs-table"><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>' +
+      state.auditLog.map(e => `<tr><td style="font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap">${e.time}</td><td style="font-size:12px;color:var(--text2)">${e.msg}</td></tr>`).join('') +
       '</tbody></table></div>'
-    :'<div class="empty-state"><h3>No audit entries yet</h3><p>Events will appear here as you run migrations.</p></div>';
+    : '<div class="empty-state"><h3>No audit entries yet</h3></div>';
 }
 
-function escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── Diagnostics ───────────────────────────────────────────────────────────────
 async function runDiagnostics() {
   const out = $('diag-output');
   out.innerHTML = '';
-
-  const log = (msg, color) => {
-    const line = document.createElement('div');
-    line.style.color = color || 'var(--text2)';
-    line.textContent = msg;
-    out.appendChild(line);
-  };
-
-  const ok  = (msg) => log('✓ ' + msg, 'var(--green)');
-  const err = (msg) => log('✗ ' + msg, 'var(--red)');
-  const inf = (msg) => log('  ' + msg, 'var(--text3)');
-  const hdr = (msg) => log('\n▸ ' + msg, 'var(--accent)');
-
-  log('Running diagnostics…', 'var(--amber)');
-
-  // Test 1: health function
-  hdr('Test 1: Health function (/.netlify/functions/health)');
+  const log = (m,c) => { const s=document.createElement('div'); s.style.color=c||'var(--text2)'; s.textContent=m; out.appendChild(s); };
+  log('Running diagnostics…','var(--amber)');
+  log('API key in session: ' + (getApiKey() ? 'YES ('+getApiKey().slice(0,12)+'…)' : 'NO'), getApiKey()?'var(--green)':'var(--red)');
   try {
-    const r = await fetch(HEALTH_URL, {signal: AbortSignal.timeout(8000)});
-    const txt = await r.text();
-    inf('HTTP status: ' + r.status);
-    inf('Response: ' + txt.slice(0, 200));
-    if (r.ok) {
-      let data;
-      try { data = JSON.parse(txt); } catch {}
-      if (data && data.apiKeyConfigured) {
-        ok('Health function reachable and API key is set');
-      } else if (data && data.apiKeyConfigured === false) {
-        err('Health function reachable BUT API key is NOT set in Netlify environment variables');
-        inf('Fix: Netlify → Site configuration → Environment variables → Add ANTHROPIC_API_KEY → Redeploy');
-      } else {
-        ok('Health function reachable (key status unknown)');
-      }
-    } else {
-      err('Health function returned HTTP ' + r.status);
-      inf('Response body: ' + txt.slice(0, 300));
-    }
-  } catch(e) {
-    err('Could not reach health function: ' + e.message);
-    inf('This means /.netlify/functions/health does not exist on your deployment');
-    inf('Check that netlify/functions/health.js is committed to your GitHub repo');
-  }
-
-  // Test 2: analyse function with tiny payload
-  hdr('Test 2: Analyse function (/.netlify/functions/analyse)');
-  try {
-    const r = await fetch(ANALYSE_URL, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        files: [{name: 'test.sql', size: 100, type: 'text/plain', contentSnippet: 'CREATE TABLE test (id INT PRIMARY KEY, name VARCHAR(100));'}],
-        jobName: 'Diagnostic Test',
-        targetServer: 'Microsoft SQL Server (on-premises)'
-      }),
-      signal: AbortSignal.timeout(30000)
-    });
-    const txt = await r.text();
-    inf('HTTP status: ' + r.status);
-    if (r.ok) {
-      ok('Analyse function returned HTTP 200 — everything is working!');
-      inf('Response length: ' + txt.length + ' chars');
-      try {
-        const d = JSON.parse(txt);
-        if (d.analysis) inf('Analysis preview: ' + d.analysis.slice(0, 150) + '…');
-      } catch {}
-    } else {
-      err('Analyse function returned HTTP ' + r.status);
-      inf('Response: ' + txt.slice(0, 400));
-      if (r.status === 500 && txt.includes('API key')) {
-        err('→ Root cause: ANTHROPIC_API_KEY not set in Netlify environment variables');
-      } else if (r.status === 401) {
-        err('→ Root cause: API key is invalid. Get a fresh key from console.anthropic.com');
-      } else if (r.status === 504 || r.status === 502) {
-        err('→ Root cause: Function timed out. The request took too long.');
-      }
-    }
-  } catch(e) {
-    err('Could not reach analyse function: ' + e.message);
-    inf('Check netlify/functions/analyse.js is in your GitHub repo');
-  }
-
-  // Test 3: redirect check
-  hdr('Test 3: /api/analyse redirect');
-  try {
-    const r = await fetch('/api/analyse', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({files:[],jobName:'redirect-test'}),
-      signal: AbortSignal.timeout(8000)
-    });
-    inf('HTTP status: ' + r.status);
-    if (r.status === 400) {
-      ok('Redirect is working (got 400 = function reached, rejected empty files as expected)');
-    } else if (r.status === 404) {
-      err('Redirect NOT working — /api/analyse returns 404');
-      inf('Fix: make sure netlify.toml is in the root of your repo with the [[redirects]] section');
-    } else {
-      ok('Redirect responded with HTTP ' + r.status);
-    }
-  } catch(e) {
-    err('Redirect test failed: ' + e.message);
-  }
-
-  log('\nDiagnostics complete.', 'var(--amber)');
+    const r = await fetch(HEALTH_URL,{signal:AbortSignal.timeout(6000)});
+    const d = await r.json();
+    log('Netlify health: ' + JSON.stringify(d), 'var(--text2)');
+  } catch(e) { log('Netlify health error: '+e.message,'var(--red)'); }
+  log('Done.','var(--amber)');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-$('today-date').textContent = 'SQL Migration workspace · '+new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+$('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 renderDashboard();
 checkHealth();
 </script>
