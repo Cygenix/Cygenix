@@ -180,38 +180,67 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   <!-- ═══════════════════════════════════════════════════════════════ -->
   <div id="step-1" class="step-view active">
     <div class="panel">
-      <div class="panel-title">Connect via Azure Function</div>
-      <div class="panel-sub">Your Azure Function handles the SQL Server connection using Managed Identity — no passwords, no firewall rules. Enter the Function URL and key below.</div>
+      <div class="panel-title">Connect to target database</div>
+      <div class="panel-sub">Choose how to connect — direct connection string works immediately, Azure Function uses Managed Identity for production.</div>
 
-      <div class="two-col">
-        <div class="form-row">
-          <label class="form-label">Azure Function URL</label>
-          <input id="fn-url" class="form-input" style="font-family:var(--mono);font-size:12px"
-            placeholder="https://cygenix-db-api.azurewebsites.net/api/db" />
-          <div class="form-hint">Your Function App URL — ends with /api/db</div>
+      <!-- Connection mode selector -->
+      <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem">
+        <div id="mode-direct" onclick="setConnMode('direct')" style="flex:1;border:2px solid var(--accent);background:var(--accent-glow);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s">
+          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:0.25rem">Direct connection string</div>
+          <div style="font-size:11px;color:var(--text3)">Works immediately — SQL auth or Windows auth via connection string</div>
         </div>
-        <div class="form-row">
-          <label class="form-label">Function key <span class="tag">from Azure Portal</span></label>
-          <input id="fn-key" type="password" class="form-input" style="font-family:var(--mono);font-size:12px"
-            placeholder="Paste your function key here" />
-          <div class="form-hint">Azure Portal → Function App → Functions → db → Function Keys</div>
+        <div id="mode-azure" onclick="setConnMode('azure')" style="flex:1;border:0.5px solid var(--border2);background:var(--bg3);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s">
+          <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:0.25rem">Azure Function <span style="font-size:10px;font-family:var(--mono);background:var(--teal-bg);color:var(--teal);padding:1px 6px;border-radius:4px;margin-left:4px">Recommended</span></div>
+          <div style="font-size:11px;color:var(--text3)">Managed Identity — no passwords, no firewall rules needed</div>
         </div>
       </div>
 
-      <div class="panel" style="margin-top:0.25rem;padding:1rem;border-color:rgba(61,126,255,0.2);background:var(--accent-glow)">
-        <div style="font-size:12px;font-weight:500;margin-bottom:0.5rem;color:var(--accent)">Where to find these values</div>
-        <div style="font-size:12px;color:var(--text2);line-height:2;font-family:var(--mono)">
-          <span style="color:var(--teal)">Function URL:</span> Azure Portal → Function App → Overview → URL<br>
-          &nbsp;&nbsp;→ append <span style="color:var(--accent)">/api/db</span> to the base URL<br>
-          <span style="color:var(--teal)">Function Key:</span> Function App → Functions → db → Function Keys → default<br>
-          &nbsp;&nbsp;→ copy the value (starts with a long string of letters/numbers)
+      <!-- DIRECT mode fields -->
+      <div id="conn-direct">
+        <div class="form-row">
+          <label class="form-label">Connection string</label>
+          <textarea id="conn-string" class="form-input" rows="3" style="font-family:var(--mono);font-size:12px"
+            placeholder="Server=myserver.database.windows.net;Database=mydb;User Id=myuser;Password=mypass;Encrypt=True;"></textarea>
+          <div class="form-hint">Supports ADO.NET format. The connection is made from Netlify's servers.</div>
+        </div>
+        <div class="panel" style="padding:0.75rem 1rem;margin-bottom:0.5rem">
+          <div style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:0.5rem">Examples</div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);line-height:2">
+            <span style="color:var(--teal)">Azure SQL:</span> Server=server.database.windows.net;Database=db;User Id=user;Password=pass;Encrypt=True;<br>
+            <span style="color:var(--accent)">On-prem:</span> Server=192.168.1.10,1433;Database=db;User Id=sa;Password=pass;TrustServerCertificate=True;<br>
+            <span style="color:var(--purple)">AWS RDS:</span> Server=mydb.xxxx.rds.amazonaws.com;Database=db;User Id=admin;Password=pass;Encrypt=True;
+          </div>
         </div>
       </div>
 
-      <div style="display:flex;gap:0.75rem;margin-top:1.25rem;align-items:center;flex-wrap:wrap">
+      <!-- AZURE mode fields -->
+      <div id="conn-azure" style="display:none">
+        <div class="two-col">
+          <div class="form-row">
+            <label class="form-label">Azure Function URL</label>
+            <input id="fn-url" class="form-input" style="font-family:var(--mono);font-size:12px"
+              placeholder="https://cygenix-db-api.azurewebsites.net/api/db" />
+            <div class="form-hint">Function App URL — ends with /api/db</div>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Function key <span class="tag">from Azure Portal</span></label>
+            <input id="fn-key" type="password" class="form-input" style="font-family:var(--mono);font-size:12px"
+              placeholder="Paste your function key here" />
+            <div class="form-hint">Function App → Functions → db → Function Keys → default</div>
+          </div>
+        </div>
+        <div class="panel" style="padding:0.75rem 1rem;border-color:rgba(61,126,255,0.2);background:var(--accent-glow);margin-bottom:0.5rem">
+          <div style="font-size:11px;color:var(--text2);line-height:2;font-family:var(--mono)">
+            <span style="color:var(--teal)">Function URL:</span> Azure Portal → Function App → Overview → URL → append /api/db<br>
+            <span style="color:var(--teal)">Function Key:</span> Function App → Functions → db → Function Keys → default
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0.75rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="testConnection()" id="test-btn">Test connection</button>
         <button class="btn btn-ghost" onclick="clearConnection()">Clear</button>
-        <span style="font-size:12px;color:var(--text3)">Values stored in browser session only — cleared when you close the tab.</span>
+        <span style="font-size:12px;color:var(--text3)">Values stored in browser session only.</span>
       </div>
 
       <div class="status-box" id="conn-status"></div>
@@ -467,12 +496,17 @@ function saveApiKey(){
   sessionStorage.setItem('cygenix_api_key', k);
   $('api-key-input').value = '';
   updateApiBadge();
-// Restore saved Azure Function URL/key if present
-const savedUrl = sessionStorage.getItem('cygenix_fn_url');
-const savedKey = sessionStorage.getItem('cygenix_fn_key');
-if (savedUrl && $('fn-url')) $('fn-url').value = savedUrl;
-if (savedKey && $('fn-key')) $('fn-key').value = '••••••••';
 }
+
+// Restore saved connection values on page load
+(function restoreSession(){
+  const savedCs  = sessionStorage.getItem('cygenix_conn_string');
+  const savedUrl = sessionStorage.getItem('cygenix_fn_url');
+  const savedKey = sessionStorage.getItem('cygenix_fn_key');
+  if (savedCs  && $('conn-string')) $('conn-string').value = savedCs;
+  if (savedUrl && $('fn-url'))      $('fn-url').value = savedUrl;
+  if (savedKey && $('fn-key'))      $('fn-key').value = '••••••••';
+})();
 function updateApiBadge(){
   const b = $('api-badge');
   if (getApiKey()){ b.textContent='Claude AI · Ready'; b.className='conn-badge ok'; $('api-key-panel').style.display='none'; }
@@ -501,61 +535,93 @@ function goStep(n){
 }
 
 // ── Step 1: Connect ──────────────────────────────────────────────────────────
+// ── Connection mode ───────────────────────────────────────────────────────────
+let connMode = sessionStorage.getItem('cygenix_conn_mode') || 'direct';
+
+function setConnMode(mode) {
+  connMode = mode;
+  sessionStorage.setItem('cygenix_conn_mode', mode);
+  const isDirect = mode === 'direct';
+  $('conn-direct').style.display = isDirect ? 'block' : 'none';
+  $('conn-azure').style.display  = isDirect ? 'none'  : 'block';
+  // Highlight selected card
+  $('mode-direct').style.border = isDirect ? '2px solid var(--accent)' : '0.5px solid var(--border2)';
+  $('mode-direct').style.background = isDirect ? 'var(--accent-glow)' : 'var(--bg3)';
+  $('mode-direct').querySelector('div').style.color = isDirect ? 'var(--accent)' : 'var(--text2)';
+  $('mode-azure').style.border  = isDirect ? '0.5px solid var(--border2)' : '2px solid var(--accent)';
+  $('mode-azure').style.background = isDirect ? 'var(--bg3)' : 'var(--accent-glow)';
+}
+setConnMode(connMode); // apply on load
+
 async function testConnection(){
-  const url = $('fn-url').value.trim();
-  const key = $('fn-key').value.trim();
-  if (!url){ alert('Please enter the Azure Function URL.'); return; }
-  if (!url.startsWith('https://')){ alert('URL must start with https://'); return; }
-
-  // Save to session
-  sessionStorage.setItem('cygenix_fn_url', url);
-  if (key) sessionStorage.setItem('cygenix_fn_key', key);
-
   const btn = $('test-btn');
   btn.disabled = true; btn.textContent = 'Connecting…';
-  showStatus('conn-status', 'Calling Azure Function…', 'info');
 
-  try {
-    const testRes = await dbCall({ action: 'test' });
-    if (!testRes.success) throw new Error(testRes.error || 'Connection test failed');
-
-    showStatus('conn-status',
-      `Connected via ${testRes.authMode}\nServer: ${testRes.server}\nDatabase: ${testRes.database}\nVersion: ${testRes.version}\nUser: ${testRes.user}`,
-      'ok');
-
-    showStatus('conn-status',
-      `✓ Connected to ${testRes.database} via ${testRes.authMode}\nFetching schema…`, 'ok');
-
-    const schemaRes = await dbCall({ action: 'schema' });
-    if (!schemaRes.success) throw new Error(schemaRes.error);
-
-    S.targetSchema = schemaRes;
-    S.connString = url; // store URL as the "connection" identifier
-    renderTargetSchema(schemaRes.tables, testRes.database, testRes.version);
-
-    const b = $('db-badge');
-    b.textContent = testRes.database + ' · Connected';
-    b.className = 'conn-badge ok';
-
-    populateTargetTableSelect(schemaRes.tables);
-
-  } catch(e) {
-    const hint = e.hint ? '\n\nHint: ' + e.hint : '';
-    showStatus('conn-status', 'Error: ' + e.message + hint +
-      '\n\nCheck:\n• Function URL is correct and ends with /api/db\n• Function key is correct\n• Managed Identity is enabled on the Function App\n• The identity has db_datareader + db_datawriter on the database',
-      'err');
-    $('db-badge').textContent = 'Connection failed';
-    $('db-badge').className = 'conn-badge err';
+  if (connMode === 'direct') {
+    await testDirectConnection();
+  } else {
+    await testAzureConnection();
   }
 
   btn.disabled = false; btn.textContent = 'Test connection';
 }
 
+async function testDirectConnection(){
+  const cs = $('conn-string').value.trim();
+  if (!cs){ alert('Please enter a connection string.'); return; }
+  sessionStorage.setItem('cygenix_conn_string', cs);
+  showStatus('conn-status', 'Connecting via Netlify function…', 'info');
+  try {
+    const testRes = await directDbCall({ action: 'test', connectionString: cs });
+    if (!testRes.success) throw new Error(testRes.error || 'Connection failed');
+    showStatus('conn-status', `✓ Connected to ${testRes.database}\nServer: ${testRes.version}\nUser: ${testRes.user}\nFetching schema…`, 'ok');
+    const schemaRes = await directDbCall({ action: 'schema', connectionString: cs });
+    if (!schemaRes.success) throw new Error(schemaRes.error);
+    S.targetSchema = schemaRes;
+    S.connString = cs;
+    renderTargetSchema(schemaRes.tables, testRes.database, testRes.version);
+    $('db-badge').textContent = testRes.database + ' · Connected';
+    $('db-badge').className = 'conn-badge ok';
+    populateTargetTableSelect(schemaRes.tables);
+  } catch(e) {
+    showStatus('conn-status', 'Connection failed: ' + e.message + (e.hint ? '\n\n' + e.hint : ''), 'err');
+    $('db-badge').textContent = 'Connection failed';
+    $('db-badge').className = 'conn-badge err';
+  }
+}
+
+async function testAzureConnection(){
+  const url = $('fn-url').value.trim();
+  const key = $('fn-key').value.trim();
+  if (!url){ alert('Please enter the Azure Function URL.'); return; }
+  if (!url.startsWith('https://')){ alert('URL must start with https://'); return; }
+  sessionStorage.setItem('cygenix_fn_url', url);
+  if (key) sessionStorage.setItem('cygenix_fn_key', key);
+  showStatus('conn-status', 'Calling Azure Function…', 'info');
+  try {
+    const testRes = await azureDbCall({ action: 'test' });
+    if (!testRes.success) throw new Error(testRes.error || 'Connection test failed');
+    showStatus('conn-status', `✓ Connected via ${testRes.authMode}\nServer: ${testRes.server}\nDatabase: ${testRes.database}\nFetching schema…`, 'ok');
+    const schemaRes = await azureDbCall({ action: 'schema' });
+    if (!schemaRes.success) throw new Error(schemaRes.error);
+    S.targetSchema = schemaRes;
+    S.connString = url;
+    renderTargetSchema(schemaRes.tables, testRes.database, testRes.version);
+    $('db-badge').textContent = testRes.database + ' · Connected';
+    $('db-badge').className = 'conn-badge ok';
+    populateTargetTableSelect(schemaRes.tables);
+  } catch(e) {
+    showStatus('conn-status', 'Error: ' + e.message + (e.hint ? '\n\n' + e.hint : ''), 'err');
+    $('db-badge').textContent = 'Connection failed';
+    $('db-badge').className = 'conn-badge err';
+  }
+}
+
 function clearConnection(){
-  $('fn-url').value = '';
-  $('fn-key').value = '';
-  sessionStorage.removeItem('cygenix_fn_url');
-  sessionStorage.removeItem('cygenix_fn_key');
+  if ($('conn-string')) $('conn-string').value = '';
+  if ($('fn-url')) $('fn-url').value = '';
+  if ($('fn-key')) $('fn-key').value = '';
+  ['cygenix_conn_string','cygenix_fn_url','cygenix_fn_key'].forEach(k => sessionStorage.removeItem(k));
   S.connString = '';
   S.targetSchema = null;
   $('db-info-panel').style.display = 'none';
@@ -564,9 +630,24 @@ function clearConnection(){
   $('db-badge').className = 'conn-badge checking';
 }
 
-async function dbCall(body){
+// Direct connection — calls Netlify db-connect function
+async function directDbCall(body){
+  const res = await fetch('/.netlify/functions/db-connect', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30000)
+  });
+  let data;
+  try { data = await res.json(); } catch { throw new Error('db-connect returned non-JSON (HTTP ' + res.status + ')'); }
+  if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { hint: data.hint });
+  return data;
+}
+
+// Azure Function connection
+async function azureDbCall(body){
   const url = getAzureFnUrl('db');
-  if (!url) throw new Error('Azure Function URL not configured. Please enter it in the connection panel.');
+  if (!url) throw new Error('Azure Function URL not configured.');
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -574,9 +655,18 @@ async function dbCall(body){
     signal: AbortSignal.timeout(60000)
   });
   let data;
-  try { data = await res.json(); } catch { throw new Error('Azure Function returned non-JSON response (HTTP ' + res.status + ')'); }
+  try { data = await res.json(); } catch { throw new Error('Azure Function returned non-JSON (HTTP ' + res.status + ')'); }
   if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { hint: data.hint });
   return data;
+}
+
+// dbCall routes to whichever mode is active (used by execute steps)
+async function dbCall(body){
+  if (connMode === 'direct') {
+    return directDbCall({ ...body, connectionString: S.connString });
+  } else {
+    return azureDbCall(body);
+  }
 }
 
 function renderTargetSchema(tables, dbName, version){
