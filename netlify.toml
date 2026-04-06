@@ -1,0 +1,21 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+  command = "npm install"
+
+[functions]
+  timeout = 26
+
+[[edge_functions]]
+  path = "/api/analyse"
+  function = "analyse"
+
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200
+
+[[redirects]]
+  from = "/api/db"
+  to = "/.netlify/functions/db-connect"
+  status = 200
