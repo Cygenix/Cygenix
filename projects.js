@@ -1,10 +1,5 @@
 // netlify/functions/projects.js
-// Netlify Blobs with explicit siteID + token for environments where
-// auto-injection is not available.
-//
-// Required environment variables (set in Netlify → Project configuration → Environment variables):
-//   NETLIFY_SITE_ID   — your site/project ID (from Project configuration → General)
-//   NETLIFY_API_TOKEN — a Netlify personal access token (from user settings → OAuth apps)
+// Uses whichever Netlify token/siteID is available in the environment.
 
 const { getStore } = require('@netlify/blobs');
 
@@ -15,8 +10,8 @@ const CORS = {
   'Content-Type': 'application/json',
 };
 
-function ok(data)           { return { statusCode: 200, headers: CORS, body: JSON.stringify(data) }; }
-function fail(msg, code=500){ return { statusCode: code, headers: CORS, body: JSON.stringify({ error: msg }) }; }
+function ok(data)            { return { statusCode: 200,  headers: CORS, body: JSON.stringify(data) }; }
+function fail(msg, code=500) { return { statusCode: code, headers: CORS, body: JSON.stringify({ error: msg }) }; }
 
 function decodeJWT(token) {
   try {
@@ -32,25 +27,27 @@ function safeStoreName(userId) {
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
 
-  // ── Check env vars are configured ────────────────────────────────────────────
-  const SITE_ID = process.env.NETLIFY_SITE_ID;
-  const API_TOKEN = process.env.NETLIFY_API_TOKEN;
+  // Use whichever siteID and token Netlify provides
+  // NETLIFY_FUNCTIONS_TOKEN and SITE_ID are auto-injected by Netlify
+  // Fall back to manually set env vars if needed
+  const siteID = process.env.SITE_ID
+             || process.env.NETLIFY_SITE_ID;
 
-  if (!SITE_ID || !API_TOKEN) {
-    return fail(
-      'Missing environment variables. Please add NETLIFY_SITE_ID and NETLIFY_API_TOKEN ' +
-      'in Netlify → Project configuration → Environment variables.'
-    );
+  const token  = process.env.NETLIFY_FUNCTIONS_TOKEN
+             || process.env.NETLIFY_API_TOKEN;
+
+  if (!siteID || !token) {
+    return fail(`Missing config — siteID: ${!!siteID}, token: ${!!token}`);
   }
 
-  // ── Auth ──────────────────────────────────────────────────────────────────────
+  // Auth
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token) return fail('Authorization header required', 401);
+  const jwtToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!jwtToken) return fail('Authorization header required', 401);
 
   let userId, userEmail;
   try {
-    const decoded = decodeJWT(token);
+    const decoded = decodeJWT(jwtToken);
     if (!decoded.sub) throw new Error('No sub in token');
     if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) return fail('Token expired', 401);
     userId    = decoded.sub;
@@ -59,15 +56,10 @@ exports.handler = async function (event) {
     return fail('Invalid token: ' + e.message, 401);
   }
 
-  // ── Open store with explicit siteID + token ───────────────────────────────────
   const storeName = safeStoreName(userId);
   let store;
   try {
-    store = getStore({
-      name:   storeName,
-      siteID: SITE_ID,
-      token:  API_TOKEN,
-    });
+    store = getStore({ name: storeName, siteID, token });
   } catch (e) {
     return fail('Could not open blob store: ' + e.message);
   }
@@ -95,7 +87,7 @@ exports.handler = async function (event) {
             targetDb:   data.targetDb   || null,
             totalRows:  data.totalRows  || 0,
           });
-        } catch { /* skip corrupted entries */ }
+        } catch { /* skip corrupted */ }
       }
       projects.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
       return ok({ projects });
@@ -111,7 +103,6 @@ exports.handler = async function (event) {
     // CREATE
     if (method === 'POST') {
       const { project, name } = body;
-      if (!project && !name) return fail('project or name required', 400);
       const id = 'proj_' + Date.now();
       const toSave = {
         ...(project || {}),
@@ -133,13 +124,11 @@ exports.handler = async function (event) {
       if (!project) return fail('project required', 400);
       const existing = await store.get(projectId, { type: 'json' }) || {};
       const toSave = {
-        ...existing,
-        ...project,
-        id:        projectId,
-        name:      name || project.name || existing.name || 'Untitled Project',
+        ...existing, ...project,
+        id: projectId,
+        name: name || project.name || existing.name || 'Untitled',
         updatedAt: new Date().toISOString(),
-        userEmail,
-        userId,
+        userEmail, userId,
       };
       await store.setJSON(projectId, toSave);
       return ok({ id: projectId, saved: true });
@@ -154,7 +143,7 @@ exports.handler = async function (event) {
     return fail('Method not supported', 405);
 
   } catch (e) {
-    console.error('[projects fn]', e);
+    console.error('[projects]', e);
     return fail('Operation failed: ' + e.message);
   }
 };
