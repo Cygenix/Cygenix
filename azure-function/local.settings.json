@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "SQL_SERVER": "cygenix.database.windows.net",
+    "SQL_DATABASE": "your-database-name",
+    "ALLOWED_ORIGINS": "https://cygenix.netlify.app,http://localhost:3000",
+    "USE_MANAGED_IDENTITY": "true"
+  }
+}
