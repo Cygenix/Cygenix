@@ -1,6 +1,3 @@
-// netlify/functions/projects.js
-// Uses whichever Netlify token/siteID is available in the environment.
-
 const { getStore } = require('@netlify/blobs');
 
 const CORS = {
@@ -27,14 +24,9 @@ function safeStoreName(userId) {
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
 
-  // Use whichever siteID and token Netlify provides
-  // NETLIFY_FUNCTIONS_TOKEN and SITE_ID are auto-injected by Netlify
-  // Fall back to manually set env vars if needed
-  const siteID = process.env.SITE_ID
-             || process.env.NETLIFY_SITE_ID;
-
-  const token  = process.env.NETLIFY_FUNCTIONS_TOKEN
-             || process.env.NETLIFY_API_TOKEN;
+  // Use personal API token (nfp_...) — NETLIFY_FUNCTIONS_TOKEN is read-only
+  const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+  const token  = process.env.NETLIFY_API_TOKEN;
 
   if (!siteID || !token) {
     return fail(`Missing config — siteID: ${!!siteID}, token: ${!!token}`);
@@ -71,7 +63,6 @@ exports.handler = async function (event) {
 
   try {
 
-    // LIST
     if (method === 'GET' && !projectId) {
       const { blobs } = await store.list();
       const projects = [];
@@ -87,20 +78,18 @@ exports.handler = async function (event) {
             targetDb:   data.targetDb   || null,
             totalRows:  data.totalRows  || 0,
           });
-        } catch { /* skip corrupted */ }
+        } catch { /* skip */ }
       }
       projects.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
       return ok({ projects });
     }
 
-    // GET ONE
     if (method === 'GET' && projectId) {
       const data = await store.get(projectId, { type: 'json' });
       if (!data) return fail('Project not found', 404);
       return ok({ project: data });
     }
 
-    // CREATE
     if (method === 'POST') {
       const { project, name } = body;
       const id = 'proj_' + Date.now();
@@ -118,7 +107,6 @@ exports.handler = async function (event) {
       return ok({ id, saved: true });
     }
 
-    // UPDATE
     if (method === 'PUT' && projectId) {
       const { project, name } = body;
       if (!project) return fail('project required', 400);
@@ -134,7 +122,6 @@ exports.handler = async function (event) {
       return ok({ id: projectId, saved: true });
     }
 
-    // DELETE
     if (method === 'DELETE' && projectId) {
       await store.delete(projectId);
       return ok({ deleted: true });
