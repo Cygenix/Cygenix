@@ -491,6 +491,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           <div class="panel-sub">Generate a professional client-ready report for any completed migration job</div>
         </div>
       </div>
+      <div style="display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center">
+        <span style="font-size:12px;color:var(--text3)">Jobs are saved in your browser. Run a migration to add jobs here.</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="clearAllJobs()">Clear all jobs</button>
+      </div>
       <div id="reports-list"></div>
     </div>
 
@@ -532,8 +536,26 @@ const BATCH_SIZE = 100; // rows per INSERT batch
 function getApiKey() { return sessionStorage.getItem('cygenix_api_key') || ''; }
 function setApiKey(k) { sessionStorage.setItem('cygenix_api_key', k.trim()); }
 
+// Load persisted jobs from localStorage on startup
+function loadPersistedJobs() {
+  try { return JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch { return []; }
+}
+function persistJobs() {
+  try {
+    // Store last 20 jobs, strip large SQL to keep storage under limits
+    const toStore = state.jobs.slice(0, 20).map(j => ({
+      ...j,
+      schemaSQL:    j.schemaSQL    ? j.schemaSQL.slice(0, 5000)    : '',
+      migrationSQL: j.migrationSQL ? j.migrationSQL.slice(0, 5000) : '',
+      analysis:     j.analysis     ? j.analysis.slice(0, 3000)     : '',
+    }));
+    localStorage.setItem('cygenix_jobs', JSON.stringify(toStore));
+  } catch {}
+}
+
 const state = {
-  jobs: [], files: [], parsedTables: [],
+  jobs: loadPersistedJobs(),
+  files: [], parsedTables: [],
   selectedTarget: 'Microsoft SQL Server (on-premises)',
   totalFilesProcessed: 0, auditLog: [], currentJob: null
 };
@@ -1274,6 +1296,7 @@ ${allTables.map(t => `SELECT '${t.tableName}' AS TableName, COUNT(*) AS ActualRo
     };
 
     state.jobs.unshift(job);
+    persistJobs();
     state.totalFilesProcessed += state.files.length;
     addAudit(`Job "${jobName}" complete — ${allTables.length} tables, ${totalRows.toLocaleString()} rows, ${Math.ceil(migrationSQL.length/1024)}KB SQL generated`);
     updateStats();
@@ -1467,9 +1490,9 @@ function signOut() {
 // ── Conversion Report ──────────────────────────────────────────────────────────
 function openReport(jobId) {
   const job = state.jobs.find(j => j.id === jobId);
-  if (!job) return;
+  if (!job) { alert('Job not found. Please run a migration first.'); return; }
 
-  // Get user info from session
+  // User info
   let userName = 'Migration Engineer', userEmail = '';
   try {
     const user = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
@@ -1477,53 +1500,71 @@ function openReport(jobId) {
     userEmail = user.email || '';
   } catch {}
 
-  // Get project name from session
+  // Project name
   let projectName = job.name;
   try {
     const proj = JSON.parse(sessionStorage.getItem('cygenix_active_project') || '{}');
     if (proj.name) projectName = proj.name;
   } catch {}
 
-  const totalRows    = job.totalRows || job.tables?.reduce((s,t) => s+(t.rows||0), 0) || 0;
-  const tableResults = job.tables?.map(t => ({
-    name:         t.name,
-    sourceRows:   t.rows,
-    insertedRows: t.rows,
-    errors:       0,
-    batches:      Math.ceil(t.rows / 100),
-    status:       'success'
-  })) || [{
-    name:         job.target || 'migration',
-    sourceRows:   totalRows,
-    insertedRows: totalRows,
-    errors:       0,
-    batches:      Math.ceil(totalRows / 100),
-    status:       'success'
-  }];
+  const totalRows = job.totalRows || job.tables?.reduce((s,t) => s+(t.rows||0), 0) || 0;
+
+  // Build per-table results
+  const tableResults = (job.tables || []).map(t => ({
+    name:         t.name || t.tableName || 'Unknown',
+    sourceRows:   t.rows   || t.sourceRows   || 0,
+    insertedRows: t.rows   || t.insertedRows || 0,
+    errors:       t.errors || 0,
+    batches:      Math.ceil((t.rows || 0) / 100),
+    status:       (t.errors || 0) === 0 ? 'success' : 'partial'
+  }));
+
+  if (!tableResults.length) {
+    tableResults.push({
+      name: job.target || 'migration', sourceRows: totalRows,
+      insertedRows: totalRows, errors: 0,
+      batches: Math.ceil(totalRows / 100), status: 'success'
+    });
+  }
+
+  // Build column mapping from schemaResult stored on job (if available)
+  const columnMapping = (job.columnMapping || []).map(m => ({
+    srcCol:    m.srcCol    || m.sourceCol || '',
+    tgtCol:    m.tgtCol    || m.targetCol || '',
+    tgtType:   m.tgtType   || m.type      || '',
+    transform: m.transform || 'NONE',
+  }));
+
+  // Source files info
+  const sourceFiles = job.files?.map(f => f.name) || [];
+  const sourceSize  = job.files?.reduce((s,f) => s+(f.size||0), 0) || 0;
 
   const reportData = {
-    id:           job.id,
+    id:             job.id,
     projectName,
     userName,
     userEmail,
-    sourceSystem: job.source || 'Database export',
-    targetSystem: job.target || 'Microsoft SQL Server',
-    sourceFile:   job.files?.map(f => f.name).join(', ') || '',
-    sourceFileSize: job.files?.reduce((s,f) => s+(f.size||0), 0) || 0,
-    targetServer:   job.target || '',
-    targetDatabase: job.target || '',
-    targetTable:    job.tables?.[0]?.name || '',
-    authMethod:     'Direct connection',
+    organisation:   'Cygenix',
+    sourceSystem:   job.source    || (sourceFiles.length ? sourceFiles[0].split('.').pop().toUpperCase() + ' export' : 'Database export'),
+    targetSystem:   job.target    || 'Microsoft SQL Server (on-premises)',
+    sourceFile:     sourceFiles.join(', ') || '—',
+    sourceFiles,
+    sourceFileSize: sourceSize,
+    targetServer:   job.targetServer   || job.target || '—',
+    targetDatabase: job.targetDatabase || job.target || '—',
+    targetTable:    tableResults[0]?.name || '—',
+    authMethod:     job.authMethod || 'SQL Authentication',
     totalRows,
-    insertedRows: totalRows,
-    errors:       0,
-    rowsBefore:   0,
-    rowsAfter:    totalRows,
-    tables:       tableResults,
-    columnMapping: [],
-    warnings:     [],
-    startedAt:    job.created,
-    completedAt:  job.created,
+    insertedRows:   totalRows,
+    columnsMapped:  columnMapping.length || (job.tables?.[0]?.cols || 0),
+    errors:         tableResults.reduce((s,t) => s+(t.errors||0), 0),
+    rowsBefore:     0,
+    rowsAfter:      totalRows,
+    tables:         tableResults,
+    columnMapping,
+    warnings:       job.warnings || [],
+    startedAt:      job.created,
+    completedAt:    job.created,
   };
 
   sessionStorage.setItem('cygenix_report', JSON.stringify(reportData));
@@ -1532,6 +1573,16 @@ function openReport(jobId) {
 
 
 // ── Reports list ──────────────────────────────────────────────────────────────
+
+function clearAllJobs() {
+  if (!confirm('Clear all saved jobs from this browser? This cannot be undone.')) return;
+  state.jobs = [];
+  localStorage.removeItem('cygenix_jobs');
+  updateStats();
+  renderReportsList();
+  renderDashboard();
+}
+
 function renderReportsList() {
   const el = $('reports-list');
   if (!el) return;
