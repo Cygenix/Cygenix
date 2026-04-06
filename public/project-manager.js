@@ -46,7 +46,7 @@
         id: projectData.id || null,
       };
       const res = await fetch(
-        '/api/projects' + (projectData.id ? '?id=' + projectData.id : ''),
+        '/.netlify/functions/projects' + (projectData.id ? '?id=' + projectData.id : ''),
         {
           method: projectData.id ? 'PUT' : 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
@@ -63,7 +63,7 @@
     async loadProject(id) {
       const token = getToken();
       if (!token) throw new Error('Not authenticated');
-      const res = await fetch('/api/projects?id=' + id, {
+      const res = await fetch('/.netlify/functions/projects?id=' + id, {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       if (!res.ok) throw new Error('Project not found');
@@ -73,7 +73,7 @@
     async listProjects() {
       const token = getToken();
       if (!token) throw new Error('Not authenticated');
-      const res = await fetch('/api/projects', {
+      const res = await fetch('/.netlify/functions/projects', {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       if (!res.ok) throw new Error('Could not load projects');
@@ -83,7 +83,7 @@
     async deleteProject(id) {
       const token = getToken();
       if (!token) throw new Error('Not authenticated');
-      const res = await fetch('/api/projects?id=' + id, {
+      const res = await fetch('/.netlify/functions/projects?id=' + id, {
         method: 'DELETE',
         headers: { 'Authorization': 'Bearer ' + token }
       });
