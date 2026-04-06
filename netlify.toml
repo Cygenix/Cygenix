@@ -2,6 +2,9 @@
   publish = "public"
   functions = "netlify/functions"
 
+[functions]
+  timeout = 26
+
 [[edge_functions]]
   path = "/api/analyse"
   function = "analyse"
@@ -15,3 +18,23 @@
   from = "/api/db"
   to = "/.netlify/functions/db-connect"
   status = 200
+
+[[redirects]]
+  from = "/api/projects"
+  to = "/.netlify/functions/projects"
+  status = 200
+
+# Protect dashboard, connect and report pages — redirect to login if not authenticated
+[[redirects]]
+  from = "/dashboard.html"
+  to = "/login.html"
+  status = 200
+  conditions = {Role = ["authenticated"]}
+  force = false
+
+# Serve login page to unauthenticated users
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false
