@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – SQL Migration Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --serif:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.app{display:grid;grid-template-columns:230px 1fr;grid-template-rows:52px 1fr;height:100vh}
+
+/* TOPBAR */
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
+.topbar-right{display:flex;align-items:center;gap:1rem}
+.conn-badge{font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono);border:0.5px solid}
+.conn-badge.ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
+.conn-badge.err{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
+.conn-badge.checking{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--bg4);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--text2)}
+.back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px;transition:color 0.15s}
+.back-link:hover{color:var(--text2)}
+
+/* SIDEBAR */
+.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto}
+.nav-section{margin-bottom:1.5rem}
+.nav-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 1.25rem;margin-bottom:0.5rem}
+.nav-item{display:flex;align-items:center;gap:10px;padding:0.5rem 1.25rem;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent;user-select:none}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
+.nav-item.active{color:var(--accent);background:var(--accent-glow);border-left-color:var(--accent)}
+.nav-icon{width:16px;height:16px;opacity:0.7;flex-shrink:0}
+.nav-item.active .nav-icon{opacity:1}
+.nav-count{margin-left:auto;background:var(--bg4);color:var(--text3);font-size:10px;padding:1px 6px;border-radius:100px;font-family:var(--mono)}
+
+/* MAIN */
+.main{padding:1.75rem;overflow-y:auto;background:var(--bg)}
+.main::-webkit-scrollbar{width:4px}
+.main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.75rem}
+.stat-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.25rem}
+.stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem}
+.stat-val{font-size:1.6rem;font-weight:600;color:var(--text);line-height:1;margin-bottom:0.25rem}
+.stat-sub{font-size:11px;color:var(--text3)}
+.stat-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
+
+/* PANELS */
+.panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
+.panel-title{font-size:15px;font-weight:600;color:var(--text)}
+.panel-sub{font-size:12px;color:var(--text3);margin-top:2px}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+
+/* UPLOAD */
+.upload-zone{border:1.5px dashed var(--border2);border-radius:var(--r-lg);padding:2rem;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:1.25rem;background:var(--bg2)}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--accent-glow)}
+.upload-zone h3{font-size:14px;color:var(--text);margin-bottom:0.3rem;margin-top:0.75rem}
+.upload-zone p{font-size:12px;color:var(--text3)}
+.upload-zone input{display:none}
+.upload-icon{width:36px;height:36px;margin:0 auto;opacity:0.35}
+
+/* FILE LIST */
+.file-list{margin-bottom:1rem}
+.file-item{display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.75rem;background:var(--bg3);border-radius:var(--r);margin-bottom:0.4rem;border:0.5px solid var(--border)}
+.file-info{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.file-ext{font-size:10px;font-weight:500;font-family:var(--mono);padding:2px 6px;border-radius:4px;flex-shrink:0}
+.ext-sql{background:rgba(61,126,255,0.15);color:var(--accent)}
+.ext-bak{background:rgba(245,158,11,0.15);color:var(--amber)}
+.ext-mdb,.ext-acc{background:rgba(167,139,250,0.15);color:var(--purple)}
+.ext-default{background:var(--bg4);color:var(--text3)}
+.file-name{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file-size{font-size:11px;color:var(--text3);font-family:var(--mono);flex-shrink:0;margin-left:0.5rem}
+.file-read-indicator{font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:4px;flex-shrink:0;margin-left:0.5rem}
+.file-read-ok{background:var(--green-bg);color:var(--green)}
+.file-read-meta{background:var(--amber-bg);color:var(--amber)}
+
+/* SQL TARGET */
+.target-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.6rem;margin:1rem 0}
+.target-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s}
+.target-card:hover{border-color:var(--border2);background:var(--bg4)}
+.target-card.selected{border-color:var(--accent);background:var(--accent-glow)}
+.target-card .t-name{font-size:12px;font-weight:500;color:var(--text);margin-top:0.3rem}
+.target-card .t-sub{font-size:10px;color:var(--text3);margin-top:2px}
+.target-card .t-icon{font-size:18px}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 9px;border-radius:100px;font-weight:500}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-blue{background:var(--accent-glow);color:var(--accent)}
+.badge-purple{background:var(--purple-bg);color:var(--purple)}
+.badge-teal{background:var(--teal-bg);color:var(--teal)}
+.badge-gray{background:rgba(255,255,255,0.05);color:var(--text2)}
+
+/* PROGRESS */
+.progress-bar{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;min-width:80px}
+.progress-fill{height:100%;border-radius:2px;background:var(--accent);transition:width 0.5s ease}
+.progress-fill.green{background:var(--green)}
+
+/* BUTTONS */
+.btn{padding:0.45rem 1rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}
+.btn-ghost:hover{color:var(--text);background:rgba(255,255,255,0.04)}
+.btn-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.25)}
+.btn-teal:hover{background:rgba(45,212,191,0.2)}
+.btn-sm{padding:0.3rem 0.75rem;font-size:11px}
+.btn-full{width:100%;padding:0.7rem;justify-content:center}
+
+/* ANALYSIS PANEL */
+.analysis-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-top:1.25rem;display:none}
+.analysis-panel.visible{display:block}
+.analysis-header{display:flex;align-items:center;gap:10px;margin-bottom:1rem;flex-wrap:wrap}
+.ai-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:aipulse 1.5s infinite;flex-shrink:0}
+@keyframes aipulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.3)}}
+.analysis-title{font-size:13px;font-weight:500;color:var(--accent);flex:1}
+
+/* TABS */
+.tabs{display:flex;gap:0;border-bottom:0.5px solid var(--border);margin-bottom:1rem}
+.tab{font-size:12px;padding:0.5rem 1rem;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;transition:all 0.15s;font-family:var(--serif)}
+.tab:hover{color:var(--text2)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* CODE BLOCKS */
+.code-block{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:1rem;font-family:var(--mono);font-size:11px;color:#a8d8a8;line-height:1.8;white-space:pre-wrap;overflow-x:auto;max-height:420px;overflow-y:auto;position:relative}
+.code-block::-webkit-scrollbar{width:4px;height:4px}
+.code-block::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+.code-block .kw{color:#79b8ff}
+.code-block .cm{color:#555a6a;font-style:italic}
+.code-block .str{color:#f0a070}
+.code-block .num{color:#f59e0b}
+.copy-btn{position:absolute;top:0.5rem;right:0.5rem;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);font-size:10px;padding:3px 8px;border-radius:4px;cursor:pointer;font-family:var(--mono);transition:all 0.15s}
+.copy-btn:hover{color:var(--text);border-color:var(--border2);background:var(--bg4)}
+
+/* JOBS TABLE */
+.jobs-table{width:100%;border-collapse:collapse}
+.jobs-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;border-bottom:0.5px solid var(--border)}
+.jobs-table td{padding:0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.jobs-table tr:last-child td{border-bottom:none}
+.jobs-table tr:hover td{background:rgba(255,255,255,0.02)}
+.job-name{font-size:13px;font-weight:500;color:var(--text)}
+.job-meta{font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.75rem;width:720px;max-width:96vw;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:600;margin-bottom:0.3rem}
+.modal-sub{font-size:12px;color:var(--text3);margin-bottom:1.25rem}
+.modal-actions{display:flex;gap:0.75rem;justify-content:flex-end;margin-top:1.5rem;flex-wrap:wrap}
+
+/* FORM */
+.form-row{margin-bottom:1rem}
+.form-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;display:block}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+
+/* ALERT */
+.alert{border-radius:var(--r-lg);padding:1rem 1.25rem;margin-bottom:1.25rem;font-size:13px;line-height:1.6;display:none}
+.alert.visible{display:block}
+.alert-amber{background:var(--amber-bg);border:0.5px solid rgba(245,158,11,0.3);color:var(--amber)}
+.alert code{font-family:var(--mono);font-size:11px;background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:3px}
+
+/* EMPTY */
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--text3)}
+.empty-state h3{font-size:14px;color:var(--text2);margin-bottom:0.4rem}
+.empty-state p{font-size:12px}
+
+/* VIEWS */
+.view{display:none}
+.view.active{display:block}
+
+/* SECTION NOTE */
+.section-note{font-size:12px;color:var(--text3);background:var(--bg3);border-radius:var(--r);padding:0.6rem 0.75rem;margin-bottom:1rem;border-left:2px solid var(--accent)}
+
+@media(max-width:900px){
+  .app{grid-template-columns:1fr;grid-template-rows:52px 1fr}
+  .sidebar{display:none}
+  .stats-row{grid-template-columns:1fr 1fr}
+  .two-col{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:1.25rem">
+      <a href="/" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back
+      </a>
+      <a href="/" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
+    </div>
+    <div class="topbar-right">
+      <div class="conn-badge checking" id="conn-badge">Checking…</div>
+      <div class="avatar">IT</div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="nav-section">
+      <div class="nav-label">Workspace</div>
+      <div class="nav-item active" onclick="showView('dashboard')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" onclick="showView('new-job')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        New Migration
+      </div>
+      <div class="nav-item" onclick="showView('jobs')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        All Jobs <span class="nav-count" id="jobs-count">0</span>
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Outputs</div>
+      <div class="nav-item" onclick="showView('schema')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 3v10M11 3v10M1 7h14" stroke="currentColor" stroke-width="1.2"/></svg>
+        Schema SQL
+      </div>
+      <div class="nav-item" onclick="showView('migration-sql')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M3 8h7M3 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Migration SQL
+      </div>
+      <div class="nav-item" onclick="showView('audit')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Audit Log
+      </div>
+    </div>
+    <div class="nav-section">
+      <div class="nav-label">Info</div>
+      <div class="nav-item" onclick="showView('supported')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Supported Formats
+      </div>
+      <div class="nav-item" onclick="window.location.href='/connect.html'" style="color:var(--teal)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="5" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M8 8h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Target DB Mapper
+      </div>
+      <div class="nav-item" onclick="showView('diagnostics')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Diagnostics
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div id="view-dashboard" class="view active">
+      <div class="panel-header">
+        <div><div class="panel-title">SQL Migration Overview</div><div class="panel-sub" id="today-date"></div></div>
+        <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All time</div></div>
+        <div class="stat-card"><div class="stat-label">Analysed</div><div class="stat-val" id="stat-analysed" style="color:var(--purple)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--purple)"></span>Schema ready</div></div>
+        <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
+        <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
+      </div>
+      <div class="panel-header"><div class="panel-title">Recent Jobs</div></div>
+      <div id="dashboard-jobs"></div>
+    </div>
+
+    <!-- NEW JOB -->
+    <div id="view-new-job" class="view">
+      <div class="panel-header">
+        <div><div class="panel-title">New SQL Migration Job</div><div class="panel-sub">Upload database export · Claude maps the schema · download SQL Server scripts</div></div>
+      </div>
+
+      <div class="alert alert-amber" id="key-alert">
+        <strong>⚠ Anthropic API key required.</strong> Enter your API key from
+        <a href="https://console.anthropic.com" target="_blank" style="color:var(--amber)">console.anthropic.com</a>
+        — it stays in your browser session only and is never stored on any server.<br><br>
+        <div style="display:flex;gap:0.75rem;align-items:center;margin-top:0.5rem;flex-wrap:wrap">
+          <input id="api-key-input" type="password" class="form-input" placeholder="sk-ant-api03-..." style="flex:1;min-width:200px;max-width:420px;font-family:var(--mono);font-size:12px" />
+          <button class="btn btn-primary" onclick="saveApiKey()" style="flex-shrink:0">Save &amp; Connect</button>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <!-- LEFT: job details + target -->
+        <div>
+          <div class="panel" style="margin-bottom:1rem">
+            <div class="panel-header" style="margin-bottom:1rem"><div class="panel-title" style="font-size:13px">Job Details</div></div>
+            <div class="form-row">
+              <label class="form-label">Job Name</label>
+              <input class="form-input" id="job-name-input" placeholder="e.g. Legacy CRM Migration" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Source System (optional)</label>
+              <input class="form-input" id="job-source-input" placeholder="e.g. Access 2010, MySQL 5.7, SQL Server 2008" />
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header" style="margin-bottom:0.75rem"><div class="panel-title" style="font-size:13px">SQL Server Target</div></div>
+            <div class="target-grid">
+              <div class="target-card selected" onclick="selectTarget(this,'Microsoft SQL Server (on-premises)')">
+                <div class="t-icon">🗄️</div>
+                <div class="t-name">SQL Server</div>
+                <div class="t-sub">On-premises</div>
+              </div>
+              <div class="target-card" onclick="selectTarget(this,'Azure SQL Database')">
+                <div class="t-icon">☁️</div>
+                <div class="t-name">Azure SQL</div>
+                <div class="t-sub">Cloud managed</div>
+              </div>
+              <div class="target-card" onclick="selectTarget(this,'SQL Server Express (on-premises)')">
+                <div class="t-icon">💾</div>
+                <div class="t-name">SQL Express</div>
+                <div class="t-sub">Free edition</div>
+              </div>
+              <div class="target-card" onclick="selectTarget(this,'Google Cloud SQL for SQL Server')">
+                <div class="t-icon">🟦</div>
+                <div class="t-name">Cloud SQL</div>
+                <div class="t-sub">Google Cloud</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RIGHT: file upload -->
+        <div class="panel">
+          <div class="panel-header" style="margin-bottom:1rem"><div class="panel-title" style="font-size:13px">Upload Database Export</div></div>
+          <div class="section-note">Claude reads .sql and text-based files directly. For .bak and .mdb files, metadata and filename are used to guide schema generation.</div>
+          <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+            <input type="file" id="file-input" multiple accept=".sql,.bak,.mdb,.accdb,.db,.sqlite,.csv,.txt,.json" onchange="handleFiles(this.files)">
+            <svg class="upload-icon" viewBox="0 0 36 36" fill="none"><path d="M18 24V12M12 18l6-6 6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="3" width="30" height="30" rx="6" stroke="currentColor" stroke-width="1.2"/></svg>
+            <h3>Drop database files here</h3>
+            <p>.sql · .bak · .mdb · .accdb · .db · .sqlite · .csv</p>
+          </div>
+          <div class="file-list" id="file-list"></div>
+          <div id="analyse-btn-wrap" style="display:none">
+            <button class="btn btn-primary btn-full" id="analyse-btn" onclick="startAnalysis()">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 3 3.5.5-2.5 2.5.5 3.5L7 9l-3 1.5.5-3.5L2 4.5 5.5 4z" stroke="currentColor" stroke-width="1.2"/></svg>
+              Analyse & Generate SQL with Claude
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Analysis output -->
+      <div class="analysis-panel" id="analysis-panel">
+        <div class="analysis-header">
+          <div class="ai-dot" id="ai-dot"></div>
+          <div class="analysis-title" id="analysis-title">Claude is analysing your database files…</div>
+          <div id="analysis-cta" style="display:flex;gap:0.5rem;flex-wrap:wrap"></div>
+        </div>
+
+        <div class="tabs" id="result-tabs" style="display:none">
+          <div class="tab active" onclick="switchTab('full')">Full Report</div>
+          <div class="tab" onclick="switchTab('schema')">Schema SQL</div>
+          <div class="tab" onclick="switchTab('migration')">Migration SQL</div>
+        </div>
+
+        <div id="tab-full">
+          <div class="analysis-body" id="analysis-body" style="font-size:12px;color:var(--text2);line-height:1.8;font-family:var(--mono);white-space:pre-wrap;max-height:400px;overflow-y:auto"></div>
+        </div>
+        <div id="tab-schema" style="display:none">
+          <div style="position:relative">
+            <button class="copy-btn" onclick="copyCode('schema-code')">Copy SQL</button>
+            <div class="code-block" id="schema-code"></div>
+          </div>
+        </div>
+        <div id="tab-migration" style="display:none">
+          <div style="position:relative">
+            <button class="copy-btn" onclick="copyCode('migration-code')">Copy SQL</button>
+            <div class="code-block" id="migration-code"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ALL JOBS -->
+    <div id="view-jobs" class="view">
+      <div class="panel-header">
+        <div class="panel-title">All Migration Jobs</div>
+        <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
+      </div>
+      <div id="all-jobs"></div>
+    </div>
+
+    <!-- SCHEMA VIEW -->
+    <div id="view-schema" class="view">
+      <div class="panel-header"><div class="panel-title">Generated Schema SQL</div></div>
+      <div id="schema-library"></div>
+    </div>
+
+    <!-- MIGRATION SQL VIEW -->
+    <div id="view-migration-sql" class="view">
+      <div class="panel-header"><div class="panel-title">Generated Migration SQL</div></div>
+      <div id="migration-library"></div>
+    </div>
+
+    <!-- AUDIT -->
+    <div id="view-audit" class="view">
+      <div class="panel-header"><div class="panel-title">Audit Log</div></div>
+      <div id="audit-log-wrap"></div>
+    </div>
+
+    <!-- SUPPORTED FORMATS -->
+    <div id="view-supported" class="view">
+      <div class="panel-header"><div class="panel-title">Supported File Formats</div></div>
+      <div class="two-col">
+        <div class="panel">
+          <div style="font-size:13px;font-weight:600;margin-bottom:1rem;color:var(--green)">✓ Full content analysis</div>
+          <div style="font-size:13px;color:var(--text2);line-height:2">
+            <span class="badge badge-blue" style="margin-right:6px">.sql</span> MySQL, PostgreSQL, SQLite dumps<br>
+            <span class="badge badge-blue" style="margin-right:6px">.csv</span> Comma-separated data files<br>
+            <span class="badge badge-blue" style="margin-right:6px">.txt</span> Tab or pipe-delimited exports<br>
+            <span class="badge badge-blue" style="margin-right:6px">.json</span> JSON data exports<br>
+            <span class="badge badge-blue" style="margin-right:6px">.sqlite</span> SQLite database files (text mode)
+          </div>
+        </div>
+        <div class="panel">
+          <div style="font-size:13px;font-weight:600;margin-bottom:1rem;color:var(--amber)">⚡ Schema guidance via filename + metadata</div>
+          <div style="font-size:13px;color:var(--text2);line-height:2">
+            <span class="badge badge-amber" style="margin-right:6px">.bak</span> SQL Server backup files<br>
+            <span class="badge badge-amber" style="margin-right:6px">.mdb</span> Microsoft Access databases<br>
+            <span class="badge badge-amber" style="margin-right:6px">.accdb</span> Access 2007+ databases<br>
+            <span class="badge badge-amber" style="margin-right:6px">.db</span> Generic database files
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:0.75rem">Binary files can't be read directly in the browser. For .bak files, use SSMS to script the schema first and upload the .sql output.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+    <!-- DIAGNOSTICS -->
+    <div id="view-diagnostics" class="view">
+      <div class="panel-header">
+        <div class="panel-title">Connection Diagnostics</div>
+        <button class="btn btn-primary" onclick="runDiagnostics()">Run Tests</button>
+      </div>
+      <div id="diag-output" style="font-family:var(--mono);font-size:12px;line-height:2;color:var(--text2)">
+        <div style="color:var(--text3)">Click "Run Tests" to check your Netlify function setup.</div>
+      </div>
+    </div>
+
+
+</div>
+
+<!-- JOB DETAIL MODAL -->
+<div class="modal-overlay" id="job-modal">
+  <div class="modal">
+    <div class="modal-title" id="modal-job-name">Job Detail</div>
+    <div class="modal-sub" id="modal-job-meta"></div>
+    <div class="tabs">
+      <div class="tab active" onclick="switchModalTab('full-report')">Full Report</div>
+      <div class="tab" onclick="switchModalTab('schema-sql')">Schema SQL</div>
+      <div class="tab" onclick="switchModalTab('migration-sql-tab')">Migration SQL</div>
+    </div>
+    <div id="modal-tab-full-report">
+      <div class="code-block" id="modal-full-text" style="color:var(--text2);max-height:50vh"></div>
+    </div>
+    <div id="modal-tab-schema-sql" style="display:none">
+      <div style="position:relative"><button class="copy-btn" onclick="copyCode('modal-schema-code')">Copy SQL</button><div class="code-block" id="modal-schema-code" style="max-height:50vh"></div></div>
+    </div>
+    <div id="modal-tab-migration-sql-tab" style="display:none">
+      <div style="position:relative"><button class="copy-btn" onclick="copyCode('modal-migration-code')">Copy SQL</button><div class="code-block" id="modal-migration-code" style="max-height:50vh"></div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      <button class="btn btn-teal" id="modal-download-schema" onclick="downloadModalSQL('schema')">⬇ Download Schema .sql</button>
+      <button class="btn btn-primary" id="modal-download-migration" onclick="downloadModalSQL('migration')">⬇ Download Migration .sql</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const HEALTH_URL = '/.netlify/functions/health';
+const BATCH_SIZE = 100; // rows per INSERT batch
+
+function getApiKey() { return sessionStorage.getItem('cygenix_api_key') || ''; }
+function setApiKey(k) { sessionStorage.setItem('cygenix_api_key', k.trim()); }
+
+const state = {
+  jobs: [], files: [], parsedTables: [],
+  selectedTarget: 'Microsoft SQL Server (on-premises)',
+  totalFilesProcessed: 0, auditLog: [], currentJob: null
+};
+
+function $(id) { return document.getElementById(id); }
+
+// ── API Key ───────────────────────────────────────────────────────────────────
+function saveApiKey() {
+  const input = $('api-key-input');
+  const key = input ? input.value.trim() : '';
+  if (!key.startsWith('sk-ant-')) {
+    alert('Please paste a valid Anthropic API key — it starts with sk-ant-');
+    return;
+  }
+  setApiKey(key);
+  input.value = '';
+  setBadge('ok');
+  $('key-alert').classList.remove('visible');
+}
+
+function setBadge(s) {
+  const b = $('conn-badge');
+  if (s === 'ok')  { b.textContent = 'Claude AI · Connected'; b.className = 'conn-badge ok'; }
+  else if (s === 'err') { b.textContent = 'Enter API key ↓'; b.className = 'conn-badge err'; }
+  else { b.textContent = 'Checking…'; b.className = 'conn-badge checking'; }
+}
+
+async function checkHealth() {
+  if (getApiKey()) { setBadge('ok'); $('key-alert').classList.remove('visible'); return; }
+  try {
+    const r = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(6000) });
+    const d = await r.json();
+    if (d.apiKeyConfigured) { setBadge('err'); $('key-alert').classList.add('visible'); }
+    else { setBadge('err'); $('key-alert').classList.add('visible'); }
+  } catch { setBadge('err'); $('key-alert').classList.add('visible'); }
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showView(v) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  const el = $('view-' + v); if (el) el.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const map = { dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6 };
+  document.querySelectorAll('.nav-item')[map[v] ?? 0]?.classList.add('active');
+  if (v === 'jobs')          renderAllJobs();
+  if (v === 'schema')        renderSchemaLibrary();
+  if (v === 'migration-sql') renderMigrationLibrary();
+  if (v === 'audit')         renderAuditLog();
+  if (v === 'dashboard')     renderDashboard();
+}
+
+function selectTarget(el, name) {
+  document.querySelectorAll('.target-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  state.selectedTarget = name;
+}
+
+// ── File handling ─────────────────────────────────────────────────────────────
+function handleDragOver(e) { e.preventDefault(); $('upload-zone').classList.add('drag'); }
+function handleDragLeave() { $('upload-zone').classList.remove('drag'); }
+function handleDrop(e) { e.preventDefault(); $('upload-zone').classList.remove('drag'); handleFiles(e.dataTransfer.files); }
+
+function handleFiles(fileList) {
+  Array.from(fileList).forEach(f => {
+    if (!state.files.find(x => x.name === f.name))
+      state.files.push({ name: f.name, size: f.size, type: f.type || '', fileObj: f, content: null, readStatus: 'pending' });
+    readFile(state.files[state.files.length - 1]);
+  });
+  renderFileList();
+}
+
+function readFile(entry) {
+  const textExts = ['sql','csv','txt','json','tsv'];
+  const ext = entry.name.split('.').pop().toLowerCase();
+  if (!textExts.includes(ext)) { entry.readStatus = 'binary'; renderFileList(); return; }
+  const reader = new FileReader();
+  reader.onload = e => { entry.content = e.target.result; entry.readStatus = 'read'; renderFileList(); };
+  reader.onerror = () => { entry.readStatus = 'error'; renderFileList(); };
+  reader.readAsText(entry.fileObj); // read the WHOLE file — we need all rows
+}
+
+function formatSize(b) {
+  if (!b) return '0B';
+  if (b < 1024) return b + 'B';
+  if (b < 1048576) return (b/1024).toFixed(1) + 'KB';
+  return (b/1048576).toFixed(1) + 'MB';
+}
+function getExt(name)      { return name?.split('.').pop().toLowerCase() || ''; }
+function getExtUpper(name) { return getExt(name).toUpperCase().slice(0,4) || 'FILE'; }
+
+function extClass(name) {
+  const e = getExt(name);
+  if (e === 'sql') return 'ext-sql';
+  if (e === 'bak') return 'ext-bak';
+  if (e === 'mdb' || e === 'accdb') return 'ext-mdb';
+  return 'ext-default';
+}
+
+function removeFile(i) { state.files.splice(i, 1); renderFileList(); }
+
+function renderFileList() {
+  $('file-list').innerHTML = state.files.map((f, i) => `
+    <div class="file-item">
+      <div class="file-info">
+        <span class="file-ext ${extClass(f.name)}">${getExtUpper(f.name)}</span>
+        <span class="file-name">${f.name}</span>
+        ${f.readStatus==='read'   ? `<span class="file-read-indicator file-read-ok">${f.content ? Math.round(f.content.length/1024)+'KB read' : 'read'}</span>` : ''}
+        ${f.readStatus==='binary' ? '<span class="file-read-indicator file-read-meta">binary — metadata only</span>' : ''}
+        ${f.readStatus==='pending'? '<span class="file-read-indicator" style="color:var(--text3)">reading…</span>' : ''}
+        ${f.readStatus==='error'  ? '<span class="file-read-indicator" style="color:var(--red)">read error</span>' : ''}
+      </div>
+      <div style="display:flex;align-items:center;gap:0.5rem;flex-shrink:0">
+        <span class="file-size">${formatSize(f.size)}</span>
+        <button class="btn btn-ghost btn-sm" onclick="removeFile(${i})" style="padding:2px 8px">✕</button>
+      </div>
+    </div>`).join('');
+  $('analyse-btn-wrap').style.display = state.files.length > 0 ? 'block' : 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── FILE PARSERS — extract actual tables and rows from uploaded files ──────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Master parse dispatcher
+function parseFileContent(file) {
+  const ext = getExt(file.name);
+  if (!file.content) return [];
+  if (ext === 'csv' || ext === 'tsv') return parseCSV(file.content, file.name, ext === 'tsv' ? '\t' : ',');
+  if (ext === 'sql') return parseSQL(file.content);
+  if (ext === 'json') return parseJSON(file.content, file.name);
+  if (ext === 'txt') return parseCSV(file.content, file.name, detectDelimiter(file.content));
+  return [];
+}
+
+// ── CSV / TSV parser ──────────────────────────────────────────────────────────
+function parseCSV(content, filename, delim = ',') {
+  const lines = content.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0], delim);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const vals = parseCSVLine(lines[i], delim);
+    if (vals.length === 0) continue;
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = vals[idx] !== undefined ? vals[idx] : null; });
+    rows.push(row);
+  }
+  const tableName = filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+  return [{ tableName, columns: headers, rows }];
+}
+
+function parseCSVLine(line, delim) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i+1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === delim && !inQuotes) {
+      result.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function detectDelimiter(content) {
+  const firstLine = content.split(/\r?\n/)[0] || '';
+  const counts = { ',': 0, '\t': 0, '|': 0, ';': 0 };
+  for (const ch of firstLine) if (counts[ch] !== undefined) counts[ch]++;
+  return Object.entries(counts).sort((a,b) => b[1]-a[1])[0][0];
+}
+
+// ── SQL dump parser ───────────────────────────────────────────────────────────
+function parseSQL(content) {
+  const tables = {};
+
+  // Extract CREATE TABLE definitions
+  const createRe = /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"\[]?(\w+)[`"\]]?\s*\(([\s\S]*?)\);/gi;
+  let m;
+  while ((m = createRe.exec(content)) !== null) {
+    const tableName = m[1];
+    const colDefs = m[2];
+    const columns = [];
+    for (const line of colDefs.split(',')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      // Skip constraints
+      if (/^(PRIMARY|UNIQUE|KEY|INDEX|CONSTRAINT|CHECK|FOREIGN)/i.test(trimmed)) continue;
+      const colMatch = trimmed.match(/^[`"\[]?(\w+)[`"\]]?\s+(\S+)/);
+      if (colMatch) columns.push(colMatch[1]);
+    }
+    tables[tableName] = { tableName, columns, rows: [], createDef: m[0] };
+  }
+
+  // Extract INSERT statements and parse rows
+  const insertRe = /INSERT\s+INTO\s+[`"\[]?(\w+)[`"\]]?\s*(?:\(([^)]+)\))?\s*VALUES\s*([\s\S]*?);(?=\s*(?:INSERT|CREATE|DROP|ALTER|--|\/\*|$))/gi;
+  while ((m = insertRe.exec(content)) !== null) {
+    const tableName = m[1];
+    const colList = m[2] ? m[2].split(',').map(c => c.trim().replace(/[`"[\]]/g,'')) : null;
+    const valuesStr = m[3];
+
+    if (!tables[tableName]) tables[tableName] = { tableName, columns: colList || [], rows: [] };
+
+    // Parse each row of values
+    const rowMatches = [...valuesStr.matchAll(/\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g)];
+    for (const rowMatch of rowMatches) {
+      const vals = parseSQLValues(rowMatch[1]);
+      if (colList) {
+        const row = {};
+        colList.forEach((c, i) => { row[c] = vals[i] !== undefined ? vals[i] : null; });
+        tables[tableName].rows.push(row);
+      } else if (tables[tableName].columns.length > 0) {
+        const row = {};
+        tables[tableName].columns.forEach((c, i) => { row[c] = vals[i] !== undefined ? vals[i] : null; });
+        tables[tableName].rows.push(row);
+      }
+    }
+  }
+
+  return Object.values(tables);
+}
+
+function parseSQLValues(str) {
+  const vals = [];
+  let current = '';
+  let inStr = false;
+  let strChar = '';
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (!inStr && (ch === "'" || ch === '"')) { inStr = true; strChar = ch; current += ch; }
+    else if (inStr && ch === strChar) {
+      if (str[i+1] === strChar) { current += ch + strChar; i++; }
+      else { inStr = false; current += ch; }
+    } else if (!inStr && ch === ',') {
+      vals.push(parseSQLValue(current.trim()));
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) vals.push(parseSQLValue(current.trim()));
+  return vals;
+}
+
+function parseSQLValue(v) {
+  if (v === 'NULL' || v === 'null') return null;
+  if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) {
+    return v.slice(1, -1).replace(/''/g, "'").replace(/""/g, '"');
+  }
+  return v;
+}
+
+// ── JSON parser ───────────────────────────────────────────────────────────────
+function parseJSON(content, filename) {
+  let data;
+  try { data = JSON.parse(content); } catch { return []; }
+  const tableName = filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_]/g, '_');
+
+  if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
+    const columns = Object.keys(data[0]);
+    return [{ tableName, columns, rows: data }];
+  }
+  // Object of arrays (one key per table)
+  if (typeof data === 'object' && !Array.isArray(data)) {
+    return Object.entries(data).map(([key, rows]) => {
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      return { tableName: key, columns: Object.keys(rows[0]), rows };
+    }).filter(Boolean);
+  }
+  return [];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── SQL SERVER TYPE INFERENCE ─────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function inferSQLServerType(values) {
+  const nonNull = values.filter(v => v !== null && v !== '' && v !== 'NULL');
+  if (nonNull.length === 0) return 'NVARCHAR(255)';
+
+  // BIT
+  if (nonNull.every(v => ['0','1','true','false','yes','no'].includes(String(v).toLowerCase()))) return 'BIT';
+
+  // INTEGER
+  if (nonNull.every(v => /^-?\d+$/.test(String(v)))) {
+    const max = Math.max(...nonNull.map(v => Math.abs(parseInt(v))));
+    if (max <= 32767) return 'SMALLINT';
+    if (max <= 2147483647) return 'INT';
+    return 'BIGINT';
+  }
+
+  // DECIMAL
+  if (nonNull.every(v => /^-?\d+\.\d+$/.test(String(v)))) {
+    const decPlaces = Math.max(...nonNull.map(v => (String(v).split('.')[1]||'').length));
+    const intPlaces = Math.max(...nonNull.map(v => (String(v).split('.')[0]||'').replace('-','').length));
+    return `DECIMAL(${intPlaces + decPlaces + 2},${decPlaces})`;
+  }
+
+  // DATETIME2
+  if (nonNull.every(v => /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?/.test(String(v)))) {
+    return nonNull.some(v => /[ T]\d{2}:\d{2}/.test(String(v))) ? 'DATETIME2' : 'DATE';
+  }
+
+  // UNIQUEIDENTIFIER (GUID)
+  if (nonNull.every(v => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(v)))) return 'UNIQUEIDENTIFIER';
+
+  // NVARCHAR — pick appropriate length
+  const maxLen = Math.max(...nonNull.map(v => String(v).length));
+  if (maxLen <= 50)  return 'NVARCHAR(50)';
+  if (maxLen <= 100) return 'NVARCHAR(100)';
+  if (maxLen <= 255) return 'NVARCHAR(255)';
+  if (maxLen <= 500) return 'NVARCHAR(500)';
+  if (maxLen <= 2000) return 'NVARCHAR(2000)';
+  return 'NVARCHAR(MAX)';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── SQL GENERATOR — produces CREATE TABLE + batched INSERT statements ──────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function generateCreateTable(tableName, columns, columnTypes, schemaMapping) {
+  // schemaMapping comes from Claude — maps source col names to SQL Server col names + types
+  const safeName = sqlIdent(tableName);
+  const colDefs = columns.map(col => {
+    const mapped = schemaMapping?.[col] || {};
+    const sqlName = sqlIdent(mapped.name || col);
+    const sqlType = mapped.type || columnTypes[col] || 'NVARCHAR(255)';
+    const nullable = mapped.nullable !== false ? 'NULL' : 'NOT NULL';
+    const defaultVal = mapped.default ? ` DEFAULT ${mapped.default}` : '';
+    return `    ${sqlName} ${sqlType}${defaultVal} ${nullable}`;
+  });
+
+  // Add primary key if Claude identified one
+  const pkCol = schemaMapping?.__primaryKey;
+  const pkDef = pkCol ? `,\n    CONSTRAINT PK_${safeName} PRIMARY KEY (${sqlIdent(pkCol)})` : '';
+
+  return `-- ============================================================\n-- Table: ${safeName}\n-- ============================================================\nIF OBJECT_ID(N'dbo.${safeName}', N'U') IS NOT NULL\n    DROP TABLE dbo.${safeName};\nGO\n\nCREATE TABLE dbo.${safeName} (\n${colDefs.join(',\n')}${pkDef}\n);\nGO\n`;
+}
+
+function generateInserts(tableName, columns, rows, schemaMapping) {
+  if (!rows || rows.length === 0) return `-- No data rows found for ${tableName}\n`;
+
+  const safeName = sqlIdent(tableName);
+  const mappedCols = columns.map(col => {
+    const mapped = schemaMapping?.[col] || {};
+    return sqlIdent(mapped.name || col);
+  });
+
+  const colList = mappedCols.join(', ');
+  let sql = '';
+
+  // Check if table has identity column
+  const hasIdentity = schemaMapping?.__identityColumn;
+  if (hasIdentity) {
+    sql += `SET IDENTITY_INSERT dbo.${safeName} ON;\nGO\n\n`;
+  }
+
+  // Generate batched INSERTs (100 rows per batch)
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(rows.length / BATCH_SIZE);
+
+    sql += `-- Batch ${batchNum} of ${totalBatches} (rows ${i+1}–${Math.min(i+BATCH_SIZE, rows.length)} of ${rows.length})\n`;
+    sql += `INSERT INTO dbo.${safeName} (${colList})\nVALUES\n`;
+
+    const rowStrings = batch.map(row => {
+      const vals = columns.map(col => formatSQLValue(row[col], schemaMapping?.[col]?.type));
+      return `    (${vals.join(', ')})`;
+    });
+    sql += rowStrings.join(',\n') + ';\n';
+
+    // Per-row fallback comment for any batch that might fail
+    if (batch.length > 1) {
+      sql += `-- If the above batch fails, use individual inserts:\n`;
+      sql += batch.map(row => {
+        const vals = columns.map(col => formatSQLValue(row[col], schemaMapping?.[col]?.type));
+        return `-- INSERT INTO dbo.${safeName} (${colList}) VALUES (${vals.join(', ')});`;
+      }).join('\n') + '\n';
+    }
+    sql += '\n';
+  }
+
+  if (hasIdentity) {
+    sql += `SET IDENTITY_INSERT dbo.${safeName} OFF;\nGO\n\n`;
+  }
+
+  return sql;
+}
+
+function formatSQLValue(val, sqlType) {
+  if (val === null || val === undefined || val === '' || String(val).toUpperCase() === 'NULL') return 'NULL';
+
+  const t = (sqlType || '').toUpperCase();
+
+  // Numeric types — no quotes
+  if (['INT','BIGINT','SMALLINT','TINYINT','BIT'].some(n => t.startsWith(n)) ||
+      t.startsWith('DECIMAL') || t.startsWith('NUMERIC') || t.startsWith('FLOAT') || t.startsWith('REAL') || t.startsWith('MONEY')) {
+    const num = String(val).replace(/[^0-9.\-]/g, '');
+    return num || 'NULL';
+  }
+
+  // UNIQUEIDENTIFIER
+  if (t === 'UNIQUEIDENTIFIER') return `'${String(val).replace(/'/g, "''")}'`;
+
+  // Date/time
+  if (t === 'DATE' || t === 'DATETIME2' || t === 'DATETIME' || t === 'SMALLDATETIME') {
+    return `'${String(val).replace(/'/g, "''")}'`;
+  }
+
+  // Everything else — string with escaped quotes
+  return `N'${String(val).replace(/'/g, "''")}'`;
+}
+
+function sqlIdent(name) {
+  // Wrap in brackets to handle reserved words and special chars
+  return `[${String(name).replace(/]/g, ']]')}]`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── CLAUDE SCHEMA ANALYSIS — gets intelligent column mapping ──────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function askClaudeForSchemaMapping(tables, targetServer, sourceSystem, apiKey) {
+  // Send Claude a sample of the data (first 20 rows per table) + inferred types
+  const tableDescriptions = tables.map(t => {
+    const sampleRows = t.rows.slice(0, 20);
+    const colTypes = {};
+    t.columns.forEach(col => {
+      const vals = t.rows.map(r => r[col]);
+      colTypes[col] = inferSQLServerType(vals);
+    });
+    return {
+      tableName: t.tableName,
+      rowCount: t.rows.length,
+      columns: t.columns,
+      inferredTypes: colTypes,
+      sampleData: sampleRows
+    };
+  });
+
+  const prompt = `You are Cygenix, an expert SQL Server database migration engineer.
+
+I have parsed ${tables.length} table(s) from uploaded database files and auto-detected SQL Server types. Your job is to review and improve the schema mapping, then return a precise JSON object.
+
+SOURCE SYSTEM: ${sourceSystem || 'Unknown'}
+TARGET: ${targetServer}
+
+TABLES WITH INFERRED SCHEMA:
+${JSON.stringify(tableDescriptions, null, 2)}
+
+Return ONLY a valid JSON object (no markdown, no explanation) in this exact format:
+{
+  "tables": {
+    "<tableName>": {
+      "columns": {
+        "<sourceColName>": {
+          "name": "<target SQL Server column name — clean, no spaces>",
+          "type": "<SQL Server type e.g. NVARCHAR(100), INT, DATETIME2, BIT, DECIMAL(10,2)>",
+          "nullable": true or false,
+          "default": null or "<default value>"
+        }
+      },
+      "__primaryKey": "<column name that should be PK, or null>",
+      "__identityColumn": "<column name that is an identity/autoincrement, or null>",
+      "indexes": ["<col1>", "<col2>"],
+      "notes": "<any migration warnings for this table>"
+    }
+  },
+  "globalNotes": "<overall migration warnings, encoding issues, reserved word conflicts>"
+}
+
+Rules:
+- Fix any column names that are SQL Server reserved words (e.g. 'order', 'user', 'name', 'group') by appending an underscore or renaming sensibly
+- Upgrade NVARCHAR(255) to larger sizes if sample data suggests it
+- Detect identity/autoincrement columns (usually named id, *_id, with sequential integers)
+- Detect likely primary keys
+- Suggest useful indexes (foreign key columns, frequently-filtered columns)
+- Flag any date format issues, encoding problems, or data quality concerns`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Claude API error (${res.status}): ${err.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  const text = data.content?.map(b => b.text || '').join('') || '';
+
+  // Extract JSON from response (handle any markdown wrapping)
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('Claude did not return valid JSON. Response: ' + text.slice(0, 300));
+
+  return JSON.parse(jsonMatch[0]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── MAIN ANALYSIS FLOW ────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function startAnalysis() {
+  const jobName = $('job-name-input').value.trim() || 'Untitled Migration';
+  if (!state.files.length) { alert('Please upload at least one database file.'); return; }
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    $('key-alert').classList.add('visible');
+    alert('Please enter your Anthropic API key first.');
+    return;
+  }
+
+  // Check all readable files are finished reading
+  const stillReading = state.files.filter(f => f.readStatus === 'pending');
+  if (stillReading.length > 0) { alert('Files are still being read, please wait a moment.'); return; }
+
+  const panel  = $('analysis-panel');
+  const btn    = $('analyse-btn');
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  btn.disabled = true;
+
+  const setStatus = (msg, color) => {
+    $('analysis-title').textContent = msg;
+    $('ai-dot').style.background = color || 'var(--accent)';
+    $('ai-dot').style.animationPlayState = color === 'var(--green)' || color === 'var(--red)' ? 'paused' : 'running';
+  };
+
+  const setBody = msg => { $('analysis-body').textContent = msg; };
+
+  const resetBtn = () => {
+    btn.disabled = false;
+    btn.textContent = 'Analyse & Generate SQL with Claude';
+  };
+
+  const fail = msg => {
+    setStatus('Analysis failed', 'var(--red)');
+    setBody(msg);
+    resetBtn();
+  };
+
+  try {
+    // ── STEP 1: Parse all uploaded files ──────────────────────────────────────
+    setStatus('Step 1 of 4 — Parsing uploaded files…');
+    setBody('Reading file contents and extracting table data…');
+
+    const allTables = [];
+    const binaryFiles = [];
+
+    for (const file of state.files) {
+      if (file.content) {
+        btn.textContent = `Parsing ${file.name}…`;
+        const tables = parseFileContent(file);
+        if (tables.length > 0) {
+          allTables.push(...tables);
+          setBody(`Parsed ${file.name}: found ${tables.length} table(s) with ${tables.reduce((s,t) => s+t.rows.length,0)} total rows`);
+        } else {
+          setBody(`⚠ Could not extract table data from ${file.name} — it may be an unsupported format`);
+        }
+      } else {
+        binaryFiles.push(file.name);
+      }
+    }
+
+    if (allTables.length === 0 && binaryFiles.length > 0) {
+      fail(`No parseable data found.\n\nBinary files (${binaryFiles.join(', ')}) cannot be read directly in the browser.\n\nFor .bak files: use SSMS → Script Database As → Script to file → upload the .sql\nFor .mdb files: use Access → External Data → Export → Text File (CSV) → upload the CSV`);
+      return;
+    }
+
+    if (allTables.length === 0) {
+      fail('No table data could be extracted from the uploaded files.\n\nMake sure your files contain actual data rows, not just schema definitions.');
+      return;
+    }
+
+    const totalRows = allTables.reduce((s, t) => s + t.rows.length, 0);
+    setBody(`✓ Parsed ${allTables.length} table(s) with ${totalRows.toLocaleString()} total rows\n\nTables found:\n${allTables.map(t => `  • ${t.tableName}: ${t.rows.length.toLocaleString()} rows, ${t.columns.length} columns`).join('\n')}`);
+
+    // ── STEP 2: Ask Claude to refine the schema mapping ───────────────────────
+    setStatus('Step 2 of 4 — Claude is analysing schema & data types…');
+    btn.textContent = 'Asking Claude…';
+
+    let schemaResult;
+    try {
+      schemaResult = await askClaudeForSchemaMapping(
+        allTables, state.selectedTarget,
+        $('job-source-input').value.trim(), apiKey
+      );
+    } catch(e) {
+      fail('Claude schema analysis failed:\n\n' + e.message);
+      return;
+    }
+
+    setBody(`✓ Claude analysed ${allTables.length} table(s)\n\n${schemaResult.globalNotes || 'Schema mapping complete.'}`);
+
+    // ── STEP 3: Generate CREATE TABLE statements ───────────────────────────────
+    setStatus('Step 3 of 4 — Generating SQL Server schema…');
+    btn.textContent = 'Generating CREATE TABLE…';
+
+    let schemaSQL = `-- ============================================================\n-- Cygenix SQL Server Migration Script\n-- Generated: ${new Date().toISOString()}\n-- Source: ${state.files.map(f=>f.name).join(', ')}\n-- Target: ${state.selectedTarget}\n-- Tables: ${allTables.length} | Total rows: ${totalRows.toLocaleString()}\n-- ============================================================\n\nUSE [YourDatabaseName]; -- ← CHANGE THIS\nGO\n\n`;
+
+    if (schemaResult.globalNotes) {
+      schemaSQL += `-- MIGRATION NOTES:\n${schemaResult.globalNotes.split('\n').map(l => '-- ' + l).join('\n')}\n\n`;
+    }
+
+    for (const table of allTables) {
+      const tableMapping = schemaResult.tables?.[table.tableName];
+      const colTypes = {};
+      table.columns.forEach(col => {
+        const vals = table.rows.map(r => r[col]);
+        colTypes[col] = inferSQLServerType(vals);
+      });
+
+      if (tableMapping?.notes) {
+        schemaSQL += `-- TABLE NOTE (${table.tableName}): ${tableMapping.notes}\n`;
+      }
+
+      schemaSQL += generateCreateTable(
+        table.tableName,
+        table.columns,
+        colTypes,
+        tableMapping?.columns
+      );
+
+      // Add indexes
+      if (tableMapping?.indexes?.length > 0) {
+        const safeName = sqlIdent(table.tableName);
+        tableMapping.indexes.forEach(col => {
+          const safeCol = sqlIdent(tableMapping?.columns?.[col]?.name || col);
+          schemaSQL += `CREATE INDEX IX_${table.tableName}_${col} ON dbo.${safeName} (${safeCol});\nGO\n`;
+        });
+      }
+      schemaSQL += '\n';
+    }
+
+    // ── STEP 4: Generate INSERT statements with actual data ────────────────────
+    setStatus('Step 4 of 4 — Generating INSERT statements with all data rows…');
+
+    let migrationSQL = `-- ============================================================\n-- Cygenix Data Migration INSERTs\n-- Generated: ${new Date().toISOString()}\n-- Total rows: ${totalRows.toLocaleString()}\n-- Batch size: ${BATCH_SIZE} rows per INSERT\n-- ============================================================\n\nUSE [YourDatabaseName]; -- ← CHANGE THIS\nGO\n\nSET NOCOUNT ON;\nGO\n\n`;
+
+    for (const table of allTables) {
+      const tableMapping = schemaResult.tables?.[table.tableName];
+      btn.textContent = `Generating INSERTs for ${table.tableName} (${table.rows.length.toLocaleString()} rows)…`;
+      setBody(`Generating INSERT statements for ${table.tableName}…\n${table.rows.length.toLocaleString()} rows → ${Math.ceil(table.rows.length/BATCH_SIZE)} batches of ${BATCH_SIZE}`);
+
+      migrationSQL += `-- ============================================================\n-- Table: ${table.tableName} | ${table.rows.length.toLocaleString()} rows\n-- ============================================================\n\n`;
+      migrationSQL += generateInserts(
+        table.tableName,
+        table.columns,
+        table.rows,
+        tableMapping?.columns
+      );
+
+      // Yield to browser to avoid blocking UI
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    migrationSQL += `\n-- ============================================================\n-- Migration complete\n-- Verify row counts:\n${allTables.map(t => `-- SELECT COUNT(*) FROM dbo.${sqlIdent(t.tableName)}; -- Expected: ${t.rows.length.toLocaleString()}`).join('\n')}\n-- ============================================================\n`;
+
+    // ── Done ──────────────────────────────────────────────────────────────────
+    setStatus('SQL Migration Package Ready', 'var(--green)');
+
+    // Build summary report
+    const dataTypeMappings = allTables.map(t => {
+      const tableMapping = schemaResult.tables?.[t.tableName];
+      return `\n### ${t.tableName} (${t.rows.length.toLocaleString()} rows)\n` +
+        t.columns.map(col => {
+          const mapped = tableMapping?.columns?.[col] || {};
+          const inferred = inferSQLServerType(t.rows.map(r => r[col]));
+          const final = mapped.type || inferred;
+          const renamedTo = mapped.name && mapped.name !== col ? ` → renamed to [${mapped.name}]` : '';
+          return `  ${col}${renamedTo}: ${final}`;
+        }).join('\n');
+    }).join('\n');
+
+    const fullReport = `# Cygenix SQL Migration Report
+Generated: ${new Date().toLocaleString()}
+Source files: ${state.files.map(f=>f.name).join(', ')}
+Target: ${state.selectedTarget}
+
+## Summary
+- Tables migrated: ${allTables.length}
+- Total rows: ${totalRows.toLocaleString()}
+- Schema SQL: ${schemaSQL.length.toLocaleString()} chars
+- Migration SQL: ${migrationSQL.length.toLocaleString()} chars (${Math.ceil(migrationSQL.length/1024)}KB)
+- INSERT batches: ${allTables.reduce((s,t) => s+Math.ceil(t.rows.length/BATCH_SIZE),0)} total
+
+## Table Summary
+${allTables.map(t => `- ${t.tableName}: ${t.rows.length.toLocaleString()} rows, ${t.columns.length} columns`).join('\n')}
+
+## Global Notes
+${schemaResult.globalNotes || 'None'}
+
+## Column Mapping & Data Types
+${dataTypeMappings}
+
+## Verification Queries
+Run these after migration to confirm row counts:
+${allTables.map(t => `SELECT '${t.tableName}' AS TableName, COUNT(*) AS ActualRows, ${t.rows.length} AS ExpectedRows FROM dbo.${sqlIdent(t.tableName)};`).join('\n')}`;
+
+    $('analysis-body').textContent = fullReport;
+    $('schema-code').textContent    = schemaSQL;
+    $('migration-code').textContent = migrationSQL;
+    $('result-tabs').style.display  = 'flex';
+    $('analysis-cta').innerHTML = `
+      <button class="btn btn-teal btn-sm" onclick="downloadSQL('schema','${escapeAttr(jobName)}')">⬇ Schema .sql (${Math.ceil(schemaSQL.length/1024)}KB)</button>
+      <button class="btn btn-primary btn-sm" onclick="downloadSQL('migration','${escapeAttr(jobName)}')">⬇ Migration .sql (${Math.ceil(migrationSQL.length/1024)}KB)</button>`;
+
+    const job = {
+      id: 'job_' + Date.now(), name: jobName,
+      source: $('job-source-input').value.trim(),
+      target: state.selectedTarget,
+      files: state.files.map(f => ({ name: f.name, size: f.size })),
+      tables: allTables.map(t => ({ name: t.tableName, rows: t.rows.length, cols: t.columns.length })),
+      analysis: fullReport, schemaSQL, migrationSQL,
+      status: 'complete', created: new Date().toISOString(),
+      totalRows
+    };
+
+    state.jobs.unshift(job);
+    state.totalFilesProcessed += state.files.length;
+    addAudit(`Job "${jobName}" complete — ${allTables.length} tables, ${totalRows.toLocaleString()} rows, ${Math.ceil(migrationSQL.length/1024)}KB SQL generated`);
+    updateStats();
+    resetBtn();
+
+  } catch(err) {
+    fail('Unexpected error:\n\n' + err.message + '\n\n' + (err.stack || ''));
+    resetBtn();
+  }
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(t) {
+  ['full','schema','migration'].forEach(n => { $('tab-'+n).style.display = n===t?'block':'none'; });
+  document.querySelectorAll('#result-tabs .tab').forEach((el,i) => {
+    el.classList.toggle('active', ['full','schema','migration'][i]===t);
+  });
+}
+function switchModalTab(t) {
+  ['full-report','schema-sql','migration-sql-tab'].forEach(n => { $('modal-tab-'+n).style.display = n===t?'block':'none'; });
+  document.querySelectorAll('#job-modal .tab').forEach((el,i) => {
+    el.classList.toggle('active', ['full-report','schema-sql','migration-sql-tab'][i]===t);
+  });
+}
+function copyCode(elId) {
+  navigator.clipboard.writeText($(elId).textContent).then(() => {
+    const btn = $(elId).parentElement.querySelector('.copy-btn');
+    if (btn) { btn.textContent='Copied!'; setTimeout(()=>btn.textContent='Copy SQL',2000); }
+  });
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+function downloadSQL(type, jobName) {
+  const el = type==='schema' ? $('schema-code') : $('migration-code');
+  const content = el?.textContent || '';
+  if (!content) { alert('No SQL generated yet.'); return; }
+  triggerDownload(content, (jobName||'migration').replace(/[^a-z0-9]/gi,'_') + (type==='schema'?'_schema':'_migration') + '.sql');
+}
+function downloadJobSQL(jobId, type) {
+  const job = state.jobs.find(j=>j.id===jobId);
+  if (!job) return;
+  const content = type==='schema' ? job.schemaSQL : job.migrationSQL;
+  if (!content) { alert('No SQL available.'); return; }
+  triggerDownload(content, job.name.replace(/[^a-z0-9]/gi,'_') + (type==='schema'?'_schema':'_migration') + '.sql');
+}
+function downloadModalSQL(type) {
+  const el = type==='schema' ? $('modal-schema-code') : $('modal-migration-code');
+  const content = el?.textContent || '';
+  if (!content) { alert('No SQL available.'); return; }
+  const name = (state.currentJob?.name||'migration').replace(/[^a-z0-9]/gi,'_');
+  triggerDownload(content, name + (type==='schema'?'_schema':'_migration') + '.sql');
+}
+function triggerDownload(content, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type:'text/plain'}));
+  a.download = filename;
+  a.click();
+}
+
+// ── Job modal ─────────────────────────────────────────────────────────────────
+function openJobModal(jobId) {
+  const job = state.jobs.find(j=>j.id===jobId);
+  if (!job) return;
+  state.currentJob = job;
+  $('modal-job-name').textContent   = job.name;
+  $('modal-job-meta').textContent   = `${job.target} · ${new Date(job.created).toLocaleDateString('en-GB')} · ${job.files.length} file(s) · ${job.totalRows?.toLocaleString()||'?'} rows`;
+  $('modal-full-text').textContent  = job.analysis || '';
+  $('modal-schema-code').textContent    = job.schemaSQL || '';
+  $('modal-migration-code').textContent = job.migrationSQL || '';
+  switchModalTab('full-report');
+  $('job-modal').classList.add('open');
+}
+function closeModal() { $('job-modal').classList.remove('open'); }
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function addAudit(msg) { state.auditLog.unshift({ time: new Date().toLocaleTimeString(), msg }); }
+function updateStats() {
+  $('stat-total').textContent    = state.jobs.length;
+  $('stat-analysed').textContent = state.jobs.length;
+  $('stat-done').textContent     = state.jobs.filter(j=>j.status==='complete').length;
+  $('stat-files').textContent    = state.totalFilesProcessed;
+  $('jobs-count').textContent    = state.jobs.length;
+}
+
+function jobsTableHTML(jobs) {
+  if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
+  return '<table class="jobs-table"><thead><tr><th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
+    jobs.map(j => `<tr>
+      <td><div class="job-name">${j.name}</div><div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div></td>
+      <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
+      <td><span style="font-size:12px;color:var(--text2)">${j.target}</span></td>
+      <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.tables?.length||j.files.length}</span></td>
+      <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.totalRows?.toLocaleString()||'—'}</span></td>
+      <td><span class="badge badge-green">SQL Ready</span></td>
+      <td style="display:flex;gap:6px;padding-top:0.75rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="openJobModal('${j.id}')">View</button>
+        <button class="btn btn-teal btn-sm" onclick="downloadJobSQL('${j.id}','schema')">⬇ Schema</button>
+        <button class="btn btn-primary btn-sm" onclick="downloadJobSQL('${j.id}','migration')">⬇ Migration</button>
+      </td></tr>`).join('') + '</tbody></table>';
+}
+
+function renderDashboard()     { $('dashboard-jobs').innerHTML = jobsTableHTML(state.jobs.slice(0,5)); updateStats(); }
+function renderAllJobs()       { $('all-jobs').innerHTML       = jobsTableHTML(state.jobs); }
+
+function codePanel(job, type) {
+  const content = type==='schema' ? job.schemaSQL : job.migrationSQL;
+  const label   = type==='schema' ? 'Schema SQL' : 'Migration SQL';
+  const btnClass = type==='schema' ? 'btn-teal' : 'btn-primary';
+  return `<div class="panel" style="margin-bottom:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.5rem;flex-wrap:wrap">
+      <div style="font-size:14px;font-weight:600">${job.name}</div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${job.totalRows?.toLocaleString()||'?'} rows · ${Math.ceil((content||'').length/1024)}KB</span>
+        <button class="btn ${btnClass} btn-sm" onclick="downloadJobSQL('${job.id}','${type}')">⬇ Download</button>
+      </div>
+    </div>
+    <div style="position:relative">
+      <button class="copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.textContent)">Copy</button>
+      <div class="code-block">${escHtml(content||'')}</div>
+    </div>
+  </div>`;
+}
+
+function renderSchemaLibrary() {
+  const w = state.jobs.filter(j=>j.schemaSQL);
+  $('schema-library').innerHTML = w.length ? w.map(j=>codePanel(j,'schema')).join('')
+    : '<div class="empty-state"><h3>No schema SQL yet</h3><p>Run a migration to generate SQL Server CREATE TABLE statements.</p></div>';
+}
+function renderMigrationLibrary() {
+  const w = state.jobs.filter(j=>j.migrationSQL);
+  $('migration-library').innerHTML = w.length ? w.map(j=>codePanel(j,'migration')).join('')
+    : '<div class="empty-state"><h3>No migration SQL yet</h3><p>Run a migration to generate INSERT statements.</p></div>';
+}
+function renderAuditLog() {
+  $('audit-log-wrap').innerHTML = state.auditLog.length
+    ? '<div class="panel"><table class="jobs-table"><thead><tr><th>Time</th><th>Event</th></tr></thead><tbody>' +
+      state.auditLog.map(e=>`<tr><td style="font-family:var(--mono);font-size:11px;color:var(--text3);white-space:nowrap">${e.time}</td><td style="font-size:12px;color:var(--text2)">${e.msg}</td></tr>`).join('') +
+      '</tbody></table></div>'
+    : '<div class="empty-state"><h3>No audit entries yet</h3></div>';
+}
+
+function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeAttr(s) { return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+$('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+renderDashboard();
+checkHealth();
+
+</script>
+</body>
+</html>
