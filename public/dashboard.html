@@ -279,6 +279,13 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         Diagnostics
       </div>
     </div>
+    <div class="nav-section" style="margin-top:auto;border-top:0.5px solid var(--border);padding-top:1rem">
+      <div class="nav-label">Deliver</div>
+      <div class="nav-item" onclick="showView('reports')" style="color:var(--purple)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="var(--bg2)" stroke="currentColor" stroke-width="1.2"/><path d="M11 12l.8.8L13 11" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Conversion Report
+      </div>
+    </div>
   </div>
 
   <!-- MAIN -->
@@ -476,6 +483,17 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
     </div>
 
+    <!-- CONVERSION REPORTS -->
+    <div id="view-reports" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Conversion Reports</div>
+          <div class="panel-sub">Generate a professional client-ready report for any completed migration job</div>
+        </div>
+      </div>
+      <div id="reports-list"></div>
+    </div>
+
 
 </div>
 
@@ -558,13 +576,15 @@ function showView(v) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   const el = $('view-' + v); if (el) el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const map = { dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6 };
+  const map = { dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6,diagnostics:7,reports:8 };
   document.querySelectorAll('.nav-item')[map[v] ?? 0]?.classList.add('active');
   if (v === 'jobs')          renderAllJobs();
   if (v === 'schema')        renderSchemaLibrary();
   if (v === 'migration-sql') renderMigrationLibrary();
   if (v === 'audit')         renderAuditLog();
   if (v === 'dashboard')     renderDashboard();
+  if (v === 'reports')       renderReportsList();
+  if (v === 'reports')       renderReportsList();
 }
 
 function selectTarget(el, name) {
@@ -1508,6 +1528,36 @@ function openReport(jobId) {
 
   sessionStorage.setItem('cygenix_report', JSON.stringify(reportData));
   window.open('/report.html', '_blank');
+}
+
+
+// ── Reports list ──────────────────────────────────────────────────────────────
+function renderReportsList() {
+  const el = $('reports-list');
+  if (!el) return;
+  if (!state.jobs.length) {
+    el.innerHTML = '<div class="empty-state"><h3>No migration jobs yet</h3><p>Run a migration analysis first, then come back here to generate a client report.</p></div>';
+    return;
+  }
+  el.innerHTML = state.jobs.map(j => {
+    const rows    = j.totalRows?.toLocaleString() || '—';
+    const tables  = j.tables?.length || j.files?.length || '—';
+    const date    = new Date(j.created).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+    return `<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+      <div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:0.3rem">${j.name}</div>
+        <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">${date} &nbsp;·&nbsp; ${tables} table(s) &nbsp;·&nbsp; ${rows} rows &nbsp;·&nbsp; ${j.target||'SQL Server'}</div>
+        ${j.source ? `<div style="font-size:11px;color:var(--text3);margin-top:3px">Source: ${j.source}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
+        <span class="badge badge-green" style="font-size:11px">SQL Ready</span>
+        <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25);font-size:12px;padding:0.45rem 1.1rem" onclick="openReport('${j.id}')">
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="flex-shrink:0"><rect x="1" y="1" width="11" height="11" rx="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3.5 4h6M3.5 6.5h6M3.5 9h3.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+          Generate Report
+        </button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
