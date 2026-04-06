@@ -246,7 +246,7 @@ async function createProject() {
     sessionStorage.setItem('cygenix_active_project', JSON.stringify({ id: result.id, name, description: desc }));
     window.location.href = '/dashboard.html?project=' + result.id;
   } catch(e) {
-    alert('Could not create project: ' + e.message);
+    alert('Could not create project: ' + e.message + '\n\nIf this says "Blobs", go to Netlify → your site → Storage tab → Enable Blobs, then redeploy.');
   }
 }
 
