@@ -2,10 +2,7 @@
   publish = "public"
   functions = "netlify/functions"
   command = "npm install"
-
-[functions]
-  node_bundler = "esbuild"
-
+  
 [[edge_functions]]
   path = "/api/analyse"
   function = "analyse"
