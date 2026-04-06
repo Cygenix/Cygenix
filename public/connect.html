@@ -152,6 +152,17 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   <div style="display:flex;align-items:center;gap:1rem">
     <div class="conn-badge checking" id="api-badge">API key needed</div>
     <div class="conn-badge checking" id="db-badge">Not connected</div>
+    <div id="project-name-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:3px 10px;background:var(--bg3);border-radius:100px;border:0.5px solid var(--border);display:none"></div>
+    <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer;position:relative" onclick="toggleUserMenu()" id="user-pill">
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)" id="user-avatar">?</div>
+      <span style="font-size:12px;color:var(--text2)" id="user-name">Loading…</span>
+      <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:12px;padding:0.5rem;min-width:180px;z-index:200">
+        <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem" id="user-email-menu"></div>
+        <div style="height:0.5px;background:var(--border);margin:0.4rem 0"></div>
+        <a href="/projects.html" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px">My projects</a>
+        <div onclick="signOut()" style="padding:0.5rem;font-size:13px;color:var(--red);cursor:pointer;border-radius:6px">Sign out</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1276,6 +1287,43 @@ if(uz){
   uz.addEventListener('dragleave',()=>{uz.style.borderColor='';uz.style.background='';});
   uz.addEventListener('drop',e=>{e.preventDefault();uz.style.borderColor='';uz.style.background='';const f=e.dataTransfer.files[0];if(f)loadSourceFile(f);});
 }
+
+function initUserAndProject() {
+  try {
+    const user = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    if (user.email) {
+      const name = user.user_metadata?.full_name || user.email.split('@')[0];
+      const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+      const nameEl = document.getElementById('user-name');
+      const avatarEl = document.getElementById('user-avatar');
+      const emailEl = document.getElementById('user-email-menu');
+      if (nameEl) nameEl.textContent = name;
+      if (avatarEl) avatarEl.textContent = initials;
+      if (emailEl) emailEl.textContent = user.email;
+    }
+  } catch {}
+  try {
+    const proj = JSON.parse(sessionStorage.getItem('cygenix_active_project') || '{}');
+    const badge = document.getElementById('project-name-badge');
+    if (proj.name && badge) { badge.textContent = proj.name; badge.style.display = 'block'; }
+  } catch {}
+}
+function toggleUserMenu() {
+  const m = document.getElementById('user-menu');
+  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', function(e) {
+  const pill = document.getElementById('user-pill');
+  if (pill && !pill.contains(e.target)) {
+    const m = document.getElementById('user-menu');
+    if (m) m.style.display = 'none';
+  }
+});
+function signOut() {
+  ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k => sessionStorage.removeItem(k));
+  window.location.href = '/login.html';
+}
+initUserAndProject();
 </script>
 </body>
 </html>

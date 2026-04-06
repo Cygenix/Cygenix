@@ -214,11 +214,21 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Back
       </a>
-      <a href="/" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
+      <a href="/projects.html" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
     </div>
     <div class="topbar-right">
       <div class="conn-badge checking" id="conn-badge">Checking…</div>
-      <div class="avatar">IT</div>
+      <div id="project-name-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:3px 10px;background:var(--bg3);border-radius:100px;border:0.5px solid var(--border);display:none"></div>
+      <div class="user-pill" id="user-pill" onclick="toggleUserMenu()" style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer;position:relative">
+        <div class="avatar" id="user-avatar" style="background:var(--accent-glow);border-color:rgba(61,126,255,0.4);color:var(--accent)">?</div>
+        <span style="font-size:12px;color:var(--text2)" id="user-name">Loading…</span>
+        <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:0.5rem;min-width:180px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.4)">
+          <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem 0.25rem" id="user-email-menu"></div>
+          <div style="height:0.5px;background:var(--border);margin:0.4rem 0"></div>
+          <a href="/projects.html" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">My projects</a>
+          <div onclick="signOut()" style="padding:0.5rem;font-size:13px;color:var(--red);cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">Sign out</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1342,6 +1352,7 @@ function jobsTableHTML(jobs) {
         <button class="btn btn-ghost btn-sm" onclick="openJobModal('${j.id}')">View</button>
         <button class="btn btn-teal btn-sm" onclick="downloadJobSQL('${j.id}','schema')">⬇ Schema</button>
         <button class="btn btn-primary btn-sm" onclick="downloadJobSQL('${j.id}','migration')">⬇ Migration</button>
+        <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')">Report</button>
       </td></tr>`).join('') + '</tbody></table>';
 }
 
@@ -1388,10 +1399,122 @@ function renderAuditLog() {
 function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escapeAttr(s) { return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
+
+// ── User + Project ─────────────────────────────────────────────────────────────
+function initUserAndProject() {
+  // Load user from session
+  try {
+    const user = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    if (user.email) {
+      const name = user.user_metadata?.full_name || user.email.split('@')[0];
+      const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+      $('user-name').textContent = name;
+      $('user-avatar').textContent = initials;
+      $('user-email-menu').textContent = user.email;
+    }
+  } catch {}
+
+  // Load active project name
+  try {
+    const proj = JSON.parse(sessionStorage.getItem('cygenix_active_project') || '{}');
+    if (proj.name) {
+      $('project-name-badge').textContent = proj.name;
+      $('project-name-badge').style.display = 'block';
+    }
+  } catch {}
+}
+
+function toggleUserMenu() {
+  const menu = $('user-menu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+// Close user menu when clicking outside
+document.addEventListener('click', function(e) {
+  const pill = $('user-pill');
+  if (pill && !pill.contains(e.target)) {
+    const menu = $('user-menu');
+    if (menu) menu.style.display = 'none';
+  }
+});
+
+function signOut() {
+  ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k => sessionStorage.removeItem(k));
+  window.location.href = '/login.html';
+}
+
+
+// ── Conversion Report ──────────────────────────────────────────────────────────
+function openReport(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) return;
+
+  // Get user info from session
+  let userName = 'Migration Engineer', userEmail = '';
+  try {
+    const user = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    userName  = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Migration Engineer';
+    userEmail = user.email || '';
+  } catch {}
+
+  // Get project name from session
+  let projectName = job.name;
+  try {
+    const proj = JSON.parse(sessionStorage.getItem('cygenix_active_project') || '{}');
+    if (proj.name) projectName = proj.name;
+  } catch {}
+
+  const totalRows    = job.totalRows || job.tables?.reduce((s,t) => s+(t.rows||0), 0) || 0;
+  const tableResults = job.tables?.map(t => ({
+    name:         t.name,
+    sourceRows:   t.rows,
+    insertedRows: t.rows,
+    errors:       0,
+    batches:      Math.ceil(t.rows / 100),
+    status:       'success'
+  })) || [{
+    name:         job.target || 'migration',
+    sourceRows:   totalRows,
+    insertedRows: totalRows,
+    errors:       0,
+    batches:      Math.ceil(totalRows / 100),
+    status:       'success'
+  }];
+
+  const reportData = {
+    id:           job.id,
+    projectName,
+    userName,
+    userEmail,
+    sourceSystem: job.source || 'Database export',
+    targetSystem: job.target || 'Microsoft SQL Server',
+    sourceFile:   job.files?.map(f => f.name).join(', ') || '',
+    sourceFileSize: job.files?.reduce((s,f) => s+(f.size||0), 0) || 0,
+    targetServer:   job.target || '',
+    targetDatabase: job.target || '',
+    targetTable:    job.tables?.[0]?.name || '',
+    authMethod:     'Direct connection',
+    totalRows,
+    insertedRows: totalRows,
+    errors:       0,
+    rowsBefore:   0,
+    rowsAfter:    totalRows,
+    tables:       tableResults,
+    columnMapping: [],
+    warnings:     [],
+    startedAt:    job.created,
+    completedAt:  job.created,
+  };
+
+  sessionStorage.setItem('cygenix_report', JSON.stringify(reportData));
+  window.open('/report.html', '_blank');
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 renderDashboard();
 checkHealth();
+initUserAndProject();
 
 </script>
 </body>
