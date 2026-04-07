@@ -324,6 +324,10 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
         </div>
       </div>
 
+      <div id="src-restored-notice" style="display:none;background:rgba(61,126,255,0.08);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.75rem;margin-top:1rem;font-size:12px;color:var(--accent)">
+        📂 Source columns restored from saved session. Your column mapping is intact.<br>
+        <strong>Re-upload the same source file</strong> to regenerate the SQL — or go straight to <a href="#" onclick="goStep(3);return false;" style="color:var(--accent)">Step 3: Map columns</a> to review your mapping first.
+      </div>
       <div id="src-preview-panel" style="display:none;margin-top:1rem">
         <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.5rem">Source data preview (first 5 rows)</div>
         <div style="overflow-x:auto">
@@ -572,16 +576,21 @@ function saveProjectState() {
   const proj = getSavedProject();
   if (!proj) return; // only save if a project is active
 
-  // Build a lean snapshot — strip actual row data (too large) but keep structure
+  // Build snapshot — full target table definition so mapping can be rebuilt on restore
   const snapshot = {
-    savedAt:    new Date().toISOString(),
-    projectId:  proj.id,
+    savedAt:     new Date().toISOString(),
+    projectId:   proj.id,
     projectName: proj.name,
     connMode,
-    connString: connMode === 'direct' ? sessionStorage.getItem('cygenix_conn_string') || '' : '',
-    fnUrl:      connMode === 'azure'  ? sessionStorage.getItem('cygenix_fn_url') || '' : '',
-    // fnKey intentionally not saved — credentials should be re-entered
-    targetTable: S.selectedTargetTable ? { schema: S.selectedTargetTable.schema, name: S.selectedTargetTable.name } : null,
+    connString:  connMode === 'direct' ? sessionStorage.getItem('cygenix_conn_string') || '' : '',
+    fnUrl:       connMode === 'azure'  ? sessionStorage.getItem('cygenix_fn_url') || '' : '',
+    // Save full target table definition so the mapping table can be rendered without reconnecting
+    selectedTargetTable: S.selectedTargetTable || null,
+    // Save full target schema table list (without row data) so we can populate dropdowns
+    targetSchemaTables: S.targetSchema?.tables?.map(t => ({
+      schema: t.schema, name: t.name, rowCount: t.rowCount,
+      columns: t.columns, primaryKeys: t.primaryKeys, foreignKeys: t.foreignKeys
+    })) || [],
     sourceFileName: S.sourceFile?.name || (S.selectedSourceTable?.tableName || ''),
     sourceColumns:  S.selectedSourceTable?.columns || [],
     columnMapping:  S.columnMapping,
@@ -645,32 +654,92 @@ function loadProjectState() {
 function restoreFromSnapshot(snap) {
   if (!snap) return;
 
-  // Restore connection mode and string
-  if (snap.connMode) {
-    connMode = snap.connMode;
-    setConnMode(connMode);
-  }
+  // ── Connection string ──────────────────────────────────────────────────────
+  if (snap.connMode) { connMode = snap.connMode; setConnMode(connMode); }
   if (snap.connString && snap.connMode === 'direct') {
     sessionStorage.setItem('cygenix_conn_string', snap.connString);
-    const el = document.getElementById('conn-string');
-    if (el) el.value = snap.connString;
+    const el = $('conn-string'); if (el) el.value = snap.connString;
   }
   if (snap.fnUrl && snap.connMode === 'azure') {
     sessionStorage.setItem('cygenix_fn_url', snap.fnUrl);
-    const el = document.getElementById('fn-url');
-    if (el) el.value = snap.fnUrl;
+    const el = $('fn-url'); if (el) el.value = snap.fnUrl;
   }
 
-  // Restore wasis rules
+  // ── Target schema — rebuild without reconnecting ───────────────────────────
+  if (snap.targetSchemaTables && snap.targetSchemaTables.length) {
+    S.targetSchema = { tables: snap.targetSchemaTables };
+    S.connString   = snap.connString || snap.fnUrl || '';
+
+    // Render schema tree and dropdowns
+    if (snap.selectedTargetTable) {
+      renderTargetSchema(snap.targetSchemaTables, snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name, '(restored)');
+      populateTargetTableSelect(snap.targetSchemaTables);
+      $('db-badge').textContent = snap.selectedTargetTable.name + ' · Restored';
+      $('db-badge').className   = 'conn-badge ok';
+      $('db-info-panel').style.display = 'block';
+    }
+
+    // Restore selected target table
+    if (snap.selectedTargetTable) {
+      S.selectedTargetTable = snap.selectedTargetTable;
+      // Pre-select it in the dropdown
+      const sel = $('target-table-select');
+      if (sel) sel.value = snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name;
+    }
+  }
+
+  // ── Source data — restore structure (not rows) so mapping screen shows columns ──
+  if (snap.sourceColumns && snap.sourceColumns.length) {
+    // Rebuild a minimal selectedSourceTable so the mapping table renders
+    S.selectedSourceTable = {
+      tableName: snap.sourceFileName || 'source',
+      columns:   snap.sourceColumns,
+      rows:      [], // rows are not stored — user will need to re-upload for actual SQL gen
+    };
+    // Show the source file info
+    const infoEl = $('src-file-info');
+    if (infoEl) {
+      infoEl.style.display = 'block';
+      infoEl.textContent = (snap.sourceFileName || 'Source file') + ' — columns restored from saved session. Re-upload the file to generate SQL.';
+    }
+    // Pre-select target table in step 2 dropdown
+    if (snap.selectedTargetTable && $('target-table-select')) {
+      $('target-table-select').value = snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name;
+      onTargetTableChange();
+    }
+    $('step2-next-btn') && ($('step2-next-btn').disabled = false);
+    const noticeEl = $('src-restored-notice'); if (noticeEl) noticeEl.style.display = 'block';
+  }
+
+  // ── Column mapping ─────────────────────────────────────────────────────────
+  if (snap.columnMapping && snap.columnMapping.length) {
+    S.columnMapping = snap.columnMapping;
+  }
+
+  // ── Wasis rules ────────────────────────────────────────────────────────────
   if (snap.wasisRules && snap.wasisRules.length) {
     wasisRules = snap.wasisRules;
     try { localStorage.setItem(WASIS_KEY, JSON.stringify(wasisRules)); } catch {}
     try { updateWasisUI(); } catch {}
   }
 
-  // Restore column mapping (source data can't be restored without the file, but mapping can)
-  if (snap.columnMapping && snap.columnMapping.length) {
-    S.columnMapping = snap.columnMapping;
+  // ── Navigate to the mapping step if we have everything ────────────────────
+  if (S.targetSchema && S.selectedSourceTable && S.columnMapping.length) {
+    // Bypass the step guards by directly activating step 3
+    document.querySelectorAll('.step-view').forEach(el => el.classList.remove('active'));
+    $('step-3').classList.add('active');
+    document.querySelectorAll('.step-tab').forEach((el, i) => {
+      el.classList.remove('active');
+      if (i < 2) el.classList.add('done');
+      else el.classList.remove('done');
+    });
+    $('tab-3').classList.add('active');
+    currentStep = 3;
+    // Render the mapping table with restored mapping
+    renderMappingTable();
+  } else if (S.targetSchema) {
+    // At least we have the DB — go to step 2
+    goStep(2);
   }
 
   return snap;
@@ -722,7 +791,15 @@ function goStep(n){
   if (n > 1 && !S.targetSchema){ alert('Please connect to a target database first.'); return; }
   if (n > 2 && !S.selectedSourceTable){ alert('Please load source data and select a target table first.'); return; }
   if (n > 3 && S.columnMapping.length === 0){ alert('Please complete column mapping first.'); return; }
-  if (n > 4 && !S.insertSQL){ alert('Please generate a preview first.'); return; }
+  if (n > 4 && !S.insertSQL){
+    // If mapping is restored but no rows loaded, remind user to re-upload source file
+    if (S.columnMapping.length > 0 && S.selectedSourceTable?.rows?.length === 0) {
+      alert('Please re-upload your source data file — the row data is needed to generate the SQL.');
+    } else {
+      alert('Please generate a preview first.');
+    }
+    return;
+  }
   document.querySelectorAll('.step-view').forEach(el => el.classList.remove('active'));
   $('step-' + n).classList.add('active');
   document.querySelectorAll('.step-tab').forEach((el, i) => {
@@ -1168,6 +1245,10 @@ function generatePreviewSQL(){
   const mapping = S.columnMapping.filter(m => m.tgtCol);
 
   if (mapping.length === 0){ alert('No columns are mapped to target. Please map at least one column.'); return; }
+  if (!src.rows || src.rows.length === 0) {
+    alert('No source data rows loaded. Please re-upload your source file before generating SQL.');
+    return;
+  }
 
   S.warnings = [];
 
