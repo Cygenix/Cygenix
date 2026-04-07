@@ -682,9 +682,13 @@ function restoreFromSnapshot(snap) {
     // Restore selected target table
     if (snap.selectedTargetTable) {
       S.selectedTargetTable = snap.selectedTargetTable;
-      // Pre-select it in the dropdown
+      // Pre-select it in the dropdown and trigger the change handler
       const sel = $('target-table-select');
-      if (sel) sel.value = snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name;
+      if (sel) {
+        sel.value = snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name;
+        // Manually call onTargetTableChange to sync S.selectedTargetTable
+        onTargetTableChange();
+      }
     }
   }
 
@@ -1016,6 +1020,22 @@ function loadSourceFile(file){
     }
 
     renderSourcePreview(tables[0]);
+
+    // If we're in restored mode, make sure selectedTargetTable is still set
+    // (the restored snapshot set it but the dropdown may not have fired onchange)
+    if (!S.selectedTargetTable && S.targetSchema) {
+      const sel = $('target-table-select');
+      if (sel && sel.value) {
+        S.selectedTargetTable = S.targetSchema.tables.find(
+          t => t.schema + '.' + t.name === sel.value
+        ) || null;
+      }
+    }
+
+    // Hide the restored notice — user has now loaded fresh data
+    const notice = $('src-restored-notice');
+    if (notice) notice.style.display = 'none';
+
     checkStep2Ready();
   };
   reader.readAsText(file);
@@ -1042,8 +1062,20 @@ function onTargetTableChange(){
 }
 
 function checkStep2Ready(){
-  const ready = S.selectedSourceTable && S.selectedTargetTable;
-  $('step2-next-btn').disabled = !ready;
+  // Enable Next button if:
+  // - We have a source table with rows (normal flow), OR
+  // - We have a restored source (columns but no rows) — user can still review mapping
+  const hasSource = !!(S.selectedSourceTable && S.selectedSourceTable.columns?.length);
+  const hasRows   = S.selectedSourceTable?.rows?.length > 0;
+  const hasTarget = !!S.selectedTargetTable;
+
+  const btn = $('step2-next-btn');
+  if (!btn) return;
+  btn.disabled = !(hasSource && hasTarget);
+  // Label the button differently when in restored-no-rows mode
+  btn.textContent = (hasSource && !hasRows && hasTarget)
+    ? 'Review saved mapping →'
+    : 'Next: Map columns →';
 }
 
 function renderSourcePreview(table){
@@ -1245,8 +1277,15 @@ function generatePreviewSQL(){
   const mapping = S.columnMapping.filter(m => m.tgtCol);
 
   if (mapping.length === 0){ alert('No columns are mapped to target. Please map at least one column.'); return; }
-  if (!src.rows || src.rows.length === 0) {
-    alert('No source data rows loaded. Please re-upload your source file before generating SQL.');
+  if (!src || !src.rows || src.rows.length === 0) {
+    // Go back to step 2 and show a clear message
+    goStep(2);
+    const info = $('src-file-info');
+    if (info) {
+      info.style.display = 'block';
+      info.textContent = 'Please upload your source file to continue — row data is needed to generate the SQL.';
+      info.style.color = 'var(--amber)';
+    }
     return;
   }
 
