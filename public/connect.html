@@ -970,8 +970,22 @@ function renderMappingTable(){
     const transforms = ['NONE','CAST','TRIM','UPPER','LOWER','CUSTOM'].map(t =>
       `<option value="${t}"${m.transform===t?' selected':''}>${t}</option>`).join('');
 
-    return `<tr>
-      <td style="font-family:var(--mono);color:var(--text)">${m.srcCol}</td>
+    // Check if any wasis rules cover this source column
+    const wasisForCol = wasisRules.filter(r =>
+      (r.srcField === m.srcCol.toLowerCase() || r.srcField === '') &&
+      (r.srcTable === (S.selectedSourceTable?.tableName||'').toLowerCase() || r.srcTable === '')
+    );
+    const wasisBadge = wasisForCol.length > 0
+      ? `<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;padding:2px 7px;border-radius:100px;background:rgba(245,158,11,0.15);color:var(--amber);font-family:var(--mono);margin-left:4px" title="${wasisForCol.length} Was/Is rule(s) will translate values in this column">🔄 ${wasisForCol.length} rule${wasisForCol.length>1?'s':''}</span>`
+      : '';
+
+    // Show a compact wasis rules summary under the source col name
+    const wasisDetail = wasisForCol.length > 0
+      ? `<div style="font-size:10px;color:var(--amber);margin-top:3px;line-height:1.6">${wasisForCol.slice(0,3).map(r=>`"${r.oldVal}" → "${r.newVal}"`).join('<br>')}${wasisForCol.length>3?`<br>+${wasisForCol.length-3} more`:''}` + '</div>'
+      : '';
+
+    return `<tr${wasisForCol.length ? ' style="background:rgba(245,158,11,0.03)"' : ''}>
+      <td style="font-family:var(--mono);color:var(--text)">${m.srcCol}${wasisBadge}${wasisDetail}</td>
       <td><span class="badge badge-gray" style="font-family:var(--mono)">${m.srcType||'?'}</span></td>
       <td><select class="map-select" onchange="updateMapping(${i},'tgtCol',this.value)">${tgtSel}</select></td>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${m.tgtType||'—'}</td>
@@ -1359,6 +1373,8 @@ function clearWasis() {
   localStorage.removeItem(WASIS_KEY);
   $('wasis-file-input').value = '';
   updateWasisUI();
+  // Refresh mapping if visible
+  if (S.columnMapping.length > 0) renderMappingTable();
 }
 
 function updateWasisUI() {
@@ -1421,22 +1437,96 @@ function escHtml(s) {
 // Parse uploaded wasis file (CSV/TSV) into rules array
 function loadWasisFile(file) {
   if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  const isExcel = ext === 'xlsx' || ext === 'xls';
+
+  if (isExcel) {
+    // Load SheetJS on demand then parse
+    if (!window.XLSX) {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      script.onload = () => readExcelWasis(file);
+      script.onerror = () => alert('Could not load Excel library. Please save your file as CSV and try again.');
+      document.head.appendChild(script);
+    } else {
+      readExcelWasis(file);
+    }
+    return;
+  }
+
+  // CSV / TSV / TXT
   const reader = new FileReader();
   reader.onload = e => {
-    const text = e.target.result;
-    const rules = parseWasisCSV(text, file.name);
+    const rules = parseWasisCSV(e.target.result, file.name);
     if (rules.length === 0) {
-      alert('No rules found in this file. Expected columns: source_table, source_field, old_value, new_value, description');
+      alert('No rules found. Expected columns: source_table, source_field, old_value, new_value, description');
       return;
     }
-    saveWasisRules(rules);
-    // Close preview if open
-    const tbl = $('wasis-preview-table');
-    if (tbl) tbl.style.display = 'none';
-    const btn = $('wasis-preview-btn');
-    if (btn) btn.textContent = '👁 Preview rules';
+    finishWasisLoad(rules);
   };
   reader.readAsText(file);
+}
+
+function readExcelWasis(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      // Convert to array of arrays
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (rows.length < 2) { alert('File appears empty.'); return; }
+
+      const rawHeaders = rows[0].map(h => String(h||''));
+      const headers    = rawHeaders.map(h => h.toLowerCase().replace(/[^a-z0-9]/g,''));
+
+      const tIdx = headers.findIndex(h => ['sourcetable','table','srctable','tablename'].includes(h));
+      const fIdx = headers.findIndex(h => ['sourcefield','field','srcfield','fieldname','column','columnname','col'].includes(h));
+      const oIdx = headers.findIndex(h => ['oldvalue','was','old','from','sourcevalue','oldval'].includes(h));
+      const nIdx = headers.findIndex(h => ['newvalue','is','new','to','targetvalue','newval','newvalue'].includes(h));
+      const dIdx = headers.findIndex(h => ['description','desc','note','notes','reason'].includes(h));
+
+      const ti = tIdx >= 0 ? tIdx : 0;
+      const fi = fIdx >= 0 ? fIdx : 1;
+      const oi = oIdx >= 0 ? oIdx : 2;
+      const ni = nIdx >= 0 ? nIdx : 3;
+      const di = dIdx >= 0 ? dIdx : 4;
+
+      const rules = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const oldVal = String(row[oi]||'').trim();
+        const newVal = String(row[ni]||'').trim();
+        if (!oldVal && !newVal) continue;
+        rules.push({
+          srcTable: String(row[ti]||'').trim().toLowerCase(),
+          srcField: String(row[fi]||'').trim().toLowerCase(),
+          oldVal,
+          newVal,
+          desc: String(row[di]||'').trim()
+        });
+      }
+
+      if (rules.length === 0) {
+        alert('No rules found in Excel file. Expected columns: source_table, source_field, old_value, new_value, description');
+        return;
+      }
+      finishWasisLoad(rules);
+    } catch(e) {
+      alert('Could not read Excel file: ' + e.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function finishWasisLoad(rules) {
+  saveWasisRules(rules);
+  const tbl = $('wasis-preview-table');
+  if (tbl) tbl.style.display = 'none';
+  const btn = $('wasis-preview-btn');
+  if (btn) btn.textContent = '👁 Preview rules';
+  // Refresh mapping table to show wasis indicators
+  if (S.columnMapping.length > 0) renderMappingTable();
 }
 
 function parseWasisCSV(text, filename) {
