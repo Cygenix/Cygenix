@@ -150,9 +150,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .code-block::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
 /* INVENTORY */
-.inv-upload-zone{border:1.5px dashed var(--border2);border-radius:var(--r-lg);padding:1.75rem;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg2)}
+.inv-upload-zone{border:1.5px dashed var(--border2);border-radius:var(--r-lg);text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg2)}
 .inv-upload-zone:hover,.inv-upload-zone.drag{border-color:var(--accent);background:var(--accent-glow)}
-.inv-doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-top:1rem}
+.inv-doc-grid{display:grid;gap:1rem}
+#view-inventory{padding:0!important;overflow:hidden!important}
 .inv-doc-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem;transition:border-color 0.15s;position:relative}
 .inv-doc-card:hover{border-color:var(--border2)}
 .inv-doc-icon{width:36px;height:36px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:0.75rem;flex-shrink:0}
@@ -528,111 +529,150 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
     <!-- CONVERSION REPORTS -->
     <!-- INVENTORY -->
-    <div id="view-inventory" class="view">
-      <div class="panel-header">
-        <div>
-          <div class="panel-title">Project Inventory</div>
-          <div class="panel-sub">Store and manage all reference documents for this migration project</div>
+    <div id="view-inventory" class="view" style="padding:0;display:flex;gap:0;height:100%;overflow:hidden">
+
+      <!-- LEFT PANEL: controls & upload -->
+      <div style="width:280px;flex-shrink:0;border-right:0.5px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;overflow-y:auto;padding:1.5rem 1.25rem">
+
+        <div style="font-size:15px;font-weight:600;margin-bottom:0.2rem">Inventory</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:1.5rem">Reference documents for this project</div>
+
+        <!-- Upload zone -->
+        <div class="inv-upload-zone" id="inv-upload-zone"
+          onclick="document.getElementById('inv-file-input').click()"
+          ondragover="invDragOver(event)" ondragleave="invDragLeave(event)" ondrop="invDrop(event)"
+          style="padding:1.5rem 1rem;margin-bottom:1.25rem">
+          <input type="file" id="inv-file-input" style="display:none" multiple
+            accept=".csv,.xlsx,.xls,.txt,.pdf,.docx,.doc,.md,.json,.sql,.png,.jpg,.jpeg"
+            onchange="invHandleFiles(this.files)">
+          <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4">📁</div>
+          <div style="font-size:12px;color:var(--text);font-weight:500;margin-bottom:0.2rem">Drop files here or click</div>
+          <div style="font-size:10px;color:var(--text3);line-height:1.7">CSV · Excel · PDF · Word<br>SQL · Markdown · Images</div>
         </div>
-        <button class="btn btn-primary" onclick="document.getElementById('inv-file-input').click()">+ Add document</button>
+
+        <!-- Add note button -->
+        <button class="btn btn-ghost" onclick="invAddNote()" style="width:100%;justify-content:center;margin-bottom:1.5rem;font-size:12px">
+          📝 Add a note
+        </button>
+
+        <!-- Filter by type -->
+        <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.6rem">Filter by type</div>
+        <div style="display:flex;flex-direction:column;gap:0.3rem;margin-bottom:1.5rem">
+          <button class="inv-filter" onclick="invFilter('all')" data-filter="all"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:var(--accent);color:#fff;border:none;font-family:var(--serif)">
+            All documents <span id="inv-count-all" style="opacity:0.7;float:right"></span>
+          </button>
+          <button class="inv-filter" onclick="invFilter('wasis')" data-filter="wasis"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
+            🔄 Was/Is Mapping <span id="inv-count-wasis" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+          </button>
+          <button class="inv-filter" onclick="invFilter('dictionary')" data-filter="dictionary"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
+            📖 Data Dictionary <span id="inv-count-dictionary" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+          </button>
+          <button class="inv-filter" onclick="invFilter('schema')" data-filter="schema"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
+            🗂️ Schema Mapping <span id="inv-count-schema" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+          </button>
+          <button class="inv-filter" onclick="invFilter('rules')" data-filter="rules"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
+            ⚙️ Business Rules <span id="inv-count-rules" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+          </button>
+          <button class="inv-filter" onclick="invFilter('signoff')" data-filter="signoff"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
+            ✅ Client Sign-off <span id="inv-count-signoff" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+          </button>
+          <button class="inv-filter" onclick="invFilter('notes')" data-filter="notes"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
+            📝 Notes <span id="inv-count-notes" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+          </button>
+          <button class="inv-filter" onclick="invFilter('other')" data-filter="other"
+            style="text-align:left;padding:0.45rem 0.75rem;border-radius:var(--r);font-size:12px;cursor:pointer;background:transparent;color:var(--text2);border:none;font-family:var(--serif)">
+            📄 Other <span id="inv-count-other" style="opacity:0.6;float:right;font-family:var(--mono);font-size:11px"></span>
+          </button>
+        </div>
+
+        <!-- Was/Is status indicator -->
+        <div id="wasis-status-panel" style="display:none;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:0.75rem;margin-top:auto">
+          <div style="font-size:11px;font-weight:600;color:var(--amber);margin-bottom:0.25rem">🔄 Was/Is active</div>
+          <div style="font-size:11px;color:var(--text3)" id="wasis-status-text">0 rules loaded</div>
+        </div>
       </div>
 
-      <!-- Upload zone -->
-      <div class="inv-upload-zone" id="inv-upload-zone"
-        onclick="document.getElementById('inv-file-input').click()"
-        ondragover="invDragOver(event)" ondragleave="invDragLeave(event)" ondrop="invDrop(event)">
-        <input type="file" id="inv-file-input" style="display:none" multiple
-          accept=".csv,.xlsx,.xls,.txt,.pdf,.docx,.doc,.md,.json,.sql,.png,.jpg,.jpeg"
-          onchange="invHandleFiles(this.files)">
-        <div style="font-size:28px;margin-bottom:0.5rem;opacity:0.4">📁</div>
-        <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop documents here or click to browse</div>
-        <div style="font-size:11px;color:var(--text3)">CSV · Excel · PDF · Word · SQL · Markdown · Images · Text</div>
-      </div>
+      <!-- RIGHT PANEL: document grid + forms -->
+      <div style="flex:1;overflow-y:auto;padding:1.5rem;background:var(--bg)">
 
-      <!-- Type selector modal (shown after file chosen) -->
-      <div id="inv-type-modal" style="display:none;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-top:1rem">
-        <div style="font-size:13px;font-weight:600;margin-bottom:1rem">Classify document: <span id="inv-pending-name" style="color:var(--accent);font-family:var(--mono)"></span></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.6rem;margin-bottom:1rem">
-          <div class="inv-type-btn" onclick="invSelectType('wasis')" data-type="wasis"
-            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
-            <div style="font-size:18px;margin-bottom:0.3rem">🔄</div>
-            <div style="font-size:12px;font-weight:600;color:var(--text)">Was/Is Mapping</div>
-            <div style="font-size:11px;color:var(--text3)">Old values → new values</div>
+        <!-- Type selector (inline, shown after file chosen) -->
+        <div id="inv-type-modal" style="display:none;background:var(--bg2);border:0.5px solid var(--accent);border-radius:var(--r-lg);padding:1.5rem;margin-bottom:1.5rem">
+          <div style="font-size:14px;font-weight:600;margin-bottom:0.25rem">Classify this document</div>
+          <div style="font-size:12px;color:var(--text3);font-family:var(--mono);margin-bottom:1.25rem" id="inv-pending-name"></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.75rem;margin-bottom:1.25rem">
+            <div class="inv-type-btn" onclick="invSelectType('wasis')" data-type="wasis"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">🔄</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Was/Is Mapping</div>
+              <div style="font-size:11px;color:var(--text3)">Old → new values</div>
+            </div>
+            <div class="inv-type-btn" onclick="invSelectType('dictionary')" data-type="dictionary"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">📖</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Data Dictionary</div>
+              <div style="font-size:11px;color:var(--text3)">Field definitions</div>
+            </div>
+            <div class="inv-type-btn" onclick="invSelectType('schema')" data-type="schema"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">🗂️</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Schema Mapping</div>
+              <div style="font-size:11px;color:var(--text3)">Source → target</div>
+            </div>
+            <div class="inv-type-btn" onclick="invSelectType('rules')" data-type="rules"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">⚙️</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Business Rules</div>
+              <div style="font-size:11px;color:var(--text3)">Logic & transforms</div>
+            </div>
+            <div class="inv-type-btn" onclick="invSelectType('signoff')" data-type="signoff"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">✅</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Client Sign-off</div>
+              <div style="font-size:11px;color:var(--text3)">Approvals</div>
+            </div>
+            <div class="inv-type-btn" onclick="invSelectType('notes')" data-type="notes"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">📝</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Notes</div>
+              <div style="font-size:11px;color:var(--text3)">Free text notes</div>
+            </div>
+            <div class="inv-type-btn" onclick="invSelectType('other')" data-type="other"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">📄</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Other</div>
+              <div style="font-size:11px;color:var(--text3)">General document</div>
+            </div>
           </div>
-          <div class="inv-type-btn" onclick="invSelectType('dictionary')" data-type="dictionary"
-            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
-            <div style="font-size:18px;margin-bottom:0.3rem">📖</div>
-            <div style="font-size:12px;font-weight:600;color:var(--text)">Data Dictionary</div>
-            <div style="font-size:11px;color:var(--text3)">Field definitions & types</div>
-          </div>
-          <div class="inv-type-btn" onclick="invSelectType('schema')" data-type="schema"
-            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
-            <div style="font-size:18px;margin-bottom:0.3rem">🗂️</div>
-            <div style="font-size:12px;font-weight:600;color:var(--text)">Schema Mapping</div>
-            <div style="font-size:11px;color:var(--text3)">Source → target fields</div>
-          </div>
-          <div class="inv-type-btn" onclick="invSelectType('rules')" data-type="rules"
-            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
-            <div style="font-size:18px;margin-bottom:0.3rem">⚙️</div>
-            <div style="font-size:12px;font-weight:600;color:var(--text)">Business Rules</div>
-            <div style="font-size:11px;color:var(--text3)">Logic & transformations</div>
-          </div>
-          <div class="inv-type-btn" onclick="invSelectType('signoff')" data-type="signoff"
-            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
-            <div style="font-size:18px;margin-bottom:0.3rem">✅</div>
-            <div style="font-size:12px;font-weight:600;color:var(--text)">Client Sign-off</div>
-            <div style="font-size:11px;color:var(--text3)">Approvals & agreements</div>
-          </div>
-          <div class="inv-type-btn" onclick="invSelectType('notes')" data-type="notes"
-            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
-            <div style="font-size:18px;margin-bottom:0.3rem">📝</div>
-            <div style="font-size:12px;font-weight:600;color:var(--text)">Notes</div>
-            <div style="font-size:11px;color:var(--text3)">Free text notes</div>
-          </div>
-          <div class="inv-type-btn" onclick="invSelectType('other')" data-type="other"
-            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
-            <div style="font-size:18px;margin-bottom:0.3rem">📄</div>
-            <div style="font-size:12px;font-weight:600;color:var(--text)">Other</div>
-            <div style="font-size:11px;color:var(--text3)">General document</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:0.75rem">
           <button class="btn btn-ghost btn-sm" onclick="invCancelUpload()">Cancel</button>
         </div>
-      </div>
 
-      <!-- Add note form -->
-      <div id="inv-note-form" style="display:none;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-top:1rem">
-        <div style="font-size:13px;font-weight:600;margin-bottom:0.75rem">Add a note</div>
-        <div style="margin-bottom:0.75rem">
-          <input id="inv-note-title" placeholder="Note title" style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;margin-bottom:0.5rem"/>
-          <textarea id="inv-note-body" placeholder="Write your notes here…" rows="5" style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;resize:vertical;line-height:1.6"></textarea>
+        <!-- Add note form -->
+        <div id="inv-note-form" style="display:none;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.5rem;margin-bottom:1.5rem">
+          <div style="font-size:14px;font-weight:600;margin-bottom:1rem">📝 Add a note</div>
+          <input id="inv-note-title" placeholder="Note title…" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;margin-bottom:0.75rem;display:block"/>
+          <textarea id="inv-note-body" placeholder="Write your notes here…" rows="4"
+            style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;resize:vertical;line-height:1.6;display:block;margin-bottom:0.75rem"></textarea>
+          <div style="display:flex;gap:0.75rem">
+            <button class="btn btn-primary btn-sm" onclick="invSaveNote()">Save note</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('inv-note-form').style.display='none'">Cancel</button>
+          </div>
         </div>
-        <div style="display:flex;gap:0.75rem">
-          <button class="btn btn-primary btn-sm" onclick="invSaveNote()">Save note</button>
-          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('inv-note-form').style.display='none'">Cancel</button>
+
+        <!-- Document grid -->
+        <div id="inv-empty" style="text-align:center;padding:5rem 1rem;color:var(--text3);display:none">
+          <div style="font-size:48px;margin-bottom:1rem;opacity:0.2">📂</div>
+          <div style="font-size:15px;color:var(--text2);margin-bottom:0.4rem;font-weight:500">No documents yet</div>
+          <div style="font-size:12px;line-height:1.8">Drop files on the left panel to upload<br>or click the upload zone to browse</div>
         </div>
+        <div class="inv-doc-grid" id="inv-doc-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"></div>
       </div>
-
-      <!-- Filter bar -->
-      <div style="display:flex;gap:0.5rem;margin-top:1.25rem;flex-wrap:wrap;align-items:center">
-        <span style="font-size:11px;color:var(--text3)">Filter:</span>
-        <button class="btn btn-sm inv-filter active" onclick="invFilter('all')" data-filter="all" style="padding:0.25rem 0.75rem;background:var(--accent);color:#fff;font-size:11px">All</button>
-        <button class="btn btn-sm inv-filter" onclick="invFilter('wasis')" data-filter="wasis" style="padding:0.25rem 0.75rem;font-size:11px">Was/Is</button>
-        <button class="btn btn-sm inv-filter" onclick="invFilter('dictionary')" data-filter="dictionary" style="padding:0.25rem 0.75rem;font-size:11px">Dictionary</button>
-        <button class="btn btn-sm inv-filter" onclick="invFilter('schema')" data-filter="schema" style="padding:0.25rem 0.75rem;font-size:11px">Schema</button>
-        <button class="btn btn-sm inv-filter" onclick="invFilter('rules')" data-filter="rules" style="padding:0.25rem 0.75rem;font-size:11px">Rules</button>
-        <button class="btn btn-sm inv-filter" onclick="invFilter('signoff')" data-filter="signoff" style="padding:0.25rem 0.75rem;font-size:11px">Sign-off</button>
-        <button class="btn btn-sm inv-filter" onclick="invFilter('notes')" data-filter="notes" style="padding:0.25rem 0.75rem;font-size:11px">Notes</button>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:11px" onclick="invAddNote()">+ Add note</button>
-      </div>
-
-      <div id="inv-empty" style="text-align:center;padding:3rem 1rem;color:var(--text3);display:none">
-        <div style="font-size:32px;margin-bottom:0.75rem;opacity:0.3">📂</div>
-        <div style="font-size:14px;color:var(--text2);margin-bottom:0.4rem">No documents yet</div>
-        <div style="font-size:12px">Upload files or add a note to get started</div>
-      </div>
-      <div class="inv-doc-grid" id="inv-doc-grid"></div>
     </div>
 
         <div id="view-reports" class="view">
@@ -1270,14 +1310,27 @@ function buildWasisSummary(wasisRules, applicationLog) {
 
 // Update the wasis banner on the new-job view
 function updateWasisBanner() {
-  const banner = $('wasis-banner');
-  if (!banner) return;
   const rules = getWasisRules();
-  if (rules.length > 0) {
-    $('wasis-rule-count').textContent = rules.length;
-    banner.style.display = 'block';
-  } else {
-    banner.style.display = 'none';
+  // Banner on new-job view
+  const banner = $('wasis-banner');
+  if (banner) {
+    if (rules.length > 0) {
+      $('wasis-rule-count').textContent = rules.length;
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+  // Status panel on inventory left sidebar
+  const statusPanel = $('wasis-status-panel');
+  const statusText  = $('wasis-status-text');
+  if (statusPanel) {
+    if (rules.length > 0) {
+      statusPanel.style.display = 'block';
+      if (statusText) statusText.textContent = rules.length + ' rules ready for migration';
+    } else {
+      statusPanel.style.display = 'none';
+    }
   }
 }
 
@@ -2078,9 +2131,23 @@ function invFilter(type) {
   renderInventory();
 }
 
+function updateInvFilterCounts() {
+  const types = ['wasis','dictionary','schema','rules','signoff','notes','other'];
+  types.forEach(t => {
+    const el = document.getElementById('inv-count-' + t);
+    if (el) {
+      const n = invItems.filter(d => d.type === t).length;
+      el.textContent = n > 0 ? n : '';
+    }
+  });
+  const allEl = document.getElementById('inv-count-all');
+  if (allEl) allEl.textContent = invItems.length > 0 ? invItems.length : '';
+}
+
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderInventory() {
   updateInvCount();
+  updateInvFilterCounts();
   const filtered = invCurrentFilter === 'all'
     ? invItems
     : invItems.filter(d => d.type === invCurrentFilter);
