@@ -1442,9 +1442,7 @@ function loadWasisFile(file) {
 function parseWasisCSV(text, filename) {
   const ext = (filename || '').split('.').pop().toLowerCase();
   const delim = ext === 'tsv' ? '	' : detectWasisDelim(text);
-  const lines = text.split(/
-?
-/).filter(l => l.trim());
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return [];
 
   const parseL = line => {
@@ -1488,9 +1486,7 @@ function parseWasisCSV(text, filename) {
 }
 
 function detectWasisDelim(text) {
-  const line = text.split(/
-?
-/)[0] || '';
+  const line = text.split(/\r?\n/)[0] || '';
   const counts = { ',': 0, '	': 0, '|': 0, ';': 0 };
   for (const ch of line) if (counts[ch] !== undefined) counts[ch]++;
   return Object.entries(counts).sort((a,b) => b[1]-a[1])[0][0];
@@ -1523,18 +1519,13 @@ function buildWasisSummaryComment(log) {
   if (!applied.length) return '';
   const byRule = {};
   applied.forEach(l => {
-    const key = `${l.applied.srcTable||'*'}.${l.applied.srcField||'*'}: "${l.applied.oldVal}" → "${l.applied.newVal}"`;
+    const key = (l.applied.srcTable||'*') + '.' + (l.applied.srcField||'*') + ': "' + l.applied.oldVal + '" to "' + l.applied.newVal + '"';
     byRule[key] = (byRule[key]||0) + 1;
   });
-  return '
--- WAS/IS TRANSLATIONS APPLIED:
-' +
-    Object.entries(byRule)
-      .sort((a,b) => b[1]-a[1])
-      .map(([k,v]) => `--   ${k} (${v} row(s))`)
-      .join('
-') + '
-';
+  const lines = Object.entries(byRule)
+    .sort((a,b) => b[1]-a[1])
+    .map(([k,v]) => '--   ' + k + ' (' + v + ' row(s))');
+  return '\n-- WAS/IS TRANSLATIONS APPLIED:\n' + lines.join('\n') + '\n';
 }
 
 // Initialise wasis UI on page load
