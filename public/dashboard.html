@@ -153,7 +153,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .inv-upload-zone{border:1.5px dashed var(--border2);border-radius:var(--r-lg);text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg2)}
 .inv-upload-zone:hover,.inv-upload-zone.drag{border-color:var(--accent);background:var(--accent-glow)}
 .inv-doc-grid{display:grid;gap:1rem}
-#view-inventory{padding:0!important;overflow:hidden!important}
 .inv-doc-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem;transition:border-color 0.15s;position:relative}
 .inv-doc-card:hover{border-color:var(--border2)}
 .inv-doc-icon{width:36px;height:36px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:0.75rem;flex-shrink:0}
@@ -529,10 +528,13 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
     <!-- CONVERSION REPORTS -->
     <!-- INVENTORY -->
-    <div id="view-inventory" class="view" style="padding:0;display:flex;gap:0;height:100%;overflow:hidden">
+    <div id="view-inventory" class="view">
 
-      <!-- LEFT PANEL: controls & upload -->
-      <div style="width:280px;flex-shrink:0;border-right:0.5px solid var(--border);background:var(--bg2);display:flex;flex-direction:column;overflow-y:auto;padding:1.5rem 1.25rem">
+      <!-- TWO COLUMN LAYOUT: controls left, documents right -->
+      <div style="display:grid;grid-template-columns:260px 1fr;gap:1.5rem;align-items:start">
+
+      <!-- LEFT CONTROLS PANEL -->
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;position:sticky;top:0">
 
         <div style="font-size:15px;font-weight:600;margin-bottom:0.2rem">Inventory</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:1.5rem">Reference documents for this project</div>
@@ -593,14 +595,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
 
         <!-- Was/Is status indicator -->
-        <div id="wasis-status-panel" style="display:none;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:0.75rem;margin-top:auto">
+        <div id="wasis-status-panel" style="display:none;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:0.75rem;margin-top:1rem">
           <div style="font-size:11px;font-weight:600;color:var(--amber);margin-bottom:0.25rem">🔄 Was/Is active</div>
           <div style="font-size:11px;color:var(--text3)" id="wasis-status-text">0 rules loaded</div>
         </div>
       </div>
 
       <!-- RIGHT PANEL: document grid + forms -->
-      <div style="flex:1;overflow-y:auto;padding:1.5rem;background:var(--bg)">
+      <div>
 
         <!-- Type selector (inline, shown after file chosen) -->
         <div id="inv-type-modal" style="display:none;background:var(--bg2);border:0.5px solid var(--accent);border-radius:var(--r-lg);padding:1.5rem;margin-bottom:1.5rem">
@@ -671,9 +673,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           <div style="font-size:15px;color:var(--text2);margin-bottom:0.4rem;font-weight:500">No documents yet</div>
           <div style="font-size:12px;line-height:1.8">Drop files on the left panel to upload<br>or click the upload zone to browse</div>
         </div>
-        <div class="inv-doc-grid" id="inv-doc-grid" style="grid-template-columns:repeat(auto-fill,minmax(300px,1fr))"></div>
-      </div>
-    </div>
+        <div class="inv-doc-grid" id="inv-doc-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
+      </div><!-- end right panel -->
+      </div><!-- end grid -->
+    </div><!-- end view-inventory -->
 
         <div id="view-reports" class="view">
       <div class="panel-header">
