@@ -1573,7 +1573,91 @@ async function executeNow(){
     }
   } catch(e) { logLine('  Could not verify: ' + e.message); }
 
-  // ── Results ───────────────────────────────────────────────────────────────
+  // ── Save job record + build report data ──────────────────────────────────
+  const jobId = 'job_' + Date.now();
+  const completedAt = new Date().toISOString();
+
+  // Get user info
+  let userName = '', userEmail = '';
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    userName  = u.user_metadata?.full_name || u.email?.split('@')[0] || '';
+    userEmail = u.email || '';
+  } catch {}
+
+  // Get project name
+  let projectName = '';
+  try {
+    const proj = JSON.parse(sessionStorage.getItem('cygenix_active_project') || '{}');
+    projectName = proj.name || '';
+  } catch {}
+
+  // Build column mapping for report
+  const reportMapping = (S.columnMapping || []).map(m => ({
+    srcCol: m.srcCol, tgtCol: m.tgtCol,
+    tgtType: m.tgtType, transform: m.transform || 'NONE'
+  }));
+
+  // Build report data
+  const reportData = {
+    id:           jobId,
+    projectName:  projectName || (S.selectedTargetTable?.name + ' migration') || 'Migration',
+    userName,
+    userEmail,
+    organisation: 'Cygenix',
+    sourceSystem: S.selectedSourceTable?.tableName || 'Source file',
+    targetSystem: 'Microsoft SQL Server',
+    sourceFile:   S.sourceFile?.name || S.selectedSourceTable?.tableName || '',
+    sourceFileSize: S.sourceFile?.size || 0,
+    targetServer:   S.connString || '',
+    targetDatabase: S.targetSchema?.database || S.selectedTargetTable?.schema || '',
+    targetTable:    safeTgt,
+    authMethod:     connMode === 'azure' ? 'Azure Managed Identity' : 'SQL Authentication',
+    totalRows:      S.selectedSourceTable?.rows?.length || totalRows,
+    insertedRows:   totalRows,
+    errors,
+    rowsBefore:     0,
+    rowsAfter:      typeof actualRows === 'number' ? actualRows : totalRows,
+    columnMapping:  reportMapping,
+    columnsMapped:  reportMapping.filter(m => m.tgtCol).length,
+    warnings:       S.warnings || [],
+    startedAt:      new Date(Date.now() - (done * 300)).toISOString(),
+    completedAt,
+    tables: [{
+      name:         safeTgt,
+      sourceRows:   S.selectedSourceTable?.rows?.length || totalRows,
+      insertedRows: totalRows,
+      errors,
+      batches:      done,
+      status:       errors === 0 ? 'success' : 'partial'
+    }]
+  };
+
+  // Save to sessionStorage for report.html
+  try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
+
+  // Also save as a dashboard-compatible job so it shows on dashboard Conversion Reports
+  const dashJob = {
+    id:        jobId,
+    name:      projectName || safeTgt + ' migration',
+    source:    S.selectedSourceTable?.tableName || '',
+    target:    safeTgt,
+    files:     S.sourceFile ? [{ name: S.sourceFile.name, size: S.sourceFile.size }] : [],
+    tables:    [{ name: safeTgt, rows: totalRows, cols: reportMapping.length }],
+    totalRows,
+    status:    'complete',
+    created:   completedAt,
+    columnMapping: reportMapping,
+    wasisRulesApplied: (wasisRules?.length || 0) > 0 ? totalRows : 0,
+    warnings:  reportData.warnings,
+  };
+  try {
+    const existing = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    existing.unshift(dashJob);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(existing.slice(0, 20)));
+  } catch {}
+
+  // ── Results UI ───────────────────────────────────────────────────────────
   $('exec-result').style.display = 'block';
   $('exec-result-title').textContent = errors === 0 ? '✓ Migration complete' : '⚠ Migration complete with ' + errors + ' error(s)';
   $('exec-result-title').style.color  = errors === 0 ? 'var(--green)' : 'var(--amber)';
@@ -1582,7 +1666,8 @@ async function executeNow(){
     'Batches: <strong>' + done + '</strong><br>' +
     'Errors: <strong style="color:' + (errors>0?'var(--red)':'var(--green)') + '">' + errors + '</strong><br>' +
     (rollbackInfo ? '<span style="font-size:11px;color:var(--text3)">Rollback log: <span style="font-family:var(--mono)">' + logTable + '</span></span><br>' : '') +
-    '<br>' + (errors > 0 ? 'Check the log above for failed batches.' : 'All rows inserted successfully.');
+    '<br>' + (errors > 0 ? 'Check the log above for failed batches.' : 'All rows inserted successfully.') +
+    '<br><br><button onclick="openMigrationReport()" style="background:rgba(167,139,250,0.15);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);border-radius:8px;padding:0.5rem 1.1rem;font-size:13px;cursor:pointer;font-family:inherit">📄 View Conversion Report</button>';
 
   if (rollbackInfo) {
     $('rollback-panel').style.display = 'block';
@@ -1591,6 +1676,11 @@ async function executeNow(){
 
   saveProjectState();
   btn.disabled = false; btn.textContent = 'Execute now →';
+}
+
+function openMigrationReport() {
+  // Report data already saved to sessionStorage in executeNow
+  window.open('/report.html', '_blank');
 }
 
 // Wrap an INSERT statement to also log the inserted PK into the tracking table
