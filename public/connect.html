@@ -1355,35 +1355,22 @@ function inferType(vals){
 const WASIS_KEY = 'cygenix_wasis_rules';
 
 // Load persisted wasis rules from localStorage
-// Validates that stored rules look like real data (not garbled binary)
 function loadPersistedWasis() {
   try {
-    const stored = JSON.parse(localStorage.getItem(WASIS_KEY) || '[]');
-    if (!Array.isArray(stored)) return [];
-    // Sanity check: discard if rules look like binary garbage
-    // Valid rules have short printable ASCII/Unicode strings for fields
-    const valid = stored.filter(r => {
-      if (typeof r !== 'object') return false;
-      const fields = [r.srcTable, r.srcField, r.oldVal, r.newVal];
-      return fields.every(f => {
-        if (f === undefined || f === null || f === '') return true;
-        const s = String(f);
-        // Flag as garbage if it contains lots of replacement chars (binary read as text)
-        const garbageCount = (s.match(/[� --]/g) || []).length;
-        return garbageCount === 0 && s.length < 500;
-      });
-    });
-    // If most rules are garbage, discard the whole set
-    if (stored.length > 0 && valid.length < stored.length * 0.5) {
-      console.warn('Wasis: stored rules appear garbled (binary data), clearing');
-      localStorage.removeItem(WASIS_KEY);
-      return [];
-    }
-    return valid;
-  } catch { return []; }
+    const raw = localStorage.getItem(WASIS_KEY);
+    if (!raw) return [];
+    const stored = JSON.parse(raw);
+    if (!Array.isArray(stored) || !stored.length) return [];
+    // Discard if first rule looks like garbled binary
+    const first = stored[0];
+    if (typeof first !== 'object' || first === null) { localStorage.removeItem(WASIS_KEY); return []; }
+    const sample = String(first.oldVal || first.srcTable || '');
+    if (sample.length > 0 && sample.charCodeAt(0) > 55295) { localStorage.removeItem(WASIS_KEY); return []; }
+    return stored;
+  } catch(e) { try { localStorage.removeItem(WASIS_KEY); } catch {} return []; }
 }
 
-// Current wasis rules in memory
+
 let wasisRules = loadPersistedWasis();
 
 function saveWasisRules(rules) {
@@ -1402,17 +1389,6 @@ function clearWasis() {
 }
 
 function updateWasisUI() {
-  // Auto-clear if rules look garbled (e.g. old binary xlsx read as text)
-  if (wasisRules.length > 0) {
-    const firstRule = wasisRules[0];
-    const sample = String(firstRule.oldVal || '') + String(firstRule.srcTable || '');
-    const badChars = (sample.match(/[� ---]/g) || []).length;
-    if (badChars > 0 || sample.length > 200) {
-      console.warn('Wasis: detected garbled rules, auto-clearing');
-      wasisRules = [];
-      localStorage.removeItem(WASIS_KEY);
-    }
-  }
   const hasRules = wasisRules.length > 0;
   const badge = $('wasis-active-badge');
   const desc  = $('wasis-desc');
@@ -1654,7 +1630,7 @@ function buildWasisSummaryComment(log) {
 }
 
 // Initialise wasis UI on page load
-updateWasisUI();
+try { updateWasisUI(); } catch(e) { console.warn('Wasis init error:', e); }
 
 function formatSize(b){if(!b)return'0B';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
 
