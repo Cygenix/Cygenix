@@ -1,10 +1,6 @@
 // netlify/functions/db-connect.js
-// Connects to SQL Server (on-prem or cloud) using the mssql npm package.
-// Handles: schema introspection, SQL execution, batch inserts with progress.
-//
-// IMPORTANT: This function requires the mssql package.
-// Add to your repo root: package.json with "mssql": "^10.0.4"
-// Netlify will auto-install it on deploy.
+// Connects to SQL Server using the mssql npm package.
+// Parses ADO.NET, JDBC, and mssql:// URL format connection strings.
 
 const sql = require('mssql');
 
@@ -15,46 +11,37 @@ const CORS = {
   'Content-Type': 'application/json',
 };
 
+function ok(data)  { return { statusCode: 200, headers: CORS, body: JSON.stringify(data) }; }
+function err(msg, hint, code=500) {
+  return { statusCode: code, headers: CORS, body: JSON.stringify({ error: msg, hint: hint || null }) };
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
-  if (event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  if (event.httpMethod !== 'POST') return err('Method not allowed', null, 405);
 
   let body;
-  try {
-    body = JSON.parse(event.body || '{}');
-  } catch (e) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON: ' + e.message }) };
-  }
+  try { body = JSON.parse(event.body || '{}'); }
+  catch (e) { return err('Invalid JSON: ' + e.message, null, 400); }
 
   const { action, connectionString, database, sql: sqlToRun, batchSql } = body;
 
-  if (!connectionString) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'connectionString is required.' }) };
-  }
+  if (!connectionString) return err('connectionString is required', null, 400);
 
-  // Parse the connection string into mssql config
   let config;
   try {
     config = parseConnectionString(connectionString, database);
   } catch (e) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid connection string: ' + e.message }) };
+    return err('Invalid connection string: ' + e.message,
+      'Supported formats:\n  ADO.NET: Server=host;Database=db;User Id=user;Password=pass;\n  URL: mssql://user:pass@host:1433/database?encrypt=true&trustServerCertificate=true',
+      400);
   }
-
-  // Set a 20 second query timeout
-  config.requestTimeout = 20000;
-  config.connectionTimeout = 10000;
 
   let pool;
   try {
     pool = await sql.connect(config);
   } catch (e) {
-    return {
-      statusCode: 500, headers: CORS,
-      body: JSON.stringify({
-        error: 'Could not connect to database: ' + e.message,
-        hint: getConnectionHint(e.message)
-      })
-    };
+    return err('Could not connect: ' + e.message, getHint(e.message));
   }
 
   try {
@@ -62,240 +49,200 @@ exports.handler = async function (event) {
 
     switch (action) {
 
-      // ── TEST: just verify connectivity ──────────────────────────────────────
       case 'test': {
-        const r = await pool.request().query('SELECT @@VERSION AS version, DB_NAME() AS dbname, SYSTEM_USER AS sysuser');
+        const r = await pool.request().query(
+          'SELECT @@VERSION AS version, DB_NAME() AS dbname, SUSER_SNAME() AS sysuser'
+        );
         result = {
           success: true,
-          version: r.recordset[0].version.split('\n')[0],
+          version: r.recordset[0].version.split('\n')[0].trim(),
           database: r.recordset[0].dbname,
-          user: r.recordset[0].sysuser
+          user: r.recordset[0].sysuser,
         };
         break;
       }
 
-      // ── SCHEMA: read all tables, columns, types, PKs, FKs ──────────────────
       case 'schema': {
-        // Get all user tables
-        const tablesResult = await pool.request().query(`
-          SELECT
-            t.TABLE_SCHEMA,
-            t.TABLE_NAME,
-            p.rows AS row_count
-          FROM INFORMATION_SCHEMA.TABLES t
-          LEFT JOIN sys.tables st ON st.name = t.TABLE_NAME
-          LEFT JOIN sys.partitions p ON p.object_id = st.object_id AND p.index_id IN (0,1)
-          WHERE t.TABLE_TYPE = 'BASE TABLE'
-            AND t.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
-          ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
-        `);
+        const [tablesR, colsR, pkR, fkR] = await Promise.all([
+          pool.request().query(`
+            SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
+              COALESCE(p.rows,0) AS row_count
+            FROM INFORMATION_SCHEMA.TABLES t
+            LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
+            LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
+            WHERE t.TABLE_TYPE='BASE TABLE'
+            ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`),
 
-        // Get all columns with types
-        const colsResult = await pool.request().query(`
-          SELECT
-            c.TABLE_SCHEMA,
-            c.TABLE_NAME,
-            c.COLUMN_NAME,
-            c.DATA_TYPE,
-            c.CHARACTER_MAXIMUM_LENGTH,
-            c.NUMERIC_PRECISION,
-            c.NUMERIC_SCALE,
-            c.IS_NULLABLE,
-            c.COLUMN_DEFAULT,
-            c.ORDINAL_POSITION,
-            COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity') AS is_identity
-          FROM INFORMATION_SCHEMA.COLUMNS c
-          WHERE c.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
-          ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION
-        `);
+          pool.request().query(`
+            SELECT c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME,
+              c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH,
+              c.NUMERIC_PRECISION, c.NUMERIC_SCALE,
+              c.IS_NULLABLE, c.COLUMN_DEFAULT, c.ORDINAL_POSITION,
+              COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsIdentity') AS is_identity
+            FROM INFORMATION_SCHEMA.COLUMNS c
+            ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION`),
 
-        // Get primary keys
-        const pkResult = await pool.request().query(`
-          SELECT
-            tc.TABLE_SCHEMA,
-            tc.TABLE_NAME,
-            kcu.COLUMN_NAME
-          FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-          JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-            ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
-            AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
-          WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-        `);
+          pool.request().query(`
+            SELECT tc.TABLE_SCHEMA, tc.TABLE_NAME, kcu.COLUMN_NAME
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+              ON tc.CONSTRAINT_NAME=kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA=kcu.TABLE_SCHEMA
+            WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY'`),
 
-        // Get foreign keys
-        const fkResult = await pool.request().query(`
-          SELECT
-            fk.name AS fk_name,
-            OBJECT_SCHEMA_NAME(fk.parent_object_id) AS fk_schema,
-            OBJECT_NAME(fk.parent_object_id) AS fk_table,
-            COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS fk_column,
-            OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
-            OBJECT_NAME(fk.referenced_object_id) AS ref_table,
-            COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ref_column
-          FROM sys.foreign_keys fk
-          JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
-        `);
+          pool.request().query(`
+            SELECT OBJECT_SCHEMA_NAME(fk.parent_object_id) AS fk_schema,
+              OBJECT_NAME(fk.parent_object_id) AS fk_table,
+              COL_NAME(fkc.parent_object_id,fkc.parent_column_id) AS fk_column,
+              OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
+              OBJECT_NAME(fk.referenced_object_id) AS ref_table,
+              COL_NAME(fkc.referenced_object_id,fkc.referenced_column_id) AS ref_column
+            FROM sys.foreign_keys fk
+            JOIN sys.foreign_key_columns fkc ON fk.object_id=fkc.constraint_object_id`)
+        ]);
 
-        // Build structured schema
         const tables = {};
-        for (const t of tablesResult.recordset) {
+        for (const t of tablesR.recordset) {
           const key = `${t.TABLE_SCHEMA}.${t.TABLE_NAME}`;
-          tables[key] = {
-            schema: t.TABLE_SCHEMA,
-            name: t.TABLE_NAME,
-            rowCount: parseInt(t.row_count) || 0,
-            columns: [],
-            primaryKeys: [],
-            foreignKeys: []
-          };
+          tables[key] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, rowCount: parseInt(t.row_count)||0, columns: [], primaryKeys: [], foreignKeys: [] };
         }
-
-        for (const c of colsResult.recordset) {
+        for (const c of colsR.recordset) {
           const key = `${c.TABLE_SCHEMA}.${c.TABLE_NAME}`;
           if (!tables[key]) continue;
-          let fullType = c.DATA_TYPE.toUpperCase();
-          if (c.CHARACTER_MAXIMUM_LENGTH) fullType += `(${c.CHARACTER_MAXIMUM_LENGTH === -1 ? 'MAX' : c.CHARACTER_MAXIMUM_LENGTH})`;
-          else if (c.NUMERIC_PRECISION && c.NUMERIC_SCALE !== null) fullType += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
-          tables[key].columns.push({
-            name: c.COLUMN_NAME,
-            type: fullType,
-            nullable: c.IS_NULLABLE === 'YES',
-            default: c.COLUMN_DEFAULT,
-            isIdentity: c.is_identity === 1,
-            ordinal: c.ORDINAL_POSITION
-          });
+          let type = c.DATA_TYPE.toUpperCase();
+          if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
+          else if (c.NUMERIC_PRECISION!=null && c.NUMERIC_SCALE!=null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+          tables[key].columns.push({ name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE==='YES', default: c.COLUMN_DEFAULT, isIdentity: c.is_identity===1, ordinal: c.ORDINAL_POSITION });
         }
-
-        for (const pk of pkResult.recordset) {
-          const key = `${pk.TABLE_SCHEMA}.${pk.TABLE_NAME}`;
-          if (tables[key]) tables[key].primaryKeys.push(pk.COLUMN_NAME);
-        }
-
-        for (const fk of fkResult.recordset) {
-          const key = `${fk.fk_schema}.${fk.fk_table}`;
-          if (tables[key]) tables[key].foreignKeys.push({
-            column: fk.fk_column,
-            references: `${fk.ref_schema}.${fk.ref_table}(${fk.ref_column})`
-          });
-        }
-
+        for (const pk of pkR.recordset) { const key=`${pk.TABLE_SCHEMA}.${pk.TABLE_NAME}`; if(tables[key]) tables[key].primaryKeys.push(pk.COLUMN_NAME); }
+        for (const fk of fkR.recordset) { const key=`${fk.fk_schema}.${fk.fk_table}`; if(tables[key]) tables[key].foreignKeys.push({column:fk.fk_column,references:`${fk.ref_schema}.${fk.ref_table}(${fk.ref_column})`}); }
         result = { success: true, tables: Object.values(tables) };
         break;
       }
 
-      // ── EXECUTE: run a single SQL statement ─────────────────────────────────
       case 'execute': {
-        if (!sqlToRun) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'sql is required for execute action' }) };
-
-        // Safety: block destructive operations unless explicitly flagged
-        const dangerous = /^\s*(DROP\s+DATABASE|DROP\s+TABLE|TRUNCATE\s+TABLE|DELETE\s+FROM\s+\w+\s*$)/i;
-        if (dangerous.test(sqlToRun)) {
-          return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Destructive statement blocked. Use explicit WHERE clauses or run in SSMS.' }) };
-        }
-
+        if (!sqlToRun) return err('sql is required', null, 400);
+        if (/^\s*(DROP\s+DATABASE|TRUNCATE\s+TABLE|DELETE\s+FROM\s*\w+\s*$)/i.test(sqlToRun))
+          return err('Destructive statement blocked. Use explicit WHERE clauses.', null, 400);
         const r = await pool.request().query(sqlToRun);
-        result = {
-          success: true,
-          rowsAffected: r.rowsAffected?.[0] || 0,
-          recordset: r.recordset || []
-        };
+        result = { success: true, rowsAffected: r.rowsAffected?.[0]||0, recordset: r.recordset||[] };
         break;
       }
 
-      // ── BATCH: run multiple INSERT statements, return progress ──────────────
       case 'batch': {
-        if (!batchSql || !Array.isArray(batchSql)) {
-          return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'batchSql array is required for batch action' }) };
-        }
-
-        const results = [];
-        let totalRowsAffected = 0;
-        let errors = 0;
-
-        for (let i = 0; i < batchSql.length; i++) {
-          const stmt = batchSql[i];
+        if (!Array.isArray(batchSql)||!batchSql.length) return err('batchSql array required', null, 400);
+        let totalRows=0, errors=0;
+        const results=[];
+        for (let i=0;i<batchSql.length;i++) {
           try {
-            const r = await pool.request().query(stmt);
-            const rows = r.rowsAffected?.[0] || 0;
-            totalRowsAffected += rows;
-            results.push({ index: i, success: true, rowsAffected: rows });
-          } catch (e) {
+            const r = await pool.request().query(batchSql[i]);
+            const rows = r.rowsAffected?.[0]||0;
+            totalRows+=rows;
+            results.push({index:i,success:true,rowsAffected:rows});
+          } catch(e) {
             errors++;
-            results.push({ index: i, success: false, error: e.message, sql: stmt.slice(0, 100) });
-            // Continue with remaining batches — don't abort on single failure
+            results.push({index:i,success:false,error:e.message,sql:batchSql[i].slice(0,120)});
           }
         }
-
-        result = {
-          success: errors === 0,
-          totalBatches: batchSql.length,
-          totalRowsAffected,
-          errors,
-          results
-        };
+        result = { success:errors===0, totalBatches:batchSql.length, totalRowsAffected:totalRows, errors, results };
         break;
       }
 
-      // ── ROW COUNT: check actual row counts post-migration ───────────────────
       case 'rowcounts': {
         const { tables: tableNames } = body;
-        if (!tableNames || !Array.isArray(tableNames)) {
-          return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'tables array is required' }) };
-        }
-        const counts = {};
+        if (!Array.isArray(tableNames)) return err('tables array required', null, 400);
+        const counts={};
         for (const t of tableNames) {
           try {
-            const safe = t.replace(/[^a-zA-Z0-9_.\[\]]/g, '');
+            const safe = t.replace(/[^a-zA-Z0-9_.\[\]]/g,'');
             const r = await pool.request().query(`SELECT COUNT(*) AS cnt FROM ${safe}`);
             counts[t] = r.recordset[0].cnt;
-          } catch (e) {
-            counts[t] = { error: e.message };
-          }
+          } catch(e) { counts[t]={error:e.message}; }
         }
-        result = { success: true, counts };
+        result = { success:true, counts };
         break;
       }
 
       default:
-        return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: `Unknown action: ${action}. Use test|schema|execute|batch|rowcounts` }) };
+        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | batch | rowcounts', 400);
     }
 
-    return { statusCode: 200, headers: CORS, body: JSON.stringify(result) };
+    return ok(result);
 
   } catch (e) {
-    return {
-      statusCode: 500, headers: CORS,
-      body: JSON.stringify({ error: 'Query error: ' + e.message, hint: getConnectionHint(e.message) })
-    };
+    return err('Query error: ' + e.message, getHint(e.message));
   } finally {
     try { await pool.close(); } catch {}
   }
 };
 
-// ── Connection string parser ──────────────────────────────────────────────────
-// Supports:
-//   ADO.NET: Server=myserver;Database=mydb;User Id=myuser;Password=mypass;
-//   JDBC: jdbc:sqlserver://myserver:1433;databaseName=mydb;user=myuser;password=mypass
-//   URL: mssql://user:pass@server:1433/database
+// ── Connection string parser ───────────────────────────────────────────────────
 function parseConnectionString(cs, dbOverride) {
   cs = cs.trim();
 
-  // URL format: mssql://user:pass@host:port/database
-  if (cs.startsWith('mssql://') || cs.startsWith('sqlserver://')) {
-    const url = new URL(cs.replace(/^sqlserver/, 'mssql').replace(/^mssql/, 'http'));
+  // ── URL format: mssql://user:pass@host:port/database?options ─────────────────
+  if (/^(mssql|sqlserver):\/\//i.test(cs)) {
+    // Replace protocol with http for URL API, but handle special chars in password
+    // Split manually to avoid URL parsing issues with special chars
+    const withoutProto = cs.replace(/^(mssql|sqlserver):\/\//i, '');
+
+    // Extract query string options first
+    const qIdx = withoutProto.indexOf('?');
+    const base  = qIdx >= 0 ? withoutProto.slice(0, qIdx) : withoutProto;
+    const query = qIdx >= 0 ? withoutProto.slice(qIdx + 1) : '';
+
+    // Parse query params
+    const qParams = {};
+    if (query) {
+      for (const p of query.split('&')) {
+        const [k, v] = p.split('=');
+        if (k) qParams[decodeURIComponent(k).toLowerCase()] = v ? decodeURIComponent(v) : '';
+      }
+    }
+
+    // Split user:pass@host:port/db
+    // Find last @ to handle passwords containing @
+    const atIdx = base.lastIndexOf('@');
+    const credentials = atIdx >= 0 ? base.slice(0, atIdx) : '';
+    const hostPart    = atIdx >= 0 ? base.slice(atIdx + 1) : base;
+
+    // Split user:pass (first colon only — password may contain colons)
+    const colonIdx = credentials.indexOf(':');
+    const user     = colonIdx >= 0 ? decodeURIComponent(credentials.slice(0, colonIdx)) : credentials;
+    const password = colonIdx >= 0 ? decodeURIComponent(credentials.slice(colonIdx + 1)) : '';
+
+    // Split host:port/database
+    const slashIdx = hostPart.indexOf('/');
+    const hostPort = slashIdx >= 0 ? hostPart.slice(0, slashIdx) : hostPart;
+    const dbPath   = slashIdx >= 0 ? hostPart.slice(slashIdx + 1) : '';
+
+    const lastColon = hostPort.lastIndexOf(':');
+    const host = lastColon >= 0 && !hostPort.includes('[') ? hostPort.slice(0, lastColon) : hostPort;
+    const port = lastColon >= 0 ? parseInt(hostPort.slice(lastColon + 1)) || 1433 : 1433;
+
+    const database = dbOverride || dbPath || qParams['database'] || qParams['initial catalog'] || 'master';
+    const encrypt  = qParams['encrypt'] !== 'false';
+    const trustCert = qParams['trustservercertificate'] === 'true' || !encrypt;
+
+    if (!host) throw new Error('Could not parse host from URL connection string');
+
     return {
-      server: url.hostname,
-      port: parseInt(url.port) || 1433,
-      database: dbOverride || url.pathname.replace('/', '') || 'master',
-      user: decodeURIComponent(url.username),
-      password: decodeURIComponent(url.password),
-      options: { encrypt: true, trustServerCertificate: true, enableArithAbort: true }
+      server: host,
+      port,
+      database,
+      user: user || undefined,
+      password: password || undefined,
+      options: {
+        encrypt,
+        trustServerCertificate: trustCert,
+        enableArithAbort: true,
+        connectTimeout: 15000,
+        requestTimeout: 30000,
+      }
     };
   }
 
-  // ADO.NET / JDBC key=value format
+  // ── ADO.NET / JDBC key=value format ──────────────────────────────────────────
   const pairs = {};
-  // Handle both ; and & as separators
   for (const part of cs.split(/[;&]+/)) {
     const eq = part.indexOf('=');
     if (eq < 0) continue;
@@ -304,44 +251,43 @@ function parseConnectionString(cs, dbOverride) {
     pairs[key] = val;
   }
 
-  const server = pairs['server'] || pairs['datasource'] || pairs['data source'] || pairs['host'];
-  if (!server) throw new Error('Could not find server/host in connection string');
+  const serverRaw = pairs['server'] || pairs['datasource'] || pairs['data source'] || pairs['host'];
+  if (!serverRaw) throw new Error('Could not find server/host in connection string. Expected: Server=host;Database=db;User Id=user;Password=pass;');
 
-  // Extract port from server if included (Server=host,1433 or host:1433)
-  let host = server, port = 1433;
-  if (server.includes(',')) { [host, port] = server.split(','); port = parseInt(port); }
-  else if (server.includes(':')) { [host, port] = server.split(':'); port = parseInt(port); }
+  let host = serverRaw, port = 1433;
+  if (serverRaw.includes(',')) { const parts = serverRaw.split(','); host = parts[0]; port = parseInt(parts[1])||1433; }
+  else if (serverRaw.includes('\\')) { /* named instance — use default port */ host = serverRaw; }
+  else if (serverRaw.lastIndexOf(':') > 0) { const c = serverRaw.lastIndexOf(':'); host = serverRaw.slice(0,c); port = parseInt(serverRaw.slice(c+1))||1433; }
 
-  const database = dbOverride ||
-    pairs['database'] || pairs['initial catalog'] || pairs['initialcatalog'] ||
-    pairs['databasename'] || 'master';
-
-  const user = pairs['user id'] || pairs['userid'] || pairs['uid'] || pairs['user'];
+  const database = dbOverride || pairs['database'] || pairs['initialcatalog'] || pairs['initial catalog'] || pairs['databasename'] || 'master';
+  const user     = pairs['user id'] || pairs['userid'] || pairs['uid'] || pairs['user'];
   const password = pairs['password'] || pairs['pwd'] || pairs['pass'];
-
-  // Azure AD / Windows Auth
-  const useWinAuth = !user && !password;
+  const encrypt  = pairs['encrypt'] !== 'false' && pairs['encrypt'] !== 'False';
+  const trustCert = pairs['trustservercertificate'] === 'true' || pairs['trust server certificate'] === 'true' || pairs['trustservercertificate'] === 'True';
 
   return {
     server: host.trim(),
     port,
     database,
-    user: user?.trim(),
-    password: password?.trim(),
+    user: user?.trim() || undefined,
+    password: password?.trim() || undefined,
     options: {
-      encrypt: pairs['encrypt'] !== 'false',
-      trustServerCertificate: pairs['trustservercertificate'] === 'true' || pairs['trust server certificate'] === 'true',
+      encrypt,
+      trustServerCertificate: trustCert,
       enableArithAbort: true,
-      integratedSecurity: useWinAuth
+      connectTimeout: 15000,
+      requestTimeout: 30000,
     }
   };
 }
 
-function getConnectionHint(msg) {
-  if (msg.includes('ECONNREFUSED')) return 'Connection refused — check server address and port, and ensure SQL Server is accessible from the internet or Netlify\'s IP range.';
-  if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) return 'Connection timed out — the server may be behind a firewall. Whitelist Netlify\'s outbound IPs or use Azure SQL which accepts internet connections.';
-  if (msg.includes('Login failed')) return 'Authentication failed — check username and password. For Azure SQL, ensure the user has db_datareader and db_datawriter roles.';
+function getHint(msg) {
+  if (!msg) return null;
+  if (msg.includes('ECONNREFUSED')) return 'Connection refused — the server is not reachable. Check the IP/hostname and port, and ensure SQL Server allows connections from Netlify.';
+  if (msg.includes('ETIMEDOUT') || msg.includes('timeout')) return 'Connection timed out — the server may be behind a firewall. Check that port 1433 is open to inbound connections.';
+  if (msg.includes('Login failed')) return 'Authentication failed — check the username and password in your connection string.';
   if (msg.includes('Cannot open database')) return 'Database not found — check the database name in your connection string.';
-  if (msg.includes('SSL') || msg.includes('TLS') || msg.includes('certificate')) return 'SSL/TLS error — try adding TrustServerCertificate=True to your connection string.';
+  if (msg.includes('SSL') || msg.includes('TLS') || msg.includes('certificate')) return 'SSL error — add trustServerCertificate=true to your connection string.';
+  if (msg.includes('password')) return 'Check your password. If it contains special characters like @, /, or ?, URL-encode them or use ADO.NET format instead.';
   return null;
 }
