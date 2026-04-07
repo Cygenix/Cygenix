@@ -1355,8 +1355,32 @@ function inferType(vals){
 const WASIS_KEY = 'cygenix_wasis_rules';
 
 // Load persisted wasis rules from localStorage
+// Validates that stored rules look like real data (not garbled binary)
 function loadPersistedWasis() {
-  try { return JSON.parse(localStorage.getItem(WASIS_KEY) || '[]'); } catch { return []; }
+  try {
+    const stored = JSON.parse(localStorage.getItem(WASIS_KEY) || '[]');
+    if (!Array.isArray(stored)) return [];
+    // Sanity check: discard if rules look like binary garbage
+    // Valid rules have short printable ASCII/Unicode strings for fields
+    const valid = stored.filter(r => {
+      if (typeof r !== 'object') return false;
+      const fields = [r.srcTable, r.srcField, r.oldVal, r.newVal];
+      return fields.every(f => {
+        if (f === undefined || f === null || f === '') return true;
+        const s = String(f);
+        // Flag as garbage if it contains lots of replacement chars (binary read as text)
+        const garbageCount = (s.match(/[� --]/g) || []).length;
+        return garbageCount === 0 && s.length < 500;
+      });
+    });
+    // If most rules are garbage, discard the whole set
+    if (stored.length > 0 && valid.length < stored.length * 0.5) {
+      console.warn('Wasis: stored rules appear garbled (binary data), clearing');
+      localStorage.removeItem(WASIS_KEY);
+      return [];
+    }
+    return valid;
+  } catch { return []; }
 }
 
 // Current wasis rules in memory
@@ -1378,6 +1402,17 @@ function clearWasis() {
 }
 
 function updateWasisUI() {
+  // Auto-clear if rules look garbled (e.g. old binary xlsx read as text)
+  if (wasisRules.length > 0) {
+    const firstRule = wasisRules[0];
+    const sample = String(firstRule.oldVal || '') + String(firstRule.srcTable || '');
+    const badChars = (sample.match(/[� ---]/g) || []).length;
+    if (badChars > 0 || sample.length > 200) {
+      console.warn('Wasis: detected garbled rules, auto-clearing');
+      wasisRules = [];
+      localStorage.removeItem(WASIS_KEY);
+    }
+  }
   const hasRules = wasisRules.length > 0;
   const badge = $('wasis-active-badge');
   const desc  = $('wasis-desc');
