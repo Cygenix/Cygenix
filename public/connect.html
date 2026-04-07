@@ -168,6 +168,20 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
 <div class="main">
 
+  <!-- RESUME BANNER -->
+  <div id="resume-banner" style="display:none;background:rgba(34,201,122,0.08);border:0.5px solid rgba(34,201,122,0.25);border-radius:var(--r-lg);padding:1rem 1.25rem;margin-bottom:1.25rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--green);margin-bottom:0.2rem">📂 Previous session found</div>
+        <div style="font-size:12px;color:var(--text3)" id="resume-desc">You have unsaved work from a previous session.</div>
+      </div>
+      <div style="display:flex;gap:0.75rem">
+        <button class="btn btn-green btn-sm" onclick="resumeSession()">Resume where I left off</button>
+        <button class="btn btn-ghost btn-sm" onclick="dismissResume()">Start fresh</button>
+      </div>
+    </div>
+  </div>
+
   <!-- API KEY BANNER -->
   <div class="panel" id="api-key-panel" style="border-color:rgba(245,158,11,0.3);background:var(--amber-bg);margin-bottom:1.25rem;display:none">
     <div class="panel-title" style="color:var(--amber);font-size:13px">Anthropic API key required for Claude schema mapping</div>
@@ -469,12 +483,23 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
         </div>
       </div>
 
+      <!-- Backup option -->
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:0.2rem">🛡 Track inserted rows for rollback</div>
+          <div style="font-size:11px;color:var(--text3)">Records the primary key of every inserted row in <span style="font-family:var(--mono)" id="backup-table-name">[table]_cyg_log</span> — rollback deletes only those rows, leaving all pre-existing data untouched</div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0">
+          <input type="checkbox" id="backup-before-exec" checked style="width:16px;height:16px;accent-color:var(--green);cursor:pointer">
+          <span style="font-size:12px;color:var(--text2)">Enable rollback tracking</span>
+        </label>
+      </div>
+
       <div class="panel" style="border-color:rgba(240,70,70,0.2);background:var(--red-bg);margin-bottom:1.25rem">
         <div style="font-size:12px;color:var(--red);font-weight:500;margin-bottom:0.25rem">Before executing</div>
         <div style="font-size:12px;color:var(--text2);line-height:1.8">
           • Existing rows in the target table will NOT be deleted automatically — this is an INSERT only<br>
           • If the target table has unique constraints, duplicate key violations will fail individual batches<br>
-          • Consider running <code style="font-family:var(--mono);background:var(--bg4);padding:1px 4px;border-radius:3px">SELECT COUNT(*) FROM [table]</code> before and after to verify row counts<br>
           • You can always download the SQL and run it manually in SSMS for full control
         </div>
       </div>
@@ -499,6 +524,19 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
         <div class="divider"></div>
         <div style="font-size:14px;font-weight:600;margin-bottom:0.5rem" id="exec-result-title"></div>
         <div style="font-size:12px;color:var(--text2);line-height:1.9" id="exec-result-body"></div>
+        <!-- Rollback panel — shown after successful backup + migration -->
+        <div id="rollback-panel" style="display:none;margin-top:1.25rem;background:rgba(240,70,70,0.06);border:0.5px solid rgba(240,70,70,0.2);border-radius:var(--r-lg);padding:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+            <div>
+              <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:0.2rem">↩ Rollback available</div>
+              <div style="font-size:11px;color:var(--text3)">Log table: <span style="font-family:var(--mono);color:var(--text2)" id="rollback-backup-name">—</span></div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">Deletes only the rows inserted by this migration — pre-existing rows are not touched. FK-safe.</div>
+            </div>
+            <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3);flex-shrink:0"
+              onclick="confirmRollback()">↩ Roll back migration</button>
+          </div>
+          <div id="rollback-log" style="display:none;margin-top:0.75rem;font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:0.75rem;max-height:120px;overflow-y:auto"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -524,6 +562,121 @@ const S = {
 };
 
 const BATCH_SIZE = 100;
+const PROJ_STATE_KEY = 'cygenix_connect_state';
+
+// ── Project persistence ───────────────────────────────────────────────────────
+// Saves connection string, source data, and mapping to localStorage (fast)
+// and to Netlify Blobs via project-manager (durable across devices/logouts)
+
+function saveProjectState() {
+  const proj = getSavedProject();
+  if (!proj) return; // only save if a project is active
+
+  // Build a lean snapshot — strip actual row data (too large) but keep structure
+  const snapshot = {
+    savedAt:    new Date().toISOString(),
+    projectId:  proj.id,
+    projectName: proj.name,
+    connMode,
+    connString: connMode === 'direct' ? sessionStorage.getItem('cygenix_conn_string') || '' : '',
+    fnUrl:      connMode === 'azure'  ? sessionStorage.getItem('cygenix_fn_url') || '' : '',
+    // fnKey intentionally not saved — credentials should be re-entered
+    targetTable: S.selectedTargetTable ? { schema: S.selectedTargetTable.schema, name: S.selectedTargetTable.name } : null,
+    sourceFileName: S.sourceFile?.name || (S.selectedSourceTable?.tableName || ''),
+    sourceColumns:  S.selectedSourceTable?.columns || [],
+    columnMapping:  S.columnMapping,
+    wasisRules,
+    step: getCurrentStep(),
+  };
+
+  // Fast local save
+  try { localStorage.setItem(PROJ_STATE_KEY + '_' + proj.id, JSON.stringify(snapshot)); } catch {}
+
+  // Async save to Blobs (fire and forget)
+  saveToBlobs(snapshot, proj);
+}
+
+function getCurrentStep() {
+  for (let i = 5; i >= 1; i--) {
+    const el = document.getElementById('step-' + i);
+    if (el && el.classList.contains('active')) return i;
+  }
+  return 1;
+}
+
+async function saveToBlobs(snapshot, proj) {
+  try {
+    const token = sessionStorage.getItem('cygenix_token');
+    if (!token) return;
+    // Strip rows from source data — too large for Blobs
+    const blobSnapshot = { ...snapshot };
+    await fetch('/.netlify/functions/projects?id=' + proj.id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        project: {
+          id: proj.id,
+          name: proj.name,
+          connectSnapshot: blobSnapshot,
+          status: snapshot.step >= 5 ? 'complete' : 'in-progress',
+          updatedAt: snapshot.savedAt,
+          sourceFile: snapshot.sourceFileName,
+          targetDb:   snapshot.targetTable ? snapshot.targetTable.schema + '.' + snapshot.targetTable.name : '',
+        },
+        name: proj.name,
+      })
+    });
+  } catch(e) { /* silent — local save is the backup */ }
+}
+
+function getSavedProject() {
+  try { return JSON.parse(sessionStorage.getItem('cygenix_active_project') || 'null'); } catch { return null; }
+}
+
+function loadProjectState() {
+  const proj = getSavedProject();
+  if (!proj) return null;
+  try {
+    const raw = localStorage.getItem(PROJ_STATE_KEY + '_' + proj.id);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function restoreFromSnapshot(snap) {
+  if (!snap) return;
+
+  // Restore connection mode and string
+  if (snap.connMode) {
+    connMode = snap.connMode;
+    setConnMode(connMode);
+  }
+  if (snap.connString && snap.connMode === 'direct') {
+    sessionStorage.setItem('cygenix_conn_string', snap.connString);
+    const el = document.getElementById('conn-string');
+    if (el) el.value = snap.connString;
+  }
+  if (snap.fnUrl && snap.connMode === 'azure') {
+    sessionStorage.setItem('cygenix_fn_url', snap.fnUrl);
+    const el = document.getElementById('fn-url');
+    if (el) el.value = snap.fnUrl;
+  }
+
+  // Restore wasis rules
+  if (snap.wasisRules && snap.wasisRules.length) {
+    wasisRules = snap.wasisRules;
+    try { localStorage.setItem(WASIS_KEY, JSON.stringify(wasisRules)); } catch {}
+    try { updateWasisUI(); } catch {}
+  }
+
+  // Restore column mapping (source data can't be restored without the file, but mapping can)
+  if (snap.columnMapping && snap.columnMapping.length) {
+    S.columnMapping = snap.columnMapping;
+  }
+
+  return snap;
+}
+
+
 // Azure Function URL — set this to your deployed Azure Function endpoint
 // Format: https://<your-fn-app>.azurewebsites.net/api/db
 // The function key (?code=...) is stored in sessionStorage
@@ -632,6 +785,7 @@ async function testDirectConnection(){
     $('db-badge').textContent = testRes.database + ' · Connected';
     $('db-badge').className = 'conn-badge ok';
     populateTargetTableSelect(schemaRes.tables);
+    autoSave();
   } catch(e) {
     showStatus('conn-status', 'Connection failed: ' + e.message + (e.hint ? '\n\n' + e.hint : ''), 'err');
     $('db-badge').textContent = 'Connection failed';
@@ -994,8 +1148,9 @@ function renderMappingTable(){
     </tr>`;
   }).join('');
 
-  $('map-stats').textContent = `${matched} matched · ${warned} review · ${missed} unmapped`;
+  $('map-stats').textContent = matched + ' matched · ' + warned + ' review · ' + missed + ' unmapped';
   $('map-stats').className = missed > 0 ? 'badge badge-amber' : 'badge badge-green';
+  autoSave();
 }
 
 function updateMapping(i, field, val){
@@ -1181,84 +1336,209 @@ function copyCode(id){ navigator.clipboard.writeText($(id).textContent).then(()=
 
 // ── Step 5: Execute ──────────────────────────────────────────────────────────
 function updateExecSummary(){
-  $('exec-target-table').textContent = S.selectedTargetTable ? `${S.selectedTargetTable.schema}.${S.selectedTargetTable.name}` : '—';
+  const tgt = S.selectedTargetTable;
+  $('exec-target-table').textContent = tgt ? tgt.schema + '.' + tgt.name : '—';
   $('exec-row-count').textContent = S.selectedSourceTable?.rows.length.toLocaleString() || '0';
   $('exec-batch-count').textContent = S.batchStatements.length;
+  // Show backup table name
+  if (tgt) {
+    const logName = '[' + tgt.schema + '].[' + tgt.name + '_cyg_log]';
+    const el = $('backup-table-name');
+    if (el) el.textContent = logName;
+  }
 }
+
+// Tracks rollback info for this migration session
+let rollbackInfo = null; // { logTable, pkCol, pkType, targetTable }
 
 async function executeNow(){
   const btn = $('exec-btn');
   btn.disabled = true; btn.textContent = 'Executing…';
   $('progress-wrap').style.display = 'block';
   $('exec-result').style.display = 'none';
+  $('rollback-panel').style.display = 'none';
+  rollbackInfo = null;
 
   const log = $('exec-log');
   log.textContent = '';
-  const logLine = (msg, color) => {
-    log.textContent += msg + '\n';
-    log.scrollTop = log.scrollHeight;
-  };
+  const logLine = msg => { log.textContent += msg + '\n'; log.scrollTop = log.scrollHeight; };
 
+  const tgt    = S.selectedTargetTable;
+  const schema = tgt.schema;
+  const tblName = tgt.name;
+  const safeTgt  = '[' + schema + '].[' + tblName + ']';
+  const doTrack  = $('backup-before-exec')?.checked !== false;
+
+  // Identify the PK column — needed for targeted DELETE on rollback
+  const pkCol  = tgt.primaryKeys?.[0] || null;
+  const pkColDef = pkCol ? tgt.columns.find(c => c.name === pkCol) : null;
+  const pkType = pkColDef?.type || 'NVARCHAR(255)';
+  const logTable = '[' + schema + '].[' + tblName + '_cyg_log]';
+
+  // ── Step 1: Create PK tracking log table ─────────────────────────────────
+  if (doTrack) {
+    $('progress-label').textContent = 'Step 1 of 2 — Setting up rollback tracking…';
+    if (!pkCol) {
+      logLine('⚠ No primary key found on ' + tblName + ' — rollback tracking requires a PK.');
+      logLine('  Continuing without rollback tracking.');
+    } else {
+      try {
+        // Drop existing log table from a previous run if present
+        await dbCall({
+          action: 'execute',
+          sql: 'IF OBJECT_ID(N\'' + logTable.replace(/'/g,"''") + '\', N\'U\') IS NOT NULL DROP TABLE ' + logTable
+        });
+        // Create fresh log table — stores PK value + migration timestamp
+        await dbCall({
+          action: 'execute',
+          sql: 'CREATE TABLE ' + logTable + ' (' +
+               '[_pk_value] ' + pkType + ' NOT NULL, ' +
+               '[_migrated_at] DATETIME2 DEFAULT GETUTCDATE())'
+        });
+        rollbackInfo = { logTable, pkCol, pkType, safeTgt, tblName };
+        logLine('✓ Rollback tracking ready — log table: ' + logTable);
+        logLine('  Will track inserted [' + pkCol + '] values for safe rollback.');
+      } catch(e) {
+        logLine('⚠ Could not create log table: ' + e.message);
+        logLine('  Continuing without rollback tracking.');
+      }
+    }
+  }
+
+  // ── Step 2: Execute migration batches ─────────────────────────────────────
+  $('progress-label').textContent = (doTrack ? 'Step 2 of 2 — ' : '') + 'Inserting ' + S.batchStatements.length + ' batches…';
   const total = S.batchStatements.length;
   let done = 0, totalRows = 0, errors = 0;
-
-  $('progress-label').textContent = `Executing ${total} batches…`;
-
-  // Execute in chunks of 10 batches per Netlify call to avoid timeout
   const CHUNK = 10;
+
   for (let i = 0; i < S.batchStatements.length; i += CHUNK){
     const chunk = S.batchStatements.slice(i, i + CHUNK);
+
+    // If tracking, wrap each batch to also log the PKs using OUTPUT clause
+    const execChunk = (rollbackInfo && pkCol)
+      ? chunk.map(stmt => wrapWithOutputLog(stmt, logTable, pkCol, pkType))
+      : chunk;
+
     try {
-      const res = await dbCall({
-        action: 'batch',
-        batchSql: chunk
-      });
+      const res = await dbCall({ action: 'batch', batchSql: execChunk });
       done += chunk.length;
       totalRows += res.totalRowsAffected || 0;
-      errors += res.errors || 0;
-
+      errors    += res.errors || 0;
       res.results?.forEach(r => {
-        if (r.success) logLine(`  Batch ${i + r.index + 1}/${total}: ${r.rowsAffected} rows inserted`);
-        else logLine(`  Batch ${i + r.index + 1}/${total} FAILED: ${r.error}`);
+        if (r.success) logLine('  Batch ' + (i+r.index+1) + '/' + total + ': ' + r.rowsAffected + ' rows inserted');
+        else logLine('  Batch ' + (i+r.index+1) + '/' + total + ' FAILED: ' + r.error);
       });
-
     } catch(e) {
       errors++;
-      logLine(`  Chunk ${Math.floor(i/CHUNK)+1} error: ${e.message}`);
+      logLine('  Chunk ' + (Math.floor(i/CHUNK)+1) + ' error: ' + e.message);
     }
-
     const pct = Math.round((done / total) * 100);
     $('progress-fill').style.width = pct + '%';
-    $('progress-fill').className = 'progress-bar-fill' + (errors > 0 ? '' : '');
-    $('progress-text').textContent = `${done} / ${total} batches · ${totalRows.toLocaleString()} rows · ${errors} errors`;
+    $('progress-text').textContent = done + ' / ' + total + ' batches · ' + totalRows.toLocaleString() + ' rows · ' + errors + ' errors';
   }
 
   $('progress-fill').style.width = '100%';
   if (errors === 0) $('progress-fill').classList.add('green');
 
-  // Verify row counts
-  logLine(`\nVerifying row counts…`);
+  // ── Verify ────────────────────────────────────────────────────────────────
+  logLine('\nVerifying row counts…');
   try {
-    const vc = await dbCall({
-      action: 'rowcounts',
-      tables: [`[${S.selectedTargetTable.schema}].[${S.selectedTargetTable.name}]`]
-    });
-    const key = Object.keys(vc.counts)[0];
-    const actual = vc.counts[key];
-    logLine(`  Target table now has ${typeof actual==='number'?actual.toLocaleString():JSON.stringify(actual)} rows`);
-  } catch(e) { logLine('  Could not verify row counts: ' + e.message); }
+    const vc = await dbCall({ action: 'rowcounts', tables: [safeTgt] });
+    const actual = vc.counts[safeTgt];
+    logLine('  ' + safeTgt + ' now has ' + (typeof actual==='number'?actual.toLocaleString():JSON.stringify(actual)) + ' rows');
+    if (rollbackInfo) {
+      const lv = await dbCall({ action: 'rowcounts', tables: [logTable] });
+      const tracked = lv.counts[logTable];
+      logLine('  Rollback log contains ' + (typeof tracked==='number'?tracked.toLocaleString():tracked) + ' tracked row(s)');
+    }
+  } catch(e) { logLine('  Could not verify: ' + e.message); }
 
+  // ── Results ───────────────────────────────────────────────────────────────
   $('exec-result').style.display = 'block';
-  $('exec-result-title').textContent = errors === 0 ? '✓ Migration complete' : `⚠ Migration complete with ${errors} error(s)`;
-  $('exec-result-title').style.color = errors === 0 ? 'var(--green)' : 'var(--amber)';
-  $('exec-result-body').innerHTML = `
-    Rows inserted: <strong>${totalRows.toLocaleString()}</strong><br>
-    Batches executed: <strong>${done}</strong><br>
-    Errors: <strong style="color:${errors>0?'var(--red)':'var(--green)'}">${errors}</strong><br><br>
-    ${errors > 0 ? 'Check the log above for details on failed batches. You can download the SQL and run failed batches manually in SSMS.' : 'All rows inserted successfully. Run the verify query in SSMS to confirm.'}
-  `;
+  $('exec-result-title').textContent = errors === 0 ? '✓ Migration complete' : '⚠ Migration complete with ' + errors + ' error(s)';
+  $('exec-result-title').style.color  = errors === 0 ? 'var(--green)' : 'var(--amber)';
+  $('exec-result-body').innerHTML =
+    'Rows inserted: <strong>' + totalRows.toLocaleString() + '</strong><br>' +
+    'Batches: <strong>' + done + '</strong><br>' +
+    'Errors: <strong style="color:' + (errors>0?'var(--red)':'var(--green)') + '">' + errors + '</strong><br>' +
+    (rollbackInfo ? '<span style="font-size:11px;color:var(--text3)">Rollback log: <span style="font-family:var(--mono)">' + logTable + '</span></span><br>' : '') +
+    '<br>' + (errors > 0 ? 'Check the log above for failed batches.' : 'All rows inserted successfully.');
 
+  if (rollbackInfo) {
+    $('rollback-panel').style.display = 'block';
+    $('rollback-backup-name').textContent = logTable;
+  }
+
+  saveProjectState();
   btn.disabled = false; btn.textContent = 'Execute now →';
+}
+
+// Wrap an INSERT statement to also log the inserted PK into the tracking table
+// Uses SQL Server OUTPUT clause: INSERT ... OUTPUT inserted.[pk] INTO [log]([_pk_value]) VALUES ...
+function wrapWithOutputLog(insertSql, logTable, pkCol, pkType) {
+  // Find the VALUES keyword and inject OUTPUT clause before it
+  const valIdx = insertSql.search(/\bVALUES\b/i);
+  if (valIdx < 0) return insertSql; // can't wrap — return as-is
+  const before = insertSql.slice(0, valIdx).trimEnd();
+  const after  = insertSql.slice(valIdx);
+  return before + '\nOUTPUT inserted.[' + pkCol + '] INTO ' + logTable + ' ([_pk_value])\n' + after;
+}
+
+// ── Rollback ──────────────────────────────────────────────────────────────────
+async function confirmRollback() {
+  if (!rollbackInfo) return;
+  const { logTable, pkCol, safeTgt } = rollbackInfo;
+
+  // First count how many rows we'd delete
+  let trackedCount = 0;
+  try {
+    const vc = await dbCall({ action: 'rowcounts', tables: [logTable] });
+    trackedCount = vc.counts[logTable] || 0;
+  } catch {}
+
+  const msg = 'This will DELETE ' + trackedCount.toLocaleString() + ' row(s) from ' + safeTgt + ' that were inserted by this migration.\n\n' +
+    'Pre-existing rows in the table will NOT be affected.\n' +
+    'Foreign key constraints will NOT be violated.\n\n' +
+    'The rollback uses: DELETE FROM ' + safeTgt + ' WHERE [' + pkCol + '] IN (SELECT [_pk_value] FROM ' + logTable + ')\n\n' +
+    'Are you sure?';
+  if (!confirm(msg)) return;
+
+  const logEl = $('rollback-log');
+  logEl.style.display = 'block';
+  logEl.textContent = 'Starting targeted rollback...\n';
+  const log = m => { logEl.textContent += m + '\n'; logEl.scrollTop = logEl.scrollHeight; };
+
+  try {
+    log('Deleting only the ' + trackedCount.toLocaleString() + ' migrated row(s) from ' + safeTgt + '...');
+    log('SQL: DELETE FROM ' + safeTgt + ' WHERE [' + pkCol + '] IN (SELECT [_pk_value] FROM ' + logTable + ')');
+
+    const res = await dbCall({
+      action: 'execute',
+      sql: 'DELETE FROM ' + safeTgt + ' WHERE [' + pkCol + '] IN (SELECT [_pk_value] FROM ' + logTable + ')'
+    });
+    log('✓ Deleted ' + (res.rowsAffected || 0).toLocaleString() + ' migrated row(s)');
+    log('  Pre-existing rows untouched, FK constraints preserved.');
+
+    // Verify
+    const vc = await dbCall({ action: 'rowcounts', tables: [safeTgt] });
+    const actual = vc.counts[safeTgt];
+    log('✓ ' + safeTgt + ' now has ' + (typeof actual==='number'?actual.toLocaleString():actual) + ' rows');
+
+    // Drop log table
+    await dbCall({ action: 'execute', sql: 'DROP TABLE ' + logTable });
+    log('✓ Rollback log table dropped');
+    rollbackInfo = null;
+    $('rollback-panel').style.display = 'none';
+
+    $('exec-result-title').textContent = '↩ Rolled back successfully — ' + (res.rowsAffected||0).toLocaleString() + ' row(s) removed';
+    $('exec-result-title').style.color = 'var(--amber)';
+
+  } catch(e) {
+    log('✕ Rollback error: ' + e.message);
+    log('  The log table ' + logTable + ' is still intact.');
+    log('  You can run this manually in SSMS:');
+    log('  DELETE FROM ' + safeTgt + ' WHERE [' + pkCol + '] IN (SELECT [_pk_value] FROM ' + logTable + ')');
+  }
 }
 
 // ── Parsers (same as dashboard) ──────────────────────────────────────────────
@@ -1684,6 +1964,57 @@ function signOut() {
   window.location.href = '/login.html';
 }
 initUserAndProject();
+checkForResumableSession();
+
+// ── Resume / dismiss session ──────────────────────────────────────────────────
+function checkForResumableSession() {
+  const snap = loadProjectState();
+  if (!snap) return;
+  // Only show if snapshot is less than 7 days old
+  const age = Date.now() - new Date(snap.savedAt).getTime();
+  if (age > 7 * 24 * 60 * 60 * 1000) return;
+  const banner = $('resume-banner');
+  const desc   = $('resume-desc');
+  if (banner) {
+    const tbl  = snap.targetTable ? snap.targetTable.schema + '.' + snap.targetTable.name : '';
+    const src  = snap.sourceFileName || '';
+    const step = snap.step || 1;
+    const stepNames = ['','Connect','Source data','Map columns','Preview SQL','Execute'];
+    if (desc) desc.textContent =
+      (src ? 'Source: ' + src + ' · ' : '') +
+      (tbl ? 'Target: ' + tbl + ' · ' : '') +
+      'Last step: ' + (stepNames[step] || step) + ' · ' +
+      'Saved ' + timeAgo(snap.savedAt);
+    banner.style.display = 'block';
+  }
+}
+
+function resumeSession() {
+  const snap = loadProjectState();
+  if (!snap) return;
+  $('resume-banner').style.display = 'none';
+  restoreFromSnapshot(snap);
+}
+
+function dismissResume() {
+  $('resume-banner').style.display = 'none';
+  // Clear the saved state so we start fresh
+  const proj = getSavedProject();
+  if (proj) localStorage.removeItem(PROJ_STATE_KEY + '_' + proj.id);
+}
+
+function timeAgo(iso) {
+  const secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60)   return 'just now';
+  if (secs < 3600) return Math.floor(secs/60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
+  return Math.floor(secs/86400) + 'd ago';
+}
+
+// Auto-save after key events
+function autoSave() { try { saveProjectState(); } catch(e) {} }
+
+
 </script>
 </body>
 </html>
