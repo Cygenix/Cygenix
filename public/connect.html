@@ -342,6 +342,44 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
       <div class="status-box status-info" id="mapping-status" style="margin-bottom:1rem"></div>
 
+      <!-- WAS/IS PANEL -->
+      <div id="wasis-panel" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;margin-bottom:1.25rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--amber);display:flex;align-items:center;gap:6px">
+              🔄 Was/Is Value Mapping
+              <span id="wasis-active-badge" style="display:none;font-size:10px;padding:1px 7px;border-radius:100px;background:rgba(34,201,122,0.15);color:var(--green);font-weight:500">Active</span>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px" id="wasis-desc">Upload a Was/Is file to apply value translations during migration</div>
+          </div>
+          <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap">
+            <input type="file" id="wasis-file-input" style="display:none" accept=".csv,.tsv,.txt,.xlsx,.xls" onchange="loadWasisFile(this.files[0])">
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wasis-file-input').click()">⬆ Load Wasis.xlsx</button>
+            <button class="btn btn-ghost btn-sm" id="wasis-clear-btn" onclick="clearWasis()" style="display:none;color:var(--red)">✕ Clear</button>
+            <button class="btn btn-ghost btn-sm" id="wasis-preview-btn" onclick="toggleWasisPreview()" style="display:none">👁 Preview rules</button>
+          </div>
+        </div>
+        <!-- Wasis rules preview table (collapsed by default) -->
+        <div id="wasis-preview-table" style="display:none;margin-top:1rem;overflow-x:auto;max-height:220px;overflow-y:auto">
+          <table class="map-table" id="wasis-rules-table">
+            <thead><tr>
+              <th>Source table</th>
+              <th>Source field</th>
+              <th>Old value</th>
+              <th>New value</th>
+              <th>Description</th>
+            </tr></thead>
+            <tbody id="wasis-rules-tbody"></tbody>
+          </table>
+        </div>
+        <!-- Wasis stats bar -->
+        <div id="wasis-stats-bar" style="display:none;margin-top:0.75rem;padding-top:0.75rem;border-top:0.5px solid var(--border);display:none;gap:1.5rem;flex-wrap:wrap">
+          <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">Rules loaded: <strong id="wasis-rule-count" style="color:var(--text)">0</strong></span>
+          <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">Tables covered: <strong id="wasis-table-count" style="color:var(--text)">0</strong></span>
+          <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">Fields covered: <strong id="wasis-field-count" style="color:var(--text)">0</strong></span>
+        </div>
+      </div>
+
       <div style="overflow-x:auto">
         <table class="map-table" id="mapping-table">
           <thead><tr>
@@ -984,6 +1022,7 @@ function generatePreviewSQL(){
 
   let insertSQL = `-- Migration: ${src.tableName} → ${tgt.schema}.${tgt.name}\n`;
   insertSQL += `-- Rows: ${src.rows.length.toLocaleString()} | Columns mapped: ${mapping.length}\n`;
+  insertSQL += wasisRules.length ? `-- Was/Is rules loaded: ${wasisRules.length}\n` : '';
   insertSQL += `-- Generated: ${new Date().toISOString()}\n\n`;
   insertSQL += `USE [${S.targetSchema?.database || 'YourDatabase'}];\nGO\n\nSET NOCOUNT ON;\nGO\n\n`;
 
@@ -1024,19 +1063,33 @@ function generatePreviewSQL(){
 
   // Deduplicate (we pushed twice by mistake above — fix)
   const realBatches = [];
+  const wasisLog = [];
   for (let i = 0; i < src.rows.length; i += BATCH_SIZE){
     const batch = src.rows.slice(i, i + BATCH_SIZE);
     const batchNum = Math.floor(i / BATCH_SIZE) + 1;
     const totalBatches = Math.ceil(src.rows.length / BATCH_SIZE);
     let stmt = `-- Batch ${batchNum} / ${totalBatches}\nINSERT INTO ${safeTgtName} (${colList})\nVALUES\n`;
     stmt += batch.map(row => {
-      const vals = mapping.map(m => applyTransform(row[m.srcCol], m.transform, m.transformExpr, m.tgtType));
+      const vals = mapping.map(m => {
+        let rawVal = row[m.srcCol];
+        if (wasisRules.length) {
+          const result = applyWasisRule(src.tableName, m.srcCol, rawVal);
+          if (result.applied) wasisLog.push({ col: m.srcCol, oldVal: rawVal, newVal: result.value, applied: result.applied });
+          rawVal = result.value;
+        }
+        return applyTransform(rawVal, m.transform, m.transformExpr, m.tgtType);
+      });
       return `    (${vals.join(', ')})`;
     }).join(',\n') + ';';
     realBatches.push(stmt);
   }
   S.batchStatements = realBatches;
+  S.wasisLog = wasisLog;
 
+  // Add wasis summary as SQL comment block
+  if (wasisLog && wasisLog.length) {
+    insertSQL += buildWasisSummaryComment(wasisLog);
+  }
   insertSQL += realBatches.join('\n\n') + '\n\n';
 
   if (hasIdentityInMapping) insertSQL += `\nSET IDENTITY_INSERT ${safeTgtName} OFF;\nGO\n`;
@@ -1053,6 +1106,14 @@ function generatePreviewSQL(){
 
   $('preview-code').textContent = insertSQL;
   $('preview-summary').textContent = `${src.rows.length.toLocaleString()} rows · ${realBatches.length} batches · ${Math.ceil(insertSQL.length/1024)}KB`;
+
+  // Add wasis summary to warnings panel
+  if (wasisLog && wasisLog.length) {
+    const wasisApplied = wasisLog.filter(l => l.applied).length;
+    S.warnings.unshift(`✓ Was/Is mapping applied: ${wasisApplied.toLocaleString()} value substitutions using ${wasisRules.length} rules`);
+  } else if (wasisRules.length) {
+    S.warnings.unshift(`Was/Is rules loaded (${wasisRules.length} rules) but no matching values found in source data`);
+  }
 
   if (S.warnings.length > 0){
     $('warnings-panel').style.display = 'block';
@@ -1271,6 +1332,213 @@ function inferType(vals){
   const ml=Math.max(...nn.map(v=>String(v).length));
   if(ml<=50)return'NVARCHAR(50)';if(ml<=100)return'NVARCHAR(100)';if(ml<=255)return'NVARCHAR(255)';if(ml<=500)return'NVARCHAR(500)';return'NVARCHAR(MAX)';
 }
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── WAS/IS (connect.html) ──────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const WASIS_KEY = 'cygenix_wasis_rules';
+
+// Load persisted wasis rules from localStorage
+function loadPersistedWasis() {
+  try { return JSON.parse(localStorage.getItem(WASIS_KEY) || '[]'); } catch { return []; }
+}
+
+// Current wasis rules in memory
+let wasisRules = loadPersistedWasis();
+
+function saveWasisRules(rules) {
+  wasisRules = rules;
+  try { localStorage.setItem(WASIS_KEY, JSON.stringify(rules)); } catch {}
+  updateWasisUI();
+}
+
+function clearWasis() {
+  wasisRules = [];
+  localStorage.removeItem(WASIS_KEY);
+  $('wasis-file-input').value = '';
+  updateWasisUI();
+}
+
+function updateWasisUI() {
+  const hasRules = wasisRules.length > 0;
+  const badge = $('wasis-active-badge');
+  const desc  = $('wasis-desc');
+  const clearBtn   = $('wasis-clear-btn');
+  const previewBtn = $('wasis-preview-btn');
+  const statsBar   = $('wasis-stats-bar');
+
+  if (badge)    badge.style.display    = hasRules ? 'inline' : 'none';
+  if (clearBtn) clearBtn.style.display = hasRules ? 'inline-flex' : 'none';
+  if (previewBtn) previewBtn.style.display = hasRules ? 'inline-flex' : 'none';
+
+  if (hasRules) {
+    const tables = new Set(wasisRules.map(r => r.srcTable).filter(Boolean));
+    const fields = new Set(wasisRules.map(r => r.srcField).filter(Boolean));
+    if (desc) desc.textContent = `${wasisRules.length} value translation rules loaded and will be applied`;
+    if (statsBar) {
+      statsBar.style.display = 'flex';
+      $('wasis-rule-count').textContent  = wasisRules.length;
+      $('wasis-table-count').textContent = tables.size || '(any)';
+      $('wasis-field-count').textContent = fields.size || '(any)';
+    }
+  } else {
+    if (desc) desc.textContent = 'Upload a Was/Is file to apply value translations during migration';
+    if (statsBar) statsBar.style.display = 'none';
+  }
+}
+
+function toggleWasisPreview() {
+  const tbl = $('wasis-preview-table');
+  if (!tbl) return;
+  const isOpen = tbl.style.display !== 'none';
+  if (!isOpen) renderWasisRulesTable();
+  tbl.style.display = isOpen ? 'none' : 'block';
+  $('wasis-preview-btn').textContent = isOpen ? '👁 Preview rules' : '🙈 Hide rules';
+}
+
+function renderWasisRulesTable() {
+  const tbody = $('wasis-rules-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = wasisRules.slice(0, 200).map(r => `<tr>
+    <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${r.srcTable || '<em style="opacity:0.4">any</em>'}</td>
+    <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${r.srcField || '<em style="opacity:0.4">any</em>'}</td>
+    <td style="font-family:var(--mono);font-size:12px;color:var(--red)">${escHtml(r.oldVal)}</td>
+    <td style="font-family:var(--mono);font-size:12px;color:var(--green)">${escHtml(r.newVal)}</td>
+    <td style="font-size:11px;color:var(--text3)">${r.desc ? escHtml(r.desc) : ''}</td>
+  </tr>`).join('');
+  if (wasisRules.length > 200) {
+    tbody.innerHTML += `<tr><td colspan="5" style="font-size:11px;color:var(--text3);text-align:center;padding:0.5rem">
+      … and ${wasisRules.length - 200} more rules</td></tr>`;
+  }
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Parse uploaded wasis file (CSV/TSV) into rules array
+function loadWasisFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const rules = parseWasisCSV(text, file.name);
+    if (rules.length === 0) {
+      alert('No rules found in this file. Expected columns: source_table, source_field, old_value, new_value, description');
+      return;
+    }
+    saveWasisRules(rules);
+    // Close preview if open
+    const tbl = $('wasis-preview-table');
+    if (tbl) tbl.style.display = 'none';
+    const btn = $('wasis-preview-btn');
+    if (btn) btn.textContent = '👁 Preview rules';
+  };
+  reader.readAsText(file);
+}
+
+function parseWasisCSV(text, filename) {
+  const ext = (filename || '').split('.').pop().toLowerCase();
+  const delim = ext === 'tsv' ? '	' : detectWasisDelim(text);
+  const lines = text.split(/
+?
+/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+
+  const parseL = line => {
+    const r=[]; let c=''; let q=false;
+    for(const ch of line){if(ch==='"')q=!q;else if(ch===delim&&!q){r.push(c.trim());c='';}else c+=ch;}
+    r.push(c.trim()); return r;
+  };
+
+  const rawHeaders = parseL(lines[0]);
+  const headers = rawHeaders.map(h => h.toLowerCase().replace(/[^a-z0-9]/g,''));
+
+  // Find column indices — canonical: source_table, source_field, old_value, new_value, description
+  const tIdx = headers.findIndex(h => ['sourcetable','table','srctable','tablename'].includes(h));
+  const fIdx = headers.findIndex(h => ['sourcefield','field','srcfield','fieldname','column','columnname','col'].includes(h));
+  const oIdx = headers.findIndex(h => ['oldvalue','was','old','from','sourcevalue','oldval'].includes(h));
+  const nIdx = headers.findIndex(h => ['newvalue','is','new','to','targetvalue','newval'].includes(h));
+  const dIdx = headers.findIndex(h => ['description','desc','note','notes','reason'].includes(h));
+
+  // Positional fallback: source_table(0), source_field(1), old_value(2), new_value(3), description(4)
+  const ti = tIdx >= 0 ? tIdx : 0;
+  const fi = fIdx >= 0 ? fIdx : 1;
+  const oi = oIdx >= 0 ? oIdx : 2;
+  const ni = nIdx >= 0 ? nIdx : 3;
+  const di = dIdx >= 0 ? dIdx : 4;
+
+  const rules = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseL(lines[i]);
+    const oldVal = cols[oi]?.trim() || '';
+    const newVal = cols[ni]?.trim() || '';
+    if (oldVal === '' && newVal === '') continue;
+    rules.push({
+      srcTable: (cols[ti]?.trim() || '').toLowerCase(),
+      srcField: (cols[fi]?.trim() || '').toLowerCase(),
+      oldVal,
+      newVal,
+      desc: cols[di]?.trim() || ''
+    });
+  }
+  return rules;
+}
+
+function detectWasisDelim(text) {
+  const line = text.split(/
+?
+/)[0] || '';
+  const counts = { ',': 0, '	': 0, '|': 0, ';': 0 };
+  for (const ch of line) if (counts[ch] !== undefined) counts[ch]++;
+  return Object.entries(counts).sort((a,b) => b[1]-a[1])[0][0];
+}
+
+// Apply a single wasis substitution — matched by table, field, and old value
+function applyWasisRule(tableName, colName, value) {
+  if (!wasisRules.length) return { value, applied: null };
+  const tbl = (tableName || '').toLowerCase();
+  const fld = (colName   || '').toLowerCase();
+  const str = String(value ?? '');
+
+  // Priority 1: table + field exact match
+  let rule = wasisRules.find(r =>
+    (r.srcTable === tbl || r.srcTable === '') &&
+    (r.srcField === fld || r.srcField === '') &&
+    r.oldVal.toLowerCase() === str.toLowerCase()
+  );
+  // Priority 2: field match, any table
+  if (!rule) rule = wasisRules.find(r =>
+    r.srcField === fld && r.srcField !== '' &&
+    r.oldVal.toLowerCase() === str.toLowerCase()
+  );
+  return rule ? { value: rule.newVal, applied: rule } : { value, applied: null };
+}
+
+// Build wasis summary string for preview SQL header comment
+function buildWasisSummaryComment(log) {
+  const applied = log.filter(l => l.applied);
+  if (!applied.length) return '';
+  const byRule = {};
+  applied.forEach(l => {
+    const key = `${l.applied.srcTable||'*'}.${l.applied.srcField||'*'}: "${l.applied.oldVal}" → "${l.applied.newVal}"`;
+    byRule[key] = (byRule[key]||0) + 1;
+  });
+  return '
+-- WAS/IS TRANSLATIONS APPLIED:
+' +
+    Object.entries(byRule)
+      .sort((a,b) => b[1]-a[1])
+      .map(([k,v]) => `--   ${k} (${v} row(s))`)
+      .join('
+') + '
+';
+}
+
+// Initialise wasis UI on page load
+updateWasisUI();
 
 function formatSize(b){if(!b)return'0B';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';return(b/1048576).toFixed(1)+'MB';}
 
