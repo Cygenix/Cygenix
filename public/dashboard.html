@@ -148,6 +148,42 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .code-block{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:1rem;font-family:var(--mono);font-size:11px;color:#a8d8a8;line-height:1.8;white-space:pre-wrap;overflow-x:auto;max-height:420px;overflow-y:auto;position:relative}
 .code-block::-webkit-scrollbar{width:4px;height:4px}
 .code-block::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+/* INVENTORY */
+.inv-upload-zone{border:1.5px dashed var(--border2);border-radius:var(--r-lg);padding:1.75rem;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg2)}
+.inv-upload-zone:hover,.inv-upload-zone.drag{border-color:var(--accent);background:var(--accent-glow)}
+.inv-doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem;margin-top:1rem}
+.inv-doc-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem;transition:border-color 0.15s;position:relative}
+.inv-doc-card:hover{border-color:var(--border2)}
+.inv-doc-icon{width:36px;height:36px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:0.75rem;flex-shrink:0}
+.inv-doc-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:0.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inv-doc-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:0.75rem}
+.inv-doc-actions{display:flex;gap:0.5rem}
+.inv-type-pill{font-size:10px;padding:2px 8px;border-radius:100px;font-weight:500;margin-bottom:0.5rem;display:inline-block}
+.doc-type-wasis{background:rgba(245,158,11,0.15);color:var(--amber)}
+.doc-type-dictionary{background:rgba(61,126,255,0.15);color:var(--accent)}
+.doc-type-schema{background:rgba(45,212,191,0.15);color:var(--teal)}
+.doc-type-rules{background:rgba(167,139,250,0.15);color:var(--purple)}
+.doc-type-signoff{background:rgba(34,201,122,0.15);color:var(--green)}
+.doc-type-notes{background:rgba(255,255,255,0.08);color:var(--text2)}
+.doc-type-other{background:rgba(255,255,255,0.05);color:var(--text3)}
+
+/* PREVIEW MODAL */
+.preview-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;align-items:center;justify-content:center}
+.preview-modal-overlay.open{display:flex}
+.preview-modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:860px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.preview-modal-header{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);flex-shrink:0}
+.preview-modal-body{flex:1;overflow-y:auto;padding:1.25rem}
+.preview-modal-body::-webkit-scrollbar{width:4px}
+.preview-modal-body::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+.wasis-table{width:100%;border-collapse:collapse;font-size:13px}
+.wasis-table th{background:var(--bg3);font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.75rem;text-align:left;border-bottom:0.5px solid var(--border)}
+.wasis-table td{padding:0.6rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:top}
+.wasis-table tr:last-child td{border-bottom:none}
+.wasis-table tr:hover td{background:rgba(255,255,255,0.02)}
+.wasis-was{color:var(--red);font-family:var(--mono);font-size:12px}
+.wasis-is{color:var(--green);font-family:var(--mono);font-size:12px}
+.notes-area{background:var(--bg3);border-radius:var(--r);padding:1rem;font-size:13px;color:var(--text2);line-height:1.8;white-space:pre-wrap;min-height:200px}
 .code-block .kw{color:#79b8ff}
 .code-block .cm{color:#555a6a;font-style:italic}
 .code-block .str{color:#f0a070}
@@ -247,6 +283,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div class="nav-item" onclick="showView('jobs')">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
         All Jobs <span class="nav-count" id="jobs-count">0</span>
+      </div>
+      <div class="nav-item" onclick="showView('inventory')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h8v2H2z" stroke="currentColor" stroke-width="1.1" fill="none"/><circle cx="13" cy="12" r="2.5" stroke="currentColor" stroke-width="1.1"/><path d="M12.3 12l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Inventory <span class="nav-count" id="inv-count">0</span>
       </div>
     </div>
     <div class="nav-section">
@@ -376,6 +416,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
             <p>.sql · .bak · .mdb · .accdb · .db · .sqlite · .csv</p>
           </div>
           <div class="file-list" id="file-list"></div>
+          <div id="wasis-banner" style="display:none;margin-bottom:0.75rem;background:rgba(245,158,11,0.1);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.6rem 0.875rem;font-size:12px;color:var(--amber);display:none">
+            🔄 <strong>Was/Is mapping loaded</strong> — <span id="wasis-rule-count">0</span> value translation rules will be applied during migration
+          </div>
           <div id="analyse-btn-wrap" style="display:none">
             <button class="btn btn-primary btn-full" id="analyse-btn" onclick="startAnalysis()">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 3 3.5.5-2.5 2.5.5 3.5L7 9l-3 1.5.5-3.5L2 4.5 5.5 4z" stroke="currentColor" stroke-width="1.2"/></svg>
@@ -484,7 +527,115 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
 
     <!-- CONVERSION REPORTS -->
-    <div id="view-reports" class="view">
+    <!-- INVENTORY -->
+    <div id="view-inventory" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Project Inventory</div>
+          <div class="panel-sub">Store and manage all reference documents for this migration project</div>
+        </div>
+        <button class="btn btn-primary" onclick="document.getElementById('inv-file-input').click()">+ Add document</button>
+      </div>
+
+      <!-- Upload zone -->
+      <div class="inv-upload-zone" id="inv-upload-zone"
+        onclick="document.getElementById('inv-file-input').click()"
+        ondragover="invDragOver(event)" ondragleave="invDragLeave(event)" ondrop="invDrop(event)">
+        <input type="file" id="inv-file-input" style="display:none" multiple
+          accept=".csv,.xlsx,.xls,.txt,.pdf,.docx,.doc,.md,.json,.sql,.png,.jpg,.jpeg"
+          onchange="invHandleFiles(this.files)">
+        <div style="font-size:28px;margin-bottom:0.5rem;opacity:0.4">📁</div>
+        <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop documents here or click to browse</div>
+        <div style="font-size:11px;color:var(--text3)">CSV · Excel · PDF · Word · SQL · Markdown · Images · Text</div>
+      </div>
+
+      <!-- Type selector modal (shown after file chosen) -->
+      <div id="inv-type-modal" style="display:none;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-top:1rem">
+        <div style="font-size:13px;font-weight:600;margin-bottom:1rem">Classify document: <span id="inv-pending-name" style="color:var(--accent);font-family:var(--mono)"></span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.6rem;margin-bottom:1rem">
+          <div class="inv-type-btn" onclick="invSelectType('wasis')" data-type="wasis"
+            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
+            <div style="font-size:18px;margin-bottom:0.3rem">🔄</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Was/Is Mapping</div>
+            <div style="font-size:11px;color:var(--text3)">Old values → new values</div>
+          </div>
+          <div class="inv-type-btn" onclick="invSelectType('dictionary')" data-type="dictionary"
+            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
+            <div style="font-size:18px;margin-bottom:0.3rem">📖</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Data Dictionary</div>
+            <div style="font-size:11px;color:var(--text3)">Field definitions & types</div>
+          </div>
+          <div class="inv-type-btn" onclick="invSelectType('schema')" data-type="schema"
+            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
+            <div style="font-size:18px;margin-bottom:0.3rem">🗂️</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Schema Mapping</div>
+            <div style="font-size:11px;color:var(--text3)">Source → target fields</div>
+          </div>
+          <div class="inv-type-btn" onclick="invSelectType('rules')" data-type="rules"
+            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
+            <div style="font-size:18px;margin-bottom:0.3rem">⚙️</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Business Rules</div>
+            <div style="font-size:11px;color:var(--text3)">Logic & transformations</div>
+          </div>
+          <div class="inv-type-btn" onclick="invSelectType('signoff')" data-type="signoff"
+            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
+            <div style="font-size:18px;margin-bottom:0.3rem">✅</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Client Sign-off</div>
+            <div style="font-size:11px;color:var(--text3)">Approvals & agreements</div>
+          </div>
+          <div class="inv-type-btn" onclick="invSelectType('notes')" data-type="notes"
+            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
+            <div style="font-size:18px;margin-bottom:0.3rem">📝</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Notes</div>
+            <div style="font-size:11px;color:var(--text3)">Free text notes</div>
+          </div>
+          <div class="inv-type-btn" onclick="invSelectType('other')" data-type="other"
+            style="border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;cursor:pointer;transition:all 0.15s">
+            <div style="font-size:18px;margin-bottom:0.3rem">📄</div>
+            <div style="font-size:12px;font-weight:600;color:var(--text)">Other</div>
+            <div style="font-size:11px;color:var(--text3)">General document</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.75rem">
+          <button class="btn btn-ghost btn-sm" onclick="invCancelUpload()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Add note form -->
+      <div id="inv-note-form" style="display:none;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-top:1rem">
+        <div style="font-size:13px;font-weight:600;margin-bottom:0.75rem">Add a note</div>
+        <div style="margin-bottom:0.75rem">
+          <input id="inv-note-title" placeholder="Note title" style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;margin-bottom:0.5rem"/>
+          <textarea id="inv-note-body" placeholder="Write your notes here…" rows="5" style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;resize:vertical;line-height:1.6"></textarea>
+        </div>
+        <div style="display:flex;gap:0.75rem">
+          <button class="btn btn-primary btn-sm" onclick="invSaveNote()">Save note</button>
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('inv-note-form').style.display='none'">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Filter bar -->
+      <div style="display:flex;gap:0.5rem;margin-top:1.25rem;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--text3)">Filter:</span>
+        <button class="btn btn-sm inv-filter active" onclick="invFilter('all')" data-filter="all" style="padding:0.25rem 0.75rem;background:var(--accent);color:#fff;font-size:11px">All</button>
+        <button class="btn btn-sm inv-filter" onclick="invFilter('wasis')" data-filter="wasis" style="padding:0.25rem 0.75rem;font-size:11px">Was/Is</button>
+        <button class="btn btn-sm inv-filter" onclick="invFilter('dictionary')" data-filter="dictionary" style="padding:0.25rem 0.75rem;font-size:11px">Dictionary</button>
+        <button class="btn btn-sm inv-filter" onclick="invFilter('schema')" data-filter="schema" style="padding:0.25rem 0.75rem;font-size:11px">Schema</button>
+        <button class="btn btn-sm inv-filter" onclick="invFilter('rules')" data-filter="rules" style="padding:0.25rem 0.75rem;font-size:11px">Rules</button>
+        <button class="btn btn-sm inv-filter" onclick="invFilter('signoff')" data-filter="signoff" style="padding:0.25rem 0.75rem;font-size:11px">Sign-off</button>
+        <button class="btn btn-sm inv-filter" onclick="invFilter('notes')" data-filter="notes" style="padding:0.25rem 0.75rem;font-size:11px">Notes</button>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:11px" onclick="invAddNote()">+ Add note</button>
+      </div>
+
+      <div id="inv-empty" style="text-align:center;padding:3rem 1rem;color:var(--text3);display:none">
+        <div style="font-size:32px;margin-bottom:0.75rem;opacity:0.3">📂</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:0.4rem">No documents yet</div>
+        <div style="font-size:12px">Upload files or add a note to get started</div>
+      </div>
+      <div class="inv-doc-grid" id="inv-doc-grid"></div>
+    </div>
+
+        <div id="view-reports" class="view">
       <div class="panel-header">
         <div>
           <div class="panel-title">Conversion Reports</div>
@@ -499,6 +650,23 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
 
 
+</div>
+
+<!-- DOCUMENT PREVIEW MODAL -->
+<div class="preview-modal-overlay" id="inv-preview-modal">
+  <div class="preview-modal">
+    <div class="preview-modal-header">
+      <div>
+        <div style="font-size:15px;font-weight:600" id="preview-doc-name"></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px" id="preview-doc-meta"></div>
+      </div>
+      <div style="display:flex;gap:0.75rem;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc(invPreviewId)">⬇ Download</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeInvPreview()">✕ Close</button>
+      </div>
+    </div>
+    <div class="preview-modal-body" id="preview-doc-body"></div>
+  </div>
 </div>
 
 <!-- JOB DETAIL MODAL -->
@@ -598,7 +766,7 @@ function showView(v) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   const el = $('view-' + v); if (el) el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const map = { dashboard:0,'new-job':1,jobs:2,schema:3,'migration-sql':4,audit:5,supported:6,diagnostics:7,reports:8 };
+  const map = { dashboard:0,'new-job':1,jobs:2,inventory:3,schema:4,'migration-sql':5,audit:6,supported:7,diagnostics:8,reports:9 };
   document.querySelectorAll('.nav-item')[map[v] ?? 0]?.classList.add('active');
   if (v === 'jobs')          renderAllJobs();
   if (v === 'schema')        renderSchemaLibrary();
@@ -606,7 +774,9 @@ function showView(v) {
   if (v === 'audit')         renderAuditLog();
   if (v === 'dashboard')     renderDashboard();
   if (v === 'reports')       renderReportsList();
+  if (v === 'inventory')     renderInventory();
   if (v === 'reports')       renderReportsList();
+  if (v === 'inventory')     renderInventory();
 }
 
 function selectTarget(el, name) {
@@ -903,7 +1073,7 @@ function generateCreateTable(tableName, columns, columnTypes, schemaMapping) {
   return `-- ============================================================\n-- Table: ${safeName}\n-- ============================================================\nIF OBJECT_ID(N'dbo.${safeName}', N'U') IS NOT NULL\n    DROP TABLE dbo.${safeName};\nGO\n\nCREATE TABLE dbo.${safeName} (\n${colDefs.join(',\n')}${pkDef}\n);\nGO\n`;
 }
 
-function generateInserts(tableName, columns, rows, schemaMapping) {
+function generateInserts(tableName, columns, rows, schemaMapping, wasisRules, wasisLog) {
   if (!rows || rows.length === 0) return `-- No data rows found for ${tableName}\n`;
 
   const safeName = sqlIdent(tableName);
@@ -931,7 +1101,18 @@ function generateInserts(tableName, columns, rows, schemaMapping) {
     sql += `INSERT INTO dbo.${safeName} (${colList})\nVALUES\n`;
 
     const rowStrings = batch.map(row => {
-      const vals = columns.map(col => formatSQLValue(row[col], schemaMapping?.[col]?.type));
+      const vals = columns.map(col => {
+        let rawVal = row[col];
+        // Apply Was/Is substitution if rules exist
+        if (wasisRules && wasisRules.length) {
+          const result = applyWasis(tableName, rawVal, wasisRules);
+          if (result.applied && wasisLog) {
+            wasisLog.push({ col, oldVal: rawVal, newVal: result.value, applied: result.applied });
+          }
+          rawVal = result.value;
+        }
+        return formatSQLValue(rawVal, schemaMapping?.[col]?.type);
+      });
       return `    (${vals.join(', ')})`;
     });
     sql += rowStrings.join(',\n') + ';\n';
@@ -940,7 +1121,11 @@ function generateInserts(tableName, columns, rows, schemaMapping) {
     if (batch.length > 1) {
       sql += `-- If the above batch fails, use individual inserts:\n`;
       sql += batch.map(row => {
-        const vals = columns.map(col => formatSQLValue(row[col], schemaMapping?.[col]?.type));
+        const vals = columns.map(col => {
+          let rawVal = row[col];
+          if (wasisRules && wasisRules.length) rawVal = applyWasis(tableName, rawVal, wasisRules).value;
+          return formatSQLValue(rawVal, schemaMapping?.[col]?.type);
+        });
         return `-- INSERT INTO dbo.${safeName} (${colList}) VALUES (${vals.join(', ')});`;
       }).join('\n') + '\n';
     }
@@ -983,12 +1168,114 @@ function sqlIdent(name) {
   return `[${String(name).replace(/]/g, ']]')}]`;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── WAS/IS MAPPING ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// The canonical Was/Is file is any inventory item of type 'wasis'.
+// Format: source_table, old_value, new_value, description
+// (first row is header, subsequent rows are rules)
+
+function getWasisRules() {
+  // Find the active wasis document in inventory
+  const wasisDoc = invItems.find(d => d.type === 'wasis' && d.isText && d.content);
+  if (!wasisDoc) return [];
+
+  const lines = wasisDoc.content.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+
+  // Parse header to find column positions
+  const delim = wasisDoc.ext === 'tsv' ? '\t' : ',';
+  const parseL = line => {
+    const r=[]; let c=''; let q=false;
+    for(const ch of line){if(ch==='"')q=!q;else if(ch===delim&&!q){r.push(c.trim());c='';}else c+=ch;}
+    r.push(c.trim()); return r;
+  };
+
+  const headers = parseL(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g,''));
+  const srcTableIdx = headers.findIndex(h => ['sourcetable','table','srctable','tablename'].includes(h));
+  const oldValIdx   = headers.findIndex(h => ['oldvalue','was','old','from','sourcevalue','src'].includes(h));
+  const newValIdx   = headers.findIndex(h => ['newvalue','is','new','to','targetvalue','tgt'].includes(h));
+  const descIdx     = headers.findIndex(h => ['description','desc','note','notes','reason'].includes(h));
+
+  // Fallback: assume columns are in order: source_table, old_value, new_value, description
+  const tIdx = srcTableIdx >= 0 ? srcTableIdx : 0;
+  const oIdx = oldValIdx   >= 0 ? oldValIdx   : 1;
+  const nIdx = newValIdx   >= 0 ? newValIdx   : 2;
+  const dIdx = descIdx     >= 0 ? descIdx     : 3;
+
+  const rules = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseL(lines[i]);
+    const srcTable = cols[tIdx]?.trim() || '';
+    const oldVal   = cols[oIdx]?.trim() || '';
+    const newVal   = cols[nIdx]?.trim() || '';
+    const desc     = cols[dIdx]?.trim() || '';
+    if (oldVal !== '' || newVal !== '') {
+      rules.push({ srcTable: srcTable.toLowerCase(), oldVal, newVal, desc });
+    }
+  }
+  return rules;
+}
+
+// Apply Was/Is rules to a single cell value for a given table
+function applyWasis(tableName, value, wasisRules) {
+  if (!wasisRules || wasisRules.length === 0) return { value, applied: null };
+  const tbl = (tableName || '').toLowerCase();
+  const strVal = String(value ?? '');
+
+  // First try table-specific match, then global (empty source_table) match
+  const rule = wasisRules.find(r =>
+    (r.srcTable === tbl || r.srcTable === '') &&
+    r.oldVal.toLowerCase() === strVal.toLowerCase()
+  );
+
+  if (rule) return { value: rule.newVal, applied: rule };
+  return { value, applied: null };
+}
+
+// Build a summary of Was/Is rules applied
+function buildWasisSummary(wasisRules, applicationLog) {
+  if (!wasisRules.length) return '';
+  const applied  = applicationLog.filter(l => l.applied);
+  const byRule   = {};
+  applied.forEach(l => {
+    const key = `${l.applied.oldVal} → ${l.applied.newVal}`;
+    byRule[key] = (byRule[key] || 0) + 1;
+  });
+  const lines = Object.entries(byRule)
+    .sort((a,b) => b[1]-a[1])
+    .map(([rule, count]) => `  ${rule}: ${count.toLocaleString()} occurrence(s)`);
+  return `\n## Was/Is Value Translations Applied\nTotal substitutions: ${applied.length.toLocaleString()}\n${lines.join('\n')}`;
+}
+
+// Update the wasis banner on the new-job view
+function updateWasisBanner() {
+  const banner = $('wasis-banner');
+  if (!banner) return;
+  const rules = getWasisRules();
+  if (rules.length > 0) {
+    $('wasis-rule-count').textContent = rules.length;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── CLAUDE SCHEMA ANALYSIS — gets intelligent column mapping ──────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 
-async function askClaudeForSchemaMapping(tables, targetServer, sourceSystem, apiKey) {
+async function askClaudeForSchemaMapping(tables, targetServer, sourceSystem, apiKey, wasisRules) {
   // Send Claude a sample of the data (first 20 rows per table) + inferred types
+  // Build Was/Is section for the prompt
+  const wasisPromptSection = wasisRules && wasisRules.length > 0
+    ? `\n\nWAS/IS VALUE MAPPING (${wasisRules.length} rules — apply these value substitutions during migration):\n` +
+      `Format: source_table | old_value → new_value | description\n` +
+      wasisRules.map(r => `  ${r.srcTable || '*'} | ${r.oldVal} → ${r.newVal}${r.desc ? ' | ' + r.desc : ''}`).join('\n') +
+      `\n\nWhen you see these old values in the data, flag them in the notes for each affected table and column.`
+    : '';
+
   const tableDescriptions = tables.map(t => {
     const sampleRows = t.rows.slice(0, 20);
     const colTypes = {};
@@ -1042,7 +1329,8 @@ Rules:
 - Detect identity/autoincrement columns (usually named id, *_id, with sequential integers)
 - Detect likely primary keys
 - Suggest useful indexes (foreign key columns, frequently-filtered columns)
-- Flag any date format issues, encoding problems, or data quality concerns`;
+- Flag any date format issues, encoding problems, or data quality concerns
+${wasisPromptSection}`;
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -1158,11 +1446,12 @@ async function startAnalysis() {
     setStatus('Step 2 of 4 — Claude is analysing schema & data types…');
     btn.textContent = 'Asking Claude…';
 
+    const wasisRules = getWasisRules();
     let schemaResult;
     try {
       schemaResult = await askClaudeForSchemaMapping(
         allTables, state.selectedTarget,
-        $('job-source-input').value.trim(), apiKey
+        $('job-source-input').value.trim(), apiKey, wasisRules
       );
     } catch(e) {
       fail('Claude schema analysis failed:\n\n' + e.message);
@@ -1181,6 +1470,7 @@ async function startAnalysis() {
       schemaSQL += `-- MIGRATION NOTES:\n${schemaResult.globalNotes.split('\n').map(l => '-- ' + l).join('\n')}\n\n`;
     }
 
+    const wasisApplicationLog = [];
     for (const table of allTables) {
       const tableMapping = schemaResult.tables?.[table.tableName];
       const colTypes = {};
@@ -1226,7 +1516,9 @@ async function startAnalysis() {
         table.tableName,
         table.columns,
         table.rows,
-        tableMapping?.columns
+        tableMapping?.columns,
+        wasisRules,
+        wasisApplicationLog
       );
 
       // Yield to browser to avoid blocking UI
@@ -1274,7 +1566,8 @@ ${dataTypeMappings}
 
 ## Verification Queries
 Run these after migration to confirm row counts:
-${allTables.map(t => `SELECT '${t.tableName}' AS TableName, COUNT(*) AS ActualRows, ${t.rows.length} AS ExpectedRows FROM dbo.${sqlIdent(t.tableName)};`).join('\n')}`;
+${allTables.map(t => `SELECT '${t.tableName}' AS TableName, COUNT(*) AS ActualRows, ${t.rows.length} AS ExpectedRows FROM dbo.${sqlIdent(t.tableName)};`).join('\n')}
+${buildWasisSummary(wasisRules, wasisApplicationLog)}`;
 
     $('analysis-body').textContent = fullReport;
     $('schema-code').textContent    = schemaSQL;
@@ -1284,6 +1577,17 @@ ${allTables.map(t => `SELECT '${t.tableName}' AS TableName, COUNT(*) AS ActualRo
       <button class="btn btn-teal btn-sm" onclick="downloadSQL('schema','${escapeAttr(jobName)}')">⬇ Schema .sql (${Math.ceil(schemaSQL.length/1024)}KB)</button>
       <button class="btn btn-primary btn-sm" onclick="downloadSQL('migration','${escapeAttr(jobName)}')">⬇ Migration .sql (${Math.ceil(migrationSQL.length/1024)}KB)</button>`;
 
+    // Build column mapping for report
+    const jobColumnMapping = allTables.flatMap(t => {
+      const tm = schemaResult.tables?.[t.tableName];
+      return t.columns.map(col => ({
+        srcCol: col,
+        tgtCol: tm?.columns?.[col]?.name || col,
+        tgtType: tm?.columns?.[col]?.type || inferSQLServerType(t.rows.map(r => r[col])),
+        transform: 'NONE',
+      }));
+    });
+    const wasisCount = wasisApplicationLog.filter(l => l.applied).length;
     const job = {
       id: 'job_' + Date.now(), name: jobName,
       source: $('job-source-input').value.trim(),
@@ -1292,7 +1596,11 @@ ${allTables.map(t => `SELECT '${t.tableName}' AS TableName, COUNT(*) AS ActualRo
       tables: allTables.map(t => ({ name: t.tableName, rows: t.rows.length, cols: t.columns.length })),
       analysis: fullReport, schemaSQL, migrationSQL,
       status: 'complete', created: new Date().toISOString(),
-      totalRows
+      totalRows,
+      columnMapping: jobColumnMapping,
+      wasisRulesApplied: wasisCount,
+      wasisRulesTotal: wasisRules.length,
+      warnings: wasisCount > 0 ? [`Was/Is mapping applied: ${wasisCount.toLocaleString()} value substitutions across ${wasisRules.length} rules`] : [],
     };
 
     state.jobs.unshift(job);
@@ -1611,11 +1919,330 @@ function renderReportsList() {
   }).join('');
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── INVENTORY ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const INV_KEY = 'cygenix_inventory';
+let invItems      = loadInventory();
+let invPendingFiles = [];
+let invCurrentFilter = 'all';
+let invPreviewId  = null;
+
+function loadInventory() {
+  try { return JSON.parse(localStorage.getItem(INV_KEY) || '[]'); } catch { return []; }
+}
+function saveInventory() {
+  try { localStorage.setItem(INV_KEY, JSON.stringify(invItems)); } catch {}
+  updateInvCount();
+}
+function updateInvCount() {
+  const el = document.getElementById('inv-count');
+  if (el) el.textContent = invItems.length;
+}
+
+// ── Type config ───────────────────────────────────────────────────────────────
+const DOC_TYPES = {
+  wasis:      { label: 'Was/Is Mapping',   icon: '🔄', cls: 'doc-type-wasis'      },
+  dictionary: { label: 'Data Dictionary',  icon: '📖', cls: 'doc-type-dictionary' },
+  schema:     { label: 'Schema Mapping',   icon: '🗂️', cls: 'doc-type-schema'     },
+  rules:      { label: 'Business Rules',   icon: '⚙️', cls: 'doc-type-rules'      },
+  signoff:    { label: 'Client Sign-off',  icon: '✅', cls: 'doc-type-signoff'    },
+  notes:      { label: 'Notes',            icon: '📝', cls: 'doc-type-notes'      },
+  other:      { label: 'Other',            icon: '📄', cls: 'doc-type-other'      },
+};
+
+// ── Upload flow ───────────────────────────────────────────────────────────────
+function invDragOver(e)  { e.preventDefault(); document.getElementById('inv-upload-zone').classList.add('drag'); }
+function invDragLeave()  { document.getElementById('inv-upload-zone').classList.remove('drag'); }
+function invDrop(e)      { e.preventDefault(); document.getElementById('inv-upload-zone').classList.remove('drag'); invHandleFiles(e.dataTransfer.files); }
+
+function invHandleFiles(fileList) {
+  invPendingFiles = Array.from(fileList);
+  if (!invPendingFiles.length) return;
+  // Show type selector for first file (process one at a time)
+  showInvTypeModal(invPendingFiles[0]);
+}
+
+function showInvTypeModal(file) {
+  document.getElementById('inv-pending-name').textContent = file.name;
+  document.getElementById('inv-type-modal').style.display = 'block';
+  // Highlight type cards on hover
+  document.querySelectorAll('.inv-type-btn').forEach(btn => {
+    btn.onmouseenter = () => btn.style.borderColor = 'var(--accent)';
+    btn.onmouseleave = () => btn.style.borderColor = 'var(--border2)';
+  });
+}
+
+function invSelectType(type) {
+  const file = invPendingFiles[0];
+  if (!file) return;
+  document.getElementById('inv-type-modal').style.display = 'none';
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const item = {
+      id:        'inv_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      name:      file.name,
+      type,
+      ext:       file.name.split('.').pop().toLowerCase(),
+      size:      file.size,
+      mimeType:  file.type || '',
+      addedAt:   new Date().toISOString(),
+      content:   e.target.result, // base64 for binary, text for text
+      isText:    typeof e.target.result === 'string' && !e.target.result.startsWith('data:'),
+    };
+    invItems.unshift(item);
+    saveInventory();
+    renderInventory();
+
+    // Process next file if any
+    invPendingFiles.shift();
+    if (invPendingFiles.length > 0) {
+      setTimeout(() => showInvTypeModal(invPendingFiles[0]), 300);
+    }
+  };
+
+  // Read as text for text-based files, dataURL for everything else
+  const textExts = ['csv','txt','md','sql','json','tsv','xml','html','js','py'];
+  if (textExts.includes(file.name.split('.').pop().toLowerCase())) {
+    reader.readAsText(file);
+  } else {
+    reader.readAsDataURL(file);
+  }
+}
+
+function invCancelUpload() {
+  invPendingFiles = [];
+  document.getElementById('inv-type-modal').style.display = 'none';
+}
+
+// ── Notes ─────────────────────────────────────────────────────────────────────
+function invAddNote() {
+  document.getElementById('inv-note-form').style.display = 'block';
+  document.getElementById('inv-note-title').focus();
+}
+
+function invSaveNote() {
+  const title = document.getElementById('inv-note-title').value.trim();
+  const body  = document.getElementById('inv-note-body').value.trim();
+  if (!title && !body) { alert('Please enter a title or note text.'); return; }
+  const item = {
+    id:      'inv_' + Date.now(),
+    name:    title || 'Untitled note',
+    type:    'notes',
+    ext:     'txt',
+    size:    body.length,
+    addedAt: new Date().toISOString(),
+    content: body,
+    isText:  true,
+    isNote:  true,
+  };
+  invItems.unshift(item);
+  saveInventory();
+  renderInventory();
+  updateWasisBanner();
+  document.getElementById('inv-note-form').style.display = 'none';
+  document.getElementById('inv-note-title').value = '';
+  document.getElementById('inv-note-body').value  = '';
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function invFilter(type) {
+  invCurrentFilter = type;
+  document.querySelectorAll('.inv-filter').forEach(btn => {
+    const isActive = btn.dataset.filter === type;
+    btn.style.background = isActive ? 'var(--accent)' : 'transparent';
+    btn.style.color = isActive ? '#fff' : 'var(--text2)';
+  });
+  renderInventory();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderInventory() {
+  updateInvCount();
+  const filtered = invCurrentFilter === 'all'
+    ? invItems
+    : invItems.filter(d => d.type === invCurrentFilter);
+
+  const grid  = document.getElementById('inv-doc-grid');
+  const empty = document.getElementById('inv-empty');
+  if (!grid) return;
+
+  if (!filtered.length) {
+    grid.innerHTML  = '';
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  grid.innerHTML = filtered.map(doc => {
+    const cfg  = DOC_TYPES[doc.type] || DOC_TYPES.other;
+    const date = new Date(doc.addedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+    const size = doc.isNote ? doc.content?.length + ' chars' : formatInvSize(doc.size);
+    return `<div class="inv-doc-card">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.5rem">
+        <div class="inv-type-pill ${cfg.cls}">${cfg.icon} ${cfg.label}</div>
+        <button onclick="invDelete('${doc.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px" title="Delete">✕</button>
+      </div>
+      <div class="inv-doc-name" title="${escHtml(doc.name)}">${escHtml(doc.name)}</div>
+      <div class="inv-doc-meta">${doc.ext.toUpperCase()} · ${size} · ${date}</div>
+      <div class="inv-doc-actions">
+        <button class="btn btn-ghost btn-sm" onclick="invPreview('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">👁 Preview</button>
+        <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">⬇ Download</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function formatInvSize(b) {
+  if (!b) return '0B';
+  if (b < 1024) return b + 'B';
+  if (b < 1048576) return (b/1024).toFixed(1) + 'KB';
+  return (b/1048576).toFixed(1) + 'MB';
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+function invDelete(id) {
+  const doc = invItems.find(d => d.id === id);
+  if (!doc) return;
+  if (!confirm(`Delete "${doc.name}"?`)) return;
+  invItems = invItems.filter(d => d.id !== id);
+  saveInventory();
+  renderInventory();
+  updateWasisBanner();
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────────
+function invPreview(id) {
+  const doc = invItems.find(d => d.id === id);
+  if (!doc) return;
+  invPreviewId = id;
+
+  const cfg  = DOC_TYPES[doc.type] || DOC_TYPES.other;
+  const date = new Date(doc.addedAt).toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'});
+  document.getElementById('preview-doc-name').textContent = doc.name;
+  document.getElementById('preview-doc-meta').textContent = `${cfg.label} · ${doc.ext.toUpperCase()} · Added ${date}`;
+
+  const body = document.getElementById('preview-doc-body');
+
+  // Was/Is CSV — render as a two-column table
+  if (doc.type === 'wasis' && (doc.ext === 'csv' || doc.ext === 'tsv' || doc.isText)) {
+    body.innerHTML = renderWasIs(doc.content, doc.ext === 'tsv' ? '\t' : ',');
+  }
+  // Image
+  else if (['png','jpg','jpeg','gif','webp','svg'].includes(doc.ext)) {
+    const src = doc.content.startsWith('data:') ? doc.content : `data:image/${doc.ext};base64,${doc.content}`;
+    body.innerHTML = `<img src="${src}" style="max-width:100%;border-radius:var(--r-lg)" alt="${escHtml(doc.name)}"/>`;
+  }
+  // PDF — embed in iframe
+  else if (doc.ext === 'pdf') {
+    const src = doc.content.startsWith('data:') ? doc.content : `data:application/pdf;base64,${doc.content}`;
+    body.innerHTML = `<iframe src="${src}" style="width:100%;height:65vh;border:none;border-radius:var(--r)"></iframe>`;
+  }
+  // CSV/TSV — full table
+  else if (doc.ext === 'csv' || doc.ext === 'tsv') {
+    body.innerHTML = renderCSVTable(doc.content, doc.ext === 'tsv' ? '\t' : ',');
+  }
+  // SQL, JSON, Markdown, code — syntax-highlighted code block
+  else if (['sql','json','md','js','py','xml','html','txt'].includes(doc.ext) || doc.isNote) {
+    const escaped = escHtml(typeof doc.content === 'string' ? doc.content : 'Binary file — download to view');
+    body.innerHTML = doc.isNote
+      ? `<div class="notes-area">${escaped}</div>`
+      : `<div class="code-block" style="color:var(--text2);max-height:65vh">${escaped}</div>`;
+  }
+  // Everything else
+  else {
+    body.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text3)">
+      <div style="font-size:48px;margin-bottom:1rem">${cfg.icon}</div>
+      <div style="font-size:14px;color:var(--text2);margin-bottom:0.5rem">${escHtml(doc.name)}</div>
+      <div style="font-size:12px;margin-bottom:1.5rem">${doc.ext.toUpperCase()} files cannot be previewed directly.</div>
+      <button class="btn btn-primary" onclick="invDownloadDoc('${doc.id}')">⬇ Download to view</button>
+    </div>`;
+  }
+
+  document.getElementById('inv-preview-modal').classList.add('open');
+}
+
+function renderWasIs(content, delim) {
+  const lines = content.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return '<p style="color:var(--text3)">Empty file</p>';
+  const parse = line => {
+    const result=[]; let cur=''; let inQ=false;
+    for (const ch of line) {
+      if (ch==='"') inQ=!inQ;
+      else if (ch===delim && !inQ) { result.push(cur.trim()); cur=''; }
+      else cur+=ch;
+    }
+    result.push(cur.trim()); return result;
+  };
+  const headers = parse(lines[0]);
+  const rows    = lines.slice(1).map(parse);
+  // Detect Was/Is pattern: 2 cols, or cols named was/is/old/new/from/to
+  const isWasIs = headers.length === 2 ||
+    headers.some(h => /^(was|old|from|source|before)/i.test(h)) ||
+    headers.some(h => /^(is|new|to|target|after)/i.test(h));
+
+  if (isWasIs && headers.length === 2) {
+    return `<table class="wasis-table">
+      <thead><tr>
+        <th style="color:var(--red)">⬅ Was (${escHtml(headers[0])})</th>
+        <th style="color:var(--green)">➡ Is (${escHtml(headers[1])})</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td class="wasis-was">${escHtml(r[0]||'')}</td>
+        <td class="wasis-is">${escHtml(r[1]||'')}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+  return renderCSVTable(content, delim);
+}
+
+function renderCSVTable(content, delim) {
+  const lines = content.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return '<p style="color:var(--text3)">Empty file</p>';
+  const parse = line => { const r=[]; let c=''; let q=false; for(const ch of line){if(ch==='"')q=!q;else if(ch===delim&&!q){r.push(c.trim());c='';}else c+=ch;} r.push(c.trim()); return r; };
+  const headers = parse(lines[0]);
+  const rows    = lines.slice(1, 201).map(parse); // cap at 200 rows for performance
+  return `<div style="overflow-x:auto"><table class="wasis-table">
+    <thead><tr>${headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${headers.map((_,i) => `<td style="font-family:var(--mono);font-size:12px;color:var(--text2)">${escHtml(r[i]||'')}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table>${lines.length > 201 ? `<p style="font-size:11px;color:var(--text3);margin-top:0.5rem">Showing first 200 of ${lines.length-1} rows</p>` : ''}</div>`;
+}
+
+function closeInvPreview() {
+  document.getElementById('inv-preview-modal').classList.remove('open');
+  invPreviewId = null;
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+function invDownloadDoc(id) {
+  const doc = invItems.find(d => d.id === id);
+  if (!doc) return;
+  const a = document.createElement('a');
+  if (doc.content.startsWith('data:')) {
+    a.href = doc.content;
+  } else {
+    a.href = URL.createObjectURL(new Blob([doc.content], { type: doc.mimeType || 'text/plain' }));
+  }
+  a.download = doc.name;
+  a.click();
+}
+
+// Close preview on overlay click
+document.getElementById('inv-preview-modal')?.addEventListener('click', function(e) {
+  if (e.target === this) closeInvPreview();
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 renderDashboard();
 checkHealth();
 initUserAndProject();
+renderInventory();
+updateInvCount();
+updateWasisBanner();
 
 </script>
 </body>
