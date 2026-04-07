@@ -270,15 +270,20 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
   <!-- SIDEBAR -->
   <div class="sidebar">
+    <!-- MIGRATE section: the two main workflows -->
     <div class="nav-section">
-      <div class="nav-label">Workspace</div>
+      <div class="nav-label">Migrate</div>
       <div class="nav-item active" onclick="showView('dashboard')">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
         Dashboard
       </div>
+      <div class="nav-item" onclick="window.location.href='/connect.html'" style="color:var(--teal)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><path d="M2 8h12M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Live DB Migration
+      </div>
       <div class="nav-item" onclick="showView('new-job')">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v6M5 8h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-        New Migration
+        Schema from File
       </div>
       <div class="nav-item" onclick="showView('jobs')">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -289,6 +294,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         Inventory <span class="nav-count" id="inv-count">0</span>
       </div>
     </div>
+
+    <!-- OUTPUTS section -->
     <div class="nav-section">
       <div class="nav-label">Outputs</div>
       <div class="nav-item" onclick="showView('schema')">
@@ -304,26 +311,20 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         Audit Log
       </div>
     </div>
-    <div class="nav-section">
-      <div class="nav-label">Info</div>
-      <div class="nav-item" onclick="showView('supported')">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Supported Formats
-      </div>
-      <div class="nav-item" onclick="window.location.href='/connect.html'" style="color:var(--teal)">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="5" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="8" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M8 8h0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-        Target DB Mapper
-      </div>
-      <div class="nav-item" onclick="showView('diagnostics')">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Diagnostics
-      </div>
-    </div>
+
+    <!-- DELIVER + misc at bottom -->
     <div class="nav-section" style="margin-top:auto;border-top:0.5px solid var(--border);padding-top:1rem">
-      <div class="nav-label">Deliver</div>
       <div class="nav-item" onclick="showView('reports')" style="color:var(--purple)">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="var(--bg2)" stroke="currentColor" stroke-width="1.2"/><path d="M11 12l.8.8L13 11" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Conversion Report
+      </div>
+      <div class="nav-item" onclick="showView('supported')" style="color:var(--text3);font-size:12px">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Supported Formats
+      </div>
+      <div class="nav-item" onclick="showView('diagnostics')" style="color:var(--text3);font-size:12px">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Diagnostics
       </div>
     </div>
   </div>
@@ -350,7 +351,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     <!-- NEW JOB -->
     <div id="view-new-job" class="view">
       <div class="panel-header">
-        <div><div class="panel-title">New SQL Migration Job</div><div class="panel-sub">Upload database export · Claude maps the schema · download SQL Server scripts</div></div>
+        <div>
+          <div class="panel-title">Schema from File</div>
+          <div class="panel-sub">Upload a database export · Claude analyses the schema · download SQL Server CREATE TABLE + INSERT scripts</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="showView('dashboard')">← Back to dashboard</button>
       </div>
 
       <div class="alert alert-amber" id="key-alert">
@@ -809,7 +814,7 @@ function showView(v) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
   const el = $('view-' + v); if (el) el.classList.add('active');
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const map = { dashboard:0,'new-job':1,jobs:2,inventory:3,schema:4,'migration-sql':5,audit:6,supported:7,diagnostics:8,reports:9 };
+  const map = { dashboard:0,'new-job':1,jobs:2,inventory:3,schema:4,'migration-sql':5,audit:6,reports:7,supported:8,diagnostics:9 };
   document.querySelectorAll('.nav-item')[map[v] ?? 0]?.classList.add('active');
   if (v === 'jobs')          renderAllJobs();
   if (v === 'schema')        renderSchemaLibrary();
