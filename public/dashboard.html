@@ -1105,7 +1105,7 @@ function generateInserts(tableName, columns, rows, schemaMapping, wasisRules, wa
         let rawVal = row[col];
         // Apply Was/Is substitution if rules exist
         if (wasisRules && wasisRules.length) {
-          const result = applyWasis(tableName, rawVal, wasisRules);
+          const result = applyWasis(tableName, col, rawVal, wasisRules);
           if (result.applied && wasisLog) {
             wasisLog.push({ col, oldVal: rawVal, newVal: result.value, applied: result.applied });
           }
@@ -1123,7 +1123,7 @@ function generateInserts(tableName, columns, rows, schemaMapping, wasisRules, wa
       sql += batch.map(row => {
         const vals = columns.map(col => {
           let rawVal = row[col];
-          if (wasisRules && wasisRules.length) rawVal = applyWasis(tableName, rawVal, wasisRules).value;
+          if (wasisRules && wasisRules.length) rawVal = applyWasis(tableName, col, rawVal, wasisRules).value;
           return formatSQLValue(rawVal, schemaMapping?.[col]?.type);
         });
         return `-- INSERT INTO dbo.${safeName} (${colList}) VALUES (${vals.join(', ')});`;
@@ -1193,40 +1193,57 @@ function getWasisRules() {
   };
 
   const headers = parseL(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g,''));
+
+  // Detect columns by name — canonical format: source_table, source_field, old_value, new_value, description
   const srcTableIdx = headers.findIndex(h => ['sourcetable','table','srctable','tablename'].includes(h));
-  const oldValIdx   = headers.findIndex(h => ['oldvalue','was','old','from','sourcevalue','src'].includes(h));
-  const newValIdx   = headers.findIndex(h => ['newvalue','is','new','to','targetvalue','tgt'].includes(h));
+  const srcFieldIdx = headers.findIndex(h => ['sourcefield','field','srcfield','fieldname','column','columnname','col'].includes(h));
+  const oldValIdx   = headers.findIndex(h => ['oldvalue','was','old','from','sourcevalue','oldval'].includes(h));
+  const newValIdx   = headers.findIndex(h => ['newvalue','is','new','to','targetvalue','newval'].includes(h));
   const descIdx     = headers.findIndex(h => ['description','desc','note','notes','reason'].includes(h));
 
-  // Fallback: assume columns are in order: source_table, old_value, new_value, description
+  // Fallback positional order: source_table(0), source_field(1), old_value(2), new_value(3), description(4)
   const tIdx = srcTableIdx >= 0 ? srcTableIdx : 0;
-  const oIdx = oldValIdx   >= 0 ? oldValIdx   : 1;
-  const nIdx = newValIdx   >= 0 ? newValIdx   : 2;
-  const dIdx = descIdx     >= 0 ? descIdx     : 3;
+  const fIdx = srcFieldIdx >= 0 ? srcFieldIdx : 1;
+  const oIdx = oldValIdx   >= 0 ? oldValIdx   : 2;
+  const nIdx = newValIdx   >= 0 ? newValIdx   : 3;
+  const dIdx = descIdx     >= 0 ? descIdx     : 4;
 
   const rules = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseL(lines[i]);
     const srcTable = cols[tIdx]?.trim() || '';
+    const srcField = cols[fIdx]?.trim() || '';
     const oldVal   = cols[oIdx]?.trim() || '';
     const newVal   = cols[nIdx]?.trim() || '';
     const desc     = cols[dIdx]?.trim() || '';
     if (oldVal !== '' || newVal !== '') {
-      rules.push({ srcTable: srcTable.toLowerCase(), oldVal, newVal, desc });
+      rules.push({
+        srcTable: srcTable.toLowerCase(),
+        srcField: srcField.toLowerCase(),
+        oldVal, newVal, desc
+      });
     }
   }
   return rules;
 }
 
-// Apply Was/Is rules to a single cell value for a given table
-function applyWasis(tableName, value, wasisRules) {
+// Apply Was/Is rules to a single cell value — matched by table, field, and old value
+function applyWasis(tableName, colName, value, wasisRules) {
   if (!wasisRules || wasisRules.length === 0) return { value, applied: null };
-  const tbl = (tableName || '').toLowerCase();
+  const tbl  = (tableName || '').toLowerCase();
+  const fld  = (colName   || '').toLowerCase();
   const strVal = String(value ?? '');
 
-  // First try table-specific match, then global (empty source_table) match
-  const rule = wasisRules.find(r =>
+  // Priority 1: table + field + value exact match
+  let rule = wasisRules.find(r =>
     (r.srcTable === tbl || r.srcTable === '') &&
+    (r.srcField === fld || r.srcField === '') &&
+    r.oldVal.toLowerCase() === strVal.toLowerCase()
+  );
+
+  // Priority 2: field + value match (any table)
+  if (!rule) rule = wasisRules.find(r =>
+    r.srcField === fld && r.srcField !== '' &&
     r.oldVal.toLowerCase() === strVal.toLowerCase()
   );
 
@@ -1240,12 +1257,14 @@ function buildWasisSummary(wasisRules, applicationLog) {
   const applied  = applicationLog.filter(l => l.applied);
   const byRule   = {};
   applied.forEach(l => {
-    const key = `${l.applied.oldVal} → ${l.applied.newVal}`;
+    const tbl = l.applied.srcTable || '*';
+    const fld = l.applied.srcField || '*';
+    const key = `${tbl}.${fld}: "${l.applied.oldVal}" → "${l.applied.newVal}"`;
     byRule[key] = (byRule[key] || 0) + 1;
   });
   const lines = Object.entries(byRule)
     .sort((a,b) => b[1]-a[1])
-    .map(([rule, count]) => `  ${rule}: ${count.toLocaleString()} occurrence(s)`);
+    .map(([rule, count]) => `  ${rule} (${count.toLocaleString()} row(s))`);
   return `\n## Was/Is Value Translations Applied\nTotal substitutions: ${applied.length.toLocaleString()}\n${lines.join('\n')}`;
 }
 
@@ -1272,7 +1291,7 @@ async function askClaudeForSchemaMapping(tables, targetServer, sourceSystem, api
   const wasisPromptSection = wasisRules && wasisRules.length > 0
     ? `\n\nWAS/IS VALUE MAPPING (${wasisRules.length} rules — apply these value substitutions during migration):\n` +
       `Format: source_table | old_value → new_value | description\n` +
-      wasisRules.map(r => `  ${r.srcTable || '*'} | ${r.oldVal} → ${r.newVal}${r.desc ? ' | ' + r.desc : ''}`).join('\n') +
+      wasisRules.map(r => `  ${r.srcTable || '*'}.${r.srcField || '*'} | "${r.oldVal}" → "${r.newVal}"${r.desc ? ' | ' + r.desc : ''}`).join('\n') +
       `\n\nWhen you see these old values in the data, flag them in the notes for each affected table and column.`
     : '';
 
