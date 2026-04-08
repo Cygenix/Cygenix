@@ -30,8 +30,14 @@ jobs:
         working-directory: azure-function
         run: zip -r ../function.zip . -x "*.md" -x "local.settings.json" -x ".git/*"
 
-      - name: Verify zip contents
-        run: unzip -l function.zip | grep -E "host.json|package.json|index.js|node_modules" | head -20
+      - name: Verify key files at zip root
+        run: |
+          echo "=== Root level files ==="
+          unzip -l function.zip | grep -v "node_modules" | grep -v "/$" | head -20
+          echo "=== Checking host.json ==="
+          unzip -p function.zip host.json
+          echo "=== Checking src/index.js first 5 lines ==="
+          unzip -p function.zip src/index.js | head -5
 
       - name: Login to Azure
         uses: azure/login@v2
