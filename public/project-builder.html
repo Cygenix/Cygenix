@@ -160,13 +160,25 @@ textarea.form-input{resize:vertical;line-height:1.6}
     <div class="two-col">
       <div class="form-row" style="margin-bottom:0">
         <label class="form-label">Source connection string</label>
-        <input class="form-input" id="proj-src-conn" style="font-family:var(--mono);font-size:12px" placeholder="Server=source;Database=db;...">
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Used by all table migration steps as the source</div>
+        <div style="display:flex;gap:0.5rem;align-items:flex-start">
+          <input class="form-input" id="proj-src-conn" style="font-family:var(--mono);font-size:12px;flex:1" placeholder="Server=source;Database=db;...">
+          <button class="btn btn-ghost btn-sm" onclick="testProjectConn('src')" style="flex-shrink:0;margin-top:0">Test</button>
+        </div>
+        <div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:0.5rem">
+          <span style="color:var(--text3)">Used by all table migration steps as the source.</span>
+          <span id="src-conn-status" style="font-family:var(--mono);font-size:11px"></span>
+        </div>
       </div>
       <div class="form-row" style="margin-bottom:0">
         <label class="form-label">Target connection string / Azure Function URL</label>
-        <input class="form-input" id="proj-tgt-conn" style="font-family:var(--mono);font-size:12px" placeholder="Server=target;Database=db;... or https://fn.azurewebsites.net/api/db">
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Used by all steps as the target — SQL scripts run here</div>
+        <div style="display:flex;gap:0.5rem;align-items:flex-start">
+          <input class="form-input" id="proj-tgt-conn" style="font-family:var(--mono);font-size:12px;flex:1" placeholder="Server=target;Database=db;... or https://fn.azurewebsites.net/api/db?code=...">
+          <button class="btn btn-ghost btn-sm" onclick="testProjectConn('tgt')" style="flex-shrink:0;margin-top:0">Test</button>
+        </div>
+        <div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:0.5rem">
+          <span style="color:var(--text3)">Used by all steps as the target.</span>
+          <span id="tgt-conn-status" style="font-family:var(--mono);font-size:11px"></span>
+        </div>
       </div>
     </div>
   </div>
@@ -872,6 +884,29 @@ function formatSqlVal(val) {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+async function testProjectConn(which) {
+  const inputEl  = document.getElementById(which === 'src' ? 'proj-src-conn' : 'proj-tgt-conn');
+  const statusEl = document.getElementById(which === 'src' ? 'src-conn-status' : 'tgt-conn-status');
+  const conn     = inputEl?.value.trim();
+  if (!conn) { alert('Please enter a connection string or URL first.'); return; }
+
+  statusEl.textContent = 'Testing…';
+  statusEl.style.color = 'var(--accent)';
+
+  try {
+    const res = await dbCall(conn, { action: 'test' });
+    if (res.success) {
+      statusEl.textContent = '✓ ' + res.database + ' · ' + res.user;
+      statusEl.style.color = 'var(--green)';
+    } else {
+      throw new Error(res.error || 'Test failed');
+    }
+  } catch(e) {
+    statusEl.textContent = '✕ ' + e.message;
+    statusEl.style.color = 'var(--red)';
+  }
+}
+
 function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
