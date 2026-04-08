@@ -1,4 +1,4 @@
-name: Build and deploy Node.js project to Azure Function App - cygenix-db-api
+name: Deploy cygenix-db-api to Azure Functions
 
 on:
   push:
@@ -17,6 +17,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        working-directory: azure-function
+        run: npm install --omit=dev
+
+      - name: Zip function app from inside the folder
+        working-directory: azure-function
+        run: zip -r ../function.zip . -x "*.md" -x "local.settings.json"
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -29,5 +42,4 @@ jobs:
         with:
           app-name: 'cygenix-db-api'
           slot-name: 'Production'
-          package: 'azure-function'
-          remote-build: true
+          package: function.zip
