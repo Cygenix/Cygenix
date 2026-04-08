@@ -236,12 +236,18 @@ textarea.form-input{resize:vertical;line-height:1.6}
     document.getElementById('user-name').textContent = name;
   } catch {}
   // Pre-fill connections from sessionStorage if available
-  const srcCs = sessionStorage.getItem('cygenix_src_conn_string') || '';
-  const tgtCs = sessionStorage.getItem('cygenix_conn_string') || '';
-  const tgtFn = sessionStorage.getItem('cygenix_fn_url') || '';
+  const srcCs  = sessionStorage.getItem('cygenix_src_conn_string') || '';
+  const tgtCs  = sessionStorage.getItem('cygenix_conn_string') || '';
+  const tgtFn  = sessionStorage.getItem('cygenix_fn_url') || '';
+  const tgtKey = sessionStorage.getItem('cygenix_fn_key') || '';
   if (srcCs) document.getElementById('proj-src-conn').value = srcCs;
-  if (tgtFn) document.getElementById('proj-tgt-conn').value = tgtFn;
-  else if (tgtCs) document.getElementById('proj-tgt-conn').value = tgtCs;
+  // For target: if Azure Function, store URL+key together so dbCall works
+  if (tgtFn) {
+    const full = tgtKey ? tgtFn + '?code=' + encodeURIComponent(tgtKey) : tgtFn;
+    document.getElementById('proj-tgt-conn').value = full;
+  } else if (tgtCs) {
+    document.getElementById('proj-tgt-conn').value = tgtCs;
+  }
 })();
 
 // ── Project state ─────────────────────────────────────────────────────────────
@@ -403,7 +409,23 @@ function closeModal() {
 
 function getModalForm(type, step) {
   const v = (field, def='') => step ? (step[field] || def) : def;
-  if (type === 'migration') return `
+  if (type === 'migration') {
+    // Check for saved mappings from connect.html
+    const savedMappings = getSavedMappings();
+    const mappingOptions = savedMappings.length
+      ? '<option value="">— configure manually below —</option>' + savedMappings.map((m,i) =>
+          '<option value="' + i + '">' + (m.srcTable||'?') + ' → ' + (m.tgtTable||'?') + ' (' + (m.mappedCols||0) + ' cols' + (m.savedAt ? ', ' + timeAgo(m.savedAt) : '') + ')</option>').join('')
+      : '<option value="">— no saved mappings found —</option>';
+    return `
+    <div style="background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.875rem;margin-bottom:1.25rem">
+      <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:0.5rem">Import saved mapping from Live DB Migration</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:0.75rem">Complete a mapping in the Live DB Migration tool first, then import it here. This brings across the full column mapping, type casts, and Was/Is rules.</div>
+      <select class="form-input" id="sf-import-mapping" onchange="importSavedMapping(this.value)" style="font-family:var(--mono);font-size:12px">
+        ${mappingOptions}
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="window.open('/connect.html','_blank')" style="margin-top:0.75rem">Open Live DB Migration →</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:0.75rem">— or configure manually —</div>
     <div class="form-row">
       <label class="form-label">Step name</label>
       <input class="form-input" id="sf-name" placeholder="e.g. Migrate Customers table" value="${escHtml(v('name'))}">
@@ -423,13 +445,15 @@ function getModalForm(type, step) {
       <input class="form-input" id="sf-rowLimit" type="number" value="${v('rowLimit','0')}" style="width:160px">
     </div>
     <div class="form-row">
-      <label class="form-label">Column mapping JSON <span style="color:var(--text3);font-weight:400">(paste from connect.html or leave blank for auto)</span></label>
-      <textarea class="form-input" id="sf-mapping" rows="4" style="font-family:var(--mono);font-size:11px" placeholder='[{"srcCol":"id","tgtCol":"CustomerID","transform":"NONE"},...]'>${escHtml(v('mapping'))}</textarea>
+      <label class="form-label">Column mapping JSON <span style="color:var(--text3);font-weight:400">(auto-generated or paste from connect.html)</span></label>
+      <div id="mapping-preview" style="font-size:11px;color:var(--text3);margin-bottom:0.4rem"></div>
+      <textarea class="form-input" id="sf-mapping" rows="5" style="font-family:var(--mono);font-size:11px" placeholder='[{"srcCol":"id","tgtCol":"CustomerID","tgtType":"INT","transform":"NONE"},...]'>${escHtml(v('mapping'))}</textarea>
     </div>
     <div class="form-row" style="margin-bottom:0">
       <label class="form-label">Was/Is rules JSON <span style="color:var(--text3);font-weight:400">(optional)</span></label>
-      <textarea class="form-input" id="sf-wasisRules" rows="3" style="font-family:var(--mono);font-size:11px" placeholder='[{"srcTable":"customers","srcField":"status","oldVal":"A","newVal":"Active"}]'>${escHtml(v('wasisRules'))}</textarea>
+      <textarea class="form-input" id="sf-wasisRules" rows="3" style="font-family:var(--mono);font-size:11px" placeholder='[{"srcField":"status","oldVal":"A","newVal":"Active"}]'>${escHtml(v('wasisRules'))}</textarea>
     </div>`;
+  }
 
   if (type === 'sql') return `
     <div class="form-row">
@@ -534,8 +558,10 @@ function confirmAddStep() {
     step.srcTable  = (document.getElementById('sf-srcTable')?.value || '').trim();
     step.tgtTable  = (document.getElementById('sf-tgtTable')?.value || '').trim();
     step.rowLimit  = parseInt(document.getElementById('sf-rowLimit')?.value || '0') || 0;
-    try { step.mapping    = JSON.parse(document.getElementById('sf-mapping')?.value || 'null'); } catch { step.mapping = null; }
-    try { step.wasisRules = JSON.parse(document.getElementById('sf-wasisRules')?.value || 'null'); } catch { step.wasisRules = null; }
+    const rawMap = document.getElementById('sf-mapping')?.value || '';
+    try { step.mapping = rawMap ? JSON.parse(rawMap) : null; } catch { step.mapping = null; }
+    const rawWasis = document.getElementById('sf-wasisRules')?.value || '';
+    try { step.wasisRules = rawWasis ? JSON.parse(rawWasis) : null; } catch { step.wasisRules = null; }
   } else if (type === 'sql') {
     step.sql = (document.getElementById('sf-sql')?.value || '').trim();
   } else if (type === 'validation') {
@@ -848,6 +874,70 @@ function formatSqlVal(val) {
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(iso) {
+  const secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
+  if (secs < 60)    return 'just now';
+  if (secs < 3600)  return Math.floor(secs/60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
+  return Math.floor(secs/86400) + 'd ago';
+}
+
+// Scan localStorage for saved connect.html mapping snapshots
+function getSavedMappings() {
+  const maps = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith('cygenix_connect_state_')) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const snap = JSON.parse(raw);
+      if (!snap.columnMapping || !snap.columnMapping.length) continue;
+      maps.push({
+        key,
+        srcTable:   snap.selectedTargetTable ? snap.sourceFileName : snap.sourceFileName,
+        tgtTable:   snap.selectedTargetTable ? snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name : '',
+        mappedCols: snap.columnMapping.filter(m => m.tgtCol).length,
+        savedAt:    snap.savedAt,
+        snap
+      });
+    }
+  } catch {}
+  return maps.sort((a,b) => new Date(b.savedAt||0) - new Date(a.savedAt||0));
+}
+
+function importSavedMapping(indexStr) {
+  if (indexStr === '') return;
+  const maps = getSavedMappings();
+  const m    = maps[parseInt(indexStr)];
+  if (!m) return;
+  const snap = m.snap;
+
+  // Fill in the form fields from the snapshot
+  const nameEl = document.getElementById('sf-name');
+  const srcEl  = document.getElementById('sf-srcTable');
+  const tgtEl  = document.getElementById('sf-tgtTable');
+  const mapEl  = document.getElementById('sf-mapping');
+  const wasEl  = document.getElementById('sf-wasisRules');
+  const prvEl  = document.getElementById('mapping-preview');
+
+  if (nameEl && !nameEl.value) nameEl.value = (snap.sourceFileName || '') + ' → ' + (m.tgtTable || '');
+  if (srcEl)  srcEl.value = snap.sourceFileName || '';
+  if (tgtEl && snap.selectedTargetTable) tgtEl.value = snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name;
+
+  // Serialise the column mapping
+  const mapping = (snap.columnMapping || []).filter(m => m.tgtCol).map(m => ({
+    srcCol: m.srcCol, tgtCol: m.tgtCol, tgtType: m.tgtType || '', transform: m.transform || 'NONE', transformExpr: m.transformExpr || null
+  }));
+  if (mapEl) mapEl.value = JSON.stringify(mapping, null, 2);
+  if (prvEl) prvEl.textContent = mapping.length + ' column mappings imported · ' + mapping.filter(m => m.transform !== 'NONE').length + ' with transforms';
+
+  // Import Was/Is rules
+  if (wasEl && snap.wasisRules && snap.wasisRules.length) {
+    wasEl.value = JSON.stringify(snap.wasisRules, null, 2);
+  }
 }
 
 function showToast(msg) {
