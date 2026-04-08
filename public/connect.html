@@ -1020,7 +1020,7 @@ async function onSourceTableChange() {
     const i = parseInt(key);
     if (!isNaN(i) && S.sourceTables[i]) {
       S.selectedSourceTable = S.sourceTables[i];
-      $('src-table-stats').textContent = S.selectedSourceTable.columns.length + ' columns · ' + S.selectedSourceTable.rows.length.toLocaleString() + ' rows';
+      $('src-table-stats').textContent = S.selectedSourceTable.columns.length + ' columns · ' + (S.selectedSourceTable.rows?.length || S.selectedSourceTable.rowCount || '?').toLocaleString() + ' rows';
       if ($('src-fetch-panel')) $('src-fetch-panel').style.display = 'none';
       checkStep3Ready();
     }
@@ -1392,9 +1392,9 @@ async function remapWithClaude(){
 }
 
 async function askClaudeForMapping(src, tgt, apiKey){
-  const srcSample = src.rows.slice(0, 10);
+  const srcSample = (src.rows || []).slice(0, 10);
   const srcTypes = {};
-  src.columns.forEach(c => { srcTypes[c] = inferType(src.rows.map(r => r[c])); });
+  src.columns.forEach(c => { srcTypes[c] = inferType((src.rows || []).map(r => r[c])); });
 
   const prompt = `You are a SQL Server migration expert. Map source columns to target columns.
 
@@ -1454,7 +1454,7 @@ Rules:
 
 function autoMap(src, tgt){
   return src.columns.map(srcCol => {
-    const srcType = inferType(src.rows.map(r => r[srcCol]));
+    const srcType = inferType((src.rows || []).map(r => r[srcCol]));
     const tgtCol = tgt.columns.find(c =>
       c.name.toLowerCase() === srcCol.toLowerCase() ||
       c.name.toLowerCase().replace(/_/g,'') === srcCol.toLowerCase().replace(/_/g,'')
