@@ -205,8 +205,19 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <input class="form-input" id="sql-name" placeholder="e.g. Create indexes, Truncate staging table">
       </div>
       <div class="form-row">
-        <label class="form-label">SQL script <span style="color:var(--text3);font-weight:400">(runs on target database)</span></label>
-        <textarea class="form-input" id="sql-body" rows="8" placeholder="-- Write your SQL here&#10;DELETE FROM [dbo].[staging_table];&#10;CREATE INDEX IX_Name ON [dbo].[Customers] ([Name]);"></textarea>
+        <label class="form-label">Run on</label>
+        <div style="display:flex;gap:1.5rem">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text2)">
+            <input type="radio" name="sql-conn" value="target" checked style="accent-color:var(--accent)"> Target database
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text2)">
+            <input type="radio" name="sql-conn" value="source" style="accent-color:var(--accent)"> Source database
+          </label>
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">SQL script</label>
+        <textarea class="form-input" id="sql-body" rows="7" placeholder="-- Write your SQL here&#10;DELETE FROM [dbo].[staging_table];&#10;CREATE INDEX IX_Name ON [dbo].[Customers] ([Name]);"></textarea>
       </div>
       <div class="form-row" style="margin-bottom:0">
         <label class="form-label">Or upload a .sql file</label>
@@ -332,7 +343,7 @@ function renderSteps() {
     const color = isMigration ? 'var(--teal-bg)' : 'var(--accent-glow)';
     const meta  = isMigration
       ? esc(step.srcTable||'?') + ' → ' + esc(step.tgtTable||'?') + ' · ' + (step.columnMapping?.filter(m=>m.tgtCol).length||0) + ' cols'
-      : (step.sql||'').slice(0,60) + '…';
+      : (step.connOn==='source'?'[source] ':'[target] ') + (step.sql||'').slice(0,55) + '…';
     const statusCls = 'status-' + (step.status||'pending');
 
     card.innerHTML = `
@@ -392,6 +403,9 @@ function openSqlModal(editIndex) {
     document.getElementById('sql-name').value = '';
     document.getElementById('sql-body').value = '';
   }
+  // Restore radio selection when editing
+  const connOn = editingSqlIndex !== null ? (project.steps[editingSqlIndex].connOn || 'target') : 'target';
+  document.querySelectorAll('input[name="sql-conn"]').forEach(r => { r.checked = r.value === connOn; });
   document.getElementById('sql-modal').style.display = 'flex';
 }
 
@@ -405,10 +419,11 @@ function loadSqlFile(input) {
 }
 
 function confirmSqlStep() {
-  const name = document.getElementById('sql-name').value.trim() || 'SQL script';
-  const sql  = document.getElementById('sql-body').value.trim();
+  const name    = document.getElementById('sql-name').value.trim() || 'SQL script';
+  const sql     = document.getElementById('sql-body').value.trim();
+  const connOn  = document.querySelector('input[name="sql-conn"]:checked')?.value || 'target';
   if (!sql) { alert('Please enter SQL or upload a file.'); return; }
-  const step = { type:'sql', name, sql, status:'pending', log:'' };
+  const step = { type:'sql', name, sql, connOn, status:'pending', log:'' };
   if (editingSqlIndex !== null) {
     project.steps[editingSqlIndex] = { ...project.steps[editingSqlIndex], ...step };
   } else {
@@ -506,7 +521,7 @@ async function runProject() {
         const r = await runMigrationStep(step, srcConn, tgtConn, log);
         stepLog=r.log; ok=r.ok;
       } else {
-        const r = await runSqlStep(step, tgtConn, log);
+        const r = await runSqlStep(step, srcConn, tgtConn, log);
         stepLog=r.log; ok=r.ok;
       }
     } catch(e) { stepLog='Error: '+e.message; ok=false; log('Error: '+e.message,'err'); }
@@ -591,12 +606,15 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   return { ok:res.errors===0, log:stepLog };
 }
 
-async function runSqlStep(step, tgtConn, log) {
+async function runSqlStep(step, srcConn, tgtConn, log) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
   if (!step.sql) throw new Error('No SQL in this step');
-  add('Executing SQL ('+step.sql.length+' chars)…');
-  const res = await dbCall(tgtConn, { action:'execute', sql:step.sql });
+  const useConn   = step.connOn === 'source' ? srcConn : tgtConn;
+  const connLabel = step.connOn === 'source' ? 'source' : 'target';
+  if (!useConn) throw new Error('No '+connLabel+' connection configured');
+  add('Executing on '+connLabel+' DB ('+step.sql.length+' chars)…');
+  const res = await dbCall(useConn, { action:'execute', sql:step.sql });
   add('Done · '+(res.rowsAffected||0)+' rows affected');
   return { ok:true, log:stepLog };
 }
