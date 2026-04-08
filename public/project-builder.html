@@ -399,18 +399,28 @@ let editingIndex     = null;
 function openAddStep(type) {
   currentStepType = type;
   editingIndex    = null;
-  document.getElementById('modal-title').textContent = 'Add ' + STEP_TYPES[type].label + ' step';
-  document.getElementById('modal-body').innerHTML    = getModalForm(type, null);
-  document.getElementById('add-step-modal').style.display = 'flex';
+  try {
+    document.getElementById('modal-title').textContent = 'Add ' + STEP_TYPES[type].label + ' step';
+    document.getElementById('modal-body').innerHTML    = getModalForm(type, null);
+    document.getElementById('add-step-modal').style.display = 'flex';
+  } catch(e) {
+    alert('Could not open form: ' + e.message);
+    console.error('openAddStep error:', e);
+  }
 }
 
 function editStep(i) {
   const step      = project.steps[i];
   currentStepType = step.type;
   editingIndex    = i;
-  document.getElementById('modal-title').textContent = 'Edit ' + STEP_TYPES[step.type].label;
-  document.getElementById('modal-body').innerHTML    = getModalForm(step.type, step);
-  document.getElementById('add-step-modal').style.display = 'flex';
+  try {
+    document.getElementById('modal-title').textContent = 'Edit ' + STEP_TYPES[step.type].label;
+    document.getElementById('modal-body').innerHTML    = getModalForm(step.type, step);
+    document.getElementById('add-step-modal').style.display = 'flex';
+  } catch(e) {
+    alert('Could not open form: ' + e.message);
+    console.error('editStep error:', e);
+  }
 }
 
 function closeModal() {
@@ -420,7 +430,13 @@ function closeModal() {
 }
 
 function getModalForm(type, step) {
-  const v = (field, def='') => step ? (step[field] || def) : def;
+  const v = (field, def='') => {
+    if (!step) return def;
+    const val = step[field];
+    if (val === null || val === undefined) return def;
+    if (typeof val === 'object') return JSON.stringify(val, null, 2);
+    return String(val) || def;
+  };
   if (type === 'migration') {
     // Check for saved mappings from connect.html
     const savedMappings = getSavedMappings();
@@ -924,22 +940,25 @@ function getSavedMappings() {
   const maps = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !key.startsWith('cygenix_connect_state_')) continue;
-      const raw = localStorage.getItem(key);
-      if (!raw) continue;
-      const snap = JSON.parse(raw);
-      if (!snap.columnMapping || !snap.columnMapping.length) continue;
-      maps.push({
-        key,
-        srcTable:   snap.selectedTargetTable ? snap.sourceFileName : snap.sourceFileName,
-        tgtTable:   snap.selectedTargetTable ? snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name : '',
-        mappedCols: snap.columnMapping.filter(m => m.tgtCol).length,
-        savedAt:    snap.savedAt,
-        snap
-      });
+      try {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith('cygenix_connect_state_')) continue;
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const snap = JSON.parse(raw);
+        if (!snap || !snap.columnMapping || !snap.columnMapping.length) continue;
+        const tgt = snap.selectedTargetTable;
+        maps.push({
+          key,
+          srcTable:   String(snap.sourceFileName || 'source'),
+          tgtTable:   tgt ? String(tgt.schema || '') + '.' + String(tgt.name || '') : '',
+          mappedCols: snap.columnMapping.filter(m => m && m.tgtCol).length,
+          savedAt:    snap.savedAt || '',
+          snap
+        });
+      } catch(innerE) { /* skip bad entries */ }
     }
-  } catch {}
+  } catch(e) { console.warn('getSavedMappings error:', e); }
   return maps.sort((a,b) => new Date(b.savedAt||0) - new Date(a.savedAt||0));
 }
 
