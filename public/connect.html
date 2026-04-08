@@ -193,9 +193,9 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
   <!-- STEP TABS -->
   <div class="steps-bar">
-    <div class="step-tab active" id="tab-1" onclick="goStep(1)"><span class="step-num">1</span>Connect</div>
-    <div class="step-tab" id="tab-2" onclick="goStep(2)"><span class="step-num">2</span>Source data</div>
-    <div class="step-tab" id="tab-3" onclick="goStep(3)"><span class="step-num">3</span>Map columns</div>
+    <div class="step-tab active" id="tab-1" onclick="goStep(1)"><span class="step-num">1</span>Source DB</div>
+    <div class="step-tab" id="tab-2" onclick="goStep(2)"><span class="step-num">2</span>Target DB</div>
+    <div class="step-tab" id="tab-3" onclick="goStep(3)"><span class="step-num">3</span>Select &amp; Map</div>
     <div class="step-tab" id="tab-4" onclick="goStep(4)"><span class="step-num">4</span>Preview SQL</div>
     <div class="step-tab" id="tab-5" onclick="goStep(5)"><span class="step-num">5</span>Execute</div>
   </div>
@@ -203,81 +203,133 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   <!-- ═══════════════════════════════════════════════════════════════ -->
   <!-- STEP 1: CONNECT TO TARGET DB -->
   <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- STEP 1: SOURCE DATABASE -->
   <div id="step-1" class="step-view active">
     <div class="panel">
-      <div class="panel-title">Connect to target database</div>
-      <div class="panel-sub">Choose how to connect — direct connection string works immediately, Azure Function uses Managed Identity for production.</div>
+      <div class="panel-title">Connect to source database</div>
+      <div class="panel-sub">The database you are migrating <em>from</em>. Data will be read directly — no file upload needed.</div>
 
-      <!-- Connection mode selector -->
-      <div style="display:flex;gap:0.75rem;margin-bottom:1.5rem">
-        <div id="mode-direct" onclick="setConnMode('direct')" style="flex:1;border:2px solid var(--accent);background:var(--accent-glow);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s">
-          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:0.25rem">Direct connection string</div>
-          <div style="font-size:11px;color:var(--text3)">Works immediately — SQL auth or Windows auth via connection string</div>
+      <!-- Source connection mode -->
+      <div style="display:flex;gap:0.75rem;margin-bottom:1.25rem">
+        <div id="src-mode-direct" onclick="setSrcMode('direct')" style="flex:1;border:2px solid var(--accent);background:var(--accent-glow);border-radius:var(--r-lg);padding:0.875rem;cursor:pointer;transition:all 0.15s">
+          <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:0.2rem">Direct connection string</div>
+          <div style="font-size:11px;color:var(--text3)">SQL auth via connection string</div>
         </div>
-        <div id="mode-azure" onclick="setConnMode('azure')" style="flex:1;border:0.5px solid var(--border2);background:var(--bg3);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s">
-          <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:0.25rem">Azure Function <span style="font-size:10px;font-family:var(--mono);background:var(--teal-bg);color:var(--teal);padding:1px 6px;border-radius:4px;margin-left:4px">Recommended</span></div>
-          <div style="font-size:11px;color:var(--text3)">Managed Identity — no passwords, no firewall rules needed</div>
+        <div id="src-mode-azure" onclick="setSrcMode('azure')" style="flex:1;border:0.5px solid var(--border2);background:var(--bg3);border-radius:var(--r-lg);padding:0.875rem;cursor:pointer;transition:all 0.15s">
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:0.2rem">Azure Function</div>
+          <div style="font-size:11px;color:var(--text3)">Managed Identity</div>
         </div>
       </div>
-
-      <!-- DIRECT mode fields -->
-      <div id="conn-direct">
+      <div id="src-conn-direct">
         <div class="form-row">
-          <label class="form-label">Connection string</label>
-          <textarea id="conn-string" class="form-input" rows="3" style="font-family:var(--mono);font-size:12px"
-            placeholder="Server=myserver.database.windows.net;Database=mydb;User Id=myuser;Password=mypass;Encrypt=True;"></textarea>
-          <div class="form-hint">Supports ADO.NET format. The connection is made from Netlify's servers.</div>
+          <label class="form-label">Source connection string</label>
+          <textarea id="src-conn-string" class="form-input" rows="2" style="font-family:var(--mono);font-size:12px"
+            placeholder="Server=source-server;Database=sourcedb;User Id=user;Password=pass;TrustServerCertificate=True;"></textarea>
         </div>
-        <div class="panel" style="padding:0.75rem 1rem;margin-bottom:0.5rem">
-          <div style="font-size:11px;font-weight:500;color:var(--text2);margin-bottom:0.5rem">Examples</div>
-          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);line-height:2">
-            <span style="color:var(--teal)">Azure SQL:</span> Server=server.database.windows.net;Database=db;User Id=user;Password=pass;Encrypt=True;<br>
-            <span style="color:var(--accent)">On-prem:</span> Server=192.168.1.10,1433;Database=db;User Id=sa;Password=pass;TrustServerCertificate=True;<br>
-            <span style="color:var(--purple)">AWS RDS:</span> Server=mydb.xxxx.rds.amazonaws.com;Database=db;User Id=admin;Password=pass;Encrypt=True;
+      </div>
+      <div id="src-conn-azure" style="display:none">
+        <div class="two-col">
+          <div class="form-row">
+            <label class="form-label">Azure Function URL</label>
+            <input id="src-fn-url" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="https://source-fn.azurewebsites.net/api/db"/>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Function key</label>
+            <input id="src-fn-key" type="password" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="Function key"/>
           </div>
         </div>
       </div>
+      <div style="display:flex;gap:0.75rem;margin-top:0.75rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="testSourceConnection()" id="src-test-btn">Test source connection</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearSourceConnection()">Clear</button>
+      </div>
+      <div class="status-box" id="src-conn-status"></div>
 
-      <!-- AZURE mode fields -->
+    </div>
+
+    <div class="panel" id="src-info-panel" style="display:none">
+      <div class="section-header">
+        <div>
+          <div class="panel-title" style="color:var(--green)">Source connected</div>
+          <div class="panel-sub" id="src-info-text" style="margin-bottom:0"></div>
+        </div>
+        <button class="btn btn-primary" onclick="goStep(2)">Next: Connect target DB →</button>
+      </div>
+      <div class="divider" style="margin:1rem 0"></div>
+      <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.75rem">Source tables (<span id="src-table-count">0</span>)
+        <span style="font-size:11px;color:var(--text3);margin-left:0.5rem;font-weight:400">— select a table to migrate in Step 3</span>
+      </div>
+      <div class="schema-tree" id="src-schema-tree"></div>
+    </div>
+
+    <!-- Fallback: file upload if source DB not accessible -->
+    <div class="panel" style="border-color:var(--border);margin-top:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:0.2rem">Source not directly accessible?</div>
+          <div style="font-size:11px;color:var(--text3)">Export to a file and upload instead (.sql, .csv, .json, .tsv)</div>
+        </div>
+        <div style="display:flex;gap:0.75rem;align-items:center">
+          <input type="file" id="src-file-input" style="display:none" accept=".sql,.csv,.json,.txt,.tsv" onchange="loadSourceFile(this.files[0])">
+          <button class="btn btn-ghost btn-sm" onclick="document.getElementById('src-file-input').click()">⬆ Upload file instead</button>
+        </div>
+      </div>
+      <div id="src-file-info" style="display:none;font-size:12px;color:var(--green);font-family:var(--mono);margin-top:0.75rem;padding:0.5rem;background:var(--green-bg);border-radius:var(--r)"></div>
+    </div>
+  </div>
+
+  <!-- STEP 2: TARGET DATABASE -->
+  <div id="step-2" class="step-view">
+    <div class="panel">
+      <div class="panel-title">Connect to target database</div>
+      <div class="panel-sub">The database you are migrating <em>into</em>. Choose how to connect.</div>
+
+      <!-- Connection mode selector -->
+      <div style="display:flex;gap:0.75rem;margin-bottom:1.25rem">
+        <div id="mode-direct" onclick="setConnMode('direct')" style="flex:1;border:2px solid var(--accent);background:var(--accent-glow);border-radius:var(--r-lg);padding:0.875rem;cursor:pointer;transition:all 0.15s">
+          <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:0.2rem">Direct connection string</div>
+          <div style="font-size:11px;color:var(--text3)">SQL auth via connection string</div>
+        </div>
+        <div id="mode-azure" onclick="setConnMode('azure')" style="flex:1;border:0.5px solid var(--border2);background:var(--bg3);border-radius:var(--r-lg);padding:0.875rem;cursor:pointer;transition:all 0.15s">
+          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:0.2rem">Azure Function <span style="font-size:10px;font-family:var(--mono);background:var(--teal-bg);color:var(--teal);padding:1px 6px;border-radius:4px;margin-left:4px">Recommended</span></div>
+          <div style="font-size:11px;color:var(--text3)">Managed Identity — no passwords needed</div>
+        </div>
+      </div>
+      <div id="conn-direct">
+        <div class="form-row">
+          <label class="form-label">Target connection string</label>
+          <textarea id="conn-string" class="form-input" rows="2" style="font-family:var(--mono);font-size:12px"
+            placeholder="Server=myserver.database.windows.net;Database=mydb;User Id=myuser;Password=mypass;Encrypt=True;"></textarea>
+          <div class="form-hint">ADO.NET or mssql:// URL format.</div>
+        </div>
+      </div>
       <div id="conn-azure" style="display:none">
         <div class="two-col">
           <div class="form-row">
             <label class="form-label">Azure Function URL</label>
-            <input id="fn-url" class="form-input" style="font-family:var(--mono);font-size:12px"
-              placeholder="https://cygenix-db-api.azurewebsites.net/api/db" />
-            <div class="form-hint">Function App URL — ends with /api/db</div>
+            <input id="fn-url" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="https://cygenix-db-api.azurewebsites.net/api/db"/>
           </div>
           <div class="form-row">
-            <label class="form-label">Function key <span class="tag">from Azure Portal</span></label>
-            <input id="fn-key" type="password" class="form-input" style="font-family:var(--mono);font-size:12px"
-              placeholder="Paste your function key here" />
-            <div class="form-hint">Function App → Functions → db → Function Keys → default</div>
-          </div>
-        </div>
-        <div class="panel" style="padding:0.75rem 1rem;border-color:rgba(61,126,255,0.2);background:var(--accent-glow);margin-bottom:0.5rem">
-          <div style="font-size:11px;color:var(--text2);line-height:2;font-family:var(--mono)">
-            <span style="color:var(--teal)">Function URL:</span> Azure Portal → Function App → Overview → URL → append /api/db<br>
-            <span style="color:var(--teal)">Function Key:</span> Function App → Functions → db → Function Keys → default
+            <label class="form-label">Function key</label>
+            <input id="fn-key" type="password" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="Paste function key"/>
           </div>
         </div>
       </div>
-
-      <div style="display:flex;gap:0.75rem;margin-top:1rem;align-items:center;flex-wrap:wrap">
+      <div style="display:flex;gap:0.75rem;margin-top:0.75rem;align-items:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="testConnection()" id="test-btn">Test connection</button>
         <button class="btn btn-ghost" onclick="clearConnection()">Clear</button>
         <span style="font-size:12px;color:var(--text3)">Values stored in browser session only.</span>
       </div>
-
       <div class="status-box" id="conn-status"></div>
     </div>
 
     <div class="panel" id="db-info-panel" style="display:none">
       <div class="section-header">
         <div>
-          <div class="panel-title" style="color:var(--green)">Connected</div>
+          <div class="panel-title" style="color:var(--green)">Target connected</div>
           <div class="panel-sub" id="db-info-text" style="margin-bottom:0"></div>
         </div>
-        <button class="btn btn-primary" onclick="goStep(2)">Next: Load source data →</button>
+        <button class="btn btn-primary" onclick="goStep(3)">Next: Select &amp; Map →</button>
       </div>
       <div class="divider" style="margin:1rem 0"></div>
       <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.75rem">Target tables (<span id="table-count">0</span>)</div>
@@ -286,67 +338,48 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
-  <!-- STEP 2: LOAD SOURCE DATA -->
-  <!-- ═══════════════════════════════════════════════════════════════ -->
-  <div id="step-2" class="step-view">
-    <div class="panel">
-      <div class="panel-title">Load source data</div>
-      <div class="panel-sub">Upload the file you want to migrate into the target database, or paste data directly.</div>
-
-      <div class="two-col">
-        <div>
-          <div class="form-row">
-            <label class="form-label">Upload source file</label>
-            <div class="upload-zone" id="src-upload" onclick="document.getElementById('src-file-input').click()" style="border:1.5px dashed var(--border2);border-radius:var(--r-lg);padding:1.5rem;text-align:center;cursor:pointer;transition:all 0.2s">
-              <input type="file" id="src-file-input" style="display:none" accept=".sql,.csv,.json,.txt,.tsv" onchange="loadSourceFile(this.files[0])">
-              <div style="font-size:13px;color:var(--text);margin-bottom:0.25rem">Drop file here or click</div>
-              <div style="font-size:11px;color:var(--text3)">.sql · .csv · .json · .txt · .tsv</div>
-            </div>
-          </div>
-          <div id="src-file-info" style="display:none;font-size:12px;color:var(--text2);font-family:var(--mono);padding:0.5rem 0"></div>
-        </div>
-        <div>
-          <div class="form-row">
-            <label class="form-label">Target table to map into</label>
-            <select id="target-table-select" class="form-input" style="font-family:var(--mono);cursor:pointer" onchange="onTargetTableChange()">
-              <option value="">— select target table —</option>
-            </select>
-          </div>
-          <div id="target-table-info" style="font-size:12px;color:var(--text3);font-family:var(--mono);line-height:1.8"></div>
-        </div>
-      </div>
-
-      <div id="src-tables-panel" style="display:none;margin-top:1rem">
-        <div class="form-row">
-          <label class="form-label">Source table to use <span class="tag">if file has multiple</span></label>
-          <select id="src-table-select" class="form-input" style="font-family:var(--mono);cursor:pointer" onchange="onSourceTableChange()">
-          </select>
-        </div>
-      </div>
-
-      <div id="src-restored-notice" style="display:none;background:rgba(61,126,255,0.08);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.75rem;margin-top:1rem;font-size:12px;color:var(--accent)">
-        📂 Source columns restored from saved session. Your column mapping is intact.<br>
-        <strong>Re-upload the same source file</strong> to regenerate the SQL — or go straight to <a href="#" onclick="goStep(3);return false;" style="color:var(--accent)">Step 3: Map columns</a> to review your mapping first.
-      </div>
-      <div id="src-preview-panel" style="display:none;margin-top:1rem">
-        <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.5rem">Source data preview (first 5 rows)</div>
-        <div style="overflow-x:auto">
-          <table class="map-table" id="src-preview-table"></table>
-        </div>
-      </div>
-
-      <div style="display:flex;gap:0.75rem;margin-top:1.5rem">
-        <button class="btn btn-ghost" onclick="goStep(1)">← Back</button>
-        <button class="btn btn-primary" id="step2-next-btn" onclick="goStep(3)" disabled>Next: Map columns →</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════════════ -->
   <!-- STEP 3: MAP COLUMNS -->
   <!-- ═══════════════════════════════════════════════════════════════ -->
   <div id="step-3" class="step-view">
     <div class="panel">
+      <!-- Table selectors: source table and target table -->
+      <div class="two-col" style="margin-bottom:1.25rem">
+        <div>
+          <label class="form-label">Source table</label>
+          <select id="src-table-select" class="form-input" style="font-family:var(--mono);cursor:pointer" onchange="onSourceTableChange()">
+            <option value="">— select source table —</option>
+          </select>
+          <div id="src-table-stats" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px"></div>
+        </div>
+        <div>
+          <label class="form-label">Target table</label>
+          <select id="target-table-select" class="form-input" style="font-family:var(--mono);cursor:pointer" onchange="onTargetTableChange()">
+            <option value="">— select target table —</option>
+          </select>
+          <div id="target-table-info" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px"></div>
+        </div>
+      </div>
+
+      <!-- Row fetch controls (only shown when source is a live DB) -->
+      <div id="src-fetch-panel" style="display:none;background:var(--bg3);border-radius:var(--r);padding:0.75rem 1rem;margin-bottom:1.25rem;display:none">
+        <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+          <div style="font-size:12px;color:var(--text2)">Rows to fetch from source:</div>
+          <select id="src-row-limit" class="form-input" style="width:130px;font-family:var(--mono);font-size:12px">
+            <option value="1000">First 1,000</option>
+            <option value="5000">First 5,000</option>
+            <option value="10000">First 10,000</option>
+            <option value="50000">First 50,000</option>
+            <option value="0">All rows</option>
+          </select>
+          <div style="font-size:11px;color:var(--text3)" id="src-row-hint">Rows will be fetched when you generate preview SQL</div>
+        </div>
+      </div>
+
+      <!-- Restored session notice -->
+      <div id="src-restored-notice" style="display:none;background:rgba(61,126,255,0.08);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.75rem;margin-bottom:1rem;font-size:12px;color:var(--accent)">
+        📂 Mapping restored from saved session. Source data will be fetched live when you generate SQL.
+      </div>
+
       <div class="section-header">
         <div>
           <div class="panel-title">Column mapping</div>
@@ -416,7 +449,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
       <div style="display:flex;gap:0.75rem">
         <button class="btn btn-ghost" onclick="goStep(2)">← Back</button>
-        <button class="btn btn-primary" onclick="generatePreviewSQL()">Next: Generate preview SQL →</button>
+        <button class="btn btn-primary" id="step3-next-btn" onclick="proceedToPreview()">Next: Generate preview SQL →</button>
       </div>
     </div>
   </div>
@@ -551,13 +584,21 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 // ── State ────────────────────────────────────────────────────────────────────
 const S = {
   apiKey: '',
+  // Target connection (where data goes)
   connString: '',
-  targetSchema: null,        // { tables: [...] }
-  selectedTargetTable: null, // { name, columns, primaryKeys, ... }
+  targetSchema: null,
+  selectedTargetTable: null,
+  // Source connection (where data comes from)
+  srcConnString: '',       // live DB connection string
+  srcConnMode: 'direct',   // 'direct' | 'azure'
+  srcFnUrl: '',
+  srcSchema: null,         // source DB schema
+  selectedSourceTable: null, // { tableName, columns, rows, fromLiveDB }
+  // File fallback
   sourceFile: null,
-  sourceTables: [],          // parsed tables from source file
-  selectedSourceTable: null, // { tableName, columns, rows }
-  columnMapping: [],         // [{ srcCol, srcType, tgtCol, tgtType, transform }]
+  sourceTables: [],
+  // Mapping + SQL
+  columnMapping: [],
   insertSQL: '',
   schemaCheckSQL: '',
   verifySQL: '',
@@ -654,7 +695,19 @@ function loadProjectState() {
 function restoreFromSnapshot(snap) {
   if (!snap) return;
 
-  // ── Connection string ──────────────────────────────────────────────────────
+  // ── Source connection ──────────────────────────────────────────────────────
+  if (snap.srcConnMode) { srcConnMode = snap.srcConnMode; setSrcMode(srcConnMode); }
+  if (snap.srcConnString) {
+    S.srcConnString = snap.srcConnString;
+    sessionStorage.setItem('cygenix_src_conn_string', snap.srcConnString);
+    const el = $('src-conn-string'); if (el) el.value = snap.srcConnString;
+  }
+  if (snap.srcSchema) {
+    S.srcSchema = snap.srcSchema;
+    populateSourceTableSelect(snap.srcSchema.tables || []);
+  }
+
+  // ── Target connection ──────────────────────────────────────────────────────
   if (snap.connMode) { connMode = snap.connMode; setConnMode(connMode); }
   if (snap.connString && snap.connMode === 'direct') {
     sessionStorage.setItem('cygenix_conn_string', snap.connString);
@@ -775,12 +828,16 @@ function saveApiKey(){
 
 // Restore saved connection values on page load
 (function restoreSession(){
-  const savedCs  = sessionStorage.getItem('cygenix_conn_string');
-  const savedUrl = sessionStorage.getItem('cygenix_fn_url');
-  const savedKey = sessionStorage.getItem('cygenix_fn_key');
-  if (savedCs  && $('conn-string')) $('conn-string').value = savedCs;
-  if (savedUrl && $('fn-url'))      $('fn-url').value = savedUrl;
-  if (savedKey && $('fn-key'))      $('fn-key').value = '••••••••';
+  const savedCs     = sessionStorage.getItem('cygenix_conn_string');
+  const savedUrl    = sessionStorage.getItem('cygenix_fn_url');
+  const savedKey    = sessionStorage.getItem('cygenix_fn_key');
+  const savedSrcCs  = sessionStorage.getItem('cygenix_src_conn_string');
+  const savedSrcUrl = sessionStorage.getItem('cygenix_src_fn_url');
+  if (savedCs     && $('conn-string'))    $('conn-string').value = savedCs;
+  if (savedUrl    && $('fn-url'))         $('fn-url').value = savedUrl;
+  if (savedKey    && $('fn-key'))         $('fn-key').value = '••••••••';
+  if (savedSrcCs  && $('src-conn-string')) { $('src-conn-string').value = savedSrcCs; S.srcConnString = savedSrcCs; }
+  if (savedSrcUrl && $('src-fn-url'))      $('src-fn-url').value = savedSrcUrl;
 })();
 function updateApiBadge(){
   const b = $('api-badge');
@@ -792,18 +849,10 @@ updateApiBadge();
 // ── Steps ────────────────────────────────────────────────────────────────────
 let currentStep = 1;
 function goStep(n){
-  if (n > 1 && !S.targetSchema){ alert('Please connect to a target database first.'); return; }
-  if (n > 2 && !S.selectedSourceTable){ alert('Please load source data and select a target table first.'); return; }
-  if (n > 3 && S.columnMapping.length === 0){ alert('Please complete column mapping first.'); return; }
-  if (n > 4 && !S.insertSQL){
-    // If mapping is restored but no rows loaded, remind user to re-upload source file
-    if (S.columnMapping.length > 0 && S.selectedSourceTable?.rows?.length === 0) {
-      alert('Please re-upload your source data file — the row data is needed to generate the SQL.');
-    } else {
-      alert('Please generate a preview first.');
-    }
-    return;
-  }
+  if (n > 1 && !S.srcSchema && !S.selectedSourceTable){ alert('Please connect to the source database first.'); return; }
+  if (n > 2 && !S.targetSchema){ alert('Please connect to the target database first.'); return; }
+  if (n > 3 && S.columnMapping.length === 0){ alert('Please select tables and complete column mapping first.'); return; }
+  if (n > 4 && !S.insertSQL){ alert('Please generate a preview first.'); return; }
   document.querySelectorAll('.step-view').forEach(el => el.classList.remove('active'));
   $('step-' + n).classList.add('active');
   document.querySelectorAll('.step-tab').forEach((el, i) => {
@@ -835,6 +884,203 @@ function setConnMode(mode) {
   $('mode-azure').style.background = isDirect ? 'var(--bg3)' : 'var(--accent-glow)';
 }
 setConnMode(connMode); // apply on load
+
+// ── Source DB connection ──────────────────────────────────────────────────────
+let srcConnMode = sessionStorage.getItem('cygenix_src_conn_mode') || 'direct';
+
+function setSrcMode(mode) {
+  srcConnMode = mode;
+  S.srcConnMode = mode;
+  sessionStorage.setItem('cygenix_src_conn_mode', mode);
+  const isDirect = mode === 'direct';
+  $('src-conn-direct').style.display = isDirect ? 'block' : 'none';
+  $('src-conn-azure').style.display  = isDirect ? 'none'  : 'block';
+  $('src-mode-direct').style.border = isDirect ? '2px solid var(--accent)' : '0.5px solid var(--border2)';
+  $('src-mode-direct').style.background = isDirect ? 'var(--accent-glow)' : 'var(--bg3)';
+  $('src-mode-azure').style.border = isDirect ? '0.5px solid var(--border2)' : '2px solid var(--accent)';
+  $('src-mode-azure').style.background = isDirect ? 'var(--bg3)' : 'var(--accent-glow)';
+}
+setSrcMode(srcConnMode);
+
+// Source DB call — uses the source connection
+async function srcDbCall(body) {
+  if (srcConnMode === 'direct') {
+    return directDbCall({ ...body, connectionString: S.srcConnString });
+  } else {
+    // Azure function for source — uses src fn url
+    const url = S.srcFnUrl;
+    if (!url) throw new Error('Source Azure Function URL not set');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60000)
+    });
+    const data = await res.json().catch(() => ({ error: 'Non-JSON response' }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+}
+
+async function testSourceConnection() {
+  const btn = $('src-test-btn');
+  btn.disabled = true; btn.textContent = 'Connecting…';
+
+  if (srcConnMode === 'direct') {
+    const cs = $('src-conn-string').value.trim();
+    if (!cs) { alert('Please enter the source connection string.'); btn.disabled=false; btn.textContent='Test source connection'; return; }
+    S.srcConnString = cs;
+    sessionStorage.setItem('cygenix_src_conn_string', cs);
+  } else {
+    const url = $('src-fn-url').value.trim();
+    const key = $('src-fn-key').value.trim();
+    if (!url) { alert('Please enter the source Azure Function URL.'); btn.disabled=false; btn.textContent='Test source connection'; return; }
+    S.srcFnUrl = url + (key ? '?code=' + encodeURIComponent(key) : '');
+    sessionStorage.setItem('cygenix_src_fn_url', url);
+    if (key) sessionStorage.setItem('cygenix_src_fn_key', key);
+  }
+
+  showStatus('src-conn-status', 'Connecting to source database…', 'info');
+  try {
+    const testRes = await srcDbCall({ action: 'test' });
+    showStatus('src-conn-status', '✓ Connected to ' + testRes.database + '\n' + testRes.version + '\nUser: ' + testRes.user, 'ok');
+    showStatus('src-conn-status', '✓ Connected to ' + testRes.database + ' — fetching schema…', 'ok');
+
+    const schemaRes = await srcDbCall({ action: 'schema' });
+    S.srcSchema = schemaRes;
+
+    // Render source schema tree
+    $('src-schema-tree').innerHTML = schemaRes.tables.length === 0
+      ? '<div style="padding:1rem;font-size:12px;color:var(--text3)">No tables found</div>'
+      : schemaRes.tables.map(t =>
+          '<div class="tree-table"><span class="tree-table-name">' + t.schema + '.' + t.name + '</span>' +
+          '<span class="tree-table-meta">' + (t.rowCount||'?').toLocaleString() + ' rows</span></div>'
+        ).join('');
+    $('src-table-count').textContent = schemaRes.tables.length;
+    $('src-info-text').textContent   = testRes.database + ' · ' + schemaRes.tables.length + ' tables';
+    $('src-info-panel').style.display = 'block';
+
+    // Populate source table dropdown in step 3
+    populateSourceTableSelect(schemaRes.tables);
+
+    $('api-badge').textContent   = testRes.database + ' source · Ready';
+    $('api-badge').className = 'conn-badge ok';
+
+  } catch(e) {
+    showStatus('src-conn-status', 'Connection failed: ' + e.message, 'err');
+  }
+  btn.disabled = false; btn.textContent = 'Test source connection';
+}
+
+function clearSourceConnection() {
+  S.srcConnString = '';
+  S.srcFnUrl = '';
+  S.srcSchema = null;
+  S.selectedSourceTable = null;
+  ['cygenix_src_conn_string','cygenix_src_fn_url','cygenix_src_fn_key'].forEach(k => sessionStorage.removeItem(k));
+  if ($('src-conn-string')) $('src-conn-string').value = '';
+  if ($('src-fn-url')) $('src-fn-url').value = '';
+  if ($('src-fn-key')) $('src-fn-key').value = '';
+  $('src-info-panel').style.display = 'none';
+  $('src-conn-status').classList.remove('visible');
+}
+
+function populateSourceTableSelect(tables) {
+  const sel = $('src-table-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— select source table —</option>' +
+    tables.map(t => '<option value="' + t.schema + '.' + t.name + '">' +
+      t.schema + '.' + t.name + ' (' + (t.rowCount||'?').toLocaleString() + ' rows)</option>').join('');
+}
+
+// Called when user selects a source table from the dropdown in step 3
+async function onSourceTableChange() {
+  const key = $('src-table-select').value;
+  if (!key) { S.selectedSourceTable = null; return; }
+
+  if (S.srcSchema) {
+    // Live DB source — build selectedSourceTable from schema (rows fetched later)
+    const tbl = S.srcSchema.tables.find(t => t.schema + '.' + t.name === key);
+    if (tbl) {
+      S.selectedSourceTable = {
+        tableName: tbl.name,
+        schemaName: tbl.schema,
+        columns: tbl.columns.map(c => c.name),
+        columnDefs: tbl.columns,
+        rows: [],       // empty until fetchSourceRows()
+        fromLiveDB: true,
+        rowCount: tbl.rowCount
+      };
+      $('src-table-stats').textContent = tbl.columns.length + ' columns · ' + (tbl.rowCount||'?').toLocaleString() + ' rows in source';
+      $('src-fetch-panel').style.display = 'block';
+      checkStep3Ready();
+    }
+  } else if (S.sourceTables.length) {
+    // File source — index is stored in option value
+    const i = parseInt(key);
+    if (!isNaN(i) && S.sourceTables[i]) {
+      S.selectedSourceTable = S.sourceTables[i];
+      $('src-table-stats').textContent = S.selectedSourceTable.columns.length + ' columns · ' + S.selectedSourceTable.rows.length.toLocaleString() + ' rows';
+      if ($('src-fetch-panel')) $('src-fetch-panel').style.display = 'none';
+      checkStep3Ready();
+    }
+  }
+
+  // Auto-build mapping if both tables selected
+  if (S.selectedTargetTable && S.selectedSourceTable) {
+    await buildMappingTable();
+  }
+}
+
+function checkStep3Ready() {
+  const ready = S.selectedSourceTable && S.selectedTargetTable;
+  const btn = $('step3-next-btn');
+  if (btn) btn.disabled = !ready;
+}
+
+// Fetch actual rows from source DB just before SQL generation
+async function fetchSourceRows() {
+  if (!S.selectedSourceTable?.fromLiveDB) return true; // file source already has rows
+  const limit = parseInt($('src-row-limit')?.value || '1000');
+  const safeSrc = '[' + S.selectedSourceTable.schemaName + '].[' + S.selectedSourceTable.tableName + ']';
+  const sql = limit > 0
+    ? 'SELECT TOP ' + limit + ' * FROM ' + safeSrc
+    : 'SELECT * FROM ' + safeSrc;
+
+  showStatus('conn-status', 'Fetching ' + (limit||'all') + ' rows from ' + safeSrc + '…', 'info');
+  try {
+    const res = await srcDbCall({ action: 'execute', sql });
+    const records = res.recordset || [];
+    if (!records.length) { showStatus('conn-status', 'No rows returned from source table.', 'err'); return false; }
+
+    // Convert recordset array to the format generatePreviewSQL expects
+    const cols = Object.keys(records[0]);
+    S.selectedSourceTable.columns = cols;
+    S.selectedSourceTable.rows    = records.map(r => {
+      const row = {};
+      cols.forEach(c => { row[c] = r[c]; });
+      return row;
+    });
+    showStatus('conn-status', '✓ Fetched ' + records.length.toLocaleString() + ' rows from ' + safeSrc, 'ok');
+    return true;
+  } catch(e) {
+    showStatus('conn-status', 'Could not fetch source rows: ' + e.message, 'err');
+    return false;
+  }
+}
+
+// proceedToPreview — fetches rows from live source then generates SQL
+async function proceedToPreview() {
+  if (!S.selectedSourceTable) { alert('Please select a source table.'); return; }
+  if (!S.selectedTargetTable) { alert('Please select a target table.'); return; }
+  if (S.columnMapping.length === 0) { alert('Please complete column mapping first.'); return; }
+
+  if (S.selectedSourceTable.fromLiveDB) {
+    const ok = await fetchSourceRows();
+    if (!ok) return;
+  }
+  generatePreviewSQL();
+}
 
 async function testConnection(){
   const btn = $('test-btn');
@@ -1010,7 +1256,20 @@ function loadSourceFile(file){
     S.selectedSourceTable = tables[0];
     S.sourceFile = file;
 
-    $('src-file-info').textContent = `${file.name} · ${tables.length} table(s) · ${tables.reduce((s,t)=>s+t.rows.length,0).toLocaleString()} total rows`;
+    const totalRows = tables.reduce((s,t)=>s+t.rows.length,0);
+    $('src-file-info').style.display = 'block';
+    $('src-file-info').textContent = '✓ ' + file.name + ' · ' + tables.length + ' table(s) · ' + totalRows.toLocaleString() + ' rows';
+
+    // Populate step 3 source table selector
+    const srcSel = $('src-table-select');
+    if (srcSel) {
+      srcSel.innerHTML = '<option value="">— select source table —</option>' +
+        tables.map((t,i) => '<option value="' + i + '">' + t.tableName + ' (' + t.rows.length.toLocaleString() + ' rows)</option>').join('');
+    }
+
+    // Advance to step 2 (target DB) if not connected yet, else step 3
+    if (S.targetSchema) goStep(3);
+    else goStep(2);
 
     if (tables.length > 1){
       $('src-tables-panel').style.display = 'block';
@@ -1059,6 +1318,7 @@ function onTargetTableChange(){
     $('target-table-info').innerHTML = '';
   }
   checkStep2Ready();
+  checkStep3Ready();
 }
 
 function checkStep2Ready(){
