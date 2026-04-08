@@ -1,9 +1,15 @@
 {
-  "name": "cygenix-migration-platform",
-  "version": "2.0.0",
-  "description": "Cygenix SQL migration platform",
+  "name": "cygenix-db-api",
+  "version": "1.0.0",
+  "description": "Cygenix Azure Function — SQL Server proxy with Managed Identity",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "func start",
+    "build": "echo No build step required"
+  },
   "dependencies": {
-    "@netlify/blobs": "^7.3.0",
+    "@azure/functions": "^4.5.0",
+    "@azure/identity": "^4.4.1",
     "mssql": "^10.0.4"
   },
   "engines": {
