@@ -1353,27 +1353,41 @@ async function buildMappingTable(){
   const tgt = S.selectedTargetTable;
   if (!src || !tgt) return;
 
-  // Try Claude first, fall back to name matching
+  // Normalise — for live DB, columns may need to come from columnDefs
+  if (!src.columns || src.columns.length === 0) {
+    if (src.columnDefs && src.columnDefs.length > 0) {
+      src.columns = src.columnDefs.map(c => c.name);
+    } else {
+      showStatus('mapping-status', 'No source columns found.', 'err');
+      return;
+    }
+  }
+  if (!src.rows) src.rows = [];
+
   $('mapping-status').textContent = 'Claude is mapping columns…';
   $('mapping-status').classList.add('visible');
 
-  const apiKey = getApiKey();
-  if (apiKey){
-    try {
-      const mapping = await askClaudeForMapping(src, tgt, apiKey);
-      S.columnMapping = mapping;
-      $('mapping-status').textContent = 'Claude mapping complete. Review and adjust below.';
-      setTimeout(() => $('mapping-status').classList.remove('visible'), 3000);
-    } catch(e) {
+  try {
+    const apiKey = getApiKey();
+    if (apiKey){
+      try {
+        const mapping = await askClaudeForMapping(src, tgt, apiKey);
+        S.columnMapping = mapping;
+        $('mapping-status').textContent = 'Claude mapping complete. Review and adjust below.';
+        setTimeout(() => $('mapping-status').classList.remove('visible'), 3000);
+      } catch(e) {
+        S.columnMapping = autoMap(src, tgt);
+        $('mapping-status').textContent = 'Claude unavailable — used automatic name matching. ' + e.message;
+      }
+    } else {
       S.columnMapping = autoMap(src, tgt);
-      $('mapping-status').textContent = 'Claude unavailable — used automatic name matching. ' + e.message;
+      $('mapping-status').textContent = 'Using automatic name matching (enter API key for Claude mapping).';
     }
-  } else {
-    S.columnMapping = autoMap(src, tgt);
-    $('mapping-status').textContent = 'Using automatic name matching (enter API key for Claude mapping).';
+    renderMappingTable();
+  } catch(e) {
+    showStatus('mapping-status', 'Mapping error: ' + e.message, 'err');
+    console.error('buildMappingTable error:', e);
   }
-
-  renderMappingTable();
 }
 
 async function remapWithClaude(){
