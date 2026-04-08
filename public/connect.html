@@ -806,11 +806,11 @@ function restoreFromSnapshot(snap) {
 // Azure Function URL — set this to your deployed Azure Function endpoint
 // Format: https://<your-fn-app>.azurewebsites.net/api/db
 // The function key (?code=...) is stored in sessionStorage
-function getAzureFnUrl(action) {
+function getAzureFnUrl() {
   const base = sessionStorage.getItem('cygenix_fn_url') || '';
   const code = sessionStorage.getItem('cygenix_fn_key') || '';
   if (!base) return null;
-  const url = base.replace(/\/+$/, '') + '/' + action;
+  const url = base.replace(/\/+$/, '');
   return code ? url + '?code=' + encodeURIComponent(code) : url;
 }
 
@@ -1176,7 +1176,7 @@ async function directDbCall(body){
 
 // Azure Function connection
 async function azureDbCall(body){
-  const url = getAzureFnUrl('db');
+  const url = getAzureFnUrl();
   if (!url) throw new Error('Azure Function URL not configured.');
   const res = await fetch(url, {
     method: 'POST',
