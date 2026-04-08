@@ -134,6 +134,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run project</button>
+        <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
       </div>
     </div>
 
@@ -466,6 +467,7 @@ async function dbCall(conn, body) {
 
 // ── Execution ─────────────────────────────────────────────────────────────────
 let isRunning = false;
+let abortRequested = false;
 
 async function runProject() {
   if (isRunning) return;
@@ -487,6 +489,8 @@ async function runProject() {
   logEl.textContent = '';
   document.getElementById('run-btn').disabled = true;
   document.getElementById('run-btn').textContent = '⏹ Running…';
+  document.getElementById('stop-btn').style.display = 'inline-flex';
+  abortRequested = false;
 
   const log = (msg, type) => {
     const ts = new Date().toLocaleTimeString();
@@ -504,6 +508,7 @@ async function runProject() {
   let passed=0, failed=0;
 
   for (let i=0; i<steps.length; i++) {
+    if (abortRequested) { log('Stopped by user.','err'); break; }
     const step = steps[i];
     const pct  = Math.round(i/steps.length*100);
     document.getElementById('exec-prog').style.width = pct+'%';
@@ -551,9 +556,19 @@ async function runProject() {
   log('\n'+summary, failed===0?'ok':'err');
   document.getElementById('run-btn').disabled=false;
   document.getElementById('run-btn').textContent='▶ Run project';
+  document.getElementById('stop-btn').style.display='none';
   document.getElementById('exec-btns').innerHTML='';
   isRunning=false;
+  abortRequested=false;
   saveProject();
+}
+
+function stopProject() {
+  if (!isRunning) return;
+  if (!confirm('Stop execution and return to editing?')) return;
+  abortRequested = true;
+  // If waiting for a decision, resolve it as abort
+  if (window._dec) window._dec('abort');
 }
 
 function waitForDecision() {
