@@ -1300,12 +1300,7 @@ function loadSourceFile(file){
   reader.readAsText(file);
 }
 
-function onSourceTableChange(){
-  const i = parseInt($('src-table-select').value);
-  S.selectedSourceTable = S.sourceTables[i];
-  renderSourcePreview(S.selectedSourceTable);
-  checkStep2Ready();
-}
+// onSourceTableChange is defined above (handles both live DB and file sources)
 
 function onTargetTableChange(){
   const key = $('target-table-select').value;
@@ -1339,12 +1334,18 @@ function checkStep2Ready(){
 }
 
 function renderSourcePreview(table){
-  $('src-preview-panel').style.display = 'block';
-  const rows = table.rows.slice(0, 5);
-  const cols = table.columns;
-  $('src-preview-table').innerHTML = `
-    <thead><tr>${cols.map(c=>`<th>${c}</th>`).join('')}</tr></thead>
-    <tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td style="font-family:var(--mono);font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r[c]??'NULL'}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  if (!table) return;
+  const rows = (table.rows || []).slice(0, 5);
+  const cols = table.columns || [];
+  const panel = $('src-preview-panel');
+  if (panel) panel.style.display = 'block';
+  const tbl = $('src-preview-table');
+  if (!tbl) return;
+  if (rows.length === 0) {
+    tbl.innerHTML = '<thead><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody><tr><td colspan="' + cols.length + '" style="color:var(--text3);font-size:11px;padding:0.5rem">Rows will be fetched from source DB when generating SQL</td></tr></tbody>';
+  } else {
+    tbl.innerHTML = '<thead><tr>' + cols.map(c=>`<th>${c}</th>`).join('') + '</tr></thead><tbody>' + rows.map(r=>'<tr>' + cols.map(c=>`<td style="font-family:var(--mono);font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r[c]??'NULL'}</td>`).join('') + '</tr>').join('') + '</tbody>';
+  }
 }
 
 // ── Step 3: Column mapping ───────────────────────────────────────────────────
