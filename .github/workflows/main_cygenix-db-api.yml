@@ -30,9 +30,6 @@ jobs:
         working-directory: azure-function
         run: zip -r ../function.zip .
 
-      - name: Verify host.json is at zip root
-        run: unzip -l function.zip | head -20
-
       - name: Login to Azure
         uses: azure/login@v2
         with:
