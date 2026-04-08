@@ -1,5 +1,4 @@
-name: Deploy cygenix-db-api to Azure Functions
-
+name: Deploy cygenix-db-api v3
 
 on:
   push:
@@ -25,11 +24,14 @@ jobs:
 
       - name: Install dependencies
         working-directory: azure-function
-        run: npm install --omit=dev
+        run: npm install
 
-      - name: Zip from inside azure-function folder
+      - name: Zip with node_modules included
         working-directory: azure-function
-        run: zip -r ../function.zip .
+        run: zip -r ../function.zip . -x "*.md" -x "local.settings.json" -x ".git/*"
+
+      - name: Verify zip contents
+        run: unzip -l function.zip | grep -E "host.json|package.json|index.js|node_modules" | head -20
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -43,5 +45,4 @@ jobs:
           az functionapp deployment source config-zip \
             --resource-group Cygenix_UK \
             --name cygenix-db-api \
-            --src function.zip \
-            --build-remote true
+            --src function.zip
