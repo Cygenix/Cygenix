@@ -252,6 +252,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
     </table>
   </div>
 
+  <!-- PROJECT STEPS (only for project reports) -->
+  <div class="section" id="steps-section" style="display:none">
+    <div class="section-title">Execution steps</div>
+    <table class="data-table" style="width:100%">
+      <thead><tr>
+        <th style="width:30px">#</th>
+        <th>Step</th>
+        <th>Type</th>
+        <th>Source → Target</th>
+        <th style="text-align:right">Rows</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody id="steps-tbody"></tbody>
+    </table>
+    <div id="steps-logs" style="margin-top:1rem"></div>
+  </div>
+
   <!-- COLUMN MAPPING -->
   <div class="section">
     <div class="section-title">Column mapping</div>
@@ -421,6 +438,36 @@ function renderReport(d) {
 
   // Column mapping
   const mapList = $('col-mapping-list');
+  // Project steps section
+  if (d.isProjectReport && d.steps && d.steps.length) {
+    document.getElementById('steps-section').style.display = 'block';
+    const stepsBody = document.getElementById('steps-tbody');
+    stepsBody.innerHTML = d.steps.map((s, i) => {
+      const statusColor = s.status==='passed'?'#22c97a':s.status==='failed'?'#f04646':s.status==='skipped'?'#f59e0b':'#555a6a';
+      const typeLabel   = s.type==='migration'?'Migration':'SQL script';
+      const route       = s.type==='migration' ? (s.srcTable||'?')+' → '+(s.tgtTable||'?') : (s.connOn==='source'?'Source DB':'Target DB');
+      return '<tr>' +
+        '<td style="color:#555a6a">'+(i+1)+'</td>' +
+        '<td style="font-weight:600">'+(s.name||s.type)+'</td>' +
+        '<td style="color:#8b90a0;font-size:11px">'+(typeLabel)+'</td>' +
+        '<td style="font-family:monospace;font-size:11px;color:#8b90a0">'+route+'</td>' +
+        '<td style="text-align:right;font-family:monospace">'+(s.rowsInserted||s.rowsAffected||0).toLocaleString()+'</td>' +
+        '<td><span style="font-size:10px;padding:2px 8px;border-radius:100px;background:'+(statusColor)+'22;color:'+statusColor+';font-family:monospace">'+s.status+'</span></td>' +
+        '</tr>';
+    }).join('');
+
+    // Step logs
+    const logsEl = document.getElementById('steps-logs');
+    const failedSteps = d.steps.filter(s => s.status === 'failed' && s.log);
+    if (failedSteps.length) {
+      logsEl.innerHTML = '<div style="font-size:11px;font-weight:600;color:#f04646;margin-bottom:0.5rem">Failed step logs:</div>' +
+        failedSteps.map(s =>
+          '<div style="margin-bottom:0.75rem"><div style="font-size:11px;font-weight:600;margin-bottom:3px">' + s.name + '</div>' +
+          '<div style="font-family:monospace;font-size:10px;background:#1a1e28;padding:0.5rem;border-radius:4px;color:#8b90a0;white-space:pre-wrap">' + (s.log||'') + '</div></div>'
+        ).join('');
+    }
+  }
+
   if (d.columnMapping && d.columnMapping.length > 0) {
     mapList.innerHTML = d.columnMapping.map(m => `
       <div class="mapping-row">

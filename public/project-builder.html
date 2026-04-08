@@ -557,10 +557,31 @@ async function runProject() {
   document.getElementById('run-btn').disabled=false;
   document.getElementById('run-btn').textContent='▶ Run project';
   document.getElementById('stop-btn').style.display='none';
-  document.getElementById('exec-btns').innerHTML='';
   isRunning=false;
   abortRequested=false;
   saveProject();
+
+  // Build and store report data
+  const reportData = buildProjectReport(steps, passed, failed, srcConn, tgtConn);
+  try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
+  // Save to jobs list
+  try {
+    const dashJob = {
+      id: reportData.id, name: project.name || 'Conversion Project',
+      source: srcConn ? 'Source DB' : '', target: tgtConn,
+      files: [], tables: steps.filter(s=>s.type==='migration').map(s=>({ name:s.tgtTable||'', rows:s.rowsInserted||0, cols:(s.columnMapping||[]).filter(m=>m.tgtCol).length })),
+      totalRows: steps.reduce((sum,s)=>sum+(s.rowsInserted||0),0),
+      status: failed===0?'complete':'partial', created: reportData.completedAt,
+      columnMapping: [], warnings: []
+    };
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    jobs.unshift(dashJob);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,20)));
+  } catch {}
+
+  // Show report button
+  document.getElementById('exec-btns').innerHTML =
+    '<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(167,139,250,0.3)">📄 View Conversion Report</button>';
 }
 
 function stopProject() {
@@ -617,7 +638,9 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 
   add('Executing '+batches.length+' batches into '+step.tgtTable+'…');
   const res = await dbCall(tgtConn, { action:'batch', batchSql:batches });
-  add('Inserted '+res.totalRowsAffected.toLocaleString()+' rows · '+(res.errors||0)+' errors');
+  const inserted = res.totalRowsAffected || 0;
+  add('Inserted '+inserted.toLocaleString()+' rows · '+(res.errors||0)+' errors');
+  step.rowsInserted = inserted;
   return { ok:res.errors===0, log:stepLog };
 }
 
@@ -632,6 +655,69 @@ async function runSqlStep(step, srcConn, tgtConn, log) {
   const res = await dbCall(useConn, { action:'execute', sql:step.sql });
   add('Done · '+(res.rowsAffected||0)+' rows affected');
   return { ok:true, log:stepLog };
+}
+
+function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
+  const now = new Date().toISOString();
+  let userName = '', userEmail = '';
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user')||'{}');
+    userName  = u.user_metadata?.full_name || u.email?.split('@')[0] || '';
+    userEmail = u.email || '';
+  } catch {}
+
+  const migrationSteps = steps.filter(s => s.type === 'migration');
+  const sqlSteps       = steps.filter(s => s.type === 'sql');
+  const totalRows      = steps.reduce((sum, s) => sum + (s.rowsInserted||0), 0);
+
+  // Build a column mapping summary from all migration steps
+  const allMappings = [];
+  migrationSteps.forEach(s => {
+    (s.columnMapping||[]).filter(m=>m.tgtCol).forEach(m => {
+      allMappings.push({ srcCol: (s.srcTable||'')+'.'+m.srcCol, tgtCol: (s.tgtTable||'')+'.'+m.tgtCol, tgtType: m.tgtType||'', transform: m.transform||'NONE' });
+    });
+  });
+
+  return {
+    id:           'proj_' + Date.now(),
+    projectName:  project.name || 'Conversion Project',
+    userName, userEmail,
+    organisation: 'Cygenix',
+    sourceSystem: 'Source Database',
+    targetSystem: 'Microsoft SQL Server / Azure SQL',
+    targetServer: tgtConn || '',
+    targetDatabase: '',
+    authMethod:   isFnUrl(tgtConn||'') ? 'Azure Managed Identity' : 'SQL Authentication',
+    totalRows,
+    insertedRows: totalRows,
+    errors:       failed,
+    rowsBefore:   0,
+    rowsAfter:    totalRows,
+    columnMapping: allMappings,
+    columnsMapped: allMappings.length,
+    warnings:     steps.filter(s=>s.status==='failed').map(s=>'Step failed: '+(s.name||s.type)),
+    startedAt:    new Date(Date.now() - steps.length * 1000).toISOString(),
+    completedAt:  now,
+    // Project-specific fields for report.html
+    isProjectReport: true,
+    steps: steps.map(s => ({
+      name:    s.name,
+      type:    s.type,
+      status:  s.status,
+      log:     s.log || '',
+      srcTable: s.srcTable || '',
+      tgtTable: s.tgtTable || '',
+      rowsInserted: s.rowsInserted || 0,
+      connOn:  s.connOn || 'target'
+    })),
+    tables: migrationSteps.map(s => ({
+      name:         s.tgtTable || s.name,
+      sourceRows:   s.rowsInserted || 0,
+      insertedRows: s.rowsInserted || 0,
+      errors:       s.status === 'failed' ? 1 : 0,
+      status:       s.status === 'passed' ? 'success' : s.status
+    }))
+  };
 }
 
 function fmtVal(v) {
