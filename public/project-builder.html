@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cygenix – Conversion Project Builder</title>
+<title>Cygenix – Conversion Project</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
@@ -24,104 +24,86 @@
   --r:8px;--r-lg:12px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
-
-/* TOPBAR */
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
 .logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
 .logo span{color:var(--accent)}
 .topbar-right{display:flex;align-items:center;gap:1rem}
 .user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
 .avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
-
-/* LAYOUT */
-.page{max-width:1100px;margin:0 auto;padding:2rem 1.5rem}
-.page-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:2rem;gap:1rem;flex-wrap:wrap}
-.page-title{font-size:1.4rem;font-weight:600;margin-bottom:0.25rem}
-.page-sub{font-size:13px;color:var(--text3)}
-
-/* BUTTONS */
-.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:#2d6ae8}
-.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
-.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
-.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
-.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
-.btn-sm{padding:0.3rem 0.75rem;font-size:12px}
-.btn:disabled{opacity:0.4;cursor:not-allowed}
-
-/* PANELS */
-.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem}
-.form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
-.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
-.form-input:focus{border-color:var(--accent)}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-.form-row{margin-bottom:1rem}
-
-/* STEP CARDS */
-.steps-list{display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1.25rem}
-.step-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;transition:all 0.15s;cursor:default}
-.step-card.dragging{opacity:0.5;border-style:dashed}
-.step-card.drag-over{border-color:var(--accent)}
+.layout{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 52px);overflow:hidden}
+.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}
+.sidebar-header{padding:1.25rem;border-bottom:0.5px solid var(--border)}
+.sidebar-title{font-size:13px;font-weight:600;margin-bottom:0.25rem}
+.sidebar-sub{font-size:11px;color:var(--text3)}
+.job-list{padding:0.75rem;flex:1}
+.job-item{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;margin-bottom:0.5rem;cursor:pointer;transition:all 0.15s}
+.job-item:hover{border-color:var(--accent);background:var(--accent-glow)}
+.job-item-name{font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px}
+.job-item-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.job-item-badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono);margin-top:4px}
+.add-sql-btn{margin:0.75rem;padding:0.6rem;background:var(--bg3);border:1.5px dashed var(--border2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.15s}
+.add-sql-btn:hover{border-color:var(--accent);color:var(--accent)}
+.main{overflow-y:auto;display:flex;flex-direction:column}
+.main-header{padding:1.25rem 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.proj-name-input{background:transparent;border:none;font-family:var(--serif);font-size:1.2rem;font-weight:600;color:var(--text);outline:none;flex:1;min-width:200px}
+.proj-name-input::placeholder{color:var(--text3)}
+.main-body{flex:1;padding:1.5rem}
+.conn-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem}
+.conn-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem}
+.conn-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem}
+.conn-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.conn-input:focus{border-color:var(--accent)}
+.conn-status{font-size:11px;font-family:var(--mono);margin-top:0.4rem}
+.steps-title{font-size:13px;font-weight:600;color:var(--text2);margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem}
+.step-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);margin-bottom:0.75rem;overflow:hidden;transition:border-color 0.15s}
+.step-card.drag-over{border-color:var(--accent);border-style:dashed}
 .step-card-header{display:flex;align-items:center;gap:0.75rem;padding:0.875rem 1rem}
-.step-drag{color:var(--text3);cursor:grab;font-size:16px;flex-shrink:0;user-select:none}
-.step-drag:active{cursor:grabbing}
-.step-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.step-drag{color:var(--text3);cursor:grab;font-size:18px;flex-shrink:0;user-select:none;line-height:1}
+.step-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
 .step-info{flex:1;min-width:0}
-.step-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
-.step-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
-.step-actions{display:flex;gap:0.5rem;flex-shrink:0;align-items:center}
-.step-status{font-size:10px;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-weight:500}
+.step-name{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step-meta{font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step-right{display:flex;align-items:center;gap:0.5rem;flex-shrink:0}
+.step-status{font-size:10px;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-weight:500;white-space:nowrap}
 .status-pending{background:var(--bg4);color:var(--text3)}
 .status-running{background:var(--accent-glow);color:var(--accent)}
 .status-passed{background:var(--green-bg);color:var(--green)}
 .status-failed{background:var(--red-bg);color:var(--red)}
 .status-skipped{background:var(--amber-bg);color:var(--amber)}
-.step-card-body{border-top:0.5px solid var(--border);padding:0.875rem 1rem;display:none;background:var(--bg2)}
-.step-card-body.open{display:block}
-.step-log{font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:0.75rem;max-height:180px;overflow-y:auto;line-height:1.8;white-space:pre-wrap}
-
-/* ADD STEP MENU */
-.add-step-menu{display:flex;gap:0.75rem;flex-wrap:wrap;margin-bottom:1.5rem}
-.step-type-btn{display:flex;align-items:center;gap:8px;padding:0.6rem 1rem;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);cursor:pointer;font-size:12px;color:var(--text2);font-family:var(--serif);transition:all 0.15s}
-.step-type-btn:hover{border-color:var(--accent);color:var(--text);background:var(--accent-glow)}
-
-/* MODAL */
+.step-log-area{border-top:0.5px solid var(--border);padding:0.75rem 1rem;background:var(--bg3);display:none}
+.step-log-area.open{display:block}
+.step-log{font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.8;white-space:pre-wrap;max-height:120px;overflow-y:auto}
+.empty-steps{text-align:center;padding:3rem 1rem;color:var(--text3)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;text-decoration:none}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
+.btn-sm{padding:0.3rem 0.7rem;font-size:11px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+.exec-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-top:1rem;display:none}
+.exec-panel.visible{display:block}
+.exec-log{font-family:var(--mono);font-size:12px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:1rem;max-height:250px;overflow-y:auto;line-height:1.8;white-space:pre-wrap;margin-bottom:1rem}
+.progress-bar{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.3s}
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;display:flex;align-items:center;justify-content:center;padding:1rem}
-.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:100%;max-width:580px;max-height:90vh;overflow-y:auto}
+.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
 .modal-header{display:flex;align-items:center;justify-content:space-between;padding:1.25rem;border-bottom:0.5px solid var(--border)}
-.modal-title{font-size:15px;font-weight:600}
 .modal-body{padding:1.25rem}
 .modal-footer{padding:1rem 1.25rem;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end;gap:0.75rem}
-.close-btn{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px}
-.close-btn:hover{color:var(--text)}
-
-/* EXECUTION PANEL */
-.exec-panel{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-top:1.5rem;display:none}
-.exec-panel.visible{display:block}
-.exec-progress{display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
-.exec-log-main{font-family:var(--mono);font-size:12px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:1rem;max-height:300px;overflow-y:auto;line-height:1.8;white-space:pre-wrap;margin-bottom:1rem}
-.progress-bar{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;flex:1;min-width:120px}
-.progress-fill{height:100%;background:var(--accent);border-radius:2px;transition:width 0.3s ease}
-
-/* EMPTY STATE */
-.empty-state{text-align:center;padding:3rem 1rem;color:var(--text3)}
-.empty-icon{font-size:40px;opacity:0.3;margin-bottom:1rem}
-
-/* TEXTAREA */
-textarea.form-input{resize:vertical;line-height:1.6}
-
-/* CONN BADGE */
-.conn-badge{font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono);border:0.5px solid}
-.conn-badge.ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
-.conn-badge.err{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
+.form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none}
+.form-input:focus{border-color:var(--accent)}
+.form-row{margin-bottom:1rem}
+textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font-size:12px}
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--mono)">Project Builder</span></a>
+  <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--mono)">Conversion Project</span></a>
   <div class="topbar-right">
-    <div id="exec-status-badge" class="conn-badge" style="display:none"></div>
     <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
     <div class="user-pill" onclick="CygenixAuth.signOut()">
       <div class="avatar" id="user-avatar">?</div>
@@ -130,876 +112,514 @@ textarea.form-input{resize:vertical;line-height:1.6}
   </div>
 </div>
 
-<div class="page">
+<div class="layout">
 
-  <!-- PAGE HEADER -->
-  <div class="page-header">
-    <div>
-      <div class="page-title" id="proj-title-display">New Conversion Project</div>
-      <div class="page-sub">Build a sequence of migration steps and execute as a single job</div>
+  <!-- LEFT: Job library -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">Migration jobs</div>
+      <div class="sidebar-sub">Click a job to add it as a step →</div>
     </div>
-    <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
-      <button class="btn btn-ghost" onclick="saveProject()">💾 Save project</button>
-      <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run project</button>
+    <div class="job-list" id="job-list">
+      <div style="font-size:12px;color:var(--text3);text-align:center;padding:2rem">No jobs found.<br>Run a migration in Live DB Migration first.</div>
     </div>
+    <div class="add-sql-btn" onclick="openSqlModal()">+ Add custom SQL step</div>
   </div>
 
-  <!-- PROJECT SETTINGS -->
-  <div class="panel">
-    <div style="font-size:13px;font-weight:600;margin-bottom:1rem">Project settings</div>
-    <div class="two-col" style="margin-bottom:1rem">
-      <div class="form-row" style="margin-bottom:0">
-        <label class="form-label">Project name</label>
-        <input class="form-input" id="proj-name" placeholder="e.g. CRM to Azure SQL Migration" oninput="updateTitle()">
-      </div>
-      <div class="form-row" style="margin-bottom:0">
-        <label class="form-label">Description (optional)</label>
-        <input class="form-input" id="proj-desc" placeholder="Brief description of what this project does">
+  <!-- RIGHT: Project builder -->
+  <div class="main">
+    <div class="main-header">
+      <input class="proj-name-input" id="proj-name" placeholder="Conversion project name…" oninput="markDirty()">
+      <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
+        <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
+        <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
+        <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run project</button>
       </div>
     </div>
-    <div class="two-col">
-      <div class="form-row" style="margin-bottom:0">
-        <label class="form-label">Source connection string</label>
-        <div style="display:flex;gap:0.5rem;align-items:flex-start">
-          <input class="form-input" id="proj-src-conn" style="font-family:var(--mono);font-size:12px;flex:1" placeholder="Server=source;Database=db;...">
-          <button class="btn btn-ghost btn-sm" onclick="testProjectConn('src')" style="flex-shrink:0;margin-top:0">Test</button>
+
+    <div class="main-body">
+
+      <!-- Connections -->
+      <div class="conn-row">
+        <div class="conn-panel">
+          <div class="conn-label">Source connection string</div>
+          <div style="display:flex;gap:0.5rem">
+            <input class="conn-input" id="proj-src-conn" placeholder="Server=source;Database=db;..." oninput="markDirty()">
+            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">Test</button>
+          </div>
+          <div class="conn-status" id="src-conn-status"></div>
         </div>
-        <div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:0.5rem">
-          <span style="color:var(--text3)">Used by all table migration steps as the source.</span>
-          <span id="src-conn-status" style="font-family:var(--mono);font-size:11px"></span>
+        <div class="conn-panel">
+          <div class="conn-label">Target — Azure Function URL or connection string</div>
+          <div style="display:flex;gap:0.5rem">
+            <input class="conn-input" id="proj-tgt-conn" placeholder="https://fn.azurewebsites.net/api/db?code=..." oninput="markDirty()">
+            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">Test</button>
+          </div>
+          <div class="conn-status" id="tgt-conn-status"></div>
         </div>
       </div>
-      <div class="form-row" style="margin-bottom:0">
-        <label class="form-label">Target connection string / Azure Function URL</label>
-        <div style="display:flex;gap:0.5rem;align-items:flex-start">
-          <input class="form-input" id="proj-tgt-conn" style="font-family:var(--mono);font-size:12px;flex:1" placeholder="Server=target;Database=db;... or https://fn.azurewebsites.net/api/db?code=...">
-          <button class="btn btn-ghost btn-sm" onclick="testProjectConn('tgt')" style="flex-shrink:0;margin-top:0">Test</button>
-        </div>
-        <div style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:0.5rem">
-          <span style="color:var(--text3)">Used by all steps as the target.</span>
-          <span id="tgt-conn-status" style="font-family:var(--mono);font-size:11px"></span>
+
+      <!-- Steps -->
+      <div class="steps-title">
+        <span>Steps</span>
+        <span id="step-count" style="font-size:11px;color:var(--text3);font-weight:400"></span>
+        <span style="font-size:11px;color:var(--text3);font-weight:400;margin-left:auto">Drag to reorder · click job on left to add</span>
+      </div>
+
+      <div id="steps-list">
+        <div class="empty-steps" id="steps-empty">
+          <div style="font-size:32px;opacity:0.3;margin-bottom:0.75rem">📋</div>
+          <div style="font-size:14px;color:var(--text2);margin-bottom:0.4rem">No steps yet</div>
+          <div style="font-size:12px">Click a migration job on the left to add it as a step</div>
         </div>
       </div>
+
+      <!-- Execution panel -->
+      <div class="exec-panel" id="exec-panel">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
+          <div style="font-size:13px;font-weight:600" id="exec-title">Running…</div>
+          <div style="display:flex;gap:0.5rem" id="exec-btns"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.75rem">
+          <span style="font-size:12px;color:var(--text3)" id="exec-step-label">Step 0/0</span>
+          <div class="progress-bar" style="flex:1"><div class="progress-fill" id="exec-prog" style="width:0%"></div></div>
+          <span style="font-size:12px;color:var(--text3)" id="exec-pct">0%</span>
+        </div>
+        <div class="exec-log" id="exec-log"></div>
+      </div>
+
     </div>
   </div>
-
-  <!-- STEPS -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
-    <div style="font-size:13px;font-weight:600">Steps <span id="step-count" style="font-size:11px;color:var(--text3);font-weight:400"></span></div>
-  </div>
-
-  <!-- ADD STEP BUTTONS -->
-  <div class="add-step-menu">
-    <div class="step-type-btn" onclick="openAddStep('migration')">🔗 Table migration</div>
-    <div class="step-type-btn" onclick="openAddStep('sql')">📝 Custom SQL script</div>
-    <div class="step-type-btn" onclick="openAddStep('validation')">✅ Data validation</div>
-    <div class="step-type-btn" onclick="openAddStep('wasis')">🔄 Was/Is transform</div>
-  </div>
-
-  <!-- STEPS LIST -->
-  <div class="steps-list" id="steps-list">
-    <div class="empty-state" id="steps-empty">
-      <div class="empty-icon">📋</div>
-      <div style="font-size:14px;color:var(--text2);margin-bottom:0.4rem">No steps yet</div>
-      <div style="font-size:12px">Add steps above to build your conversion project</div>
-    </div>
-  </div>
-
-  <!-- EXECUTION PANEL -->
-  <div class="exec-panel" id="exec-panel">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:0.75rem">
-      <div style="font-size:14px;font-weight:600" id="exec-title">Running project…</div>
-      <div style="display:flex;gap:0.75rem" id="exec-action-btns"></div>
-    </div>
-    <div class="exec-progress">
-      <div style="font-size:12px;color:var(--text2)" id="exec-step-label">Step 0 / 0</div>
-      <div class="progress-bar"><div class="progress-fill" id="exec-progress-fill" style="width:0%"></div></div>
-      <div style="font-size:12px;color:var(--text2)" id="exec-pct">0%</div>
-    </div>
-    <div class="exec-log-main" id="exec-log"></div>
-  </div>
-
 </div>
 
-<!-- ADD STEP MODAL -->
-<div class="modal-overlay" id="add-step-modal" style="display:none" onclick="if(event.target===this)closeModal()">
+<!-- SQL Modal -->
+<div class="modal-overlay" id="sql-modal" style="display:none" onclick="if(event.target===this)closeSqlModal()">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title" id="modal-title">Add step</div>
-      <button class="close-btn" onclick="closeModal()">✕</button>
+      <div style="font-size:14px;font-weight:600" id="sql-modal-title">Add SQL step</div>
+      <button onclick="closeSqlModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
     </div>
-    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label class="form-label">Step name</label>
+        <input class="form-input" id="sql-name" placeholder="e.g. Create indexes, Truncate staging table">
+      </div>
+      <div class="form-row">
+        <label class="form-label">SQL script <span style="color:var(--text3);font-weight:400">(runs on target database)</span></label>
+        <textarea class="form-input" id="sql-body" rows="8" placeholder="-- Write your SQL here&#10;DELETE FROM [dbo].[staging_table];&#10;CREATE INDEX IX_Name ON [dbo].[Customers] ([Name]);"></textarea>
+      </div>
+      <div class="form-row" style="margin-bottom:0">
+        <label class="form-label">Or upload a .sql file</label>
+        <input type="file" id="sql-file" accept=".sql,.txt" style="font-size:12px;color:var(--text2)" onchange="loadSqlFile(this)">
+      </div>
+    </div>
     <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmAddStep()">Add step</button>
+      <button class="btn btn-ghost" onclick="closeSqlModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmSqlStep()">Add step</button>
     </div>
   </div>
 </div>
 
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
-(function initAuth(){
-  const token = sessionStorage.getItem('cygenix_token');
-  if (!token) { window.location.href = '/login.html'; return; }
+(function(){
+  if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login.html'; return; }
   try {
-    const user = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
-    const name = user.user_metadata?.full_name || user.email?.split('@')[0] || '?';
-    document.getElementById('user-avatar').textContent = name[0].toUpperCase();
-    document.getElementById('user-name').textContent = name;
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user')||'{}');
+    const n = u.user_metadata?.full_name || u.email?.split('@')[0] || '?';
+    document.getElementById('user-avatar').textContent = n[0].toUpperCase();
+    document.getElementById('user-name').textContent   = n;
   } catch {}
-  // Pre-fill connections from sessionStorage if available
-  const srcCs  = sessionStorage.getItem('cygenix_src_conn_string') || '';
-  const tgtCs  = sessionStorage.getItem('cygenix_conn_string') || '';
-  const tgtFn  = sessionStorage.getItem('cygenix_fn_url') || '';
-  const tgtKey = sessionStorage.getItem('cygenix_fn_key') || '';
-  if (srcCs) document.getElementById('proj-src-conn').value = srcCs;
-  // For target: if Azure Function, store URL+key together so dbCall works
-  if (tgtFn) {
-    const full = tgtKey ? tgtFn + '?code=' + encodeURIComponent(tgtKey) : tgtFn;
-    document.getElementById('proj-tgt-conn').value = full;
-  } else if (tgtCs) {
-    document.getElementById('proj-tgt-conn').value = tgtCs;
-  }
 })();
 
 // ── Project state ─────────────────────────────────────────────────────────────
 const PROJ_KEY = 'cygenix_conv_project';
-let project = loadProject();
+let project = { id:'proj_'+Date.now(), name:'', srcConn:'', tgtConn:'', steps:[] };
+let isDirty = false;
 
-function loadProject() {
+(function loadProject(){
   try {
     const saved = localStorage.getItem(PROJ_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) project = JSON.parse(saved);
   } catch {}
-  return { id: 'proj_' + Date.now(), name: '', desc: '', srcConn: '', tgtConn: '', steps: [] };
-}
+  // Pre-fill connections from last connect.html session
+  if (!project.srcConn) {
+    project.srcConn = sessionStorage.getItem('cygenix_src_conn_string') || '';
+  }
+  if (!project.tgtConn) {
+    const fn  = sessionStorage.getItem('cygenix_fn_url') || '';
+    const key = sessionStorage.getItem('cygenix_fn_key') || '';
+    const cs  = sessionStorage.getItem('cygenix_conn_string') || '';
+    project.tgtConn = fn ? (fn + (key ? '?code='+encodeURIComponent(key) : '')) : cs;
+  }
+  document.getElementById('proj-name').value    = project.name    || '';
+  document.getElementById('proj-src-conn').value = project.srcConn || '';
+  document.getElementById('proj-tgt-conn').value = project.tgtConn || '';
+  renderSteps();
+  renderJobs();
+})();
+
+function markDirty() { isDirty = true; document.getElementById('dirty-badge').style.display='inline'; }
 
 function saveProject() {
   project.name    = document.getElementById('proj-name').value.trim();
-  project.desc    = document.getElementById('proj-desc').value.trim();
   project.srcConn = document.getElementById('proj-src-conn').value.trim();
   project.tgtConn = document.getElementById('proj-tgt-conn').value.trim();
   localStorage.setItem(PROJ_KEY, JSON.stringify(project));
+  isDirty = false;
+  document.getElementById('dirty-badge').style.display = 'none';
   showToast('Project saved');
 }
 
-function updateTitle() {
-  const name = document.getElementById('proj-name').value.trim();
-  document.getElementById('proj-title-display').textContent = name || 'New Conversion Project';
+// ── Jobs sidebar ──────────────────────────────────────────────────────────────
+function renderJobs() {
+  const list = document.getElementById('job-list');
+  let jobs = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  if (!jobs.length) return;
+  list.innerHTML = jobs.map((j,i) => `
+    <div class="job-item" onclick="addJobAsStep(${i})" title="Click to add as a project step">
+      <div class="job-item-name">${esc(j.name||'Unnamed job')}</div>
+      <div class="job-item-meta">${esc(j.source||'')} → ${esc(j.target||'')}</div>
+      <div class="job-item-meta">${(j.totalRows||0).toLocaleString()} rows · ${new Date(j.created||Date.now()).toLocaleDateString('en-GB')}</div>
+      <span class="job-item-badge">${(j.columnMapping||[]).filter(m=>m.tgtCol).length} cols mapped</span>
+    </div>`).join('');
 }
 
-// Restore project to form on load
-(function restoreProject() {
-  if (project.name)    document.getElementById('proj-name').value    = project.name;
-  if (project.desc)    document.getElementById('proj-desc').value    = project.desc;
-  if (project.srcConn) document.getElementById('proj-src-conn').value = project.srcConn;
-  if (project.tgtConn) document.getElementById('proj-tgt-conn').value = project.tgtConn;
-  if (project.name)    updateTitle();
+function addJobAsStep(jobIndex) {
+  let jobs = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  const job = jobs[jobIndex];
+  if (!job) return;
+
+  const step = {
+    type:          'migration',
+    name:          job.name || job.target + ' migration',
+    srcTable:      job.source || '',
+    tgtTable:      job.target || '',
+    columnMapping: job.columnMapping || [],
+    totalRows:     job.totalRows || 0,
+    jobId:         job.id,
+    status:        'pending',
+    log:           ''
+  };
+  project.steps.push(step);
   renderSteps();
-})();
+  markDirty();
+  showToast('Added: ' + step.name);
+}
 
-// ── Step definitions ──────────────────────────────────────────────────────────
-const STEP_TYPES = {
-  migration:  { label: 'Table migration',    icon: '🔗', color: 'rgba(45,212,191,0.15)' },
-  sql:        { label: 'Custom SQL script',  icon: '📝', color: 'rgba(61,126,255,0.15)' },
-  validation: { label: 'Data validation',    icon: '✅', color: 'rgba(34,201,122,0.15)' },
-  wasis:      { label: 'Was/Is transform',   icon: '🔄', color: 'rgba(245,158,11,0.15)' },
-};
-
-// ── Render steps ──────────────────────────────────────────────────────────────
+// ── Steps ─────────────────────────────────────────────────────────────────────
 function renderSteps() {
-  const list    = document.getElementById('steps-list');
-  const empty   = document.getElementById('steps-empty');
-  const counter = document.getElementById('step-count');
-  counter.textContent = project.steps.length ? '(' + project.steps.length + ')' : '';
+  const list  = document.getElementById('steps-list');
+  const empty = document.getElementById('steps-empty');
+  document.getElementById('step-count').textContent = project.steps.length ? '('+project.steps.length+')' : '';
 
-  if (project.steps.length === 0) {
-    empty.style.display = 'block';
-    // Remove any step cards
-    list.querySelectorAll('.step-card').forEach(el => el.remove());
-    return;
-  }
+  // Remove old cards
+  list.querySelectorAll('.step-card').forEach(el => el.remove());
+
+  if (!project.steps.length) { empty.style.display='block'; return; }
   empty.style.display = 'none';
 
-  // Rebuild all step cards
-  list.querySelectorAll('.step-card').forEach(el => el.remove());
   project.steps.forEach((step, i) => {
-    const card = buildStepCard(step, i);
+    const card = document.createElement('div');
+    card.className = 'step-card';
+    card.dataset.index = i;
+    card.draggable = true;
+
+    const isMigration = step.type === 'migration';
+    const icon  = isMigration ? '🔗' : '📝';
+    const color = isMigration ? 'var(--teal-bg)' : 'var(--accent-glow)';
+    const meta  = isMigration
+      ? esc(step.srcTable||'?') + ' → ' + esc(step.tgtTable||'?') + ' · ' + (step.columnMapping?.filter(m=>m.tgtCol).length||0) + ' cols'
+      : (step.sql||'').slice(0,60) + '…';
+    const statusCls = 'status-' + (step.status||'pending');
+
+    card.innerHTML = `
+      <div class="step-card-header">
+        <span class="step-drag">⠿</span>
+        <div class="step-icon" style="background:${color}">${icon}</div>
+        <div class="step-info">
+          <div class="step-name">${esc(step.name)}</div>
+          <div class="step-meta">${meta}</div>
+        </div>
+        <div class="step-right">
+          <span class="step-status ${statusCls}">${step.status||'pending'}</span>
+          <button class="btn btn-ghost btn-sm" onclick="deleteStep(${i})" style="color:var(--red);padding:3px 8px">✕</button>
+          ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${i})" style="padding:3px 8px">Log</button>` : ''}
+        </div>
+      </div>
+      ${step.log ? `<div class="step-log-area" id="log-${i}"><div class="step-log">${esc(step.log)}</div></div>` : ''}`;
+
+    // Drag handlers
+    card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', i); card.style.opacity='0.5'; });
+    card.addEventListener('dragend',   () => card.style.opacity='1');
+    card.addEventListener('dragover',  e => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
+      e.preventDefault(); card.classList.remove('drag-over');
+      const from = parseInt(e.dataTransfer.getData('text/plain'));
+      const to   = parseInt(card.dataset.index);
+      if (from !== to) { const [s]=project.steps.splice(from,1); project.steps.splice(to,0,s); renderSteps(); markDirty(); }
+    });
+
     list.appendChild(card);
   });
 }
 
-function buildStepCard(step, i) {
-  const def = STEP_TYPES[step.type];
-  const card = document.createElement('div');
-  card.className = 'step-card';
-  card.dataset.index = i;
-  card.draggable = true;
-
-  const statusClass = 'status-' + (step.status || 'pending');
-  const statusLabel = step.status || 'pending';
-
-  card.innerHTML = `
-    <div class="step-card-header">
-      <span class="step-drag" title="Drag to reorder">⠿</span>
-      <div class="step-icon" style="background:${def.color}">${def.icon}</div>
-      <div class="step-info">
-        <div class="step-name">${escHtml(step.name || def.label)}</div>
-        <div class="step-meta">${getStepMeta(step)}</div>
-      </div>
-      <div class="step-actions">
-        <span class="step-status ${statusClass}">${statusLabel}</span>
-        <button class="btn btn-ghost btn-sm" onclick="editStep(${i})" style="padding:3px 8px">Edit</button>
-        <button class="btn btn-ghost btn-sm" onclick="deleteStep(${i})" style="padding:3px 8px;color:var(--red)">✕</button>
-        <button class="btn btn-ghost btn-sm" onclick="toggleStepLog(${i})" id="log-toggle-${i}" style="padding:3px 8px;display:none">Log</button>
-      </div>
-    </div>
-    <div class="step-card-body" id="step-body-${i}">
-      <div class="step-log" id="step-log-${i}">${step.log ? escHtml(step.log) : 'No log yet.'}</div>
-    </div>`;
-
-  // Drag events
-  card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', i); card.classList.add('dragging'); });
-  card.addEventListener('dragend',   () => card.classList.remove('dragging'));
-  card.addEventListener('dragover',  e => { e.preventDefault(); card.classList.add('drag-over'); });
-  card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
-  card.addEventListener('drop', e => {
-    e.preventDefault(); card.classList.remove('drag-over');
-    const from = parseInt(e.dataTransfer.getData('text/plain'));
-    const to   = parseInt(card.dataset.index);
-    if (from !== to) { const [s] = project.steps.splice(from, 1); project.steps.splice(to, 0, s); renderSteps(); }
-  });
-
-  return card;
-}
-
-function getStepMeta(step) {
-  if (step.type === 'migration')  return (step.srcTable || '?') + ' → ' + (step.tgtTable || '?');
-  if (step.type === 'sql')        return step.sqlFile || (step.sql ? step.sql.slice(0,60) + '…' : 'No SQL yet');
-  if (step.type === 'validation') return step.query ? step.query.slice(0,60) + '…' : 'No query yet';
-  if (step.type === 'wasis')      return (step.wasisFile || 'No file') + ' → ' + (step.targetTable || '?');
-  return '';
-}
-
-function toggleStepLog(i) {
-  const body = document.getElementById('step-body-' + i);
-  body.classList.toggle('open');
+function toggleLog(i) {
+  const el = document.getElementById('log-'+i);
+  if (el) el.classList.toggle('open');
 }
 
 function deleteStep(i) {
   if (!confirm('Remove this step?')) return;
-  project.steps.splice(i, 1);
-  renderSteps();
+  project.steps.splice(i,1);
+  renderSteps(); markDirty();
 }
 
-// ── Add / edit step modal ─────────────────────────────────────────────────────
-let currentStepType = null;
-let editingIndex     = null;
+// ── SQL modal ─────────────────────────────────────────────────────────────────
+let editingSqlIndex = null;
 
-function openAddStep(type) {
-  currentStepType = type;
-  editingIndex    = null;
-  try {
-    document.getElementById('modal-title').textContent = 'Add ' + STEP_TYPES[type].label + ' step';
-    document.getElementById('modal-body').innerHTML    = getModalForm(type, null);
-    document.getElementById('add-step-modal').style.display = 'flex';
-  } catch(e) {
-    alert('Could not open form: ' + e.message);
-    console.error('openAddStep error:', e);
+function openSqlModal(editIndex) {
+  editingSqlIndex = editIndex !== undefined ? editIndex : null;
+  document.getElementById('sql-modal-title').textContent = editingSqlIndex !== null ? 'Edit SQL step' : 'Add SQL step';
+  if (editingSqlIndex !== null) {
+    const s = project.steps[editingSqlIndex];
+    document.getElementById('sql-name').value = s.name || '';
+    document.getElementById('sql-body').value = s.sql  || '';
+  } else {
+    document.getElementById('sql-name').value = '';
+    document.getElementById('sql-body').value = '';
   }
+  document.getElementById('sql-modal').style.display = 'flex';
 }
 
-function editStep(i) {
-  const step      = project.steps[i];
-  currentStepType = step.type;
-  editingIndex    = i;
-  try {
-    document.getElementById('modal-title').textContent = 'Edit ' + STEP_TYPES[step.type].label;
-    document.getElementById('modal-body').innerHTML    = getModalForm(step.type, step);
-    document.getElementById('add-step-modal').style.display = 'flex';
-  } catch(e) {
-    alert('Could not open form: ' + e.message);
-    console.error('editStep error:', e);
-  }
-}
-
-function closeModal() {
-  document.getElementById('add-step-modal').style.display = 'none';
-  currentStepType = null;
-  editingIndex    = null;
-}
-
-function getModalForm(type, step) {
-  const v = (field, def='') => {
-    if (!step) return def;
-    const val = step[field];
-    if (val === null || val === undefined) return def;
-    if (typeof val === 'object') return JSON.stringify(val, null, 2);
-    return String(val) || def;
-  };
-  if (type === 'migration') {
-    // Check for saved mappings from connect.html
-    const savedMappings = getSavedMappings();
-    const mappingOptions = savedMappings.length
-      ? '<option value="">— configure manually below —</option>' + savedMappings.map((m,i) =>
-          '<option value="' + i + '">' + (m.srcTable||'?') + ' → ' + (m.tgtTable||'?') + ' (' + (m.mappedCols||0) + ' cols' + (m.savedAt ? ', ' + timeAgo(m.savedAt) : '') + ')</option>').join('')
-      : '<option value="">— no saved mappings found —</option>';
-    return `
-    <div style="background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.875rem;margin-bottom:1.25rem">
-      <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:0.5rem">Import saved mapping from Live DB Migration</div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:0.75rem">Complete a mapping in the Live DB Migration tool first, then import it here. This brings across the full column mapping, type casts, and Was/Is rules.</div>
-      <select class="form-input" id="sf-import-mapping" onchange="importSavedMapping(this.value)" style="font-family:var(--mono);font-size:12px">
-        ${mappingOptions}
-      </select>
-      <button class="btn btn-ghost btn-sm" onclick="window.open('/connect.html','_blank')" style="margin-top:0.75rem">Open Live DB Migration →</button>
-    </div>
-    <div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:0.75rem">— or configure manually —</div>
-    <div class="form-row">
-      <label class="form-label">Step name</label>
-      <input class="form-input" id="sf-name" placeholder="e.g. Migrate Customers table" value="${escHtml(v('name'))}">
-    </div>
-    <div class="two-col">
-      <div class="form-row">
-        <label class="form-label">Source table</label>
-        <input class="form-input" id="sf-srcTable" placeholder="e.g. dbo.Customers" style="font-family:var(--mono)" value="${escHtml(v('srcTable'))}">
-      </div>
-      <div class="form-row">
-        <label class="form-label">Target table</label>
-        <input class="form-input" id="sf-tgtTable" placeholder="e.g. dbo.Customers_New" style="font-family:var(--mono)" value="${escHtml(v('tgtTable'))}">
-      </div>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Row limit (0 = all rows)</label>
-      <input class="form-input" id="sf-rowLimit" type="number" value="${v('rowLimit','0')}" style="width:160px">
-    </div>
-    <div class="form-row">
-      <label class="form-label">Column mapping JSON <span style="color:var(--text3);font-weight:400">(auto-generated or paste from connect.html)</span></label>
-      <div id="mapping-preview" style="font-size:11px;color:var(--text3);margin-bottom:0.4rem"></div>
-      <textarea class="form-input" id="sf-mapping" rows="5" style="font-family:var(--mono);font-size:11px" placeholder='[{"srcCol":"id","tgtCol":"CustomerID","tgtType":"INT","transform":"NONE"},...]'>${escHtml(v('mapping'))}</textarea>
-    </div>
-    <div class="form-row" style="margin-bottom:0">
-      <label class="form-label">Was/Is rules JSON <span style="color:var(--text3);font-weight:400">(optional)</span></label>
-      <textarea class="form-input" id="sf-wasisRules" rows="3" style="font-family:var(--mono);font-size:11px" placeholder='[{"srcField":"status","oldVal":"A","newVal":"Active"}]'>${escHtml(v('wasisRules'))}</textarea>
-    </div>`;
-  }
-
-  if (type === 'sql') return `
-    <div class="form-row">
-      <label class="form-label">Step name</label>
-      <input class="form-input" id="sf-name" placeholder="e.g. Create indexes" value="${escHtml(v('name'))}">
-    </div>
-    <div class="form-row">
-      <label class="form-label">SQL script</label>
-      <textarea class="form-input" id="sf-sql" rows="8" style="font-family:var(--mono);font-size:12px" placeholder="-- Write your SQL here&#10;CREATE INDEX IX_Customers_Email ON dbo.Customers (Email);">${escHtml(v('sql'))}</textarea>
-    </div>
-    <div class="form-row" style="margin-bottom:0">
-      <label class="form-label">Or upload a .sql file</label>
-      <input type="file" id="sf-sql-file" accept=".sql,.txt" style="color:var(--text2);font-size:12px" onchange="loadSqlFile(this)">
-    </div>`;
-
-  if (type === 'validation') return `
-    <div class="form-row">
-      <label class="form-label">Step name</label>
-      <input class="form-input" id="sf-name" placeholder="e.g. Verify row count" value="${escHtml(v('name'))}">
-    </div>
-    <div class="form-row">
-      <label class="form-label">Validation query <span style="color:var(--text3);font-weight:400">(must return a single value)</span></label>
-      <textarea class="form-input" id="sf-query" rows="4" style="font-family:var(--mono);font-size:12px" placeholder="SELECT COUNT(*) FROM dbo.Customers">${escHtml(v('query'))}</textarea>
-    </div>
-    <div class="two-col">
-      <div class="form-row" style="margin-bottom:0">
-        <label class="form-label">Expected result</label>
-        <select class="form-input" id="sf-validationType">
-          <option value="gt0" ${v('validationType')==='gt0'?'selected':''}>Greater than 0</option>
-          <option value="eq" ${v('validationType')==='eq'?'selected':''}>Equal to value</option>
-          <option value="gte" ${v('validationType')==='gte'?'selected':''}>Greater than or equal to</option>
-          <option value="any" ${v('validationType')==='any'?'selected':''}>Any result (just runs)</option>
-        </select>
-      </div>
-      <div class="form-row" style="margin-bottom:0">
-        <label class="form-label">Expected value</label>
-        <input class="form-input" id="sf-expectedValue" placeholder="e.g. 100" value="${escHtml(v('expectedValue'))}">
-      </div>
-    </div>`;
-
-  if (type === 'wasis') return `
-    <div class="form-row">
-      <label class="form-label">Step name</label>
-      <input class="form-input" id="sf-name" placeholder="e.g. Apply status translations" value="${escHtml(v('name'))}">
-    </div>
-    <div class="form-row">
-      <label class="form-label">Target table to update</label>
-      <input class="form-input" id="sf-targetTable" placeholder="e.g. dbo.Customers" style="font-family:var(--mono)" value="${escHtml(v('targetTable'))}">
-    </div>
-    <div class="form-row">
-      <label class="form-label">Was/Is rules JSON</label>
-      <textarea class="form-input" id="sf-wasisRules" rows="5" style="font-family:var(--mono);font-size:11px" placeholder='[{"srcField":"status","oldVal":"A","newVal":"Active"},...]'>${escHtml(v('wasisRules'))}</textarea>
-    </div>
-    <div class="form-row" style="margin-bottom:0">
-      <label class="form-label">Or upload a Was/Is CSV/XLSX file</label>
-      <input type="file" id="sf-wasis-file" accept=".csv,.xlsx,.xls" style="color:var(--text2);font-size:12px" onchange="loadWasisFileForStep(this)">
-    </div>`;
-  return '';
-}
+function closeSqlModal() { document.getElementById('sql-modal').style.display='none'; editingSqlIndex=null; }
 
 function loadSqlFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => { document.getElementById('sf-sql').value = e.target.result; };
-  reader.readAsText(file);
+  const f = input.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => { document.getElementById('sql-body').value = e.target.result; };
+  r.readAsText(f);
 }
 
-function loadWasisFileForStep(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    // Simple CSV parse
-    const lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) return;
-    const headers = lines[0].toLowerCase().split(',');
-    const oIdx = headers.findIndex(h => h.includes('old') || h.includes('was'));
-    const nIdx = headers.findIndex(h => h.includes('new') || h.includes('is'));
-    const fIdx = headers.findIndex(h => h.includes('field') || h.includes('col'));
-    const rules = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',');
-      const oldVal = cols[oIdx >= 0 ? oIdx : 2]?.trim();
-      const newVal = cols[nIdx >= 0 ? nIdx : 3]?.trim();
-      const field  = cols[fIdx >= 0 ? fIdx : 1]?.trim();
-      if (oldVal && newVal) rules.push({ srcField: field || '', oldVal, newVal });
-    }
-    document.getElementById('sf-wasisRules').value = JSON.stringify(rules, null, 2);
-  };
-  reader.readAsText(file);
-}
-
-function confirmAddStep() {
-  const type = currentStepType;
-  if (!type) return;
-
-  const step = { type, status: 'pending', log: '' };
-  step.name = (document.getElementById('sf-name')?.value || '').trim() || STEP_TYPES[type].label;
-
-  if (type === 'migration') {
-    step.srcTable  = (document.getElementById('sf-srcTable')?.value || '').trim();
-    step.tgtTable  = (document.getElementById('sf-tgtTable')?.value || '').trim();
-    step.rowLimit  = parseInt(document.getElementById('sf-rowLimit')?.value || '0') || 0;
-    const rawMap = document.getElementById('sf-mapping')?.value || '';
-    try { step.mapping = rawMap ? JSON.parse(rawMap) : null; } catch { step.mapping = null; }
-    const rawWasis = document.getElementById('sf-wasisRules')?.value || '';
-    try { step.wasisRules = rawWasis ? JSON.parse(rawWasis) : null; } catch { step.wasisRules = null; }
-  } else if (type === 'sql') {
-    step.sql = (document.getElementById('sf-sql')?.value || '').trim();
-  } else if (type === 'validation') {
-    step.query          = (document.getElementById('sf-query')?.value || '').trim();
-    step.validationType = document.getElementById('sf-validationType')?.value || 'gt0';
-    step.expectedValue  = (document.getElementById('sf-expectedValue')?.value || '').trim();
-  } else if (type === 'wasis') {
-    step.targetTable = (document.getElementById('sf-targetTable')?.value || '').trim();
-    try { step.wasisRules = JSON.parse(document.getElementById('sf-wasisRules')?.value || 'null'); } catch { step.wasisRules = null; }
-  }
-
-  if (editingIndex !== null) {
-    step.status = project.steps[editingIndex].status;
-    step.log    = project.steps[editingIndex].log;
-    project.steps[editingIndex] = step;
+function confirmSqlStep() {
+  const name = document.getElementById('sql-name').value.trim() || 'SQL script';
+  const sql  = document.getElementById('sql-body').value.trim();
+  if (!sql) { alert('Please enter SQL or upload a file.'); return; }
+  const step = { type:'sql', name, sql, status:'pending', log:'' };
+  if (editingSqlIndex !== null) {
+    project.steps[editingSqlIndex] = { ...project.steps[editingSqlIndex], ...step };
   } else {
     project.steps.push(step);
   }
-
-  closeModal();
-  renderSteps();
+  closeSqlModal(); renderSteps(); markDirty();
 }
 
-// ── Execution engine ──────────────────────────────────────────────────────────
+// ── Connection test ───────────────────────────────────────────────────────────
+async function testConn(which) {
+  const conn   = document.getElementById(which==='src'?'proj-src-conn':'proj-tgt-conn').value.trim();
+  const status = document.getElementById(which+'-conn-status');
+  if (!conn) { alert('Enter a connection string first.'); return; }
+  status.textContent = 'Testing…'; status.style.color = 'var(--accent)';
+  try {
+    const res = await dbCall(conn, { action:'test' });
+    status.textContent = '✓ ' + res.database + ' · ' + (res.user||'').split('@')[0];
+    status.style.color = 'var(--green)';
+  } catch(e) {
+    status.textContent = '✕ ' + e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+function isFnUrl(c) { return c.startsWith('https://') || c.startsWith('http://'); }
+
+async function dbCall(conn, body) {
+  if (isFnUrl(conn)) {
+    const res  = await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(120000) });
+    const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
+    if (!res.ok) throw new Error(data.error||res.statusText);
+    return data;
+  } else {
+    const res  = await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body,connectionString:conn}), signal:AbortSignal.timeout(120000) });
+    const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
+    if (!res.ok) throw new Error(data.error||res.statusText);
+    return data;
+  }
+}
+
+// ── Execution ─────────────────────────────────────────────────────────────────
 let isRunning = false;
-let abortExec = false;
 
 async function runProject() {
   if (isRunning) return;
   saveProject();
+  const steps  = project.steps;
+  if (!steps.length) { alert('Add at least one step first.'); return; }
+  const srcConn = project.srcConn;
+  const tgtConn = project.tgtConn;
+  if (!tgtConn) { alert('Please enter a target connection.'); return; }
+  if (!confirm('Run ' + steps.length + ' step(s)? Execution stops on any error.')) return;
 
-  const steps = project.steps;
-  if (!steps.length) { alert('Add at least one step before running.'); return; }
-
-  const srcConn = document.getElementById('proj-src-conn').value.trim();
-  const tgtConn = document.getElementById('proj-tgt-conn').value.trim();
-  if (!tgtConn) { alert('Please enter a target connection string or Azure Function URL.'); return; }
-
-  if (!confirm('Run all ' + steps.length + ' step(s) in sequence? Execution will stop on any error.')) return;
-
-  isRunning  = true;
-  abortExec  = false;
-
-  // Reset all step statuses
-  steps.forEach(s => { s.status = 'pending'; s.log = ''; });
+  isRunning = true;
+  steps.forEach(s => { s.status='pending'; s.log=''; });
   renderSteps();
 
-  const execPanel = document.getElementById('exec-panel');
-  const execLog   = document.getElementById('exec-log');
-  execPanel.classList.add('visible');
-  execLog.textContent = '';
-
+  const panel = document.getElementById('exec-panel');
+  const logEl = document.getElementById('exec-log');
+  panel.classList.add('visible');
+  logEl.textContent = '';
   document.getElementById('run-btn').disabled = true;
   document.getElementById('run-btn').textContent = '⏹ Running…';
 
-  const log = (msg, type='info') => {
-    const ts  = new Date().toLocaleTimeString();
-    const pre = type === 'err' ? '✕' : type === 'ok' ? '✓' : '·';
-    execLog.textContent += '[' + ts + '] ' + pre + ' ' + msg + '\n';
-    execLog.scrollTop = execLog.scrollHeight;
+  const log = (msg, type) => {
+    const ts = new Date().toLocaleTimeString();
+    const p  = type==='err'?'✕':type==='ok'?'✓':'·';
+    logEl.textContent += '['+ts+'] '+p+' '+msg+'\n';
+    logEl.scrollTop = logEl.scrollHeight;
   };
 
-  const setStepStatus = (i, status, stepLog) => {
+  const setStatus = (i, status, stepLog) => {
     project.steps[i].status = status;
     project.steps[i].log    = stepLog;
-    const card   = document.querySelector('.step-card[data-index="' + i + '"]');
-    const badge  = card?.querySelector('.step-status');
-    const logBtn = document.getElementById('log-toggle-' + i);
-    if (badge)  { badge.className = 'step-status status-' + status; badge.textContent = status; }
-    if (logBtn) { logBtn.style.display = 'inline-flex'; }
-    const logEl = document.getElementById('step-log-' + i);
-    if (logEl) { logEl.textContent = stepLog; document.getElementById('step-body-' + i)?.classList.add('open'); }
+    renderSteps();
   };
 
-  let passed = 0, failed = 0;
+  let passed=0, failed=0;
 
-  for (let i = 0; i < steps.length; i++) {
-    if (abortExec) { log('Execution aborted by user.', 'err'); break; }
-
+  for (let i=0; i<steps.length; i++) {
     const step = steps[i];
-    const def  = STEP_TYPES[step.type];
-    const pct  = Math.round(((i) / steps.length) * 100);
-    document.getElementById('exec-progress-fill').style.width = pct + '%';
-    document.getElementById('exec-pct').textContent           = pct + '%';
-    document.getElementById('exec-step-label').textContent    = 'Step ' + (i+1) + ' / ' + steps.length;
-    document.getElementById('exec-title').textContent         = 'Running: ' + (step.name || def.label);
+    const pct  = Math.round(i/steps.length*100);
+    document.getElementById('exec-prog').style.width = pct+'%';
+    document.getElementById('exec-pct').textContent  = pct+'%';
+    document.getElementById('exec-step-label').textContent = 'Step '+(i+1)+'/'+steps.length;
+    document.getElementById('exec-title').textContent = 'Running: '+step.name;
 
-    setStepStatus(i, 'running', 'Running…');
-    log('Step ' + (i+1) + ': ' + (step.name || def.label));
+    setStatus(i, 'running', 'Running…');
+    log('Step '+(i+1)+': '+step.name);
 
-    const stepStart = Date.now();
-    let stepLog = '';
-    let ok = true;
-
+    const t0 = Date.now();
+    let stepLog='', ok=true;
     try {
       if (step.type === 'migration') {
-        const result = await execMigrationStep(step, srcConn, tgtConn, log);
-        stepLog = result.log;
-        ok = result.ok;
-      } else if (step.type === 'sql') {
-        const result = await execSqlStep(step, tgtConn, log);
-        stepLog = result.log;
-        ok = result.ok;
-      } else if (step.type === 'validation') {
-        const result = await execValidationStep(step, tgtConn, log);
-        stepLog = result.log;
-        ok = result.ok;
-      } else if (step.type === 'wasis') {
-        const result = await execWasisStep(step, tgtConn, log);
-        stepLog = result.log;
-        ok = result.ok;
+        const r = await runMigrationStep(step, srcConn, tgtConn, log);
+        stepLog=r.log; ok=r.ok;
+      } else {
+        const r = await runSqlStep(step, tgtConn, log);
+        stepLog=r.log; ok=r.ok;
       }
-    } catch(e) {
-      stepLog = 'Error: ' + e.message;
-      ok = false;
-      log('Error: ' + e.message, 'err');
-    }
+    } catch(e) { stepLog='Error: '+e.message; ok=false; log('Error: '+e.message,'err'); }
 
-    const duration = ((Date.now() - stepStart) / 1000).toFixed(1) + 's';
-    stepLog += '\nDuration: ' + duration;
+    const dur = ((Date.now()-t0)/1000).toFixed(1)+'s';
+    stepLog += '\nDuration: '+dur;
 
     if (ok) {
       passed++;
-      setStepStatus(i, 'passed', stepLog);
-      log('Step ' + (i+1) + ' passed (' + duration + ')', 'ok');
+      setStatus(i, 'passed', stepLog);
+      log('Step '+(i+1)+' passed ('+dur+')', 'ok');
     } else {
       failed++;
-      setStepStatus(i, 'failed', stepLog);
-      log('Step ' + (i+1) + ' FAILED — stopping execution.', 'err');
-
-      // Show retry/skip/abort options
-      const halted = await waitForUserDecision(i);
-      if (halted === 'abort') { log('Execution aborted.', 'err'); break; }
-      if (halted === 'skip')  { log('Step skipped — continuing.', 'err'); setStepStatus(i, 'skipped', stepLog + '\n[Skipped by user]'); continue; }
-      if (halted === 'retry') { i--; log('Retrying step ' + (i+2) + '…'); continue; }
+      setStatus(i, 'failed', stepLog);
+      log('Step '+(i+1)+' FAILED — stopping.', 'err');
+      const decision = await waitForDecision();
+      if (decision==='abort') { log('Aborted.','err'); break; }
+      if (decision==='skip')  { setStatus(i,'skipped',stepLog+'\n[Skipped]'); log('Skipped.','err'); continue; }
+      if (decision==='retry') { i--; log('Retrying…'); continue; }
     }
   }
 
-  // Final
-  document.getElementById('exec-progress-fill').style.width = '100%';
+  document.getElementById('exec-prog').style.width = '100%';
   document.getElementById('exec-pct').textContent  = '100%';
-  document.getElementById('exec-step-label').textContent = 'Complete';
-  const summary = failed === 0
-    ? '✓ All ' + steps.length + ' steps completed successfully.'
-    : '⚠ ' + passed + ' passed, ' + failed + ' failed.';
+  const summary = failed===0 ? '✓ All '+steps.length+' steps passed' : '⚠ '+passed+' passed, '+failed+' failed';
   document.getElementById('exec-title').textContent = summary;
-  log('\n' + summary, failed === 0 ? 'ok' : 'err');
-
-  document.getElementById('run-btn').disabled = false;
-  document.getElementById('run-btn').textContent = '▶ Run project';
-  document.getElementById('exec-action-btns').innerHTML = '';
-  isRunning = false;
-
+  log('\n'+summary, failed===0?'ok':'err');
+  document.getElementById('run-btn').disabled=false;
+  document.getElementById('run-btn').textContent='▶ Run project';
+  document.getElementById('exec-btns').innerHTML='';
+  isRunning=false;
   saveProject();
 }
 
-function waitForUserDecision(stepIndex) {
+function waitForDecision() {
   return new Promise(resolve => {
-    const btns = document.getElementById('exec-action-btns');
+    const btns = document.getElementById('exec-btns');
     btns.innerHTML = `
-      <button class="btn btn-amber btn-sm" onclick="resolveDecision('retry')">↩ Retry step</button>
-      <button class="btn btn-ghost btn-sm" onclick="resolveDecision('skip')">⏭ Skip step</button>
-      <button class="btn btn-red btn-sm" onclick="resolveDecision('abort')">⏹ Abort</button>`;
-    window._resolveDecision = (choice) => { btns.innerHTML = ''; resolve(choice); };
+      <button class="btn btn-amber btn-sm" onclick="window._dec('retry')">↩ Retry</button>
+      <button class="btn btn-ghost btn-sm" onclick="window._dec('skip')">⏭ Skip</button>
+      <button class="btn btn-red btn-sm" onclick="window._dec('abort')">⏹ Abort</button>`;
+    window._dec = c => { btns.innerHTML=''; resolve(c); };
   });
 }
-window.resolveDecision = (choice) => window._resolveDecision && window._resolveDecision(choice);
 
-// ── Step executors ────────────────────────────────────────────────────────────
-function isFnUrl(conn) { return conn.startsWith('https://') || conn.startsWith('http://'); }
-
-async function dbCall(conn, body) {
-  const isFn = isFnUrl(conn);
-  if (isFn) {
-    const res  = await fetch(conn, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
-    const data = await res.json().catch(() => ({ error: 'Non-JSON response (HTTP ' + res.status + ')' }));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
-  } else {
-    const res  = await fetch('/.netlify/functions/db-connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, connectionString: conn }), signal: AbortSignal.timeout(120000) });
-    const data = await res.json().catch(() => ({ error: 'Non-JSON response (HTTP ' + res.status + ')' }));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
-  }
-}
-
-async function execMigrationStep(step, srcConn, tgtConn, log) {
-  let stepLog = '';
-  const addLog = msg => { stepLog += msg + '\n'; log(msg); };
-
-  if (!step.srcTable) throw new Error('Source table not configured');
-  if (!step.tgtTable) throw new Error('Target table not configured');
-  if (!srcConn)       throw new Error('Source connection not configured in project settings');
+async function runMigrationStep(step, srcConn, tgtConn, log) {
+  let stepLog='';
+  const add = m => { stepLog+=m+'\n'; log(m); };
+  if (!step.srcTable) throw new Error('Source table not set');
+  if (!step.tgtTable) throw new Error('Target table not set');
+  if (!srcConn)       throw new Error('Source connection not configured');
 
   // Fetch rows from source
-  const limit = step.rowLimit > 0 ? 'TOP ' + step.rowLimit + ' ' : '';
-  addLog('Fetching rows from ' + step.srcTable + '…');
-  const srcRes = await dbCall(srcConn, { action: 'execute', sql: 'SELECT ' + limit + '* FROM ' + step.srcTable });
-  const rows   = srcRes.recordset || [];
-  addLog('Fetched ' + rows.length.toLocaleString() + ' rows');
+  add('Fetching rows from '+step.srcTable+'…');
+  const srcRes = await dbCall(srcConn, { action:'execute', sql:'SELECT * FROM '+step.srcTable });
+  const rows   = srcRes.recordset||[];
+  add('Fetched '+rows.length.toLocaleString()+' rows');
+  if (!rows.length) { add('Nothing to insert.'); return {ok:true,log:stepLog}; }
 
-  if (rows.length === 0) { addLog('No rows to migrate.'); return { ok: true, log: stepLog }; }
-
-  // Determine column mapping
-  let mapping = step.mapping;
-  if (!mapping || !mapping.length) {
-    // Auto-map: source col → same target col
-    const cols = Object.keys(rows[0]);
-    mapping    = cols.map(c => ({ srcCol: c, tgtCol: c, transform: 'NONE' }));
-    addLog('Auto-mapping ' + cols.length + ' columns by name');
+  // Build mapping — use saved column mapping or auto-map
+  let mapping = step.columnMapping?.filter(m=>m.tgtCol) || [];
+  if (!mapping.length) {
+    mapping = Object.keys(rows[0]).map(c=>({srcCol:c,tgtCol:c,transform:'NONE'}));
+    add('Auto-mapping '+mapping.length+' columns by name');
+  } else {
+    add('Using saved mapping: '+mapping.length+' columns');
   }
 
-  // Apply Was/Is rules if configured
-  const wasisRules = step.wasisRules || [];
-
-  // Build INSERT batches
-  const BATCH = 100;
-  const colList = mapping.filter(m => m.tgtCol).map(m => '[' + m.tgtCol + ']').join(', ');
+  const colList = mapping.map(m=>'['+m.tgtCol+']').join(', ');
+  const BATCH   = 100;
   const batches = [];
-
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH);
-    let stmt = 'INSERT INTO ' + step.tgtTable + ' (' + colList + ') VALUES\n';
-    stmt += batch.map(row => {
-      const vals = mapping.filter(m => m.tgtCol).map(m => {
-        let val = row[m.srcCol];
-        // Apply Was/Is
-        if (wasisRules.length) {
-          const rule = wasisRules.find(r =>
-            (r.srcField === m.srcCol.toLowerCase() || !r.srcField) &&
-            r.oldVal?.toString().toLowerCase() === String(val ?? '').toLowerCase()
-          );
-          if (rule) val = rule.newVal;
-        }
-        return formatSqlVal(val);
-      });
-      return '    (' + vals.join(', ') + ')';
-    }).join(',\n') + ';';
+  for (let i=0;i<rows.length;i+=BATCH) {
+    const batch = rows.slice(i,i+BATCH);
+    const stmt  = 'INSERT INTO '+step.tgtTable+' ('+colList+') VALUES\n' +
+      batch.map(row=>'    ('+mapping.map(m=>fmtVal(row[m.srcCol])).join(', ')+')').join(',\n')+';';
     batches.push(stmt);
   }
 
-  addLog('Executing ' + batches.length + ' batches into ' + step.tgtTable + '…');
-  const batchRes = await dbCall(tgtConn, { action: 'batch', batchSql: batches });
-  addLog('Inserted ' + batchRes.totalRowsAffected.toLocaleString() + ' rows · ' + (batchRes.errors || 0) + ' errors');
-
-  return { ok: batchRes.errors === 0, log: stepLog };
+  add('Executing '+batches.length+' batches into '+step.tgtTable+'…');
+  const res = await dbCall(tgtConn, { action:'batch', batchSql:batches });
+  add('Inserted '+res.totalRowsAffected.toLocaleString()+' rows · '+(res.errors||0)+' errors');
+  return { ok:res.errors===0, log:stepLog };
 }
 
-async function execSqlStep(step, tgtConn, log) {
-  let stepLog = '';
-  const addLog = msg => { stepLog += msg + '\n'; log(msg); };
-  if (!step.sql) throw new Error('No SQL configured for this step');
-  addLog('Executing SQL script (' + step.sql.length + ' chars)…');
-  const res = await dbCall(tgtConn, { action: 'execute', sql: step.sql });
-  addLog('Done · ' + (res.rowsAffected || 0) + ' rows affected');
-  return { ok: true, log: stepLog };
+async function runSqlStep(step, tgtConn, log) {
+  let stepLog='';
+  const add = m => { stepLog+=m+'\n'; log(m); };
+  if (!step.sql) throw new Error('No SQL in this step');
+  add('Executing SQL ('+step.sql.length+' chars)…');
+  const res = await dbCall(tgtConn, { action:'execute', sql:step.sql });
+  add('Done · '+(res.rowsAffected||0)+' rows affected');
+  return { ok:true, log:stepLog };
 }
 
-async function execValidationStep(step, tgtConn, log) {
-  let stepLog = '';
-  const addLog = msg => { stepLog += msg + '\n'; log(msg); };
-  if (!step.query) throw new Error('No query configured for this step');
-  addLog('Running validation: ' + step.query.slice(0, 80) + '…');
-  const res    = await dbCall(tgtConn, { action: 'execute', sql: step.query });
-  const record = res.recordset?.[0];
-  const value  = record ? Object.values(record)[0] : null;
-  addLog('Result: ' + JSON.stringify(value));
-
-  let passed = true;
-  const vt = step.validationType || 'gt0';
-  const ev = parseFloat(step.expectedValue) || 0;
-  if (vt === 'gt0')  passed = parseFloat(value) > 0;
-  else if (vt === 'eq')  passed = String(value) === String(step.expectedValue);
-  else if (vt === 'gte') passed = parseFloat(value) >= ev;
-  // 'any' always passes
-
-  addLog('Validation ' + (passed ? 'PASSED' : 'FAILED') + ' · expected ' + vt + (vt !== 'gt0' && vt !== 'any' ? ' ' + ev : '') + ', got ' + value);
-  return { ok: passed, log: stepLog };
-}
-
-async function execWasisStep(step, tgtConn, log) {
-  let stepLog = '';
-  const addLog = msg => { stepLog += msg + '\n'; log(msg); };
-  const rules = step.wasisRules;
-  if (!rules || !rules.length) throw new Error('No Was/Is rules configured');
-  if (!step.targetTable) throw new Error('No target table configured');
-  addLog('Applying ' + rules.length + ' Was/Is rules to ' + step.targetTable + '…');
-
-  let updates = 0;
-  for (const rule of rules) {
-    if (!rule.srcField || !rule.oldVal || rule.newVal === undefined) continue;
-    const sql = 'UPDATE ' + step.targetTable + ' SET [' + rule.srcField + '] = ' + formatSqlVal(rule.newVal) + ' WHERE [' + rule.srcField + '] = ' + formatSqlVal(rule.oldVal);
-    const res = await dbCall(tgtConn, { action: 'execute', sql });
-    updates += res.rowsAffected || 0;
-    addLog('  "' + rule.oldVal + '" → "' + rule.newVal + '" · ' + (res.rowsAffected || 0) + ' rows');
-  }
-  addLog('Total: ' + updates + ' rows updated across ' + rules.length + ' rules');
-  return { ok: true, log: stepLog };
-}
-
-function formatSqlVal(val) {
-  if (val === null || val === undefined || val === '') return 'NULL';
-  if (typeof val === 'boolean' || val === true || val === false) return val ? '1' : '0';
-  if (typeof val === 'number') return String(val);
-  const s = String(val);
+function fmtVal(v) {
+  if (v===null||v===undefined) return 'NULL';
+  if (typeof v==='boolean') return v?'1':'0';
+  if (typeof v==='number') return String(v);
+  const s=String(v);
   if (/^-?\d+(\.\d+)?$/.test(s)) return s;
-  return "N'" + s.replace(/'/g, "''") + "'";
+  return "N'"+s.replace(/'/g,"''")+"'";
 }
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
-async function testProjectConn(which) {
-  const inputEl  = document.getElementById(which === 'src' ? 'proj-src-conn' : 'proj-tgt-conn');
-  const statusEl = document.getElementById(which === 'src' ? 'src-conn-status' : 'tgt-conn-status');
-  const conn     = inputEl?.value.trim();
-  if (!conn) { alert('Please enter a connection string or URL first.'); return; }
-
-  statusEl.textContent = 'Testing…';
-  statusEl.style.color = 'var(--accent)';
-
-  try {
-    const res = await dbCall(conn, { action: 'test' });
-    if (res.success) {
-      statusEl.textContent = '✓ ' + res.database + ' · ' + res.user;
-      statusEl.style.color = 'var(--green)';
-    } else {
-      throw new Error(res.error || 'Test failed');
-    }
-  } catch(e) {
-    statusEl.textContent = '✕ ' + e.message;
-    statusEl.style.color = 'var(--red)';
-  }
-}
-
-function escHtml(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function timeAgo(iso) {
-  const secs = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  if (secs < 60)    return 'just now';
-  if (secs < 3600)  return Math.floor(secs/60) + 'm ago';
-  if (secs < 86400) return Math.floor(secs/3600) + 'h ago';
-  return Math.floor(secs/86400) + 'd ago';
-}
-
-// Scan localStorage for saved connect.html mapping snapshots
-function getSavedMappings() {
-  const maps = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      try {
-        const key = localStorage.key(i);
-        if (!key || !key.startsWith('cygenix_connect_state_')) continue;
-        const raw = localStorage.getItem(key);
-        if (!raw) continue;
-        const snap = JSON.parse(raw);
-        if (!snap || !snap.columnMapping || !snap.columnMapping.length) continue;
-        const tgt = snap.selectedTargetTable;
-        maps.push({
-          key,
-          srcTable:   String(snap.sourceFileName || 'source'),
-          tgtTable:   tgt ? String(tgt.schema || '') + '.' + String(tgt.name || '') : '',
-          mappedCols: snap.columnMapping.filter(m => m && m.tgtCol).length,
-          savedAt:    snap.savedAt || '',
-          snap
-        });
-      } catch(innerE) { /* skip bad entries */ }
-    }
-  } catch(e) { console.warn('getSavedMappings error:', e); }
-  return maps.sort((a,b) => new Date(b.savedAt||0) - new Date(a.savedAt||0));
-}
-
-function importSavedMapping(indexStr) {
-  if (indexStr === '') return;
-  const maps = getSavedMappings();
-  const m    = maps[parseInt(indexStr)];
-  if (!m) return;
-  const snap = m.snap;
-
-  // Fill in the form fields from the snapshot
-  const nameEl = document.getElementById('sf-name');
-  const srcEl  = document.getElementById('sf-srcTable');
-  const tgtEl  = document.getElementById('sf-tgtTable');
-  const mapEl  = document.getElementById('sf-mapping');
-  const wasEl  = document.getElementById('sf-wasisRules');
-  const prvEl  = document.getElementById('mapping-preview');
-
-  if (nameEl && !nameEl.value) nameEl.value = (snap.sourceFileName || '') + ' → ' + (m.tgtTable || '');
-  if (srcEl)  srcEl.value = snap.sourceFileName || '';
-  if (tgtEl && snap.selectedTargetTable) tgtEl.value = snap.selectedTargetTable.schema + '.' + snap.selectedTargetTable.name;
-
-  // Serialise the column mapping
-  const mapping = (snap.columnMapping || []).filter(m => m.tgtCol).map(m => ({
-    srcCol: m.srcCol, tgtCol: m.tgtCol, tgtType: m.tgtType || '', transform: m.transform || 'NONE', transformExpr: m.transformExpr || null
-  }));
-  if (mapEl) mapEl.value = JSON.stringify(mapping, null, 2);
-  if (prvEl) prvEl.textContent = mapping.length + ' column mappings imported · ' + mapping.filter(m => m.transform !== 'NONE').length + ' with transforms';
-
-  // Import Was/Is rules
-  if (wasEl && snap.wasisRules && snap.wasisRules.length) {
-    wasEl.value = JSON.stringify(snap.wasisRules, null, 2);
-  }
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function showToast(msg) {
-  const t = document.createElement('div');
-  t.textContent = msg;
-  t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg2);border:0.5px solid var(--border2);color:var(--green);padding:0.6rem 1.1rem;border-radius:var(--r);font-size:13px;z-index:999;font-family:var(--serif)';
+  const t=document.createElement('div');
+  t.textContent=msg;
+  t.style.cssText='position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg2);border:0.5px solid var(--border2);color:var(--green);padding:0.6rem 1.1rem;border-radius:var(--r);font-size:13px;z-index:999;font-family:var(--serif)';
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2500);
+  setTimeout(()=>t.remove(),2500);
 }
 </script>
 </body>
