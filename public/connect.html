@@ -498,86 +498,43 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   </div>
 
   <!-- ═══════════════════════════════════════════════════════════════ -->
-  <!-- STEP 5: EXECUTE -->
+  <!-- STEP 5: SAVE & FINISH -->
   <!-- ═══════════════════════════════════════════════════════════════ -->
   <div id="step-5" class="step-view">
     <div class="panel">
-      <div class="panel-title">Execute migration</div>
-      <div class="panel-sub">Review the plan then choose to execute directly or download the SQL to run in SSMS.</div>
+      <div class="panel-title">Save &amp; Finish</div>
+      <div class="panel-sub">Your mapping is ready. Save this job to your library then add it to a Conversion Project to execute — or go straight back to the dashboard.</div>
 
       <div class="three-col" style="margin-bottom:1.5rem">
         <div style="background:var(--bg3);border-radius:var(--r);padding:1rem;border:0.5px solid var(--border)">
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">Source table</div>
+          <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--teal)" id="finish-src-table">—</div>
+        </div>
+        <div style="background:var(--bg3);border-radius:var(--r);padding:1rem;border:0.5px solid var(--border)">
           <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">Target table</div>
-          <div style="font-size:14px;font-weight:600;font-family:var(--mono)" id="exec-target-table">—</div>
+          <div style="font-size:13px;font-weight:600;font-family:var(--mono);color:var(--accent)" id="finish-tgt-table">—</div>
         </div>
         <div style="background:var(--bg3);border-radius:var(--r);padding:1rem;border:0.5px solid var(--border)">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">Rows to insert</div>
-          <div style="font-size:1.4rem;font-weight:600;color:var(--accent)" id="exec-row-count">0</div>
-        </div>
-        <div style="background:var(--bg3);border-radius:var(--r);padding:1rem;border:0.5px solid var(--border)">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">INSERT batches</div>
-          <div style="font-size:1.4rem;font-weight:600;color:var(--text)" id="exec-batch-count">0</div>
+          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">Columns mapped</div>
+          <div style="font-size:1.4rem;font-weight:600;color:var(--green)" id="finish-col-count">0</div>
         </div>
       </div>
 
-      <!-- Backup option -->
-      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:0.2rem">🛡 Track inserted rows for rollback</div>
-          <div style="font-size:11px;color:var(--text3)">Records the primary key of every inserted row in <span style="font-family:var(--mono)" id="backup-table-name">[table]_cyg_log</span> — rollback deletes only those rows, leaving all pre-existing data untouched</div>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0">
-          <input type="checkbox" id="backup-before-exec" checked style="width:16px;height:16px;accent-color:var(--green);cursor:pointer">
-          <span style="font-size:12px;color:var(--text2)">Enable rollback tracking</span>
-        </label>
+      <div style="margin-bottom:1.5rem">
+        <label style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem">Job name</label>
+        <input id="finish-job-name" class="form-input" placeholder="e.g. Customers table migration" style="font-size:13px;max-width:480px">
       </div>
 
-      <div class="panel" style="border-color:rgba(240,70,70,0.2);background:var(--red-bg);margin-bottom:1.25rem">
-        <div style="font-size:12px;color:var(--red);font-weight:500;margin-bottom:0.25rem">Before executing</div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.8">
-          • Existing rows in the target table will NOT be deleted automatically — this is an INSERT only<br>
-          • If the target table has unique constraints, duplicate key violations will fail individual batches<br>
-          • You can always download the SQL and run it manually in SSMS for full control
-        </div>
-      </div>
-
-      <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
         <button class="btn btn-ghost" onclick="goStep(4)">← Back to preview</button>
-        <button class="btn btn-ghost" onclick="downloadPreviewSQL()">⬇ Download SQL (run in SSMS)</button>
-        <button class="btn btn-primary" onclick="executeNow()" id="exec-btn">Execute now →</button>
+        <button class="btn btn-primary" onclick="saveJobAndFinish('dashboard')">💾 Save &amp; go to Dashboard</button>
+        <button class="btn" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="saveJobAndFinish('another')">💾 Save &amp; map another table</button>
+        <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.35)" onclick="saveJobAndFinish('project')">💾 Save &amp; open Conversion Project</button>
       </div>
 
-      <div class="progress-wrap" id="progress-wrap" style="display:none">
-        <div class="divider"></div>
-        <div style="font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.75rem" id="progress-label">Executing…</div>
-        <div class="progress-bar-outer">
-          <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
-        </div>
-        <div class="progress-text" id="progress-text">0 / 0 batches</div>
-        <div class="status-box status-info visible" id="exec-log" style="margin-top:0.75rem;max-height:300px"></div>
-      </div>
-
-      <div id="exec-result" style="display:none;margin-top:1.5rem">
-        <div class="divider"></div>
-        <div style="font-size:14px;font-weight:600;margin-bottom:0.5rem" id="exec-result-title"></div>
-        <div style="font-size:12px;color:var(--text2);line-height:1.9" id="exec-result-body"></div>
-        <!-- Rollback panel — shown after successful backup + migration -->
-        <div id="rollback-panel" style="display:none;margin-top:1.25rem;background:rgba(240,70,70,0.06);border:0.5px solid rgba(240,70,70,0.2);border-radius:var(--r-lg);padding:1rem">
-          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem">
-            <div>
-              <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:0.2rem">↩ Rollback available</div>
-              <div style="font-size:11px;color:var(--text3)">Log table: <span style="font-family:var(--mono);color:var(--text2)" id="rollback-backup-name">—</span></div>
-              <div style="font-size:11px;color:var(--text3);margin-top:2px">Deletes only the rows inserted by this migration — pre-existing rows are not touched. FK-safe.</div>
-            </div>
-            <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3);flex-shrink:0"
-              onclick="confirmRollback()">↩ Roll back migration</button>
-          </div>
-          <div id="rollback-log" style="display:none;margin-top:0.75rem;font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:0.75rem;max-height:120px;overflow-y:auto"></div>
-        </div>
-      </div>
+      <div id="finish-status" style="display:none;margin-top:1.25rem;padding:0.75rem 1rem;background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.3);border-radius:var(--r);font-size:13px;color:var(--green)"></div>
     </div>
   </div>
-
 </div><!-- /main -->
 
 <script>
@@ -863,7 +820,7 @@ function goStep(n){
   $('tab-' + n).classList.add('active');
   currentStep = n;
   if (n === 3) buildMappingTable();
-  if (n === 5) updateExecSummary();
+  if (n === 5) updateFinishSummary();
 }
 
 // ── Step 1: Connect ──────────────────────────────────────────────────────────
@@ -1730,16 +1687,22 @@ function downloadPreviewSQL(){
 function copyCode(id){ navigator.clipboard.writeText($(id).textContent).then(()=>{ $('copy-btn-'+id)||null; }); }
 
 // ── Step 5: Execute ──────────────────────────────────────────────────────────
-function updateExecSummary(){
+function updateExecSummary(){ updateFinishSummary(); } // legacy alias
+
+function updateFinishSummary(){
+  const src = S.selectedSourceTable;
   const tgt = S.selectedTargetTable;
-  $('exec-target-table').textContent = tgt ? tgt.schema + '.' + tgt.name : '—';
-  $('exec-row-count').textContent = S.selectedSourceTable?.rows.length.toLocaleString() || '0';
-  $('exec-batch-count').textContent = S.batchStatements.length;
-  // Show backup table name
-  if (tgt) {
-    const logName = '[' + tgt.schema + '].[' + tgt.name + '_cyg_log]';
-    const el = $('backup-table-name');
-    if (el) el.textContent = logName;
+  const mappedCols = (S.columnMapping||[]).filter(m => m.tgtCol).length;
+  const srcName = src
+    ? (src.schemaName ? src.schemaName + '.' + src.tableName : src.tableName)
+    : (src?.fromFile ? S.sourceFile?.name || 'Source file' : '—');
+  const el = $('finish-src-table'); if (el) el.textContent = srcName || '—';
+  const el2 = $('finish-tgt-table'); if (el2) el2.textContent = tgt ? tgt.schema + '.' + tgt.name : '—';
+  const el3 = $('finish-col-count'); if (el3) el3.textContent = mappedCols;
+  // Pre-fill job name
+  const nameEl = $('finish-job-name');
+  if (nameEl && !nameEl.value) {
+    nameEl.value = tgt ? (tgt.schema + '.' + tgt.name + ' migration') : 'Migration job';
   }
 }
 
@@ -1971,6 +1934,104 @@ async function executeNow(){
 
   saveProjectState();
   btn.disabled = false; btn.textContent = 'Execute now →';
+}
+
+
+// ── Step 5: Save & Finish ─────────────────────────────────────────────────────
+function saveJobAndFinish(action) {
+  const jobName = ($('finish-job-name')?.value || '').trim()
+    || ($('finish-tgt-table')?.textContent || 'Migration job');
+
+  // Build the job record (same structure as before, minus execution)
+  const src = S.selectedSourceTable;
+  const tgt = S.selectedTargetTable;
+  const completedAt = new Date().toISOString();
+  let userName = '', userEmail = '';
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    userName  = u.user_metadata?.full_name || u.email?.split('@')[0] || '';
+    userEmail = u.email || '';
+  } catch {}
+
+  const reportMapping = (S.columnMapping || []).map(m => {
+    const colWasis = wasisRules.filter(r =>
+      (r.srcField === m.srcCol?.toLowerCase() || r.srcField === '') &&
+      (r.srcTable === (src?.tableName||'').toLowerCase() || r.srcTable === '')
+    );
+    return {
+      srcCol: m.srcCol, tgtCol: m.tgtCol, tgtType: m.tgtType,
+      transform: m.transform || 'NONE', transformExpr: m.transformExpr || null,
+      wasisRules: colWasis.length ? colWasis.map(r => r.oldVal + ' → ' + r.newVal) : null,
+      wasisCount: colWasis.length || null
+    };
+  });
+
+  const srcTableName = src
+    ? (src.schemaName ? src.schemaName + '.' + src.tableName : src.tableName) || src.tableName
+    : S.sourceFile?.name || '';
+
+  const tgtTableName = tgt ? tgt.schema + '.' + tgt.name : '';
+  const totalRows = src?.rows?.length || src?.rowCount || 0;
+
+  const dashJob = {
+    id:            'job_' + Date.now(),
+    name:          jobName,
+    source:        srcTableName,
+    target:        tgtTableName,
+    sourceTable:   srcTableName,
+    files:         S.sourceFile ? [{ name: S.sourceFile.name, size: S.sourceFile.size }] : [],
+    tables:        [{ name: tgtTableName, rows: totalRows, cols: reportMapping.filter(m=>m.tgtCol).length }],
+    totalRows,
+    status:        'ready',
+    created:       completedAt,
+    columnMapping: reportMapping,
+    wasisRules:    wasisRules || [],
+    wasisRuleCount: wasisRules?.length || 0,
+    wasisColCount:  reportMapping.filter(m => m.wasisCount).length,
+    insertSQL:     S.insertSQL || '',
+    schemaSQL:     S.schemaSQL || '',
+    warnings:      S.warnings || [],
+    userName, userEmail,
+    sourceSystem:  srcTableName || 'Source',
+    targetSystem:  'Microsoft SQL Server',
+    targetServer:  S.connString || '',
+    targetDatabase: S.targetSchema?.database || tgt?.schema || '',
+    authMethod:    connMode === 'azure' ? 'Azure Managed Identity' : 'SQL Authentication',
+  };
+
+  try {
+    const existing = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    existing.unshift(dashJob);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(existing.slice(0, 20)));
+  } catch(e) {
+    console.error('Save failed:', e);
+    alert('Could not save job: ' + e.message);
+    return;
+  }
+
+  const statusEl = $('finish-status');
+  if (statusEl) {
+    statusEl.style.display = 'block';
+    statusEl.textContent = '✓ Job "' + jobName + '" saved to your library.';
+  }
+
+  if (action === 'dashboard') {
+    setTimeout(() => window.location.href = '/dashboard.html', 800);
+  } else if (action === 'project') {
+    setTimeout(() => window.location.href = '/project-builder.html', 800);
+  } else if (action === 'another') {
+    // Reset to step 3 for a new mapping on a different table
+    setTimeout(() => {
+      S.selectedSourceTable = null;
+      S.selectedTargetTable = null;
+      S.columnMapping = [];
+      S.insertSQL = '';
+      S.batchStatements = [];
+      if (statusEl) statusEl.style.display = 'none';
+      if ($('finish-job-name')) $('finish-job-name').value = '';
+      goStep(3);
+    }, 800);
+  }
 }
 
 function openMigrationReport() {
