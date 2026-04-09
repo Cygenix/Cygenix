@@ -1696,7 +1696,7 @@ function updateFinishSummary(){
   const srcName = src
     ? (src.schemaName ? src.schemaName + '.' + src.tableName : src.tableName)
     : (src?.fromFile ? S.sourceFile?.name || 'Source file' : '—');
-  const el = $('finish-src-table'); if (el) el.textContent = srcName || '—';
+  const el = $('finish-src-table'); if (el) { el.textContent = srcName || '—'; el.dataset.value = srcName || ''; }
   const el2 = $('finish-tgt-table'); if (el2) el2.textContent = tgt ? tgt.schema + '.' + tgt.name : '—';
   const el3 = $('finish-col-count'); if (el3) el3.textContent = mappedCols;
   // Pre-fill job name
@@ -1968,9 +1968,22 @@ function saveJobAndFinish(action) {
     };
   });
 
-  const srcTableName = src
-    ? (src.schemaName ? src.schemaName + '.' + src.tableName : src.tableName) || src.tableName
-    : S.sourceFile?.name || '';
+  // Get source table name - try multiple sources in case state was partially lost
+  let srcTableName = '';
+  if (src && src.tableName) {
+    srcTableName = src.schemaName ? src.schemaName + '.' + src.tableName : src.tableName;
+  } else if (S.sourceFile?.name) {
+    srcTableName = S.sourceFile.name;
+  } else {
+    // Fall back to what's displayed on the finish summary panel
+    srcTableName = $('finish-src-table')?.dataset?.value || $('finish-src-table')?.textContent?.trim() || '';
+    if (srcTableName === '—') srcTableName = '';
+  }
+  // Also try to extract from the insertSQL comment if still empty
+  if (!srcTableName && S.insertSQL) {
+    const m = S.insertSQL.match(/-- Migration: (.+?) →/);
+    if (m) srcTableName = m[1].trim();
+  }
 
   const tgtTableName = tgt ? tgt.schema + '.' + tgt.name : '';
   const totalRows = src?.rows?.length || src?.rowCount || 0;
