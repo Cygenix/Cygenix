@@ -714,7 +714,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
 
 
-
     <!-- VALIDATION VIEW -->
     <div id="view-validation" class="view">
 
@@ -2550,95 +2549,393 @@ updateWasisBanner();
 </html>
 
 <script>
-// <div class="app-layout">
 
-  <!-- SIDEBAR -->
-  <div class="sidebar">
-    <div class="nav-item" onclick="showView('validation')">
-      Data Validation
-    </div>
+// VALIDATION ENGINE – MAIN WINDOW VERSION
+// =======================================
 
-    <!-- Add other menu items here -->
-  </div>
+let valScripts = [];   // all scripts from validation_scripts table
+let valResults = [];   // results from last run (kept for future use)
+let valRunning = false;
 
-  <!-- MAIN CONTENT -->
-  <div class="main-content">
+// ── Init: pre-fill connections + FORCE MAIN WINDOW PLACEMENT ─────────────────
+function initValidationView() {
+  // ==============================================================
+  // CHANGE THESE TWO SELECTORS TO MATCH YOUR APP
+  // ==============================================================
+  const VALIDATION_WRAPPER_ID = 'val-tab';        // ← the <div> that holds ALL validation HTML
+  const MAIN_WINDOW_ID       = 'main-content';    // ← your main content pane (common names: main-content, app-main, content-area, main)
 
-    <!-- VALIDATION VIEW -->
-    <div id="validation-view" class="view">
+  // 1. Move the validation UI into the main window if it’s currently in the left menu bar
+  const wrapper = document.getElementById(VALIDATION_WRAPPER_ID);
+  if (wrapper) {
+    const currentParent = wrapper.parentElement;
+    const mainWindow = document.getElementById(MAIN_WINDOW_ID) ||
+                       document.querySelector('main') ||
+                       document.querySelector('.main-panel') ||
+                       document.body;
 
-      <h2>Data Validation</h2>
+    if (currentParent && mainWindow && currentParent !== mainWindow) {
+      console.log('%c[Validation] Moving UI from left menu bar → main window', 'color:#00ffaa;font-weight:bold');
+      mainWindow.appendChild(wrapper);
+      // Optional: hide left sidebar if you want a full-screen view
+      // document.getElementById('sidebar')?.style.display = 'none';
+    }
+  }
 
-      <!-- CONNECTIONS -->
-      <div class="card">
-        <h3>Connections</h3>
+  // 2. Pre-fill connection strings from sessionStorage (unchanged)
+  const srcConn = sessionStorage.getItem('cygenix_src_conn_string') || '';
+  const tgtFn   = sessionStorage.getItem('cygenix_fn_url') || '';
+  const tgtKey  = sessionStorage.getItem('cygenix_fn_key') || '';
+  const tgtCs   = sessionStorage.getItem('cygenix_conn_string') || '';
 
-        <input id="val-src-conn" placeholder="Source connection string" />
-        <button onclick="valTestConn('src')">Connect</button>
-        <div id="val-src-status"></div>
+  const srcEl = document.getElementById('val-src-conn');
+  const tgtEl = document.getElementById('val-tgt-conn');
 
-        <input id="val-tgt-conn" placeholder="Target connection string / API URL" />
-        <button onclick="valTestConn('tgt')">Connect</button>
-        <div id="val-tgt-status"></div>
+  if (srcEl && !srcEl.value && srcConn) srcEl.value = srcConn;
+  if (tgtEl && !tgtEl.value) {
+    tgtEl.value = tgtFn
+      ? tgtFn + (tgtKey ? '?code=' + encodeURIComponent(tgtKey) : '')
+      : tgtCs;
+  }
 
-        <button onclick="loadValidationScripts()">Load validation scripts</button>
-      </div>
+  if (valScripts.length) renderValidationTable();
+}
 
-      <!-- ACTIONS -->
-      <div class="card">
-        <button id="val-run-all-btn" onclick="runAllValidations()" disabled>
-          Run all scripts
-        </button>
+// ── Test connection ──────────────────────────────────────────────────────────
+async function valTestConn(which) {
+  const inputEl = document.getElementById(which === 'src' ? 'val-src-conn' : 'val-tgt-conn');
+  const statusEl = document.getElementById('val-' + which + '-status');
+  const conn = inputEl?.value.trim();
 
-        <button id="val-run-selected-btn" onclick="runSelectedValidations()" style="display:none;">
-          Run selected
-        </button>
+  if (!conn) {
+    alert('Please enter a connection string or URL first.');
+    return;
+  }
 
-        <button id="val-export-btn" onclick="exportValidationExcel()" style="display:none;">
-          Export results
-        </button>
-      </div>
+  statusEl.textContent = 'Connecting…';
+  statusEl.style.color = 'var(--accent)';
 
-      <!-- STATS -->
-      <div id="val-stats" class="card" style="display:none;">
-        Total: <span id="val-stat-total"></span> |
-        Passed: <span id="val-stat-pass"></span> |
-        Failed: <span id="val-stat-fail"></span> |
-        Errors: <span id="val-stat-error"></span> |
-        Pending: <span id="val-stat-pending"></span>
-      </div>
+  try {
+    const res = await valDbCall(conn, { action: 'test' });
+    statusEl.textContent = `🟢 Connected · ${res.database} · ${(res.user || '').split('@')[0]}`;
+    statusEl.style.color = 'var(--green)';
+  } catch (e) {
+    statusEl.textContent = `🔴 ${e.message}`;
+    statusEl.style.color = 'var(--red)';
+  }
+}
 
-      <!-- EMPTY STATE -->
-      <div id="val-empty" class="card">
-        <div>No validation scripts loaded.</div>
-        <div></div>
-      </div>
+// ── DB call helper ───────────────────────────────────────────────────────────
+function valIsFn(conn) {
+  return conn && (conn.startsWith('https://') || conn.startsWith('http://'));
+}
 
-      <!-- TABLE -->
-      <div class="card">
-        <table id="val-scripts-table" style="display:none; width:100%;">
-          <thead>
-            <tr>
-              <th><input type="checkbox" onclick="toggleAllValidations(this.checked)" /></th>
-              <th>Name</th>
-              <th>Caption</th>
-              <th>Group</th>
-              <th>DB</th>
-              <th>Status</th>
-              <th>Result</th>
-              <th>Run</th>
-            </tr>
-          </thead>
-          <tbody id="val-scripts-tbody"></tbody>
-        </table>
-      </div>
+async function valDbCall(conn, body) {
+  if (!conn) throw new Error('No connection configured');
 
-      <!-- LOG -->
-      <div id="val-log-wrap" class="card" style="display:none;">
-        <pre id="val-log"></pre>
-      </div>
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120000);
 
-    </div>
+  try {
+    let res, data;
+    if (valIsFn(conn)) {
+      res = await fetch(conn, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+    } else {
+      res = await fetch('/.netlify/functions/db-connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, connectionString: conn }),
+        signal: controller.signal
+      });
+    }
 
-  </div>
-</div>
+    data = await res.json().catch(() => ({ error: `Non-JSON (HTTP ${res.status})` }));
+
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ── Load validation scripts ──────────────────────────────────────────────────
+async function loadValidationScripts() {
+  const srcConn = document.getElementById('val-src-conn').value.trim();
+  if (!srcConn) {
+    alert('Please enter a source connection string.');
+    return;
+  }
+
+  const emptyEl = document.getElementById('val-empty');
+  const tableEl = document.getElementById('val-scripts-table');
+
+  if (emptyEl) {
+    emptyEl.style.display = 'block';
+    emptyEl.querySelector('div:nth-child(2)').textContent = 'Loading scripts…';
+  }
+  if (tableEl) tableEl.style.display = 'none';
+
+  try {
+    const res = await valDbCall(srcConn, {
+      action: 'execute',
+      sql: `SELECT name, caption, sql, [Order], code, Script_DestinationDatabase, [group] 
+            FROM validation_scripts 
+            ORDER BY [Order], [group], name`
+    });
+
+    valScripts = (res.recordset || []).map((row, i) => ({
+      id: i,
+      name: row.name || row.NAME || '',
+      caption: row.caption || row.CAPTION || '',
+      sql: row.sql || row.SQL || '',
+      order: row.Order || row.ORDER || 0,
+      code: row.code || row.CODE || '',
+      destDb: parseInt(row.Script_DestinationDatabase || 1, 10),
+      group: row.group || row.GROUP || '',
+      status: 'pending',
+      result: null,
+      rowsFound: 0,
+      error: null,
+      checked: true
+    }));
+
+    if (!valScripts.length) {
+      if (emptyEl) emptyEl.querySelector('div:nth-child(2)').textContent = 'No scripts found in validation_scripts table.';
+      return;
+    }
+
+    renderValidationTable();
+    document.getElementById('val-run-all-btn').disabled = false;
+    const selBtn = document.getElementById('val-run-selected-btn');
+    if (selBtn) {
+      selBtn.style.display = 'inline-flex';
+      selBtn.disabled = false;
+    }
+    valLog(`Loaded ${valScripts.length} validation scripts.`);
+  } catch (e) {
+    if (emptyEl) emptyEl.querySelector('div:nth-child(2)').textContent = `Error: ${e.message}`;
+  }
+}
+
+// ── Render table ─────────────────────────────────────────────────────────────
+function renderValidationTable() {
+  const emptyEl = document.getElementById('val-empty');
+  const tableEl = document.getElementById('val-scripts-table');
+  const tbody = document.getElementById('val-scripts-tbody');
+  if (!tbody) return;
+
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (tableEl) tableEl.style.display = 'table';
+
+  const dbLabel = db => db <= 3
+    ? `<span style="font-size:10px;padding:2px 7px;border-radius:100px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono)">Source</span>`
+    : `<span style="font-size:10px;padding:2px 7px;border-radius:100px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono)">Target</span>`;
+
+  const statusBadge = s => {
+    if (s.status === 'pending') return '<span style="font-size:10px;color:var(--text3)">—</span>';
+    if (s.status === 'running') return '<span style="font-size:10px;color:var(--accent)">🟡 Running…</span>';
+    if (s.status === 'pass')   return '<span style="font-size:10px;color:var(--green)">🟢 Passed</span>';
+    if (s.status === 'fail')   return '<span style="font-size:10px;color:var(--red)">🔴 Failed</span>';
+    if (s.status === 'error')  return '<span style="font-size:10px;color:var(--amber)">🟠 Error</span>';
+    return '';
+  };
+
+  const resultCell = s => {
+    if (s.status === 'pending' || s.status === 'running') return '—';
+    if (s.status === 'error') return `<span style="font-size:11px;color:var(--amber);font-family:var(--mono)">${escHtml(s.error || '')}</span>`;
+    if (s.status === 'pass') return '<span style="font-size:11px;color:var(--green)">✓ No issues</span>';
+    return `<span style="font-size:11px;color:var(--red);font-weight:600">${s.rowsFound.toLocaleString()} rows found</span>`;
+  };
+
+  tbody.innerHTML = valScripts.map(s => `
+    <tr id="val-row-${s.id}" style="${s.status==='fail'?'background:rgba(240,70,70,0.04)':s.status==='error'?'background:rgba(245,158,11,0.04)':''}">
+      <td><input type="checkbox" ${s.checked ? 'checked' : ''} onchange="valScripts[${s.id}].checked=this.checked" style="accent-color:var(--accent)"></td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${escHtml(s.name)}</td>
+      <td style="font-size:12px;color:var(--text2)">${escHtml(s.caption)}</td>
+      <td style="font-size:11px;color:var(--text3)">${escHtml(s.group)}</td>
+      <td>${dbLabel(s.destDb)}</td>
+      <td>${statusBadge(s)}</td>
+      <td>${resultCell(s)}</td>
+      <td><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" onclick="runSingleValidation(${s.id})">▶ Run</button></td>
+    </tr>`).join('');
+
+  updateValStats();
+}
+
+function updateValStats() {
+  const ran = valScripts.filter(s => !['pending','running'].includes(s.status));
+  const pass = valScripts.filter(s => s.status === 'pass').length;
+  const fail = valScripts.filter(s => s.status === 'fail').length;
+  const error = valScripts.filter(s => s.status === 'error').length;
+  const pending = valScripts.filter(s => s.status === 'pending').length;
+
+  const statsEl = document.getElementById('val-stats');
+  if (statsEl && valScripts.length) {
+    statsEl.style.display = 'block';
+    document.getElementById('val-stat-total').textContent = valScripts.length;
+    document.getElementById('val-stat-pass').textContent = pass;
+    document.getElementById('val-stat-fail').textContent = fail;
+    document.getElementById('val-stat-error').textContent = error;
+    const pendingEl = document.getElementById('val-stat-pending');
+    if (pendingEl) pendingEl.textContent = pending;
+  }
+
+  const exportBtn = document.getElementById('val-export-btn');
+  if (exportBtn) exportBtn.style.display = ran.length ? 'inline-flex' : 'none';
+
+  const selBtn = document.getElementById('val-run-selected-btn');
+  if (selBtn) selBtn.style.display = valScripts.length ? 'inline-flex' : 'none';
+}
+
+function toggleAllValidations(checked) {
+  valScripts.forEach(s => s.checked = checked);
+  document.querySelectorAll('#val-scripts-tbody input[type="checkbox"]').forEach(cb => cb.checked = checked);
+}
+
+// ── Run validations ──────────────────────────────────────────────────────────
+async function runAllValidations() { await runValidations(valScripts); }
+async function runSelectedValidations() { await runValidations(valScripts.filter(s => s.checked)); }
+async function runSingleValidation(id) { await runValidations(valScripts.filter(s => s.id === id)); }
+
+async function runValidations(scripts) {
+  if (valRunning || !scripts.length) {
+    if (!scripts.length) alert('No scripts to run.');
+    return;
+  }
+
+  const srcConn = document.getElementById('val-src-conn').value.trim();
+  const tgtConn = document.getElementById('val-tgt-conn').value.trim();
+  if (!srcConn) {
+    alert('Please enter a source connection first.');
+    return;
+  }
+
+  valRunning = true;
+  document.getElementById('val-run-all-btn').disabled = true;
+  document.getElementById('val-log-wrap').style.display = 'block';
+  valLog(`Starting ${scripts.length} validation script(s)…\n`);
+
+  for (const script of scripts) {
+    script.status = 'running';
+    script.error = null;
+    script.result = null;
+    script.rowsFound = 0;
+    renderValidationTable(); // full re-render (simple & reliable)
+
+    const conn = script.destDb >= 4 ? tgtConn : srcConn;
+    const ts = new Date().toLocaleTimeString();
+
+    valLog(`[${ts}] Running: ${script.name}${script.caption ? ' — ' + script.caption : ''}`);
+
+    try {
+      if (!conn) throw new Error(`No ${script.destDb >= 4 ? 'target' : 'source'} connection configured`);
+      const res = await valDbCall(conn, { action: 'execute', sql: script.sql });
+      const rows = res.recordset || [];
+
+      script.rowsFound = rows.length;
+      script.result = rows;
+      script.status = rows.length > 0 ? 'fail' : 'pass';
+
+      valLog(rows.length > 0
+        ? ` 🔴 FAILED — ${rows.length.toLocaleString()} rows found (data issues detected)`
+        : ` 🟢 PASSED — no issues found`);
+    } catch (e) {
+      script.status = 'error';
+      script.error = e.message;
+      valLog(` 🟠 ERROR — ${e.message}`);
+    }
+
+    renderValidationTable();
+  }
+
+  updateValStats();
+  valLog(`\nValidation complete. ${valScripts.filter(s=>s.status==='pass').length} passed, ` +
+         `${valScripts.filter(s=>s.status==='fail').length} failed, ` +
+         `${valScripts.filter(s=>s.status==='error').length} errors.`);
+
+  valRunning = false;
+  document.getElementById('val-run-all-btn').disabled = false;
+}
+
+function valLog(msg) {
+  const el = document.getElementById('val-log');
+  if (el) {
+    el.textContent += msg + '\n';
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+// ── Export to Excel ──────────────────────────────────────────────────────────
+function exportValidationExcel() {
+  if (!window.XLSX) {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = doValidationExport;
+    document.head.appendChild(s);
+  } else {
+    doValidationExport();
+  }
+}
+
+function doValidationExport() {
+  const wb = XLSX.utils.book_new();
+  const now = new Date().toISOString().slice(0,10);
+
+  // Summary sheet
+  const summaryData = [
+    ['Cygenix — Validation Report', '', '', ''],
+    ['Date', now, '', ''],
+    ['Total scripts', valScripts.length, '', ''],
+    ['Passed', valScripts.filter(s=>s.status==='pass').length, '', ''],
+    ['Failed', valScripts.filter(s=>s.status==='fail').length, '', ''],
+    ['Errors', valScripts.filter(s=>s.status==='error').length, '', ''],
+    ['', '', '', ''],
+    ['Script name', 'Caption', 'Group', 'Database', 'Status', 'Rows found', 'Error']
+  ].concat(valScripts.map(s => [
+    s.name, s.caption, s.group,
+    s.destDb >= 4 ? 'Target' : 'Source',
+    s.status, s.rowsFound || 0, s.error || ''
+  ]));
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+  wsSummary['!cols'] = [{wch:35},{wch:40},{wch:20},{wch:10},{wch:10},{wch:12},{wch:50}];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // Failed script detail sheets
+  let sheetNum = 1;
+  valScripts.filter(s => s.status === 'fail' && s.result?.length).forEach(s => {
+    const cols = Object.keys(s.result[0]);
+    const data = [cols].concat(s.result.map(row => cols.map(c => row[c])));
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const safeName = (sheetNum + '. ' + s.name).slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, safeName);
+    sheetNum++;
+  });
+
+  // Errors sheet
+  const errorScripts = valScripts.filter(s => s.status === 'error');
+  if (errorScripts.length) {
+    const errData = [['Script name', 'Caption', 'Group', 'Error message']]
+      .concat(errorScripts.map(s => [s.name, s.caption, s.group, s.error || '']));
+    const wsErr = XLSX.utils.aoa_to_sheet(errData);
+    wsErr['!cols'] = [{wch:35},{wch:40},{wch:20},{wch:80}];
+    XLSX.utils.book_append_sheet(wb, wsErr, 'Script Errors');
+  }
+
+  XLSX.writeFile(wb, `cygenix_validation_${now}.xlsx`);
+}
+
+function escHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+</script>
+
+
