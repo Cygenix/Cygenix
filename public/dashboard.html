@@ -1784,7 +1784,7 @@ function updateStats() {
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
   return '<table class="jobs-table"><thead><tr><th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
-    jobs.map(j => `<tr id="job-row-${j.id}">
+    jobs.map(j => `<tr id="job-row-${j.id}" data-job-id="${j.id}">
       <td>
         <div class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="Double-click to rename">${j.name}</div>
         <div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div>
@@ -1805,8 +1805,18 @@ function jobsTableHTML(jobs) {
 }
 
 function startRenameJob(jobId) {
-  const nameEl = document.getElementById('job-name-' + jobId);
-  if (!nameEl) return;
+  // jobId may contain underscores or special chars — use querySelector as fallback
+  let nameEl = document.getElementById('job-name-' + jobId);
+  if (!nameEl) {
+    // Try finding by data attribute
+    nameEl = document.querySelector('[data-job-id="' + jobId + '"] .job-name');
+  }
+  if (!nameEl) {
+    // Last resort: find the rename button's parent row and get the job-name div
+    const btn = document.querySelector('[onclick*="startRenameJob(\'' + jobId + '\')"]');
+    if (btn) nameEl = btn.closest('tr')?.querySelector('.job-name');
+  }
+  if (!nameEl) { alert('Could not find job name element. Please refresh the page.'); return; }
   const current = nameEl.textContent.trim();
   // Build inline input
   const input = document.createElement('input');
@@ -1826,7 +1836,8 @@ function handleRenameKey(e, jobId) {
 }
 
 function confirmRenameJob(jobId) {
-  const input = document.getElementById('rename-input-' + jobId);
+  const input = document.getElementById('rename-input-' + jobId)
+    || document.querySelector('[data-job-id="' + jobId + '"] input');
   if (!input) return;
   const newName = input.value.trim();
   if (!newName) { cancelRenameJob(jobId); return; }
