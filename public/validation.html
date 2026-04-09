@@ -100,6 +100,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     <div style="display:flex;gap:0.75rem">
       <button class="btn btn-ghost btn-sm" id="run-selected-btn" onclick="runSelectedValidations()" style="display:none">▶ Run selected</button>
       <button class="btn btn-amber btn-sm" onclick="runAllValidations()" id="run-all-btn" disabled>▶ Run all scripts</button>
+      <button class="btn btn-sm" onclick="stopExecution()" id="stop-btn" style="display:none;background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)">⏹ Stop</button>
       <button class="btn btn-ghost btn-sm" onclick="exportValidationExcel()" id="export-btn" style="display:none">📊 Export to Excel</button>
     </div>
     <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
@@ -277,6 +278,7 @@ function signOut(){
 // ── State ─────────────────────────────────────────────────────────────────────
 let scripts = [];
 let running  = false;
+let abortFlag = false;
 
 // ── DB helper ─────────────────────────────────────────────────────────────────
 function isFn(c){ return c && (c.startsWith('https://')||c.startsWith('http://')); }
@@ -422,13 +424,18 @@ async function execScripts(toRun){
   if (!srcConn){ alert('Enter source connection first.'); return; }
 
   running = true;
+  abortFlag = false;
   document.getElementById('run-all-btn').disabled = true;
+  document.getElementById('stop-btn').style.display = 'inline-flex';
+  document.getElementById('stop-btn').disabled = false;
+  document.getElementById('stop-btn').textContent = '⏹ Stop';
   document.getElementById('log-panel').style.display = 'block';
   document.getElementById('progress-wrap').style.display = 'block';
   clearLog();
   addLog('Starting '+toRun.length+' validation script(s)…\n');
 
   for (let i=0; i<toRun.length; i++){
+    if (abortFlag) { addLog('\n⏹ Execution stopped by user.'); break; }
     const s    = toRun[i];
     const pct  = Math.round(i/toRun.length*100);
     document.getElementById('progress-fill').style.width = pct+'%';
@@ -466,7 +473,9 @@ async function execScripts(toRun){
   addLog('✕ Failed:  '+scripts.filter(s=>s.status==='fail').length);
   addLog('⚠ Errors:  '+scripts.filter(s=>s.status==='error').length);
   running = false;
+  abortFlag = false;
   document.getElementById('run-all-btn').disabled = false;
+  document.getElementById('stop-btn').style.display = 'none';
 }
 
 function addLog(msg){
@@ -528,6 +537,13 @@ function doExport(){
   }
 
   XLSX.writeFile(wb,'cygenix_validation_'+now+'.xlsx');
+}
+
+function stopExecution(){
+  if (!running) return;
+  abortFlag = true;
+  document.getElementById('stop-btn').disabled = true;
+  document.getElementById('stop-btn').textContent = '⏹ Stopping…';
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
