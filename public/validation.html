@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Data Validation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.topbar-right{display:flex;align-items:center;gap:1rem}
+.user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
+
+/* PAGE */
+.page{max-width:1200px;margin:0 auto;padding:2rem 1.5rem}
+.page-header{margin-bottom:1.5rem}
+.page-title{font-size:1.4rem;font-weight:600;margin-bottom:0.25rem}
+.page-sub{font-size:13px;color:var(--text3)}
+
+/* PANELS */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem}
+.panel-title{font-size:13px;font-weight:600;margin-bottom:0.875rem}
+
+/* FORM */
+.form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.55rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text)}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
+.btn-sm{padding:0.3rem 0.75rem;font-size:12px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+
+/* STATS */
+.stats-bar{display:flex;gap:2rem;flex-wrap:wrap;align-items:center}
+.stat-box{text-align:center}
+.stat-num{font-size:1.6rem;font-weight:700;line-height:1}
+.stat-label{font-size:11px;color:var(--text3);margin-top:3px}
+
+/* TABLE */
+.val-table{width:100%;border-collapse:collapse}
+.val-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.75rem 0.875rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border)}
+.val-table td{padding:0.75rem 0.875rem;border-bottom:0.5px solid var(--border);vertical-align:middle;font-size:13px}
+.val-table tr:last-child td{border-bottom:none}
+.val-table tr:hover td{background:rgba(255,255,255,0.02)}
+.val-table tr.row-fail td{background:rgba(240,70,70,0.03)}
+.val-table tr.row-error td{background:rgba(245,158,11,0.03)}
+
+/* BADGES */
+.badge{font-size:10px;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-weight:500;white-space:nowrap}
+.badge-source{background:var(--teal-bg);color:var(--teal)}
+.badge-target{background:var(--accent-glow);color:var(--accent)}
+
+/* LOG */
+.log-box{font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:0.875rem;max-height:300px;overflow-y:auto;line-height:1.8;white-space:pre-wrap}
+
+/* CONN STATUS */
+.conn-status{font-size:11px;font-family:var(--mono);margin-top:5px;min-height:16px}
+
+/* EMPTY */
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--text3)}
+.empty-icon{font-size:32px;opacity:0.3;margin-bottom:0.75rem}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/dashboard.html" class="logo">Cyge<span>nix</span>
+    <span style="font-size:11px;color:var(--amber);font-weight:500;font-family:var(--mono);margin-left:8px">Data Validation</span>
+  </a>
+  <div class="topbar-right">
+    <div style="display:flex;gap:0.75rem">
+      <button class="btn btn-ghost btn-sm" id="run-selected-btn" onclick="runSelectedValidations()" style="display:none">▶ Run selected</button>
+      <button class="btn btn-amber btn-sm" onclick="runAllValidations()" id="run-all-btn" disabled>▶ Run all scripts</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportValidationExcel()" id="export-btn" style="display:none">📊 Export to Excel</button>
+    </div>
+    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+    <div class="user-pill" onclick="signOut()">
+      <div class="avatar" id="user-avatar">?</div>
+      <span id="user-name" style="font-size:12px;color:var(--text2)">Loading…</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+  <div class="page-header">
+    <div class="page-title">Data Validation</div>
+    <div class="page-sub">Run validation scripts from the <code style="font-family:var(--mono);color:var(--accent)">validation_scripts</code> table and review results. Any rows returned = validation failed.</div>
+  </div>
+
+  <!-- CONNECTIONS -->
+  <div class="panel">
+    <div class="panel-title">Connections</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1rem">
+      <div>
+        <label class="form-label">Source database <span style="font-weight:400;color:var(--text3)">(Script_DestinationDatabase 1,2,3)</span></label>
+        <div style="display:flex;gap:0.5rem">
+          <input id="val-src-conn" class="form-input" placeholder="Server=...;Database=...;User=...;Password=...">
+          <button class="btn btn-ghost btn-sm" onclick="valConnect('src')" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
+        </div>
+        <div class="conn-status" id="val-src-status"></div>
+      </div>
+      <div>
+        <label class="form-label">Target database <span style="font-weight:400;color:var(--text3)">(Script_DestinationDatabase 4)</span></label>
+        <div style="display:flex;gap:0.5rem">
+          <input id="val-tgt-conn" class="form-input" placeholder="https://fn.azurewebsites.net/api/db?code=... or Server=...">
+          <button class="btn btn-ghost btn-sm" onclick="valConnect('tgt')" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
+        </div>
+        <div class="conn-status" id="val-tgt-status"></div>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="loadScripts()">↻ Load validation scripts</button>
+    <span id="load-status" style="font-size:12px;color:var(--text3);margin-left:1rem"></span>
+  </div>
+
+  <!-- STATS -->
+  <div class="panel" id="stats-panel" style="display:none">
+    <div class="stats-bar">
+      <div class="stat-box"><div class="stat-num" id="s-total" style="color:var(--text)">0</div><div class="stat-label">Total</div></div>
+      <div class="stat-box"><div class="stat-num" id="s-pass" style="color:var(--green)">0</div><div class="stat-label">Passed</div></div>
+      <div class="stat-box"><div class="stat-num" id="s-fail" style="color:var(--red)">0</div><div class="stat-label">Failed</div></div>
+      <div class="stat-box"><div class="stat-num" id="s-error" style="color:var(--amber)">0</div><div class="stat-label">Errors</div></div>
+      <div class="stat-box"><div class="stat-num" id="s-pending" style="color:var(--text3)">0</div><div class="stat-label">Pending</div></div>
+      <div style="margin-left:auto">
+        <div id="progress-wrap" style="display:none;width:200px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px" id="progress-label">Running…</div>
+          <div style="height:4px;background:var(--bg4);border-radius:2px;overflow:hidden">
+            <div id="progress-fill" style="height:100%;background:var(--amber);border-radius:2px;transition:width 0.3s;width:0%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCRIPTS TABLE -->
+  <div class="panel" style="padding:0;overflow:hidden" id="scripts-panel">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🔍</div>
+      <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No scripts loaded</div>
+      <div style="font-size:12px">Enter your source connection above and click Load validation scripts</div>
+    </div>
+    <table class="val-table" id="scripts-table" style="display:none">
+      <thead>
+        <tr>
+          <th style="width:36px;padding-left:1rem">
+            <input type="checkbox" id="check-all" onchange="toggleAll(this.checked)" style="accent-color:var(--accent)">
+          </th>
+          <th style="width:40px">#</th>
+          <th>Name</th>
+          <th>Caption</th>
+          <th>Group</th>
+          <th style="width:90px">Runs on</th>
+          <th style="width:120px">Status</th>
+          <th>Result</th>
+          <th style="width:70px;padding-right:1rem"></th>
+        </tr>
+      </thead>
+      <tbody id="scripts-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- EXECUTION LOG -->
+  <div class="panel" id="log-panel" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <div class="panel-title" style="margin-bottom:0">Execution log</div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('log-panel').style.display='none'">✕ Close</button>
+    </div>
+    <div class="log-box" id="exec-log"></div>
+  </div>
+
+</div>
+
+<script>
+// ── Auth ──────────────────────────────────────────────────────────────────────
+(function(){
+  if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login.html'; return; }
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user')||'{}');
+    const n = u.user_metadata?.full_name || u.email?.split('@')[0] || '?';
+    document.getElementById('user-avatar').textContent = n[0].toUpperCase();
+    document.getElementById('user-name').textContent   = n;
+  } catch {}
+  // Pre-fill connections from sessionStorage
+  const srcCs  = sessionStorage.getItem('cygenix_src_conn_string') || '';
+  const tgtFn  = sessionStorage.getItem('cygenix_fn_url') || '';
+  const tgtKey = sessionStorage.getItem('cygenix_fn_key') || '';
+  const tgtCs  = sessionStorage.getItem('cygenix_conn_string') || '';
+  if (srcCs) document.getElementById('val-src-conn').value = srcCs;
+  document.getElementById('val-tgt-conn').value = tgtFn
+    ? tgtFn + (tgtKey ? '?code='+encodeURIComponent(tgtKey) : '')
+    : tgtCs;
+})();
+
+function signOut(){
+  ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k=>sessionStorage.removeItem(k));
+  window.location.href='/login.html';
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let scripts = [];
+let running  = false;
+
+// ── DB helper ─────────────────────────────────────────────────────────────────
+function isFn(c){ return c && (c.startsWith('https://')||c.startsWith('http://')); }
+
+async function dbCall(conn, body){
+  if (isFn(conn)){
+    const res  = await fetch(conn,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});
+    const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+    if (!res.ok) throw new Error(data.error||res.statusText);
+    return data;
+  } else {
+    const res  = await fetch('/.netlify/functions/db-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,connectionString:conn}),signal:AbortSignal.timeout(120000)});
+    const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+    if (!res.ok) throw new Error(data.error||res.statusText);
+    return data;
+  }
+}
+
+// ── Connect buttons ───────────────────────────────────────────────────────────
+async function valConnect(which){
+  const conn   = document.getElementById('val-'+which+'-conn').value.trim();
+  const status = document.getElementById('val-'+which+'-status');
+  if (!conn){ alert('Enter a connection string first.'); return; }
+  status.textContent='Connecting…'; status.style.color='var(--accent)';
+  try {
+    const res = await dbCall(conn,{action:'test'});
+    status.textContent = '🟢 Connected · '+res.database+' · '+(res.user||'').split('@')[0];
+    status.style.color = 'var(--green)';
+  } catch(e){
+    status.textContent = '🔴 '+e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+// ── Load scripts ──────────────────────────────────────────────────────────────
+async function loadScripts(){
+  const srcConn = document.getElementById('val-src-conn').value.trim();
+  if (!srcConn){ alert('Enter a source connection first.'); return; }
+  const loadStatus = document.getElementById('load-status');
+  loadStatus.textContent = 'Loading…';
+  try {
+    const res = await dbCall(srcConn,{
+      action:'execute',
+      sql:'SELECT name, caption, sql, [Order], code, Script_DestinationDatabase, [group] FROM validation_scripts ORDER BY [Order], [group], name'
+    });
+    scripts = (res.recordset||[]).map((r,i)=>({
+      id:      i,
+      name:    r.name||'',
+      caption: r.caption||'',
+      sql:     r.sql||r.SQL||'',
+      order:   r.Order||0,
+      code:    r.code||'',
+      destDb:  parseInt(r.Script_DestinationDatabase||1),
+      group:   r.group||'',
+      status:  'pending', rowsFound:0, result:null, error:null, checked:true
+    }));
+    if (!scripts.length){ loadStatus.textContent='No scripts found in validation_scripts table.'; return; }
+    loadStatus.textContent = scripts.length+' scripts loaded';
+    renderTable();
+    document.getElementById('run-all-btn').disabled = false;
+    document.getElementById('run-selected-btn').style.display = 'inline-flex';
+    document.getElementById('stats-panel').style.display = 'block';
+    updateStats();
+  } catch(e){
+    loadStatus.textContent = '✕ '+e.message;
+    loadStatus.style.color = 'var(--red)';
+  }
+}
+
+// ── Render table ──────────────────────────────────────────────────────────────
+function renderTable(){
+  const tbody = document.getElementById('scripts-tbody');
+  const empty = document.getElementById('empty-state');
+  const table = document.getElementById('scripts-table');
+  if (!scripts.length){ empty.style.display='block'; table.style.display='none'; return; }
+  empty.style.display='none'; table.style.display='table';
+
+  tbody.innerHTML = scripts.map(s=>{
+    const rowCls = s.status==='fail'?'row-fail':s.status==='error'?'row-error':'';
+    const dbBadge = s.destDb>=4
+      ? '<span class="badge badge-target">Target</span>'
+      : '<span class="badge badge-source">Source</span>';
+    const statusHtml = {
+      pending: '<span style="color:var(--text3);font-size:12px">— pending —</span>',
+      running: '<span style="color:var(--accent);font-size:12px">🟡 Running…</span>',
+      pass:    '<span style="color:var(--green);font-size:12px">🟢 Passed</span>',
+      fail:    '<span style="color:var(--red);font-size:12px;font-weight:600">🔴 Failed</span>',
+      error:   '<span style="color:var(--amber);font-size:12px">🟠 Error</span>'
+    }[s.status]||'';
+    const resultHtml = s.status==='pending'||s.status==='running' ? '—'
+      : s.status==='error' ? '<span style="font-family:var(--mono);font-size:11px;color:var(--amber)">'+esc(s.error||'')+'</span>'
+      : s.status==='pass'  ? '<span style="color:var(--green);font-size:12px">✓ No issues</span>'
+      : '<span style="color:var(--red);font-size:12px;font-weight:600">'+s.rowsFound.toLocaleString()+' rows found</span>';
+    return `<tr class="${rowCls}" id="val-row-${s.id}">
+      <td style="padding-left:1rem"><input type="checkbox" ${s.checked?'checked':''} onchange="scripts[${s.id}].checked=this.checked" style="accent-color:var(--accent)"></td>
+      <td style="color:var(--text3);font-family:var(--mono);font-size:11px">${s.order||s.id+1}</td>
+      <td style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--text)">${esc(s.name)}</td>
+      <td style="font-size:12px;color:var(--text2)">${esc(s.caption)}</td>
+      <td style="font-size:11px;color:var(--text3)">${esc(s.group)}</td>
+      <td>${dbBadge}</td>
+      <td>${statusHtml}</td>
+      <td>${resultHtml}</td>
+      <td style="padding-right:1rem"><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" onclick="runSingle(${s.id})">▶ Run</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function updateStats(){
+  const ran     = scripts.filter(s=>s.status!=='pending'&&s.status!=='running');
+  document.getElementById('s-total').textContent   = scripts.length;
+  document.getElementById('s-pass').textContent    = scripts.filter(s=>s.status==='pass').length;
+  document.getElementById('s-fail').textContent    = scripts.filter(s=>s.status==='fail').length;
+  document.getElementById('s-error').textContent   = scripts.filter(s=>s.status==='error').length;
+  document.getElementById('s-pending').textContent = scripts.filter(s=>s.status==='pending').length;
+  const exp = document.getElementById('export-btn');
+  if (exp) exp.style.display = ran.length ? 'inline-flex' : 'none';
+}
+
+function toggleAll(checked){
+  scripts.forEach(s=>s.checked=checked);
+  document.querySelectorAll('#scripts-tbody input[type="checkbox"]').forEach(cb=>cb.checked=checked);
+}
+
+// ── Run ───────────────────────────────────────────────────────────────────────
+async function runAllValidations()      { await execScripts(scripts); }
+async function runSelectedValidations() { await execScripts(scripts.filter(s=>s.checked)); }
+async function runSingle(id)            { await execScripts(scripts.filter(s=>s.id===id)); }
+
+async function execScripts(toRun){
+  if (running) return;
+  if (!toRun.length){ alert('No scripts to run.'); return; }
+  const srcConn = document.getElementById('val-src-conn').value.trim();
+  const tgtConn = document.getElementById('val-tgt-conn').value.trim();
+  if (!srcConn){ alert('Enter source connection first.'); return; }
+
+  running = true;
+  document.getElementById('run-all-btn').disabled = true;
+  document.getElementById('log-panel').style.display = 'block';
+  document.getElementById('progress-wrap').style.display = 'block';
+  clearLog();
+  addLog('Starting '+toRun.length+' validation script(s)…\n');
+
+  for (let i=0; i<toRun.length; i++){
+    const s    = toRun[i];
+    const pct  = Math.round(i/toRun.length*100);
+    document.getElementById('progress-fill').style.width = pct+'%';
+    document.getElementById('progress-label').textContent = 'Step '+(i+1)+' / '+toRun.length;
+
+    s.status='running'; s.error=null; s.result=null; s.rowsFound=0;
+    renderTable(); updateStats();
+
+    const conn = s.destDb>=4 ? tgtConn : srcConn;
+    const ts   = new Date().toLocaleTimeString();
+    addLog('['+ts+'] '+s.name+(s.caption?' — '+s.caption:''));
+
+    try {
+      if (!conn) throw new Error('No '+(s.destDb>=4?'target':'source')+' connection configured');
+      const res = await dbCall(conn,{action:'execute', sql:s.sql});
+      const rows = res.recordset||[];
+      s.rowsFound = rows.length;
+      s.result    = rows;
+      s.status    = rows.length>0 ? 'fail' : 'pass';
+      addLog(rows.length>0
+        ? '  🔴 FAILED — '+rows.length.toLocaleString()+' rows found'
+        : '  🟢 PASSED — no issues');
+    } catch(e){
+      s.status = 'error';
+      s.error  = e.message;
+      addLog('  🟠 ERROR — '+e.message);
+    }
+    renderTable(); updateStats();
+  }
+
+  document.getElementById('progress-fill').style.width='100%';
+  document.getElementById('progress-label').textContent='Complete';
+  addLog('\n─────────────────────────────────────────');
+  addLog('✓ Passed:  '+scripts.filter(s=>s.status==='pass').length);
+  addLog('✕ Failed:  '+scripts.filter(s=>s.status==='fail').length);
+  addLog('⚠ Errors:  '+scripts.filter(s=>s.status==='error').length);
+  running = false;
+  document.getElementById('run-all-btn').disabled = false;
+}
+
+function addLog(msg){
+  const el = document.getElementById('exec-log');
+  if (el){ el.textContent+=msg+'\n'; el.scrollTop=el.scrollHeight; }
+}
+function clearLog(){ const el=document.getElementById('exec-log'); if(el) el.textContent=''; }
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportValidationExcel(){
+  if (!window.XLSX){
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=doExport; document.head.appendChild(s);
+  } else { doExport(); }
+}
+
+function doExport(){
+  const wb  = XLSX.utils.book_new();
+  const now = new Date().toISOString().slice(0,10);
+
+  // Summary sheet
+  const summary=[
+    ['Cygenix — Data Validation Report'],
+    ['Date', now],
+    ['Total scripts', scripts.length],
+    ['Passed',  scripts.filter(s=>s.status==='pass').length],
+    ['Failed',  scripts.filter(s=>s.status==='fail').length],
+    ['Errors',  scripts.filter(s=>s.status==='error').length],
+    ['Pending', scripts.filter(s=>s.status==='pending').length],
+    [],
+    ['#','Name','Caption','Group','Runs on','Status','Rows found','Error']
+  ].concat(scripts.map(s=>[
+    s.order||s.id+1, s.name, s.caption, s.group,
+    s.destDb>=4?'Target':'Source',
+    s.status, s.rowsFound||0, s.error||''
+  ]));
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+  wsSummary['!cols']=[{wch:5},{wch:35},{wch:40},{wch:20},{wch:10},{wch:10},{wch:12},{wch:60}];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // One sheet per failed script
+  let n=1;
+  scripts.filter(s=>s.status==='fail'&&s.result?.length).forEach(s=>{
+    const cols=Object.keys(s.result[0]);
+    const data=[cols].concat(s.result.map(r=>cols.map(c=>r[c])));
+    const ws=XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb,ws,(n+++'. '+s.name).slice(0,31));
+  });
+
+  // Errors sheet
+  const errs=scripts.filter(s=>s.status==='error');
+  if (errs.length){
+    const ws=XLSX.utils.aoa_to_sheet([
+      ['Name','Caption','Group','Error']
+    ].concat(errs.map(s=>[s.name,s.caption,s.group,s.error||''])));
+    ws['!cols']=[{wch:35},{wch:40},{wch:20},{wch:80}];
+    XLSX.utils.book_append_sheet(wb,ws,'Script Errors');
+  }
+
+  XLSX.writeFile(wb,'cygenix_validation_'+now+'.xlsx');
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
