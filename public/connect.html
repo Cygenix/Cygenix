@@ -1857,10 +1857,12 @@ async function executeNow(){
                     ? (S.selectedSourceTable.schemaName
                         ? S.selectedSourceTable.schemaName + '.' + S.selectedSourceTable.tableName
                         : S.selectedSourceTable.tableName)
-                    : 'Source file',
-    sourceTable:  S.selectedSourceTable?.schemaName
-                    ? S.selectedSourceTable.schemaName + '.' + S.selectedSourceTable.tableName
-                    : S.selectedSourceTable?.tableName || S.sourceFile?.name || '',
+                    : (S.sourceFile?.name || 'Source file'),
+    sourceTable:  S.selectedSourceTable
+                    ? (S.selectedSourceTable.schemaName
+                        ? S.selectedSourceTable.schemaName + '.' + S.selectedSourceTable.tableName
+                        : S.selectedSourceTable.tableName || '')
+                    : (S.sourceFile?.name || ''),
     targetSystem: 'Microsoft SQL Server',
     sourceFile:   S.sourceFile?.name || S.selectedSourceTable?.tableName || '',
     sourceFileSize: S.sourceFile?.size || 0,
