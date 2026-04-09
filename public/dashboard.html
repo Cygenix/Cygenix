@@ -1776,11 +1776,14 @@ function updateStats() {
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
   return '<table class="jobs-table"><thead><tr><th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
-    jobs.map(j => `<tr>
-      <td><div class="job-name">${j.name}</div><div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div></td>
+    jobs.map(j => `<tr id="job-row-${j.id}">
+      <td>
+        <div class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="Double-click to rename">${j.name}</div>
+        <div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div>
+      </td>
       <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
       <td><span style="font-size:12px;color:var(--text2)">${j.target}</span></td>
-      <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.tables?.length||j.files.length}</span></td>
+      <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.tables?.length||j.files?.length||'—'}</span></td>
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.totalRows?.toLocaleString()||'—'}</span></td>
       <td><span class="badge badge-green">SQL Ready</span></td>
       <td style="display:flex;gap:6px;padding-top:0.75rem;flex-wrap:wrap">
@@ -1788,7 +1791,65 @@ function jobsTableHTML(jobs) {
         <button class="btn btn-teal btn-sm" onclick="downloadJobSQL('${j.id}','schema')">⬇ Schema</button>
         <button class="btn btn-primary btn-sm" onclick="downloadJobSQL('${j.id}','migration')">⬇ Migration</button>
         <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')">Report</button>
+        <button class="btn btn-sm" style="background:transparent;color:var(--text3);border:0.5px solid var(--border2)" onclick="startRenameJob('${j.id}')" title="Rename">✏</button>
+        <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Delete">✕</button>
       </td></tr>`).join('') + '</tbody></table>';
+}
+
+function startRenameJob(jobId) {
+  const nameEl = document.getElementById('job-name-' + jobId);
+  if (!nameEl) return;
+  const current = nameEl.textContent.trim();
+  const input = document.getElementById('rename-input-' + jobId);
+  if (input) { input.focus(); input.select(); }
+}
+
+function handleRenameKey(e, jobId) {
+  if (e.key === 'Enter')  { e.preventDefault(); confirmRenameJob(jobId); }
+  if (e.key === 'Escape') { e.preventDefault(); cancelRenameJob(jobId); }
+}
+
+function confirmRenameJob(jobId) {
+  const input = document.getElementById('rename-input-' + jobId);
+  if (!input) return;
+  const newName = input.value.trim();
+  if (!newName) { cancelRenameJob(jobId); return; }
+  const job = state.jobs.find(j => j.id === jobId);
+  if (job) {
+    job.name = newName;
+    saveJobs();
+    showToast('Job renamed to "' + newName + '"');
+  }
+  renderAllJobs();
+}
+
+function cancelRenameJob(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  const nameEl = document.getElementById('job-name-' + jobId);
+  if (nameEl && job) nameEl.innerHTML = job.name;
+}
+
+function deleteJob(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) return;
+  if (!confirm('Delete job "' + job.name + '"? This cannot be undone.')) return;
+  state.jobs = state.jobs.filter(j => j.id !== jobId);
+  saveJobs();
+  renderAllJobs();
+  renderDashboard();
+  showToast('Job deleted');
+}
+
+function saveJobs() {
+  try { localStorage.setItem('cygenix_jobs', JSON.stringify(state.jobs)); } catch {}
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg2);border:0.5px solid var(--border2);color:var(--green);padding:0.6rem 1.1rem;border-radius:8px;font-size:13px;z-index:999;font-family:var(--serif)';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
 }
 
 function renderDashboard()     { $('dashboard-jobs').innerHTML = jobsTableHTML(state.jobs.slice(0,5)); updateStats(); }
