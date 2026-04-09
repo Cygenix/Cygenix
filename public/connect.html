@@ -589,7 +589,7 @@ function saveProjectState() {
       schema: t.schema, name: t.name, rowCount: t.rowCount,
       columns: t.columns, primaryKeys: t.primaryKeys, foreignKeys: t.foreignKeys
     })) || [],
-    sourceFileName: S.sourceFile?.name || (S.selectedSourceTable?.tableName || ''),
+    sourceFileName: S.sourceFile?.name || (S.selectedSourceTable ? (S.selectedSourceTable.schemaName ? S.selectedSourceTable.schemaName + '.' + S.selectedSourceTable.tableName : S.selectedSourceTable.tableName) : '') || '',
     sourceColumns:  S.selectedSourceTable?.columns || [],
     columnMapping:  S.columnMapping,
     wasisRules,
@@ -705,10 +705,13 @@ function restoreFromSnapshot(snap) {
   // ── Source data — restore structure (not rows) so mapping screen shows columns ──
   if (snap.sourceColumns && snap.sourceColumns.length) {
     // Rebuild a minimal selectedSourceTable so the mapping table renders
+    // sourceFileName may be 'schema.table' or just 'table'
+    const snapParts = (snap.sourceFileName || '').split('.');
     S.selectedSourceTable = {
-      tableName: snap.sourceFileName || 'source',
-      columns:   snap.sourceColumns,
-      rows:      [], // rows are not stored — user will need to re-upload for actual SQL gen
+      tableName:  snapParts.length > 1 ? snapParts.slice(1).join('.') : (snap.sourceFileName || 'source'),
+      schemaName: snapParts.length > 1 ? snapParts[0] : '',
+      columns:    snap.sourceColumns,
+      rows:       [],
     };
     // Show the source file info
     const infoEl = $('src-file-info');
@@ -1956,6 +1959,9 @@ async function executeNow(){
 
 // ── Step 5: Save & Finish ─────────────────────────────────────────────────────
 function saveJobAndFinish(action) {
+  // Always refresh the summary panel first so all DOM values are current
+  updateFinishSummary();
+
   const jobName = ($('finish-job-name')?.value || '').trim()
     || ($('finish-tgt-table')?.textContent || 'Migration job');
 

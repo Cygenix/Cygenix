@@ -412,11 +412,9 @@ function renderReport(d) {
   // Target
   set('tgt-server',   d.targetServer || '—');
   set('tgt-database', d.targetDatabase || '—');
-  const srcTableDisplay = d.sourceTable || 
-    (d.sourceFile && !d.sourceFile.includes('.csv') && !d.sourceFile.includes('.xlsx') && !d.sourceFile.includes('.sql') ? d.sourceFile : null) ||
-    (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' ? d.sourceSystem : null) || 
-    d.sourceFile || '—';
-  set('src-table', srcTableDisplay);
+  set('src-table', d.sourceTable || 
+        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
+        d.sourceFile || '—');
   set('tgt-table',    d.targetTable || '—');
   set('tgt-auth',     d.authMethod || 'Managed Identity');
   set('tgt-rows-before', fmt(d.rowsBefore));
@@ -604,11 +602,9 @@ function doExport() {
       ['', '', '', ''],
       ['MIGRATION SUMMARY', '', '', ''],
       ['Source system',   d.sourceSystem || '—',              'Tables migrated',  tableCount],
-      ['Source table',   d.sourceTable || 
-        (d.sourceFile && !d.sourceFile.match(/\.csv$|\.xlsx$|\.sql$/i) ? d.sourceFile : null) ||
-        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' ? d.sourceSystem : null) ||
-        d.sourceFile || '—',
-        'Target table', d.targetTable || (d.tables?.[0]?.name) || '—'],
+      ['Source table', d.sourceTable || 
+        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
+        d.sourceFile || '—', 'Target table', d.targetTable || (d.tables?.[0]?.name) || '—'],
       ['Target system',   d.targetSystem || '—',              'Total rows',       totalRows],
       ['Auth method',     d.authMethod || 'Managed Identity', 'Rows inserted',    inserted],
       ['Target server',   d.targetServer || '—',              'Errors',           errors],
@@ -643,9 +639,8 @@ function doExport() {
     const resultsData = [
       ['Source table', 'Target table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
     ].concat(tables.map(t => [
-      t.sourceName || d.sourceTable ||
-        (d.sourceFile && !d.sourceFile.match(/\.csv$|\.xlsx$|\.sql$/i) ? d.sourceFile : null) ||
-        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' ? d.sourceSystem : null) ||
+      t.sourceName || d.sourceTable || 
+        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
         d.sourceFile || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
     ]));
     const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
@@ -654,9 +649,8 @@ function doExport() {
 
     // ── Sheet 3: Column Mapping ───────────────────────────────────────────────
     if (d.columnMapping && d.columnMapping.length > 0) {
-      const srcTableName = d.sourceTable ||
-        (d.sourceFile && !d.sourceFile.match(/\.csv$|\.xlsx$|\.sql$/i) ? d.sourceFile : null) ||
-        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' ? d.sourceSystem : null) ||
+      const srcTableName = d.sourceTable || 
+        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
         d.sourceFile || '—';
       const tgtTableName = d.targetTable || (d.tables?.[0]?.name) || '—';
       const mapData = [
