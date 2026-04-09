@@ -405,7 +405,7 @@ function renderReport(d) {
   // Target
   set('tgt-server',   d.targetServer || '—');
   set('tgt-database', d.targetDatabase || '—');
-  set('src-table',    d.sourceSystem || d.sourceFile || '—');
+  set('src-table',    d.sourceTable || d.sourceFile || d.sourceSystem || '—');
   set('tgt-table',    d.targetTable || '—');
   set('tgt-auth',     d.authMethod || 'Managed Identity');
   set('tgt-rows-before', fmt(d.rowsBefore));
@@ -429,6 +429,7 @@ function renderReport(d) {
       ? '<span class="badge badge-amber">Partial</span>'
       : '<span class="badge badge-red">Failed</span>';
     return `<tr>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${t.sourceName||d.sourceTable||d.sourceFile||'—'}</td>
       <td style="font-family:var(--mono);font-weight:500">${t.name}</td>
       <td style="text-align:right;font-family:var(--mono)">${fmt(t.sourceRows)}</td>
       <td style="text-align:right;font-family:var(--mono);color:var(--green);font-weight:500">${fmt(t.insertedRows)}</td>
@@ -592,7 +593,7 @@ function doExport() {
       ['', '', '', ''],
       ['MIGRATION SUMMARY', '', '', ''],
       ['Source system',   d.sourceSystem || '—',              'Tables migrated',  tableCount],
-      ['Source table',   d.sourceFile || d.sourceSystem || '—', 'Target table',     d.targetTable || '—'],
+      ['Source table',   d.sourceTable || d.sourceFile || d.sourceSystem || '—', 'Target table', d.targetTable || '—'],
       ['Target system',   d.targetSystem || '—',              'Total rows',       totalRows],
       ['Auth method',     d.authMethod || 'Managed Identity', 'Rows inserted',    inserted],
       ['Target server',   d.targetServer || '—',              'Errors',           errors],
@@ -625,12 +626,12 @@ function doExport() {
     // ── Sheet 2: Migration Results ────────────────────────────────────────────
     const tables = d.tables || [{ name: d.targetTable||'migration', sourceRows: totalRows, insertedRows: inserted, errors, batches: Math.ceil(totalRows/100), status: errors===0?'success':'partial' }];
     const resultsData = [
-      ['Table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
+      ['Source table', 'Target table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
     ].concat(tables.map(t => [
-      t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
+      t.sourceName || d.sourceTable || d.sourceFile || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
     ]));
     const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
-    wsResults['!cols'] = [{wch:40},{wch:14},{wch:12},{wch:10},{wch:10},{wch:12}];
+    wsResults['!cols'] = [{wch:35},{wch:35},{wch:14},{wch:12},{wch:10},{wch:10},{wch:12}];
     XLSX.utils.book_append_sheet(wb, wsResults, 'Migration Results');
 
     // ── Sheet 3: Column Mapping ───────────────────────────────────────────────

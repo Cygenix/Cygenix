@@ -1881,8 +1881,11 @@ async function executeNow(){
     userEmail,
     organisation: 'Cygenix',
     sourceSystem: S.selectedSourceTable?.tableName || 'Source file',
+    sourceTable:  S.selectedSourceTable?.schemaName
+                    ? S.selectedSourceTable.schemaName + '.' + S.selectedSourceTable.tableName
+                    : S.selectedSourceTable?.tableName || S.sourceFile?.name || '',
     targetSystem: 'Microsoft SQL Server',
-    sourceFile:   S.sourceFile?.name || (S.selectedSourceTable?.schemaName ? S.selectedSourceTable.schemaName+'.'+S.selectedSourceTable.tableName : S.selectedSourceTable?.tableName) || '',
+    sourceFile:   S.sourceFile?.name || S.selectedSourceTable?.tableName || '',
     sourceFileSize: S.sourceFile?.size || 0,
     targetServer:   S.connString || '',
     targetDatabase: S.targetSchema?.database || S.selectedTargetTable?.schema || '',
