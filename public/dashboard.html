@@ -24,7 +24,7 @@
 }
 html,body{height:100%;overflow:hidden}
 body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-.app{display:grid;grid-template-columns:230px 1fr;grid-template-rows:52px 1fr;height:100vh;overflow:hidden}
+.app{display:grid;grid-template-columns:230px 1fr;grid-template-rows:52px 1fr;height:100vh;width:100vw}
 
 /* TOPBAR */
 .topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
@@ -41,7 +41,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .back-link:hover{color:var(--text2)}
 
 /* SIDEBAR */
-.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto;min-width:0;overflow-x:hidden;grid-column:1;grid-row:2}
+.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto;overflow-x:hidden;width:230px;flex-shrink:0}
 .nav-section{margin-bottom:1.5rem}
 .nav-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 1.25rem;margin-bottom:0.5rem}
 .nav-item{display:flex;align-items:center;gap:10px;padding:0.5rem 1.25rem;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent;user-select:none}
@@ -52,7 +52,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .nav-count{margin-left:auto;background:var(--bg4);color:var(--text3);font-size:10px;padding:1px 6px;border-radius:100px;font-family:var(--mono)}
 
 /* MAIN */
-.main{padding:1.75rem;overflow-y:auto;background:var(--bg);min-width:0;width:100%;box-sizing:border-box;grid-column:2;grid-row:2}
+.main{padding:1.75rem;overflow-y:auto;background:var(--bg);min-width:0;flex:1}
 .main::-webkit-scrollbar{width:4px}
 .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
@@ -716,7 +716,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
 
     <!-- VALIDATION VIEW -->
-    <div id="view-validation" class="view">
+    <div id="view-validation" class="view" style="width:100%;max-width:100%;box-sizing:border-box">
 
       <!-- Header -->
       <div class="panel-header">
