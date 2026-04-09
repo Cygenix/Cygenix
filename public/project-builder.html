@@ -149,7 +149,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <div class="conn-label">Source connection string</div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-src-conn" placeholder="Server=source;Database=db;..." oninput="markDirty()">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">Test</button>
+            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">🔌 Test source</button>
           </div>
           <div class="conn-status" id="src-conn-status"></div>
         </div>
@@ -157,7 +157,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <div class="conn-label">Target — Azure Function URL or connection string</div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-tgt-conn" placeholder="https://fn.azurewebsites.net/api/db?code=..." oninput="markDirty()">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">Test</button>
+            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">🔌 Test target</button>
           </div>
           <div class="conn-status" id="tgt-conn-status"></div>
         </div>
@@ -360,16 +360,19 @@ function renderSteps() {
       ? esc(step.srcTable||'?') + ' → ' + esc(step.tgtTable||'?') + ' · ' + (step.columnMapping?.filter(m=>m.tgtCol).length||0) + ' cols'
       : (step.connOn==='source'?'[source] ':'[target] ') + (step.sql||'').slice(0,55) + '…';
     const statusCls = 'status-' + (step.status||'pending');
+    const statusEmoji = {pending:'⚪',running:'🟡',passed:'🟢',failed:'🔴',skipped:'🟠'}[step.status||'pending'] || '⚪';
 
     card.innerHTML = `
       <div class="step-card-header">
         <span class="step-drag">⠿</span>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:var(--mono);min-width:20px;text-align:center;flex-shrink:0">${i+1}</div>
         <div class="step-icon" style="background:${color}">${icon}</div>
         <div class="step-info">
           <div class="step-name">${esc(step.name)}</div>
           <div class="step-meta">${meta}</div>
         </div>
         <div class="step-right">
+          <span style="font-size:16px;line-height:1" title="${step.status||'pending'}">${statusEmoji}</span>
           <span class="step-status ${statusCls}">${step.status||'pending'}</span>
           <button class="btn btn-ghost btn-sm" onclick="deleteStep(${i})" style="color:var(--red);padding:3px 8px">✕</button>
           ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${i})" style="padding:3px 8px">Log</button>` : ''}
