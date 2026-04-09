@@ -656,9 +656,9 @@ function doExport() {
       const mapData = [
         ['Source table', 'Source column', 'Target table', 'Target column', 'Target type', 'Transform', 'Transform expression', 'Was/Is rules']
       ].concat(d.columnMapping.map(m => [
-        srcTableName, m.srcCol || '',
+        m.srcTable || srcTableName, m.srcCol || '',
         tgtTableName, m.tgtCol || '',
-        m.tgtType || '', m.transform || 'NONE', m.transformExpr || ''
+        m.tgtTable || tgtTableName, m.tgtCol || '',
       ]));
       const wsMap = XLSX.utils.aoa_to_sheet(mapData);
       wsMap['!cols'] = [{wch:30},{wch:28},{wch:30},{wch:28},{wch:18},{wch:14},{wch:35},{wch:40}];

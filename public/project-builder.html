@@ -688,19 +688,36 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
   const totalRows      = steps.reduce((sum, s) => sum + (s.rowsInserted||0), 0);
 
   // Build a column mapping summary from all migration steps
+  // Keep srcCol as plain column name — report.html adds the table name separately
   const allMappings = [];
   migrationSteps.forEach(s => {
     (s.columnMapping||[]).filter(m=>m.tgtCol).forEach(m => {
-      allMappings.push({ srcCol: (s.srcTable||'')+'.'+m.srcCol, tgtCol: (s.tgtTable||'')+'.'+m.tgtCol, tgtType: m.tgtType||'', transform: m.transform||'NONE' });
+      allMappings.push({
+        srcCol:    m.srcCol || '',
+        srcTable:  s.srcTable || '',
+        tgtCol:    m.tgtCol || '',
+        tgtTable:  s.tgtTable || '',
+        tgtType:   m.tgtType  || '',
+        transform: m.transform || 'NONE',
+        transformExpr: m.transformExpr || null,
+        wasisRules: m.wasisRules || null
+      });
     });
   });
+
+  // Get source/target table names from first migration step
+  const firstMigStep = migrationSteps[0];
+  const srcTableName = firstMigStep?.srcTable || '';
+  const tgtTableName = firstMigStep?.tgtTable || '';
 
   return {
     id:           'proj_' + Date.now(),
     projectName:  project.name || 'Conversion Project',
     userName, userEmail,
     organisation: 'Cygenix',
-    sourceSystem: 'Source Database',
+    sourceTable:  srcTableName,
+    sourceSystem: srcTableName || 'Source',
+    targetTable:  tgtTableName,
     targetSystem: 'Microsoft SQL Server / Azure SQL',
     targetServer: tgtConn || '',
     targetDatabase: '',
