@@ -1946,6 +1946,15 @@ function saveJobAndFinish(action) {
 
   // Build the job record (same structure as before, minus execution)
   const src = S.selectedSourceTable;
+  // DEBUG - remove after fix confirmed
+  console.log('DEBUG saveJobAndFinish:', {
+    src: src,
+    tableName: src?.tableName,
+    schemaName: src?.schemaName,
+    srcSchema: S.srcSchema ? 'loaded' : 'null',
+    insertSQLsnippet: (S.insertSQL||'').slice(0,120),
+    finishSrcText: document.getElementById('finish-src-table')?.dataset?.value
+  });
   const tgt = S.selectedTargetTable;
   const completedAt = new Date().toISOString();
   let userName = '', userEmail = '';
