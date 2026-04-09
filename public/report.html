@@ -651,8 +651,7 @@ function doExport() {
           s.type==='migration'?'Migration':'SQL script',
           s.status||'pending',
           s.rowsInserted||0,
-          (s.log||'').replace(/
-/g,' | ')
+          (s.log||'').replace(/\n/g,' | ')
         ]);
       });
       const wsLog = XLSX.utils.aoa_to_sheet(logData);
