@@ -298,6 +298,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
   <div class="nav-links">
     <a href="#features">Features</a>
     <a href="#how-it-works">How it works</a>
+    <a href="#custom-sql">Custom SQL</a>
     <a href="#validation">Validation</a>
     <a href="#reports">Reports</a>
   </div>
@@ -394,6 +395,11 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="feature-card-icon">📖</div>
         <div class="feature-card-title">Inventory & Documentation</div>
         <div class="feature-card-body">Store schema files, data dictionaries, mapping documents and Was/Is tables in an organised inventory. Preview CSVs, download documents, manage versions.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-card-icon">⚙️</div>
+        <div class="feature-card-title">Custom SQL & Stored Procedures</div>
+        <div class="feature-card-body">Inject any SQL script or stored procedure call into the migration sequence — run DELETE, TRUNCATE, EXEC, or complex transforms on source or target before, between, or after table migrations.</div>
       </div>
     </div>
   </div>
@@ -536,6 +542,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <li>Custom SQL steps run on source or target</li>
           <li>⚪🟡🟢🔴🟠 live status per step</li>
           <li>Retry, skip or abort on failure</li>
+          <li>Custom SQL steps and stored procedure calls</li>
           <li>Full execution log + Conversion Report</li>
         </ul>
       </div>
@@ -568,15 +575,24 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           </div>
           <div class="proj-step">
             <div class="proj-num">3</div>
-            <div class="proj-icon" style="background:rgba(245,166,35,0.15)">📋</div>
+            <div class="proj-icon" style="background:rgba(245,166,35,0.15)">⚙️</div>
             <div class="proj-info">
-              <div class="proj-name">Update audit timestamps</div>
-              <div class="proj-meta">SQL · target · UPDATE dbo.effect…</div>
+              <div class="proj-name">EXEC sp_RecalcBalances</div>
+              <div class="proj-meta">stored proc · target · EXEC dbo.sp_RecalcBal…</div>
             </div>
             <div class="proj-emoji">⚪</div>
           </div>
           <div class="proj-step">
             <div class="proj-num">4</div>
+            <div class="proj-icon" style="background:rgba(167,139,250,0.15)">📋</div>
+            <div class="proj-info">
+              <div class="proj-name">Update audit timestamps</div>
+              <div class="proj-meta">SQL · target · UPDATE dbo.effect SET modified…</div>
+            </div>
+            <div class="proj-emoji">⚪</div>
+          </div>
+          <div class="proj-step">
+            <div class="proj-num">5</div>
             <div class="proj-icon" style="background:rgba(16,212,138,0.15)">✅</div>
             <div class="proj-info">
               <div class="proj-name">Row count verify</div>
@@ -589,6 +605,66 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
               <div id="proj-progress" style="height:100%;background:linear-gradient(90deg,var(--green),var(--accent));width:30%;transition:width 0.5s"></div>
             </div>
             <div style="font-size:9px;font-family:var(--mono);color:var(--text3)">Step 2/4 running…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- CUSTOM SQL -->
+<section class="section" id="custom-sql">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div>
+        <div class="section-tag">Custom SQL & Stored Procedures</div>
+        <div class="section-title" style="font-size:2.2rem">Full SQL control at every step</div>
+        <div class="section-sub">Between table migrations, inject any SQL — bulk deletes, stored procedure calls, index rebuilds, data transforms, or complex business logic. Run on source or target.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>Write any T-SQL — SELECT, UPDATE, DELETE, TRUNCATE, EXEC</li>
+          <li>Call stored procedures with parameters</li>
+          <li>Choose whether each script runs on source or target DB</li>
+          <li>Upload a .sql file or type directly in the editor</li>
+          <li>Errors captured in the log — retry, skip or abort</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div>
+          <div class="mock-dot" style="background:#f5a623"></div>
+          <div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-size:9px;color:var(--text3);font-family:var(--mono)">Custom SQL Step</div>
+        </div>
+        <div class="mock-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.6rem">
+            <div>
+              <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Step name</div>
+              <div style="background:var(--bg4);border:0.5px solid var(--border2);border-radius:4px;padding:4px 8px;font-size:10px;color:var(--text2);font-family:var(--mono)">EXEC sp_RecalcBalances</div>
+            </div>
+            <div>
+              <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Run on</div>
+              <div style="background:var(--accent-glow, rgba(79,142,255,0.15));border:0.5px solid rgba(79,142,255,0.3);border-radius:4px;padding:4px 8px;font-size:10px;color:var(--accent);font-family:var(--mono)">● Target database</div>
+            </div>
+          </div>
+          <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">SQL / Stored procedure</div>
+          <div class="sql-block" style="min-height:130px">
+            <span class="sql-cm">-- Recalculate all GL balances after migration</span><br>
+            <span class="sql-kw">EXEC</span> <span class="sql-fn">dbo.sp_RecalcBalances</span><br>
+            &nbsp;&nbsp;@fiscal_year = <span class="sql-num">2024</span>,<br>
+            &nbsp;&nbsp;@recalc_mode = <span class="sql-str">'FULL'</span>,<br>
+            &nbsp;&nbsp;@notify_on_complete = <span class="sql-num">1</span>;<br><br>
+            <span class="sql-cm">-- Or run any custom T-SQL</span><br>
+            <span class="sql-kw">UPDATE</span> dbo.effective_dated_records<br>
+            <span class="sql-kw">SET</span> migrated_at = <span class="sql-fn">GETUTCDATE</span>(),<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;migrated_by = <span class="sql-str">'Cygenix'</span><br>
+            <span class="sql-kw">WHERE</span> migrated_at <span class="sql-kw">IS NULL</span>;
+          </div>
+          <div style="display:flex;gap:0.4rem;margin-top:0.5rem">
+            <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:9px;color:var(--text3);font-family:var(--mono)">📁 Upload .sql file</div>
+            <div style="flex:1"></div>
+            <div style="background:rgba(16,212,138,0.1);border:0.5px solid rgba(16,212,138,0.3);border-radius:4px;padding:3px 8px;font-size:9px;color:var(--green);font-family:var(--mono)">✓ Save step</div>
           </div>
         </div>
       </div>
