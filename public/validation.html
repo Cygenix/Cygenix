@@ -80,6 +80,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 /* CONN STATUS */
 .conn-status{font-size:11px;font-family:var(--mono);margin-top:5px;min-height:16px}
 
+/* COLUMN FILTERS */
+.col-filter{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--serif);outline:none}
+.col-filter:focus{border-color:var(--accent)}
+.col-filter option{background:var(--bg3)}
+
 /* EMPTY */
 .empty-state{text-align:center;padding:3rem 1rem;color:var(--text3)}
 .empty-icon{font-size:32px;opacity:0.3;margin-bottom:0.75rem}
@@ -137,38 +142,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     <span id="load-status" style="font-size:12px;color:var(--text3);margin-left:1rem"></span>
   </div>
 
-  <!-- FILTERS -->
-  <div class="panel" id="filters-panel" style="display:none;padding:0.875rem 1.25rem">
-    <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center">
-      <div style="flex:1;min-width:180px">
-        <input id="filter-name" class="form-input" placeholder="🔍 Filter by name or caption…" oninput="applyFilters()" style="font-family:var(--serif)">
-      </div>
-      <div>
-        <select id="filter-group" class="form-input" onchange="applyFilters()" style="width:160px;font-family:var(--serif)">
-          <option value="">All groups</option>
-        </select>
-      </div>
-      <div>
-        <select id="filter-status" class="form-input" onchange="applyFilters()" style="width:140px;font-family:var(--serif)">
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="pass">Passed</option>
-          <option value="fail">Failed</option>
-          <option value="error">Error</option>
-        </select>
-      </div>
-      <div>
-        <select id="filter-db" class="form-input" onchange="applyFilters()" style="width:140px;font-family:var(--serif)">
-          <option value="">Source &amp; Target</option>
-          <option value="source">Source only</option>
-          <option value="target">Target only</option>
-        </select>
-      </div>
-      <div style="font-size:12px;color:var(--text3);white-space:nowrap" id="filter-count"></div>
-      <button class="btn btn-ghost btn-sm" onclick="clearFilters()">✕ Clear filters</button>
-    </div>
-  </div>
-
   <!-- STATS -->
   <div class="panel" id="stats-panel" style="display:none">
     <div class="stats-bar">
@@ -198,10 +171,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     <table class="val-table" id="scripts-table" style="display:none">
       <thead>
         <tr>
-          <th style="width:36px;padding-left:1rem">
+          <th style="width:36px;padding-left:1rem" rowspan="2">
             <input type="checkbox" id="check-all" onchange="toggleAll(this.checked)" style="accent-color:var(--accent)">
           </th>
-          <th style="width:40px">#</th>
+          <th style="width:40px" rowspan="2">#</th>
           <th>Name</th>
           <th>Caption</th>
           <th>Group</th>
@@ -210,7 +183,54 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
           <th>Result</th>
           <th style="width:60px">Dest#</th>
           <th>SQL</th>
-          <th style="width:70px;padding-right:1rem"></th>
+          <th style="width:70px;padding-right:1rem" rowspan="2">
+            <span style="font-size:10px;color:var(--text3);cursor:pointer;white-space:nowrap" onclick="clearFilters()" title="Clear all filters">✕ clear</span>
+            <div style="font-size:9px;color:var(--text3);margin-top:2px;font-family:var(--mono)" id="filter-count"></div>
+          </th>
+        </tr>
+        <tr id="filter-row" style="background:var(--bg4)">
+          <th style="padding:4px 8px">
+            <input id="filter-name" class="col-filter" placeholder="Search name…" oninput="applyFilters()">
+          </th>
+          <th style="padding:4px 8px">
+            <input id="filter-caption" class="col-filter" placeholder="Search caption…" oninput="applyFilters()">
+          </th>
+          <th style="padding:4px 8px">
+            <select id="filter-group" class="col-filter" onchange="applyFilters()">
+              <option value="">All groups</option>
+            </select>
+          </th>
+          <th style="padding:4px 8px">
+            <select id="filter-db" class="col-filter" onchange="applyFilters()">
+              <option value="">All</option>
+              <option value="source">Source</option>
+              <option value="target">Target</option>
+            </select>
+          </th>
+          <th style="padding:4px 8px">
+            <select id="filter-status" class="col-filter" onchange="applyFilters()">
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed</option>
+              <option value="error">Error</option>
+            </select>
+          </th>
+          <th style="padding:4px 8px">
+            <input id="filter-result" class="col-filter" placeholder="e.g. 0" oninput="applyFilters()">
+          </th>
+          <th style="padding:4px 8px">
+            <select id="filter-destdb" class="col-filter" onchange="applyFilters()">
+              <option value="">All</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+          </th>
+          <th style="padding:4px 8px">
+            <input id="filter-sql" class="col-filter" placeholder="Search SQL…" oninput="applyFilters()">
+          </th>
         </tr>
       </thead>
       <tbody id="scripts-tbody"></tbody>
@@ -319,7 +339,6 @@ async function loadScripts(){
     document.getElementById('run-all-btn').disabled = false;
     document.getElementById('run-selected-btn').style.display = 'inline-flex';
     document.getElementById('stats-panel').style.display = 'block';
-    document.getElementById('filters-panel').style.display = 'block';
     populateGroupFilter();
     updateStats();
   } catch(e){
@@ -524,36 +543,50 @@ function populateGroupFilter(){
 }
 
 function applyFilters(){
-  activeFilters.name   = (document.getElementById('filter-name')?.value  || '').toLowerCase();
-  activeFilters.group  =  document.getElementById('filter-group')?.value || '';
-  activeFilters.status =  document.getElementById('filter-status')?.value || '';
-  activeFilters.db     =  document.getElementById('filter-db')?.value || '';
+  const fName    = (document.getElementById('filter-name')?.value    || '').toLowerCase();
+  const fCaption = (document.getElementById('filter-caption')?.value  || '').toLowerCase();
+  const fGroup   =  document.getElementById('filter-group')?.value   || '';
+  const fDb      =  document.getElementById('filter-db')?.value      || '';
+  const fStatus  =  document.getElementById('filter-status')?.value  || '';
+  const fResult  = (document.getElementById('filter-result')?.value   || '').toLowerCase();
+  const fDestDb  =  document.getElementById('filter-destdb')?.value  || '';
+  const fSql     = (document.getElementById('filter-sql')?.value      || '').toLowerCase();
 
-  let visible = 0;
+  const hasFilter = fName||fCaption||fGroup||fDb||fStatus||fResult||fDestDb||fSql;
+  let visible = 0, checkedVisible = 0;
+
   document.querySelectorAll('#scripts-tbody tr').forEach(row => {
-    const id  = parseInt(row.id.replace('val-row-',''));
-    const s   = scripts[id];
+    const id = parseInt(row.id.replace('val-row-',''));
+    const s  = scripts[id];
     if (!s) return;
-    const matchName   = !activeFilters.name   || s.name.toLowerCase().includes(activeFilters.name) || s.caption.toLowerCase().includes(activeFilters.name);
-    const matchGroup  = !activeFilters.group  || s.group === activeFilters.group;
-    const matchStatus = !activeFilters.status || s.status === activeFilters.status;
-    const matchDb     = !activeFilters.db     || (activeFilters.db==='source' ? s.destDb<4 : s.destDb>=4);
-    const show = matchName && matchGroup && matchStatus && matchDb;
+    const show =
+      (!fName    || s.name.toLowerCase().includes(fName)) &&
+      (!fCaption || s.caption.toLowerCase().includes(fCaption)) &&
+      (!fGroup   || s.group === fGroup) &&
+      (!fDb      || (fDb==='source' ? s.destDb<4 : s.destDb>=4)) &&
+      (!fStatus  || s.status === fStatus) &&
+      (!fResult  || String(s.rowsFound||0).includes(fResult)) &&
+      (!fDestDb  || String(s.destDb) === fDestDb) &&
+      (!fSql     || (s.sql||'').toLowerCase().includes(fSql));
     row.style.display = show ? '' : 'none';
-    if (show) visible++;
+    if (show) { visible++; if (s.checked) checkedVisible++; }
   });
 
   const countEl = document.getElementById('filter-count');
-  const hasFilter = activeFilters.name || activeFilters.group || activeFilters.status || activeFilters.db;
-  if (countEl) countEl.textContent = hasFilter ? visible + ' of ' + scripts.length + ' shown' : '';
+  if (countEl) countEl.textContent = hasFilter ? visible+'/'+scripts.length : '';
+
+  // Highlight active filter inputs
+  document.querySelectorAll('.col-filter').forEach(el => {
+    el.style.borderColor = el.value ? 'var(--amber)' : '';
+    el.style.background  = el.value ? 'rgba(245,158,11,0.08)' : '';
+  });
 }
 
 function clearFilters(){
-  document.getElementById('filter-name').value   = '';
-  document.getElementById('filter-group').value  = '';
-  document.getElementById('filter-status').value = '';
-  document.getElementById('filter-db').value     = '';
-  activeFilters = { name:'', group:'', status:'', db:'' };
+  document.querySelectorAll('.col-filter').forEach(el => {
+    if (el.tagName==='SELECT') el.value=''; else el.value='';
+    el.style.borderColor=''; el.style.background='';
+  });
   applyFilters();
 }
 
