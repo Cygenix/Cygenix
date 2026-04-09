@@ -717,62 +717,77 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
     <!-- VALIDATION VIEW -->
     <div id="view-validation" class="view">
-      <div class="panel-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:1rem">
-        <div>
-          <div class="panel-title">Data Validation</div>
-          <div class="panel-sub">Run validation scripts from your source database and review results</div>
-        </div>
-        <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" onclick="loadValidationScripts()">↻ Refresh scripts</button>
-          <button class="btn btn-ghost btn-sm" id="val-run-selected-btn" onclick="runSelectedValidations()" disabled style="display:none">▶ Run selected</button>
-          <button class="btn btn-primary btn-sm" onclick="runAllValidations()" id="val-run-all-btn" disabled>▶ Run all scripts</button>
-        </div>
-      </div>
 
-      <!-- Connection status -->
-      <div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.3rem">Source connection</div>
-          <input id="val-src-conn" class="form-input" style="font-family:var(--mono);font-size:12px;background:var(--bg2)" placeholder="Server=source;Database=db;... or https://fn.azurewebsites.net/api/db">
-        </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.3rem">Target connection (for Script_DestinationDatabase=4)</div>
-          <input id="val-tgt-conn" class="form-input" style="font-family:var(--mono);font-size:12px;background:var(--bg2)" placeholder="Server=target;Database=db;... or https://fn.azurewebsites.net/api/db">
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="loadValidationScripts()" style="flex-shrink:0">🔌 Connect &amp; load</button>
-      </div>
-
-      <!-- Stats bar -->
-      <div id="val-stats" style="display:none;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.875rem 1.25rem;margin-bottom:1rem;display:none">
-        <div style="display:flex;gap:2rem;flex-wrap:wrap">
-          <div><span style="font-size:1.4rem;font-weight:700;color:var(--text)" id="val-stat-total">0</span><div style="font-size:11px;color:var(--text3)">Scripts</div></div>
-          <div><span style="font-size:1.4rem;font-weight:700;color:var(--green)" id="val-stat-pass">0</span><div style="font-size:11px;color:var(--text3)">Passed</div></div>
-          <div><span style="font-size:1.4rem;font-weight:700;color:var(--red)" id="val-stat-fail">0</span><div style="font-size:11px;color:var(--text3)">Failed</div></div>
-          <div><span style="font-size:1.4rem;font-weight:700;color:var(--amber)" id="val-stat-error">0</span><div style="font-size:11px;color:var(--text3)">Errors</div></div>
-          <div style="margin-left:auto;display:flex;align-items:center;gap:0.75rem">
-            <button class="btn btn-ghost btn-sm" onclick="exportValidationExcel()" id="val-export-btn" style="display:none">📊 Export to Excel</button>
+      <!-- Header -->
+      <div class="panel-header">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;width:100%;flex-wrap:wrap;gap:1rem">
+          <div>
+            <div class="panel-title">Data Validation</div>
+            <div class="panel-sub">Run validation scripts from your source database and review results</div>
+          </div>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="val-run-selected-btn" onclick="runSelectedValidations()" style="display:none">▶ Run selected</button>
+            <button class="btn btn-primary btn-sm" onclick="runAllValidations()" id="val-run-all-btn" disabled>▶ Run all scripts</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportValidationExcel()" id="val-export-btn" style="display:none">📊 Export results</button>
           </div>
         </div>
       </div>
 
-      <!-- Scripts table -->
-      <div id="val-scripts-wrap" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden">
-        <div id="val-empty" style="text-align:center;padding:3rem;color:var(--text3)">
-          <div style="font-size:24px;opacity:0.3;margin-bottom:0.75rem">🔍</div>
-          <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No scripts loaded</div>
-          <div style="font-size:12px">Enter your source connection above and click Connect &amp; load</div>
+      <!-- Connections -->
+      <div class="panel" style="margin-bottom:1rem">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:0.875rem">Connections</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:0.875rem">
+          <div>
+            <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.35rem">Source database <span style="font-weight:400;color:var(--text3)">(Script_DestinationDatabase 1,2,3)</span></div>
+            <div style="display:flex;gap:0.5rem">
+              <input id="val-src-conn" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1" placeholder="Server=...;Database=...;  or  https://fn.azurewebsites.net/api/db">
+              <button class="btn btn-ghost btn-sm" onclick="valTestConn('src')" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
+            </div>
+            <div id="val-src-status" style="font-size:11px;font-family:var(--mono);margin-top:4px;color:var(--text3)"></div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.35rem">Target database <span style="font-weight:400;color:var(--text3)">(Script_DestinationDatabase 4)</span></div>
+            <div style="display:flex;gap:0.5rem">
+              <input id="val-tgt-conn" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1" placeholder="Server=...;Database=...;  or  https://fn.azurewebsites.net/api/db?code=...">
+              <button class="btn btn-ghost btn-sm" onclick="valTestConn('tgt')" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
+            </div>
+            <div id="val-tgt-status" style="font-size:11px;font-family:var(--mono);margin-top:4px;color:var(--text3)"></div>
+          </div>
         </div>
-        <table class="jobs-table" id="val-scripts-table" style="display:none">
+        <button class="btn btn-primary btn-sm" onclick="loadValidationScripts()">↻ Load validation scripts</button>
+      </div>
+
+      <!-- Stats bar -->
+      <div id="val-stats" style="display:none;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.875rem 1.25rem;margin-bottom:1rem">
+        <div style="display:flex;gap:2.5rem;flex-wrap:wrap;align-items:center">
+          <div style="text-align:center"><div style="font-size:1.5rem;font-weight:700;color:var(--text)" id="val-stat-total">0</div><div style="font-size:11px;color:var(--text3)">Total</div></div>
+          <div style="text-align:center"><div style="font-size:1.5rem;font-weight:700;color:var(--green)" id="val-stat-pass">0</div><div style="font-size:11px;color:var(--text3)">Passed</div></div>
+          <div style="text-align:center"><div style="font-size:1.5rem;font-weight:700;color:var(--red)" id="val-stat-fail">0</div><div style="font-size:11px;color:var(--text3)">Failed</div></div>
+          <div style="text-align:center"><div style="font-size:1.5rem;font-weight:700;color:var(--amber)" id="val-stat-error">0</div><div style="font-size:11px;color:var(--text3)">Errors</div></div>
+          <div style="text-align:center"><div style="font-size:1.5rem;font-weight:700;color:var(--text2)" id="val-stat-pending">0</div><div style="font-size:11px;color:var(--text3)">Pending</div></div>
+        </div>
+      </div>
+
+      <!-- Scripts table -->
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1rem">
+        <div id="val-empty" style="text-align:center;padding:3rem;color:var(--text3)">
+          <div style="font-size:28px;opacity:0.3;margin-bottom:0.75rem">🔍</div>
+          <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No scripts loaded</div>
+          <div style="font-size:12px">Enter your source connection above and click Load validation scripts</div>
+        </div>
+        <table class="jobs-table" id="val-scripts-table" style="display:none;width:100%">
           <thead>
             <tr>
-              <th style="width:32px"><input type="checkbox" id="val-check-all" onchange="toggleAllValidations(this.checked)" style="accent-color:var(--accent)"></th>
+              <th style="width:32px;padding:0.75rem 0.5rem">
+                <input type="checkbox" id="val-check-all" onchange="toggleAllValidations(this.checked)" style="accent-color:var(--accent)">
+              </th>
               <th>Name</th>
               <th>Caption</th>
               <th>Group</th>
-              <th>Database</th>
-              <th>Status</th>
+              <th style="width:90px">Runs on</th>
+              <th style="width:110px">Status</th>
               <th>Result</th>
-              <th style="width:80px">Action</th>
+              <th style="width:70px"></th>
             </tr>
           </thead>
           <tbody id="val-scripts-tbody"></tbody>
@@ -780,13 +795,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
 
       <!-- Execution log -->
-      <div id="val-log-wrap" style="display:none;margin-top:1rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem">
+      <div id="val-log-wrap" style="display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem">
         <div style="font-size:13px;font-weight:600;margin-bottom:0.75rem;display:flex;align-items:center;justify-content:space-between">
           <span>Execution log</span>
           <button class="btn btn-ghost btn-sm" onclick="document.getElementById('val-log-wrap').style.display='none'">✕</button>
         </div>
         <div id="val-log" style="font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:0.75rem;max-height:300px;overflow-y:auto;line-height:1.8;white-space:pre-wrap"></div>
       </div>
+
     </div>
     <!-- END VALIDATION VIEW -->
 
@@ -2557,6 +2573,22 @@ function initValidationView() {
   if (valScripts.length) renderValidationTable();
 }
 
+async function valTestConn(which) {
+  const inputEl  = document.getElementById(which === 'src' ? 'val-src-conn' : 'val-tgt-conn');
+  const statusEl = document.getElementById('val-' + which + '-status');
+  const conn     = inputEl?.value.trim();
+  if (!conn) { alert('Please enter a connection string or URL first.'); return; }
+  statusEl.textContent = 'Connecting…'; statusEl.style.color = 'var(--accent)';
+  try {
+    const res = await valDbCall(conn, { action: 'test' });
+    statusEl.textContent = '🟢 Connected · ' + res.database + ' · ' + (res.user||'').split('@')[0];
+    statusEl.style.color = 'var(--green)';
+  } catch(e) {
+    statusEl.textContent = '🔴 ' + e.message;
+    statusEl.style.color = 'var(--red)';
+  }
+}
+
 // ── DB call helper ────────────────────────────────────────────────────────────
 function valIsFn(conn) { return conn && (conn.startsWith('https://') || conn.startsWith('http://')); }
 
@@ -2671,21 +2703,26 @@ function renderValidationTable() {
 }
 
 function updateValStats() {
-  const ran   = valScripts.filter(s => s.status !== 'pending' && s.status !== 'running');
-  const pass  = valScripts.filter(s => s.status === 'pass').length;
-  const fail  = valScripts.filter(s => s.status === 'fail').length;
-  const error = valScripts.filter(s => s.status === 'error').length;
+  const ran     = valScripts.filter(s => s.status !== 'pending' && s.status !== 'running');
+  const pass    = valScripts.filter(s => s.status === 'pass').length;
+  const fail    = valScripts.filter(s => s.status === 'fail').length;
+  const error   = valScripts.filter(s => s.status === 'error').length;
+  const pending = valScripts.filter(s => s.status === 'pending').length;
 
   const statsEl = document.getElementById('val-stats');
-  if (statsEl) {
-    statsEl.style.display = ran.length ? 'block' : 'none';
-    document.getElementById('val-stat-total').textContent = valScripts.length;
-    document.getElementById('val-stat-pass').textContent  = pass;
-    document.getElementById('val-stat-fail').textContent  = fail;
-    document.getElementById('val-stat-error').textContent = error;
+  if (statsEl && valScripts.length) {
+    statsEl.style.display = 'block';
+    document.getElementById('val-stat-total').textContent   = valScripts.length;
+    document.getElementById('val-stat-pass').textContent    = pass;
+    document.getElementById('val-stat-fail').textContent    = fail;
+    document.getElementById('val-stat-error').textContent   = error;
+    const pendingEl = document.getElementById('val-stat-pending');
+    if (pendingEl) pendingEl.textContent = pending;
   }
   const exportBtn = document.getElementById('val-export-btn');
   if (exportBtn) exportBtn.style.display = ran.length ? 'inline-flex' : 'none';
+  const selBtn = document.getElementById('val-run-selected-btn');
+  if (selBtn) selBtn.style.display = valScripts.length ? 'inline-flex' : 'none';
 }
 
 function toggleAllValidations(checked) {
