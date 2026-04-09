@@ -1693,9 +1693,24 @@ function updateFinishSummary(){
   const src = S.selectedSourceTable;
   const tgt = S.selectedTargetTable;
   const mappedCols = (S.columnMapping||[]).filter(m => m.tgtCol).length;
-  const srcName = src
-    ? (src.schemaName ? src.schemaName + '.' + src.tableName : src.tableName)
-    : (src?.fromFile ? S.sourceFile?.name || 'Source file' : '—');
+  // Try every possible source of the table name
+  let srcName = '';
+  if (src) {
+    if (src.schemaName && src.tableName) srcName = src.schemaName + '.' + src.tableName;
+    else if (src.tableName) srcName = src.tableName;
+    else if (src.name) srcName = src.name;
+  }
+  if (!srcName && S.sourceFile?.name) srcName = S.sourceFile.name;
+  if (!srcName && S.insertSQL) {
+    const m = S.insertSQL.match(/-- Migration: ([^\n]+?) [→-]/);
+    if (m) srcName = m[1].trim();
+  }
+  if (!srcName) {
+    // Try getting from the source table dropdown value (live DB stores schema.table)
+    const sel = document.getElementById('src-table-select');
+    if (sel?.value && sel.value.includes('.')) srcName = sel.value;
+  }
+  if (!srcName) srcName = '—';
   const el = $('finish-src-table'); if (el) { el.textContent = srcName || '—'; el.dataset.value = srcName || ''; }
   const el2 = $('finish-tgt-table'); if (el2) el2.textContent = tgt ? tgt.schema + '.' + tgt.name : '—';
   const el3 = $('finish-col-count'); if (el3) el3.textContent = mappedCols;
@@ -1946,15 +1961,7 @@ function saveJobAndFinish(action) {
 
   // Build the job record (same structure as before, minus execution)
   const src = S.selectedSourceTable;
-  // DEBUG - remove after fix confirmed
-  console.log('DEBUG saveJobAndFinish:', {
-    src: src,
-    tableName: src?.tableName,
-    schemaName: src?.schemaName,
-    srcSchema: S.srcSchema ? 'loaded' : 'null',
-    insertSQLsnippet: (S.insertSQL||'').slice(0,120),
-    finishSrcText: document.getElementById('finish-src-table')?.dataset?.value
-  });
+
   const tgt = S.selectedTargetTable;
   const completedAt = new Date().toISOString();
   let userName = '', userEmail = '';
@@ -1977,21 +1984,25 @@ function saveJobAndFinish(action) {
     };
   });
 
-  // Get source table name - try multiple sources in case state was partially lost
+  // Get source table name using same logic as updateFinishSummary
   let srcTableName = '';
-  if (src && src.tableName) {
-    srcTableName = src.schemaName ? src.schemaName + '.' + src.tableName : src.tableName;
-  } else if (S.sourceFile?.name) {
-    srcTableName = S.sourceFile.name;
-  } else {
-    // Fall back to what's displayed on the finish summary panel
-    srcTableName = $('finish-src-table')?.dataset?.value || $('finish-src-table')?.textContent?.trim() || '';
-    if (srcTableName === '—') srcTableName = '';
+  if (src) {
+    if (src.schemaName && src.tableName) srcTableName = src.schemaName + '.' + src.tableName;
+    else if (src.tableName) srcTableName = src.tableName;
+    else if (src.name) srcTableName = src.name;
   }
-  // Also try to extract from the insertSQL comment if still empty
+  if (!srcTableName && S.sourceFile?.name) srcTableName = S.sourceFile.name;
   if (!srcTableName && S.insertSQL) {
-    const m = S.insertSQL.match(/-- Migration: (.+?) →/);
+    const m = S.insertSQL.match(/-- Migration: ([^\n]+?) [→-]/);
     if (m) srcTableName = m[1].trim();
+  }
+  if (!srcTableName) {
+    const el = $('finish-src-table');
+    if (el && el.textContent && el.textContent !== '—') srcTableName = el.textContent.trim();
+  }
+  if (!srcTableName) {
+    const sel = document.getElementById('src-table-select');
+    if (sel?.value && sel.value.includes('.')) srcTableName = sel.value;
   }
 
   const tgtTableName = tgt ? tgt.schema + '.' + tgt.name : '';
