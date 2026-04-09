@@ -137,6 +137,38 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     <span id="load-status" style="font-size:12px;color:var(--text3);margin-left:1rem"></span>
   </div>
 
+  <!-- FILTERS -->
+  <div class="panel" id="filters-panel" style="display:none;padding:0.875rem 1.25rem">
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:180px">
+        <input id="filter-name" class="form-input" placeholder="🔍 Filter by name or caption…" oninput="applyFilters()" style="font-family:var(--serif)">
+      </div>
+      <div>
+        <select id="filter-group" class="form-input" onchange="applyFilters()" style="width:160px;font-family:var(--serif)">
+          <option value="">All groups</option>
+        </select>
+      </div>
+      <div>
+        <select id="filter-status" class="form-input" onchange="applyFilters()" style="width:140px;font-family:var(--serif)">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="pass">Passed</option>
+          <option value="fail">Failed</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
+      <div>
+        <select id="filter-db" class="form-input" onchange="applyFilters()" style="width:140px;font-family:var(--serif)">
+          <option value="">Source &amp; Target</option>
+          <option value="source">Source only</option>
+          <option value="target">Target only</option>
+        </select>
+      </div>
+      <div style="font-size:12px;color:var(--text3);white-space:nowrap" id="filter-count"></div>
+      <button class="btn btn-ghost btn-sm" onclick="clearFilters()">✕ Clear filters</button>
+    </div>
+  </div>
+
   <!-- STATS -->
   <div class="panel" id="stats-panel" style="display:none">
     <div class="stats-bar">
@@ -176,6 +208,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
           <th style="width:90px">Runs on</th>
           <th style="width:120px">Status</th>
           <th>Result</th>
+          <th style="width:60px">Dest#</th>
+          <th>SQL</th>
           <th style="width:70px;padding-right:1rem"></th>
         </tr>
       </thead>
@@ -285,6 +319,8 @@ async function loadScripts(){
     document.getElementById('run-all-btn').disabled = false;
     document.getElementById('run-selected-btn').style.display = 'inline-flex';
     document.getElementById('stats-panel').style.display = 'block';
+    document.getElementById('filters-panel').style.display = 'block';
+    populateGroupFilter();
     updateStats();
   } catch(e){
     loadStatus.textContent = '✕ '+e.message;
@@ -299,6 +335,9 @@ function renderTable(){
   const table = document.getElementById('scripts-table');
   if (!scripts.length){ empty.style.display='block'; table.style.display='none'; return; }
   empty.style.display='none'; table.style.display='table';
+
+  // Re-apply filters after render
+  setTimeout(applyFilters, 0);
 
   tbody.innerHTML = scripts.map(s=>{
     const rowCls = s.status==='fail'?'row-fail':s.status==='error'?'row-error':'';
@@ -325,6 +364,11 @@ function renderTable(){
       <td>${dbBadge}</td>
       <td>${statusHtml}</td>
       <td>${resultHtml}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${s.destDb}</td>
+      <td style="max-width:300px">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;cursor:pointer" title="${esc(s.sql)}" onclick="toggleSQL(${s.id})">${esc((s.sql||'').slice(0,80))}${(s.sql||'').length>80?'…':''}</div>
+        <div id="sql-expand-${s.id}" style="display:none;margin-top:4px;padding:0.5rem;background:var(--bg4);border-radius:4px;font-family:var(--mono);font-size:10px;color:var(--text2);white-space:pre-wrap;word-break:break-all;max-height:120px;overflow-y:auto">${esc(s.sql||'')}</div>
+      </td>
       <td style="padding-right:1rem"><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" onclick="runSingle(${s.id})">▶ Run</button></td>
     </tr>`;
   }).join('');
@@ -468,6 +512,55 @@ function doExport(){
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+let activeFilters = { name:'', group:'', status:'', db:'' };
+
+function populateGroupFilter(){
+  const sel    = document.getElementById('filter-group');
+  const groups = [...new Set(scripts.map(s=>s.group).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">All groups</option>' +
+    groups.map(g=>'<option value="'+esc(g)+'">'+esc(g)+'</option>').join('');
+}
+
+function applyFilters(){
+  activeFilters.name   = (document.getElementById('filter-name')?.value  || '').toLowerCase();
+  activeFilters.group  =  document.getElementById('filter-group')?.value || '';
+  activeFilters.status =  document.getElementById('filter-status')?.value || '';
+  activeFilters.db     =  document.getElementById('filter-db')?.value || '';
+
+  let visible = 0;
+  document.querySelectorAll('#scripts-tbody tr').forEach(row => {
+    const id  = parseInt(row.id.replace('val-row-',''));
+    const s   = scripts[id];
+    if (!s) return;
+    const matchName   = !activeFilters.name   || s.name.toLowerCase().includes(activeFilters.name) || s.caption.toLowerCase().includes(activeFilters.name);
+    const matchGroup  = !activeFilters.group  || s.group === activeFilters.group;
+    const matchStatus = !activeFilters.status || s.status === activeFilters.status;
+    const matchDb     = !activeFilters.db     || (activeFilters.db==='source' ? s.destDb<4 : s.destDb>=4);
+    const show = matchName && matchGroup && matchStatus && matchDb;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  const countEl = document.getElementById('filter-count');
+  const hasFilter = activeFilters.name || activeFilters.group || activeFilters.status || activeFilters.db;
+  if (countEl) countEl.textContent = hasFilter ? visible + ' of ' + scripts.length + ' shown' : '';
+}
+
+function clearFilters(){
+  document.getElementById('filter-name').value   = '';
+  document.getElementById('filter-group').value  = '';
+  document.getElementById('filter-status').value = '';
+  document.getElementById('filter-db').value     = '';
+  activeFilters = { name:'', group:'', status:'', db:'' };
+  applyFilters();
+}
+
+function toggleSQL(id){
+  const el = document.getElementById('sql-expand-'+id);
+  if (el) el.style.display = el.style.display==='none' ? 'block' : 'none';
+}
 </script>
 </body>
 </html>
