@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Help & Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--purple:#a78bfa;
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);text-decoration:none;color:var(--text2);background:transparent;border:0.5px solid var(--border2)}
+.btn:hover{color:var(--text)}
+
+/* LAYOUT */
+.layout{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 52px)}
+
+/* TOC SIDEBAR */
+.toc{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.5rem 0;overflow-y:auto;position:sticky;top:52px;height:calc(100vh - 52px)}
+.toc-title{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0 1.25rem;margin-bottom:0.75rem}
+.toc-item{display:block;padding:0.4rem 1.25rem;font-size:12px;color:var(--text3);text-decoration:none;transition:all 0.15s;border-left:2px solid transparent}
+.toc-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
+.toc-item.active{color:var(--accent);border-left-color:var(--accent)}
+.toc-item.sub{padding-left:2rem;font-size:11px}
+
+/* CONTENT */
+.content{overflow-y:auto;padding:2.5rem 3rem;max-width:860px}
+
+/* TYPOGRAPHY */
+h1{font-size:1.8rem;font-weight:600;margin-bottom:0.5rem;color:var(--text)}
+h2{font-size:1.25rem;font-weight:600;margin:2.5rem 0 1rem;color:var(--text);padding-top:0.5rem;border-top:0.5px solid var(--border)}
+h3{font-size:1rem;font-weight:600;margin:1.5rem 0 0.5rem;color:var(--text2)}
+p{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:0.875rem}
+ul,ol{margin:0.5rem 0 0.875rem 1.25rem}
+li{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:0.25rem}
+code{font-family:var(--mono);font-size:12px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:1px 6px;color:var(--accent)}
+.lead{font-size:15px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem}
+
+/* CARDS */
+.card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem}
+.card-title{font-size:13px;font-weight:600;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem}
+.card p{margin-bottom:0}
+
+/* STEPS */
+.steps{counter-reset:step;margin:1rem 0}
+.step{display:flex;gap:1rem;margin-bottom:1.25rem;align-items:flex-start}
+.step-num{counter-increment:step;min-width:28px;height:28px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent);flex-shrink:0;font-family:var(--mono)}
+.step-num::before{content:counter(step)}
+.step-body{padding-top:4px}
+.step-body strong{display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px}
+.step-body p{margin-bottom:0;font-size:13px}
+
+/* BADGES */
+.badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-weight:500;margin:0 2px}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-blue{background:var(--accent-glow);color:var(--accent)}
+.badge-teal{background:rgba(45,212,191,0.1);color:var(--teal)}
+.badge-purple{background:rgba(167,139,250,0.1);color:var(--purple)}
+
+/* TIP BOX */
+.tip{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.875rem 1rem;margin:1rem 0;font-size:13px;color:var(--text2);line-height:1.7}
+.tip strong{color:var(--accent)}
+.warn{background:var(--amber-bg);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:0.875rem 1rem;margin:1rem 0;font-size:13px;color:var(--text2);line-height:1.7}
+.warn strong{color:var(--amber)}
+
+/* TABLE */
+.help-table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:13px}
+.help-table th{text-align:left;padding:0.6rem 0.875rem;font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;background:var(--bg3);border-bottom:0.5px solid var(--border)}
+.help-table td{padding:0.6rem 0.875rem;border-bottom:0.5px solid var(--border);color:var(--text2);vertical-align:top}
+.help-table tr:last-child td{border-bottom:none}
+
+section{margin-bottom:0.5rem}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--text3);font-weight:400;font-family:var(--mono);margin-left:6px">Help & Guide</span></div>
+  <a href="/dashboard.html" class="btn">← Back to Dashboard</a>
+</div>
+
+<div class="layout">
+
+  <!-- TABLE OF CONTENTS -->
+  <nav class="toc">
+    <div class="toc-title">Contents</div>
+    <a class="toc-item" href="#overview">Overview</a>
+    <a class="toc-item" href="#getting-started">Getting Started</a>
+    <a class="toc-item" href="#configure">Configure (Live DB Migration)</a>
+    <a class="toc-item sub" href="#configure-source">Step 1 – Source DB</a>
+    <a class="toc-item sub" href="#configure-target">Step 2 – Target DB</a>
+    <a class="toc-item sub" href="#configure-map">Step 3 – Select & Map</a>
+    <a class="toc-item sub" href="#configure-preview">Step 4 – Preview SQL</a>
+    <a class="toc-item sub" href="#configure-save">Step 5 – Save & Finish</a>
+    <a class="toc-item" href="#conversion-project">Conversion Project</a>
+    <a class="toc-item sub" href="#project-steps">Adding steps</a>
+    <a class="toc-item sub" href="#project-run">Running a project</a>
+    <a class="toc-item" href="#validation">Data Validation</a>
+    <a class="toc-item" href="#inventory">Inventory</a>
+    <a class="toc-item" href="#reports">Conversion Reports</a>
+    <a class="toc-item" href="#wasis">Was/Is Mapping</a>
+    <a class="toc-item" href="#client-portal">Client Portal</a>
+    <a class="toc-item" href="#connections">Connection Strings</a>
+    <a class="toc-item" href="#troubleshooting">Troubleshooting</a>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <div class="content">
+
+    <!-- OVERVIEW -->
+    <section id="overview">
+      <h1>Cygenix Help Guide</h1>
+      <p class="lead">Cygenix is an AI-powered database migration platform. It connects to your source and target databases, maps columns intelligently using Claude AI, applies value translations (Was/Is), and executes migrations with full rollback capability.</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem">
+        <div class="card">
+          <div class="card-title">🔗 <span style="color:var(--teal)">Configure</span></div>
+          <p>Connect source & target DBs, map columns with AI, preview SQL and save migration jobs.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">📋 <span style="color:var(--purple)">Conversion Project</span></div>
+          <p>Sequence multiple migration jobs and SQL scripts into a single executable project.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">✅ <span style="color:var(--amber)">Validation</span></div>
+          <p>Run pre/post migration validation scripts to verify data quality and integrity.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- GETTING STARTED -->
+    <section id="getting-started">
+      <h2>Getting Started</h2>
+      <p>The typical migration workflow in Cygenix follows this sequence:</p>
+      <div class="steps">
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run validation scripts (pre-migration)</strong><p>Use the Validation page to identify data quality issues in the source database before migrating.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Configure your migration</strong><p>Connect to source and target databases, select tables, map columns using Claude AI, and save the job to your library.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Build a Conversion Project</strong><p>Combine multiple migration jobs and custom SQL scripts into an ordered project and run them as a single job.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Review the Conversion Report</strong><p>Export an Excel report showing migration results, column mapping, Was/Is rules applied, and any warnings.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run validation scripts (post-migration)</strong><p>Re-run validation against the target database to confirm data migrated correctly.</p></div></div>
+      </div>
+    </section>
+
+    <!-- CONFIGURE -->
+    <section id="configure">
+      <h2>Configure (Live DB Migration)</h2>
+      <p>The Configure page is a 5-step wizard for setting up a migration between a source and target database. Access it from <strong>Configure</strong> in the sidebar.</p>
+
+      <h3 id="configure-source">Step 1 — Source Database</h3>
+      <p>Connect to the database you are migrating <em>from</em>. Two connection modes are available:</p>
+      <ul>
+        <li><strong>Direct connection string</strong> — uses the Netlify serverless function to connect. Use standard SQL Server format: <code>Server=host;Database=db;User Id=user;Password=pass;Encrypt=true;</code></li>
+        <li><strong>Azure Function</strong> — connects via the Cygenix Azure Function using Managed Identity. No passwords needed. Enter the Function URL and key.</li>
+      </ul>
+      <p>Click <strong>🔌 Connect source DB</strong> to test the connection and load the database schema.</p>
+
+      <h3 id="configure-target">Step 2 — Target Database</h3>
+      <p>Connect to the database you are migrating <em>into</em>. Same two connection modes as Step 1. The Azure Function mode is recommended for Azure SQL as it uses Managed Identity authentication.</p>
+
+      <div class="tip"><strong>Tip:</strong> Your connection details are remembered for the session. On future visits the fields will pre-fill from your last session.</div>
+
+      <h3 id="configure-map">Step 3 — Select & Map</h3>
+      <p>Choose the source table and target table from the dropdowns. Claude AI will automatically map columns between the two tables based on name matching and data type compatibility.</p>
+      <ul>
+        <li><span class="badge badge-green">auto</span> — exact name and type match</li>
+        <li><span class="badge badge-amber">review</span> — name match but type differs, or similar name</li>
+        <li><span class="badge badge-red">unmatched</span> — no suitable target column found</li>
+      </ul>
+      <p>You can override any mapping using the dropdown in each row. Use <strong>Re-map with Claude</strong> to ask the AI to remap after you've made changes.</p>
+      <p>If you have a <strong>Was/Is</strong> translation file, load it here using the Was/Is panel. Rules are shown as 🔄 badges on affected columns.</p>
+
+      <h3 id="configure-preview">Step 4 — Preview SQL</h3>
+      <p>For source tables from a live database, click <strong>Fetch rows from source DB</strong> to retrieve the data. Cygenix then generates batched <code>INSERT INTO</code> statements with all column mappings and Was/Is translations applied.</p>
+      <p>Three tabs are available:</p>
+      <ul>
+        <li><strong>INSERT statements</strong> — the full migration SQL</li>
+        <li><strong>Schema check SQL</strong> — queries to verify the target schema</li>
+        <li><strong>Verify queries</strong> — row count comparison queries</li>
+      </ul>
+      <p>You can download the SQL to run manually in SSMS if preferred.</p>
+
+      <h3 id="configure-save">Step 5 — Save & Finish</h3>
+      <p>Enter a job name and choose what to do next:</p>
+      <ul>
+        <li><strong>💾 Save & go to Dashboard</strong> — saves the job and returns to the dashboard</li>
+        <li><strong>💾 Save & map another table</strong> — saves and returns to Step 3 keeping your connections active</li>
+        <li><strong>💾 Save & open Conversion Project</strong> — saves and goes to the project builder</li>
+      </ul>
+      <div class="tip"><strong>Tip:</strong> The job is saved to your browser's local storage and appears in All Jobs and the Conversion Project job library. The full column mapping and Was/Is rules are saved with the job.</div>
+    </section>
+
+    <!-- CONVERSION PROJECT -->
+    <section id="conversion-project">
+      <h2>Conversion Project</h2>
+      <p>The Conversion Project Builder lets you sequence multiple migration jobs and custom SQL scripts into a single executable project.</p>
+
+      <h3 id="project-steps">Adding Steps</h3>
+      <p>The left panel shows all saved migration jobs. Click any job to add it as a step. Steps show their step number, icon, source → target route, and current status.</p>
+      <p>Use <strong>+ Add custom SQL step</strong> at the bottom of the left panel to add a SQL script step. Each SQL step can be set to run on either the <strong>source</strong> or <strong>target</strong> database — useful for pre-migration cleanup, creating indexes, or archiving processed rows.</p>
+      <p>Drag steps to reorder them. Click ✕ to remove a step.</p>
+
+      <h3 id="project-run">Running a Project</h3>
+      <p>Set your source and target connections at the top, click <strong>🔌 Connect source</strong> and <strong>🔌 Connect target</strong> to verify, then click <strong>▶ Run project</strong>.</p>
+      <p>Steps run sequentially. Status indicators show progress:</p>
+      <ul>
+        <li>⚪ Pending — not yet run</li>
+        <li>🟡 Running — currently executing</li>
+        <li>🟢 Passed — completed successfully</li>
+        <li>🔴 Failed — error occurred</li>
+        <li>🟠 Skipped — user chose to skip after failure</li>
+      </ul>
+      <p>If a step fails, execution stops and you are presented with three options: <strong>↩ Retry</strong>, <strong>⏭ Skip</strong>, or <strong>⏹ Abort</strong>. Use <strong>⏹ Stop</strong> in the topbar to halt execution at any time.</p>
+      <p>After completion, click <strong>📄 View Conversion Report</strong> to open the full Excel-exportable report.</p>
+    </section>
+
+    <!-- VALIDATION -->
+    <section id="validation">
+      <h2>Data Validation</h2>
+      <p>The Validation page reads scripts from a <code>validation_scripts</code> table in your source database and executes them to identify data quality issues.</p>
+
+      <table class="help-table">
+        <thead><tr><th>Column</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>name</code></td><td>Script identifier name</td></tr>
+          <tr><td><code>caption</code></td><td>Human-readable description of what the script checks</td></tr>
+          <tr><td><code>sql</code></td><td>The SQL query to execute. Any rows returned = validation failed.</td></tr>
+          <tr><td><code>Order</code></td><td>Execution order</td></tr>
+          <tr><td><code>code</code></td><td>Script code reference</td></tr>
+          <tr><td><code>Script_DestinationDatabase</code></td><td>1, 2, or 3 = run on Source. 4 = run on Target.</td></tr>
+          <tr><td><code>group</code></td><td>Logical grouping of scripts (e.g. AP-Transactions, GL-Setup)</td></tr>
+        </tbody>
+      </table>
+
+      <p><strong>Pass/Fail rule:</strong> If a script returns 0 rows — it passes. If it returns any rows — it fails and those rows are shown in the Excel export so you can investigate the exact records causing the issue.</p>
+
+      <p>Use the <strong>column header filters</strong> to narrow down scripts by name, caption, group, destination database, or status. Active filters highlight in amber. Click <strong>✕ clear</strong> to reset all filters.</p>
+
+      <p>Click the SQL preview in the SQL column to expand the full query inline. Use <strong>▶ Run</strong> on individual rows to test specific scripts, or <strong>▶ Run all scripts</strong> / <strong>▶ Run selected</strong> for bulk execution.</p>
+
+      <p>The <strong>📊 Export to Excel</strong> button produces a workbook with a Summary sheet, one sheet per failed script showing the actual problem rows, and a Script Errors sheet for any scripts that encountered SQL errors.</p>
+    </section>
+
+    <!-- INVENTORY -->
+    <section id="inventory">
+      <h2>Inventory</h2>
+      <p>The Inventory section stores documents, schema files, data dictionaries and notes relevant to the migration project. Files are stored in your browser's local storage.</p>
+      <p>Supported file types:</p>
+      <ul>
+        <li><strong>CSV / TSV</strong> — used as source data for file-based migrations</li>
+        <li><strong>Excel (.xlsx)</strong> — source data or Was/Is translation tables</li>
+        <li><strong>SQL (.sql)</strong> — schema scripts, migration scripts</li>
+        <li><strong>PDF / Word</strong> — reference documents, specifications</li>
+        <li><strong>JSON</strong> — structured data exports</li>
+      </ul>
+      <p>If a client has uploaded files via the <strong>Client Portal</strong>, they appear at the top of Inventory in an amber <strong>👤 Client submissions</strong> section. Use <strong>+ Inventory</strong> to pull a client file into the main inventory for use in migrations.</p>
+
+      <div class="tip"><strong>Was/Is files:</strong> Upload a CSV or Excel file with "Was" and "Is" (old/new) value columns to the inventory, then load it in Step 3 of Configure. Cygenix will automatically translate matching values during migration.</div>
+    </section>
+
+    <!-- REPORTS -->
+    <section id="reports">
+      <h2>Conversion Reports</h2>
+      <p>After completing a migration (via Configure Step 5 or Conversion Project), click <strong>Report</strong> from All Jobs or <strong>📄 View Conversion Report</strong> from the project runner.</p>
+      <p>The report page shows a summary of the migration and allows export to Excel. The Excel workbook contains:</p>
+      <ul>
+        <li><strong>Summary</strong> — project name, user, date, duration, migration statistics, status</li>
+        <li><strong>Migration Results</strong> — source table, target table, rows, errors, status per table</li>
+        <li><strong>Column Mapping</strong> — every column mapped with source/target table, type, transform, and Was/Is rules applied</li>
+        <li><strong>Was-Is Rules</strong> — complete list of value translations applied</li>
+        <li><strong>Execution Log</strong> — (project reports) step-by-step log with status and row counts</li>
+        <li><strong>Warnings</strong> — any issues flagged during migration</li>
+      </ul>
+    </section>
+
+    <!-- WAS/IS -->
+    <section id="wasis">
+      <h2>Was/Is Mapping</h2>
+      <p>Was/Is mapping translates specific values during migration — for example converting status codes <code>A</code> → <code>Active</code>, or renaming department codes to match the target system's naming conventions.</p>
+      <p>Prepare a CSV or Excel file with columns for: field name, old value (Was), new value (Is). Load it in Configure Step 3 using the Was/Is panel on the right side of the column mapping section.</p>
+      <p>Columns that have Was/Is rules applied show a <span style="font-size:11px;padding:2px 7px;border-radius:100px;background:rgba(245,158,11,0.15);color:var(--amber);font-family:var(--mono)">🔄 N rules</span> badge. Hover to see a preview of the translations. The rules are applied at execution time and included in the Conversion Report.</p>
+
+      <div class="warn"><strong>Note:</strong> Was/Is rules are case-sensitive by default. Ensure the "Was" values exactly match the source data values.</div>
+    </section>
+
+    <!-- CLIENT PORTAL -->
+    <section id="client-portal">
+      <h2>Client Portal</h2>
+      <p>Clients can be given their own Cygenix login that takes them to a simplified portal (<code>/client.html</code>) where they can upload source data files, documents, and notes for the migration analyst.</p>
+
+      <h3>Setting up a client account</h3>
+      <div class="steps">
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Invite the client</strong><p>Go to Netlify dashboard → Identity → Invite users → enter the client's email address.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Set the client role</strong><p>After they accept the invite, find their user in Netlify Identity → Edit → set <code>app_metadata</code> to <code>{"role": "client"}</code>.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Client logs in</strong><p>When the client logs in at the Cygenix URL they are automatically routed to the client portal, not the analyst dashboard.</p></div></div>
+      </div>
+
+      <h3>Client portal features</h3>
+      <ul>
+        <li>Upload files categorised as: Source data, Inventory, Document, Schema/SQL, Other</li>
+        <li>Add notes and messages for the analyst</li>
+        <li>View all previous submissions with timestamps</li>
+      </ul>
+      <p>Client uploads appear in the analyst's <strong>Inventory</strong> tab under a <strong>👤 Client submissions</strong> section. The analyst can dismiss items once reviewed or click <strong>+ Inventory</strong> to add a file to the main inventory.</p>
+    </section>
+
+    <!-- CONNECTIONS -->
+    <section id="connections">
+      <h2>Connection Strings</h2>
+      <p>Cygenix supports two connection methods for both source and target databases:</p>
+
+      <h3>Direct SQL Server connection string</h3>
+      <p>Standard ADO.NET format:</p>
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">Server=your-server.database.windows.net;Database=YourDatabase;User Id=username;Password=yourpassword;Encrypt=true;TrustServerCertificate=false;</div>
+      <p>For on-premises SQL Server with Windows auth:</p>
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">Server=192.168.1.100,1433;Database=YourDatabase;User Id=sa;Password=yourpassword;Encrypt=true;TrustServerCertificate=true;</div>
+
+      <h3>Azure Function (Managed Identity)</h3>
+      <p>For Azure SQL databases, use the Cygenix Azure Function which authenticates via Managed Identity — no passwords stored or transmitted:</p>
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/db?code=YOUR_FUNCTION_KEY</div>
+      <div class="tip"><strong>Tip:</strong> The Azure Function URL and key can be found in the Azure Portal → Function App → Functions → db → Get function URL.</div>
+    </section>
+
+    <!-- TROUBLESHOOTING -->
+    <section id="troubleshooting">
+      <h2>Troubleshooting</h2>
+
+      <table class="help-table">
+        <thead><tr><th>Issue</th><th>Solution</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>Connection failed: Failed to fetch</strong></td>
+            <td>Check the URL is correct. For Azure Function, ensure the <code>?code=</code> key is included. Check CORS is enabled for the Cygenix domain in the Azure Function App.</td>
+          </tr>
+          <tr>
+            <td><strong>Non-JSON response (HTTP 500)</strong></td>
+            <td>The Azure SQL database may be paused (auto-pause on free tier). Wait 20–30 seconds and try again. The first connection after a pause takes time to resume.</td>
+          </tr>
+          <tr>
+            <td><strong>Login failed / token error</strong></td>
+            <td>The Managed Identity may not have access to the database. Run: <code>CREATE USER [identity-name] FROM EXTERNAL PROVIDER</code> and grant <code>db_datareader</code> and <code>db_datawriter</code> roles.</td>
+          </tr>
+          <tr>
+            <td><strong>Source table shows — in report</strong></td>
+            <td>Save & Finish from Step 5 of Configure (not Execute). The new Save flow correctly records the source table name.</td>
+          </tr>
+          <tr>
+            <td><strong>Column mapping not saving</strong></td>
+            <td>Ensure you complete all steps through to Step 5 and click a Save button. Mappings are stored in the job record in browser local storage.</td>
+          </tr>
+          <tr>
+            <td><strong>Validation scripts show Non-JSON (500)</strong></td>
+            <td>The Azure SQL database is paused. Click Connect again after 30 seconds to wake it up, then retry loading scripts.</td>
+          </tr>
+          <tr>
+            <td><strong>Jobs disappear after refresh</strong></td>
+            <td>Jobs are stored in browser local storage. Clearing browser data will remove them. Export reports before clearing browser storage.</td>
+          </tr>
+          <tr>
+            <td><strong>Excel export does nothing</strong></td>
+            <td>SheetJS is loaded on demand from a CDN. Check your internet connection. If behind a corporate firewall, the CDN domain <code>cdnjs.cloudflare.com</code> may need to be whitelisted.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="tip"><strong>Need more help?</strong> Contact your Cygenix administrator or raise an issue via the feedback button in the dashboard.</div>
+    </section>
+
+    <div style="margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3)">
+      Cygenix AI Migration Platform · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">← Back to Dashboard</a>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /layout -->
+
+<script>
+// Highlight active TOC item on scroll
+const sections = document.querySelectorAll('section[id]');
+const tocItems  = document.querySelectorAll('.toc-item');
+
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      tocItems.forEach(a => a.classList.remove('active'));
+      const active = document.querySelector('.toc-item[href="#'+entry.target.id+'"]');
+      if (active) active.classList.add('active');
+    }
+  });
+}, { rootMargin:'-20% 0px -70% 0px' });
+
+sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
