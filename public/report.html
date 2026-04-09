@@ -179,6 +179,10 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
       <div class="stat-num" id="stat-errors" style="color:var(--text3)">0</div>
       <div class="stat-label">Errors</div>
     </div>
+    <div class="stat-cell">
+      <div class="stat-num blue" id="stat-wasis">0</div>
+      <div class="stat-label">Was/Is rules</div>
+    </div>
   </div>
 
   <!-- PROJECT DETAILS -->
@@ -211,6 +215,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
       </div>
       <div>
         <div class="info-row"><span class="info-key">Tables found</span><span class="info-val" id="src-tables">—</span></div>
+        <div class="info-row"><span class="info-key">Was/Is rules</span><span class="info-val" id="src-wasis">—</span></div>
         <div class="info-row"><span class="info-key">Total rows</span><span class="info-val" id="src-rows">—</span></div>
         <div class="info-row"><span class="info-key">Columns mapped</span><span class="info-val" id="src-cols">—</span></div>
       </div>
@@ -379,6 +384,7 @@ function renderReport(d) {
   set('stat-success', fmt(inserted));
   set('stat-errors',  errors);
   $('stat-errors').style.color = errors > 0 ? 'var(--red)' : 'var(--text3)';
+  set('stat-wasis', d.wasisRuleCount || 0);
 
   // Project details
   set('d-project-name', d.projectName || '—');
@@ -399,6 +405,7 @@ function renderReport(d) {
   set('src-files',  d.sourceFiles?.join(', ') || d.sourceFile || '—');
   set('src-size',   fmtSize(d.sourceFileSize));
   set('src-tables', tableCount);
+  set('src-wasis',  d.wasisRuleCount ? d.wasisRuleCount + ' rules across ' + (d.wasisColCount||0) + ' columns' : 'None');
   set('src-rows',   fmt(totalRows));
   set('src-cols',   fmt(d.columnMapping?.length || d.columnsMapped));
 
@@ -628,7 +635,7 @@ function doExport() {
     const resultsData = [
       ['Source table', 'Target table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
     ].concat(tables.map(t => [
-      t.sourceName || d.sourceTable || d.sourceFile || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
+      t.sourceName || d.sourceTable || d.sourceFile || d.sourceSystem || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
     ]));
     const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
     wsResults['!cols'] = [{wch:35},{wch:35},{wch:14},{wch:12},{wch:10},{wch:10},{wch:12}];
@@ -636,13 +643,17 @@ function doExport() {
 
     // ── Sheet 3: Column Mapping ───────────────────────────────────────────────
     if (d.columnMapping && d.columnMapping.length > 0) {
+      const srcTableName = d.sourceTable || d.sourceFile || d.sourceSystem || '—';
+      const tgtTableName = d.targetTable || (d.tables?.[0]?.name) || '—';
       const mapData = [
-        ['Source column', 'Target column', 'Target type', 'Transform', 'Transform expression']
+        ['Source table', 'Source column', 'Target table', 'Target column', 'Target type', 'Transform', 'Transform expression', 'Was/Is rules']
       ].concat(d.columnMapping.map(m => [
-        m.srcCol || '', m.tgtCol || '', m.tgtType || '', m.transform || 'NONE', m.transformExpr || ''
+        srcTableName, m.srcCol || '',
+        tgtTableName, m.tgtCol || '',
+        m.tgtType || '', m.transform || 'NONE', m.transformExpr || ''
       ]));
       const wsMap = XLSX.utils.aoa_to_sheet(mapData);
-      wsMap['!cols'] = [{wch:30},{wch:30},{wch:18},{wch:14},{wch:35}];
+      wsMap['!cols'] = [{wch:30},{wch:28},{wch:30},{wch:28},{wch:18},{wch:14},{wch:35},{wch:40}];
       XLSX.utils.book_append_sheet(wb, wsMap, 'Column Mapping');
     }
 
@@ -663,7 +674,19 @@ function doExport() {
       XLSX.utils.book_append_sheet(wb, wsLog, 'Execution Log');
     }
 
-    // ── Sheet 5: Warnings ─────────────────────────────────────────────────────
+    // ── Sheet 5: Was/Is rules ────────────────────────────────────────────────
+    if (d.wasisRules && d.wasisRules.length > 0) {
+      const wasisData = [
+        ['Field', 'Source table', 'Old value (Was)', 'New value (Is)']
+      ].concat(d.wasisRules.map(r => [
+        r.srcField || '(all fields)', r.srcTable || '(all tables)', r.oldVal || '', r.newVal || ''
+      ]));
+      const wsWasis = XLSX.utils.aoa_to_sheet(wasisData);
+      wsWasis['!cols'] = [{wch:25},{wch:30},{wch:30},{wch:30}];
+      XLSX.utils.book_append_sheet(wb, wsWasis, 'Was-Is Rules');
+    }
+
+    // ── Sheet 6: Warnings ─────────────────────────────────────────────────────
     if (d.warnings && d.warnings.length > 0) {
       const warnData = [['#', 'Warning']].concat(d.warnings.map((w,i) => [i+1, w]));
       const wsWarn = XLSX.utils.aoa_to_sheet(warnData);

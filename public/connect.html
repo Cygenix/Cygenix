@@ -1868,10 +1868,20 @@ async function executeNow(){
   } catch {}
 
   // Build column mapping for report
-  const reportMapping = (S.columnMapping || []).map(m => ({
-    srcCol: m.srcCol, tgtCol: m.tgtCol,
-    tgtType: m.tgtType, transform: m.transform || 'NONE'
-  }));
+  const reportMapping = (S.columnMapping || []).map(m => {
+    // Find any Was/Is rules that apply to this column
+    const colWasis = wasisRules.filter(r =>
+      (r.srcField === m.srcCol.toLowerCase() || r.srcField === '') &&
+      (r.srcTable === (S.selectedSourceTable?.tableName||'').toLowerCase() || r.srcTable === '')
+    );
+    return {
+      srcCol: m.srcCol, tgtCol: m.tgtCol,
+      tgtType: m.tgtType, transform: m.transform || 'NONE',
+      transformExpr: m.transformExpr || null,
+      wasisRules: colWasis.length ? colWasis.map(r => r.oldVal + ' → ' + r.newVal) : null,
+      wasisCount: colWasis.length || null
+    };
+  });
 
   // Build report data
   const reportData = {
@@ -1880,7 +1890,11 @@ async function executeNow(){
     userName,
     userEmail,
     organisation: 'Cygenix',
-    sourceSystem: S.selectedSourceTable?.tableName || 'Source file',
+    sourceSystem: S.selectedSourceTable
+                    ? (S.selectedSourceTable.schemaName
+                        ? S.selectedSourceTable.schemaName + '.' + S.selectedSourceTable.tableName
+                        : S.selectedSourceTable.tableName)
+                    : 'Source file',
     sourceTable:  S.selectedSourceTable?.schemaName
                     ? S.selectedSourceTable.schemaName + '.' + S.selectedSourceTable.tableName
                     : S.selectedSourceTable?.tableName || S.sourceFile?.name || '',
@@ -1898,6 +1912,9 @@ async function executeNow(){
     rowsAfter:      typeof actualRows === 'number' ? actualRows : totalRows,
     columnMapping:  reportMapping,
     columnsMapped:  reportMapping.filter(m => m.tgtCol).length,
+    wasisRules:     wasisRules || [],
+    wasisRuleCount: wasisRules?.length || 0,
+    wasisColCount:  reportMapping.filter(m => m.wasisCount).length,
     warnings:       S.warnings || [],
     startedAt:      new Date(Date.now() - (done * 300)).toISOString(),
     completedAt,
