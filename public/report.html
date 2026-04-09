@@ -341,7 +341,7 @@ function loadReport() {
   // Get report data from sessionStorage (set by dashboard before opening report)
   let data;
   try {
-    const raw = sessionStorage.getItem('cygenix_report');
+    const raw = localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report');
     data = raw ? JSON.parse(raw) : null;
   } catch { data = null; }
 
@@ -563,7 +563,7 @@ function doExport() {
   const btn = document.getElementById('excel-btn');
   try {
     let d;
-    try { d = JSON.parse(sessionStorage.getItem('cygenix_report')||'null'); } catch {}
+    try { d = JSON.parse(localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report') || 'null'); } catch {}
     if (!d) d = buildDemoData();
 
     const wb = XLSX.utils.book_new();

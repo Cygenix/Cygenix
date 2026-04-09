@@ -577,7 +577,7 @@ async function runProject() {
 
   // Build and store report data
   const reportData = buildProjectReport(steps, passed, failed, srcConn, tgtConn);
-  try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
+  try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); localStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
   // Save to jobs list
   try {
     const dashJob = {

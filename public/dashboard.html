@@ -1959,7 +1959,7 @@ function openReport(jobId) {
     completedAt:    job.created,
   };
 
-  sessionStorage.setItem('cygenix_report', JSON.stringify(reportData));
+  sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); localStorage.setItem('cygenix_report', JSON.stringify(reportData));
   window.open('/report.html', '_blank');
 }
 

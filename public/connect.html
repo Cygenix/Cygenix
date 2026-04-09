@@ -1909,7 +1909,7 @@ async function executeNow(){
   };
 
   // Save to sessionStorage for report.html
-  try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
+  try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); localStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
 
   // Also save as a dashboard-compatible job so it shows on dashboard Conversion Reports
   const dashJob = {
