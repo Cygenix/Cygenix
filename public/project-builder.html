@@ -149,7 +149,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <div class="conn-label">Source connection string</div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-src-conn" placeholder="Server=source;Database=db;..." oninput="markDirty()">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">🔌 Test source</button>
+            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">🔌 Connect source</button>
           </div>
           <div class="conn-status" id="src-conn-status"></div>
         </div>
@@ -157,7 +157,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <div class="conn-label">Target — Azure Function URL or connection string</div>
           <div style="display:flex;gap:0.5rem">
             <input class="conn-input" id="proj-tgt-conn" placeholder="https://fn.azurewebsites.net/api/db?code=..." oninput="markDirty()">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">🔌 Test target</button>
+            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">🔌 Connect target</button>
           </div>
           <div class="conn-status" id="tgt-conn-status"></div>
         </div>
