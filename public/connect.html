@@ -240,7 +240,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
         </div>
       </div>
       <div style="display:flex;gap:0.75rem;margin-top:0.75rem;flex-wrap:wrap">
-        <button class="btn btn-primary btn-sm" onclick="testSourceConnection()" id="src-test-btn">🔌 Test source DB connection</button>
+        <button class="btn btn-primary btn-sm" onclick="testSourceConnection()" id="src-test-btn">🔌 Connect source DB</button>
         <button class="btn btn-ghost btn-sm" onclick="clearSourceConnection()">Clear</button>
       </div>
       <div class="status-box" id="src-conn-status"></div>
@@ -316,7 +316,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
         </div>
       </div>
       <div style="display:flex;gap:0.75rem;margin-top:0.75rem;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="testConnection()" id="test-btn">🔌 Test target DB connection</button>
+        <button class="btn btn-primary" onclick="testConnection()" id="test-btn">🔌 Connect target DB</button>
         <button class="btn btn-ghost" onclick="clearConnection()">Clear</button>
         <span style="font-size:12px;color:var(--text3)">Values stored in browser session only.</span>
       </div>
@@ -888,13 +888,13 @@ async function testSourceConnection() {
 
   if (srcConnMode === 'direct') {
     const cs = $('src-conn-string').value.trim();
-    if (!cs) { alert('Please enter the source connection string.'); btn.disabled=false; btn.textContent='🔌 Test source DB connection'; return; }
+    if (!cs) { alert('Please enter the source connection string.'); btn.disabled=false; btn.textContent='🔌 Connect source DB'; return; }
     S.srcConnString = cs;
     sessionStorage.setItem('cygenix_src_conn_string', cs);
   } else {
     const url = $('src-fn-url').value.trim();
     const key = $('src-fn-key').value.trim();
-    if (!url) { alert('Please enter the source Azure Function URL.'); btn.disabled=false; btn.textContent='🔌 Test source DB connection'; return; }
+    if (!url) { alert('Please enter the source Azure Function URL.'); btn.disabled=false; btn.textContent='🔌 Connect source DB'; return; }
     S.srcFnUrl = url + (key ? '?code=' + encodeURIComponent(key) : '');
     sessionStorage.setItem('cygenix_src_fn_url', url);
     if (key) sessionStorage.setItem('cygenix_src_fn_key', key);
@@ -1052,7 +1052,7 @@ async function testConnection(){
     await testAzureConnection();
   }
 
-  btn.disabled = false; btn.textContent = '🔌 Test target DB connection';
+  btn.disabled = false; btn.textContent = '🔌 Connect target DB';
 }
 
 async function testDirectConnection(){
