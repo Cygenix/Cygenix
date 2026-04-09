@@ -2014,6 +2014,13 @@ function saveJobAndFinish(action) {
   const tgtTableName = tgt ? tgt.schema + '.' + tgt.name : '';
   const totalRows = src?.rows?.length || src?.rowCount || 0;
 
+  // Temporary: show what we got so we can diagnose
+  alert('Source table name computed as: [' + srcTableName + ']\n' +
+    'src object: ' + (src ? 'exists, tableName=' + src.tableName + ', schemaName=' + src.schemaName : 'NULL') + '\n' +
+    'S.sourceFile: ' + (S.sourceFile?.name || 'null') + '\n' +
+    'finish-src-table text: ' + (document.getElementById('finish-src-table')?.textContent || 'null') + '\n' +
+    'src-table-select value: ' + (document.getElementById('src-table-select')?.value || 'null'));
+
   const dashJob = {
     id:            'job_' + Date.now(),
     name:          jobName,
