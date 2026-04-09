@@ -1974,11 +1974,18 @@ function openReport(jobId) {
 
   if (!tableResults.length) {
     tableResults.push({
-      name: job.target || 'migration', sourceRows: totalRows,
-      insertedRows: totalRows, errors: 0,
-      batches: Math.ceil(totalRows / 100), status: 'success'
+      name: job.target || 'migration',
+      sourceRows: totalRows,
+      insertedRows: totalRows,
+      errors: 0,
+      batches: Math.ceil(totalRows / 100),
+      status: 'success'
     });
   }
+  // Ensure all table results have the correct target table name
+  tableResults.forEach(t => {
+    if (!t.name || t.name === 'Unknown') t.name = job.target || 'migration';
+  });
 
   // Build column mapping from schemaResult stored on job (if available)
   const columnMapping = (job.columnMapping || []).map(m => ({
@@ -1992,29 +1999,33 @@ function openReport(jobId) {
   const sourceFiles = job.files?.map(f => f.name) || [];
   const sourceSize  = job.files?.reduce((s,f) => s+(f.size||0), 0) || 0;
 
+  // Source table name: job.source is set by saveJobAndFinish to the schema.table name
+  const srcTableName = job.sourceTable || job.source || '';
+  const tgtTableName = job.target || tableResults[0]?.name || '—';
+
   const reportData = {
     id:             job.id,
     projectName,
     userName,
     userEmail,
     organisation:   'Cygenix',
-    sourceTable:    job.sourceTable || job.source || '',
-    sourceSystem:   job.sourceTable || job.source || (sourceFiles.length ? sourceFiles[0] : 'Database export'),
+    sourceTable:    srcTableName,
+    sourceSystem:   srcTableName || 'Source Database',
     targetSystem:   'Microsoft SQL Server',
-    sourceFile:     sourceFiles.join(', ') || job.source || '',
-    sourceFiles,
-    sourceFileSize: sourceSize,
-    targetServer:   job.targetServer   || job.target || '—',
-    targetDatabase: job.targetDatabase || job.target || '—',
-    targetTable:    job.target || tableResults[0]?.name || '—',
+    sourceFile:     srcTableName,
+    sourceFiles:    srcTableName ? [srcTableName] : [],
+    sourceFileSize: 0,
+    targetServer:   job.targetServer || job.target || '—',
+    targetDatabase: job.targetDatabase || '—',
+    targetTable:    tgtTableName,
     authMethod:     job.authMethod || 'SQL Authentication',
     totalRows,
     insertedRows:   totalRows,
-    columnsMapped:  columnMapping.length || (job.tables?.[0]?.cols || 0),
+    columnsMapped:  (job.columnMapping || []).filter(m => m.tgtCol).length || (job.tables?.[0]?.cols || 0),
     errors:         tableResults.reduce((s,t) => s+(t.errors||0), 0),
     rowsBefore:     0,
     rowsAfter:      totalRows,
-    tables:         tableResults,
+    tables:         tableResults.map(t => ({ ...t, sourceName: srcTableName })),
     columnMapping:  (job.columnMapping || []).map(m => ({
       srcCol: m.srcCol || '', tgtCol: m.tgtCol || '',
       tgtType: m.tgtType || '', transform: m.transform || 'NONE',

@@ -1990,36 +1990,30 @@ function saveJobAndFinish(action) {
     };
   });
 
-  // Get source table name using same logic as updateFinishSummary
+  // Get source table name — try every source in priority order
   let srcTableName = '';
-  if (src) {
+  // 1. Live DB: src-table-select always stores 'schema.table' format
+  const _srcSel = document.getElementById('src-table-select');
+  if (_srcSel?.value && _srcSel.value.includes('.')) {
+    srcTableName = _srcSel.value;
+  }
+  // 2. S.selectedSourceTable object
+  if (!srcTableName && src) {
     if (src.schemaName && src.tableName) srcTableName = src.schemaName + '.' + src.tableName;
     else if (src.tableName) srcTableName = src.tableName;
-    else if (src.name) srcTableName = src.name;
   }
+  // 3. The finish summary panel text (set by updateFinishSummary above)
+  if (!srcTableName) {
+    const _el = document.getElementById('finish-src-table');
+    if (_el?.textContent && _el.textContent !== '—') srcTableName = _el.textContent.trim();
+  }
+  // 4. Source file name
   if (!srcTableName && S.sourceFile?.name) srcTableName = S.sourceFile.name;
-  if (!srcTableName && S.insertSQL) {
-    const m = S.insertSQL.match(/-- Migration: ([^\n]+?) [→-]/);
-    if (m) srcTableName = m[1].trim();
-  }
-  if (!srcTableName) {
-    const el = $('finish-src-table');
-    if (el && el.textContent && el.textContent !== '—') srcTableName = el.textContent.trim();
-  }
-  if (!srcTableName) {
-    const sel = document.getElementById('src-table-select');
-    if (sel?.value && sel.value.includes('.')) srcTableName = sel.value;
-  }
 
   const tgtTableName = tgt ? tgt.schema + '.' + tgt.name : '';
   const totalRows = src?.rows?.length || src?.rowCount || 0;
 
-  // Temporary: show what we got so we can diagnose
-  alert('Source table name computed as: [' + srcTableName + ']\n' +
-    'src object: ' + (src ? 'exists, tableName=' + src.tableName + ', schemaName=' + src.schemaName : 'NULL') + '\n' +
-    'S.sourceFile: ' + (S.sourceFile?.name || 'null') + '\n' +
-    'finish-src-table text: ' + (document.getElementById('finish-src-table')?.textContent || 'null') + '\n' +
-    'src-table-select value: ' + (document.getElementById('src-table-select')?.value || 'null'));
+
 
   const dashJob = {
     id:            'job_' + Date.now(),
