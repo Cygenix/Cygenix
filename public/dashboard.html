@@ -1805,6 +1805,7 @@ function jobsTableHTML(jobs) {
 }
 
 function startRenameJob(jobId) {
+  alert('startRenameJob called with: ' + jobId);
   // jobId may contain underscores or special chars — use querySelector as fallback
   let nameEl = document.getElementById('job-name-' + jobId);
   if (!nameEl) {
