@@ -138,7 +138,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   <div class="toolbar-logo">Cyge<span>nix</span> <span style="font-size:11px;color:#555a6a;margin-left:4px;font-family:var(--mono)">Migration Report</span></div>
   <div class="toolbar-actions">
     <a href="/dashboard.html" class="btn btn-ghost">← Dashboard</a>
-    <button class="btn btn-primary" onclick="window.print()">⬇ Download PDF</button>
+    <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
   </div>
 </div>
 
@@ -544,6 +544,144 @@ function buildDemoData() {
 }
 
 loadReport();
+
+// ── Excel Export ──────────────────────────────────────────────────────────────
+function exportToExcel() {
+  const btn = document.getElementById('excel-btn');
+  btn.textContent = '⏳ Building…'; btn.disabled = true;
+
+  // Load SheetJS on demand
+  if (window.XLSX) { doExport(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.onload  = doExport;
+  s.onerror = () => { alert('Could not load Excel library. Check your internet connection.'); btn.textContent='📊 Export to Excel'; btn.disabled=false; };
+  document.head.appendChild(s);
+}
+
+function doExport() {
+  const btn = document.getElementById('excel-btn');
+  try {
+    let d;
+    try { d = JSON.parse(sessionStorage.getItem('cygenix_report')||'null'); } catch {}
+    if (!d) d = buildDemoData();
+
+    const wb = XLSX.utils.book_new();
+    const now = new Date().toISOString();
+    const reportId = d.id || ('MIG-' + Date.now().toString(36).toUpperCase());
+    const totalRows  = d.tables?.reduce((s,t)=>s+(t.sourceRows||0),0) || d.totalRows || 0;
+    const inserted   = d.tables?.reduce((s,t)=>s+(t.insertedRows||0),0) || d.insertedRows || 0;
+    const errors     = d.tables?.reduce((s,t)=>s+(t.errors||0),0) || d.errors || 0;
+    const tableCount = d.tables?.length || 1;
+
+    const secs = d.startedAt && d.completedAt
+      ? Math.round((new Date(d.completedAt) - new Date(d.startedAt)) / 1000) : 0;
+    const duration = secs < 60 ? secs+'s' : Math.floor(secs/60)+'m '+secs%60+'s';
+
+    // ── Sheet 1: Summary ──────────────────────────────────────────────────────
+    const summaryRows = [
+      ['Cygenix — Conversion Report', '', '', ''],
+      ['', '', '', ''],
+      ['Report ID',       reportId,                           '', ''],
+      ['Project',         d.projectName || '—',               '', ''],
+      ['Prepared by',     d.userName || d.userEmail || '—',   '', ''],
+      ['Date',            fmtDate(d.completedAt || now),       '', ''],
+      ['Duration',        duration,                            '', ''],
+      ['', '', '', ''],
+      ['MIGRATION SUMMARY', '', '', ''],
+      ['Source system',   d.sourceSystem || '—',              'Tables migrated',  tableCount],
+      ['Target system',   d.targetSystem || '—',              'Total rows',       totalRows],
+      ['Auth method',     d.authMethod || 'Managed Identity', 'Rows inserted',    inserted],
+      ['Target server',   d.targetServer || '—',              'Errors',           errors],
+      ['Target database', d.targetDatabase || '—',            'Columns mapped',   d.columnMapping?.length || d.columnsMapped || 0],
+      ['', '', '', ''],
+      ['STATUS', errors === 0 ? 'SUCCESS' : errors > 0 && inserted > 0 ? 'PARTIAL' : 'FAILED', '', ''],
+    ];
+
+    if (d.isProjectReport && d.steps) {
+      summaryRows.push(['', '', '', '']);
+      summaryRows.push(['PROJECT STEPS', '', '', '']);
+      summaryRows.push(['Step', 'Type', 'Source → Target', 'Status']);
+      d.steps.forEach((s,i) => {
+        summaryRows.push([
+          (i+1)+'. '+(s.name||s.type),
+          s.type==='migration'?'Migration':'SQL script',
+          s.type==='migration'?(s.srcTable||'?')+' → '+(s.tgtTable||'?'):(s.connOn==='source'?'Source DB':'Target DB'),
+          s.status||'pending'
+        ]);
+      });
+    }
+
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    // Style column widths
+    wsSummary['!cols'] = [{wch:22},{wch:35},{wch:22},{wch:18}];
+    // Bold the header
+    if (wsSummary['A1']) wsSummary['A1'].s = { font:{bold:true,sz:14} };
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+    // ── Sheet 2: Migration Results ────────────────────────────────────────────
+    const tables = d.tables || [{ name: d.targetTable||'migration', sourceRows: totalRows, insertedRows: inserted, errors, batches: Math.ceil(totalRows/100), status: errors===0?'success':'partial' }];
+    const resultsData = [
+      ['Table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
+    ].concat(tables.map(t => [
+      t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
+    ]));
+    const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
+    wsResults['!cols'] = [{wch:40},{wch:14},{wch:12},{wch:10},{wch:10},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, wsResults, 'Migration Results');
+
+    // ── Sheet 3: Column Mapping ───────────────────────────────────────────────
+    if (d.columnMapping && d.columnMapping.length > 0) {
+      const mapData = [
+        ['Source column', 'Target column', 'Target type', 'Transform', 'Transform expression']
+      ].concat(d.columnMapping.map(m => [
+        m.srcCol || '', m.tgtCol || '', m.tgtType || '', m.transform || 'NONE', m.transformExpr || ''
+      ]));
+      const wsMap = XLSX.utils.aoa_to_sheet(mapData);
+      wsMap['!cols'] = [{wch:30},{wch:30},{wch:18},{wch:14},{wch:35}];
+      XLSX.utils.book_append_sheet(wb, wsMap, 'Column Mapping');
+    }
+
+    // ── Sheet 4: Execution Log (project reports) ──────────────────────────────
+    if (d.isProjectReport && d.steps) {
+      const logData = [['Step', 'Type', 'Status', 'Rows inserted', 'Log']];
+      d.steps.forEach((s,i) => {
+        logData.push([
+          (i+1)+'. '+(s.name||s.type),
+          s.type==='migration'?'Migration':'SQL script',
+          s.status||'pending',
+          s.rowsInserted||0,
+          (s.log||'').replace(/
+/g,' | ')
+        ]);
+      });
+      const wsLog = XLSX.utils.aoa_to_sheet(logData);
+      wsLog['!cols'] = [{wch:35},{wch:14},{wch:12},{wch:14},{wch:80}];
+      XLSX.utils.book_append_sheet(wb, wsLog, 'Execution Log');
+    }
+
+    // ── Sheet 5: Warnings ─────────────────────────────────────────────────────
+    if (d.warnings && d.warnings.length > 0) {
+      const warnData = [['#', 'Warning']].concat(d.warnings.map((w,i) => [i+1, w]));
+      const wsWarn = XLSX.utils.aoa_to_sheet(warnData);
+      wsWarn['!cols'] = [{wch:5},{wch:90}];
+      XLSX.utils.book_append_sheet(wb, wsWarn, 'Warnings');
+    }
+
+    // Generate filename
+    const projName = (d.projectName||'migration').replace(/[^a-z0-9]/gi,'_').toLowerCase();
+    const dateStr  = new Date().toISOString().slice(0,10);
+    const filename = 'cygenix_report_'+projName+'_'+dateStr+'.xlsx';
+
+    XLSX.writeFile(wb, filename);
+    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+
+  } catch(e) {
+    alert('Export failed: '+e.message);
+    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+  }
+}
+
 </script>
 </body>
 </html>
