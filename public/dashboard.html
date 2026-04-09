@@ -24,7 +24,7 @@
 }
 html,body{height:100%;overflow:hidden}
 body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-.app{display:grid;grid-template-columns:230px 1fr;grid-template-rows:52px 1fr;height:100vh}
+.app{display:grid;grid-template-columns:230px 1fr;grid-template-rows:52px 1fr;height:100vh;overflow:hidden}
 
 /* TOPBAR */
 .topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
@@ -41,7 +41,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .back-link:hover{color:var(--text2)}
 
 /* SIDEBAR */
-.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto}
+.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto;min-width:0;overflow-x:hidden;grid-column:1;grid-row:2}
 .nav-section{margin-bottom:1.5rem}
 .nav-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 1.25rem;margin-bottom:0.5rem}
 .nav-item{display:flex;align-items:center;gap:10px;padding:0.5rem 1.25rem;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent;user-select:none}
@@ -52,7 +52,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .nav-count{margin-left:auto;background:var(--bg4);color:var(--text3);font-size:10px;padding:1px 6px;border-radius:100px;font-family:var(--mono)}
 
 /* MAIN */
-.main{padding:1.75rem;overflow-y:auto;background:var(--bg)}
+.main{padding:1.75rem;overflow-y:auto;background:var(--bg);min-width:0;width:100%;box-sizing:border-box;grid-column:2;grid-row:2}
 .main::-webkit-scrollbar{width:4px}
 .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
@@ -2551,77 +2551,32 @@ updateWasisBanner();
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════════
-// =====================================================
-// VALIDATION ENGINE – FULLY FIXED FOR MAIN WINDOW
-// =====================================================
+// VALIDATION ENGINE
+// ═══════════════════════════════════════════════════════════════════════════════
 
-let valScripts = [];
-let valResults = [];
-let valRunning = false;
+let valScripts    = [];   // all scripts from validation_scripts table
+let valResults    = [];   // results from last run
+let valRunning    = false;
 
-// ── INIT: Pre-fill + FORCE INTO MAIN WINDOW ───────────────────────────────
+// ── Init: pre-fill connections from sessionStorage ────────────────────────────
 function initValidationView() {
-  console.log('%c[Validation] 🚀 initValidationView started', 'color:#00ffaa;font-weight:bold');
-
-  const view = document.getElementById('view-validation');
-  if (!view) {
-    console.error('%c[Validation] ❌ #view-validation not found!', 'color:#ff0000');
-    return;
-  }
-
-  // Find the main content area (the big right panel)
-  let mainArea = document.querySelector('.main') || 
-                 document.getElementById('main-content') ||
-                 document.querySelector('main') ||
-                 document.querySelector('.app-content') ||
-                 document.body;
-
-  // If the validation view is currently inside the sidebar, move it
-  if (mainArea && !mainArea.contains(view)) {
-    console.log('%c[Validation] 🔄 MOVING #view-validation → main window', 'color:#00ffaa;font-weight:bold');
-    mainArea.appendChild(view);
-
-    // Force full width + proper spacing
-    view.style.cssText = `
-      width: 100% !important;
-      max-width: 100% !important;
-      margin: 20px 0 !important;
-      box-sizing: border-box !important;
-      display: block !important;
-    `;
-
-    // Hide the left sidebar completely so validation fills the screen
-    const sidebar = document.querySelector('.sidebar');
-    if (sidebar) {
-      sidebar.style.display = 'none';
-      console.log('%c[Validation] 🔄 Left sidebar hidden for full main view', 'color:#00ffaa');
-    }
-  } else {
-    console.log('%c[Validation] ✅ Already in main window', 'color:#00ffaa');
-  }
-
-  // Pre-fill connection strings from sessionStorage
   const srcConn = sessionStorage.getItem('cygenix_src_conn_string') || '';
   const tgtFn   = sessionStorage.getItem('cygenix_fn_url') || '';
   const tgtKey  = sessionStorage.getItem('cygenix_fn_key') || '';
   const tgtCs   = sessionStorage.getItem('cygenix_conn_string') || '';
-
-  const srcEl = document.getElementById('val-src-conn');
-  const tgtEl = document.getElementById('val-tgt-conn');
-
+  const srcEl   = document.getElementById('val-src-conn');
+  const tgtEl   = document.getElementById('val-tgt-conn');
   if (srcEl && !srcEl.value && srcConn) srcEl.value = srcConn;
   if (tgtEl && !tgtEl.value) {
     tgtEl.value = tgtFn ? tgtFn + (tgtKey ? '?code=' + encodeURIComponent(tgtKey) : '') : tgtCs;
   }
-
   if (valScripts.length) renderValidationTable();
 }
 
-// ── All other functions (unchanged – your original logic) ─────────────────────
 async function valTestConn(which) {
-  const inputEl = document.getElementById(which === 'src' ? 'val-src-conn' : 'val-tgt-conn');
+  const inputEl  = document.getElementById(which === 'src' ? 'val-src-conn' : 'val-tgt-conn');
   const statusEl = document.getElementById('val-' + which + '-status');
-  const conn = inputEl?.value.trim();
+  const conn     = inputEl?.value.trim();
   if (!conn) { alert('Please enter a connection string or URL first.'); return; }
   statusEl.textContent = 'Connecting…'; statusEl.style.color = 'var(--accent)';
   try {
@@ -2634,60 +2589,280 @@ async function valTestConn(which) {
   }
 }
 
+// ── DB call helper ────────────────────────────────────────────────────────────
 function valIsFn(conn) { return conn && (conn.startsWith('https://') || conn.startsWith('http://')); }
 
 async function valDbCall(conn, body) {
   if (!conn) throw new Error('No connection configured');
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 120000);
-  try {
-    let res, data;
-    if (valIsFn(conn)) {
-      res = await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:controller.signal });
-    } else {
-      res = await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body, connectionString:conn}), signal:controller.signal });
-    }
-    data = await res.json().catch(() => ({ error: 'Non-JSON (HTTP ' + res.status + ')' }));
+  if (valIsFn(conn)) {
+    const res  = await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(120000) });
+    const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
-  } finally { clearTimeout(timeoutId); }
+  } else {
+    const res  = await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body, connectionString:conn}), signal:AbortSignal.timeout(120000) });
+    const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
 }
 
-async function loadValidationScripts() { /* your original function – unchanged */ 
-  // (paste your full loadValidationScripts function here if you want, but it was already correct)
+// ── Load validation scripts from source DB ────────────────────────────────────
+async function loadValidationScripts() {
   const srcConn = document.getElementById('val-src-conn').value.trim();
   if (!srcConn) { alert('Please enter a source connection string.'); return; }
 
   const emptyEl = document.getElementById('val-empty');
   const tableEl = document.getElementById('val-scripts-table');
-
-  if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.querySelector('div:nth-child(2)').textContent = 'Loading scripts…'; }
+  if (emptyEl) emptyEl.style.display = 'block';
+  if (emptyEl) emptyEl.querySelector('div:nth-child(2)').textContent = 'Loading scripts…';
   if (tableEl) tableEl.style.display = 'none';
 
   try {
-    const res = await valDbCall(srcConn, { action: 'execute', sql: 'SELECT name, caption, sql, [Order], code, Script_DestinationDatabase, [group] FROM validation_scripts ORDER BY [Order], [group], name' });
-    valScripts = (res.recordset || []).map((row, i) => ({ id: i, name: row.name || row.NAME || '', caption: row.caption || row.CAPTION || '', sql: row.sql || row.SQL || '', order: row.Order || row.ORDER || 0, code: row.code || row.CODE || '', destDb: parseInt(row.Script_DestinationDatabase || 1,10), group: row.group || row.GROUP || '', status: 'pending', result: null, rowsFound: 0, error: null, checked: true }));
-    if (!valScripts.length) { if (emptyEl) emptyEl.querySelector('div:nth-child(2)').textContent = 'No scripts found in validation_scripts table.'; return; }
+    const res = await valDbCall(srcConn, {
+      action: 'execute',
+      sql: 'SELECT name, caption, sql, [Order], code, Script_DestinationDatabase, [group] FROM validation_scripts ORDER BY [Order], [group], name'
+    });
+
+    valScripts = (res.recordset || []).map((row, i) => ({
+      id:          i,
+      name:        row.name || row.NAME || '',
+      caption:     row.caption || row.CAPTION || '',
+      sql:         row.sql || row.SQL || '',
+      order:       row.Order || row.ORDER || 0,
+      code:        row.code || row.CODE || '',
+      destDb:      parseInt(row.Script_DestinationDatabase || 1),
+      group:       row.group || row.GROUP || '',
+      status:      'pending',
+      result:      null,
+      rowsFound:   0,
+      error:       null,
+      checked:     true
+    }));
+
+    if (!valScripts.length) {
+      if (emptyEl) emptyEl.querySelector('div:nth-child(2)').textContent = 'No scripts found in validation_scripts table.';
+      return;
+    }
+
     renderValidationTable();
     document.getElementById('val-run-all-btn').disabled = false;
-    const selBtn = document.getElementById('val-run-selected-btn'); if (selBtn) { selBtn.style.display = 'inline-flex'; selBtn.disabled = false; }
+    document.getElementById('val-run-selected-btn').style.display = 'inline-flex';
+    document.getElementById('val-run-selected-btn').disabled = false;
     valLog('Loaded ' + valScripts.length + ' validation scripts.');
-  } catch(e) { if (emptyEl) emptyEl.querySelector('div:nth-child(2)').textContent = 'Error: ' + e.message; }
+
+  } catch(e) {
+    if (emptyEl) emptyEl.querySelector('div:nth-child(2)').textContent = 'Error: ' + e.message;
+  }
 }
 
-// (All the rest of your functions – renderValidationTable, updateValStats, toggleAllValidations, runAllValidations, runSelectedValidations, runSingleValidation, runValidations, valLog, exportValidationExcel, doValidationExport, escHtml – are unchanged and can stay exactly as you had them)
+// ── Render scripts table ──────────────────────────────────────────────────────
+function renderValidationTable() {
+  const emptyEl = document.getElementById('val-empty');
+  const tableEl = document.getElementById('val-scripts-table');
+  const tbody   = document.getElementById('val-scripts-tbody');
+  if (!tbody) return;
 
-function renderValidationTable() { /* your original render function */ }
-function updateValStats() { /* your original */ }
-function toggleAllValidations(checked) { /* your original */ }
-async function runAllValidations() { await runValidations(valScripts); }
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (tableEl) tableEl.style.display = 'table';
+
+  const dbLabel = db => {
+    if (db <= 3) return '<span style="font-size:10px;padding:2px 7px;border-radius:100px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono)">Source</span>';
+    return '<span style="font-size:10px;padding:2px 7px;border-radius:100px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono)">Target</span>';
+  };
+
+  const statusBadge = s => {
+    if (s.status === 'pending')  return '<span style="font-size:10px;color:var(--text3)">—</span>';
+    if (s.status === 'running')  return '<span style="font-size:10px;color:var(--accent)">🟡 Running…</span>';
+    if (s.status === 'pass')     return '<span style="font-size:10px;color:var(--green)">🟢 Passed</span>';
+    if (s.status === 'fail')     return '<span style="font-size:10px;color:var(--red)">🔴 Failed</span>';
+    if (s.status === 'error')    return '<span style="font-size:10px;color:var(--amber)">🟠 Error</span>';
+    return '';
+  };
+
+  const resultCell = s => {
+    if (s.status === 'pending' || s.status === 'running') return '—';
+    if (s.status === 'error') return '<span style="font-size:11px;color:var(--amber);font-family:var(--mono)">' + escHtml(s.error||'') + '</span>';
+    if (s.status === 'pass') return '<span style="font-size:11px;color:var(--green)">✓ No issues</span>';
+    return '<span style="font-size:11px;color:var(--red);font-weight:600">' + s.rowsFound.toLocaleString() + ' rows found</span>';
+  };
+
+  tbody.innerHTML = valScripts.map(s => `
+    <tr id="val-row-${s.id}" style="${s.status==='fail'?'background:rgba(240,70,70,0.04)':s.status==='error'?'background:rgba(245,158,11,0.04)':''}">
+      <td><input type="checkbox" ${s.checked?'checked':''} onchange="valScripts[${s.id}].checked=this.checked" style="accent-color:var(--accent)"></td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${escHtml(s.name)}</td>
+      <td style="font-size:12px;color:var(--text2)">${escHtml(s.caption)}</td>
+      <td style="font-size:11px;color:var(--text3)">${escHtml(s.group)}</td>
+      <td>${dbLabel(s.destDb)}</td>
+      <td>${statusBadge(s)}</td>
+      <td>${resultCell(s)}</td>
+      <td><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 8px" onclick="runSingleValidation(${s.id})">▶ Run</button></td>
+    </tr>`).join('');
+
+  updateValStats();
+}
+
+function updateValStats() {
+  const ran     = valScripts.filter(s => s.status !== 'pending' && s.status !== 'running');
+  const pass    = valScripts.filter(s => s.status === 'pass').length;
+  const fail    = valScripts.filter(s => s.status === 'fail').length;
+  const error   = valScripts.filter(s => s.status === 'error').length;
+  const pending = valScripts.filter(s => s.status === 'pending').length;
+
+  const statsEl = document.getElementById('val-stats');
+  if (statsEl && valScripts.length) {
+    statsEl.style.display = 'block';
+    document.getElementById('val-stat-total').textContent   = valScripts.length;
+    document.getElementById('val-stat-pass').textContent    = pass;
+    document.getElementById('val-stat-fail').textContent    = fail;
+    document.getElementById('val-stat-error').textContent   = error;
+    const pendingEl = document.getElementById('val-stat-pending');
+    if (pendingEl) pendingEl.textContent = pending;
+  }
+  const exportBtn = document.getElementById('val-export-btn');
+  if (exportBtn) exportBtn.style.display = ran.length ? 'inline-flex' : 'none';
+  const selBtn = document.getElementById('val-run-selected-btn');
+  if (selBtn) selBtn.style.display = valScripts.length ? 'inline-flex' : 'none';
+}
+
+function toggleAllValidations(checked) {
+  valScripts.forEach(s => s.checked = checked);
+  document.querySelectorAll('#val-scripts-tbody input[type="checkbox"]').forEach(cb => cb.checked = checked);
+}
+
+// ── Run validation scripts ────────────────────────────────────────────────────
+async function runAllValidations()      { await runValidations(valScripts); }
 async function runSelectedValidations() { await runValidations(valScripts.filter(s => s.checked)); }
-async function runSingleValidation(id) { await runValidations(valScripts.filter(s => s.id === id)); }
-async function runValidations(scripts) { /* your original full run function */ }
-function valLog(msg) { /* your original */ }
-function exportValidationExcel() { /* your original */ }
-function doValidationExport() { /* your original */ }
-function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+async function runSingleValidation(id)  { await runValidations(valScripts.filter(s => s.id === id)); }
 
-console.log('%c[Validation] ✅ Full engine loaded – ready for main window', 'color:#00ffaa');
+async function runValidations(scripts) {
+  if (valRunning) return;
+  if (!scripts.length) { alert('No scripts to run.'); return; }
+
+  const srcConn = document.getElementById('val-src-conn').value.trim();
+  const tgtConn = document.getElementById('val-tgt-conn').value.trim();
+  if (!srcConn) { alert('Please enter a source connection first.'); return; }
+
+  valRunning = true;
+  document.getElementById('val-run-all-btn').disabled = true;
+  document.getElementById('val-log-wrap').style.display = 'block';
+  valLog('Starting ' + scripts.length + ' validation script(s)…\n');
+
+  for (const script of scripts) {
+    script.status   = 'running';
+    script.error    = null;
+    script.result   = null;
+    script.rowsFound = 0;
+    updateValRow(script);
+
+    const conn = script.destDb >= 4 ? tgtConn : srcConn;
+    const ts   = new Date().toLocaleTimeString();
+    valLog('[' + ts + '] Running: ' + script.name + (script.caption ? ' — ' + script.caption : ''));
+
+    try {
+      if (!conn) throw new Error('No ' + (script.destDb >= 4 ? 'target' : 'source') + ' connection configured');
+      const res = await valDbCall(conn, { action: 'execute', sql: script.sql });
+      const rows = res.recordset || [];
+      script.rowsFound = rows.length;
+      script.result    = rows;
+      script.status    = rows.length > 0 ? 'fail' : 'pass';
+
+      if (rows.length > 0) {
+        valLog('  🔴 FAILED — ' + rows.length.toLocaleString() + ' rows found (data issues detected)');
+      } else {
+        valLog('  🟢 PASSED — no issues found');
+      }
+    } catch(e) {
+      script.status = 'error';
+      script.error  = e.message;
+      valLog('  🟠 ERROR — ' + e.message);
+    }
+
+    updateValRow(script);
+  }
+
+  updateValStats();
+  valLog('\nValidation complete. ' +
+    valScripts.filter(s=>s.status==='pass').length + ' passed, ' +
+    valScripts.filter(s=>s.status==='fail').length + ' failed, ' +
+    valScripts.filter(s=>s.status==='error').length + ' errors.');
+
+  valRunning = false;
+  document.getElementById('val-run-all-btn').disabled = false;
+}
+
+function updateValRow(script) {
+  // Re-render just this row
+  const rows  = document.getElementById('val-scripts-tbody')?.querySelectorAll('tr') || [];
+  renderValidationTable();  // simple full re-render
+}
+
+function valLog(msg) {
+  const el = document.getElementById('val-log');
+  if (el) { el.textContent += msg + '\n'; el.scrollTop = el.scrollHeight; }
+}
+
+// ── Export to Excel ───────────────────────────────────────────────────────────
+function exportValidationExcel() {
+  if (!window.XLSX) {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = doValidationExport;
+    document.head.appendChild(s);
+  } else {
+    doValidationExport();
+  }
+}
+
+function doValidationExport() {
+  const wb   = XLSX.utils.book_new();
+  const now  = new Date().toISOString().slice(0,10);
+
+  // Sheet 1: Summary
+  const summary = [
+    ['Cygenix — Validation Report', '', '', ''],
+    ['Date', now, '', ''],
+    ['Total scripts', valScripts.length, '', ''],
+    ['Passed', valScripts.filter(s=>s.status==='pass').length, '', ''],
+    ['Failed', valScripts.filter(s=>s.status==='fail').length, '', ''],
+    ['Errors', valScripts.filter(s=>s.status==='error').length, '', ''],
+    ['', '', '', ''],
+    ['Script name', 'Caption', 'Group', 'Database', 'Status', 'Rows found', 'Error']
+  ].concat(valScripts.map(s => [
+    s.name, s.caption, s.group,
+    s.destDb >= 4 ? 'Target' : 'Source',
+    s.status, s.rowsFound || 0, s.error || ''
+  ]));
+  const wsSummary = XLSX.utils.aoa_to_sheet(summary);
+  wsSummary['!cols'] = [{wch:35},{wch:40},{wch:20},{wch:10},{wch:10},{wch:12},{wch:50}];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // Sheet 2+: One sheet per failed script with its rows
+  let sheetNum = 1;
+  valScripts.filter(s => s.status === 'fail' && s.result && s.result.length).forEach(s => {
+    const cols = Object.keys(s.result[0]);
+    const data = [cols].concat(s.result.map(row => cols.map(c => row[c])));
+    const ws   = XLSX.utils.aoa_to_sheet(data);
+    const safeSheetName = (sheetNum + '. ' + s.name).slice(0, 31); // Excel limit
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
+    sheetNum++;
+  });
+
+  // Sheet: Errors
+  const errorScripts = valScripts.filter(s => s.status === 'error');
+  if (errorScripts.length) {
+    const errData = [['Script name', 'Caption', 'Group', 'Error message']].concat(
+      errorScripts.map(s => [s.name, s.caption, s.group, s.error || ''])
+    );
+    const wsErr = XLSX.utils.aoa_to_sheet(errData);
+    wsErr['!cols'] = [{wch:35},{wch:40},{wch:20},{wch:80}];
+    XLSX.utils.book_append_sheet(wb, wsErr, 'Script Errors');
+  }
+
+  XLSX.writeFile(wb, 'cygenix_validation_' + now + '.xlsx');
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
 </script>
