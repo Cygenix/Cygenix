@@ -126,12 +126,29 @@ function saveSession(data) {
   sessionStorage.setItem('cygenix_token',   data.access_token);
   sessionStorage.setItem('cygenix_user',    JSON.stringify(data));
   sessionStorage.setItem('cygenix_expires', String(Date.now() + (data.expires_in || 3600) * 1000));
+  if (data.refresh_token) localStorage.setItem('cygenix_refresh_token', data.refresh_token);
+  if (data.token_type === 'bearer' && data.user) {
+    sessionStorage.setItem('cygenix_user', JSON.stringify({ ...data, ...data.user, access_token: data.access_token }));
+  }
+}
+
+function redirectAfterLogin(userData) {
+  // Check role in app_metadata (set via Netlify Identity admin)
+  const role = userData?.app_metadata?.role || userData?.role || '';
+  if (role === 'client') {
+    window.location.href = '/client.html';
+  } else {
+    window.location.href = '/projects.html';
+  }
 }
 
 // Already logged in — go straight to projects
 if (sessionStorage.getItem('cygenix_token') &&
     Date.now() < parseInt(sessionStorage.getItem('cygenix_expires') || '0')) {
-  window.location.href = '/projects.html';
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    redirectAfterLogin(u);
+  } catch { window.location.href = '/projects.html'; }
 }
 
 // Handle OAuth redirect — GoTrue puts token in URL hash
@@ -143,7 +160,11 @@ if (sessionStorage.getItem('cygenix_token') &&
   if (token) {
     saveSession({ access_token: token, expires_in: parseInt(params.get('expires_in') || '3600') });
     window.history.replaceState(null, '', window.location.pathname);
-    window.location.href = '/projects.html';
+    // Check role after OAuth
+    try {
+      const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+      redirectAfterLogin(u);
+    } catch { window.location.href = '/projects.html'; }
   }
 })();
 
@@ -167,7 +188,7 @@ async function signIn() {
   try {
     const data = await goTrue('/token?grant_type=password', { email, password });
     saveSession(data);
-    window.location.href = '/projects.html';
+    redirectAfterLogin(data.user || data);
   } catch(e) { showError(friendly(e.message)); }
   setLoading('signin-btn', false, 'Sign in');
 }

@@ -682,6 +682,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           <div style="font-size:15px;color:var(--text2);margin-bottom:0.4rem;font-weight:500">No documents yet</div>
           <div style="font-size:12px;line-height:1.8">Drop files on the left panel to upload<br>or click the upload zone to browse</div>
         </div>
+        <!-- Client uploads section -->
+        <div id="client-uploads-section" style="display:none;margin-bottom:1.5rem">
+          <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem">
+            <span>&#128100; Client submissions</span>
+            <span id="client-upload-count" style="font-size:10px;background:var(--amber-bg);color:var(--amber);padding:1px 7px;border-radius:100px;font-family:var(--mono)">0</span>
+          </div>
+          <div id="client-uploads-list" style="display:flex;flex-direction:column;gap:0.5rem"></div>
+        </div>
         <div class="inv-doc-grid" id="inv-doc-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
       </div><!-- end right panel -->
       </div><!-- end grid -->
