@@ -1714,7 +1714,7 @@ function updateFinishSummary(){
     if (sel?.value && sel.value.includes('.')) srcName = sel.value;
   }
   if (!srcName) srcName = '—';
-  const el = $('finish-src-table'); if (el) { el.textContent = srcName || '—'; el.dataset.value = srcName || ''; }
+  const el = $('finish-src-table'); if (el) { el.textContent = srcName || '—'; el.dataset.value = srcName || ''; el.setAttribute('data-src', srcName || ''); }
   const el2 = $('finish-tgt-table'); if (el2) el2.textContent = tgt ? tgt.schema + '.' + tgt.name : '—';
   const el3 = $('finish-col-count'); if (el3) el3.textContent = mappedCols;
   // Pre-fill job name
@@ -1990,25 +1990,20 @@ function saveJobAndFinish(action) {
     };
   });
 
-  // Get source table name — try every source in priority order
-  let srcTableName = '';
-  // 1. Live DB: src-table-select always stores 'schema.table' format
-  const _srcSel = document.getElementById('src-table-select');
-  if (_srcSel?.value && _srcSel.value.includes('.')) {
-    srcTableName = _srcSel.value;
-  }
-  // 2. S.selectedSourceTable object
-  if (!srcTableName && src) {
-    if (src.schemaName && src.tableName) srcTableName = src.schemaName + '.' + src.tableName;
-    else if (src.tableName) srcTableName = src.tableName;
-  }
-  // 3. The finish summary panel text (set by updateFinishSummary above)
-  if (!srcTableName) {
-    const _el = document.getElementById('finish-src-table');
-    if (_el?.textContent && _el.textContent !== '—') srcTableName = _el.textContent.trim();
-  }
-  // 4. Source file name
-  if (!srcTableName && S.sourceFile?.name) srcTableName = S.sourceFile.name;
+  // Source table name — read from every possible source and take the first non-empty value
+  const _elSrc = document.getElementById('finish-src-table');
+  const _selSrc = document.getElementById('src-table-select');
+  const srcTableName =
+    // 1. finish-src-table element (just populated by updateFinishSummary above)
+    ((_elSrc?.dataset?.value || '').trim() || '') ||
+    ((_elSrc?.textContent || '').trim().replace(/^—$/, '') || '') ||
+    // 2. src-table-select dropdown (live DB stores schema.table)
+    ((_selSrc?.value || '').includes('.') ? _selSrc.value : '') ||
+    // 3. S.selectedSourceTable state object
+    (src?.schemaName && src?.tableName ? src.schemaName + '.' + src.tableName : '') ||
+    (src?.tableName || '') ||
+    // 4. source file name
+    (S.sourceFile?.name || '');
 
   const tgtTableName = tgt ? tgt.schema + '.' + tgt.name : '';
   const totalRows = src?.rows?.length || src?.rowCount || 0;
