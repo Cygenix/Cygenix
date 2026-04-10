@@ -148,6 +148,15 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .quality-seg.amber{background:var(--amber)}
 .quality-seg.red{background:var(--red)}
 
+/* SEARCH */
+.search-result-item{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);cursor:pointer;transition:background 0.15s}
+.search-result-item:hover{background:var(--bg3)}
+.search-result-item:last-child{border-bottom:none}
+.search-hit{background:rgba(167,139,250,0.25);color:var(--purple);border-radius:2px;padding:0 2px}
+.search-result-table{font-size:10px;font-family:var(--mono);color:var(--teal);margin-bottom:3px}
+.search-result-row{font-size:11px;color:var(--text2);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.search-empty{padding:1.25rem;text-align:center;font-size:12px;color:var(--text3)}
+
 /* SELECTED COUNT BADGE */
 .sel-badge{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);border-radius:100px;font-size:10px;padding:1px 8px;font-family:var(--mono)}
 </style>
@@ -159,6 +168,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono);margin-left:8px">Data Insights</span>
   </a>
   <div class="topbar-right">
+    <div id="search-wrap" style="display:none;position:relative">
+      <input id="global-search" class="form-input" placeholder="🔍 Search sample data…" oninput="globalSearch(this.value)" style="width:220px;padding:0.3rem 0.75rem 0.3rem 0.75rem;font-size:12px;font-family:var(--serif)">
+      <div id="search-results-pop" style="display:none;position:absolute;top:calc(100% + 6px);right:0;width:420px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);z-index:200;max-height:360px;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.5)"></div>
+    </div>
+    <div id="export-wrap" style="display:none;display:none;gap:0.5rem">
+      <button class="btn btn-ghost btn-sm" onclick="exportToExcel()" title="Export analysis to Excel">📊 Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportToWord()" title="Export analysis to Word">📝 Word</button>
+    </div>
     <button class="btn btn-purple btn-sm" onclick="runInsights()" id="run-btn" disabled>🔍 Analyse source tables</button>
     <button class="btn btn-sm" onclick="runMigrationMapping()" id="mapping-btn-top" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none">🗺 Full migration picture</button>
     <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
@@ -239,10 +256,12 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
-let allTables   = [];
-let selectedIds = new Set();
-let srcSchema   = null;
-let tgtSchema   = null;
+let allTables    = [];
+let selectedIds  = new Set();
+let srcSchema    = null;
+let tgtSchema    = null;
+let sampleStore  = {};   // { fullName: { rows, insight, table } }
+let migrationMap = null; // last migration map result
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 (function(){
@@ -549,6 +568,13 @@ Respond with ONLY a valid JSON object in exactly this structure — no markdown,
 
 // ── Render full insight card ───────────────────────────────────────────────────
 function renderInsightCard(table, rows, insight, card){
+  // Store for search and export
+  sampleStore[table.fullName] = { rows, insight, table };
+  // Show search bar and export buttons once we have data
+  const sw = document.getElementById('search-wrap');
+  const ew = document.getElementById('export-wrap');
+  if (sw) sw.style.display = 'block';
+  if (ew) ew.style.display = 'flex';
   const q   = insight.dataQuality || {};
   const score = q.score || 0;
   const scoreCls = score>=80?'green':score>=60?'amber':'red';
@@ -761,6 +787,7 @@ Analyse and respond with ONLY a valid JSON object — no markdown fences, no exp
 }
 
 function renderMigrationMap(map, card){
+  migrationMap = map;
   const confIcon = c => c==='high'?'🟢':c==='medium'?'🟡':c==='low'?'🟠':'🔴';
   const confCls  = c => c==='high'?'high':c==='medium'?'med':c==='low'?'low':'none';
   const sevBadge = s => s==='high'?'<span class="tag tag-red">HIGH</span>':s==='medium'?'<span class="tag tag-amber">MED</span>':'<span class="tag tag-green">LOW</span>';
@@ -872,6 +899,295 @@ function renderMigrationMap(map, card){
       <div class="accordion-body">${seqHtml}</div>` : ''}
 
     </div>`;
+}
+
+// ── Global search ─────────────────────────────────────────────────────────────
+function globalSearch(query){
+  const pop = document.getElementById('search-results-pop');
+  if (!pop) return;
+  const q = query.trim().toLowerCase();
+  if (!q) { pop.style.display='none'; return; }
+
+  const results = [];
+  Object.values(sampleStore).forEach(({rows, table}) => {
+    rows.forEach((row, ri) => {
+      const rowStr = JSON.stringify(row).toLowerCase();
+      if (!rowStr.includes(q)) return;
+      // Find matching fields
+      const hits = Object.entries(row).filter(([k,v])=>
+        String(v||'').toLowerCase().includes(q)
+      );
+      if (hits.length) results.push({ table: table.fullName, rowIndex: ri, row, hits, q });
+    });
+  });
+
+  if (!results.length) {
+    pop.innerHTML = '<div class="search-empty">No matches found in sample data</div>';
+    pop.style.display = 'block';
+    return;
+  }
+
+  const highlight = (str, q) => {
+    const s   = String(str||'');
+    const idx = s.toLowerCase().indexOf(q);
+    if (idx < 0) return esc(s.slice(0,60));
+    return esc(s.slice(Math.max(0,idx-20), idx)) +
+      '<span class="search-hit">'+esc(s.slice(idx, idx+q.length))+'</span>' +
+      esc(s.slice(idx+q.length, idx+60));
+  };
+
+  pop.innerHTML = `<div style="padding:0.5rem 1rem;font-size:10px;font-family:var(--mono);color:var(--text3);border-bottom:0.5px solid var(--border)">${results.length} match${results.length!==1?'es':''} across ${new Set(results.map(r=>r.table)).size} table${new Set(results.map(r=>r.table)).size!==1?'s':''}</div>` +
+    results.slice(0,30).map(r=>`
+      <div class="search-result-item" onclick="scrollToTable('${esc(r.table)}')">
+        <div class="search-result-table">${esc(r.table)} · row ${r.rowIndex+1}</div>
+        <div class="search-result-row">${r.hits.slice(0,3).map(([k,v])=>`<span style="color:var(--text3)">${esc(k)}:</span> ${highlight(v, r.q)}`).join('  ·  ')}</div>
+      </div>`).join('') +
+    (results.length>30?`<div class="search-empty">${results.length-30} more results — refine your search</div>`:'');
+  pop.style.display = 'block';
+}
+
+function scrollToTable(fullName){
+  const card = document.getElementById('card-'+allTables.find(t=>t.fullName===fullName)?.id);
+  if (card) { card.scrollIntoView({behavior:'smooth', block:'start'}); card.style.boxShadow='0 0 0 2px var(--purple)'; setTimeout(()=>card.style.boxShadow='',2000); }
+  document.getElementById('search-results-pop').style.display='none';
+}
+
+// Close search popup on outside click
+document.addEventListener('click', e=>{
+  if (!e.target.closest('#search-wrap')) {
+    const pop = document.getElementById('search-results-pop');
+    if (pop) pop.style.display='none';
+  }
+});
+
+// ── Export to Excel ────────────────────────────────────────────────────────────
+function exportToExcel(){
+  if (!window.XLSX){
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=doExcelExport; document.head.appendChild(s);
+  } else { doExcelExport(); }
+}
+
+function doExcelExport(){
+  const wb  = XLSX.utils.book_new();
+  const now = new Date().toISOString().slice(0,10);
+
+  // Sheet 1: Summary of all tables
+  const summaryData = [
+    ['Cygenix Data Insights Report'],
+    ['Generated', now],
+    ['Source DB', srcSchema?.database||''],
+    ['Target DB', tgtSchema?.database||''],
+    [],
+    ['Table', 'Rows', 'Columns', 'Quality Score', 'Summary', 'Tags', 'Migration Considerations']
+  ];
+  Object.values(sampleStore).forEach(({table, insight})=>{
+    summaryData.push([
+      table.fullName,
+      table.rowCount||0,
+      table.columns.length,
+      insight.dataQuality?.score||'',
+      insight.summary||'',
+      (insight.tags||[]).join(', '),
+      (insight.migrationConsiderations||[]).join(' | ')
+    ]);
+  });
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+  wsSummary['!cols']=[{wch:35},{wch:10},{wch:8},{wch:8},{wch:60},{wch:30},{wch:60}];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+  // Sheet 2: Key Fields
+  const fieldsData = [['Table','Column','Role','Insight']];
+  Object.values(sampleStore).forEach(({table, insight})=>{
+    (insight.keyFields||[]).forEach(f=>{
+      fieldsData.push([table.fullName, f.name||'', f.role||'', f.insight||'']);
+    });
+  });
+  if (fieldsData.length>1){
+    const ws = XLSX.utils.aoa_to_sheet(fieldsData);
+    ws['!cols']=[{wch:35},{wch:25},{wch:15},{wch:70}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Key Fields');
+  }
+
+  // Sheet 3: Data Quality
+  const qualData = [['Table','Quality Score','Observations','Issues','Recommendations']];
+  Object.values(sampleStore).forEach(({table, insight})=>{
+    const q = insight.dataQuality||{};
+    qualData.push([
+      table.fullName,
+      q.score||'',
+      (q.observations||[]).join(' | '),
+      (q.issues||[]).join(' | '),
+      (q.recommendations||[]).join(' | ')
+    ]);
+  });
+  if (qualData.length>1){
+    const ws = XLSX.utils.aoa_to_sheet(qualData);
+    ws['!cols']=[{wch:35},{wch:8},{wch:60},{wch:60},{wch:60}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Data Quality');
+  }
+
+  // Sheet 4: Migration Considerations
+  const migData = [['Table','Consideration']];
+  Object.values(sampleStore).forEach(({table, insight})=>{
+    (insight.migrationConsiderations||[]).forEach(c=>{
+      migData.push([table.fullName, c]);
+    });
+  });
+  if (migData.length>1){
+    const ws = XLSX.utils.aoa_to_sheet(migData);
+    ws['!cols']=[{wch:35},{wch:100}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Migration Considerations');
+  }
+
+  // Sheet 5: Migration Map (if available)
+  if (migrationMap){
+    const mapData = [
+      ['MIGRATION MAP'],
+      ['Overview', migrationMap.overview||''],
+      ['Complexity', migrationMap.estimatedComplexity||''],
+      ['Rationale', migrationMap.complexityRationale||''],
+      [],
+      ['TABLE MAPPINGS'],
+      ['Source Table','Target Table','Confidence','Notes']
+    ];
+    (migrationMap.tableMappings||[]).forEach(m=>{
+      mapData.push([m.sourceTable||'', m.targetTable||'—', m.confidence||'', m.notes||'']);
+    });
+    mapData.push([],[' MIGRATION RISKS'],['Severity','Risk']);
+    (migrationMap.migrationRisks||[]).forEach(r=>mapData.push([r.severity||'',r.risk||'']));
+    mapData.push([],['CONFIG/LOOKUP TABLES'],['Database','Table','Reason']);
+    (migrationMap.configLookupTables||[]).forEach(t=>mapData.push([t.db||'',t.table||'',t.reason||'']));
+    const ws = XLSX.utils.aoa_to_sheet(mapData);
+    ws['!cols']=[{wch:35},{wch:35},{wch:12},{wch:80}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Migration Map');
+  }
+
+  // Sheets: Sample data per table
+  Object.values(sampleStore).forEach(({table, rows})=>{
+    if (!rows.length) return;
+    const cols = Object.keys(rows[0]);
+    const data = [cols].concat(rows.map(r=>cols.map(c=>r[c]??'')));
+    const ws   = XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb, ws, ('Data-'+table.name).slice(0,31));
+  });
+
+  XLSX.writeFile(wb, 'cygenix_insights_'+now+'.xlsx');
+}
+
+// ── Export to Word ─────────────────────────────────────────────────────────────
+function exportToWord(){
+  if (!window.docx){
+    const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/docx.min.js';
+    s.onload=doWordExport; document.head.appendChild(s);
+  } else { doWordExport(); }
+}
+
+function doWordExport(){
+  const { Document, Packer, Paragraph, TextRun, HeadingLevel, Table, TableRow, TableCell, BorderStyle, WidthType, AlignmentType } = docx;
+  const now  = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+  const children = [];
+
+  const h1 = txt => new Paragraph({ text: txt, heading: HeadingLevel.HEADING_1, spacing:{before:400,after:200} });
+  const h2 = txt => new Paragraph({ text: txt, heading: HeadingLevel.HEADING_2, spacing:{before:300,after:150} });
+  const h3 = txt => new Paragraph({ text: txt, heading: HeadingLevel.HEADING_3, spacing:{before:200,after:100} });
+  const p  = txt => new Paragraph({ children:[new TextRun({text:String(txt||''),size:22})], spacing:{after:120} });
+  const bullet = txt => new Paragraph({ text:String(txt||''), bullet:{level:0}, spacing:{after:80} });
+  const hr  = () => new Paragraph({ border:{bottom:{style:BorderStyle.SINGLE,size:6,color:'CCCCCC'}}, spacing:{after:200} });
+
+  // Title
+  children.push(new Paragraph({
+    children:[new TextRun({text:'Cygenix Data Insights Report', bold:true, size:40, color:'3d7eff'})],
+    spacing:{after:100}
+  }));
+  children.push(p(`Generated: ${now} · Source: ${srcSchema?.database||''} · Target: ${tgtSchema?.database||''}`));
+  children.push(hr());
+
+  // Migration Map section first if available
+  if (migrationMap){
+    children.push(h1('🗺 Full Migration Picture'));
+    children.push(p(migrationMap.overview||''));
+    children.push(p(`Complexity: ${(migrationMap.estimatedComplexity||'').toUpperCase()} — ${migrationMap.complexityRationale||''}`));
+
+    if ((migrationMap.tableMappings||[]).length){
+      children.push(h2('Table Mappings'));
+      const rows = [
+        new TableRow({ children:[
+          new TableCell({children:[new Paragraph({children:[new TextRun({text:'Source Table',bold:true,size:18})]})], shading:{fill:'F0F4FF'}}),
+          new TableCell({children:[new Paragraph({children:[new TextRun({text:'Target Table',bold:true,size:18})]})], shading:{fill:'F0F4FF'}}),
+          new TableCell({children:[new Paragraph({children:[new TextRun({text:'Confidence',bold:true,size:18})]})], shading:{fill:'F0F4FF'}}),
+          new TableCell({children:[new Paragraph({children:[new TextRun({text:'Notes',bold:true,size:18})]})], shading:{fill:'F0F4FF'}})
+        ]})
+      ].concat((migrationMap.tableMappings||[]).map(m=>new TableRow({children:[
+        new TableCell({children:[new Paragraph({children:[new TextRun({text:m.sourceTable||'',size:18,font:'Courier New'})]})]}) ,
+        new TableCell({children:[new Paragraph({children:[new TextRun({text:m.targetTable||'—',size:18,font:'Courier New'})]})]}),
+        new TableCell({children:[new Paragraph({children:[new TextRun({text:m.confidence||'',size:18})]})]}),
+        new TableCell({children:[new Paragraph({children:[new TextRun({text:m.notes||'',size:18})]})]})
+      ]})));
+      children.push(new Table({rows, width:{size:100,type:WidthType.PERCENTAGE}}));
+    }
+
+    if ((migrationMap.migrationRisks||[]).length){
+      children.push(h2('Migration Risks'));
+      (migrationMap.migrationRisks||[]).forEach(r=>children.push(bullet(`[${(r.severity||'').toUpperCase()}] ${r.risk||''}`)));
+    }
+    if ((migrationMap.configLookupTables||[]).length){
+      children.push(h2('Config & Lookup Tables'));
+      (migrationMap.configLookupTables||[]).forEach(t=>children.push(bullet(`[${t.db}] ${t.table} — ${t.reason}`)));
+    }
+    if ((migrationMap.migrationOpportunities||[]).length){
+      children.push(h2('Opportunities'));
+      (migrationMap.migrationOpportunities||[]).forEach(o=>children.push(bullet(o)));
+    }
+    if ((migrationMap.recommendedSequence||[]).length){
+      children.push(h2('Recommended Migration Sequence'));
+      (migrationMap.recommendedSequence||[]).forEach((s,i)=>children.push(bullet(`${i+1}. ${s}`)));
+    }
+    children.push(hr());
+  }
+
+  // Table insights
+  children.push(h1('📊 Table Insights'));
+  Object.values(sampleStore).forEach(({table, insight})=>{
+    children.push(h2(table.fullName));
+    children.push(p(insight.summary||''));
+
+    const q = insight.dataQuality||{};
+    if (q.score!==undefined) children.push(p(`Data Quality Score: ${q.score}/100`));
+
+    if ((insight.keyFields||[]).length){
+      children.push(h3('Key Fields'));
+      (insight.keyFields||[]).forEach(f=>children.push(bullet(`${f.name} [${f.role}] — ${f.insight}`)));
+    }
+    if ((q.observations||[]).length || (q.issues||[]).length){
+      children.push(h3('Data Quality'));
+      (q.observations||[]).forEach(o=>children.push(bullet('✓ '+o)));
+      (q.issues||[]).forEach(i=>children.push(bullet('⚠ '+i)));
+      (q.recommendations||[]).forEach(r=>children.push(bullet('→ '+r)));
+    }
+    if ((insight.patterns||[]).length){
+      children.push(h3('Patterns'));
+      (insight.patterns||[]).forEach(p2=>children.push(bullet(p2)));
+    }
+    if ((insight.migrationConsiderations||[]).length){
+      children.push(h3('Migration Considerations'));
+      (insight.migrationConsiderations||[]).forEach(c=>children.push(bullet(c)));
+    }
+    children.push(new Paragraph({spacing:{after:200}}));
+  });
+
+  const doc = new Document({ sections:[{properties:{},children}] });
+
+  Packer.toBlob(doc).then(blob=>{
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href    = url;
+    a.download= 'cygenix_insights_'+new Date().toISOString().slice(0,10)+'.docx';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
