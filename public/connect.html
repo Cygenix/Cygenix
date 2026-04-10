@@ -2684,19 +2684,45 @@ function renderTableDrop(which, q) {
 }
 
 function selectTableFromDrop(which, value, label) {
-  // Set the hidden native select
+  // Set the hidden native select value
   const sel = $(which+'-table-select');
-  if (sel) { sel.value = value; }
-  // Set the search input
+  if (sel) sel.value = value;
+
+  // Set the visible search input
   const inp = $(which+'-table-search');
   if (inp) inp.value = label;
+
   // Close dropdown
   const drop = $(which+'-table-drop');
   if (drop) drop.style.display = 'none';
   kbIndex[which] = -1;
-  // Trigger the real change handler
-  if (which === 'src') onSourceTableChange();
-  else onTargetTableChange();
+
+  if (which === 'tgt') {
+    // Set S.selectedTargetTable directly from the target schema
+    // (avoids race condition where onTargetTableChange runs before schema is fully set)
+    if (S.targetSchema?.tables) {
+      S.selectedTargetTable = S.targetSchema.tables.find(t => t.schema + '.' + t.name === value) || null;
+    }
+    // Fallback: also trigger the standard handler in case schema lookup above worked
+    onTargetTableChange();
+  } else {
+    // Source table
+    if (S.srcSchema?.tables) {
+      const tbl = S.srcSchema.tables.find(t => t.schema + '.' + t.name === value);
+      if (tbl) {
+        S.selectedSourceTable = {
+          tableName:   tbl.name,
+          schemaName:  tbl.schema,
+          columns:     tbl.columns.map(c => c.name),
+          columnDefs:  tbl.columns,
+          rows:        [],
+          fromLiveDB:  true,
+          rowCount:    tbl.rowCount
+        };
+      }
+    }
+    onSourceTableChange();
+  }
 }
 
 function setKbActive(which, i) {
