@@ -38,6 +38,15 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
 /* STEPS */
 .steps-bar{display:flex;gap:0;margin-bottom:2.5rem;border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.table-search-wrap{position:relative}
+.table-search-drop{position:absolute;z-index:200;left:0;right:0;top:calc(100% + 2px);background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:280px;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.5)}
+.table-search-drop::-webkit-scrollbar{width:4px}.table-search-drop::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+.table-drop-item{padding:0.45rem 0.75rem;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.5rem}
+.table-drop-item:last-child{border-bottom:none}
+.table-drop-item:hover,.table-drop-item.kb-active{background:var(--accent-glow);color:var(--accent)}
+.table-drop-item.selected{color:var(--teal);background:rgba(45,212,191,0.07)}
+.table-drop-rows{font-size:9px;color:var(--text3);flex-shrink:0;font-family:var(--mono)}
+.table-drop-empty{padding:0.75rem;font-size:12px;color:var(--text3);text-align:center}
 .step-tab{flex:1;padding:0.9rem 1rem;text-align:center;font-size:12px;font-weight:500;color:var(--text3);cursor:pointer;transition:all 0.15s;border-right:0.5px solid var(--border);position:relative}
 .step-tab:last-child{border-right:none}
 .step-tab.active{background:var(--accent-glow);color:var(--accent)}
@@ -346,16 +355,31 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
       <div class="two-col" style="margin-bottom:1.25rem">
         <div>
           <label class="form-label">Source table</label>
-          <select id="src-table-select" class="form-input" style="font-family:var(--mono);cursor:pointer" onchange="onSourceTableChange()">
+          <!-- Searchable combobox — hidden native select keeps existing JS working -->
+          <select id="src-table-select" style="display:none" onchange="onSourceTableChange()">
             <option value="">— select source table —</option>
           </select>
+          <div class="table-search-wrap" id="src-search-wrap">
+            <input id="src-table-search" class="form-input" style="font-family:var(--mono)" 
+              placeholder="🔍 Type to search source tables…"
+              oninput="filterTableList('src')" onfocus="openTableList('src')"
+              autocomplete="off" spellcheck="false">
+            <div class="table-search-drop" id="src-table-drop" style="display:none"></div>
+          </div>
           <div id="src-table-stats" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px"></div>
         </div>
         <div>
           <label class="form-label">Target table</label>
-          <select id="target-table-select" class="form-input" style="font-family:var(--mono);cursor:pointer" onchange="onTargetTableChange()">
+          <select id="target-table-select" style="display:none" onchange="onTargetTableChange()">
             <option value="">— select target table —</option>
           </select>
+          <div class="table-search-wrap" id="tgt-search-wrap">
+            <input id="tgt-table-search" class="form-input" style="font-family:var(--mono)"
+              placeholder="🔍 Type to search target tables…"
+              oninput="filterTableList('tgt')" onfocus="openTableList('tgt')"
+              autocomplete="off" spellcheck="false">
+            <div class="table-search-drop" id="tgt-table-drop" style="display:none"></div>
+          </div>
           <div id="target-table-info" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px"></div>
         </div>
       </div>
@@ -951,6 +975,12 @@ function populateSourceTableSelect(tables) {
   sel.innerHTML = '<option value="">— select source table —</option>' +
     tables.map(t => '<option value="' + t.schema + '.' + t.name + '">' +
       t.schema + '.' + t.name + ' (' + (t.rowCount||'?').toLocaleString() + ' rows)</option>').join('');
+  tableSearchData.src = tables.map(t=>({
+    value: t.schema+'.'+t.name,
+    label: t.schema+'.'+t.name,
+    rows:  t.rowCount||0
+  }));
+  renderTableDrop('src','');
 }
 
 // Called when user selects a source table from the dropdown in step 3
@@ -1187,6 +1217,12 @@ function populateTargetTableSelect(tables){
   const sel = $('target-table-select');
   sel.innerHTML = '<option value="">— select target table —</option>' +
     tables.map(t => `<option value="${t.schema}.${t.name}">${t.schema}.${t.name} (${t.rowCount?.toLocaleString()||'?'} rows)</option>`).join('');
+  tableSearchData.tgt = tables.map(t=>({
+    value: t.schema+'.'+t.name,
+    label: t.schema+'.'+t.name,
+    rows:  t.rowCount||0
+  }));
+  renderTableDrop('tgt','');
 }
 
 // ── Step 2: Source data ──────────────────────────────────────────────────────
@@ -2577,6 +2613,119 @@ function signOut() {
   ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k => sessionStorage.removeItem(k));
   window.location.href = '/login.html';
 }
+// ── Searchable table combobox ──────────────────────────────────────────────────
+const tableSearchData = { src: [], tgt: [] };
+let kbIndex = { src: -1, tgt: -1 };
+
+function openTableList(which) {
+  renderTableDrop(which, $(which+'-table-search')?.value || '');
+  const drop = $(which+'-table-drop');
+  if (drop) drop.style.display = 'block';
+}
+
+function filterTableList(which) {
+  const q = $(which+'-table-search')?.value || '';
+  kbIndex[which] = -1;
+  renderTableDrop(which, q);
+  const drop = $(which+'-table-drop');
+  if (drop) drop.style.display = 'block';
+}
+
+function renderTableDrop(which, q) {
+  const drop = $(which+'-table-drop');
+  if (!drop) return;
+  const data = tableSearchData[which] || [];
+  const lower = q.toLowerCase();
+  const filtered = lower
+    ? data.filter(t => t.label.toLowerCase().includes(lower)).slice(0, 100)
+    : data.slice(0, 100);
+
+  if (!data.length) {
+    drop.innerHTML = '<div class="table-drop-empty">Connect to database first</div>';
+    return;
+  }
+  if (!filtered.length) {
+    drop.innerHTML = '<div class="table-drop-empty">No tables match "' + q + '"</div>';
+    return;
+  }
+
+  const currentVal = $(which+'-table-select')?.value || '';
+  drop.innerHTML = filtered.map((t, i) => `
+    <div class="table-drop-item ${t.value===currentVal?'selected':''}" data-value="${t.value}" data-index="${i}"
+      onclick="selectTableFromDrop('${which}','${t.value}','${t.label}')"
+      onmouseover="setKbActive('${which}',${i})">
+      <span>${t.label}</span>
+      <span class="table-drop-rows">${t.rows.toLocaleString()}</span>
+    </div>`).join('');
+
+  if (data.length > 100) {
+    drop.innerHTML += `<div class="table-drop-empty">${data.length - 100} more — type to filter</div>`;
+  }
+}
+
+function selectTableFromDrop(which, value, label) {
+  // Set the hidden native select
+  const sel = $(which+'-table-select');
+  if (sel) { sel.value = value; }
+  // Set the search input
+  const inp = $(which+'-table-search');
+  if (inp) inp.value = label;
+  // Close dropdown
+  const drop = $(which+'-table-drop');
+  if (drop) drop.style.display = 'none';
+  kbIndex[which] = -1;
+  // Trigger the real change handler
+  if (which === 'src') onSourceTableChange();
+  else onTargetTableChange();
+}
+
+function setKbActive(which, i) {
+  kbIndex[which] = i;
+  document.querySelectorAll('#'+which+'-table-drop .table-drop-item').forEach((el,j) => {
+    el.classList.toggle('kb-active', j === i);
+  });
+}
+
+// Keyboard navigation for both comboboxes
+['src','tgt'].forEach(which => {
+  document.addEventListener('keydown', function(e) {
+    const drop = $(which+'-table-drop');
+    if (!drop || drop.style.display === 'none') return;
+    const inp  = $(which+'-table-search');
+    if (document.activeElement !== inp) return;
+    const items = drop.querySelectorAll('.table-drop-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      kbIndex[which] = Math.min(kbIndex[which]+1, items.length-1);
+      setKbActive(which, kbIndex[which]);
+      items[kbIndex[which]]?.scrollIntoView({block:'nearest'});
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      kbIndex[which] = Math.max(kbIndex[which]-1, 0);
+      setKbActive(which, kbIndex[which]);
+      items[kbIndex[which]]?.scrollIntoView({block:'nearest'});
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const active = drop.querySelector('.kb-active');
+      if (active) active.click();
+    } else if (e.key === 'Escape') {
+      drop.style.display = 'none';
+      kbIndex[which] = -1;
+    }
+  });
+});
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+  ['src','tgt'].forEach(which => {
+    if (!e.target.closest('#'+which+'-search-wrap')) {
+      const drop = $(which+'-table-drop');
+      if (drop) drop.style.display = 'none';
+    }
+  });
+});
+
+// ── End searchable combobox ────────────────────────────────────────────────────
 initUserAndProject();
 checkForResumableSession();
 
