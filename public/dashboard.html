@@ -287,7 +287,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
       <div class="nav-item" onclick="window.location.href='/project-builder.html'" style="color:var(--purple)">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="var(--bg2)" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Conversion Project
+        Execute Jobs
       </div>
       
       <div class="nav-item" onclick="showView('jobs')">
@@ -1754,8 +1754,11 @@ function downloadSQL(type, jobName) {
 function downloadJobSQL(jobId, type) {
   const job = state.jobs.find(j=>j.id===jobId);
   if (!job) return;
-  const content = type==='schema' ? job.schemaSQL : job.migrationSQL;
-  if (!content) { alert('No SQL available.'); return; }
+  // Jobs use insertSQL (from saveJobAndFinish) or migrationSQL (legacy)
+  const content = type==='schema'
+    ? (job.schemaSQL || '')
+    : (job.insertSQL || job.migrationSQL || '');
+  if (!content) { alert('No SQL available for this job. Open Configure to generate SQL first.'); return; }
   triggerDownload(content, job.name.replace(/[^a-z0-9]/gi,'_') + (type==='schema'?'_schema':'_migration') + '.sql');
 }
 function downloadModalSQL(type) {
@@ -1940,15 +1943,18 @@ function escapeAttr(s) { return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 // ── User + Project ─────────────────────────────────────────────────────────────
 function initUserAndProject() {
-  // Load user from session
+  // Load user from session — GoTrue nests the user object differently depending on flow
   try {
-    const user = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
-    if (user.email) {
-      const name = user.user_metadata?.full_name || user.email.split('@')[0];
+    const raw  = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    // GoTrue may return { user: {...}, access_token } or the user directly
+    const user = raw.user || raw;
+    const email = user.email || raw.email || '';
+    if (email) {
+      const name = user.user_metadata?.full_name || raw.user_metadata?.full_name || email.split('@')[0];
       const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
-      $('user-name').textContent = name;
-      $('user-avatar').textContent = initials;
-      $('user-email-menu').textContent = user.email;
+      $('user-name') && ($('user-name').textContent = name);
+      $('user-avatar') && ($('user-avatar').textContent = initials);
+      $('user-email-menu') && ($('user-email-menu').textContent = email);
     }
   } catch {}
 

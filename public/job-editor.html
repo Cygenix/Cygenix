@@ -211,7 +211,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
         <input type="password" id="api-key" class="form-input" placeholder="sk-ant-…">
         <button class="btn btn-ghost btn-sm" onclick="toggleKey()">👁</button>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:0.5rem">Paste your target table's column definitions and Claude will remap the columns intelligently.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:0.5rem">
+        Paste your target table's column definitions below and Claude will remap intelligently.
+        If columns are missing, add them manually using <strong style="color:var(--text2)">+ Add row</strong> in the mapping table,
+        or paste a column list / CREATE TABLE DDL here.
+      </div>
       <div style="margin-top:0.75rem">
         <div class="form-label">Target table columns (paste DDL or column list)</div>
         <textarea id="tgt-cols-input" class="form-input" rows="5" style="font-family:var(--mono);font-size:11px;resize:vertical" placeholder="ColumnName DataType&#10;run_number SMALLINT&#10;code NVARCHAR(50)&#10;…or paste CREATE TABLE DDL"></textarea>
@@ -268,9 +272,23 @@ const WASIS_KEY = 'cygenix_wasis_rules';
 
   // Load column mapping
   mapping = (job.columnMapping||[]).map((m,i)=>({...m, id:i}));
-  if (!mapping.length && job.source){
-    // Bootstrap empty mapping from source table if columns known
-    mapping = [];
+
+  // If still empty, try to pull source columns from sampleStore (insights data)
+  // or create a placeholder row so the user can start editing
+  if (!mapping.length) {
+    // Check if insights stored column data for this source table
+    try {
+      const insightData = JSON.parse(localStorage.getItem('cygenix_insight_'+job.sourceTable) || 'null');
+      if (insightData?.columns?.length) {
+        mapping = insightData.columns.map((c,i)=>({
+          id:i, srcCol:c.name||c, srcType:c.type||'', tgtCol:c.name||c, transform:'NONE', confidence:'MEDIUM'
+        }));
+      }
+    } catch {}
+    // If still nothing, show one blank row so the editor isn't empty
+    if (!mapping.length) {
+      mapping = [{ id:0, srcCol:'', srcType:'', tgtCol:'', transform:'NONE', confidence:'LOW' }];
+    }
   }
 
   // Load Was/Is rules from job first, then fall back to global store
@@ -292,6 +310,14 @@ function renderMapping(){
   const tbody = document.getElementById('mapping-tbody');
   if (!tbody) return;
 
+  if (!mapping.length || (mapping.length===1 && !mapping[0].srcCol && !mapping[0].tgtCol)) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:2rem;color:var(--text3);font-size:13px">
+      No columns yet — use <strong style="color:var(--text2)">+ Add row</strong> to add manually,
+      or paste column definitions and use <strong style="color:var(--purple)">🤖 AI re-map</strong>.
+    </td></tr>`;
+    document.getElementById('mapped-count').textContent = '';
+    return;
+  }
   tbody.innerHTML = mapping.map((m,i)=>{
     const wasisCount = wasisRules.filter(r=>
       (!r.srcField || r.srcField.toLowerCase()===m.srcCol?.toLowerCase()) &&

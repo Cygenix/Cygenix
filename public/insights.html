@@ -273,12 +273,12 @@ let migrationMap = null; // last migration map result
     document.getElementById('user-name').textContent   = n;
   } catch {}
   // Pre-fill connection from session
-  const fn  = sessionStorage.getItem('cygenix_fn_url') || '';
-  const key = sessionStorage.getItem('cygenix_fn_key') || '';
-  const cs  = sessionStorage.getItem('cygenix_src_conn_string') || sessionStorage.getItem('cygenix_conn_string') || '';
-  const el  = document.getElementById('src-conn');
-  if (el) el.value = fn ? fn+(key?'?code='+encodeURIComponent(key):'') : cs;
-  // Pre-fill target connection
+  // Source: use the source DB connection string (NOT the Azure Function target URL)
+  const srcCs  = sessionStorage.getItem('cygenix_src_conn_string') || '';
+  const srcEl  = document.getElementById('src-conn');
+  if (srcEl) srcEl.value = srcCs;
+
+  // Target: use the Azure Function URL or direct target connection string
   const tgtFn  = sessionStorage.getItem('cygenix_fn_url') || '';
   const tgtKey = sessionStorage.getItem('cygenix_fn_key') || '';
   const tgtCs  = sessionStorage.getItem('cygenix_conn_string') || '';
@@ -570,6 +570,11 @@ Respond with ONLY a valid JSON object in exactly this structure — no markdown,
 function renderInsightCard(table, rows, insight, card){
   // Store for search and export
   sampleStore[table.fullName] = { rows, insight, table };
+  // Persist column data so job-editor.html can use it when mapping is empty
+  try {
+    localStorage.setItem('cygenix_insight_'+table.fullName,
+      JSON.stringify({ columns: table.columns, rowCount: table.rowCount, analysedAt: new Date().toISOString() }));
+  } catch {}
   // Show search bar and export buttons once we have data
   const sw = document.getElementById('search-wrap');
   const ew = document.getElementById('export-wrap');
@@ -1216,20 +1221,22 @@ function saveJobFromMapping(mi){
   const tgtSchema2 = tgtParts.length > 1 ? tgtParts[0] : 'dbo';
   const tgtTable   = tgtParts.length > 1 ? tgtParts.slice(1).join('.') : m.targetTable;
 
-  // Check if insight data is available for this table to pre-fill column mapping
+  // Pre-fill column mapping from insight data if available
   const srcInsight = sampleStore[m.sourceTable];
-  const colMapping = srcInsight?.table?.columns?.map(c=>({
-    srcCol:  c.name,
-    srcType: c.type||'',
-    tgtCol:  c.name,   // best guess — same name, user can edit in Configure
-    tgtType: c.type||'',
+  const srcCols = srcInsight?.table?.columns || [];
+  const colMapping = srcCols.map((c,i)=>({
+    id:       i,
+    srcCol:   c.name,
+    srcType:  c.type||'',
+    tgtCol:   c.name,   // same name as best guess — editable in job editor
+    tgtType:  c.type||'',
     transform: 'NONE',
     transformExpr: null,
     wasisRules: null,
     wasisCount: null,
     confidence: 'MEDIUM',
-    note: 'Mapped from Data Insights — review in Configure'
-  })) || [];
+    note: 'Mapped from Data Insights — review in job editor'
+  }));
 
   const now = new Date().toISOString();
   const job = {
