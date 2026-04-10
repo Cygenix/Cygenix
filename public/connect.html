@@ -2719,11 +2719,18 @@ function selectTableFromDrop(which, value, label) {
   kbIndex[which] = -1;
 
   if (which === 'tgt') {
+    // Set directly from schema — don't rely on native select value being set
     if (S.targetSchema?.tables) {
       S.selectedTargetTable = S.targetSchema.tables.find(t => t.schema + '.' + t.name === value) || null;
     }
-    onTargetTableChange();
+    // Update target info display
+    if (S.selectedTargetTable) {
+      $('target-table-info').innerHTML = S.selectedTargetTable.columns.map(c =>
+        `<span style="color:var(--text2)">${c.name}</span> <span style="color:var(--text3)">${c.type}</span><br>`
+      ).join('');
+    }
   } else {
+    // Set source directly from schema
     if (S.srcSchema?.tables) {
       const tbl = S.srcSchema.tables.find(t => t.schema + '.' + t.name === value);
       if (tbl) {
@@ -2740,10 +2747,18 @@ function selectTableFromDrop(which, value, label) {
         $('src-fetch-panel') && ($('src-fetch-panel').style.display = 'block');
       }
     }
-    onSourceTableChange();
+    // Also sync the native select value so any other code reading it works
+    const sel = $('src-table-select');
+    if (sel) sel.value = value;
   }
-  // Always re-evaluate button state after either selection changes
+  // Also sync target native select
+  if (which === 'tgt') {
+    const sel = $('target-table-select');
+    if (sel) sel.value = value;
+  }
+  // Enable the Next button directly — don't call onSourceTableChange which clears state if key is empty
   checkStep3Ready();
+  // Build mapping if both are now selected
   if (S.selectedSourceTable && S.selectedTargetTable) buildMappingTable();
 }
 
