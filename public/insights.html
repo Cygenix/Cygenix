@@ -238,6 +238,12 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 </div>
 
 <script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allTables   = [];
+let selectedIds = new Set();
+let srcSchema   = null;
+let tgtSchema   = null;
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 (function(){
   if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login.html'; return; }
@@ -274,11 +280,7 @@ function toggleApiKey(){
   el.type = el.type==='password' ? 'text' : 'password';
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let allTables     = [];
-let selectedIds   = new Set();
-let srcSchema     = null;
-let tgtSchema     = null;
+
 
 // ── DB helper ─────────────────────────────────────────────────────────────────
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
