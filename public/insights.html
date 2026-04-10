@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Data Insights</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.topbar-right{display:flex;align-items:center;gap:0.75rem}
+.user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
+
+/* LAYOUT */
+.page{max-width:1200px;margin:0 auto;padding:2rem 1.5rem}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;text-decoration:none}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)}.btn-purple:hover{background:rgba(167,139,250,0.15)}
+.btn-sm{padding:0.3rem 0.75rem;font-size:12px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+
+/* FORM */
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.55rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+.form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
+
+/* PANELS */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem}
+.panel-title{font-size:13px;font-weight:600;margin-bottom:0.875rem;display:flex;align-items:center;gap:0.5rem}
+
+/* TABLE PICKER */
+.table-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0.5rem;margin-top:0.75rem;max-height:320px;overflow-y:auto}
+.table-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.875rem;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:0.5rem;user-select:none}
+.table-card:hover{border-color:var(--accent);background:var(--accent-glow)}
+.table-card.selected{border-color:var(--purple);background:var(--purple-bg)}
+.table-card input[type="checkbox"]{accent-color:var(--purple);flex-shrink:0}
+.table-name{font-family:var(--mono);font-size:11px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.table-rows{font-size:10px;color:var(--text3);font-family:var(--mono);flex-shrink:0}
+
+/* INSIGHT CARDS */
+.insight-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.25rem;overflow:hidden}
+.insight-header{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.875rem;background:var(--bg3)}
+.insight-icon{width:38px;height:38px;border-radius:var(--r);background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.insight-table-name{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--teal)}
+.insight-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+.insight-body{padding:1.25rem}
+
+/* INSIGHT SECTIONS */
+.insight-section{margin-bottom:1.25rem}
+.insight-section:last-child{margin-bottom:0}
+.insight-section-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.625rem;display:flex;align-items:center;gap:0.4rem}
+.insight-text{font-size:13px;color:var(--text2);line-height:1.8}
+
+/* TAGS */
+.tag{display:inline-block;font-size:10px;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-weight:500;margin:2px}
+.tag-green{background:var(--green-bg);color:var(--green)}
+.tag-amber{background:var(--amber-bg);color:var(--amber)}
+.tag-red{background:var(--red-bg);color:var(--red)}
+.tag-blue{background:var(--accent-glow);color:var(--accent)}
+.tag-purple{background:var(--purple-bg);color:var(--purple)}
+.tag-teal{background:var(--teal-bg);color:var(--teal)}
+
+/* FIELD TABLE */
+.field-table{width:100%;border-collapse:collapse;font-size:11px}
+.field-table th{text-align:left;padding:0.4rem 0.6rem;font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;background:var(--bg3);border-bottom:0.5px solid var(--border)}
+.field-table td{padding:0.4rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);vertical-align:top;font-family:var(--mono)}
+.field-table tr:last-child td{border-bottom:none}
+.field-table tr:hover td{background:rgba(255,255,255,0.02)}
+
+/* SKELETON */
+.skeleton{background:linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%);background-size:400% 100%;animation:shimmer 1.5s infinite;border-radius:4px}
+@keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
+
+/* CONN STATUS */
+.conn-status{font-size:11px;font-family:var(--mono);margin-top:5px;min-height:16px;color:var(--text3)}
+
+/* PROGRESS */
+.progress-bar{height:3px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:0.5rem}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--purple),var(--accent));border-radius:2px;transition:width 0.4s}
+
+/* API KEY */
+.api-row{display:flex;gap:0.5rem;align-items:center}
+.api-input{flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.45rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+.api-input:focus{border-color:var(--accent)}
+.api-input::placeholder{color:var(--text3)}
+
+/* EMPTY */
+.empty-state{text-align:center;padding:4rem 1rem;color:var(--text3)}
+
+/* ACCORDION */
+.accordion-btn{width:100%;background:none;border:none;text-align:left;cursor:pointer;padding:0.625rem 0;display:flex;align-items:center;justify-content:space-between;color:var(--text2);font-family:var(--serif);font-size:12px;font-weight:500;border-top:0.5px solid var(--border)}
+.accordion-btn:first-child{border-top:none}
+.accordion-btn .chevron{font-size:10px;transition:transform 0.2s;color:var(--text3)}
+.accordion-btn.open .chevron{transform:rotate(180deg)}
+.accordion-body{display:none;padding-bottom:0.75rem}
+.accordion-btn.open + .accordion-body{display:block}
+
+/* SAMPLE DATA */
+.sample-table-wrap{overflow-x:auto;border-radius:var(--r);border:0.5px solid var(--border)}
+.sample-table{border-collapse:collapse;font-size:10px;font-family:var(--mono);min-width:100%}
+.sample-table th{background:var(--bg3);padding:0.35rem 0.6rem;text-align:left;color:var(--text3);font-weight:500;white-space:nowrap;border-bottom:0.5px solid var(--border)}
+.sample-table td{padding:0.3rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.sample-table tr:last-child td{border-bottom:none}
+.sample-table tr:hover td{background:rgba(255,255,255,0.02)}
+
+/* MIGRATION MAP CARD */
+.map-card{background:var(--bg2);border:0.5px solid var(--teal-bg);border-radius:var(--r-lg);margin-bottom:1.25rem;overflow:hidden}
+.map-header{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.875rem;background:rgba(45,212,191,0.04)}
+.map-body{padding:1.25rem}
+.match-row{display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:0.5px solid var(--border)}
+.match-row:last-child{border-bottom:none}
+.match-src{flex:1;font-family:var(--mono);font-size:11px;color:var(--text2);text-align:right}
+.match-arrow{font-size:13px;color:var(--text3);flex-shrink:0;width:60px;text-align:center;font-family:var(--mono)}
+.match-arrow.high{color:var(--green)}
+.match-arrow.med{color:var(--amber)}
+.match-arrow.low{color:var(--red)}
+.match-arrow.none{color:var(--text3)}
+.match-tgt{flex:1;font-family:var(--mono);font-size:11px;color:var(--teal)}
+.match-conf{font-size:9px;font-family:var(--mono);white-space:nowrap}
+
+/* QUALITY METER */
+.quality-bar{display:flex;gap:0.25rem;margin-top:0.5rem}
+.quality-seg{height:6px;flex:1;border-radius:2px;background:var(--bg4)}
+.quality-seg.green{background:var(--green)}
+.quality-seg.amber{background:var(--amber)}
+.quality-seg.red{background:var(--red)}
+
+/* SELECTED COUNT BADGE */
+.sel-badge{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);border-radius:100px;font-size:10px;padding:1px 8px;font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/dashboard.html" class="logo" style="text-decoration:none">Cyge<span>nix</span>
+    <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono);margin-left:8px">Data Insights</span>
+  </a>
+  <div class="topbar-right">
+    <button class="btn btn-purple btn-sm" onclick="runInsights()" id="run-btn" disabled>🔍 Analyse source tables</button>
+    <button class="btn btn-sm" onclick="runMigrationMapping()" id="mapping-btn-top" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none">🗺 Full migration picture</button>
+    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+    <div class="user-pill" onclick="signOut()">
+      <div class="avatar" id="user-avatar">?</div>
+      <span id="user-name" style="font-size:12px;color:var(--text2)">Loading…</span>
+    </div>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- HEADER -->
+  <div style="margin-bottom:1.5rem">
+    <div style="font-size:1.4rem;font-weight:600;margin-bottom:0.25rem">Data Insights</div>
+    <div style="font-size:13px;color:var(--text3)">Select source tables and let Claude AI analyse the data — understanding what it represents, its quality, patterns, anomalies, and migration considerations.</div>
+  </div>
+
+  <!-- CONNECTION + API KEY -->
+  <div class="panel">
+    <div class="panel-title">🔌 Connections</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:0.875rem">
+      <div>
+        <label class="form-label">Source database</label>
+        <div style="display:flex;gap:0.5rem">
+          <input id="src-conn" class="form-input" placeholder="Server=...;Database=...;  or  https://fn.azurewebsites.net/api/db?code=...">
+          <button class="btn btn-ghost btn-sm" onclick="connectSrc()" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
+        </div>
+        <div class="conn-status" id="src-status"></div>
+      </div>
+      <div>
+        <label class="form-label">Target database <span style="font-weight:400;color:var(--text3)">(optional — enables migration mapping)</span></label>
+        <div style="display:flex;gap:0.5rem">
+          <input id="tgt-conn" class="form-input" placeholder="Server=...;Database=...;  or  https://fn.azurewebsites.net/api/db?code=...">
+          <button class="btn btn-ghost btn-sm" onclick="connectTgt()" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
+        </div>
+        <div class="conn-status" id="tgt-status"></div>
+      </div>
+    </div>
+    <div>
+      <label class="form-label">Anthropic API key <span style="font-weight:400;color:var(--text3)">(for Claude analysis)</span></label>
+      <div class="api-row" style="max-width:420px">
+        <input type="password" id="api-key" class="api-input" placeholder="sk-ant-…" oninput="checkReady()">
+        <button class="btn btn-ghost btn-sm" onclick="toggleApiKey()" style="flex-shrink:0;font-size:11px">👁</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE PICKER -->
+  <div class="panel" id="table-picker-panel" style="display:none">
+    <div class="panel-title">
+      📋 Select tables to analyse
+      <span class="sel-badge" id="sel-count" style="display:none">0 selected</span>
+      <div style="margin-left:auto;display:flex;gap:0.5rem">
+        <button class="btn btn-ghost btn-sm" onclick="selectAllTables()">Select all</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearTableSelection()">Clear</button>
+        <input id="table-search" class="form-input" style="width:160px;padding:0.25rem 0.5rem;font-size:11px" placeholder="🔍 Filter tables…" oninput="filterTables()">
+      </div>
+    </div>
+    <div class="table-grid" id="table-grid"></div>
+    <div style="margin-top:0.875rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+      <button class="btn btn-purple btn-sm" onclick="runInsights()" id="run-btn-2" disabled>🔍 Analyse source tables</button>
+      <button class="btn btn-sm" onclick="runMigrationMapping()" id="mapping-btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none">🗺 Full migration picture</button>
+      <span style="font-size:12px;color:var(--text3)" id="analyse-hint">Select at least one table to analyse</span>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="results-area">
+    <div class="empty-state" id="empty-msg">
+      <div style="font-size:32px;opacity:0.3;margin-bottom:0.875rem">🔬</div>
+      <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No insights yet</div>
+      <div style="font-size:12px">Connect to your source database, select tables, then click Analyse</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Auth ──────────────────────────────────────────────────────────────────────
+(function(){
+  if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login.html'; return; }
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user')||'{}');
+    const n = u.user_metadata?.full_name || u.email?.split('@')[0] || '?';
+    document.getElementById('user-avatar').textContent = n[0].toUpperCase();
+    document.getElementById('user-name').textContent   = n;
+  } catch {}
+  // Pre-fill connection from session
+  const fn  = sessionStorage.getItem('cygenix_fn_url') || '';
+  const key = sessionStorage.getItem('cygenix_fn_key') || '';
+  const cs  = sessionStorage.getItem('cygenix_src_conn_string') || sessionStorage.getItem('cygenix_conn_string') || '';
+  const el  = document.getElementById('src-conn');
+  if (el) el.value = fn ? fn+(key?'?code='+encodeURIComponent(key):'') : cs;
+  // Pre-fill target connection
+  const tgtFn  = sessionStorage.getItem('cygenix_fn_url') || '';
+  const tgtKey = sessionStorage.getItem('cygenix_fn_key') || '';
+  const tgtCs  = sessionStorage.getItem('cygenix_conn_string') || '';
+  const tgtEl  = document.getElementById('tgt-conn');
+  if (tgtEl) tgtEl.value = tgtFn ? tgtFn+(tgtKey?'?code='+encodeURIComponent(tgtKey):'') : tgtCs;
+  // Pre-fill API key
+  const ak = localStorage.getItem('cygenix_api_key') || '';
+  if (ak) document.getElementById('api-key').value = ak;
+  checkReady();
+})();
+
+function signOut(){
+  ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k=>sessionStorage.removeItem(k));
+  window.location.href='/login.html';
+}
+function toggleApiKey(){
+  const el = document.getElementById('api-key');
+  el.type = el.type==='password' ? 'text' : 'password';
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allTables     = [];
+let selectedIds   = new Set();
+let srcSchema     = null;
+let tgtSchema     = null;
+
+// ── DB helper ─────────────────────────────────────────────────────────────────
+function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
+
+async function dbCall(conn, body){
+  if (isFn(conn)){
+    const res  = await fetch(conn,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
+    const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+    if (!res.ok) throw new Error(data.error||res.statusText);
+    return data;
+  } else {
+    const res  = await fetch('/.netlify/functions/db-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,connectionString:conn}),signal:AbortSignal.timeout(60000)});
+    const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+    if (!res.ok) throw new Error(data.error||res.statusText);
+    return data;
+  }
+}
+
+// ── Connect ───────────────────────────────────────────────────────────────────
+async function connectSrc(){
+  const conn   = document.getElementById('src-conn').value.trim();
+  const status = document.getElementById('src-status');
+  if (!conn){ alert('Enter a connection string first.'); return; }
+  status.textContent='Connecting…'; status.style.color='var(--accent)';
+  try {
+    const res = await dbCall(conn,{action:'schema'});
+    srcSchema = res;
+    allTables = (res.tables||[]).map((t,i)=>({
+      id:    i,
+      schema: t.schema||'dbo',
+      name:  t.name,
+      fullName: (t.schema||'dbo')+'.'+t.name,
+      rowCount: t.rowCount||0,
+      columns: t.columns||[]
+    }));
+    status.textContent = '🟢 Connected · '+res.database+' · '+allTables.length+' tables';
+    status.style.color = 'var(--green)';
+    renderTablePicker();
+    document.getElementById('table-picker-panel').style.display = 'block';
+    document.getElementById('empty-msg').style.display = 'block';
+  } catch(e){
+    status.textContent = '🔴 '+e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+// ── Connect target ───────────────────────────────────────────────────────────
+async function connectTgt(){
+  const conn   = document.getElementById('tgt-conn').value.trim();
+  const status = document.getElementById('tgt-status');
+  if (!conn){ alert('Enter a target connection string first.'); return; }
+  status.textContent='Connecting…'; status.style.color='var(--accent)';
+  try {
+    const res = await dbCall(conn,{action:'schema'});
+    tgtSchema = res;
+    status.textContent = '🟢 Connected · '+res.database+' · '+(res.tables||[]).length+' tables';
+    status.style.color = 'var(--green)';
+    // Show migration mapping button
+    ['mapping-btn','mapping-btn-top'].forEach(id=>{
+      const btn = document.getElementById(id);
+      if (btn) btn.style.display = 'inline-flex';
+    });
+    checkReady();
+  } catch(e){
+    status.textContent = '🔴 '+e.message;
+    status.style.color = 'var(--red)';
+  }
+}
+
+// ── Table picker ──────────────────────────────────────────────────────────────
+function renderTablePicker(filter=''){
+  const grid = document.getElementById('table-grid');
+  const visible = filter
+    ? allTables.filter(t=>t.fullName.toLowerCase().includes(filter.toLowerCase()))
+    : allTables;
+  grid.innerHTML = visible.map(t=>`
+    <div class="table-card ${selectedIds.has(t.id)?'selected':''}" onclick="toggleTable(${t.id})" id="tc-${t.id}">
+      <input type="checkbox" ${selectedIds.has(t.id)?'checked':''} onclick="event.stopPropagation();toggleTable(${t.id})">
+      <div class="table-name" title="${t.fullName}">${t.fullName}</div>
+      <div class="table-rows">${(t.rowCount||0).toLocaleString()}</div>
+    </div>`).join('');
+  updateSelCount();
+}
+
+function filterTables(){ renderTablePicker(document.getElementById('table-search').value); }
+
+function toggleTable(id){
+  if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+  renderTablePicker(document.getElementById('table-search').value);
+  checkReady();
+}
+function selectAllTables(){ allTables.forEach(t=>selectedIds.add(t.id)); renderTablePicker(); checkReady(); }
+function clearTableSelection(){ selectedIds.clear(); renderTablePicker(); checkReady(); }
+
+function updateSelCount(){
+  const n   = selectedIds.size;
+  const el  = document.getElementById('sel-count');
+  const hint= document.getElementById('analyse-hint');
+  el.style.display = n ? 'inline' : 'none';
+  el.textContent   = n+' selected';
+  if (hint) hint.textContent = n ? 'Click Analyse to generate AI insights' : 'Select at least one table to analyse';
+}
+
+function checkReady(){
+  const apiKey = document.getElementById('api-key').value.trim();
+  const ready  = selectedIds.size > 0 && apiKey.startsWith('sk-ant-');
+  ['run-btn','run-btn-2'].forEach(id=>{
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = !ready;
+  });
+  if (apiKey.startsWith('sk-ant-')) localStorage.setItem('cygenix_api_key', apiKey);
+}
+
+// ── Run insights ──────────────────────────────────────────────────────────────
+async function runInsights(){
+  const conn   = document.getElementById('src-conn').value.trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+  if (!conn)   { alert('Connect to source database first.'); return; }
+  if (!apiKey) { alert('Enter your Anthropic API key.'); return; }
+  if (!selectedIds.size){ alert('Select at least one table.'); return; }
+
+  const area = document.getElementById('results-area');
+  area.innerHTML = '';
+  document.getElementById('empty-msg') && (document.getElementById('empty-msg').style.display='none');
+
+  const tables = allTables.filter(t=>selectedIds.has(t.id));
+
+  for (const table of tables){
+    const card = createSkeletonCard(table);
+    area.appendChild(card);
+    await analyseTable(table, conn, apiKey, card);
+  }
+}
+
+// ── Create skeleton while loading ─────────────────────────────────────────────
+function createSkeletonCard(table){
+  const div = document.createElement('div');
+  div.className = 'insight-card';
+  div.id = 'card-'+table.id;
+  div.innerHTML = `
+    <div class="insight-header">
+      <div class="insight-icon">🔬</div>
+      <div>
+        <div class="insight-table-name">${esc(table.fullName)}</div>
+        <div class="insight-meta">${table.columns.length} columns · ${(table.rowCount||0).toLocaleString()} rows · Analysing…</div>
+      </div>
+      <div style="margin-left:auto;font-size:12px;color:var(--purple);font-family:var(--mono)">Claude AI analysing…</div>
+    </div>
+    <div class="insight-body">
+      <div style="display:flex;flex-direction:column;gap:0.75rem">
+        <div class="skeleton" style="height:14px;width:90%"></div>
+        <div class="skeleton" style="height:14px;width:70%"></div>
+        <div class="skeleton" style="height:14px;width:80%"></div>
+        <div class="skeleton" style="height:14px;width:60%"></div>
+      </div>
+      <div class="progress-bar" style="margin-top:1rem"><div class="progress-fill" id="prog-${table.id}" style="width:0%"></div></div>
+    </div>`;
+  return div;
+}
+
+// ── Analyse a single table ────────────────────────────────────────────────────
+async function analyseTable(table, conn, apiKey, card){
+  const prog = document.getElementById('prog-'+table.id);
+  if (prog) prog.style.width = '20%';
+
+  try {
+    // 1. Fetch sample rows (up to 50)
+    const sampleRes = await dbCall(conn,{
+      action:'execute',
+      sql:`SELECT TOP 50 * FROM ${table.fullName} ORDER BY (SELECT NULL)`
+    });
+    const rows = sampleRes.recordset || [];
+    if (prog) prog.style.width = '50%';
+
+    // 2. Fetch basic stats per column (nulls, distinct count)
+    let statsText = '';
+    try {
+      const statsCols = table.columns.slice(0,10).map(c=>`
+        COUNT(DISTINCT [${c.name}]) AS [${c.name}_distinct],
+        SUM(CASE WHEN [${c.name}] IS NULL THEN 1 ELSE 0 END) AS [${c.name}_nulls]`).join(',\n');
+      const statsRes = await dbCall(conn,{action:'execute', sql:`SELECT TOP 1 ${statsCols} FROM ${table.fullName}`});
+      if (statsRes.recordset?.[0]) statsText = JSON.stringify(statsRes.recordset[0]);
+    } catch {}
+
+    if (prog) prog.style.width = '70%';
+
+    // 3. Build Claude prompt
+    const schema = table.columns.map(c=>`  ${c.name} ${c.type||''}${c.maxLength?' ('+c.maxLength+')':''}`).join('\n');
+    const sampleJson = rows.length ? JSON.stringify(rows.slice(0,10), null, 2) : 'No rows available';
+
+    const prompt = `You are a senior data migration consultant analysing a database table to help a migration analyst understand it before migrating it to a new system.
+
+TABLE: ${table.fullName}
+TOTAL ROWS: ${(table.rowCount||0).toLocaleString()}
+
+SCHEMA:
+${schema}
+
+SAMPLE DATA (first 10 rows):
+${sampleJson}
+
+COLUMN STATISTICS (distinct counts and null counts):
+${statsText || 'Not available'}
+
+Provide a comprehensive data analysis report with the following sections. Be specific and reference actual column names and sample values. Be concise but informative.
+
+Respond with ONLY a valid JSON object in exactly this structure — no markdown, no explanation outside the JSON:
+{
+  "summary": "2-3 sentence plain English description of what this table stores and its business purpose",
+  "keyFields": [
+    {"name": "column_name", "role": "primary_key|foreign_key|code|description|date|amount|flag|other", "insight": "brief insight about this field"}
+  ],
+  "dataQuality": {
+    "score": 85,
+    "observations": ["observation 1", "observation 2"],
+    "issues": ["issue 1 if any"],
+    "recommendations": ["recommendation 1"]
+  },
+  "patterns": ["pattern or insight 1", "pattern or insight 2"],
+  "migrationConsiderations": ["consideration 1", "consideration 2"],
+  "sampleValueInsights": ["what the sample values tell us 1", "insight 2"],
+  "tags": ["tag1", "tag2"]
+}`;
+
+    // 4. Call Claude API
+    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:1500,
+        messages:[{role:'user', content:prompt}]
+      })
+    });
+
+    if (!claudeRes.ok) throw new Error('Claude API error: '+(await claudeRes.text()).slice(0,200));
+    const claudeData = await claudeRes.json();
+    const raw = claudeData.content?.[0]?.text || '{}';
+
+    if (prog) prog.style.width = '90%';
+
+    // 5. Parse response
+    let insight;
+    try {
+      const clean = raw.replace(/```json|```/g,'').trim();
+      insight = JSON.parse(clean);
+    } catch {
+      insight = { summary: raw, keyFields:[], dataQuality:{score:0,observations:[],issues:[],recommendations:[]}, patterns:[], migrationConsiderations:[], sampleValueInsights:[], tags:[] };
+    }
+
+    if (prog) prog.style.width = '100%';
+    renderInsightCard(table, rows, insight, card);
+
+  } catch(e){
+    card.querySelector('.insight-body').innerHTML = `
+      <div style="padding:1rem;background:var(--red-bg);border-radius:var(--r);font-size:13px;color:var(--red)">
+        ✕ Analysis failed: ${esc(e.message)}
+      </div>`;
+  }
+}
+
+// ── Render full insight card ───────────────────────────────────────────────────
+function renderInsightCard(table, rows, insight, card){
+  const q   = insight.dataQuality || {};
+  const score = q.score || 0;
+  const scoreCls = score>=80?'green':score>=60?'amber':'red';
+  const scoreCol = score>=80?'var(--green)':score>=60?'var(--amber)':'var(--red)';
+  const qualitySegs = Array.from({length:10},(_,i)=>{
+    if (i < Math.round(score/10)) return `<div class="quality-seg ${scoreCls}"></div>`;
+    return '<div class="quality-seg"></div>';
+  }).join('');
+
+  const tagHtml = (insight.tags||[]).map(t=>`<span class="tag tag-purple">${esc(t)}</span>`).join('');
+
+  const keyFieldsHtml = (insight.keyFields||[]).map(f=>{
+    const roleCls = {primary_key:'tag-blue',foreign_key:'tag-teal',code:'tag-amber',date:'tag-green',amount:'tag-amber',flag:'tag-purple'}[f.role]||'tag-blue';
+    return `<tr>
+      <td style="font-weight:600;color:var(--teal)">${esc(f.name)}</td>
+      <td><span class="tag ${roleCls}">${esc(f.role||'')}</span></td>
+      <td style="font-family:var(--serif);color:var(--text2)">${esc(f.insight||'')}</td>
+    </tr>`;
+  }).join('');
+
+  const listHtml = (arr,icon='→')=>(arr||[]).map(s=>`<div style="display:flex;gap:0.5rem;margin-bottom:0.4rem;font-size:13px;color:var(--text2)"><span style="color:var(--purple);flex-shrink:0;font-family:var(--mono)">${icon}</span>${esc(s)}</div>`).join('');
+
+  // Sample data table
+  const cols = rows.length ? Object.keys(rows[0]) : table.columns.map(c=>c.name);
+  const displayCols = cols.slice(0,8);
+  const sampleHtml = rows.length ? `
+    <div class="sample-table-wrap">
+      <table class="sample-table">
+        <thead><tr>${displayCols.map(c=>`<th>${esc(c)}</th>`).join('')}${cols.length>8?'<th style="color:var(--text3)">+'+(cols.length-8)+'more</th>':''}</tr></thead>
+        <tbody>${rows.slice(0,8).map(r=>`<tr>${displayCols.map(c=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??'NULL').slice(0,40))}</td>`).join('')}${cols.length>8?'<td style="color:var(--text3)">…</td>':''}</tr>`).join('')}</tbody>
+      </table>
+    </div>` : '<div style="font-size:12px;color:var(--text3)">No sample data available</div>';
+
+  card.innerHTML = `
+    <div class="insight-header">
+      <div class="insight-icon">🔬</div>
+      <div style="flex:1;min-width:0">
+        <div class="insight-table-name">${esc(table.fullName)}</div>
+        <div class="insight-meta">${table.columns.length} columns · ${(table.rowCount||0).toLocaleString()} rows · ${tagHtml}</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:1.4rem;font-weight:700;color:${scoreCol};font-family:var(--mono)">${score}</div>
+        <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">QUALITY SCORE</div>
+        <div class="quality-bar" style="width:100px;margin-top:4px">${qualitySegs}</div>
+      </div>
+    </div>
+    <div class="insight-body">
+
+      <!-- Summary -->
+      <div class="insight-section">
+        <div class="insight-section-title">📖 What is this table?</div>
+        <div class="insight-text">${esc(insight.summary||'')}</div>
+      </div>
+
+      <!-- Key fields -->
+      ${keyFieldsHtml ? `<div class="insight-section">
+        <div class="insight-section-title">🔑 Key fields</div>
+        <table class="field-table">
+          <thead><tr><th>Column</th><th>Role</th><th>Insight</th></tr></thead>
+          <tbody>${keyFieldsHtml}</tbody>
+        </table>
+      </div>` : ''}
+
+      <!-- Data quality -->
+      <div class="insight-section">
+        <div class="insight-section-title">✅ Data quality</div>
+        ${listHtml(q.observations,'✓')}
+        ${(q.issues||[]).map(s=>`<div style="display:flex;gap:0.5rem;margin-bottom:0.4rem;font-size:13px;color:var(--amber)"><span style="flex-shrink:0">⚠</span>${esc(s)}</div>`).join('')}
+        ${listHtml(q.recommendations,'→')}
+      </div>
+
+      <!-- Accordion sections -->
+      <button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>📊 Patterns & observations</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body">
+        ${listHtml(insight.patterns)}
+        ${listHtml(insight.sampleValueInsights,'◆')}
+      </div>
+
+      <button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>🚀 Migration considerations</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body">
+        ${listHtml(insight.migrationConsiderations)}
+      </div>
+
+      <button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>🗂 Sample data (${Math.min(rows.length,8)} rows)</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body" style="padding-top:0.5rem">
+        ${sampleHtml}
+      </div>
+    </div>`;
+}
+
+function toggleAccordion(btn){
+  btn.classList.toggle('open');
+}
+
+// ── Full migration mapping ────────────────────────────────────────────────────
+async function runMigrationMapping(){
+  const srcConn = document.getElementById('src-conn').value.trim();
+  const tgtConn = document.getElementById('tgt-conn').value.trim();
+  const apiKey  = document.getElementById('api-key').value.trim();
+  if (!srcConn || !tgtConn){ alert('Connect both source and target databases first.'); return; }
+  if (!apiKey){ alert('Enter your Anthropic API key.'); return; }
+
+  const area = document.getElementById('results-area');
+  // Add migration map section at top
+  const mapDiv = document.createElement('div');
+  mapDiv.id = 'migration-map';
+  mapDiv.className = 'map-card';
+  mapDiv.innerHTML = `
+    <div class="map-header">
+      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">🗺</div>
+      <div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--teal)">Full Migration Picture</div>
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">Claude AI comparing source → target schemas…</div>
+      </div>
+    </div>
+    <div class="map-body">
+      <div style="display:flex;flex-direction:column;gap:0.75rem">
+        <div class="skeleton" style="height:14px;width:85%"></div>
+        <div class="skeleton" style="height:14px;width:65%"></div>
+        <div class="skeleton" style="height:14px;width:75%"></div>
+      </div>
+    </div>`;
+
+  const existing = document.getElementById('migration-map');
+  if (existing) existing.replaceWith(mapDiv); else area.prepend(mapDiv);
+  document.getElementById('empty-msg') && (document.getElementById('empty-msg').style.display='none');
+
+  try {
+    // Build compact schema summaries for both databases
+    const srcTables = (srcSchema?.tables||[]).map(t=>({
+      name: (t.schema||'dbo')+'.'+t.name,
+      rows: t.rowCount||0,
+      cols: (t.columns||[]).map(c=>c.name+':'+c.type).join(', ').slice(0,200)
+    }));
+    const tgtTables = (tgtSchema?.tables||[]).map(t=>({
+      name: (t.schema||'dbo')+'.'+t.name,
+      rows: t.rowCount||0,
+      cols: (t.columns||[]).map(c=>c.name+':'+c.type).join(', ').slice(0,200)
+    }));
+
+    const prompt = `You are a senior data migration consultant. You have been given the schemas of two databases — a SOURCE (legacy/on-premises) and a TARGET (new system, likely Azure SQL). Your job is to produce a full migration picture: which source tables map to which target tables, what the data landscape looks like, and what risks or opportunities exist.
+
+SOURCE DATABASE: ${srcSchema?.database||'Source'}
+SOURCE TABLES (${srcTables.length} total):
+${JSON.stringify(srcTables.slice(0,60), null, 2)}
+
+TARGET DATABASE: ${tgtSchema?.database||'Target'}  
+TARGET TABLES (${tgtTables.length} total):
+${JSON.stringify(tgtTables.slice(0,60), null, 2)}
+
+Analyse and respond with ONLY a valid JSON object — no markdown fences, no explanation outside the JSON:
+{
+  "overview": "2-3 sentence executive summary of the migration landscape — what kind of systems these are, overall complexity",
+  "tableMappings": [
+    {
+      "sourceTable": "dbo.source_table_name",
+      "targetTable": "dbo.target_table_name or null if no match",
+      "confidence": "high|medium|low|none",
+      "notes": "brief note on the mapping — column differences, type changes, split/merge needed"
+    }
+  ],
+  "configLookupTables": [
+    {"table": "dbo.table_name", "db": "source|target", "reason": "why this appears to be config/lookup/setup data"}
+  ],
+  "orphanedTables": [
+    {"table": "dbo.table_name", "db": "source|target", "observation": "why this table has no obvious mapping"}
+  ],
+  "migrationRisks": [
+    {"severity": "high|medium|low", "risk": "description of the risk"}
+  ],
+  "migrationOpportunities": ["opportunity or simplification identified"],
+  "recommendedSequence": ["table or group 1 (reason)", "table or group 2 (reason)"],
+  "estimatedComplexity": "low|medium|high|very_high",
+  "complexityRationale": "explanation of the complexity rating"
+}`;
+
+    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:3000,
+        messages:[{role:'user', content:prompt}]
+      })
+    });
+
+    if (!claudeRes.ok) throw new Error('Claude API error: '+(await claudeRes.text()).slice(0,200));
+    const claudeData = await claudeRes.json();
+    const raw = claudeData.content?.[0]?.text || '{}';
+    let map;
+    try {
+      map = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    } catch { throw new Error('Could not parse Claude response'); }
+
+    renderMigrationMap(map, mapDiv);
+  } catch(e){
+    mapDiv.querySelector('.map-body').innerHTML = `<div style="padding:1rem;background:var(--red-bg);border-radius:var(--r);font-size:13px;color:var(--red)">✕ Analysis failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderMigrationMap(map, card){
+  const confIcon = c => c==='high'?'🟢':c==='medium'?'🟡':c==='low'?'🟠':'🔴';
+  const confCls  = c => c==='high'?'high':c==='medium'?'med':c==='low'?'low':'none';
+  const sevBadge = s => s==='high'?'<span class="tag tag-red">HIGH</span>':s==='medium'?'<span class="tag tag-amber">MED</span>':'<span class="tag tag-green">LOW</span>';
+  const complexCls = c => ({low:'var(--green)',medium:'var(--amber)',high:'var(--red)',very_high:'var(--red)'})[c]||'var(--text2)';
+
+  const mappingsHtml = (map.tableMappings||[]).map(m=>`
+    <div class="match-row">
+      <div class="match-src">${esc(m.sourceTable||'—')}</div>
+      <div class="match-arrow ${confCls(m.confidence)}">${confIcon(m.confidence)} ${m.confidence||''}</div>
+      <div class="match-tgt">${esc(m.targetTable||'— no match —')}</div>
+      <div style="flex:1;font-size:11px;color:var(--text3);padding-left:0.5rem">${esc(m.notes||'')}</div>
+    </div>`).join('');
+
+  const configHtml = (map.configLookupTables||[]).map(t=>`
+    <div style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.5rem;font-size:12px">
+      <span class="tag ${t.db==='source'?'tag-blue':'tag-teal'}" style="flex-shrink:0">${t.db}</span>
+      <span style="font-family:var(--mono);color:var(--text2)">${esc(t.table)}</span>
+      <span style="color:var(--text3)">— ${esc(t.reason)}</span>
+    </div>`).join('');
+
+  const orphansHtml = (map.orphanedTables||[]).map(t=>`
+    <div style="display:flex;align-items:flex-start;gap:0.5rem;margin-bottom:0.5rem;font-size:12px">
+      <span class="tag tag-amber" style="flex-shrink:0">${t.db}</span>
+      <span style="font-family:var(--mono);color:var(--text2)">${esc(t.table)}</span>
+      <span style="color:var(--text3)">— ${esc(t.observation)}</span>
+    </div>`).join('');
+
+  const risksHtml = (map.migrationRisks||[]).map(r=>`
+    <div style="display:flex;align-items:flex-start;gap:0.6rem;margin-bottom:0.5rem;font-size:13px;color:var(--text2)">
+      ${sevBadge(r.severity)} ${esc(r.risk)}
+    </div>`).join('');
+
+  const oppsHtml = (map.migrationOpportunities||[]).map(o=>`
+    <div style="display:flex;gap:0.5rem;margin-bottom:0.4rem;font-size:13px;color:var(--text2)">
+      <span style="color:var(--green);flex-shrink:0">✓</span>${esc(o)}
+    </div>`).join('');
+
+  const seqHtml = (map.recommendedSequence||[]).map((s,i)=>`
+    <div style="display:flex;gap:0.75rem;align-items:flex-start;margin-bottom:0.4rem;font-size:13px">
+      <span style="background:var(--teal-bg);color:var(--teal);border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-family:var(--mono);flex-shrink:0;margin-top:1px">${i+1}</span>
+      <span style="color:var(--text2)">${esc(s)}</span>
+    </div>`).join('');
+
+  card.innerHTML = `
+    <div class="map-header">
+      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">🗺</div>
+      <div style="flex:1">
+        <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--teal)">Full Migration Picture</div>
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">${esc(srcSchema?.database||'Source')} → ${esc(tgtSchema?.database||'Target')} · ${(map.tableMappings||[]).length} table mappings</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:1.1rem;font-weight:700;color:${complexCls(map.estimatedComplexity)};font-family:var(--mono);text-transform:uppercase">${map.estimatedComplexity||'—'}</div>
+        <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">COMPLEXITY</div>
+      </div>
+    </div>
+    <div class="map-body">
+
+      <!-- Overview -->
+      <div class="insight-section">
+        <div class="insight-section-title">📖 Migration overview</div>
+        <div class="insight-text">${esc(map.overview||'')}</div>
+        ${map.complexityRationale ? `<div style="margin-top:0.5rem;font-size:12px;color:var(--text3);font-style:italic">${esc(map.complexityRationale)}</div>` : ''}
+      </div>
+
+      <!-- Table Mappings -->
+      <button class="accordion-btn open" onclick="toggleAccordion(this)">
+        <span>🔗 Source → Target table mappings (${(map.tableMappings||[]).length})</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body" style="display:block">
+        <div style="display:flex;gap:2rem;margin-bottom:0.75rem;font-size:11px;font-family:var(--mono);color:var(--text3)">
+          <span>🟢 High confidence</span><span>🟡 Medium</span><span>🟠 Low</span><span>🔴 No match</span>
+        </div>
+        <div style="max-height:360px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r)">
+          <div style="display:grid;grid-template-columns:1fr 100px 1fr 1fr;gap:0.5rem;padding:0.35rem 0.5rem;background:var(--bg3);font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;position:sticky;top:0">
+            <div style="text-align:right">Source table</div><div style="text-align:center">Match</div><div>Target table</div><div>Notes</div>
+          </div>
+          ${mappingsHtml}
+        </div>
+      </div>
+
+      <!-- Config/Lookup tables -->
+      ${configHtml ? `<button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>⚙️ Config & lookup tables identified (${(map.configLookupTables||[]).length})</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body">${configHtml}</div>` : ''}
+
+      <!-- Orphaned tables -->
+      ${orphansHtml ? `<button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>🔍 Orphaned / unmapped tables (${(map.orphanedTables||[]).length})</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body">${orphansHtml}</div>` : ''}
+
+      <!-- Risks -->
+      ${risksHtml ? `<button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>⚠️ Migration risks (${(map.migrationRisks||[]).length})</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body">${risksHtml}</div>` : ''}
+
+      <!-- Opportunities -->
+      ${oppsHtml ? `<button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>✅ Opportunities & simplifications</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body">${oppsHtml}</div>` : ''}
+
+      <!-- Recommended sequence -->
+      ${seqHtml ? `<button class="accordion-btn" onclick="toggleAccordion(this)">
+        <span>📋 Recommended migration sequence</span><span class="chevron">▼</span>
+      </button>
+      <div class="accordion-body">${seqHtml}</div>` : ''}
+
+    </div>`;
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
