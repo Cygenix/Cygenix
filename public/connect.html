@@ -1390,6 +1390,22 @@ async function buildMappingTable(){
 async function remapWithClaude(){
   const apiKey = getApiKey();
   if (!apiKey){ alert('Please enter your Anthropic API key.'); return; }
+  if (!S.selectedSourceTable){
+    alert('Please select a source table first.');
+    return;
+  }
+  if (!S.selectedTargetTable){
+    alert('Please select a target table first.');
+    return;
+  }
+  if (!S.selectedSourceTable.columns?.length){
+    alert('Source table has no columns loaded. Please re-select it from the dropdown.');
+    return;
+  }
+  if (!S.selectedTargetTable.columns?.length){
+    alert('Target table has no columns loaded. Please re-select it from the dropdown.');
+    return;
+  }
   $('remap-btn').disabled = true; $('remap-btn').textContent = 'Mapping…';
   $('mapping-status').textContent = 'Claude is re-analysing the mapping…'; $('mapping-status').classList.add('visible');
   try {
@@ -1403,6 +1419,10 @@ async function remapWithClaude(){
 }
 
 async function askClaudeForMapping(src, tgt, apiKey){
+  if (!src) throw new Error('No source table selected');
+  if (!tgt) throw new Error('No target table selected');
+  if (!src.columns?.length) throw new Error('Source table has no columns');
+  if (!tgt.columns?.length) throw new Error('Target table has no columns');
   const srcSample = (src.rows || []).slice(0, 10);
   const srcTypes = {};
   src.columns.forEach(c => { srcTypes[c] = inferType((src.rows || []).map(r => r[c])); });
