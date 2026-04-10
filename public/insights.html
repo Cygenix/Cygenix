@@ -788,6 +788,11 @@ Analyse and respond with ONLY a valid JSON object — no markdown fences, no exp
 
 function renderMigrationMap(map, card){
   migrationMap = map;
+  // Show export buttons even if only migration map was run
+  const sw = document.getElementById('search-wrap');
+  const ew = document.getElementById('export-wrap');
+  if (sw) sw.style.display = 'block';
+  if (ew) ew.style.display = 'flex';
   const confIcon = c => c==='high'?'🟢':c==='medium'?'🟡':c==='low'?'🟠':'🔴';
   const confCls  = c => c==='high'?'high':c==='medium'?'med':c==='low'?'low':'none';
   const sevBadge = s => s==='high'?'<span class="tag tag-red">HIGH</span>':s==='medium'?'<span class="tag tag-amber">MED</span>':'<span class="tag tag-green">LOW</span>';
