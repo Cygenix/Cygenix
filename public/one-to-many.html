@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – One-to-Many Mapper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;gap:1rem}
+.logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;text-decoration:none;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.25)}
+.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)}
+.btn-sm{padding:0.3rem 0.75rem;font-size:12px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+.form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
+select.form-input option{background:var(--bg3)}
+
+.page{max-width:1400px;margin:0 auto;padding:1.5rem}
+
+/* Layout */
+.main-grid{display:grid;grid-template-columns:320px 1fr;gap:1.5rem;align-items:start}
+
+/* Panels */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1rem}
+.panel-head{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:0.5rem}
+.panel-body{padding:1.25rem}
+
+/* Source column list */
+.src-col-list{display:flex;flex-direction:column;gap:2px;max-height:400px;overflow-y:auto}
+.src-col-item{padding:0.4rem 0.6rem;border-radius:4px;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:grab;background:var(--bg3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;user-select:none;transition:all 0.15s}
+.src-col-item:hover{border-color:var(--accent);color:var(--text)}
+.src-col-item.used{border-color:rgba(34,201,122,0.3);color:var(--green);background:var(--green-bg)}
+.src-col-type{font-size:9px;color:var(--text3);flex-shrink:0}
+
+/* Target table cards */
+.tgt-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);margin-bottom:1rem;overflow:hidden}
+.tgt-card-head{padding:0.875rem 1.25rem;background:var(--bg3);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.75rem}
+.tgt-card-num{width:24px;height:24px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--accent);font-family:var(--mono);flex-shrink:0}
+.tgt-card-name{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--teal);flex:1}
+.tgt-card-body{padding:1rem}
+
+/* Mapping rows */
+.map-row{display:grid;grid-template-columns:1fr 32px 1fr 110px 28px;gap:0.4rem;align-items:center;margin-bottom:0.4rem}
+.map-row-label{font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center}
+select.map-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:4px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;width:100%}
+select.map-select:focus{border-color:var(--accent)}
+.del-btn{background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px}
+.del-btn:hover{color:var(--red)}
+
+/* FK section */
+.fk-row{display:grid;grid-template-columns:1fr 28px 1fr 28px;gap:0.4rem;align-items:center;margin-bottom:0.4rem;padding:0.5rem;background:rgba(245,158,11,0.05);border:0.5px solid rgba(245,158,11,0.15);border-radius:var(--r)}
+.fk-arrow{text-align:center;color:var(--amber);font-size:12px}
+
+/* PK config */
+.pk-row{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r)}
+
+/* Searchable dropdown */
+.search-wrap{position:relative}
+.search-drop{position:absolute;z-index:300;left:0;right:0;top:calc(100% + 2px);background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:240px;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,0.5)}
+.drop-item{padding:0.4rem 0.75rem;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.drop-item:last-child{border-bottom:none}
+.drop-item:hover{background:var(--accent-glow);color:var(--accent)}
+.drop-rows{font-size:9px;color:var(--text3)}
+.drop-empty{padding:0.75rem;font-size:12px;color:var(--text3);text-align:center}
+
+/* SQL Preview */
+.sql-preview{background:var(--bg);border-radius:var(--r);padding:1rem;font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--text2);white-space:pre-wrap;overflow-x:auto;max-height:500px;overflow-y:auto;border:0.5px solid var(--border)}
+.sql-kw{color:#569cd6}.sql-cm{color:#6a9955}.sql-str{color:#ce9178}.sql-fn{color:#dcdcaa}.sql-var{color:#9cdcfe}
+
+/* Status */
+.status{font-size:12px;padding:0.5rem 0.875rem;border-radius:var(--r);margin-bottom:0.75rem;display:none}
+.status-ok{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3);display:block}
+.status-err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3);display:block}
+
+/* Conn status */
+.conn-status{font-size:11px;font-family:var(--mono);margin-top:4px;min-height:14px}
+
+/* Badge */
+.badge{font-size:9px;padding:1px 7px;border-radius:100px;font-family:var(--mono)}
+.badge-teal{background:var(--teal-bg);color:var(--teal)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-purple{background:var(--purple-bg);color:var(--purple)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:1rem">
+    <a href="/dashboard.html" class="logo" style="text-decoration:none">Cyge<span>nix</span></a>
+    <span style="color:var(--text3);font-size:13px">/</span>
+    <span style="font-size:13px;color:var(--purple);font-weight:500">One-to-Many Mapper</span>
+  </div>
+  <div style="display:flex;gap:0.75rem">
+    <button class="btn btn-purple btn-sm" onclick="generateSQL()" id="gen-btn" disabled>⚡ Generate SQL</button>
+    <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="save-btn" disabled>💾 Save as job</button>
+    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+<div class="page">
+  <div style="margin-bottom:1.25rem">
+    <div style="font-size:1.3rem;font-weight:600;margin-bottom:0.25rem">One-to-Many Mapper</div>
+    <div style="font-size:13px;color:var(--text3)">Split a single source table into multiple related target tables. Map columns, define foreign key relationships, and generate sequenced INSERT SQL.</div>
+  </div>
+
+  <div class="main-grid">
+
+    <!-- LEFT: Source + connections -->
+    <div>
+
+      <!-- Connections -->
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">🔌 Connections</div></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:0.875rem">
+          <div>
+            <label class="form-label">Source database</label>
+            <div style="display:flex;gap:0.5rem">
+              <input id="src-conn" class="form-input" placeholder="Server=... or https://fn.azure...">
+              <button class="btn btn-ghost btn-sm" onclick="connectSrc()" style="flex-shrink:0">🔌</button>
+            </div>
+            <div class="conn-status" id="src-conn-status"></div>
+          </div>
+          <div>
+            <label class="form-label">Target database</label>
+            <div style="display:flex;gap:0.5rem">
+              <input id="tgt-conn" class="form-input" placeholder="Server=... or https://fn.azure...">
+              <button class="btn btn-ghost btn-sm" onclick="connectTgt()" style="flex-shrink:0">🔌</button>
+            </div>
+            <div class="conn-status" id="tgt-conn-status"></div>
+          </div>
+          <div>
+            <label class="form-label">Mapping name</label>
+            <input id="mapping-name" class="form-input" style="font-family:var(--serif)" placeholder="e.g. Address → Site + Address + Phone">
+          </div>
+        </div>
+      </div>
+
+      <!-- Source table picker -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">📋 Source table</div>
+          <span id="src-col-count" class="badge badge-teal" style="display:none"></span>
+        </div>
+        <div class="panel-body">
+          <div class="search-wrap">
+            <input id="src-table-input" class="form-input" placeholder="🔍 Type to search source tables…"
+              oninput="filterSrcTables()" onfocus="openSrcDrop()" autocomplete="off">
+            <div class="search-drop" id="src-table-drop" style="display:none"></div>
+          </div>
+          <div id="src-col-list-wrap" style="display:none;margin-top:0.875rem">
+            <div style="font-size:11px;color:var(--text3);margin-bottom:0.4rem">Source columns — drag or click to map</div>
+            <div class="src-col-list" id="src-col-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Transaction mode -->
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">⚙️ Options</div></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:0.75rem">
+          <div>
+            <label class="form-label">Transaction mode</label>
+            <select id="tx-mode" class="form-input" style="font-family:var(--serif)">
+              <option value="single">Single transaction — rollback all on failure</option>
+              <option value="independent">Independent — each table commits separately</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Source row filter (WHERE clause, optional)</label>
+            <input id="src-where" class="form-input" placeholder="e.g. active = 1 AND country = 'UK'">
+          </div>
+          <div>
+            <label class="form-label">Rows to fetch for preview</label>
+            <select id="row-limit" class="form-input" style="font-family:var(--serif)">
+              <option value="100">First 100</option>
+              <option value="1000" selected>First 1,000</option>
+              <option value="5000">First 5,000</option>
+              <option value="0">All rows</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT: Target tables + SQL -->
+    <div>
+
+      <div id="status-bar" class="status"></div>
+
+      <!-- Add target table -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">🎯 Target tables <span id="tgt-count" class="badge badge-purple" style="margin-left:4px;display:none">0</span></div>
+          <button class="btn btn-primary btn-sm" onclick="addTargetTable()">+ Add target table</button>
+        </div>
+        <div class="panel-body" style="padding:0.75rem 1.25rem">
+          <div class="search-wrap" style="max-width:400px">
+            <input id="tgt-table-input" class="form-input" placeholder="🔍 Search target tables to add…"
+              oninput="filterTgtTables()" onfocus="openTgtDrop()" autocomplete="off">
+            <div class="search-drop" id="tgt-table-drop" style="display:none"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Target table cards -->
+      <div id="tgt-cards"></div>
+
+      <div id="empty-tgt" style="text-align:center;padding:3rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);color:var(--text3)">
+        <div style="font-size:28px;opacity:0.3;margin-bottom:0.75rem">🎯</div>
+        <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No target tables yet</div>
+        <div style="font-size:12px">Connect to source and target databases, pick a source table, then add target tables above</div>
+      </div>
+
+      <!-- SQL Preview -->
+      <div id="sql-wrap" style="display:none">
+        <div class="panel">
+          <div class="panel-head">
+            <div class="panel-title">⚡ Generated SQL</div>
+            <div style="display:flex;gap:0.5rem">
+              <select id="sql-tab" class="form-input" style="width:160px;font-size:12px" onchange="showSQLTab()">
+                <option value="insert">INSERT script</option>
+                <option value="schema">Schema check</option>
+                <option value="verify">Verify queries</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
+              <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
+            </div>
+          </div>
+          <div class="panel-body" style="padding:0.75rem">
+            <div class="sql-preview" id="sql-preview"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Auth ──────────────────────────────────────────────────────────────────────
+if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login.html';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let srcSchema    = null;
+let tgtSchema    = null;
+let srcTable     = null;   // { name, schema, columns:[{name,type,nullable}], rows:[] }
+let targetTables = [];     // [{ id, schema, name, columns, pkMode, pkCol, pkVar, mappings:[{srcCol,tgtCol,transform}], fks:[{myCol,refTable,refCol}] }]
+let generatedSQL = { insert:'', schema:'', verify:'' };
+let srcAllTables = [];
+let tgtAllTables = [];
+
+// Pre-fill connections
+(function(){
+  const srcCs = sessionStorage.getItem('cygenix_src_conn_string') || '';
+  const tgtFn = sessionStorage.getItem('cygenix_fn_url') || '';
+  const tgtKey= sessionStorage.getItem('cygenix_fn_key') || '';
+  const tgtCs = sessionStorage.getItem('cygenix_conn_string') || '';
+  if (srcCs) document.getElementById('src-conn').value = srcCs;
+  document.getElementById('tgt-conn').value = tgtFn ? tgtFn+(tgtKey?'?code='+encodeURIComponent(tgtKey):'') : tgtCs;
+})();
+
+// ── DB helper ─────────────────────────────────────────────────────────────────
+function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
+async function dbCall(conn, body){
+  const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn(conn) ? body : {...body, connectionString:conn};
+  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(60000)});
+  const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+  if (!res.ok) throw new Error(data.error||res.statusText);
+  return data;
+}
+
+// ── Connect ───────────────────────────────────────────────────────────────────
+async function connectSrc(){
+  const conn=document.getElementById('src-conn').value.trim();
+  const st=document.getElementById('src-conn-status');
+  if (!conn){alert('Enter source connection');return;}
+  st.textContent='Connecting…';st.style.color='var(--accent)';
+  try{
+    const res=await dbCall(conn,{action:'schema'});
+    srcSchema=res;
+    srcAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
+    st.textContent='🟢 '+res.database+' · '+srcAllTables.length+' tables';
+    st.style.color='var(--green)';
+    renderSrcDrop('');
+  }catch(e){st.textContent='🔴 '+e.message;st.style.color='var(--red)';}
+}
+async function connectTgt(){
+  const conn=document.getElementById('tgt-conn').value.trim();
+  const st=document.getElementById('tgt-conn-status');
+  if (!conn){alert('Enter target connection');return;}
+  st.textContent='Connecting…';st.style.color='var(--accent)';
+  try{
+    const res=await dbCall(conn,{action:'schema'});
+    tgtSchema=res;
+    tgtAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
+    st.textContent='🟢 '+res.database+' · '+tgtAllTables.length+' tables';
+    st.style.color='var(--green)';
+    renderTgtDrop('');
+  }catch(e){st.textContent='🔴 '+e.message;st.style.color='var(--red)';}
+}
+
+// ── Source table searchable dropdown ─────────────────────────────────────────
+function openSrcDrop(){renderSrcDrop(document.getElementById('src-table-input').value);document.getElementById('src-table-drop').style.display='block';}
+function filterSrcTables(){const q=document.getElementById('src-table-input').value;renderSrcDrop(q);document.getElementById('src-table-drop').style.display='block';}
+function renderSrcDrop(q){
+  const drop=document.getElementById('src-table-drop');
+  const data=srcAllTables;
+  const filtered=q?data.filter(t=>t.label.toLowerCase().includes(q.toLowerCase())).slice(0,80):data.slice(0,80);
+  if(!filtered.length){drop.innerHTML='<div class="drop-empty">'+(data.length?'No match':'Connect source DB first')+'</div>';return;}
+  drop.innerHTML=filtered.map(t=>`<div class="drop-item" onclick="selectSrcTable('${t.value}')"><span>${t.label}</span><span class="drop-rows">${t.rowCount.toLocaleString()}</span></div>`).join('');
+  if(data.length>80) drop.innerHTML+=`<div class="drop-empty">${data.length-80} more — type to filter</div>`;
+}
+function selectSrcTable(value){
+  const t=srcAllTables.find(t=>t.value===value);
+  if(!t) return;
+  srcTable={fullName:t.value,schema:t.schema,name:t.name,columns:t.columns,rows:[]};
+  document.getElementById('src-table-input').value=t.label;
+  document.getElementById('src-table-drop').style.display='none';
+  document.getElementById('src-col-list-wrap').style.display='block';
+  document.getElementById('src-col-count').style.display='inline';
+  document.getElementById('src-col-count').textContent=t.columns.length+' cols';
+  renderSrcColList();
+  checkReady();
+}
+function renderSrcColList(){
+  if(!srcTable) return;
+  const used=new Set();
+  targetTables.forEach(tt=>tt.mappings.forEach(m=>{if(m.srcCol) used.add(m.srcCol);}));
+  document.getElementById('src-col-list').innerHTML=srcTable.columns.map(c=>`
+    <div class="src-col-item ${used.has(c.name)?'used':''}" draggable="true"
+      ondragstart="dragCol('${c.name}')"
+      onclick="quickMap('${c.name}')">
+      <span>${c.name}</span>
+      <span class="src-col-type">${c.type||''}</span>
+    </div>`).join('');
+}
+
+// ── Target table searchable dropdown ─────────────────────────────────────────
+function openTgtDrop(){renderTgtDrop(document.getElementById('tgt-table-input').value);document.getElementById('tgt-table-drop').style.display='block';}
+function filterTgtTables(){const q=document.getElementById('tgt-table-input').value;renderTgtDrop(q);document.getElementById('tgt-table-drop').style.display='block';}
+function renderTgtDrop(q){
+  const drop=document.getElementById('tgt-table-drop');
+  const data=tgtAllTables;
+  const filtered=q?data.filter(t=>t.label.toLowerCase().includes(q.toLowerCase())).slice(0,80):data.slice(0,80);
+  if(!filtered.length){drop.innerHTML='<div class="drop-empty">'+(data.length?'No match':'Connect target DB first')+'</div>';return;}
+  drop.innerHTML=filtered.map(t=>`<div class="drop-item" onclick="selectTgtTable('${t.value}')"><span>${t.label}</span><span class="drop-rows">${t.rowCount.toLocaleString()}</span></div>`).join('');
+  if(data.length>80) drop.innerHTML+=`<div class="drop-empty">${data.length-80} more — type to filter</div>`;
+}
+function addTargetTable(){openTgtDrop();}
+function selectTgtTable(value){
+  const t=tgtAllTables.find(t=>t.value===value);
+  if(!t) return;
+  if(targetTables.find(tt=>tt.fullName===value)){showStatus('Table already added','err');return;}
+  const tt={
+    id:'tt_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    fullName:t.value,schema:t.schema,name:t.name,
+    columns:t.columns,
+    pkMode:'identity',  // identity | guid | natural
+    pkCol: t.columns.find(c=>c.isIdentity||c.name.toLowerCase()==='id'||c.name.toLowerCase().endsWith('_id'))?.name || t.columns[0]?.name || '',
+    pkVar: '@'+t.name.replace(/[^a-z0-9]/gi,'')+'Id',
+    mappings:[],
+    fks:[]
+  };
+  // Auto-detect FK columns (columns ending in _id or matching a parent table name)
+  targetTables.push(tt);
+  document.getElementById('tgt-table-input').value='';
+  document.getElementById('tgt-table-drop').style.display='none';
+  renderTargetCards();
+  checkReady();
+}
+
+// ── Drag-to-map ────────────────────────────────────────────────────────────────
+let draggingCol = null;
+function dragCol(colName){ draggingCol = colName; }
+
+function quickMap(colName){
+  // Map to first target table that has a matching column name
+  if(!targetTables.length){ alert('Add a target table first.'); return; }
+  const tt = targetTables[0];
+  const matchingTgtCol = tt.columns.find(c=>c.name.toLowerCase()===colName.toLowerCase());
+  tt.mappings.push({srcCol:colName, tgtCol:matchingTgtCol?.name||'', transform:'NONE'});
+  renderTargetCards();
+  renderSrcColList();
+}
+
+// ── Render target cards ────────────────────────────────────────────────────────
+function renderTargetCards(){
+  const container = document.getElementById('tgt-cards');
+  const emptyEl   = document.getElementById('empty-tgt');
+  const countBadge = document.getElementById('tgt-count');
+  emptyEl.style.display = targetTables.length ? 'none' : 'block';
+  countBadge.style.display = targetTables.length ? 'inline' : 'none';
+  countBadge.textContent = targetTables.length;
+
+  container.innerHTML = targetTables.map((tt,ti) => {
+    const srcColOpts = (srcTable?.columns||[]).map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+    const tgtColOpts = tt.columns.map(c=>`<option value="${esc(c.name)}">${esc(c.name)}${c.isIdentity?' (IDENTITY)':''}</option>`).join('');
+    const tgtColOptsBlank = '<option value="">— skip —</option>' + tgtColOpts;
+    const srcColOptsBlank = '<option value="">— source col —</option>' + srcColOpts;
+    const otherTables = targetTables.filter((_,i)=>i<ti); // tables defined before this one (potential parents)
+
+    const mappingRows = tt.mappings.map((m,mi)=>`
+      <div class="map-row">
+        <select class="map-select" onchange="updateMapping(${ti},${mi},'srcCol',this.value)">
+          <option value="">— source col —</option>
+          ${(srcTable?.columns||[]).map(c=>`<option ${m.srcCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+        </select>
+        <div class="map-row-label" style="color:var(--accent)">→</div>
+        <select class="map-select" onchange="updateMapping(${ti},${mi},'tgtCol',this.value)">
+          <option value="">— target col —</option>
+          ${tt.columns.map(c=>`<option ${m.tgtCol===c.name?'selected':''}>${esc(c.name)}${c.isIdentity?' ✦':''}</option>`).join('')}
+        </select>
+        <select class="map-select" onchange="updateMapping(${ti},${mi},'transform',this.value)">
+          ${['NONE','TRIM','CAST','UPPER','LOWER','CONVERT','GETDATE()','NEWID()'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+        <button class="del-btn" onclick="removeMapping(${ti},${mi})">✕</button>
+      </div>`).join('');
+
+    const fkRows = tt.fks.map((fk,fi)=>`
+      <div class="fk-row">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--teal)">${tt.name}.${fk.myCol}</div>
+        <div class="fk-arrow">←</div>
+        <select class="map-select" onchange="updateFK(${ti},${fi},'refTableVar',this.value)" style="font-size:10px">
+          ${otherTables.map(pt=>`<option value="${pt.pkVar}" ${fk.refTableVar===pt.pkVar?'selected':''}>${pt.name} (${pt.pkVar})</option>`).join('')}
+        </select>
+        <button class="del-btn" onclick="removeFK(${ti},${fi})">✕</button>
+      </div>`).join('');
+
+    const isParent = targetTables.some((_,i)=>i>ti); // has child tables after it
+
+    return `<div class="tgt-card" id="card-${tt.id}">
+      <div class="tgt-card-head">
+        <div class="tgt-card-num">${ti+1}</div>
+        <div>
+          <div class="tgt-card-name">${tt.fullName}</div>
+          <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">${tt.columns.length} cols${isParent?' · parent table':''}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:0.5rem">
+          ${ti>0?`<button class="btn btn-ghost btn-sm" onclick="moveTgt(${ti},-1)" style="padding:2px 6px;font-size:11px">↑</button>`:''}
+          ${ti<targetTables.length-1?`<button class="btn btn-ghost btn-sm" onclick="moveTgt(${ti},1)" style="padding:2px 6px;font-size:11px">↓</button>`:''}
+          <button class="btn btn-red btn-sm" onclick="removeTgt(${ti})">✕ Remove</button>
+        </div>
+      </div>
+      <div class="tgt-card-body">
+
+        <!-- PK config -->
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem">Primary key</div>
+        <div class="pk-row">
+          <div>
+            <div style="font-size:9px;color:var(--text3);margin-bottom:3px">PK column</div>
+            <select class="map-select" onchange="updateTT(${ti},'pkCol',this.value)">
+              ${tt.columns.map(c=>`<option ${tt.pkCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <div style="font-size:9px;color:var(--text3);margin-bottom:3px">PK generation</div>
+            <select class="map-select" onchange="updateTT(${ti},'pkMode',this.value)">
+              <option value="identity" ${tt.pkMode==='identity'?'selected':''}>IDENTITY (SQL auto-generates)</option>
+              <option value="guid" ${tt.pkMode==='guid'?'selected':''}>NEWID() — generate GUID</option>
+              <option value="natural" ${tt.pkMode==='natural'?'selected':''}>Natural key — from source column</option>
+              <option value="sequence" ${tt.pkMode==='sequence'?'selected':''}>Sequence / manual</option>
+            </select>
+          </div>
+        </div>
+        <div style="font-size:9px;color:var(--text3);margin-bottom:1rem">
+          Variable to capture generated key: <code style="color:var(--accent);font-family:var(--mono)">${tt.pkVar}</code>
+          — used as FK in child tables
+          <input class="form-input" value="${tt.pkVar}" oninput="updateTT(${ti},'pkVar',this.value)"
+            style="width:150px;padding:2px 6px;font-size:11px;display:inline-block;margin-left:0.5rem">
+        </div>
+
+        <!-- Column mappings -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+          <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Column mappings</div>
+          <button class="btn btn-ghost btn-sm" onclick="addMapping(${ti})" style="font-size:11px;padding:2px 8px">+ Add row</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 32px 1fr 110px 28px;gap:0.4rem;margin-bottom:0.25rem">
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3)">SOURCE COLUMN</div>
+          <div></div>
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3)">TARGET COLUMN</div>
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3)">TRANSFORM</div>
+          <div></div>
+        </div>
+        ${mappingRows || '<div style="font-size:12px;color:var(--text3);padding:0.5rem 0">No mappings yet — click + Add row or click a source column</div>'}
+
+        <!-- Foreign keys -->
+        ${otherTables.length ? `
+        <div style="margin-top:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+            <div style="font-size:11px;font-weight:600;color:var(--amber);text-transform:uppercase;letter-spacing:0.07em">🔗 Foreign keys (link to parent tables)</div>
+            <button class="btn btn-amber btn-sm" onclick="addFK(${ti})" style="font-size:11px;padding:2px 8px">+ Add FK</button>
+          </div>
+          ${fkRows || '<div style="font-size:12px;color:var(--text3)">No FK links yet — add to link this table to a parent</div>'}
+        </div>` : ''}
+
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── State update helpers ───────────────────────────────────────────────────────
+function updateTT(ti,key,val){ targetTables[ti][key]=val; renderTargetCards(); }
+function updateMapping(ti,mi,key,val){ targetTables[ti].mappings[mi][key]=val; if(key==='srcCol') renderSrcColList(); }
+function updateFK(ti,fi,key,val){ targetTables[ti].fks[fi][key]=val; }
+function addMapping(ti){ targetTables[ti].mappings.push({srcCol:'',tgtCol:'',transform:'NONE'}); renderTargetCards(); }
+function removeMapping(ti,mi){ targetTables[ti].mappings.splice(mi,1); renderTargetCards(); renderSrcColList(); }
+function addFK(ti){
+  const parentTables = targetTables.slice(0,ti);
+  if(!parentTables.length){ alert('No parent tables available — add FK-receiving tables before child tables.'); return; }
+  // Guess the FK column — look for a column matching parent table name + _id
+  const parent = parentTables[parentTables.length-1];
+  const guessCol = targetTables[ti].columns.find(c=>c.name.toLowerCase().includes(parent.name.toLowerCase().split('.').pop()+'id')||c.name.toLowerCase().includes('_id'))?.name || targetTables[ti].columns[1]?.name || '';
+  targetTables[ti].fks.push({myCol:guessCol, refTableVar:parent.pkVar, description:''});
+  renderTargetCards();
+}
+function removeFK(ti,fi){ targetTables[ti].fks.splice(fi,1); renderTargetCards(); }
+function removeTgt(ti){ targetTables.splice(ti,1); renderTargetCards(); checkReady(); }
+function moveTgt(ti,dir){
+  const tmp=targetTables[ti]; targetTables[ti]=targetTables[ti+dir]; targetTables[ti+dir]=tmp;
+  renderTargetCards();
+}
+
+function checkReady(){
+  const ready = srcTable && targetTables.length > 0;
+  document.getElementById('gen-btn').disabled = !ready;
+  document.getElementById('save-btn').disabled = !ready;
+}
+
+// ── Generate SQL ──────────────────────────────────────────────────────────────
+function generateSQL(){
+  if(!srcTable||!targetTables.length){alert('Select source table and add at least one target table.');return;}
+
+  const txMode = document.getElementById('tx-mode').value;
+  const where  = document.getElementById('src-where').value.trim();
+  const limit  = document.getElementById('row-limit').value;
+  const srcFull = '['+srcTable.schema+'].['+srcTable.name+']';
+
+  let sql = '';
+
+  // Header comment
+  sql += `-- ╔══════════════════════════════════════════════════════════════════╗\n`;
+  sql += `-- ║  Cygenix One-to-Many Migration\n`;
+  sql += `-- ║  Source: ${srcTable.fullName}\n`;
+  sql += `-- ║  Targets: ${targetTables.map(t=>t.fullName).join(', ')}\n`;
+  sql += `-- ║  Generated: ${new Date().toISOString().slice(0,19).replace('T',' ')}\n`;
+  sql += `-- ╚══════════════════════════════════════════════════════════════════╝\n\n`;
+
+  // Declare FK variables
+  const parentTables = targetTables.filter((_,i)=>targetTables.some((_2,j)=>j>i&&targetTables[j].fks.some(fk=>fk.refTableVar===targetTables[i].pkVar)));
+  if(parentTables.length || targetTables.some(t=>t.pkMode==='identity'||t.pkMode==='guid')){
+    sql += `-- Variable declarations for captured keys\n`;
+    targetTables.forEach(tt=>{
+      if(tt.pkMode==='identity'||tt.pkMode==='guid'||tt.pkMode==='sequence'){
+        const pkCol = tt.columns.find(c=>c.name===tt.pkCol);
+        const sqlType = pkCol?.type?.toLowerCase().includes('uniqueidentifier')||tt.pkMode==='guid' ? 'UNIQUEIDENTIFIER' : 'INT';
+        sql += `DECLARE ${tt.pkVar} ${sqlType};\n`;
+      }
+    });
+    sql += '\n';
+  }
+
+  if(txMode==='single'){
+    sql += `SET XACT_ABORT ON;\nBEGIN TRAN;\n\n`;
+  }
+
+  // Cursor over source rows
+  const srcCols = [...new Set(targetTables.flatMap(tt=>tt.mappings.filter(m=>m.srcCol).map(m=>m.srcCol)))];
+  if(!srcCols.length){ showStatus('Add at least one column mapping before generating SQL.','err'); return; }
+
+  sql += `-- ── Cursor over source rows ──────────────────────────────────────────\n`;
+  sql += `DECLARE cur CURSOR FOR\n`;
+  sql += `  SELECT ${srcCols.map(c=>'['+c+']').join(', ')}\n`;
+  sql += `  FROM   ${srcFull}\n`;
+  if(where) sql += `  WHERE  ${where}\n`;
+  if(limit>0) sql += `-- (Add TOP ${limit} to SELECT above for preview)\n`;
+  sql += `  ORDER  BY (SELECT NULL);\n\n`;
+
+  // Declare cursor variables
+  sql += `DECLARE\n`;
+  srcCols.forEach(c=>{
+    const colDef = srcTable.columns.find(col=>col.name===c);
+    const sqlType = colDef?.type || 'NVARCHAR(MAX)';
+    sql += `  @src_${c.replace(/[^a-z0-9]/gi,'_')} ${sqlType},\n`;
+  });
+  sql = sql.slice(0,-2) + ';\n\n';
+
+  sql += `OPEN cur;\nFETCH NEXT FROM cur INTO ${srcCols.map(c=>'@src_'+c.replace(/[^a-z0-9]/gi,'_')).join(', ')};\n\n`;
+  sql += `WHILE @@FETCH_STATUS = 0\nBEGIN\n\n`;
+
+  // Insert into each target table in order
+  targetTables.forEach((tt,ti)=>{
+    const tgtFull = '['+tt.schema+'].['+tt.name+']';
+    const mappedCols = tt.mappings.filter(m=>m.srcCol&&m.tgtCol&&!tt.columns.find(c=>c.name===m.tgtCol&&c.isIdentity));
+    const fkCols = tt.fks;
+
+    if(!mappedCols.length && !fkCols.length){
+      sql += `  -- Table ${ti+1}: ${tt.fullName} — no mappings defined, skipping\n\n`;
+      return;
+    }
+
+    sql += `  -- ── ${ti+1}. INSERT into ${tt.fullName}\n`;
+
+    if(txMode==='independent'){
+      sql += `  BEGIN TRY\n  BEGIN TRAN;\n`;
+    }
+
+    const insertCols = [
+      ...mappedCols.map(m=>'  ['+m.tgtCol+']'),
+      ...fkCols.map(fk=>'  ['+fk.myCol+']')
+    ].join(',\n');
+
+    const insertVals = [
+      ...mappedCols.map(m=>{
+        const varName = '@src_'+m.srcCol.replace(/[^a-z0-9]/gi,'_');
+        const tgtCol  = tt.columns.find(c=>c.name===m.tgtCol);
+        switch(m.transform){
+          case 'TRIM':    return `  TRIM(${varName})`;
+          case 'UPPER':   return `  UPPER(${varName})`;
+          case 'LOWER':   return `  LOWER(${varName})`;
+          case 'CAST':    return `  CAST(${varName} AS ${tgtCol?.type||'NVARCHAR(MAX)'})`;
+          case 'CONVERT': return `  CONVERT(${tgtCol?.type||'NVARCHAR(MAX)'}, ${varName})`;
+          case 'GETDATE()': return `  GETDATE()`;
+          case 'NEWID()': return `  NEWID()`;
+          default:        return `  ${varName}`;
+        }
+      }),
+      ...fkCols.map(fk=>`  ${fk.refTableVar}`)
+    ].join(',\n');
+
+    if(tt.pkMode==='identity'){
+      sql += `  INSERT INTO ${tgtFull} (\n${insertCols}\n  )\n`;
+      sql += `  OUTPUT INSERTED.[${tt.pkCol}] INTO @tbl${tt.id.replace(/[^a-z0-9]/gi,'')}(Id)\n`;
+      sql += `  VALUES (\n${insertVals}\n  );\n`;
+      sql += `  SELECT TOP 1 ${tt.pkVar} = Id FROM @tbl${tt.id.replace(/[^a-z0-9]/gi,'')};\n`;
+      // Declare table variable before cursor
+    } else if(tt.pkMode==='guid'){
+      sql += `  SET ${tt.pkVar} = NEWID();\n`;
+      sql += `  INSERT INTO ${tgtFull} ([${tt.pkCol}],\n${insertCols}\n  )\n`;
+      sql += `  VALUES (${tt.pkVar},\n${insertVals}\n  );\n`;
+    } else {
+      sql += `  INSERT INTO ${tgtFull} (\n${insertCols}\n  )\n`;
+      sql += `  VALUES (\n${insertVals}\n  );\n`;
+    }
+
+    if(txMode==='independent'){
+      sql += `  COMMIT TRAN;\n`;
+      sql += `  END TRY\n  BEGIN CATCH\n`;
+      sql += `    ROLLBACK TRAN;\n`;
+      sql += `    PRINT 'Error inserting ${tt.fullName}: ' + ERROR_MESSAGE();\n`;
+      sql += `  END CATCH\n`;
+    }
+    sql += '\n';
+  });
+
+  sql += `  FETCH NEXT FROM cur INTO ${srcCols.map(c=>'@src_'+c.replace(/[^a-z0-9]/gi,'_')).join(', ')};\nEND -- WHILE\n\n`;
+  sql += `CLOSE cur;\nDEALLOCATE cur;\n`;
+  if(txMode==='single') sql += `\nCOMMIT TRAN;\n`;
+
+  // Add table variable declarations before cursor for IDENTITY tables
+  const identityTables = targetTables.filter(t=>t.pkMode==='identity');
+  if(identityTables.length){
+    const tableVarDecls = identityTables.map(tt=>`DECLARE @tbl${tt.id.replace(/[^a-z0-9]/gi,'')} TABLE (Id INT);\n`).join('');
+    sql = tableVarDecls + '\n' + sql;
+  }
+
+  // Schema check SQL
+  let schemaSql = `-- Schema verification queries\n\n`;
+  targetTables.forEach(tt=>{
+    schemaSql += `-- Check ${tt.fullName} exists and has expected columns\n`;
+    schemaSql += `SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA = '${tt.schema}' AND TABLE_NAME = '${tt.name}'\nORDER BY ORDINAL_POSITION;\n\n`;
+  });
+
+  // Verify SQL
+  let verifySql = `-- Verify row counts after migration\n\n`;
+  verifySql += `SELECT '${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFull}`;
+  if(where) verifySql += ` WHERE ${where}`;
+  verifySql += '\nUNION ALL\n';
+  verifySql += targetTables.map(tt=>`SELECT '${tt.fullName}', COUNT(*) FROM [${tt.schema}].[${tt.name}]`).join('\nUNION ALL\n');
+  verifySql += ';';
+
+  generatedSQL = { insert:sql, schema:schemaSql, verify:verifySql };
+  document.getElementById('sql-wrap').style.display = 'block';
+  showSQLTab();
+  document.getElementById('save-btn').disabled = false;
+  showStatus('SQL generated — '+targetTables.length+' target table'+(targetTables.length!==1?'s':'')+'','ok');
+}
+
+function showSQLTab(){
+  const tab = document.getElementById('sql-tab').value;
+  const raw = generatedSQL[tab] || '';
+  document.getElementById('sql-preview').innerHTML = syntaxHighlight(raw);
+}
+
+function syntaxHighlight(sql){
+  return esc(sql)
+    .replace(/\b(SELECT|FROM|WHERE|INSERT|INTO|VALUES|UPDATE|SET|DELETE|BEGIN|END|TRAN|TRANSACTION|COMMIT|ROLLBACK|DECLARE|CURSOR|FOR|OPEN|CLOSE|DEALLOCATE|FETCH|NEXT|WHILE|IF|ELSE|PRINT|TRY|CATCH|OUTPUT|INSERTED|TOP|ORDER|BY|AND|OR|NOT|NULL|AS|IN|ON|JOIN|LEFT|INNER|OUTER|UNION|ALL|EXEC|EXECUTE|PROC|PROCEDURE|TABLE|CREATE|ALTER|DROP|INDEX)\b/g,
+      '<span class="sql-kw">$1</span>')
+    .replace(/(--[^\n]*)/g,'<span class="sql-cm">$1</span>')
+    .replace(/(@\w+)/g,'<span class="sql-var">$1</span>');
+}
+
+function copySQL(){
+  const tab=document.getElementById('sql-tab').value;
+  navigator.clipboard.writeText(generatedSQL[tab]||'').then(()=>showStatus('SQL copied to clipboard','ok'));
+}
+function downloadSQL(){
+  const tab=document.getElementById('sql-tab').value;
+  const content=generatedSQL[tab]||'';
+  const name=(document.getElementById('mapping-name').value||'one_to_many').replace(/[^a-z0-9]/gi,'_')+'_'+tab+'.sql';
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type:'text/plain'}));a.download=name;a.click();URL.revokeObjectURL(a.href);
+}
+
+// ── Save as job ───────────────────────────────────────────────────────────────
+function saveAsJob(){
+  if(!srcTable||!targetTables.length){alert('Nothing to save yet.');return;}
+  const name=document.getElementById('mapping-name').value.trim()||srcTable.fullName+' → '+targetTables.map(t=>t.name).join(', ');
+  const job={
+    id:'job_'+Date.now(),
+    name,
+    source:srcTable.fullName,
+    sourceTable:srcTable.fullName,
+    target:targetTables[targetTables.length-1].fullName,
+    tables:targetTables.map(tt=>({name:tt.fullName,rows:0,cols:tt.mappings.length})),
+    totalRows:0,
+    status:'ready',
+    created:new Date().toISOString(),
+    jobType:'one-to-many',
+    oneToManyConfig:{ srcTable:srcTable.fullName, targetTables:targetTables.map(tt=>({fullName:tt.fullName,pkMode:tt.pkMode,pkCol:tt.pkCol,pkVar:tt.pkVar,mappings:tt.mappings,fks:tt.fks})), txMode:document.getElementById('tx-mode').value },
+    insertSQL:generatedSQL.insert||'',
+    schemaSQL:generatedSQL.schema||'',
+    columnMapping:targetTables.flatMap(tt=>tt.mappings.filter(m=>m.srcCol&&m.tgtCol).map(m=>({srcCol:m.srcCol,tgtCol:m.tgtCol,srcTable:srcTable.fullName,tgtTable:tt.fullName,transform:m.transform||'NONE'}))),
+    warnings:['One-to-many mapping — '+targetTables.length+' target tables'],
+  };
+  try{
+    const jobs=JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    jobs.unshift(job);
+    localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,50)));
+    showStatus('✓ Saved as job: '+name+' — visible in All Jobs','ok');
+  }catch(e){showStatus('Save failed: '+e.message,'err');}
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────────
+function showStatus(msg,type){
+  const el=document.getElementById('status-bar');
+  el.textContent=msg;el.className='status status-'+type;
+  if(type==='ok') setTimeout(()=>el.className='status',4000);
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// Close dropdowns on outside click
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#src-table-input')&&!e.target.closest('#src-table-drop'))
+    document.getElementById('src-table-drop').style.display='none';
+  if(!e.target.closest('#tgt-table-input')&&!e.target.closest('#tgt-table-drop'))
+    document.getElementById('tgt-table-drop').style.display='none';
+});
+</script>
+</body>
+</html>
