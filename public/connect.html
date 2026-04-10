@@ -2719,15 +2719,11 @@ function selectTableFromDrop(which, value, label) {
   kbIndex[which] = -1;
 
   if (which === 'tgt') {
-    // Set S.selectedTargetTable directly from the target schema
-    // (avoids race condition where onTargetTableChange runs before schema is fully set)
     if (S.targetSchema?.tables) {
       S.selectedTargetTable = S.targetSchema.tables.find(t => t.schema + '.' + t.name === value) || null;
     }
-    // Fallback: also trigger the standard handler in case schema lookup above worked
     onTargetTableChange();
   } else {
-    // Source table
     if (S.srcSchema?.tables) {
       const tbl = S.srcSchema.tables.find(t => t.schema + '.' + t.name === value);
       if (tbl) {
@@ -2740,10 +2736,15 @@ function selectTableFromDrop(which, value, label) {
           fromLiveDB:  true,
           rowCount:    tbl.rowCount
         };
+        $('src-table-stats').textContent = tbl.columns.length + ' columns · ' + (tbl.rowCount||'?').toLocaleString() + ' rows in source';
+        $('src-fetch-panel') && ($('src-fetch-panel').style.display = 'block');
       }
     }
     onSourceTableChange();
   }
+  // Always re-evaluate button state after either selection changes
+  checkStep3Ready();
+  if (S.selectedSourceTable && S.selectedTargetTable) buildMappingTable();
 }
 
 function setKbActive(which, i) {
