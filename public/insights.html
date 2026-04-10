@@ -1284,6 +1284,11 @@ function saveJobFromMapping(mi){
 
     // Show a toast-style notice
     showSaveToast(`Job saved: ${m.sourceTable} → ${m.targetTable}`);
+    // Add edit link to toast
+    setTimeout(()=>{
+      const editLink = document.getElementById('toast-edit-link');
+      if (editLink) editLink.innerHTML = '<a href="/job-editor.html?id='+job.id+'" style="font-size:11px;color:var(--purple);text-decoration:none">✏ Edit mapping →</a>';
+    }, 50);
   } catch(e) {
     alert('Could not save job: ' + e.message);
   }
@@ -1297,7 +1302,9 @@ function showSaveToast(msg){
     toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg2);border:0.5px solid rgba(34,201,122,0.4);border-radius:var(--r-lg);padding:0.75rem 1.25rem;font-size:13px;color:var(--green);z-index:999;box-shadow:0 8px 30px rgba(0,0,0,0.4);display:flex;align-items:center;gap:0.5rem;transition:opacity 0.3s';
     document.body.appendChild(toast);
   }
-  toast.innerHTML = '✓ ' + msg + '<a href="/dashboard.html" style="margin-left:0.75rem;font-size:11px;color:var(--accent);text-decoration:none">View in Dashboard →</a>';
+  toast.innerHTML = '✓ ' + msg +
+    '<a href="/dashboard.html" style="margin-left:0.75rem;font-size:11px;color:var(--accent);text-decoration:none">Dashboard →</a>' +
+    '<span id="toast-edit-link" style="margin-left:0.5rem"></span>';
   toast.style.opacity = '1';
   clearTimeout(toast._timer);
   toast._timer = setTimeout(()=>toast.style.opacity='0', 4000);

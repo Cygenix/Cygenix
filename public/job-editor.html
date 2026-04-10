@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Edit Job</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+
+/* TOPBAR */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;gap:1rem;flex-wrap:wrap}
+.logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.topbar-right{display:flex;align-items:center;gap:0.75rem}
+
+/* LAYOUT */
+.layout{display:grid;grid-template-columns:1fr 340px;gap:1.5rem;max-width:1400px;margin:0 auto;padding:1.5rem}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;text-decoration:none;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}.btn-green:hover{background:rgba(34,201,122,0.15)}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)}.btn-purple:hover{background:rgba(167,139,250,0.15)}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.25)}
+.btn-sm{padding:0.3rem 0.75rem;font-size:12px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+
+/* FORM */
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.55rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+.form-label{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.4rem}
+
+/* PANEL */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem}
+.panel-title{font-size:13px;font-weight:600;margin-bottom:0.875rem;display:flex;align-items:center;gap:0.5rem}
+
+/* MAPPING TABLE */
+.map-table{width:100%;border-collapse:collapse}
+.map-table th{font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+.map-table td{padding:0.5rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.map-table tr:last-child td{border-bottom:none}
+.map-table tr:hover td{background:rgba(255,255,255,0.015)}
+.map-table select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;width:100%}
+.map-table select:focus{border-color:var(--accent)}
+.col-name{font-family:var(--mono);font-size:11px;color:var(--teal);font-weight:500}
+.col-type{font-family:var(--mono);font-size:10px;color:var(--text3)}
+
+/* CONFIDENCE BADGE */
+.conf-badge{font-size:9px;padding:1px 6px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
+.conf-high{background:var(--green-bg);color:var(--green)}
+.conf-med{background:var(--amber-bg);color:var(--amber)}
+.conf-low{background:var(--red-bg);color:var(--red)}
+
+/* WASIS TABLE */
+.wasis-table{width:100%;border-collapse:collapse;font-size:11px}
+.wasis-table th{text-align:left;padding:0.35rem 0.5rem;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;background:var(--bg3);border-bottom:0.5px solid var(--border)}
+.wasis-table td{padding:0.35rem 0.5rem;border-bottom:0.5px solid var(--border);font-family:var(--mono)}
+.wasis-table tr:last-child td{border-bottom:none}
+.wasis-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none}
+.wasis-input:focus{border-color:var(--amber)}
+
+/* UPLOAD ZONE */
+.upload-zone{border:1.5px dashed var(--border2);border-radius:var(--r);padding:0.875rem;text-align:center;cursor:pointer;transition:all 0.2s;background:var(--bg3);font-size:12px;color:var(--text3)}
+.upload-zone:hover{border-color:var(--amber);background:var(--amber-bg)}
+
+/* STATUS */
+.status-bar{font-size:12px;padding:0.625rem 0.875rem;border-radius:var(--r);margin-bottom:0.75rem;display:none}
+.status-ok{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.status-err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+
+/* TRANSFORM SELECT */
+.tx-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 4px;font-size:10px;color:var(--text2);font-family:var(--mono);outline:none}
+.tx-select:focus{border-color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:1rem">
+    <a href="/dashboard.html" class="logo" style="text-decoration:none">Cyge<span>nix</span></a>
+    <span style="color:var(--text3);font-size:13px">/ Edit Job:</span>
+    <input id="job-name-input" class="form-input" style="width:280px;font-family:var(--serif);font-size:13px" placeholder="Job name…">
+  </div>
+  <div class="topbar-right">
+    <button class="btn btn-purple btn-sm" onclick="remapWithClaude()" id="ai-remap-btn">🤖 AI re-map</button>
+    <button class="btn btn-green btn-sm" onclick="saveJob()">💾 Save job</button>
+    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- LEFT: Mapping -->
+  <div>
+    <!-- Job info -->
+    <div class="panel">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem">
+        <div>
+          <div class="form-label">Source table</div>
+          <div id="src-table-display" style="font-family:var(--mono);font-size:12px;color:var(--teal);padding:0.4rem 0">—</div>
+        </div>
+        <div>
+          <div class="form-label">Target table</div>
+          <div id="tgt-table-display" style="font-family:var(--mono);font-size:12px;color:var(--accent);padding:0.4rem 0">—</div>
+        </div>
+        <div>
+          <div class="form-label">Status</div>
+          <div id="job-status-display" style="font-size:12px;color:var(--text2);padding:0.4rem 0">—</div>
+        </div>
+      </div>
+      <div id="insight-notes" style="display:none;margin-top:0.75rem;padding:0.625rem 0.875rem;background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"></div>
+    </div>
+
+    <div id="status-bar" class="status-bar"></div>
+
+    <!-- Column mapping -->
+    <div class="panel" style="padding:0;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:0.5px solid var(--border)">
+        <div class="panel-title" style="margin-bottom:0">🗂 Column mapping <span id="mapped-count" style="font-size:11px;color:var(--text3);font-weight:400"></span></div>
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-ghost btn-sm" onclick="addMappingRow()">+ Add row</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearUnmapped()">Remove unmapped</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="map-table" id="mapping-table">
+          <thead>
+            <tr>
+              <th style="width:30px"></th>
+              <th>Source column</th>
+              <th>Source type</th>
+              <th style="width:170px">Target column</th>
+              <th style="width:100px">Transform</th>
+              <th style="width:80px">Was/Is</th>
+              <th style="width:70px">Confidence</th>
+              <th style="width:30px"></th>
+            </tr>
+          </thead>
+          <tbody id="mapping-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Was/Is + Actions -->
+  <div>
+
+    <!-- Was/Is panel -->
+    <div class="panel">
+      <div class="panel-title">
+        🔄 Was/Is Rules
+        <span id="wasis-count-badge" style="display:none;font-size:10px;background:var(--amber-bg);color:var(--amber);padding:1px 8px;border-radius:100px;font-family:var(--mono)">0</span>
+      </div>
+
+      <!-- Upload -->
+      <div class="upload-zone" onclick="document.getElementById('wasis-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--amber)'" ondragleave="this.style.borderColor=''" ondrop="handleWasisDrop(event)">
+        <input type="file" id="wasis-file" accept=".csv,.xlsx,.xls,.tsv" style="display:none" onchange="loadWasisFile(this.files[0])">
+        📎 Drop Was/Is CSV or Excel here, or click to browse
+      </div>
+
+      <!-- Manual add -->
+      <div style="margin-top:0.875rem">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Add rule manually</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;margin-bottom:0.4rem">
+          <input id="wr-field" class="wasis-input" placeholder="Field (blank=any)" style="padding:4px 6px">
+          <input id="wr-table" class="wasis-input" placeholder="Table (blank=any)" style="padding:4px 6px">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:0.4rem">
+          <input id="wr-old" class="wasis-input" placeholder="Was (old value)" style="padding:4px 6px;border-color:rgba(240,70,70,0.3)">
+          <input id="wr-new" class="wasis-input" placeholder="Is (new value)" style="padding:4px 6px;border-color:rgba(34,201,122,0.3)">
+          <button class="btn btn-amber btn-sm" onclick="addWasisRuleManual()" style="padding:4px 10px">+</button>
+        </div>
+      </div>
+
+      <!-- Rules table -->
+      <div id="wasis-rules-wrap" style="display:none;margin-top:0.875rem;max-height:300px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r)">
+        <table class="wasis-table" id="wasis-rules-table">
+          <thead><tr><th>Field</th><th>Table</th><th style="color:var(--red)">Was</th><th style="color:var(--green)">Is</th><th style="width:28px"></th></tr></thead>
+          <tbody id="wasis-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="wasis-clear-btn" onclick="clearWasis()" style="display:none;color:var(--red)">✕ Clear all</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportWasisCSV()" id="wasis-export-btn" style="display:none">⬇ Export CSV</button>
+      </div>
+    </div>
+
+    <!-- API key for AI remap -->
+    <div class="panel">
+      <div class="panel-title">🤖 Claude AI re-mapping</div>
+      <div class="form-label">Anthropic API key</div>
+      <div style="display:flex;gap:0.5rem">
+        <input type="password" id="api-key" class="form-input" placeholder="sk-ant-…">
+        <button class="btn btn-ghost btn-sm" onclick="toggleKey()">👁</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:0.5rem">Paste your target table's column definitions and Claude will remap the columns intelligently.</div>
+      <div style="margin-top:0.75rem">
+        <div class="form-label">Target table columns (paste DDL or column list)</div>
+        <textarea id="tgt-cols-input" class="form-input" rows="5" style="font-family:var(--mono);font-size:11px;resize:vertical" placeholder="ColumnName DataType&#10;run_number SMALLINT&#10;code NVARCHAR(50)&#10;…or paste CREATE TABLE DDL"></textarea>
+      </div>
+      <button class="btn btn-purple btn-sm" onclick="remapWithClaude()" style="margin-top:0.75rem;width:100%;justify-content:center">🤖 Re-map with Claude AI</button>
+    </div>
+
+    <!-- Notes -->
+    <div class="panel">
+      <div class="panel-title">📝 Notes</div>
+      <textarea id="job-notes" class="form-input" rows="4" style="font-family:var(--serif);resize:vertical" placeholder="Add migration notes, observations or instructions…"></textarea>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Auth & init ────────────────────────────────────────────────────────────────
+let job       = null;
+let mapping   = [];
+let wasisRules = [];
+const WASIS_KEY = 'cygenix_wasis_rules';
+
+(function init(){
+  if (!sessionStorage.getItem('cygenix_token')){ window.location.href='/login.html'; return; }
+  const params = new URLSearchParams(location.search);
+  const jobId  = params.get('id');
+  if (!jobId){ alert('No job ID specified.'); history.back(); return; }
+
+  // Load job from localStorage
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    job = jobs.find(j=>j.id===jobId);
+  } catch {}
+
+  if (!job){ alert('Job not found.'); history.back(); return; }
+
+  // Pre-fill API key
+  const ak = localStorage.getItem('cygenix_api_key')||'';
+  if (ak) document.getElementById('api-key').value = ak;
+
+  // Populate fields
+  document.getElementById('job-name-input').value = job.name || '';
+  document.getElementById('src-table-display').textContent = job.sourceTable || job.source || '—';
+  document.getElementById('tgt-table-display').textContent = job.targetTable || job.target || '—';
+  document.getElementById('job-status-display').textContent = job.status || 'ready';
+
+  if (job.insightNotes || job.insightConfidence){
+    const el = document.getElementById('insight-notes');
+    el.style.display = 'block';
+    el.innerHTML = '🔬 Created from Data Insights · Confidence: <strong style="color:var(--purple)">'+(job.insightConfidence||'—')+'</strong>' +
+      (job.insightNotes ? ' · '+job.insightNotes : '');
+  }
+
+  // Load column mapping
+  mapping = (job.columnMapping||[]).map((m,i)=>({...m, id:i}));
+  if (!mapping.length && job.source){
+    // Bootstrap empty mapping from source table if columns known
+    mapping = [];
+  }
+
+  // Load Was/Is rules from job first, then fall back to global store
+  if (job.wasisRules?.length){
+    wasisRules = job.wasisRules;
+  } else {
+    try { wasisRules = JSON.parse(localStorage.getItem(WASIS_KEY)||'[]'); } catch { wasisRules = []; }
+  }
+
+  // Load any notes
+  if (job.notes) document.getElementById('job-notes').value = job.notes;
+
+  renderMapping();
+  renderWasis();
+})();
+
+// ── Mapping render ─────────────────────────────────────────────────────────────
+function renderMapping(){
+  const tbody = document.getElementById('mapping-tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = mapping.map((m,i)=>{
+    const wasisCount = wasisRules.filter(r=>
+      (!r.srcField || r.srcField.toLowerCase()===m.srcCol?.toLowerCase()) &&
+      (!r.srcTable || r.srcTable.toLowerCase()===(job.source||'').toLowerCase().split('.').pop())
+    ).length;
+    const confCls = m.confidence==='HIGH'?'conf-high':m.confidence==='MEDIUM'?'conf-med':'conf-low';
+    return `<tr id="mrow-${i}">
+      <td style="text-align:center;font-family:var(--mono);font-size:10px;color:var(--text3)">${i+1}</td>
+      <td><div class="col-name">${esc(m.srcCol||'')}</div></td>
+      <td><div class="col-type">${esc(m.srcType||'')}</div></td>
+      <td>
+        <input class="wasis-input" value="${esc(m.tgtCol||'')}" oninput="mapping[${i}].tgtCol=this.value;updateMappedCount()"
+          placeholder="— skip —" style="width:100%;padding:3px 6px;border-color:${m.tgtCol?'var(--border2)':'rgba(240,70,70,0.2)'}">
+      </td>
+      <td>
+        <select class="tx-select" onchange="mapping[${i}].transform=this.value">
+          ${['NONE','TRIM','CAST','CONVERT','UPPER','LOWER','CUSTOM'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+      </td>
+      <td style="text-align:center">
+        ${wasisCount ? `<span style="font-size:10px;padding:1px 6px;border-radius:100px;background:var(--amber-bg);color:var(--amber);font-family:var(--mono)">🔄 ${wasisCount}</span>` : '<span style="color:var(--text3);font-size:10px">—</span>'}
+      </td>
+      <td>
+        ${m.confidence ? `<span class="conf-badge ${confCls}">${m.confidence}</span>` : ''}
+      </td>
+      <td>
+        <button onclick="removeMappingRow(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+  updateMappedCount();
+}
+
+function updateMappedCount(){
+  const total  = mapping.length;
+  const mapped = mapping.filter(m=>m.tgtCol).length;
+  const el = document.getElementById('mapped-count');
+  if (el) el.textContent = `(${mapped} of ${total} mapped)`;
+}
+
+function addMappingRow(){
+  mapping.push({ id: mapping.length, srcCol:'', srcType:'', tgtCol:'', transform:'NONE', confidence:'LOW' });
+  renderMapping();
+}
+
+function removeMappingRow(i){
+  mapping.splice(i,1);
+  mapping.forEach((m,idx)=>m.id=idx);
+  renderMapping();
+}
+
+function clearUnmapped(){
+  mapping = mapping.filter(m=>m.tgtCol);
+  mapping.forEach((m,i)=>m.id=i);
+  renderMapping();
+}
+
+// ── Was/Is ─────────────────────────────────────────────────────────────────────
+function renderWasis(){
+  const tbody  = document.getElementById('wasis-tbody');
+  const wrap   = document.getElementById('wasis-rules-wrap');
+  const badge  = document.getElementById('wasis-count-badge');
+  const clearBtn = document.getElementById('wasis-clear-btn');
+  const exportBtn = document.getElementById('wasis-export-btn');
+
+  if (!wasisRules.length){
+    wrap.style.display = 'none';
+    badge.style.display = 'none';
+    if (clearBtn)  clearBtn.style.display  = 'none';
+    if (exportBtn) exportBtn.style.display = 'none';
+    return;
+  }
+
+  badge.style.display  = 'inline';
+  badge.textContent    = wasisRules.length + ' rules';
+  wrap.style.display   = 'block';
+  if (clearBtn)  clearBtn.style.display  = 'inline-flex';
+  if (exportBtn) exportBtn.style.display = 'inline-flex';
+
+  tbody.innerHTML = wasisRules.map((r,i)=>`
+    <tr>
+      <td><input class="wasis-input" value="${esc(r.srcField||'')}" oninput="wasisRules[${i}].srcField=this.value" placeholder="any"></td>
+      <td><input class="wasis-input" value="${esc(r.srcTable||'')}" oninput="wasisRules[${i}].srcTable=this.value" placeholder="any"></td>
+      <td><input class="wasis-input" value="${esc(r.oldVal||'')}" oninput="wasisRules[${i}].oldVal=this.value" style="border-color:rgba(240,70,70,0.3)"></td>
+      <td><input class="wasis-input" value="${esc(r.newVal||'')}" oninput="wasisRules[${i}].newVal=this.value" style="border-color:rgba(34,201,122,0.3)"></td>
+      <td><button onclick="removeWasisRule(${i})" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:2px 4px">✕</button></td>
+    </tr>`).join('');
+
+  // Refresh wasis badges on mapping rows
+  renderMapping();
+}
+
+function addWasisRuleManual(){
+  const oldVal = document.getElementById('wr-old').value.trim();
+  const newVal = document.getElementById('wr-new').value.trim();
+  if (!oldVal){ alert('Enter a "Was" value.'); return; }
+  wasisRules.push({
+    srcField: document.getElementById('wr-field').value.trim(),
+    srcTable: document.getElementById('wr-table').value.trim(),
+    oldVal, newVal
+  });
+  document.getElementById('wr-old').value = '';
+  document.getElementById('wr-new').value = '';
+  renderWasis();
+}
+
+function removeWasisRule(i){ wasisRules.splice(i,1); renderWasis(); }
+function clearWasis(){ if (confirm('Clear all Was/Is rules?')){ wasisRules=[]; renderWasis(); } }
+
+function handleWasisDrop(e){
+  e.preventDefault();
+  e.currentTarget.style.borderColor='';
+  const file = e.dataTransfer.files[0];
+  if (file) loadWasisFile(file);
+}
+
+function loadWasisFile(file){
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext==='xlsx'||ext==='xls'){
+    if (!window.XLSX){
+      const s=document.createElement('script');
+      s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload=()=>readExcelWasis(file); document.head.appendChild(s);
+    } else readExcelWasis(file);
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = e => {
+    const rules = parseWasisCSV(e.target.result, file.name);
+    if (!rules.length){ alert('No rules found. Expected columns: source_table, source_field, old_value, new_value'); return; }
+    finishWasisLoad(rules);
+  };
+  reader.readAsText(file);
+}
+
+function readExcelWasis(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try {
+      const wb   = XLSX.read(e.target.result,{type:'array'});
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      if (rows.length<2){ alert('File appears empty.'); return; }
+      const hdrs = rows[0].map(h=>String(h||'').toLowerCase().replace(/[^a-z0-9]/g,''));
+      const oIdx = hdrs.findIndex(h=>['oldvalue','was','old','from','sourcevalue','oldval'].includes(h));
+      const nIdx = hdrs.findIndex(h=>['newvalue','is','new','to','targetvalue','newval'].includes(h));
+      const fIdx = hdrs.findIndex(h=>['sourcefield','field','srcfield','column','col'].includes(h));
+      const tIdx = hdrs.findIndex(h=>['sourcetable','table','srctable','tablename'].includes(h));
+      if (oIdx<0||nIdx<0){ alert('Could not find Was/Is columns. Need: old_value, new_value'); return; }
+      const rules=rows.slice(1).filter(r=>r[oIdx]!=='').map(r=>({
+        srcTable: tIdx>=0?String(r[tIdx]||''):'',
+        srcField: fIdx>=0?String(r[fIdx]||''):'',
+        oldVal:   String(r[oIdx]||''), newVal: String(r[nIdx]||'')
+      }));
+      finishWasisLoad(rules);
+    } catch(e){ alert('Error reading Excel file: '+e.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function parseWasisCSV(text, filename){
+  const lines = text.split(/\r?\n/).filter(l=>l.trim());
+  if (!lines.length) return [];
+  const sep   = lines[0].includes('\t') ? '\t' : ',';
+  const hdrs  = lines[0].split(sep).map(h=>h.trim().toLowerCase().replace(/[^a-z0-9]/g,''));
+  const oIdx  = hdrs.findIndex(h=>['oldvalue','was','old','from','sourcevalue','oldval'].includes(h));
+  const nIdx  = hdrs.findIndex(h=>['newvalue','is','new','to','targetvalue','newval'].includes(h));
+  const fIdx  = hdrs.findIndex(h=>['sourcefield','field','srcfield','column','col'].includes(h));
+  const tIdx  = hdrs.findIndex(h=>['sourcetable','table','srctable','tablename'].includes(h));
+  if (oIdx<0||nIdx<0) return [];
+  return lines.slice(1).map(l=>{
+    const cols = l.split(sep).map(c=>c.trim().replace(/^"|"$/g,''));
+    return { srcTable:tIdx>=0?cols[tIdx]||'':'', srcField:fIdx>=0?cols[fIdx]||'':'', oldVal:cols[oIdx]||'', newVal:cols[nIdx]||'' };
+  }).filter(r=>r.oldVal);
+}
+
+function finishWasisLoad(rules){
+  wasisRules = rules;
+  showStatus(`✓ Loaded ${rules.length} Was/Is rules from file`, 'ok');
+  renderWasis();
+}
+
+function exportWasisCSV(){
+  const lines = ['source_table,source_field,old_value,new_value'].concat(
+    wasisRules.map(r=>`${r.srcTable||''},${r.srcField||''},"${r.oldVal||''}","${r.newVal||''}"`));
+  const blob = new Blob([lines.join('\n')],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='wasis_rules_'+(job.name||'export').replace(/[^a-z0-9]/gi,'_')+'.csv';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+// ── Claude AI re-map ───────────────────────────────────────────────────────────
+async function remapWithClaude(){
+  const apiKey = document.getElementById('api-key').value.trim();
+  if (!apiKey){ alert('Enter your Anthropic API key first.'); return; }
+  if (!mapping.length){ alert('No source columns to map.'); return; }
+
+  const tgtInput = document.getElementById('tgt-cols-input').value.trim();
+  const srcCols  = mapping.map(m=>`${m.srcCol} (${m.srcType||'unknown type'})`).join('\n');
+
+  const prompt = `You are a database migration expert. Map the following SOURCE columns to the TARGET columns using intelligent name matching and type compatibility.
+
+SOURCE TABLE: ${job.sourceTable||job.source||''}
+SOURCE COLUMNS:
+${srcCols}
+
+TARGET TABLE: ${job.targetTable||job.target||''}
+TARGET COLUMNS:
+${tgtInput || mapping.map(m=>m.tgtCol||m.srcCol).join('\n')}
+
+Was/Is rules in use: ${wasisRules.length} rules
+
+Respond ONLY with a valid JSON array — no markdown, no explanation:
+[
+  {
+    "srcCol": "exact_source_column_name",
+    "tgtCol": "best_target_column_name_or_empty_string_to_skip",
+    "transform": "NONE|TRIM|CAST|CONVERT|UPPER|LOWER",
+    "confidence": "HIGH|MEDIUM|LOW",
+    "note": "brief reason"
+  }
+]`;
+
+  const btn = document.getElementById('ai-remap-btn');
+  btn.disabled=true; btn.textContent='🤖 Mapping…';
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,messages:[{role:'user',content:prompt}]})
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    const raw  = data.content?.[0]?.text||'[]';
+    const mapped = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    // Merge back
+    mapping = mapping.map(m=>{
+      const match = mapped.find(r=>r.srcCol?.toLowerCase()===m.srcCol?.toLowerCase());
+      return match ? {...m, tgtCol:match.tgtCol||m.tgtCol, transform:match.transform||'NONE', confidence:match.confidence||'MEDIUM'} : m;
+    });
+    renderMapping();
+    showStatus(`✓ Claude re-mapped ${mapping.filter(m=>m.tgtCol).length} of ${mapping.length} columns`, 'ok');
+    localStorage.setItem('cygenix_api_key', apiKey);
+  } catch(e){
+    showStatus('✕ AI mapping failed: '+e.message.slice(0,100), 'err');
+  } finally {
+    btn.disabled=false; btn.textContent='🤖 AI re-map';
+  }
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+function saveJob(){
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    const idx  = jobs.findIndex(j=>j.id===job.id);
+    const updated = {
+      ...job,
+      name:          document.getElementById('job-name-input').value.trim() || job.name,
+      columnMapping: mapping,
+      wasisRules,
+      wasisRuleCount: wasisRules.length,
+      wasisColCount:  mapping.filter(m=>wasisRules.some(r=>(!r.srcField||r.srcField.toLowerCase()===m.srcCol?.toLowerCase()))).length,
+      notes:         document.getElementById('job-notes').value.trim(),
+      updatedAt:     new Date().toISOString(),
+      columnsMapped: mapping.filter(m=>m.tgtCol).length,
+      fromInsights:  job.fromInsights,
+    };
+    // Save wasis globally too
+    localStorage.setItem(WASIS_KEY, JSON.stringify(wasisRules));
+    if (idx>=0) jobs[idx]=updated; else jobs.unshift(updated);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,50)));
+    job = updated;
+    showStatus('✓ Job saved — '+mapping.filter(m=>m.tgtCol).length+' columns mapped, '+wasisRules.length+' Was/Is rules', 'ok');
+  } catch(e){
+    showStatus('✕ Save failed: '+e.message, 'err');
+  }
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────────
+function toggleKey(){
+  const el=document.getElementById('api-key');
+  el.type=el.type==='password'?'text':'password';
+}
+
+function showStatus(msg, type){
+  const el=document.getElementById('status-bar');
+  el.textContent=msg;
+  el.className='status-bar status-'+type;
+  el.style.display='block';
+  if (type==='ok') setTimeout(()=>el.style.display='none',4000);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>
