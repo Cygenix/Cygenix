@@ -1415,7 +1415,7 @@ Rules:
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [{ role: 'user', content: prompt }]
     })
   });
@@ -1424,7 +1424,18 @@ Rules:
   const text = data.content?.map(b=>b.text||'').join('') || '';
   const jsonMatch = text.match(/\[[\s\S]*\]/);
   if (!jsonMatch) throw new Error('No JSON array in Claude response');
-  return JSON.parse(jsonMatch[0]);
+  // Repair truncated JSON if needed
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    const lastBrace = jsonMatch[0].lastIndexOf('}');
+    if (lastBrace > 0) {
+      try { parsed = JSON.parse(jsonMatch[0].slice(0, lastBrace + 1) + ']'); }
+      catch { parsed = []; }
+    } else { parsed = []; }
+  }
+  return parsed;
 }
 
 function autoMap(src, tgt){

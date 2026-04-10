@@ -535,7 +535,7 @@ Respond with ONLY a valid JSON object in exactly this structure — no markdown,
       },
       body: JSON.stringify({
         model:'claude-sonnet-4-20250514',
-        max_tokens:1500,
+        max_tokens:4096,
         messages:[{role:'user', content:prompt}]
       })
     });
@@ -550,9 +550,16 @@ Respond with ONLY a valid JSON object in exactly this structure — no markdown,
     let insight;
     try {
       const clean = raw.replace(/```json|```/g,'').trim();
-      insight = JSON.parse(clean);
+      try {
+        insight = JSON.parse(clean);
+      } catch {
+        // Repair truncated JSON
+        const lastBrace = clean.lastIndexOf('}');
+        insight = lastBrace > 0 ? JSON.parse(clean.slice(0, lastBrace + 1) + '}') : null;
+        if (!insight) throw new Error('unparseable');
+      }
     } catch {
-      insight = { summary: raw, keyFields:[], dataQuality:{score:0,observations:[],issues:[],recommendations:[]}, patterns:[], migrationConsiderations:[], sampleValueInsights:[], tags:[] };
+      insight = { summary: raw.slice(0,500)||'Analysis incomplete — response was truncated. Try again.', keyFields:[], dataQuality:{score:0,observations:['Response truncated'],issues:[],recommendations:['Re-run analysis']}, patterns:[], migrationConsiderations:[], sampleValueInsights:[], tags:['truncated'] };
     }
 
     if (prog) prog.style.width = '100%';
@@ -772,7 +779,7 @@ Analyse and respond with ONLY a valid JSON object — no markdown fences, no exp
       },
       body: JSON.stringify({
         model:'claude-sonnet-4-20250514',
-        max_tokens:3000,
+        max_tokens:8096,
         messages:[{role:'user', content:prompt}]
       })
     });
@@ -782,8 +789,17 @@ Analyse and respond with ONLY a valid JSON object — no markdown fences, no exp
     const raw = claudeData.content?.[0]?.text || '{}';
     let map;
     try {
-      map = JSON.parse(raw.replace(/```json|```/g,'').trim());
-    } catch { throw new Error('Could not parse Claude response'); }
+      const cleanMap = raw.replace(/```json|```/g,'').trim();
+      try {
+        map = JSON.parse(cleanMap);
+      } catch {
+        // Repair truncated JSON by closing at last complete object
+        const lastBrace = cleanMap.lastIndexOf('}');
+        if (lastBrace > 0) {
+          map = JSON.parse(cleanMap.slice(0, lastBrace + 1) + '}');
+        } else { throw new Error('unparseable'); }
+      }
+    } catch { throw new Error('Could not parse Claude response — try again'); }
 
     renderMigrationMap(map, mapDiv);
   } catch(e){
