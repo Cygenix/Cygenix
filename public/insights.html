@@ -798,12 +798,17 @@ function renderMigrationMap(map, card){
   const sevBadge = s => s==='high'?'<span class="tag tag-red">HIGH</span>':s==='medium'?'<span class="tag tag-amber">MED</span>':'<span class="tag tag-green">LOW</span>';
   const complexCls = c => ({low:'var(--green)',medium:'var(--amber)',high:'var(--red)',very_high:'var(--red)'})[c]||'var(--text2)';
 
-  const mappingsHtml = (map.tableMappings||[]).map(m=>`
-    <div class="match-row">
+  const mappingsHtml = (map.tableMappings||[]).map((m,mi)=>`
+    <div class="match-row" id="mrow-${mi}">
       <div class="match-src">${esc(m.sourceTable||'—')}</div>
       <div class="match-arrow ${confCls(m.confidence)}">${confIcon(m.confidence)} ${m.confidence||''}</div>
       <div class="match-tgt">${esc(m.targetTable||'— no match —')}</div>
       <div style="flex:1;font-size:11px;color:var(--text3);padding-left:0.5rem">${esc(m.notes||'')}</div>
+      ${m.targetTable && m.confidence !== 'none' ? `
+        <button onclick="saveJobFromMapping(${mi})" id="savejob-${mi}"
+          style="flex-shrink:0;background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:9px;font-family:var(--serif);cursor:pointer;white-space:nowrap;transition:all 0.15s"
+          onmouseover="this.style.background='rgba(167,139,250,0.2)'" onmouseout="this.style.background='var(--purple-bg)'"
+          title="Save as migration job">💾 Save job</button>` : ''}
     </div>`).join('');
 
   const configHtml = (map.configLookupTables||[]).map(t=>`
@@ -1193,6 +1198,109 @@ function doWordExport(){
     a.click();
     URL.revokeObjectURL(url);
   });
+}
+
+// ── Save mapping as job ───────────────────────────────────────────────────────
+function saveJobFromMapping(mi){
+  if (!migrationMap?.tableMappings?.[mi]) return;
+  const m   = migrationMap.tableMappings[mi];
+  const btn = document.getElementById('savejob-'+mi);
+
+  if (!m.sourceTable || !m.targetTable) return;
+
+  // Parse schema.table
+  const srcParts = m.sourceTable.split('.');
+  const tgtParts = m.targetTable.split('.');
+  const srcSchema2 = srcParts.length > 1 ? srcParts[0] : 'dbo';
+  const srcTable   = srcParts.length > 1 ? srcParts.slice(1).join('.') : m.sourceTable;
+  const tgtSchema2 = tgtParts.length > 1 ? tgtParts[0] : 'dbo';
+  const tgtTable   = tgtParts.length > 1 ? tgtParts.slice(1).join('.') : m.targetTable;
+
+  // Check if insight data is available for this table to pre-fill column mapping
+  const srcInsight = sampleStore[m.sourceTable];
+  const colMapping = srcInsight?.table?.columns?.map(c=>({
+    srcCol:  c.name,
+    srcType: c.type||'',
+    tgtCol:  c.name,   // best guess — same name, user can edit in Configure
+    tgtType: c.type||'',
+    transform: 'NONE',
+    transformExpr: null,
+    wasisRules: null,
+    wasisCount: null,
+    confidence: 'MEDIUM',
+    note: 'Mapped from Data Insights — review in Configure'
+  })) || [];
+
+  const now = new Date().toISOString();
+  const job = {
+    id:           'job_' + Date.now(),
+    name:         m.sourceTable + ' → ' + m.targetTable,
+    source:       m.sourceTable,
+    sourceTable:  m.sourceTable,
+    target:       m.targetTable,
+    targetTable:  m.targetTable,
+    files:        [],
+    tables:       [{ name: m.targetTable, rows: srcInsight?.table?.rowCount||0, cols: colMapping.length }],
+    totalRows:    srcInsight?.table?.rowCount || 0,
+    status:       'ready',
+    created:      now,
+    columnMapping: colMapping,
+    wasisRules:   [],
+    wasisRuleCount: 0,
+    wasisColCount: 0,
+    insertSQL:    '',
+    schemaSQL:    '',
+    warnings:     [`Created from Data Insights migration map. Confidence: ${m.confidence}. ${m.notes||''}`],
+    sourceSystem: srcSchema?.database || 'Source',
+    targetSystem: 'Microsoft SQL Server',
+    targetServer: document.getElementById('tgt-conn')?.value || '',
+    authMethod:   'SQL Authentication',
+    fromInsights: true,
+    insightNotes: m.notes || '',
+    insightConfidence: m.confidence || ''
+  };
+
+  try {
+    const existing = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    // Avoid duplicates
+    const alreadyExists = existing.some(j => j.source === m.sourceTable && j.target === m.targetTable);
+    if (alreadyExists) {
+      if (!confirm(`A job for ${m.sourceTable} → ${m.targetTable} already exists. Save another copy?`)) return;
+    }
+    existing.unshift(job);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(existing.slice(0, 50)));
+
+    // Update button to show saved
+    if (btn) {
+      btn.textContent = '✓ Saved';
+      btn.style.background = 'var(--green-bg)';
+      btn.style.color = 'var(--green)';
+      btn.style.borderColor = 'rgba(34,201,122,0.3)';
+      btn.disabled = true;
+    }
+    // Highlight the row briefly
+    const row = document.getElementById('mrow-'+mi);
+    if (row) { row.style.background='rgba(34,201,122,0.06)'; setTimeout(()=>row.style.background='',2000); }
+
+    // Show a toast-style notice
+    showSaveToast(`Job saved: ${m.sourceTable} → ${m.targetTable}`);
+  } catch(e) {
+    alert('Could not save job: ' + e.message);
+  }
+}
+
+function showSaveToast(msg){
+  let toast = document.getElementById('save-toast');
+  if (!toast){
+    toast = document.createElement('div');
+    toast.id = 'save-toast';
+    toast.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg2);border:0.5px solid rgba(34,201,122,0.4);border-radius:var(--r-lg);padding:0.75rem 1.25rem;font-size:13px;color:var(--green);z-index:999;box-shadow:0 8px 30px rgba(0,0,0,0.4);display:flex;align-items:center;gap:0.5rem;transition:opacity 0.3s';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = '✓ ' + msg + '<a href="/dashboard.html" style="margin-left:0.75rem;font-size:11px;color:var(--accent);text-decoration:none">View in Dashboard →</a>';
+  toast.style.opacity = '1';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(()=>toast.style.opacity='0', 4000);
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
