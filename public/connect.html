@@ -1390,26 +1390,41 @@ async function buildMappingTable(){
 async function remapWithClaude(){
   const apiKey = getApiKey();
   if (!apiKey){ alert('Please enter your Anthropic API key.'); return; }
-  if (!S.selectedSourceTable){
-    alert('Please select a source table first.');
-    return;
+
+  // Try to resolve src/tgt from UI if S state is not set
+  let src = S.selectedSourceTable;
+  let tgt = S.selectedTargetTable;
+
+  // Attempt to recover tgt from the search input text or native select value
+  if (!tgt) {
+    const tgtVal = $('target-table-select')?.value || $('tgt-table-search')?.value || '';
+    if (tgtVal && S.targetSchema?.tables) {
+      tgt = S.targetSchema.tables.find(t => t.schema+'.'+t.name === tgtVal) || null;
+      if (tgt) S.selectedTargetTable = tgt;
+    }
   }
-  if (!S.selectedTargetTable){
-    alert('Please select a target table first.');
-    return;
+
+  // Attempt to recover src
+  if (!src) {
+    const srcVal = $('src-table-select')?.value || $('src-table-search')?.value || '';
+    if (srcVal && S.srcSchema?.tables) {
+      const tbl = S.srcSchema.tables.find(t => t.schema+'.'+t.name === srcVal);
+      if (tbl) {
+        src = { tableName:tbl.name, schemaName:tbl.schema, columns:tbl.columns.map(c=>c.name), columnDefs:tbl.columns, rows:[], fromLiveDB:true, rowCount:tbl.rowCount };
+        S.selectedSourceTable = src;
+      }
+    }
   }
-  if (!S.selectedSourceTable.columns?.length){
-    alert('Source table has no columns loaded. Please re-select it from the dropdown.');
-    return;
-  }
-  if (!S.selectedTargetTable.columns?.length){
-    alert('Target table has no columns loaded. Please re-select it from the dropdown.');
-    return;
-  }
+
+  if (!src){ alert('Please select a source table first (type a name in the Source table box and pick from the list).'); return; }
+  if (!tgt){ alert('Please select a target table first (type a name in the Target table box and pick from the list).'); return; }
+  if (!src.columns?.length && !src.columnDefs?.length){ alert('Source table columns not loaded — please re-select the source table.'); return; }
+  if (!tgt.columns?.length){ alert('Target table columns not loaded — please re-select the target table.'); return; }
+
   $('remap-btn').disabled = true; $('remap-btn').textContent = 'Mapping…';
   $('mapping-status').textContent = 'Claude is re-analysing the mapping…'; $('mapping-status').classList.add('visible');
   try {
-    S.columnMapping = await askClaudeForMapping(S.selectedSourceTable, S.selectedTargetTable, apiKey);
+    S.columnMapping = await askClaudeForMapping(src, tgt, apiKey);
     renderMappingTable();
     $('mapping-status').textContent = 'Re-mapping complete.';
   } catch(e) {
@@ -1423,15 +1438,21 @@ async function askClaudeForMapping(src, tgt, apiKey){
   if (!tgt) throw new Error('No target table selected');
   if (!src.columns?.length) throw new Error('Source table has no columns');
   if (!tgt.columns?.length) throw new Error('Target table has no columns');
+  if (!src) throw new Error('No source table selected');
+  if (!tgt) throw new Error('No target table selected');
+
   const srcSample = (src.rows || []).slice(0, 10);
   const srcTypes = {};
-  src.columns.forEach(c => { srcTypes[c] = inferType((src.rows || []).map(r => r[c])); });
+  // columns may be string[] or object[] depending on source
+  const srcColNames = src.columns.map(c => typeof c === 'string' ? c : c.name);
+  const srcColDefs  = src.columnDefs || src.columns.map(c => typeof c === 'string' ? {name:c,type:'unknown'} : c);
+  srcColNames.forEach(c => { srcTypes[c] = inferType((src.rows || []).map(r => r[c])); });
 
   const prompt = `You are a SQL Server migration expert. Map source columns to target columns.
 
-SOURCE TABLE: ${src.tableName}
+SOURCE TABLE: ${src.schemaName ? src.schemaName+'.'+src.tableName : src.tableName}
 Source columns and inferred types:
-${src.columns.map(c => `  ${c}: ${srcTypes[c]}`).join('\n')}
+${srcColDefs.map(c => `  ${c.name||c}: ${c.type||srcTypes[c.name||c]||'unknown'}`).join('\n')}
 
 Sample source data (first 3 rows):
 ${JSON.stringify(srcSample.slice(0,3), null, 2)}
