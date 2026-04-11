@@ -291,6 +291,7 @@ let targetTables = [];     // [{ id, schema, name, columns, pkMode, pkCol, pkVar
 let generatedSQL = { insert:'', schema:'', verify:'' };
 let srcAllTables = [];
 let tgtAllTables = [];
+let pendingEditCfg = null; // holds config to restore after DB connects
 
 // Pre-fill connections
 (function(){
@@ -327,6 +328,20 @@ async function connectSrc(){
     if(lbl) lbl.textContent='Source: '+res.database;
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderSrcDrop('');
+    // If in edit mode, restore source table with real columns from schema
+    if (pendingEditCfg && pendingEditCfg.srcTable) {
+      const tbl = srcAllTables.find(t => t.value === pendingEditCfg.srcTable || t.label === pendingEditCfg.srcTable);
+      if (tbl) {
+        srcTable = { fullName: tbl.value, schema: tbl.schema, name: tbl.name, columns: tbl.columns, rows: [] };
+        const inp = document.getElementById('src-table-input');
+        if (inp) inp.value = tbl.label;
+        document.getElementById('src-col-list-wrap').style.display = 'block';
+        document.getElementById('src-col-count').style.display = 'inline';
+        document.getElementById('src-col-count').textContent = tbl.columns.length + ' cols';
+        renderSrcColList();
+        checkReady();
+      }
+    }
   }catch(e){
     if(st) { st.textContent='🔴 '+e.message; st.style.color='var(--red)'; }
     if(dot) dot.style.background='var(--red)';
@@ -353,6 +368,21 @@ async function connectTgt(){
     if(lbl) lbl.textContent='Target: '+res.database;
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderTgtDrop('');
+    // If in edit mode, enrich target table cards with real columns from schema
+    if (pendingEditCfg && pendingEditCfg.targetTables && pendingEditCfg.targetTables.length) {
+      let changed = false;
+      targetTables.forEach((tt, ti) => {
+        const schemaEntry = tgtAllTables.find(t => t.value === tt.fullName || t.label === tt.fullName);
+        if (schemaEntry && schemaEntry.columns && schemaEntry.columns.length) {
+          targetTables[ti].columns = schemaEntry.columns;
+          changed = true;
+        }
+      });
+      if (changed) {
+        renderTargetCards();
+        checkReady();
+      }
+    }
   }catch(e){
     if(st) { st.textContent='🔴 '+e.message; st.style.color='var(--red)'; }
     if(dot) dot.style.background='var(--red)';
@@ -946,6 +976,10 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
       document.getElementById('src-col-count').textContent='saved';
     }
 
+    // Store config so connectSrc/connectTgt can restore columns after loading schemas
+    pendingEditCfg = cfg;
+
+    // Render cards now with whatever column info we have (may be empty until DB connects)
     renderTargetCards();
     checkReady();
 
