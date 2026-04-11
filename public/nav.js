@@ -217,8 +217,8 @@
   window.cygToggleSub = cygToggleSub;
 
   function injectNav() {
-    // Skip login page and index
-    if (['login.html','index.html',''].includes(page)) return;
+    // Skip login, index, and dashboard (dashboard has its own built-in sidebar)
+    if (['login.html','index.html','','dashboard.html'].includes(page)) return;
 
     // Inject CSS
     const style = document.createElement('style');
