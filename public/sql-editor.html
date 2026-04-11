@@ -103,6 +103,19 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
 .form-input:focus{border-color:var(--accent)}
 select.form-input option{background:var(--bg3)}
+
+/* Pivot view */
+.pivot-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
+.pivot-table td:first-child{background:var(--bg3);color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:0.05em;padding:0.35rem 0.75rem;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);white-space:nowrap;font-weight:600;position:sticky;left:0}
+.pivot-table td:not(:first-child){padding:0.35rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);border-right:0.5px solid var(--border)}
+.pivot-table th{background:var(--bg4);padding:0.4rem 0.75rem;font-size:9px;color:var(--text3);text-transform:uppercase;border-bottom:0.5px solid var(--border);border-right:0.5px solid var(--border);text-align:left;position:sticky;top:0;white-space:nowrap}
+.pivot-table tr:hover td{background:rgba(255,255,255,0.02)}
+
+/* Results toolbar */
+.results-toolbar{display:flex;align-items:center;gap:0.4rem;padding:0 0.5rem}
+.results-toolbar-btn{background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;padding:2px 7px;font-size:10px;font-family:var(--serif);transition:all 0.12s;display:flex;align-items:center;gap:3px}
+.results-toolbar-btn:hover{color:var(--text);border-color:var(--text3)}
+.results-toolbar-btn.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3)}
 </style>
 </head>
 <body>
@@ -178,8 +191,24 @@ select.form-input option{background:var(--bg3)}
       <div class="results-bottom-tabs">
         <div class="results-bottom-tab active" onclick="switchBottomTab('results')" id="btab-results">📊 Results</div>
         <div class="results-bottom-tab" onclick="switchBottomTab('history')" id="btab-history">🕐 History</div>
-        <div id="results-footer" style="margin-left:auto;padding:0 1rem;font-size:10px;font-family:var(--mono);color:var(--text3);display:flex;align-items:center"></div>
-        <button onclick="toggleResultsPane()" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 0.75rem;font-size:16px" id="results-toggle" title="Collapse results">⌃</button>
+        <div id="results-footer" style="padding:0 0.75rem;font-size:10px;font-family:var(--mono);color:var(--text3);display:flex;align-items:center"></div>
+        <!-- Results toolbar: only visible when results tab is active -->
+        <div class="results-toolbar" id="results-toolbar" style="display:none">
+          <button class="results-toolbar-btn active" id="btn-row-view" onclick="setResultsView('row')" title="Row view">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="0" y="1" width="10" height="2" rx="0.5" fill="currentColor"/><rect x="0" y="4.5" width="10" height="2" rx="0.5" fill="currentColor"/><rect x="0" y="8" width="10" height="2" rx="0.5" fill="currentColor"/></svg>
+            Rows
+          </button>
+          <button class="results-toolbar-btn" id="btn-col-view" onclick="setResultsView('column')" title="Column (pivot) view — one column per row">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x="1" y="0" width="2" height="10" rx="0.5" fill="currentColor"/><rect x="4.5" y="0" width="2" height="10" rx="0.5" fill="currentColor"/><rect x="8" y="0" width="2" height="10" rx="0.5" fill="currentColor"/></svg>
+            Pivot
+          </button>
+          <div style="width:0.5px;background:var(--border2);height:14px;margin:0 2px"></div>
+          <button class="results-toolbar-btn" onclick="exportResults('csv')" title="Export as CSV">⬇ CSV</button>
+          <button class="results-toolbar-btn" onclick="exportResults('tsv')" title="Export as TSV">⬇ TSV</button>
+          <button class="results-toolbar-btn" onclick="exportResults('json')" title="Export as JSON">⬇ JSON</button>
+          <button class="results-toolbar-btn" onclick="exportResults('xlsx')" title="Export as Excel">⬇ Excel</button>
+        </div>
+        <button onclick="toggleResultsPane()" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 0.75rem;font-size:16px;margin-left:auto" id="results-toggle" title="Collapse results">⌃</button>
       </div>
       <div class="results-bottom-body" id="results-container" style="display:block">
         <div class="results-empty">Run a query (Ctrl+Enter) to see results here</div>
@@ -351,21 +380,63 @@ async function runSQL() {
   }
 }
 
+// Store last results for export/pivot
+let lastResults = { rows:[], cols:[], ms:0 };
+let resultsView = 'row'; // 'row' | 'column'
+
 function renderResults(rows, ms, sql) {
   const wrap   = document.getElementById('results-container');
   const footer = document.getElementById('results-footer');
   switchBottomTab('results');
+
   if (!rows.length) {
     wrap.innerHTML = `<div class="results-empty" style="color:var(--green)">✓ Executed in ${ms}ms — no rows returned</div>`;
-    if (footer) footer.textContent = ''; return;
+    if (footer) footer.textContent = '';
+    document.getElementById('results-toolbar').style.display = 'none';
+    lastResults = {rows:[],cols:[],ms};
+    return;
   }
+
   const cols = Object.keys(rows[0]);
-  const MAX  = 1000;
-  wrap.innerHTML = `<table class="results-table">
-    <thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
-    <tbody>${rows.slice(0,MAX).map(r=>`<tr>${cols.map(c=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
-  </table>`;
+  lastResults = {rows, cols, ms};
+  document.getElementById('results-toolbar').style.display = 'flex';
+  resultsView = 'row';
+  document.getElementById('btn-row-view').classList.add('active');
+  document.getElementById('btn-col-view').classList.remove('active');
+  drawResultsTable(rows, cols, ms);
+}
+
+function drawResultsTable(rows, cols, ms) {
+  const wrap   = document.getElementById('results-container');
+  const footer = document.getElementById('results-footer');
+  const MAX    = 1000;
+
+  if (resultsView === 'row') {
+    wrap.innerHTML = `<table class="results-table">
+      <thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.slice(0,MAX).map(r=>`<tr>${cols.map(c=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`;
+  } else {
+    // Pivot: columns become rows, each data row becomes a column
+    const showRows = Math.min(rows.length, 20); // limit columns in pivot
+    const headerCols = Array.from({length:showRows},(_,i)=>`Row ${i+1}`);
+    wrap.innerHTML = `<table class="pivot-table">
+      <thead><tr><th>Column</th>${headerCols.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${cols.map(c=>`<tr>
+        <td>${esc(c)}</td>
+        ${rows.slice(0,showRows).map(r=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table>${rows.length>20?`<div style="padding:0.5rem 0.75rem;font-size:10px;color:var(--text3);font-family:var(--mono)">Pivot shows first 20 rows as columns — use Row view for full dataset</div>`:''}`;
+  }
+
   if (footer) footer.textContent = `${rows.length.toLocaleString()} row${rows.length!==1?'s':''} · ${cols.length} col${cols.length!==1?'s':''} · ${ms}ms${rows.length>MAX?' · showing first '+MAX:''}`;
+}
+
+function setResultsView(view) {
+  resultsView = view;
+  document.getElementById('btn-row-view').classList.toggle('active', view==='row');
+  document.getElementById('btn-col-view').classList.toggle('active', view==='column');
+  if (lastResults.rows.length) drawResultsTable(lastResults.rows, lastResults.cols, lastResults.ms);
 }
 
 function renderError(msg) {
@@ -379,6 +450,9 @@ function clearResults() {
   document.getElementById('results-container').innerHTML='<div class="results-empty">Run a query (Ctrl+Enter) to see results here</div>';
   const footer = document.getElementById('results-footer');
   if (footer) footer.textContent = '';
+  const toolbar = document.getElementById('results-toolbar');
+  if (toolbar) toolbar.style.display = 'none';
+  lastResults = {rows:[], cols:[], ms:0};
 }
 
 // ── Bottom panel controls ─────────────────────────────────────────────────────
@@ -387,6 +461,9 @@ function switchBottomTab(tab) {
   document.getElementById('history-container').style.display = tab==='history' ? 'block' : 'none';
   document.getElementById('btab-results').classList.toggle('active', tab==='results');
   document.getElementById('btab-history').classList.toggle('active', tab==='history');
+  // Only show toolbar when results tab is active AND we have data
+  const toolbar = document.getElementById('results-toolbar');
+  if (toolbar) toolbar.style.display = (tab==='results' && lastResults.rows.length) ? 'flex' : 'none';
 }
 
 let resultsCollapsed = false;
@@ -649,6 +726,53 @@ function addToJobs() {
     document.body.style.cursor = '';
   });
 })();
+
+// ── Export results ────────────────────────────────────────────────────────────
+function exportResults(format) {
+  const {rows, cols} = lastResults;
+  if (!rows.length) { alert('No results to export — run a query first.'); return; }
+
+  const scriptName = (document.getElementById('script-name')?.value||'results').replace(/[^a-z0-9]/gi,'_');
+  const filename   = scriptName + '_' + new Date().toISOString().slice(0,10);
+  let content2, mime, ext;
+
+  if (format === 'json') {
+    content2 = JSON.stringify(rows, null, 2);
+    mime = 'application/json'; ext = 'json';
+
+  } else if (format === 'tsv') {
+    const lines = [cols.join('\t')].concat(rows.map(r=>cols.map(c=>String(r[c]??'')).join('\t')));
+    content2 = lines.join('\n');
+    mime = 'text/tab-separated-values'; ext = 'tsv';
+
+  } else if (format === 'xlsx') {
+    if (!window.XLSX) {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = () => exportResults('xlsx');
+      document.head.appendChild(s); return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Results');
+    XLSX.writeFile(wb, filename + '.xlsx'); return;
+
+  } else {
+    // CSV — handle commas and quotes in values
+    const escape = v => { const s=String(v??''); return s.includes(',')||s.includes('"')||s.includes('\n') ? '"'+s.replace(/"/g,'""')+'"' : s; };
+    const lines  = [cols.map(escape).join(',')].concat(rows.map(r=>cols.map(c=>escape(r[c])).join(',')));
+    content2 = lines.join('\n');
+    mime = 'text/csv'; ext = 'csv';
+  }
+
+  const blob = new Blob([content2], {type: mime});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = filename + '.' + ext;
+  a.click(); URL.revokeObjectURL(a.href);
+  setExecStatus('✓ Exported as ' + ext.toUpperCase(), 'var(--green)');
+  setTimeout(()=>setExecStatus('',''), 3000);
+}
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
