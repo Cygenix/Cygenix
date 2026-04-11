@@ -246,6 +246,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
   .two-col{grid-template-columns:1fr}
 }
 </style>
+<script src="/connections.js"></script>
 </head>
 <body>
 <div class="app">
@@ -283,6 +284,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div class="nav-item active" onclick="showView('dashboard')">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
         Dashboard
+      </div>
+      <div class="nav-item" onclick="showView('connections')" style="color:var(--green)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="4" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        Connections <span id="conn-status-dot" style="margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0" title="Not configured"></span>
       </div>
 
       <!-- Mapping sub-menu -->
@@ -746,6 +751,99 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
 
 
+
+    <!-- CONNECTIONS VIEW -->
+    <div id="view-connections" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">🔌 Project Connections</div>
+          <div class="panel-sub">Configure your source and target database connections once — all pages inherit these settings automatically.</div>
+        </div>
+        <div style="display:flex;gap:0.75rem;align-items:center">
+          <div id="conn-save-indicator" style="font-size:12px;color:var(--text3);display:none">✓ Saved</div>
+          <button class="btn btn-primary btn-sm" onclick="saveProjectConnections()">💾 Save connections</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearProjectConnections()" style="color:var(--red)">✕ Clear all</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem">
+
+        <!-- Source -->
+        <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem">
+          <div style="font-size:13px;font-weight:600;color:var(--teal);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 8h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Source Database
+            <span id="src-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)" title="Not connected"></span>
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+            <button id="src-mode-direct" class="btn btn-sm" onclick="setSrcMode('direct')" style="flex:1;justify-content:center;background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.3)">Direct connection</button>
+            <button id="src-mode-azure" class="btn btn-sm" onclick="setSrcMode('azure')" style="flex:1;justify-content:center;background:transparent;color:var(--text2);border:0.5px solid var(--border2)">Azure Function</button>
+          </div>
+
+          <div id="src-direct-wrap">
+            <label class="form-label">Connection string</label>
+            <input id="proj-src-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="Server=host;Database=db;User Id=user;Password=pass;Encrypt=true;">
+          </div>
+          <div id="src-azure-wrap" style="display:none">
+            <label class="form-label">Azure Function URL</label>
+            <input id="proj-src-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
+            <label class="form-label">Function key</label>
+            <input id="proj-src-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="your-function-key" type="password">
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')">🔌 Connect &amp; test</button>
+          </div>
+          <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3)"></div>
+        </div>
+
+        <!-- Target -->
+        <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem">
+          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="12" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 8h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+            Target Database
+            <span id="tgt-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)" title="Not connected"></span>
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
+            <button id="tgt-mode-direct" class="btn btn-sm" onclick="setTgtMode('direct')" style="flex:1;justify-content:center;background:transparent;color:var(--text2);border:0.5px solid var(--border2)">Direct connection</button>
+            <button id="tgt-mode-azure" class="btn btn-sm" onclick="setTgtMode('azure')" style="flex:1;justify-content:center;background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.3)">Azure Function</button>
+          </div>
+
+          <div id="tgt-direct-wrap" style="display:none">
+            <label class="form-label">Connection string</label>
+            <input id="proj-tgt-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="Server=host;Database=db;User Id=user;Password=pass;Encrypt=true;">
+          </div>
+          <div id="tgt-azure-wrap">
+            <label class="form-label">Azure Function URL</label>
+            <input id="proj-tgt-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
+            <label class="form-label">Function key</label>
+            <input id="proj-tgt-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="your-function-key" type="password">
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')">🔌 Connect &amp; test</button>
+          </div>
+          <div id="tgt-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3)"></div>
+        </div>
+      </div>
+
+      <!-- Status / inherited pages -->
+      <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem">
+        <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">📡 Connection inheritance</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:0.875rem">
+          Once saved, these connections are automatically available in:
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem">
+          ${['Simple Map (Configure)','One-to-Many','Data Insights','Execute Jobs','Validation','Data Insights'].map(p=>`
+          <div style="background:var(--bg3);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:0.4rem">
+            <span style="color:var(--green)">✓</span> ${p}
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <!-- END CONNECTIONS VIEW -->
 
 </div>
 
@@ -2524,3 +2622,148 @@ updateWasisBanner();
 </html>
 
 
+
+<script>
+// ── Project Connections View ───────────────────────────────────────────────────
+let srcMode = 'direct';
+let tgtMode = 'azure';
+
+function setSrcMode(mode) {
+  srcMode = mode;
+  document.getElementById('src-direct-wrap').style.display = mode === 'direct' ? 'block' : 'none';
+  document.getElementById('src-azure-wrap').style.display  = mode === 'azure'  ? 'block' : 'none';
+  document.getElementById('src-mode-direct').style.background = mode==='direct' ? 'var(--accent-glow)' : 'transparent';
+  document.getElementById('src-mode-direct').style.color = mode==='direct' ? 'var(--accent)' : 'var(--text2)';
+  document.getElementById('src-mode-azure').style.background = mode==='azure' ? 'var(--accent-glow)' : 'transparent';
+  document.getElementById('src-mode-azure').style.color = mode==='azure' ? 'var(--accent)' : 'var(--text2)';
+}
+function setTgtMode(mode) {
+  tgtMode = mode;
+  document.getElementById('tgt-direct-wrap').style.display = mode === 'direct' ? 'block' : 'none';
+  document.getElementById('tgt-azure-wrap').style.display  = mode === 'azure'  ? 'block' : 'none';
+  document.getElementById('tgt-mode-direct').style.background = mode==='direct' ? 'var(--accent-glow)' : 'transparent';
+  document.getElementById('tgt-mode-direct').style.color = mode==='direct' ? 'var(--accent)' : 'var(--text2)';
+  document.getElementById('tgt-mode-azure').style.background = mode==='azure' ? 'var(--accent-glow)' : 'transparent';
+  document.getElementById('tgt-mode-azure').style.color = mode==='azure' ? 'var(--accent)' : 'var(--text2)';
+}
+
+function initConnectionsView() {
+  const c = CygenixConnections.get();
+
+  // Source
+  srcMode = c.srcConnMode || 'direct';
+  setSrcMode(srcMode);
+  if (document.getElementById('proj-src-cs'))     document.getElementById('proj-src-cs').value = c.srcConnString;
+  if (document.getElementById('proj-src-fn-url')) document.getElementById('proj-src-fn-url').value = c.tgtFnUrl; // src azure not commonly used
+  if (document.getElementById('proj-src-fn-key')) document.getElementById('proj-src-fn-key').value = '';
+
+  // Target
+  tgtMode = c.tgtConnMode || 'azure';
+  setTgtMode(tgtMode);
+  if (document.getElementById('proj-tgt-cs'))     document.getElementById('proj-tgt-cs').value = c.tgtConnString;
+  if (document.getElementById('proj-tgt-fn-url')) document.getElementById('proj-tgt-fn-url').value = c.tgtFnUrl;
+  if (document.getElementById('proj-tgt-fn-key')) document.getElementById('proj-tgt-fn-key').value = c.tgtFnKey;
+
+  updateConnDots();
+}
+
+function updateConnDots() {
+  const c = CygenixConnections.get();
+  const srcOk = !!(c.srcConnString);
+  const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
+  const srcDot = document.getElementById('src-conn-dot');
+  const tgtDot = document.getElementById('tgt-conn-dot');
+  const navDot = document.getElementById('conn-status-dot');
+  if (srcDot) { srcDot.style.background = srcOk ? 'var(--green)' : 'var(--red)'; srcDot.title = srcOk ? 'Configured' : 'Not configured'; }
+  if (tgtDot) { tgtDot.style.background = tgtOk ? 'var(--green)' : 'var(--red)'; tgtDot.title = tgtOk ? 'Configured' : 'Not configured'; }
+  if (navDot) { navDot.style.background = (srcOk && tgtOk) ? 'var(--green)' : srcOk||tgtOk ? 'var(--amber)' : 'var(--red)'; }
+}
+
+async function testProjConn(which) {
+  const resultEl = document.getElementById(which+'-conn-result');
+  const dotEl    = document.getElementById(which+'-conn-dot');
+  resultEl.textContent = 'Connecting…';
+  resultEl.style.color = 'var(--accent)';
+
+  let conn = '';
+  if (which === 'src') {
+    conn = srcMode === 'direct'
+      ? (document.getElementById('proj-src-cs')?.value.trim() || '')
+      : (document.getElementById('proj-src-fn-url')?.value.trim() || '');
+  } else {
+    conn = tgtMode === 'direct'
+      ? (document.getElementById('proj-tgt-cs')?.value.trim() || '')
+      : (document.getElementById('proj-tgt-fn-url')?.value.trim() || '');
+    const key = document.getElementById('proj-tgt-fn-key')?.value.trim();
+    if (tgtMode === 'azure' && key) conn = conn + (conn.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(key);
+  }
+
+  if (!conn) { resultEl.textContent = 'Enter a connection string first.'; resultEl.style.color = 'var(--red)'; return; }
+
+  try {
+    const isFn = conn.startsWith('https://') || conn.startsWith('http://');
+    const res  = isFn
+      ? await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test'}), signal:AbortSignal.timeout(30000) })
+      : await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'test', connectionString:conn}), signal:AbortSignal.timeout(30000) });
+    const data = await res.json().catch(()=>({error:'Non-JSON'}));
+    if (!res.ok) throw new Error(data.error||res.statusText);
+    resultEl.textContent = '🟢 Connected · ' + data.database + ' · ' + (data.user||'').split('@')[0];
+    resultEl.style.color = 'var(--green)';
+    if (dotEl) dotEl.style.background = 'var(--green)';
+    // Auto-save on successful test
+    saveProjectConnections();
+  } catch(e) {
+    resultEl.textContent = '🔴 ' + e.message;
+    resultEl.style.color = 'var(--red)';
+    if (dotEl) dotEl.style.background = 'var(--red)';
+  }
+}
+
+function saveProjectConnections() {
+  // Read from the form and save to sessionStorage then localStorage
+  if (srcMode === 'direct') {
+    const cs = document.getElementById('proj-src-cs')?.value.trim() || '';
+    sessionStorage.setItem('cygenix_src_conn_string', cs);
+    sessionStorage.setItem('cygenix_src_conn_mode', 'direct');
+  } else {
+    const url = document.getElementById('proj-src-fn-url')?.value.trim() || '';
+    const key = document.getElementById('proj-src-fn-key')?.value.trim() || '';
+    sessionStorage.setItem('cygenix_src_conn_string', url + (key ? '?code='+encodeURIComponent(key) : ''));
+    sessionStorage.setItem('cygenix_src_conn_mode', 'azure');
+  }
+
+  if (tgtMode === 'direct') {
+    const cs = document.getElementById('proj-tgt-cs')?.value.trim() || '';
+    sessionStorage.setItem('cygenix_conn_string', cs);
+    sessionStorage.setItem('cygenix_fn_url', '');
+    sessionStorage.setItem('cygenix_fn_key', '');
+    sessionStorage.setItem('cygenix_conn_mode', 'direct');
+  } else {
+    const url = document.getElementById('proj-tgt-fn-url')?.value.trim() || '';
+    const key = document.getElementById('proj-tgt-fn-key')?.value.trim() || '';
+    sessionStorage.setItem('cygenix_fn_url', url);
+    sessionStorage.setItem('cygenix_fn_key', key);
+    sessionStorage.setItem('cygenix_conn_string', '');
+    sessionStorage.setItem('cygenix_conn_mode', 'azure');
+  }
+
+  // Persist to localStorage via CygenixConnections
+  CygenixConnections.save();
+  updateConnDots();
+
+  const ind = document.getElementById('conn-save-indicator');
+  if (ind) { ind.style.display='block'; setTimeout(()=>ind.style.display='none', 2500); }
+}
+
+function clearProjectConnections() {
+  if (!confirm('Clear all saved connections?')) return;
+  CygenixConnections.clear();
+  ['proj-src-cs','proj-src-fn-url','proj-src-fn-key','proj-tgt-cs','proj-tgt-fn-url','proj-tgt-fn-key']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['src-conn-result','tgt-conn-result'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+  updateConnDots();
+}
+
+// Update nav dot on load
+document.addEventListener('DOMContentLoaded', updateConnDots);
+</script>
