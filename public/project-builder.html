@@ -127,27 +127,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 </div>
 
 <div class="app-wrap">
-<div id="conn-banner" style="display:flex;align-items:center;gap:1rem;padding:0.5rem 1.25rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:11px;font-family:var(--mono);flex-wrap:wrap;grid-column:1/-1">
-  <span style="color:var(--text3);font-size:10px;text-transform:uppercase;font-family:var(--serif)">Connections</span>
-  <span id="banner-src-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red)"></span>
-  <span id="banner-src-label" style="color:var(--text3)">Source: not configured</span>
-  <span style="color:var(--border2)">|</span>
-  <span id="banner-tgt-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red)"></span>
-  <span id="banner-tgt-label" style="color:var(--text3)">Target: not configured</span>
-  <a href="/dashboard.html" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none">⚙ Edit →</a>
-</div>
-<script>
-(function(){if(typeof CygenixConnections==="undefined")return;
-const c=CygenixConnections.get(),s=!!c.srcConnString,t=!!(c.tgtFnUrl||c.tgtConnString);
-const sd=document.getElementById("banner-src-dot"),td=document.getElementById("banner-tgt-dot");
-const sl=document.getElementById("banner-src-label"),tl=document.getElementById("banner-tgt-label");
-if(sd)sd.style.background=s?"var(--green)":"var(--red)";
-if(td)td.style.background=t?"var(--green)":"var(--red)";
-if(sl)sl.textContent=s?"Source: "+c.srcConnString.slice(0,45):"Source: not configured";
-const tr=c.tgtFnUrl||c.tgtConnString||"";
-if(tl)tl.textContent=t?"Target: "+tr.slice(0,45):"Target: not configured";
-})();
-</script>
+
 
   <!-- NAV SIDEBAR -->
   <nav class="nav-sidebar">
