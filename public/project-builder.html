@@ -391,15 +391,19 @@ function addJobAsStep(jobIndex) {
   if (!job) return;
 
   const step = {
-    type:          'migration',
-    name:          job.name || job.target + ' migration',
-    srcTable:      job.source || '',
-    tgtTable:      job.target || '',
-    columnMapping: job.columnMapping || [],
-    totalRows:     job.totalRows || 0,
-    jobId:         job.id,
-    status:        'pending',
-    log:           ''
+    type:            'migration',
+    name:            job.name || job.target + ' migration',
+    srcTable:        job.sourceTable || job.source || '',
+    tgtTable:        job.targetTable || job.target || '',
+    columnMapping:   job.columnMapping || [],
+    totalRows:       job.totalRows || 0,
+    jobId:           job.id,
+    jobType:         job.jobType || 'migration',
+    oneToManyConfig: job.oneToManyConfig || null,
+    insertSQL:       job.insertSQL || '',
+    tables:          job.tables || [],
+    status:          'pending',
+    log:             ''
   };
   project.steps.push(step);
   renderSteps();
@@ -748,8 +752,28 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
   if (!step.srcTable) throw new Error('Source table not set');
-  if (!step.tgtTable) throw new Error('Target table not set');
   if (!srcConn)       throw new Error('Source connection not configured');
+  if (!tgtConn)       throw new Error('Target connection not configured');
+
+  // ── One-to-many job: use the pre-generated cursor SQL ──────────────────────
+  if (step.jobType === 'one-to-many' || step.oneToManyConfig) {
+    if (!step.insertSQL) throw new Error('No generated SQL found — open the One-to-Many Mapper, generate SQL, then save the job again');
+    add('Running one-to-many migration: '+step.srcTable+' → '+( step.tables?.map(t=>t.name).join(', ')||step.tgtTable||'multiple tables'));
+    add('Executing generated cursor SQL on target DB…');
+    try {
+      const res = await dbCall(tgtConn, { action:'execute', sql: step.insertSQL });
+      const affected = res.rowsAffected || res.totalRowsAffected || 0;
+      add('Done — ' + affected.toLocaleString() + ' rows affected');
+      step.rowsInserted = affected;
+      return { ok: true, log: stepLog };
+    } catch(e) {
+      add('Error: ' + e.message);
+      return { ok: false, log: stepLog };
+    }
+  }
+
+  // ── Standard single-table migration ────────────────────────────────────────
+  if (!step.tgtTable) throw new Error('Target table not set');
 
   // Fetch rows from source
   add('Fetching rows from '+step.srcTable+'…');
@@ -758,7 +782,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   add('Fetched '+rows.length.toLocaleString()+' rows');
   if (!rows.length) { add('Nothing to insert.'); return {ok:true,log:stepLog}; }
 
-  // Build mapping — use saved column mapping or auto-map
+  // Build mapping — use saved column mapping or auto-map by name
   let mapping = step.columnMapping?.filter(m=>m.tgtCol) || [];
   if (!mapping.length) {
     mapping = Object.keys(rows[0]).map(c=>({srcCol:c,tgtCol:c,transform:'NONE'}));
@@ -780,9 +804,10 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   add('Executing '+batches.length+' batches into '+step.tgtTable+'…');
   const res = await dbCall(tgtConn, { action:'batch', batchSql:batches });
   const inserted = res.totalRowsAffected || 0;
+  if (res.errorDetails) add('Error detail: ' + JSON.stringify(res.errorDetails).slice(0,200));
   add('Inserted '+inserted.toLocaleString()+' rows · '+(res.errors||0)+' errors');
   step.rowsInserted = inserted;
-  return { ok:res.errors===0, log:stepLog };
+  return { ok: (res.errors||0) === 0, log: stepLog };
 }
 
 async function runSqlStep(step, srcConn, tgtConn, log) {
