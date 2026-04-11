@@ -300,6 +300,25 @@ let pendingEditCfg = null; // holds config to restore after DB connects
 
 // ── DB helper ─────────────────────────────────────────────────────────────────
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
+
+// Parse database name from ADO.NET or mssql:// connection string
+function parseDbName(connStr) {
+  if (!connStr) return '';
+  // Azure Function URL — no DB name available, return empty (target DB is fixed on server)
+  if (isFn(connStr)) {
+    // Try to extract from URL path: mssql://user:pass@host:1433/dbname
+    const urlMatch = connStr.match(/\/([^/?&]+)(\?|$)/);
+    if (urlMatch) return urlMatch[1];
+    return '';
+  }
+  // ADO.NET: Database=xxx; or Initial Catalog=xxx;
+  const adoMatch = connStr.match(/(?:Database|Initial\s+Catalog)\s*=\s*([^;]+)/i);
+  if (adoMatch) return adoMatch[1].trim();
+  // mssql URL format: mssql://user:pass@host:port/database
+  const mssqlMatch = connStr.match(/mssql:\/\/[^/]+\/([^?&]+)/i);
+  if (mssqlMatch) return mssqlMatch[1].trim();
+  return '';
+}
 async function dbCall(conn, body){
   const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
   const payload = isFn(conn) ? body : {...body, connectionString:conn};
@@ -321,11 +340,13 @@ async function connectSrc(){
   if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
     const res=await dbCall(conn,{action:'schema'});
-    srcSchema=res;
+    // Parse database name from connection string since schema response doesn't include it
+    const srcDbName = parseDbName(_oc.srcConnString);
+    srcSchema = { ...res, database: srcDbName };
     srcAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
-    if(st) { st.textContent='🟢 '+res.database+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
+    if(st) { st.textContent='🟢 '+srcDbName+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
-    if(lbl) lbl.textContent='Source: '+res.database;
+    if(lbl) lbl.textContent='Source: '+srcDbName;
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderSrcDrop('');
     // If in edit mode, restore source table with real columns from schema
@@ -361,11 +382,13 @@ async function connectTgt(){
   if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
     const res=await dbCall(conn,{action:'schema'});
-    tgtSchema=res;
+    // Parse database name from connection string since schema response doesn't include it
+    const tgtDbName = parseDbName(conn);
+    tgtSchema = { ...res, database: tgtDbName };
     tgtAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
-    if(st) { st.textContent='🟢 '+res.database+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
+    if(st) { st.textContent='🟢 '+tgtDbName+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
-    if(lbl) lbl.textContent='Target: '+res.database;
+    if(lbl) lbl.textContent='Target: '+tgtDbName;
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderTgtDrop('');
     // If in edit mode, enrich target table cards with real columns + restore saved mappings
