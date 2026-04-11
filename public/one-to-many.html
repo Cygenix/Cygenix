@@ -740,8 +740,10 @@ function downloadSQL(){
 function saveAsJob(){
   if(!srcTable||!targetTables.length){alert('Nothing to save yet.');return;}
   const name=document.getElementById('mapping-name').value.trim()||srcTable.fullName+' → '+targetTables.map(t=>t.name).join(', ');
+  // Check if we're in edit mode
+  const editId = new URLSearchParams(location.search).get('edit');
   const job={
-    id:'job_'+Date.now(),
+    id: editId || 'job_'+Date.now(),
     name,
     source:srcTable.fullName,
     sourceTable:srcTable.fullName,
@@ -759,9 +761,11 @@ function saveAsJob(){
   };
   try{
     const jobs=JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
-    jobs.unshift(job);
+    const existIdx = jobs.findIndex(j=>j.id===job.id);
+    if (existIdx>=0) { jobs[existIdx]={...jobs[existIdx],...job}; }
+    else { jobs.unshift(job); }
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,50)));
-    showStatus('✓ Saved as job: '+name+' — visible in All Jobs','ok');
+    showStatus('✓ '+(existIdx>=0?'Updated':'Saved as')+' job: '+name+' — visible in All Jobs','ok');
   }catch(e){showStatus('Save failed: '+e.message,'err');}
 }
 
@@ -772,6 +776,58 @@ function showStatus(msg,type){
   if(type==='ok') setTimeout(()=>el.className='status',4000);
 }
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+// ── Edit mode — load saved one-to-many job ────────────────────────────────────
+(function loadEditMode(){
+  const params = new URLSearchParams(location.search);
+  const editId = params.get('edit');
+  if (!editId) return;
+
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    const job  = jobs.find(j=>j.id===editId);
+    if (!job || job.jobType!=='one-to-many') return;
+
+    const cfg = job.oneToManyConfig;
+    if (!cfg) return;
+
+    // Set mapping name
+    const nameEl = document.getElementById('mapping-name');
+    if (nameEl) nameEl.value = job.name || '';
+
+    // Set transaction mode
+    const txEl = document.getElementById('tx-mode');
+    if (txEl && cfg.txMode) txEl.value = cfg.txMode;
+
+    // Restore target tables state
+    if (cfg.targetTables?.length) {
+      targetTables = cfg.targetTables.map(tt=>({...tt, id: tt.id||'tt_'+Date.now()+'_'+Math.random().toString(36).slice(2,5)}));
+    }
+
+    // Set source table display
+    if (cfg.srcTable) {
+      const inp = document.getElementById('src-table-input');
+      if (inp) inp.value = cfg.srcTable;
+      // Build minimal srcTable object so renderTargetCards works
+      srcTable = { fullName: cfg.srcTable, schema: cfg.srcTable.split('.')[0]||'dbo', name: cfg.srcTable.split('.').pop(), columns: [], rows: [] };
+      document.getElementById('src-col-list-wrap').style.display='block';
+      document.getElementById('src-col-count').style.display='inline';
+      document.getElementById('src-col-count').textContent='saved';
+    }
+
+    renderTargetCards();
+    checkReady();
+
+    // Show a banner indicating edit mode
+    const banner = document.createElement('div');
+    banner.style.cssText='margin-bottom:1rem;padding:0.6rem 1rem;background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);font-size:12px;color:var(--purple);display:flex;align-items:center;justify-content:space-between';
+    banner.innerHTML='<span>✏ Editing job: <strong>'+job.name+'</strong> — connect to DBs then generate SQL to update</span><button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px">✕</button>';
+    const page = document.querySelector('.page');
+    if (page) page.insertBefore(banner, page.firstChild);
+  } catch(e) {
+    console.warn('Could not load edit job:', e);
+  }
+})();
 
 // Close dropdowns on outside click
 document.addEventListener('click',e=>{

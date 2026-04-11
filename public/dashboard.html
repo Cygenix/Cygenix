@@ -2124,7 +2124,10 @@ function jobsTableHTML(jobs) {
     jobs.map((j, idx) => `<tr id="job-row-${j.id}" data-job-id="${j.id}">
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${idx+1}</td>
       <td>
-        <div class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="Double-click to rename">${j.name}</div>
+        <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:2px">
+          <div class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="Double-click to rename">${j.name}</div>
+          ${j.jobType==='one-to-many'?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono);flex-shrink:0">1→M</span>':j.jobType==='sql'?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono);flex-shrink:0">SQL</span>':''}
+        </div>
         <div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div>
       </td>
       <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
@@ -2135,13 +2138,30 @@ function jobsTableHTML(jobs) {
       <td>${lastRunText(j)}</td>
       <td style="display:flex;gap:6px;padding-top:0.75rem;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="openJobModal('${j.id}')">View</button>
-        <button class="btn btn-ghost btn-sm" onclick="window.location.href='/job-editor.html?id=${j.id}'" style="color:var(--purple);border-color:rgba(167,139,250,0.25)">✏ Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)">✏ Edit</button>
         <button class="btn btn-teal btn-sm" onclick="downloadJobSQL('${j.id}','schema')">⬇ Schema</button>
         <button class="btn btn-primary btn-sm" onclick="downloadJobSQL('${j.id}','migration')">⬇ Migration</button>
         <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')">Report</button>
         <button class="btn btn-ghost btn-sm" onclick="renameJob(this)" data-jobid="${j.id}">✎ Rename</button>
         <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Delete">✕</button>
       </td></tr>`).join('') + '</tbody></table>';
+}
+
+function editJob(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) return;
+  // Route to the correct editor based on jobType
+  switch (job.jobType) {
+    case 'one-to-many':
+      window.location.href = '/one-to-many.html?edit=' + encodeURIComponent(jobId);
+      break;
+    case 'sql':
+      window.location.href = '/sql-editor.html?edit=' + encodeURIComponent(jobId);
+      break;
+    default:
+      // Standard column-mapping job → job-editor
+      window.location.href = '/job-editor.html?id=' + encodeURIComponent(jobId);
+  }
 }
 
 function renameJob(btn) {
