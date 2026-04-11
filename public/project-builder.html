@@ -659,6 +659,9 @@ async function runProject() {
       if (step.type === 'migration') {
         const r = await runMigrationStep(step, srcConn, tgtConn, log);
         stepLog=r.log; ok=r.ok;
+        // Ensure rowsInserted and tables are explicitly set on project.steps[i]
+        if (r.rowsInserted !== undefined) project.steps[i].rowsInserted = r.rowsInserted;
+        if (r.tables)                     project.steps[i].tables       = r.tables;
       } else {
         const r = await runSqlStep(step, srcConn, tgtConn, log);
         stepLog=r.log; ok=r.ok;
@@ -697,6 +700,7 @@ async function runProject() {
 
   // Build and store report data
   const reportData = buildProjectReport(steps, passed, failed, srcConn, tgtConn);
+  console.log('[Cygenix Report] tables:', reportData.tables?.map(t=>t.name+':'+t.insertedRows));
   try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); localStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
   // Save to jobs list
   try {
@@ -794,14 +798,20 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       // Update step.tables with actual row counts for the report
       if (step.tables && step.tables.length) {
         step.tables = step.tables.map(t => {
-          const found = perTableCounts.find(p => p.name === (t.name||t.fullName));
+          const tName = t.name || t.fullName || '';
+          const found = perTableCounts.find(p =>
+            p.name === tName ||
+            p.name.toLowerCase() === tName.toLowerCase() ||
+            p.name.split('.').pop().toLowerCase() === tName.split('.').pop().toLowerCase()
+          );
           return { ...t, rows: found ? found.rows : 0 };
         });
       }
-      return { ok: true, log: stepLog };
+      console.log('[Cygenix] rows after count:', step.tables?.map(t=>t.name+':'+t.rows));
+      return { ok: true, log: stepLog, rowsInserted: totalInserted, tables: step.tables };
     } catch(e) {
       add('Error: ' + e.message);
-      return { ok: false, log: stepLog };
+      return { ok: false, log: stepLog, rowsInserted: 0 };
     }
   }
 
