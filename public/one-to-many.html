@@ -66,7 +66,7 @@ select.form-input option{background:var(--bg3)}
 .tgt-card-body{padding:1rem}
 
 /* Mapping rows */
-.map-row{display:grid;grid-template-columns:1fr 32px 1fr 110px 28px;gap:0.4rem;align-items:center;margin-bottom:0.4rem}
+.map-row{display:grid;grid-template-columns:1fr 28px 1fr 90px 24px;gap:0.35rem;align-items:center;margin-bottom:0.4rem}
 .map-row-label{font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center}
 select.map-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:4px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;width:100%}
 select.map-select:focus{border-color:var(--accent)}
@@ -368,18 +368,25 @@ async function connectTgt(){
     if(lbl) lbl.textContent='Target: '+res.database;
     if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderTgtDrop('');
-    // If in edit mode, enrich target table cards with real columns from schema
+    // If in edit mode, enrich target table cards with real columns + restore saved mappings
     if (pendingEditCfg && pendingEditCfg.targetTables && pendingEditCfg.targetTables.length) {
       let changed = false;
       targetTables.forEach((tt, ti) => {
         const schemaEntry = tgtAllTables.find(t => t.value === tt.fullName || t.label === tt.fullName);
         if (schemaEntry && schemaEntry.columns && schemaEntry.columns.length) {
+          // Enrich with live column definitions (type, isIdentity, nullable etc.)
           targetTables[ti].columns = schemaEntry.columns;
+          // Restore saved mappings from the edit config (overwrite the empty default)
+          const savedTT = pendingEditCfg.targetTables[ti];
+          if (savedTT && savedTT.mappings && savedTT.mappings.length) {
+            targetTables[ti].mappings = savedTT.mappings.map(m => ({...m}));
+          }
           changed = true;
         }
       });
       if (changed) {
         renderTargetCards();
+        renderSrcColList();
         checkReady();
       }
     }
@@ -494,12 +501,12 @@ function renderTargetCards(){
       <div class="map-row">
         <select class="map-select" onchange="updateMapping(${ti},${mi},'srcCol',this.value)">
           <option value="">— source col —</option>
-          ${(srcTable?.columns||[]).map(c=>`<option ${m.srcCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+          ${(srcTable?.columns||[]).map(c=>`<option ${m.srcCol===c.name?'selected':''} value="${esc(c.name)}">${esc(c.name)}${c.type?' ('+esc(c.type)+')':''}</option>`).join('')}
         </select>
         <div class="map-row-label" style="color:var(--accent)">→</div>
         <select class="map-select" onchange="updateMapping(${ti},${mi},'tgtCol',this.value)">
           <option value="">— target col —</option>
-          ${tt.columns.map(c=>`<option ${m.tgtCol===c.name?'selected':''}>${esc(c.name)}${c.isIdentity?' ✦':''}</option>`).join('')}
+          ${tt.columns.map(c=>`<option ${m.tgtCol===c.name?'selected':''} value="${esc(c.name)}">${esc(c.name)}${c.isIdentity?' ✦ IDENTITY':c.type?' ('+esc(c.type)+(c.nullable===false?' NN':'')+')':''}</option>`).join('')}
         </select>
         <select class="map-select" onchange="updateMapping(${ti},${mi},'transform',this.value)">
           ${['NONE','TRIM','CAST','UPPER','LOWER','CONVERT','GETDATE()','NEWID()'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
