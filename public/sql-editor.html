@@ -28,7 +28,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .topbar{position:fixed;top:0;right:0;left:220px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem}
 .logo{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
 .page{display:grid;grid-template-rows:52px 1fr;height:100vh;padding-left:0}
-.editor-layout{display:grid;grid-template-columns:280px 1fr 380px;height:calc(100vh - 52px);overflow:hidden;margin-top:52px}
+.editor-layout{display:grid;grid-template-columns:280px 1fr 340px;height:calc(100vh - 52px);overflow:hidden;margin-top:52px}
 
 /* SIDEBAR: Script library */
 .script-panel{background:var(--bg2);border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
@@ -46,9 +46,20 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 /* EDITOR pane */
 .editor-pane{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 .editor-toolbar{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex-shrink:0}
+.editor-upper{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:120px}
 .editor-wrap{position:relative;flex:1;overflow:hidden}
 #sql-editor{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.7;border:none;outline:none;resize:none;padding:1rem 1.25rem;tab-size:2}
 .editor-status{padding:0.35rem 1rem;background:var(--bg3);border-top:0.5px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:flex;gap:1rem}
+/* Resize handle */
+.resize-handle{height:5px;background:var(--border);cursor:row-resize;flex-shrink:0;transition:background 0.15s;position:relative}
+.resize-handle:hover,.resize-handle.dragging{background:var(--accent)}
+.resize-handle::after{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:40px;height:2px;border-radius:1px;background:var(--text3);opacity:0.5}
+/* Results bottom panel */
+.results-bottom{display:flex;flex-direction:column;border-top:0.5px solid var(--border);background:var(--bg2);flex-shrink:0;min-height:36px;overflow:hidden}
+.results-bottom-tabs{display:flex;align-items:center;border-bottom:0.5px solid var(--border);flex-shrink:0;background:var(--bg3)}
+.results-bottom-tab{padding:0.4rem 1rem;font-size:11px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap}
+.results-bottom-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.results-bottom-body{flex:1;overflow:auto}
 
 /* RESULTS / AI pane */
 .right-pane{display:flex;flex-direction:column;background:var(--bg2);border-left:0.5px solid var(--border);overflow:hidden}
@@ -97,20 +108,22 @@ select.form-input option{background:var(--bg3)}
 <body>
 
 <div class="topbar">
-  <div style="display:flex;align-items:center;gap:0.75rem">
-    <span style="font-size:13px;color:var(--teal);font-weight:500">SQL Editor</span>
-    <input id="script-name" class="form-input" style="width:220px;font-family:var(--serif);font-size:12px" placeholder="Script name…" value="New script">
+  <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
+    <span style="font-size:13px;color:var(--teal);font-weight:500;flex-shrink:0">SQL Editor</span>
+    <input id="script-name" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Script name…" value="New script">
+    <input id="script-desc" class="form-input" style="width:240px;font-family:var(--serif);font-size:12px;color:var(--text3)" placeholder="Description (optional)">
   </div>
-  <div style="display:flex;gap:0.5rem;align-items:center">
-    <select id="conn-select" class="form-input" style="width:150px;font-size:12px" onchange="updateConnLabel()">
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
+    <select id="conn-select" class="form-input" style="width:140px;font-size:12px" onchange="updateConnLabel()">
       <option value="source">Source DB</option>
       <option value="target">Target DB</option>
     </select>
     <button class="btn btn-primary btn-sm" onclick="runSQL()" id="run-btn">▶ Run</button>
     <button class="btn btn-ghost btn-sm" onclick="formatSQL()">⌨ Format</button>
-    <button class="btn btn-green btn-sm" onclick="saveScript()">💾 Save script</button>
-    <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ Add to jobs</button>
-    <input type="password" id="api-key" class="form-input" style="width:160px;font-size:11px" placeholder="Anthropic key for AI">
+    <button class="btn btn-green btn-sm" onclick="saveScript()">💾 Save</button>
+    <button class="btn btn-amber btn-sm" onclick="saveToInventory()" title="Save to Inventory">📋 Inventory</button>
+    <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ Jobs</button>
+    <input type="password" id="api-key" class="form-input" style="width:140px;font-size:11px" placeholder="Anthropic API key">
   </div>
 </div>
 
@@ -130,8 +143,8 @@ select.form-input option{background:var(--bg3)}
     </div>
   </div>
 
-  <!-- Editor -->
-  <div class="editor-pane">
+  <!-- Editor + Results (stacked vertically) -->
+  <div class="editor-pane" id="editor-pane">
     <div class="editor-toolbar">
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('SELECT TOP 100 * FROM ')">SELECT</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('WHERE ')">WHERE</button>
@@ -139,59 +152,63 @@ select.form-input option{background:var(--bg3)}
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('UPDATE ')">UPDATE</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('DELETE FROM ')">DELETE</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('BEGIN TRAN;\n\n\n\nROLLBACK; -- COMMIT;')">TRAN</button>
-      <div style="margin-left:auto;display:flex;gap:0.5rem">
+      <div style="margin-left:auto;display:flex;gap:0.5rem;align-items:center">
         <span id="exec-status" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
       </div>
     </div>
-    <div class="editor-wrap">
-      <textarea id="sql-editor" spellcheck="false" placeholder="-- Write your SQL here, or ask Claude AI to help on the right
--- Press Ctrl+Enter to run
 
-SELECT TOP 100 * FROM [dbo].[YourTable]
-" onkeydown="handleEditorKey(event)" oninput="updateStatus()"></textarea>
+    <!-- Editor area (upper) -->
+    <div class="editor-upper" id="editor-upper" style="height:60%">
+      <div class="editor-wrap">
+        <textarea id="sql-editor" spellcheck="false" placeholder="-- Write your SQL here, or use Claude AI on the right&#10;-- Ctrl+Enter to run  |  Tab to indent&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus()"></textarea>
+      </div>
+      <div class="editor-status">
+        <span id="status-lines">Lines: 1</span>
+        <span id="status-chars">Chars: 0</span>
+        <span id="status-conn">DB: Source</span>
+        <span id="status-sel"></span>
+      </div>
     </div>
-    <div class="editor-status">
-      <span id="status-lines">Lines: 1</span>
-      <span id="status-chars">Chars: 0</span>
-      <span id="status-conn">DB: Source</span>
-      <span id="status-sel"></span>
+
+    <!-- Drag handle -->
+    <div class="resize-handle" id="resize-handle"></div>
+
+    <!-- Results panel (lower third) -->
+    <div class="results-bottom" id="results-bottom" style="height:40%">
+      <div class="results-bottom-tabs">
+        <div class="results-bottom-tab active" onclick="switchBottomTab('results')" id="btab-results">📊 Results</div>
+        <div class="results-bottom-tab" onclick="switchBottomTab('history')" id="btab-history">🕐 History</div>
+        <div id="results-footer" style="margin-left:auto;padding:0 1rem;font-size:10px;font-family:var(--mono);color:var(--text3);display:flex;align-items:center"></div>
+        <button onclick="toggleResultsPane()" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 0.75rem;font-size:16px" id="results-toggle" title="Collapse results">⌃</button>
+      </div>
+      <div class="results-bottom-body" id="results-container" style="display:block">
+        <div class="results-empty">Run a query (Ctrl+Enter) to see results here</div>
+      </div>
+      <div class="results-bottom-body" id="history-container" style="display:none">
+        <div id="history-list" style="font-size:12px">
+          <div class="results-empty">No query history yet</div>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Right pane: Results + AI -->
+  <!-- Right pane: Claude AI only -->
   <div class="right-pane">
     <div class="right-tabs">
-      <div class="right-tab active" onclick="switchRightTab('results')">📊 Results</div>
-      <div class="right-tab" onclick="switchRightTab('ai')">🤖 Claude AI</div>
-      <div class="right-tab" onclick="switchRightTab('history')">🕐 History</div>
+      <div class="right-tab active">🤖 Claude AI</div>
     </div>
-
-    <!-- Results -->
-    <div class="right-content active" id="tab-results">
-      <div class="results-wrap" id="results-container">
-        <div class="results-empty">Run a query to see results</div>
-      </div>
-      <div id="results-footer" style="padding:0.4rem 0.75rem;border-top:0.5px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:none"></div>
-    </div>
-
-    <!-- AI Chat -->
-    <div class="right-content" id="tab-ai">
+    <div class="right-content active" id="tab-ai">
       <div class="ai-messages" id="ai-messages">
-        <div class="ai-msg assistant">👋 Hi! I can help you write SQL. Describe what you need and I'll generate it — or select some SQL and I'll explain or improve it.<br><br>
-        <strong>Try:</strong> "Write a query to find duplicate emails", "Explain this JOIN", "Optimise this query for performance"</div>
+        <div class="ai-msg assistant">👋 Hi! I can help you write T-SQL. Describe what you need and I'll generate it — or select some SQL and I'll explain or fix it.<br><br>
+        <strong>Try asking:</strong><br>
+        "Find duplicate emails in client table"<br>
+        "Explain this JOIN"<br>
+        "Add error handling to this script"<br>
+        "Optimise this query"</div>
       </div>
       <div class="ai-input-wrap">
         <textarea class="ai-input" id="ai-prompt" rows="2" placeholder="Ask Claude to write or improve SQL…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askClaude()}"></textarea>
         <button class="btn btn-purple btn-sm" onclick="askClaude()" id="ai-btn" style="align-self:flex-end">Send</button>
-      </div>
-    </div>
-
-    <!-- History -->
-    <div class="right-content" id="tab-history">
-      <div class="results-wrap">
-        <div id="history-list" style="font-size:12px">
-          <div class="results-empty">No query history yet</div>
-        </div>
       </div>
     </div>
   </div>
@@ -251,6 +268,8 @@ function loadScript(id) {
   document.getElementById('script-name').value = s.name;
   document.getElementById('sql-editor').value = s.sql;
   document.getElementById('conn-select').value = s.conn||'source';
+  const descEl = document.getElementById('script-desc');
+  if (descEl) descEl.value = s.desc || '';
   updateConnLabel();
   updateStatus();
   renderScriptList();
@@ -263,9 +282,10 @@ function saveScript() {
   const conn = document.getElementById('conn-select').value;
   if (!sql) { alert('Write some SQL first.'); return; }
 
+  const desc = document.getElementById('script-desc')?.value.trim() || '';
   const existing = currentScript ? scripts.find(s=>s.id===currentScript) : null;
   if (existing) {
-    existing.name=name; existing.sql=sql; existing.conn=conn; existing.updated=new Date().toISOString();
+    existing.name=name; existing.sql=sql; existing.conn=conn; existing.desc=desc; existing.updated=new Date().toISOString();
   } else {
     const s = {id:'script_'+Date.now(), name, sql, conn, created:new Date().toISOString(), updated:new Date().toISOString()};
     currentScript = s.id;
@@ -332,31 +352,56 @@ async function runSQL() {
 }
 
 function renderResults(rows, ms, sql) {
-  const wrap = document.getElementById('results-container');
+  const wrap   = document.getElementById('results-container');
   const footer = document.getElementById('results-footer');
+  switchBottomTab('results');
   if (!rows.length) {
-    // Non-SELECT (UPDATE/INSERT/DELETE)
-    wrap.innerHTML = `<div class="results-empty" style="color:var(--green)">✓ Query executed successfully in ${ms}ms<br><span style="color:var(--text3);font-size:11px">No rows returned (non-SELECT or empty result)</span></div>`;
-    footer.style.display='none'; return;
+    wrap.innerHTML = `<div class="results-empty" style="color:var(--green)">✓ Executed in ${ms}ms — no rows returned</div>`;
+    if (footer) footer.textContent = ''; return;
   }
   const cols = Object.keys(rows[0]);
-  const MAX = 500;
+  const MAX  = 1000;
   wrap.innerHTML = `<table class="results-table">
     <thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
     <tbody>${rows.slice(0,MAX).map(r=>`<tr>${cols.map(c=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
   </table>`;
-  footer.style.display='block';
-  footer.textContent = `${rows.length} row${rows.length!==1?'s':''} · ${cols.length} col${cols.length!==1?'s':''} · ${ms}ms${rows.length>MAX?' (showing first '+MAX+')':''}`;
+  if (footer) footer.textContent = `${rows.length.toLocaleString()} row${rows.length!==1?'s':''} · ${cols.length} col${cols.length!==1?'s':''} · ${ms}ms${rows.length>MAX?' · showing first '+MAX:''}`;
 }
 
 function renderError(msg) {
+  switchBottomTab('results');
   document.getElementById('results-container').innerHTML = `<div style="padding:1rem;font-size:12px;color:var(--red);font-family:var(--mono);line-height:1.7;white-space:pre-wrap">${esc(msg)}</div>`;
-  document.getElementById('results-footer').style.display='none';
+  const footer = document.getElementById('results-footer');
+  if (footer) footer.textContent = '';
 }
 
 function clearResults() {
-  document.getElementById('results-container').innerHTML='<div class="results-empty">Run a query to see results</div>';
-  document.getElementById('results-footer').style.display='none';
+  document.getElementById('results-container').innerHTML='<div class="results-empty">Run a query (Ctrl+Enter) to see results here</div>';
+  const footer = document.getElementById('results-footer');
+  if (footer) footer.textContent = '';
+}
+
+// ── Bottom panel controls ─────────────────────────────────────────────────────
+function switchBottomTab(tab) {
+  document.getElementById('results-container').style.display = tab==='results' ? 'block' : 'none';
+  document.getElementById('history-container').style.display = tab==='history' ? 'block' : 'none';
+  document.getElementById('btab-results').classList.toggle('active', tab==='results');
+  document.getElementById('btab-history').classList.toggle('active', tab==='history');
+}
+
+let resultsCollapsed = false;
+function toggleResultsPane() {
+  const rb = document.getElementById('results-bottom');
+  const eu = document.getElementById('editor-upper');
+  const btn = document.getElementById('results-toggle');
+  resultsCollapsed = !resultsCollapsed;
+  if (resultsCollapsed) {
+    rb.style.height = '36px'; eu.style.height = 'calc(100% - 36px - 5px)';
+    btn.textContent = '⌄'; btn.title = 'Expand results';
+  } else {
+    rb.style.height = '40%'; eu.style.height = '60%';
+    btn.textContent = '⌃'; btn.title = 'Collapse results';
+  }
 }
 
 // ── History ────────────────────────────────────────────────────────────────────
@@ -499,6 +544,36 @@ function setExecStatus(msg, color) {
   el.textContent=msg; el.style.color=color;
 }
 
+// ── Save to Inventory ─────────────────────────────────────────────────────────
+function saveToInventory() {
+  const sql  = document.getElementById('sql-editor').value.trim();
+  const name = document.getElementById('script-name').value.trim() || 'SQL Script';
+  const desc = document.getElementById('script-desc').value.trim();
+  const conn = document.getElementById('conn-select').value;
+  if (!sql) { alert('Write some SQL first.'); return; }
+
+  try {
+    const inv = JSON.parse(localStorage.getItem('cygenix_inventory') || '[]');
+    const item = {
+      id:       'inv_sql_' + Date.now(),
+      type:     'sql-script',
+      name,
+      description: desc || 'SQL script from SQL Editor',
+      content:  sql,
+      conn,
+      size:     sql.length + ' chars',
+      added:    new Date().toISOString(),
+      source:   'SQL Editor',
+      tags:     ['sql', conn],
+      notes:    desc,
+    };
+    inv.unshift(item);
+    localStorage.setItem('cygenix_inventory', JSON.stringify(inv));
+    setExecStatus('✓ Saved to Inventory', 'var(--amber)');
+    setTimeout(()=>setExecStatus('',''), 3000);
+  } catch(e) { alert('Could not save to inventory: ' + e.message); }
+}
+
 // ── Add to Jobs ────────────────────────────────────────────────────────────────
 function addToJobs() {
   const sql  = document.getElementById('sql-editor').value.trim();
@@ -535,14 +610,45 @@ function addToJobs() {
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
-function switchRightTab(tab) {
-  document.querySelectorAll('.right-tab').forEach((el,i)=>{
-    el.classList.toggle('active',['results','ai','history'][i]===tab);
+// switchRightTab replaced by switchBottomTab above
+
+// ── Drag resize ───────────────────────────────────────────────────────────────
+(function() {
+  const handle = document.getElementById('resize-handle');
+  const upper  = document.getElementById('editor-upper');
+  const lower  = document.getElementById('results-bottom');
+  const pane   = document.getElementById('editor-pane');
+  if (!handle) return;
+
+  let dragging = false, startY = 0, startUpperH = 0, totalH = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startUpperH = upper.offsetHeight;
+    totalH = pane.offsetHeight;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
   });
-  document.querySelectorAll('.right-content').forEach((el,i)=>{
-    el.classList.toggle('active',['tab-results','tab-ai','tab-history'][i]===el.id);
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = e.clientY - startY;
+    const newUpperH = Math.max(80, Math.min(totalH - 80, startUpperH + delta));
+    const newLowerH = totalH - newUpperH - 5;
+    upper.style.height = newUpperH + 'px';
+    lower.style.height = newLowerH + 'px';
+    upper.style.flex = 'none';
+    lower.style.flex = 'none';
   });
-}
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+})();
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
