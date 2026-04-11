@@ -1823,17 +1823,44 @@ function updateStats() {
 
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
-  return '<table class="jobs-table"><thead><tr><th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th><th>Status</th><th>Actions</th></tr></thead><tbody>' +
-    jobs.map(j => `<tr id="job-row-${j.id}" data-job-id="${j.id}">
+
+  function jobStatusBadge(j) {
+    const s = j.executionStatus || j.status || 'ready';
+    if (s === 'complete' || s === 'success') return '<span class="badge badge-green">🟢 Complete</span>';
+    if (s === 'failed')   return '<span class="badge" style="background:var(--red-bg);color:var(--red)">🔴 Failed</span>';
+    if (s === 'running')  return '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">🟡 Running</span>';
+    if (s === 'ready' || s === 'sql_ready') return '<span class="badge badge-green">SQL Ready</span>';
+    return '<span class="badge" style="background:var(--bg3);color:var(--text3)">⚪ Pending</span>';
+  }
+
+  function lastRunText(j) {
+    const ts = j.lastRun || j.completedAt || j.executedAt;
+    if (!ts) return '<span style="font-size:10px;color:var(--text3)">Never run</span>';
+    const d = new Date(ts);
+    const diff = Date.now() - d.getTime();
+    if (diff < 60000)   return '<span style="font-size:10px;color:var(--green)">Just now</span>';
+    if (diff < 3600000) return '<span style="font-size:10px;color:var(--text3)">' + Math.round(diff/60000) + 'm ago</span>';
+    if (diff < 86400000)return '<span style="font-size:10px;color:var(--text3)">' + Math.round(diff/3600000) + 'h ago</span>';
+    return '<span style="font-size:10px;color:var(--text3)">' + d.toLocaleDateString('en-GB') + '</span>';
+  }
+
+  return '<table class="jobs-table"><thead><tr>' +
+    '<th style="width:40px">#</th>' +
+    '<th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
+    '<th>Exec Status</th><th>Last Run</th><th>Actions</th>' +
+    '</tr></thead><tbody>' +
+    jobs.map((j, idx) => `<tr id="job-row-${j.id}" data-job-id="${j.id}">
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${idx+1}</td>
       <td>
         <div class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="Double-click to rename">${j.name}</div>
         <div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div>
       </td>
       <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
-      <td><span style="font-size:12px;color:var(--text2)">${j.target}</span></td>
+      <td><span style="font-size:12px;color:var(--text2)">${j.target||'—'}</span></td>
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.tables?.length||j.files?.length||'—'}</span></td>
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.totalRows?.toLocaleString()||'—'}</span></td>
-      <td><span class="badge badge-green">SQL Ready</span></td>
+      <td>${jobStatusBadge(j)}</td>
+      <td>${lastRunText(j)}</td>
       <td style="display:flex;gap:6px;padding-top:0.75rem;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="openJobModal('${j.id}')">View</button>
         <button class="btn btn-ghost btn-sm" onclick="window.location.href='/job-editor.html?id=${j.id}'" style="color:var(--purple);border-color:rgba(167,139,250,0.25)">✏ Edit</button>
