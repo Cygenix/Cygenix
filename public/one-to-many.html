@@ -690,7 +690,7 @@ function generateSQL(){
   }
 
   // Set database context to target DB
-  if(tgtDb) sql += `USE [${tgtDb}];\nGO\n\n`;
+  if(tgtDb) sql += `USE [${tgtDb}];\n\n`;
 
   if(txMode==='single'){
     sql += `SET XACT_ABORT ON;\nBEGIN TRAN;\n\n`;
