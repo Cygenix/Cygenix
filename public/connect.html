@@ -204,18 +204,27 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
   <!-- STEP TABS -->
   <div class="steps-bar">
-    <div class="step-tab active" id="tab-1" onclick="goStep(1)"><span class="step-num">1</span>Source DB</div>
-    <div class="step-tab" id="tab-2" onclick="goStep(2)"><span class="step-num">2</span>Target DB</div>
-    <div class="step-tab" id="tab-3" onclick="goStep(3)"><span class="step-num">3</span>Select &amp; Map</div>
-    <div class="step-tab" id="tab-4" onclick="goStep(4)"><span class="step-num">4</span>Preview SQL</div>
-    <div class="step-tab" id="tab-5" onclick="goStep(5)"><span class="step-num">5</span>Save &amp; Finish</div>
+    <div class="step-tab active" id="tab-3" onclick="goStep(3)"><span class="step-num">1</span>Select &amp; Map</div>
+    <div class="step-tab" id="tab-4" onclick="goStep(4)"><span class="step-num">2</span>Preview SQL</div>
+    <div class="step-tab" id="tab-5" onclick="goStep(5)"><span class="step-num">3</span>Save &amp; Finish</div>
+  </div>
+  <!-- Connection status banner (replaces steps 1 & 2) -->
+  <div id="conn-status-banner" style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 1.25rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:11px;flex-wrap:wrap">
+    <span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-family:var(--serif)">Connections</span>
+    <span style="display:flex;align-items:center;gap:0.4rem">
+      <span id="csb-src-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
+      <span id="csb-src-label" style="font-family:var(--mono);color:var(--text3)">Source: —</span>
+    </span>
+    <span style="color:var(--border2)">|</span>
+    <span style="display:flex;align-items:center;gap:0.4rem">
+      <span id="csb-tgt-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
+      <span id="csb-tgt-label" style="font-family:var(--mono);color:var(--text3)">Target: —</span>
+    </span>
+    <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Change connections →</a>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════════════ -->
-  <!-- STEP 1: CONNECT TO TARGET DB -->
-  <!-- ═══════════════════════════════════════════════════════════════ -->
-  <!-- STEP 1: SOURCE DATABASE -->
-  <div id="step-1" class="step-view active">
+  <!-- Steps 1 & 2 hidden — connections come from Dashboard settings -->
+  <div id="step-1" class="step-view" style="display:none">
     <div id="conn-banner" style="display:flex;align-items:center;gap:1rem;padding:0.6rem 1.25rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:12px;font-family:var(--mono);flex-wrap:wrap">
   <span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-family:var(--serif)">Connections</span>
   <span style="display:flex;align-items:center;gap:0.4rem;color:var(--text3)">
@@ -289,8 +298,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
     </div>
   </div>
 
-  <!-- STEP 2: TARGET DATABASE -->
-  <div id="step-2" class="step-view">
+  <div id="step-2" class="step-view" style="display:none">
     <div class="panel">
       <div class="section-header">
         <div>
@@ -803,18 +811,14 @@ updateApiBadge();
 // ── Steps ────────────────────────────────────────────────────────────────────
 let currentStep = 1;
 function goStep(n){
-  if (n > 1 && !S.srcSchema && !S.selectedSourceTable){ alert('Please connect to the source database first.'); return; }
-  if (n > 2 && !S.targetSchema){ alert('Please connect to the target database first.'); return; }
+  // Steps 1 & 2 replaced by auto-connect from dashboard settings
+  if (n === 1 || n === 2) n = 3;
   if (n > 3 && S.columnMapping.length === 0){ alert('Please select tables and complete column mapping first.'); return; }
   if (n > 4 && !S.insertSQL){ alert('Please generate a preview first.'); return; }
-  document.querySelectorAll('.step-view').forEach(el => el.classList.remove('active'));
-  $('step-' + n).classList.add('active');
-  document.querySelectorAll('.step-tab').forEach((el, i) => {
-    el.classList.remove('active');
-    if (i + 1 < n) el.classList.add('done');
-    else el.classList.remove('done');
-  });
-  $('tab-' + n).classList.add('active');
+  document.querySelectorAll('.step-view').forEach(el => { el.classList.remove('active'); });
+  const sv = $('step-' + n); if (sv) sv.classList.add('active');
+  document.querySelectorAll('.step-tab').forEach(el => { el.classList.remove('active'); el.classList.remove('done'); });
+  const tb = $('tab-' + n); if (tb) tb.classList.add('active');
   currentStep = n;
   if (n === 3) buildMappingTable();
   if (n === 5) updateFinishSummary();
@@ -2791,6 +2795,54 @@ document.addEventListener('click', function(e) {
 // ── End searchable combobox ────────────────────────────────────────────────────
 initUserAndProject();
 checkForResumableSession();
+
+// ── Auto-connect from Dashboard connection settings ───────────────────────────
+(function autoConnectAndStart() {
+  const c = CygenixConnections.get();
+  const srcCs  = c.srcConnString  || '';
+  const tgtFn  = c.tgtFnUrl       || '';
+  const tgtKey = c.tgtFnKey       || '';
+  const tgtCs  = c.tgtConnString  || '';
+  const mask   = s => s.replace(/Password=[^;]*/i,'Password=***').replace(/code=[^&]*/i,'code=***');
+  const trim   = s => s.length > 55 ? s.slice(0,55)+'…' : s;
+
+  const setSrc = (ok, label) => {
+    const dot = document.getElementById('csb-src-dot');
+    const lbl = document.getElementById('csb-src-label');
+    if (dot) dot.style.background = ok ? 'var(--green)' : 'var(--red)';
+    if (lbl) lbl.textContent = label;
+  };
+  const setTgt = (ok, label) => {
+    const dot = document.getElementById('csb-tgt-dot');
+    const lbl = document.getElementById('csb-tgt-label');
+    if (dot) dot.style.background = ok ? 'var(--green)' : 'var(--red)';
+    if (lbl) lbl.textContent = label;
+  };
+
+  if (!srcCs) setSrc(false, 'Source: not configured — set in Dashboard');
+  else { setSrc(false, 'Source: connecting…'); S.srcConnString = srcCs; S.srcConnMode = c.srcConnMode || 'direct'; if ($('src-conn-string')) $('src-conn-string').value = srcCs; }
+
+  if (!tgtFn && !tgtCs) setTgt(false, 'Target: not configured — set in Dashboard');
+  else {
+    setTgt(false, 'Target: connecting…');
+    S.connMode = tgtFn ? 'azure' : 'direct';
+    if (tgtFn && $('fn-url'))  $('fn-url').value  = tgtFn;
+    if (tgtKey && $('fn-key')) $('fn-key').value  = tgtKey;
+    if (tgtCs  && $('conn-string')) $('conn-string').value = tgtCs;
+  }
+
+  const srcPromise = srcCs ? testSourceConnection()
+    .then(() => setSrc(true, 'Source: ' + trim(mask(srcCs))))
+    .catch(e  => setSrc(false, 'Source error: ' + e.message))
+    : Promise.resolve();
+
+  const tgtPromise = (tgtFn || tgtCs) ? testConnection()
+    .then(() => setTgt(true, 'Target: ' + trim(mask(tgtFn || tgtCs))))
+    .catch(e  => setTgt(false, 'Target error: ' + e.message))
+    : Promise.resolve();
+
+  Promise.all([srcPromise, tgtPromise]).then(() => goStep(3));
+})();
 
 // ── Resume / dismiss session ──────────────────────────────────────────────────
 function checkForResumableSession() {
