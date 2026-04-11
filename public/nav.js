@@ -87,11 +87,11 @@
 
     // Determine which sub-menus should start open
     const configPages = ['dashboard.html'];
-    const mappingPages = ['connect.html','one-to-many.html','sql-editor.html'];
     const configOpen = configPages.includes(page) ? 'open' : '';
-    const mappingOpen = mappingPages.includes(page) ? 'open' : '';
     const configCollapsed = configOpen ? '' : 'collapsed';
-    const mappingCollapsed = mappingOpen ? '' : 'collapsed';
+    // Mapping sub-menu is always pinned open
+    const mappingOpen = 'open';
+    const mappingCollapsed = '';
 
     return `
 <div class="cyg-nav-logo">
@@ -218,7 +218,7 @@
 
   function injectNav() {
     // Skip login, index, and dashboard (dashboard has its own built-in sidebar)
-    if (['login.html','index.html','','dashboard.html'].includes(page)) return;
+    if (['login.html','index.html','','dashboard.html','project-builder.html'].includes(page)) return;
 
     // Inject CSS
     const style = document.createElement('style');
