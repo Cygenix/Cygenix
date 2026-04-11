@@ -651,9 +651,10 @@ function generateSQL(){
   if(parentTables.length || targetTables.some(t=>t.pkMode==='identity'||t.pkMode==='guid')){
     sql += `-- Variable declarations for captured keys\n`;
     targetTables.forEach(tt=>{
-      if(tt.pkMode==='identity'||tt.pkMode==='guid'||tt.pkMode==='sequence'){
+      if(tt.pkMode==='identity'||tt.pkMode==='guid'||tt.pkMode==='sequence'||tt.pkMode==='natural'){
         const pkCol = tt.columns && tt.columns.find(c=>c.name===tt.pkCol);
-        const sqlType = (pkCol?.type||'').toLowerCase().includes('uniqueidentifier')||tt.pkMode==='guid' ? 'UNIQUEIDENTIFIER' : 'INT';
+        const isGuid = tt.pkMode==='guid' || (pkCol?.type||'').toLowerCase().includes('uniqueidentifier');
+        const sqlType = isGuid ? 'UNIQUEIDENTIFIER' : 'INT';
         sql += `DECLARE ${tt.pkVar} ${sqlType};\n`;
       }
     });
@@ -763,10 +764,15 @@ function generateSQL(){
   sql += `CLOSE cur;\nDEALLOCATE cur;\n`;
   if(txMode==='single') sql += `\nCOMMIT TRAN;\n`;
 
-  // Add table variable declarations before cursor for IDENTITY tables
+  // Add table variable declarations only for IDENTITY tables (OUTPUT INSERTED pattern)
   const identityTables = targetTables.filter(t=>t.pkMode==='identity');
   if(identityTables.length){
-    const tableVarDecls = identityTables.map(tt=>`DECLARE @tbl${tt.id.replace(/[^a-z0-9]/gi,'')} TABLE (Id INT);\n`).join('');
+    const tableVarDecls = identityTables.map(tt=>{
+      // Match the table variable column type to the actual PK column type
+      const pkColDef = tt.columns && tt.columns.find(c=>c.name===tt.pkCol);
+      const idType = (pkColDef?.type||'INT').toUpperCase().includes('UNIQUEIDENTIFIER') ? 'UNIQUEIDENTIFIER' : 'INT';
+      return `DECLARE @tbl${tt.id.replace(/[^a-z0-9]/gi,'')} TABLE (Id ${idType});\n`;
+    }).join('');
     sql = tableVarDecls + '\n' + sql;
   }
 
