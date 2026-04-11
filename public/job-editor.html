@@ -21,7 +21,7 @@
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
 
 /* TOPBAR */
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;gap:1rem;flex-wrap:wrap}
@@ -89,6 +89,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .tx-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 4px;font-size:10px;color:var(--text2);font-family:var(--mono);outline:none}
 .tx-select:focus{border-color:var(--accent)}
 </style>
+<script src="/connections.js"></script>
+<script src="/nav.js"></script>
 </head>
 <body>
 
@@ -517,7 +519,11 @@ async function remapWithClaude(){
   if (!mapping.length){ alert('No source columns to map.'); return; }
 
   const tgtInput = document.getElementById('tgt-cols-input').value.trim();
-  const srcCols  = mapping.map(m=>`${m.srcCol} (${m.srcType||'unknown type'})`).join('\n');
+  // Cap at 80 columns to avoid token limits — process in batches if needed
+  const MAX_COLS = 80;
+  const srcCols  = mapping.slice(0, MAX_COLS).map(m=>`${m.srcCol} (${m.srcType||'unknown type'})`).join('\n');
+  const hasMore  = mapping.length > MAX_COLS;
+  if (hasMore) showStatus('⚠ Processing first ' + MAX_COLS + ' of ' + mapping.length + ' columns. Re-run for the rest.', 'ok');
 
   const prompt = `You are a database migration expert. Map the following SOURCE columns to the TARGET columns using intelligent name matching and type compatibility.
 
@@ -549,12 +555,31 @@ Respond ONLY with a valid JSON array — no markdown, no explanation:
     const res = await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,messages:[{role:'user',content:prompt}]})
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,messages:[{role:'user',content:prompt}]})
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    const raw  = data.content?.[0]?.text||'[]';
-    const mapped = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    let raw  = (data.content?.[0]?.text||'[]').replace(/```json|```/g,'').trim();
+
+    // Repair truncated JSON — if cut off mid-array, close it gracefully
+    let mapped;
+    try {
+      mapped = JSON.parse(raw);
+    } catch(parseErr) {
+      // Try to recover: find the last complete object and close the array
+      const lastBrace = raw.lastIndexOf('}');
+      if (lastBrace > 0) {
+        const repaired = raw.slice(0, lastBrace + 1) + ']';
+        try {
+          mapped = JSON.parse(repaired);
+          showStatus('⚠ Response was truncated — ' + mapped.length + ' of ' + mapping.length + ' columns mapped. Re-run for remaining.', 'ok');
+        } catch {
+          throw new Error('Could not parse Claude response — try with fewer columns or a shorter column list.');
+        }
+      } else {
+        throw parseErr;
+      }
+    }
     // Merge back
     mapping = mapping.map(m=>{
       const match = mapped.find(r=>r.srcCol?.toLowerCase()===m.srcCol?.toLowerCase());

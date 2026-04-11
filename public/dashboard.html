@@ -247,6 +247,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 }
 </style>
 <script src="/connections.js"></script>
+<script src="/nav.js"></script>
 </head>
 <body>
 <div class="app">
@@ -299,6 +300,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <div class="nav-item" onclick="event.stopPropagation();showView('connections')" style="color:var(--green)">
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
           Connections <span id="conn-status-dot" style="margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
+        </div>
+        <div class="nav-item" onclick="event.stopPropagation();showView('backup')" style="color:var(--purple)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11" width="12" height="3" rx="1" stroke="currentColor" stroke-width="1.1"/></svg>
+          Backup &amp; Restore
         </div>
       </div>
 
@@ -574,6 +579,49 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
     </div>
 
+    <!-- BACKUP & RESTORE VIEW -->
+    <div id="view-backup" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">💾 Backup &amp; Restore</div>
+          <div class="panel-sub">Export all project data to a JSON file, or restore from a previous backup</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="backupAll()">⬇ Download backup</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
+        <div class="panel">
+          <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">📦 Export backup</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Creates a single JSON file containing:</div>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:1.25rem">
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Project settings</div>
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Source &amp; target connections</div>
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>All migration jobs</div>
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Was/Is rules</div>
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Inventory items</div>
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>API key</div>
+          </div>
+          <button class="btn btn-green" onclick="backupAll()" style="width:100%;justify-content:center">⬇ Download backup.json</button>
+        </div>
+
+        <div class="panel">
+          <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">📂 Restore from backup</div>
+          <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Upload a Cygenix backup file to restore your project state. Existing data will be merged.</div>
+          <div style="border:1.5px dashed var(--border2);border-radius:var(--r);padding:1.5rem;text-align:center;cursor:pointer;background:var(--bg3);margin-bottom:0.875rem" onclick="document.getElementById('restore-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" ondragleave="this.style.borderColor=''" ondrop="handleRestoreDrop(event)">
+            <input type="file" id="restore-file" accept=".json" style="display:none" onchange="restoreBackup(this.files[0])">
+            <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4">📂</div>
+            <div style="font-size:13px;color:var(--text2)">Drop backup.json here or click to browse</div>
+          </div>
+          <div id="restore-status" style="font-size:12px;color:var(--text3);min-height:16px"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">🕐 Auto-backup history</div>
+        <div id="backup-history-list" style="font-size:12px;color:var(--text3)">Loading…</div>
+      </div>
+    </div>
+    <!-- END BACKUP & RESTORE -->
 
     <!-- PROJECT SETTINGS VIEW -->
     <div id="view-project-settings" class="view">
@@ -1094,6 +1142,7 @@ function showView(v) {
   if (v === 'inventory')         renderInventory();
   if (v === 'connections')       initConnectionsView();
   if (v === 'project-settings')  initProjectSettingsView();
+  if (v === 'backup')             initBackupView();
 }
 
 function selectTarget(el, name) {
@@ -2913,4 +2962,90 @@ function toggleSubMenu(id) {
   sub.classList.toggle('collapsed', isOpen);
   label.classList.toggle('open', !isOpen);
 }
+</script>
+
+<script>
+// ── Backup & Restore ───────────────────────────────────────────────────────────
+const BACKUP_KEYS = [
+  'cygenix_project_settings','cygenix_project_connections',
+  'cygenix_jobs','cygenix_wasis_rules','cygenix_inventory',
+  'cygenix_api_key','cygenix_project_name','cygenix_analyst_name','cygenix_client_name',
+  'cygenix_active_project'
+];
+
+function backupAll() {
+  const data = { version: '1.0', created: new Date().toISOString(), data: {} };
+  BACKUP_KEYS.forEach(k => {
+    const v = localStorage.getItem(k);
+    if (v) try { data.data[k] = JSON.parse(v); } catch { data.data[k] = v; }
+  });
+  // Also include insight column data
+  Object.keys(localStorage).filter(k => k.startsWith('cygenix_insight_')).forEach(k => {
+    try { data.data[k] = JSON.parse(localStorage.getItem(k)); } catch {}
+  });
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cygenix-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  // Log auto-backup
+  try {
+    const hist = JSON.parse(localStorage.getItem('cygenix_backup_history')||'[]');
+    hist.unshift({ date: new Date().toISOString(), keys: Object.keys(data.data).length });
+    localStorage.setItem('cygenix_backup_history', JSON.stringify(hist.slice(0,10)));
+  } catch {}
+  showBackupHistory();
+}
+
+function handleRestoreDrop(e) {
+  e.preventDefault();
+  e.currentTarget.style.borderColor='';
+  const file = e.dataTransfer.files[0];
+  if (file) restoreBackup(file);
+}
+
+function restoreBackup(file) {
+  if (!file) return;
+  const st = document.getElementById('restore-status');
+  st.textContent = 'Reading backup…'; st.style.color = 'var(--accent)';
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.data || !data.version) throw new Error('Invalid backup file format');
+      let count = 0;
+      Object.entries(data.data).forEach(([k, v]) => {
+        localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+        count++;
+      });
+      CygenixConnections.load(); // refresh sessions
+      st.textContent = '✓ Restored ' + count + ' items from backup dated ' + (data.created||'').slice(0,10);
+      st.style.color = 'var(--green)';
+      // Reload state
+      try { state.jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); renderDashboard(); renderAllJobs(); } catch {}
+      showBackupHistory();
+    } catch(err) {
+      st.textContent = '✕ Restore failed: ' + err.message;
+      st.style.color = 'var(--red)';
+    }
+  };
+  reader.readAsText(file);
+}
+
+function showBackupHistory() {
+  const el = document.getElementById('backup-history-list');
+  if (!el) return;
+  try {
+    const hist = JSON.parse(localStorage.getItem('cygenix_backup_history')||'[]');
+    if (!hist.length) { el.textContent = 'No backups yet — click Download backup to create one.'; return; }
+    el.innerHTML = hist.map((h,i) => `
+      <div style="display:flex;align-items:center;gap:1rem;padding:0.5rem 0;border-bottom:0.5px solid var(--border);font-family:var(--mono)">
+        <span style="color:var(--text3)">#${i+1}</span>
+        <span style="color:var(--text2)">${new Date(h.date).toLocaleString('en-GB')}</span>
+        <span style="color:var(--text3)">${h.keys} items</span>
+      </div>`).join('');
+  } catch { el.textContent = 'Could not load history.'; }
+}
+
+function initBackupView() { showBackupHistory(); }
 </script>

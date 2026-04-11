@@ -90,6 +90,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .empty-icon{font-size:32px;opacity:0.3;margin-bottom:0.75rem}
 </style>
 <script src="/connections.js"></script>
+<script src="/nav.js"></script>
 </head>
 <body>
 
@@ -261,14 +262,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     document.getElementById('user-name').textContent   = n;
   } catch {}
   // Pre-fill connections from sessionStorage
-  const srcCs  = sessionStorage.getItem('cygenix_src_conn_string') || '';
-  const tgtFn  = sessionStorage.getItem('cygenix_fn_url') || '';
-  const tgtKey = sessionStorage.getItem('cygenix_fn_key') || '';
-  const tgtCs  = sessionStorage.getItem('cygenix_conn_string') || '';
-  if (srcCs) document.getElementById('val-src-conn').value = srcCs;
-  document.getElementById('val-tgt-conn').value = tgtFn
-    ? tgtFn + (tgtKey ? '?code='+encodeURIComponent(tgtKey) : '')
-    : tgtCs;
+  // Connections auto-loaded via CygenixConnections
 })();
 
 function signOut(){
@@ -316,7 +310,7 @@ async function valConnect(which){
 
 // ── Load scripts ──────────────────────────────────────────────────────────────
 async function loadScripts(){
-  const srcConn = document.getElementById('val-src-conn').value.trim();
+  const _vconn = CygenixConnections.get(); const srcConn = _vconn.srcConnString || '';
   if (!srcConn){ alert('Enter a source connection first.'); return; }
   const loadStatus = document.getElementById('load-status');
   loadStatus.textContent = 'Loading…';
@@ -420,8 +414,8 @@ async function runSingle(id)            { await execScripts(scripts.filter(s=>s.
 async function execScripts(toRun){
   if (running) return;
   if (!toRun.length){ alert('No scripts to run.'); return; }
-  const srcConn = document.getElementById('val-src-conn').value.trim();
-  const tgtConn = document.getElementById('val-tgt-conn').value.trim();
+  const _vconn = CygenixConnections.get(); const srcConn = _vconn.srcConnString || '';
+  const tgtConn = (()=>{const _v=CygenixConnections.get();return _v.tgtFnUrl?_v.tgtFnUrl+(_v.tgtFnKey?'?code='+encodeURIComponent(_v.tgtFnKey):''):(_v.tgtConnString||'');})();
   if (!srcConn){ alert('Enter source connection first.'); return; }
 
   running = true;

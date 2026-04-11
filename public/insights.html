@@ -161,6 +161,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .sel-badge{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);border-radius:100px;font-size:10px;padding:1px 8px;font-family:var(--mono)}
 </style>
 <script src="/connections.js"></script>
+<script src="/nav.js"></script>
 </head>
 <body>
 
@@ -274,17 +275,12 @@ let migrationMap = null; // last migration map result
     document.getElementById('user-name').textContent   = n;
   } catch {}
   // Pre-fill connection from session
-  // Source: use the source DB connection string (NOT the Azure Function target URL)
-  const srcCs  = sessionStorage.getItem('cygenix_src_conn_string') || '';
-  const srcEl  = document.getElementById('src-conn');
-  if (srcEl) srcEl.value = srcCs;
-
-  // Target: use the Azure Function URL or direct target connection string
-  const tgtFn  = sessionStorage.getItem('cygenix_fn_url') || '';
-  const tgtKey = sessionStorage.getItem('cygenix_fn_key') || '';
-  const tgtCs  = sessionStorage.getItem('cygenix_conn_string') || '';
-  const tgtEl  = document.getElementById('tgt-conn');
-  if (tgtEl) tgtEl.value = tgtFn ? tgtFn+(tgtKey?'?code='+encodeURIComponent(tgtKey):'') : tgtCs;
+  // Load from central project connections
+  const _conn = CygenixConnections.get();
+  const srcEl = document.getElementById('src-conn');
+  if (srcEl) srcEl.value = _conn.srcConnString || '';
+  const tgtEl = document.getElementById('tgt-conn');
+  if (tgtEl) tgtEl.value = _conn.tgtFnUrl ? _conn.tgtFnUrl+(_conn.tgtFnKey?'?code='+encodeURIComponent(_conn.tgtFnKey):'') : (_conn.tgtConnString||'');
   // Pre-fill API key
   const ak = localStorage.getItem('cygenix_api_key') || '';
   if (ak) document.getElementById('api-key').value = ak;

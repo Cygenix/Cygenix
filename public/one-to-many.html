@@ -21,7 +21,7 @@
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
 
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100;gap:1rem}
 .logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
@@ -108,6 +108,7 @@ select.map-select:focus{border-color:var(--accent)}
 .badge-purple{background:var(--purple-bg);color:var(--purple)}
 </style>
 <script src="/connections.js"></script>
+<script src="/nav.js"></script>
 </head>
 <body>
 
@@ -124,6 +125,33 @@ select.map-select:focus{border-color:var(--accent)}
   </div>
 </div>
 
+<div id="conn-banner" style="display:flex;align-items:center;gap:1rem;padding:0.6rem 1.25rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:12px;font-family:var(--mono);flex-wrap:wrap">
+  <span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-family:var(--serif)">Connections</span>
+  <span style="display:flex;align-items:center;gap:0.4rem;color:var(--text3)">
+    <span id="banner-src-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
+    <span id="banner-src-label">Source: not configured</span>
+  </span>
+  <span style="color:var(--border2)">|</span>
+  <span style="display:flex;align-items:center;gap:0.4rem;color:var(--text3)">
+    <span id="banner-tgt-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
+    <span id="banner-tgt-label">Target: not configured</span>
+  </span>
+  <a href="/dashboard.html" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Edit connections →</a>
+</div>
+<script>
+(function initBanner(){
+  if(typeof CygenixConnections==="undefined") return;
+  const c=CygenixConnections.get();
+  const srcOk=!!c.srcConnString, tgtOk=!!(c.tgtFnUrl||c.tgtConnString);
+  const mask=s=>s.replace(/Password=[^;]*/i,"Password=***").replace(/code=[^&]*/i,"code=***");
+  const trim=s=>s.length>50?s.slice(0,50)+"…":s;
+  const setDot=(id,ok)=>{const el=document.getElementById(id);if(el)el.style.background=ok?"var(--green)":"var(--red)";};
+  const setText=(id,t)=>{const el=document.getElementById(id);if(el)el.textContent=t;};
+  setDot("banner-src-dot",srcOk); setText("banner-src-label",srcOk?"Source: "+trim(mask(c.srcConnString)):"Source: not configured");
+  setDot("banner-tgt-dot",tgtOk); const tgtRaw=c.tgtFnUrl||c.tgtConnString||"";
+  setText("banner-tgt-label",tgtOk?"Target: "+trim(mask(tgtRaw)):"Target: not configured");
+})();
+</script>
 <div class="page">
   <div style="margin-bottom:1.25rem">
     <div style="font-size:1.3rem;font-weight:600;margin-bottom:0.25rem">One-to-Many Mapper</div>
@@ -135,33 +163,7 @@ select.map-select:focus{border-color:var(--accent)}
     <!-- LEFT: Source + connections -->
     <div>
 
-      <!-- Connections -->
-      <div class="panel">
-        <div class="panel-head"><div class="panel-title">🔌 Connections</div></div>
-        <div class="panel-body" style="display:flex;flex-direction:column;gap:0.875rem">
-          <div>
-            <label class="form-label">Source database</label>
-            <div style="display:flex;gap:0.5rem">
-              <input id="src-conn" class="form-input" placeholder="Server=... or https://fn.azure...">
-              <button class="btn btn-ghost btn-sm" onclick="connectSrc()" style="flex-shrink:0">🔌</button>
-            </div>
-            <div class="conn-status" id="src-conn-status"></div>
-          </div>
-          <div>
-            <label class="form-label">Target database</label>
-            <div style="display:flex;gap:0.5rem">
-              <input id="tgt-conn" class="form-input" placeholder="Server=... or https://fn.azure...">
-              <button class="btn btn-ghost btn-sm" onclick="connectTgt()" style="flex-shrink:0">🔌</button>
-            </div>
-            <div class="conn-status" id="tgt-conn-status"></div>
-          </div>
-          <div>
-            <label class="form-label">Mapping name</label>
-            <input id="mapping-name" class="form-input" style="font-family:var(--serif)" placeholder="e.g. Address → Site + Address + Phone">
-          </div>
-        </div>
-      </div>
-
+      
       <!-- Source table picker -->
       <div class="panel">
         <div class="panel-head">
@@ -279,12 +281,7 @@ let tgtAllTables = [];
 
 // Pre-fill connections
 (function(){
-  const srcCs = sessionStorage.getItem('cygenix_src_conn_string') || '';
-  const tgtFn = sessionStorage.getItem('cygenix_fn_url') || '';
-  const tgtKey= sessionStorage.getItem('cygenix_fn_key') || '';
-  const tgtCs = sessionStorage.getItem('cygenix_conn_string') || '';
-  if (srcCs) document.getElementById('src-conn').value = srcCs;
-  document.getElementById('tgt-conn').value = tgtFn ? tgtFn+(tgtKey?'?code='+encodeURIComponent(tgtKey):'') : tgtCs;
+  // Connections loaded from CygenixConnections — no manual input needed
 })();
 
 // ── DB helper ─────────────────────────────────────────────────────────────────
@@ -300,7 +297,7 @@ async function dbCall(conn, body){
 
 // ── Connect ───────────────────────────────────────────────────────────────────
 async function connectSrc(){
-  const conn=document.getElementById('src-conn').value.trim();
+  const _oc=CygenixConnections.get(); const conn=_oc.srcConnString||'';
   const st=document.getElementById('src-conn-status');
   if (!conn){alert('Enter source connection');return;}
   st.textContent='Connecting…';st.style.color='var(--accent)';
@@ -314,7 +311,7 @@ async function connectSrc(){
   }catch(e){st.textContent='🔴 '+e.message;st.style.color='var(--red)';}
 }
 async function connectTgt(){
-  const conn=document.getElementById('tgt-conn').value.trim();
+  const _oc2=CygenixConnections.get(); let conn=_oc2.tgtFnUrl||_oc2.tgtConnString||''; if(_oc2.tgtFnUrl&&_oc2.tgtFnKey) conn=_oc2.tgtFnUrl+'?code='+encodeURIComponent(_oc2.tgtFnKey);
   const st=document.getElementById('tgt-conn-status');
   if (!conn){alert('Enter target connection');return;}
   st.textContent='Connecting…';st.style.color='var(--accent)';
