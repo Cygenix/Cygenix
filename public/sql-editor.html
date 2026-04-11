@@ -104,6 +104,39 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .form-input:focus{border-color:var(--accent)}
 select.form-input option{background:var(--bg3)}
 
+/* ── FULLSCREEN ─────────────────────────────────────────────────────────────── */
+body.fullscreen .cyg-sidebar,
+body.fullscreen #cyg-sidebar { display:none!important }
+body.fullscreen { padding-left:0!important }
+body.fullscreen .topbar { left:0!important }
+body.fullscreen .editor-layout { grid-template-columns:0 1fr 340px }
+body.fullscreen .script-panel { display:none }
+
+/* ── FIND BAR ──────────────────────────────────────────────────────────────── */
+.find-bar{position:absolute;top:8px;right:12px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:4px 8px;display:flex;align-items:center;gap:6px;z-index:50;box-shadow:0 4px 20px rgba(0,0,0,0.4);font-size:12px}
+.find-bar input{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;width:180px}
+.find-bar input:focus{border-color:var(--accent)}
+.find-bar-btn{background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;padding:2px 8px;font-size:11px;font-family:var(--serif)}
+.find-bar-btn:hover{color:var(--text);border-color:var(--text3)}
+.find-count{font-size:10px;color:var(--text3);font-family:var(--mono);min-width:40px;text-align:center}
+.highlight-match{background:rgba(245,158,11,0.35);border-radius:1px}
+.highlight-current{background:rgba(61,126,255,0.45);border-radius:1px}
+
+/* ── LINE NUMBERS ──────────────────────────────────────────────────────────── */
+.editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative}
+.line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre}
+#sql-editor{flex:1;min-width:0}
+
+/* ── WORD WRAP toggle ──────────────────────────────────────────────────────── */
+#sql-editor.wrap-on{white-space:pre-wrap;word-break:break-all}
+#sql-editor.wrap-off{white-space:pre;overflow-x:auto}
+
+/* ── STATUS PILLS ──────────────────────────────────────────────────────────── */
+.status-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:100px;font-size:9px;font-family:var(--mono);background:var(--bg4);color:var(--text3);border:0.5px solid var(--border)}
+
+/* Pivot / results already defined */
+
+
 /* Pivot view */
 .pivot-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
 .pivot-table td:first-child{background:var(--bg3);color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:0.05em;padding:0.35rem 0.75rem;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);white-space:nowrap;font-weight:600;position:sticky;left:0}
@@ -137,6 +170,7 @@ select.form-input option{background:var(--bg3)}
     <button class="btn btn-amber btn-sm" onclick="saveToInventory()" title="Save to Inventory">📋 Inventory</button>
     <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ Jobs</button>
     <input type="password" id="api-key" class="form-input" style="width:140px;font-size:11px" placeholder="Anthropic API key">
+    <button class="btn btn-ghost btn-sm" onclick="toggleFullscreen()" id="fs-btn" title="Toggle fullscreen (F11)">⛶</button>
   </div>
 </div>
 
@@ -159,12 +193,20 @@ select.form-input option{background:var(--bg3)}
   <!-- Editor + Results (stacked vertically) -->
   <div class="editor-pane" id="editor-pane">
     <div class="editor-toolbar">
+      <!-- SQL snippets -->
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('SELECT TOP 100 * FROM ')">SELECT</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('WHERE ')">WHERE</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('INSERT INTO ')">INSERT</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('UPDATE ')">UPDATE</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('DELETE FROM ')">DELETE</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('BEGIN TRAN;\n\n\n\nROLLBACK; -- COMMIT;')">TRAN</button>
+      <div style="width:0.5px;background:var(--border2);height:16px;margin:0 2px;flex-shrink:0"></div>
+      <!-- Editor tools -->
+      <button class="btn btn-ghost btn-sm" onclick="toggleFind()" title="Find (Ctrl+F)" id="btn-find">🔍 Find</button>
+      <button class="btn btn-ghost btn-sm" onclick="commentSelection()" title="Toggle comment (Ctrl+/)">// Comment</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleWordWrap()" id="btn-wrap" title="Toggle word wrap">↩ Wrap</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleLineNumbers()" id="btn-lnum" title="Toggle line numbers" style="color:var(--accent)">## Lines</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearEditor()" title="Clear editor" style="color:var(--red)">✕ Clear</button>
       <div style="margin-left:auto;display:flex;gap:0.5rem;align-items:center">
         <span id="exec-status" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
       </div>
@@ -172,8 +214,22 @@ select.form-input option{background:var(--bg3)}
 
     <!-- Editor area (upper) -->
     <div class="editor-upper" id="editor-upper" style="height:60%">
+      <!-- Find bar (hidden by default) -->
+      <div id="find-bar" class="find-bar" style="display:none">
+        <input id="find-input" placeholder="Find…" oninput="findInEditor()" onkeydown="findKey(event)">
+        <input id="replace-input" placeholder="Replace…" style="width:130px">
+        <span class="find-count" id="find-count"></span>
+        <button class="find-bar-btn" onclick="findPrev()">↑</button>
+        <button class="find-bar-btn" onclick="findNext()">↓</button>
+        <button class="find-bar-btn" onclick="replaceOne()">Replace</button>
+        <button class="find-bar-btn" onclick="replaceAll()">All</button>
+        <button class="find-bar-btn" onclick="closeFind()" style="color:var(--red)">✕</button>
+      </div>
       <div class="editor-wrap">
-        <textarea id="sql-editor" spellcheck="false" placeholder="-- Write your SQL here, or use Claude AI on the right&#10;-- Ctrl+Enter to run  |  Tab to indent&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus()"></textarea>
+        <div class="editor-wrap-inner">
+          <div class="line-numbers" id="line-numbers">1</div>
+          <textarea id="sql-editor" spellcheck="false" class="wrap-off" placeholder="-- Write SQL here | Ctrl+Enter to run | Ctrl+F to find | Ctrl+/ to comment&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus();updateLineNumbers()" onscroll="syncScroll()" onclick="updateStatus()"></textarea>
+        </div>
       </div>
       <div class="editor-status">
         <span id="status-lines">Lines: 1</span>
@@ -323,6 +379,8 @@ function saveScript() {
   saveScripts();
   renderScriptList();
   setExecStatus('✓ Saved', 'var(--green)');
+  const savedEl = document.getElementById('status-saved');
+  if (savedEl) { savedEl.textContent='Saved'; savedEl.style.color='var(--green)'; }
 }
 
 // ── Connection ─────────────────────────────────────────────────────────────────
@@ -595,7 +653,12 @@ function insertSnippet(text) {
 
 function handleEditorKey(e) {
   if (e.key==='Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); runSQL(); return; }
-  if (e.key==='Tab') { e.preventDefault(); insertSnippet('  '); }
+  if (e.key==='Tab') { e.preventDefault(); insertSnippet('  '); return; }
+  // Mark as unsaved on any edit
+  const savedEl = document.getElementById('status-saved');
+  if (savedEl && !['Control','Meta','Alt','Shift'].includes(e.key)) {
+    savedEl.textContent='Unsaved'; savedEl.style.color='var(--amber)';
+  }
 }
 
 function formatSQL() {
@@ -609,12 +672,193 @@ function formatSQL() {
   updateStatus();
 }
 
+// ── Editor state ─────────────────────────────────────────────────────────────
+let wordWrapOn   = false;
+let lineNumsOn   = true;
+let isFullscreen = false;
+let findMatches  = [];
+let findIdx      = 0;
+
 function updateStatus() {
-  const val = document.getElementById('sql-editor').value;
-  const lines = val.split('\n').length;
-  document.getElementById('status-lines').textContent='Lines: '+lines;
-  document.getElementById('status-chars').textContent='Chars: '+val.length;
+  const el   = document.getElementById('sql-editor');
+  const val  = el.value;
+  const pos  = el.selectionStart;
+  const lines= val.split('\n');
+  let lineNum=1, col=1, chars=0;
+  for (let i=0;i<lines.length;i++){
+    if (chars+lines[i].length+1>pos){ col=pos-chars+1; break; }
+    chars+=lines[i].length+1; lineNum++;
+  }
+  const selLen = el.selectionEnd - el.selectionStart;
+  document.getElementById('status-lines').textContent = 'Ln '+lineNum;
+  document.getElementById('status-col').textContent   = 'Col '+col;
+  document.getElementById('status-chars').textContent = val.length.toLocaleString()+' chars';
+  const selEl = document.getElementById('status-sel');
+  if (selLen>0){ selEl.textContent=selLen+' selected'; selEl.style.display='inline-flex'; }
+  else { selEl.style.display='none'; }
+  updateLineNumbers();
 }
+
+function updateConnLabel() {
+  const which = document.getElementById('conn-select').value;
+  const lbl = document.getElementById('status-conn');
+  if (lbl) lbl.textContent = which==='target' ? 'Target DB' : 'Source DB';
+}
+
+// ── Line numbers ──────────────────────────────────────────────────────────────
+function updateLineNumbers() {
+  const el  = document.getElementById('sql-editor');
+  const ln  = document.getElementById('line-numbers');
+  if (!ln || !lineNumsOn) return;
+  const lines = el.value.split('\n').length;
+  ln.textContent = Array.from({length:lines},(_,i)=>i+1).join('\n');
+}
+
+function syncScroll() {
+  const el = document.getElementById('sql-editor');
+  const ln = document.getElementById('line-numbers');
+  if (ln) ln.scrollTop = el.scrollTop;
+}
+
+function toggleLineNumbers() {
+  lineNumsOn = !lineNumsOn;
+  const ln  = document.getElementById('line-numbers');
+  const btn = document.getElementById('btn-lnum');
+  if (ln)  ln.style.display  = lineNumsOn ? 'block' : 'none';
+  if (btn) { btn.style.color = lineNumsOn ? 'var(--accent)' : ''; }
+  updateLineNumbers();
+}
+
+// ── Word wrap ─────────────────────────────────────────────────────────────────
+function toggleWordWrap() {
+  wordWrapOn = !wordWrapOn;
+  const el  = document.getElementById('sql-editor');
+  const btn = document.getElementById('btn-wrap');
+  el.classList.toggle('wrap-on', wordWrapOn);
+  el.classList.toggle('wrap-off', !wordWrapOn);
+  if (btn) btn.style.color = wordWrapOn ? 'var(--accent)' : '';
+}
+
+// ── Fullscreen ────────────────────────────────────────────────────────────────
+function toggleFullscreen() {
+  isFullscreen = !isFullscreen;
+  document.body.classList.toggle('fullscreen', isFullscreen);
+  const btn = document.getElementById('fs-btn');
+  if (btn) { btn.textContent = isFullscreen ? '⛶' : '⛶'; btn.title = isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F11)'; btn.style.color = isFullscreen ? 'var(--accent)' : ''; }
+  if (isFullscreen) {
+    // Also expand the editor pane to use full width
+    const layout = document.querySelector('.editor-layout');
+    if (layout) layout.style.gridTemplateColumns = '0 1fr 340px';
+  } else {
+    const layout = document.querySelector('.editor-layout');
+    if (layout) layout.style.gridTemplateColumns = '';
+  }
+  setTimeout(()=>document.getElementById('sql-editor').focus(), 50);
+}
+
+// ── Comment / uncomment selection ─────────────────────────────────────────────
+function commentSelection() {
+  const el    = document.getElementById('sql-editor');
+  const start = el.selectionStart;
+  const end   = el.selectionEnd;
+  const val   = el.value;
+  const lineStart = val.lastIndexOf('\n', start-1)+1;
+  const lineEnd   = val.indexOf('\n', end);
+  const section   = val.slice(lineStart, lineEnd===-1?undefined:lineEnd);
+  const lines     = section.split('\n');
+  const allCommented = lines.every(l=>l.trimStart().startsWith('--'));
+  const toggled = lines.map(l=> allCommented ? l.replace(/^(\s*)--\s?/,'$1') : '-- '+l).join('\n');
+  el.value = val.slice(0,lineStart)+toggled+(lineEnd===-1?'':val.slice(lineEnd));
+  el.selectionStart = lineStart;
+  el.selectionEnd   = lineStart+toggled.length;
+  updateStatus();
+}
+
+// ── Clear editor ──────────────────────────────────────────────────────────────
+function clearEditor() {
+  if (document.getElementById('sql-editor').value && !confirm('Clear the editor?')) return;
+  document.getElementById('sql-editor').value='';
+  updateStatus(); clearResults();
+}
+
+// ── Find & Replace ────────────────────────────────────────────────────────────
+function toggleFind() {
+  const bar = document.getElementById('find-bar');
+  const open = bar.style.display!=='none';
+  if (open) { closeFind(); } else { bar.style.display='flex'; document.getElementById('find-input').focus(); }
+}
+function closeFind() {
+  document.getElementById('find-bar').style.display='none';
+  document.getElementById('find-count').textContent='';
+  findMatches=[]; findIdx=0;
+}
+
+function findInEditor() {
+  const q = document.getElementById('find-input').value;
+  const el = document.getElementById('sql-editor');
+  findMatches=[];
+  if (!q) { document.getElementById('find-count').textContent=''; return; }
+  const text = el.value.toLowerCase();
+  const ql   = q.toLowerCase();
+  let pos=0;
+  while((pos=text.indexOf(ql,pos))!==-1){ findMatches.push(pos); pos+=ql.length; }
+  document.getElementById('find-count').textContent = findMatches.length ? (findIdx+1)+'/'+findMatches.length : '0 found';
+  if (findMatches.length) { findIdx=0; highlightFind(); }
+}
+
+function highlightFind() {
+  if (!findMatches.length) return;
+  const el  = document.getElementById('sql-editor');
+  const pos = findMatches[findIdx];
+  el.focus();
+  el.setSelectionRange(pos, pos+document.getElementById('find-input').value.length);
+  document.getElementById('find-count').textContent=(findIdx+1)+'/'+findMatches.length;
+}
+
+function findNext() { if (!findMatches.length) return; findIdx=(findIdx+1)%findMatches.length; highlightFind(); }
+function findPrev() { if (!findMatches.length) return; findIdx=(findIdx-1+findMatches.length)%findMatches.length; highlightFind(); }
+
+function replaceOne() {
+  const find = document.getElementById('find-input').value;
+  const rep  = document.getElementById('replace-input').value;
+  const el   = document.getElementById('sql-editor');
+  if (!find||!findMatches.length) return;
+  const pos = findMatches[findIdx];
+  el.value = el.value.slice(0,pos)+rep+el.value.slice(pos+find.length);
+  updateStatus(); findInEditor();
+}
+
+function replaceAll() {
+  const find = document.getElementById('find-input').value;
+  const rep  = document.getElementById('replace-input').value;
+  const el   = document.getElementById('sql-editor');
+  if (!find) return;
+  const count = (el.value.match(new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'))||[]).length;
+  el.value = el.value.split(find).join(rep);
+  updateStatus(); findInEditor();
+  setExecStatus('Replaced '+count+' occurrence'+( count!==1?'s':''), 'var(--green)');
+}
+
+function findKey(e) {
+  if (e.key==='Enter') { e.shiftKey ? findPrev() : findNext(); e.preventDefault(); }
+  if (e.key==='Escape') closeFind();
+}
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  // Escape exits fullscreen
+  if (e.key==='Escape' && isFullscreen) { toggleFullscreen(); return; }
+  // F11 toggle fullscreen
+  if (e.key==='F11') { e.preventDefault(); toggleFullscreen(); return; }
+  // Ctrl+F find
+  if ((e.ctrlKey||e.metaKey) && e.key==='f' && document.activeElement.id==='sql-editor') {
+    e.preventDefault(); toggleFind(); return;
+  }
+  // Ctrl+/ comment
+  if ((e.ctrlKey||e.metaKey) && e.key==='/') { e.preventDefault(); commentSelection(); return; }
+  // Ctrl+S save
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); saveScript(); return; }
+});
 
 function setExecStatus(msg, color) {
   const el = document.getElementById('exec-status');
@@ -780,6 +1024,8 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 loadScripts();
 renderScriptList();
 updateConnLabel();
+updateLineNumbers();
+updateStatus();
 </script>
 </body>
 </html>
