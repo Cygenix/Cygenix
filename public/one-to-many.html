@@ -651,9 +651,21 @@ function checkReady(){
 }
 
 // ── Generate SQL ──────────────────────────────────────────────────────────────
+
+function parseTypeLen(typeStr) {
+  if (!typeStr) return Infinity;
+  var m = typeStr.match(/[(](\d+|MAX)[)]/i);
+  if (!m) return Infinity;
+  return m[1].toUpperCase() === 'MAX' ? Infinity : parseInt(m[1]);
+}
+function isCharType(typeStr) {
+  if (!typeStr) return false;
+  return /^(N?VARCHAR|N?CHAR|N?TEXT)/i.test(typeStr.trim());
+}
 function generateSQL(){
   if(!srcTable||!targetTables.length){alert('Select source table and add at least one target table.');return;}
 
+  var truncationWarnings = [];
   const txMode = document.getElementById('tx-mode').value;
   const where  = document.getElementById('src-where').value.trim();
   const limit  = document.getElementById('row-limit').value;
@@ -754,15 +766,26 @@ function generateSQL(){
       ...mappedCols.map(m=>{
         const varName = '@src_'+m.srcCol.replace(/[^a-z0-9]/gi,'_');
         const tgtCol  = tt.columns.find(c=>c.name===m.tgtCol);
+        var srcColDef = srcTable.columns.find(function(c){return c.name===m.srcCol;});
+        var truncLen = 0;
+        if (m.transform==='NONE' && tgtCol && srcColDef && isCharType(srcColDef.type) && isCharType(tgtCol.type)) {
+          var sl = parseTypeLen(srcColDef.type), tl = parseTypeLen(tgtCol.type);
+          if (sl > tl && tl !== Infinity) {
+            truncLen = tl;
+            truncationWarnings.push({srcCol:m.srcCol, srcType:srcColDef.type, tgtCol:m.tgtCol, tgtType:tgtCol.type, tgtTable:tt.fullName, tgtLen:tl});
+          }
+        }
         switch(m.transform){
-          case 'TRIM':    return `  TRIM(${varName})`;
-          case 'UPPER':   return `  UPPER(${varName})`;
-          case 'LOWER':   return `  LOWER(${varName})`;
-          case 'CAST':    return `  CAST(${varName} AS ${tgtCol?.type||'NVARCHAR(MAX)'})`;
-          case 'CONVERT': return `  CONVERT(${tgtCol?.type||'NVARCHAR(MAX)'}, ${varName})`;
-          case 'GETDATE()': return `  GETDATE()`;
-          case 'NEWID()': return `  NEWID()`;
-          default:        return `  ${varName}`;
+          case 'TRIM':    return '  TRIM('+varName+')';
+          case 'UPPER':   return '  UPPER('+varName+')';
+          case 'LOWER':   return '  LOWER('+varName+')';
+          case 'CAST':    return '  CAST('+varName+' AS '+(tgtCol&&tgtCol.type||'NVARCHAR(MAX)')+')';
+          case 'CONVERT': return '  CONVERT('+(tgtCol&&tgtCol.type||'NVARCHAR(MAX)')+', '+varName+')';
+          case 'GETDATE()': return '  GETDATE()';
+          case 'NEWID()': return '  NEWID()';
+          default:
+            if (truncLen) return '  LEFT('+varName+', '+truncLen+') -- truncated: '+(srcColDef&&srcColDef.type)+' -> '+(tgtCol&&tgtCol.type);
+            return '  '+varName;
         }
       }),
       ...fkCols.map(fk=>`  ${fk.refTableVar}`)
@@ -793,7 +816,17 @@ function generateSQL(){
     sql += '\n';
   });
 
-  sql += `  FETCH NEXT FROM cur INTO ${srcCols.map(c=>'@src_'+c.replace(/[^a-z0-9]/gi,'_')).join(', ')};\nEND -- WHILE\n\n`;
+
+  if (truncationWarnings.length) {
+    var wb = '-- \u26a0 TRUNCATION WARNINGS -- columns auto-truncated with LEFT():\n';
+    truncationWarnings.forEach(function(w){
+      wb += '--   '+w.tgtTable+'.'+w.tgtCol+' ('+w.tgtType+'): source '+w.srcCol+' ('+w.srcType+') truncated to '+w.tgtLen+' chars\n';
+    });
+    wb += '--\n\n';
+    sql = wb + sql;
+  }
+
+    sql += `  FETCH NEXT FROM cur INTO ${srcCols.map(c=>'@src_'+c.replace(/[^a-z0-9]/gi,'_')).join(', ')};\nEND -- WHILE\n\n`;
   sql += `CLOSE cur;\nDEALLOCATE cur;\n`;
   if(txMode==='single') sql += `\nCOMMIT TRAN;\n`;
 
@@ -828,7 +861,9 @@ function generateSQL(){
   document.getElementById('sql-wrap').style.display = 'block';
   showSQLTab();
   document.getElementById('save-btn').disabled = false;
-  showStatus('SQL generated — '+targetTables.length+' target table'+(targetTables.length!==1?'s':'')+'','ok');
+  window._lastTruncWarnings = truncationWarnings;
+  var tMsg = truncationWarnings.length ? ' -- ⚠ '+truncationWarnings.length+' truncation'+(truncationWarnings.length>1?'s':'')+' applied (LEFT)' : '';
+  showStatus('SQL generated — '+targetTables.length+' target table'+(targetTables.length!==1?'s':'')+''+tMsg,'ok');
 }
 
 function showSQLTab(){
@@ -970,7 +1005,13 @@ function saveAsJob(){
     insertSQL:generatedSQL.insert||'',
     schemaSQL:generatedSQL.schema||'',
     columnMapping:targetTables.flatMap(tt=>tt.mappings.filter(m=>m.srcCol&&m.tgtCol).map(m=>({srcCol:m.srcCol,tgtCol:m.tgtCol,srcTable:srcTable.fullName,tgtTable:tt.fullName,transform:m.transform||'NONE'}))),
-    warnings:['One-to-many mapping — '+targetTables.length+' target tables'],
+    warnings: (function(){
+      var w = ['One-to-many mapping — '+targetTables.length+' target tables'];
+      (window._lastTruncWarnings||[]).forEach(function(t){
+        w.push('TRUNCATION: '+t.srcCol+' ('+t.srcType+') → '+t.tgtTable+'.'+t.tgtCol+' ('+t.tgtType+') truncated to '+t.tgtLen+' chars');
+      });
+      return w;
+    })(),
   };
   try{
     const jobs=JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
