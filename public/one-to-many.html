@@ -638,13 +638,18 @@ function generateSQL(){
 
   let sql = '';
 
+  // Capture database names from connected schemas
+  const srcDb  = srcSchema?.database || '';
+  const tgtDb  = tgtSchema?.database || '';
+
   // Header comment
   sql += `-- ╔══════════════════════════════════════════════════════════════════╗\n`;
   sql += `-- ║  Cygenix One-to-Many Migration\n`;
-  sql += `-- ║  Source: ${srcTable.fullName}\n`;
-  sql += `-- ║  Targets: ${targetTables.map(t=>t.fullName).join(', ')}\n`;
+  sql += `-- ║  Source DB: ${srcDb ? srcDb + ' — ' : ''}${srcTable.fullName}\n`;
+  sql += `-- ║  Target DB: ${tgtDb ? tgtDb + ' — ' : ''}${targetTables.map(t=>t.fullName).join(', ')}\n`;
   sql += `-- ║  Generated: ${new Date().toISOString().slice(0,19).replace('T',' ')}\n`;
   sql += `-- ╚══════════════════════════════════════════════════════════════════╝\n\n`;
+  if(srcDb) sql += `-- NOTE: Script runs on target DB (${tgtDb||'target'}). Source rows are read via cross-database reference.\n\n`;
 
   // Declare FK variables
   const parentTables = targetTables.filter((_,i)=>targetTables.some((_2,j)=>j>i&&targetTables[j].fks.some(fk=>fk.refTableVar===targetTables[i].pkVar)));
@@ -661,6 +666,9 @@ function generateSQL(){
     sql += '\n';
   }
 
+  // Set database context to target DB
+  if(tgtDb) sql += `USE [${tgtDb}];\nGO\n\n`;
+
   if(txMode==='single'){
     sql += `SET XACT_ABORT ON;\nBEGIN TRAN;\n\n`;
   }
@@ -672,7 +680,9 @@ function generateSQL(){
   sql += `-- ── Cursor over source rows ──────────────────────────────────────────\n`;
   sql += `DECLARE cur CURSOR FOR\n`;
   sql += `  SELECT ${srcCols.map(c=>'['+c+']').join(', ')}\n`;
-  sql += `  FROM   ${srcFull}\n`;
+  // Use 3-part name [database].[schema].[table] so script can cross-database query
+  const srcFullQualified = srcDb ? `[${srcDb}].${srcFull}` : srcFull;
+  sql += `  FROM   ${srcFullQualified}\n`;
   if(where) sql += `  WHERE  ${where}\n`;
   if(limit>0) sql += `-- (Add TOP ${limit} to SELECT above for preview)\n`;
   sql += `  ORDER  BY (SELECT NULL);\n\n`;
@@ -785,7 +795,7 @@ function generateSQL(){
 
   // Verify SQL
   let verifySql = `-- Verify row counts after migration\n\n`;
-  verifySql += `SELECT '${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFull}`;
+  verifySql += `SELECT '${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcDb ? '['+srcDb+'].'+srcFull : srcFull}`;
   if(where) verifySql += ` WHERE ${where}`;
   verifySql += '\nUNION ALL\n';
   verifySql += targetTables.map(tt=>`SELECT '${tt.fullName}', COUNT(*) FROM [${tt.schema}].[${tt.name}]`).join('\nUNION ALL\n');
