@@ -86,10 +86,9 @@
     const connDot = `<span class="cyg-conn-dot" style="background:${connAll?'#22c97a':srcOk||tgtOk?'#f59e0b':'#f04646'}"></span>`;
 
     // Determine which sub-menus should start open
-    const configPages = ['dashboard.html'];
-    const configOpen = configPages.includes(page) ? 'open' : '';
-    const configCollapsed = configOpen ? '' : 'collapsed';
-    // Mapping sub-menu is always pinned open
+    // Both sub-menus always pinned open
+    const configOpen = 'open';
+    const configCollapsed = '';
     const mappingOpen = 'open';
     const mappingCollapsed = '';
 
