@@ -706,8 +706,7 @@ async function runProject() {
       files: [], tables: steps.filter(s=>s.type==='migration').flatMap(s=>{
         // One-to-many: expand into per-target-table rows
         if ((s.jobType==='one-to-many'||s.oneToManyConfig) && s.tables && s.tables.length) {
-          const perTable = Math.round((s.rowsInserted||0) / s.tables.length);
-          return s.tables.map(t=>({ name:t.name||t.fullName||'', rows:perTable, cols:t.cols||0 }));
+          return s.tables.map(t=>({ name:t.name||t.fullName||'', rows:t.rows||0, cols:t.cols||0 }));
         }
         return [{ name:s.tgtTable||'', rows:s.rowsInserted||0, cols:(s.columnMapping||[]).filter(m=>m.tgtCol).length }];
       }),
@@ -766,32 +765,39 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   // ── One-to-many job: use the pre-generated cursor SQL ──────────────────────
   if (step.jobType === 'one-to-many' || step.oneToManyConfig) {
     if (!step.insertSQL) throw new Error('No generated SQL found — open the One-to-Many Mapper, generate SQL, then save the job again');
-    add('Running one-to-many migration: '+step.srcTable+' → '+( step.tables?.map(t=>t.name).join(', ')||step.tgtTable||'multiple tables'));
+    const tgtNames = step.tables?.map(t=>t.name||t.fullName).filter(Boolean) || [step.tgtTable];
+    add('Running one-to-many migration: '+step.srcTable+' → '+tgtNames.join(', '));
     add('Executing generated cursor SQL on target DB…');
     try {
-      const res = await dbCall(tgtConn, { action:'execute', sql: step.insertSQL });
-      // rowsAffected is an array (one per statement) — sum all entries
-      let affected = 0;
-      if (Array.isArray(res.rowsAffected)) {
-        affected = res.rowsAffected.reduce((sum, n) => sum + (parseInt(n)||0), 0);
-      } else {
-        affected = parseInt(res.rowsAffected || res.totalRowsAffected || 0);
+      // Execute the cursor script
+      await dbCall(tgtConn, { action:'execute', sql: step.insertSQL });
+
+      // rowsAffected from a cursor script is unreliable (counts all statements, not just INSERTs).
+      // Instead: query actual row counts from each target table after execution.
+      let totalInserted = 0;
+      const perTableCounts = [];
+      for (const tgtName of tgtNames) {
+        try {
+          const countRes = await dbCall(tgtConn, { action:'execute', sql: 'SELECT COUNT(*) AS cnt FROM ' + tgtName });
+          const cnt = countRes.recordset?.[0]?.cnt || 0;
+          perTableCounts.push({ name: tgtName, rows: cnt });
+          totalInserted += cnt;
+          add('  ' + tgtName + ': ' + cnt.toLocaleString() + ' rows in table');
+        } catch(ce) {
+          add('  Could not count rows in ' + tgtName + ': ' + ce.message);
+          perTableCounts.push({ name: tgtName, rows: 0 });
+        }
       }
-      // For cursor-based scripts, rowsAffected counts every individual statement
-      // (DECLARE, OPEN, FETCH, INSERT, SELECT...) not just INSERTs.
-      // Use the source table row count from the job as a fallback if affected is misleading
-      const srcRowCount = step.totalRows || 0;
-      // Count only INSERT statements: number of target tables × source rows
-      const targetCount = (step.tables||[]).length || 1;
-      // If affected seems too high (includes non-INSERT stmts), try to derive from source count
-      // Otherwise use what the DB reported
-      const reportedRows = affected;
-      add('Done — ' + reportedRows.toLocaleString() + ' rows affected across ' + targetCount + ' target table(s)');
-      step.rowsInserted = reportedRows;
-      step.rowsInsertedPerTable = step.tables ? step.tables.map(t => ({
-        name: t.name,
-        rows: Math.round(reportedRows / targetCount)
-      })) : [];
+
+      add('Done — ' + totalInserted.toLocaleString() + ' total rows across ' + tgtNames.length + ' target table(s)');
+      step.rowsInserted = totalInserted;
+      // Update step.tables with actual row counts for the report
+      if (step.tables && step.tables.length) {
+        step.tables = step.tables.map(t => {
+          const found = perTableCounts.find(p => p.name === (t.name||t.fullName));
+          return { ...t, rows: found ? found.rows : 0 };
+        });
+      }
       return { ok: true, log: stepLog };
     } catch(e) {
       add('Error: ' + e.message);
@@ -866,8 +872,7 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
   // Expand one-to-many steps into per-target-table entries for the report
   const expandedTables = steps.filter(s=>s.type==='migration').flatMap(s=>{
     if ((s.jobType==='one-to-many'||s.oneToManyConfig) && s.tables && s.tables.length) {
-      const perTable = Math.round((s.rowsInserted||0) / s.tables.length);
-      return s.tables.map(t=>({ name:t.name||t.fullName||'', rows:perTable, cols:t.cols||0, srcTable:s.srcTable }));
+      return s.tables.map(t=>({ name:t.name||t.fullName||'', rows:t.rows||0, cols:t.cols||0, srcTable:s.srcTable }));
     }
     return [{ name:s.tgtTable||'', rows:s.rowsInserted||0, cols:(s.columnMapping||[]).filter(m=>m.tgtCol).length, srcTable:s.srcTable }];
   });
@@ -933,13 +938,12 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
       connOn:  s.connOn || 'target'
     })),
     tables: migrationSteps.flatMap(s => {
-      // One-to-many: expand into one row per target table
+      // One-to-many: use actual per-table row counts stored in step.tables after execution
       if ((s.jobType==='one-to-many'||s.oneToManyConfig) && s.tables && s.tables.length) {
-        const perTable = Math.round((s.rowsInserted||0) / s.tables.length);
         return s.tables.map(t => ({
           name:         t.name || t.fullName || '',
-          sourceRows:   perTable,
-          insertedRows: perTable,
+          sourceRows:   t.rows || 0,
+          insertedRows: t.rows || 0,
           errors:       s.status === 'failed' ? 1 : 0,
           status:       s.status === 'passed' ? 'success' : s.status
         }));
