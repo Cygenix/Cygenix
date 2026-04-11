@@ -125,18 +125,28 @@ select.map-select:focus{border-color:var(--accent)}
   </div>
 </div>
 
-<div id="conn-banner" style="display:flex;align-items:center;gap:1rem;padding:0.6rem 1.25rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:12px;font-family:var(--mono);flex-wrap:wrap">
-  <span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-family:var(--serif)">Connections</span>
-  <span style="display:flex;align-items:center;gap:0.4rem;color:var(--text3)">
+<div style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 1.25rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:11px;flex-wrap:wrap">
+  <span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-family:var(--serif);flex-shrink:0">Connections</span>
+
+  <!-- Source -->
+  <div style="display:flex;align-items:center;gap:0.4rem">
     <span id="banner-src-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
-    <span id="banner-src-label">Source: not configured</span>
-  </span>
+    <span id="banner-src-label" style="font-family:var(--mono);color:var(--text3);font-size:11px">Source: not configured</span>
+    <button onclick="connectSrc()" id="src-connect-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">🔌 Connect</button>
+    <span id="src-conn-status" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
+  </div>
+
   <span style="color:var(--border2)">|</span>
-  <span style="display:flex;align-items:center;gap:0.4rem;color:var(--text3)">
+
+  <!-- Target -->
+  <div style="display:flex;align-items:center;gap:0.4rem">
     <span id="banner-tgt-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
-    <span id="banner-tgt-label">Target: not configured</span>
-  </span>
-  <a href="/dashboard.html" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Edit connections →</a>
+    <span id="banner-tgt-label" style="font-family:var(--mono);color:var(--text3);font-size:11px">Target: not configured</span>
+    <button onclick="connectTgt()" id="tgt-connect-btn" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">🔌 Connect</button>
+    <span id="tgt-conn-status" style="font-size:11px;font-family:var(--mono);color:var(--text3)"></span>
+  </div>
+
+  <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Edit →</a>
 </div>
 <script>
 (function initBanner(){
@@ -148,7 +158,8 @@ select.map-select:focus{border-color:var(--accent)}
   const setDot=(id,ok)=>{const el=document.getElementById(id);if(el)el.style.background=ok?"var(--green)":"var(--red)";};
   const setText=(id,t)=>{const el=document.getElementById(id);if(el)el.textContent=t;};
   setDot("banner-src-dot",srcOk); setText("banner-src-label",srcOk?"Source: "+trim(mask(c.srcConnString)):"Source: not configured");
-  setDot("banner-tgt-dot",tgtOk); const tgtRaw=c.tgtFnUrl||c.tgtConnString||"";
+  setDot("banner-tgt-dot",tgtOk);
+  const tgtRaw=c.tgtFnUrl||c.tgtConnString||"";
   setText("banner-tgt-label",tgtOk?"Target: "+trim(mask(tgtRaw)):"Target: not configured");
 })();
 </script>
@@ -299,30 +310,52 @@ async function dbCall(conn, body){
 async function connectSrc(){
   const _oc=CygenixConnections.get(); const conn=_oc.srcConnString||'';
   const st=document.getElementById('src-conn-status');
-  if (!conn){alert('Enter source connection');return;}
-  st.textContent='Connecting…';st.style.color='var(--accent)';
+  const btn=document.getElementById('src-connect-btn');
+  const dot=document.getElementById('banner-src-dot');
+  const lbl=document.getElementById('banner-src-label');
+  if (!conn){ alert('No source connection configured. Go to Dashboard → Configure → Connections.'); return; }
+  if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
+  if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
     const res=await dbCall(conn,{action:'schema'});
     srcSchema=res;
     srcAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
-    st.textContent='🟢 '+res.database+' · '+srcAllTables.length+' tables';
-    st.style.color='var(--green)';
+    if(st) { st.textContent='🟢 '+res.database+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
+    if(dot) dot.style.background='var(--green)';
+    if(lbl) lbl.textContent='Source: '+res.database;
+    if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderSrcDrop('');
-  }catch(e){st.textContent='🔴 '+e.message;st.style.color='var(--red)';}
+  }catch(e){
+    if(st) { st.textContent='🔴 '+e.message; st.style.color='var(--red)'; }
+    if(dot) dot.style.background='var(--red)';
+    if(btn) { btn.disabled=false; btn.textContent='🔌 Retry'; }
+  }
 }
 async function connectTgt(){
-  const _oc2=CygenixConnections.get(); let conn=_oc2.tgtFnUrl||_oc2.tgtConnString||''; if(_oc2.tgtFnUrl&&_oc2.tgtFnKey) conn=_oc2.tgtFnUrl+'?code='+encodeURIComponent(_oc2.tgtFnKey);
+  const _oc2=CygenixConnections.get();
+  let conn=_oc2.tgtFnUrl||_oc2.tgtConnString||'';
+  if(_oc2.tgtFnUrl&&_oc2.tgtFnKey) conn=_oc2.tgtFnUrl+'?code='+encodeURIComponent(_oc2.tgtFnKey);
   const st=document.getElementById('tgt-conn-status');
-  if (!conn){alert('Enter target connection');return;}
-  st.textContent='Connecting…';st.style.color='var(--accent)';
+  const btn=document.getElementById('tgt-connect-btn');
+  const dot=document.getElementById('banner-tgt-dot');
+  const lbl=document.getElementById('banner-tgt-label');
+  if (!conn){ alert('No target connection configured. Go to Dashboard → Configure → Connections.'); return; }
+  if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
+  if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
     const res=await dbCall(conn,{action:'schema'});
     tgtSchema=res;
     tgtAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
-    st.textContent='🟢 '+res.database+' · '+tgtAllTables.length+' tables';
-    st.style.color='var(--green)';
+    if(st) { st.textContent='🟢 '+res.database+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
+    if(dot) dot.style.background='var(--green)';
+    if(lbl) lbl.textContent='Target: '+res.database;
+    if(btn) { btn.textContent='✓ Connected'; btn.style.color='var(--green)'; }
     renderTgtDrop('');
-  }catch(e){st.textContent='🔴 '+e.message;st.style.color='var(--red)';}
+  }catch(e){
+    if(st) { st.textContent='🔴 '+e.message; st.style.color='var(--red)'; }
+    if(dot) dot.style.background='var(--red)';
+    if(btn) { btn.disabled=false; btn.textContent='🔌 Retry'; }
+  }
 }
 
 // ── Source table searchable dropdown ─────────────────────────────────────────
@@ -827,6 +860,13 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
   } catch(e) {
     console.warn('Could not load edit job:', e);
   }
+})();
+
+// Auto-connect on load if connections are already configured
+(function autoConnect(){
+  const c = CygenixConnections.get();
+  if (c.srcConnString) setTimeout(connectSrc, 300);
+  if (c.tgtFnUrl || c.tgtConnString) setTimeout(connectTgt, 600);
 })();
 
 // Close dropdowns on outside click
