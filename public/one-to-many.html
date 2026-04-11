@@ -784,7 +784,7 @@ function generateSQL(){
           case 'GETDATE()': return '  GETDATE()';
           case 'NEWID()': return '  NEWID()';
           default:
-            if (truncLen) return '  LEFT('+varName+', '+truncLen+') -- truncated: '+(srcColDef&&srcColDef.type)+' -> '+(tgtCol&&tgtCol.type);
+            if (truncLen) return '  -- truncated: '+(srcColDef&&srcColDef.type)+' -> '+(tgtCol&&tgtCol.type)+'\n  LEFT('+varName+', '+truncLen+')';
             return '  '+varName;
         }
       }),
