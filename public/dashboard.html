@@ -1071,19 +1071,24 @@ async function checkHealth() {
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showView(v) {
   document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
-  const el = $('view-' + v); if (el) el.classList.add('active');
+  const el = $('view-' + v);
+  if (el) el.classList.add('active');
+  else { console.warn('No view found: view-' + v); return; }
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const map = { dashboard:0,'new-job':1,jobs:2,inventory:3,schema:4,'migration-sql':5,audit:6,reports:7,supported:8,diagnostics:9 };
-  document.querySelectorAll('.nav-item')[map[v] ?? 0]?.classList.add('active');
-  if (v === 'jobs')          renderAllJobs();
-  if (v === 'schema')        renderSchemaLibrary();
-  if (v === 'migration-sql') renderMigrationLibrary();
-  if (v === 'audit')         renderAuditLog();
-  if (v === 'dashboard')     renderDashboard();
-  if (v === 'reports')       renderReportsList();
-  if (v === 'inventory')     renderInventory();
-  if (v === 'reports')       renderReportsList();
-  if (v === 'inventory')     renderInventory();
+  // Highlight the correct nav item by matching onclick attribute
+  document.querySelectorAll('.nav-item').forEach(item => {
+    const oc = item.getAttribute('onclick') || '';
+    if (oc.includes("showView('" + v + "')")) item.classList.add('active');
+  });
+  if (v === 'jobs')              renderAllJobs();
+  if (v === 'schema')            renderSchemaLibrary();
+  if (v === 'migration-sql')     renderMigrationLibrary();
+  if (v === 'audit')             renderAuditLog();
+  if (v === 'dashboard')         renderDashboard();
+  if (v === 'reports')           renderReportsList();
+  if (v === 'inventory')         renderInventory();
+  if (v === 'connections')       initConnectionsView();
+  if (v === 'project-settings')  initProjectSettingsView();
 }
 
 function selectTarget(el, name) {
