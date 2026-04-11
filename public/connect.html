@@ -867,13 +867,13 @@ setSrcMode(srcConnMode);
 
 // Source DB call — uses the source connection
 async function srcDbCall(body) {
-  if (srcConnMode === 'direct') {
-    return directDbCall({ ...body, connectionString: S.srcConnString });
-  } else {
-    // Azure function for source — uses src fn url
-    const url = S.srcFnUrl;
-    if (!url) throw new Error('Source Azure Function URL not set');
-    const res = await fetch(url, {
+  // Always refresh from CygenixConnections in case auto-connect populated it
+  const saved = CygenixConnections.get();
+  if (!S.srcConnString && saved.srcConnString) S.srcConnString = saved.srcConnString;
+  if (!S.srcFnUrl && saved.srcConnString && saved.srcConnString.startsWith('https://')) S.srcFnUrl = saved.srcConnString;
+
+  if (S.srcFnUrl && S.srcFnUrl.startsWith('https://')) {
+    const res = await fetch(S.srcFnUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -883,6 +883,9 @@ async function srcDbCall(body) {
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
   }
+  const cs = S.srcConnString || saved.srcConnString || '';
+  if (!cs) throw new Error('No source connection configured — set in Dashboard → Configure → Connections');
+  return directDbCall({ ...body, connectionString: cs });
 }
 
 async function testSourceConnection() {
@@ -1102,10 +1105,12 @@ async function testDirectConnection(){
 }
 
 async function testAzureConnection(){
-  const url = $('fn-url').value.trim();
-  const key = $('fn-key').value.trim();
-  if (!url){ alert('Please enter the Azure Function URL.'); return; }
-  if (!url.startsWith('https://')){ alert('URL must start with https://'); return; }
+  // Read from DOM input, falling back to CygenixConnections (DOM may be in hidden step 2)
+  const saved = CygenixConnections.get();
+  const url = ($('fn-url')?.value||'').trim() || saved.tgtFnUrl || sessionStorage.getItem('cygenix_fn_url') || '';
+  const key = ($('fn-key')?.value||'').trim() || saved.tgtFnKey || sessionStorage.getItem('cygenix_fn_key') || '';
+  if (!url){ showStatus('conn-status','No Azure Function URL configured. Set in Dashboard → Configure → Connections.','err'); return; }
+  if (!url.startsWith('https://')){ showStatus('conn-status','Azure Function URL must start with https://','err'); return; }
   sessionStorage.setItem('cygenix_fn_url', url);
   if (key) sessionStorage.setItem('cygenix_fn_key', key);
   showStatus('conn-status', 'Calling Azure Function…', 'info');
