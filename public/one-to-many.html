@@ -113,16 +113,16 @@ select.map-select:focus{border-color:var(--accent)}
 <body>
 
 <div class="topbar">
-  <div style="display:flex;align-items:center;gap:1rem">
-    <a href="/dashboard.html" class="logo" style="text-decoration:none">Cyge<span>nix</span></a>
-    <span style="color:var(--text3);font-size:13px">/</span>
-    <span style="font-size:13px;color:var(--purple);font-weight:500">One-to-Many Mapper</span>
+  <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
+    <a href="/dashboard.html" class="logo" style="text-decoration:none;flex-shrink:0">Cyge<span>nix</span></a>
+    <span style="color:var(--text3);font-size:13px;flex-shrink:0">/</span>
+    <input id="mapping-name" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;width:280px;min-width:0" placeholder="Mapping name… e.g. Address to Site + Phone" oninput="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border2)'">
   </div>
-  <div style="display:flex;gap:0.75rem">
-    <button class="btn btn-purple btn-sm" onclick="generateSQL()" id="gen-btn" disabled>⚡ Generate SQL</button>
-    <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="save-btn" disabled>💾 Save as job</button>
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
+    <button class="btn btn-purple btn-sm" onclick="generateSQL()" id="gen-btn" disabled>&#x26A1; Generate SQL</button>
+    <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="save-btn" disabled>&#x1F4BE; Save as job</button>
     <div style="width:0.5px;background:var(--border2);height:20px"></div>
-    <input type="password" id="otm-api-key" style="width:170px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:4px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none" placeholder="Anthropic key for AI Map">
+    <input type="password" id="otm-api-key" style="width:150px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:4px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none" placeholder="Anthropic key for AI">
     <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
   </div>
 </div>
@@ -864,8 +864,13 @@ async function aiMapColumns(ti) {
 }
 
 function saveAsJob(){
-  if(!srcTable||!targetTables.length){alert('Nothing to save yet.');return;}
-  const name=document.getElementById('mapping-name').value.trim()||srcTable.fullName+' → '+targetTables.map(t=>t.name).join(', ');
+  if(!srcTable||!targetTables.length){
+    alert('Please select a source table and add at least one target table before saving.');
+    return;
+  }
+  const nameEl = document.getElementById('mapping-name');
+  const name = (nameEl && nameEl.value.trim()) ||
+    (srcTable.fullName + ' → ' + targetTables.map(t=>t.name).join(', '));
   // Check if we're in edit mode
   const editId = new URLSearchParams(location.search).get('edit');
   const job={
@@ -891,7 +896,7 @@ function saveAsJob(){
     if (existIdx>=0) { jobs[existIdx]={...jobs[existIdx],...job}; }
     else { jobs.unshift(job); }
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,50)));
-    showStatus('✓ '+(existIdx>=0?'Updated':'Saved as')+' job: '+name+' — visible in All Jobs','ok');
+    showStatus('✓ '+(existIdx>=0?'Updated':'Saved')+': '+name+' — visible in All Jobs','ok');
   }catch(e){showStatus('Save failed: '+e.message,'err');}
 }
 
