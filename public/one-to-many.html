@@ -645,8 +645,8 @@ function generateSQL(){
     sql += `-- Variable declarations for captured keys\n`;
     targetTables.forEach(tt=>{
       if(tt.pkMode==='identity'||tt.pkMode==='guid'||tt.pkMode==='sequence'){
-        const pkCol = tt.columns.find(c=>c.name===tt.pkCol);
-        const sqlType = pkCol?.type?.toLowerCase().includes('uniqueidentifier')||tt.pkMode==='guid' ? 'UNIQUEIDENTIFIER' : 'INT';
+        const pkCol = tt.columns && tt.columns.find(c=>c.name===tt.pkCol);
+        const sqlType = (pkCol?.type||'').toLowerCase().includes('uniqueidentifier')||tt.pkMode==='guid' ? 'UNIQUEIDENTIFIER' : 'INT';
         sql += `DECLARE ${tt.pkVar} ${sqlType};\n`;
       }
     });
@@ -673,7 +673,9 @@ function generateSQL(){
   sql += `DECLARE\n`;
   srcCols.forEach(c=>{
     const colDef = srcTable.columns.find(col=>col.name===c);
-    const sqlType = colDef?.type || 'NVARCHAR(MAX)';
+    let sqlType = colDef?.type || 'NVARCHAR(MAX)';
+    // Strip invalid precision/scale from fixed-size types (MONEY, SMALLMONEY, BIT, etc.)
+    sqlType = sqlType.replace(/^(MONEY|SMALLMONEY|BIT|TINYINT|SMALLINT|INT|BIGINT|REAL|DATE|SMALLDATETIME|DATETIME|DATETIME2|UNIQUEIDENTIFIER|XML|TEXT|NTEXT|IMAGE)(\s*\([^)]*\))?/i, '$1');
     sql += `  @src_${c.replace(/[^a-z0-9]/gi,'_')} ${sqlType},\n`;
   });
   sql = sql.slice(0,-2) + ';\n\n';
@@ -683,7 +685,11 @@ function generateSQL(){
 
   // Insert into each target table in order
   targetTables.forEach((tt,ti)=>{
-    const tgtFull = '['+tt.schema+'].['+tt.name+']';
+    // Derive schema and name from fullName if not set directly (e.g. restored from saved job)
+    const _parts = (tt.fullName||'').split('.');
+    const _schema = tt.schema || (_parts.length > 1 ? _parts[0] : 'dbo');
+    const _name   = tt.name   || (_parts.length > 1 ? _parts.slice(1).join('.') : _parts[0]);
+    const tgtFull = '['+_schema+'].['+_name+']';
     const mappedCols = tt.mappings.filter(m=>m.srcCol&&m.tgtCol&&!tt.columns.find(c=>c.name===m.tgtCol&&c.isIdentity));
     const fkCols = tt.fks;
 
