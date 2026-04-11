@@ -126,10 +126,10 @@
     </a>
   </div>
 
-  <!-- Mapping sub-menu -->
+  <!-- Develop sub-menu -->
   <div class="cyg-sub-label ${mappingOpen}" id="cyg-lbl-mapping" onclick="cygToggleSub('mapping')">
     <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><path d="M1 3h4M1 6h4M1 9h4M7 3h4M7 6h4M7 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-    Mapping
+    Develop
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${mappingCollapsed}" id="cyg-sub-mapping" style="max-height:${mappingOpen?'200px':'0'}">

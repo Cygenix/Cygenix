@@ -373,6 +373,11 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
             <option value="50000">First 50,000</option>
             <option value="0">All rows</option>
           </select>
+          <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:180px">
+            <span style="font-size:12px;color:var(--text2);flex-shrink:0">WHERE</span>
+            <input id="src-where-filter" class="form-input" style="flex:1;font-family:var(--mono);font-size:11px" placeholder="e.g. active = 1 AND country = 'UK'">
+            <button onclick="openConnectWhereAI()" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);padding:4px 10px;font-size:11px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI WHERE builder">🤖 AI help</button>
+          </div>
           <div style="font-size:11px;color:var(--text3)" id="src-row-hint">Rows will be fetched when you generate preview SQL</div>
         </div>
       </div>
@@ -1009,9 +1014,11 @@ async function fetchSourceRows() {
   if (!S.selectedSourceTable?.fromLiveDB) return true; // file source already has rows
   const limit = parseInt($('src-row-limit')?.value || '1000');
   const safeSrc = '[' + S.selectedSourceTable.schemaName + '].[' + S.selectedSourceTable.tableName + ']';
+  const whereFilter = ($('src-where-filter')?.value||'').trim();
+  const whereClause = whereFilter ? ' WHERE ' + whereFilter : '';
   const sql = limit > 0
-    ? 'SELECT TOP ' + limit + ' * FROM ' + safeSrc
-    : 'SELECT * FROM ' + safeSrc;
+    ? 'SELECT TOP ' + limit + ' * FROM ' + safeSrc + whereClause
+    : 'SELECT * FROM ' + safeSrc + whereClause;
 
   showStatus('conn-status', 'Fetching ' + (limit||'all') + ' rows from ' + safeSrc + '…', 'info');
   try {
@@ -2892,6 +2899,193 @@ function timeAgo(iso) {
 // Auto-save after key events
 function autoSave() { try { saveProjectState(); } catch(e) {} }
 
+
+
+// ── Connect.html WHERE AI wrapper ─────────────────────────────────────────────
+function openConnectWhereAI() {
+  const apiKey = localStorage.getItem('cygenix_api_key') || '';
+  if (!apiKey) {
+    const k = prompt('Enter your Anthropic API key for AI WHERE builder:');
+    if (!k) return;
+    localStorage.setItem('cygenix_api_key', k);
+  }
+  const key = localStorage.getItem('cygenix_api_key') || '';
+  const tbl = S.selectedSourceTable;
+  if (!tbl) { alert('Please select a source table first.'); return; }
+  const tableName = (tbl.schemaName||'dbo') + '.' + (tbl.tableName||tbl.name||'table');
+  const cols = tbl.columns || Object.keys((tbl.rows||[{}])[0]||{});
+  buildWhereWithClaude('src-where-filter', tableName, cols, null);
+  // Override apiKey since connect.html doesn't have otm-api-key input
+  // The modal reads from localStorage which we set above
+}
+
+// ── Claude AI WHERE clause helper ─────────────────────────────────────────────
+async function buildWhereWithClaude(targetInputId, srcTableObj, columnsArr, apiKeyInputId) {
+  const apiKey = (document.getElementById(apiKeyInputId||'otm-api-key')?.value
+    || localStorage.getItem('cygenix_api_key') || '').trim();
+  if (!apiKey) {
+    alert('Enter your Anthropic API key to use AI WHERE builder.');
+    document.getElementById(apiKeyInputId||'otm-api-key')?.focus();
+    return;
+  }
+
+  // Get column info
+  const cols = (columnsArr || []).map(c => {
+    if (typeof c === 'string') return c;
+    return c.name + (c.type ? ' ' + c.type : '') + (c.nullable === false ? ' NOT NULL' : '');
+  });
+
+  if (!cols.length) {
+    alert('Please connect to the source database and select a table first — column info is needed for AI suggestions.');
+    return;
+  }
+
+  const tableName = typeof srcTableObj === 'string' ? srcTableObj
+    : (srcTableObj?.fullName || srcTableObj?.tableName || srcTableObj?.name || 'source table');
+
+  const existing = document.getElementById(targetInputId)?.value.trim() || '';
+
+  // Show modal
+  showWhereModal(targetInputId, tableName, cols, apiKey, existing);
+}
+
+function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
+  // Remove any existing modal
+  const old = document.getElementById('where-ai-modal');
+  if (old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'where-ai-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem';
+  modal.innerHTML = `
+    <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:100%;max-width:640px;display:flex;flex-direction:column;max-height:90vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+      <div style="padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text)">🤖 AI WHERE clause builder</div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">${tableName}</div>
+        </div>
+        <button onclick="document.getElementById('where-ai-modal').remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
+      </div>
+
+      <!-- Columns reference -->
+      <div style="padding:0.75rem 1.25rem;border-bottom:0.5px solid var(--border);flex-shrink:0;max-height:120px;overflow-y:auto">
+        <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.4rem">Available columns</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.3rem">
+          ${cols.map(c => {
+            const name = c.split(' ')[0];
+            return `<button onclick="appendColToPrompt('${name}')" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);color:var(--teal);cursor:pointer" title="${c}">${name}</button>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- Chat messages -->
+      <div id="where-chat" style="flex:1;overflow-y:auto;padding:0.875rem 1.25rem;display:flex;flex-direction:column;gap:0.75rem;min-height:120px">
+        <div style="padding:0.6rem 0.875rem;background:var(--bg3);border-radius:var(--r);font-size:12px;color:var(--text2);line-height:1.6">
+          👋 Describe the filter you need in plain English and I'll write the T-SQL WHERE clause.<br>
+          <span style="color:var(--text3);font-size:11px">e.g. "Only active clients in the UK" · "Records created after 2020" · "Where status is not null"</span>
+        </div>
+        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
+      </div>
+
+      <!-- Current WHERE value -->
+      <div style="padding:0.5rem 1.25rem;border-top:0.5px solid var(--border);flex-shrink:0;background:var(--bg3)">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:0.3rem;text-transform:uppercase;letter-spacing:0.06em">WHERE clause</div>
+        <div style="display:flex;gap:0.5rem;align-items:center">
+          <input id="where-result-box" style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:6px 10px;font-size:12px;color:var(--teal);font-family:var(--mono);outline:none" placeholder="WHERE clause will appear here…" value="${existing}">
+          <button onclick="applyWhereClause('${targetInputId}')" style="background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.3);border-radius:var(--r);padding:6px 14px;font-size:12px;color:var(--green);cursor:pointer;font-family:var(--serif);white-space:nowrap">✓ Apply</button>
+          <button onclick="document.getElementById('where-result-box').value=''" style="background:var(--red-bg);border:0.5px solid rgba(240,70,70,0.25);border-radius:var(--r);padding:6px 10px;font-size:12px;color:var(--red);cursor:pointer">✕</button>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);flex-shrink:0;display:flex;gap:0.5rem">
+        <textarea id="where-prompt" rows="2" style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:6px 10px;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;resize:none" placeholder="Describe your filter in plain English…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}');}"></textarea>
+        <button onclick="sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}')" id="where-send-btn" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);padding:6px 14px;font-size:12px;color:var(--purple);cursor:pointer;align-self:flex-end;font-family:var(--serif)">Send</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('where-prompt')?.focus();
+}
+
+function appendColToPrompt(colName) {
+  const el = document.getElementById('where-prompt');
+  if (el) { el.value += (el.value ? ' ' : '') + '[' + colName + ']'; el.focus(); }
+}
+
+function applyWhereClause(targetInputId) {
+  const val = document.getElementById('where-result-box')?.value.trim() || '';
+  const inp = document.getElementById(targetInputId);
+  if (inp) { inp.value = val; inp.dispatchEvent(new Event('input')); }
+  document.getElementById('where-ai-modal')?.remove();
+}
+
+async function sendWherePrompt(tableName, colsStr, apiKey) {
+  const prompt = document.getElementById('where-prompt')?.value.trim();
+  if (!prompt) return;
+  const cols = colsStr.split('|').filter(Boolean);
+  const btn = document.getElementById('where-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+  // Add user message to chat
+  addWhereChatMsg(prompt, 'user');
+  document.getElementById('where-prompt').value = '';
+
+  const system = 'You are a T-SQL expert. The user wants a WHERE clause for the table: ' + tableName + '\n\n' +
+    'Available columns:\n' + cols.join('\n') + '\n\n' +
+    'Rules:\n' +
+    '- Respond with ONLY the WHERE clause condition (no "WHERE" keyword, no semicolons)\n' +
+    '- Use square bracket column names: [ColumnName]\n' +
+    '- Use proper T-SQL syntax (GETDATE(), CONVERT, LIKE, IN, IS NULL, etc.)\n' +
+    '- If the request is ambiguous, write the most likely interpretation and add a brief comment\n' +
+    '- Keep it concise — just the condition\n\n' +
+    'Example output: [Status] = \'Active\' AND [Country] = \'UK\'';
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 512,
+        system, messages: [{ role: 'user', content: prompt }] })
+    });
+    const data = await res.json();
+    const text = (data.content?.[0]?.text || '').trim();
+    addWhereChatMsg(text, 'assistant');
+    // Auto-populate the result box
+    const box = document.getElementById('where-result-box');
+    if (box && text) box.value = text.replace(/^WHERE\s+/i, '').replace(/;$/, '').trim();
+  } catch(e) {
+    addWhereChatMsg('Error: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+  }
+}
+
+function addWhereChatMsg(text, role) {
+  const chat = document.getElementById('where-chat');
+  if (!chat) return;
+  const colours = { user: 'var(--accent-glow)', assistant: 'var(--bg3)', error: 'var(--red-bg)' };
+  const textCol = { user: 'var(--text)', assistant: 'var(--teal)', error: 'var(--red)' };
+  const div = document.createElement('div');
+  div.style.cssText = 'padding:0.6rem 0.875rem;background:' + colours[role] + ';border-radius:var(--r);font-size:12px;line-height:1.6;font-family:' + (role==='assistant'?'var(--mono)':'var(--serif)') + ';color:' + textCol[role] + ';white-space:pre-wrap;word-break:break-word';
+  div.textContent = text;
+  if (role === 'assistant') {
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = '↑ Use this';
+    applyBtn.style.cssText = 'margin-top:0.5rem;display:block;background:rgba(45,212,191,0.12);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 10px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)';
+    applyBtn.onclick = () => {
+      const box = document.getElementById('where-result-box');
+      if (box) box.value = text.replace(/^WHERE\s+/i, '').replace(/;$/, '').trim();
+    };
+    div.appendChild(applyBtn);
+  }
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
 
 </script>
 </body>
