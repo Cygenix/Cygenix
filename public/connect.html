@@ -1093,10 +1093,12 @@ async function fetchSourceRows() {
     : null;
   var baseCols = srcTableDef ? srcTableDef.columns : (S.selectedSourceTable.columnDefs || []);
 
-  // Only select joined columns that are actually used in the column mapping
+  // Build a map: for each joined table, what key does addJoinColToMapping use?
+  // It uses "tableBareName.colName" e.g. "matter.mfolder"
+  // The SELECT alias must match that exactly so row[m.srcCol] works.
   var usedJoinedCols = S.columnMapping
     .filter(function(m){ return m.fromJoin; })
-    .map(function(m){ return m.srcCol; }); // e.g. "s1.mfolder"
+    .map(function(m){ return m.srcCol; }); // e.g. "matter.mfolder"
 
   var baseColList = baseCols.length
     ? baseCols.map(function(c){
@@ -1108,10 +1110,12 @@ async function fetchSourceRows() {
   var joinedColList = [];
   activeJoins.forEach(function(j){
     var a = joinAliases[j.table];
+    // The key stored in srcCol uses the bare table name (last part of schema.table)
+    var tblBareName = j.table.split('.').pop();
     (j.cols||[]).forEach(function(c){
       var cn = typeof c === 'string' ? c : c.name;
-      var rowKey = a+'.'+cn;
-      // Only include if used in mapping
+      var rowKey = tblBareName + '.' + cn;  // matches srcCol stored by addJoinColToMapping
+      // Only include if this col is actually used in the mapping
       if (usedJoinedCols.indexOf(rowKey) > -1) {
         joinedColList.push(a+'.['+cn+'] AS ['+rowKey+']');
       }
