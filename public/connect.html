@@ -1055,11 +1055,15 @@ async function fetchSourceRows() {
   var sqlBase = 'SELECT ' + (limit > 0 ? 'TOP ' + limit + ' ' : '') + selectList + ' FROM ' + safeSrc + joinClause + whereClause;
   const sql = sqlBase;
 
+  console.log('[fetchSourceRows] SQL:', sql);
   showStatus('conn-status', 'Fetching ' + (limit||'all') + ' rows from ' + safeSrc + '…', 'info');
   try {
     const res = await srcDbCall({ action: 'execute', sql });
     const records = res.recordset || [];
-    if (!records.length) { showStatus('conn-status', 'No rows returned from source table.', 'err'); return false; }
+    if (!records.length) {
+      showStatus('conn-status', 'No rows returned from source table. SQL used: ' + sql.slice(0,120), 'err');
+      return false;
+    }
 
     // Convert recordset array to the format generatePreviewSQL expects
     const cols = Object.keys(records[0]);
@@ -1072,7 +1076,9 @@ async function fetchSourceRows() {
     showStatus('conn-status', '✓ Fetched ' + records.length.toLocaleString() + ' rows from ' + safeSrc, 'ok');
     return true;
   } catch(e) {
-    showStatus('conn-status', 'Could not fetch source rows: ' + e.message, 'err');
+    console.error('[fetchSourceRows] error:', e);
+    showStatus('conn-status', 'Fetch error: ' + e.message, 'err');
+    alert('Could not fetch source rows: ' + e.message);
     return false;
   }
 }
@@ -1642,6 +1648,7 @@ function generatePreviewSQL(){
   const src = S.selectedSourceTable;
   const tgt = S.selectedTargetTable;
   const mapping = S.columnMapping.filter(m => m.tgtCol);
+  console.log('[generatePreviewSQL] mapping:', mapping.length, 'rows:', src?.rows?.length, 'tgt:', tgt?.name);
 
   if (mapping.length === 0){ alert('No columns are mapped to target. Please map at least one column.'); return; }
   if (!src || !src.rows || src.rows.length === 0) {
