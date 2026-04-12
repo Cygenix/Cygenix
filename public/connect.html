@@ -548,6 +548,10 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
+// tableSearchData declared here at top level to avoid TDZ errors
+const tableSearchData = { src: [], tgt: [] };
+let kbIndex = { src: -1, tgt: -1 };
+
 const S = {
   apiKey: '',
   // Target connection (where data goes)
@@ -2653,8 +2657,7 @@ function signOut() {
   window.location.href = '/login.html';
 }
 // ── Searchable table combobox ──────────────────────────────────────────────────
-const tableSearchData = { src: [], tgt: [] };
-let kbIndex = { src: -1, tgt: -1 };
+// (tableSearchData and kbIndex declared at top of script to avoid TDZ)
 
 function openTableList(which) {
   renderTableDrop(which, $(which+'-table-search')?.value || '');
