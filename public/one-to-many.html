@@ -1653,8 +1653,6 @@ async function aiJoinHelp(i) {
   const key = localStorage.getItem('cygenix_api_key');
 
   const base    = window._joinBaseTable;
-  const allTbls = window._joinAllTables || [];
-
   const baseCols = (base?.columns || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
   const joinCols = (join.cols || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
 
@@ -1672,7 +1670,12 @@ async function aiJoinHelp(i) {
     'Example output: [dbo].[client].[clnum] = [dbo].[contact].[clnum]'
   ].join('\n');
 
-  // Use stable id to find the ON input — querySelectorAll breaks after DOM re-render
+  // Suspend _onJoinChange and _rerenderJoins during the API call
+  // so the DOM isn't wiped while we're waiting for Claude
+  const savedOnChange = window._onJoinChange;
+  window._onJoinChange = null;
+
+  // Show thinking state
   const getInput = () => document.getElementById('join-on-' + i);
   const input = getInput();
   const oldVal = input ? input.value : '';
@@ -1696,19 +1699,22 @@ async function aiJoinHelp(i) {
     const data = await res.json();
     const text = (data.content?.[0]?.text || '').trim().replace(/^ON\s+/i, '').replace(/;$/, '');
 
-    // Store in state first — this is the source of truth for re-renders
+    // Store in state
     window._joinState[i].on = text;
 
-    // Update the input directly using its stable id (DOM may have been re-rendered)
-    const inp = getInput();
-    if (inp) { inp.value = text; inp.disabled = false; }
+    // Restore change handler before re-rendering
+    window._onJoinChange = savedOnChange;
 
-    // Notify change handlers without triggering a full re-render of the join builder
+    // Re-render the join builder so the input reflects the new value from state
+    renderJoinBuilder(window._joinContainerId, window._joinAllTables || [], window._joinBaseTable);
+
+    // Now notify downstream (source cols, target cards) — join builder is stable
     if (window._onJoinChange) window._onJoinChange(window._joinState);
 
   } catch(e) {
-    const inp = getInput();
-    if (inp) { inp.value = oldVal; inp.disabled = false; }
+    window._joinState[i].on = oldVal;
+    window._onJoinChange = savedOnChange;
+    renderJoinBuilder(window._joinContainerId, window._joinAllTables || [], window._joinBaseTable);
     alert('AI error: ' + e.message);
   }
 }
