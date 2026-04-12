@@ -815,42 +815,87 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
     }
   }
 
-  // ── Standard single-table migration ────────────────────────────────────────
+  // ── Standard single-table migration (paginated fetch → batched insert) ────────
   if (!step.tgtTable) throw new Error('Target table not set');
 
-  // Fetch rows from source
-  add('Fetching rows from '+step.srcTable+'…');
-  const srcRes = await dbCall(srcConn, { action:'execute', sql:'SELECT * FROM '+step.srcTable });
-  const rows   = srcRes.recordset||[];
-  add('Fetched '+rows.length.toLocaleString()+' rows');
-  if (!rows.length) { add('Nothing to insert.'); return {ok:true,log:stepLog}; }
+  const PAGE_SIZE   = 2000;  // rows fetched per page from source
+  const INSERT_BATCH = 500;  // rows per INSERT VALUES statement
 
-  // Build mapping — use saved column mapping or auto-map by name
+  // Build the source SELECT
+  const srcSelectSQL = 'SELECT * FROM ' + step.srcTable;
+
+  // Get total count first so we can show progress
+  add('Counting rows in ' + step.srcTable + '…');
+  let totalRows = 0;
+  try {
+    const countRes = await dbCall(srcConn, { action:'count', sql: srcSelectSQL });
+    totalRows = countRes.count || 0;
+    add('Source has ' + totalRows.toLocaleString() + ' rows — fetching in pages of ' + PAGE_SIZE.toLocaleString() + '…');
+  } catch(e) {
+    add('Could not count rows (' + e.message + ') — proceeding without progress estimate');
+  }
+
+  // Build column mapping
   let mapping = step.columnMapping?.filter(m=>m.tgtCol) || [];
-  if (!mapping.length) {
-    mapping = Object.keys(rows[0]).map(c=>({srcCol:c,tgtCol:c,transform:'NONE'}));
-    add('Auto-mapping '+mapping.length+' columns by name');
-  } else {
-    add('Using saved mapping: '+mapping.length+' columns');
+  let colList = '';
+  let totalInserted = 0;
+  let pageNum = 0;
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    // Fetch one page of source rows
+    const pageRes = await dbCall(srcConn, {
+      action: 'fetch-page',
+      sql: srcSelectSQL,
+      offset,
+      pageSize: PAGE_SIZE
+    });
+    const rows = pageRes.rows || [];
+    hasMore = pageRes.hasMore && rows.length === PAGE_SIZE;
+    pageNum++;
+
+    if (!rows.length) break;
+
+    // Build mapping on first page
+    if (offset === 0) {
+      if (!mapping.length) {
+        mapping = Object.keys(rows[0]).map(c => ({ srcCol:c, tgtCol:c, transform:'NONE' }));
+        add('Auto-mapping ' + mapping.length + ' columns by name');
+      } else {
+        add('Using saved mapping: ' + mapping.length + ' columns');
+      }
+      colList = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+    }
+
+    // Split page into INSERT batches
+    const batches = [];
+    for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+      const batch = rows.slice(i, i + INSERT_BATCH);
+      batches.push(
+        'INSERT INTO ' + step.tgtTable + ' (' + colList + ') VALUES\n' +
+        batch.map(row => '    (' + mapping.map(m => fmtVal(row[m.srcCol])).join(', ') + ')').join(',\n') + ';'
+      );
+    }
+
+    const pageRes2 = await dbCall(tgtConn, { action:'batch', batchSql: batches });
+    const inserted = pageRes2.totalRowsAffected || 0;
+    totalInserted += inserted;
+
+    const pct = totalRows > 0 ? ' (' + Math.round(totalInserted/totalRows*100) + '%)' : '';
+    add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, inserted ' + inserted.toLocaleString() + ' — total ' + totalInserted.toLocaleString() + pct);
+
+    if (pageRes2.errors) add('  ⚠ ' + pageRes2.errors + ' batch error(s) on this page');
+
+    offset += rows.length;
+
+    // Safety: if hasMore is ambiguous, stop when offset >= totalRows
+    if (totalRows > 0 && offset >= totalRows) hasMore = false;
   }
 
-  const colList = mapping.map(m=>'['+m.tgtCol+']').join(', ');
-  const BATCH   = 100;
-  const batches = [];
-  for (let i=0;i<rows.length;i+=BATCH) {
-    const batch = rows.slice(i,i+BATCH);
-    const stmt  = 'INSERT INTO '+step.tgtTable+' ('+colList+') VALUES\n' +
-      batch.map(row=>'    ('+mapping.map(m=>fmtVal(row[m.srcCol])).join(', ')+')').join(',\n')+';';
-    batches.push(stmt);
-  }
-
-  add('Executing '+batches.length+' batches into '+step.tgtTable+'…');
-  const res = await dbCall(tgtConn, { action:'batch', batchSql:batches });
-  const inserted = res.totalRowsAffected || 0;
-  if (res.errorDetails) add('Error detail: ' + JSON.stringify(res.errorDetails).slice(0,200));
-  add('Inserted '+inserted.toLocaleString()+' rows · '+(res.errors||0)+' errors');
-  step.rowsInserted = inserted;
-  return { ok: (res.errors||0) === 0, log: stepLog };
+  add('Complete — ' + totalInserted.toLocaleString() + ' total rows inserted from ' + pageNum + ' page(s)');
+  step.rowsInserted = totalInserted;
+  return { ok: true, log: stepLog };
 }
 
 async function runSqlStep(step, srcConn, tgtConn, log) {
