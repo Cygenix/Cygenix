@@ -52,7 +52,7 @@ select.form-input option{background:var(--bg3)}
 .panel-body{padding:1.25rem}
 
 /* Source column list */
-.src-col-list{display:flex;flex-direction:column;gap:2px;max-height:400px;overflow-y:auto}
+.src-col-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto}
 .src-col-item{padding:0.4rem 0.6rem;border-radius:4px;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:grab;background:var(--bg3);border:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;user-select:none;transition:all 0.15s}
 .src-col-item:hover{border-color:var(--accent);color:var(--text)}
 .src-col-item.used{border-color:rgba(34,201,122,0.3);color:var(--green);background:var(--green-bg)}
@@ -178,20 +178,38 @@ select.map-select:focus{border-color:var(--accent)}
 
       
       <!-- Source table picker -->
-      <div class="panel">
-        <div class="panel-head">
-          <div class="panel-title">📋 Source table</div>
-          <span id="src-col-count" class="badge badge-teal" style="display:none"></span>
+      <div class="panel" id="src-panel">
+        <div class="panel-head" onclick="toggleSrcPanel()" style="cursor:pointer;user-select:none" title="Click to expand/collapse">
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <div class="panel-title">📋 Source table</div>
+            <span id="src-col-count" class="badge badge-teal" style="display:none"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem">
+            <span id="src-panel-toggle-btn" style="font-size:16px;color:var(--text3);line-height:1;transition:transform 0.2s">▼</span>
+          </div>
         </div>
-        <div class="panel-body">
+        <div class="panel-body" id="src-panel-body">
           <div class="search-wrap">
             <input id="src-table-input" class="form-input" placeholder="🔍 Type to search source tables…"
-              oninput="filterSrcTables()" onfocus="openSrcDrop()" autocomplete="off">
+              oninput="filterSrcTables()" onfocus="openSrcDrop()" autocomplete="off"
+              onclick="event.stopPropagation()">
             <div class="search-drop" id="src-table-drop" style="display:none"></div>
           </div>
           <div id="src-col-list-wrap" style="display:none;margin-top:0.875rem">
-            <div style="font-size:11px;color:var(--text3);margin-bottom:0.4rem">Source columns — drag or click to map</div>
-            <div class="src-col-list" id="src-col-list"></div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.4rem">
+              <span style="font-size:11px;color:var(--text3)">Source columns — drag or click to map</span>
+              <span id="src-col-list-size-btns" style="display:flex;gap:0.3rem">
+                <button onclick="event.stopPropagation();setSrcPanelSize('sm')" id="src-size-sm" title="Small"
+                  style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">S</button>
+                <button onclick="event.stopPropagation();setSrcPanelSize('md')" id="src-size-md" title="Medium"
+                  style="background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--accent);cursor:pointer">M</button>
+                <button onclick="event.stopPropagation();setSrcPanelSize('lg')" id="src-size-lg" title="Large"
+                  style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">L</button>
+                <button onclick="event.stopPropagation();setSrcPanelSize('xl')" id="src-size-xl" title="Full"
+                  style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">⛶</button>
+              </span>
+            </div>
+            <div class="src-col-list" id="src-col-list" style="max-height:220px;overflow-y:auto"></div>
           </div>
           <!-- JOIN builder -->
           <div id="otm-join-panel" style="display:none;margin-top:0.875rem;padding-top:0.875rem;border-top:0.5px solid var(--border)">
@@ -1691,6 +1709,40 @@ function refreshJoinBuilder(allTables, baseTable) {
   window._joinAllTables = allTables;
   window._joinBaseTable = baseTable;
   _rerenderJoins();
+}
+
+// ── Source panel collapse/expand ─────────────────────────────────────────────
+var srcPanelOpen = true;
+var srcPanelSize = 'md'; // sm | md | lg | xl
+
+var srcPanelHeights = { sm: '120px', md: '220px', lg: '400px', xl: '700px' };
+
+function toggleSrcPanel() {
+  srcPanelOpen = !srcPanelOpen;
+  const body = document.getElementById('src-panel-body');
+  const btn  = document.getElementById('src-panel-toggle-btn');
+  if (body) body.style.display = srcPanelOpen ? '' : 'none';
+  if (btn)  btn.style.transform = srcPanelOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
+}
+
+function setSrcPanelSize(size) {
+  srcPanelSize = size;
+  const list = document.getElementById('src-col-list');
+  if (list) list.style.maxHeight = srcPanelHeights[size] || '220px';
+  // Update button styles
+  ['sm','md','lg','xl'].forEach(s => {
+    const b = document.getElementById('src-size-'+s);
+    if (!b) return;
+    if (s === size) {
+      b.style.background = 'var(--accent-glow)';
+      b.style.borderColor = 'rgba(61,126,255,0.3)';
+      b.style.color = 'var(--accent)';
+    } else {
+      b.style.background = 'var(--bg3)';
+      b.style.borderColor = 'var(--border2)';
+      b.style.color = 'var(--text3)';
+    }
+  });
 }
 
 // Close dropdowns on outside click
