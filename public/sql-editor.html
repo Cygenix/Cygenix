@@ -28,10 +28,13 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .topbar{position:fixed;top:0;right:0;left:220px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem}
 .logo{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
 .page{display:grid;grid-template-rows:52px 1fr;height:100vh;padding-left:0}
-.editor-layout{display:grid;grid-template-columns:280px 1fr 340px;height:calc(100vh - 52px);overflow:hidden;margin-top:52px}
+.editor-layout{display:flex;flex-direction:row;height:calc(100vh - 52px);overflow:hidden;margin-top:52px}
+.col-resize-handle{width:5px;flex-shrink:0;background:var(--border);cursor:col-resize;transition:background 0.15s;position:relative;z-index:10}
+.col-resize-handle:hover,.col-resize-handle.dragging{background:var(--accent)}
+.col-resize-handle::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:40px;border-radius:1px;background:var(--text3);opacity:0.5}
 
 /* SIDEBAR: Script library */
-.script-panel{background:var(--bg2);border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.script-panel{background:var(--bg2);border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden;width:280px;flex-shrink:0;min-width:120px;max-width:600px}
 .script-panel-head{padding:0.875rem 1rem;border-bottom:0.5px solid var(--border);flex-shrink:0}
 .script-list{flex:1;overflow-y:auto;padding:0.5rem}
 .script-item{padding:0.6rem 0.75rem;border-radius:var(--r);cursor:pointer;transition:background 0.12s;border:0.5px solid transparent;margin-bottom:3px}
@@ -44,7 +47,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .conn-tgt{background:var(--accent-glow);color:var(--accent)}
 
 /* EDITOR pane */
-.editor-pane{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+.editor-pane{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);flex:1;min-width:200px}
 .editor-toolbar{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex-shrink:0}
 .editor-upper{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:120px}
 .editor-wrap{position:relative;flex:1;overflow:hidden}
@@ -62,7 +65,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .results-bottom-body{flex:1;overflow:auto}
 
 /* RESULTS / AI pane */
-.right-pane{display:flex;flex-direction:column;background:var(--bg2);border-left:0.5px solid var(--border);overflow:hidden}
+.right-pane{display:flex;flex-direction:column;background:var(--bg2);border-left:0.5px solid var(--border);overflow:hidden;width:340px;flex-shrink:0;min-width:120px;max-width:700px}
 .right-tabs{display:flex;border-bottom:0.5px solid var(--border);flex-shrink:0}
 .right-tab{flex:1;padding:0.6rem 0.5rem;font-size:12px;text-align:center;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;transition:all 0.15s}
 .right-tab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--accent-glow)}
@@ -109,7 +112,7 @@ body.fullscreen .cyg-sidebar,
 body.fullscreen #cyg-sidebar { display:none!important }
 body.fullscreen { padding-left:0!important }
 body.fullscreen .topbar { left:0!important }
-body.fullscreen .editor-layout { grid-template-columns:0 1fr 340px }
+body.fullscreen .script-panel { width:0!important;overflow:hidden }
 body.fullscreen .script-panel { display:none }
 
 /* ── FIND BAR ──────────────────────────────────────────────────────────────── */
@@ -207,6 +210,9 @@ body.fullscreen .script-panel { display:none }
     </div>
   </div>
 
+  <!-- Left col resize handle -->
+  <div class="col-resize-handle" id="col-resize-left" title="Drag to resize"></div>
+
   <!-- Editor + Results (stacked vertically) -->
   <div class="editor-pane" id="editor-pane">
     <div class="editor-toolbar">
@@ -276,10 +282,11 @@ body.fullscreen .script-panel { display:none }
             Pivot
           </button>
           <div style="width:0.5px;background:var(--border2);height:14px;margin:0 2px"></div>
+          <button class="results-toolbar-btn" onclick="copyResultsForExcel()" title="Copy tab-separated — paste directly into Excel" style="color:var(--green);border-color:rgba(34,201,122,0.3)">📋 Copy for Excel</button>
+          <button class="results-toolbar-btn" onclick="exportResults('xlsx')" title="Download as Excel file">⬇ Excel</button>
           <button class="results-toolbar-btn" onclick="exportResults('csv')" title="Export as CSV">⬇ CSV</button>
           <button class="results-toolbar-btn" onclick="exportResults('tsv')" title="Export as TSV">⬇ TSV</button>
           <button class="results-toolbar-btn" onclick="exportResults('json')" title="Export as JSON">⬇ JSON</button>
-          <button class="results-toolbar-btn" onclick="exportResults('xlsx')" title="Export as Excel">⬇ Excel</button>
         </div>
         <button onclick="toggleResultsPane()" style="background:none;border:none;color:var(--text3);cursor:pointer;padding:0 0.75rem;font-size:16px;margin-left:auto" id="results-toggle" title="Collapse results">⌃</button>
       </div>
@@ -295,6 +302,9 @@ body.fullscreen .script-panel { display:none }
   </div>
 
   <!-- Right pane: Claude AI only -->
+  <!-- Right col resize handle -->
+  <div class="col-resize-handle" id="col-resize-right" title="Drag to resize"></div>
+
   <div class="right-pane">
     <div class="right-tabs">
       <div class="right-tab active">🤖 Claude AI</div>
@@ -768,7 +778,7 @@ function toggleFullscreen() {
   if (isFullscreen) {
     // Also expand the editor pane to use full width
     const layout = document.querySelector('.editor-layout');
-    if (layout) layout.style.gridTemplateColumns = '0 1fr 340px';
+    if (layout) { const sp = layout.querySelector('.script-panel'); if (sp) sp.style.width='0'; }
   } else {
     const layout = document.querySelector('.editor-layout');
     if (layout) layout.style.gridTemplateColumns = '';
@@ -1053,7 +1063,89 @@ function addToJobs() {
 // ── Tab switching ──────────────────────────────────────────────────────────────
 // switchRightTab replaced by switchBottomTab above
 
-// ── Drag resize ───────────────────────────────────────────────────────────────
+// ── Copy results for Excel ────────────────────────────────────────────────────
+function copyResultsForExcel() {
+  const {rows, cols} = lastResults;
+  if (!rows.length) { alert('No results to copy — run a query first.'); return; }
+  // Tab-separated with headers — pastes perfectly into Excel
+  const header = cols.join('	');
+  const body   = rows.map(r => cols.map(c => {
+    const v = r[c];
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    // If value contains tabs or newlines, wrap in quotes
+    return (s.indexOf('\t') > -1 || s.indexOf('\n') > -1) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join('\t')).join('\n');
+  const tsv = header + '\n' + body;
+  navigator.clipboard.writeText(tsv).then(function() {
+    setExecStatus('✓ Copied ' + rows.length.toLocaleString() + ' rows — paste into Excel', 'var(--green)');
+    setTimeout(function(){ setExecStatus('',''); }, 3000);
+  }).catch(function(e) {
+    // Fallback for browsers that block clipboard
+    const ta = document.createElement('textarea');
+    ta.value = tsv;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    setExecStatus('✓ Copied — paste into Excel', 'var(--green)');
+    setTimeout(function(){ setExecStatus('',''); }, 3000);
+  });
+}
+
+// ── Column drag resize ─────────────────────────────────────────────────────────
+(function() {
+  function makeColResizer(handleId, panelEl, side) {
+    const handle = document.getElementById(handleId);
+    if (!handle || !panelEl) return;
+    let dragging = false, startX = 0, startW = 0;
+    handle.addEventListener('mousedown', function(e) {
+      dragging = true;
+      startX = e.clientX;
+      startW = panelEl.offsetWidth;
+      handle.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!dragging) return;
+      const delta = e.clientX - startX;
+      const newW  = side === 'left'
+        ? Math.max(120, Math.min(600, startW + delta))
+        : Math.max(120, Math.min(700, startW - delta));
+      panelEl.style.width = newW + 'px';
+    });
+    document.addEventListener('mouseup', function() {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    });
+    // Touch support
+    handle.addEventListener('touchstart', function(e) {
+      dragging = true;
+      startX = e.touches[0].clientX;
+      startW = panelEl.offsetWidth;
+      e.preventDefault();
+    }, {passive:false});
+    document.addEventListener('touchmove', function(e) {
+      if (!dragging) return;
+      const delta = e.touches[0].clientX - startX;
+      const newW  = side === 'left'
+        ? Math.max(120, Math.min(600, startW + delta))
+        : Math.max(120, Math.min(700, startW - delta));
+      panelEl.style.width = newW + 'px';
+    });
+    document.addEventListener('touchend', function() { dragging = false; });
+  }
+  makeColResizer('col-resize-left',  document.querySelector('.script-panel'), 'left');
+  makeColResizer('col-resize-right', document.querySelector('.right-pane'),   'right');
+})();
+
+// ── Row drag resize ───────────────────────────────────────────────────────────
 (function() {
   const handle = document.getElementById('resize-handle');
   const upper  = document.getElementById('editor-upper');
