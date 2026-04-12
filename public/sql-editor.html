@@ -176,6 +176,8 @@ body.fullscreen .script-panel { display:none }
     <button id="save-to-job-btn" class="btn btn-teal btn-sm" onclick="saveBackToJob()" style="display:none" title="Save SQL changes back to the loaded job">💾 Save to Job</button>
     <button class="btn btn-amber btn-sm" onclick="saveToInventory()" title="Save to Inventory">📋 Inventory</button>
     <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ New Job</button>
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('load-sql-file').click()" title="Load SQL from a .sql or .txt file">📂 Load File</button>
+    <input type="file" id="load-sql-file" accept=".sql,.txt,.ddl" style="display:none" onchange="loadSQLFromFile(this)">
     <input type="password" id="api-key" class="form-input" style="width:140px;font-size:11px" placeholder="Anthropic API key">
     <button class="btn btn-ghost btn-sm" onclick="toggleFullscreen()" id="fs-btn" title="Toggle fullscreen (F11)">⛶</button>
   </div>
@@ -359,12 +361,15 @@ function renderScriptList() {
   const filtered = scripts.filter(s=>!q||s.name.toLowerCase().includes(q)||s.sql.toLowerCase().includes(q));
   if (!filtered.length) { list.innerHTML='<div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">'+(scripts.length?'No matches':'No scripts yet — write one and save it')+'</div>'; return; }
   list.innerHTML = filtered.map((s,i)=>`
-    <div class="script-item ${currentScript===s.id?'active':''}" onclick="loadScript('${s.id}')">
-      <div class="script-name">${esc(s.name)}</div>
+    <div class="script-item ${currentScript===s.id?'active':''}" style="position:relative" onclick="loadScript('${s.id}')">
+      <div class="script-name" style="padding-right:22px">${esc(s.name)}</div>
       <div class="script-meta" style="display:flex;align-items:center;gap:0.4rem;margin-top:2px">
         <span class="script-conn ${s.conn==='source'?'conn-src':'conn-tgt'}">${s.conn}</span>
         <span>${new Date(s.updated||s.created).toLocaleDateString('en-GB')}</span>
       </div>
+      <button onclick="event.stopPropagation();deleteScript('${s.id}')"
+        style="position:absolute;top:6px;right:6px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 3px;border-radius:3px;opacity:0.6"
+        title="Delete script" onmouseover="this.style.opacity='1';this.style.color='var(--red)'" onmouseout="this.style.opacity='0.6';this.style.color='var(--text3)'">✕</button>
     </div>`).join('');
 }
 
@@ -413,6 +418,55 @@ function saveScript() {
   setExecStatus('✓ Saved', 'var(--green)');
   const savedEl = document.getElementById('status-saved');
   if (savedEl) { savedEl.textContent='Saved'; savedEl.style.color='var(--green)'; }
+}
+
+function deleteScript(id) {
+  const s = scripts.find(s=>s.id===id);
+  if (!s) return;
+  if (!confirm('Delete script "' + s.name + '"? This cannot be undone.')) return;
+  scripts = scripts.filter(s=>s.id!==id);
+  saveScripts();
+  if (currentScript === id) {
+    currentScript = null;
+    document.getElementById('sql-editor').value = '';
+    document.getElementById('script-name').value = 'New script';
+    clearResults();
+  }
+  renderScriptList();
+  setExecStatus('Script deleted', 'var(--red)');
+  setTimeout(()=>setExecStatus('',''), 2000);
+}
+
+// ── Load SQL from file ────────────────────────────────────────────────────────
+function loadSQLFromFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const sql = e.target.result;
+    document.getElementById('sql-editor').value = sql;
+    // Use filename (without extension) as script name
+    const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g,' ');
+    document.getElementById('script-name').value = name;
+    document.getElementById('script-desc').value = 'Loaded from file: ' + file.name;
+    currentScript = null;
+    currentJobId  = null;
+    // Clear job indicator
+    const ind = document.getElementById('job-indicator');
+    if (ind) ind.style.display = 'none';
+    const btn = document.getElementById('save-to-job-btn');
+    if (btn) btn.style.display = 'none';
+    updateStatus();
+    updateLineNumbers();
+    clearResults();
+    renderScriptList();
+    setExecStatus('✓ Loaded: ' + file.name + ' (' + Math.ceil(sql.length/1024) + 'KB)', 'var(--green)');
+    setTimeout(()=>setExecStatus('',''), 3000);
+  };
+  reader.onerror = function() { alert('Could not read file: ' + file.name); };
+  reader.readAsText(file, 'utf-8');
+  // Reset input so same file can be reloaded
+  input.value = '';
 }
 
 // ── Connection ─────────────────────────────────────────────────────────────────
