@@ -695,37 +695,87 @@ function updateSchemaStatusBar(schema, which) {
 async function refreshSchemaCache() {
   const btn = document.getElementById('schema-refresh-btn');
   if (btn) { btn.textContent = '…'; btn.disabled = true; }
-  // Clear cache for current connection
-  const conn = getConn();
-  if (conn) delete _schemaCache[conn.slice(0,80)];
-  const which = document.getElementById('conn-select').value;
-  const schema = await fetchSchemaForAI();
-  updateSchemaStatusBar(schema, which);
+  // Clear entire cache so both are re-fetched
+  Object.keys(_schemaCache).forEach(k => delete _schemaCache[k]);
+  const { srcSchema, tgtSchema } = await fetchBothSchemas();
+  updateSchemaStatusBar(srcSchema, tgtSchema);
   if (btn) { btn.textContent = '↻ Schema'; btn.disabled = false; }
-  if (schema) {
-    setExecStatus('✓ Schema loaded: ' + (schema.tables?.length||0) + ' tables', 'var(--teal)');
+  const total = (srcSchema?.tables?.length||0) + (tgtSchema?.tables?.length||0);
+  if (total) {
+    setExecStatus('✓ Both schemas loaded: ' + total + ' tables total', 'var(--teal)');
     setTimeout(()=>setExecStatus('',''), 3000);
   }
 }
 
-async function fetchSchemaForAI() {
-  const conn = getConn();
-  if (!conn) return null;
-  // Return cached if available
-  const cacheKey = conn.slice(0, 80);
-  if (_schemaCache[cacheKey]) return _schemaCache[cacheKey];
+// Same dbCall pattern as one-to-many.html — proven to work for both src and tgt
+async function schemaCallForConn(connStr) {
+  // connStr is either an https:// Azure Function URL or an ADO.NET connection string
+  const url     = isFn(connStr) ? connStr : '/.netlify/functions/db-connect';
+  const payload = isFn(connStr) ? {action:'schema'} : {action:'schema', connectionString:connStr};
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000)
+  });
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
 
+async function fetchSchemaForConn(connStr, label) {
+  if (!connStr) {
+    console.log('[schema] ' + (label||'?') + ': no connection string configured');
+    return null;
+  }
+  const cacheKey = connStr.slice(0, 80);
+  if (_schemaCache[cacheKey]) {
+    console.log('[schema] ' + (label||'?') + ': cache hit, ' + (_schemaCache[cacheKey].tables?.length||0) + ' tables');
+    return _schemaCache[cacheKey];
+  }
   try {
-    const url  = isFn(conn) ? conn : '/.netlify/functions/db-connect';
-    const body = isFn(conn) ? {action:'schema'} : {action:'schema', connectionString:conn};
-    const res  = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(30000)});
-    const data = await res.json().catch(()=>({}));
+    console.log('[schema] ' + (label||'?') + ': fetching via ' + (isFn(connStr)?'Azure Function':'Netlify') + '…');
+    const data = await schemaCallForConn(connStr);
     if (data.tables && data.tables.length) {
       _schemaCache[cacheKey] = data;
+      console.log('[schema] ' + (label||'?') + ': loaded ' + data.tables.length + ' tables, db=' + (data.database||'?'));
       return data;
     }
-  } catch(e) { /* schema fetch failed — proceed without it */ }
+    console.log('[schema] ' + (label||'?') + ': response had no tables', data);
+  } catch(e) {
+    console.warn('[schema] ' + (label||'?') + ': fetch failed:', e.message);
+  }
   return null;
+}
+
+async function fetchSchemaForAI() {
+  // Fetch active connection only (used by refreshSchemaCache)
+  const conn = getConn();
+  const which = document.getElementById('conn-select').value;
+  return fetchSchemaForConn(conn, which);
+}
+
+async function fetchBothSchemas() {
+  // Always fetch BOTH source and target in parallel
+  // Use CygenixConnections directly — same as one-to-many.html
+  const c = CygenixConnections.get();
+
+  // Source: may be direct ADO.NET string or Azure Function URL
+  const srcConn = c.srcConnString || '';
+
+  // Target: prefer Azure Function URL (with key appended), fall back to direct
+  const tgtConn = c.tgtFnUrl
+    ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
+    : (c.tgtConnString || '');
+
+  console.log('[schema] fetchBothSchemas — src:', srcConn ? (isFn(srcConn)?'fn-url':'direct-cs') : 'EMPTY',
+              '| tgt:', tgtConn ? (isFn(tgtConn)?'fn-url':'direct-cs') : 'EMPTY');
+
+  const [srcSchema, tgtSchema] = await Promise.all([
+    fetchSchemaForConn(srcConn, 'source'),
+    fetchSchemaForConn(tgtConn, 'target')
+  ]);
+  return { srcSchema, tgtSchema };
 }
 
 function buildSchemaContext(schema, which) {
@@ -740,6 +790,20 @@ function buildSchemaContext(schema, which) {
   }).join('\n\n');
   const truncated = schema.tables.length > 80 ? `\n  ... and ${schema.tables.length - 80} more tables` : '';
   return `\n\n${which === 'target' ? 'TARGET' : 'SOURCE'} DATABASE SCHEMA (${dbName}):\n${tableList}${truncated}`;
+}
+
+function updateSchemaStatusBar(srcSchema, tgtSchema) {
+  const bar = document.getElementById('schema-status-bar');
+  if (!bar) return;
+  const parts = [];
+  if (srcSchema?.tables) parts.push('Source: ' + (srcSchema.database||'DB') + ' · ' + srcSchema.tables.length + ' tables');
+  if (tgtSchema?.tables) parts.push('Target: ' + (tgtSchema.database||'DB') + ' · ' + tgtSchema.tables.length + ' tables');
+  if (parts.length) {
+    bar.textContent = '📋 ' + parts.join('   |   ');
+    bar.style.display = 'block';
+  } else {
+    bar.style.display = 'none';
+  }
 }
 
 async function askClaude() {
@@ -759,46 +823,29 @@ async function askClaude() {
   document.getElementById('ai-btn').disabled = true;
   setExecStatus('Fetching schema…', 'var(--amber)');
 
-  // Fetch schema for the active connection
-  const schema = await fetchSchemaForAI();
-  updateSchemaStatusBar(schema, which);
-
-  // Also fetch the other connection's schema for cross-db context
-  const c = CygenixConnections.get();
-  const otherConnStr = which === 'target'
-    ? c.srcConnString
-    : (c.tgtFnUrl ? c.tgtFnUrl+(c.tgtFnKey?'?code='+encodeURIComponent(c.tgtFnKey):'') : c.tgtConnString);
-  let otherSchema = null;
-  if (otherConnStr) {
-    const otherKey = otherConnStr.slice(0,80);
-    if (_schemaCache[otherKey]) {
-      otherSchema = _schemaCache[otherKey];
-    } else {
-      try {
-        const url  = isFn(otherConnStr) ? otherConnStr : '/.netlify/functions/db-connect';
-        const body = isFn(otherConnStr) ? {action:'schema'} : {action:'schema', connectionString:otherConnStr};
-        const res  = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(20000)});
-        const data = await res.json().catch(()=>({}));
-        if (data.tables) { _schemaCache[otherKey] = data; otherSchema = data; }
-      } catch(e) {}
-    }
-  }
+  // Always fetch BOTH source and target schemas in parallel
+  const { srcSchema, tgtSchema } = await fetchBothSchemas();
+  updateSchemaStatusBar(srcSchema, tgtSchema);
 
   setExecStatus('Asking Claude…', 'var(--amber)');
 
-  const schemaContext = buildSchemaContext(schema, which)
-    + buildSchemaContext(otherSchema, which === 'target' ? 'source' : 'target');
+  // Always include both schemas — source first, then target
+  const schemaContext = buildSchemaContext(srcSchema, 'source')
+                      + buildSchemaContext(tgtSchema, 'target');
 
   const systemPrompt = `You are a T-SQL expert helping with database migration scripts for SQL Server / Azure SQL.
-Active connection: ${which} database.${schemaContext}
+Active editor connection: ${which} database.${schemaContext}
 ${currentSQL ? `\nCurrent SQL in editor:\n\`\`\`sql\n${currentSQL.slice(0,2000)}\n\`\`\`` : ''}
 
 Rules:
-- Always use the actual table and column names from the schema above — never invent placeholder names
+- Always use the actual table and column names from the schemas above — never invent placeholder names
+- When the user mentions "source", use tables from the SOURCE DATABASE SCHEMA
+- When the user mentions "target", use tables from the TARGET DATABASE SCHEMA
+- If no schema qualifier is given, infer from context or use the active connection
 - Use [schema].[table] bracket notation
 - Write concise, practical T-SQL
 - Wrap any SQL you generate in a \`\`\`sql code block
-- If the schema above doesn't contain what the user needs, say so clearly`;
+- If a table or column the user asks about isn't in the schema, say so clearly`;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
