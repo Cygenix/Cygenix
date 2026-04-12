@@ -1610,7 +1610,7 @@ function renderMappingTable(){
       <td>
         ${m.fromJoin ? `
           <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-            <span style="font-family:var(--mono);color:var(--teal);font-size:12px">${m.srcCol}</span>
+            <span style="font-family:var(--mono);color:var(--teal);font-size:12px">${m.srcCol.split('.').pop()}</span>
             <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono)">${m.fromJoin.split('.').pop()}</span>
           </div>` :
           `<span style="font-family:var(--mono);color:var(--text)">${m.srcCol}</span>${wasisBadge}`}
@@ -1665,7 +1665,7 @@ function generatePreviewSQL(){
     const mapped = mapping.find(m => m.tgtCol === tc.name);
     if (!mapped) S.warnings.push(`Target column [${tc.name}] is NOT NULL but has no source mapping — inserts will fail.`);
     else {
-      const hasNulls = src.rows.some(r => r[mapped.srcCol] === null || r[mapped.srcCol] === '' || r[mapped.srcCol] === undefined);
+      const hasNulls = src.rows.some(r => { const v = r[mapped.srcCol] !== undefined ? r[mapped.srcCol] : r[mapped.srcCol.split('.').pop()]; return v === null || v === '' || v === undefined; });
       if (hasNulls) S.warnings.push(`Target column [${tc.name}] is NOT NULL but source column "${mapped.srcCol}" contains nulls/empty values.`);
     }
   });
@@ -1729,7 +1729,9 @@ function generatePreviewSQL(){
     let stmt = `-- Batch ${batchNum} / ${totalBatches}\nINSERT INTO ${safeTgtName} (${colList})\nVALUES\n`;
     stmt += batch.map(row => {
       const vals = mapping.map(m => {
-        let rawVal = row[m.srcCol];
+        // Try direct key, then plain col name (joined cols aliased as "table.col")
+        let rawVal = row[m.srcCol] !== undefined ? row[m.srcCol]
+          : row[m.srcCol.split('.').pop()];
         if (wasisRules.length) {
           const result = applyWasisRule(src.tableName, m.srcCol, rawVal);
           if (result.applied) wasisLog.push({ col: m.srcCol, oldVal: rawVal, newVal: result.value, applied: result.applied });
@@ -3431,14 +3433,18 @@ function showJoinColPicker() {
 }
 
 function addJoinColToMapping(colName, fromTable, colType) {
+  // The SELECT aliases joined cols as "tablename.colname" e.g. "contact.email"
+  const tblAlias = fromTable.split('.').pop();
+  const rowKey   = tblAlias + '.' + colName;  // matches the AS alias in SELECT
+
   // Check not already in mapping
-  if (S.columnMapping.find(m => m.srcCol === colName)) {
+  if (S.columnMapping.find(m => m.srcCol === rowKey || m.srcCol === colName)) {
     alert(colName + ' is already in the mapping.');
     return;
   }
 
   S.columnMapping.push({
-    srcCol:       colName,
+    srcCol:       rowKey,      // "contact.email" — matches AS alias in fetched rows
     srcType:      colType || 'unknown',
     tgtCol:       null,
     tgtType:      null,
