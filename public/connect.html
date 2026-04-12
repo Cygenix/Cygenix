@@ -1034,101 +1034,111 @@ function checkStep3Ready() {
 // Fetch actual rows from source DB just before SQL generation
 async function fetchSourceRows() {
   if (!S.selectedSourceTable?.fromLiveDB) return true; // file source already has rows
-  const limit = parseInt($('src-row-limit')?.value || '1000');
-  const safeSrc = '[' + S.selectedSourceTable.schemaName + '].[' + S.selectedSourceTable.tableName + ']';
+  const limit       = parseInt($('src-row-limit')?.value || '1000');
+  const schema      = S.selectedSourceTable.schemaName;
+  const tblName     = S.selectedSourceTable.tableName;
+  const safeSrc     = '[' + schema + '].[' + tblName + ']';
   const whereFilter = ($('src-where-filter')?.value||'').trim();
   const activeJoins = (window._joinState||[]).filter(function(j){ return j.table && j.on; });
   const hasJoins    = activeJoins.length > 0;
 
-  // Assign stable aliases: base = s1, joined tables = s2, s3, ...
-  var s1 = 's1';
-  var joinAliases = {}; // table value -> alias
-  activeJoins.forEach(function(j, i){ joinAliases[j.table] = 's' + (i + 2); });
+  // Strategy:
+  //   Base table  → no alias, use safeSrc directly: [dbo].[client].[col]
+  //   Joined tables → aliases s1, s2, ... declared in JOIN clause
 
-  // Build explicit SELECT list for base table columns
-  var srcTableDef = S.srcSchema && S.srcSchema.tables
-    ? S.srcSchema.tables.find(function(t){ return t.schema+'.'+t.name === S.selectedSourceTable.schemaName+'.'+S.selectedSourceTable.tableName; })
-    : null;
-  var baseCols = srcTableDef ? srcTableDef.columns : S.selectedSourceTable.columnDefs || [];
-  var baseColList = baseCols.length
-    ? baseCols.map(function(c){ var cn=typeof c==='string'?c:c.name; return s1+'.['+cn+']'; }).join(', ')
-    : s1+'.*';
+  // Assign aliases to joined tables only
+  var joinAliases = {};
+  activeJoins.forEach(function(j, i){ joinAliases[j.table] = 's' + (i + 1); });
 
-  // Add joined table columns
-  var joinedColList = (window._joinState||[])
-    .filter(function(j){ return j.table && j.cols && j.cols.length; })
-    .flatMap(function(j){
-      var a = joinAliases[j.table] || 's2';
-      return j.cols.map(function(c){
-        var cn = typeof c==='string'?c:c.name;
-        return a+'.['+cn+'] AS ['+a+'.'+cn+']';
-      });
-    });
-
-  var selectList = hasJoins
-    ? baseColList + (joinedColList.length ? ', ' + joinedColList.join(', ') : '')
-    : (baseCols.length ? baseColList : '*');
-
-  // Build FROM with s1 alias for base table
-  var fromPart = safeSrc + ' ' + s1;
-
-  // Build a lookup: tableName (last part, lowercase) -> alias
-  // e.g. "client" -> "s1", "matter" -> "s2"
+  // Build alias lookup for ON-clause rewriting
+  // base table: bare name and schema.name both map to safeSrc prefix
   var tableAliasMap = {};
-  var srcTableName = S.selectedSourceTable.tableName.toLowerCase();
-  var srcSchemaName = S.selectedSourceTable.schemaName.toLowerCase();
-  tableAliasMap[srcTableName] = s1;
-  tableAliasMap[srcSchemaName + '.' + srcTableName] = s1;
+  tableAliasMap[tblName.toLowerCase()]               = safeSrc;
+  tableAliasMap[(schema+'.'+tblName).toLowerCase()]  = safeSrc;
   activeJoins.forEach(function(j){
-    var a = joinAliases[j.table];
+    var a     = joinAliases[j.table];
     var parts = j.table.toLowerCase().split('.');
-    tableAliasMap[parts[parts.length-1]] = a;  // bare table name
-    tableAliasMap[j.table.toLowerCase()] = a;  // schema.table
+    tableAliasMap[parts[parts.length-1]]   = a;   // bare table name
+    tableAliasMap[j.table.toLowerCase()]   = a;   // schema.table
   });
 
-  // Rewrite an ON clause: replace schema.table.col or [schema].[table].[col] with alias.[col]
+  // Rewrite ON clause: any schema.table.col → alias.[col] or [schema].[table].[col]
   function rewriteOn(on) {
-    // Replace bracketed 3-part: [schema].[table].[col]
+    // Bracketed 3-part [schema].[table].[col]
     on = on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]\.\[([^\]]+)\]/g, function(_, sc, tb, col){
-      var key1 = (sc+'.'+tb).toLowerCase();
-      var key2 = tb.toLowerCase();
-      var alias = tableAliasMap[key1] || tableAliasMap[key2];
-      return alias ? alias+'.['+col+']' : '['+sc+'].['+tb+'].['+col+']';
+      var alias = tableAliasMap[(sc+'.'+tb).toLowerCase()] || tableAliasMap[tb.toLowerCase()];
+      if (!alias) return '['+sc+'].['+tb+'].['+col+']';
+      return alias === safeSrc ? safeSrc+'.['+col+']' : alias+'.['+col+']';
     });
-    // Replace unbracketed 3-part: schema.table.col
+    // Unbracketed 3-part schema.table.col
     on = on.replace(/(\w+)\.(\w+)\.(\w+)/g, function(_, sc, tb, col){
-      var key1 = (sc+'.'+tb).toLowerCase();
-      var key2 = tb.toLowerCase();
-      var alias = tableAliasMap[key1] || tableAliasMap[key2];
-      return alias ? alias+'.['+col+']' : _; // leave unchanged if not found
+      var alias = tableAliasMap[(sc+'.'+tb).toLowerCase()] || tableAliasMap[tb.toLowerCase()];
+      if (!alias) return sc+'.'+tb+'.'+col;
+      return alias === safeSrc ? safeSrc+'.['+col+']' : alias+'.['+col+']';
     });
-    // Replace bracketed 2-part: [table].[col] — only if table is in our map
+    // Bracketed 2-part [table].[col]
     on = on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]/g, function(_, tb, col){
       var alias = tableAliasMap[tb.toLowerCase()];
-      return alias ? alias+'.['+col+']' : '['+tb+'].['+col+']';
+      if (!alias) return '['+tb+'].['+col+']';
+      return alias === safeSrc ? safeSrc+'.['+col+']' : alias+'.['+col+']';
     });
     return on;
   }
 
-  // Build JOIN clauses with rewritten ON
-  var joinParts = (window._joinState||[])
-    .filter(function(j){ return j.table && j.on; })
-    .map(function(j){
-      var a = joinAliases[j.table];
-      var parts = j.table.split('.');
-      var tblRef = parts.length > 1
-        ? '['+parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']'
-        : '['+j.table+']';
-      var on = rewriteOn(j.on);
-      return j.type + ' JOIN ' + tblRef + ' ' + a + ' ON ' + on;
+  // SELECT list:
+  //   Base table cols: [schema].[table].[col] AS [col]  (no alias, explicit 3-part)
+  //   Joined cols used in mapping: sN.[col] AS [sN.col]
+  var srcTableDef = S.srcSchema && S.srcSchema.tables
+    ? S.srcSchema.tables.find(function(t){ return t.schema+'.'+t.name === schema+'.'+tblName; })
+    : null;
+  var baseCols = srcTableDef ? srcTableDef.columns : (S.selectedSourceTable.columnDefs || []);
+
+  // Only select joined columns that are actually used in the column mapping
+  var usedJoinedCols = S.columnMapping
+    .filter(function(m){ return m.fromJoin; })
+    .map(function(m){ return m.srcCol; }); // e.g. "s1.mfolder"
+
+  var baseColList = baseCols.length
+    ? baseCols.map(function(c){
+        var cn = typeof c === 'string' ? c : c.name;
+        return safeSrc+'.['+cn+'] AS ['+cn+']';
+      }).join(', ')
+    : safeSrc+'.*';
+
+  var joinedColList = [];
+  activeJoins.forEach(function(j){
+    var a = joinAliases[j.table];
+    (j.cols||[]).forEach(function(c){
+      var cn = typeof c === 'string' ? c : c.name;
+      var rowKey = a+'.'+cn;
+      // Only include if used in mapping
+      if (usedJoinedCols.indexOf(rowKey) > -1) {
+        joinedColList.push(a+'.['+cn+'] AS ['+rowKey+']');
+      }
     });
+  });
+
+  var selectCols = hasJoins && joinedColList.length
+    ? baseColList + ', ' + joinedColList.join(', ')
+    : baseColList;
+
+  // JOIN clauses: [dbo].[matter] s1 ON rewritten-condition
+  var joinParts = activeJoins.map(function(j){
+    var a     = joinAliases[j.table];
+    var parts = j.table.split('.');
+    var tblRef = parts.length > 1
+      ? '['+parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']'
+      : '['+j.table+']';
+    var on = rewriteOn(j.on);
+    return j.type+' JOIN '+tblRef+' '+a+' ON '+on;
+  });
 
   var whereClause = whereFilter ? ' WHERE ' + whereFilter : '';
-  var sql = 'SELECT ' + (limit > 0 ? 'TOP ' + limit + ' ' : '') + selectList
-    + ' FROM ' + fromPart
+  var topClause   = limit > 0 ? 'TOP ' + limit + ' ' : '';
+  var sql = 'SELECT ' + topClause + selectCols
+    + ' FROM ' + safeSrc
     + (joinParts.length ? ' ' + joinParts.join(' ') : '')
     + whereClause;
-
   console.log('[fetchSourceRows] SQL:', sql);
   showStatus('conn-status', 'Fetching ' + (limit||'all') + ' rows from ' + safeSrc + '…', 'info');
   try {
