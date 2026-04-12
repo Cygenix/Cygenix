@@ -553,9 +553,12 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
-// tableSearchData declared here at top level to avoid TDZ errors
+// Variables declared at top level to avoid temporal dead zone (TDZ) errors
 const tableSearchData = { src: [], tgt: [] };
 let kbIndex = { src: -1, tgt: -1 };
+const WASIS_KEY = 'cygenix_wasis_rules';
+// wasisRules initialised here — loadPersistedWasis() called after full parse via init
+let wasisRules = [];
 
 const S = {
   apiKey: '',
@@ -2332,8 +2335,6 @@ function inferType(vals){
 // ── WAS/IS (connect.html) ──────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const WASIS_KEY = 'cygenix_wasis_rules';
-
 // Load persisted wasis rules from localStorage
 function loadPersistedWasis() {
   try {
@@ -2351,7 +2352,8 @@ function loadPersistedWasis() {
 }
 
 
-let wasisRules = loadPersistedWasis();
+// Populate wasisRules (declared at top of script)
+wasisRules = loadPersistedWasis();
 
 function saveWasisRules(rules) {
   wasisRules = rules;
