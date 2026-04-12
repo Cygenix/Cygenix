@@ -390,8 +390,12 @@ function addJobAsStep(jobIndex) {
   const job = jobs[jobIndex];
   if (!job) return;
 
+  // Detect whether this is a raw SQL script job (saved from SQL Editor)
+  // or a mapping-based migration job (saved from Simple Map / One-to-Many)
+  const isSqlJob = job.type === 'sql' || job.jobType === 'sql' || job.jobType === 'sql-script';
+
   const step = {
-    type:            'migration',
+    type:            isSqlJob ? 'sql' : 'migration',
     name:            job.name || job.target + ' migration',
     srcTable:        job.sourceTable || job.source || '',
     tgtTable:        job.targetTable || job.target || '',
@@ -401,6 +405,8 @@ function addJobAsStep(jobIndex) {
     jobType:         job.jobType || 'migration',
     oneToManyConfig: job.oneToManyConfig || null,
     insertSQL:       job.insertSQL || '',
+    sql:             job.sql || job.insertSQL || '',
+    connOn:          job.connOn || 'target',
     tables:          job.tables || [],
     warnings:        job.warnings || [],
     status:          'pending',
@@ -762,6 +768,13 @@ function waitForDecision() {
 async function runMigrationStep(step, srcConn, tgtConn, log) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
+
+  // ── Safety: if this is actually a raw SQL script job, run it as SQL ──────────
+  // This catches jobs saved from SQL Editor that got misrouted as 'migration'
+  if ((step.jobType === 'sql' || step.type === 'sql') && (step.sql || step.insertSQL)) {
+    return runSqlStep(step, srcConn, tgtConn, log);
+  }
+
   if (!step.srcTable) throw new Error('Source table not set');
   if (!srcConn)       throw new Error('Source connection not configured');
   if (!tgtConn)       throw new Error('Target connection not configured');
@@ -901,13 +914,18 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 async function runSqlStep(step, srcConn, tgtConn, log) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
-  if (!step.sql) throw new Error('No SQL in this step');
+  const sql = step.sql || step.insertSQL || '';
+  if (!sql) throw new Error('No SQL in this step');
   const useConn   = step.connOn === 'source' ? srcConn : tgtConn;
   const connLabel = step.connOn === 'source' ? 'source' : 'target';
   if (!useConn) throw new Error('No '+connLabel+' connection configured');
-  add('Executing on '+connLabel+' DB ('+step.sql.length+' chars)…');
-  const res = await dbCall(useConn, { action:'execute', sql:step.sql });
-  add('Done · '+(res.rowsAffected||0)+' rows affected');
+  add('Executing on '+connLabel+' DB ('+sql.length+' chars)…');
+  const res = await dbCall(useConn, { action:'execute', sql });
+  const affected = Array.isArray(res.rowsAffected)
+    ? res.rowsAffected.reduce((a,b) => a+(b||0), 0)
+    : (res.rowsAffected || 0);
+  add('✓ Done · '+affected.toLocaleString()+' rows affected');
+  step.rowsInserted = affected;
   return { ok:true, log:stepLog };
 }
 
