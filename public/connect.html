@@ -210,15 +210,17 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   </div>
   <!-- Connection status banner (replaces steps 1 & 2) -->
   <div id="conn-status-banner" style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 1.25rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:11px;flex-wrap:wrap">
-    <span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-family:var(--serif)">Connections</span>
+    <span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;font-family:var(--serif);flex-shrink:0">Connections</span>
     <span style="display:flex;align-items:center;gap:0.4rem">
       <span id="csb-src-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
       <span id="csb-src-label" style="font-family:var(--mono);color:var(--text3)">Source: —</span>
+      <button id="csb-src-btn" onclick="doConnectSrc()" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--text3);cursor:pointer;font-family:var(--serif)">&#128268; Connect</button>
     </span>
     <span style="color:var(--border2)">|</span>
     <span style="display:flex;align-items:center;gap:0.4rem">
       <span id="csb-tgt-dot" style="width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
       <span id="csb-tgt-label" style="font-family:var(--mono);color:var(--text3)">Target: —</span>
+      <button id="csb-tgt-btn" onclick="doConnectTgt()" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--text3);cursor:pointer;font-family:var(--serif)">&#128268; Connect</button>
     </span>
     <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Change connections →</a>
   </div>
@@ -2838,8 +2840,10 @@ function setBanner(side, ok, text) {
 async function doConnectSrc() {
   const c = CygenixConnections.get() || {};
   const srcCs = c.srcConnString || '';
+  const btn = document.getElementById('csb-src-btn');
   if (!srcCs) { setBanner('src', false, 'Source: not configured — set in Dashboard → Configure'); return; }
   setBanner('src', false, 'Source: connecting…');
+  if (btn) { btn.disabled = true; btn.textContent = 'Connecting...'; }
   try {
     const res = await dbCallDirect(srcCs, { action: 'schema' });
     const db  = parseDbNameFromConn(srcCs);
@@ -2848,8 +2852,10 @@ async function doConnectSrc() {
     sessionStorage.setItem('cygenix_src_conn_string', srcCs);
     populateSourceTableSelect(res.tables || []);
     setBanner('src', true, 'Source: ' + db + ' · ' + (res.tables||[]).length + ' tables');
+    if (btn) { btn.textContent = '✓ Connected'; btn.style.color = 'var(--green)'; btn.disabled = false; }
   } catch(e) {
     setBanner('src', false, 'Source error: ' + e.message);
+    if (btn) { btn.textContent = '&#128268; Retry'; btn.style.color = 'var(--red)'; btn.disabled = false; }
     console.error('[connect] source error:', e);
   }
 }
@@ -2860,8 +2866,10 @@ async function doConnectTgt() {
   const tgtKey = c.tgtFnKey || '';
   const tgtCs  = c.tgtConnString || '';
   const tgtConn = tgtFn ? (tgtKey ? tgtFn + '?code=' + encodeURIComponent(tgtKey) : tgtFn) : tgtCs;
+  const btn = document.getElementById('csb-tgt-btn');
   if (!tgtConn) { setBanner('tgt', false, 'Target: not configured — set in Dashboard → Configure'); return; }
   setBanner('tgt', false, 'Target: connecting…');
+  if (btn) { btn.disabled = true; btn.textContent = 'Connecting...'; }
   try {
     const res = await dbCallDirect(tgtConn, { action: 'schema' });
     const db  = parseDbNameFromConn(tgtConn);
@@ -2873,8 +2881,10 @@ async function doConnectTgt() {
     renderTargetSchema(res.tables || [], db, '');
     populateTargetTableSelect(res.tables || []);
     setBanner('tgt', true, 'Target: ' + db + ' · ' + (res.tables||[]).length + ' tables');
+    if (btn) { btn.textContent = '✓ Connected'; btn.style.color = 'var(--green)'; btn.disabled = false; }
   } catch(e) {
     setBanner('tgt', false, 'Target error: ' + e.message);
+    if (btn) { btn.textContent = '&#128268; Retry'; btn.style.color = 'var(--red)'; btn.disabled = false; }
     console.error('[connect] target error:', e);
   }
 }
