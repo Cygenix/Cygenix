@@ -1176,13 +1176,8 @@ async function proceedToPreview() {
   if (!S.selectedSourceTable) { alert('Please select a source table.'); return; }
   if (!S.selectedTargetTable) { alert('Please select a target table.'); return; }
   if (S.columnMapping.length === 0) { alert('Please complete column mapping first.'); return; }
-
+  // No row fetch needed — output is INSERT...SELECT, not INSERT...VALUES
   try {
-    if (S.selectedSourceTable.fromLiveDB) {
-      showStatus('conn-status', 'Fetching source rows…', 'info');
-      const ok = await fetchSourceRows();
-      if (!ok) return;
-    }
     generatePreviewSQL();
   } catch(e) {
     console.error('proceedToPreview error:', e);
@@ -1736,139 +1731,156 @@ function generatePreviewSQL(){
   const src = S.selectedSourceTable;
   const tgt = S.selectedTargetTable;
   const mapping = S.columnMapping.filter(m => m.tgtCol);
-  console.log('[generatePreviewSQL] mapping:', mapping.length, 'rows:', src?.rows?.length, 'tgt:', tgt?.name);
+  console.log('[generatePreviewSQL] mapping:', mapping.length, 'tgt:', tgt?.name);
 
   if (mapping.length === 0){ alert('No columns are mapped to target. Please map at least one column.'); return; }
-  if (!src || !src.rows || src.rows.length === 0) {
-    if (src && src.fromLiveDB) {
-      // Rows not fetched yet — try fetching now
-      showStatus('conn-status', 'Fetching source rows before generating SQL…', 'info');
-      fetchSourceRows().then(ok => {
-        if (ok) generatePreviewSQL();
-        else showStatus('conn-status', 'Could not fetch source rows — check connection and try again.', 'err');
-      });
-    } else {
-      showStatus('mapping-status', 'No source row data — please re-select the source table.', 'err');
-    }
-    return;
-  }
+  if (!src){ showStatus('mapping-status', 'No source table selected.', 'err'); return; }
 
   S.warnings = [];
 
-  // Check for NOT NULL target columns with no mapping or null data
-  tgt.columns.filter(c => !c.nullable && !c.isIdentity).forEach(tc => {
-    const mapped = mapping.find(m => m.tgtCol === tc.name);
-    if (!mapped) S.warnings.push(`Target column [${tc.name}] is NOT NULL but has no source mapping — inserts will fail.`);
-    else {
-      const hasNulls = src.rows.some(r => { const v = r[mapped.srcCol] !== undefined ? r[mapped.srcCol] : r[mapped.srcCol.split('.').pop()]; return v === null || v === '' || v === undefined; });
-      if (hasNulls) S.warnings.push(`Target column [${tc.name}] is NOT NULL but source column "${mapped.srcCol}" contains nulls/empty values.`);
-    }
-  });
-
-  // Check for identity column in mapping (shouldn't be there)
+  const safeSrc    = '[' + src.schemaName + '].[' + src.tableName + ']';
+  const safeTgtDB  = S.targetSchema?.database || 'TargetDatabase';
+  const safeTgtName = '[' + tgt.schema + '].[' + tgt.name + ']';
   const identityCols = tgt.columns.filter(c => c.isIdentity).map(c => c.name);
-
-  // Build INSERT statements
-  const safeTgtName = `[${tgt.schema}].[${tgt.name}]`;
-  const colList = mapping.map(m => `[${m.tgtCol}]`).join(', ');
   const hasIdentityInMapping = mapping.some(m => identityCols.includes(m.tgtCol));
 
-  let insertSQL = `-- Migration: ${src.tableName} → ${tgt.schema}.${tgt.name}\n`;
-  insertSQL += `-- Rows: ${src.rows.length.toLocaleString()} | Columns mapped: ${mapping.length}\n`;
-  insertSQL += wasisRules.length ? `-- Was/Is rules loaded: ${wasisRules.length}\n` : '';
-  insertSQL += `-- Generated: ${new Date().toISOString()}\n\n`;
-  insertSQL += `USE [${S.targetSchema?.database || 'YourDatabase'}];\nGO\n\nSET NOCOUNT ON;\nGO\n\n`;
+  // ── Build the source SELECT with aliases ─────────────────────────────────────
+  // Same alias logic as fetchSourceRows: base table = no alias, joined = s1, s2...
+  const activeJoins = (window._joinState||[]).filter(j => j.table && j.on);
+  const joinAliases = {};
+  activeJoins.forEach((j, i) => { joinAliases[j.table] = 's' + (i + 1); });
 
-  if (hasIdentityInMapping){
-    insertSQL += `SET IDENTITY_INSERT ${safeTgtName} ON;\nGO\n\n`;
-    S.warnings.push('SET IDENTITY_INSERT ON is required — ensure you have permission and the identity values do not conflict with existing rows.');
-  }
+  // Build alias lookup for ON-clause rewriting (reuse same rewriteOn logic)
+  const tableAliasMap2 = {};
+  tableAliasMap2[src.tableName.toLowerCase()]                      = safeSrc;
+  tableAliasMap2[(src.schemaName+'.'+src.tableName).toLowerCase()] = safeSrc;
+  activeJoins.forEach(j => {
+    const a = joinAliases[j.table];
+    const parts = j.table.toLowerCase().split('.');
+    tableAliasMap2[parts[parts.length-1]] = a;
+    tableAliasMap2[j.table.toLowerCase()] = a;
+  });
 
-  const batchStatements = [];
-  for (let i = 0; i < src.rows.length; i += BATCH_SIZE){
-    const batch = src.rows.slice(i, i + BATCH_SIZE);
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(src.rows.length / BATCH_SIZE);
-
-    let stmt = `-- Batch ${batchNum} / ${totalBatches} (rows ${i+1}–${Math.min(i+BATCH_SIZE, src.rows.length)})\n`;
-    stmt += `INSERT INTO ${safeTgtName} (${colList})\nVALUES\n`;
-
-    const rowLines = batch.map(row => {
-      const vals = mapping.map(m => {
-        const raw = row[m.srcCol];
-        return applyTransform(raw, m.transform, m.transformExpr, m.tgtType);
-      });
-      return `    (${vals.join(', ')})`;
+  function rewriteOn2(on) {
+    on = on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]\.\[([^\]]+)\]/g, (_, sc, tb, col) => {
+      const alias = tableAliasMap2[(sc+'.'+tb).toLowerCase()] || tableAliasMap2[tb.toLowerCase()];
+      if (!alias) return '['+sc+'].['+tb+'].['+col+']';
+      return alias === safeSrc ? safeSrc+'.['+col+']' : alias+'.['+col+']';
     });
-    stmt += rowLines.join(',\n') + ';';
-    batchStatements.push(stmt);
+    on = on.replace(/(\w+)\.(\w+)\.(\w+)/g, (_, sc, tb, col) => {
+      const alias = tableAliasMap2[(sc+'.'+tb).toLowerCase()] || tableAliasMap2[tb.toLowerCase()];
+      if (!alias) return sc+'.'+tb+'.'+col;
+      return alias === safeSrc ? safeSrc+'.['+col+']' : alias+'.['+col+']';
+    });
+    on = on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]/g, (_, tb, col) => {
+      const alias = tableAliasMap2[tb.toLowerCase()];
+      if (!alias) return '['+tb+'].['+col+']';
+      return alias === safeSrc ? safeSrc+'.['+col+']' : alias+'.['+col+']';
+    });
+    return on;
+  }
 
-    // Per-row fallback
-    if (batch.length > 1){
-      stmt += '\n-- Per-row fallback:\n';
-      stmt += batch.map(row => {
-        const vals = mapping.map(m => applyTransform(row[m.srcCol], m.transform, m.transformExpr, m.tgtType));
-        return `-- INSERT INTO ${safeTgtName} (${colList}) VALUES (${vals.join(', ')});`;
-      }).join('\n');
+  // JOIN clauses
+  const joinClauses = activeJoins.map(j => {
+    const a = joinAliases[j.table];
+    const parts = j.table.split('.');
+    const tblRef = parts.length > 1
+      ? '['+parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']'
+      : '['+j.table+']';
+    return j.type + ' JOIN ' + tblRef + ' ' + a + ' ON ' + rewriteOn2(j.on);
+  }).join('\n');
+
+  // SELECT column list — map each target col to its source expression
+  const selectCols = mapping.map(m => {
+    let srcExpr;
+    if (m.fromJoin) {
+      // Joined column: find its alias
+      const tblBareName = m.fromJoin.split('.').pop();
+      const joinEntry = activeJoins.find(j => j.table.split('.').pop() === tblBareName || j.table === m.fromJoin);
+      const alias = joinEntry ? joinAliases[joinEntry.table] : tblBareName;
+      const colName = m.srcCol.includes('.') ? m.srcCol.split('.').pop() : m.srcCol;
+      srcExpr = alias + '.[' + colName + ']';
+    } else {
+      srcExpr = safeSrc + '.[' + m.srcCol + ']';
     }
-    batchStatements.push(stmt);
-  }
 
-  // Deduplicate (we pushed twice by mistake above — fix)
-  const realBatches = [];
-  const wasisLog = [];
-  for (let i = 0; i < src.rows.length; i += BATCH_SIZE){
-    const batch = src.rows.slice(i, i + BATCH_SIZE);
-    const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(src.rows.length / BATCH_SIZE);
-    let stmt = `-- Batch ${batchNum} / ${totalBatches}\nINSERT INTO ${safeTgtName} (${colList})\nVALUES\n`;
-    stmt += batch.map(row => {
-      const vals = mapping.map(m => {
-        // Try direct key, then plain col name (joined cols aliased as "table.col")
-        let rawVal = row[m.srcCol] !== undefined ? row[m.srcCol]
-          : row[m.srcCol.split('.').pop()];
-        if (wasisRules.length) {
-          const result = applyWasisRule(src.tableName, m.srcCol, rawVal);
-          if (result.applied) wasisLog.push({ col: m.srcCol, oldVal: rawVal, newVal: result.value, applied: result.applied });
-          rawVal = result.value;
-        }
-        return applyTransform(rawVal, m.transform, m.transformExpr, m.tgtType);
-      });
-      return `    (${vals.join(', ')})`;
-    }).join(',\n') + ';';
-    realBatches.push(stmt);
-  }
-  S.batchStatements = realBatches;
-  S.wasisLog = wasisLog;
+    // Apply transform as SQL expression
+    let expr;
+    switch ((m.transform||'NONE').toUpperCase()) {
+      case 'TRIM':   expr = 'LTRIM(RTRIM(' + srcExpr + '))'; break;
+      case 'UPPER':  expr = 'UPPER(' + srcExpr + ')'; break;
+      case 'LOWER':  expr = 'LOWER(' + srcExpr + ')'; break;
+      case 'CAST':   expr = 'CAST(' + srcExpr + ' AS ' + (m.tgtType||'NVARCHAR(255)') + ')'; break;
+      case 'CUSTOM': expr = m.transformExpr || srcExpr; break;
+      default:       expr = srcExpr;
+    }
 
-  // Add wasis summary as SQL comment block
-  if (wasisLog && wasisLog.length) {
-    insertSQL += buildWasisSummaryComment(wasisLog);
-  }
-  insertSQL += realBatches.join('\n\n') + '\n\n';
+    // Was/Is as CASE expression if rules exist for this column
+    const colWasis = wasisRules.filter(r =>
+      (r.srcField === m.srcCol.toLowerCase() || r.srcField === '') &&
+      (r.srcTable === src.tableName.toLowerCase() || r.srcTable === '')
+    );
+    if (colWasis.length) {
+      const cases = colWasis.map(r =>
+        `WHEN ${expr} = ${formatSQLVal(r.oldVal)} THEN ${formatSQLVal(r.newVal)}`
+      ).join('\n        ');
+      expr = `CASE\n        ${cases}\n        ELSE ${expr}\n      END`;
+      S.warnings.push(`Was/Is applied to [${m.srcCol}]: ${colWasis.length} rule(s) as CASE expression`);
+    }
 
-  if (hasIdentityInMapping) insertSQL += `\nSET IDENTITY_INSERT ${safeTgtName} OFF;\nGO\n`;
+    return '      ' + expr + ' AS [' + m.tgtCol + ']';
+  }).join(',\n');
+
+  // WHERE clause
+  const whereFilter = ($('src-where-filter')?.value||'').trim();
+  const whereClause = whereFilter ? '\nWHERE ' + whereFilter : '';
+
+  // NOT NULL warnings (logic only — no row data needed)
+  tgt.columns.filter(c => !c.nullable && !c.isIdentity).forEach(tc => {
+    if (!mapping.find(m => m.tgtCol === tc.name))
+      S.warnings.push(`Target column [${tc.name}] is NOT NULL but has no source mapping.`);
+  });
+  if (hasIdentityInMapping)
+    S.warnings.push('IDENTITY column in mapping — SET IDENTITY_INSERT ON/OFF required.');
+
+  // ── Build the final INSERT … SELECT ─────────────────────────────────────────
+  const colList = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+  let sql = '';
+  sql += `-- ============================================================\n`;
+  sql += `-- Migration: ${src.schemaName}.${src.tableName} → ${safeTgtDB}.${tgt.schema}.${tgt.name}\n`;
+  sql += `-- Columns mapped: ${mapping.length}\n`;
+  sql += wasisRules.length ? `-- Was/Is rules: ${wasisRules.length} (applied as CASE expressions)\n` : '';
+  sql += `-- Generated: ${new Date().toISOString()}\n`;
+  sql += `-- Edit the SELECT, JOINs and WHERE clause as needed before running\n`;
+  sql += `-- ============================================================\n\n`;
+  sql += `USE [${safeTgtDB}];\nGO\n\n`;
+  sql += `SET NOCOUNT ON;\nGO\n\n`;
+  if (hasIdentityInMapping) sql += `SET IDENTITY_INSERT ${safeTgtName} ON;\nGO\n\n`;
+
+  sql += `INSERT INTO ${safeTgtName}\n`;
+  sql += `    (${colList})\n`;
+  sql += `SELECT\n`;
+  sql += selectCols + '\n';
+  sql += `FROM ${safeSrc}\n`;
+  if (joinClauses) sql += joinClauses + '\n';
+  sql += whereClause ? whereClause + '\n' : '';
+  sql += `;\nGO\n`;
+
+  if (hasIdentityInMapping) sql += `\nSET IDENTITY_INSERT ${safeTgtName} OFF;\nGO\n`;
+
+  sql += `\n\n-- ── Verify ──────────────────────────────────────────────────\n`;
+  sql += `-- Run after migration to check row counts:\n`;
+  sql += `SELECT COUNT(*) AS migrated_rows FROM ${safeTgtName};\n`;
 
   // Schema check SQL
   const schemaSQL = `-- Schema compatibility check\nSELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA = '${tgt.schema}' AND TABLE_NAME = '${tgt.name}'\nORDER BY ORDINAL_POSITION;`;
 
-  // Verify SQL
-  const verifySQL = `-- Verify row counts after migration\nSELECT\n    '${src.tableName}' AS source_table,\n    ${src.rows.length} AS expected_rows,\n    COUNT(*) AS actual_rows,\n    COUNT(*) - ${src.rows.length} AS difference\nFROM ${safeTgtName};`;
-
-  S.insertSQL = insertSQL;
+  S.insertSQL    = sql;
   S.schemaCheckSQL = schemaSQL;
-  S.verifySQL = verifySQL;
+  S.verifySQL    = `SELECT COUNT(*) AS migrated_rows FROM ${safeTgtName};`;
 
-  $('preview-code').textContent = insertSQL;
-  $('preview-summary').textContent = `${src.rows.length.toLocaleString()} rows · ${realBatches.length} batches · ${Math.ceil(insertSQL.length/1024)}KB`;
-
-  // Add wasis summary to warnings panel
-  if (wasisLog && wasisLog.length) {
-    const wasisApplied = wasisLog.filter(l => l.applied).length;
-    S.warnings.unshift(`✓ Was/Is mapping applied: ${wasisApplied.toLocaleString()} value substitutions using ${wasisRules.length} rules`);
-  } else if (wasisRules.length) {
-    S.warnings.unshift(`Was/Is rules loaded (${wasisRules.length} rules) but no matching values found in source data`);
-  }
+  $('preview-code').textContent = sql;
+  $('preview-summary').textContent = `${mapping.length} columns mapped · INSERT…SELECT · ${Math.ceil(sql.length/1024)}KB`;
 
   if (S.warnings.length > 0){
     $('warnings-panel').style.display = 'block';
@@ -1878,6 +1890,14 @@ function generatePreviewSQL(){
   }
 
   goStep(4);
+}
+
+// Format a value as a SQL literal
+function formatSQLVal(v) {
+  if (v === null || v === undefined || String(v).toUpperCase() === 'NULL') return 'NULL';
+  const s = String(v);
+  if (!isNaN(s) && s.trim() !== '') return s;
+  return "'" + s.replace(/'/g,"''") + "'";
 }
 
 function applyTransform(val, transform, expr, tgtType){
