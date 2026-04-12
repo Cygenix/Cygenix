@@ -1596,7 +1596,7 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
         </div>
         <div style="display:flex;align-items:center;gap:0.4rem">
           <span style="font-size:10px;color:var(--text3);flex-shrink:0">ON</span>
-          <input value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
+          <input id="join-on-${i}" value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
             placeholder="e.g. [dbo].[client].[clnum] = [dbo].[contact].[clnum]"
             style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--teal);font-family:var(--mono);outline:none">
           <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause">🤖 AI</button>
@@ -1654,12 +1654,11 @@ async function aiJoinHelp(i) {
 
   const base    = window._joinBaseTable;
   const allTbls = window._joinAllTables || [];
-  const joinTbl = allTbls.find(t => t.value === join.table);
 
   const baseCols = (base?.columns || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
   const joinCols = (join.cols || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
 
-  const prompt = [
+  const aiPrompt = [
     'You are a T-SQL expert. Write the ON clause for a JOIN between two tables.',
     '',
     'Base table: ' + (base?.fullName || 'source'),
@@ -1673,25 +1672,43 @@ async function aiJoinHelp(i) {
     'Example output: [dbo].[client].[clnum] = [dbo].[contact].[clnum]'
   ].join('\n');
 
-  // Show thinking state in ON input
-  const inputs = document.querySelectorAll(`[oninput="updateJoin(${i},'on',this.value)"]`);
-  const input = inputs[0];
+  // Use stable id to find the ON input — querySelectorAll breaks after DOM re-render
+  const getInput = () => document.getElementById('join-on-' + i);
+  const input = getInput();
   const oldVal = input ? input.value : '';
   if (input) { input.value = 'Claude is thinking…'; input.disabled = true; }
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 256, messages: [{ role: 'user', content: prompt }] })
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 256,
+        messages: [{ role: 'user', content: aiPrompt }]
+      })
     });
     const data = await res.json();
     const text = (data.content?.[0]?.text || '').trim().replace(/^ON\s+/i, '').replace(/;$/, '');
+
+    // Store in state first — this is the source of truth for re-renders
     window._joinState[i].on = text;
-    if (input) { input.value = text; input.disabled = false; }
+
+    // Update the input directly using its stable id (DOM may have been re-rendered)
+    const inp = getInput();
+    if (inp) { inp.value = text; inp.disabled = false; }
+
+    // Notify change handlers without triggering a full re-render of the join builder
     if (window._onJoinChange) window._onJoinChange(window._joinState);
+
   } catch(e) {
-    if (input) { input.value = oldVal; input.disabled = false; }
+    const inp = getInput();
+    if (inp) { inp.value = oldVal; inp.disabled = false; }
     alert('AI error: ' + e.message);
   }
 }
