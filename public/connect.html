@@ -1037,48 +1037,62 @@ async function fetchSourceRows() {
   const limit = parseInt($('src-row-limit')?.value || '1000');
   const safeSrc = '[' + S.selectedSourceTable.schemaName + '].[' + S.selectedSourceTable.tableName + ']';
   const whereFilter = ($('src-where-filter')?.value||'').trim();
-  const whereClause = whereFilter ? ' WHERE ' + whereFilter : '';
-  const joinSQL = (typeof getJoinSQL === 'function') ? getJoinSQL() : '';
-  const joinClause = joinSQL ? ' ' + joinSQL : '';
-  // Build SELECT list: base table * plus explicit joined columns
-  // Build SELECT with proper table aliases to avoid "multi-part identifier" errors
-  // Base table gets alias "b", joined tables get alias from their name
-  var hasJoins = (window._joinState||[]).some(function(j){ return j.table && j.cols && j.cols.length; });
-  var baseSrcRef = safeSrc + (hasJoins ? ' b' : '');
+  const activeJoins = (window._joinState||[]).filter(function(j){ return j.table && j.on; });
+  const hasJoins    = activeJoins.length > 0;
 
-  var joinedCols = [];
-  var joinClauseAliased = joinClause;
+  // Assign stable aliases: base = s1, joined tables = s2, s3, ...
+  var s1 = 's1';
+  var joinAliases = {}; // table value -> alias
+  activeJoins.forEach(function(j, i){ joinAliases[j.table] = 's' + (i + 2); });
 
-  if (hasJoins) {
-    // Build join clause using table aliases
-    joinClauseAliased = (window._joinState||[])
-      .filter(function(j){ return j.table && j.on; })
-      .map(function(j){
-        var parts = j.table.split('.');
-        var alias = parts[parts.length-1];
-        var tblRef = j.table.indexOf('.') > -1
-          ? '[' + parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']'
-          : '['+j.table+']';
-        return j.type + ' JOIN ' + tblRef + ' ' + alias + ' ON ' + j.on;
-      }).join(' ');
+  // Build explicit SELECT list for base table columns
+  var srcTableDef = S.srcSchema && S.srcSchema.tables
+    ? S.srcSchema.tables.find(function(t){ return t.schema+'.'+t.name === S.selectedSourceTable.schemaName+'.'+S.selectedSourceTable.tableName; })
+    : null;
+  var baseCols = srcTableDef ? srcTableDef.columns : S.selectedSourceTable.columnDefs || [];
+  var baseColList = baseCols.length
+    ? baseCols.map(function(c){ var cn=typeof c==='string'?c:c.name; return s1+'.['+cn+']'; }).join(', ')
+    : s1+'.*';
 
-    joinedCols = (window._joinState||[])
-      .filter(function(j){ return j.table && j.cols && j.cols.length; })
-      .flatMap(function(j){
-        var parts = j.table.split('.');
-        var alias = parts[parts.length-1];
-        return j.cols.map(function(c){
-          var cn = typeof c==='string'?c:c.name;
-          // Use alias.column syntax — clean and always resolvable
-          return alias + '.[' + cn + '] AS [' + alias + '.' + cn + ']';
-        });
+  // Add joined table columns
+  var joinedColList = (window._joinState||[])
+    .filter(function(j){ return j.table && j.cols && j.cols.length; })
+    .flatMap(function(j){
+      var a = joinAliases[j.table] || 's2';
+      return j.cols.map(function(c){
+        var cn = typeof c==='string'?c:c.name;
+        return a+'.['+cn+'] AS ['+a+'.'+cn+']';
       });
-  }
+    });
 
-  var selectList = joinedCols.length ? 'b.*, ' + joinedCols.join(', ') : '*';
-  var fromClause = ' FROM ' + baseSrcRef + (joinClauseAliased ? ' ' + joinClauseAliased : '') + whereClause;
-  var sqlBase = 'SELECT ' + (limit > 0 ? 'TOP ' + limit + ' ' : '') + selectList + fromClause;
-  const sql = sqlBase;
+  var selectList = hasJoins
+    ? baseColList + (joinedColList.length ? ', ' + joinedColList.join(', ') : '')
+    : (baseCols.length ? baseColList : '*');
+
+  // Build FROM with s1 alias for base table
+  var fromPart = safeSrc + ' ' + s1;
+
+  // Build JOIN clauses using s1/s2/s3 aliases in ON clause
+  var joinParts = (window._joinState||[])
+    .filter(function(j){ return j.table && j.on; })
+    .map(function(j){
+      var a = joinAliases[j.table];
+      var parts = j.table.split('.');
+      var tblRef = parts.length > 1
+        ? '['+parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']'
+        : '['+j.table+']';
+      // Rewrite ON clause: replace any unaliased [schema].[table].[col] with alias.[col]
+      var on = j.on;
+      // Replace base table refs in ON
+      on = on.replace(new RegExp(safeSrc.replace(/[\[\]]/g,'').replace(/\./g,'\\.')+'\\.(\\w+)', 'gi'), s1+'.[$1]');
+      return j.type + ' JOIN ' + tblRef + ' ' + a + ' ON ' + on;
+    });
+
+  var whereClause = whereFilter ? ' WHERE ' + whereFilter : '';
+  var sql = 'SELECT ' + (limit > 0 ? 'TOP ' + limit + ' ' : '') + selectList
+    + ' FROM ' + fromPart
+    + (joinParts.length ? ' ' + joinParts.join(' ') : '')
+    + whereClause;
 
   console.log('[fetchSourceRows] SQL:', sql);
   showStatus('conn-status', 'Fetching ' + (limit||'all') + ' rows from ' + safeSrc + '…', 'info');
