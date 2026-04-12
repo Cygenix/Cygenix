@@ -1072,7 +1072,45 @@ async function fetchSourceRows() {
   // Build FROM with s1 alias for base table
   var fromPart = safeSrc + ' ' + s1;
 
-  // Build JOIN clauses using s1/s2/s3 aliases in ON clause
+  // Build a lookup: tableName (last part, lowercase) -> alias
+  // e.g. "client" -> "s1", "matter" -> "s2"
+  var tableAliasMap = {};
+  var srcTableName = S.selectedSourceTable.tableName.toLowerCase();
+  var srcSchemaName = S.selectedSourceTable.schemaName.toLowerCase();
+  tableAliasMap[srcTableName] = s1;
+  tableAliasMap[srcSchemaName + '.' + srcTableName] = s1;
+  activeJoins.forEach(function(j){
+    var a = joinAliases[j.table];
+    var parts = j.table.toLowerCase().split('.');
+    tableAliasMap[parts[parts.length-1]] = a;  // bare table name
+    tableAliasMap[j.table.toLowerCase()] = a;  // schema.table
+  });
+
+  // Rewrite an ON clause: replace schema.table.col or [schema].[table].[col] with alias.[col]
+  function rewriteOn(on) {
+    // Replace bracketed 3-part: [schema].[table].[col]
+    on = on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]\.\[([^\]]+)\]/g, function(_, sc, tb, col){
+      var key1 = (sc+'.'+tb).toLowerCase();
+      var key2 = tb.toLowerCase();
+      var alias = tableAliasMap[key1] || tableAliasMap[key2];
+      return alias ? alias+'.['+col+']' : '['+sc+'].['+tb+'].['+col+']';
+    });
+    // Replace unbracketed 3-part: schema.table.col
+    on = on.replace(/(\w+)\.(\w+)\.(\w+)/g, function(_, sc, tb, col){
+      var key1 = (sc+'.'+tb).toLowerCase();
+      var key2 = tb.toLowerCase();
+      var alias = tableAliasMap[key1] || tableAliasMap[key2];
+      return alias ? alias+'.['+col+']' : _; // leave unchanged if not found
+    });
+    // Replace bracketed 2-part: [table].[col] — only if table is in our map
+    on = on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]/g, function(_, tb, col){
+      var alias = tableAliasMap[tb.toLowerCase()];
+      return alias ? alias+'.['+col+']' : '['+tb+'].['+col+']';
+    });
+    return on;
+  }
+
+  // Build JOIN clauses with rewritten ON
   var joinParts = (window._joinState||[])
     .filter(function(j){ return j.table && j.on; })
     .map(function(j){
@@ -1081,10 +1119,7 @@ async function fetchSourceRows() {
       var tblRef = parts.length > 1
         ? '['+parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']'
         : '['+j.table+']';
-      // Rewrite ON clause: replace any unaliased [schema].[table].[col] with alias.[col]
-      var on = j.on;
-      // Replace base table refs in ON
-      on = on.replace(new RegExp(safeSrc.replace(/[\[\]]/g,'').replace(/\./g,'\\.')+'\\.(\\w+)', 'gi'), s1+'.[$1]');
+      var on = rewriteOn(j.on);
       return j.type + ' JOIN ' + tblRef + ' ' + a + ' ON ' + on;
     });
 
