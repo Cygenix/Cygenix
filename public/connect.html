@@ -2806,92 +2806,100 @@ document.addEventListener('click', function(e) {
 
 // ── End searchable combobox ────────────────────────────────────────────────────
 initUserAndProject();
-checkForResumableSession();
 
-// ── Auto-connect from Dashboard connection settings ───────────────────────────
-// Uses the same proven dbCall pattern as one-to-many.html
-(function autoConnectAndStart() {
+// ── Shared helpers (same pattern as one-to-many.html) ────────────────────────
+function isFnConn(c){ return c && (c.startsWith('https://') || c.startsWith('http://')); }
 
-  function isFnConn(c){ return c && (c.startsWith('https://') || c.startsWith('http://')); }
+function parseDbNameFromConn(connStr) {
+  if (!connStr) return '';
+  if (isFnConn(connStr)) { const m = connStr.match(/\/([^/?&]+)(\?|$)/); return m ? m[1] : ''; }
+  const ado = connStr.match(/(?:Database|Initial\s+Catalog)\s*=\s*([^;]+)/i);
+  if (ado) return ado[1].trim();
+  const url = connStr.match(/mssql:\/\/[^/]+\/([^?&]+)/i);
+  return url ? url[1].trim() : '';
+}
 
-  function parseDbNameFromConn(connStr) {
-    if (!connStr) return '';
-    if (isFnConn(connStr)) {
-      const m = connStr.match(/\/([^/?&]+)(\?|$)/);
-      return m ? m[1] : '';
-    }
-    const ado = connStr.match(/(?:Database|Initial\s+Catalog)\s*=\s*([^;]+)/i);
-    if (ado) return ado[1].trim();
-    const url = connStr.match(/mssql:\/\/[^/]+\/([^?&]+)/i);
-    return url ? url[1].trim() : '';
+async function dbCallDirect(conn, body) {
+  const url     = isFnConn(conn) ? conn : '/.netlify/functions/db-connect';
+  const payload = isFnConn(conn) ? body : { ...body, connectionString: conn };
+  const res  = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), signal:AbortSignal.timeout(60000) });
+  const data = await res.json().catch(() => ({ error:'Non-JSON ('+res.status+')' }));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function setBanner(side, ok, text) {
+  const dot = document.getElementById('csb-' + side + '-dot');
+  const lbl = document.getElementById('csb-' + side + '-label');
+  if (dot) dot.style.background = ok ? 'var(--green)' : 'var(--red)';
+  if (lbl) lbl.textContent = text;
+}
+
+async function doConnectSrc() {
+  const c = CygenixConnections.get() || {};
+  const srcCs = c.srcConnString || '';
+  if (!srcCs) { setBanner('src', false, 'Source: not configured — set in Dashboard → Configure'); return; }
+  setBanner('src', false, 'Source: connecting…');
+  try {
+    const res = await dbCallDirect(srcCs, { action: 'schema' });
+    const db  = parseDbNameFromConn(srcCs);
+    S.srcConnString = srcCs;
+    S.srcSchema     = { ...res, database: db };
+    sessionStorage.setItem('cygenix_src_conn_string', srcCs);
+    populateSourceTableSelect(res.tables || []);
+    setBanner('src', true, 'Source: ' + db + ' · ' + (res.tables||[]).length + ' tables');
+  } catch(e) {
+    setBanner('src', false, 'Source error: ' + e.message);
+    console.error('[connect] source error:', e);
   }
+}
 
-  async function dbCallDirect(conn, body) {
-    const url     = isFnConn(conn) ? conn : '/.netlify/functions/db-connect';
-    const payload = isFnConn(conn) ? body : { ...body, connectionString: conn };
-    const res  = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload), signal:AbortSignal.timeout(60000) });
-    const data = await res.json().catch(() => ({ error:'Non-JSON ('+res.status+')' }));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
+async function doConnectTgt() {
+  const c = CygenixConnections.get() || {};
+  const tgtFn  = c.tgtFnUrl || '';
+  const tgtKey = c.tgtFnKey || '';
+  const tgtCs  = c.tgtConnString || '';
+  const tgtConn = tgtFn ? (tgtKey ? tgtFn + '?code=' + encodeURIComponent(tgtKey) : tgtFn) : tgtCs;
+  if (!tgtConn) { setBanner('tgt', false, 'Target: not configured — set in Dashboard → Configure'); return; }
+  setBanner('tgt', false, 'Target: connecting…');
+  try {
+    const res = await dbCallDirect(tgtConn, { action: 'schema' });
+    const db  = parseDbNameFromConn(tgtConn);
+    S.targetSchema = { ...res, database: db };
+    S.connString   = tgtConn;
+    S.connMode     = tgtFn ? 'azure' : 'direct';
+    if (tgtFn) { sessionStorage.setItem('cygenix_fn_url', tgtFn); if (tgtKey) sessionStorage.setItem('cygenix_fn_key', tgtKey); }
+    if (tgtCs) sessionStorage.setItem('cygenix_conn_string', tgtCs);
+    renderTargetSchema(res.tables || [], db, '');
+    populateTargetTableSelect(res.tables || []);
+    setBanner('tgt', true, 'Target: ' + db + ' · ' + (res.tables||[]).length + ' tables');
+  } catch(e) {
+    setBanner('tgt', false, 'Target error: ' + e.message);
+    console.error('[connect] target error:', e);
   }
+}
 
-  function setBanner(side, ok, text) {
-    const dot = document.getElementById('csb-' + side + '-dot');
-    const lbl = document.getElementById('csb-' + side + '-label');
-    if (dot) dot.style.background = ok ? 'var(--green)' : 'var(--red)';
-    if (lbl) lbl.textContent = text;
-  }
-
-  const c      = CygenixConnections.get();
+// ── Force global connections from configuration page (same as one-to-many) ────
+(function forceGlobalConnections() {
+  const c = CygenixConnections.get() || {};
   const srcCs  = c.srcConnString || '';
   const tgtFn  = c.tgtFnUrl || '';
   const tgtKey = c.tgtFnKey || '';
   const tgtCs  = c.tgtConnString || '';
   const tgtConn = tgtFn ? (tgtKey ? tgtFn + '?code=' + encodeURIComponent(tgtKey) : tgtFn) : tgtCs;
 
-  if (!srcCs)  setBanner('src', false, 'Source: not configured — set in Dashboard → Configure');
-  if (!tgtConn) setBanner('tgt', false, 'Target: not configured — set in Dashboard → Configure');
+  // Override any stale project snapshot
+  S.srcConnString = srcCs;
+  S.connString    = tgtConn;
+  S.connMode      = tgtFn ? 'azure' : 'direct';
 
-  async function doConnectSrc() {
-    if (!srcCs) return;
-    setBanner('src', false, 'Source: connecting…');
-    try {
-      const res = await dbCallDirect(srcCs, { action: 'schema' });
-      const db  = parseDbNameFromConn(srcCs);
-      // Populate S so existing functions work
-      S.srcConnString = srcCs;
-      S.srcSchema     = { ...res, database: db };
-      sessionStorage.setItem('cygenix_src_conn_string', srcCs);
-      populateSourceTableSelect(res.tables || []);
-      setBanner('src', true, 'Source: ' + db + ' · ' + (res.tables||[]).length + ' tables');
-    } catch(e) {
-      setBanner('src', false, 'Source error: ' + e.message);
-      console.error('[connect] source error:', e);
-    }
-  }
+  console.log('✅ Forced global connections:', { src: !!srcCs, tgt: !!tgtConn });
 
-  async function doConnectTgt() {
-    if (!tgtConn) return;
-    setBanner('tgt', false, 'Target: connecting…');
-    try {
-      const res = await dbCallDirect(tgtConn, { action: 'schema' });
-      const db  = parseDbNameFromConn(tgtConn);
-      // Populate S and sessionStorage so existing functions work
-      S.targetSchema = { ...res, database: db };
-      S.connString   = tgtConn;
-      S.connMode     = tgtFn ? 'azure' : 'direct';
-      if (tgtFn) { sessionStorage.setItem('cygenix_fn_url', tgtFn); if (tgtKey) sessionStorage.setItem('cygenix_fn_key', tgtKey); }
-      if (tgtCs) sessionStorage.setItem('cygenix_conn_string', tgtCs);
-      renderTargetSchema(res.tables || [], db, '');
-      populateTargetTableSelect(res.tables || []);
-      setBanner('tgt', true, 'Target: ' + db + ' · ' + (res.tables||[]).length + ' tables');
-    } catch(e) {
-      setBanner('tgt', false, 'Target error: ' + e.message);
-      console.error('[connect] target error:', e);
-    }
-  }
+  if (srcCs)   doConnectSrc();
+  if (tgtConn) doConnectTgt();
 
-  Promise.all([doConnectSrc(), doConnectTgt()]).then(() => goStep(3));
+  // Still allow resume, but after global connections are applied
+  setTimeout(checkForResumableSession, 100);
 })();
 
 // ── Resume / dismiss session ──────────────────────────────────────────────────
