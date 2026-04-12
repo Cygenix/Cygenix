@@ -384,6 +384,11 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
         </div>
       </div>
 
+      <!-- JOIN builder panel -->
+      <div id="con-join-panel" style="display:none;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;margin-bottom:1.25rem">
+        <div id="con-join-container"></div>
+      </div>
+
       <!-- Restored session notice -->
       <div id="src-restored-notice" style="display:none;background:rgba(61,126,255,0.08);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.75rem;margin-bottom:1rem;font-size:12px;color:var(--accent)">
         📂 Mapping restored from saved session. Source data will be fetched live when you generate SQL.
@@ -1025,9 +1030,11 @@ async function fetchSourceRows() {
   const safeSrc = '[' + S.selectedSourceTable.schemaName + '].[' + S.selectedSourceTable.tableName + ']';
   const whereFilter = ($('src-where-filter')?.value||'').trim();
   const whereClause = whereFilter ? ' WHERE ' + whereFilter : '';
+  const joinSQL = (typeof getJoinSQL === 'function') ? getJoinSQL() : '';
+  const joinClause = joinSQL ? ' ' + joinSQL : '';
   const sql = limit > 0
-    ? 'SELECT TOP ' + limit + ' * FROM ' + safeSrc + whereClause
-    : 'SELECT * FROM ' + safeSrc + whereClause;
+    ? 'SELECT TOP ' + limit + ' * FROM ' + safeSrc + joinClause + whereClause
+    : 'SELECT * FROM ' + safeSrc + joinClause + whereClause;
 
   showStatus('conn-status', 'Fetching ' + (limit||'all') + ' rows from ' + safeSrc + '…', 'info');
   try {
@@ -3149,6 +3156,175 @@ function addWhereChatMsg(text, role) {
   }
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+}
+
+
+// ── JOIN Builder (shared between connect.html and one-to-many.html) ──────────
+// Usage: initJoinBuilder(containerEl, getTablesFunc, getBaseTableFunc, onJoinChange)
+// getTablesFunc() → array of {value, label, schema, name, columns}
+// getBaseTableFunc() → {fullName, schema, name, columns}
+// onJoinChange(joins) → called when joins change so caller can update SQL
+
+// Global join state — keyed by page context
+window._joinState = [];
+
+function getJoinSQL() {
+  return window._joinState
+    .filter(j => j.table && j.on)
+    .map(j => j.type + ' JOIN ' + j.table + ' ON ' + j.on)
+    .join('\n');
+}
+
+function getJoinColumns() {
+  // Return all columns from all joined tables for use in SELECT/mapping
+  return window._joinState
+    .filter(j => j.table && j.cols && j.cols.length)
+    .flatMap(j => j.cols.map(c => ({ name: j.tableAlias + '.' + c.name, type: c.type, fromJoin: j.table })));
+}
+
+function renderJoinBuilder(containerId, allTables, baseTable) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const joins = window._joinState;
+
+  container.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.625rem">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">
+        Source joins <span style="color:var(--teal)">${joins.length ? '(' + joins.length + ')' : ''}</span>
+      </div>
+      <div style="display:flex;gap:0.4rem">
+        <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
+      </div>
+    </div>
+    ${joins.length === 0 ? `<div style="font-size:12px;color:var(--text3);padding:0.4rem 0">No joins — query uses ${baseTable ? baseTable.name || baseTable.fullName : 'source table'} only</div>` : ''}
+    ${joins.map((j, i) => `
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.625rem 0.75rem;margin-bottom:0.4rem">
+        <div style="display:grid;grid-template-columns:100px 1fr 24px;gap:0.4rem;align-items:center;margin-bottom:0.4rem">
+          <select onchange="updateJoin(${i},'type',this.value)" style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none">
+            ${['INNER','LEFT','RIGHT','FULL OUTER'].map(t => `<option value="${t}" ${j.type===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+          <select onchange="updateJoin(${i},'table',this.value)" style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none">
+            <option value="">— select table —</option>
+            ${allTables.map(t => `<option value="${t.value}" ${j.table===t.value?'selected':''}>${t.label}</option>`).join('')}
+          </select>
+          <button onclick="removeJoin(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.4rem">
+          <span style="font-size:10px;color:var(--text3);flex-shrink:0">ON</span>
+          <input value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
+            placeholder="e.g. [dbo].[client].[clnum] = [dbo].[contact].[clnum]"
+            style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--teal);font-family:var(--mono);outline:none">
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause">🤖 AI</button>
+        </div>
+        ${j.table ? `<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols ? j.cols.length + ' columns available' : 'Loading columns…'}</div>` : ''}
+      </div>
+    `).join('')}
+  `;
+}
+
+function addJoin() {
+  window._joinState.push({ type: 'INNER', table: '', on: '', cols: [], tableAlias: '' });
+  _rerenderJoins();
+}
+
+function removeJoin(i) {
+  window._joinState.splice(i, 1);
+  _rerenderJoins();
+  if (window._onJoinChange) window._onJoinChange(window._joinState);
+}
+
+function updateJoin(i, key, val) {
+  window._joinState[i][key] = val;
+  if (key === 'table' && val) {
+    // Look up columns for the joined table
+    const allTables = window._joinAllTables || [];
+    const tbl = allTables.find(t => t.value === val);
+    window._joinState[i].cols = tbl ? (tbl.columns || []) : [];
+    window._joinState[i].tableAlias = tbl ? ('[' + (tbl.schema||'dbo') + '].[' + tbl.name + ']') : val;
+    _rerenderJoins();
+  }
+  if (key === 'on') {
+    if (window._onJoinChange) window._onJoinChange(window._joinState);
+  }
+}
+
+function _rerenderJoins() {
+  const base = window._joinBaseTable;
+  const tables = window._joinAllTables || [];
+  renderJoinBuilder(window._joinContainerId, tables, base);
+  if (window._onJoinChange) window._onJoinChange(window._joinState);
+}
+
+async function aiJoinHelp(i) {
+  const join = window._joinState[i];
+  if (!join.table) { alert('Select a table to join first.'); return; }
+
+  const apiKey = (localStorage.getItem('cygenix_api_key') || '').trim();
+  if (!apiKey) {
+    const k = prompt('Enter your Anthropic API key for AI JOIN help:');
+    if (!k) return;
+    localStorage.setItem('cygenix_api_key', k);
+  }
+  const key = localStorage.getItem('cygenix_api_key');
+
+  const base    = window._joinBaseTable;
+  const allTbls = window._joinAllTables || [];
+  const joinTbl = allTbls.find(t => t.value === join.table);
+
+  const baseCols = (base?.columns || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
+  const joinCols = (join.cols || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
+
+  const prompt = [
+    'You are a T-SQL expert. Write the ON clause for a JOIN between two tables.',
+    '',
+    'Base table: ' + (base?.fullName || 'source'),
+    'Columns: ' + baseCols.join(', '),
+    '',
+    'Join table: ' + join.table,
+    'Columns: ' + joinCols.join(', '),
+    '',
+    'Write ONLY the ON condition (no "ON" keyword). Use fully qualified [schema].[table].[column] notation.',
+    'Match columns by name similarity (e.g. id, key, code, num fields).',
+    'Example output: [dbo].[client].[clnum] = [dbo].[contact].[clnum]'
+  ].join('\n');
+
+  // Show thinking state in ON input
+  const inputs = document.querySelectorAll(`[oninput="updateJoin(${i},'on',this.value)"]`);
+  const input = inputs[0];
+  const oldVal = input ? input.value : '';
+  if (input) { input.value = 'Claude is thinking…'; input.disabled = true; }
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 256, messages: [{ role: 'user', content: prompt }] })
+    });
+    const data = await res.json();
+    const text = (data.content?.[0]?.text || '').trim().replace(/^ON\s+/i, '').replace(/;$/, '');
+    window._joinState[i].on = text;
+    if (input) { input.value = text; input.disabled = false; }
+    if (window._onJoinChange) window._onJoinChange(window._joinState);
+  } catch(e) {
+    if (input) { input.value = oldVal; input.disabled = false; }
+    alert('AI error: ' + e.message);
+  }
+}
+
+function initJoinBuilder(containerId, allTables, baseTable, onJoinChange) {
+  window._joinContainerId = containerId;
+  window._joinAllTables   = allTables;
+  window._joinBaseTable   = baseTable;
+  window._onJoinChange    = onJoinChange;
+  window._joinState       = [];
+  renderJoinBuilder(containerId, allTables, baseTable);
+}
+
+function refreshJoinBuilder(allTables, baseTable) {
+  window._joinAllTables = allTables;
+  window._joinBaseTable = baseTable;
+  _rerenderJoins();
 }
 
 </script>
