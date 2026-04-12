@@ -157,7 +157,8 @@ body.fullscreen .script-panel { display:none }
   <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
     <span style="font-size:13px;color:var(--teal);font-weight:500;flex-shrink:0">SQL Editor</span>
     <input id="script-name" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Script name…" value="New script">
-    <input id="script-desc" class="form-input" style="width:240px;font-family:var(--serif);font-size:12px;color:var(--text3)" placeholder="Description (optional)">
+    <input id="script-desc" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px;color:var(--text3)" placeholder="Description (optional)">
+    <span id="job-indicator" style="display:none;font-size:11px;font-family:var(--mono);color:var(--teal);background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 8px;white-space:nowrap"></span>
   </div>
   <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
     <select id="conn-select" class="form-input" style="width:140px;font-size:12px" onchange="updateConnLabel()">
@@ -167,8 +168,9 @@ body.fullscreen .script-panel { display:none }
     <button class="btn btn-primary btn-sm" onclick="runSQL()" id="run-btn">▶ Run</button>
     <button class="btn btn-ghost btn-sm" onclick="formatSQL()">⌨ Format</button>
     <button class="btn btn-green btn-sm" onclick="saveScript()">💾 Save</button>
+    <button id="save-to-job-btn" class="btn btn-teal btn-sm" onclick="saveBackToJob()" style="display:none" title="Save SQL changes back to the loaded job">💾 Save to Job</button>
     <button class="btn btn-amber btn-sm" onclick="saveToInventory()" title="Save to Inventory">📋 Inventory</button>
-    <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ Jobs</button>
+    <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ New Job</button>
     <input type="password" id="api-key" class="form-input" style="width:140px;font-size:11px" placeholder="Anthropic API key">
     <button class="btn btn-ghost btn-sm" onclick="toggleFullscreen()" id="fs-btn" title="Toggle fullscreen (F11)">⛶</button>
   </div>
@@ -176,17 +178,32 @@ body.fullscreen .script-panel { display:none }
 
 <div class="editor-layout">
 
-  <!-- Script library -->
+  <!-- Script library + Jobs panel -->
   <div class="script-panel">
-    <div class="script-panel-head">
+    <!-- Tabs -->
+    <div style="display:flex;border-bottom:0.5px solid var(--border);margin-bottom:0.5rem">
+      <button id="lib-tab-scripts" onclick="switchLibTab('scripts')" style="flex:1;background:none;border:none;padding:6px 4px;font-size:11px;font-weight:600;color:var(--accent);border-bottom:2px solid var(--accent);cursor:pointer;font-family:var(--serif)">Scripts</button>
+      <button id="lib-tab-jobs" onclick="switchLibTab('jobs')" style="flex:1;background:none;border:none;padding:6px 4px;font-size:11px;font-weight:500;color:var(--text3);border-bottom:2px solid transparent;cursor:pointer;font-family:var(--serif)">Migration Jobs</button>
+    </div>
+
+    <!-- Scripts pane -->
+    <div id="lib-pane-scripts">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
-        <span style="font-size:12px;font-weight:600">Scripts</span>
+        <span style="font-size:11px;color:var(--text3)">Saved scripts</span>
         <button class="btn btn-ghost btn-sm" onclick="newScript()" style="padding:2px 8px">+ New</button>
       </div>
       <input id="script-search" class="form-input" placeholder="Search scripts…" style="font-size:11px;padding:4px 8px" oninput="renderScriptList()">
+      <div class="script-list" id="script-list" style="margin-top:0.4rem">
+        <div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">No scripts yet — write one and save it</div>
+      </div>
     </div>
-    <div class="script-list" id="script-list">
-      <div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">No scripts yet — write one and save it</div>
+
+    <!-- Jobs pane -->
+    <div id="lib-pane-jobs" style="display:none">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Load a job's SQL to edit</div>
+      <div class="script-list" id="jobs-list">
+        <div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">Loading…</div>
+      </div>
     </div>
   </div>
 
@@ -314,6 +331,9 @@ const savedKey = localStorage.getItem('cygenix_api_key') || '';
 if (savedKey) document.getElementById('api-key').value = savedKey;
 
 // ── Script library ─────────────────────────────────────────────────────────────
+// Track currently loaded job
+var currentJobId = null;
+
 function loadScripts() {
   try { scripts = JSON.parse(localStorage.getItem(SCRIPTS_KEY)||'[]'); } catch { scripts=[]; }
 }
@@ -896,6 +916,106 @@ function saveToInventory() {
 }
 
 // ── Add to Jobs ────────────────────────────────────────────────────────────────
+// ── Library tab switching ──────────────────────────────────────────────────────
+function switchLibTab(tab) {
+  ['scripts','jobs'].forEach(function(t) {
+    document.getElementById('lib-tab-'+t).style.color = t===tab ? 'var(--accent)' : 'var(--text3)';
+    document.getElementById('lib-tab-'+t).style.borderBottomColor = t===tab ? 'var(--accent)' : 'transparent';
+    document.getElementById('lib-tab-'+t).style.fontWeight = t===tab ? '600' : '500';
+    document.getElementById('lib-pane-'+t).style.display = t===tab ? 'block' : 'none';
+  });
+  if (tab === 'jobs') renderJobsList();
+}
+
+// ── Render jobs in sidebar ─────────────────────────────────────────────────────
+function renderJobsList() {
+  const list = document.getElementById('jobs-list');
+  const jobs = getJobsWithSQL();
+  if (!jobs.length) {
+    list.innerHTML = '<div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">No migration jobs with SQL yet — generate SQL in Simple Map or One-to-Many first</div>';
+    return;
+  }
+  list.innerHTML = jobs.map(function(j) {
+    const isCurrent = j.id === currentJobId;
+    const date = new Date(j.created).toLocaleDateString('en-GB');
+    const sqlLen = Math.ceil((j.insertSQL||j.migrationSQL||'').length/1024);
+    return '<div class="script-item ' + (isCurrent?'active':'') + '" onclick="loadJobSQL(this.dataset.jid)" data-jid="' + j.id + '" style="cursor:pointer">' +
+      '<div class="script-name">' + esc(j.name||'Unnamed job') + '</div>' +
+      '<div class="script-meta" style="display:flex;align-items:center;gap:0.4rem;margin-top:2px;flex-wrap:wrap">' +
+        '<span class="script-conn conn-tgt">' + esc(j.target||'') + '</span>' +
+        '<span>' + date + '</span>' +
+        '<span style="color:var(--text3)">' + sqlLen + 'KB</span>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function getJobsWithSQL() {
+  try {
+    var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    return jobs.filter(function(j){ return j.insertSQL || j.migrationSQL; });
+  } catch(e) { return []; }
+}
+
+// ── Load a job's SQL into the editor ──────────────────────────────────────────
+function loadJobSQL(jobId) {
+  var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+  var job  = jobs.find(function(j){ return j.id === jobId; });
+  if (!job) { alert('Job not found.'); return; }
+
+  var sql = job.insertSQL || job.migrationSQL || '';
+  if (!sql) { alert('This job has no generated SQL yet.'); return; }
+
+  currentJobId  = jobId;
+  currentScript = null; // decouple from saved scripts
+
+  document.getElementById('sql-editor').value = sql;
+  document.getElementById('script-name').value = job.name || 'Job SQL';
+  document.getElementById('script-desc').value = 'Loaded from job: ' + (job.name||jobId);
+  document.getElementById('conn-select').value = 'target';
+
+  // Show job indicator and Save to Job button
+  var ind = document.getElementById('job-indicator');
+  if (ind) { ind.style.display='inline'; ind.textContent='📋 Job: ' + (job.name||jobId); }
+  var btn = document.getElementById('save-to-job-btn');
+  if (btn) btn.style.display = 'inline-flex';
+
+  updateConnLabel();
+  updateStatus();
+  clearResults();
+  renderJobsList();
+  setExecStatus('✓ Loaded: ' + (job.name||'job'), 'var(--teal)');
+  setTimeout(function(){ setExecStatus('',''); }, 3000);
+}
+
+// ── Save edited SQL back to the job ───────────────────────────────────────────
+function saveBackToJob() {
+  if (!currentJobId) { alert('No job loaded — use the Migration Jobs panel to load a job first.'); return; }
+  var sql = document.getElementById('sql-editor').value.trim();
+  if (!sql) { alert('Editor is empty.'); return; }
+
+  try {
+    var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    var job  = jobs.find(function(j){ return j.id === currentJobId; });
+    if (!job) { alert('Job no longer found in storage.'); return; }
+
+    // Preserve which field was originally used
+    if (job.insertSQL !== undefined) job.insertSQL = sql;
+    else if (job.migrationSQL !== undefined) job.migrationSQL = sql;
+    else job.insertSQL = sql;
+
+    job.sqlEditedAt = new Date().toISOString();
+    job.sqlEditedNote = 'Edited in SQL Editor';
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+
+    setExecStatus('✓ Saved to job: ' + (job.name||currentJobId), 'var(--green)');
+    setTimeout(function(){ setExecStatus('',''); }, 3000);
+    renderJobsList();
+  } catch(e) {
+    alert('Could not save: ' + e.message);
+  }
+}
+
 function addToJobs() {
   const sql  = document.getElementById('sql-editor').value.trim();
   const name = document.getElementById('script-name').value.trim() || 'SQL Script';
@@ -1026,6 +1146,16 @@ renderScriptList();
 updateConnLabel();
 updateLineNumbers();
 updateStatus();
+
+// Check URL params — support both ?job=id (direct) and ?edit=id (from dashboard editJob)
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const jobId  = params.get('job') || params.get('edit');
+  if (jobId) {
+    switchLibTab('jobs');
+    setTimeout(function(){ loadJobSQL(jobId); }, 150);
+  }
+})();
 </script>
 </body>
 </html>
