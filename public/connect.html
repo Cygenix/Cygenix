@@ -831,8 +831,9 @@ updateApiBadge();
 // ── Steps ────────────────────────────────────────────────────────────────────
 let currentStep = 1;
 function goStep(n){
-  // Steps 1 & 2 replaced by auto-connect from dashboard settings
-  if (n === 1 || n === 2) n = 3;
+  // Steps 1 & 2 replaced by auto-connect — only redirect when navigating back
+  if (n === 1) n = 3;
+  if (n === 2) n = 3;
   if (n > 3 && S.columnMapping.length === 0){ alert('Please select tables and complete column mapping first.'); return; }
   if (n > 4 && !S.insertSQL){ alert('Please generate a preview first.'); return; }
   document.querySelectorAll('.step-view').forEach(el => { el.classList.remove('active'); });
@@ -1082,11 +1083,17 @@ async function proceedToPreview() {
   if (!S.selectedTargetTable) { alert('Please select a target table.'); return; }
   if (S.columnMapping.length === 0) { alert('Please complete column mapping first.'); return; }
 
-  if (S.selectedSourceTable.fromLiveDB) {
-    const ok = await fetchSourceRows();
-    if (!ok) return;
+  try {
+    if (S.selectedSourceTable.fromLiveDB) {
+      showStatus('conn-status', 'Fetching source rows…', 'info');
+      const ok = await fetchSourceRows();
+      if (!ok) return;
+    }
+    generatePreviewSQL();
+  } catch(e) {
+    console.error('proceedToPreview error:', e);
+    showStatus('conn-status', 'Error: ' + e.message, 'err');
   }
-  generatePreviewSQL();
 }
 
 async function testConnection(){
@@ -1638,13 +1645,15 @@ function generatePreviewSQL(){
 
   if (mapping.length === 0){ alert('No columns are mapped to target. Please map at least one column.'); return; }
   if (!src || !src.rows || src.rows.length === 0) {
-    // Go back to step 2 and show a clear message
-    goStep(2);
-    const info = $('src-file-info');
-    if (info) {
-      info.style.display = 'block';
-      info.textContent = 'Please upload your source file to continue — row data is needed to generate the SQL.';
-      info.style.color = 'var(--amber)';
+    if (src && src.fromLiveDB) {
+      // Rows not fetched yet — try fetching now
+      showStatus('conn-status', 'Fetching source rows before generating SQL…', 'info');
+      fetchSourceRows().then(ok => {
+        if (ok) generatePreviewSQL();
+        else showStatus('conn-status', 'Could not fetch source rows — check connection and try again.', 'err');
+      });
+    } else {
+      showStatus('mapping-status', 'No source row data — please re-select the source table.', 'err');
     }
     return;
   }
