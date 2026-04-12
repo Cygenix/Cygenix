@@ -3354,6 +3354,46 @@ function getJoinColumns() {
     .flatMap(j => j.cols.map(c => ({ name: j.tableAlias + '.' + c.name, type: c.type, fromJoin: j.table })));
 }
 
+// ── Join table searchable dropdown helpers ────────────────────────────────────
+function openJoinTableDrop(i) {
+  filterJoinTableDrop(i, document.getElementById('join-tbl-inp-'+i)?.value || '');
+  const drop = document.getElementById('join-tbl-drop-'+i);
+  if (drop) drop.style.display = 'block';
+}
+function closeJoinTableDrop(i) {
+  const drop = document.getElementById('join-tbl-drop-'+i);
+  if (drop) drop.style.display = 'none';
+}
+function filterJoinTableDrop(i, q) {
+  const drop = document.getElementById('join-tbl-drop-'+i);
+  if (!drop) return;
+  const all  = window._joinAllTables || [];
+  const low  = q.toLowerCase();
+  const hits = low ? all.filter(t=>t.label.toLowerCase().includes(low)).slice(0,80) : all.slice(0,80);
+  if (!hits.length) {
+    drop.innerHTML = '<div style="padding:6px 10px;font-size:11px;color:var(--text3)">'+(all.length?'No match':'No tables loaded')+'</div>';
+    drop.style.display = 'block';
+    return;
+  }
+  drop.innerHTML = hits.map(t =>
+    '<div onclick="selectJoinTable('+i+',\''+t.value+'\',\''+t.label+'\')" '+
+    'style="padding:5px 10px;font-size:11px;cursor:pointer;font-family:var(--mono);'+
+    'color:var(--text);display:flex;justify-content:space-between;align-items:center" '+
+    'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">' +
+    '<span>'+t.label+'</span>' +
+    (t.rowCount !== undefined ? '<span style="font-size:10px;color:var(--text3)">'+t.rowCount.toLocaleString()+' rows</span>' : '') +
+    '</div>'
+  ).join('');
+  if (all.length > 80) drop.innerHTML += '<div style="padding:4px 10px;font-size:10px;color:var(--text3)">'+(all.length-80)+' more — keep typing</div>';
+  drop.style.display = 'block';
+}
+function selectJoinTable(i, value, label) {
+  const inp = document.getElementById('join-tbl-inp-'+i);
+  if (inp) inp.value = label;
+  closeJoinTableDrop(i);
+  updateJoin(i, 'table', value);
+}
+
 function renderJoinBuilder(containerId, allTables, baseTable) {
   const container = document.getElementById(containerId);
   if (!container) return;
@@ -3376,10 +3416,15 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
           <select onchange="updateJoin(${i},'type',this.value)" style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none">
             ${['INNER','LEFT','RIGHT','FULL OUTER'].map(t => `<option value="${t}" ${j.type===t?'selected':''}>${t}</option>`).join('')}
           </select>
-          <select onchange="updateJoin(${i},'table',this.value)" style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none">
-            <option value="">— select table —</option>
-            ${allTables.map(t => `<option value="${t.value}" ${j.table===t.value?'selected':''}>${t.label}</option>`).join('')}
-          </select>
+          <div style="position:relative;flex:1">
+            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||''})()}" placeholder="🔍 Type to search tables…"
+              autocomplete="off" spellcheck="false"
+              onfocus="openJoinTableDrop(${i})"
+              oninput="filterJoinTableDrop(${i},this.value)"
+              onblur="setTimeout(()=>closeJoinTableDrop(${i}),180)"
+              style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;box-sizing:border-box">
+            <div id="join-tbl-drop-${i}" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:0 0 var(--r) var(--r);max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.3)"></div>
+          </div>
           <button onclick="removeJoin(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1">✕</button>
         </div>
         <div style="display:flex;align-items:center;gap:0.4rem">
