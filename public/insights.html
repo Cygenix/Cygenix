@@ -358,16 +358,21 @@ function setSchemaQuestion(q) {
 
 function buildFullSchemaContext() {
   if (!allTables.length) return null;
-  const tableLines = allTables.map(t => {
-    const cols = (t.columns || []).slice(0, 25).map(c => {
-      const name = typeof c === 'string' ? c : c.name;
-      const type = typeof c === 'object' ? (c.type || '') : '';
-      return name + (type ? ' (' + type + ')' : '');
-    }).join(', ');
-    return '  ' + t.fullName + (t.rowCount ? ' [' + t.rowCount.toLocaleString() + ' rows]' : '') + ': ' + cols;
-  }).join('\n');
   const dbName = srcSchema && srcSchema.database ? srcSchema.database : 'Source database';
-  return 'DATABASE: ' + dbName + '\nTABLES (' + allTables.length + '):\n' + tableLines;
+
+  // Compact format: one line per table with key columns only
+  // Prioritise columns that suggest data category (names, amounts, dates, ids)
+  const tableLines = allTables.map(t => {
+    const allCols = (t.columns || []).map(c => typeof c === 'string' ? c : c.name);
+    // Take first 8 columns — enough for Claude to infer purpose
+    const cols = allCols.slice(0, 8).join(', ');
+    const more = allCols.length > 8 ? ' +' + (allCols.length - 8) + ' more' : '';
+    return t.fullName
+      + (t.rowCount ? ' [' + t.rowCount.toLocaleString() + ' rows]' : '')
+      + ': ' + cols + more;
+  }).join('\n');
+
+  return 'DATABASE: ' + dbName + ' | ' + allTables.length + ' tables\n\n' + tableLines;
 }
 
 function addQAMessage(text, role) {
@@ -396,6 +401,12 @@ async function askSchemaQuestion() {
     return;
   }
 
+  // Guard: rough token estimate (~4 chars per token). Truncate if too large.
+  const MAX_SCHEMA_CHARS = 60000; // ~15k tokens, leaves plenty for prompt + response
+  const safeSchemaCtx = schemaCtx.length > MAX_SCHEMA_CHARS
+    ? schemaCtx.slice(0, MAX_SCHEMA_CHARS) + '\n\n[Schema truncated — ' + allTables.length + ' tables total]'
+    : schemaCtx;
+
   addQAMessage(question, 'user');
   inp.value = '';
   btn.disabled = true;
@@ -417,7 +428,7 @@ async function askSchemaQuestion() {
     + '- Explain WHY you think it matches based on column names and naming patterns\n'
     + '- Group related tables together\n'
     + '- Be concise but thorough\n\n'
-    + schemaCtx;
+    + safeSchemaCtx;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
