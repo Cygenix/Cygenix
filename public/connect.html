@@ -1041,18 +1041,43 @@ async function fetchSourceRows() {
   const joinSQL = (typeof getJoinSQL === 'function') ? getJoinSQL() : '';
   const joinClause = joinSQL ? ' ' + joinSQL : '';
   // Build SELECT list: base table * plus explicit joined columns
-  const joinedCols = (window._joinState||[])
-    .filter(function(j){ return j.table && j.cols && j.cols.length; })
-    .flatMap(function(j){
-      var parts = j.table.split('.');
-      var alias = parts[parts.length-1];
-      return j.cols.map(function(c){
-        var cn = typeof c==='string'?c:c.name;
-        return '['+j.tableAlias.replace(/[[\]]/g,'').split('].').join('].[') + '].[' + cn + '] AS [' + alias + '.' + cn + ']';
+  // Build SELECT with proper table aliases to avoid "multi-part identifier" errors
+  // Base table gets alias "b", joined tables get alias from their name
+  var hasJoins = (window._joinState||[]).some(function(j){ return j.table && j.cols && j.cols.length; });
+  var baseSrcRef = safeSrc + (hasJoins ? ' b' : '');
+
+  var joinedCols = [];
+  var joinClauseAliased = joinClause;
+
+  if (hasJoins) {
+    // Build join clause using table aliases
+    joinClauseAliased = (window._joinState||[])
+      .filter(function(j){ return j.table && j.on; })
+      .map(function(j){
+        var parts = j.table.split('.');
+        var alias = parts[parts.length-1];
+        var tblRef = j.table.indexOf('.') > -1
+          ? '[' + parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']'
+          : '['+j.table+']';
+        return j.type + ' JOIN ' + tblRef + ' ' + alias + ' ON ' + j.on;
+      }).join(' ');
+
+    joinedCols = (window._joinState||[])
+      .filter(function(j){ return j.table && j.cols && j.cols.length; })
+      .flatMap(function(j){
+        var parts = j.table.split('.');
+        var alias = parts[parts.length-1];
+        return j.cols.map(function(c){
+          var cn = typeof c==='string'?c:c.name;
+          // Use alias.column syntax — clean and always resolvable
+          return alias + '.[' + cn + '] AS [' + alias + '.' + cn + ']';
+        });
       });
-    });
-  var selectList = joinedCols.length ? '*, ' + joinedCols.join(', ') : '*';
-  var sqlBase = 'SELECT ' + (limit > 0 ? 'TOP ' + limit + ' ' : '') + selectList + ' FROM ' + safeSrc + joinClause + whereClause;
+  }
+
+  var selectList = joinedCols.length ? 'b.*, ' + joinedCols.join(', ') : '*';
+  var fromClause = ' FROM ' + baseSrcRef + (joinClauseAliased ? ' ' + joinClauseAliased : '') + whereClause;
+  var sqlBase = 'SELECT ' + (limit > 0 ? 'TOP ' + limit + ' ' : '') + selectList + fromClause;
   const sql = sqlBase;
 
   console.log('[fetchSourceRows] SQL:', sql);
