@@ -975,9 +975,12 @@ function populateSourceTableSelect(tables) {
     tables.map(t => '<option value="' + t.schema + '.' + t.name + '">' +
       t.schema + '.' + t.name + ' (' + (t.rowCount||'?').toLocaleString() + ' rows)</option>').join('');
   tableSearchData.src = tables.map(t=>({
-    value: t.schema+'.'+t.name,
-    label: t.schema+'.'+t.name,
-    rows:  t.rowCount||0
+    value:   t.schema+'.'+t.name,
+    label:   t.schema+'.'+t.name,
+    schema:  t.schema,
+    name:    t.name,
+    rows:    t.rowCount||0,
+    columns: t.columns || []   // keep full column defs for JOIN builder
   }));
   renderTableDrop('src','');
 }
@@ -2781,9 +2784,19 @@ function selectTableFromDrop(which, value, label) {
         // Show and init JOIN builder
         var joinPanel = $('con-join-panel');
         if (joinPanel) joinPanel.style.display = 'block';
-        var allSrcTbls = (tableSearchData.src || []).filter(function(t){ return t.value !== value; });
+        // Use S.srcSchema.tables directly so full column definitions are available
+        var allSchemaTbls = (S.srcSchema && S.srcSchema.tables || [])
+          .filter(function(t){ return (t.schema+'.'+t.name) !== value; })
+          .map(function(t){ return {
+            value:   t.schema+'.'+t.name,
+            label:   t.schema+'.'+t.name,
+            schema:  t.schema,
+            name:    t.name,
+            columns: t.columns || [],
+            rows:    t.rowCount||0
+          }; });
         var baseTbl = { fullName: tbl.schema+'.'+tbl.name, schema: tbl.schema, name: tbl.name, columns: tbl.columns };
-        initJoinBuilder('con-join-container', allSrcTbls, baseTbl, function(joins) {
+        initJoinBuilder('con-join-container', allSchemaTbls, baseTbl, function(joins) {
           // joins updated — used in fetchSourceRows SQL
         });
       }
