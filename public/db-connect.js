@@ -124,7 +124,11 @@ exports.handler = async function (event) {
         if (/^\s*(DROP\s+DATABASE|TRUNCATE\s+TABLE|DELETE\s+FROM\s*\w+\s*$)/i.test(sqlToRun))
           return err('Destructive statement blocked. Use explicit WHERE clauses.', null, 400);
         const r = await pool.request().query(sqlToRun);
-        result = { success: true, rowsAffected: r.rowsAffected?.[0]||0, recordset: r.recordset||[] };
+        result = {
+          success: true,
+          rowsAffected: r.rowsAffected || [0],
+          recordset: r.recordset || []
+        };
         break;
       }
 
