@@ -312,15 +312,19 @@ body.fullscreen .script-panel { display:none }
   <div class="right-pane">
     <div class="right-tabs">
       <div class="right-tab active">🤖 Claude AI</div>
+      <button onclick="refreshSchemaCache()" id="schema-refresh-btn" title="Reload database schema for AI context"
+        style="margin-left:auto;margin-right:0.5rem;background:none;border:0.5px solid var(--border2);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--text3);cursor:pointer;font-family:var(--serif)">↻ Schema</button>
     </div>
+    <div id="schema-status-bar" style="display:none;padding:3px 8px;font-size:10px;font-family:var(--mono);color:var(--teal);background:var(--teal-bg);border-bottom:0.5px solid rgba(45,212,191,0.2)"></div>
     <div class="right-content active" id="tab-ai">
       <div class="ai-messages" id="ai-messages">
-        <div class="ai-msg assistant">👋 Hi! I can help you write T-SQL. Describe what you need and I'll generate it — or select some SQL and I'll explain or fix it.<br><br>
+        <div class="ai-msg assistant">👋 Hi! I can write T-SQL using your actual database schema — just describe what you need.<br><br>
         <strong>Try asking:</strong><br>
-        "Find duplicate emails in client table"<br>
-        "Explain this JOIN"<br>
-        "Add error handling to this script"<br>
-        "Optimise this query"</div>
+        "List all tables in the source DB"<br>
+        "Write a query joining client to matter"<br>
+        "Find duplicate emails in the client table"<br>
+        "Add error handling to this script"<br><br>
+        <span style="font-size:10px;color:var(--text3)">Schema is loaded automatically from your connected database when you send a message.</span></div>
       </div>
       <div class="ai-input-wrap">
         <textarea class="ai-input" id="ai-prompt" rows="2" placeholder="Ask Claude to write or improve SQL…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askClaude()}"></textarea>
@@ -673,6 +677,71 @@ function loadFromHistory(i) {
 }
 
 // ── Claude AI ──────────────────────────────────────────────────────────────────
+// Schema cache — keyed by connection string to avoid re-fetching
+const _schemaCache = {};
+
+function updateSchemaStatusBar(schema, which) {
+  const bar = document.getElementById('schema-status-bar');
+  if (!bar) return;
+  if (!schema || !schema.tables) {
+    bar.style.display = 'none';
+    return;
+  }
+  const dbName = schema.database || (which === 'target' ? 'Target DB' : 'Source DB');
+  bar.textContent = '📋 ' + which + ': ' + dbName + ' · ' + schema.tables.length + ' tables loaded';
+  bar.style.display = 'block';
+}
+
+async function refreshSchemaCache() {
+  const btn = document.getElementById('schema-refresh-btn');
+  if (btn) { btn.textContent = '…'; btn.disabled = true; }
+  // Clear cache for current connection
+  const conn = getConn();
+  if (conn) delete _schemaCache[conn.slice(0,80)];
+  const which = document.getElementById('conn-select').value;
+  const schema = await fetchSchemaForAI();
+  updateSchemaStatusBar(schema, which);
+  if (btn) { btn.textContent = '↻ Schema'; btn.disabled = false; }
+  if (schema) {
+    setExecStatus('✓ Schema loaded: ' + (schema.tables?.length||0) + ' tables', 'var(--teal)');
+    setTimeout(()=>setExecStatus('',''), 3000);
+  }
+}
+
+async function fetchSchemaForAI() {
+  const conn = getConn();
+  if (!conn) return null;
+  // Return cached if available
+  const cacheKey = conn.slice(0, 80);
+  if (_schemaCache[cacheKey]) return _schemaCache[cacheKey];
+
+  try {
+    const url  = isFn(conn) ? conn : '/.netlify/functions/db-connect';
+    const body = isFn(conn) ? {action:'schema'} : {action:'schema', connectionString:conn};
+    const res  = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(30000)});
+    const data = await res.json().catch(()=>({}));
+    if (data.tables && data.tables.length) {
+      _schemaCache[cacheKey] = data;
+      return data;
+    }
+  } catch(e) { /* schema fetch failed — proceed without it */ }
+  return null;
+}
+
+function buildSchemaContext(schema, which) {
+  if (!schema || !schema.tables || !schema.tables.length) return '';
+  const dbName = schema.database || (which === 'target' ? 'Target DB' : 'Source DB');
+  const tableList = schema.tables.slice(0, 80).map(t => {
+    const cols = (t.columns || []).slice(0, 30).map(c => {
+      const flags = [c.isIdentity?'IDENTITY':null, c.nullable===false?'NOT NULL':null].filter(Boolean).join(', ');
+      return `    [${c.name}] ${c.type||''}${flags?' ('+flags+')':''}`;
+    }).join('\n');
+    return `  [${t.schema||'dbo'}].[${t.name}]${t.rowCount?' ('+t.rowCount.toLocaleString()+' rows)':''}\n${cols}`;
+  }).join('\n\n');
+  const truncated = schema.tables.length > 80 ? `\n  ... and ${schema.tables.length - 80} more tables` : '';
+  return `\n\n${which === 'target' ? 'TARGET' : 'SOURCE'} DATABASE SCHEMA (${dbName}):\n${tableList}${truncated}`;
+}
+
 async function askClaude() {
   const prompt = document.getElementById('ai-prompt').value.trim();
   if (!prompt) return;
@@ -683,36 +752,69 @@ async function askClaude() {
   const editor = document.getElementById('sql-editor');
   const selected = editor.value.substring(editor.selectionStart, editor.selectionEnd).trim();
   const currentSQL = selected || editor.value.trim();
+  const which = document.getElementById('conn-select').value;
 
   addAIMessage(prompt, 'user');
-  document.getElementById('ai-prompt').value='';
-  document.getElementById('ai-btn').disabled=true;
+  document.getElementById('ai-prompt').value = '';
+  document.getElementById('ai-btn').disabled = true;
+  setExecStatus('Fetching schema…', 'var(--amber)');
 
-  const systemPrompt = `You are a T-SQL expert helping with database migration scripts. The user is working with SQL Server / Azure SQL.
-Current connection: ${document.getElementById('conn-select').value} database.
-${currentSQL ? `Current SQL in editor:\n\`\`\`sql\n${currentSQL.slice(0,2000)}\n\`\`\`` : ''}
+  // Fetch schema for the active connection
+  const schema = await fetchSchemaForAI();
+  updateSchemaStatusBar(schema, which);
 
-When writing SQL:
-- Use proper T-SQL syntax
-- Use square bracket identifiers [schema].[table]
-- Include comments for complex logic
-- Be concise and practical
+  // Also fetch the other connection's schema for cross-db context
+  const c = CygenixConnections.get();
+  const otherConnStr = which === 'target'
+    ? c.srcConnString
+    : (c.tgtFnUrl ? c.tgtFnUrl+(c.tgtFnKey?'?code='+encodeURIComponent(c.tgtFnKey):'') : c.tgtConnString);
+  let otherSchema = null;
+  if (otherConnStr) {
+    const otherKey = otherConnStr.slice(0,80);
+    if (_schemaCache[otherKey]) {
+      otherSchema = _schemaCache[otherKey];
+    } else {
+      try {
+        const url  = isFn(otherConnStr) ? otherConnStr : '/.netlify/functions/db-connect';
+        const body = isFn(otherConnStr) ? {action:'schema'} : {action:'schema', connectionString:otherConnStr};
+        const res  = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(20000)});
+        const data = await res.json().catch(()=>({}));
+        if (data.tables) { _schemaCache[otherKey] = data; otherSchema = data; }
+      } catch(e) {}
+    }
+  }
 
-If you generate SQL, wrap it in a \`\`\`sql code block. Keep explanations brief.`;
+  setExecStatus('Asking Claude…', 'var(--amber)');
+
+  const schemaContext = buildSchemaContext(schema, which)
+    + buildSchemaContext(otherSchema, which === 'target' ? 'source' : 'target');
+
+  const systemPrompt = `You are a T-SQL expert helping with database migration scripts for SQL Server / Azure SQL.
+Active connection: ${which} database.${schemaContext}
+${currentSQL ? `\nCurrent SQL in editor:\n\`\`\`sql\n${currentSQL.slice(0,2000)}\n\`\`\`` : ''}
+
+Rules:
+- Always use the actual table and column names from the schema above — never invent placeholder names
+- Use [schema].[table] bracket notation
+- Write concise, practical T-SQL
+- Wrap any SQL you generate in a \`\`\`sql code block
+- If the schema above doesn't contain what the user needs, say so clearly`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2000,system:systemPrompt,messages:[{role:'user',content:prompt}]})
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:2000, system:systemPrompt, messages:[{role:'user',content:prompt}]})
     });
     const data = await res.json();
-    const text = data.content?.[0]?.text||'No response';
+    if (!res.ok) throw new Error(data.error?.message || res.statusText);
+    const text = data.content?.[0]?.text || 'No response';
     addAIMessage(text, 'assistant', true);
   } catch(e) {
-    addAIMessage('Error: '+e.message, 'assistant');
+    addAIMessage('Error: ' + e.message, 'assistant');
   } finally {
-    document.getElementById('ai-btn').disabled=false;
+    document.getElementById('ai-btn').disabled = false;
+    setExecStatus('', '');
   }
 }
 
