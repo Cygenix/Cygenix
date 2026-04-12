@@ -2753,6 +2753,15 @@ function selectTableFromDrop(which, value, label) {
         };
         $('src-table-stats').textContent = tbl.columns.length + ' columns · ' + (tbl.rowCount||'?').toLocaleString() + ' rows in source';
         $('src-fetch-panel') && ($('src-fetch-panel').style.display = 'block');
+
+        // Show and init JOIN builder
+        var joinPanel = $('con-join-panel');
+        if (joinPanel) joinPanel.style.display = 'block';
+        var allSrcTbls = (tableSearchData.src || []).filter(function(t){ return t.value !== value; });
+        var baseTbl = { fullName: tbl.schema+'.'+tbl.name, schema: tbl.schema, name: tbl.name, columns: tbl.columns };
+        initJoinBuilder('con-join-container', allSrcTbls, baseTbl, function(joins) {
+          // joins updated — used in fetchSourceRows SQL
+        });
       }
     }
     // Also sync the native select value so any other code reading it works
