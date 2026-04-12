@@ -91,6 +91,10 @@
     const configCollapsed = '';
     const mappingOpen = 'open';
     const mappingCollapsed = '';
+    const analysisOpen = ['insights.html','validation.html'].includes(page) ? 'open' : 'open';
+    const analysisCollapsed = '';
+    const reportsOpen = ['issues.html'].includes(page) ? 'open' : 'open';
+    const reportsCollapsed = '';
 
     return `
 <div class="cyg-nav-logo">
@@ -147,10 +151,23 @@
     </a>
   </div>
 
-  <a class="${isActive('insights.html')}" href="/insights.html" style="color:#a78bfa">
-    <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M3 14c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-    Data Insights
-  </a>
+  <!-- Analysis sub-menu -->
+  <div class="cyg-sub-label ${analysisOpen}" id="cyg-lbl-analysis" onclick="cygToggleSub('analysis')">
+    <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><path d="M1 9l3-3 2 2 3-4 2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Analysis
+    <span class="cyg-chev">▶</span>
+  </div>
+  <div class="cyg-sub ${analysisCollapsed}" id="cyg-sub-analysis" style="max-height:${analysisOpen?'160px':'0'}">
+    <a class="${isActive('insights.html')}" href="/insights.html" style="color:#a78bfa">
+      <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M3 14c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Data Insights
+    </a>
+    <a class="${isActive('validation.html')}" href="/validation.html" style="color:#f59e0b">
+      <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Validation
+    </a>
+  </div>
+
   <a class="${isActive('project-builder.html')}" href="/project-builder.html" style="color:#a78bfa">
     <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="#13161d" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
     Execute Jobs
@@ -164,25 +181,31 @@
     <svg viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h8v2H2z" stroke="currentColor" stroke-width="1.1" fill="none"/></svg>
     Inventory
   </a>
-  <a class="${isActive('validation.html')}" href="/validation.html" style="color:#f59e0b">
-    <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-    Validation
-  </a>
 </div>
 
 <div class="cyg-nav-section">
   <span class="cyg-nav-label">Outputs</span>
-  <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','schema')">
-    <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 3v10M11 3v10M1 7h14" stroke="currentColor" stroke-width="1.2"/></svg>
-    Schema SQL
-  </a>
-  <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','migration-sql')">
-    <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-    Migration SQL
-  </a>
-  <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','reports')">
-    <svg viewBox="0 0 16 16" fill="none"><path d="M3 2h10v12H3z" stroke="currentColor" stroke-width="1.2"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+
+  <!-- Reports sub-menu -->
+  <div class="cyg-sub-label ${reportsOpen}" id="cyg-lbl-reports" onclick="cygToggleSub('reports')">
+    <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><rect x="1.5" y="1" width="9" height="10" rx="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3.5 4h5M3.5 6h5M3.5 8h3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
     Reports
+    <span class="cyg-chev">▶</span>
+  </div>
+  <div class="cyg-sub ${reportsCollapsed}" id="cyg-sub-reports" style="max-height:${reportsOpen?'160px':'0'}">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','reports')" style="color:#a78bfa">
+      <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Conversion Report
+    </a>
+    <a class="${isActive('issues.html')}" href="/issues.html" style="color:#f04646">
+      <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v4M8 11v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Issue Management
+    </a>
+  </div>
+
+  <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','audit')">
+    <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+    Audit Log
   </a>
 </div>
 
