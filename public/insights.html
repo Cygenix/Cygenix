@@ -125,6 +125,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .sample-table td{padding:0.3rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .sample-table tr:last-child td{border-bottom:none}
 .sample-table tr:hover td{background:rgba(255,255,255,0.02)}
+.example-pill{background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:3px 10px;font-size:11px;color:var(--text2);cursor:pointer;font-family:var(--serif);transition:all 0.12s;white-space:nowrap}
+.example-pill:hover{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
+.qa-msg-user{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);align-self:flex-end;max-width:90%}
+.qa-msg-assistant{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;font-size:12px;color:var(--text2);line-height:1.7;white-space:pre-wrap}
 
 /* MIGRATION MAP CARD */
 .map-card{background:var(--bg2);border:0.5px solid var(--teal-bg);border-radius:var(--r-lg);margin-bottom:1.25rem;overflow:hidden}
@@ -226,6 +230,40 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
     </div>
   </div>
 
+  <!-- SCHEMA QUESTION PANEL -->
+  <div class="panel" id="schema-qa-panel" style="display:none;margin-bottom:1rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <div>
+        <div class="panel-title" style="margin-bottom:0.1rem">🔍 Ask about your database</div>
+        <div style="font-size:11px;color:var(--text3)">Explore your schema without running any queries — Claude reads the table and column names to answer</div>
+      </div>
+      <button onclick="toggleSchemaQA()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1" id="schema-qa-toggle">▲</button>
+    </div>
+    <!-- Example prompts -->
+    <div id="schema-qa-examples" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem">
+      <span style="font-size:10px;color:var(--text3);align-self:center;flex-shrink:0">Try:</span>
+      <button onclick="setSchemaQuestion('Show me all tables that likely contain financial data')" class="example-pill">💰 Financial tables</button>
+      <button onclick="setSchemaQuestion('Which tables contain customer or client information?')" class="example-pill">👤 Customer tables</button>
+      <button onclick="setSchemaQuestion('Find tables that look like they store dates or time data')" class="example-pill">📅 Date/time tables</button>
+      <button onclick="setSchemaQuestion('Which tables might contain personal or sensitive data?')" class="example-pill">🔒 Sensitive data</button>
+      <button onclick="setSchemaQuestion('Show me tables that look like lookup or reference tables')" class="example-pill">📋 Lookup tables</button>
+      <button onclick="setSchemaQuestion('Which tables have foreign key relationships based on column names?')" class="example-pill">🔗 Related tables</button>
+      <button onclick="setSchemaQuestion('What is the overall structure of this database?')" class="example-pill">🗂 Database overview</button>
+    </div>
+    <!-- Chat messages -->
+    <div id="schema-qa-messages" style="display:flex;flex-direction:column;gap:0.6rem;max-height:360px;overflow-y:auto;margin-bottom:0.75rem;padding-right:2px"></div>
+    <!-- Input -->
+    <div style="display:flex;gap:0.5rem;align-items:flex-end">
+      <textarea id="schema-qa-input" rows="2" placeholder="e.g. Show me all tables with financial data in them…"
+        style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;resize:none"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askSchemaQuestion()}"></textarea>
+      <button onclick="askSchemaQuestion()" id="schema-qa-btn"
+        style="background:var(--accent);border:none;border-radius:var(--r);padding:0.5rem 1rem;font-size:12px;color:white;cursor:pointer;font-family:var(--serif);align-self:flex-end;white-space:nowrap">
+        Ask Claude
+      </button>
+    </div>
+  </div>
+
   <!-- TABLE PICKER -->
   <div class="panel" id="table-picker-panel" style="display:none">
     <div class="panel-title">
@@ -298,6 +336,146 @@ function toggleApiKey(){
 
 
 
+
+// ── Schema Q&A ─────────────────────────────────────────────────────────────────
+let _schemaQAOpen = true;
+
+function toggleSchemaQA() {
+  _schemaQAOpen = !_schemaQAOpen;
+  const msgs  = document.getElementById('schema-qa-messages');
+  const ex    = document.getElementById('schema-qa-examples');
+  const inp   = document.getElementById('schema-qa-input');
+  const btn   = document.getElementById('schema-qa-btn');
+  const tog   = document.getElementById('schema-qa-toggle');
+  [msgs, ex, inp, btn].forEach(el => { if (el) el.style.display = _schemaQAOpen ? '' : 'none'; });
+  if (tog) tog.textContent = _schemaQAOpen ? '▲' : '▼';
+}
+
+function setSchemaQuestion(q) {
+  const inp = document.getElementById('schema-qa-input');
+  if (inp) { inp.value = q; inp.focus(); }
+}
+
+function buildFullSchemaContext() {
+  if (!allTables.length) return null;
+  const tableLines = allTables.map(t => {
+    const cols = (t.columns || []).slice(0, 25).map(c => {
+      const name = typeof c === 'string' ? c : c.name;
+      const type = typeof c === 'object' ? (c.type || '') : '';
+      return name + (type ? ' (' + type + ')' : '');
+    }).join(', ');
+    return '  ' + t.fullName + (t.rowCount ? ' [' + t.rowCount.toLocaleString() + ' rows]' : '') + ': ' + cols;
+  }).join('\n');
+  const dbName = srcSchema && srcSchema.database ? srcSchema.database : 'Source database';
+  return 'DATABASE: ' + dbName + '\nTABLES (' + allTables.length + '):\n' + tableLines;
+}
+
+function addQAMessage(text, role) {
+  const msgs = document.getElementById('schema-qa-messages');
+  if (!msgs) return;
+  const div = document.createElement('div');
+  div.className = role === 'user' ? 'qa-msg-user' : 'qa-msg-assistant';
+  div.textContent = text;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+  return div;
+}
+
+async function askSchemaQuestion() {
+  const inp      = document.getElementById('schema-qa-input');
+  const btn      = document.getElementById('schema-qa-btn');
+  const question = (inp ? inp.value : '').trim();
+  if (!question) return;
+
+  const apiKey = document.getElementById('api-key').value.trim();
+  if (!apiKey) { alert('Enter your Anthropic API key in the topbar.'); return; }
+
+  const schemaCtx = buildFullSchemaContext();
+  if (!schemaCtx) {
+    alert('Connect to a source database first — the schema is needed to answer questions about it.');
+    return;
+  }
+
+  addQAMessage(question, 'user');
+  inp.value = '';
+  btn.disabled = true;
+  btn.textContent = 'Thinking…';
+
+  const msgs = document.getElementById('schema-qa-messages');
+  const thinking = document.createElement('div');
+  thinking.className = 'qa-msg-assistant';
+  thinking.style.color = 'var(--text3)';
+  thinking.textContent = '…';
+  msgs.appendChild(thinking);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const systemPrompt = 'You are a database analyst helping a user explore and understand their database schema.\n'
+    + 'You have been given the full schema — all table names, column names, data types and row counts.\n'
+    + 'Answer questions about the database structure confidently and specifically.\n\n'
+    + 'When identifying tables:\n'
+    + '- Name the exact table (e.g. [dbo].[client])\n'
+    + '- Explain WHY you think it matches based on column names and naming patterns\n'
+    + '- Group related tables together\n'
+    + '- Be concise but thorough\n\n'
+    + schemaCtx;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: question }]
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error && data.error.message ? data.error.message : res.statusText);
+    const text = (data.content && data.content[0] ? data.content[0].text : '').trim();
+    thinking.textContent = text;
+    thinking.style.color = '';
+
+    // Offer to select any mentioned tables for analysis
+    const mentioned = allTables.filter(t =>
+      text.toLowerCase().includes(t.name.toLowerCase()) ||
+      text.toLowerCase().includes(t.fullName.toLowerCase())
+    );
+    if (mentioned.length > 0 && mentioned.length <= 20) {
+      const selectBtn = document.createElement('button');
+      selectBtn.textContent = '📋 Select these ' + mentioned.length + ' table(s) for analysis';
+      selectBtn.style.cssText = 'margin-top:0.5rem;display:block;background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);padding:4px 12px;font-size:11px;color:var(--purple);cursor:pointer;font-family:var(--serif)';
+      selectBtn.onclick = function() {
+        mentioned.forEach(function(t){ selectedIds.add(t.id); });
+        renderTablePicker();
+        checkReady();
+        var panel = document.getElementById('table-picker-panel');
+        if (panel) panel.scrollIntoView({ behavior: 'smooth' });
+        selectBtn.textContent = '✓ ' + mentioned.length + ' table(s) selected — scroll down to analyse';
+        selectBtn.disabled = true;
+      };
+      thinking.appendChild(selectBtn);
+    }
+  } catch(e) {
+    thinking.textContent = 'Error: ' + e.message;
+    thinking.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Ask Claude';
+  }
+}
+
+// Show the Q&A panel once tables are loaded
+function showSchemaQAPanel() {
+  var p = document.getElementById('schema-qa-panel');
+  if (p) p.style.display = 'block';
+}
+
 // ── DB helper ─────────────────────────────────────────────────────────────────
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
 
@@ -337,6 +515,7 @@ async function connectSrc(){
     renderTablePicker();
     document.getElementById('table-picker-panel').style.display = 'block';
     document.getElementById('empty-msg').style.display = 'block';
+    showSchemaQAPanel();
   } catch(e){
     status.textContent = '🔴 '+e.message;
     status.style.color = 'var(--red)';
