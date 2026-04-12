@@ -236,7 +236,7 @@ body.fullscreen .script-panel { display:none }
     </div>
 
     <!-- Editor area (upper) -->
-    <div class="editor-upper" id="editor-upper" style="height:60%">
+    <div class="editor-upper" id="editor-upper" style="flex:1;height:auto">
       <!-- Find bar (hidden by default) -->
       <div id="find-bar" class="find-bar" style="display:none">
         <input id="find-input" placeholder="Find…" oninput="findInEditor()" onkeydown="findKey(event)">
@@ -266,7 +266,7 @@ body.fullscreen .script-panel { display:none }
     <div class="resize-handle" id="resize-handle"></div>
 
     <!-- Results panel (lower third) -->
-    <div class="results-bottom" id="results-bottom" style="height:40%">
+    <div class="results-bottom" id="results-bottom" style="height:36px">
       <div class="results-bottom-tabs">
         <div class="results-bottom-tab active" onclick="switchBottomTab('results')" id="btab-results">📊 Results</div>
         <div class="results-bottom-tab" onclick="switchBottomTab('history')" id="btab-history">🕐 History</div>
@@ -488,6 +488,7 @@ function renderResults(rows, ms, sql) {
   const cols = Object.keys(rows[0]);
   lastResults = {rows, cols, ms};
   document.getElementById('results-toolbar').style.display = 'flex';
+  expandResults();
   resultsView = 'row';
   document.getElementById('btn-row-view').classList.add('active');
   document.getElementById('btn-col-view').classList.remove('active');
@@ -541,6 +542,28 @@ function clearResults() {
   const toolbar = document.getElementById('results-toolbar');
   if (toolbar) toolbar.style.display = 'none';
   lastResults = {rows:[], cols:[], ms:0};
+  // Collapse panel when cleared
+  collapseResults();
+}
+
+function collapseResults() {
+  const rb = document.getElementById('results-bottom');
+  const eu = document.getElementById('editor-upper');
+  if (!rb || !eu) return;
+  rb.style.height = '36px';
+  eu.style.flex   = '1';
+  eu.style.height = 'auto';
+}
+
+function expandResults() {
+  const rb = document.getElementById('results-bottom');
+  const eu = document.getElementById('editor-upper');
+  if (!rb || !eu) return;
+  const paneH = document.getElementById('editor-pane')?.offsetHeight || window.innerHeight - 52;
+  const resultH = Math.max(200, Math.round(paneH * 0.38));
+  rb.style.height = resultH + 'px';
+  eu.style.flex   = 'none';
+  eu.style.height = (paneH - resultH - 5) + 'px';
 }
 
 // ── Bottom panel controls ─────────────────────────────────────────────────────
@@ -556,16 +579,14 @@ function switchBottomTab(tab) {
 
 let resultsCollapsed = false;
 function toggleResultsPane() {
-  const rb = document.getElementById('results-bottom');
-  const eu = document.getElementById('editor-upper');
   const btn = document.getElementById('results-toggle');
   resultsCollapsed = !resultsCollapsed;
   if (resultsCollapsed) {
-    rb.style.height = '36px'; eu.style.height = 'calc(100% - 36px - 5px)';
-    btn.textContent = '⌄'; btn.title = 'Expand results';
+    collapseResults();
+    if (btn) { btn.textContent = '⌄'; btn.title = 'Expand results'; }
   } else {
-    rb.style.height = '40%'; eu.style.height = '60%';
-    btn.textContent = '⌃'; btn.title = 'Collapse results';
+    expandResults();
+    if (btn) { btn.textContent = '⌃'; btn.title = 'Collapse results'; }
   }
 }
 
@@ -1170,9 +1191,10 @@ function copyResultsForExcel() {
     const newUpperH = Math.max(80, Math.min(totalH - 80, startUpperH + delta));
     const newLowerH = totalH - newUpperH - 5;
     upper.style.height = newUpperH + 'px';
-    lower.style.height = newLowerH + 'px';
     upper.style.flex = 'none';
+    lower.style.height = newLowerH + 'px';
     lower.style.flex = 'none';
+    resultsCollapsed = false;
   });
   document.addEventListener('mouseup', () => {
     if (!dragging) return;
