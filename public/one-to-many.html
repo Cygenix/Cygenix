@@ -1644,17 +1644,19 @@ async function aiJoinHelp(i) {
   const join = window._joinState[i];
   if (!join.table) { alert('Select a table to join first.'); return; }
 
-  const apiKey = (localStorage.getItem('cygenix_api_key') || '').trim();
-  if (!apiKey) {
-    const k = prompt('Enter your Anthropic API key for AI JOIN help:');
-    if (!k) return;
-    localStorage.setItem('cygenix_api_key', k);
+  // Read API key the same way as the rest of OTM (topbar input first, then localStorage)
+  const keyEl = document.getElementById('otm-api-key');
+  const key = (keyEl?.value || localStorage.getItem('cygenix_api_key') || '').trim();
+  if (!key) {
+    alert('Enter your Anthropic API key in the topbar field.');
+    if (keyEl) keyEl.focus();
+    return;
   }
-  const key = localStorage.getItem('cygenix_api_key');
+  localStorage.setItem('cygenix_api_key', key);
 
-  const base    = window._joinBaseTable;
+  const base     = window._joinBaseTable;
   const baseCols = (base?.columns || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
-  const joinCols = (join.cols || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
+  const joinCols = (join.cols  || []).map(c => typeof c === 'string' ? c : c.name).slice(0, 30);
 
   const aiPrompt = [
     'You are a T-SQL expert. Write the ON clause for a JOIN between two tables.',
@@ -1670,16 +1672,18 @@ async function aiJoinHelp(i) {
     'Example output: [dbo].[client].[clnum] = [dbo].[contact].[clnum]'
   ].join('\n');
 
-  // Suspend _onJoinChange and _rerenderJoins during the API call
-  // so the DOM isn't wiped while we're waiting for Claude
+  // Suspend _onJoinChange so DOM isn't wiped while awaiting Claude
   const savedOnChange = window._onJoinChange;
   window._onJoinChange = null;
 
-  // Show thinking state
+  // Show thinking state in the ON input
   const getInput = () => document.getElementById('join-on-' + i);
   const input = getInput();
   const oldVal = input ? input.value : '';
   if (input) { input.value = 'Claude is thinking…'; input.disabled = true; }
+
+  let text = '';
+  let errMsg = '';
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1697,26 +1701,30 @@ async function aiJoinHelp(i) {
       })
     });
     const data = await res.json();
-    const text = (data.content?.[0]?.text || '').trim().replace(/^ON\s+/i, '').replace(/;$/, '');
-
-    // Store in state
-    window._joinState[i].on = text;
-
-    // Restore change handler before re-rendering
-    window._onJoinChange = savedOnChange;
-
-    // Re-render the join builder so the input reflects the new value from state
-    renderJoinBuilder(window._joinContainerId, window._joinAllTables || [], window._joinBaseTable);
-
-    // Now notify downstream (source cols, target cards) — join builder is stable
-    if (window._onJoinChange) window._onJoinChange(window._joinState);
-
+    if (!res.ok) throw new Error((data.error?.message || data.type || res.statusText) + ' (status ' + res.status + ')');
+    text = (data.content?.[0]?.text || '').trim().replace(/^ON\s+/i, '').replace(/;$/, '').trim();
+    if (!text) throw new Error('Claude returned an empty response');
   } catch(e) {
-    window._joinState[i].on = oldVal;
-    window._onJoinChange = savedOnChange;
-    renderJoinBuilder(window._joinContainerId, window._joinAllTables || [], window._joinBaseTable);
-    alert('AI error: ' + e.message);
+    errMsg = e.message;
   }
+
+  // Always restore the change handler
+  window._onJoinChange = savedOnChange;
+
+  if (errMsg) {
+    // Restore old value and show error
+    window._joinState[i].on = oldVal;
+    renderJoinBuilder(window._joinContainerId, window._joinAllTables || [], window._joinBaseTable);
+    alert('AI JOIN help error: ' + errMsg);
+    return;
+  }
+
+  // Store result and re-render so input shows the new value
+  window._joinState[i].on = text;
+  renderJoinBuilder(window._joinContainerId, window._joinAllTables || [], window._joinBaseTable);
+
+  // Notify downstream once — join builder is already stable
+  if (window._onJoinChange) window._onJoinChange(window._joinState);
 }
 
 function initJoinBuilder(containerId, allTables, baseTable, onJoinChange) {
