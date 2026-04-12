@@ -51,7 +51,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .editor-toolbar{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex-shrink:0}
 .editor-upper{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:120px}
 .editor-wrap{position:relative;flex:1;overflow:hidden}
-#sql-editor{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.7;border:none;outline:none;resize:none;padding:1rem 1.25rem;tab-size:2}
+#sql-editor{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.7;border:none;outline:none;resize:none;padding:1rem 1.25rem;tab-size:2;overflow-x:hidden}
 .editor-status{padding:0.35rem 1rem;background:var(--bg3);border-top:0.5px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:flex;gap:1rem}
 /* Resize handle */
 .resize-handle{height:5px;background:var(--border);cursor:row-resize;flex-shrink:0;transition:background 0.15s;position:relative}
@@ -129,10 +129,12 @@ body.fullscreen .script-panel { display:none }
 .editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative}
 .line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre}
 #sql-editor{flex:1;min-width:0}
+#sql-editor::-webkit-scrollbar-horizontal { display:none }
+#sql-editor { scrollbar-width:thin }
 
 /* ── WORD WRAP toggle ──────────────────────────────────────────────────────── */
 #sql-editor.wrap-on{white-space:pre-wrap;word-break:break-all}
-#sql-editor.wrap-off{white-space:pre;overflow-x:auto}
+#sql-editor.wrap-off{white-space:pre;overflow-x:hidden}
 
 /* ── STATUS PILLS ──────────────────────────────────────────────────────────── */
 .status-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:100px;font-size:9px;font-family:var(--mono);background:var(--bg4);color:var(--text3);border:0.5px solid var(--border)}
