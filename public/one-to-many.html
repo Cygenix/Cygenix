@@ -456,6 +456,8 @@ function selectSrcTable(value){
   initJoinBuilder('otm-join-container', srcAllTables.filter(st=>st.value!==value), srcTable, function(joins){
     // Joins changed — rebuild source column list to include joined columns
     renderSrcColListWithJoins();
+    // Also update each target card's source column dropdowns
+    renderTargetCards();
   });
 }
 function renderSrcColListWithJoins() {
@@ -468,13 +470,34 @@ function renderSrcColList(extraCols){
   if(!srcTable) return;
   const used=new Set();
   targetTables.forEach(tt=>tt.mappings.forEach(m=>{if(m.srcCol) used.add(m.srcCol);}));
-  document.getElementById('src-col-list').innerHTML=srcTable.columns.map(c=>`
+
+  // Base table columns
+  let items = srcTable.columns.map(c=>`
     <div class="src-col-item ${used.has(c.name)?'used':''}" draggable="true"
       ondragstart="dragCol('${c.name}')"
       onclick="quickMap('${c.name}')">
       <span>${c.name}</span>
       <span class="src-col-type">${c.type||''}</span>
     </div>`).join('');
+
+  // Joined table columns — shown in a separate group
+  const joinCols = (typeof getJoinColumns === 'function') ? getJoinColumns() : (extraCols || []);
+  if (joinCols.length) {
+    items += '<div style="font-size:10px;color:var(--teal);text-transform:uppercase;letter-spacing:0.07em;padding:6px 0 3px;margin-top:6px;border-top:0.5px solid var(--border)">Joined columns</div>';
+    items += joinCols.map(c => {
+      const colName = c.name || c;
+      const colType = c.type || '';
+      return `<div class="src-col-item ${used.has(colName)?'used':''}" draggable="true"
+        style="opacity:0.85;border-left:2px solid var(--teal)"
+        ondragstart="dragCol('${colName}')"
+        onclick="quickMap('${colName}')">
+        <span>${colName}</span>
+        <span class="src-col-type">${colType}</span>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('src-col-list').innerHTML = items;
 }
 
 // ── Target table searchable dropdown ─────────────────────────────────────────
@@ -535,7 +558,12 @@ function renderTargetCards(){
   countBadge.textContent = targetTables.length;
 
   container.innerHTML = targetTables.map((tt,ti) => {
-    const srcColOpts = (srcTable?.columns||[]).map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`).join('');
+    const joinedSrcCols = (typeof getJoinColumns === 'function') ? getJoinColumns() : [];
+    const srcColOpts = [
+      ...(srcTable?.columns||[]).map(c=>`<option value="${esc(c.name)}">${esc(c.name)}</option>`),
+      ...(joinedSrcCols.length ? ['<option disabled>── Joined ──</option>'] : []),
+      ...joinedSrcCols.map(c=>`<option value="${esc(c.name)}">${esc(c.name)} [joined]</option>`)
+    ].join('');
     const tgtColOpts = tt.columns.map(c=>`<option value="${esc(c.name)}">${esc(c.name)}${c.isIdentity?' (IDENTITY)':''}</option>`).join('');
     const tgtColOptsBlank = '<option value="">— skip —</option>' + tgtColOpts;
     const srcColOptsBlank = '<option value="">— source col —</option>' + srcColOpts;
@@ -546,6 +574,7 @@ function renderTargetCards(){
         <select class="map-select" onchange="updateMapping(${ti},${mi},'srcCol',this.value)">
           <option value="">— source col —</option>
           ${(srcTable?.columns||[]).map(c=>`<option ${m.srcCol===c.name?'selected':''} value="${esc(c.name)}">${esc(c.name)}${c.type?' ('+esc(c.type)+')':''}</option>`).join('')}
+          ${(typeof getJoinColumns==='function'?getJoinColumns():[]).map(c=>`<option ${m.srcCol===c.name?'selected':''} value="${esc(c.name)}">${esc(c.name)}${c.type?' ('+esc(c.type)+')':''} [joined]</option>`).join('')}
         </select>
         <div class="map-row-label" style="color:var(--accent)">→</div>
         <select class="map-select" onchange="updateMapping(${ti},${mi},'tgtCol',this.value)">

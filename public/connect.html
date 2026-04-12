@@ -399,7 +399,8 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
           <div class="panel-title">Column mapping</div>
           <div class="panel-sub" style="margin-bottom:0">Claude has mapped source columns to target columns. Review and adjust.</div>
         </div>
-        <div style="display:flex;gap:0.75rem">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(45,212,191,0.3)">+ Joined column</button>
           <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()" id="remap-btn">Re-map with Claude</button>
           <div class="badge badge-green" id="map-stats"></div>
         </div>
@@ -1035,9 +1036,20 @@ async function fetchSourceRows() {
   const whereClause = whereFilter ? ' WHERE ' + whereFilter : '';
   const joinSQL = (typeof getJoinSQL === 'function') ? getJoinSQL() : '';
   const joinClause = joinSQL ? ' ' + joinSQL : '';
-  const sql = limit > 0
-    ? 'SELECT TOP ' + limit + ' * FROM ' + safeSrc + joinClause + whereClause
-    : 'SELECT * FROM ' + safeSrc + joinClause + whereClause;
+  // Build SELECT list: base table * plus explicit joined columns
+  const joinedCols = (window._joinState||[])
+    .filter(function(j){ return j.table && j.cols && j.cols.length; })
+    .flatMap(function(j){
+      var parts = j.table.split('.');
+      var alias = parts[parts.length-1];
+      return j.cols.map(function(c){
+        var cn = typeof c==='string'?c:c.name;
+        return '['+j.tableAlias.replace(/[[\]]/g,'').split('].').join('].[') + '].[' + cn + '] AS [' + alias + '.' + cn + ']';
+      });
+    });
+  var selectList = joinedCols.length ? '*, ' + joinedCols.join(', ') : '*';
+  var sqlBase = 'SELECT ' + (limit > 0 ? 'TOP ' + limit + ' ' : '') + selectList + ' FROM ' + safeSrc + joinClause + whereClause;
+  const sql = sqlBase;
 
   showStatus('conn-status', 'Fetching ' + (limit||'all') + ' rows from ' + safeSrc + '…', 'info');
   try {
@@ -1464,7 +1476,9 @@ async function askClaudeForMapping(src, tgt, apiKey){
 
 SOURCE TABLE: ${src.schemaName ? src.schemaName+'.'+src.tableName : src.tableName}
 Source columns and inferred types:
-${srcColDefs.map(c => `  ${c.name||c}: ${c.type||srcTypes[c.name||c]||'unknown'}`).join('\n')}
+${srcColDefs.map(c => `  ${c.name||c}: ${c.type||srcTypes[c.name||c]||'unknown'}`).join('\n')}${(window._joinState||[]).filter(j=>j.table&&j.cols&&j.cols.length).map(j=>
+  '\n\nJOINED TABLE: '+j.table+'\n'+j.cols.map(c=>'  '+(typeof c==='string'?c:c.name)+': '+(typeof c==='string'?'unknown':c.type||'unknown')).join('\n')
+).join('')}
 
 Sample source data (first 3 rows):
 ${JSON.stringify(srcSample.slice(0,3), null, 2)}
@@ -3265,6 +3279,7 @@ function _rerenderJoins() {
   const tables = window._joinAllTables || [];
   renderJoinBuilder(window._joinContainerId, tables, base);
   if (window._onJoinChange) window._onJoinChange(window._joinState);
+  if (typeof _updateJoinColBtn === 'function') _updateJoinColBtn();
 }
 
 async function aiJoinHelp(i) {
@@ -3338,6 +3353,111 @@ function refreshJoinBuilder(allTables, baseTable) {
   _rerenderJoins();
 }
 
+
+// ── Joined column picker ──────────────────────────────────────────────────────
+function showJoinColPicker() {
+  const joins = (window._joinState || []).filter(j => j.table && j.cols && j.cols.length);
+  if (!joins.length) {
+    alert('Add at least one JOIN with a table selected first — then its columns will be available here.');
+    return;
+  }
+  const tableSel = document.getElementById('join-col-table-sel');
+  tableSel.innerHTML = '<option value="">— select table —</option>' +
+    joins.map((j, i) => `<option value="${i}">${j.table}</option>`).join('');
+  document.getElementById('join-col-col-sel').innerHTML = '<option value="">— select column —</option>';
+  document.getElementById('join-col-modal').style.display = 'flex';
+}
+
+function renderJoinColOptions() {
+  const idx  = parseInt(document.getElementById('join-col-table-sel').value);
+  const join = (window._joinState || [])[idx];
+  const colSel = document.getElementById('join-col-col-sel');
+  if (!join || isNaN(idx)) { colSel.innerHTML = '<option value="">— select column —</option>'; return; }
+  colSel.innerHTML = '<option value="">— select column —</option>' +
+    (join.cols || []).map(c => {
+      const name = typeof c === 'string' ? c : c.name;
+      const type = typeof c === 'string' ? '' : (c.type ? ' ('+c.type+')' : '');
+      return `<option value="${name}">${name}${type}</option>`;
+    }).join('');
+}
+
+function addJoinColToMapping() {
+  const idx     = parseInt(document.getElementById('join-col-table-sel').value);
+  const colName = document.getElementById('join-col-col-sel').value;
+  const join    = (window._joinState || [])[idx];
+  if (!join || !colName) { alert('Select a table and column.'); return; }
+
+  const allTbls  = window._joinAllTables || [];
+  const joinTbl  = allTbls.find(t => t.value === join.table);
+  const colDef   = (join.cols || []).find(c => (typeof c === 'string' ? c : c.name) === colName);
+  const colType  = typeof colDef === 'string' ? 'unknown' : (colDef?.type || 'unknown');
+
+  // Prefix with table alias so it's unambiguous in SQL
+  const tblParts  = join.table.split('.');
+  const tblAlias  = tblParts[tblParts.length - 1]; // e.g. "contact"
+  const qualifiedCol = tblAlias + '.' + colName;   // e.g. "contact.email"
+
+  // Check not already in mapping
+  if (S.columnMapping.find(m => m.srcCol === qualifiedCol || m.srcCol === colName)) {
+    alert(colName + ' is already in the mapping.');
+    return;
+  }
+
+  // Add a new LOW-confidence mapping row
+  S.columnMapping.push({
+    srcCol:       qualifiedCol,
+    srcType:      colType,
+    tgtCol:       null,
+    tgtType:      null,
+    transform:    'NONE',
+    transformExpr: null,
+    confidence:   'LOW',
+    note:         'From joined table: ' + join.table,
+    fromJoin:     join.table
+  });
+
+  document.getElementById('join-col-modal').style.display = 'none';
+  renderMappingTable();
+}
+
+// Update add-join-col-btn visibility whenever joins change
+function _updateJoinColBtn() {
+  const btn = document.getElementById('add-join-col-btn');
+  if (!btn) return;
+  const hasJoins = (window._joinState || []).some(j => j.table && j.cols && j.cols.length);
+  btn.style.display = hasJoins ? 'inline-flex' : 'none';
+}
+
+// Patch initJoinBuilder to call _updateJoinColBtn on changes
+const _origOnJoinChange = window._onJoinChange;
+window.addEventListener('joinStateChange', _updateJoinColBtn);
+
 </script>
+
+<!-- Join column picker modal -->
+<div id="join-col-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;align-items:center;justify-content:center;padding:1rem">
+  <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:100%;max-width:480px;padding:1.25rem;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div style="font-size:13px;font-weight:600">Add column from joined table</div>
+      <button onclick="document.getElementById('join-col-modal').style.display='none'" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div style="margin-bottom:0.75rem">
+      <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem">Joined table</label>
+      <select id="join-col-table-sel" onchange="renderJoinColOptions()" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:6px 10px;font-size:12px;color:var(--text);font-family:var(--mono);outline:none">
+        <option value="">— select table —</option>
+      </select>
+    </div>
+    <div style="margin-bottom:1rem">
+      <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem">Column</label>
+      <select id="join-col-col-sel" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:6px 10px;font-size:12px;color:var(--text);font-family:var(--mono);outline:none">
+        <option value="">— select column —</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+      <button onclick="document.getElementById('join-col-modal').style.display='none'" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:6px 16px;font-size:12px;color:var(--text3);cursor:pointer">Cancel</button>
+      <button onclick="addJoinColToMapping()" style="background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:var(--r);padding:6px 16px;font-size:12px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add to mapping</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
