@@ -2205,15 +2205,12 @@ function editJob(jobId) {
   if (!job) return;
   // Route to the correct editor based on jobType
   switch (job.jobType) {
-    case 'one-to-many':
-      window.location.href = '/one-to-many.html?edit=' + encodeURIComponent(jobId);
-      break;
     case 'sql':
       window.location.href = '/sql-editor.html?edit=' + encodeURIComponent(jobId);
       break;
     default:
-      // Standard column-mapping job → job-editor
-      window.location.href = '/job-editor.html?id=' + encodeURIComponent(jobId);
+      // All mapping jobs (single-map, one-to-many, migration) → mapper.html
+      window.location.href = '/mapper.html?edit=' + encodeURIComponent(jobId);
   }
 }
 
