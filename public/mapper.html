@@ -1050,7 +1050,7 @@ function generateSingleSQL(silent){
   const verifySQL=`SELECT '${srcDB?srcDB+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFullQ}${where?' WHERE '+where:''}\nUNION ALL\nSELECT '${tgtDB?tgtDB+'.':''}${tgtTable.fullName}', COUNT(*) FROM ${tgtFullQ};`;
 
   generatedSQL={insert:sql, schema:schemaSQL, verify:verifySQL};
-  showSQLOutput(sql, warnings);
+  showSQLOutput(sql, warnings, !silent);
   $('save-job-btn').disabled=false;
   $('tab-schema').style.display='';
   $('tab-verify').style.display='';
@@ -1438,14 +1438,14 @@ function generateOTMSQL(){
   generatedSQL={insert:sql, schema:'', verify:verifySQL};
 
   const warnings=truncWarnings.map(w=>`[${w.srcCol}] → [${w.tgtTable}.${w.tgtCol}] truncated to ${w.tgtLen} chars via LEFT()`);
-  showSQLOutput(sql, warnings);
+  showSQLOutput(sql, warnings, true);
   $('save-job-btn').disabled=false;
   $('tab-schema').style.display='none';
   $('tab-verify').style.display='none';
 }
 
 // ── SQL output panel ──────────────────────────────────────────────────────────
-function showSQLOutput(sql, warnings=[]){
+function showSQLOutput(sql, warnings=[], scroll=false){
   $('sql-panel').style.display='block';
   $('sql-output').textContent=sql;
   currentSQLTab='sql';
@@ -1456,7 +1456,7 @@ function showSQLOutput(sql, warnings=[]){
   } else {
     $('sql-warnings').style.display='none';
   }
-  $('sql-panel').scrollIntoView({behavior:'smooth', block:'start'});
+  if(scroll) $('sql-panel').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 function showSQLTab(tab){
