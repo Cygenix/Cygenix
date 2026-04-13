@@ -328,6 +328,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
                   <option value="unmapped">Unmapped only</option>
                   <option value="fixed">Fixed value</option>
                 </select>
+                <button class="btn btn-ghost btn-sm" id="btn-toggle-unmapped" onclick="toggleUnmappedCols()" title="Show or hide rows with no source column and no fixed value">👁 Hide Unmapped</button>
                 <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">✕ Clear</button>
                 <span id="map-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
               </div>
@@ -823,11 +824,14 @@ function applyMapFilter(){
   rows.forEach((tr,i)=>{
     const m=columnMapping[i];
     if(!m){ tr.style.display='none'; return; }
+    const isUnmapped = !m.srcCol && !m.literalValue;
+    // Hide unmapped toggle
+    if(_hidingUnmapped && isUnmapped){ tr.style.display='none'; return; }
     // Text filter: check source and target col names
     const textOk = !q || (m.srcCol||'').toLowerCase().includes(q) || (m.tgtCol||'').toLowerCase().includes(q);
     // Match filter
     let matchOk = true;
-    if(matchF==='unmapped') matchOk = !m.srcCol && !m.literalValue;
+    if(matchF==='unmapped') matchOk = isUnmapped;
     else if(matchF==='fixed') matchOk = !!(m.literalValue);
     else if(matchF) matchOk = m.match===matchF;
     const show = textOk && matchOk;
@@ -836,7 +840,7 @@ function applyMapFilter(){
   });
   const total = columnMapping.length;
   const fc=$('map-filter-count');
-  if(fc) fc.textContent = (q||matchF) ? visible+' of '+total+' shown' : '';
+  if(fc) fc.textContent = (q||matchF||_hidingUnmapped) ? visible+' of '+total+' shown' : '';
 }
 
 function removeUnmappedCols(){
@@ -861,6 +865,19 @@ function undoRemoveUnmappedCols(){
   tryAutoGenSQL();
   $('undo-remove-btn').style.display = 'none';
   showStatus('Restored unmapped columns','info');
+}
+
+let _hidingUnmapped = false;
+
+function toggleUnmappedCols(){
+  _hidingUnmapped = !_hidingUnmapped;
+  const btn = $('btn-toggle-unmapped');
+  if(btn){
+    btn.textContent = _hidingUnmapped ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.style.color = _hidingUnmapped ? 'var(--amber)' : '';
+    btn.style.borderColor = _hidingUnmapped ? 'rgba(245,158,11,0.4)' : '';
+  }
+  applyMapFilter();
 }
 
 function clearMapFilter(){
@@ -933,6 +950,10 @@ function renderMappingTable(){
       <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
     </tr>`;
   }).join('');
+  // Reset hide-unmapped toggle when mapping rebuilt
+  _hidingUnmapped = false;
+  const btn = $('btn-toggle-unmapped');
+  if(btn){ btn.textContent='👁 Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
   // Re-apply any active filter after re-render
   applyMapFilter();
 }
