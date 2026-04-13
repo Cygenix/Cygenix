@@ -137,13 +137,9 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${mappingCollapsed}" id="cyg-sub-mapping" style="max-height:${mappingOpen?'200px':'0'}">
-    <a class="${isActive('connect.html')}" href="/connect.html" style="color:#2dd4bf">
-      <svg viewBox="0 0 16 16" fill="none"><path d="M2 8h12M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Simple Map
-    </a>
-    <a class="${isActive('one-to-many.html')}" href="/one-to-many.html" style="color:#2dd4bf">
-      <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.1"/><rect x="10" y="1" width="5" height="3" rx="1" stroke="currentColor" stroke-width="1.1"/><rect x="10" y="6" width="5" height="3" rx="1" stroke="currentColor" stroke-width="1.1"/><rect x="10" y="11" width="5" height="3" rx="1" stroke="currentColor" stroke-width="1.1"/><path d="M6 4h2.5M6 4c0 3.5 2.5 3.5 2.5 5.5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
-      One-to-Many
+    <a class="${isActive('mapper.html')}" href="/mapper.html" style="color:#2dd4bf">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h5M2 8h5M2 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M9 4h5M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M7 4l2 4-2 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Mapper
     </a>
     <a class="${isActive('sql-editor.html')}" href="/sql-editor.html" style="color:#2dd4bf">
       <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6l3 2-3 2M9 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
