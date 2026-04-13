@@ -321,9 +321,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
                 <table class="map-table" id="mapping-table">
                   <thead><tr>
                     <th>Source column</th><th>Src type</th>
-                    <th>Target column</th><th>Tgt type</th>
+                    <th>Target column ▲</th><th>Tgt type</th>
                     <th>Transform</th>
-                    <th title="Type a fixed SQL value to use instead of the source column (e.g. N'Enterprise', 0, GETDATE(), NULL)">Fixed value</th>
+                    <th title="Type a fixed SQL value instead of source (e.g. N'Enterprise', 0, GETDATE(), NULL)">Fixed value</th>
                     <th>Match</th><th></th>
                   </tr></thead>
                   <tbody id="mapping-tbody"></tbody>
@@ -720,10 +720,11 @@ async function buildMappingIfReady(){
   $('mapping-wrap').style.display='block';
   $('single-empty').style.display='none';
   renderSrcColList();
-  const mapped = columnMapping.filter(m=>m.tgtCol).length;
+  const mapped = columnMapping.filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length;
+  const total  = columnMapping.filter(m=>m.tgtCol).length;
   $('map-stats').style.display='inline';
-  $('map-stats').textContent = mapped+' / '+columnMapping.length+' mapped';
-  showStatus('Mapping ready — '+mapped+' columns matched','info');
+  $('map-stats').textContent = mapped+' / '+total+' target cols mapped';
+  showStatus('Mapping ready — '+mapped+' of '+total+' target columns matched','info');
 }
 
 async function remapWithClaude(){
@@ -745,9 +746,10 @@ async function askClaudeForMapping(src, tgt, apiKey){
   const prompt = 'You are a data migration expert. Map source columns to target columns.\n\n'+
     'Source table: '+src.fullName+'\nSource columns:\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
     'Target table: '+tgt.fullName+'\nTarget columns:\n'+tgtCols.map(c=>'  '+c).join('\n')+'\n\n'+
-    'Return a JSON array only. Each element: {"srcCol":"name","tgtCol":"name","transform":"NONE","match":"HIGH|MEDIUM|LOW|SKIP","note":"reason"}\n'+
-    'Include every source column. Use "SKIP" match and empty tgtCol if no good match exists.\n'+
-    'Transforms: NONE | TRIM | UPPER | LOWER | CAST | CUSTOM\n'+
+    'Return a JSON array only — ONE ENTRY PER TARGET COLUMN (not per source column).\n'+
+    'Each element: {"srcCol":"matching source col name or empty string","tgtCol":"target col name","transform":"NONE","match":"HIGH|MEDIUM|LOW|","note":"reason"}\n'+
+    'Every non-identity target column must appear exactly once. Leave srcCol empty if no match.\n'+
+    'Transforms: NONE | TRIM | UPPER | LOWER | CAST\n'+
     'Return ONLY the JSON array, no explanation.';
   const res = await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
@@ -762,35 +764,55 @@ async function askClaudeForMapping(src, tgt, apiKey){
 }
 
 function autoMap(src, tgt){
+  // Drive off TARGET columns so every target field appears in the mapping table.
   const srcCols = src.columns.map(c=>typeof c==='string'?{name:c,type:''}:c);
-  return srcCols.map(sc=>{
-    const exact = tgt.columns.find(tc=>tc.name.toLowerCase()===sc.name.toLowerCase());
-    const fuzzy = !exact && tgt.columns.find(tc=>tc.name.toLowerCase().includes(sc.name.toLowerCase())||sc.name.toLowerCase().includes(tc.name.toLowerCase()));
-    return {srcCol:sc.name, tgtCol:(exact||fuzzy)?.name||'', transform:'NONE', match:exact?'HIGH':fuzzy?'MEDIUM':''};
+  return tgt.columns.filter(tc=>!tc.isIdentity).map(tc=>{
+    const exact = srcCols.find(sc=>sc.name.toLowerCase()===tc.name.toLowerCase());
+    const fuzzy = !exact && srcCols.find(sc=>
+      sc.name.toLowerCase().includes(tc.name.toLowerCase())||
+      tc.name.toLowerCase().includes(sc.name.toLowerCase()));
+    const sc = exact||fuzzy||null;
+    return { srcCol:sc?.name||'', tgtCol:tc.name, transform:'NONE',
+             match:exact?'HIGH':fuzzy?'MEDIUM':sc?'LOW':'' };
   });
 }
+
+// Parse numeric length from SQL type e.g. NVARCHAR(50)->50, NVARCHAR(MAX)->Infinity
+function parseTypeLen(t){ const m=(t||'').match(/\((MAX|\d+)\)/i); if(!m) return Infinity; return m[1].toUpperCase()==='MAX'?Infinity:parseInt(m[1]); }
+function isCharType(t){ return /^(N?VARCHAR|N?CHAR|TEXT|NTEXT)/i.test(t||''); }
 
 function renderMappingTable(){
   if(!tgtTable) return;
   const tgtCols = tgtTable.columns||[];
   const tbody=$('mapping-tbody'); if(!tbody) return;
+  const srcColOpts = (srcTable?.columns||[]).map(c=>{const n=typeof c==='string'?c:c.name; return `<option value="${esc(n)}">${esc(n)}</option>`;}).join('');
   tbody.innerHTML = columnMapping.map((m,i)=>{
-    const srcDef = srcTable?.columns.find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
-    const srcType = typeof srcDef==='object'?srcDef.type:'';
+    const srcDef = (srcTable?.columns||[]).find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
+    const srcType = srcDef&&typeof srcDef==='object'?srcDef.type:'';
     const tgtDef = tgtCols.find(c=>c.name===m.tgtCol);
+    const tgtType = tgtDef?.type||'';
     const matchColor = m.match==='HIGH'?'var(--green)':m.match==='MEDIUM'?'var(--amber)':m.match==='LOW'?'var(--red)':'var(--text3)';
     const hasFixed = !!(m.literalValue !== undefined && m.literalValue !== '');
-    const rowBg = hasFixed ? 'background:rgba(45,212,191,0.04)' : '';
-    return `<tr style="${rowBg}">
-      <td style="font-family:var(--mono);color:${hasFixed?'var(--text3)':'var(--text)'};${hasFixed?'text-decoration:line-through;font-style:italic':''}">
-        ${esc(m.srcCol)||'<span style="color:var(--text3);font-style:italic;font-size:10px">—</span>'}
+    // Truncation: source char wider than target char, no transform or TRIM
+    const willTruncate = !hasFixed && m.srcCol && srcType && tgtType
+      && isCharType(srcType) && isCharType(tgtType)
+      && (m.transform==='NONE'||m.transform==='TRIM')
+      && parseTypeLen(srcType) > parseTypeLen(tgtType);
+    const truncLen = willTruncate ? parseTypeLen(tgtType) : 0;
+    const rowBg = hasFixed ? 'rgba(45,212,191,0.04)' : willTruncate ? 'rgba(245,158,11,0.04)' : '';
+    return `<tr style="${rowBg?'background:'+rowBg:''}">
+      <td>
+        <select class="map-select" style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}"
+          onchange="columnMapping[${i}].srcCol=this.value;columnMapping[${i}].match=this.value?'HIGH':'';renderMappingTable();renderSrcColList();tryAutoGenSQL()">
+          <option value="">— none —</option>
+          ${srcColOpts.replace(`value="${esc(m.srcCol)}"`,`value="${esc(m.srcCol)}" selected`)}
+        </select>
       </td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
-      <td><select class="map-select" onchange="columnMapping[${i}].tgtCol=this.value;renderSrcColList();tryAutoGenSQL()">
-        <option value="">— skip —</option>
-        ${tgtCols.filter(c=>!c.isIdentity).map(c=>`<option value="${esc(c.name)}" ${m.tgtCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
-      </select></td>
-      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(tgtDef?.type||'')}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(m.tgtCol)}</td>
+      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
+        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})">⚠ LEFT(${truncLen})</span>`:''}
+      </td>
       <td><select class="map-select" style="width:80px" onchange="updateTransform(${i},this.value)">
         ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
       </select></td>
@@ -799,7 +821,7 @@ function renderMappingTable(){
           placeholder="e.g. N'Value', 0, NULL…"
           value="${esc(m.literalValue||'')}"
           oninput="columnMapping[${i}].literalValue=this.value.trim();tryAutoGenSQL()"
-          title="Optional fixed value — overrides source column in SQL. Leave blank to use source.">
+          title="Fixed SQL value — overrides source column. Leave blank to use source.">
       </td>
       <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${m.match||'—'}</span></td>
       <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
@@ -860,7 +882,6 @@ function generateSingleSQL(silent){
       srcExpr=alias+'.['+colName+']';
     } else {
       // Bare [colName] — the FROM clause already specifies the 3-part table reference.
-      // No table prefix needed on SELECT columns for a single-table source.
       srcExpr='['+m.srcCol+']';
     }
     switch((m.transform||'NONE').toUpperCase()){
@@ -868,6 +889,18 @@ function generateSingleSQL(silent){
       case 'UPPER': srcExpr='UPPER('+srcExpr+')'; break;
       case 'LOWER': srcExpr='LOWER('+srcExpr+')'; break;
       case 'CAST': srcExpr='CAST('+srcExpr+' AS '+(tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'NVARCHAR(255)')+')'; break;
+    }
+    // Auto-truncate: wrap in LEFT() when source char type is wider than target
+    if((m.transform||'NONE')==='NONE'||m.transform==='TRIM'){
+      const srcDef=(srcTable?.columns||[]).find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
+      const srcT=srcDef&&typeof srcDef==='object'?srcDef.type:'';
+      const tgtDef=tgtTable.columns.find(c=>c.name===m.tgtCol);
+      const tgtT=tgtDef?.type||'';
+      if(isCharType(srcT)&&isCharType(tgtT)&&parseTypeLen(srcT)>parseTypeLen(tgtT)){
+        const lim=parseTypeLen(tgtT);
+        srcExpr='LEFT('+srcExpr+', '+lim+')';
+        warnings.push('['+m.srcCol+'] truncated to '+lim+' chars via LEFT() (src: '+srcT+', tgt: '+tgtT+')');
+      }
     }
     // Was/Is as CASE
     const colWasis=wasisRules.filter(r=>(r.srcField===m.srcCol.toLowerCase()||r.srcField==='')&&(r.srcTable===srcTable.name.toLowerCase()||r.srcTable===''));
