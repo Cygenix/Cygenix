@@ -322,7 +322,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
                   <thead><tr>
                     <th>Source column</th><th>Src type</th>
                     <th>Target column</th><th>Tgt type</th>
-                    <th>Transform</th><th>Match</th><th></th>
+                    <th>Transform</th>
+                    <th title="Type a fixed SQL value to use instead of the source column (e.g. N'Enterprise', 0, GETDATE(), NULL)">Fixed value</th>
+                    <th>Match</th><th></th>
                   </tr></thead>
                   <tbody id="mapping-tbody"></tbody>
                 </table>
@@ -777,23 +779,27 @@ function renderMappingTable(){
     const srcType = typeof srcDef==='object'?srcDef.type:'';
     const tgtDef = tgtCols.find(c=>c.name===m.tgtCol);
     const matchColor = m.match==='HIGH'?'var(--green)':m.match==='MEDIUM'?'var(--amber)':m.match==='LOW'?'var(--red)':'var(--text3)';
-    const isLiteral = (m.transform||'').toUpperCase()==='LITERAL';
-    return `<tr${isLiteral?' style="background:rgba(45,212,191,0.04)"':''}>
-      <td style="font-family:var(--mono);color:${isLiteral?'var(--text3)':'var(--text)'};${isLiteral?'text-decoration:line-through;font-style:italic':''}">
-        ${isLiteral?'<span style="color:var(--text3);font-style:italic;font-size:10px">(fixed value)</span>':esc(m.srcCol)}
+    const hasFixed = !!(m.literalValue !== undefined && m.literalValue !== '');
+    const rowBg = hasFixed ? 'background:rgba(45,212,191,0.04)' : '';
+    return `<tr style="${rowBg}">
+      <td style="font-family:var(--mono);color:${hasFixed?'var(--text3)':'var(--text)'};${hasFixed?'text-decoration:line-through;font-style:italic':''}">
+        ${esc(m.srcCol)||'<span style="color:var(--text3);font-style:italic;font-size:10px">—</span>'}
       </td>
-      <td style="font-family:var(--mono);color:var(--text3)">${isLiteral?'':esc(srcType)}</td>
-      <td><select class="map-select" onchange="columnMapping[${i}].tgtCol=this.value;renderSrcColList()">
+      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
+      <td><select class="map-select" onchange="columnMapping[${i}].tgtCol=this.value;renderSrcColList();tryAutoGenSQL()">
         <option value="">— skip —</option>
         ${tgtCols.filter(c=>!c.isIdentity).map(c=>`<option value="${esc(c.name)}" ${m.tgtCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
       </select></td>
-      <td style="font-family:var(--mono);color:var(--text3)">${esc(tgtDef?.type||'')}</td>
+      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(tgtDef?.type||'')}</td>
+      <td><select class="map-select" style="width:80px" onchange="updateTransform(${i},this.value)">
+        ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
+      </select></td>
       <td>
-        <select class="map-select" style="width:90px" onchange="updateTransform(${i},this.value)">
-          ${['NONE','TRIM','UPPER','LOWER','CAST','LITERAL'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
-        </select>
-        ${isLiteral?`<input class="map-select" style="margin-top:3px;width:100%;color:var(--teal)" placeholder="Fixed value…"
-          value="${esc(m.literalValue||'')}" oninput="columnMapping[${i}].literalValue=this.value;generateSingleSQL()">`:''}
+        <input class="map-select" style="width:120px;color:var(--teal);font-family:var(--mono);font-size:11px"
+          placeholder="e.g. N'Value', 0, NULL…"
+          value="${esc(m.literalValue||'')}"
+          oninput="columnMapping[${i}].literalValue=this.value.trim();tryAutoGenSQL()"
+          title="Optional fixed value — overrides source column in SQL. Leave blank to use source.">
       </td>
       <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${m.match||'—'}</span></td>
       <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
@@ -802,11 +808,11 @@ function renderMappingTable(){
 }
 
 // ── Single SQL generation ─────────────────────────────────────────────────────
-function generateSingleSQL(){
-  if(!srcTable){ alert('Select a source table.'); return; }
-  if(!tgtTable){ alert('Select a target table.'); return; }
-  const mapping = columnMapping.filter(m=>m.tgtCol);
-  if(!mapping.length){ alert('No columns mapped.'); return; }
+function generateSingleSQL(silent){
+  if(!srcTable){ if(!silent) alert('Select a source table.'); return; }
+  if(!tgtTable){ if(!silent) alert('Select a target table.'); return; }
+  const mapping = columnMapping.filter(m=>m.tgtCol||m.literalValue);
+  if(!mapping.length){ if(!silent) alert('No columns mapped.'); return; }
 
   const warnings = [];
   const srcFull = '['+srcTable.schema+'].['+srcTable.name+']';
@@ -843,10 +849,9 @@ function generateSingleSQL(){
 
   const selectCols = mapping.map(m=>{
     let srcExpr;
-    // LITERAL transform: output the fixed value directly, no source column
-    if((m.transform||'').toUpperCase()==='LITERAL'){
-      const lit = m.literalValue !== undefined ? m.literalValue : '';
-      return '      '+formatSQLVal(lit)+' AS ['+m.tgtCol+']';
+    // If a fixed literal value is set, use it directly regardless of transform
+    if(m.literalValue !== undefined && m.literalValue !== ''){
+      return '      '+m.literalValue+' AS ['+m.tgtCol+']';
     }
     if(m.fromJoin){
       const jEntry=activeJoins.find(j=>j.table===m.fromJoin||j.table.split('.').pop()===m.fromJoin?.split('.').pop());
@@ -912,9 +917,14 @@ function generateSingleSQL(){
 
 function updateTransform(i, val){
   columnMapping[i].transform = val;
-  if(val !== 'LITERAL') delete columnMapping[i].literalValue;
   renderMappingTable();
-  generateSingleSQL();
+  tryAutoGenSQL();
+}
+
+function tryAutoGenSQL(){
+  if(srcTable && tgtTable && columnMapping.filter(m=>m.tgtCol||m.literalValue).length > 0){
+    try { generateSingleSQL(true); } catch(e) {}
+  }
 }
 
 // Also add + Fixed value button to add a literal-only row
@@ -1349,6 +1359,7 @@ function saveAsJob(){
       target: tgtTable.fullName,
       targetTable: tgtTable.fullName,
       columnMapping: columnMapping.filter(m=>m.tgtCol),
+      joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
       insertSQL: generatedSQL.insert,
       schemaSQL: generatedSQL.schema,
       verifySQL: generatedSQL.verify,
@@ -1379,6 +1390,7 @@ function saveAsJob(){
       target: targetTables.map(t=>t.fullName).join(', '),
       insertSQL: generatedSQL.insert,
       oneToManyConfig:true,
+      joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
       tables: targetTables.map(tt=>({name:tt.fullName, pkCol:tt.pkCol, pkMode:tt.pkMode, mappings:tt.mappings, fks:tt.fks, rows:0})),
       columnMapping:[],
       totalRows: srcTable.rowCount||0,
@@ -1432,35 +1444,64 @@ function checkEditMode(){
 }
 
 function restoreJobMapping(job,isOTM){
+  // ── Restore JOIN state first (both modes) ─────────────────────────────────
+  if(job.joinState && Array.isArray(job.joinState) && job.joinState.length){
+    // Re-init the join builder with saved state so user can add/remove/edit joins
+    const otherTables = srcAllTables.filter(t=>!srcTable||t.value!==srcTable.value);
+    window._joinAllTables = otherTables;
+    window._joinBaseTable  = srcTable;
+    // initJoinBuilder resets _joinState to [] then we overwrite it
+    initJoinBuilder('join-container', otherTables, srcTable, function(){
+      renderSrcColList();
+      if(mode==='single') tryAutoGenSQL();
+    });
+    // Overwrite empty state with saved joins after initJoinBuilder resets it
+    window._joinState = job.joinState;
+    // Re-render so the saved joins appear in the UI
+    renderJoinBuilder('join-container', otherTables, srcTable);
+    $('join-panel').style.display = 'block';
+  }
+
   if(isOTM){
-    // Restore OTM target tables
+    // ── Restore OTM target tables ───────────────────────────────────────────
     (job.tables||[]).forEach(jtt=>{
       const t=tgtAllTables.find(t=>t.value===jtt.name||t.label===jtt.name);
       if(t&&!targetTables.find(tt=>tt.fullName===t.value)){
         addOTMTargetFromTable(t);
         const ti=targetTables.length-1;
         if(jtt.pkMode) targetTables[ti].pkMode=jtt.pkMode;
-        if(jtt.pkCol) targetTables[ti].pkCol=jtt.pkCol;
+        if(jtt.pkCol)  targetTables[ti].pkCol=jtt.pkCol;
         if(jtt.mappings) targetTables[ti].mappings=jtt.mappings;
-        if(jtt.fks) targetTables[ti].fks=jtt.fks;
+        if(jtt.fks)    targetTables[ti].fks=jtt.fks;
       }
     });
-    generatedSQL.insert=job.insertSQL||'';
-    if(generatedSQL.insert) showSQLOutput(generatedSQL.insert);
     renderOTMCards();
+    // Regenerate SQL from restored config so it's live-editable
+    generateOTMSQL();
   } else {
-    // Restore single-map
+    // ── Restore single-map ─────────────────────────────────────────────────
     const tgtFull=job.targetTable||job.target||'';
     if(tgtFull){
       const t=tgtAllTables.find(t=>t.value===tgtFull||t.label===tgtFull);
-      if(t){ selectTable('tgt',t.value); setTimeout(()=>{
-        if(job.columnMapping?.length){ columnMapping=job.columnMapping; renderMappingTable(); $('mapping-wrap').style.display='block'; $('single-empty').style.display='none'; }
-        generatedSQL.insert=job.insertSQL||'';
-        if(generatedSQL.insert){ showSQLOutput(generatedSQL.insert); $('save-job-btn').disabled=false; }
-      },400); }
+      if(t){
+        selectTable('tgt',t.value);
+        setTimeout(()=>{
+          if(job.columnMapping?.length){
+            // Restore full mapping including literalValue on each row
+            columnMapping = job.columnMapping.map(m=>({...m}));
+            $('mapping-wrap').style.display='block';
+            $('single-empty').style.display='none';
+            renderMappingTable();
+            // Regenerate SQL live so user sees current state and can freely edit
+            tryAutoGenSQL();
+            // Scroll mapping into view for immediate editing
+            setTimeout(()=>$('mapping-wrap')?.scrollIntoView({behavior:'smooth',block:'start'}),200);
+          }
+        },300);
+      }
     }
   }
-  showStatus('Job "'+job.name+'" loaded for editing','info');
+  showStatus('Editing: "'+job.name+'" — change anything then save','info');
 }
 
 function clearEditMode(){
