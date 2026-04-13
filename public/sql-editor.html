@@ -51,7 +51,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .editor-toolbar{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex-shrink:0}
 .editor-upper{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:120px}
 .editor-wrap{position:relative;flex:1;overflow:hidden;display:flex;flex-direction:column}
-/* #sql-editor base — appearance set in highlight block below */
+#sql-editor{width:100%;flex:1;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.7;border:none;outline:none;resize:none;padding:1rem 1.25rem;tab-size:2;overflow-x:hidden;min-height:0}
 .editor-status{padding:0.35rem 1rem;background:var(--bg3);border-top:0.5px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:flex;gap:1rem}
 /* Resize handle */
 .resize-handle{height:5px;background:var(--border);cursor:row-resize;flex-shrink:0;transition:background 0.15s;position:relative}
@@ -62,7 +62,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .results-bottom-tabs{display:flex;align-items:center;border-bottom:0.5px solid var(--border);flex-shrink:0;background:var(--bg3)}
 .results-bottom-tab{padding:0.4rem 1rem;font-size:11px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap}
 .results-bottom-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-.results-bottom-body{flex:1;overflow-y:auto;overflow-x:scroll}
+.results-bottom-body{flex:1;overflow:auto}
 
 /* RESULTS / AI pane */
 .right-pane{display:flex;flex-direction:column;background:var(--bg2);border-left:0.5px solid var(--border);overflow:hidden;width:340px;flex-shrink:0;min-width:120px;max-width:700px}
@@ -73,10 +73,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .right-content.active{display:flex;flex-direction:column}
 
 /* Results table */
-.results-wrap{flex:1;overflow-y:auto;overflow-x:scroll;padding:0.75rem}
-.results-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
+.results-wrap{flex:1;overflow:auto;padding:0.75rem}
+.results-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
 .results-table th{background:var(--bg3);padding:0.4rem 0.6rem;text-align:left;font-size:9px;text-transform:uppercase;color:var(--text3);letter-spacing:0.05em;border-bottom:0.5px solid var(--border);position:sticky;top:0;white-space:nowrap}
-.results-table td{padding:0.35rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);white-space:nowrap}
+.results-table td{padding:0.35rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .results-table tr:hover td{background:rgba(255,255,255,0.02)}
 .results-empty{padding:2rem;text-align:center;color:var(--text3);font-size:12px}
 
@@ -125,28 +125,10 @@ body.fullscreen .script-panel { display:none }
 .highlight-match{background:rgba(245,158,11,0.35);border-radius:1px}
 .highlight-current{background:rgba(61,126,255,0.45);border-radius:1px}
 
-/* ── SQL SYNTAX HIGHLIGHT ──────────────────────────────────────────────────── */
+/* ── LINE NUMBERS ──────────────────────────────────────────────────────────── */
 .editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:column}
-.editor-scroll-row{display:flex;flex:1;overflow:hidden;position:relative}
 .line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre;align-self:stretch}
-/* highlight layer sits behind — renders coloured tokens */
-#sql-highlight{position:absolute;top:0;left:0;right:0;bottom:0;padding:1rem 1.25rem;font-family:var(--mono);font-size:13px;line-height:1.7;white-space:pre;overflow:hidden;pointer-events:none;tab-size:2;color:var(--text)}
-/* textarea on top — transparent text so colours show through, caret visible */
-#sql-editor{width:100%;flex:1;position:relative;z-index:1;font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 1.25rem;tab-size:2;border:none;outline:none;resize:none;min-height:0;background:transparent!important;color:transparent!important;-webkit-text-fill-color:transparent!important;caret-color:#ffffff}
-/* token colours */
-.tok-kw   {color:#569cd6}  /* SELECT, FROM, WHERE… */
-.tok-kw2  {color:#c586c0}  /* JOIN, ON, AS… */
-.tok-fn   {color:#dcdcaa}  /* functions: COUNT, LEFT, CAST… */
-.tok-str  {color:#ce9178}  /* 'string literals' */
-.tok-num  {color:#b5cea8}  /* numbers */
-.tok-op   {color:#d4d4d4}  /* = > < + - */
-.tok-cm   {color:#6a9955;font-style:italic} /* -- comments */
-.tok-obj  {color:#4ec9b0}  /* [bracketed identifiers] */
-.tok-var  {color:#9cdcfe}  /* @variables */
-.tok-punc {color:#808080}  /* ( ) , ; */
-.tok-plain{color:#e8eaf0}  /* everything else */
-#sql-editor::-webkit-scrollbar-horizontal { display:block }
-#sql-editor { scrollbar-width:thin }
+#sql-editor{flex:1;min-width:0}
 
 /* ── WORD WRAP toggle ──────────────────────────────────────────────────────── */
 #sql-editor.wrap-on{white-space:pre-wrap;word-break:break-all}
@@ -271,10 +253,7 @@ body.fullscreen .script-panel { display:none }
       <div class="editor-wrap">
         <div class="editor-wrap-inner">
           <div class="line-numbers" id="line-numbers">1</div>
-          <div style="position:relative;flex:1;overflow:auto;display:flex;flex-direction:column" id="editor-scroll-host">
-            <div id="sql-highlight" aria-hidden="true"></div>
-            <textarea id="sql-editor" spellcheck="false" class="wrap-off" placeholder="-- Write SQL here | Ctrl+Enter to run | Ctrl+F to find | Ctrl+/ to comment&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus();updateLineNumbers();highlightSQL()" onscroll="syncScroll()" onclick="updateStatus()"></textarea>
-          </div>
+          <textarea id="sql-editor" spellcheck="false" class="wrap-off" placeholder="-- Write SQL here | Ctrl+Enter to run | Ctrl+F to find | Ctrl+/ to comment&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus();updateLineNumbers()" onscroll="syncScroll()" onclick="updateStatus()"></textarea>
         </div>
       </div>
       <div class="editor-status">
@@ -401,7 +380,7 @@ function newScript() {
   currentScript = id;
   document.getElementById('script-name').value = 'New script';
   document.getElementById('sql-editor').value = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
-  highlightSQL(); updateLineNumbers();
+  updateLineNumbers();
   clearResults();
   renderScriptList();
   document.getElementById('sql-editor').focus();
@@ -413,7 +392,7 @@ function loadScript(id) {
   currentScript = id;
   document.getElementById('script-name').value = s.name;
   document.getElementById('sql-editor').value = s.sql;
-  highlightSQL(); updateLineNumbers();
+  updateLineNumbers();
   document.getElementById('conn-select').value = s.conn||'source';
   const descEl = document.getElementById('script-desc');
   if (descEl) descEl.value = s.desc || '';
@@ -454,7 +433,7 @@ function deleteScript(id) {
   if (currentScript === id) {
     currentScript = null;
     document.getElementById('sql-editor').value = '';
-    highlightSQL(); updateLineNumbers();
+    updateLineNumbers();
     document.getElementById('script-name').value = 'New script';
     clearResults();
   }
@@ -471,7 +450,7 @@ function loadSQLFromFile(input) {
   reader.onload = function(e) {
     const sql = e.target.result;
     document.getElementById('sql-editor').value = sql;
-    highlightSQL(); updateLineNumbers();
+    updateLineNumbers();
     // Use filename (without extension) as script name
     const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g,' ');
     document.getElementById('script-name').value = name;
@@ -625,10 +604,10 @@ function drawResultsTable(rows, cols, ms) {
   const MAX    = 1000;
 
   if (resultsView === 'row') {
-    wrap.innerHTML = `<div style="min-width:max-content"><table class="results-table">
+    wrap.innerHTML = `<table class="results-table">
       <thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
       <tbody>${rows.slice(0,MAX).map(r=>`<tr>${cols.map(c=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
-    </table></div>`;
+    </table>`;
   } else {
     // Pivot: columns become rows, each data row becomes a column
     const showRows = Math.min(rows.length, 20); // limit columns in pivot
@@ -968,7 +947,7 @@ function insertSnippet(text) {
   const before = el.value.slice(0,start);
   const after = el.value.slice(el.selectionEnd);
   el.value = before + text + after;
-  highlightSQL(); updateLineNumbers();
+  updateLineNumbers();
   el.selectionStart = el.selectionEnd = start + text.length;
   el.focus();
   updateStatus();
@@ -1040,81 +1019,7 @@ function updateLineNumbers() {
 function syncScroll() {
   const el = document.getElementById('sql-editor');
   const ln = document.getElementById('line-numbers');
-  const hl = document.getElementById('sql-highlight');
   if (ln) ln.scrollTop = el.scrollTop;
-  if (hl) { hl.scrollTop = el.scrollTop; hl.scrollLeft = el.scrollLeft; }
-}
-
-// ── SQL Syntax Highlighter ────────────────────────────────────────────────────
-const SQL_KW  = new Set('SELECT INSERT UPDATE DELETE FROM WHERE JOIN LEFT RIGHT INNER OUTER FULL CROSS ON INTO VALUES SET GROUP BY ORDER HAVING LIMIT TOP DISTINCT ALL AS WITH UNION EXCEPT INTERSECT EXISTS IN NOT AND OR IS NULL BETWEEN LIKE CASE WHEN THEN ELSE END IF BEGIN COMMIT ROLLBACK TRANSACTION TRAN EXEC EXECUTE DECLARE PRINT USE GO RETURN OFFSET FETCH NEXT ROWS ONLY NOCOUNT IDENTITY_INSERT'.split(' '));
-const SQL_KW2 = new Set('JOIN ON AS LEFT RIGHT INNER OUTER FULL CROSS APPLY'.split(' '));
-const SQL_FN  = new Set('COUNT SUM AVG MIN MAX LEN LEFT RIGHT TRIM LTRIM RTRIM UPPER LOWER CAST CONVERT ISNULL COALESCE NULLIF REPLACE SUBSTRING CHARINDEX GETDATE GETUTCDATE NEWID DATEADD DATEDIFF DATENAME YEAR MONTH DAY FLOOR CEILING ROUND ABS ISNUMERIC ISDATE ROW_NUMBER RANK DENSE_RANK OVER PARTITION'.split(' '));
-
-function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-function tokeniseSQL(sql){
-  let out = '', i = 0, n = sql.length;
-  while(i < n){
-    const ch = sql[i];
-
-    // -- single-line comment
-    if(ch==='-' && sql[i+1]==='-'){
-      let j=i; while(j<n && sql[j]!=='\n') j++;
-      out+=`<span class="tok-cm">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
-    }
-    // /* block comment */
-    if(ch==='/' && sql[i+1]==='*'){
-      let j=i+2; while(j<n-1 && !(sql[j]==='*'&&sql[j+1]==='/')) j++;
-      j+=2;
-      out+=`<span class="tok-cm">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
-    }
-    // 'string' or N'string'
-    if(ch==="'" || (ch==='N' && sql[i+1]==="'")){
-      let j=i+(ch==='N'?2:1);
-      while(j<n){ if(sql[j]==="'"){if(sql[j+1]==="'"){j+=2;}else{j++;break;}} else j++; }
-      out+=`<span class="tok-str">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
-    }
-    // [bracketed identifier]
-    if(ch==='['){
-      let j=i+1; while(j<n && sql[j]!==']') j++; j++;
-      out+=`<span class="tok-obj">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
-    }
-    // @variable
-    if(ch==='@'){
-      let j=i+1; while(j<n && /\w/.test(sql[j])) j++;
-      out+=`<span class="tok-var">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
-    }
-    // number
-    if(/\d/.test(ch) || (ch==='.' && /\d/.test(sql[i+1]||''))){
-      let j=i; while(j<n && /[\d.]/.test(sql[j])) j++;
-      out+=`<span class="tok-num">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
-    }
-    // word / keyword
-    if(/[a-zA-Z_#]/.test(ch)){
-      let j=i; while(j<n && /\w/.test(sql[j])) j++;
-      const word=sql.slice(i,j); const up=word.toUpperCase();
-      const cls=SQL_KW.has(up)?'tok-kw':SQL_FN.has(up)?'tok-fn':'tok-plain';
-      out+=`<span class="${cls}">${escHtml(word)}</span>`; i=j; continue;
-    }
-    // punctuation
-    if('(),;'.includes(ch)){ out+=`<span class="tok-punc">${escHtml(ch)}</span>`; i++; continue; }
-    // operators
-    if('=<>!+-*/%|&^~'.includes(ch)){ out+=`<span class="tok-op">${escHtml(ch)}</span>`; i++; continue; }
-    // whitespace/newlines — pass through as-is
-    out+=escHtml(ch); i++;
-  }
-  return out;
-}
-
-function highlightSQL(){
-  const ta = document.getElementById('sql-editor');
-  const hl = document.getElementById('sql-highlight');
-  if(!ta||!hl) return;
-  // Append trailing newline so caret on last line has space
-  hl.innerHTML = tokeniseSQL(ta.value) + '\n';
-  // Keep scroll in sync
-  hl.scrollTop  = ta.scrollTop;
-  hl.scrollLeft = ta.scrollLeft;
 }
 
 function toggleLineNumbers() {
