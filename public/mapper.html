@@ -854,8 +854,9 @@ function generateSingleSQL(){
       const colName=m.srcCol.includes('.')?m.srcCol.split('.').pop():m.srcCol;
       srcExpr=alias+'.['+colName+']';
     } else {
-      // Use srcFullQ (3-part) — column name only, no schema/table prefix in SELECT
-      srcExpr=srcFullQ+'.['+m.srcCol+']';
+      // Bare [colName] — the FROM clause already specifies the 3-part table reference.
+      // No table prefix needed on SELECT columns for a single-table source.
+      srcExpr='['+m.srcCol+']';
     }
     switch((m.transform||'NONE').toUpperCase()){
       case 'TRIM': srcExpr='LTRIM(RTRIM('+srcExpr+'))'; break;
@@ -1177,8 +1178,10 @@ function generateOTMSQL(){
   const srcFullQualified=srcDb?`[${srcDb}].${srcFull}`:srcFull;
 
   const selectExprs=[
-    ...baseSrcCols.map(c=>srcFullQualified+'.['+c+'] AS ['+c+']'),
-    ...joinedSrcCols.map(c=>{ const dotIdx=c.indexOf('.'); const alias=dotIdx>-1?c.slice(0,dotIdx):''; const col=dotIdx>-1?c.slice(dotIdx+1):c; return alias?alias+'.['+col+']':srcFullQualified+'.['+col+']'; })
+    // Bare [colName] for base table columns — FROM clause has the 3-part reference
+    ...baseSrcCols.map(c=>'['+c+']'),
+    // Joined columns keep their alias prefix: s1.[colName]
+    ...joinedSrcCols.map(c=>{ const dotIdx=c.indexOf('.'); const alias=dotIdx>-1?c.slice(0,dotIdx):''; const col=dotIdx>-1?c.slice(dotIdx+1):c; return alias?alias+'.['+col+']':'['+col+']'; })
   ];
 
   sql+=`DECLARE cur CURSOR FOR\n`;
