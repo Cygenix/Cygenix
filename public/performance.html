@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix - Performance Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/connections.js"></script>
+<script src="/nav.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-bottom:80px}
+.page{max-width:900px;margin:0 auto;padding:1.75rem 1.5rem}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.25rem;overflow:hidden}
+.panel-head{padding:0.875rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.75rem}
+.panel-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px}
+.panel-title{font-size:13px;font-weight:600}
+.panel-sub{font-size:11px;color:var(--text3);margin-top:1px}
+.panel-body{padding:1.1rem}
+.setting-row{display:grid;grid-template-columns:1fr 200px;gap:1.25rem;align-items:start;padding:0.875rem 0;border-bottom:0.5px solid var(--border)}
+.setting-row:last-child{border-bottom:none;padding-bottom:0}
+.setting-row:first-child{padding-top:0}
+.setting-label{font-size:13px;font-weight:500;margin-bottom:0.2rem}
+.setting-desc{font-size:11px;color:var(--text3);line-height:1.6;margin-top:0.25rem}
+.setting-ctrl{display:flex;flex-direction:column;gap:0.3rem;align-items:flex-end}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.45rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+select.form-input option{background:var(--bg3)}
+.input-unit{font-size:10px;color:var(--text3);font-family:var(--mono);text-align:right}
+.toggle{position:relative;width:36px;height:20px;cursor:pointer;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--bg4);border-radius:100px;transition:background 0.2s;border:0.5px solid var(--border2)}
+.toggle input:checked+.toggle-slider{background:var(--accent);border-color:var(--accent)}
+.toggle-slider::before{content:'';position:absolute;width:14px;height:14px;left:2px;top:2px;background:#fff;border-radius:50%;transition:transform 0.2s}
+.toggle input:checked+.toggle-slider::before{transform:translateX(16px)}
+.toggle-label{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:0.4rem 0.875rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text)}
+.btn-sm{padding:0.25rem 0.6rem;font-size:11px}
+.tip{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);padding:0.65rem 0.875rem;font-size:11px;color:var(--text2);line-height:1.6;margin-top:0.5rem}
+.tip-amber{background:var(--amber-bg);border-color:rgba(245,158,11,0.2);color:var(--amber)}
+.tip-green{background:var(--green-bg);border-color:rgba(34,201,122,0.2);color:var(--green)}
+.tip strong{color:var(--text)}
+.presets{display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:1rem}
+.preset-chip{padding:3px 10px;border-radius:100px;font-size:11px;font-family:var(--mono);cursor:pointer;border:0.5px solid var(--border2);background:var(--bg3);color:var(--text2);transition:all 0.12s}
+.preset-chip:hover{border-color:var(--accent);color:var(--accent)}
+.preset-chip.active{background:var(--accent-glow);border-color:rgba(61,126,255,0.4);color:var(--accent)}
+.save-bar{position:fixed;bottom:0;left:220px;right:0;background:var(--bg2);border-top:0.5px solid var(--border);padding:0.875rem 1.5rem;display:flex;align-items:center;gap:0.75rem;z-index:50}
+.badge{display:inline-flex;align-items:center;font-size:10px;padding:1px 7px;border-radius:100px;font-family:var(--mono);font-weight:500}
+.badge-teal{background:var(--teal-bg);color:var(--teal)}
+.badge-amber{background:var(--amber-bg);color:var(--amber)}
+.badge-green{background:var(--green-bg);color:var(--green)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div style="margin-bottom:1.5rem">
+    <div style="font-size:1.3rem;font-weight:600;margin-bottom:0.3rem">Performance Settings</div>
+    <div style="font-size:12px;color:var(--text3)">Tune batch sizes, timeouts, concurrency and data loading to match your environment and data volumes. Settings are saved locally and applied across all migration operations.</div>
+  </div>
+
+  <!-- Presets -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-icon" style="background:rgba(61,126,255,0.12)">&#127919;</div>
+      <div><div class="panel-title">Quick presets</div><div class="panel-sub">Start with a profile matched to your environment, then fine-tune below</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="presets" id="preset-chips">
+        <span class="preset-chip" onclick="applyPreset('small')" id="preset-small">Small DB (&lt;100k rows)</span>
+        <span class="preset-chip" onclick="applyPreset('medium')" id="preset-medium">Medium DB (100k-1M)</span>
+        <span class="preset-chip" onclick="applyPreset('large')" id="preset-large">Large DB (&gt;1M rows)</span>
+        <span class="preset-chip" onclick="applyPreset('azure')" id="preset-azure">Azure SQL</span>
+        <span class="preset-chip" onclick="applyPreset('cautious')" id="preset-cautious">Cautious / Low impact</span>
+      </div>
+      <div class="tip" id="preset-tip">Select a preset above to auto-fill recommended values. You can adjust any setting individually after applying.</div>
+    </div>
+  </div>
+
+  <!-- Batch sizes -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-icon" style="background:rgba(45,212,191,0.12)">&#128230;</div>
+      <div><div class="panel-title">Batch and chunk sizes</div><div class="panel-sub">Controls how many rows are fetched or inserted in each operation</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Fetch page size</div>
+          <div class="setting-desc">Number of rows fetched from the source database per page. Larger values mean fewer round-trips but more memory. Reduce if you hit memory errors or timeouts on wide tables.</div>
+          <div class="tip"><strong>Guidance:</strong> 2,000 is a safe default. Use 500-1,000 for tables with many large text/blob columns. Use 5,000+ for narrow tables on fast local networks.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-fetch-page" class="form-input" min="100" max="50000" step="100" value="2000">
+          <span class="input-unit">rows per page</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Insert batch size</div>
+          <div class="setting-desc">Rows per INSERT statement. SQL Server supports up to 1,000 per INSERT VALUES. Smaller batches are safer; larger batches are faster but harder to roll back on failure.</div>
+          <div class="tip"><strong>Guidance:</strong> 500 is recommended. Reduce to 100-200 for wide rows (&gt;50 columns) or large NVARCHAR fields that approach the 8,060 byte SQL Server row limit.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-insert-batch" class="form-input" min="10" max="1000" step="10" value="500">
+          <span class="input-unit">rows per INSERT</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Concurrent batch threads</div>
+          <div class="setting-desc">How many INSERT batches are sent in parallel within each page. Parallelism speeds up inserts significantly but increases lock contention. Set to 1 for sequential (safest).</div>
+          <div class="tip tip-amber"><strong>Caution:</strong> Values above 4 can overwhelm Azure SQL Basic/Standard tiers. Always test with 2 first and monitor DTU usage before increasing further.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-concurrency" class="form-input" min="1" max="16" step="1" value="1">
+          <span class="input-unit">parallel threads</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeouts -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-icon" style="background:rgba(245,158,11,0.12)">&#9201;</div>
+      <div><div class="panel-title">Timeouts</div><div class="panel-sub">How long to wait before abandoning a connection or query</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Connection timeout</div>
+          <div class="setting-desc">Maximum wait when establishing a new database connection. Increase for slow VPNs or Azure SQL cold-starts. Reduce to get faster error feedback on wrong credentials.</div>
+          <div class="tip"><strong>Guidance:</strong> 30s is standard. Azure SQL serverless may need 60-90s on cold start. On-premises over LAN rarely needs more than 15s.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-conn-timeout" class="form-input" min="5" max="300" step="5" value="30">
+          <span class="input-unit">seconds</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Query / execution timeout</div>
+          <div class="setting-desc">Maximum time a single SQL statement may run before cancellation. Long migrations or complex validations need higher values. Set to 0 to disable (not recommended in production).</div>
+          <div class="tip"><strong>Guidance:</strong> 300s (5 min) is safe for most migrations. For 1M+ row tables consider 600-1200s. Never set 0 in shared environments.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-query-timeout" class="form-input" min="0" max="3600" step="30" value="300">
+          <span class="input-unit">seconds (0 = none)</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Azure Function / API timeout</div>
+          <div class="setting-desc">Maximum time the browser waits for the Azure or Netlify Function connector. This must be higher than your query timeout or the browser will cancel a query still running on the server.</div>
+          <div class="tip tip-amber"><strong>Important:</strong> The Azure Function host itself has a separate timeout (default 30s on Consumption plan, 5 min on Premium). If hitting 30s limits, upgrade to Premium or set functionTimeout in host.json.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-api-timeout" class="form-input" min="10" max="600" step="10" value="120">
+          <span class="input-unit">seconds</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Retry attempts on failure</div>
+          <div class="setting-desc">How many times to retry a failed batch before marking it as an error. Useful for transient network blips or Azure throttling (HTTP 429). Each retry waits 2x longer than the last (exponential backoff).</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-retries" class="form-input" min="0" max="10" step="1" value="3">
+          <span class="input-unit">retries</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data loading -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-icon" style="background:rgba(167,139,250,0.12)">&#128260;</div>
+      <div><div class="panel-title">Data loading behaviour</div><div class="panel-sub">Controls how data is read, written and validated during migration</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Use NOLOCK (READ UNCOMMITTED) on source reads</div>
+          <div class="setting-desc">When reading source data, use READ UNCOMMITTED to avoid blocking writers. This can cause dirty reads (reading uncommitted rows) but reduces lock contention on live source databases significantly.</div>
+          <div class="tip"><strong>Guidance:</strong> Enable only if source DB is live under active write load. Disable for offline/static sources to guarantee consistency.</div>
+        </div>
+        <div class="setting-ctrl">
+          <label class="toggle"><input type="checkbox" id="s-nolock" onchange="updateLabel('s-nolock','nolock-lbl')"><span class="toggle-slider"></span></label>
+          <span class="toggle-label" id="nolock-lbl">OFF</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Wrap inserts in transactions</div>
+          <div class="setting-desc">Each batch of inserts is wrapped in BEGIN TRAN / COMMIT TRAN. A failed batch only rolls back that batch, not the whole migration. Disable only for maximum speed on targets without good transaction support.</div>
+        </div>
+        <div class="setting-ctrl">
+          <label class="toggle"><input type="checkbox" id="s-use-tran" checked onchange="updateLabel('s-use-tran','tran-lbl')"><span class="toggle-slider"></span></label>
+          <span class="toggle-label" id="tran-lbl">ON</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">SET NOCOUNT ON</div>
+          <div class="setting-desc">Suppresses row-affected messages from SQL Server. Reduces network traffic for large batch operations and can measurably improve throughput on high-latency connections.</div>
+        </div>
+        <div class="setting-ctrl">
+          <label class="toggle"><input type="checkbox" id="s-nocount" checked onchange="updateLabel('s-nocount','nocount-lbl')"><span class="toggle-slider"></span></label>
+          <span class="toggle-label" id="nocount-lbl">ON</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Suggest disabling non-clustered indexes</div>
+          <div class="setting-desc">Adds ALTER INDEX DISABLE / REBUILD comments around the generated migration SQL. Disabling non-clustered indexes before a large insert then rebuilding afterwards can be 3-10x faster. These are added as comments only — you run them manually in SSMS before and after the migration.</div>
+          <div class="tip tip-amber"><strong>Note:</strong> Never disable the clustered index — this makes the table inaccessible. Non-clustered only. Always rebuild before going live.</div>
+        </div>
+        <div class="setting-ctrl">
+          <label class="toggle"><input type="checkbox" id="s-disable-idx" onchange="updateLabel('s-disable-idx','idx-lbl')"><span class="toggle-slider"></span></label>
+          <span class="toggle-label" id="idx-lbl">OFF</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Row count verification after each batch</div>
+          <div class="setting-desc">After each page of inserts, runs a COUNT(*) on the target to verify the expected rows were written. Small overhead per batch but confirms no data was silently dropped.</div>
+        </div>
+        <div class="setting-ctrl">
+          <label class="toggle"><input type="checkbox" id="s-verify" onchange="updateLabel('s-verify','verify-lbl')"><span class="toggle-slider"></span></label>
+          <span class="toggle-label" id="verify-lbl">OFF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schema and connection -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-icon" style="background:rgba(34,201,122,0.12)">&#128475;</div>
+      <div><div class="panel-title">Schema and connection</div><div class="panel-sub">How schemas are loaded and connections are managed</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Schema cache lifetime</div>
+          <div class="setting-desc">How long table names, columns and types are cached in the browser before re-fetching. Longer cache means faster page loads. If your schema changes frequently during development, use a shorter value.</div>
+        </div>
+        <div class="setting-ctrl">
+          <select id="s-schema-cache" class="form-input">
+            <option value="0">No cache (always reload)</option>
+            <option value="60">1 minute</option>
+            <option value="300" selected>5 minutes</option>
+            <option value="900">15 minutes</option>
+            <option value="3600">1 hour</option>
+          </select>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Max tables in schema drop-downs</div>
+          <div class="setting-desc">Databases with hundreds of tables can slow the browser when populating selectors. This cap limits the initial load — you can still search for any table by typing. Set to 0 for no limit.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-max-tables" class="form-input" min="0" max="5000" step="50" value="500">
+          <span class="input-unit">tables</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Connection pool size</div>
+          <div class="setting-desc">Maximum simultaneous database connections the Azure Function maintains per request. Higher values allow more parallel queries but consume more server resources and DTUs. Most migrations need no more than 4.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-pool-size" class="form-input" min="1" max="20" step="1" value="4">
+          <span class="input-unit">connections</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Browser and UI -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-icon" style="background:rgba(240,70,70,0.10)">&#128187;</div>
+      <div><div class="panel-title">Browser and UI</div><div class="panel-sub">Settings that affect how Cygenix behaves in the browser</div></div>
+    </div>
+    <div class="panel-body">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Max rows in SQL Editor results grid</div>
+          <div class="setting-desc">Caps rows rendered in the results grid after a SELECT. All rows still return from the server — this only limits display to prevent the browser becoming unresponsive with very large result sets.</div>
+        </div>
+        <div class="setting-ctrl">
+          <input type="number" id="s-editor-rows" class="form-input" min="10" max="10000" step="10" value="1000">
+          <span class="input-unit">rows in grid</span>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Auto-save interval</div>
+          <div class="setting-desc">How often the mapper and editor auto-save your work to localStorage. Lower values mean less risk of losing work but more frequent writes. Set to 0 to disable auto-save.</div>
+        </div>
+        <div class="setting-ctrl">
+          <select id="s-autosave" class="form-input">
+            <option value="0">Disabled</option>
+            <option value="5">Every 5 seconds</option>
+            <option value="15">Every 15 seconds</option>
+            <option value="30" selected>Every 30 seconds</option>
+            <option value="60">Every minute</option>
+          </select>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Progress update frequency</div>
+          <div class="setting-desc">How often the progress bar and row counters update during execution. More frequent updates are easier to monitor but add slight overhead. For very fast connections, increase the interval to avoid UI flickering.</div>
+        </div>
+        <div class="setting-ctrl">
+          <select id="s-progress-freq" class="form-input">
+            <option value="1">Every batch</option>
+            <option value="5" selected>Every 5 batches</option>
+            <option value="10">Every 10 batches</option>
+            <option value="25">Every 25 batches</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-icon" style="background:rgba(61,126,255,0.12)">&#128203;</div>
+      <div><div class="panel-title">Configuration summary</div><div class="panel-sub">Estimated configuration and warnings based on current settings</div></div>
+    </div>
+    <div class="panel-body" id="summary-body">
+      <div style="color:var(--text3);font-size:12px">Save your settings to see a configuration summary and any warnings.</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="save-bar">
+  <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
+  <button class="btn btn-ghost btn-sm" onclick="resetSettings()">Reset to defaults</button>
+  <span id="save-status" style="font-size:12px;color:var(--text3)"></span>
+</div>
+
+<script>
+if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+
+const PERF_KEY = 'cygenix_performance';
+
+const DEFAULTS = {
+  fetchPage:2000, insertBatch:500, concurrency:1,
+  connTimeout:30, queryTimeout:300, apiTimeout:120, retries:3,
+  nolock:false, useTran:true, nocount:true, disableIdx:false, verify:false,
+  schemaCache:300, maxTables:500, poolSize:4,
+  editorRows:1000, autosave:30, progressFreq:5,
+};
+
+const PRESETS = {
+  small:{fetchPage:1000,insertBatch:500,concurrency:1,connTimeout:15,queryTimeout:120,apiTimeout:60,retries:2,nolock:false,useTran:true,nocount:true,disableIdx:false,verify:true,schemaCache:300,maxTables:200,poolSize:2,editorRows:1000,autosave:30,progressFreq:1,
+    tip:'Optimised for small databases. Conservative timeouts and full verification — ideal for accurate results fast.',style:'tip-green'},
+  medium:{fetchPage:2000,insertBatch:500,concurrency:2,connTimeout:30,queryTimeout:300,apiTimeout:120,retries:3,nolock:false,useTran:true,nocount:true,disableIdx:false,verify:false,schemaCache:300,maxTables:500,poolSize:4,editorRows:1000,autosave:30,progressFreq:5,
+    tip:'Balanced settings for mid-size databases. Good throughput without overloading a shared server.',style:'tip-green'},
+  large:{fetchPage:5000,insertBatch:1000,concurrency:4,connTimeout:60,queryTimeout:600,apiTimeout:240,retries:3,nolock:true,useTran:true,nocount:true,disableIdx:true,verify:false,schemaCache:900,maxTables:500,poolSize:8,editorRows:500,autosave:60,progressFreq:10,
+    tip:'High-throughput mode. Uses NOLOCK reads and suggests disabling indexes. Monitor server resources closely — reduce concurrency if you see DTU spikes.',style:'tip-amber'},
+  azure:{fetchPage:2000,insertBatch:500,concurrency:2,connTimeout:90,queryTimeout:300,apiTimeout:180,retries:5,nolock:false,useTran:true,nocount:true,disableIdx:false,verify:false,schemaCache:300,maxTables:500,poolSize:4,editorRows:1000,autosave:30,progressFreq:5,
+    tip:'Tuned for Azure SQL. Higher connection timeout handles cold-start latency, more retries handle transient throttling (HTTP 429). Concurrency kept low to respect DTU limits.',style:'tip-amber'},
+  cautious:{fetchPage:500,insertBatch:100,concurrency:1,connTimeout:30,queryTimeout:120,apiTimeout:90,retries:5,nolock:false,useTran:true,nocount:true,disableIdx:false,verify:true,schemaCache:60,maxTables:200,poolSize:2,editorRows:500,autosave:15,progressFreq:1,
+    tip:'Low-impact mode — sequential inserts of 100 rows, full verification after each batch. Best for live production source databases where minimal locking is critical. Slower but safest.',style:'tip-amber'},
+};
+
+function loadSettings(){
+  try{const r=localStorage.getItem(PERF_KEY);return r?{...DEFAULTS,...JSON.parse(r)}:{...DEFAULTS};}catch{return{...DEFAULTS};}
+}
+
+function applyToUI(c){
+  sv('s-fetch-page',c.fetchPage); sv('s-insert-batch',c.insertBatch);
+  sv('s-concurrency',c.concurrency); sv('s-conn-timeout',c.connTimeout);
+  sv('s-query-timeout',c.queryTimeout); sv('s-api-timeout',c.apiTimeout);
+  sv('s-retries',c.retries); sv('s-schema-cache',c.schemaCache);
+  sv('s-max-tables',c.maxTables); sv('s-pool-size',c.poolSize);
+  sv('s-editor-rows',c.editorRows); sv('s-autosave',c.autosave);
+  sv('s-progress-freq',c.progressFreq);
+  scb('s-nolock',c.nolock); updateLabel('s-nolock','nolock-lbl');
+  scb('s-use-tran',c.useTran); updateLabel('s-use-tran','tran-lbl');
+  scb('s-nocount',c.nocount); updateLabel('s-nocount','nocount-lbl');
+  scb('s-disable-idx',c.disableIdx); updateLabel('s-disable-idx','idx-lbl');
+  scb('s-verify',c.verify); updateLabel('s-verify','verify-lbl');
+}
+
+function readUI(){
+  return {
+    fetchPage:n('s-fetch-page'), insertBatch:n('s-insert-batch'), concurrency:n('s-concurrency'),
+    connTimeout:n('s-conn-timeout'), queryTimeout:n('s-query-timeout'), apiTimeout:n('s-api-timeout'),
+    retries:n('s-retries'), schemaCache:n('s-schema-cache'), maxTables:n('s-max-tables'),
+    poolSize:n('s-pool-size'), editorRows:n('s-editor-rows'), autosave:n('s-autosave'),
+    progressFreq:n('s-progress-freq'),
+    nolock:gc('s-nolock'), useTran:gc('s-use-tran'), nocount:gc('s-nocount'),
+    disableIdx:gc('s-disable-idx'), verify:gc('s-verify'),
+  };
+}
+
+function saveSettings(){
+  const c=readUI();
+  try{localStorage.setItem(PERF_KEY,JSON.stringify(c));}catch{}
+  const s=document.getElementById('save-status');
+  s.textContent='Saved at '+new Date().toLocaleTimeString(); s.style.color='var(--green)';
+  setTimeout(()=>s.textContent='',3000);
+  renderSummary(c);
+}
+
+function resetSettings(){
+  if(!confirm('Reset all performance settings to defaults?')) return;
+  applyToUI(DEFAULTS);
+  document.querySelectorAll('.preset-chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('preset-tip').textContent='Select a preset above to auto-fill recommended values.';
+  document.getElementById('preset-tip').className='tip';
+}
+
+function applyPreset(name){
+  const p=PRESETS[name]; if(!p) return;
+  applyToUI(p);
+  document.querySelectorAll('.preset-chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('preset-'+name).classList.add('active');
+  const t=document.getElementById('preset-tip');
+  t.textContent=p.tip; t.className='tip '+(p.style||'');
+}
+
+function renderSummary(c){
+  const warns=[];
+  if(c.concurrency>4) warns.push('Concurrency above 4 may overwhelm Azure SQL Standard tier — monitor DTU usage.');
+  if(c.nolock&&!c.verify) warns.push('NOLOCK reads without verification — dirty reads could go undetected. Consider enabling row count verification.');
+  if(c.apiTimeout<=c.queryTimeout) warns.push('API timeout ('+c.apiTimeout+'s) should exceed query timeout ('+c.queryTimeout+'s) or the browser may cancel queries still running on the server.');
+  if(c.queryTimeout===0) warns.push('Unlimited query timeout — a runaway query will not be cancelled automatically.');
+  if(c.insertBatch===1000&&!c.disableIdx) warns.push('At max batch size (1,000), disabling non-clustered indexes before migration can improve speed by 3-10x.');
+
+  document.getElementById('summary-body').innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.875rem;margin-bottom:1rem">'
+    +'<div style="background:var(--bg3);border-radius:var(--r);padding:0.75rem;border:0.5px solid var(--border)">'
+    +'<div style="font-size:10px;color:var(--text3);margin-bottom:0.25rem">Fetch / Insert</div>'
+    +'<div style="font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--teal)">'+c.fetchPage.toLocaleString()+' / '+c.insertBatch.toLocaleString()+'</div>'
+    +'<div style="font-size:10px;color:var(--text3)">rows per page / per batch</div></div>'
+    +'<div style="background:var(--bg3);border-radius:var(--r);padding:0.75rem;border:0.5px solid var(--border)">'
+    +'<div style="font-size:10px;color:var(--text3);margin-bottom:0.25rem">Threads / Retries</div>'
+    +'<div style="font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--accent)">'+c.concurrency+' / '+c.retries+'</div>'
+    +'<div style="font-size:10px;color:var(--text3)">parallel threads / retries</div></div>'
+    +'<div style="background:var(--bg3);border-radius:var(--r);padding:0.75rem;border:0.5px solid var(--border)">'
+    +'<div style="font-size:10px;color:var(--text3);margin-bottom:0.25rem">Timeouts</div>'
+    +'<div style="font-size:1.1rem;font-weight:700;font-family:var(--mono);color:var(--purple)">'+c.queryTimeout+'s</div>'
+    +'<div style="font-size:10px;color:var(--text3)">query · '+c.connTimeout+'s connect · '+c.apiTimeout+'s API</div></div>'
+    +'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.875rem">'
+    +(c.nolock?'<span class="badge badge-amber">NOLOCK reads</span>':'')
+    +(c.useTran?'<span class="badge badge-teal">Transactional</span>':'')
+    +(c.nocount?'<span class="badge badge-teal">NOCOUNT ON</span>':'')
+    +(c.disableIdx?'<span class="badge badge-amber">Index hint</span>':'')
+    +(c.verify?'<span class="badge badge-teal">Row verification</span>':'')
+    +'<span class="badge badge-teal">Cache '+c.schemaCache+'s</span>'
+    +'</div>'
+    +(warns.length
+      ? warns.map(w=>'<div class="tip tip-amber" style="margin-bottom:0.4rem">'+w+'</div>').join('')
+      : '<div class="tip tip-green">No configuration warnings — settings look good.</div>');
+}
+
+function sv(id,v){const e=document.getElementById(id);if(e)e.value=v;}
+function scb(id,v){const e=document.getElementById(id);if(e)e.checked=!!v;}
+function n(id){return parseFloat(document.getElementById(id)?.value||0)||0;}
+function gc(id){return document.getElementById(id)?.checked||false;}
+function updateLabel(cbId,lblId){
+  const c=document.getElementById(cbId);const l=document.getElementById(lblId);
+  if(c&&l)l.textContent=c.checked?'ON':'OFF';
+}
+
+const cfg=loadSettings();
+applyToUI(cfg);
+renderSummary(cfg);
+</script>
+</body>
+</html>
