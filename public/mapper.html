@@ -1181,30 +1181,50 @@ function renderOTMCards(){
           </select>
           <button onclick="removeFK(${ti},${fi})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;padding:1px 4px">✕</button>
         </div>`).join('')}
-      <!-- Mapping rows -->
+      <!-- Mapping rows — driven off TARGET columns -->
       <div style="padding:0.5rem 0.875rem">
-        <table class="map-table" style="margin-bottom:0.4rem">
-          <thead><tr><th>Source</th><th>Target</th><th>Transform</th><th></th></tr></thead>
-          <tbody>
-          ${tt.mappings.map((m,mi)=>`
-            <tr>
-              <td><select class="map-select" onchange="updateMapping(${ti},${mi},'srcCol',this.value)">
-                <option value="">— source col —</option>
-                ${srcOpts.map(c=>`<option value="${esc(c.name)}" ${m.srcCol===c.name?'selected':''}>${c.fromJoin?'⊞ ':''} ${esc(c.name)}</option>`).join('')}
+        <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
+          <input placeholder="🔍 Filter…" style="flex:1;min-width:100px;max-width:180px;font-size:11px;padding:2px 6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono);outline:none" oninput="filterOTMRows(${ti},this.value)" id="otm-filter-${ti}">
+          <button class="btn btn-ghost btn-sm" id="otm-hide-btn-${ti}" onclick="toggleOTMUnmapped(${ti})" style="font-size:10px;padding:2px 7px">👁 Hide Unmapped</button>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="map-table" style="margin-bottom:0.4rem" id="otm-table-${ti}">
+          <thead><tr><th>Source col</th><th>Src type</th><th>Target col ▲</th><th>Tgt type</th><th>Transform</th><th title="Fixed SQL value — overrides source col">Fixed value</th><th></th></tr></thead>
+          <tbody id="otm-tbody-${ti}">
+          ${tt.columns.filter(c=>!c.isIdentity).map((tc,mi)=>{
+            const m=tt.mappings.find(mp=>mp.tgtCol===tc.name)||{srcCol:'',tgtCol:tc.name,transform:'NONE',literalValue:''};
+            const realMi=tt.mappings.findIndex(mp=>mp.tgtCol===tc.name);
+            const srcDef=(srcTable?.columns||[]).find(sc=>(typeof sc==='string'?sc:sc.name)===m.srcCol);
+            const srcType=srcDef&&typeof srcDef==='object'?srcDef.type:'';
+            const willTrunc=m.srcCol&&srcType&&tc.type&&isCharType(srcType)&&isCharType(tc.type)&&(m.transform||'NONE')==='NONE'&&parseTypeLen(srcType)>parseTypeLen(tc.type);
+            const truncLen=willTrunc?parseTypeLen(tc.type):0;
+            const hasFixed=!!(m.literalValue&&m.literalValue!=='');
+            const rowBg=hasFixed?'background:rgba(45,212,191,0.04)':willTrunc?'background:rgba(245,158,11,0.04)':'';
+            const unmapped=!m.srcCol&&!hasFixed;
+            return `<tr data-unmapped="${unmapped}" style="${rowBg?rowBg:''}">
+              <td><select class="map-select" style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}"
+                onchange="updateOTMSrcCol(${ti},'${esc(tc.name)}',this.value)">
+                <option value="">— none —</option>
+                ${srcOpts.map(sc=>`<option value="${esc(sc.name)}" ${m.srcCol===sc.name?'selected':''}>${sc.fromJoin?'⊞ ':''}${esc(sc.name)}</option>`).join('')}
               </select></td>
-              <td><select class="map-select" onchange="updateMapping(${ti},${mi},'tgtCol',this.value)">
-                <option value="">— target col —</option>
-                ${tt.columns.filter(c=>!c.isIdentity).map(c=>`<option value="${esc(c.name)}" ${m.tgtCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
+              <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(tc.name)}</td>
+              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px">⚠ LEFT(${truncLen})</span>`:''}</td>
+              <td><select class="map-select" style="width:75px" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
+                ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
               </select></td>
-              <td><select class="map-select" style="width:80px" onchange="updateMapping(${ti},${mi},'transform',this.value)">
-                ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
-              </select></td>
-              <td><button onclick="removeMapping(${ti},${mi})" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px">✕</button></td>
-            </tr>`).join('')}
+              <td><input class="map-select" style="width:110px;color:var(--teal);font-family:var(--mono);font-size:11px"
+                placeholder="e.g. N'Value', NULL…"
+                value="${esc(m.literalValue||'')}"
+                oninput="updateOTMLiteral(${ti},'${esc(tc.name)}',this.value)"
+                title="Fixed SQL value — overrides source col. Leave blank to use source."></td>
+              <td></td>
+            </tr>`;
+          }).join('')}
           </tbody>
         </table>
+        </div>
         <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
-          <button onclick="addMapping(${ti})" class="btn btn-ghost btn-sm">+ Row</button>
           ${ti>0?`<button onclick="addFK(${ti})" class="btn btn-amber btn-sm">+ FK</button>`:''}
         </div>
       </div>
@@ -1224,6 +1244,59 @@ function addMapping(ti){ targetTables[ti].mappings.push({srcCol:'',tgtCol:'',tra
 function addFK(ti){ targetTables[ti].fks.push({myCol:'',refTableVar:''}); renderOTMCards(); }
 function removeMapping(ti,mi){ targetTables[ti].mappings.splice(mi,1); renderOTMCards(); renderSrcColList(); }
 function removeFK(ti,fi){ targetTables[ti].fks.splice(fi,1); renderOTMCards(); }
+
+// ── OTM per-card filter + show/hide unmapped ──────────────────────────────────
+const _otmHideUnmapped = {};
+
+function toggleOTMUnmapped(ti){
+  _otmHideUnmapped[ti] = !_otmHideUnmapped[ti];
+  const btn=document.getElementById('otm-hide-btn-'+ti);
+  if(btn){
+    btn.textContent = _otmHideUnmapped[ti] ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.style.color = _otmHideUnmapped[ti] ? 'var(--amber)' : '';
+  }
+  filterOTMRows(ti, document.getElementById('otm-filter-'+ti)?.value||'');
+}
+
+function filterOTMRows(ti, q){
+  const tbody=document.getElementById('otm-tbody-'+ti); if(!tbody) return;
+  const low=(q||'').toLowerCase();
+  Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
+    const isUnmapped=tr.dataset.unmapped==='true';
+    if(_otmHideUnmapped[ti] && isUnmapped){ tr.style.display='none'; return; }
+    if(low){
+      const text=tr.textContent.toLowerCase();
+      tr.style.display=text.includes(low)?'':'none';
+    } else {
+      tr.style.display='';
+    }
+  });
+}
+
+// Update helpers that operate on tgtCol as key (target-driven mapping)
+function updateOTMSrcCol(ti, tgtCol, srcCol){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){ m={srcCol:'',tgtCol,transform:'NONE',literalValue:''}; tt.mappings.push(m); }
+  m.srcCol=srcCol;
+  checkOTMReady();
+}
+
+function updateOTMTransform(ti, tgtCol, transform){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){ m={srcCol:'',tgtCol,transform:'NONE',literalValue:''}; tt.mappings.push(m); }
+  m.transform=transform;
+  checkOTMReady();
+}
+
+function updateOTMLiteral(ti, tgtCol, val){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){ m={srcCol:'',tgtCol,transform:'NONE',literalValue:''}; tt.mappings.push(m); }
+  m.literalValue=val.trim();
+  checkOTMReady();
+}
 
 function checkOTMReady(){
   const btn=$('otm-actions');
@@ -1269,25 +1342,36 @@ async function aiMapOTM(ti){
   const srcCols=[...(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name), ...joinCols.map(c=>c.name)];
   const tgtCols=tt.columns.filter(c=>!c.isIdentity).map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
 
+  // Target-driven prompt — one entry per target column
   const prompt='Map source columns to target table columns.\n\n'+
     'Source: '+srcTable.fullName+'\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
     'Target: '+tt.fullName+'\n'+tgtCols.map(c=>'  '+c).join('\n')+'\n\n'+
-    'Return JSON array: [{"srcCol":"name","tgtCol":"name","transform":"NONE"}]\n'+
-    'Only include good matches. Return ONLY JSON.';
+    'Return a JSON array — ONE ENTRY PER TARGET COLUMN.\n'+
+    '[{"srcCol":"matching source col or empty string","tgtCol":"target col","transform":"NONE","match":"HIGH|MEDIUM|LOW|"}]\n'+
+    'Every non-identity target column must appear. Leave srcCol empty if no match. Return ONLY JSON.';
 
   try {
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2048,messages:[{role:'user',content:prompt}]})
-    });
-    const data=await res.json();
-    if(!res.ok) throw new Error(data.error?.message||res.statusText);
-    const raw=(data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
-    const arr=JSON.parse(raw);
-    targetTables[ti].mappings=arr.map(m=>({srcCol:m.srcCol,tgtCol:m.tgtCol||'',transform:m.transform||'NONE'}));
-    renderOTMCards();
-    renderSrcColList();
+    // Haiku with retry on overload
+    for(let attempt=1; attempt<=3; attempt++){
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2048,messages:[{role:'user',content:prompt}]})
+      });
+      const data=await res.json();
+      if(res.status===529||data.error?.type==='overloaded_error'){
+        if(attempt<3){ showStatus('Claude busy — retrying ('+attempt+'/3)…','info'); await new Promise(r=>setTimeout(r,2000*attempt)); continue; }
+        throw new Error('Claude is overloaded — try again in a moment');
+      }
+      if(!res.ok) throw new Error(data.error?.message||res.statusText);
+      const raw=(data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
+      const arr=JSON.parse(raw);
+      // Merge AI result into mappings (target-driven)
+      targetTables[ti].mappings=arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',literalValue:'',match:m.match||''}));
+      renderOTMCards();
+      renderSrcColList();
+      break;
+    }
   } catch(e){
     showStatus('AI map error: '+e.message,'err');
   }
