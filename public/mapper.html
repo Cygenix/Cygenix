@@ -103,7 +103,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .wasis-table th{color:var(--text3);font-size:10px;text-transform:uppercase;background:var(--bg4)}
 
 /* ── SQL Preview ── */
-.sql-box{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:1rem;font-family:var(--mono);font-size:11px;color:var(--text2);white-space:pre;overflow:auto;max-height:400px;line-height:1.6}
+.sql-box{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:1rem;font-family:var(--mono);font-size:11px;color:var(--text2);white-space:pre;overflow:auto;max-height:400px;max-width:300ch;line-height:1.6}
 .sql-tab{padding:0.4rem 0.875rem;font-size:12px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;font-family:var(--serif);background:none;border-top:none;border-left:none;border-right:none}
 .sql-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 
@@ -389,7 +389,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
       <div class="panel" id="sql-panel" style="display:none">
         <div class="panel-head">
           <div class="panel-title">⚡ Generated SQL</div>
-          <div style="display:flex;gap:0.5rem">
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value">✂ Remove unused</button>
             <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
             <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
             <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn">💾 Save as job</button>
@@ -835,6 +836,16 @@ function applyMapFilter(){
   const total = columnMapping.length;
   const fc=$('map-filter-count');
   if(fc) fc.textContent = (q||matchF) ? visible+' of '+total+' shown' : '';
+}
+
+function removeUnmappedCols(){
+  const before = columnMapping.length;
+  columnMapping = columnMapping.filter(m => m.srcCol || m.literalValue);
+  const removed = before - columnMapping.length;
+  if(!removed){ showStatus('No unused columns to remove','info'); return; }
+  renderMappingTable();
+  tryAutoGenSQL();
+  showStatus('Removed '+removed+' unmapped row'+(removed===1?'':'s'),'info');
 }
 
 function clearMapFilter(){
