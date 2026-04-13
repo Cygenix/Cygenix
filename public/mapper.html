@@ -391,6 +391,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
           <div class="panel-title">⚡ Generated SQL</div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value">✂ Remove unused</button>
+            <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none;color:var(--amber)">↩ Undo remove</button>
             <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
             <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
             <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn">💾 Save as job</button>
@@ -840,12 +841,26 @@ function applyMapFilter(){
 
 function removeUnmappedCols(){
   const before = columnMapping.length;
+  const removed = columnMapping.filter(m => !m.srcCol && !m.literalValue);
+  if(!removed.length){ showStatus('No unused columns to remove','info'); return; }
+  _removedUnmappedCols = removed;  // stash for undo
   columnMapping = columnMapping.filter(m => m.srcCol || m.literalValue);
-  const removed = before - columnMapping.length;
-  if(!removed){ showStatus('No unused columns to remove','info'); return; }
   renderMappingTable();
   tryAutoGenSQL();
-  showStatus('Removed '+removed+' unmapped row'+(removed===1?'':'s'),'info');
+  $('undo-remove-btn').style.display = 'inline-flex';
+  showStatus('Removed '+removed.length+' unmapped row'+(removed.length===1?'':'s')+' — click Undo to restore','info');
+}
+
+let _removedUnmappedCols = [];
+
+function undoRemoveUnmappedCols(){
+  if(!_removedUnmappedCols.length){ showStatus('Nothing to undo','info'); return; }
+  columnMapping = [...columnMapping, ..._removedUnmappedCols];
+  _removedUnmappedCols = [];
+  renderMappingTable();
+  tryAutoGenSQL();
+  $('undo-remove-btn').style.display = 'none';
+  showStatus('Restored unmapped columns','info');
 }
 
 function clearMapFilter(){
