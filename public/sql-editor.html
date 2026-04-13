@@ -129,9 +129,10 @@ body.fullscreen .script-panel { display:none }
 .editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:column}
 .editor-scroll-row{display:flex;flex:1;overflow:hidden;position:relative}
 .line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre;align-self:stretch}
-/* highlight layer sits behind the textarea */
-#sql-highlight{position:absolute;top:0;left:0;right:0;bottom:0;padding:1rem 1.25rem;font-family:var(--mono);font-size:13px;line-height:1.7;white-space:pre;overflow:hidden;pointer-events:none;tab-size:2;word-break:normal;color:transparent}
-#sql-editor{position:relative;z-index:1;background:transparent!important;caret-color:var(--text);color:transparent;flex:1;min-width:0}
+/* highlight layer sits behind the textarea — shows token colours */
+#sql-highlight{position:absolute;top:0;left:0;right:0;bottom:0;padding:1rem 1.25rem;font-family:var(--mono);font-size:13px;line-height:1.7;white-space:pre;overflow:hidden;pointer-events:none;tab-size:2;word-break:normal;color:var(--text)}
+/* textarea sits on top — text transparent so highlight shows through, caret stays visible */
+#sql-editor{position:relative;z-index:1;background:transparent!important;caret-color:var(--text);color:transparent;flex:1;min-width:0;-webkit-text-fill-color:transparent}
 /* token colours */
 .tok-kw   {color:#569cd6}  /* SELECT, FROM, WHERE… */
 .tok-kw2  {color:#c586c0}  /* JOIN, ON, AS… */
@@ -270,7 +271,7 @@ body.fullscreen .script-panel { display:none }
       <div class="editor-wrap">
         <div class="editor-wrap-inner">
           <div class="line-numbers" id="line-numbers">1</div>
-          <div style="position:relative;flex:1;overflow:auto;display:flex" id="editor-scroll-host">
+          <div style="position:relative;flex:1;overflow:auto;display:flex;flex-direction:column" id="editor-scroll-host">
             <div id="sql-highlight" aria-hidden="true"></div>
             <textarea id="sql-editor" spellcheck="false" class="wrap-off" placeholder="-- Write SQL here | Ctrl+Enter to run | Ctrl+F to find | Ctrl+/ to comment&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus();updateLineNumbers();highlightSQL()" onscroll="syncScroll()" onclick="updateStatus()"></textarea>
           </div>
