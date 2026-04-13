@@ -804,7 +804,7 @@ function generateSingleSQL(){
   const warnings = [];
   const srcFull = '['+srcTable.schema+'].['+srcTable.name+']';
   const tgtFull = '['+tgtTable.schema+'].['+tgtTable.name+']';
-  const tgtDB = tgtSchema?.database||'';
+  const tgtDB = tgtSchema?.database || parseDbName(tgtConn) || '';
   const identityCols = (tgtTable.columns||[]).filter(c=>c.isIdentity).map(c=>c.name);
   const hasIdent = mapping.some(m=>identityCols.includes(m.tgtCol));
 
@@ -864,7 +864,7 @@ function generateSingleSQL(){
   });
 
   // Build fully-qualified 3-part names including database
-  const srcDB  = srcSchema?.database || '';
+  const srcDB  = srcSchema?.database || parseDbName(srcConn) || '';
   const srcFullQ = srcDB ? `[${srcDB}].${srcFull}` : srcFull;
   const tgtFullQ = tgtDB ? `[${tgtDB}].${tgtFull}` : tgtFull;
 
@@ -1110,8 +1110,8 @@ function generateOTMSQL(){
   const txMode=$('tx-mode')?.value||'single';
   const where=($('src-where')?.value||'').trim();
   const srcFull='['+srcTable.schema+'].['+srcTable.name+']';
-  const srcDb=srcSchema?.database||'';
-  const tgtDb=tgtSchema?.database||'';
+  const srcDb = srcSchema?.database || parseDbName(srcConn) || '';
+  const tgtDb = tgtSchema?.database || parseDbName(tgtConn) || '';
   const truncWarnings=[];
 
   // Aliases

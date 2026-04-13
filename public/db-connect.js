@@ -115,7 +115,7 @@ exports.handler = async function (event) {
         }
         for (const pk of pkR.recordset) { const key=`${pk.TABLE_SCHEMA}.${pk.TABLE_NAME}`; if(tables[key]) tables[key].primaryKeys.push(pk.COLUMN_NAME); }
         for (const fk of fkR.recordset) { const key=`${fk.fk_schema}.${fk.fk_table}`; if(tables[key]) tables[key].foreignKeys.push({column:fk.fk_column,references:`${fk.ref_schema}.${fk.ref_table}(${fk.ref_column})`}); }
-        result = { success: true, tables: Object.values(tables) };
+        result = { success: true, database: config.database || '', tables: Object.values(tables) };
         break;
       }
 
