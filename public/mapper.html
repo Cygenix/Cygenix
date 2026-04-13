@@ -863,24 +863,35 @@ function generateSingleSQL(){
     if(!mapping.find(m=>m.tgtCol===tc.name)) warnings.push('Target ['+tc.name+'] is NOT NULL but has no mapping');
   });
 
+  // Build fully-qualified 3-part names including database
+  const srcDB  = srcSchema?.database || '';
+  const srcFullQ = srcDB ? `[${srcDB}].${srcFull}` : srcFull;
+  const tgtFullQ = tgtDB ? `[${tgtDB}].${tgtFull}` : tgtFull;
+
+  // Rewrite SELECT expressions to use 3-part source reference
+  const selectColsQ = selectCols.replace(
+    new RegExp('\\['+srcTable.schema.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\]\\.\\['+srcTable.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\]\\.', 'g'),
+    srcFullQ + '.'
+  );
+
   let sql='';
   sql+=`-- ============================================================\n`;
-  sql+=`-- Migration: ${srcTable.fullName} → ${tgtDB?tgtDB+'.':''}${tgtTable.fullName}\n`;
+  sql+=`-- Migration: ${srcDB?srcDB+'.':''}${srcTable.fullName} → ${tgtDB?tgtDB+'.':''}${tgtTable.fullName}\n`;
   sql+=`-- Columns: ${mapping.length} mapped${wasisRules.length?' · Was/Is: '+wasisRules.length+' rules':''}\n`;
   sql+=`-- Generated: ${new Date().toISOString()}\n`;
   sql+=`-- ============================================================\n\n`;
-  if(tgtDB) sql+=`USE [${tgtDB}];\nGO\n\n`;
-  sql+=`SET NOCOUNT ON;\nGO\n\n`;
-  if(hasIdent) sql+=`SET IDENTITY_INSERT ${tgtFull} ON;\nGO\n\n`;
-  sql+=`INSERT INTO ${tgtFull}\n    (${colList})\nSELECT\n${selectCols}\nFROM ${srcFull}\n`;
+  sql+=`SET NOCOUNT ON;\n\n`;
+  if(hasIdent) sql+=`SET IDENTITY_INSERT ${tgtFullQ} ON;\n\n`;
+  sql+=`INSERT INTO ${tgtFullQ}\n    (${colList})\nSELECT\n${selectCols.replace(/\[${srcTable.schema}\]\.\[${srcTable.name}\]\./g, srcFullQ+'.')}\nFROM ${srcFullQ}\n`;
   if(joinClauses) sql+=joinClauses+'\n';
   if(where) sql+=`WHERE ${where}\n`;
-  sql+=';\nGO\n';
-  if(hasIdent) sql+=`\nSET IDENTITY_INSERT ${tgtFull} OFF;\nGO\n`;
-  sql+=`\n-- Verify:\nSELECT COUNT(*) AS migrated_rows FROM ${tgtFull};`;
+  sql+=';\n';
+  if(hasIdent) sql+=`\nSET IDENTITY_INSERT ${tgtFullQ} OFF;\n`;
+  sql+=`\n-- Verify:\nSELECT COUNT(*) AS [migrated_rows] FROM ${tgtFullQ};\n`+
+       `SELECT COUNT(*) AS [source_rows]   FROM ${srcFullQ}${where?' WHERE '+where:''};`;
 
   const schemaSQL=`SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA='${tgtTable.schema}' AND TABLE_NAME='${tgtTable.name}'\nORDER BY ORDINAL_POSITION;`;
-  const verifySQL=`SELECT COUNT(*) AS migrated_rows FROM ${tgtFull};`;
+  const verifySQL=`SELECT '${srcDB?srcDB+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFullQ}${where?' WHERE '+where:''}\nUNION ALL\nSELECT '${tgtDB?tgtDB+'.':''}${tgtTable.fullName}', COUNT(*) FROM ${tgtFullQ};`;
 
   generatedSQL={insert:sql, schema:schemaSQL, verify:verifySQL};
   showSQLOutput(sql, warnings);
@@ -1116,11 +1127,11 @@ function generateOTMSQL(){
   let sql='';
   sql+=`-- ╔══════════════════════════════════════════════════════════════════╗\n`;
   sql+=`-- ║  Cygenix One-to-Many Migration\n`;
-  sql+=`-- ║  Source: ${srcDb?srcDb+' — ':''}${srcTable.fullName}\n`;
-  sql+=`-- ║  Targets: ${targetTables.map(t=>t.fullName).join(', ')}\n`;
+  sql+=`-- ║  Source: ${srcDb?srcDb+'.':''}${srcTable.fullName}\n`;
+  sql+=`-- ║  Targets: ${targetTables.map(t=>(tgtDb?tgtDb+'.':'')+t.fullName).join(', ')}\n`;
   sql+=`-- ║  Generated: ${new Date().toISOString().slice(0,19).replace('T',' ')}\n`;
   sql+=`-- ╚══════════════════════════════════════════════════════════════════╝\n\n`;
-  if(srcDb) sql+=`-- NOTE: Script runs on target DB. Source read via cross-database reference.\n\n`;
+  if(srcDb) sql+=`-- NOTE: Source read via cross-database reference [${srcDb}].\n\n`;
 
   // Declare PK vars
   const parentTables=targetTables.filter((_,i)=>targetTables.some((_2,j)=>j>i&&targetTables[j].fks.some(fk=>fk.refTableVar===targetTables[i].pkVar)));
@@ -1135,7 +1146,6 @@ function generateOTMSQL(){
     sql+='\n';
   }
 
-  if(tgtDb) sql+=`USE [${tgtDb}];\n\n`;
   if(txMode==='single') sql+=`SET XACT_ABORT ON;\nBEGIN TRAN;\n\n`;
 
   // Cursor SELECT
@@ -1186,11 +1196,12 @@ function generateOTMSQL(){
   // Insert into each target
   targetTables.forEach((tt,ti)=>{
     const tgtFull='['+tt.schema+'].['+tt.name+']';
+    const tgtFullQ=tgtDb?'['+tgtDb+'].'+tgtFull:tgtFull;  // 3-part: [TargetDB].[schema].[table]
     const mappedCols=tt.mappings.filter(m=>m.srcCol&&m.tgtCol&&!tt.columns.find(c=>c.name===m.tgtCol&&c.isIdentity));
     const fkCols=tt.fks;
     if(!mappedCols.length&&!fkCols.length){ sql+=`  -- Table ${ti+1}: ${tt.fullName} — no mappings, skipping\n\n`; return; }
 
-    sql+=`  -- ── ${ti+1}. INSERT into ${tt.fullName}\n`;
+    sql+=`  -- ── ${ti+1}. INSERT into ${tgtDb?tgtDb+'.':''}${tt.fullName}\n`;
     if(txMode==='independent') sql+=`  BEGIN TRY\n  BEGIN TRAN;\n`;
 
     const insertCols=[...mappedCols.map(m=>'  ['+m.tgtCol+']'),...fkCols.map(fk=>'  ['+fk.myCol+']')].join(',\n');
@@ -1217,19 +1228,19 @@ function generateOTMSQL(){
     ].join(',\n');
 
     if(tt.pkMode==='identity'){
-      sql+=`  INSERT INTO ${tgtFull} (\n${insertCols}\n  )\n`;
+      sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n`;
       sql+=`  OUTPUT INSERTED.[${tt.pkCol}] INTO @tbl${tt.id.replace(/[^a-z0-9]/gi,'')}(Id)\n`;
       sql+=`  VALUES (\n${insertVals}\n  );\n`;
       sql+=`  SELECT TOP 1 ${tt.pkVar} = Id FROM @tbl${tt.id.replace(/[^a-z0-9]/gi,'')};\n`;
     } else if(tt.pkMode==='guid'){
       sql+=`  SET ${tt.pkVar} = NEWID();\n`;
-      sql+=`  INSERT INTO ${tgtFull} ([${tt.pkCol}],\n${insertCols}\n  )\n  VALUES (${tt.pkVar},\n${insertVals}\n  );\n`;
+      sql+=`  INSERT INTO ${tgtFullQ} ([${tt.pkCol}],\n${insertCols}\n  )\n  VALUES (${tt.pkVar},\n${insertVals}\n  );\n`;
     } else {
-      sql+=`  INSERT INTO ${tgtFull} (\n${insertCols}\n  )\n  VALUES (\n${insertVals}\n  );\n`;
+      sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n  VALUES (\n${insertVals}\n  );\n`;
     }
 
     if(txMode==='independent'){
-      sql+=`  COMMIT TRAN;\n  END TRY\n  BEGIN CATCH\n    ROLLBACK TRAN;\n    PRINT 'Error in ${tt.fullName}: '+ERROR_MESSAGE();\n  END CATCH\n`;
+      sql+=`  COMMIT TRAN;\n  END TRY\n  BEGIN CATCH\n    ROLLBACK TRAN;\n    PRINT 'Error in ${tgtDb?tgtDb+'.':''}${tt.fullName}: '+ERROR_MESSAGE();\n  END CATCH\n`;
     }
     sql+='\n';
   });
@@ -1245,7 +1256,9 @@ function generateOTMSQL(){
   if(txMode==='single') sql+=`\nCOMMIT TRAN;\n`;
 
   _lastTruncWarnings=truncWarnings;
-  generatedSQL={insert:sql, schema:'', verify:''};
+  const verifySQL=`-- Verify row counts\nSELECT '${srcDb?srcDb+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFullQualified}${where?' WHERE '+where:''}\n`+
+    targetTables.map(tt=>`UNION ALL\nSELECT '${tgtDb?tgtDb+'.':''}${tt.fullName}', COUNT(*) FROM ${tgtDb?'['+tgtDb+'].':''} [${tt.schema}].[${tt.name}]`).join('\n')+';\n';
+  generatedSQL={insert:sql, schema:'', verify:verifySQL};
 
   const warnings=truncWarnings.map(w=>`[${w.srcCol}] → [${w.tgtTable}.${w.tgtCol}] truncated to ${w.tgtLen} chars via LEFT()`);
   showSQLOutput(sql, warnings);
