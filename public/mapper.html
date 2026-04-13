@@ -777,17 +777,24 @@ function renderMappingTable(){
     const srcType = typeof srcDef==='object'?srcDef.type:'';
     const tgtDef = tgtCols.find(c=>c.name===m.tgtCol);
     const matchColor = m.match==='HIGH'?'var(--green)':m.match==='MEDIUM'?'var(--amber)':m.match==='LOW'?'var(--red)':'var(--text3)';
-    return `<tr>
-      <td style="font-family:var(--mono);color:var(--text)">${esc(m.srcCol)}</td>
-      <td style="font-family:var(--mono);color:var(--text3)">${esc(srcType)}</td>
+    const isLiteral = (m.transform||'').toUpperCase()==='LITERAL';
+    return `<tr${isLiteral?' style="background:rgba(45,212,191,0.04)"':''}>
+      <td style="font-family:var(--mono);color:${isLiteral?'var(--text3)':'var(--text)'};${isLiteral?'text-decoration:line-through;font-style:italic':''}">
+        ${isLiteral?'<span style="color:var(--text3);font-style:italic;font-size:10px">(fixed value)</span>':esc(m.srcCol)}
+      </td>
+      <td style="font-family:var(--mono);color:var(--text3)">${isLiteral?'':esc(srcType)}</td>
       <td><select class="map-select" onchange="columnMapping[${i}].tgtCol=this.value;renderSrcColList()">
         <option value="">— skip —</option>
         ${tgtCols.filter(c=>!c.isIdentity).map(c=>`<option value="${esc(c.name)}" ${m.tgtCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
       </select></td>
       <td style="font-family:var(--mono);color:var(--text3)">${esc(tgtDef?.type||'')}</td>
-      <td><select class="map-select" style="width:90px" onchange="columnMapping[${i}].transform=this.value">
-        ${['NONE','TRIM','UPPER','LOWER','CAST','CUSTOM'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
-      </select></td>
+      <td>
+        <select class="map-select" style="width:90px" onchange="updateTransform(${i},this.value)">
+          ${['NONE','TRIM','UPPER','LOWER','CAST','LITERAL'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
+        </select>
+        ${isLiteral?`<input class="map-select" style="margin-top:3px;width:100%;color:var(--teal)" placeholder="Fixed value…"
+          value="${esc(m.literalValue||'')}" oninput="columnMapping[${i}].literalValue=this.value;generateSingleSQL()">`:''}
+      </td>
       <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${m.match||'—'}</span></td>
       <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
     </tr>`;
@@ -808,17 +815,22 @@ function generateSingleSQL(){
   const identityCols = (tgtTable.columns||[]).filter(c=>c.isIdentity).map(c=>c.name);
   const hasIdent = mapping.some(m=>identityCols.includes(m.tgtCol));
 
+  // 3-part DB names — build BEFORE selectCols so we can use srcFullQ directly
+  const srcDB  = srcSchema?.database || parseDbName(srcConn) || '';
+  const srcFullQ = srcDB ? `[${srcDB}].${srcFull}` : srcFull;
+  const tgtFullQ = tgtDB ? `[${tgtDB}].${tgtFull}` : tgtFull;
+
   // JOIN aliases
   const activeJoins = (window._joinState||[]).filter(j=>j.table&&j.on);
   const joinAliases = {}; activeJoins.forEach((j,i)=>{ joinAliases[j.table]='s'+(i+1); });
 
   function rewriteOn(on){
     const map={};
-    map[srcTable.name.toLowerCase()]=srcFull;
-    map[(srcTable.schema+'.'+srcTable.name).toLowerCase()]=srcFull;
+    map[srcTable.name.toLowerCase()]=srcFullQ;
+    map[(srcTable.schema+'.'+srcTable.name).toLowerCase()]=srcFullQ;
     activeJoins.forEach(j=>{ const a=joinAliases[j.table]; const parts=j.table.toLowerCase().split('.'); map[parts[parts.length-1]]=a; map[j.table.toLowerCase()]=a; });
-    on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,sc,tb,col)=>{ const a=map[(sc+'.'+tb).toLowerCase()]||map[tb.toLowerCase()]; return a?(a===srcFull?a+'.['+col+']':a+'.['+col+']'):'['+sc+'].['+tb+'].['+col+']'; });
-    on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,tb,col)=>{ const a=map[tb.toLowerCase()]; return a?(a+'.['+col+']'):'['+tb+'].['+col+']'; });
+    on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,sc,tb,col)=>{ const a=map[(sc+'.'+tb).toLowerCase()]||map[tb.toLowerCase()]; return a?a+'.['+col+']':'['+sc+'].['+tb+'].['+col+']'; });
+    on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,tb,col)=>{ const a=map[tb.toLowerCase()]; return a?a+'.['+col+']':'['+tb+'].['+col+']'; });
     return on;
   }
 
@@ -831,13 +843,19 @@ function generateSingleSQL(){
 
   const selectCols = mapping.map(m=>{
     let srcExpr;
+    // LITERAL transform: output the fixed value directly, no source column
+    if((m.transform||'').toUpperCase()==='LITERAL'){
+      const lit = m.literalValue !== undefined ? m.literalValue : '';
+      return '      '+formatSQLVal(lit)+' AS ['+m.tgtCol+']';
+    }
     if(m.fromJoin){
       const jEntry=activeJoins.find(j=>j.table===m.fromJoin||j.table.split('.').pop()===m.fromJoin?.split('.').pop());
       const alias=jEntry?joinAliases[jEntry.table]:m.alias||'s1';
       const colName=m.srcCol.includes('.')?m.srcCol.split('.').pop():m.srcCol;
       srcExpr=alias+'.['+colName+']';
     } else {
-      srcExpr=srcFull+'.['+m.srcCol+']';
+      // Use srcFullQ (3-part) — column name only, no schema/table prefix in SELECT
+      srcExpr=srcFullQ+'.['+m.srcCol+']';
     }
     switch((m.transform||'NONE').toUpperCase()){
       case 'TRIM': srcExpr='LTRIM(RTRIM('+srcExpr+'))'; break;
@@ -863,16 +881,7 @@ function generateSingleSQL(){
     if(!mapping.find(m=>m.tgtCol===tc.name)) warnings.push('Target ['+tc.name+'] is NOT NULL but has no mapping');
   });
 
-  // Build fully-qualified 3-part names including database
-  const srcDB  = srcSchema?.database || parseDbName(srcConn) || '';
-  const srcFullQ = srcDB ? `[${srcDB}].${srcFull}` : srcFull;
-  const tgtFullQ = tgtDB ? `[${tgtDB}].${tgtFull}` : tgtFull;
-
-  // Rewrite SELECT expressions to use 3-part source reference
-  const selectColsQ = selectCols.replace(
-    new RegExp('\\['+srcTable.schema.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\]\\.\\['+srcTable.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\]\\.', 'g'),
-    srcFullQ + '.'
-  );
+  // srcDB, srcFullQ, tgtFullQ already computed above before selectCols
 
   let sql='';
   sql+=`-- ============================================================\n`;
@@ -882,7 +891,7 @@ function generateSingleSQL(){
   sql+=`-- ============================================================\n\n`;
   sql+=`SET NOCOUNT ON;\n\n`;
   if(hasIdent) sql+=`SET IDENTITY_INSERT ${tgtFullQ} ON;\n\n`;
-  sql+=`INSERT INTO ${tgtFullQ}\n    (${colList})\nSELECT\n${selectCols.replace(/\[${srcTable.schema}\]\.\[${srcTable.name}\]\./g, srcFullQ+'.')}\nFROM ${srcFullQ}\n`;
+  sql+=`INSERT INTO ${tgtFullQ}\n    (${colList})\nSELECT\n${selectCols}\nFROM ${srcFullQ}\n`;
   if(joinClauses) sql+=joinClauses+'\n';
   if(where) sql+=`WHERE ${where}\n`;
   sql+=';\n';
@@ -898,6 +907,20 @@ function generateSingleSQL(){
   $('save-job-btn').disabled=false;
   $('tab-schema').style.display='';
   $('tab-verify').style.display='';
+}
+
+function updateTransform(i, val){
+  columnMapping[i].transform = val;
+  if(val !== 'LITERAL') delete columnMapping[i].literalValue;
+  renderMappingTable();
+  generateSingleSQL();
+}
+
+// Also add + Fixed value button to add a literal-only row
+function addLiteralRow(){
+  if(!tgtTable){ alert('Select a target table first.'); return; }
+  columnMapping.push({ srcCol:'', tgtCol:'', transform:'LITERAL', literalValue:'', match:'LITERAL' });
+  renderMappingTable();
 }
 
 function formatSQLVal(v){
