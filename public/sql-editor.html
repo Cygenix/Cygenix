@@ -73,7 +73,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .right-content.active{display:flex;flex-direction:column}
 
 /* Results table */
-.results-wrap{flex:1;overflow:auto;padding:0.75rem}
+.results-wrap{flex:1;overflow-y:auto;overflow-x:scroll;padding:0.75rem}
 .results-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
 .results-table th{background:var(--bg3);padding:0.4rem 0.6rem;text-align:left;font-size:9px;text-transform:uppercase;color:var(--text3);letter-spacing:0.05em;border-bottom:0.5px solid var(--border);position:sticky;top:0;white-space:nowrap}
 .results-table td{padding:0.35rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);white-space:nowrap}
@@ -125,10 +125,25 @@ body.fullscreen .script-panel { display:none }
 .highlight-match{background:rgba(245,158,11,0.35);border-radius:1px}
 .highlight-current{background:rgba(61,126,255,0.45);border-radius:1px}
 
-/* ── LINE NUMBERS ──────────────────────────────────────────────────────────── */
+/* ── SQL SYNTAX HIGHLIGHT ──────────────────────────────────────────────────── */
 .editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:column}
+.editor-scroll-row{display:flex;flex:1;overflow:hidden;position:relative}
 .line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre;align-self:stretch}
-#sql-editor{flex:1;min-width:0}
+/* highlight layer sits behind the textarea */
+#sql-highlight{position:absolute;top:0;left:0;right:0;bottom:0;padding:1rem 1.25rem;font-family:var(--mono);font-size:13px;line-height:1.7;white-space:pre;overflow:hidden;pointer-events:none;tab-size:2;word-break:normal;color:transparent}
+#sql-editor{position:relative;z-index:1;background:transparent!important;caret-color:var(--text);color:transparent;flex:1;min-width:0}
+/* token colours */
+.tok-kw   {color:#569cd6}  /* SELECT, FROM, WHERE… */
+.tok-kw2  {color:#c586c0}  /* JOIN, ON, AS… */
+.tok-fn   {color:#dcdcaa}  /* functions: COUNT, LEFT, CAST… */
+.tok-str  {color:#ce9178}  /* 'string literals' */
+.tok-num  {color:#b5cea8}  /* numbers */
+.tok-op   {color:#d4d4d4}  /* = > < + - */
+.tok-cm   {color:#6a9955;font-style:italic} /* -- comments */
+.tok-obj  {color:#4ec9b0}  /* [bracketed identifiers] */
+.tok-var  {color:#9cdcfe}  /* @variables */
+.tok-punc {color:#808080}  /* ( ) , ; */
+.tok-plain{color:#e8eaf0}  /* everything else */
 #sql-editor::-webkit-scrollbar-horizontal { display:block }
 #sql-editor { scrollbar-width:thin }
 
@@ -255,7 +270,10 @@ body.fullscreen .script-panel { display:none }
       <div class="editor-wrap">
         <div class="editor-wrap-inner">
           <div class="line-numbers" id="line-numbers">1</div>
-          <textarea id="sql-editor" spellcheck="false" class="wrap-off" placeholder="-- Write SQL here | Ctrl+Enter to run | Ctrl+F to find | Ctrl+/ to comment&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus();updateLineNumbers()" onscroll="syncScroll()" onclick="updateStatus()"></textarea>
+          <div style="position:relative;flex:1;overflow:auto;display:flex" id="editor-scroll-host">
+            <div id="sql-highlight" aria-hidden="true"></div>
+            <textarea id="sql-editor" spellcheck="false" class="wrap-off" placeholder="-- Write SQL here | Ctrl+Enter to run | Ctrl+F to find | Ctrl+/ to comment&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus();updateLineNumbers();highlightSQL()" onscroll="syncScroll()" onclick="updateStatus()"></textarea>
+          </div>
         </div>
       </div>
       <div class="editor-status">
@@ -382,6 +400,7 @@ function newScript() {
   currentScript = id;
   document.getElementById('script-name').value = 'New script';
   document.getElementById('sql-editor').value = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+  highlightSQL(); updateLineNumbers();
   clearResults();
   renderScriptList();
   document.getElementById('sql-editor').focus();
@@ -393,6 +412,7 @@ function loadScript(id) {
   currentScript = id;
   document.getElementById('script-name').value = s.name;
   document.getElementById('sql-editor').value = s.sql;
+  highlightSQL(); updateLineNumbers();
   document.getElementById('conn-select').value = s.conn||'source';
   const descEl = document.getElementById('script-desc');
   if (descEl) descEl.value = s.desc || '';
@@ -433,6 +453,7 @@ function deleteScript(id) {
   if (currentScript === id) {
     currentScript = null;
     document.getElementById('sql-editor').value = '';
+    highlightSQL(); updateLineNumbers();
     document.getElementById('script-name').value = 'New script';
     clearResults();
   }
@@ -449,6 +470,7 @@ function loadSQLFromFile(input) {
   reader.onload = function(e) {
     const sql = e.target.result;
     document.getElementById('sql-editor').value = sql;
+    highlightSQL(); updateLineNumbers();
     // Use filename (without extension) as script name
     const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g,' ');
     document.getElementById('script-name').value = name;
@@ -945,6 +967,7 @@ function insertSnippet(text) {
   const before = el.value.slice(0,start);
   const after = el.value.slice(el.selectionEnd);
   el.value = before + text + after;
+  highlightSQL(); updateLineNumbers();
   el.selectionStart = el.selectionEnd = start + text.length;
   el.focus();
   updateStatus();
@@ -1016,7 +1039,81 @@ function updateLineNumbers() {
 function syncScroll() {
   const el = document.getElementById('sql-editor');
   const ln = document.getElementById('line-numbers');
+  const hl = document.getElementById('sql-highlight');
   if (ln) ln.scrollTop = el.scrollTop;
+  if (hl) { hl.scrollTop = el.scrollTop; hl.scrollLeft = el.scrollLeft; }
+}
+
+// ── SQL Syntax Highlighter ────────────────────────────────────────────────────
+const SQL_KW  = new Set('SELECT INSERT UPDATE DELETE FROM WHERE JOIN LEFT RIGHT INNER OUTER FULL CROSS ON INTO VALUES SET GROUP BY ORDER HAVING LIMIT TOP DISTINCT ALL AS WITH UNION EXCEPT INTERSECT EXISTS IN NOT AND OR IS NULL BETWEEN LIKE CASE WHEN THEN ELSE END IF BEGIN COMMIT ROLLBACK TRANSACTION TRAN EXEC EXECUTE DECLARE PRINT USE GO RETURN OFFSET FETCH NEXT ROWS ONLY NOCOUNT IDENTITY_INSERT'.split(' '));
+const SQL_KW2 = new Set('JOIN ON AS LEFT RIGHT INNER OUTER FULL CROSS APPLY'.split(' '));
+const SQL_FN  = new Set('COUNT SUM AVG MIN MAX LEN LEFT RIGHT TRIM LTRIM RTRIM UPPER LOWER CAST CONVERT ISNULL COALESCE NULLIF REPLACE SUBSTRING CHARINDEX GETDATE GETUTCDATE NEWID DATEADD DATEDIFF DATENAME YEAR MONTH DAY FLOOR CEILING ROUND ABS ISNUMERIC ISDATE ROW_NUMBER RANK DENSE_RANK OVER PARTITION'.split(' '));
+
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function tokeniseSQL(sql){
+  let out = '', i = 0, n = sql.length;
+  while(i < n){
+    const ch = sql[i];
+
+    // -- single-line comment
+    if(ch==='-' && sql[i+1]==='-'){
+      let j=i; while(j<n && sql[j]!=='\n') j++;
+      out+=`<span class="tok-cm">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
+    }
+    // /* block comment */
+    if(ch==='/' && sql[i+1]==='*'){
+      let j=i+2; while(j<n-1 && !(sql[j]==='*'&&sql[j+1]==='/')) j++;
+      j+=2;
+      out+=`<span class="tok-cm">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
+    }
+    // 'string' or N'string'
+    if(ch==="'" || (ch==='N' && sql[i+1]==="'")){
+      let j=i+(ch==='N'?2:1);
+      while(j<n){ if(sql[j]==="'"){if(sql[j+1]==="'"){j+=2;}else{j++;break;}} else j++; }
+      out+=`<span class="tok-str">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
+    }
+    // [bracketed identifier]
+    if(ch==='['){
+      let j=i+1; while(j<n && sql[j]!==']') j++; j++;
+      out+=`<span class="tok-obj">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
+    }
+    // @variable
+    if(ch==='@'){
+      let j=i+1; while(j<n && /\w/.test(sql[j])) j++;
+      out+=`<span class="tok-var">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
+    }
+    // number
+    if(/\d/.test(ch) || (ch==='.' && /\d/.test(sql[i+1]||''))){
+      let j=i; while(j<n && /[\d.]/.test(sql[j])) j++;
+      out+=`<span class="tok-num">${escHtml(sql.slice(i,j))}</span>`; i=j; continue;
+    }
+    // word / keyword
+    if(/[a-zA-Z_#]/.test(ch)){
+      let j=i; while(j<n && /\w/.test(sql[j])) j++;
+      const word=sql.slice(i,j); const up=word.toUpperCase();
+      const cls=SQL_KW.has(up)?'tok-kw':SQL_FN.has(up)?'tok-fn':'tok-plain';
+      out+=`<span class="${cls}">${escHtml(word)}</span>`; i=j; continue;
+    }
+    // punctuation
+    if('(),;'.includes(ch)){ out+=`<span class="tok-punc">${escHtml(ch)}</span>`; i++; continue; }
+    // operators
+    if('=<>!+-*/%|&^~'.includes(ch)){ out+=`<span class="tok-op">${escHtml(ch)}</span>`; i++; continue; }
+    // whitespace/newlines — pass through as-is
+    out+=escHtml(ch); i++;
+  }
+  return out;
+}
+
+function highlightSQL(){
+  const ta = document.getElementById('sql-editor');
+  const hl = document.getElementById('sql-highlight');
+  if(!ta||!hl) return;
+  // Append trailing newline so caret on last line has space
+  hl.innerHTML = tokeniseSQL(ta.value) + '\n';
+  // Keep scroll in sync
+  hl.scrollTop  = ta.scrollTop;
+  hl.scrollLeft = ta.scrollLeft;
 }
 
 function toggleLineNumbers() {
