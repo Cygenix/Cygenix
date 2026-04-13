@@ -1356,7 +1356,7 @@ async function aiMapOTM(ti){
       const res=await fetch('https://api.anthropic.com/v1/messages',{
         method:'POST',
         headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2048,messages:[{role:'user',content:prompt}]})
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4096,messages:[{role:'user',content:prompt}]})
       });
       const data=await res.json();
       if(res.status===529||data.error?.type==='overloaded_error'){
@@ -1365,7 +1365,14 @@ async function aiMapOTM(ti){
       }
       if(!res.ok) throw new Error(data.error?.message||res.statusText);
       const raw=(data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
-      const arr=JSON.parse(raw);
+      // Repair truncated JSON — find last complete object and close the array
+      let arr;
+      try { arr=JSON.parse(raw); }
+      catch {
+        const lastBrace=raw.lastIndexOf('}');
+        try { arr=JSON.parse(raw.slice(0,lastBrace+1)+']'); }
+        catch { arr=[]; }
+      }
       // Merge AI result into mappings (target-driven)
       targetTables[ti].mappings=arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',literalValue:'',match:m.match||''}));
       renderOTMCards();
