@@ -51,7 +51,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .editor-toolbar{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex-shrink:0}
 .editor-upper{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:120px}
 .editor-wrap{position:relative;flex:1;overflow:hidden;display:flex;flex-direction:column}
-#sql-editor{width:100%;flex:1;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.7;border:none;outline:none;resize:none;padding:1rem 1.25rem;tab-size:2;overflow-x:auto;white-space:pre;min-height:0}
+/* #sql-editor base — appearance set in highlight block below */
 .editor-status{padding:0.35rem 1rem;background:var(--bg3);border-top:0.5px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:flex;gap:1rem}
 /* Resize handle */
 .resize-handle{height:5px;background:var(--border);cursor:row-resize;flex-shrink:0;transition:background 0.15s;position:relative}
@@ -62,7 +62,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100v
 .results-bottom-tabs{display:flex;align-items:center;border-bottom:0.5px solid var(--border);flex-shrink:0;background:var(--bg3)}
 .results-bottom-tab{padding:0.4rem 1rem;font-size:11px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;transition:all 0.15s;white-space:nowrap}
 .results-bottom-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-.results-bottom-body{flex:1;overflow:auto}
+.results-bottom-body{flex:1;overflow-y:auto;overflow-x:scroll}
 
 /* RESULTS / AI pane */
 .right-pane{display:flex;flex-direction:column;background:var(--bg2);border-left:0.5px solid var(--border);overflow:hidden;width:340px;flex-shrink:0;min-width:120px;max-width:700px}
@@ -129,10 +129,10 @@ body.fullscreen .script-panel { display:none }
 .editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:column}
 .editor-scroll-row{display:flex;flex:1;overflow:hidden;position:relative}
 .line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre;align-self:stretch}
-/* highlight layer sits behind the textarea — shows token colours */
-#sql-highlight{position:absolute;top:0;left:0;right:0;bottom:0;padding:1rem 1.25rem;font-family:var(--mono);font-size:13px;line-height:1.7;white-space:pre;overflow:hidden;pointer-events:none;tab-size:2;word-break:normal;color:var(--text)}
-/* textarea sits on top — text transparent so highlight shows through, caret stays visible */
-#sql-editor{position:relative;z-index:1;background:transparent!important;caret-color:var(--text);color:transparent;flex:1;min-width:0;-webkit-text-fill-color:transparent}
+/* highlight layer sits behind — renders coloured tokens */
+#sql-highlight{position:absolute;top:0;left:0;right:0;bottom:0;padding:1rem 1.25rem;font-family:var(--mono);font-size:13px;line-height:1.7;white-space:pre;overflow:hidden;pointer-events:none;tab-size:2;color:var(--text)}
+/* textarea on top — transparent text so colours show through, caret visible */
+#sql-editor{width:100%;flex:1;position:relative;z-index:1;font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 1.25rem;tab-size:2;border:none;outline:none;resize:none;min-height:0;background:transparent!important;color:transparent!important;-webkit-text-fill-color:transparent!important;caret-color:#ffffff}
 /* token colours */
 .tok-kw   {color:#569cd6}  /* SELECT, FROM, WHERE… */
 .tok-kw2  {color:#c586c0}  /* JOIN, ON, AS… */
@@ -625,10 +625,10 @@ function drawResultsTable(rows, cols, ms) {
   const MAX    = 1000;
 
   if (resultsView === 'row') {
-    wrap.innerHTML = `<table class="results-table">
+    wrap.innerHTML = `<div style="min-width:max-content"><table class="results-table">
       <thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
       <tbody>${rows.slice(0,MAX).map(r=>`<tr>${cols.map(c=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
-    </table>`;
+    </table></div>`;
   } else {
     // Pivot: columns become rows, each data row becomes a column
     const showRows = Math.min(rows.length, 20); // limit columns in pivot
