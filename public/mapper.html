@@ -317,14 +317,31 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 
             <!-- Column mapping table -->
             <div id="mapping-wrap" style="display:none">
+              <!-- Filter + sort toolbar -->
+              <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
+                <input id="map-filter" class="form-input" style="flex:1;min-width:140px;max-width:260px;font-size:12px;padding:0.35rem 0.6rem" placeholder="🔍 Filter columns…" oninput="applyMapFilter()">
+                <select id="map-filter-match" class="form-input" style="width:120px;font-size:12px;padding:0.35rem 0.5rem" onchange="applyMapFilter()">
+                  <option value="">All rows</option>
+                  <option value="HIGH">HIGH match</option>
+                  <option value="MEDIUM">MEDIUM match</option>
+                  <option value="LOW">LOW match</option>
+                  <option value="unmapped">Unmapped only</option>
+                  <option value="fixed">Fixed value</option>
+                </select>
+                <button class="btn btn-ghost btn-sm" onclick="clearMapFilter()" title="Clear filter">✕ Clear</button>
+                <span id="map-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+              </div>
               <div style="overflow-x:auto">
                 <table class="map-table" id="mapping-table">
                   <thead><tr>
-                    <th>Source column</th><th>Src type</th>
-                    <th>Target column ▲</th><th>Tgt type</th>
+                    <th onclick="sortMapping('src')" style="cursor:pointer;user-select:none">Source column <span id="sort-src" style="opacity:0.4">⇅</span></th>
+                    <th>Src type</th>
+                    <th onclick="sortMapping('tgt')" style="cursor:pointer;user-select:none">Target column <span id="sort-tgt" style="opacity:0.4">⇅</span></th>
+                    <th>Tgt type</th>
                     <th>Transform</th>
                     <th title="Type a fixed SQL value instead of source (e.g. N'Enterprise', 0, GETDATE(), NULL)">Fixed value</th>
-                    <th>Match</th><th></th>
+                    <th onclick="sortMapping('match')" style="cursor:pointer;user-select:none">Match <span id="sort-match" style="opacity:0.4">⇅</span></th>
+                    <th></th>
                   </tr></thead>
                   <tbody id="mapping-tbody"></tbody>
                 </table>
@@ -742,7 +759,7 @@ async function remapWithClaude(){
 
 async function askClaudeForMapping(src, tgt, apiKey){
   const srcCols = src.columns.map(c=>typeof c==='string'?c:c.name);
-  const tgtCols = tgt.columns.map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
+  const tgtCols = tgt.columns.filter(c=>!c.isIdentity).map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
   const prompt = 'You are a data migration expert. Map source columns to target columns.\n\n'+
     'Source table: '+src.fullName+'\nSource columns:\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
     'Target table: '+tgt.fullName+'\nTarget columns:\n'+tgtCols.map(c=>'  '+c).join('\n')+'\n\n'+
@@ -751,16 +768,79 @@ async function askClaudeForMapping(src, tgt, apiKey){
     'Every non-identity target column must appear exactly once. Leave srcCol empty if no match.\n'+
     'Transforms: NONE | TRIM | UPPER | LOWER | CAST\n'+
     'Return ONLY the JSON array, no explanation.';
-  const res = await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,messages:[{role:'user',content:prompt}]})
+
+  // Try up to 3 times with backoff — handles transient overload errors
+  for(let attempt=1; attempt<=3; attempt++){
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4096,messages:[{role:'user',content:prompt}]})
+    });
+    const data = await res.json();
+    // Retry on overload
+    if(res.status===529 || data.error?.type==='overloaded_error'){
+      if(attempt<3){ showStatus('Claude busy — retrying ('+attempt+'/3)…','info'); await new Promise(r=>setTimeout(r,2000*attempt)); continue; }
+      throw new Error('Claude is overloaded — try again in a moment');
+    }
+    if(!res.ok) throw new Error(data.error?.message||res.statusText);
+    const raw = (data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
+    const arr = JSON.parse(raw);
+    return arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',match:m.match||'',note:m.note||''}));
+  }
+}
+
+// ── Mapping table filter + sort ───────────────────────────────────────────────
+let mapSortCol = 'tgt';   // 'src' | 'tgt' | 'match'
+let mapSortDir = 1;        // 1=asc, -1=desc
+const matchOrder = { HIGH:0, MEDIUM:1, LOW:2, '':3 };
+
+function sortMapping(col){
+  if(mapSortCol===col){ mapSortDir*=-1; } else { mapSortCol=col; mapSortDir=1; }
+  // Update header indicators
+  ['src','tgt','match'].forEach(c=>{
+    const el=$('sort-'+c); if(!el) return;
+    el.textContent = c===mapSortCol ? (mapSortDir===1?'▲':'▼') : '⇅';
+    el.style.opacity = c===mapSortCol ? '1' : '0.4';
   });
-  const data = await res.json();
-  if(!res.ok) throw new Error(data.error?.message||res.statusText);
-  const raw = (data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
-  const arr = JSON.parse(raw);
-  return arr.map(m=>({srcCol:m.srcCol,tgtCol:m.tgtCol||'',transform:m.transform||'NONE',match:m.match||'',note:m.note||''}));
+  columnMapping.sort((a,b)=>{
+    let av, bv;
+    if(col==='src'){ av=(a.srcCol||'').toLowerCase(); bv=(b.srcCol||'').toLowerCase(); }
+    else if(col==='tgt'){ av=(a.tgtCol||'').toLowerCase(); bv=(b.tgtCol||'').toLowerCase(); }
+    else { av=matchOrder[a.match]??3; bv=matchOrder[b.match]??3; return (av-bv)*mapSortDir; }
+    return av<bv?-mapSortDir:av>bv?mapSortDir:0;
+  });
+  renderMappingTable();
+  applyMapFilter();
+}
+
+function applyMapFilter(){
+  const q=($('map-filter')?.value||'').toLowerCase().trim();
+  const matchF=$('map-filter-match')?.value||'';
+  const rows=document.querySelectorAll('#mapping-tbody tr');
+  let visible=0;
+  rows.forEach((tr,i)=>{
+    const m=columnMapping[i];
+    if(!m){ tr.style.display='none'; return; }
+    // Text filter: check source and target col names
+    const textOk = !q || (m.srcCol||'').toLowerCase().includes(q) || (m.tgtCol||'').toLowerCase().includes(q);
+    // Match filter
+    let matchOk = true;
+    if(matchF==='unmapped') matchOk = !m.srcCol && !m.literalValue;
+    else if(matchF==='fixed') matchOk = !!(m.literalValue);
+    else if(matchF) matchOk = m.match===matchF;
+    const show = textOk && matchOk;
+    tr.style.display = show ? '' : 'none';
+    if(show) visible++;
+  });
+  const total = columnMapping.length;
+  const fc=$('map-filter-count');
+  if(fc) fc.textContent = (q||matchF) ? visible+' of '+total+' shown' : '';
+}
+
+function clearMapFilter(){
+  const f=$('map-filter'); if(f) f.value='';
+  const m=$('map-filter-match'); if(m) m.value='';
+  applyMapFilter();
 }
 
 function autoMap(src, tgt){
@@ -827,6 +907,8 @@ function renderMappingTable(){
       <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
     </tr>`;
   }).join('');
+  // Re-apply any active filter after re-render
+  applyMapFilter();
 }
 
 // ── Single SQL generation ─────────────────────────────────────────────────────
