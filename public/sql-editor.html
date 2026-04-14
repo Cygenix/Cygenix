@@ -138,8 +138,8 @@ body.fullscreen .script-panel { display:none }
 .highlight-current{background:rgba(61,126,255,0.45);border-radius:1px}
 
 /* ── LINE NUMBERS ──────────────────────────────────────────────────────────── */
-.editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:column}
-.line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre;align-self:stretch}
+.editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:row}
+.line-numbers{display:none}
 #sql-editor{flex:1;min-width:0}
 
 /* ── WORD WRAP toggle ──────────────────────────────────────────────────────── */
@@ -988,7 +988,7 @@ function formatSQL() {
 
 // ── Editor state ─────────────────────────────────────────────────────────────
 let wordWrapOn   = false;
-let lineNumsOn   = true;
+let lineNumsOn   = false;
 let isFullscreen = false;
 let findMatches  = [];
 let findIdx      = 0;
