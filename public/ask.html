@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Ask</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/connections.js"></script>
+<script src="/nav.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:220px}
+
+/* Layout: full-height chat */
+.ask-layout{display:flex;flex-direction:column;height:100vh;padding-top:52px}
+.ask-topbar{position:fixed;top:0;right:0;left:220px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem}
+
+/* Sidebar: conversation history */
+.ask-sidebar{position:fixed;top:52px;left:220px;width:240px;height:calc(100vh - 52px);background:var(--bg2);border-right:0.5px solid var(--border);display:flex;flex-direction:column;z-index:50}
+.ask-sidebar-head{padding:0.75rem 0.875rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ask-sidebar-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em}
+.conv-list{flex:1;overflow-y:auto;padding:0.5rem}
+.conv-item{padding:0.5rem 0.6rem;border-radius:var(--r);cursor:pointer;transition:background 0.12s;border:0.5px solid transparent;margin-bottom:2px}
+.conv-item:hover{background:var(--bg3)}
+.conv-item.active{background:var(--accent-glow);border-color:rgba(61,126,255,0.2)}
+.conv-name{font-size:12px;color:var(--text2);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-meta{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+
+/* Main chat area */
+.ask-main{margin-left:240px;display:flex;flex-direction:column;height:calc(100vh - 52px);overflow:hidden}
+
+/* Messages */
+.messages{flex:1;overflow-y:auto;padding:1.5rem 2rem;display:flex;flex-direction:column;gap:1rem;scroll-behavior:smooth}
+
+/* Welcome state */
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;text-align:center;padding:2rem;gap:1.5rem}
+.welcome-icon{font-size:3rem;opacity:0.8}
+.welcome-title{font-size:1.4rem;font-weight:600;color:var(--text)}
+.welcome-sub{font-size:13px;color:var(--text3);max-width:480px;line-height:1.7}
+.suggested-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;max-width:560px;width:100%}
+.suggest-btn{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.65rem 0.875rem;text-align:left;cursor:pointer;font-size:12px;color:var(--text2);font-family:var(--serif);transition:all 0.15s;line-height:1.5}
+.suggest-btn:hover{border-color:var(--purple);color:var(--purple);background:var(--purple-bg)}
+.suggest-btn strong{display:block;font-size:11px;color:var(--text3);font-weight:500;margin-bottom:2px}
+
+/* Message bubbles */
+.msg{display:flex;flex-direction:column;max-width:75%}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.msg.assistant{align-self:flex-start;align-items:flex-start}
+.msg-bubble{padding:0.75rem 1rem;border-radius:var(--r-lg);font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.msg.user .msg-bubble{background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.msg.assistant .msg-bubble{background:var(--bg2);border:0.5px solid var(--border2);color:var(--text);border-bottom-left-radius:4px}
+.msg-meta{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:4px;padding:0 4px}
+
+/* Typing indicator */
+.typing-bubble{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);border-bottom-left-radius:4px;padding:0.75rem 1rem;display:flex;gap:4px;align-items:center}
+.typing-dot{width:7px;height:7px;border-radius:50%;background:var(--text3);animation:typingBounce 1.2s ease-in-out infinite}
+.typing-dot:nth-child(2){animation-delay:0.2s}
+.typing-dot:nth-child(3){animation-delay:0.4s}
+@keyframes typingBounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-6px)}}
+
+/* Context pills */
+.context-bar{display:flex;align-items:center;gap:0.4rem;padding:0.4rem 2rem;border-top:0.5px solid var(--border);background:var(--bg2);flex-wrap:wrap;flex-shrink:0}
+.ctx-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:2px 8px;border-radius:100px;font-family:var(--mono);border:0.5px solid var(--border2);color:var(--text3);background:var(--bg3)}
+.ctx-pill.active{border-color:rgba(45,212,191,0.4);color:var(--teal);background:var(--teal-bg)}
+
+/* Input area */
+.input-area{padding:1rem 2rem 1.25rem;border-top:0.5px solid var(--border);background:var(--bg);flex-shrink:0}
+.input-wrap{display:flex;gap:0.5rem;align-items:flex-end;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:0.5rem 0.5rem 0.5rem 1rem;transition:border-color 0.15s}
+.input-wrap:focus-within{border-color:var(--accent)}
+.ask-input{flex:1;background:transparent;border:none;outline:none;resize:none;font-size:13px;color:var(--text);font-family:var(--serif);line-height:1.6;max-height:140px;min-height:22px}
+.ask-input::placeholder{color:var(--text3)}
+.send-btn{background:var(--accent);border:none;border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;transition:all 0.15s;color:#fff}
+.send-btn:hover{background:#5a8fff}
+.send-btn:disabled{opacity:0.4;cursor:not-allowed}
+.input-hint{font-size:10px;color:var(--text3);margin-top:6px;text-align:center;font-family:var(--mono)}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:0.35rem 0.75rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text)}
+.btn-sm{padding:0.22rem 0.55rem;font-size:11px}
+
+/* Markdown-like rendering in assistant messages */
+.msg-bubble code{font-family:var(--mono);font-size:11px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 5px;color:var(--teal)}
+.msg-bubble pre{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;font-family:var(--mono);font-size:11px;color:var(--text2);overflow-x:auto;margin:0.5rem 0;white-space:pre-wrap}
+.msg-bubble strong{color:var(--text);font-weight:600}
+.msg-bubble em{color:var(--text2)}
+
+/* Fullscreen: hide sidebar */
+body.fullscreen .cyg-sidebar,body.fullscreen #cyg-sidebar{display:none!important}
+body.fullscreen{padding-left:0!important}
+body.fullscreen .ask-topbar{left:0!important}
+body.fullscreen .ask-sidebar{left:0}
+body.fullscreen .ask-main{margin-left:240px}
+</style>
+</head>
+<body>
+
+<div class="ask-topbar">
+  <div style="display:flex;align-items:center;gap:0.75rem">
+    <span style="font-size:13px;font-weight:600;color:var(--purple)">Ask</span>
+    <span style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="ask-project-name">Loading project…</span>
+  </div>
+  <div style="display:flex;gap:0.5rem;align-items:center">
+    <button class="btn btn-ghost btn-sm" onclick="clearChat()" title="Clear current conversation">✕ Clear</button>
+    <button class="btn btn-ghost btn-sm" onclick="newConversation()">+ New chat</button>
+  </div>
+</div>
+
+<!-- Conversation history sidebar -->
+<div class="ask-sidebar">
+  <div class="ask-sidebar-head">
+    <span class="ask-sidebar-title">History</span>
+    <button class="btn btn-ghost btn-sm" onclick="newConversation()" title="New conversation" style="padding:2px 6px;font-size:13px">+</button>
+  </div>
+  <div class="conv-list" id="conv-list">
+    <div style="padding:0.75rem;font-size:11px;color:var(--text3);text-align:center">No conversations yet</div>
+  </div>
+</div>
+
+<!-- Main chat -->
+<div class="ask-layout">
+  <div class="ask-main">
+    <!-- Context bar -->
+    <div class="context-bar" id="context-bar">
+      <span style="font-size:10px;color:var(--text3)">Context:</span>
+      <span class="ctx-pill" id="ctx-project">📋 Project</span>
+      <span class="ctx-pill" id="ctx-tasks">✅ Tasks</span>
+      <span class="ctx-pill" id="ctx-jobs">🗂 Jobs</span>
+      <span class="ctx-pill" id="ctx-connections">🔌 Connections</span>
+      <span class="ctx-pill" id="ctx-settings">⚙ Settings</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text3);font-family:var(--mono)" id="ctx-status"></span>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages" id="messages">
+      <!-- Welcome shown initially -->
+      <div class="welcome" id="welcome-screen">
+        <div class="welcome-icon">💬</div>
+        <div class="welcome-title">Ask anything about your project</div>
+        <div class="welcome-sub">I have full context of your Cygenix project — settings, tasks, jobs, connections, performance config and plan. Ask me anything about it.</div>
+        <div class="suggested-grid" id="suggestions-grid">
+          <button class="suggest-btn" onclick="sendSuggestion(this)"><strong>Project status</strong>How is my migration project progressing? What's left to do?</button>
+          <button class="suggest-btn" onclick="sendSuggestion(this)"><strong>Blockers</strong>Do I have any open blockers or at-risk tasks?</button>
+          <button class="suggest-btn" onclick="sendSuggestion(this)"><strong>Timeline</strong>Am I on track to meet my completion date?</button>
+          <button class="suggest-btn" onclick="sendSuggestion(this)"><strong>Next steps</strong>What should I focus on next to keep the migration on track?</button>
+          <button class="suggest-btn" onclick="sendSuggestion(this)"><strong>Jobs overview</strong>Summarise my migration jobs and their current state.</button>
+          <button class="suggest-btn" onclick="sendSuggestion(this)"><strong>Performance</strong>Review my performance settings — are they appropriate for my setup?</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea class="ask-input" id="ask-input" placeholder="Ask anything about your migration project…" rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send (Enter)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M14 8L2 2l3 6-3 6 12-6z" fill="currentColor"/></svg>
+        </button>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for new line · Context loaded from your project</div>
+    </div>
+  </div>
+</div>
+
+<script>
+if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+const PS_KEY   = 'cygenix_project_settings';
+const PLAN_KEY = 'cygenix_project_plan';
+const JOBS_KEY = 'cygenix_jobs';
+const PERF_KEY = 'cygenix_performance';
+const CONN_KEY = 'cygenix_project_connections';
+const ASK_KEY  = 'cygenix_ask_conversations';
+const API_KEY_STORAGE = 'cygenix_api_key';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let conversations = [];
+let activeConvId  = null;
+let isStreaming   = false;
+
+const STATUS_LABELS = {todo:'To do',inprog:'In progress',blocked:'Blocked',review:'Review',done:'Done'};
+const PRIORITY_LABELS = {high:'High',med:'Medium',low:'Low'};
+const PHASE_LABELS = {planning:'Planning',analysis:'Analysis',mapping:'Mapping',development:'Development',uat:'UAT','go-live':'Go-live',post:'Post-migration'};
+
+// ── Load & save conversations ─────────────────────────────────────────────────
+function saveConversations(){
+  try{ localStorage.setItem(ASK_KEY, JSON.stringify(conversations)); }catch{}
+}
+function loadConversations(){
+  try{ const r=localStorage.getItem(ASK_KEY); if(r) conversations=JSON.parse(r); }catch{}
+}
+
+// ── Gather project context ────────────────────────────────────────────────────
+function gatherContext(){
+  const ps   = JSON.parse(localStorage.getItem(PS_KEY)||'{}');
+  const plan = JSON.parse(localStorage.getItem(PLAN_KEY)||'{}');
+  const jobs = JSON.parse(localStorage.getItem(JOBS_KEY)||'[]');
+  const perf = JSON.parse(localStorage.getItem(PERF_KEY)||'{}');
+  const conn = JSON.parse(localStorage.getItem(CONN_KEY)||'{}');
+
+  const tasks    = plan.tasks    || [];
+  const blockers = plan.blockers || [];
+  const calEvs   = plan.calEvents|| [];
+
+  // Update context bar pills
+  const setActive = (id, active) => {
+    const el = document.getElementById(id);
+    if(el) el.classList.toggle('active', active);
+  };
+  setActive('ctx-project', !!(ps.name||ps.start||ps.end));
+  setActive('ctx-tasks',   tasks.length>0);
+  setActive('ctx-jobs',    jobs.length>0);
+  setActive('ctx-connections', !!(conn.srcConnString||conn.tgtConnString||conn.tgtFnUrl));
+  setActive('ctx-settings', Object.keys(perf).length>0);
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const endDate = ps.end ? new Date(ps.end+'T00:00:00') : null;
+  const daysLeft = endDate ? Math.ceil((endDate-today)/86400000) : null;
+  const pct = tasks.length ? Math.round(tasks.filter(t=>t.status==='done').length/tasks.length*100) : 0;
+
+  const ctxStatus = document.getElementById('ctx-status');
+  if(ctxStatus){
+    const parts=[];
+    if(jobs.length) parts.push(jobs.length+' jobs');
+    if(tasks.length) parts.push(tasks.length+' tasks');
+    if(daysLeft!==null) parts.push(daysLeft<0?Math.abs(daysLeft)+'d overdue':daysLeft+'d left');
+    ctxStatus.textContent = parts.join(' · ');
+  }
+
+  // Build the system prompt with full project context
+  const jobSummary = jobs.slice(0,20).map(j=>`  - ${j.name||'Unnamed'}: src=${j.srcTable||'?'} → tgt=${j.tgtTable||'?'}, ${(j.columnMapping||[]).length} columns mapped, created ${j.created||'?'}`).join('\n');
+  const taskSummary = tasks.map(t=>`  - [${STATUS_LABELS[t.status]||t.status}] ${t.name} | Priority: ${PRIORITY_LABELS[t.priority]||t.priority} | Phase: ${PHASE_LABELS[t.phase]||t.phase} | Due: ${t.due||'none'} | Owner: ${t.owner||'unassigned'}${t.status==='blocked'?' ⚠ BLOCKED':''}`).join('\n');
+  const blockerSummary = blockers.filter(b=>!b.resolved).map(b=>`  - [${b.impact?.toUpperCase()||'UNKNOWN'} IMPACT] ${b.title}: ${b.desc||''} | Owner: ${b.owner||'?'} | Target resolution: ${b.resolveDate||'?'}`).join('\n');
+  const calSummary = calEvs.slice(0,10).map(e=>`  - ${e.date}: ${e.title} (${e.type})`).join('\n');
+
+  return `You are the Cygenix Project AI Assistant. Your sole purpose is to help the user with their migration project managed in Cygenix. You have full real-time context of this project loaded below.
+
+IMPORTANT RULES:
+- Only answer questions related to this migration project, Cygenix features, data migration best practices, or project management for this project.
+- If asked about anything unrelated (e.g. general coding, other tools unrelated to the project, personal topics), politely decline and redirect to project-related questions.
+- Be concise, practical and direct. Use bullet points for lists. Highlight risks and blockers prominently.
+- When giving advice, always refer back to the actual project data below.
+- Do NOT make up data — only use what is provided in the context below.
+- Treat the user as a migration professional who wants actionable guidance.
+
+═══════════════════════════════════════════════════════
+PROJECT CONTEXT (live data from Cygenix)
+═══════════════════════════════════════════════════════
+
+PROJECT SETTINGS:
+  Name:          ${ps.name||'Not set'}
+  Type:          ${ps.type||'Not set'}
+  Reference:     ${ps.ref||'Not set'}
+  Analyst:       ${ps.analyst||'Not set'}
+  Project Manager: ${ps.pm||'Not set'}
+  Client:        ${ps.client||'Not set'}
+  Start date:    ${ps.start||'Not set'}
+  Completion target: ${ps.end||'Not set'}${daysLeft!==null?' ('+( daysLeft<0?Math.abs(daysLeft)+' days OVERDUE':daysLeft+' days remaining')+')':''}
+  Current phase: ${PHASE_LABELS[ps.phase]||ps.phase||'Not set'}
+  Source system: ${ps['src-system']||'Not set'}
+  Target system: ${ps['tgt-system']||'Not set'}
+  Est. rows:     ${ps.rows||'Not set'}
+  Notes:         ${ps.notes||'None'}
+
+TASK SUMMARY (${tasks.length} total, ${tasks.filter(t=>t.status==='done').length} done, ${pct}% complete):
+${taskSummary||'  No tasks recorded'}
+
+OPEN BLOCKERS (${blockers.filter(b=>!b.resolved).length} active):
+${blockerSummary||'  No active blockers'}
+
+CALENDAR EVENTS (upcoming):
+${calSummary||'  No calendar events'}
+
+MIGRATION JOBS (${jobs.length} total):
+${jobSummary||'  No jobs saved'}
+
+CONNECTIONS:
+  Source DB: ${conn.srcConnString?'Configured ('+( conn.srcConnString.match(/Database=([^;]+)/i)?.[1]||'details hidden')+')'  :'Not configured'}
+  Target DB: ${conn.tgtFnUrl?'Azure Function configured':conn.tgtConnString?'Direct connection configured':'Not configured'}
+
+PERFORMANCE SETTINGS:
+  Fetch page size: ${perf.fetchPage||2000} rows
+  Insert batch:    ${perf.insertBatch||500} rows
+  Concurrency:     ${perf.concurrency||1} threads
+  Query timeout:   ${perf.queryTimeout||300}s
+  NOLOCK reads:    ${perf.nolock?'Yes':'No'}
+  Row verification:${perf.verify?'Yes':'No'}
+  Retries:         ${perf.retries||3}
+
+═══════════════════════════════════════════════════════
+END OF PROJECT CONTEXT
+═══════════════════════════════════════════════════════`;
+}
+
+// ── Conversation management ────────────────────────────────────────────────────
+function newConversation(){
+  const id = 'conv_'+Date.now();
+  conversations.unshift({id, name:'New conversation', messages:[], created:new Date().toISOString()});
+  activeConvId = id;
+  saveConversations();
+  renderConvList();
+  renderMessages();
+  document.getElementById('welcome-screen').style.display='flex';
+  document.getElementById('ask-input').focus();
+}
+
+function loadConversation(id){
+  activeConvId=id;
+  renderConvList();
+  renderMessages();
+  const welcome=document.getElementById('welcome-screen');
+  const conv=getActiveConv();
+  if(welcome) welcome.style.display = conv?.messages?.length ? 'none' : 'flex';
+}
+
+function getActiveConv(){
+  return conversations.find(c=>c.id===activeConvId);
+}
+
+function clearChat(){
+  const conv=getActiveConv();
+  if(!conv) return;
+  if(conv.messages.length && !confirm('Clear this conversation?')) return;
+  conv.messages=[];
+  conv.name='New conversation';
+  saveConversations();
+  renderConvList();
+  renderMessages();
+  document.getElementById('welcome-screen').style.display='flex';
+}
+
+function deleteConversation(id, e){
+  e.stopPropagation();
+  conversations=conversations.filter(c=>c.id!==id);
+  if(activeConvId===id) activeConvId=conversations[0]?.id||null;
+  saveConversations();
+  renderConvList();
+  if(activeConvId) loadConversation(activeConvId);
+  else{ document.getElementById('messages').innerHTML='<div class="welcome" id="welcome-screen" style="display:flex"><div class="welcome-icon">💬</div><div class="welcome-title">Ask anything about your project</div></div>'; }
+}
+
+function renderConvList(){
+  const el=document.getElementById('conv-list'); if(!el) return;
+  if(!conversations.length){
+    el.innerHTML='<div style="padding:0.75rem;font-size:11px;color:var(--text3);text-align:center">No conversations yet</div>';
+    return;
+  }
+  el.innerHTML=conversations.map(c=>`
+    <div class="conv-item${c.id===activeConvId?' active':''}" onclick="loadConversation('${c.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="conv-name">${esc(c.name)}</div>
+        <button onclick="deleteConversation('${c.id}',event)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:0 2px;opacity:0" class="del-conv-btn">✕</button>
+      </div>
+      <div class="conv-meta">${new Date(c.created).toLocaleDateString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`).join('');
+  // Show delete button on hover
+  el.querySelectorAll('.conv-item').forEach(item=>{
+    const btn=item.querySelector('.del-conv-btn');
+    item.addEventListener('mouseenter',()=>{ if(btn) btn.style.opacity='1'; });
+    item.addEventListener('mouseleave',()=>{ if(btn) btn.style.opacity='0'; });
+  });
+}
+
+// ── Render messages ────────────────────────────────────────────────────────────
+function renderMessages(){
+  const el=document.getElementById('messages'); if(!el) return;
+  const conv=getActiveConv();
+  // Remove old messages (keep welcome if no messages)
+  const welcome=document.getElementById('welcome-screen');
+  const msgs=conv?.messages||[];
+
+  // Clear non-welcome children
+  Array.from(el.children).forEach(c=>{ if(c.id!=='welcome-screen') c.remove(); });
+
+  if(!msgs.length){
+    if(welcome) welcome.style.display='flex';
+    return;
+  }
+  if(welcome) welcome.style.display='none';
+
+  msgs.forEach(m=>{ el.appendChild(buildMsgEl(m)); });
+  el.scrollTop=el.scrollHeight;
+}
+
+function buildMsgEl(msg){
+  const div=document.createElement('div');
+  div.className='msg '+msg.role;
+  const bubble=document.createElement('div');
+  bubble.className='msg-bubble';
+  bubble.innerHTML = msg.role==='assistant' ? renderMarkdown(msg.content) : esc(msg.content);
+  const meta=document.createElement('div');
+  meta.className='msg-meta';
+  meta.textContent=msg.time||(new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}));
+  div.appendChild(bubble);
+  div.appendChild(meta);
+  return div;
+}
+
+// Simple markdown renderer
+function renderMarkdown(text){
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/^### (.+)$/gm,'<strong style="display:block;margin-top:0.5rem;color:var(--text)">$1</strong>')
+    .replace(/^## (.+)$/gm,'<strong style="display:block;margin-top:0.75rem;font-size:14px;color:var(--text)">$1</strong>')
+    .replace(/^- (.+)$/gm,'<span style="display:block;padding-left:0.75rem">• $1</span>')
+    .replace(/^\d+\. (.+)$/gm,'<span style="display:block;padding-left:0.75rem">$1</span>');
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Append streaming message ───────────────────────────────────────────────────
+function appendUserMsg(content){
+  const el=document.getElementById('messages');
+  const welcome=document.getElementById('welcome-screen');
+  if(welcome) welcome.style.display='none';
+  const t=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const m={role:'user',content,time:t};
+  const conv=getActiveConv(); if(conv) conv.messages.push(m);
+  el.appendChild(buildMsgEl(m));
+  el.scrollTop=el.scrollHeight;
+  return t;
+}
+
+function showTyping(){
+  const el=document.getElementById('messages');
+  const typing=document.createElement('div');
+  typing.className='msg assistant'; typing.id='typing-indicator';
+  const wrap=document.createElement('div');
+  wrap.className='typing-bubble';
+  wrap.innerHTML='<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+  typing.appendChild(wrap);
+  el.appendChild(typing);
+  el.scrollTop=el.scrollHeight;
+}
+
+function removeTyping(){ document.getElementById('typing-indicator')?.remove(); }
+
+function appendAssistantMsg(content){
+  const el=document.getElementById('messages');
+  const t=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  const m={role:'assistant',content,time:t};
+  const conv=getActiveConv(); if(conv){ conv.messages.push(m); saveConversations(); }
+  el.appendChild(buildMsgEl(m));
+  el.scrollTop=el.scrollHeight;
+  // Update conversation name from first user message
+  if(conv&&conv.name==='New conversation'){
+    const firstUser=conv.messages.find(x=>x.role==='user');
+    if(firstUser) conv.name=firstUser.content.slice(0,45)+(firstUser.content.length>45?'…':'');
+    renderConvList();
+  }
+}
+
+// ── Send message ───────────────────────────────────────────────────────────────
+async function sendMessage(){
+  const input=document.getElementById('ask-input');
+  const text=(input.value||'').trim();
+  if(!text||isStreaming) return;
+
+  const apiKey=localStorage.getItem(API_KEY_STORAGE)||'';
+  if(!apiKey){
+    alert('No Anthropic API key found. Please add your API key in Project Settings (Configure → Project Settings → API key).');
+    return;
+  }
+
+  if(!activeConvId) newConversation();
+  input.value=''; autoResize(input);
+  appendUserMsg(text);
+  isStreaming=true;
+  document.getElementById('send-btn').disabled=true;
+
+  const systemPrompt=gatherContext();
+  const conv=getActiveConv();
+  // Build messages array (exclude last user msg as it's already appended)
+  const history=(conv?.messages||[]).slice(0,-1)
+    .filter(m=>m.role==='user'||m.role==='assistant')
+    .slice(-20)  // last 20 messages for context window
+    .map(m=>({role:m.role,content:m.content}));
+  history.push({role:'user',content:text});
+
+  showTyping();
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:2048,
+        system:systemPrompt,
+        messages:history
+      })
+    });
+    const data=await res.json();
+    removeTyping();
+    if(!res.ok) throw new Error(data.error?.message||res.statusText);
+    const reply=(data.content?.[0]?.text||'').trim();
+    appendAssistantMsg(reply);
+  }catch(e){
+    removeTyping();
+    appendAssistantMsg('Sorry, I encountered an error: '+e.message+'\n\nIf this is an API key issue, check Configure → Project Settings → API key.');
+  }
+
+  isStreaming=false;
+  document.getElementById('send-btn').disabled=false;
+  input.focus();
+}
+
+function sendSuggestion(btn){
+  const text=btn.querySelector('strong')?.nextSibling?.textContent?.trim()||btn.textContent;
+  document.getElementById('ask-input').value=text;
+  sendMessage();
+}
+
+// ── Input helpers ──────────────────────────────────────────────────────────────
+function handleKey(e){
+  if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); }
+}
+function autoResize(el){
+  el.style.height='auto';
+  el.style.height=Math.min(el.scrollHeight,140)+'px';
+}
+
+// ── Project name in topbar ─────────────────────────────────────────────────────
+function loadProjectName(){
+  try{
+    const ps=JSON.parse(localStorage.getItem('cygenix_project_settings')||'{}');
+    const el=document.getElementById('ask-project-name');
+    if(el) el.textContent=ps.name||'No project name set';
+  }catch{}
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+loadConversations();
+loadProjectName();
+if(conversations.length){
+  activeConvId=conversations[0].id;
+  renderConvList();
+  loadConversation(activeConvId);
+} else {
+  renderConvList();
+  newConversation();
+}
+gatherContext();
+</script>
+</body>
+</html>
