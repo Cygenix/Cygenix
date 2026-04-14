@@ -89,6 +89,8 @@
     // Both sub-menus always pinned open
     const configOpen = 'open';
     const configCollapsed = '';
+    const planOpen = ['project-plan.html'].includes(page) ? 'open' : 'open';
+    const planCollapsed = '';
     const mappingOpen = 'open';
     const mappingCollapsed = '';
     const analysisOpen = ['insights.html','validation.html'].includes(page) ? 'open' : 'open';
@@ -131,6 +133,19 @@
     <a class="${isActive('performance.html')}" href="/performance.html" style="color:#2dd4bf">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 12 L5 7 L8 9 L11 4 L14 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14" cy="6" r="1.5" fill="currentColor"/></svg>
       Performance
+    </a>
+  </div>
+
+  <!-- Plan sub-menu -->
+  <div class="cyg-sub-label ${planOpen}" id="cyg-lbl-plan" onclick="cygToggleSub('plan')">
+    <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3 4h6M3 6h6M3 8h3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M8 7l1.5 1.5L12 6" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Plan
+    <span class="cyg-chev">▶</span>
+  </div>
+  <div class="cyg-sub ${planCollapsed}" id="cyg-sub-plan" style="max-height:${planOpen?'120px':'0'}">
+    <a class="${isActive('project-plan.html')}" href="/project-plan.html" style="color:#22c97a">
+      <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M11 8l1.5 1.5L15 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Planner
     </a>
   </div>
 
@@ -206,10 +221,6 @@
   <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','audit')">
     <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
     Audit Log
-  </a>
-  <a class="${isActive('project-plan.html')}" href="/project-plan.html" style="color:#22c97a">
-    <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M11 8l1.5 1.5L15 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    Project Plan
   </a>
 </div>
 
