@@ -360,6 +360,10 @@ select.form-input option{background:var(--bg3)}
 <div class="save-bar">
   <button class="btn btn-primary" onclick="saveSettings()">Save settings</button>
   <button class="btn btn-ghost btn-sm" onclick="resetSettings()">Reset to defaults</button>
+  <div style="width:0.5px;height:20px;background:var(--border2);margin:0 0.25rem"></div>
+  <button class="btn btn-ghost btn-sm" onclick="exportSettings()" title="Download settings as a JSON file">⬇ Export</button>
+  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-file').click()" title="Load settings from a JSON file">⬆ Import</button>
+  <input type="file" id="import-file" accept=".json" style="display:none" onchange="importSettings(this)">
   <span id="save-status" style="font-size:12px;color:var(--text3)"></span>
 </div>
 
@@ -489,6 +493,46 @@ function gc(id){return document.getElementById(id)?.checked||false;}
 function updateLabel(cbId,lblId){
   const c=document.getElementById(cbId);const l=document.getElementById(lblId);
   if(c&&l)l.textContent=c.checked?'ON':'OFF';
+}
+
+function exportSettings(){
+  const cfg = readUI();
+  const filename = 'cygenix-performance-'+new Date().toISOString().slice(0,10)+'.json';
+  const blob = new Blob([JSON.stringify({_type:'cygenix-performance',_version:1,...cfg},null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  const s=document.getElementById('save-status');
+  s.textContent='Exported '+filename; s.style.color='var(--teal)';
+  setTimeout(()=>s.textContent='',3000);
+}
+
+function importSettings(input){
+  const file = input.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if(data._type && data._type !== 'cygenix-performance'){
+        alert('This does not appear to be a Cygenix performance settings file.');
+        return;
+      }
+      // Merge with defaults so any new keys added later are present
+      const merged = {...DEFAULTS,...data};
+      applyToUI(merged);
+      renderSummary(merged);
+      const s=document.getElementById('save-status');
+      s.textContent='Imported — click Save to apply'; s.style.color='var(--amber)';
+      setTimeout(()=>s.textContent='',5000);
+    } catch(err) {
+      alert('Could not read file: '+err.message);
+    }
+  };
+  reader.readAsText(file);
+  // Reset file input so the same file can be re-imported if needed
+  input.value='';
 }
 
 const cfg=loadSettings();
