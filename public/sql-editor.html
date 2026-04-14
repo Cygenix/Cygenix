@@ -6,6 +6,15 @@
 <title>Cygenix – SQL Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/comment/comment.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
 <script src="/connections.js"></script>
 <script src="/nav.js"></script>
 <style>
@@ -152,6 +161,41 @@ body.fullscreen .script-panel { display:none }
 .results-toolbar-btn{background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;padding:2px 7px;font-size:10px;font-family:var(--serif);transition:all 0.12s;display:flex;align-items:center;gap:3px}
 .results-toolbar-btn:hover{color:var(--text);border-color:var(--text3)}
 .results-toolbar-btn.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3)}
+
+/* ── CodeMirror integration ────────────────────────────────────────────────── */
+.CodeMirror{
+  flex:1;min-height:0;height:100%;font-family:var(--mono);font-size:13px;
+  line-height:1.7;background:var(--bg)!important;color:var(--text)!important;
+  border:none;
+}
+.CodeMirror-scroll{min-height:0}
+.CodeMirror-gutters{background:var(--bg2)!important;border-right:0.5px solid var(--border)!important;min-width:48px}
+.CodeMirror-linenumber{color:var(--text3)!important;font-size:12px;padding:0 6px 0 8px}
+.CodeMirror-cursor{border-left:2px solid var(--accent)!important}
+.CodeMirror-selected{background:rgba(61,126,255,0.18)!important}
+.CodeMirror-activeline-background{background:rgba(255,255,255,0.025)!important}
+.CodeMirror-matchingbracket{color:var(--amber)!important;font-weight:700;background:rgba(245,158,11,0.15);border-radius:2px}
+/* SQL token colours — VS Code dark+ inspired */
+.cm-keyword   {color:#569cd6!important;font-weight:500}  /* SELECT FROM WHERE JOIN… */
+.cm-builtin   {color:#dcdcaa!important}                   /* functions */
+.cm-string    {color:#ce9178!important}                   /* 'strings' */
+.cm-string-2  {color:#ce9178!important}                   /* N'strings' */
+.cm-number    {color:#b5cea8!important}                   /* numbers */
+.cm-comment   {color:#6a9955!important;font-style:italic} /* -- comments */
+.cm-operator  {color:#d4d4d4!important}                   /* = > < */
+.cm-punctuation{color:#808080!important}                  /* ( ) , ; */
+.cm-variable  {color:#9cdcfe!important}                   /* @variables */
+.cm-variable-2{color:#4ec9b0!important}                   /* [identifiers] */
+.cm-atom      {color:#569cd6!important}                   /* NULL, TRUE, FALSE */
+/* Hide the old textarea (CodeMirror replaces it) */
+#sql-editor{display:none!important}
+/* Make line-numbers div hidden — CodeMirror handles its own gutter */
+.line-numbers{display:none!important}
+/* CodeMirror wraps inside editor-wrap-inner */
+.editor-wrap-inner{position:relative;flex:1;overflow:hidden;display:flex;flex-direction:row}
+.CodeMirror-wrap .CodeMirror-code{word-break:break-all}
+/* Find bar sits above CM */
+.find-bar{z-index:100}
 </style>
 </head>
 <body>
@@ -379,7 +423,7 @@ function newScript() {
   const id = 'script_'+Date.now();
   currentScript = id;
   document.getElementById('script-name').value = 'New script';
-  document.getElementById('sql-editor').value = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+  setEditorValue('-- Write your SQL here\n\nSELECT TOP 100 * FROM ');
   updateLineNumbers();
   clearResults();
   renderScriptList();
@@ -391,7 +435,7 @@ function loadScript(id) {
   if (!s) return;
   currentScript = id;
   document.getElementById('script-name').value = s.name;
-  document.getElementById('sql-editor').value = s.sql;
+  setEditorValue(s.sql);
   updateLineNumbers();
   document.getElementById('conn-select').value = s.conn||'source';
   const descEl = document.getElementById('script-desc');
@@ -403,7 +447,7 @@ function loadScript(id) {
 }
 
 function saveScript() {
-  const sql  = document.getElementById('sql-editor').value.trim();
+  const sql  = getEditorValue().trim();
   const name = document.getElementById('script-name').value.trim() || 'Untitled script';
   const conn = document.getElementById('conn-select').value;
   if (!sql) { alert('Write some SQL first.'); return; }
@@ -432,7 +476,7 @@ function deleteScript(id) {
   saveScripts();
   if (currentScript === id) {
     currentScript = null;
-    document.getElementById('sql-editor').value = '';
+    setEditorValue('');
     updateLineNumbers();
     document.getElementById('script-name').value = 'New script';
     clearResults();
@@ -449,8 +493,7 @@ function loadSQLFromFile(input) {
   const reader = new FileReader();
   reader.onload = function(e) {
     const sql = e.target.result;
-    document.getElementById('sql-editor').value = sql;
-    updateLineNumbers();
+    setEditorValue(sql);
     // Use filename (without extension) as script name
     const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g,' ');
     document.getElementById('script-name').value = name;
@@ -716,7 +759,7 @@ function renderHistory() {
 }
 function loadFromHistory(i) {
   const h = queryHistory[i];
-  if (h) { document.getElementById('sql-editor').value=h.sql; updateStatus(); switchRightTab('results'); }
+  if (h) { setEditorValue(h.sql); updateStatusCM(); switchRightTab('results'); }
 }
 
 // ── Claude AI ──────────────────────────────────────────────────────────────────
@@ -934,8 +977,7 @@ function addAIMessage(text, role, parseSQL=false) {
 function applySQLFromAI(id) {
   const sql = window['_aiSql_'+id];
   if (sql) {
-    document.getElementById('sql-editor').value = sql;
-    updateStatus();
+    setEditorValue(sql);
     setExecStatus('SQL applied from Claude', 'var(--purple)');
   }
 }
@@ -947,7 +989,6 @@ function insertSnippet(text) {
   const before = el.value.slice(0,start);
   const after = el.value.slice(el.selectionEnd);
   el.value = before + text + after;
-  updateLineNumbers();
   el.selectionStart = el.selectionEnd = start + text.length;
   el.focus();
   updateStatus();
@@ -965,13 +1006,13 @@ function handleEditorKey(e) {
 
 function formatSQL() {
   const el = document.getElementById('sql-editor');
-  let sql = el.value;
+  let sql = getEditorValue();
   // Basic formatting: uppercase keywords
   const kws = ['SELECT','FROM','WHERE','JOIN','LEFT JOIN','RIGHT JOIN','INNER JOIN','ON','AND','OR','NOT','INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','GROUP BY','ORDER BY','HAVING','UNION','UNION ALL','TOP','DISTINCT','AS','BEGIN','END','IF','ELSE','RETURN','DECLARE','SET','EXEC','EXECUTE','CAST','CONVERT','ISNULL','COALESCE'];
-  kws.forEach(kw => {
-    el.value = el.value.replace(new RegExp('\\b'+kw+'\\b','gi'), kw);
-  });
-  updateStatus();
+  let v = getEditorValue();
+  kws.forEach(kw => { v = v.replace(new RegExp('\\b'+kw+'\\b','gi'), kw); });
+  setEditorValue(v);
+  updateStatusCM();
 }
 
 // ── Editor state ─────────────────────────────────────────────────────────────
@@ -982,6 +1023,7 @@ let findMatches  = [];
 let findIdx      = 0;
 
 function updateStatus() {
+  if(cm){ updateStatusCM(); return; }
   const el   = document.getElementById('sql-editor');
   const val  = el.value;
   const pos  = el.selectionStart;
@@ -1009,6 +1051,7 @@ function updateConnLabel() {
 
 // ── Line numbers ──────────────────────────────────────────────────────────────
 function updateLineNumbers() {
+  if(cm) return; // CodeMirror handles its own line numbers
   const el  = document.getElementById('sql-editor');
   const ln  = document.getElementById('line-numbers');
   if (!ln || !lineNumsOn) return;
@@ -1078,9 +1121,9 @@ function commentSelection() {
 
 // ── Clear editor ──────────────────────────────────────────────────────────────
 function clearEditor() {
-  if (document.getElementById('sql-editor').value && !confirm('Clear the editor?')) return;
-  document.getElementById('sql-editor').value='';
-  updateStatus(); clearResults();
+  if (getEditorValue() && !confirm('Clear the editor?')) return;
+  setEditorValue('');
+  updateStatusCM(); clearResults();
 }
 
 // ── Find & Replace ────────────────────────────────────────────────────────────
@@ -1169,7 +1212,7 @@ function setExecStatus(msg, color) {
 
 // ── Save to Inventory ─────────────────────────────────────────────────────────
 function saveToInventory() {
-  const sql  = document.getElementById('sql-editor').value.trim();
+  const sql  = getEditorValue().trim();
   const name = document.getElementById('script-name').value.trim() || 'SQL Script';
   const desc = document.getElementById('script-desc').value.trim();
   const conn = document.getElementById('conn-select').value;
@@ -1251,7 +1294,7 @@ function loadJobSQL(jobId) {
   currentJobId  = jobId;
   currentScript = null; // decouple from saved scripts
 
-  document.getElementById('sql-editor').value = sql;
+  setEditorValue(sql);
   document.getElementById('script-name').value = job.name || 'Job SQL';
   document.getElementById('script-desc').value = 'Loaded from job: ' + (job.name||jobId);
   document.getElementById('conn-select').value = 'target';
@@ -1273,7 +1316,7 @@ function loadJobSQL(jobId) {
 // ── Save edited SQL back to the job ───────────────────────────────────────────
 function saveBackToJob() {
   if (!currentJobId) { alert('No job loaded — use the Migration Jobs panel to load a job first.'); return; }
-  var sql = document.getElementById('sql-editor').value.trim();
+  var sql = getEditorValue().trim();
   if (!sql) { alert('Editor is empty.'); return; }
 
   try {
@@ -1299,7 +1342,7 @@ function saveBackToJob() {
 }
 
 function addToJobs() {
-  const sql  = document.getElementById('sql-editor').value.trim();
+  const sql  = getEditorValue().trim();
   const name = document.getElementById('script-name').value.trim() || 'SQL Script';
   const conn = document.getElementById('conn-select').value;
   if (!sql) { alert('Write some SQL first.'); return; }
@@ -1521,6 +1564,158 @@ updateStatus();
     setTimeout(function(){ loadJobSQL(jobId); }, 150);
   }
 })();
+
+// ── CodeMirror initialisation ────────────────────────────────────────────────
+let cm = null;
+
+(function initCodeMirror(){
+  const ta = document.getElementById('sql-editor');
+  if (!ta || typeof CodeMirror === 'undefined') return;
+
+  cm = CodeMirror.fromTextArea(ta, {
+    mode:           'text/x-mssql',
+    theme:          'default',           // we override colours via CSS above
+    lineNumbers:    true,
+    matchBrackets:  true,
+    autoCloseBrackets: true,
+    styleActiveLine: true,
+    tabSize:        2,
+    indentWithTabs: false,
+    lineWrapping:   false,
+    extraKeys: {
+      'Ctrl-Enter':   () => runSQL(),
+      'Cmd-Enter':    () => runSQL(),
+      'Ctrl-/':       () => cm.execCommand('toggleComment'),
+      'Cmd-/':        () => cm.execCommand('toggleComment'),
+      'Tab':          cm => cm.execCommand('indentMore'),
+      'Shift-Tab':    cm => cm.execCommand('indentLess'),
+      'Ctrl-F':       () => openFind(),
+      'Cmd-F':        () => openFind(),
+    }
+  });
+
+  // Match CM height to its container
+  cm.setSize('100%', '100%');
+
+  // Keep status bar in sync
+  cm.on('change', () => { updateStatusCM(); });
+  cm.on('cursorActivity', () => { updateStatusCM(); });
+
+  // Mark unsaved on change
+  cm.on('change', (_, change) => {
+    if (change.origin !== 'setValue') {
+      const savedEl = document.getElementById('status-saved');
+      if (savedEl) { savedEl.textContent='Unsaved'; savedEl.style.color='var(--amber)'; }
+    }
+  });
+
+  // Initial status update
+  updateStatusCM();
+})();
+
+// ── Shim: all code that reads/writes #sql-editor now goes through CM ──────────
+function getEditorValue(){
+  return cm ? cm.getValue() : (document.getElementById('sql-editor')?.value || '');
+}
+function setEditorValue(val){
+  if (cm) {
+    cm.setValue(val || '');
+    cm.clearHistory();
+    cm.focus();
+  } else {
+    const el = document.getElementById('sql-editor');
+    if (el) el.value = val || '';
+  }
+}
+
+// ── Status bar for CodeMirror ─────────────────────────────────────────────────
+function updateStatusCM(){
+  if (!cm) return;
+  const cursor = cm.getCursor();
+  const val    = cm.getValue();
+  const selLen = cm.getSelection().length;
+  document.getElementById('status-lines').textContent = 'Ln '+(cursor.line+1);
+  const colEl = document.getElementById('status-col');
+  if (colEl) colEl.textContent = 'Col '+(cursor.ch+1);
+  document.getElementById('status-chars').textContent = val.length.toLocaleString()+' chars';
+  const selEl = document.getElementById('status-sel');
+  if (selEl){ if(selLen>0){selEl.textContent=selLen+' selected';selEl.style.display='inline-flex';}else{selEl.style.display='none';} }
+}
+
+// ── Patch toggleWordWrap / toggleLineNumbers to work with CM ─────────────────
+const _origToggleWordWrap = toggleWordWrap;
+toggleWordWrap = function(){
+  wordWrapOn = !wordWrapOn;
+  if (cm) cm.setOption('lineWrapping', wordWrapOn);
+  const btn = document.getElementById('btn-wrap');
+  if (btn) btn.style.color = wordWrapOn ? 'var(--accent)' : '';
+};
+
+const _origToggleLineNumbers = toggleLineNumbers;
+toggleLineNumbers = function(){
+  lineNumsOn = !lineNumsOn;
+  if (cm) cm.setOption('lineNumbers', lineNumsOn);
+  const btn = document.getElementById('btn-lnum');
+  if (btn) btn.style.color = lineNumsOn ? 'var(--accent)' : '';
+};
+
+// ── Patch toggleFullscreen to refresh CM layout ───────────────────────────────
+const _origToggleFullscreen = toggleFullscreen;
+toggleFullscreen = function(){
+  _origToggleFullscreen();
+  setTimeout(()=>{ if(cm){ cm.refresh(); cm.focus(); } }, 100);
+};
+
+// ── Find in CM ───────────────────────────────────────────────────────────────
+// Override the existing findInEditor to use CodeMirror's search cursor
+function findInEditor(){
+  if (!cm) return;
+  const q = document.getElementById('find-input')?.value || '';
+  const countEl = document.getElementById('find-count');
+  if (!q) { cm.getAllMarks().forEach(m=>m.clear()); if(countEl) countEl.textContent=''; findMatches=[]; return; }
+  cm.getAllMarks().forEach(m=>m.clear());
+  findMatches=[];
+  const cursor = cm.getSearchCursor(q, CodeMirror.Pos(0,0), {caseFold:true});
+  while(cursor.findNext()){
+    const mark = cm.markText(cursor.from(), cursor.to(), {className:'highlight-match'});
+    findMatches.push({from:cursor.from(), to:cursor.to(), mark});
+  }
+  if(countEl) countEl.textContent = findMatches.length ? '1 / '+findMatches.length : 'No match';
+  findIdx=0; highlightCurrentMatch();
+}
+function highlightCurrentMatch(){
+  if(!findMatches.length) return;
+  const m=findMatches[findIdx];
+  cm.getAllMarks().forEach(mk=>{ if(mk.className==='highlight-current') mk.clear(); });
+  cm.markText(m.from, m.to, {className:'highlight-current'});
+  cm.scrollIntoView(m.from, 80);
+  const countEl=document.getElementById('find-count');
+  if(countEl) countEl.textContent=(findIdx+1)+' / '+findMatches.length;
+}
+function findNext(){ if(!findMatches.length)return; findIdx=(findIdx+1)%findMatches.length; highlightCurrentMatch(); }
+function findPrev(){ if(!findMatches.length)return; findIdx=(findIdx-1+findMatches.length)%findMatches.length; highlightCurrentMatch(); }
+function replaceOne(){
+  if(!cm||!findMatches.length) return;
+  const rVal=document.getElementById('replace-input')?.value||'';
+  const m=findMatches[findIdx];
+  cm.replaceRange(rVal, m.from, m.to);
+  findInEditor();
+}
+function replaceAll(){
+  if(!cm) return;
+  const q=document.getElementById('find-input')?.value||'';
+  const r=document.getElementById('replace-input')?.value||'';
+  if(!q) return;
+  const cursor=cm.getSearchCursor(q,CodeMirror.Pos(0,0),{caseFold:true});
+  cm.operation(()=>{ while(cursor.findNext()) cursor.replace(r); });
+  findInEditor();
+}
+function closeFind(){
+  document.getElementById('find-bar').style.display='none';
+  cm.getAllMarks().forEach(m=>m.clear());
+  cm.focus();
+}
+
 </script>
 </body>
 </html>
