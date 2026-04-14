@@ -394,9 +394,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
       </div>
 
-      <div class="nav-item" onclick="showView('audit')">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-        Audit Log
+      <div class="nav-item" onclick="showView('audit')" style="display:none">
       </div>
     </div>
 
@@ -409,23 +407,35 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
     </div>
 
-    <!-- DELIVER + misc at bottom -->
-    <div class="nav-section" style="margin-top:auto;border-top:0.5px solid var(--border);padding-top:1rem">
-      <div class="nav-item" onclick="showView('supported')" style="color:var(--text3);font-size:12px">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-        Supported Formats
+    <!-- More section -->
+    <div class="nav-section">
+      <div class="nav-label">More</div>
+      <div class="nav-sub-label open" id="more-label" onclick="toggleSubMenu('more')">
+        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><circle cx="2" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="10" cy="6" r="1" fill="currentColor"/></svg>
+        More
+        <span class="chevron">▶</span>
       </div>
-      <div class="nav-item" onclick="showView('diagnostics')" style="color:var(--text3);font-size:12px">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Diagnostics
-      </div>
-      <div class="nav-item" onclick="window.open('/help.html','_blank')" style="color:var(--accent);font-size:12px;margin-top:0.25rem">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/></svg>
-        Help &amp; Guide
-      </div>
-      <div class="nav-item" onclick="window.open('/demo.html','_blank')" style="color:var(--purple);font-size:12px">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><polygon points="3,2 13,8 3,14" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/></svg>
-        Demo Reel
+      <div class="nav-sub" id="more-sub" style="max-height:300px">
+        <div class="nav-item" onclick="event.stopPropagation();showView('audit')" style="color:var(--text2)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+          Audit Log
+        </div>
+        <div class="nav-item" onclick="event.stopPropagation();showView('supported')" style="color:var(--text2)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          Supported Formats
+        </div>
+        <div class="nav-item" onclick="event.stopPropagation();showView('diagnostics')" style="color:var(--text2)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Diagnostics
+        </div>
+        <div class="nav-item" onclick="event.stopPropagation();window.open('/help.html','_blank')" style="color:var(--accent)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/></svg>
+          Help &amp; Guide
+        </div>
+        <div class="nav-item" onclick="event.stopPropagation();window.open('/demo.html','_blank')" style="color:var(--amber)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><polygon points="3,2 13,8 3,14" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/></svg>
+          Demo Reel
+        </div>
       </div>
     </div>
   </div>

@@ -93,6 +93,8 @@
     const planCollapsed = '';
     const serviceOpen = ['ask.html'].includes(page) ? 'open' : 'open';
     const serviceCollapsed = '';
+    const moreOpen = ['demo.html','help.html'].includes(page) ? 'open' : 'open';
+    const moreCollapsed = '';
     const mappingOpen = 'open';
     const mappingCollapsed = '';
     const analysisOpen = ['insights.html','validation.html'].includes(page) ? 'open' : 'open';
@@ -220,10 +222,6 @@
     </a>
   </div>
 
-  <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','audit')">
-    <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-    Audit Log
-  </a>
 </div>
 
 <div class="cyg-nav-section">
@@ -245,6 +243,39 @@
 
 </div>
 
+<div class="cyg-nav-section">
+  <span class="cyg-nav-label">More</span>
+
+  <!-- More sub-menu -->
+  <div class="cyg-sub-label ${moreOpen}" id="cyg-lbl-more" onclick="cygToggleSub('more')">
+    <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><circle cx="2" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="10" cy="6" r="1" fill="currentColor"/></svg>
+    More
+    <span class="cyg-chev">▶</span>
+  </div>
+  <div class="cyg-sub ${moreCollapsed}" id="cyg-sub-more" style="max-height:${moreOpen?'240px':'0'}">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','audit')" style="color:#8b90a0">
+      <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Audit Log
+    </a>
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','supported')" style="color:#8b90a0">
+      <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      Supported Formats
+    </a>
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','diagnostics')" style="color:#8b90a0">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Diagnostics
+    </a>
+    <a class="${isActive('help.html')}" href="/help.html" target="_blank" style="color:#3d7eff">
+      <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/></svg>
+      Help &amp; Guide
+    </a>
+    <a class="${isActive('demo.html')}" href="/demo.html" target="_blank" style="color:#f59e0b">
+      <svg viewBox="0 0 16 16" fill="none"><polygon points="5,3 13,8 5,13" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/></svg>
+      Demo Reel
+    </a>
+  </div>
+</div>
+
 <div class="cyg-sidebar-footer">
   <div class="cyg-conn-bar">
     <span class="cyg-conn-dot" id="cyg-src-dot" style="background:${srcOk?'#22c97a':'#f04646'}"></span>
@@ -252,10 +283,6 @@
     <span class="cyg-conn-dot" id="cyg-tgt-dot" style="background:${tgtOk?'#22c97a':'#f04646'}"></span>
     <span>${tgtOk?'Tgt ✓':'Tgt —'}</span>
   </div>
-  <a class="cyg-nav-item" href="/help.html" target="_blank" style="font-size:11px;color:#3d7eff">
-    <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/></svg>
-    Help & Guide
-  </a>
 </div>
 `;
   }
