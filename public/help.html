@@ -21,29 +21,17 @@
   --r:8px;--r-lg:12px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
-
-/* TOPBAR */
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
-.logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
-.logo span{color:var(--accent)}
-.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);text-decoration:none;color:var(--text2);background:transparent;border:0.5px solid var(--border2)}
-.btn:hover{color:var(--text)}
-
-/* LAYOUT */
-.layout{display:grid;grid-template-columns:260px 1fr;height:calc(100vh - 52px)}
-
-/* TOC SIDEBAR */
+.logo{font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;font-family:var(--serif);text-decoration:none;color:var(--text2);background:transparent;border:0.5px solid var(--border2)}.btn:hover{color:var(--text)}
+.layout{display:grid;grid-template-columns:270px 1fr;height:calc(100vh - 52px)}
 .toc{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.5rem 0;overflow-y:auto;position:sticky;top:52px;height:calc(100vh - 52px)}
-.toc-title{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0 1.25rem;margin-bottom:0.75rem}
-.toc-item{display:block;padding:0.4rem 1.25rem;font-size:12px;color:var(--text3);text-decoration:none;transition:all 0.15s;border-left:2px solid transparent}
+.toc-section{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;padding:0.75rem 1.25rem 0.25rem;margin-top:0.25rem}
+.toc-item{display:block;padding:0.35rem 1.25rem;font-size:12px;color:var(--text3);text-decoration:none;transition:all 0.15s;border-left:2px solid transparent}
 .toc-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
 .toc-item.active{color:var(--accent);border-left-color:var(--accent)}
 .toc-item.sub{padding-left:2rem;font-size:11px}
-
-/* CONTENT */
 .content{overflow-y:auto;padding:2.5rem 3rem;max-width:860px}
-
-/* TYPOGRAPHY */
 h1{font-size:1.8rem;font-weight:600;margin-bottom:0.5rem;color:var(--text)}
 h2{font-size:1.25rem;font-weight:600;margin:2.5rem 0 1rem;color:var(--text);padding-top:0.5rem;border-top:0.5px solid var(--border)}
 h3{font-size:1rem;font-weight:600;margin:1.5rem 0 0.5rem;color:var(--text2)}
@@ -52,13 +40,9 @@ ul,ol{margin:0.5rem 0 0.875rem 1.25rem}
 li{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:0.25rem}
 code{font-family:var(--mono);font-size:12px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:1px 6px;color:var(--accent)}
 .lead{font-size:15px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem}
-
-/* CARDS */
 .card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem}
 .card-title{font-size:13px;font-weight:600;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem}
 .card p{margin-bottom:0}
-
-/* STEPS */
 .steps{counter-reset:step;margin:1rem 0}
 .step{display:flex;gap:1rem;margin-bottom:1.25rem;align-items:flex-start}
 .step-num{counter-increment:step;min-width:28px;height:28px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--accent);flex-shrink:0;font-family:var(--mono)}
@@ -66,8 +50,6 @@ code{font-family:var(--mono);font-size:12px;background:var(--bg3);border:0.5px s
 .step-body{padding-top:4px}
 .step-body strong{display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px}
 .step-body p{margin-bottom:0;font-size:13px}
-
-/* BADGES */
 .badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-weight:500;margin:0 2px}
 .badge-green{background:var(--green-bg);color:var(--green)}
 .badge-red{background:var(--red-bg);color:var(--red)}
@@ -75,19 +57,14 @@ code{font-family:var(--mono);font-size:12px;background:var(--bg3);border:0.5px s
 .badge-blue{background:var(--accent-glow);color:var(--accent)}
 .badge-teal{background:rgba(45,212,191,0.1);color:var(--teal)}
 .badge-purple{background:rgba(167,139,250,0.1);color:var(--purple)}
-
-/* TIP BOX */
 .tip{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.875rem 1rem;margin:1rem 0;font-size:13px;color:var(--text2);line-height:1.7}
 .tip strong{color:var(--accent)}
 .warn{background:var(--amber-bg);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);padding:0.875rem 1rem;margin:1rem 0;font-size:13px;color:var(--text2);line-height:1.7}
 .warn strong{color:var(--amber)}
-
-/* TABLE */
 .help-table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:13px}
 .help-table th{text-align:left;padding:0.6rem 0.875rem;font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;background:var(--bg3);border-bottom:0.5px solid var(--border)}
 .help-table td{padding:0.6rem 0.875rem;border-bottom:0.5px solid var(--border);color:var(--text2);vertical-align:top}
 .help-table tr:last-child td{border-bottom:none}
-
 section{margin-bottom:0.5rem}
 </style>
 </head>
@@ -99,314 +76,357 @@ section{margin-bottom:0.5rem}
 </div>
 
 <div class="layout">
-
-  <!-- TABLE OF CONTENTS -->
   <nav class="toc">
-    <div class="toc-title">Contents</div>
+    <div class="toc-section">Getting started</div>
     <a class="toc-item" href="#overview">Overview</a>
-    <a class="toc-item" href="#getting-started">Getting Started</a>
-    <a class="toc-item" href="#configure">Configure (Live DB Migration)</a>
-    <a class="toc-item sub" href="#configure-source">Step 1 – Source DB</a>
-    <a class="toc-item sub" href="#configure-target">Step 2 – Target DB</a>
-    <a class="toc-item sub" href="#configure-map">Step 3 – Select & Map</a>
-    <a class="toc-item sub" href="#configure-preview">Step 4 – Preview SQL</a>
-    <a class="toc-item sub" href="#configure-save">Step 5 – Save & Finish</a>
+    <a class="toc-item" href="#workflow">Typical workflow</a>
+    <a class="toc-item" href="#connections">Connection strings</a>
+
+    <div class="toc-section">Configure</div>
+    <a class="toc-item" href="#configure">Configure (live DB migration)</a>
+    <a class="toc-item sub" href="#configure-source">Source database</a>
+    <a class="toc-item sub" href="#configure-target">Target database</a>
+    <a class="toc-item sub" href="#configure-map">Select & Map</a>
+    <a class="toc-item sub" href="#configure-preview">Preview SQL</a>
+    <a class="toc-item sub" href="#configure-save">Save & finish</a>
+
+    <div class="toc-section">Develop</div>
+    <a class="toc-item" href="#mapper">Mapper</a>
+    <a class="toc-item sub" href="#mapper-simple">Simple map</a>
+    <a class="toc-item sub" href="#mapper-otm">One-to-many map</a>
+    <a class="toc-item sub" href="#mapper-sql">Generated SQL</a>
+    <a class="toc-item" href="#sql-editor">SQL Editor</a>
+    <a class="toc-item" href="#wasis">Was/Is mapping</a>
+
+    <div class="toc-section">Analysis</div>
+    <a class="toc-item" href="#validation">Data validation</a>
+    <a class="toc-item sub" href="#val-setup">Adding a validation table</a>
+    <a class="toc-item sub" href="#val-run">Running scripts</a>
+    <a class="toc-item" href="#insights">Data insights</a>
+
+    <div class="toc-section">Plan</div>
+    <a class="toc-item" href="#project-plan">Project Planner</a>
+    <a class="toc-item sub" href="#plan-calendar">Calendar</a>
+    <a class="toc-item sub" href="#plan-tasks">Tasks</a>
+    <a class="toc-item sub" href="#plan-blockers">Blockers</a>
+
+    <div class="toc-section">Configure</div>
+    <a class="toc-item" href="#performance">Performance settings</a>
+    <a class="toc-item" href="#project-settings">Project settings</a>
+
+    <div class="toc-section">Execute & report</div>
     <a class="toc-item" href="#conversion-project">Conversion Project</a>
-    <a class="toc-item sub" href="#project-steps">Adding steps</a>
-    <a class="toc-item sub" href="#project-run">Running a project</a>
-    <a class="toc-item" href="#validation">Data Validation</a>
-    <a class="toc-item" href="#inventory">Inventory</a>
     <a class="toc-item" href="#reports">Conversion Reports</a>
-    <a class="toc-item" href="#wasis">Was/Is Mapping</a>
+    <a class="toc-item" href="#inventory">Inventory</a>
     <a class="toc-item" href="#client-portal">Client Portal</a>
-    <a class="toc-item" href="#connections">Connection Strings</a>
+
+    <div class="toc-section">Support</div>
     <a class="toc-item" href="#troubleshooting">Troubleshooting</a>
   </nav>
 
-  <!-- MAIN CONTENT -->
   <div class="content">
 
-    <!-- OVERVIEW -->
     <section id="overview">
       <h1>Cygenix Help Guide</h1>
-      <p class="lead">Cygenix is an AI-powered database migration platform. It connects to your source and target databases, maps columns intelligently using Claude AI, applies value translations (Was/Is), and executes migrations with full rollback capability.</p>
-
+      <p class="lead">Cygenix is an AI-powered database migration platform. It connects to your source and target SQL Server databases, maps columns using Claude AI, applies value translations, validates results, and delivers professional reports — all from the browser.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem">
-        <div class="card">
-          <div class="card-title">🔗 <span style="color:var(--teal)">Configure</span></div>
-          <p>Connect source & target DBs, map columns with AI, preview SQL and save migration jobs.</p>
-        </div>
-        <div class="card">
-          <div class="card-title">📋 <span style="color:var(--purple)">Conversion Project</span></div>
-          <p>Sequence multiple migration jobs and SQL scripts into a single executable project.</p>
-        </div>
-        <div class="card">
-          <div class="card-title">✅ <span style="color:var(--amber)">Validation</span></div>
-          <p>Run pre/post migration validation scripts to verify data quality and integrity.</p>
-        </div>
+        <div class="card"><div class="card-title">🗺 <span style="color:var(--teal)">Mapper</span></div><p>Target-driven column mapping with AI, fixed values, Was/Is rules and one-to-many support.</p></div>
+        <div class="card"><div class="card-title">✅ <span style="color:var(--amber)">Validation</span></div><p>Add any table as a validation source. Pick the SQL column, report columns and run connection.</p></div>
+        <div class="card"><div class="card-title">📅 <span style="color:var(--green)">Project Planner</span></div><p>Calendar, tasks, blockers, phase tracker and activity log — driven by your completion date.</p></div>
       </div>
     </section>
 
-    <!-- GETTING STARTED -->
-    <section id="getting-started">
-      <h2>Getting Started</h2>
-      <p>The typical migration workflow in Cygenix follows this sequence:</p>
+    <section id="workflow">
+      <h2>Typical workflow</h2>
+      <p>The recommended migration sequence in Cygenix:</p>
       <div class="steps">
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run validation scripts (pre-migration)</strong><p>Use the Validation page to identify data quality issues in the source database before migrating.</p></div></div>
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Configure your migration</strong><p>Connect to source and target databases, select tables, map columns using Claude AI, and save the job to your library.</p></div></div>
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Build a Conversion Project</strong><p>Combine multiple migration jobs and custom SQL scripts into an ordered project and run them as a single job.</p></div></div>
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Review the Conversion Report</strong><p>Export an Excel report showing migration results, column mapping, Was/Is rules applied, and any warnings.</p></div></div>
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run validation scripts (post-migration)</strong><p>Re-run validation against the target database to confirm data migrated correctly.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Set up Project Settings</strong><p>Enter project name, start and completion dates, source and target systems. The completion date drives the Project Planner calendar and countdown.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run pre-migration validation</strong><p>Add your validation tables in the Validation page. Run scripts against the source database to identify data quality issues before migrating.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Map tables using the Mapper</strong><p>Use Simple Map for single-table migrations or One-to-Many for complex transformations. AI maps columns automatically — override as needed, add fixed values and Was/Is rules.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Build and run a Conversion Project</strong><p>Combine multiple mapping jobs and custom SQL scripts into a sequenced project. Run in one click with live status per step.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run post-migration validation</strong><p>Re-run validation scripts against the target database to confirm data migrated correctly.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Export the Conversion Report</strong><p>Download a client-ready Excel report with summary, migration results, column mapping, Was/Is applied and execution log.</p></div></div>
       </div>
     </section>
 
-    <!-- CONFIGURE -->
+    <section id="connections">
+      <h2>Connection strings</h2>
+      <h3>Direct SQL Server connection string</h3>
+      <p>Standard ADO.NET format — works on-premises and Azure SQL:</p>
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">Server=your-server.database.windows.net;Database=YourDB;User Id=user;Password=pass;Encrypt=true;TrustServerCertificate=false;</div>
+      <h3>Azure Function (Managed Identity)</h3>
+      <p>Recommended for Azure SQL — no passwords stored or transmitted:</p>
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">https://your-function.azurewebsites.net/api/db?code=YOUR_FUNCTION_KEY</div>
+      <div class="tip"><strong>Tip:</strong> Save your connections in Project Settings → Connections. They are then pre-filled across the Mapper, Validation and SQL Editor.</div>
+    </section>
+
     <section id="configure">
-      <h2>Configure (Live DB Migration)</h2>
-      <p>The Configure page is a 5-step wizard for setting up a migration between a source and target database. Access it from <strong>Configure</strong> in the sidebar.</p>
-
-      <h3 id="configure-source">Step 1 — Source Database</h3>
-      <p>Connect to the database you are migrating <em>from</em>. Two connection modes are available:</p>
-      <ul>
-        <li><strong>Direct connection string</strong> — uses the Netlify serverless function to connect. Use standard SQL Server format: <code>Server=host;Database=db;User Id=user;Password=pass;Encrypt=true;</code></li>
-        <li><strong>Azure Function</strong> — connects via the Cygenix Azure Function using Managed Identity. No passwords needed. Enter the Function URL and key.</li>
-      </ul>
-      <p>Click <strong>🔌 Connect source DB</strong> to test the connection and load the database schema.</p>
-
-      <h3 id="configure-target">Step 2 — Target Database</h3>
-      <p>Connect to the database you are migrating <em>into</em>. Same two connection modes as Step 1. The Azure Function mode is recommended for Azure SQL as it uses Managed Identity authentication.</p>
-
-      <div class="tip"><strong>Tip:</strong> Your connection details are remembered for the session. On future visits the fields will pre-fill from your last session.</div>
-
-      <h3 id="configure-map">Step 3 — Select & Map</h3>
-      <p>Choose the source table and target table from the dropdowns. Claude AI will automatically map columns between the two tables based on name matching and data type compatibility.</p>
-      <ul>
-        <li><span class="badge badge-green">auto</span> — exact name and type match</li>
-        <li><span class="badge badge-amber">review</span> — name match but type differs, or similar name</li>
-        <li><span class="badge badge-red">unmatched</span> — no suitable target column found</li>
-      </ul>
-      <p>You can override any mapping using the dropdown in each row. Use <strong>Re-map with Claude</strong> to ask the AI to remap after you've made changes.</p>
-      <p>If you have a <strong>Was/Is</strong> translation file, load it here using the Was/Is panel. Rules are shown as 🔄 badges on affected columns.</p>
-
-      <h3 id="configure-preview">Step 4 — Preview SQL</h3>
-      <p>For source tables from a live database, click <strong>Fetch rows from source DB</strong> to retrieve the data. Cygenix then generates batched <code>INSERT INTO</code> statements with all column mappings and Was/Is translations applied.</p>
-      <p>Three tabs are available:</p>
-      <ul>
-        <li><strong>INSERT statements</strong> — the full migration SQL</li>
-        <li><strong>Schema check SQL</strong> — queries to verify the target schema</li>
-        <li><strong>Verify queries</strong> — row count comparison queries</li>
-      </ul>
-      <p>You can download the SQL to run manually in SSMS if preferred.</p>
-
-      <h3 id="configure-save">Step 5 — Save & Finish</h3>
-      <p>Enter a job name and choose what to do next:</p>
-      <ul>
-        <li><strong>💾 Save & go to Dashboard</strong> — saves the job and returns to the dashboard</li>
-        <li><strong>💾 Save & map another table</strong> — saves and returns to Step 3 keeping your connections active</li>
-        <li><strong>💾 Save & open Conversion Project</strong> — saves and goes to the project builder</li>
-      </ul>
-      <div class="tip"><strong>Tip:</strong> The job is saved to your browser's local storage and appears in All Jobs and the Conversion Project job library. The full column mapping and Was/Is rules are saved with the job.</div>
+      <h2>Configure (live DB migration)</h2>
+      <p>The legacy 5-step Configure wizard walks through source connection, target connection, column mapping, SQL preview and save. New migrations should use the <strong>Mapper</strong> directly, which provides a richer target-driven mapping experience.</p>
+      <h3 id="configure-source">Source database</h3>
+      <p>Connect to the database you are migrating <em>from</em>. Use a direct connection string or Azure Function URL. Click <strong>🔌 Connect source DB</strong> to test and load the schema.</p>
+      <h3 id="configure-target">Target database</h3>
+      <p>Connect to the database you are migrating <em>into</em>. Same connection modes as source.</p>
+      <h3 id="configure-map">Select & Map</h3>
+      <p>Choose source and target tables. Claude AI maps columns automatically. Override any row using the dropdowns. Load Was/Is rules from the panel on the right.</p>
+      <h3 id="configure-preview">Preview SQL</h3>
+      <p>Fetch live rows from the source and review the generated INSERT statements before executing. Download as .sql if preferred.</p>
+      <h3 id="configure-save">Save & finish</h3>
+      <p>Enter a job name and save. The job appears in All Jobs and the Conversion Project job library.</p>
     </section>
 
-    <!-- CONVERSION PROJECT -->
-    <section id="conversion-project">
-      <h2>Conversion Project</h2>
-      <p>The Conversion Project Builder lets you sequence multiple migration jobs and custom SQL scripts into a single executable project.</p>
+    <section id="mapper">
+      <h2>Mapper</h2>
+      <p>The Mapper is the primary tool for building migration jobs. It offers two modes toggled at the top: <strong>Simple Map</strong> and <strong>One-to-Many</strong>.</p>
 
-      <h3 id="project-steps">Adding Steps</h3>
-      <p>The left panel shows all saved migration jobs. Click any job to add it as a step. Steps show their step number, icon, source → target route, and current status.</p>
-      <p>Use <strong>+ Add custom SQL step</strong> at the bottom of the left panel to add a SQL script step. Each SQL step can be set to run on either the <strong>source</strong> or <strong>target</strong> database — useful for pre-migration cleanup, creating indexes, or archiving processed rows.</p>
-      <p>Drag steps to reorder them. Click ✕ to remove a step.</p>
-
-      <h3 id="project-run">Running a Project</h3>
-      <p>Set your source and target connections at the top, click <strong>🔌 Connect source</strong> and <strong>🔌 Connect target</strong> to verify, then click <strong>▶ Run project</strong>.</p>
-      <p>Steps run sequentially. Status indicators show progress:</p>
+      <h3 id="mapper-simple">Simple map</h3>
+      <p>Maps one source table to one target table. The mapping grid is <strong>target-driven</strong> — every non-identity target column appears as a fixed row. You choose the source column from a dropdown.</p>
       <ul>
-        <li>⚪ Pending — not yet run</li>
-        <li>🟡 Running — currently executing</li>
-        <li>🟢 Passed — completed successfully</li>
-        <li>🔴 Failed — error occurred</li>
-        <li>🟠 Skipped — user chose to skip after failure</li>
+        <li><strong>AI map</strong> — Claude Haiku automatically maps all target columns. Retries automatically on overload (up to 3 attempts).</li>
+        <li><strong>Fixed value</strong> — type any SQL literal in the Fixed value column to override the source. Examples: <code>N'Enterprise'</code>, <code>NULL</code>, <code>GETDATE()</code>, <code>0</code></li>
+        <li><strong>Truncation warning</strong> — if the source char type is wider than the target, a <span style="font-size:11px;padding:1px 6px;border-radius:100px;background:var(--amber-bg);color:var(--amber);font-family:var(--mono)">⚠ LEFT(N)</span> badge appears and LEFT() is auto-applied in the SQL</li>
+        <li><strong>👁 Hide/Show Unmapped</strong> — toggle to show only columns that have a source or fixed value</li>
+        <li><strong>Filter bar</strong> — filter rows by text or match level (HIGH / MEDIUM / LOW / Unmapped / Fixed)</li>
+        <li><strong>Sort</strong> — click column headers to sort Source, Target or Match</li>
+        <li><strong>✂ Remove unused</strong> — removes unmapped rows from the generated SQL (with ↩ undo)</li>
       </ul>
-      <p>If a step fails, execution stops and you are presented with three options: <strong>↩ Retry</strong>, <strong>⏭ Skip</strong>, or <strong>⏹ Abort</strong>. Use <strong>⏹ Stop</strong> in the topbar to halt execution at any time.</p>
-      <p>After completion, click <strong>📄 View Conversion Report</strong> to open the full Excel-exportable report.</p>
+
+      <h3 id="mapper-otm">One-to-many map</h3>
+      <p>Maps one source table into multiple target tables in a single operation. Add as many target table cards as needed using <strong>+ Add target table</strong>.</p>
+      <ul>
+        <li>Each card has its own target-driven mapping grid, AI map button, filter and 👁 Hide Unmapped toggle</li>
+        <li><strong>PK mode</strong> per card: Identity (auto-increment), GUID (NEWID()), or Natural key</li>
+        <li><strong>PK variable</strong> — name the variable (e.g. @ClientID) that captures the inserted PK for use in FK columns of child cards</li>
+        <li><strong>FK rows</strong> — add foreign key columns that reference the PK variable of a parent card</li>
+        <li><strong>Fixed value</strong> column per row — same as Simple map</li>
+        <li>Cards can be reordered with ↑ ↓ buttons</li>
+      </ul>
+
+      <h3 id="mapper-sql">Generated SQL</h3>
+      <p>SQL is generated automatically as you edit. Click <strong>⚡ Generate SQL</strong> to scroll to the SQL panel and refresh it explicitly.</p>
+      <ul>
+        <li>Three-part database names: <code>[SourceDB].[dbo].[table]</code> and <code>[TargetDB].[dbo].[table]</code></li>
+        <li>Bare column names in SELECT: <code>[colName]</code> (no schema prefix)</li>
+        <li>No GO statements — compatible with direct execution and batch runners</li>
+        <li>Was/Is rules appear as CASE WHEN blocks per column</li>
+        <li>Fixed values replace the source column directly in SELECT</li>
+        <li>LEFT(N) wrapping applied automatically for truncated char columns</li>
+      </ul>
+      <div class="tip"><strong>Edit mode:</strong> Clicking Edit on any existing job opens the Mapper in edit mode. Both schemas are loaded, the mapping is restored (including fixed values and Was/Is rules) and SQL is regenerated silently.</div>
     </section>
 
-    <!-- VALIDATION -->
+    <section id="sql-editor">
+      <h2>SQL Editor</h2>
+      <p>A full-featured SQL workspace for writing, running and managing scripts against source or target databases.</p>
+      <ul>
+        <li><strong>Script library</strong> — left panel. Save any number of named scripts. Click to load. Scripts persist in localStorage.</li>
+        <li><strong>Connection selector</strong> — choose whether queries run against Source DB or Target DB</li>
+        <li><strong>Keyboard shortcuts</strong> — <code>Ctrl+Enter</code> run, <code>Ctrl+F</code> find, <code>Ctrl+/</code> toggle comment, <code>Tab</code> indent</li>
+        <li><strong>Snippet toolbar</strong> — one-click SELECT, WHERE, INSERT, UPDATE, DELETE, BEGIN TRAN buttons</li>
+        <li><strong>Results grid</strong> — row view or pivot view. Export to Excel. Rows capped in browser but all rows execute on server.</li>
+        <li><strong>History</strong> — every executed query is stored with timestamp and result count. Click to reload.</li>
+        <li><strong>AI assistant</strong> — describe what you need. Claude writes or improves the SQL. Click Apply to load into the editor.</li>
+        <li><strong>Format SQL</strong> — uppercases all SQL keywords in the current script</li>
+        <li><strong>Word wrap</strong> / <strong>Line numbers</strong> toggles</li>
+        <li><strong>Fullscreen mode</strong> — hides the sidebar for maximum editor space</li>
+        <li><strong>Load from file</strong> — open any .sql file directly into the editor</li>
+      </ul>
+      <div class="tip"><strong>Job mode:</strong> SQL Editor also opens when you click Edit on a SQL-type job from the dashboard. The script is loaded automatically and a job indicator shows in the toolbar.</div>
+    </section>
+
+    <section id="wasis">
+      <h2>Was/Is mapping</h2>
+      <p>Was/Is mapping translates specific values during migration — for example converting status codes <code>A</code> → <code>Active</code>, or renaming department codes to match the target system.</p>
+      <p>Prepare a CSV or Excel file with columns: field name, old value (Was), new value (Is). Load it in the Mapper using the Was/Is panel. Columns with rules applied show a <span style="font-size:11px;padding:2px 7px;border-radius:100px;background:rgba(245,158,11,0.15);color:var(--amber);font-family:var(--mono)">🔄 N rules</span> badge.</p>
+      <div class="warn"><strong>Note:</strong> Was/Is rules are case-sensitive by default. Ensure Was values exactly match the source data.</div>
+    </section>
+
     <section id="validation">
       <h2>Data Validation</h2>
-      <p>The Validation page reads scripts from a <code>validation_scripts</code> table in your source database and executes them to identify data quality issues.</p>
+      <p>The Validation page runs SQL scripts to check data quality before and after migration. Unlike the old fixed-table approach, you can now add <em>any</em> table as a validation source.</p>
 
+      <h3 id="val-setup">Adding a validation table</h3>
+      <p>Click <strong>+ Add validation table</strong>. A modal walks through:</p>
+      <div class="steps">
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Connection</strong><p>Pick Source DB, Target DB (from project connections), or type a custom connection string. Click Connect to load the schema.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Table picker</strong><p>Search and select any table. The modal loads the row count and column list.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>SQL column</strong><p>Pick which column holds the SQL statement to execute. Each row in the table becomes one script. The SQL column is highlighted teal in the report column pills.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Script name column</strong><p>Optional. Pick a column to use as the label for each script in the results table.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Report columns</strong><p>All columns are shown as toggleable pills. Select which ones appear in the failure report when a script returns rows. All are selected by default — deselect what you don't need.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run on</strong><p>Choose whether the script SQL executes against Source DB, Target DB, or the same connection as the validation table itself.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Label</strong><p>Give this validation source a friendly name (defaults to the table name). Click Save.</p></div></div>
+      </div>
+
+      <h3 id="val-run">Running scripts</h3>
+      <ul>
+        <li><strong>▶ Run all</strong> (topbar) — runs every script across all sources</li>
+        <li><strong>▶ Run selected</strong> — runs only checked scripts</li>
+        <li><strong>▶ Run</strong> (source card) — runs all scripts for that source only</li>
+        <li><strong>▶</strong> (row button) — runs a single script</li>
+      </ul>
+      <p>A script <span style="font-size:11px;padding:1px 7px;border-radius:100px;background:var(--green-bg);color:var(--green);font-family:var(--mono)">✓ Pass</span> if it returns zero rows. It <span style="font-size:11px;padding:1px 7px;border-radius:100px;background:var(--red-bg);color:var(--red);font-family:var(--mono)">✕ Fail</span> if it returns any rows (those rows are the problem data). Click <strong>👁 View</strong> on a failed script to see the rows inline, filtered to your chosen report columns.</p>
+      <p>Click <strong>📊 Export</strong> to download an Excel file with a summary sheet and one sheet per failed script.</p>
+      <div class="tip"><strong>Tip:</strong> Validation sources are saved to localStorage (<code>cygenix_validation_sources</code>). Click ✏ Edit on any source card to update its column selections without losing the configuration.</div>
+    </section>
+
+    <section id="insights">
+      <h2>Data Insights</h2>
+      <p>Connect to any database table and load column data into the browser for quick analysis — distinct values, value frequencies, null counts, date ranges. Useful for understanding source data before mapping.</p>
+    </section>
+
+    <section id="project-plan">
+      <h2>Project Planner</h2>
+      <p>A built-in project management tool for tracking your migration. Access it from <strong>Plan → Project Planner</strong> in the sidebar. The completion date is read from Project Settings → Target completion.</p>
+
+      <h3 id="plan-calendar">Calendar</h3>
+      <p>Four views toggled at the top of the calendar panel:</p>
+      <ul>
+        <li><strong>Year</strong> — 12 mini month grids. Days with events show a teal dot. Click any day to jump to Day view.</li>
+        <li><strong>Month</strong> — full month grid. Events shown as coloured pills (up to 3 per cell, +N more). Click a cell to drill into Day view.</li>
+        <li><strong>Week</strong> — 7-column hourly grid. All-day band at top. Click any hour slot to add an event pre-filled with that date and time.</li>
+        <li><strong>Day</strong> — single column hourly view. All-day events at top.</li>
+      </ul>
+      <p>Use <strong>‹ ›</strong> to navigate and <strong>Today</strong> to jump back to now. Click <strong>+ Event</strong> to add a calendar event manually.</p>
+      <p>The calendar automatically shows events generated from your tasks (due dates and start dates) and the project completion date from Project Settings. Clicking a task-generated event opens the task edit modal.</p>
+      <p>Event types and colours:</p>
       <table class="help-table">
-        <thead><tr><th>Column</th><th>Description</th></tr></thead>
+        <thead><tr><th>Type</th><th>Colour</th><th>Use for</th></tr></thead>
         <tbody>
-          <tr><td><code>name</code></td><td>Script identifier name</td></tr>
-          <tr><td><code>caption</code></td><td>Human-readable description of what the script checks</td></tr>
-          <tr><td><code>sql</code></td><td>The SQL query to execute. Any rows returned = validation failed.</td></tr>
-          <tr><td><code>Order</code></td><td>Execution order</td></tr>
-          <tr><td><code>code</code></td><td>Script code reference</td></tr>
-          <tr><td><code>Script_DestinationDatabase</code></td><td>1, 2, or 3 = run on Source. 4 = run on Target.</td></tr>
-          <tr><td><code>group</code></td><td>Logical grouping of scripts (e.g. AP-Transactions, GL-Setup)</td></tr>
+          <tr><td>Task</td><td style="color:var(--accent)">■ Blue</td><td>General tasks with start/due dates</td></tr>
+          <tr><td>Deadline</td><td style="color:var(--red)">■ Red</td><td>Hard deadlines, sign-off dates</td></tr>
+          <tr><td>Milestone</td><td style="color:var(--amber)">■ Amber</td><td>Key project milestones</td></tr>
+          <tr><td>Meeting</td><td style="color:var(--purple)">■ Purple</td><td>Stakeholder meetings, reviews</td></tr>
         </tbody>
       </table>
 
-      <p><strong>Pass/Fail rule:</strong> If a script returns 0 rows — it passes. If it returns any rows — it fails and those rows are shown in the Excel export so you can investigate the exact records causing the issue.</p>
+      <h3 id="plan-tasks">Tasks</h3>
+      <p>Click <strong>+ Add task</strong> to open the task modal (similar to an Outlook task). Fields include: name, description, phase, status, priority, start date, due date, owner/assignee and notes.</p>
+      <p>Task statuses: <span class="badge badge-blue">In progress</span> <span class="badge" style="background:rgba(255,255,255,0.06);color:var(--text3)">To do</span> <span class="badge badge-red">Blocked</span> <span class="badge badge-amber">Review</span> <span class="badge badge-green">Done</span></p>
+      <p>Overdue tasks (due date past, not done) are highlighted red. The tasks table can be filtered by status, phase and free text search.</p>
+      <p>The summary stats bar at the top shows: days remaining to completion, total tasks, completed, in progress, blocked, open blockers and overall % complete. Two progress bars show task completion and elapsed project time.</p>
 
-      <p>Use the <strong>column header filters</strong> to narrow down scripts by name, caption, group, destination database, or status. Active filters highlight in amber. Click <strong>✕ clear</strong> to reset all filters.</p>
+      <h3 id="plan-blockers">Blockers</h3>
+      <p>Click <strong>+ Add blocker</strong> to record anything blocking the migration. Fields: title, description, impact level (Low / Medium / High / Critical), raised by, owner, target resolution date and resolution notes.</p>
+      <p>Open blockers appear as red cards. Click <strong>✓ Resolve</strong> to mark a blocker resolved (it turns green). The active blocker count is shown in the summary stats.</p>
 
-      <p>Click the SQL preview in the SQL column to expand the full query inline. Use <strong>▶ Run</strong> on individual rows to test specific scripts, or <strong>▶ Run all scripts</strong> / <strong>▶ Run selected</strong> for bulk execution.</p>
-
-      <p>The <strong>📊 Export to Excel</strong> button produces a workbook with a Summary sheet, one sheet per failed script showing the actual problem rows, and a Script Errors sheet for any scripts that encountered SQL errors.</p>
+      <h3>Execution phase tracker</h3>
+      <p>A visual 7-stage pipeline: Planning → Analysis → Mapping → Development → UAT → Go-live → Post-migration. The current phase is highlighted in blue; completed stages in green. Click any stage to set it as the current phase — this saves back to Project Settings and is reflected across the dashboard.</p>
     </section>
 
-    <!-- INVENTORY -->
-    <section id="inventory">
-      <h2>Inventory</h2>
-      <p>The Inventory section stores documents, schema files, data dictionaries and notes relevant to the migration project. Files are stored in your browser's local storage.</p>
-      <p>Supported file types:</p>
+    <section id="performance">
+      <h2>Performance settings</h2>
+      <p>Access from <strong>Configure → Performance</strong>. Settings are saved to localStorage (<code>cygenix_performance</code>) and applied across all migration operations.</p>
+
+      <h3>Quick presets</h3>
+      <table class="help-table">
+        <thead><tr><th>Preset</th><th>Best for</th><th>Key settings</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Small DB</strong></td><td>Tables under 100k rows</td><td>1,000 rows/page, 1 thread, row verification on</td></tr>
+          <tr><td><strong>Medium DB</strong></td><td>100k–1M rows</td><td>2,000 rows/page, 2 threads, balanced timeouts</td></tr>
+          <tr><td><strong>Large DB</strong></td><td>Over 1M rows</td><td>5,000 rows/page, 4 threads, NOLOCK, index hint</td></tr>
+          <tr><td><strong>Azure SQL</strong></td><td>Azure SQL databases</td><td>90s connect timeout, 5 retries, low concurrency</td></tr>
+          <tr><td><strong>Cautious</strong></td><td>Live production sources</td><td>100 rows/batch, 1 thread, full row verification</td></tr>
+        </tbody>
+      </table>
+      <p>Key settings:</p>
       <ul>
-        <li><strong>CSV / TSV</strong> — used as source data for file-based migrations</li>
-        <li><strong>Excel (.xlsx)</strong> — source data or Was/Is translation tables</li>
-        <li><strong>SQL (.sql)</strong> — schema scripts, migration scripts</li>
-        <li><strong>PDF / Word</strong> — reference documents, specifications</li>
-        <li><strong>JSON</strong> — structured data exports</li>
+        <li><strong>Fetch page size</strong> — rows fetched per round-trip from source. Reduce for wide tables with large text/blob columns.</li>
+        <li><strong>Insert batch size</strong> — rows per INSERT VALUES (max 1,000 for SQL Server). Reduce for tables approaching the 8,060 byte row size limit.</li>
+        <li><strong>Concurrent threads</strong> — parallel INSERT batches. Keep at 1–2 for Azure SQL Standard to avoid DTU spikes.</li>
+        <li><strong>NOLOCK</strong> — enables READ UNCOMMITTED on source reads. Reduces lock contention on live databases but allows dirty reads.</li>
+        <li><strong>Row verification</strong> — COUNT(*) check after each page insert to confirm rows were written.</li>
+        <li><strong>Index disable hint</strong> — adds ALTER INDEX DISABLE/REBUILD comments in generated SQL (you run manually in SSMS).</li>
       </ul>
-      <p>If a client has uploaded files via the <strong>Client Portal</strong>, they appear at the top of Inventory in an amber <strong>👤 Client submissions</strong> section. Use <strong>+ Inventory</strong> to pull a client file into the main inventory for use in migrations.</p>
-
-      <div class="tip"><strong>Was/Is files:</strong> Upload a CSV or Excel file with "Was" and "Is" (old/new) value columns to the inventory, then load it in Step 3 of Configure. Cygenix will automatically translate matching values during migration.</div>
+      <p>Use <strong>⬇ Export</strong> to save settings as a JSON file. Use <strong>⬆ Import</strong> to restore from a saved file. The Configuration summary panel shows warnings for conflicting settings (e.g. API timeout less than query timeout).</p>
     </section>
 
-    <!-- REPORTS -->
+    <section id="project-settings">
+      <h2>Project settings</h2>
+      <p>Access from <strong>Configure → Project Settings</strong> (or the dashboard sidebar). Fields include: project name, type, reference number, description, analyst, PM, client, start date, <strong>target completion date</strong>, migration phase, source system, target system, estimated rows and notes.</p>
+      <div class="tip"><strong>Important:</strong> The <strong>Target completion</strong> date is used by the Project Planner calendar as the fixed end marker and drives the countdown in the summary stats bar.</div>
+    </section>
+
+    <section id="conversion-project">
+      <h2>Conversion Project</h2>
+      <p>The Conversion Project Builder (<strong>Execute Jobs</strong> in the sidebar) sequences multiple migration jobs and custom SQL scripts into a single executable project.</p>
+      <h3>Adding steps</h3>
+      <ul>
+        <li>Select migration jobs from the job library on the left</li>
+        <li>Add custom SQL steps — write any T-SQL to run on source or target</li>
+        <li>Add stored procedure call steps with parameters</li>
+        <li>Drag-and-drop to reorder steps</li>
+      </ul>
+      <h3>Running a project</h3>
+      <p>Click <strong>▶ Run project</strong>. Each step shows a live status: ⚪ pending → 🟡 running → 🟢 complete / 🔴 failed / 🟠 error. On failure you can Retry, Skip or Abort the run. A full execution log is captured and included in the Conversion Report.</p>
+    </section>
+
     <section id="reports">
       <h2>Conversion Reports</h2>
-      <p>After completing a migration (via Configure Step 5 or Conversion Project), click <strong>Report</strong> from All Jobs or <strong>📄 View Conversion Report</strong> from the project runner.</p>
-      <p>The report page shows a summary of the migration and allows export to Excel. The Excel workbook contains:</p>
+      <p>Export a client-ready Excel report from <strong>Reports → Conversion Report</strong> in the dashboard. The report includes:</p>
       <ul>
-        <li><strong>Summary</strong> — project name, user, date, duration, migration statistics, status</li>
-        <li><strong>Migration Results</strong> — source table, target table, rows, errors, status per table</li>
-        <li><strong>Column Mapping</strong> — every column mapped with source/target table, type, transform, and Was/Is rules applied</li>
-        <li><strong>Was-Is Rules</strong> — complete list of value translations applied</li>
-        <li><strong>Execution Log</strong> — (project reports) step-by-step log with status and row counts</li>
-        <li><strong>Warnings</strong> — any issues flagged during migration</li>
+        <li><strong>Summary</strong> — project metadata, migration totals, row counts, error summary</li>
+        <li><strong>Migration results</strong> — one row per job: source table, target table, rows migrated, rows verified, status</li>
+        <li><strong>Column mapping</strong> — full mapping for each job including Was/Is rules applied</li>
+        <li><strong>Execution log</strong> — timestamped log of every step</li>
+        <li><strong>Was/Is rules</strong> — complete translation table used</li>
       </ul>
     </section>
 
-    <!-- WAS/IS -->
-    <section id="wasis">
-      <h2>Was/Is Mapping</h2>
-      <p>Was/Is mapping translates specific values during migration — for example converting status codes <code>A</code> → <code>Active</code>, or renaming department codes to match the target system's naming conventions.</p>
-      <p>Prepare a CSV or Excel file with columns for: field name, old value (Was), new value (Is). Load it in Configure Step 3 using the Was/Is panel on the right side of the column mapping section.</p>
-      <p>Columns that have Was/Is rules applied show a <span style="font-size:11px;padding:2px 7px;border-radius:100px;background:rgba(245,158,11,0.15);color:var(--amber);font-family:var(--mono)">🔄 N rules</span> badge. Hover to see a preview of the translations. The rules are applied at execution time and included in the Conversion Report.</p>
-
-      <div class="warn"><strong>Note:</strong> Was/Is rules are case-sensitive by default. Ensure the "Was" values exactly match the source data values.</div>
+    <section id="inventory">
+      <h2>Inventory</h2>
+      <p>Store project documents, schema files, data dictionaries, mapping documents and Was/Is tables. Files can be uploaded, previewed (CSV, images) and downloaded. Client uploads appear in a separate <strong>👤 Client submissions</strong> section.</p>
     </section>
 
-    <!-- CLIENT PORTAL -->
     <section id="client-portal">
       <h2>Client Portal</h2>
-      <p>Clients can be given their own Cygenix login that takes them to a simplified portal (<code>/client.html</code>) where they can upload source data files, documents, and notes for the migration analyst.</p>
-
-      <h3>Setting up a client account</h3>
+      <p>Give clients a separate login that takes them to a simplified portal (<code>/client.html</code>) for uploading source data and notes.</p>
       <div class="steps">
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Invite the client</strong><p>Go to Netlify dashboard → Identity → Invite users → enter the client's email address.</p></div></div>
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Set the client role</strong><p>After they accept the invite, find their user in Netlify Identity → Edit → set <code>app_metadata</code> to <code>{"role": "client"}</code>.</p></div></div>
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Client logs in</strong><p>When the client logs in at the Cygenix URL they are automatically routed to the client portal, not the analyst dashboard.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Invite the client</strong><p>Netlify dashboard → Identity → Invite users → enter the client's email.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Set the client role</strong><p>After they accept, edit their user in Netlify Identity → set <code>app_metadata</code> to <code>{"role":"client"}</code>.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Client logs in</strong><p>Cygenix automatically routes them to the client portal, not the analyst dashboard.</p></div></div>
       </div>
-
-      <h3>Client portal features</h3>
-      <ul>
-        <li>Upload files categorised as: Source data, Inventory, Document, Schema/SQL, Other</li>
-        <li>Add notes and messages for the analyst</li>
-        <li>View all previous submissions with timestamps</li>
-      </ul>
-      <p>Client uploads appear in the analyst's <strong>Inventory</strong> tab under a <strong>👤 Client submissions</strong> section. The analyst can dismiss items once reviewed or click <strong>+ Inventory</strong> to add a file to the main inventory.</p>
     </section>
 
-    <!-- CONNECTIONS -->
-    <section id="connections">
-      <h2>Connection Strings</h2>
-      <p>Cygenix supports two connection methods for both source and target databases:</p>
-
-      <h3>Direct SQL Server connection string</h3>
-      <p>Standard ADO.NET format:</p>
-      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">Server=your-server.database.windows.net;Database=YourDatabase;User Id=username;Password=yourpassword;Encrypt=true;TrustServerCertificate=false;</div>
-      <p>For on-premises SQL Server with Windows auth:</p>
-      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">Server=192.168.1.100,1433;Database=YourDatabase;User Id=sa;Password=yourpassword;Encrypt=true;TrustServerCertificate=true;</div>
-
-      <h3>Azure Function (Managed Identity)</h3>
-      <p>For Azure SQL databases, use the Cygenix Azure Function which authenticates via Managed Identity — no passwords stored or transmitted:</p>
-      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;font-family:var(--mono);font-size:12px;color:var(--text2);margin-bottom:1rem">https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/db?code=YOUR_FUNCTION_KEY</div>
-      <div class="tip"><strong>Tip:</strong> The Azure Function URL and key can be found in the Azure Portal → Function App → Functions → db → Get function URL.</div>
-    </section>
-
-    <!-- TROUBLESHOOTING -->
     <section id="troubleshooting">
       <h2>Troubleshooting</h2>
-
       <table class="help-table">
         <thead><tr><th>Issue</th><th>Solution</th></tr></thead>
         <tbody>
-          <tr>
-            <td><strong>Connection failed: Failed to fetch</strong></td>
-            <td>Check the URL is correct. For Azure Function, ensure the <code>?code=</code> key is included. Check CORS is enabled for the Cygenix domain in the Azure Function App.</td>
-          </tr>
-          <tr>
-            <td><strong>Non-JSON response (HTTP 500)</strong></td>
-            <td>The Azure SQL database may be paused (auto-pause on free tier). Wait 20–30 seconds and try again. The first connection after a pause takes time to resume.</td>
-          </tr>
-          <tr>
-            <td><strong>Login failed / token error</strong></td>
-            <td>The Managed Identity may not have access to the database. Run: <code>CREATE USER [identity-name] FROM EXTERNAL PROVIDER</code> and grant <code>db_datareader</code> and <code>db_datawriter</code> roles.</td>
-          </tr>
-          <tr>
-            <td><strong>Source table shows — in report</strong></td>
-            <td>Save & Finish from Step 5 of Configure (not Execute). The new Save flow correctly records the source table name.</td>
-          </tr>
-          <tr>
-            <td><strong>Column mapping not saving</strong></td>
-            <td>Ensure you complete all steps through to Step 5 and click a Save button. Mappings are stored in the job record in browser local storage.</td>
-          </tr>
-          <tr>
-            <td><strong>Validation scripts show Non-JSON (500)</strong></td>
-            <td>The Azure SQL database is paused. Click Connect again after 30 seconds to wake it up, then retry loading scripts.</td>
-          </tr>
-          <tr>
-            <td><strong>Jobs disappear after refresh</strong></td>
-            <td>Jobs are stored in browser local storage. Clearing browser data will remove them. Export reports before clearing browser storage.</td>
-          </tr>
-          <tr>
-            <td><strong>Excel export does nothing</strong></td>
-            <td>SheetJS is loaded on demand from a CDN. Check your internet connection. If behind a corporate firewall, the CDN domain <code>cdnjs.cloudflare.com</code> may need to be whitelisted.</td>
-          </tr>
+          <tr><td><strong>Connection failed: Failed to fetch</strong></td><td>Check the URL is correct. For Azure Function, ensure <code>?code=</code> key is included. Verify CORS is enabled for the Cygenix domain in the Azure Function App settings.</td></tr>
+          <tr><td><strong>Non-JSON response (HTTP 500)</strong></td><td>The Azure SQL database may be paused (auto-pause on free tier). Wait 20–30 seconds and retry. The first connection after a pause takes time to resume.</td></tr>
+          <tr><td><strong>Login failed / token error</strong></td><td>Managed Identity may not have database access. Run: <code>CREATE USER [identity-name] FROM EXTERNAL PROVIDER</code> and grant <code>db_datareader</code> / <code>db_datawriter</code>.</td></tr>
+          <tr><td><strong>AI map error: Overloaded</strong></td><td>Claude is busy. The mapper automatically retries 3 times with exponential backoff. If it still fails, wait a moment and try again.</td></tr>
+          <tr><td><strong>AI map error: Unterminated JSON</strong></td><td>The table has many columns and the AI response was truncated. The mapper applies automatic JSON repair. If columns are missing, try remapping individual sections.</td></tr>
+          <tr><td><strong>Validation — table not found</strong></td><td>Ensure the connection in the validation source matches the database where the validation table lives. Use ✏ Edit on the source card to update the connection.</td></tr>
+          <tr><td><strong>Calendar events not showing</strong></td><td>Task events appear only if the task has a start or due date set. Project completion appears only if a Target completion date is set in Project Settings.</td></tr>
+          <tr><td><strong>Performance preset not applying</strong></td><td>After clicking a preset, click <strong>Save settings</strong>. Presets fill the form but do not auto-save.</td></tr>
+          <tr><td><strong>Jobs disappear after refresh</strong></td><td>Jobs are stored in browser localStorage. Clearing browser data removes them. Export a backup from Configure → Backup & Restore before clearing storage.</td></tr>
+          <tr><td><strong>Excel export does nothing</strong></td><td>SheetJS is loaded on demand from cdnjs.cloudflare.com. Check internet connection. On corporate networks, whitelist <code>cdnjs.cloudflare.com</code>.</td></tr>
         </tbody>
       </table>
-
-      <div class="tip"><strong>Need more help?</strong> Contact your Cygenix administrator or raise an issue via the feedback button in the dashboard.</div>
+      <div class="tip"><strong>Need more help?</strong> Contact your Cygenix administrator or use the feedback button in the dashboard.</div>
     </section>
 
     <div style="margin-top:3rem;padding-top:1.5rem;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3)">
       Cygenix AI Migration Platform · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">← Back to Dashboard</a>
     </div>
 
-  </div><!-- /content -->
-</div><!-- /layout -->
+  </div>
+</div>
 
 <script>
-// Highlight active TOC item on scroll
 const sections = document.querySelectorAll('section[id]');
 const tocItems  = document.querySelectorAll('.toc-item');
-
 const observer = new IntersectionObserver(entries => {
   entries.forEach(entry => {
-    if (entry.isIntersecting) {
-      tocItems.forEach(a => a.classList.remove('active'));
-      const active = document.querySelector('.toc-item[href="#'+entry.target.id+'"]');
-      if (active) active.classList.add('active');
+    if(entry.isIntersecting){
+      tocItems.forEach(a=>a.classList.remove('active'));
+      const active=document.querySelector('.toc-item[href="#'+entry.target.id+'"]');
+      if(active) active.classList.add('active');
     }
   });
-}, { rootMargin:'-20% 0px -70% 0px' });
-
-sections.forEach(s => observer.observe(s));
+},{rootMargin:'-20% 0px -70% 0px'});
+sections.forEach(s=>observer.observe(s));
 </script>
 </body>
 </html>

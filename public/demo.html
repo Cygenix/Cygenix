@@ -3,304 +3,133 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cygenix – AI-Powered Database Migration</title>
+<title>Cygenix – AI-Powered Database Migration Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bricolage+Grotesque:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#080b12;
-  --bg2:#0d1220;
-  --bg3:#111827;
-  --bg4:#1a2236;
-  --border:rgba(255,255,255,0.06);
-  --border2:rgba(255,255,255,0.12);
-  --text:#f0f2f8;
-  --text2:#8892a8;
-  --text3:#3d4a5c;
-  --accent:#4f8eff;
-  --accent2:#2563eb;
-  --glow:rgba(79,142,255,0.15);
-  --green:#10d48a;
-  --green-g:rgba(16,212,138,0.12);
-  --amber:#f5a623;
-  --amber-g:rgba(245,166,35,0.12);
-  --red:#f04070;
-  --red-g:rgba(240,64,112,0.12);
-  --teal:#22d3ee;
-  --purple:#a78bfa;
+  --bg:#080b12;--bg2:#0d1220;--bg3:#111827;--bg4:#1a2236;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --text:#f0f2f8;--text2:#8892a8;--text3:#3d4a5c;
+  --accent:#4f8eff;--accent2:#2563eb;--glow:rgba(79,142,255,0.15);
+  --green:#10d48a;--green-g:rgba(16,212,138,0.12);
+  --amber:#f5a623;--amber-g:rgba(245,166,35,0.12);
+  --red:#f04070;--red-g:rgba(240,64,112,0.12);
+  --teal:#22d3ee;--purple:#a78bfa;
   --serif:'Bricolage Grotesque',system-ui,sans-serif;
   --mono:'IBM Plex Mono',monospace;
 }
-
 html{scroll-behavior:smooth}
 body{font-family:var(--serif);background:var(--bg);color:var(--text);overflow-x:hidden;-webkit-font-smoothing:antialiased}
-
-/* ── GRID BACKGROUND ── */
-body::before{
-  content:'';position:fixed;inset:0;
-  background-image:
-    linear-gradient(rgba(79,142,255,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(79,142,255,0.03) 1px, transparent 1px);
-  background-size:60px 60px;
-  pointer-events:none;z-index:0;
-}
-
-/* ── NAV ── */
-nav{
-  position:fixed;top:0;left:0;right:0;z-index:100;
-  display:flex;align-items:center;justify-content:space-between;
-  padding:0 2.5rem;height:60px;
-  background:rgba(8,11,18,0.85);
-  backdrop-filter:blur(20px);
-  border-bottom:0.5px solid var(--border);
-}
-.nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}
-.nav-logo span{color:var(--accent)}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:rgba(8,11,18,0.85);backdrop-filter:blur(20px);border-bottom:0.5px solid var(--border)}
+.nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}.nav-logo span{color:var(--accent)}
 .nav-links{display:flex;gap:2rem;align-items:center}
-.nav-links a{font-size:13px;color:var(--text2);text-decoration:none;transition:color 0.2s}
-.nav-links a:hover{color:var(--text)}
-.nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}
-.nav-cta:hover{background:var(--accent2);color:#fff}
-
-/* ── HERO ── */
-.hero{
-  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  text-align:center;padding:6rem 2rem 4rem;position:relative;z-index:1;
-}
-.hero-badge{
-  display:inline-flex;align-items:center;gap:6px;
-  background:var(--glow);border:0.5px solid rgba(79,142,255,0.3);
-  border-radius:100px;padding:5px 14px;font-size:11px;font-weight:500;
-  color:var(--accent);font-family:var(--mono);letter-spacing:0.05em;
-  margin-bottom:2rem;
-  animation:fadeUp 0.6s ease both;
-}
+.nav-links a{font-size:13px;color:var(--text2);text-decoration:none;transition:color 0.2s}.nav-links a:hover{color:var(--text)}
+.nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}.nav-cta:hover{background:var(--accent2);color:#fff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6rem 2rem 4rem;position:relative;z-index:1}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--glow);border:0.5px solid rgba(79,142,255,0.3);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:500;color:var(--accent);font-family:var(--mono);letter-spacing:0.05em;margin-bottom:2rem;animation:fadeUp 0.6s ease both}
 .hero-badge::before{content:'◆';font-size:8px}
-.hero h1{
-  font-size:clamp(2.8rem,7vw,5.5rem);font-weight:800;letter-spacing:-0.04em;
-  line-height:1.05;margin-bottom:1.5rem;
-  animation:fadeUp 0.6s ease 0.1s both;
-}
-.hero h1 .line1{display:block;color:var(--text)}
-.hero h1 .line2{
-  display:block;
-  background:linear-gradient(135deg, var(--accent) 0%, var(--teal) 50%, var(--purple) 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
-}
-.hero-sub{
-  font-size:clamp(1rem,2vw,1.2rem);color:var(--text2);max-width:600px;line-height:1.7;
-  margin-bottom:2.5rem;font-weight:400;
-  animation:fadeUp 0.6s ease 0.2s both;
-}
-.hero-btns{
-  display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;
-  animation:fadeUp 0.6s ease 0.3s both;
-}
+.hero h1{font-size:clamp(2.8rem,7vw,5.5rem);font-weight:800;letter-spacing:-0.04em;line-height:1.05;margin-bottom:1.5rem;animation:fadeUp 0.6s ease 0.1s both}
+.line1{display:block;color:var(--text)}
+.line2{display:block;background:linear-gradient(135deg,var(--accent) 0%,var(--teal) 50%,var(--purple) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:clamp(1rem,2vw,1.2rem);color:var(--text2);max-width:640px;line-height:1.7;margin-bottom:2.5rem;font-weight:400;animation:fadeUp 0.6s ease 0.2s both}
+.hero-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp 0.6s ease 0.3s both}
 .btn-hero{padding:0.75rem 1.75rem;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:none;transition:all 0.2s}
-.btn-primary{background:var(--accent);color:#fff;box-shadow:0 0 30px rgba(79,142,255,0.3)}
-.btn-primary:hover{background:var(--accent2);box-shadow:0 0 40px rgba(79,142,255,0.5);transform:translateY(-1px)}
-.btn-secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}
-.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
-
-/* ── STATS ROW ── */
-.stats-row{
-  display:flex;gap:3rem;justify-content:center;flex-wrap:wrap;
-  padding:1.5rem 2rem;margin-bottom:0;
-  animation:fadeUp 0.6s ease 0.4s both;
-}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 0 30px rgba(79,142,255,0.3)}.btn-primary:hover{background:var(--accent2);box-shadow:0 0 40px rgba(79,142,255,0.5);transform:translateY(-1px)}
+.btn-secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+.stats-row{display:flex;gap:3rem;justify-content:center;flex-wrap:wrap;padding:1.5rem 2rem;animation:fadeUp 0.6s ease 0.4s both}
 .stat{text-align:center}
 .stat-num{font-size:2rem;font-weight:800;letter-spacing:-0.03em;color:var(--text);line-height:1}
 .stat-num span{background:linear-gradient(135deg,var(--accent),var(--teal));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .stat-label{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;letter-spacing:0.05em}
-
-/* ── SECTION ── */
 .section{padding:6rem 2rem;position:relative;z-index:1}
 .section-tag{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem}
 .section-title{font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-0.03em;line-height:1.1;margin-bottom:1rem}
 .section-sub{font-size:15px;color:var(--text2);line-height:1.7;max-width:560px}
 .container{max-width:1200px;margin:0 auto}
 .container-sm{max-width:860px;margin:0 auto}
-
-/* ── DIVIDER ── */
 .divider{height:0.5px;background:linear-gradient(90deg,transparent,var(--border2),transparent);margin:0 auto;max-width:800px}
-
-/* ── FEATURE DEMOS ── */
-.feature-block{
-  display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center;
-  padding:5rem 0;
-}
-.feature-block.reverse{direction:rtl}
-.feature-block.reverse > *{direction:ltr}
+.feature-block{display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center;padding:5rem 0}
+.feature-block.reverse{direction:rtl}.feature-block.reverse > *{direction:ltr}
 .feature-tag{font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem}
 .feature-title{font-size:1.9rem;font-weight:700;letter-spacing:-0.03em;line-height:1.15;margin-bottom:1rem}
 .feature-body{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem}
 .feature-points{list-style:none;display:flex;flex-direction:column;gap:0.6rem}
 .feature-points li{font-size:13px;color:var(--text2);display:flex;align-items:flex-start;gap:0.6rem;line-height:1.6}
 .feature-points li::before{content:'→';color:var(--accent);flex-shrink:0;font-family:var(--mono);margin-top:1px}
-
-/* ── MOCK SCREENS ── */
-.mock{
-  background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;
-  overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6),0 0 0 0.5px rgba(79,142,255,0.1);
-  position:relative;
-}
-.mock-topbar{
-  background:var(--bg3);border-bottom:0.5px solid var(--border);
-  padding:0.6rem 1rem;display:flex;align-items:center;gap:0.6rem;
-}
+.mock{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6),0 0 0 0.5px rgba(79,142,255,0.1);position:relative}
+.mock-topbar{background:var(--bg3);border-bottom:0.5px solid var(--border);padding:0.6rem 1rem;display:flex;align-items:center;gap:0.6rem}
 .mock-dot{width:8px;height:8px;border-radius:50%}
 .mock-body{padding:1rem;font-size:11px}
-
-/* Step wizard mock */
-.step-tabs{display:flex;border-bottom:0.5px solid var(--border);background:var(--bg3)}
-.step-tab{padding:0.5rem 0.75rem;font-size:10px;font-family:var(--mono);color:var(--text3);border-bottom:2px solid transparent;white-space:nowrap}
-.step-tab.done{color:var(--green)}
-.step-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
-
 .mapping-row{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04)}
 .col-pill{background:var(--bg4);border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap}
-.arrow-mid{color:var(--text3);font-size:10px}
 .confidence{font-size:9px;padding:1px 6px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
-.c-high{background:var(--green-g);color:var(--green)}
-.c-med{background:var(--amber-g);color:var(--amber)}
-.c-low{background:var(--red-g);color:var(--red)}
-
-/* Validation mock */
+.c-high{background:var(--green-g);color:var(--green)}.c-med{background:var(--amber-g);color:var(--amber)}.c-low{background:var(--red-g);color:var(--red)}
 .val-row{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);font-size:10px}
 .val-name{flex:1;font-family:var(--mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .val-badge{font-size:9px;padding:1px 7px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
-.v-pass{background:var(--green-g);color:var(--green)}
-.v-fail{background:var(--red-g);color:var(--red)}
-.v-pending{background:rgba(255,255,255,0.05);color:var(--text3)}
-.v-error{background:var(--amber-g);color:var(--amber)}
-.val-rows{font-family:var(--mono);color:var(--text3);font-size:9px;width:55px;text-align:right}
-
-/* Project mock */
+.v-pass{background:var(--green-g);color:var(--green)}.v-fail{background:var(--red-g);color:var(--red)}.v-pending{background:rgba(255,255,255,0.05);color:var(--text3)}.v-error{background:var(--amber-g);color:var(--amber)}
 .proj-step{display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.6rem;border-radius:6px;margin-bottom:0.35rem;background:var(--bg3);border:0.5px solid var(--border)}
-.proj-num{font-size:9px;font-family:var(--mono);color:var(--text3);width:14px;text-align:center}
 .proj-icon{width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
 .proj-info{flex:1;min-width:0}
 .proj-name{font-size:10px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .proj-meta{font-size:9px;font-family:var(--mono);color:var(--text3)}
-.proj-emoji{font-size:12px}
-
-/* SQL preview mock */
 .sql-block{background:var(--bg);border-radius:6px;padding:0.6rem;font-family:var(--mono);font-size:9px;line-height:1.7;overflow:hidden;max-height:160px}
-.sql-kw{color:#569cd6}
-.sql-str{color:#ce9178}
-.sql-fn{color:#dcdcaa}
-.sql-cm{color:#6a9955}
-.sql-num{color:#b5cea8}
-
-/* Report mock */
-.report-sheet{display:flex;gap:0.35rem;border-bottom:0.5px solid var(--border);padding:0.4rem 0.75rem;background:var(--bg3)}
-.r-sheet{font-size:9px;font-family:var(--mono);color:var(--text3);padding:2px 8px;border-radius:3px 3px 0 0}
-.r-sheet.active{background:var(--bg2);color:var(--accent)}
-.report-table{padding:0.5rem 0.75rem}
-.report-row{display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr;gap:0.4rem;padding:0.3rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);font-size:9px}
-.report-row.header{color:var(--text3);font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:0.05em}
-.report-cell{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono)}
-.report-cell.green{color:var(--green)}
-.report-cell.accent{color:var(--accent)}
-
-/* ── FEATURES GRID ── */
+.sql-kw{color:#569cd6}.sql-str{color:#ce9178}.sql-fn{color:#dcdcaa}.sql-cm{color:#6a9955}.sql-num{color:#b5cea8}
 .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;margin-top:3rem}
-.feature-card{background:var(--bg2);padding:1.75rem;transition:background 0.2s;cursor:default}
-.feature-card:hover{background:var(--bg3)}
+.feature-card{background:var(--bg2);padding:1.75rem;transition:background 0.2s;cursor:default}.feature-card:hover{background:var(--bg3)}
 .feature-card-icon{font-size:1.5rem;margin-bottom:0.875rem}
 .feature-card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:0.5rem}
 .feature-card-body{font-size:12px;color:var(--text3);line-height:1.7}
-
-/* ── FLOW DIAGRAM ── */
 .flow{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:nowrap;margin:3rem 0;overflow-x:auto;padding:1rem 0}
-.flow-step{
-  background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;
-  padding:1.1rem 1.25rem;text-align:center;min-width:130px;flex-shrink:0;
-  transition:all 0.2s;cursor:default;position:relative;
-}
+.flow-step{background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;padding:1.1rem 1.25rem;text-align:center;min-width:130px;flex-shrink:0;transition:all 0.2s;cursor:default}
 .flow-step:hover{border-color:var(--accent);background:var(--bg3);transform:translateY(-2px)}
 .flow-step-num{font-size:9px;font-family:var(--mono);color:var(--accent);margin-bottom:0.4rem;letter-spacing:0.05em}
 .flow-step-icon{font-size:1.4rem;margin-bottom:0.4rem}
 .flow-step-label{font-size:11px;font-weight:600;color:var(--text);line-height:1.3}
 .flow-arrow{color:var(--text3);font-size:1.2rem;flex-shrink:0;padding:0 0.5rem;margin-top:-0.5rem}
-
-/* ── ANIMATED TERMINAL ── */
-.terminal{background:#0a0e18;border:0.5px solid var(--border2);border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
-.terminal-bar{background:var(--bg3);padding:0.6rem 1rem;display:flex;align-items:center;gap:0.5rem;border-bottom:0.5px solid var(--border)}
-.terminal-body{padding:1.25rem;font-family:var(--mono);font-size:12px;line-height:1.9;min-height:200px}
-.t-green{color:var(--green)}
-.t-accent{color:var(--accent)}
-.t-amber{color:var(--amber)}
-.t-red{color:var(--red)}
-.t-dim{color:var(--text3)}
-.t-white{color:var(--text)}
-.cursor{display:inline-block;width:8px;height:14px;background:var(--accent);animation:blink 1s infinite;vertical-align:-2px}
-@keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0}}
-.terminal-line{opacity:0;animation:lineIn 0.3s ease forwards}
-
-/* ── CTA ── */
-.cta-section{
-  padding:8rem 2rem;text-align:center;position:relative;z-index:1;
-}
-.cta-section::before{
-  content:'';position:absolute;inset:0;
-  background:radial-gradient(ellipse 800px 400px at 50% 50%, rgba(79,142,255,0.06) 0%, transparent 70%);
-  pointer-events:none;
-}
+.cta-section{padding:8rem 2rem;text-align:center;position:relative;z-index:1}
+.cta-section::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 800px 400px at 50% 50%,rgba(79,142,255,0.06) 0%,transparent 70%);pointer-events:none}
 .cta-title{font-size:clamp(2.2rem,5vw,3.5rem);font-weight:800;letter-spacing:-0.04em;margin-bottom:1rem}
 .cta-sub{font-size:15px;color:var(--text2);max-width:500px;margin:0 auto 2.5rem;line-height:1.7}
 .cta-btns{display:flex;gap:1rem;justify-content:center}
-
-/* ── ANIMATIONS ── */
 @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-@keyframes lineIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
-@keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(400%)}}
-
 .animate-on-scroll{opacity:0;transform:translateY(30px);transition:opacity 0.7s ease,transform 0.7s ease}
 .animate-on-scroll.visible{opacity:1;transform:translateY(0)}
-
-/* ── GLOW ORBS ── */
 .orb{position:fixed;border-radius:50%;pointer-events:none;filter:blur(80px);opacity:0.4}
 .orb1{width:400px;height:400px;background:rgba(79,142,255,0.15);top:-100px;right:-100px;animation:orbFloat 8s ease-in-out infinite}
 .orb2{width:300px;height:300px;background:rgba(167,139,250,0.1);bottom:100px;left:-80px;animation:orbFloat 10s ease-in-out infinite reverse}
 @keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,30px)}}
-
-/* ── FOOTER ── */
 footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3);position:relative;z-index:1}
-
-/* ── DEMO TICKER ── */
-.ticker-wrap{overflow:hidden;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg2);padding:0.6rem 0;margin:0}
-.ticker{display:flex;gap:4rem;white-space:nowrap;animation:tick 25s linear infinite}
+.ticker-wrap{overflow:hidden;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg2);padding:0.6rem 0}
+.ticker{display:flex;gap:4rem;white-space:nowrap;animation:tick 30s linear infinite}
 .ticker-item{display:flex;align-items:center;gap:0.5rem;font-size:11px;color:var(--text3);font-family:var(--mono)}
 .ticker-item span{color:var(--accent)}
-
 @keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-
-@media(max-width:768px){
-  .feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}
-  .features-grid{grid-template-columns:1fr}
-  .flow{flex-wrap:wrap;gap:0.5rem}
-  .flow-arrow{display:none}
-  nav .nav-links{display:none}
-}
+/* cal mock */
+.cal-mini-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-family:var(--mono);font-size:9px}
+.cal-cell{text-align:center;padding:3px 2px;border-radius:3px;color:var(--text3)}
+.cal-cell.today{background:var(--accent);color:#fff;border-radius:50%}
+.cal-cell.has-ev{position:relative}.cal-cell.has-ev::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--teal)}
+.cal-ev{font-size:9px;padding:1px 5px;border-radius:3px;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}}
 </style>
 </head>
 <body>
-
 <div class="orb orb1"></div>
 <div class="orb orb2"></div>
 
-<!-- NAV -->
 <nav>
   <div class="nav-logo">Cyge<span>nix</span></div>
   <div class="nav-links">
     <a href="#features">Features</a>
-    <a href="#how-it-works">How it works</a>
-    <a href="#custom-sql">Custom SQL</a>
+    <a href="#mapper">Mapper</a>
     <a href="#validation">Validation</a>
-    <a href="#reports">Reports</a>
+    <a href="#planner">Project Planner</a>
+    <a href="#sql-editor">SQL Editor</a>
   </div>
   <a href="/login.html" class="nav-cta">Launch Platform →</a>
 </nav>
@@ -312,14 +141,14 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <span class="line1">Database Migration,</span>
     <span class="line2">Reimagined with AI</span>
   </h1>
-  <p class="hero-sub">Cygenix connects to any SQL Server database, maps your schema intelligently using Claude AI, and executes validated migrations — in minutes, not months.</p>
+  <p class="hero-sub">Cygenix connects to any SQL Server database, maps your schema intelligently using Claude AI, validates results, and delivers professional reports — in minutes, not months.</p>
   <div class="hero-btns">
     <a href="/login.html" class="btn-hero btn-primary">Start migrating →</a>
     <a href="#features" class="btn-hero btn-secondary">See the platform</a>
   </div>
   <div class="stats-row" style="margin-top:3rem">
-    <div class="stat"><div class="stat-num"><span id="c-scripts">1,500</span></div><div class="stat-label">VALIDATION SCRIPTS</div></div>
-    <div class="stat"><div class="stat-num"><span id="c-ai">AI</span></div><div class="stat-label">COLUMN MAPPING</div></div>
+    <div class="stat"><div class="stat-num"><span>AI</span></div><div class="stat-label">COLUMN MAPPING</div></div>
+    <div class="stat"><div class="stat-num"><span>Any</span></div><div class="stat-label">VALIDATION TABLE</div></div>
     <div class="stat"><div class="stat-num"><span>Azure</span></div><div class="stat-label">MANAGED IDENTITY</div></div>
     <div class="stat"><div class="stat-num"><span>100%</span></div><div class="stat-label">BROWSER-BASED</div></div>
   </div>
@@ -328,22 +157,26 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <!-- TICKER -->
 <div class="ticker-wrap">
   <div class="ticker">
-    <div class="ticker-item">🟢 <span>Connected</span> · Conversion · mtvne</div>
+    <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item">📊 <span>1,500 validation scripts</span> loaded</div>
-    <div class="ticker-item">🟢 <span>28 rows migrated</span> · 0 errors</div>
+    <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
     <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
-    <div class="ticker-item">🟢 <span>Connected</span> · Conversion · mtvne</div>
+    <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
+    <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item">📊 <span>1,500 validation scripts</span> loaded</div>
-    <div class="ticker-item">🟢 <span>28 rows migrated</span> · 0 errors</div>
+    <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
     <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
+    <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
   </div>
 </div>
 
-<!-- FEATURES SECTION -->
+<!-- FEATURES GRID -->
 <section class="section" id="features">
   <div class="container">
     <div class="animate-on-scroll" style="text-align:center;margin-bottom:1rem">
@@ -351,316 +184,113 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       <div class="section-title">Everything you need to<br>migrate with confidence</div>
     </div>
     <div class="features-grid animate-on-scroll">
-      <div class="feature-card">
-        <div class="feature-card-icon">🔌</div>
-        <div class="feature-card-title">Live Database Connection</div>
-        <div class="feature-card-body">Connect directly to SQL Server on-premises or Azure SQL via connection string or Azure Function with Managed Identity. No VPN or firewall changes required.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">🤖</div>
-        <div class="feature-card-title">AI Column Mapping</div>
-        <div class="feature-card-body">Claude AI automatically maps columns between source and target schemas, handling name variations, type differences, and suggesting transforms with confidence scores.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">🔄</div>
-        <div class="feature-card-title">Was/Is Value Translation</div>
-        <div class="feature-card-body">Upload translation tables to automatically convert values during migration — status codes, lookup IDs, department names, currency codes, and more.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">✅</div>
-        <div class="feature-card-title">1,500 Validation Scripts</div>
-        <div class="feature-card-body">Run pre and post-migration validation scripts directly from your database. Filterable by group, name, and database target. Results exported to Excel with problem rows.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">📋</div>
-        <div class="feature-card-title">Conversion Projects</div>
-        <div class="feature-card-body">Sequence multiple table migrations and custom SQL scripts into a single ordered project. Retry, skip, or abort steps on failure. Full execution log.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">📊</div>
-        <div class="feature-card-title">Professional Reports</div>
-        <div class="feature-card-body">Export client-ready Excel reports with summary, migration results, column mapping, Was/Is rules applied, and execution logs — ready to hand to stakeholders.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">👤</div>
-        <div class="feature-card-title">Client Portal</div>
-        <div class="feature-card-body">Give clients their own login to a stripped-down portal for uploading source data, documents and notes. Files surface directly in the analyst's Inventory.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">☁️</div>
-        <div class="feature-card-title">Azure Native</div>
-        <div class="feature-card-body">Built for Azure SQL. Managed Identity authentication means no passwords in connection strings. Deployed on Netlify with Azure Function backend.</div>
-      </div>
-      <div class="feature-card">
-        <div class="feature-card-icon">📖</div>
-        <div class="feature-card-title">Inventory & Documentation</div>
-        <div class="feature-card-body">Store schema files, data dictionaries, mapping documents and Was/Is tables in an organised inventory. Preview CSVs, download documents, manage versions.</div>
-      </div>
-
+      <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Live Database Connection</div><div class="feature-card-body">Connect directly to SQL Server on-premises or Azure SQL via connection string or Azure Function with Managed Identity. No VPN or firewall changes required.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">AI Column Mapping</div><div class="feature-card-body">Claude AI automatically maps columns between source and target schemas. Target-driven layout shows every target column with a source dropdown, fixed value override and truncation warnings.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🔄</div><div class="feature-card-title">Was/Is Value Translation</div><div class="feature-card-body">Upload translation tables to automatically convert values during migration — status codes, lookup IDs, department names, currency codes, and more.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">✅</div><div class="feature-card-title">Flexible Validation</div><div class="feature-card-body">Add any table as a validation source. Pick which column holds the SQL, choose which columns appear in the report. Run any number of validation tables against any database.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📋</div><div class="feature-card-title">Conversion Projects</div><div class="feature-card-body">Sequence multiple table migrations and custom SQL scripts into a single ordered project. Retry, skip, or abort steps on failure. Full execution log.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Professional Reports</div><div class="feature-card-body">Export client-ready Excel reports with summary, migration results, column mapping, Was/Is rules applied, and execution logs — ready to hand to stakeholders.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📅</div><div class="feature-card-title">Project Planner</div><div class="feature-card-body">Full calendar (year/month/week/day views), task tracking, blocker management, execution phase tracker, and activity log — driven by your project completion date.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">⚡</div><div class="feature-card-title">Performance Tuning</div><div class="feature-card-body">Configure fetch page size, insert batch size, concurrency, timeouts and retry behaviour. Quick presets for Small DB, Large DB, Azure SQL and Cautious mode.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">💻</div><div class="feature-card-title">SQL Editor</div><div class="feature-card-body">Full-featured SQL editor with script library, connection selector, find & replace, results grid, history, AI assistant, and one-to-many mapper for complex transformations.</div></div>
     </div>
   </div>
 </section>
 
 <div class="divider"></div>
 
-<!-- HOW IT WORKS -->
-<section class="section" id="how-it-works">
+<!-- MAPPER -->
+<section class="section" id="mapper">
   <div class="container-sm">
     <div class="animate-on-scroll" style="text-align:center">
-      <div class="section-tag">How it Works</div>
-      <div class="section-title">From connection to completion<br>in five steps</div>
-      <div class="section-sub" style="margin:0 auto">The Configure wizard walks you through the full migration flow — source, target, mapping, preview, and save.</div>
-    </div>
-    <div class="flow animate-on-scroll">
-      <div class="flow-step"><div class="flow-step-num">STEP 1</div><div class="flow-step-icon">🔌</div><div class="flow-step-label">Source DB</div></div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step"><div class="flow-step-num">STEP 2</div><div class="flow-step-icon">🎯</div><div class="flow-step-label">Target DB</div></div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step" style="border-color:rgba(79,142,255,0.4);background:var(--bg3)"><div class="flow-step-num" style="color:var(--purple)">STEP 3</div><div class="flow-step-icon">🤖</div><div class="flow-step-label">AI Column Map</div></div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step"><div class="flow-step-num">STEP 4</div><div class="flow-step-icon">👁</div><div class="flow-step-label">Preview SQL</div></div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-step"><div class="flow-step-num">STEP 5</div><div class="flow-step-icon">💾</div><div class="flow-step-label">Save & Launch</div></div>
+      <div class="section-tag">Intelligent Column Mapping</div>
+      <div class="section-title">Target-driven mapping<br>with AI confidence</div>
+      <div class="section-sub" style="margin:0 auto 1rem">Every target column shown as a fixed row. Source column, fixed value override, truncation warnings and AI confidence — all in one place.</div>
     </div>
 
-    <!-- Feature: AI Mapping -->
     <div class="feature-block animate-on-scroll">
       <div>
-        <div class="feature-tag">Step 3 · AI Column Mapping</div>
-        <div class="feature-title">Claude maps your schema in seconds</div>
-        <div class="feature-body">Drop-in Claude AI analyses both schemas, detects column relationships, infers data type transforms, and produces a full mapping with confidence scores — editable at any time.</div>
+        <div class="feature-tag">Simple Map</div>
+        <div class="feature-title">One table to one table, mapped in seconds</div>
+        <div class="feature-body">Select source and target tables. Claude AI maps every column automatically. Override any row, add a fixed SQL value, hide unmapped columns, filter by match confidence.</div>
         <ul class="feature-points">
-          <li>Exact name matches flagged as HIGH confidence</li>
-          <li>Similar names and type mismatches flagged for review</li>
-          <li>Was/Is translation rules applied per column</li>
-          <li>Override any mapping with the dropdown — re-run AI any time</li>
+          <li>Target-driven layout — every target column shown, source is a dropdown</li>
+          <li>Fixed value column — type any SQL literal (N'Value', NULL, GETDATE())</li>
+          <li>⚠ Truncation warnings when source char type is wider than target</li>
+          <li>👁 Show/Hide Unmapped toggle to focus on what matters</li>
+          <li>AI uses Haiku with automatic retry on overload</li>
         </ul>
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div>
-          <div class="mock-dot" style="background:#f5a623"></div>
-          <div class="mock-dot" style="background:#10d48a"></div>
-          <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin-left:8px"></div>
-        </div>
-        <div class="step-tabs">
-          <div class="step-tab done">① Source DB</div>
-          <div class="step-tab done">② Target DB</div>
-          <div class="step-tab active">③ Select & Map</div>
-          <div class="step-tab">④ Preview</div>
-          <div class="step-tab">⑤ Save</div>
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Mapper · Simple Map</div>
+          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">👁 Hide Unmapped</div>
         </div>
         <div class="mock-body">
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.75rem">
-            <div style="flex:1;background:var(--bg4);border-radius:4px;padding:0.3rem 0.5rem;font-family:var(--mono);font-size:9px;color:var(--teal)">dbo.effective_dated_records</div>
-            <div style="font-size:9px;color:var(--text3);padding:0 0.3rem;align-self:center">→</div>
-            <div style="flex:1;background:var(--bg4);border-radius:4px;padding:0.3rem 0.5rem;font-family:var(--mono);font-size:9px;color:var(--accent)">dbo.effective_dated_records</div>
-            <div style="background:var(--glow);border:0.5px solid rgba(79,142,255,0.3);border-radius:4px;padding:0.3rem 0.6rem;font-size:9px;color:var(--accent);white-space:nowrap">🤖 AI map</div>
+          <div style="display:grid;grid-template-columns:1fr 0.7fr 1fr 0.8fr 0.8fr;gap:0.3rem;padding:0.25rem 0;margin-bottom:0.3rem">
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Source col</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Src type</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Target col ▲</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Fixed value</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Match</div>
           </div>
-          <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;display:grid;grid-template-columns:1fr 0.4fr 1fr 0.6fr 0.5fr;gap:0.3rem;margin-bottom:0.3rem">
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Source column</div>
-            <div></div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Target column</div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Type</div>
-            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Confidence</div>
+          <div id="mapper-rows"></div>
+          <div style="margin-top:0.6rem;font-size:9px;color:var(--green);font-family:var(--mono)">✓ 15 columns mapped · 2 hidden (unmapped)</div>
+          <div style="margin-top:0.4rem;background:var(--bg3);border-radius:4px;padding:0.4rem 0.6rem;font-family:var(--mono);font-size:9px;color:var(--text3)">
+            <span class="sql-kw">INSERT INTO</span> [TargetDB].[dbo].[effective_dated_records]<br>
+            <span class="sql-kw">SELECT</span> [run_number], [code], <span class="sql-fn">LEFT</span>([description_text], <span class="sql-num">100</span>), <span class="sql-str">N'Enterprise'</span>, [active_flag]<br>
+            <span class="sql-kw">FROM</span> [SourceDB].[dbo].[effective_dated_records]
           </div>
-          <div id="mapping-rows">
-            <!-- Rendered by JS -->
-          </div>
-          <div style="margin-top:0.6rem;font-size:9px;color:var(--green);font-family:var(--mono)">✓ 15 columns mapped · 2 need review</div>
         </div>
       </div>
     </div>
 
-    <div class="divider"></div>
+    <div class="divider" style="margin:2rem 0"></div>
 
-    <!-- Feature: SQL Preview -->
     <div class="feature-block reverse animate-on-scroll">
       <div>
-        <div class="feature-tag">Step 4 · SQL Preview</div>
-        <div class="feature-title">Inspect every INSERT before it runs</div>
-        <div class="feature-body">Cygenix fetches live rows from your source database and generates batched INSERT statements with all mappings, type casts, and Was/Is translations baked in. Review or download before executing.</div>
+        <div class="feature-tag">One-to-Many Map</div>
+        <div class="feature-title">One source, multiple target tables</div>
+        <div class="feature-body">Map a single source table into multiple target tables in one operation. Each target card has its own AI mapping, filter, hide-unmapped toggle, FK relationships and fixed values.</div>
         <ul class="feature-points">
-          <li>Batched INSERT statements with full column mapping</li>
-          <li>Schema check SQL to verify target structure</li>
-          <li>Verify queries for row count reconciliation</li>
-          <li>Download SQL to run in SSMS if preferred</li>
+          <li>Add as many target table cards as needed</li>
+          <li>PK mode per card — Identity, GUID or natural key</li>
+          <li>FK columns reference PK variables from parent cards</li>
+          <li>AI maps each card independently with overload retry</li>
+          <li>Single generated SQL script covers all target tables</li>
         </ul>
       </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div>
-          <div class="mock-dot" style="background:#f5a623"></div>
-          <div class="mock-dot" style="background:#10d48a"></div>
-          <div style="flex:1;text-align:center;font-size:9px;color:var(--text3);font-family:var(--mono)">Preview SQL</div>
-        </div>
-        <div style="display:flex;border-bottom:0.5px solid var(--border);background:var(--bg3)">
-          <div style="padding:0.35rem 0.75rem;font-size:9px;font-family:var(--mono);color:var(--accent);border-bottom:1.5px solid var(--accent)">INSERT statements</div>
-          <div style="padding:0.35rem 0.75rem;font-size:9px;font-family:var(--mono);color:var(--text3)">Schema check</div>
-          <div style="padding:0.35rem 0.75rem;font-size:9px;font-family:var(--mono);color:var(--text3)">Verify queries</div>
-        </div>
-        <div class="sql-block" style="margin:0.5rem">
-          <span class="sql-cm">-- Migration: dbo.effective_dated_records → dbo.effective_dated_records</span><br>
-          <span class="sql-cm">-- Generated by Cygenix AI · 28 rows · Batch 1/1</span><br><br>
-          <span class="sql-kw">SET</span> XACT_ABORT <span class="sql-kw">ON</span>;<br>
-          <span class="sql-kw">BEGIN</span> TRAN;<br><br>
-          <span class="sql-kw">INSERT INTO</span> <span class="sql-fn">dbo.effective_dated_records</span><br>
-          &nbsp;&nbsp;(run_number, code, description_text, dcs5, percentage_diff, active_flag)<br>
-          <span class="sql-kw">VALUES</span><br>
-          &nbsp;&nbsp;(<span class="sql-num">1001</span>, <span class="sql-str">'AP-GL'</span>, <span class="sql-str">'Accounts Payable GL Interface'</span>,<br>
-          &nbsp;&nbsp;&nbsp;<span class="sql-num">6</span>, <span class="sql-num">0.045</span>, <span class="sql-num">1</span>),<br>
-          &nbsp;&nbsp;(<span class="sql-num">1002</span>, <span class="sql-str">'GL-SETUP'</span>, <span class="sql-str">'General Ledger Setup'</span>,<br>
-          &nbsp;&nbsp;&nbsp;<span class="sql-num">3</span>, <span class="sql-num">0.000</span>, <span class="sql-num">1</span>);<br><br>
-          <span class="sql-kw">COMMIT</span> TRAN;<br>
-          <span class="sql-cm">-- ✓ 28 rows inserted successfully</span>
-        </div>
-        <div style="display:flex;gap:0.4rem;padding:0.5rem;background:var(--bg3);border-top:0.5px solid var(--border)">
-          <div style="font-size:9px;font-family:var(--mono);color:var(--green);flex:1">✓ 28 rows ready to migrate</div>
-          <div style="background:var(--glow);border:0.5px solid rgba(79,142,255,0.3);border-radius:4px;padding:2px 8px;font-size:9px;color:var(--accent)">⬇ Download SQL</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- CONVERSION PROJECT -->
-<section class="section" id="projects">
-  <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div>
-        <div class="section-tag">Conversion Projects</div>
-        <div class="section-title" style="font-size:2.2rem">Orchestrate multi-table migrations</div>
-        <div class="section-sub">Combine any number of migration jobs and custom SQL scripts into a sequenced project. Run the whole thing in one click.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Drag-and-drop step ordering</li>
-          <li>Custom SQL steps run on source or target</li>
-          <li>⚪🟡🟢🔴🟠 live status per step</li>
-          <li>Retry, skip or abort on failure</li>
-          <li>Custom SQL steps and stored procedure calls</li>
-          <li>Full execution log + Conversion Report</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div>
-          <div class="mock-dot" style="background:#f5a623"></div>
-          <div class="mock-dot" style="background:#10d48a"></div>
-          <div style="flex:1;text-align:center;font-size:9px;color:var(--text3);font-family:var(--mono)">Conversion Project · On Prem → Azure</div>
-          <div style="background:var(--red-g);border:0.5px solid rgba(240,64,112,0.3);border-radius:4px;padding:2px 8px;font-size:9px;color:var(--red)">⏹ Stop</div>
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Mapper · One-to-Many · 3 target tables</div>
         </div>
         <div class="mock-body">
-          <div class="proj-step" style="border-color:rgba(16,212,138,0.3);background:rgba(16,212,138,0.04)">
-            <div class="proj-num">1</div>
-            <div class="proj-icon" style="background:rgba(240,64,112,0.15)">🗑</div>
-            <div class="proj-info">
-              <div class="proj-name">Delete effective_dated_records</div>
-              <div class="proj-meta">SQL · target · DELETE FROM dbo.effect…</div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
+              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--teal)">dbo.ClientMaster</span>
+              <span style="font-size:9px;color:var(--text3);margin-left:auto">5 mapped</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(167,139,250,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
+              <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">👁 Hide Unmapped</span>
             </div>
-            <div class="proj-emoji">🟢</div>
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · @ClientID · 5 cols mapped</div>
           </div>
-          <div class="proj-step" style="border-color:rgba(79,142,255,0.3);background:rgba(79,142,255,0.04)">
-            <div class="proj-num">2</div>
-            <div class="proj-icon" style="background:rgba(79,142,255,0.15)">📊</div>
-            <div class="proj-info">
-              <div class="proj-name">effective_dated_records migration</div>
-              <div class="proj-meta">migration · dbo.effective_dated → dbo.effective_dated</div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
+              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent)">dbo.ClientAddress</span>
+              <span style="font-size:9px;color:var(--text3);margin-left:auto">4 mapped</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(167,139,250,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
             </div>
-            <div class="proj-emoji" id="step2-emoji" style="font-size:12px">🟡</div>
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: GUID · FK → @ClientID</div>
           </div>
-          <div class="proj-step">
-            <div class="proj-num">3</div>
-            <div class="proj-icon" style="background:rgba(245,166,35,0.15)">⚙️</div>
-            <div class="proj-info">
-              <div class="proj-name">EXEC sp_RecalcBalances</div>
-              <div class="proj-meta">stored proc · target · EXEC dbo.sp_RecalcBal…</div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
+              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--amber)">dbo.ClientContact</span>
+              <span style="font-size:9px;color:var(--text3);margin-left:auto">3 mapped</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(167,139,250,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
             </div>
-            <div class="proj-emoji">⚪</div>
-          </div>
-          <div class="proj-step">
-            <div class="proj-num">4</div>
-            <div class="proj-icon" style="background:rgba(167,139,250,0.15)">📋</div>
-            <div class="proj-info">
-              <div class="proj-name">Update audit timestamps</div>
-              <div class="proj-meta">SQL · target · UPDATE dbo.effect SET modified…</div>
-            </div>
-            <div class="proj-emoji">⚪</div>
-          </div>
-          <div class="proj-step">
-            <div class="proj-num">5</div>
-            <div class="proj-icon" style="background:rgba(16,212,138,0.15)">✅</div>
-            <div class="proj-info">
-              <div class="proj-name">Row count verify</div>
-              <div class="proj-meta">SQL · source · SELECT COUNT(*) FROM…</div>
-            </div>
-            <div class="proj-emoji">⚪</div>
-          </div>
-          <div style="margin-top:0.6rem;padding:0.4rem 0.5rem;background:var(--bg3);border-radius:4px;display:flex;align-items:center;gap:0.5rem">
-            <div style="flex:1;height:3px;background:var(--bg4);border-radius:2px;overflow:hidden">
-              <div id="proj-progress" style="height:100%;background:linear-gradient(90deg,var(--green),var(--accent));width:30%;transition:width 0.5s"></div>
-            </div>
-            <div style="font-size:9px;font-family:var(--mono);color:var(--text3)">Step 2/4 running…</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<div class="divider"></div>
-
-<!-- CUSTOM SQL -->
-<section class="section" id="custom-sql">
-  <div class="container">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
-      <div>
-        <div class="section-tag">Custom SQL & Stored Procedures</div>
-        <div class="section-title" style="font-size:2.2rem">Full SQL control at every step</div>
-        <div class="section-sub">Between table migrations, inject any SQL — bulk deletes, stored procedure calls, index rebuilds, data transforms, or complex business logic. Run on source or target.</div>
-        <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Write any T-SQL — SELECT, UPDATE, DELETE, TRUNCATE, EXEC</li>
-          <li>Call stored procedures with parameters</li>
-          <li>Choose whether each script runs on source or target DB</li>
-          <li>Upload a .sql file or type directly in the editor</li>
-          <li>Errors captured in the log — retry, skip or abort</li>
-        </ul>
-      </div>
-      <div class="mock">
-        <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div>
-          <div class="mock-dot" style="background:#f5a623"></div>
-          <div class="mock-dot" style="background:#10d48a"></div>
-          <div style="flex:1;text-align:center;font-size:9px;color:var(--text3);font-family:var(--mono)">Custom SQL Step</div>
-        </div>
-        <div class="mock-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.6rem">
-            <div>
-              <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Step name</div>
-              <div style="background:var(--bg4);border:0.5px solid var(--border2);border-radius:4px;padding:4px 8px;font-size:10px;color:var(--text2);font-family:var(--mono)">EXEC sp_RecalcBalances</div>
-            </div>
-            <div>
-              <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px">Run on</div>
-              <div style="background:var(--accent-glow, rgba(79,142,255,0.15));border:0.5px solid rgba(79,142,255,0.3);border-radius:4px;padding:4px 8px;font-size:10px;color:var(--accent);font-family:var(--mono)">● Target database</div>
-            </div>
-          </div>
-          <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">SQL / Stored procedure</div>
-          <div class="sql-block" style="min-height:130px">
-            <span class="sql-cm">-- Recalculate all GL balances after migration</span><br>
-            <span class="sql-kw">EXEC</span> <span class="sql-fn">dbo.sp_RecalcBalances</span><br>
-            &nbsp;&nbsp;@fiscal_year = <span class="sql-num">2024</span>,<br>
-            &nbsp;&nbsp;@recalc_mode = <span class="sql-str">'FULL'</span>,<br>
-            &nbsp;&nbsp;@notify_on_complete = <span class="sql-num">1</span>;<br><br>
-            <span class="sql-cm">-- Or run any custom T-SQL</span><br>
-            <span class="sql-kw">UPDATE</span> dbo.effective_dated_records<br>
-            <span class="sql-kw">SET</span> migrated_at = <span class="sql-fn">GETUTCDATE</span>(),<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;migrated_by = <span class="sql-str">'Cygenix'</span><br>
-            <span class="sql-kw">WHERE</span> migrated_at <span class="sql-kw">IS NULL</span>;
-          </div>
-          <div style="display:flex;gap:0.4rem;margin-top:0.5rem">
-            <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:9px;color:var(--text3);font-family:var(--mono)">📁 Upload .sql file</div>
-            <div style="flex:1"></div>
-            <div style="background:rgba(16,212,138,0.1);border:0.5px solid rgba(16,212,138,0.3);border-radius:4px;padding:3px 8px;font-size:9px;color:var(--green);font-family:var(--mono)">✓ Save step</div>
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · FK → @ClientID</div>
           </div>
         </div>
       </div>
@@ -674,40 +304,90 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <section class="section" id="validation">
   <div class="container">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div>
+        <div class="section-tag">Flexible Validation</div>
+        <div class="section-title" style="font-size:2.2rem">Any table. Any SQL. Any database.</div>
+        <div class="section-sub">No longer locked to a fixed validation_scripts table. Add any table, pick which column holds the SQL to execute, choose which columns appear in the failure report, and run against any database.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>Add multiple validation tables from different connections</li>
+          <li>Pick the SQL column, name column and report columns per source</li>
+          <li>Run all, run selected (checkboxes), or run one source at a time</li>
+          <li>Inline result rows shown with your chosen report columns</li>
+          <li>Export to Excel — summary + one sheet per failed script</li>
+          <li>⏹ Stop mid-run at any time</li>
+        </ul>
+      </div>
       <div class="mock">
         <div class="mock-topbar">
-          <div class="mock-dot" style="background:#f04070"></div>
-          <div class="mock-dot" style="background:#f5a623"></div>
-          <div class="mock-dot" style="background:#10d48a"></div>
-          <div style="flex:1;text-align:center;font-size:9px;color:var(--text3);font-family:var(--mono)">Data Validation</div>
-          <div style="background:var(--amber-g);border:0.5px solid rgba(245,166,35,0.3);border-radius:4px;padding:2px 8px;font-size:9px;color:var(--amber)">▶ Run all</div>
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Data Validation · 3 sources</div>
         </div>
         <div class="mock-body">
-          <div style="display:flex;gap:0.75rem;margin-bottom:0.6rem">
-            <div style="text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--text)">1500</div><div style="font-size:8px;color:var(--text3);font-family:var(--mono)">TOTAL</div></div>
-            <div style="text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--green)" id="val-pass-count">0</div><div style="font-size:8px;color:var(--text3);font-family:var(--mono)">PASSED</div></div>
-            <div style="text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--red)" id="val-fail-count">0</div><div style="font-size:8px;color:var(--text3);font-family:var(--mono)">FAILED</div></div>
-            <div style="text-align:center"><div style="font-size:1.1rem;font-weight:800;color:var(--amber)" id="val-error-count">2</div><div style="font-size:8px;color:var(--text3);font-family:var(--mono)">ERRORS</div></div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem;display:flex;align-items:center;gap:0.5rem">
+            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--teal)">Post-migration checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.val_scripts · SQL col: script_sql · 24 scripts</div></div>
+            <span style="font-size:9px;background:var(--red-g);color:var(--red);padding:1px 6px;border-radius:100px;font-family:var(--mono)">3 fail</span>
+            <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">21 pass</span>
           </div>
-          <!-- Filter row -->
-          <div style="display:flex;gap:0.3rem;margin-bottom:0.4rem">
-            <input style="flex:1;background:var(--bg4);border:0.5px solid var(--border2);border-radius:3px;padding:2px 5px;font-size:9px;color:var(--text2);font-family:var(--mono)" placeholder="Search name…" readonly>
-            <select style="background:var(--bg4);border:0.5px solid var(--border2);border-radius:3px;padding:2px 5px;font-size:9px;color:var(--text2);font-family:var(--mono)"><option>All groups</option></select>
-            <select style="background:var(--bg4);border:0.5px solid var(--amber);border-radius:3px;padding:2px 5px;font-size:9px;color:var(--amber);font-family:var(--mono)"><option>Failed</option></select>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.5rem">
+            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--amber)">GL Integrity checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.gl_checks · SQL col: check_query · 8 scripts</div></div>
+            <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">8 pass</span>
           </div>
           <div id="val-rows-mock"></div>
+          <div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green)">✓ Pass: <span id="val-pass-count">0</span></span>
+            <span style="color:var(--red)">✕ Fail: <span id="val-fail-count">0</span></span>
+            <span style="color:var(--text3)">⏳ Pending: <span id="val-pend-count">0</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- PROJECT PLANNER -->
+<section class="section" id="planner">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Project Plan · Calendar — April 2026</div>
+        </div>
+        <div class="mock-body" style="padding:0.5rem">
+          <!-- Mini calendar -->
+          <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem">
+            <div style="font-size:9px;background:var(--bg4);color:var(--accent);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Year</div>
+            <div style="font-size:9px;background:var(--accent);color:#fff;padding:2px 7px;border-radius:4px;font-family:var(--mono)">Month</div>
+            <div style="font-size:9px;background:var(--bg4);color:var(--text3);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Week</div>
+            <div style="font-size:9px;background:var(--bg4);color:var(--text3);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Day</div>
+            <div style="margin-left:auto;font-size:9px;color:var(--text3);font-family:var(--mono)">◀ April 2026 ▶</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;font-family:var(--mono);font-size:9px;text-align:center;margin-bottom:2px">
+            <div style="color:var(--text3)">M</div><div style="color:var(--text3)">T</div><div style="color:var(--text3)">W</div><div style="color:var(--text3)">T</div><div style="color:var(--text3)">F</div><div style="color:var(--text3)">S</div><div style="color:var(--text3)">S</div>
+          </div>
+          <div id="cal-mock-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;font-family:var(--mono);font-size:9px"></div>
+          <!-- Stats row -->
+          <div style="display:flex;gap:0.4rem;margin-top:0.5rem;flex-wrap:wrap">
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--accent)">7</div><div style="font-size:8px;color:var(--text3)">days left</div></div>
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--green)">12</div><div style="font-size:8px;color:var(--text3)">done</div></div>
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--amber)">3</div><div style="font-size:8px;color:var(--text3)">in progress</div></div>
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--red)">1</div><div style="font-size:8px;color:var(--text3)">blocker</div></div>
+          </div>
         </div>
       </div>
       <div>
-        <div class="section-tag">Data Validation</div>
-        <div class="section-title" style="font-size:2.2rem">1,500 validation scripts. One click.</div>
-        <div class="section-sub">Your <code style="font-family:var(--mono);font-size:12px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:1px 6px;color:var(--teal)">validation_scripts</code> table drives the entire validation engine. Any rows returned means a failed check.</div>
+        <div class="section-tag">Project Planner</div>
+        <div class="section-title" style="font-size:2.2rem">Plan, track and deliver your migration</div>
+        <div class="section-sub">A full project management tool built into Cygenix. Calendar views, task tracking, blockers, phase progress and activity log — all driven by your project completion date from Project Settings.</div>
         <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Run against source or target database per script</li>
-          <li>Column-level filtering by name, group, status, SQL</li>
-          <li>Expandable SQL preview inline</li>
-          <li>Export to Excel — problem rows included per failed script</li>
-          <li>⏹ Stop button aborts between scripts gracefully</li>
+          <li>Year / Month / Week / Day calendar views — click to add events</li>
+          <li>Outlook-style event modal with type, time, location, attendees</li>
+          <li>Task table with status, priority, phase, owner and due date</li>
+          <li>Blocker management with impact level and resolution tracking</li>
+          <li>7-stage execution phase tracker — click to set current phase</li>
+          <li>Activity log records every change automatically</li>
         </ul>
       </div>
     </div>
@@ -716,59 +396,86 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
 <div class="divider"></div>
 
-<!-- REPORTS -->
-<section class="section" id="reports">
-  <div class="container-sm animate-on-scroll">
-    <div style="text-align:center;margin-bottom:2.5rem">
-      <div class="section-tag">Conversion Reports</div>
-      <div class="section-title">Client-ready Excel reports,<br>generated in one click</div>
-    </div>
-    <div class="mock">
-      <div class="mock-topbar">
-        <div class="mock-dot" style="background:#f04070"></div>
-        <div class="mock-dot" style="background:#f5a623"></div>
-        <div class="mock-dot" style="background:#10d48a"></div>
-        <div style="flex:1;text-align:center;font-size:9px;color:var(--text3);font-family:var(--mono)">Conversion Report · On Prem → Azure · 09 Apr 2026</div>
-        <div style="background:var(--green-g);border:0.5px solid rgba(16,212,138,0.3);border-radius:4px;padding:2px 8px;font-size:9px;color:var(--green)">📊 Export Excel</div>
+<!-- SQL EDITOR -->
+<section class="section" id="sql-editor">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div>
+        <div class="section-tag">SQL Editor</div>
+        <div class="section-title" style="font-size:2.2rem">Full-featured SQL workspace</div>
+        <div class="section-sub">Write, save, run and manage SQL scripts against source or target databases. AI assistant, find & replace, history, results grid with pivot view and Excel export.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>Script library — save, name and load any number of scripts</li>
+          <li>Ctrl+Enter to run, Ctrl+F to find, Ctrl+/ to comment selection</li>
+          <li>Results grid with row / pivot view and Excel export</li>
+          <li>Query history with re-load and timestamp</li>
+          <li>AI assistant — describe what you need, Claude writes the SQL</li>
+          <li>Snippet toolbar — SELECT, WHERE, INSERT, UPDATE, TRAN</li>
+        </ul>
       </div>
-      <div class="report-sheet">
-        <div class="r-sheet active">Summary</div>
-        <div class="r-sheet">Migration Results</div>
-        <div class="r-sheet">Column Mapping</div>
-        <div class="r-sheet">Was-Is Rules</div>
-        <div class="r-sheet">Execution Log</div>
-      </div>
-      <div class="report-table">
-        <div class="report-row header">
-          <div>Source table</div><div>Target table</div><div>Source rows</div><div>Inserted</div><div>Status</div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">SQL Editor · Source DB</div>
         </div>
-        <div class="report-row">
-          <div class="report-cell accent">dbo.effective_dated_rec…</div>
-          <div class="report-cell accent">dbo.effective_dated_rec…</div>
-          <div class="report-cell">28</div>
-          <div class="report-cell green">28</div>
-          <div class="report-cell green">✓ Success</div>
+        <div class="sql-block" style="margin:0.5rem;max-height:130px">
+          <span class="sql-cm">-- Count records by status for reconciliation</span><br>
+          <span class="sql-kw">SELECT</span><br>
+          &nbsp;&nbsp;[status_code],<br>
+          &nbsp;&nbsp;<span class="sql-fn">COUNT</span>(*) <span class="sql-kw">AS</span> record_count,<br>
+          &nbsp;&nbsp;<span class="sql-fn">SUM</span>([amount]) <span class="sql-kw">AS</span> total_amount<br>
+          <span class="sql-kw">FROM</span> [dbo].[transactions]<br>
+          <span class="sql-kw">WHERE</span> [created_date] &gt;= <span class="sql-str">'2024-01-01'</span><br>
+          &nbsp;&nbsp;<span class="sql-kw">AND</span> [active_flag] = <span class="sql-num">1</span><br>
+          <span class="sql-kw">GROUP BY</span> [status_code]<br>
+          <span class="sql-kw">ORDER BY</span> record_count <span class="sql-kw">DESC</span>
         </div>
-        <div style="margin-top:0.75rem;padding-top:0.75rem;border-top:0.5px solid var(--border)">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem">
-            <div style="background:var(--bg3);border-radius:6px;padding:0.6rem;text-align:center">
-              <div style="font-size:1rem;font-weight:700;color:var(--green)">28</div>
-              <div style="font-size:8px;font-family:var(--mono);color:var(--text3)">ROWS MIGRATED</div>
-            </div>
-            <div style="background:var(--bg3);border-radius:6px;padding:0.6rem;text-align:center">
-              <div style="font-size:1rem;font-weight:700;color:var(--accent)">15</div>
-              <div style="font-size:8px;font-family:var(--mono);color:var(--text3)">COLUMNS MAPPED</div>
-            </div>
-            <div style="background:var(--bg3);border-radius:6px;padding:0.6rem;text-align:center">
-              <div style="font-size:1rem;font-weight:700;color:var(--amber)">0</div>
-              <div style="font-size:8px;font-family:var(--mono);color:var(--text3)">WAS/IS RULES</div>
-            </div>
-            <div style="background:var(--bg3);border-radius:6px;padding:0.6rem;text-align:center">
-              <div style="font-size:1rem;font-weight:700;color:var(--green)">0</div>
-              <div style="font-size:8px;font-family:var(--mono);color:var(--text3)">ERRORS</div>
-            </div>
+        <div style="background:var(--bg3);border-top:0.5px solid var(--border);padding:0.4rem 0.6rem;display:flex;gap:0.5rem;font-family:var(--mono);font-size:9px;color:var(--text3)">
+          <span style="color:var(--green)">▶ Run (Ctrl+Enter)</span>
+          <span>|</span><span>🔍 Find</span><span>|</span><span>⬇ Export</span>
+        </div>
+        <div style="padding:0.4rem 0.6rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.3rem;font-family:var(--mono);font-size:9px;background:var(--bg3);border-radius:4px;padding:0.3rem">
+            <div style="color:var(--text3);text-transform:uppercase;font-size:8px">status_code</div><div style="color:var(--text3);text-transform:uppercase;font-size:8px">record_count</div><div style="color:var(--text3);text-transform:uppercase;font-size:8px">total_amount</div>
+            <div style="color:var(--teal)">ACTIVE</div><div style="color:var(--text2)">1,842</div><div style="color:var(--green)">£2,341,990</div>
+            <div style="color:var(--teal)">PENDING</div><div style="color:var(--text2)">234</div><div style="color:var(--amber)">£89,450</div>
+            <div style="color:var(--teal)">CLOSED</div><div style="color:var(--text2)">89</div><div style="color:var(--text3)">£12,100</div>
           </div>
+          <div style="font-size:9px;color:var(--green);font-family:var(--mono);margin-top:0.3rem">✓ 3 rows · 12ms</div>
         </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- PERFORMANCE -->
+<section class="section" id="performance">
+  <div class="container-sm animate-on-scroll" style="text-align:center">
+    <div class="section-tag">Performance Tuning</div>
+    <div class="section-title">Tuned for your environment</div>
+    <div class="section-sub" style="margin:0 auto 3rem">Quick presets for common scenarios. Fine-tune batch sizes, timeouts, concurrency and data loading to match your server's capacity. Import and export settings as JSON.</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.75rem;margin-bottom:2rem">
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--green);margin-bottom:0.3rem">Small DB</div>
+        <div style="font-size:9px;color:var(--text3)">1,000 rows/page<br>1 thread<br>Full verify</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--accent);margin-bottom:0.3rem">Medium DB</div>
+        <div style="font-size:9px;color:var(--text3)">2,000 rows/page<br>2 threads<br>Balanced</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid rgba(79,142,255,0.4);border-radius:8px;padding:0.875rem;text-align:center;background:var(--bg3)">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--amber);margin-bottom:0.3rem">Large DB</div>
+        <div style="font-size:9px;color:var(--text3)">5,000 rows/page<br>4 threads<br>NOLOCK</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--teal);margin-bottom:0.3rem">Azure SQL</div>
+        <div style="font-size:9px;color:var(--text3)">90s connect<br>5 retries<br>DTU-safe</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--purple);margin-bottom:0.3rem">Cautious</div>
+        <div style="font-size:9px;color:var(--text3)">100 rows/batch<br>1 thread<br>Row verify</div>
       </div>
     </div>
   </div>
@@ -777,7 +484,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <!-- CTA -->
 <section class="cta-section">
   <div class="cta-title">Ready to migrate<br>with confidence?</div>
-  <div class="cta-sub">Cygenix handles the complexity — AI mapping, value translation, validation, and reporting — so your team can focus on the migration, not the tooling.</div>
+  <div class="cta-sub">Cygenix handles the complexity — AI mapping, value translation, flexible validation, project planning and performance tuning — so your team can focus on the migration, not the tooling.</div>
   <div class="cta-btns">
     <a href="/login.html" class="btn-hero btn-primary">Launch Cygenix →</a>
     <a href="/help.html" class="btn-hero btn-secondary" target="_blank">Read the docs</a>
@@ -785,105 +492,107 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 </section>
 
 <footer>
-  Cygenix AI Migration Platform · Featuring Claude AI Conversion Engine · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">Dashboard</a> · <a href="/help.html" style="color:var(--accent);text-decoration:none">Help</a>
+  Cygenix AI Migration Platform · Claude AI Column Mapping · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">Dashboard</a> · <a href="/help.html" style="color:var(--accent);text-decoration:none">Help</a>
 </footer>
 
 <script>
-// ── Mapping rows animation ────────────────────────────────────────────────────
-const mappingData = [
-  ['run_number',      'SMALLINT', 'run_number',      'SMALLINT', 'high'],
-  ['code',            'NVARCHAR', 'code',            'NVARCHAR(50)', 'high'],
-  ['description_text','NVARCHAR', 'description_text','NVARCHAR(MAX)','high'],
-  ['dcs5',            'INT',      'dcs5',            'INT',      'high'],
-  ['percentage_diff', 'FLOAT',    'percentage_diff', 'DECIMAL',  'med'],
-  ['active_flag',     'BIT',      'active_flag',     'BIT',      'high'],
-  ['created_by',      'NVARCHAR', 'created_user',    'NVARCHAR', 'med'],
-  ['legacy_id',       'INT',      null,              null,       'low'],
+// Mapper rows animation
+const mapData = [
+  ['run_number','SMALLINT','run_number','SMALLINT','','high'],
+  ['code','NVARCHAR(50)','code','NVARCHAR(50)','','high'],
+  ['description_text','NVARCHAR(200)','description_text','NVARCHAR(100)','','med'],
+  ['active_flag','BIT','active_flag','BIT','','high'],
+  ['region','NVARCHAR','territory','NVARCHAR','N\'EMEA\'','fixed'],
+  ['legacy_id','INT','—','—','','low'],
 ];
-
-const tbody = document.getElementById('mapping-rows');
-if (tbody) {
-  mappingData.forEach((r, i) => {
-    setTimeout(() => {
-      const row = document.createElement('div');
-      row.style.cssText = 'display:grid;grid-template-columns:1fr 0.4fr 1fr 0.6fr 0.5fr;gap:0.3rem;padding:0.25rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);align-items:center;opacity:0;transition:opacity 0.3s';
-      row.innerHTML = `
-        <div style="font-family:var(--mono);font-size:9px;color:${r[4]==='low'?'var(--text3)':'var(--text2)'};">${r[0]}</div>
+const mapBody = document.getElementById('mapper-rows');
+if(mapBody){
+  mapData.forEach((r,i)=>{
+    setTimeout(()=>{
+      const d=document.createElement('div');
+      d.style.cssText='display:grid;grid-template-columns:1fr 0.7fr 1fr 0.8fr 0.8fr;gap:0.3rem;padding:0.25rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);align-items:center;opacity:0;transition:opacity 0.3s';
+      const isTrunc=r[0]==='description_text';
+      const isFixed=r[4]!=='';
+      const badgeCls=r[5]==='high'?'c-high':r[5]==='med'?'c-med':r[5]==='fixed'?'c-high':'c-low';
+      const badgeTxt=r[5]==='high'?'HIGH':r[5]==='med'?'MED ⚠':r[5]==='fixed'?'FIXED':'LOW';
+      d.innerHTML=`
+        <div style="font-family:var(--mono);font-size:9px;color:${r[5]==='low'?'var(--text3)':'var(--text2)'}">${r[0]}</div>
         <div style="font-size:8px;color:var(--text3);font-family:var(--mono)">${r[1]}</div>
-        <div style="font-family:var(--mono);font-size:9px;color:${r[2]?'var(--teal)':'var(--text3)'}">${r[2]||'— skip —'}</div>
-        <div style="font-size:8px;color:var(--text3);font-family:var(--mono)">${r[3]||''}</div>
-        <div><span class="confidence c-${r[4]}">${r[4]==='high'?'HIGH':r[4]==='med'?'REVIEW':'LOW'}</span></div>`;
-      tbody.appendChild(row);
-      requestAnimationFrame(() => row.style.opacity = '1');
-    }, i * 120);
+        <div style="font-family:var(--mono);font-size:9px;color:${r[2]==='—'?'var(--text3)':'var(--teal)'}">${r[2]}${isTrunc?'<span style="font-size:8px;color:var(--amber)"> ⚠ LEFT(100)</span>':''}</div>
+        <div style="font-family:var(--mono);font-size:9px;color:${isFixed?'var(--teal)':'var(--text3)'}">${r[4]||'—'}</div>
+        <div><span class="confidence ${badgeCls}">${badgeTxt}</span></div>`;
+      mapBody.appendChild(d);
+      requestAnimationFrame(()=>d.style.opacity='1');
+    },i*100);
   });
 }
 
-// ── Validation rows animation ─────────────────────────────────────────────────
-const valData = [
-  ['AP-Transactions.CheckVchrDetailGL', 'fail', 3],
-  ['AP-Transactions.CheckVchrWHTax',    'fail', 1],
-  ['GL-Setup.CheckJournalOrphans',       'pass', 0],
-  ['GL-Setup.CheckPostingPeriods',       'pass', 0],
-  ['AP-Setup.CheckVendorGUIDs',          'error', 0],
-  ['AR-Transactions.CheckInvoiceDates',  'pending', 0],
+// Validation rows animation
+const valData=[
+  ['CheckGLBalances','pass',0],
+  ['CheckOrphanVouchers','fail',14],
+  ['CheckDuplicateInvoices','fail',3],
+  ['CheckVendorRefs','pass',0],
+  ['CheckPeriodTotals','pending',0],
 ];
-
-const valContainer = document.getElementById('val-rows-mock');
-let passCount = 0, failCount = 0;
-
-if (valContainer) {
-  valData.forEach((r, i) => {
-    setTimeout(() => {
-      const row = document.createElement('div');
-      row.className = 'val-row';
-      const badge = r[1]==='pass' ? '<span class="val-badge v-pass">🟢 Passed</span>'
-        : r[1]==='fail'    ? '<span class="val-badge v-fail">🔴 Failed</span>'
-        : r[1]==='error'   ? '<span class="val-badge v-error">🟠 Error</span>'
-        : '<span class="val-badge v-pending">— pending —</span>';
-      row.innerHTML = `<div class="val-name">${r[0]}</div>${badge}<div class="val-rows">${r[2]>0?r[2]+' rows':''}</div>`;
-      valContainer.appendChild(row);
-      if (r[1]==='pass') { passCount++; document.getElementById('val-pass-count').textContent = passCount; }
-      if (r[1]==='fail') { failCount++; document.getElementById('val-fail-count').textContent = failCount; }
-    }, 400 + i * 300);
+const valBody=document.getElementById('val-rows-mock');
+let vp=0,vf=0,vpend=0;
+if(valBody){
+  valData.forEach((r,i)=>{
+    setTimeout(()=>{
+      const row=document.createElement('div');
+      row.className='val-row';
+      const badge=r[1]==='pass'?'<span class="val-badge v-pass">🟢 Pass</span>':r[1]==='fail'?'<span class="val-badge v-fail">🔴 Fail</span>':'<span class="val-badge v-pending">— pending —</span>';
+      row.innerHTML=`<input type="checkbox" ${r[1]!=='pending'?'checked':''} style="accent-color:var(--accent);width:10px;flex-shrink:0"><div class="val-name">${r[0]}</div>${badge}<div class="val-rows">${r[2]>0?r[2]+' rows':''}</div>`;
+      valBody.appendChild(row);
+      if(r[1]==='pass'){vp++;document.getElementById('val-pass-count').textContent=vp;}
+      if(r[1]==='fail'){vf++;document.getElementById('val-fail-count').textContent=vf;}
+      if(r[1]==='pending'){vpend++;document.getElementById('val-pend-count').textContent=vpend;}
+    },400+i*280);
   });
 }
 
-// ── Project step animation ────────────────────────────────────────────────────
-let projPct = 30;
-const projInterval = setInterval(() => {
-  projPct = Math.min(projPct + 1, 55);
-  const bar = document.getElementById('proj-progress');
-  if (bar) bar.style.width = projPct + '%';
-  if (projPct >= 55) {
-    clearInterval(projInterval);
-    const emoji = document.getElementById('step2-emoji');
-    if (emoji) { emoji.textContent = '🟢'; emoji.style.transition = 'all 0.3s'; }
-  }
-}, 80);
-
-// ── Scroll animations ─────────────────────────────────────────────────────────
-const observer = new IntersectionObserver(entries => {
-  entries.forEach((e, i) => {
-    if (e.isIntersecting) {
-      e.target.style.transitionDelay = (e.target.dataset.delay || 0) + 'ms';
-      e.target.classList.add('visible');
+// Calendar mock
+const calGrid=document.getElementById('cal-mock-grid');
+if(calGrid){
+  const today=14; // April 14 2026
+  const eventDays={8:'ev-task',11:'ev-deadline',14:'ev-milestone',18:'ev-task',21:'ev-meeting',25:'ev-deadline'};
+  const evNames={8:'Schema review',11:'UAT deadline',14:'Go-live!',18:'Data QA',21:'Stakeholder sync',25:'Sign-off'};
+  const evCols={'ev-task':'var(--accent)','ev-deadline':'var(--red)','ev-milestone':'var(--amber)','ev-meeting':'var(--purple)'};
+  // April 2026: starts Wednesday (dow=2 → Mon=0 based → offset=2)
+  for(let i=0;i<2;i++) calGrid.innerHTML+=`<div style="color:var(--text3);text-align:center;padding:2px"></div>`;
+  for(let d=1;d<=30;d++){
+    const isToday=d===today;
+    const ev=eventDays[d];
+    let inner=`<div style="text-align:center;padding:2px;font-size:9px;border-radius:${isToday?'50%':'3px'};background:${isToday?'var(--accent)':'transparent'};color:${isToday?'#fff':'var(--text3)'};font-family:var(--mono);cursor:pointer;position:relative">${d}`;
+    if(ev) inner+=`<span style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:${evCols[ev]}"></span>`;
+    inner+=`</div>`;
+    if(ev){
+      inner=`<div style="position:relative">
+        <div style="text-align:center;padding:2px;font-size:9px;border-radius:${isToday?'50%':'3px'};background:${isToday?'var(--accent)':'transparent'};color:${isToday?'#fff':'var(--text3)'};font-family:var(--mono);cursor:pointer">${d}</div>
+        <div style="font-size:8px;padding:1px 3px;border-radius:2px;background:${evCols[ev]}22;color:${evCols[ev]};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;border-left:2px solid ${evCols[ev]}">${evNames[d]}</div>
+      </div>`;
     }
-  });
-}, { threshold: 0.1 });
+    calGrid.innerHTML+=inner;
+  }
+}
 
-document.querySelectorAll('.animate-on-scroll').forEach(el => observer.observe(el));
-
-// ── Nav active state ──────────────────────────────────────────────────────────
-const sections = document.querySelectorAll('section[id]');
-const navLinks  = document.querySelectorAll('.nav-links a');
-window.addEventListener('scroll', () => {
-  let cur = '';
-  sections.forEach(s => { if (window.scrollY >= s.offsetTop - 100) cur = s.id; });
-  navLinks.forEach(a => {
-    a.style.color = a.getAttribute('href') === '#'+cur ? 'var(--text)' : '';
+// Scroll animations
+const observer=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){e.target.style.transitionDelay=(e.target.dataset.delay||0)+'ms';e.target.classList.add('visible');}
   });
-}, { passive: true });
+},{threshold:0.1});
+document.querySelectorAll('.animate-on-scroll').forEach(el=>observer.observe(el));
+
+// Nav scroll
+const sections=document.querySelectorAll('section[id]');
+const navLinks=document.querySelectorAll('.nav-links a');
+window.addEventListener('scroll',()=>{
+  let cur='';
+  sections.forEach(s=>{if(window.scrollY>=s.offsetTop-100)cur=s.id;});
+  navLinks.forEach(a=>{a.style.color=a.getAttribute('href')==='#'+cur?'var(--text)':'';});
+},{passive:true});
 </script>
 </body>
 </html>
