@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Project Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/connections.js"></script>
+<script src="/nav.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+.page{max-width:1200px;margin:0 auto;padding:1.5rem}
+/* ── panels ── */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.1rem;overflow:hidden}
+.panel-head{padding:0.75rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;background:var(--bg3)}
+.panel-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:0.5rem}
+.panel-body{padding:1rem 1.1rem}
+/* ── buttons ── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:0.38rem 0.8rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text)}
+.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
+.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+.btn-sm{padding:0.22rem 0.55rem;font-size:11px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+/* ── forms ── */
+.form-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.42rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+select.form-input option{background:var(--bg3)}
+/* ── badges ── */
+.badge{display:inline-flex;align-items:center;font-size:10px;padding:1px 8px;border-radius:100px;font-family:var(--mono);font-weight:500;white-space:nowrap}
+.b-todo   {background:rgba(255,255,255,0.06);color:var(--text3)}
+.b-inprog {background:var(--accent-glow);color:var(--accent)}
+.b-blocked{background:var(--red-bg);color:var(--red)}
+.b-done   {background:var(--green-bg);color:var(--green)}
+.b-review {background:var(--amber-bg);color:var(--amber)}
+.b-low    {background:rgba(255,255,255,0.05);color:var(--text3)}
+.b-med    {background:var(--amber-bg);color:var(--amber)}
+.b-high   {background:var(--red-bg);color:var(--red)}
+/* ── timeline bar ── */
+.timeline-wrap{overflow-x:auto;padding-bottom:0.5rem}
+.tl-row{display:flex;align-items:center;gap:0;margin-bottom:3px;min-width:700px}
+.tl-label{width:160px;flex-shrink:0;font-size:11px;color:var(--text2);padding-right:0.75rem;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-track{flex:1;height:22px;background:var(--bg3);border-radius:4px;position:relative;overflow:hidden}
+.tl-bar{position:absolute;height:100%;border-radius:4px;display:flex;align-items:center;padding-left:6px;font-size:10px;font-family:var(--mono);white-space:nowrap;overflow:hidden}
+.tl-today{position:absolute;top:0;width:2px;background:var(--red);height:100%;opacity:0.7;z-index:10}
+.tl-header{display:flex;margin-bottom:2px;min-width:700px}
+.tl-header-label{width:160px;flex-shrink:0}
+.tl-header-months{flex:1;display:flex}
+.tl-month{flex:1;font-size:10px;color:var(--text3);font-family:var(--mono);text-align:center;border-right:0.5px solid var(--border)}
+/* ── table ── */
+.data-table{width:100%;border-collapse:collapse;font-size:12px}
+.data-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.75rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+.data-table td{padding:0.55rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.data-table tr:last-child td{border-bottom:none}
+.data-table tr:hover td{background:rgba(255,255,255,0.015)}
+/* ── stat cards ── */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:0.75rem}
+.stat-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.75rem;text-align:center}
+.stat-num{font-size:1.5rem;font-weight:700;line-height:1;font-family:var(--mono)}
+.stat-lbl{font-size:10px;color:var(--text3);margin-top:4px}
+/* ── progress bar ── */
+.prog{height:6px;border-radius:3px;background:var(--bg4);overflow:hidden;margin-top:4px}
+.prog-fill{height:100%;border-radius:3px;transition:width 0.4s}
+/* ── modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:100%;max-width:580px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+.modal-head{padding:0.875rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-body{padding:1.1rem;display:flex;flex-direction:column;gap:0.875rem}
+.modal-foot{padding:0.75rem 1.1rem;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end;gap:0.5rem}
+/* ── blockers ── */
+.blocker-card{background:var(--red-bg);border:0.5px solid rgba(240,70,70,0.25);border-radius:var(--r);padding:0.65rem 0.875rem;margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.75rem}
+.blocker-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.blocker-title{font-size:12px;font-weight:600;color:var(--red);margin-bottom:2px}
+.blocker-desc{font-size:11px;color:var(--text2)}
+/* ── activity log ── */
+.activity-item{display:flex;gap:0.75rem;padding:0.5rem 0;border-bottom:0.5px solid var(--border)}
+.activity-item:last-child{border-bottom:none}
+.activity-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.activity-text{font-size:12px;color:var(--text2);line-height:1.5}
+.activity-time{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:0.75rem">
+    <div>
+      <div style="font-size:1.3rem;font-weight:600;margin-bottom:0.25rem" id="page-project-name">Project Plan</div>
+      <div style="font-size:12px;color:var(--text3)" id="page-project-sub">Loading project settings…</div>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="exportPlan()">📊 Export</button>
+      <button class="btn btn-green btn-sm" onclick="openTaskModal()">+ Add task</button>
+      <button class="btn btn-red btn-sm" onclick="openBlockerModal()">+ Add blocker</button>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div class="panel" id="summary-panel">
+    <div class="panel-body">
+      <div class="stat-grid" id="stat-grid">
+        <div class="stat-card">
+          <div class="stat-num" id="st-days" style="color:var(--accent)">—</div>
+          <div class="stat-lbl">Days remaining</div>
+          <div class="prog"><div class="prog-fill" id="st-prog" style="background:var(--accent);width:0%"></div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-tasks-total" style="color:var(--text)">0</div>
+          <div class="stat-lbl">Total tasks</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-tasks-done" style="color:var(--green)">0</div>
+          <div class="stat-lbl">Completed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-tasks-prog" style="color:var(--accent)">0</div>
+          <div class="stat-lbl">In progress</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-tasks-blocked" style="color:var(--red)">0</div>
+          <div class="stat-lbl">Blocked</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-blockers" style="color:var(--red)">0</div>
+          <div class="stat-lbl">Open blockers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="st-completion" style="color:var(--green)">0%</div>
+          <div class="stat-lbl">% complete</div>
+          <div class="prog"><div class="prog-fill" id="st-comp-bar" style="background:var(--green);width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Timeline Gantt -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📅 Timeline</div>
+      <div style="font-size:11px;color:var(--text3)" id="tl-date-range"></div>
+    </div>
+    <div class="panel-body" style="padding:0.75rem 1.1rem">
+      <div class="timeline-wrap">
+        <div class="tl-header" id="tl-header"></div>
+        <div id="tl-body"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:1rem;margin-top:0.75rem;font-size:10px;color:var(--text3)">
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--accent);display:inline-block"></span>In progress</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--green);display:inline-block"></span>Done</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block"></span>Blocked</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--bg4);display:inline-block"></span>To do</span>
+        <span style="display:flex;align-items:center;gap:4px"><span style="width:2px;height:10px;background:var(--red);opacity:0.7;display:inline-block"></span>Today</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Execution stage -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">🚀 Execution stage</div>
+      <div style="display:flex;align-items:center;gap:0.5rem">
+        <span style="font-size:11px;color:var(--text3)">Current phase:</span>
+        <span class="badge b-inprog" id="current-phase-badge">—</span>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div style="display:flex;align-items:center;gap:0;overflow-x:auto;padding-bottom:0.25rem" id="phase-track"></div>
+    </div>
+  </div>
+
+  <!-- Active blockers -->
+  <div class="panel" id="blockers-panel">
+    <div class="panel-head">
+      <div class="panel-title">🔴 Active blockers</div>
+      <span style="font-size:11px;color:var(--text3)" id="blockers-count">None</span>
+    </div>
+    <div class="panel-body" id="blockers-body">
+      <div style="color:var(--text3);font-size:12px;text-align:center;padding:1rem">No active blockers — great!</div>
+    </div>
+  </div>
+
+  <!-- Tasks -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">✅ Tasks</div>
+      <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+        <select id="filter-status" class="form-input" style="width:120px;font-size:11px;padding:3px 6px" onchange="renderTasks()">
+          <option value="">All status</option>
+          <option value="todo">To do</option>
+          <option value="inprog">In progress</option>
+          <option value="blocked">Blocked</option>
+          <option value="review">Review</option>
+          <option value="done">Done</option>
+        </select>
+        <select id="filter-phase" class="form-input" style="width:140px;font-size:11px;padding:3px 6px" onchange="renderTasks()">
+          <option value="">All phases</option>
+          <option value="planning">Planning</option>
+          <option value="analysis">Analysis</option>
+          <option value="mapping">Mapping</option>
+          <option value="development">Development</option>
+          <option value="uat">UAT</option>
+          <option value="go-live">Go-live</option>
+          <option value="post">Post-migration</option>
+        </select>
+        <input id="filter-text" class="form-input" style="width:160px;font-size:11px;padding:3px 6px" placeholder="🔍 Search…" oninput="renderTasks()">
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th style="width:32px"><input type="checkbox" id="chk-all" onchange="toggleAllTasks(this.checked)" style="accent-color:var(--accent)"></th>
+            <th>Task</th>
+            <th style="width:120px">Phase</th>
+            <th style="width:90px">Status</th>
+            <th style="width:80px">Priority</th>
+            <th style="width:110px">Owner</th>
+            <th style="width:90px">Due date</th>
+            <th style="width:90px">Start date</th>
+            <th style="width:65px">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tasks-tbody"></tbody>
+      </table>
+      <div id="tasks-empty" style="display:none;text-align:center;padding:2rem;color:var(--text3);font-size:12px">
+        No tasks yet — click "+ Add task" to get started.
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity log -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">📋 Activity log</div>
+      <button class="btn btn-ghost btn-sm" onclick="clearActivity()">Clear</button>
+    </div>
+    <div class="panel-body" id="activity-body" style="max-height:300px;overflow-y:auto">
+      <div style="color:var(--text3);font-size:12px;text-align:center;padding:1rem">No activity yet.</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Task Modal ── -->
+<div class="modal-overlay" id="task-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div style="font-size:14px;font-weight:600" id="task-modal-title">Add task</div>
+      <button onclick="closeTaskModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="task-edit-id">
+      <div>
+        <label class="form-label">Task name *</label>
+        <input id="t-name" class="form-input" placeholder="e.g. Complete source schema analysis">
+      </div>
+      <div>
+        <label class="form-label">Description</label>
+        <textarea id="t-desc" class="form-input" rows="2" placeholder="Optional details…" style="resize:vertical;font-family:var(--serif)"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div>
+          <label class="form-label">Phase</label>
+          <select id="t-phase" class="form-input">
+            <option value="planning">Planning</option>
+            <option value="analysis">Analysis</option>
+            <option value="mapping">Mapping</option>
+            <option value="development">Development</option>
+            <option value="uat">UAT</option>
+            <option value="go-live">Go-live</option>
+            <option value="post">Post-migration</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Status</label>
+          <select id="t-status" class="form-input">
+            <option value="todo">To do</option>
+            <option value="inprog">In progress</option>
+            <option value="blocked">Blocked</option>
+            <option value="review">Review</option>
+            <option value="done">Done</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+        <div>
+          <label class="form-label">Priority</label>
+          <select id="t-priority" class="form-input">
+            <option value="low">Low</option>
+            <option value="med" selected>Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Start date</label>
+          <input id="t-start" type="date" class="form-input">
+        </div>
+        <div>
+          <label class="form-label">Due date</label>
+          <input id="t-due" type="date" class="form-input">
+        </div>
+      </div>
+      <div>
+        <label class="form-label">Owner / Assignee</label>
+        <input id="t-owner" class="form-input" placeholder="e.g. John Smith">
+      </div>
+      <div>
+        <label class="form-label">Notes</label>
+        <textarea id="t-notes" class="form-input" rows="2" placeholder="Any additional context…" style="resize:vertical;font-family:var(--serif)"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeTaskModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTask()">Save task</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Blocker Modal ── -->
+<div class="modal-overlay" id="blocker-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div style="font-size:14px;font-weight:600" id="blocker-modal-title">Add blocker</div>
+      <button onclick="closeBlockerModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="blocker-edit-id">
+      <div>
+        <label class="form-label">Blocker title *</label>
+        <input id="b-title" class="form-input" placeholder="e.g. Source DB access not granted">
+      </div>
+      <div>
+        <label class="form-label">Description</label>
+        <textarea id="b-desc" class="form-input" rows="3" placeholder="What is blocked and why…" style="resize:vertical;font-family:var(--serif)"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div>
+          <label class="form-label">Impact</label>
+          <select id="b-impact" class="form-input">
+            <option value="low">Low</option>
+            <option value="med">Medium</option>
+            <option value="high">High — blocks progress</option>
+            <option value="critical">Critical — stops delivery</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Raised by</label>
+          <input id="b-raised" class="form-input" placeholder="Name">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div>
+          <label class="form-label">Owner (who resolves it)</label>
+          <input id="b-owner" class="form-input" placeholder="Name or team">
+        </div>
+        <div>
+          <label class="form-label">Target resolution date</label>
+          <input id="b-resolve-date" type="date" class="form-input">
+        </div>
+      </div>
+      <div>
+        <label class="form-label">Resolution notes</label>
+        <textarea id="b-resolution" class="form-input" rows="2" placeholder="How it was / will be resolved…" style="resize:vertical;font-family:var(--serif)"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem">
+        <label class="form-label" style="margin:0">Resolved?</label>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px">
+          <input type="checkbox" id="b-resolved" style="accent-color:var(--green)"> Mark as resolved
+        </label>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeBlockerModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveBlocker()">Save blocker</button>
+    </div>
+  </div>
+</div>
+
+<script>
+if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+
+const PLAN_KEY = 'cygenix_project_plan';
+const PS_KEY   = 'cygenix_project_settings';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let tasks    = [];
+let blockers = [];
+let activity = [];
+let projectStart = null;
+let projectEnd   = null;
+let projectName  = '';
+let projectPhase = '';
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function uid(){ return 'id_'+Date.now()+'_'+Math.random().toString(36).slice(2,7); }
+function fmtDate(d){ if(!d) return '—'; return new Date(d+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+
+// ── Persistence ────────────────────────────────────────────────────────────────
+function savePlan(){
+  try{ localStorage.setItem(PLAN_KEY, JSON.stringify({tasks,blockers,activity})); }catch{}
+}
+function loadPlan(){
+  try{
+    const raw = localStorage.getItem(PLAN_KEY);
+    if(raw){ const d=JSON.parse(raw); tasks=d.tasks||[]; blockers=d.blockers||[]; activity=d.activity||[]; }
+  }catch{}
+}
+
+// ── Load project settings ──────────────────────────────────────────────────────
+function loadProjectSettings(){
+  try{
+    const s = JSON.parse(localStorage.getItem(PS_KEY)||'{}');
+    projectName  = s.name  || 'Migration Project';
+    projectStart = s.start || null;
+    projectEnd   = s.end   || null;
+    projectPhase = s.phase || 'planning';
+    $('page-project-name').textContent = projectName + ' — Project Plan';
+    const subParts = [];
+    if(projectStart) subParts.push('Start: '+fmtDate(projectStart));
+    if(projectEnd)   subParts.push('Completion target: '+fmtDate(projectEnd));
+    if(!projectEnd)  subParts.push('Set a completion date in Project Settings to enable timeline view');
+    $('page-project-sub').textContent = subParts.join('  ·  ');
+  }catch{}
+}
+
+// ── Stats ──────────────────────────────────────────────────────────────────────
+function updateStats(){
+  const total  = tasks.length;
+  const done   = tasks.filter(t=>t.status==='done').length;
+  const inprog = tasks.filter(t=>t.status==='inprog').length;
+  const blocked= tasks.filter(t=>t.status==='blocked').length;
+  const openB  = blockers.filter(b=>!b.resolved).length;
+  const pct    = total ? Math.round(done/total*100) : 0;
+
+  $('st-tasks-total').textContent  = total;
+  $('st-tasks-done').textContent   = done;
+  $('st-tasks-prog').textContent   = inprog;
+  $('st-tasks-blocked').textContent= blocked;
+  $('st-blockers').textContent     = openB;
+  $('st-completion').textContent   = pct+'%';
+  $('st-comp-bar').style.width     = pct+'%';
+
+  if(projectEnd){
+    const today = new Date(); today.setHours(0,0,0,0);
+    const end   = new Date(projectEnd+'T00:00:00');
+    const start = projectStart ? new Date(projectStart+'T00:00:00') : today;
+    const daysLeft  = Math.ceil((end-today)/(1000*60*60*24));
+    const totalDays = Math.ceil((end-start)/(1000*60*60*24));
+    const elapsed   = Math.ceil((today-start)/(1000*60*60*24));
+    $('st-days').textContent = daysLeft<0 ? Math.abs(daysLeft)+' overdue' : daysLeft;
+    $('st-days').style.color = daysLeft<0 ? 'var(--red)' : daysLeft<14 ? 'var(--amber)' : 'var(--accent)';
+    const timePct = totalDays>0 ? Math.min(100,Math.max(0,Math.round(elapsed/totalDays*100))) : 0;
+    $('st-prog').style.width = timePct+'%';
+    $('st-prog').style.background = daysLeft<0?'var(--red)':daysLeft<14?'var(--amber)':'var(--accent)';
+  } else {
+    $('st-days').textContent='No end date';
+    $('st-days').style.color='var(--text3)';
+  }
+}
+
+// ── Phase track ────────────────────────────────────────────────────────────────
+const PHASES = [
+  {id:'planning',label:'Planning'},
+  {id:'analysis',label:'Analysis'},
+  {id:'mapping',label:'Mapping'},
+  {id:'development',label:'Development'},
+  {id:'uat',label:'UAT'},
+  {id:'go-live',label:'Go-live'},
+  {id:'post',label:'Post-migration'},
+];
+function renderPhaseTrack(){
+  const cur = projectPhase;
+  const curIdx = PHASES.findIndex(p=>p.id===cur);
+  const badge = $('current-phase-badge');
+  if(badge) badge.textContent = PHASES[curIdx]?.label || cur;
+  const el = $('phase-track'); if(!el) return;
+  el.innerHTML = PHASES.map((p,i)=>{
+    const done    = i<curIdx;
+    const active  = i===curIdx;
+    const future  = i>curIdx;
+    const bg = done?'var(--green)':active?'var(--accent)':'var(--bg4)';
+    const col = done||active?'#fff':'var(--text3)';
+    return `<div style="flex:1;min-width:80px;text-align:center;position:relative">
+      <div style="background:${bg};color:${col};padding:5px 4px;font-size:10px;font-family:var(--serif);font-weight:${active?700:500};border-radius:4px;margin:0 2px;cursor:pointer;transition:all 0.15s" onclick="setPhase('${p.id}')" title="Set as current phase">
+        ${done?'✓ ':active?'▶ ':''}${esc(p.label)}
+      </div>
+      ${i<PHASES.length-1?'<div style="position:absolute;right:-2px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--text3);z-index:1">▶</div>':''}
+    </div>`;
+  }).join('');
+}
+function setPhase(id){
+  projectPhase = id;
+  try{
+    const s=JSON.parse(localStorage.getItem(PS_KEY)||'{}');
+    s.phase=id; localStorage.setItem(PS_KEY,JSON.stringify(s));
+  }catch{}
+  addActivity('Phase updated to: '+PHASES.find(p=>p.id===id)?.label, 'phase');
+  renderPhaseTrack();
+}
+
+// ── Timeline / Gantt ───────────────────────────────────────────────────────────
+function renderTimeline(){
+  const headerEl = $('tl-header'); const bodyEl = $('tl-body'); const rangeEl=$('tl-date-range');
+  if(!headerEl||!bodyEl) return;
+
+  // Date range: project start → end, or today±3 months if not set
+  const today = new Date(); today.setHours(0,0,0,0);
+  let rangeStart = projectStart ? new Date(projectStart+'T00:00:00') : new Date(today.getFullYear(), today.getMonth()-1, 1);
+  let rangeEnd   = projectEnd   ? new Date(projectEnd+'T00:00:00')   : new Date(today.getFullYear(), today.getMonth()+3, 0);
+
+  // Extend to cover task dates too
+  tasks.forEach(t=>{
+    if(t.start){ const d=new Date(t.start+'T00:00:00'); if(d<rangeStart) rangeStart=d; }
+    if(t.due)  { const d=new Date(t.due+'T00:00:00');   if(d>rangeEnd)   rangeEnd=d;   }
+  });
+
+  const totalMs = rangeEnd - rangeStart;
+  if(totalMs<=0){ bodyEl.innerHTML='<div style="color:var(--text3);font-size:11px;padding:0.5rem">Set start and completion dates in Project Settings to enable the timeline.</div>'; return; }
+
+  if(rangeEl) rangeEl.textContent = fmtDate(rangeStart.toISOString().slice(0,10))+' → '+fmtDate(rangeEnd.toISOString().slice(0,10));
+
+  // Build month header
+  const months=[]; let cur=new Date(rangeStart.getFullYear(),rangeStart.getMonth(),1);
+  while(cur<=rangeEnd){
+    months.push(new Date(cur));
+    cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
+  }
+  headerEl.innerHTML='<div class="tl-header-label"></div><div class="tl-header-months">'+
+    months.map(m=>`<div class="tl-month">${m.toLocaleDateString('en-GB',{month:'short',year:'2-digit'})}</div>`).join('')+'</div>';
+
+  // Today marker position
+  const todayPct = Math.max(0,Math.min(100,((today-rangeStart)/totalMs)*100));
+
+  // Task rows
+  const pct=(d)=>Math.max(0,Math.min(100,((new Date(d+'T00:00:00')-rangeStart)/totalMs)*100));
+
+  const barColour={todo:'var(--bg4)',inprog:'var(--accent)',blocked:'var(--red)',review:'var(--amber)',done:'var(--green)'};
+
+  const rows = tasks.filter(t=>t.start||t.due).map(t=>{
+    const s  = t.start ? pct(t.start) : null;
+    const e  = t.due   ? pct(t.due)   : null;
+    const left = s!==null?s:(e!==null?Math.max(0,e-5):0);
+    const width= (s!==null&&e!==null)?Math.max(1,e-s):5;
+    const col=barColour[t.status]||'var(--bg4)';
+    return `<div class="tl-row">
+      <div class="tl-label" title="${esc(t.name)}">${esc(t.name)}</div>
+      <div class="tl-track">
+        <div class="tl-today" style="left:${todayPct}%"></div>
+        <div class="tl-bar" style="left:${left}%;width:${width}%;background:${col};color:${t.status==='todo'?'var(--text3)':'rgba(255,255,255,0.9)'}">
+          ${width>8?esc(t.name.slice(0,20)):''}
+        </div>
+      </div>
+    </div>`;
+  });
+
+  // Add project completion line
+  const endPct = 100;
+  bodyEl.innerHTML = rows.join('')+
+    `<div class="tl-row" style="margin-top:6px">
+      <div class="tl-label" style="color:var(--red);font-weight:600">Completion</div>
+      <div class="tl-track" style="background:transparent">
+        <div class="tl-today" style="left:${todayPct}%;background:var(--red)"></div>
+        <div style="position:absolute;right:0;top:0;height:100%;width:3px;background:var(--red);border-radius:1px"></div>
+        <div style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--red);font-family:var(--mono)">${projectEnd?fmtDate(projectEnd):''}</div>
+      </div>
+    </div>`;
+
+  if(!rows.length){
+    bodyEl.innerHTML='<div style="color:var(--text3);font-size:11px;padding:0.5rem 0">Add tasks with start and due dates to see them on the timeline.</div>';
+  }
+}
+
+// ── Blockers ───────────────────────────────────────────────────────────────────
+function renderBlockers(){
+  const body  = $('blockers-body');
+  const count = $('blockers-count');
+  const open  = blockers.filter(b=>!b.resolved);
+  if(count) count.textContent = open.length ? open.length+' active' : 'None';
+  if(!body) return;
+  if(!blockers.length){ body.innerHTML='<div style="color:var(--text3);font-size:12px;text-align:center;padding:1rem">No blockers recorded.</div>'; return; }
+  body.innerHTML = blockers.map(b=>{
+    const impactCol = b.impact==='critical'?'var(--red)':b.impact==='high'?'var(--red)':b.impact==='med'?'var(--amber)':'var(--text3)';
+    return `<div class="${b.resolved?'':'blocker-card'}" style="${b.resolved?'background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.2);border-radius:var(--r);padding:0.65rem 0.875rem;margin-bottom:0.5rem;display:flex;align-items:flex-start;gap:0.75rem':''}">
+      <div class="blocker-icon">${b.resolved?'✅':'🔴'}</div>
+      <div style="flex:1">
+        <div class="blocker-title" style="color:${b.resolved?'var(--green)':'var(--red)'}">${esc(b.title)}</div>
+        ${b.desc?`<div class="blocker-desc">${esc(b.desc)}</div>`:''}
+        <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:4px;font-size:10px;color:var(--text3)">
+          ${b.impact?`<span>Impact: <span style="color:${impactCol}">${esc(b.impact)}</span></span>`:''}
+          ${b.owner?`<span>Owner: ${esc(b.owner)}</span>`:''}
+          ${b.resolveDate?`<span>Target: ${fmtDate(b.resolveDate)}</span>`:''}
+          ${b.resolved&&b.resolution?`<span style="color:var(--green)">Resolution: ${esc(b.resolution)}</span>`:''}
+        </div>
+      </div>
+      <div style="display:flex;gap:0.4rem;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="editBlocker('${b.id}')">✏</button>
+        ${!b.resolved?`<button class="btn btn-green btn-sm" onclick="resolveBlocker('${b.id}')">✓ Resolve</button>`:''}
+        <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteBlocker('${b.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Tasks table ────────────────────────────────────────────────────────────────
+const STATUS_LABELS={todo:'To do',inprog:'In progress',blocked:'Blocked',review:'Review',done:'Done'};
+const PRIORITY_LABELS={low:'Low',med:'Medium',high:'High'};
+const PHASE_LABELS={planning:'Planning',analysis:'Analysis',mapping:'Mapping',development:'Development',uat:'UAT','go-live':'Go-live',post:'Post-migration'};
+
+function renderTasks(){
+  const tbody = $('tasks-tbody'); const empty=$('tasks-empty'); if(!tbody) return;
+  const fSt=$('filter-status')?.value||'';
+  const fPh=$('filter-phase')?.value||'';
+  const fTx=($('filter-text')?.value||'').toLowerCase();
+
+  const filtered = tasks.filter(t=>{
+    if(fSt&&t.status!==fSt) return false;
+    if(fPh&&t.phase!==fPh)  return false;
+    if(fTx&&!(t.name||'').toLowerCase().includes(fTx)&&!(t.owner||'').toLowerCase().includes(fTx)) return false;
+    return true;
+  });
+
+  const badgeCls={todo:'b-todo',inprog:'b-inprog',blocked:'b-blocked',review:'b-review',done:'b-done'};
+  const priCls={low:'b-low',med:'b-med',high:'b-high'};
+
+  const isOverdue=t=>t.due&&t.status!=='done'&&new Date(t.due+'T00:00:00')<new Date();
+
+  tbody.innerHTML = filtered.map(t=>`
+    <tr id="tr-${t.id}" ${isOverdue(t)?'style="background:rgba(240,70,70,0.03)"':''}>
+      <td><input type="checkbox" ${t.checked?'checked':''} onchange="toggleTask('${t.id}',this.checked)" style="accent-color:var(--accent)"></td>
+      <td>
+        <div style="font-weight:500;color:var(--text)${t.status==='done'?';text-decoration:line-through;opacity:0.6':''}">${esc(t.name)}</div>
+        ${t.desc?`<div style="font-size:10px;color:var(--text3);margin-top:2px">${esc(t.desc.slice(0,80))}${t.desc.length>80?'…':''}</div>`:''}
+        ${isOverdue(t)?'<div style="font-size:10px;color:var(--red);margin-top:2px">⚠ Overdue</div>':''}
+      </td>
+      <td><span style="font-size:11px;color:var(--text3)">${esc(PHASE_LABELS[t.phase]||t.phase||'—')}</span></td>
+      <td><span class="badge ${badgeCls[t.status]||'b-todo'}">${esc(STATUS_LABELS[t.status]||t.status)}</span></td>
+      <td><span class="badge ${priCls[t.priority]||'b-low'}">${esc(PRIORITY_LABELS[t.priority]||t.priority||'—')}</span></td>
+      <td style="font-size:11px;color:var(--text2)">${esc(t.owner||'—')}</td>
+      <td style="font-size:11px;font-family:var(--mono);color:${isOverdue(t)?'var(--red)':'var(--text3)'}">${fmtDate(t.due)}</td>
+      <td style="font-size:11px;font-family:var(--mono);color:var(--text3)">${fmtDate(t.start)}</td>
+      <td>
+        <div style="display:flex;gap:3px">
+          <button class="btn btn-ghost btn-sm" onclick="editTask('${t.id}')" title="Edit">✏</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteTask('${t.id}')" title="Delete">✕</button>
+        </div>
+      </td>
+    </tr>`).join('');
+
+  if(empty) empty.style.display = filtered.length?'none':'block';
+}
+
+function toggleTask(id,checked){
+  const t=tasks.find(x=>x.id===id); if(t) t.checked=checked; savePlan();
+}
+function toggleAllTasks(checked){
+  tasks.forEach(t=>t.checked=checked);
+  document.querySelectorAll('#tasks-tbody input[type="checkbox"]').forEach(c=>c.checked=checked);
+  savePlan();
+}
+
+// ── Activity log ───────────────────────────────────────────────────────────────
+const ACT_COLOURS={task:'var(--accent)',blocker:'var(--red)',phase:'var(--purple)',system:'var(--text3)'};
+function addActivity(msg, type='system'){
+  activity.unshift({msg,type,time:new Date().toISOString()});
+  if(activity.length>100) activity=activity.slice(0,100);
+  savePlan();
+  renderActivity();
+}
+function renderActivity(){
+  const body=$('activity-body'); if(!body) return;
+  if(!activity.length){ body.innerHTML='<div style="color:var(--text3);font-size:12px;text-align:center;padding:1rem">No activity yet.</div>'; return; }
+  body.innerHTML=activity.map(a=>`
+    <div class="activity-item">
+      <div class="activity-dot" style="background:${ACT_COLOURS[a.type]||'var(--text3)'}"></div>
+      <div style="flex:1"><div class="activity-text">${esc(a.msg)}</div></div>
+      <div class="activity-time">${new Date(a.time).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`).join('');
+}
+function clearActivity(){ if(confirm('Clear activity log?')){ activity=[]; savePlan(); renderActivity(); } }
+
+// ── Task modal ─────────────────────────────────────────────────────────────────
+function openTaskModal(id){
+  $('task-modal-title').textContent = id ? 'Edit task' : 'Add task';
+  $('task-edit-id').value = id||'';
+  if(id){
+    const t=tasks.find(x=>x.id===id); if(!t) return;
+    $('t-name').value=t.name||''; $('t-desc').value=t.desc||'';
+    $('t-phase').value=t.phase||'planning'; $('t-status').value=t.status||'todo';
+    $('t-priority').value=t.priority||'med'; $('t-start').value=t.start||'';
+    $('t-due').value=t.due||''; $('t-owner').value=t.owner||''; $('t-notes').value=t.notes||'';
+  } else {
+    ['t-name','t-desc','t-start','t-due','t-owner','t-notes'].forEach(i=>$(i).value='');
+    $('t-phase').value='planning'; $('t-status').value='todo'; $('t-priority').value='med';
+  }
+  $('task-modal').classList.add('open');
+  setTimeout(()=>$('t-name').focus(),100);
+}
+function closeTaskModal(){ $('task-modal').classList.remove('open'); }
+
+function saveTask(){
+  const name=$('t-name').value.trim();
+  if(!name){ $('t-name').focus(); $('t-name').style.borderColor='var(--red)'; return; }
+  $('t-name').style.borderColor='';
+  const editId=$('task-edit-id').value;
+  const t={
+    id:editId||uid(), name,
+    desc:$('t-desc').value.trim(), phase:$('t-phase').value,
+    status:$('t-status').value, priority:$('t-priority').value,
+    start:$('t-start').value||'', due:$('t-due').value||'',
+    owner:$('t-owner').value.trim(), notes:$('t-notes').value.trim(),
+    checked:true, created:editId?undefined:new Date().toISOString()
+  };
+  if(editId){
+    const idx=tasks.findIndex(x=>x.id===editId);
+    if(idx>=0){ t.created=tasks[idx].created; tasks[idx]=t; }
+    addActivity(`Task updated: "${name}"`, 'task');
+  } else {
+    tasks.push(t);
+    addActivity(`Task added: "${name}"`, 'task');
+  }
+  savePlan(); closeTaskModal(); renderAll();
+}
+
+function editTask(id){ openTaskModal(id); }
+function deleteTask(id){
+  const t=tasks.find(x=>x.id===id);
+  if(!confirm(`Delete task "${t?.name}"?`)) return;
+  tasks=tasks.filter(x=>x.id!==id);
+  addActivity(`Task deleted: "${t?.name}"`, 'task');
+  savePlan(); renderAll();
+}
+
+// ── Blocker modal ──────────────────────────────────────────────────────────────
+function openBlockerModal(id){
+  $('blocker-modal-title').textContent = id ? 'Edit blocker' : 'Add blocker';
+  $('blocker-edit-id').value = id||'';
+  if(id){
+    const b=blockers.find(x=>x.id===id); if(!b) return;
+    $('b-title').value=b.title||''; $('b-desc').value=b.desc||'';
+    $('b-impact').value=b.impact||'med'; $('b-raised').value=b.raised||'';
+    $('b-owner').value=b.owner||''; $('b-resolve-date').value=b.resolveDate||'';
+    $('b-resolution').value=b.resolution||''; $('b-resolved').checked=!!b.resolved;
+  } else {
+    ['b-title','b-desc','b-raised','b-owner','b-resolve-date','b-resolution'].forEach(i=>$(i).value='');
+    $('b-impact').value='high'; $('b-resolved').checked=false;
+  }
+  $('blocker-modal').classList.add('open');
+  setTimeout(()=>$('b-title').focus(),100);
+}
+function closeBlockerModal(){ $('blocker-modal').classList.remove('open'); }
+
+function saveBlocker(){
+  const title=$('b-title').value.trim();
+  if(!title){ $('b-title').focus(); $('b-title').style.borderColor='var(--red)'; return; }
+  $('b-title').style.borderColor='';
+  const editId=$('blocker-edit-id').value;
+  const b={
+    id:editId||uid(), title, desc:$('b-desc').value.trim(),
+    impact:$('b-impact').value, raised:$('b-raised').value.trim(),
+    owner:$('b-owner').value.trim(), resolveDate:$('b-resolve-date').value||'',
+    resolution:$('b-resolution').value.trim(), resolved:$('b-resolved').checked,
+    created:editId?undefined:new Date().toISOString()
+  };
+  if(editId){
+    const idx=blockers.findIndex(x=>x.id===editId);
+    if(idx>=0){ b.created=blockers[idx].created; blockers[idx]=b; }
+    addActivity(`Blocker updated: "${title}"`, 'blocker');
+  } else {
+    blockers.push(b);
+    addActivity(`Blocker raised: "${title}"`, 'blocker');
+  }
+  savePlan(); closeBlockerModal(); renderAll();
+}
+function editBlocker(id){ openBlockerModal(id); }
+function resolveBlocker(id){
+  const b=blockers.find(x=>x.id===id); if(!b) return;
+  b.resolved=true;
+  addActivity(`Blocker resolved: "${b.title}"`, 'blocker');
+  savePlan(); renderAll();
+}
+function deleteBlocker(id){
+  const b=blockers.find(x=>x.id===id);
+  if(!confirm(`Delete blocker "${b?.title}"?`)) return;
+  blockers=blockers.filter(x=>x.id!==id);
+  addActivity(`Blocker deleted: "${b?.title}"`, 'blocker');
+  savePlan(); renderAll();
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+function exportPlan(){
+  const rows=[['CYGENIX — PROJECT PLAN'],['Project',projectName],['Exported',new Date().toLocaleString('en-GB')],[]];
+  rows.push(['TASKS']);
+  rows.push(['Name','Phase','Status','Priority','Owner','Start','Due','Notes']);
+  tasks.forEach(t=>rows.push([t.name,PHASE_LABELS[t.phase]||t.phase,STATUS_LABELS[t.status]||t.status,PRIORITY_LABELS[t.priority]||t.priority,t.owner,t.start,t.due,t.notes]));
+  rows.push([],[]);
+  rows.push(['BLOCKERS']);
+  rows.push(['Title','Impact','Owner','Raised by','Target date','Resolved','Resolution']);
+  blockers.forEach(b=>rows.push([b.title,b.impact,b.owner,b.raised,b.resolveDate,b.resolved?'Yes':'No',b.resolution]));
+
+  const csv=rows.map(r=>r.map(c=>'"'+(String(c||'').replace(/"/g,'""'))+'"').join(',')).join('\n');
+  const a=document.createElement('a');
+  a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download='cygenix-project-plan-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+}
+
+// ── Render all ─────────────────────────────────────────────────────────────────
+function renderAll(){
+  updateStats();
+  renderPhaseTrack();
+  renderTimeline();
+  renderBlockers();
+  renderTasks();
+  renderActivity();
+}
+
+// ── Close modals on outside click ──────────────────────────────────────────────
+['task-modal','blocker-modal'].forEach(id=>{
+  $(id)?.addEventListener('click',e=>{ if(e.target===$(id)) { if(id==='task-modal') closeTaskModal(); else closeBlockerModal(); } });
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+loadPlan();
+loadProjectSettings();
+renderAll();
+</script>
+</body>
+</html>
