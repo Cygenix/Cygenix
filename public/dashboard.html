@@ -3,7 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cygenix – SQL Migration Console</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0d0f14">
+<meta name="description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
+<meta property="og:title" content="Cygenix – Migration Dashboard">
+<meta property="og:description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
+<meta property="og:url" content="https://cygenix.netlify.app/dashboard.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cygenix.netlify.app/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – Migration Dashboard">
+<meta name="twitter:description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
+<title>Cygenix – Migration Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -2896,6 +2908,31 @@ renderInventory();
 updateInvCount();
 updateWasisBanner();
 
+// ── First-run onboarding ───────────────────────────────────────────────────────
+(function checkFirstRun(){
+  const dismissed = localStorage.getItem('cygenix_onboarded');
+  const ps = JSON.parse(localStorage.getItem('cygenix_project_settings')||'{}');
+  const hasProject = !!(ps.name || ps['src-system']);
+  if (!dismissed && !hasProject) {
+    setTimeout(function(){
+      const modal = document.getElementById('onboarding-modal');
+      if (modal) modal.style.display = 'flex';
+    }, 800);
+  }
+})();
+
+function dismissOnboarding(){
+  localStorage.setItem('cygenix_onboarded','1');
+  const modal = document.getElementById('onboarding-modal');
+  if (modal) modal.style.display = 'none';
+}
+function onboardGoTo(view){
+  dismissOnboarding();
+  if(view === 'mapper') { window.location.href='/mapper.html'; return; }
+  if(view === 'help') { window.open('/help.html','_blank'); return; }
+  showView(view);
+}
+
 // Handle cyg_goto navigation from nav.js sidebar links on other pages
 (function(){
   const goto = sessionStorage.getItem('cyg_goto');
@@ -2906,11 +2943,68 @@ updateWasisBanner();
 })();
 
 </script>
+<!-- ── First-run onboarding modal ── -->
+<div id="onboarding-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)">
+  <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:16px;width:100%;max-width:540px;box-shadow:0 24px 64px rgba(0,0,0,0.5);overflow:hidden">
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#1a2a4a 0%,#0d1a35 100%);padding:2rem 2rem 1.5rem;text-align:center;position:relative">
+      <div style="font-size:2.5rem;margin-bottom:0.5rem">🚀</div>
+      <div style="font-size:1.2rem;font-weight:700;color:#fff;margin-bottom:0.35rem;letter-spacing:-0.02em">Welcome to Cygenix</div>
+      <div style="font-size:13px;color:rgba(255,255,255,0.6)">AI-powered SQL database migration — let's get you started</div>
+      <button onclick="dismissOnboarding()" style="position:absolute;top:1rem;right:1rem;background:none;border:none;color:rgba(255,255,255,0.4);cursor:pointer;font-size:20px;line-height:1">✕</button>
+    </div>
+    <!-- Steps -->
+    <div style="padding:1.5rem">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:1rem">Recommended first steps</div>
+      <div style="display:flex;flex-direction:column;gap:0.6rem">
+        <div onclick="onboardGoTo('project-settings')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--amber-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚙</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Set up your project</div>
+            <div style="font-size:11px;color:var(--text3)">Enter your project name, completion date, source and target systems</div>
+          </div>
+          <div style="color:var(--text3);font-size:14px">›</div>
+        </div>
+        <div onclick="onboardGoTo('connections')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--green)'" onmouseout="this.style.borderColor='var(--border2)'">
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--green-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🔌</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Connect your databases</div>
+            <div style="font-size:11px;color:var(--text3)">Add your source and target SQL Server connection strings</div>
+          </div>
+          <div style="color:var(--text3);font-size:14px">›</div>
+        </div>
+        <div onclick="onboardGoTo('mapper')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--teal)'" onmouseout="this.style.borderColor='var(--border2)'">
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--teal-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">🤖</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Create your first mapping</div>
+            <div style="font-size:11px;color:var(--text3)">Select tables and let Claude AI map your columns automatically</div>
+          </div>
+          <div style="color:var(--text3);font-size:14px">›</div>
+        </div>
+        <div onclick="onboardGoTo('help')" style="display:flex;align-items:center;gap:0.875rem;padding:0.875rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;cursor:pointer;transition:border-color 0.15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
+          <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-glow);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📖</div>
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px">Read the guide</div>
+            <div style="font-size:11px;color:var(--text3)">Full documentation covering every feature of the platform</div>
+          </div>
+          <div style="color:var(--text3);font-size:14px">›</div>
+        </div>
+      </div>
+      <div style="margin-top:1.25rem;display:flex;align-items:center;justify-content:space-between">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text3);cursor:pointer">
+          <input type="checkbox" onchange="if(this.checked)localStorage.setItem('cygenix_onboarded','1')" style="accent-color:var(--accent)">
+          Don't show this again
+        </label>
+        <button onclick="dismissOnboarding()" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:0.5rem 1.25rem;font-size:13px;font-weight:500;cursor:pointer;font-family:var(--serif)">
+          Go to dashboard →
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
-
-
-
 <script>
 // ── Project Settings ──────────────────────────────────────────────────────────
 const PS_KEY = 'cygenix_project_settings';
