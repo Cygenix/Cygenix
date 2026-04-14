@@ -134,9 +134,9 @@ body.fullscreen .script-panel { display:none }
 .highlight-match{background:rgba(245,158,11,0.35);border-radius:1px}
 .highlight-current{background:rgba(61,126,255,0.45);border-radius:1px}
 
-/* ── LINE NUMBERS ──────────────────────────────────────────────────────────── */
-.editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:column}
+/* ── LINE NUMBERS (hidden — CodeMirror handles its own gutter) ─────────────── */
 .line-numbers{font-family:var(--mono);font-size:13px;line-height:1.7;padding:1rem 0.5rem 1rem 0.75rem;background:var(--bg2);border-right:0.5px solid var(--border);color:var(--text3);text-align:right;min-width:48px;overflow:hidden;user-select:none;flex-shrink:0;white-space:pre;align-self:stretch}
+.editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:column}
 #sql-editor{flex:1;min-width:0}
 
 /* ── WORD WRAP toggle ──────────────────────────────────────────────────────── */
@@ -161,20 +161,6 @@ body.fullscreen .script-panel { display:none }
 .results-toolbar-btn{background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;padding:2px 7px;font-size:10px;font-family:var(--serif);transition:all 0.12s;display:flex;align-items:center;gap:3px}
 .results-toolbar-btn:hover{color:var(--text);border-color:var(--text3)}
 .results-toolbar-btn.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3)}
-
-/* ── CodeMirror integration ────────────────────────────────────────────────── */
-.CodeMirror{
-  flex:1;min-height:0;height:100%;font-family:var(--mono);font-size:13px;
-  line-height:1.7;background:var(--bg)!important;color:var(--text)!important;
-  border:none;
-}
-.CodeMirror-scroll{min-height:0}
-.CodeMirror-gutters{background:var(--bg2)!important;border-right:0.5px solid var(--border)!important;min-width:48px}
-.CodeMirror-linenumber{color:var(--text3)!important;font-size:12px;padding:0 6px 0 8px}
-.CodeMirror-cursor{border-left:2px solid var(--accent)!important}
-.CodeMirror-selected{background:rgba(61,126,255,0.18)!important}
-.CodeMirror-activeline-background{background:rgba(255,255,255,0.025)!important}
-.CodeMirror-matchingbracket{color:var(--amber)!important;font-weight:700;background:rgba(245,158,11,0.15);border-radius:2px}
 /* SQL token colours — VS Code dark+ inspired */
 .cm-keyword   {color:#569cd6!important;font-weight:500}  /* SELECT FROM WHERE JOIN… */
 .cm-builtin   {color:#dcdcaa!important}                   /* functions */
@@ -187,14 +173,34 @@ body.fullscreen .script-panel { display:none }
 .cm-variable  {color:#9cdcfe!important}                   /* @variables */
 .cm-variable-2{color:#4ec9b0!important}                   /* [identifiers] */
 .cm-atom      {color:#569cd6!important}                   /* NULL, TRUE, FALSE */
-/* Hide the old textarea (CodeMirror replaces it) */
-#sql-editor{display:none!important}
-/* Make line-numbers div hidden — CodeMirror handles its own gutter */
+/* ── CodeMirror integration ────────────────────────────────────────────────── */
+.CodeMirror{
+  flex:1;height:100%!important;font-family:var(--mono)!important;font-size:13px!important;
+  line-height:1.7!important;background:var(--bg)!important;color:var(--text)!important;
+  border:none;z-index:1;
+}
+.CodeMirror-scroll{min-height:0!important}
+.CodeMirror-gutters{background:var(--bg2)!important;border-right:0.5px solid var(--border)!important;min-width:44px}
+.CodeMirror-linenumber{color:var(--text3)!important;font-size:12px;padding:0 6px 0 8px}
+.CodeMirror-cursor{border-left:2px solid var(--accent)!important}
+.CodeMirror-selected{background:rgba(61,126,255,0.18)!important}
+.CodeMirror-activeline-background{background:rgba(255,255,255,0.025)!important}
+.CodeMirror-matchingbracket{color:var(--amber)!important;font-weight:700;background:rgba(245,158,11,0.15);border-radius:2px}
+/* SQL token colours */
+.cm-keyword   {color:#569cd6!important;font-weight:500}
+.cm-builtin   {color:#dcdcaa!important}
+.cm-string    {color:#ce9178!important}
+.cm-string-2  {color:#ce9178!important}
+.cm-number    {color:#b5cea8!important}
+.cm-comment   {color:#6a9955!important;font-style:italic}
+.cm-operator  {color:#d4d4d4!important}
+.cm-variable  {color:#9cdcfe!important}
+.cm-variable-2{color:#4ec9b0!important}
+.cm-atom      {color:#569cd6!important}
+/* Hide the old line-numbers div — CM has its own gutter */
 .line-numbers{display:none!important}
-/* CodeMirror wraps inside editor-wrap-inner */
-.editor-wrap-inner{position:relative;flex:1;overflow:hidden;display:flex;flex-direction:row}
-.CodeMirror-wrap .CodeMirror-code{word-break:break-all}
-/* Find bar sits above CM */
+/* editor-wrap-inner: column flex so CM fills remaining space */
+.editor-wrap-inner{position:relative;flex:1;overflow:hidden;display:flex!important;flex-direction:column!important}
 .find-bar{z-index:100}
 </style>
 </head>
@@ -1438,6 +1444,7 @@ function copyResultsForExcel() {
       handle.classList.remove('dragging');
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
+      if (cm) cm.refresh();
     });
     // Touch support
     handle.addEventListener('touchstart', function(e) {
@@ -1496,6 +1503,7 @@ function copyResultsForExcel() {
     handle.classList.remove('dragging');
     document.body.style.userSelect = '';
     document.body.style.cursor = '';
+    if (cm) cm.refresh();
   });
 })();
 
@@ -1568,50 +1576,55 @@ updateStatus();
 // ── CodeMirror initialisation ────────────────────────────────────────────────
 let cm = null;
 
-(function initCodeMirror(){
+window.addEventListener('load', function initCodeMirror(){
   const ta = document.getElementById('sql-editor');
-  if (!ta || typeof CodeMirror === 'undefined') return;
+  if (!ta || typeof CodeMirror === 'undefined') {
+    console.warn('[CM] CodeMirror not available — editor runs as plain textarea');
+    return;
+  }
 
   cm = CodeMirror.fromTextArea(ta, {
-    mode:           'text/x-mssql',
-    theme:          'default',           // we override colours via CSS above
-    lineNumbers:    true,
-    matchBrackets:  true,
+    mode:            'text/x-mssql',
+    theme:           'default',
+    lineNumbers:     true,
+    matchBrackets:   true,
     autoCloseBrackets: true,
     styleActiveLine: true,
-    tabSize:        2,
-    indentWithTabs: false,
-    lineWrapping:   false,
+    tabSize:         2,
+    indentWithTabs:  false,
+    lineWrapping:    false,
     extraKeys: {
-      'Ctrl-Enter':   () => runSQL(),
-      'Cmd-Enter':    () => runSQL(),
-      'Ctrl-/':       () => cm.execCommand('toggleComment'),
-      'Cmd-/':        () => cm.execCommand('toggleComment'),
-      'Tab':          cm => cm.execCommand('indentMore'),
-      'Shift-Tab':    cm => cm.execCommand('indentLess'),
-      'Ctrl-F':       () => openFind(),
-      'Cmd-F':        () => openFind(),
+      'Ctrl-Enter':  function(){ runSQL(); },
+      'Cmd-Enter':   function(){ runSQL(); },
+      'Ctrl-/':      function(editor){ editor.execCommand('toggleComment'); },
+      'Cmd-/':       function(editor){ editor.execCommand('toggleComment'); },
+      'Tab':         function(editor){ editor.execCommand('indentMore'); },
+      'Shift-Tab':   function(editor){ editor.execCommand('indentLess'); },
+      'Ctrl-F':      function(){ openFind(); },
+      'Cmd-F':       function(){ openFind(); },
     }
   });
 
-  // Match CM height to its container
+  // Let CM fill the editor-wrap flex container
   cm.setSize('100%', '100%');
 
+  // Refresh once layout is stable
+  setTimeout(function(){ cm.refresh(); cm.focus(); }, 50);
+
   // Keep status bar in sync
-  cm.on('change', () => { updateStatusCM(); });
-  cm.on('cursorActivity', () => { updateStatusCM(); });
+  cm.on('change', function(){ updateStatusCM(); });
+  cm.on('cursorActivity', function(){ updateStatusCM(); });
 
   // Mark unsaved on change
-  cm.on('change', (_, change) => {
+  cm.on('change', function(_, change){
     if (change.origin !== 'setValue') {
       const savedEl = document.getElementById('status-saved');
-      if (savedEl) { savedEl.textContent='Unsaved'; savedEl.style.color='var(--amber)'; }
+      if (savedEl){ savedEl.textContent='Unsaved'; savedEl.style.color='var(--amber)'; }
     }
   });
 
-  // Initial status update
   updateStatusCM();
-})();
+});
 
 // ── Shim: all code that reads/writes #sql-editor now goes through CM ──────────
 function getEditorValue(){
