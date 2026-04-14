@@ -54,17 +54,48 @@ select.form-input option{background:var(--bg3)}
 .b-low    {background:rgba(255,255,255,0.05);color:var(--text3)}
 .b-med    {background:var(--amber-bg);color:var(--amber)}
 .b-high   {background:var(--red-bg);color:var(--red)}
-/* ── timeline bar ── */
-.timeline-wrap{overflow-x:auto;padding-bottom:0.5rem}
-.tl-row{display:flex;align-items:center;gap:0;margin-bottom:3px;min-width:700px}
-.tl-label{width:160px;flex-shrink:0;font-size:11px;color:var(--text2);padding-right:0.75rem;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tl-track{flex:1;height:22px;background:var(--bg3);border-radius:4px;position:relative;overflow:hidden}
-.tl-bar{position:absolute;height:100%;border-radius:4px;display:flex;align-items:center;padding-left:6px;font-size:10px;font-family:var(--mono);white-space:nowrap;overflow:hidden}
-.tl-today{position:absolute;top:0;width:2px;background:var(--red);height:100%;opacity:0.7;z-index:10}
-.tl-header{display:flex;margin-bottom:2px;min-width:700px}
-.tl-header-label{width:160px;flex-shrink:0}
-.tl-header-months{flex:1;display:flex}
-.tl-month{flex:1;font-size:10px;color:var(--text3);font-family:var(--mono);text-align:center;border-right:0.5px solid var(--border)}
+/* ── calendar ── */
+.cal-grid-year{display:grid;grid-template-columns:repeat(4,1fr);gap:0.75rem}
+.cal-mini{background:var(--bg3);border-radius:var(--r);padding:0.5rem;border:0.5px solid var(--border)}
+.cal-mini-title{font-size:11px;font-weight:600;text-align:center;margin-bottom:0.4rem;color:var(--text2)}
+.cal-mini-days{display:grid;grid-template-columns:repeat(7,1fr);gap:1px}
+.cal-mini-day{font-size:9px;text-align:center;padding:2px 0;border-radius:2px;cursor:pointer;color:var(--text3);font-family:var(--mono)}
+.cal-mini-day:hover{background:var(--accent-glow);color:var(--accent)}
+.cal-mini-day.today{background:var(--accent);color:#fff;font-weight:700;border-radius:50%}
+.cal-mini-day.has-event{position:relative}
+.cal-mini-day.has-event::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--teal)}
+.cal-mini-day.other-month{opacity:0.25}
+/* month/week/day grid */
+.cal-month-grid{display:grid;grid-template-columns:repeat(7,1fr);border-left:0.5px solid var(--border);border-top:0.5px solid var(--border)}
+.cal-month-cell{border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);min-height:90px;padding:4px;position:relative;cursor:pointer;transition:background 0.1s}
+.cal-month-cell:hover{background:rgba(255,255,255,0.02)}
+.cal-month-cell.today-cell{background:rgba(61,126,255,0.06)}
+.cal-month-cell.other-month-cell{opacity:0.45}
+.cal-day-num{font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:3px}
+.cal-day-num.today-num{background:var(--accent);color:#fff;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
+.cal-event{font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--serif)}
+.cal-event:hover{opacity:0.85}
+/* week view */
+.cal-week-grid{display:grid;grid-template-columns:50px repeat(7,1fr);border-left:0.5px solid var(--border)}
+.cal-week-time{font-size:9px;font-family:var(--mono);color:var(--text3);text-align:right;padding-right:6px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);height:40px;display:flex;align-items:flex-start;padding-top:2px}
+.cal-week-cell{border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);height:40px;position:relative;cursor:pointer}
+.cal-week-cell:hover{background:rgba(255,255,255,0.02)}
+.cal-week-head{font-size:10px;text-align:center;padding:4px 2px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);font-family:var(--mono);color:var(--text2)}
+.cal-week-head.today-head{color:var(--accent);font-weight:700}
+/* day view */
+.cal-day-grid{display:grid;grid-template-columns:50px 1fr;border-left:0.5px solid var(--border)}
+.cal-day-time{font-size:9px;font-family:var(--mono);color:var(--text3);text-align:right;padding-right:6px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);height:48px;display:flex;align-items:flex-start;padding-top:2px}
+.cal-day-slot{border-bottom:0.5px solid var(--border);height:48px;position:relative;cursor:pointer;padding:2px 4px}
+.cal-day-slot:hover{background:rgba(255,255,255,0.02)}
+/* view toggle */
+.view-btn{padding:3px 10px;border-radius:4px;font-size:11px;cursor:pointer;border:0.5px solid var(--border2);background:transparent;color:var(--text3);font-family:var(--serif);transition:all 0.12s}
+.view-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+/* event type colours */
+.ev-task    {background:var(--accent-glow);color:var(--accent);border-left:3px solid var(--accent)}
+.ev-deadline{background:var(--red-bg);color:var(--red);border-left:3px solid var(--red)}
+.ev-milestone{background:var(--amber-bg);color:var(--amber);border-left:3px solid var(--amber)}
+.ev-meeting {background:var(--purple-bg);color:var(--purple);border-left:3px solid var(--purple)}
+.ev-blocker {background:var(--red-bg);color:var(--red);border-left:3px solid var(--red)}
 /* ── table ── */
 .data-table{width:100%;border-collapse:collapse;font-size:12px}
 .data-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.75rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border);white-space:nowrap}
@@ -97,6 +128,28 @@ select.form-input option{background:var(--bg3)}
 .activity-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px}
 .activity-text{font-size:12px;color:var(--text2);line-height:1.5}
 .activity-time{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
+/* ── integrations ── */
+.int-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.875rem;margin-bottom:0.75rem}
+.int-logo{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.int-status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.int-row{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem}
+.int-name{font-size:13px;font-weight:600;color:var(--text)}
+.int-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.sync-item{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:0.5px solid var(--border);font-size:11px}
+.sync-item:last-child{border-bottom:none}
+.sync-arrow{color:var(--text3);font-size:10px;font-family:var(--mono)}
+.sync-badge{font-size:10px;padding:1px 7px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
+.sb-new{background:var(--green-bg);color:var(--green)}
+.sb-update{background:var(--accent-glow);color:var(--accent)}
+.sb-skip{background:rgba(255,255,255,0.05);color:var(--text3)}
+.sb-err{background:var(--red-bg);color:var(--red)}
+/* tabs */
+.int-tabs{display:flex;border-bottom:0.5px solid var(--border);margin-bottom:0.875rem}
+.int-tab{padding:0.4rem 0.875rem;font-size:12px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;transition:all 0.15s}
+.int-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+/* field mapping table */
+.map-row{display:grid;grid-template-columns:1fr auto 1fr;gap:0.5rem;align-items:center;padding:0.35rem 0;border-bottom:0.5px solid var(--border);font-size:11px}
+.map-row:last-child{border-bottom:none}
 </style>
 </head>
 <body>
@@ -110,9 +163,23 @@ select.form-input option{background:var(--bg3)}
     </div>
     <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" onclick="exportPlan()">📊 Export</button>
+      <button class="btn btn-ghost btn-sm" onclick="openIntModal()" style="color:var(--purple);border-color:rgba(167,139,250,0.3)">🔗 Integrations</button>
       <button class="btn btn-green btn-sm" onclick="openTaskModal()">+ Add task</button>
       <button class="btn btn-red btn-sm" onclick="openBlockerModal()">+ Add blocker</button>
     </div>
+  </div>
+
+  <!-- Integration status bar -->
+  <div id="int-status-bar" style="display:none;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.5rem 0.875rem;margin-bottom:0.875rem;display:none;align-items:center;gap:1rem;flex-wrap:wrap">
+    <span style="font-size:11px;color:var(--text3)">Integrations:</span>
+    <span id="ss-bar-badge" style="display:none;font-size:11px;font-family:var(--mono);display:none;align-items:center;gap:4px">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block"></span>Smartsheet connected
+      <button onclick="syncSmartsheet()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px;margin-left:4px">↻ Sync</button>
+    </span>
+    <span id="jira-bar-badge" style="display:none;font-size:11px;font-family:var(--mono);display:none;align-items:center;gap:4px">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block"></span>Jira connected
+      <button onclick="syncJira()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px;margin-left:4px">↻ Sync</button>
+    </span>
   </div>
 
   <!-- Summary stats -->
@@ -153,24 +220,37 @@ select.form-input option{background:var(--bg3)}
     </div>
   </div>
 
-  <!-- Timeline Gantt -->
+  <!-- Calendar -->
   <div class="panel">
     <div class="panel-head">
-      <div class="panel-title">📅 Timeline</div>
-      <div style="font-size:11px;color:var(--text3)" id="tl-date-range"></div>
+      <div class="panel-title">📅 Calendar</div>
+      <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+        <!-- View toggle -->
+        <div style="display:flex;gap:3px">
+          <button class="view-btn active" id="vbtn-year"  onclick="setCalView('year')">Year</button>
+          <button class="view-btn"        id="vbtn-month" onclick="setCalView('month')">Month</button>
+          <button class="view-btn"        id="vbtn-week"  onclick="setCalView('week')">Week</button>
+          <button class="view-btn"        id="vbtn-day"   onclick="setCalView('day')">Day</button>
+        </div>
+        <!-- Nav -->
+        <div style="display:flex;align-items:center;gap:4px">
+          <button class="btn btn-ghost btn-sm" onclick="calNav(-1)">‹</button>
+          <span style="font-size:12px;font-weight:600;min-width:140px;text-align:center" id="cal-title"></span>
+          <button class="btn btn-ghost btn-sm" onclick="calNav(1)">›</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="calToday()">Today</button>
+        <button class="btn btn-green btn-sm" onclick="openCalEventModal()">+ Event</button>
+      </div>
     </div>
-    <div class="panel-body" style="padding:0.75rem 1.1rem">
-      <div class="timeline-wrap">
-        <div class="tl-header" id="tl-header"></div>
-        <div id="tl-body"></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:1rem;margin-top:0.75rem;font-size:10px;color:var(--text3)">
-        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--accent);display:inline-block"></span>In progress</span>
-        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--green);display:inline-block"></span>Done</span>
-        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block"></span>Blocked</span>
-        <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--bg4);display:inline-block"></span>To do</span>
-        <span style="display:flex;align-items:center;gap:4px"><span style="width:2px;height:10px;background:var(--red);opacity:0.7;display:inline-block"></span>Today</span>
-      </div>
+    <!-- Legend -->
+    <div style="display:flex;gap:0.875rem;padding:0.5rem 1.1rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap">
+      <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--accent);display:inline-block"></span>Task</span>
+      <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--red);display:inline-block"></span>Deadline</span>
+      <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--amber);display:inline-block"></span>Milestone</span>
+      <span style="font-size:10px;display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:var(--purple);display:inline-block"></span>Meeting</span>
+    </div>
+    <div class="panel-body" style="padding:0.75rem 1.1rem;overflow-x:auto">
+      <div id="cal-body"></div>
     </div>
   </div>
 
@@ -261,6 +341,78 @@ select.form-input option{background:var(--bg3)}
 
 </div>
 
+<!-- ── Calendar Event Modal ── -->
+<div class="modal-overlay" id="cal-event-modal">
+  <div class="modal-box" style="max-width:520px">
+    <div class="modal-head">
+      <div style="font-size:14px;font-weight:600" id="cal-event-modal-title">New event</div>
+      <button onclick="closeCalEventModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ce-edit-id">
+      <div>
+        <label class="form-label">Title *</label>
+        <input id="ce-title" class="form-input" placeholder="Event title…">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div>
+          <label class="form-label">Type</label>
+          <select id="ce-type" class="form-input">
+            <option value="task">Task</option>
+            <option value="deadline">Deadline</option>
+            <option value="milestone">Milestone</option>
+            <option value="meeting">Meeting</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:flex-end;padding-bottom:2px;gap:0.5rem">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+            <input type="checkbox" id="ce-allday" checked onchange="toggleCalAllDay()" style="accent-color:var(--accent)">
+            All day
+          </label>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div>
+          <label class="form-label">Start date *</label>
+          <input id="ce-date" type="date" class="form-input">
+        </div>
+        <div>
+          <label class="form-label">End date</label>
+          <input id="ce-end-date" type="date" class="form-input">
+        </div>
+      </div>
+      <div id="ce-time-row" style="display:none;grid-template-columns:1fr 1fr;gap:0.75rem">
+        <div>
+          <label class="form-label">Start time</label>
+          <input id="ce-time" type="time" class="form-input">
+        </div>
+        <div>
+          <label class="form-label">End time</label>
+          <input id="ce-end-time" type="time" class="form-input">
+        </div>
+      </div>
+      <div>
+        <label class="form-label">Location</label>
+        <input id="ce-location" class="form-input" placeholder="e.g. Meeting room, Teams call…">
+      </div>
+      <div>
+        <label class="form-label">Attendees</label>
+        <input id="ce-attendees" class="form-input" placeholder="e.g. John Smith, Sarah Jones…">
+      </div>
+      <div>
+        <label class="form-label">Description / notes</label>
+        <textarea id="ce-desc" class="form-input" rows="3" style="resize:vertical;font-family:var(--serif)" placeholder="Agenda, details, links…"></textarea>
+      </div>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between">
+      <button class="btn btn-red btn-sm" id="ce-delete-btn" onclick="deleteCalEvent()" style="display:none">🗑 Delete</button>
+      <div style="display:flex;gap:0.5rem">
+        <button class="btn btn-ghost" onclick="closeCalEventModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveCalEvent()">Save event</button>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- ── Task Modal ── -->
 <div class="modal-overlay" id="task-modal">
   <div class="modal-box">
@@ -396,6 +548,191 @@ select.form-input option{background:var(--bg3)}
   </div>
 </div>
 
+<!-- ── Integration Modal ── -->
+<div class="modal-overlay" id="int-modal">
+  <div class="modal-box" style="max-width:700px">
+    <div class="modal-head">
+      <div style="font-size:14px;font-weight:600">🔗 Integrations</div>
+      <button onclick="closeIntModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div style="padding:1rem 1.25rem">
+      <div class="int-tabs">
+        <div class="int-tab active" id="itab-smartsheet" onclick="setIntTab('smartsheet')">📊 Smartsheet</div>
+        <div class="int-tab" id="itab-jira" onclick="setIntTab('jira')">🔵 Jira</div>
+        <div class="int-tab" id="itab-map" onclick="setIntTab('map')">🗺 Field mapping</div>
+        <div class="int-tab" id="itab-log" onclick="setIntTab('log')">📋 Sync log</div>
+      </div>
+
+      <!-- Smartsheet tab -->
+      <div id="int-pane-smartsheet">
+        <div class="int-card">
+          <div class="int-row">
+            <div class="int-logo" style="background:#0e6b47">📊</div>
+            <div style="flex:1">
+              <div class="int-name">Smartsheet</div>
+              <div class="int-meta" id="ss-status-text">Not connected</div>
+            </div>
+            <div class="int-status-dot" id="ss-dot" style="background:var(--text3)"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <div>
+              <label class="form-label">API token <a href="https://app.smartsheet.com/b/home#personal-settings/api-access" target="_blank" style="font-size:10px;color:var(--accent);font-family:var(--mono);margin-left:4px">Get token →</a></label>
+              <input id="ss-token" class="form-input" type="password" placeholder="Your Smartsheet API token…" autocomplete="off">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+              <div>
+                <label class="form-label">Sheet ID or URL</label>
+                <input id="ss-sheet-id" class="form-input" placeholder="Sheet ID or sheet URL…">
+              </div>
+              <div>
+                <label class="form-label">Sync direction</label>
+                <select id="ss-direction" class="form-input">
+                  <option value="import">Import from Smartsheet → Cygenix tasks</option>
+                  <option value="export">Export Cygenix tasks → Smartsheet</option>
+                  <option value="both">Bidirectional (merge)</option>
+                </select>
+              </div>
+            </div>
+            <div class="tip" style="margin:0">
+              <strong>How it works:</strong> Cygenix reads rows from your Smartsheet sheet and maps them to tasks (and vice versa). Set the field mapping in the Field Mapping tab. Your token is stored only in browser localStorage and never sent to any Cygenix server.
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
+              <button class="btn btn-ghost btn-sm" onclick="testSmartsheet()">🔌 Test connection</button>
+              <button class="btn btn-primary btn-sm" onclick="syncSmartsheet()">↻ Sync now</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearSmartsheet()" style="color:var(--red)">✕ Disconnect</button>
+            </div>
+          </div>
+        </div>
+        <div id="ss-sheets-list" style="display:none">
+          <label class="form-label">Available sheets</label>
+          <select id="ss-sheet-picker" class="form-input" style="margin-bottom:0.5rem" onchange="document.getElementById('ss-sheet-id').value=this.value">
+            <option value="">— select a sheet —</option>
+          </select>
+        </div>
+        <div id="ss-preview" style="display:none;margin-top:0.5rem">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:0.4rem" id="ss-preview-label"></div>
+          <div id="ss-preview-rows" style="max-height:200px;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- Jira tab -->
+      <div id="int-pane-jira" style="display:none">
+        <div class="int-card">
+          <div class="int-row">
+            <div class="int-logo" style="background:#0052cc">🔵</div>
+            <div style="flex:1">
+              <div class="int-name">Atlassian Jira</div>
+              <div class="int-meta" id="jira-status-text">Not connected</div>
+            </div>
+            <div class="int-status-dot" id="jira-dot" style="background:var(--text3)"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+              <div>
+                <label class="form-label">Jira domain <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="font-size:10px;color:var(--accent);font-family:var(--mono);margin-left:4px">Get token →</a></label>
+                <input id="jira-domain" class="form-input" placeholder="yourcompany.atlassian.net">
+              </div>
+              <div>
+                <label class="form-label">Email address</label>
+                <input id="jira-email" class="form-input" placeholder="you@company.com">
+              </div>
+            </div>
+            <div>
+              <label class="form-label">API token</label>
+              <input id="jira-token" class="form-input" type="password" placeholder="Atlassian API token…" autocomplete="off">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+              <div>
+                <label class="form-label">Project key</label>
+                <input id="jira-project" class="form-input" placeholder="e.g. MGRP, CYG, PROJ">
+              </div>
+              <div>
+                <label class="form-label">Sync direction</label>
+                <select id="jira-direction" class="form-input">
+                  <option value="import">Import Jira issues → Cygenix tasks</option>
+                  <option value="export">Export Cygenix tasks → Jira issues</option>
+                  <option value="both">Bidirectional (merge)</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+              <div>
+                <label class="form-label">Issue type to create</label>
+                <select id="jira-issuetype" class="form-input">
+                  <option value="Task">Task</option>
+                  <option value="Story">Story</option>
+                  <option value="Epic">Epic</option>
+                  <option value="Bug">Bug</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Import filter (JQL)</label>
+                <input id="jira-jql" class="form-input" placeholder="project = MGRP ORDER BY created DESC">
+              </div>
+            </div>
+            <div class="tip" style="margin:0">
+              <strong>Privacy:</strong> Credentials are stored only in your browser localStorage. All Jira API calls go directly from your browser to Jira — no Cygenix servers are involved.
+            </div>
+            <div class="warn" style="margin:0;font-size:11px">
+              <strong>CORS note:</strong> Jira Cloud blocks direct browser API calls. If you see CORS errors, use a browser extension like "CORS Unblock" or run Cygenix locally during sync operations.
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
+              <button class="btn btn-ghost btn-sm" onclick="testJira()">🔌 Test connection</button>
+              <button class="btn btn-primary btn-sm" onclick="syncJira()">↻ Sync now</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearJira()" style="color:var(--red)">✕ Disconnect</button>
+            </div>
+          </div>
+        </div>
+        <div id="jira-issues-preview" style="display:none;margin-top:0.5rem">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:0.4rem" id="jira-preview-label"></div>
+          <div id="jira-preview-rows" style="max-height:200px;overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- Field mapping tab -->
+      <div id="int-pane-map" style="display:none">
+        <p style="font-size:12px;color:var(--text3);margin-bottom:0.875rem">Map Cygenix task fields to columns/fields in your external tools. Leave blank to skip a field.</p>
+
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:0.5rem">Smartsheet column names</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:1rem">
+          <div><label class="form-label">Task name column</label><input id="ssmap-name" class="form-input" placeholder="Task Name" value="Task Name"></div>
+          <div><label class="form-label">Status column</label><input id="ssmap-status" class="form-input" placeholder="Status" value="Status"></div>
+          <div><label class="form-label">Owner/Assignee column</label><input id="ssmap-owner" class="form-input" placeholder="Assigned To" value="Assigned To"></div>
+          <div><label class="form-label">Due date column</label><input id="ssmap-due" class="form-input" placeholder="Due Date" value="Due Date"></div>
+          <div><label class="form-label">Start date column</label><input id="ssmap-start" class="form-input" placeholder="Start Date" value="Start Date"></div>
+          <div><label class="form-label">Priority column</label><input id="ssmap-priority" class="form-input" placeholder="Priority" value="Priority"></div>
+          <div><label class="form-label">Phase column</label><input id="ssmap-phase" class="form-input" placeholder="Phase" value="Phase"></div>
+          <div><label class="form-label">Notes column</label><input id="ssmap-notes" class="form-input" placeholder="Notes" value="Notes"></div>
+        </div>
+
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:0.5rem">Jira field mapping</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.875rem">
+          <div><label class="form-label">Summary → task name</label><input id="jmap-summary" class="form-input" value="summary" readonly style="color:var(--text3)"></div>
+          <div><label class="form-label">Status → Cygenix status</label><div style="font-size:11px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">Auto-mapped: To Do→todo, In Progress→inprog, Done→done, Blocked→blocked</div></div>
+          <div><label class="form-label">Assignee → owner</label><input id="jmap-assignee" class="form-input" value="assignee.displayName" readonly style="color:var(--text3)"></div>
+          <div><label class="form-label">Due date field</label><input id="jmap-due" class="form-input" placeholder="duedate" value="duedate"></div>
+          <div><label class="form-label">Priority → priority</label><div style="font-size:11px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">Auto-mapped: Highest/High→high, Medium→med, Low/Lowest→low</div></div>
+          <div><label class="form-label">Labels → phase tag</label><input id="jmap-label" class="form-input" placeholder="cygenix-phase" value="cygenix-phase"></div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="saveFieldMapping()">Save mapping</button>
+      </div>
+
+      <!-- Sync log tab -->
+      <div id="int-pane-log" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+          <div style="font-size:12px;color:var(--text3)" id="sync-log-meta">No sync history</div>
+          <button class="btn btn-ghost btn-sm" onclick="clearSyncLog()">Clear</button>
+        </div>
+        <div id="sync-log-list" style="max-height:350px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="modal-foot" style="justify-content:space-between">
+      <div style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="int-footer-status"></div>
+      <button class="btn btn-ghost" onclick="closeIntModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
 
@@ -418,12 +755,12 @@ function fmtDate(d){ if(!d) return '—'; return new Date(d+'T00:00:00').toLocal
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function savePlan(){
-  try{ localStorage.setItem(PLAN_KEY, JSON.stringify({tasks,blockers,activity})); }catch{}
+  try{ localStorage.setItem(PLAN_KEY, JSON.stringify({tasks,blockers,activity,calEvents})); }catch{}
 }
 function loadPlan(){
   try{
     const raw = localStorage.getItem(PLAN_KEY);
-    if(raw){ const d=JSON.parse(raw); tasks=d.tasks||[]; blockers=d.blockers||[]; activity=d.activity||[]; }
+    if(raw){ const d=JSON.parse(raw); tasks=d.tasks||[]; blockers=d.blockers||[]; activity=d.activity||[]; calEvents=d.calEvents||[]; }
   }catch{}
 }
 
@@ -519,76 +856,289 @@ function setPhase(id){
   renderPhaseTrack();
 }
 
-// ── Timeline / Gantt ───────────────────────────────────────────────────────────
-function renderTimeline(){
-  const headerEl = $('tl-header'); const bodyEl = $('tl-body'); const rangeEl=$('tl-date-range');
-  if(!headerEl||!bodyEl) return;
+// ── Calendar ──────────────────────────────────────────────────────────────────
+let calView   = 'month';
+let calDate   = new Date();
+let calEvents = []; // [{id,title,date,endDate,time,endTime,type,desc,allDay,color}]
 
-  // Date range: project start → end, or today±3 months if not set
-  const today = new Date(); today.setHours(0,0,0,0);
-  let rangeStart = projectStart ? new Date(projectStart+'T00:00:00') : new Date(today.getFullYear(), today.getMonth()-1, 1);
-  let rangeEnd   = projectEnd   ? new Date(projectEnd+'T00:00:00')   : new Date(today.getFullYear(), today.getMonth()+3, 0);
+const EV_TYPES = {
+  task:     {label:'Task',      cls:'ev-task',      dot:'var(--accent)'},
+  deadline: {label:'Deadline',  cls:'ev-deadline',  dot:'var(--red)'},
+  milestone:{label:'Milestone', cls:'ev-milestone', dot:'var(--amber)'},
+  meeting:  {label:'Meeting',   cls:'ev-meeting',   dot:'var(--purple)'},
+};
 
-  // Extend to cover task dates too
+const DAYS_SHORT  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTHS_SHORT= ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function toYMD(d){ return d.toISOString().slice(0,10); }
+function isoToDate(s){ return new Date(s+'T00:00:00'); }
+function sameDay(a,b){ return toYMD(a)===toYMD(b); }
+
+// Build all calendar events from tasks + dedicated calEvents
+function getAllEvents(){
+  const all = [];
+  // Tasks → calendar events (due date = event date)
   tasks.forEach(t=>{
-    if(t.start){ const d=new Date(t.start+'T00:00:00'); if(d<rangeStart) rangeStart=d; }
-    if(t.due)  { const d=new Date(t.due+'T00:00:00');   if(d>rangeEnd)   rangeEnd=d;   }
+    const col = {todo:'var(--text3)',inprog:'var(--accent)',blocked:'var(--red)',review:'var(--amber)',done:'var(--green)'}[t.status]||'var(--accent)';
+    if(t.due) all.push({id:'task-'+t.id, title:t.name, date:t.due, type:'task', cls:'ev-task', desc:t.desc, allDay:true, _taskRef:t.id});
+    if(t.start&&t.start!==t.due) all.push({id:'task-start-'+t.id, title:'▶ '+t.name, date:t.start, type:'task', cls:'ev-task', desc:'Start: '+t.name, allDay:true, _taskRef:t.id});
+  });
+  // Project end = deadline event
+  if(projectEnd) all.push({id:'proj-end', title:'🏁 Completion: '+projectName, date:projectEnd, type:'deadline', cls:'ev-deadline', allDay:true});
+  // Dedicated calendar events
+  calEvents.forEach(e=> all.push({...e, cls: EV_TYPES[e.type]?.cls||'ev-task'}));
+  return all;
+}
+
+function eventsOnDay(date){
+  const ymd=toYMD(date);
+  return getAllEvents().filter(e=>e.date===ymd);
+}
+
+function setCalView(v){
+  calView=v;
+  ['year','month','week','day'].forEach(x=>{
+    const b=$('vbtn-'+x); if(b){ b.classList.toggle('active',x===v); }
+  });
+  renderCalendar();
+}
+
+function calNav(dir){
+  if(calView==='year'){
+    calDate=new Date(calDate.getFullYear()+dir,calDate.getMonth(),1);
+  } else if(calView==='month'){
+    calDate=new Date(calDate.getFullYear(),calDate.getMonth()+dir,1);
+  } else if(calView==='week'){
+    calDate=new Date(calDate.getTime()+dir*7*86400000);
+  } else {
+    calDate=new Date(calDate.getTime()+dir*86400000);
+  }
+  renderCalendar();
+}
+
+function calToday(){ calDate=new Date(); renderCalendar(); }
+
+function renderCalendar(){
+  const body=$('cal-body'); const title=$('cal-title');
+  if(!body) return;
+  if(calView==='year')  renderCalYear(body,title);
+  else if(calView==='month') renderCalMonth(body,title);
+  else if(calView==='week')  renderCalWeek(body,title);
+  else renderCalDay(body,title);
+}
+
+// ── Year view ─────────────────────────────────────────────────────────────────
+function renderCalYear(body,title){
+  const yr=calDate.getFullYear();
+  if(title) title.textContent=yr;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const allEv=getAllEvents();
+  const evDays=new Set(allEv.map(e=>e.date));
+
+  let html='<div class="cal-grid-year">';
+  for(let m=0;m<12;m++){
+    const first=new Date(yr,m,1);
+    const dow=(first.getDay()+6)%7; // Mon=0
+    const daysInMonth=new Date(yr,m+1,0).getDate();
+    html+=`<div class="cal-mini"><div class="cal-mini-title">${MONTHS_SHORT[m]}</div>`;
+    html+='<div class="cal-mini-days">';
+    // DOW headers
+    DAYS_SHORT.forEach(d=>{ html+=`<div class="cal-mini-day" style="color:var(--text3);font-size:8px;cursor:default">${d[0]}</div>`; });
+    // Blanks
+    for(let i=0;i<dow;i++) html+='<div class="cal-mini-day other-month"></div>';
+    for(let d=1;d<=daysInMonth;d++){
+      const date=new Date(yr,m,d);
+      const ymd=toYMD(date);
+      const isToday=sameDay(date,today);
+      const hasEv=evDays.has(ymd);
+      html+=`<div class="cal-mini-day${isToday?' today':''}${hasEv?' has-event':''}" onclick="calDate=new Date(${yr},${m},${d});setCalView('day')" title="${ymd}">${d}</div>`;
+    }
+    html+='</div></div>';
+  }
+  html+='</div>';
+  body.innerHTML=html;
+}
+
+// ── Month view ────────────────────────────────────────────────────────────────
+function renderCalMonth(body,title){
+  const yr=calDate.getFullYear(), mo=calDate.getMonth();
+  if(title) title.textContent=MONTHS_FULL[mo]+' '+yr;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const first=new Date(yr,mo,1);
+  const last=new Date(yr,mo+1,0);
+  const startDow=(first.getDay()+6)%7;
+  const totalCells=Math.ceil((startDow+last.getDate())/7)*7;
+
+  let html='<div class="cal-month-grid">';
+  // Day headers
+  DAYS_SHORT.forEach(d=>{ html+=`<div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-align:center;padding:4px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg3)">${d}</div>`; });
+
+  for(let i=0;i<totalCells;i++){
+    const date=new Date(yr,mo,i-startDow+1);
+    const inMonth=date.getMonth()===mo;
+    const isToday=sameDay(date,today);
+    const evs=eventsOnDay(date);
+    const ymd=toYMD(date);
+    html+=`<div class="cal-month-cell${isToday?' today-cell':''}${!inMonth?' other-month-cell':''}" onclick="calDate=new Date('${ymd}T00:00:00');setCalView('day')">`;
+    html+=`<div class="cal-day-num${isToday?' today-num':''}">${date.getDate()}</div>`;
+    evs.slice(0,3).forEach(e=>{
+      html+=`<div class="cal-event ${e.cls}" onclick="event.stopPropagation();openCalEventModal('${e.id}')" title="${esc(e.title)}">${esc(e.title)}</div>`;
+    });
+    if(evs.length>3) html+=`<div style="font-size:9px;color:var(--text3);padding-left:2px">+${evs.length-3} more</div>`;
+    html+='</div>';
+  }
+  html+='</div>';
+  body.innerHTML=html;
+}
+
+// ── Week view ─────────────────────────────────────────────────────────────────
+function renderCalWeek(body,title){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const dow=(calDate.getDay()+6)%7;
+  const weekStart=new Date(calDate.getTime()-dow*86400000);
+  const weekEnd=new Date(weekStart.getTime()+6*86400000);
+  if(title) title.textContent=fmtDate(toYMD(weekStart))+' – '+fmtDate(toYMD(weekEnd));
+
+  const days=Array.from({length:7},(_,i)=>new Date(weekStart.getTime()+i*86400000));
+
+  let html='<div class="cal-week-grid">';
+  // Corner + day headers
+  html+='<div class="cal-week-head" style="background:var(--bg3)"></div>';
+  days.forEach(d=>{
+    const isT=sameDay(d,today);
+    html+=`<div class="cal-week-head${isT?' today-head':''}" style="background:var(--bg3)">${DAYS_SHORT[(d.getDay()+6)%7]} ${d.getDate()}</div>`;
   });
 
-  const totalMs = rangeEnd - rangeStart;
-  if(totalMs<=0){ bodyEl.innerHTML='<div style="color:var(--text3);font-size:11px;padding:0.5rem">Set start and completion dates in Project Settings to enable the timeline.</div>'; return; }
-
-  if(rangeEl) rangeEl.textContent = fmtDate(rangeStart.toISOString().slice(0,10))+' → '+fmtDate(rangeEnd.toISOString().slice(0,10));
-
-  // Build month header
-  const months=[]; let cur=new Date(rangeStart.getFullYear(),rangeStart.getMonth(),1);
-  while(cur<=rangeEnd){
-    months.push(new Date(cur));
-    cur=new Date(cur.getFullYear(),cur.getMonth()+1,1);
-  }
-  headerEl.innerHTML='<div class="tl-header-label"></div><div class="tl-header-months">'+
-    months.map(m=>`<div class="tl-month">${m.toLocaleDateString('en-GB',{month:'short',year:'2-digit'})}</div>`).join('')+'</div>';
-
-  // Today marker position
-  const todayPct = Math.max(0,Math.min(100,((today-rangeStart)/totalMs)*100));
-
-  // Task rows
-  const pct=(d)=>Math.max(0,Math.min(100,((new Date(d+'T00:00:00')-rangeStart)/totalMs)*100));
-
-  const barColour={todo:'var(--bg4)',inprog:'var(--accent)',blocked:'var(--red)',review:'var(--amber)',done:'var(--green)'};
-
-  const rows = tasks.filter(t=>t.start||t.due).map(t=>{
-    const s  = t.start ? pct(t.start) : null;
-    const e  = t.due   ? pct(t.due)   : null;
-    const left = s!==null?s:(e!==null?Math.max(0,e-5):0);
-    const width= (s!==null&&e!==null)?Math.max(1,e-s):5;
-    const col=barColour[t.status]||'var(--bg4)';
-    return `<div class="tl-row">
-      <div class="tl-label" title="${esc(t.name)}">${esc(t.name)}</div>
-      <div class="tl-track">
-        <div class="tl-today" style="left:${todayPct}%"></div>
-        <div class="tl-bar" style="left:${left}%;width:${width}%;background:${col};color:${t.status==='todo'?'var(--text3)':'rgba(255,255,255,0.9)'}">
-          ${width>8?esc(t.name.slice(0,20)):''}
-        </div>
-      </div>
-    </div>`;
+  // All-day row
+  html+='<div class="cal-week-head" style="font-size:9px;color:var(--text3);background:var(--bg3)">All day</div>';
+  days.forEach(d=>{
+    const evs=eventsOnDay(d).filter(e=>e.allDay);
+    html+='<div style="border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);padding:2px;min-height:28px">';
+    evs.forEach(e=>{ html+=`<div class="cal-event ${e.cls}" onclick="openCalEventModal('${e.id}')" title="${esc(e.title)}">${esc(e.title)}</div>`; });
+    html+='</div>';
   });
 
-  // Add project completion line
-  const endPct = 100;
-  bodyEl.innerHTML = rows.join('')+
-    `<div class="tl-row" style="margin-top:6px">
-      <div class="tl-label" style="color:var(--red);font-weight:600">Completion</div>
-      <div class="tl-track" style="background:transparent">
-        <div class="tl-today" style="left:${todayPct}%;background:var(--red)"></div>
-        <div style="position:absolute;right:0;top:0;height:100%;width:3px;background:var(--red);border-radius:1px"></div>
-        <div style="position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--red);font-family:var(--mono)">${projectEnd?fmtDate(projectEnd):''}</div>
-      </div>
-    </div>`;
-
-  if(!rows.length){
-    bodyEl.innerHTML='<div style="color:var(--text3);font-size:11px;padding:0.5rem 0">Add tasks with start and due dates to see them on the timeline.</div>';
+  // Hourly rows
+  for(let h=0;h<24;h++){
+    const hStr=h.toString().padStart(2,'0')+':00';
+    html+=`<div class="cal-week-time">${hStr}</div>`;
+    days.forEach(d=>{
+      const ymd=toYMD(d);
+      html+=`<div class="cal-week-cell" onclick="openCalEventModal(null,'${ymd}','${hStr}')"></div>`;
+    });
   }
+  html+='</div>';
+  body.innerHTML=html;
+}
+
+// ── Day view ──────────────────────────────────────────────────────────────────
+function renderCalDay(body,title){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const isToday=sameDay(calDate,today);
+  if(title) title.textContent=(isToday?'Today — ':'')+fmtDate(toYMD(calDate));
+  const ymd=toYMD(calDate);
+  const allEvs=eventsOnDay(calDate);
+  const allDay=allEvs.filter(e=>e.allDay);
+  const timed=allEvs.filter(e=>!e.allDay);
+
+  let html='<div class="cal-day-grid">';
+  // All-day
+  if(allDay.length){
+    html+='<div style="font-size:9px;color:var(--text3);text-align:right;padding-right:6px;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);padding-top:4px">All day</div>';
+    html+='<div style="border-bottom:0.5px solid var(--border);padding:4px;min-height:32px">';
+    allDay.forEach(e=>{ html+=`<div class="cal-event ${e.cls}" onclick="openCalEventModal('${e.id}')" style="display:inline-flex;margin:1px 3px 1px 0">${esc(e.title)}</div>`; });
+    html+='</div>';
+  }
+
+  for(let h=0;h<24;h++){
+    const hStr=h.toString().padStart(2,'0')+':00';
+    const slotEvs=timed.filter(e=>e.time&&e.time.slice(0,2)===h.toString().padStart(2,'0'));
+    html+=`<div class="cal-day-time">${hStr}</div>`;
+    html+=`<div class="cal-day-slot" onclick="openCalEventModal(null,'${ymd}','${hStr}')">`;
+    slotEvs.forEach(e=>{ html+=`<div class="cal-event ${e.cls}" onclick="event.stopPropagation();openCalEventModal('${e.id}')">${esc(e.time||'')} ${esc(e.title)}</div>`; });
+    html+='</div>';
+  }
+  html+='</div>';
+  body.innerHTML=html;
+}
+
+// ── Calendar event CRUD ───────────────────────────────────────────────────────
+function openCalEventModal(id, prefillDate, prefillTime){
+  const modal=$('cal-event-modal');
+  $('cal-event-modal-title').textContent = id ? 'Edit event' : 'New event';
+  $('ce-edit-id').value=id||'';
+
+  if(id){
+    // Find in calEvents (not task-derived)
+    const e=calEvents.find(x=>x.id===id);
+    if(!e){
+      // It's a task-derived event — jump to task edit instead
+      const match = getAllEvents().find(x=>x.id===id);
+      if(match?._taskRef){ closeCalEventModal(); openTaskModal(match._taskRef); return; }
+      // Project deadline — read-only, just show
+      alert('This event is automatically generated from your project settings. Edit the dates there.'); return;
+    }
+    $('ce-title').value=e.title||''; $('ce-type').value=e.type||'task';
+    $('ce-date').value=e.date||''; $('ce-end-date').value=e.endDate||'';
+    $('ce-time').value=e.time||''; $('ce-end-time').value=e.endTime||'';
+    $('ce-allday').checked=!!e.allDay; $('ce-desc').value=e.desc||'';
+    $('ce-location').value=e.location||''; $('ce-attendees').value=e.attendees||'';
+    toggleCalAllDay();
+  } else {
+    ['ce-title','ce-end-date','ce-time','ce-end-time','ce-desc','ce-location','ce-attendees'].forEach(i=>$(i).value='');
+    $('ce-type').value='task'; $('ce-allday').checked=true;
+    $('ce-date').value=prefillDate||toYMD(calDate);
+    if(prefillTime){ $('ce-allday').checked=false; $('ce-time').value=prefillTime; }
+    toggleCalAllDay();
+  }
+  const delBtn=$('ce-delete-btn'); if(delBtn) delBtn.style.display=id&&calEvents.find(x=>x.id===id)?'inline-flex':'none';
+  if(modal) modal.classList.add('open');
+  setTimeout(()=>$('ce-title').focus(),100);
+}
+function closeCalEventModal(){ $('cal-event-modal')?.classList.remove('open'); }
+
+function toggleCalAllDay(){
+  const allDay=$('ce-allday')?.checked;
+  const timeRow=$('ce-time-row');
+  if(timeRow) timeRow.style.display=allDay?'none':'grid';
+}
+
+function saveCalEvent(){
+  const title=$('ce-title').value.trim();
+  if(!title){ $('ce-title').style.borderColor='var(--red)'; $('ce-title').focus(); return; }
+  $('ce-title').style.borderColor='';
+  const editId=$('ce-edit-id').value;
+  const e={
+    id:editId||uid(), title, type:$('ce-type').value||'task',
+    date:$('ce-date').value||toYMD(calDate),
+    endDate:$('ce-end-date').value||'',
+    time:$('ce-allday').checked?'':$('ce-time').value||'',
+    endTime:$('ce-allday').checked?'':$('ce-end-time').value||'',
+    allDay:!!$('ce-allday').checked,
+    desc:$('ce-desc').value.trim(),
+    location:$('ce-location').value.trim(),
+    attendees:$('ce-attendees').value.trim(),
+  };
+  if(editId){
+    const idx=calEvents.findIndex(x=>x.id===editId);
+    if(idx>=0) calEvents[idx]=e; else calEvents.push(e);
+    addActivity(`Calendar event updated: "${title}"`, 'task');
+  } else {
+    calEvents.push(e);
+    addActivity(`Calendar event added: "${title}" on ${fmtDate(e.date)}`, 'task');
+  }
+  savePlan(); closeCalEventModal(); renderCalendar();
+}
+
+function deleteCalEvent(){
+  const id=$('ce-edit-id').value; if(!id) return;
+  const e=calEvents.find(x=>x.id===id);
+  if(!e||!confirm(`Delete "${e.title}"?`)) return;
+  calEvents=calEvents.filter(x=>x.id!==id);
+  addActivity(`Calendar event deleted: "${e.title}"`, 'task');
+  savePlan(); closeCalEventModal(); renderCalendar();
 }
 
 // ── Blockers ───────────────────────────────────────────────────────────────────
@@ -829,21 +1379,413 @@ function exportPlan(){
 function renderAll(){
   updateStats();
   renderPhaseTrack();
-  renderTimeline();
+  renderCalendar();
   renderBlockers();
   renderTasks();
   renderActivity();
 }
 
 // ── Close modals on outside click ──────────────────────────────────────────────
-['task-modal','blocker-modal'].forEach(id=>{
-  $(id)?.addEventListener('click',e=>{ if(e.target===$(id)) { if(id==='task-modal') closeTaskModal(); else closeBlockerModal(); } });
+['task-modal','blocker-modal','cal-event-modal'].forEach(id=>{
+  $(id)?.addEventListener('click',e=>{ if(e.target===$(id)) { if(id==='task-modal') closeTaskModal(); else if(id==='blocker-modal') closeBlockerModal(); else closeCalEventModal(); } });
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 loadPlan();
 loadProjectSettings();
+loadIntegrationConfig();
 renderAll();
+
+// ── Integration state ─────────────────────────────────────────────────────────
+const INT_KEY = 'cygenix_integrations';
+let intConfig = {
+  ss:   { token:'', sheetId:'', direction:'import', connected:false },
+  jira: { domain:'', email:'', token:'', project:'', direction:'import', jql:'', issuetype:'Task', connected:false },
+  ssMap:{ name:'Task Name', status:'Status', owner:'Assigned To', due:'Due Date', start:'Start Date', priority:'Priority', phase:'Phase', notes:'Notes' },
+  jiraMap:{ due:'duedate', phaseLabel:'cygenix-phase' },
+  syncLog: []
+};
+let intTab = 'smartsheet';
+
+function saveIntegrationConfig(){
+  try{ localStorage.setItem(INT_KEY, JSON.stringify(intConfig)); }catch{}
+}
+function loadIntegrationConfig(){
+  try{
+    const raw=localStorage.getItem(INT_KEY);
+    if(raw) intConfig={...intConfig,...JSON.parse(raw)};
+  }catch{}
+  // Pre-fill form fields
+  $('ss-token').value=intConfig.ss?.token||'';
+  $('ss-sheet-id').value=intConfig.ss?.sheetId||'';
+  $('ss-direction').value=intConfig.ss?.direction||'import';
+  $('jira-domain').value=intConfig.jira?.domain||'';
+  $('jira-email').value=intConfig.jira?.email||'';
+  $('jira-token').value=intConfig.jira?.token||'';
+  $('jira-project').value=intConfig.jira?.project||'';
+  $('jira-direction').value=intConfig.jira?.direction||'import';
+  $('jira-jql').value=intConfig.jira?.jql||'';
+  $('jira-issuetype').value=intConfig.jira?.issuetype||'Task';
+  const sm=intConfig.ssMap||{};
+  ['name','status','owner','due','start','priority','phase','notes'].forEach(f=>{ const el=$('ssmap-'+f); if(el&&sm[f]) el.value=sm[f]; });
+  updateIntStatusBar();
+}
+
+// ── Modal open/close ──────────────────────────────────────────────────────────
+function openIntModal(){ $('int-modal').classList.add('open'); setIntTab(intTab); }
+function closeIntModal(){ $('int-modal').classList.remove('open'); }
+$('int-modal').addEventListener('click',e=>{ if(e.target===$('int-modal')) closeIntModal(); });
+
+function setIntTab(t){
+  intTab=t;
+  ['smartsheet','jira','map','log'].forEach(x=>{
+    $('itab-'+x).classList.toggle('active',x===t);
+    $('int-pane-'+x).style.display=x===t?'block':'none';
+  });
+  if(t==='log') renderSyncLog();
+}
+
+function updateIntStatusBar(){
+  const bar=$('int-status-bar');
+  const ssBadge=$('ss-bar-badge');
+  const jiraBadge=$('jira-bar-badge');
+  const ssOn=intConfig.ss?.connected;
+  const jiraOn=intConfig.jira?.connected;
+  if(ssOn||jiraOn){
+    bar.style.display='flex';
+    if(ssBadge) ssBadge.style.display=ssOn?'inline-flex':'none';
+    if(jiraBadge) jiraBadge.style.display=jiraOn?'inline-flex':'none';
+  } else {
+    bar.style.display='none';
+  }
+}
+
+// ── Smartsheet ─────────────────────────────────────────────────────────────────
+function readSsForm(){
+  intConfig.ss.token=$('ss-token').value.trim();
+  intConfig.ss.sheetId=$('ss-sheet-id').value.trim();
+  intConfig.ss.direction=$('ss-direction').value;
+}
+
+function setSsStatus(msg, ok){
+  $('ss-status-text').textContent=msg;
+  $('ss-dot').style.background=ok===true?'var(--green)':ok===false?'var(--red)':'var(--text3)';
+}
+
+function setSsConnected(ok){
+  intConfig.ss.connected=ok;
+  saveIntegrationConfig();
+  updateIntStatusBar();
+}
+
+async function testSmartsheet(){
+  readSsForm();
+  if(!intConfig.ss.token){ setSsStatus('Enter an API token first',false); return; }
+  setSsStatus('Testing…',null);
+  try{
+    const r=await ssGet('/users/me');
+    setSsStatus('Connected as '+r.name+' ('+r.email+')',true);
+    setSsConnected(true);
+    // Also list sheets
+    const sheets=await ssGet('/sheets?pageSize=20');
+    const picker=$('ss-sheet-picker');
+    if(picker&&sheets.data){
+      picker.innerHTML='<option value="">— select a sheet —</option>'+sheets.data.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
+      $('ss-sheets-list').style.display='block';
+    }
+    addSyncLog('Smartsheet','test','Connected as '+r.name,true);
+  }catch(e){ setSsStatus('Error: '+e.message,false); setSsConnected(false); addSyncLog('Smartsheet','test',e.message,false); }
+}
+
+async function ssGet(path){
+  const r=await fetch('https://api.smartsheet.com/2.0'+path,{
+    headers:{'Authorization':'Bearer '+intConfig.ss.token,'Content-Type':'application/json'}
+  });
+  if(!r.ok){ const d=await r.json().catch(()=>({message:r.statusText})); throw new Error(d.message||r.statusText); }
+  return r.json();
+}
+async function ssPost(path,body){
+  const r=await fetch('https://api.smartsheet.com/2.0'+path,{
+    method:'POST',headers:{'Authorization':'Bearer '+intConfig.ss.token,'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  if(!r.ok){ const d=await r.json().catch(()=>({message:r.statusText})); throw new Error(d.message||r.statusText); }
+  return r.json();
+}
+async function ssPut(path,body){
+  const r=await fetch('https://api.smartsheet.com/2.0'+path,{
+    method:'PUT',headers:{'Authorization':'Bearer '+intConfig.ss.token,'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  if(!r.ok){ const d=await r.json().catch(()=>({message:r.statusText})); throw new Error(d.message||r.statusText); }
+  return r.json();
+}
+
+async function syncSmartsheet(){
+  readSsForm();
+  if(!intConfig.ss.token){ alert('Enter a Smartsheet API token first.'); openIntModal(); setIntTab('smartsheet'); return; }
+  const sheetId=intConfig.ss.sheetId; if(!sheetId){ alert('Enter a Sheet ID or URL.'); return; }
+  const sid=sheetId.replace(/.*\/(\d+)$/,'$1'); // extract ID from URL
+  setSsStatus('Syncing…',null);
+  setIntFooter('Syncing with Smartsheet…');
+  try{
+    const sheet=await ssGet('/sheets/'+sid+'?include=columns');
+    const cols=sheet.columns||[];
+    const colIdx={}; cols.forEach(c=>{ colIdx[c.title]=c.id; });
+    const map=intConfig.ssMap;
+    const dir=intConfig.ss.direction;
+    let imported=0,exported=0,errors=0;
+
+    if(dir==='import'||dir==='both'){
+      // Import rows → tasks
+      const rows=sheet.rows||[];
+      const preview=[]; 
+      rows.forEach(row=>{
+        const get=title=>{ const cid=colIdx[title]; if(!cid) return ''; const cell=row.cells?.find(c=>c.columnId===cid); return cell?.displayValue||cell?.value||''; };
+        const name=get(map.name); if(!name) return;
+        const exId='ss-'+sheet.id+'-'+row.id;
+        const existing=tasks.find(t=>t._ssRowId===row.id||t._ssExId===exId);
+        const rawStatus=(get(map.status)||'').toLowerCase();
+        const statusMap={'to do':'todo','in progress':'inprog','in-progress':'inprog','done':'done','complete':'done','completed':'done','blocked':'blocked','review':'review','in review':'review'};
+        const status=statusMap[rawStatus]||'todo';
+        const priRaw=(get(map.priority)||'').toLowerCase();
+        const priMap={'high':'high','medium':'med','low':'low','critical':'high'};
+        const priority=priMap[priRaw]||'med';
+        if(existing){
+          existing.name=name; existing.status=status; existing.owner=get(map.owner);
+          existing.due=get(map.due); existing.start=get(map.start);
+          existing.priority=priority; existing.phase=get(map.phase)||existing.phase;
+          existing.notes=get(map.notes)||existing.notes;
+          existing._ssRowId=row.id; existing._ssExId=exId;
+          preview.push({name,action:'update'});
+        } else {
+          tasks.push({id:uid(),name,status,owner:get(map.owner),due:get(map.due)||'',start:get(map.start)||'',priority,phase:get(map.phase)||'planning',notes:get(map.notes)||'',desc:'',checked:true,created:new Date().toISOString(),_ssRowId:row.id,_ssExId:exId});
+          preview.push({name,action:'new'});
+          imported++;
+        }
+      });
+      // Show preview
+      const previewEl=$('ss-preview'); const labelEl=$('ss-preview-label'); const rowsEl=$('ss-preview-rows');
+      if(previewEl){ previewEl.style.display='block'; labelEl.textContent='Imported '+preview.length+' rows from sheet: '+sheet.name; }
+      if(rowsEl) rowsEl.innerHTML=preview.slice(0,20).map(p=>`<div class="sync-item"><span style="font-size:11px;color:var(--text2)">${esc(p.name)}</span><span class="sync-badge ${p.action==='new'?'sb-new':'sb-update'}">${p.action}</span></div>`).join('');
+    }
+
+    if(dir==='export'||dir==='both'){
+      // Export tasks → sheet rows
+      // First get existing rows to avoid duplicates
+      const existingRows=sheet.rows||[];
+      const existingByExId={};
+      existingRows.forEach(row=>{
+        const get=title=>{ const cid=colIdx[title]; if(!cid) return ''; const cell=row.cells?.find(c=>c.columnId===cid); return cell?.displayValue||cell?.value||''; };
+        const name=get(map.name); if(name) existingByExId[name]=row.id;
+      });
+      const statusToSs={todo:'To Do',inprog:'In Progress',blocked:'Blocked',review:'In Review',done:'Done'};
+      const priToSs={high:'High',med:'Medium',low:'Low'};
+      const PHASE_LABELS_LOCAL={planning:'Planning',analysis:'Analysis',mapping:'Mapping',development:'Development',uat:'UAT','go-live':'Go-live',post:'Post-migration'};
+      for(const t of tasks){
+        const cells=[];
+        const addCell=(title,val)=>{ const cid=colIdx[title]; if(cid&&val!==undefined&&val!=='') cells.push({columnId:cid,value:val}); };
+        addCell(map.name,t.name); addCell(map.status,statusToSs[t.status]||t.status);
+        addCell(map.owner,t.owner||''); addCell(map.due,t.due||'');
+        addCell(map.start,t.start||''); addCell(map.priority,priToSs[t.priority]||'');
+        addCell(map.phase,PHASE_LABELS_LOCAL[t.phase]||t.phase||'');
+        addCell(map.notes,t.notes||'');
+        if(!cells.length) continue;
+        try{
+          if(existingByExId[t.name]){
+            await ssPut('/sheets/'+sid+'/rows',{id:existingByExId[t.name],cells});
+          } else {
+            await ssPost('/sheets/'+sid+'/rows',{toBottom:true,cells});
+          }
+          exported++;
+        }catch(e){ errors++; addSyncLog('Smartsheet','export-row',t.name+': '+e.message,false); }
+      }
+    }
+
+    savePlan(); renderAll();
+    const msg=`Sync complete — imported: ${imported}, exported: ${exported}, errors: ${errors}`;
+    setSsStatus(msg,true); setSsConnected(true);
+    addSyncLog('Smartsheet','sync',msg,errors===0);
+    setIntFooter(msg);
+    saveIntegrationConfig();
+  }catch(e){
+    setSsStatus('Sync error: '+e.message,false);
+    addSyncLog('Smartsheet','sync','Error: '+e.message,false);
+    setIntFooter('Sync error: '+e.message);
+  }
+}
+
+function clearSmartsheet(){
+  intConfig.ss={token:'',sheetId:'',direction:'import',connected:false};
+  $('ss-token').value=''; $('ss-sheet-id').value='';
+  setSsStatus('Disconnected',null); setSsConnected(false);
+  saveIntegrationConfig(); updateIntStatusBar();
+}
+
+// ── Jira ──────────────────────────────────────────────────────────────────────
+function readJiraForm(){
+  intConfig.jira.domain=$('jira-domain').value.trim().replace(/^https?:\/\//,'').replace(/\/$/,'');
+  intConfig.jira.email=$('jira-email').value.trim();
+  intConfig.jira.token=$('jira-token').value.trim();
+  intConfig.jira.project=$('jira-project').value.trim().toUpperCase();
+  intConfig.jira.direction=$('jira-direction').value;
+  intConfig.jira.jql=$('jira-jql').value.trim();
+  intConfig.jira.issuetype=$('jira-issuetype').value;
+}
+
+function jiraAuth(){ return 'Basic '+btoa(intConfig.jira.email+':'+intConfig.jira.token); }
+function jiraBase(){ return 'https://'+intConfig.jira.domain+'/rest/api/3'; }
+
+async function jiraGet(path){
+  const r=await fetch(jiraBase()+path,{headers:{'Authorization':jiraAuth(),'Accept':'application/json'}});
+  if(!r.ok){ const d=await r.json().catch(()=>({errorMessages:[r.statusText]})); throw new Error((d.errorMessages||[d.message||r.statusText])[0]); }
+  return r.json();
+}
+async function jiraPost(path,body){
+  const r=await fetch(jiraBase()+path,{method:'POST',headers:{'Authorization':jiraAuth(),'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){ const d=await r.json().catch(()=>({errorMessages:[r.statusText]})); throw new Error((d.errorMessages||[d.message||r.statusText])[0]); }
+  return r.json();
+}
+
+function setJiraStatus(msg,ok){ $('jira-status-text').textContent=msg; $('jira-dot').style.background=ok===true?'var(--accent)':ok===false?'var(--red)':'var(--text3)'; }
+function setJiraConnected(ok){ intConfig.jira.connected=ok; saveIntegrationConfig(); updateIntStatusBar(); }
+
+async function testJira(){
+  readJiraForm();
+  if(!intConfig.jira.domain||!intConfig.jira.email||!intConfig.jira.token){ setJiraStatus('Fill in domain, email and token',false); return; }
+  setJiraStatus('Testing…',null);
+  try{
+    const me=await jiraGet('/myself');
+    setJiraStatus('Connected as '+me.displayName+' ('+me.emailAddress+')',true);
+    setJiraConnected(true);
+    // List projects
+    const projs=await jiraGet('/project?maxResults=20');
+    const picker=$('jira-project'); if(picker&&projs.length){
+      // Just show a quick note with available project keys
+      $('jira-preview-label').textContent='Projects: '+projs.map(p=>p.key).join(', ');
+      $('jira-issues-preview').style.display='block';
+    }
+    addSyncLog('Jira','test','Connected as '+me.displayName,true);
+  }catch(e){ setJiraStatus('Error: '+e.message,false); setJiraConnected(false); addSyncLog('Jira','test',e.message,false); }
+}
+
+async function syncJira(){
+  readJiraForm();
+  if(!intConfig.jira.domain||!intConfig.jira.token){ alert('Configure Jira credentials first.'); openIntModal(); setIntTab('jira'); return; }
+  setJiraStatus('Syncing…',null); setIntFooter('Syncing with Jira…');
+  let imported=0,exported=0,errors=0;
+  const dir=intConfig.jira.direction;
+
+  const jiraStatusMap={'To Do':'todo','In Progress':'inprog','Done':'done','Blocked':'blocked','In Review':'review','Closed':'done','Resolved':'done','Open':'todo','Reopened':'todo'};
+  const jiraPriMap={'Highest':'high','High':'high','Medium':'med','Low':'low','Lowest':'low'};
+  const cyStatusToJira={todo:'To Do',inprog:'In Progress',blocked:'Blocked',review:'In Review',done:'Done'};
+
+  try{
+    if(dir==='import'||dir==='both'){
+      const jql=intConfig.jira.jql||(intConfig.jira.project?'project='+intConfig.jira.project+' ORDER BY created DESC':'ORDER BY created DESC');
+      const res=await jiraGet('/search?jql='+encodeURIComponent(jql)+'&maxResults=100&fields=summary,status,assignee,priority,duedate,labels,description');
+      const issues=res.issues||[];
+      const preview=[];
+      issues.forEach(issue=>{
+        const f=issue.fields;
+        const name=f.summary; if(!name) return;
+        const exId='jira-'+issue.id;
+        const existing=tasks.find(t=>t._jiraId===issue.id||t._jiraExId===exId);
+        const status=jiraStatusMap[f.status?.name]||'todo';
+        const priority=jiraPriMap[f.priority?.name]||'med';
+        const due=intConfig.jiraMap?.due&&f[intConfig.jiraMap.due]?f[intConfig.jiraMap.due]:'';
+        const phaseLabel=intConfig.jiraMap?.phaseLabel;
+        const phase=(f.labels||[]).find(l=>l.startsWith('cygenix-'))?.replace('cygenix-','')||'planning';
+        if(existing){
+          existing.name=name; existing.status=status; existing.priority=priority;
+          existing.owner=f.assignee?.displayName||existing.owner;
+          if(due) existing.due=due; existing._jiraId=issue.id; existing._jiraExId=exId;
+          preview.push({name,key:issue.key,action:'update'});
+        } else {
+          tasks.push({id:uid(),name,status,priority,owner:f.assignee?.displayName||'',due,start:'',phase,desc:f.description?.content?.[0]?.content?.[0]?.text||'',notes:'',checked:true,created:new Date().toISOString(),_jiraId:issue.id,_jiraExId:exId,_jiraKey:issue.key});
+          preview.push({name,key:issue.key,action:'new'}); imported++;
+        }
+      });
+      const prev=$('jira-issues-preview'); const label=$('jira-preview-label'); const rows=$('jira-preview-rows');
+      if(prev){ prev.style.display='block'; label.textContent='Imported '+preview.length+' issues'; }
+      if(rows) rows.innerHTML=preview.slice(0,20).map(p=>`<div class="sync-item"><span style="font-size:10px;color:var(--teal);font-family:var(--mono);margin-right:4px">${esc(p.key)}</span><span style="font-size:11px;color:var(--text2)">${esc(p.name)}</span><span class="sync-badge ${p.action==='new'?'sb-new':'sb-update'}">${p.action}</span></div>`).join('');
+    }
+
+    if(dir==='export'||dir==='both'){
+      for(const t of tasks.filter(x=>!x._jiraKey)){
+        try{
+          const body={fields:{
+            project:{key:intConfig.jira.project},
+            summary:t.name,
+            issuetype:{name:intConfig.jira.issuetype},
+            description:{version:1,type:'doc',content:[{type:'paragraph',content:[{type:'text',text:t.desc||t.notes||t.name}]}]},
+            labels:t.phase?['cygenix-'+t.phase]:[]
+          }};
+          if(t.due) body.fields.duedate=t.due;
+          const res=await jiraPost('/issue',body);
+          t._jiraKey=res.key; t._jiraId=res.id;
+          exported++;
+        }catch(e){ errors++; addSyncLog('Jira','export-issue',t.name+': '+e.message,false); }
+      }
+    }
+
+    savePlan(); renderAll();
+    const msg=`Sync complete — imported: ${imported}, exported: ${exported}, errors: ${errors}`;
+    setJiraStatus(msg,true); setJiraConnected(true);
+    addSyncLog('Jira','sync',msg,errors===0);
+    setIntFooter(msg);
+    saveIntegrationConfig();
+  }catch(e){
+    setJiraStatus('Sync error: '+e.message,false);
+    addSyncLog('Jira','sync','Error: '+e.message,false);
+    setIntFooter('Sync error: '+e.message);
+  }
+}
+
+function clearJira(){
+  intConfig.jira={domain:'',email:'',token:'',project:'',direction:'import',jql:'',issuetype:'Task',connected:false};
+  ['jira-domain','jira-email','jira-token','jira-project','jira-jql'].forEach(id=>$(id).value='');
+  setJiraStatus('Disconnected',null); setJiraConnected(false);
+  saveIntegrationConfig(); updateIntStatusBar();
+}
+
+// ── Field mapping save ────────────────────────────────────────────────────────
+function saveFieldMapping(){
+  ['name','status','owner','due','start','priority','phase','notes'].forEach(f=>{
+    const el=$('ssmap-'+f); if(el) intConfig.ssMap[f]=el.value;
+  });
+  const jd=$('jmap-due'); if(jd) intConfig.jiraMap.due=jd.value;
+  const jl=$('jmap-label'); if(jl) intConfig.jiraMap.phaseLabel=jl.value;
+  saveIntegrationConfig();
+  setIntFooter('Field mapping saved');
+  setTimeout(()=>setIntFooter(''),2000);
+}
+
+// ── Sync log ──────────────────────────────────────────────────────────────────
+function addSyncLog(tool,action,msg,ok){
+  intConfig.syncLog.unshift({tool,action,msg,ok,time:new Date().toISOString()});
+  if(intConfig.syncLog.length>100) intConfig.syncLog=intConfig.syncLog.slice(0,100);
+  saveIntegrationConfig();
+}
+function renderSyncLog(){
+  const el=$('sync-log-list'); const meta=$('sync-log-meta'); if(!el) return;
+  const logs=intConfig.syncLog||[];
+  if(meta) meta.textContent=logs.length?logs.length+' entries':'No sync history';
+  el.innerHTML=logs.map(l=>`
+    <div class="sync-item" style="flex-wrap:wrap;gap:0.4rem">
+      <span class="sync-badge ${l.ok?'sb-new':'sb-err'}">${l.tool}</span>
+      <span style="font-size:10px;font-family:var(--mono);color:var(--text3)">${l.action}</span>
+      <span style="font-size:11px;color:var(--text2);flex:1">${esc(l.msg)}</span>
+      <span class="activity-time">${new Date(l.time).toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+    </div>`).join('');
+}
+function clearSyncLog(){
+  intConfig.syncLog=[];
+  saveIntegrationConfig();
+  renderSyncLog();
+}
+
+function setIntFooter(msg){ const el=$('int-footer-status'); if(el) el.textContent=msg; }
 </script>
 </body>
 </html>
