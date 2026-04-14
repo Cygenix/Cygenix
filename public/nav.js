@@ -244,7 +244,6 @@
 </div>
 
 <div class="cyg-nav-section">
-  <span class="cyg-nav-label">More</span>
 
   <!-- More sub-menu -->
   <div class="cyg-sub-label ${moreOpen}" id="cyg-lbl-more" onclick="cygToggleSub('more')">
