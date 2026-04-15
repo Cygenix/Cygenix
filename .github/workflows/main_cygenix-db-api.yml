@@ -1,18 +1,15 @@
 name: Deploy cygenix-db-api v3
-
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -30,7 +27,7 @@ jobs:
         working-directory: azure-function
         run: zip -r ../function.zip . -x "*.md" -x "local.settings.json" -x ".git/*"
 
-      - name: Verify key files at zip root
+      - name: Verify key files in zip
         run: |
           echo "=== Root level files ==="
           unzip -l function.zip | grep -v "node_modules" | grep -v "/$" | head -20
@@ -38,6 +35,8 @@ jobs:
           unzip -p function.zip host.json
           echo "=== Checking src/index.js first 5 lines ==="
           unzip -p function.zip src/index.js | head -5
+          echo "=== Confirming @azure/cosmos installed ==="
+          unzip -l function.zip | grep "@azure/cosmos" | head -3
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -51,4 +50,5 @@ jobs:
           az functionapp deployment source config-zip \
             --resource-group Cygenix_UK \
             --name cygenix-db-api \
-            --src function.zip
+            --src function.zip \
+            --build-remote false
