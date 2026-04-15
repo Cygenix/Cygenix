@@ -339,17 +339,29 @@ app.http('data', {
 
         // ── PING — test Cosmos connectivity ─────────────────────────────────
         // GET /api/data/ping
-        case 'ping': {
-          const { resource: db } = await _cosmos
-            ?.database(process.env.COSMOS_DATABASE || 'cygenix')
-            .read()
-            ?? getCosmosContainer('users')
-              .database.read();
-          return ok({
-            ok:       true,
-            database: process.env.COSMOS_DATABASE || 'cygenix',
-            endpoint: process.env.COSMOS_ENDPOINT?.replace(/\/+$/, '')
-          });
+   case 'ping': {
+          try {
+            const { CosmosClient } = require('@azure/cosmos');
+            const testClient = new CosmosClient({
+              endpoint: process.env.COSMOS_ENDPOINT,
+              key:      process.env.COSMOS_KEY
+            });
+            const { resource: db } = await testClient
+              .database(process.env.COSMOS_DATABASE || 'cygenix')
+              .read();
+            return ok({
+              ok:       true,
+              database: db.id,
+              endpoint: process.env.COSMOS_ENDPOINT?.replace(/\/+$/, ''),
+              envCheck: {
+                COSMOS_ENDPOINT: process.env.COSMOS_ENDPOINT ? 'SET' : 'MISSING',
+                COSMOS_KEY:      process.env.COSMOS_KEY      ? 'SET' : 'MISSING',
+                COSMOS_DATABASE: process.env.COSMOS_DATABASE || 'cygenix (default)'
+              }
+            });
+          } catch (pingErr) {
+            return err(500, `Cosmos ping failed: ${pingErr.message} | code: ${pingErr.code} | ENDPOINT=${process.env.COSMOS_ENDPOINT ? 'SET' : 'MISSING'} KEY=${process.env.COSMOS_KEY ? 'SET' : 'MISSING'}`);
+          }
         }
 
         default:
