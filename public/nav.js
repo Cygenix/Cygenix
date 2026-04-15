@@ -2,6 +2,13 @@
 // Injects the sidebar nav into every page automatically.
 // Usage: <script src="/nav.js"></script> in <head> — runs after DOM ready.
 
+// Load Cosmos sync if not already loaded
+if (!window.CygenixSync) {
+  const s = document.createElement('script');
+  s.src = '/cygenix-cosmos-sync.js';
+  document.head.appendChild(s);
+}
+
 (function() {
   'use strict';
 
