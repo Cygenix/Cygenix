@@ -1,6 +1,6 @@
 {
   "name": "cygenix-db-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Cygenix Azure Function — SQL Server proxy with Managed Identity",
   "main": "src/index.js",
   "scripts": {
