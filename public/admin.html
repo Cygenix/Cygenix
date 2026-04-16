@@ -465,38 +465,29 @@ async function loadUsers() {
     }
   } catch {}
 
-  // Fallback: load from Netlify Identity API directly
-  const netlifyUsers = await netlifyApi('/admin/users?per_page=100');
+  // Load via Azure Function (has Netlify admin token server-side)
+  tbody.innerHTML = '<tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading users via Azure Function…</div></td></tr>';
 
-  if (netlifyUsers?.error || !netlifyUsers?.users) {
-    // Not an admin — show message
+  const userId = CygenixSync?.getUserId?.() || 'admin';
+  const adminRes = await fetch(`${API}/admin-users?code=${CODE}`, {
+    headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
+  });
+
+  if (!adminRes.ok) {
+    const errText = await adminRes.text();
     tbody.innerHTML = `<tr><td colspan="6">
       <div class="empty">
-        <div class="empty-icon">🔒</div>
-        <div class="empty-text" style="max-width:400px;margin:0 auto">
-          To view all users, your account needs admin access in Netlify Identity.<br><br>
-          Go to <a href="https://app.netlify.com" target="_blank" style="color:var(--accent)">Netlify → Identity</a>
-          to manage users directly, or contact Netlify support to grant admin access.<br><br>
-          <strong style="color:var(--text)">Users registered so far are visible in Netlify → Identity → Users.</strong>
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-text">Failed to load users: ${errText}<br><br>
+          Check that <code>NETLIFY_TOKEN</code> is set in your Azure Function environment variables.
         </div>
       </div>
     </td></tr>`;
     return;
   }
 
-  // Enrich Netlify users with Cosmos DB data where possible
-  _users = netlifyUsers.users.map(u => ({
-    id:         u.id,
-    email:      u.email,
-    name:       u.user_metadata?.full_name || u.email.split('@')[0],
-    plan:       'trial',
-    status:     u.confirmed_at ? 'active' : 'pending',
-    createdAt:  u.created_at,
-    lastSignIn: u.last_sign_in_at,
-    confirmed:  !!u.confirmed_at,
-    provider:   u.app_metadata?.provider || 'email'
-  }));
-
+  const adminData = await adminRes.json();
+  _users = adminData.users || [];
   renderUsers(_users);
   updateStats(_users);
 }
@@ -670,19 +661,20 @@ async function sendBulkInvites() {
 
 async function doInvite(email, name, showMsg = true) {
   try {
-    const result = await netlifyApi('/admin/users', 'POST', {
-      email,
-      data: { full_name: name || email.split('@')[0] },
-      send_email: true
+    // Call Azure Function which handles Netlify admin API server-side
+    const userId = CygenixSync?.getUserId?.() || 'admin';
+    const res = await fetch(`${API}/invite?code=${CODE}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify({ email, name: name || email.split('@')[0] })
     });
 
-    if (result?.error) {
-      if (showMsg) showAlert('error', `Failed to invite ${email}: ${result.error}`);
+    const result = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      if (showMsg) showAlert('error', `Failed to invite ${email}: ${JSON.stringify(result)}`);
       return false;
     }
-
-    // Pre-create user record in Cosmos DB
-    await cosmosApi('user-create', 'POST', { email, name: name || '' }, email);
 
     if (showMsg) showAlert('success', `Invitation sent to ${email}`);
     await loadUsers();
