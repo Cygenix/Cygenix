@@ -522,6 +522,34 @@ function isDML(sql) {
   return /^\s*(INSERT|UPDATE|DELETE|MERGE|EXEC|EXECUTE|CREATE|ALTER|DROP|TRUNCATE|DECLARE|BEGIN|SET\s+\w|USE\s+\[)/i.test(trimmed);
 }
 
+// Track job execution — updates job record with run history for calendar
+function trackJobExecution(jobId, rowsAffected, ms, sql) {
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const idx  = jobs.findIndex(j => j.id === jobId);
+    if (idx < 0) return;
+
+    const run = {
+      ts:           new Date().toISOString(),
+      rowsAffected,
+      ms,
+      sqlPreview:   sql.trim().slice(0, 120),
+      status:       'success'
+    };
+
+    // Update job fields
+    jobs[idx].lastRun      = run.ts;
+    jobs[idx].lastRowCount = rowsAffected;
+    jobs[idx].status       = rowsAffected > 0 ? 'complete' : 'ready';
+    jobs[idx].runHistory   = [run, ...(jobs[idx].runHistory || [])].slice(0, 10); // keep last 10
+
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+    console.log('[SQL Editor] Job execution tracked:', jobId, rowsAffected, 'rows');
+  } catch(e) {
+    console.warn('[SQL Editor] Failed to track job execution:', e.message);
+  }
+}
+
 async function runSQL() {
   const editor = document.getElementById('sql-editor');
   const sel = editor.value.substring(editor.selectionStart, editor.selectionEnd).trim();
@@ -547,6 +575,8 @@ async function runSQL() {
       renderDMLResult(affected, ms, sql);
       setExecStatus(`✓ ${affected.toLocaleString()} row${affected!==1?'s':''} affected · ${ms}ms`, 'var(--green)');
       addHistory({sql, rows:affected, ms, ts:new Date().toISOString(), ok:true});
+      // Track execution on the job record for calendar history
+      if (currentJobId && isDML(sql)) trackJobExecution(currentJobId, affected, ms, sql);
     } else {
       renderResults(rows, ms, sql);
       setExecStatus(`✓ ${rows.length.toLocaleString()} row${rows.length!==1?'s':''} · ${ms}ms`, 'var(--green)');
@@ -1536,5 +1566,6 @@ updateStatus();
   }
 })();
 </script>
+<script src="/cookie-consent.js"></script>
 </body>
 </html>
