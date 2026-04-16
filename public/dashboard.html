@@ -2445,6 +2445,8 @@ document.addEventListener('click', function(e) {
 
 function signOut() {
   ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k => sessionStorage.removeItem(k));
+  // Clear user marker so next login detects a user switch and loads correct data
+  localStorage.removeItem('cygenix_active_user');
   window.location.href = '/login.html';
 }
 
@@ -3078,6 +3080,7 @@ function onboardGoTo(view){
   </div>
 </div>
 
+<script src="/cookie-consent.js"></script>
 </body>
 </html>
 <script>

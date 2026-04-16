@@ -146,12 +146,32 @@ const CygenixSync = (() => {
     }
     _done = true;
     console.log('[CygenixSync] User:', userId);
+
+    // ── Check if localStorage belongs to a DIFFERENT user ──────────────────
+    // If so, clear it so we don't accidentally push someone else's data
+    const storedUserId = localStorage.getItem('cygenix_active_user');
+    if (storedUserId && storedUserId !== userId) {
+      console.log('[CygenixSync] Different user detected — clearing local data for:', userId);
+      SYNC_KEYS.forEach(k => localStorage.removeItem(k));
+      localStorage.removeItem('cygenix_active_project');
+    }
+    // Store current user so we can detect user switches
+    localStorage.setItem('cygenix_active_user', userId);
+
     await ensureUser();
+
     const hasLocal = SYNC_KEYS.some(k => localStorage.getItem(k) !== null);
     if (!hasLocal) {
+      // No local data — load from cloud (may also be empty for new users)
       const loaded = await load();
-      if (loaded) { console.log('[CygenixSync] Reloading with cloud data...'); setTimeout(() => location.reload(), 500); }
+      if (loaded) {
+        console.log('[CygenixSync] Reloading with cloud data...');
+        setTimeout(() => location.reload(), 500);
+      } else {
+        console.log('[CygenixSync] New user — starting fresh');
+      }
     } else {
+      // Local data exists and belongs to this user — push to cloud
       if (_saveTimer) clearTimeout(_saveTimer);
       _saveTimer = setTimeout(save, 3000);
     }
