@@ -413,53 +413,32 @@ app.http('data', {
           return ok({ invited: true, email, netlifyResponse: inviteData });
         }
 
-        // ── LIST all users (Netlify Identity + Cosmos DB merge) ──────────────
+        // ── LIST all users from Cosmos DB ────────────────────────────────────
         // GET /api/data/admin-users
         case 'admin-users': {
-          const netlifyToken = process.env.NETLIFY_TOKEN;
-          const netlifySiteId = process.env.NETLIFY_SITE_ID || 'cygenix.netlify.app';
-          if (!netlifyToken) return err(500, 'NETLIFY_TOKEN not configured');
+          try {
+            const { resources } = await getCosmosContainer('users').items
+              .query('SELECT * FROM c ORDER BY c.createdAt DESC')
+              .fetchAll();
 
-          // Fetch from Netlify Identity
-          const identityUrl = `https://${netlifySiteId}/.netlify/identity`;
-          const netlifyRes = await fetch(`${identityUrl}/admin/users?per_page=100`, {
-            headers: { 'Authorization': `Bearer ${netlifyToken}` }
-          });
-
-          if (!netlifyRes.ok) {
-            const errText = await netlifyRes.text();
-            ctx.log('Netlify users fetch failed:', netlifyRes.status, errText);
-            return err(netlifyRes.status, `Netlify API error: ${errText}`);
-          }
-
-          const netlifyData = await netlifyRes.json();
-          const netlifyUsers = netlifyData.users || [];
-
-          // Enrich with Cosmos DB data
-          const enriched = await Promise.all(netlifyUsers.map(async u => {
-            let cosmosData = {};
-            try {
-              const { resource } = await getCosmosContainer('users').item(u.email, u.email).read();
-              if (resource) cosmosData = resource;
-            } catch {}
-
-            return {
+            const users = (resources || []).map(u => ({
               id:          u.id,
               email:       u.email,
-              name:        u.user_metadata?.full_name || cosmosData.name || u.email.split('@')[0],
-              plan:        cosmosData.plan        || 'trial',
-              status:      cosmosData.status      || (u.confirmed_at ? 'active' : 'pending'),
-              createdAt:   cosmosData.createdAt   || u.created_at,
-              trialEndsAt: cosmosData.trialEndsAt || null,
-              updatedAt:   cosmosData.updatedAt   || null,
-              lastSignIn:  u.last_sign_in_at      || null,
-              provider:    u.app_metadata?.provider || 'email',
-              confirmed:   !!u.confirmed_at,
-              stripeId:    cosmosData.stripeId    || null
-            };
-          }));
+              name:        u.name || u.email?.split('@')[0] || '',
+              plan:        u.plan        || 'trial',
+              status:      u.status      || 'active',
+              createdAt:   u.createdAt   || null,
+              trialEndsAt: u.trialEndsAt || null,
+              updatedAt:   u.updatedAt   || null,
+              stripeId:    u.stripeId    || null,
+              provider:    u.provider    || 'email'
+            }));
 
-          return ok({ users: enriched, total: enriched.length });
+            return ok({ users, total: users.length });
+          } catch(e) {
+            ctx.log('admin-users error:', e.message);
+            return err(500, `Failed to fetch users: ${e.message}`);
+          }
         }
 
         // ── AUDIT log — recent activity from Cosmos DB ──────────────────────
