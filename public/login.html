@@ -252,11 +252,12 @@ async function acceptInvite(token) {
   if (btn) { btn.textContent = 'Accepting…'; btn.disabled = true; }
 
   try {
-    // Accept the invite via GoTrue — this verifies the token and sets password
+    // Accept the invite via GoTrue — correct endpoint for invite tokens
+    // GoTrue uses /verify with type 'signup' for invite token acceptance
     const res = await fetch(GOTRUE + '/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, type: 'invite', password })
+      body: JSON.stringify({ token, type: 'signup', password })
     });
     const data = await res.json().catch(() => ({}));
 
