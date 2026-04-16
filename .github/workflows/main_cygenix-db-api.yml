@@ -31,8 +31,6 @@ jobs:
         run: |
           echo "=== Root level files ==="
           unzip -l function.zip | grep -v "node_modules" | grep -v "/$" | head -20
-          echo "=== Checking host.json ==="
-          unzip -p function.zip host.json
           echo "=== Checking src/index.js first 5 lines ==="
           unzip -p function.zip src/index.js | head -5
           echo "=== Confirming @azure/cosmos installed ==="
@@ -52,3 +50,9 @@ jobs:
             --name cygenix-db-api \
             --src function.zip \
             --build-remote false
+
+      - name: Restart Function App
+        run: |
+          az functionapp restart \
+            --resource-group Cygenix_UK \
+            --name cygenix-db-api
