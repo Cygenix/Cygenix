@@ -339,33 +339,126 @@ app.http('data', {
 
         // ── PING — test Cosmos connectivity ─────────────────────────────────
         // GET /api/data/ping
-   case 'ping': {
-          try {
-            const { CosmosClient } = require('@azure/cosmos');
-            const testClient = new CosmosClient({
-              endpoint: process.env.COSMOS_ENDPOINT,
-              key:      process.env.COSMOS_KEY
-            });
-            const { resource: db } = await testClient
-              .database(process.env.COSMOS_DATABASE || 'cygenix')
-              .read();
-            return ok({
-              ok:       true,
-              database: db.id,
-              endpoint: process.env.COSMOS_ENDPOINT?.replace(/\/+$/, ''),
-              envCheck: {
-                COSMOS_ENDPOINT: process.env.COSMOS_ENDPOINT ? 'SET' : 'MISSING',
-                COSMOS_KEY:      process.env.COSMOS_KEY      ? 'SET' : 'MISSING',
-                COSMOS_DATABASE: process.env.COSMOS_DATABASE || 'cygenix (default)'
-              }
-            });
-          } catch (pingErr) {
-            return err(500, `Cosmos ping failed: ${pingErr.message} | code: ${pingErr.code} | ENDPOINT=${process.env.COSMOS_ENDPOINT ? 'SET' : 'MISSING'} KEY=${process.env.COSMOS_KEY ? 'SET' : 'MISSING'}`);
+        case 'ping': {
+          const { resource: db } = await _cosmos
+            ?.database(process.env.COSMOS_DATABASE || 'cygenix')
+            .read()
+            ?? getCosmosContainer('users')
+              .database.read();
+          return ok({
+            ok:       true,
+            database: process.env.COSMOS_DATABASE || 'cygenix',
+            endpoint: process.env.COSMOS_ENDPOINT?.replace(/\/+$/, '')
+          });
+        }
+
+        // ── INVITE user via Netlify Identity ────────────────────────────────────
+        // POST /api/data/invite
+        // Body: { email, name }
+        case 'invite': {
+          const body = await req.json().catch(() => ({}));
+          const email = body.email;
+          if (!email) return err(400, 'email is required');
+
+          const netlifyToken = process.env.NETLIFY_TOKEN;
+          const netlifySiteId = process.env.NETLIFY_SITE_ID || 'cygenix.netlify.app';
+          if (!netlifyToken) return err(500, 'NETLIFY_TOKEN not configured');
+
+          // Send invite via Netlify Identity admin API
+          const inviteRes = await fetch(
+            `https://api.netlify.com/api/v1/sites/${netlifySiteId}/identity/users/invite`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${netlifyToken}`
+              },
+              body: JSON.stringify({ emails: [email] })
+            }
+          );
+
+          const inviteData = await inviteRes.json().catch(() => ({}));
+          ctx.log('Netlify invite response:', inviteRes.status, JSON.stringify(inviteData));
+
+          if (!inviteRes.ok) {
+            return err(inviteRes.status, `Netlify invite failed: ${JSON.stringify(inviteData)}`);
           }
+
+          // Pre-create user record in Cosmos DB
+          try {
+            const container = getCosmosContainer('users');
+            const existCheck = await container.item(email, email).read().catch(() => ({ resource: null }));
+            if (!existCheck.resource) {
+              await container.items.create({
+                id:          email,
+                userId:      email,
+                email,
+                name:        body.name || email.split('@')[0],
+                plan:        'trial',
+                status:      'invited',
+                createdAt:   new Date().toISOString(),
+                trialEndsAt: new Date(Date.now() + 14 * 86400000).toISOString(),
+                stripeId:    null
+              });
+            }
+          } catch(e) {
+            ctx.log('Cosmos pre-create warning (non-fatal):', e.message);
+          }
+
+          return ok({ invited: true, email, netlifyResponse: inviteData });
+        }
+
+        // ── LIST all users (Netlify Identity + Cosmos DB merge) ──────────────
+        // GET /api/data/admin-users
+        case 'admin-users': {
+          const netlifyToken = process.env.NETLIFY_TOKEN;
+          const netlifySiteId = process.env.NETLIFY_SITE_ID || 'cygenix.netlify.app';
+          if (!netlifyToken) return err(500, 'NETLIFY_TOKEN not configured');
+
+          // Fetch from Netlify Identity
+          const netlifyRes = await fetch(
+            `https://api.netlify.com/api/v1/sites/${netlifySiteId}/identity/users?per_page=100`,
+            { headers: { 'Authorization': `Bearer ${netlifyToken}` } }
+          );
+
+          if (!netlifyRes.ok) {
+            const errText = await netlifyRes.text();
+            ctx.log('Netlify users fetch failed:', netlifyRes.status, errText);
+            return err(netlifyRes.status, `Netlify API error: ${errText}`);
+          }
+
+          const netlifyData = await netlifyRes.json();
+          const netlifyUsers = netlifyData.users || [];
+
+          // Enrich with Cosmos DB data
+          const enriched = await Promise.all(netlifyUsers.map(async u => {
+            let cosmosData = {};
+            try {
+              const { resource } = await getCosmosContainer('users').item(u.email, u.email).read();
+              if (resource) cosmosData = resource;
+            } catch {}
+
+            return {
+              id:          u.id,
+              email:       u.email,
+              name:        u.user_metadata?.full_name || cosmosData.name || u.email.split('@')[0],
+              plan:        cosmosData.plan        || 'trial',
+              status:      cosmosData.status      || (u.confirmed_at ? 'active' : 'pending'),
+              createdAt:   cosmosData.createdAt   || u.created_at,
+              trialEndsAt: cosmosData.trialEndsAt || null,
+              updatedAt:   cosmosData.updatedAt   || null,
+              lastSignIn:  u.last_sign_in_at      || null,
+              provider:    u.app_metadata?.provider || 'email',
+              confirmed:   !!u.confirmed_at,
+              stripeId:    cosmosData.stripeId    || null
+            };
+          }));
+
+          return ok({ users: enriched, total: enriched.length });
         }
 
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users`);
       }
 
     } catch (e) {
