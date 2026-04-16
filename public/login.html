@@ -203,6 +203,14 @@ if (sessionStorage.getItem('cygenix_token') &&
     return;
   }
 
+  // ── Recovery token — user clicked password reset email link ──────────────
+  const recoveryToken = params.get('recovery_token');
+  if (recoveryToken) {
+    window.history.replaceState(null, '', window.location.pathname);
+    showPasswordReset(recoveryToken);
+    return;
+  }
+
   // ── Access token — OAuth redirect (Google, Microsoft) ──────────────────────
   const accessToken = params.get('access_token');
   if (accessToken) {
@@ -236,6 +244,83 @@ function showInviteAccept(token) {
       <a href="/" style="color:var(--text3)">← Back to cygenix.co.uk</a>
     </div>
   `;
+}
+
+// Show password reset form — user sets new password via recovery token
+function showPasswordReset(token) {
+  const card = document.querySelector('.card') || document.body;
+  card.innerHTML = `
+    <div class="logo">Cyge<span>nix</span></div>
+    <div class="tagline">Set your new password</div>
+    <div id="reset-alert" class="alert alert-error" style="display:none"></div>
+    <div class="form-row">
+      <label class="form-label">New password <span style="color:var(--text3);font-size:10px;text-transform:none">(min 8 chars)</span></label>
+      <input id="reset-password" class="form-input" type="password" placeholder="Choose a strong password"
+        autocomplete="new-password" onkeydown="if(event.key==='Enter')doPasswordReset('${token}')"/>
+    </div>
+    <div class="form-row">
+      <label class="form-label">Confirm password</label>
+      <input id="reset-password2" class="form-input" type="password" placeholder="Repeat your password"
+        autocomplete="new-password" onkeydown="if(event.key==='Enter')doPasswordReset('${token}')"/>
+    </div>
+    <button class="btn btn-primary" onclick="doPasswordReset('${token}')">Set new password &amp; sign in</button>
+    <div class="footer-link" style="margin-top:1rem">
+      <a href="/login.html" style="color:var(--text3)">← Back to sign in</a>
+    </div>
+  `;
+}
+
+async function doPasswordReset(token) {
+  const password  = document.getElementById('reset-password')?.value || '';
+  const password2 = document.getElementById('reset-password2')?.value || '';
+  const alertEl   = document.getElementById('reset-alert');
+
+  if (!password || password.length < 8) {
+    if (alertEl) { alertEl.textContent = 'Password must be at least 8 characters.'; alertEl.style.display = 'block'; }
+    return;
+  }
+  if (password !== password2) {
+    if (alertEl) { alertEl.textContent = 'Passwords do not match.'; alertEl.style.display = 'block'; }
+    return;
+  }
+
+  const btn = document.querySelector('.btn-primary');
+  if (btn) { btn.textContent = 'Setting password…'; btn.disabled = true; }
+
+  try {
+    const res = await fetch(GOTRUE + '/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, type: 'recovery', password })
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const msg = data.msg || data.error_description || data.error || 'Failed to reset password.';
+      if (alertEl) { alertEl.textContent = `${msg} (HTTP ${res.status})`; alertEl.style.display = 'block'; }
+      if (btn) { btn.textContent = 'Set new password & sign in'; btn.disabled = false; }
+      return;
+    }
+
+    // Auto-login with returned token
+    if (data.access_token) {
+      saveSession(data);
+      setTimeout(() => { window.location.href = getRedirectUrl(); }, 300);
+    } else {
+      const card = document.querySelector('.card');
+      if (card) card.innerHTML = `
+        <div class="logo">Cyge<span>nix</span></div>
+        <div class="tagline" style="color:var(--green)">✓ Password updated!</div>
+        <div style="font-size:13px;color:var(--text2);text-align:center;margin:1rem 0 1.5rem;line-height:1.6">
+          Your password has been set. Please sign in.
+        </div>
+        <button class="btn btn-primary" onclick="window.location.href='/login.html'" style="width:100%">Sign in now →</button>
+      `;
+    }
+  } catch(e) {
+    if (alertEl) { alertEl.textContent = 'Error: ' + e.message; alertEl.style.display = 'block'; }
+    if (btn) { btn.textContent = 'Set new password & sign in'; btn.disabled = false; }
+  }
 }
 
 async function acceptInvite(token) {
