@@ -347,7 +347,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <span class="chevron">▶</span>
       </div>
       <div class="nav-sub" id="mapping-sub" style="max-height:300px">
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/mapper.html'" style="color:var(--teal)">
+        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/object_mapping.html'" style="color:var(--teal)">
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><path d="M2 4h5M2 8h5M2 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M9 4h5M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M7 4l2 4-2 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Mapper
         </div>
@@ -2260,8 +2260,8 @@ function editJob(jobId) {
       window.location.href = '/sql-editor.html?edit=' + encodeURIComponent(jobId);
       break;
     default:
-      // All mapping jobs (single-map, one-to-many, migration) → mapper.html
-      window.location.href = '/mapper.html?edit=' + encodeURIComponent(jobId);
+      // All mapping jobs (single-map, one-to-many, migration) → object_mapping.html
+      window.location.href = '/object_mapping.html?edit=' + encodeURIComponent(jobId);
   }
 }
 
@@ -3005,7 +3005,7 @@ function dismissOnboarding(){
 }
 function onboardGoTo(view){
   dismissOnboarding();
-  if(view === 'mapper') { window.location.href='/mapper.html'; return; }
+  if(view === 'mapper') { window.location.href='/object_mapping.html'; return; }
   if(view === 'help') { window.open('/help.html','_blank'); return; }
   showView(view);
 }

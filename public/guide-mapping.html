@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Cygenix – How to Map a Table</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.08);
+  --amber:#f5a623;--amber-bg:rgba(245,166,35,0.08);
+  --purple:#a855f7;--purple-bg:rgba(168,85,247,0.08);
+  --serif:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh}
+
+/* ── Layout ── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2)}
+.logo{font-size:1.1rem;font-weight:600;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
+.back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px;transition:color 0.15s}
+.back-link:hover{color:var(--text2)}
+
+.page{max-width:760px;margin:0 auto;padding:2.5rem 1.5rem 4rem}
+.page-header{margin-bottom:2.5rem}
+.guide-tag{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-family:var(--mono);color:var(--accent);background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);padding:3px 8px;border-radius:100px;margin-bottom:1rem;text-transform:uppercase;letter-spacing:0.08em}
+.page-title{font-size:2rem;font-weight:600;letter-spacing:-0.03em;margin-bottom:0.5rem}
+.page-sub{font-size:14px;color:var(--text2);line-height:1.6}
+
+/* ── Step track ── */
+.step-track{display:flex;align-items:center;margin-bottom:2rem;overflow-x:auto;padding-bottom:4px}
+.step-dot{display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;flex:1;min-width:56px}
+.step-dot-circle{width:30px;height:30px;border-radius:50%;border:0.5px solid var(--border2);background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--text3);transition:all 0.2s;position:relative;z-index:1;font-family:var(--mono)}
+.step-dot.done .step-dot-circle{background:var(--accent);border-color:var(--accent);color:#fff}
+.step-dot.active .step-dot-circle{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 0 0 4px var(--accent-glow)}
+.step-dot-label{font-size:10px;color:var(--text3);text-align:center;line-height:1.3;max-width:60px}
+.step-dot.active .step-dot-label{color:var(--accent)}
+.step-dot.done .step-dot-label{color:var(--text2)}
+.step-connector{flex:1;height:0.5px;background:var(--border2);margin-top:-20px;min-width:8px}
+.step-connector.done{background:var(--accent)}
+
+/* ── Step card ── */
+.step-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:2rem;margin-bottom:1.25rem;min-height:400px}
+.step-label{font-size:10px;font-family:var(--mono);color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;display:flex;align-items:center;gap:6px;margin-bottom:1rem}
+.step-num{width:20px;height:20px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--accent)}
+.step-heading{font-size:1.3rem;font-weight:600;letter-spacing:-0.02em;margin-bottom:0.625rem}
+.step-body{font-size:13px;color:var(--text2);line-height:1.65;margin-bottom:1.5rem}
+
+/* ── UI mocks ── */
+.ui-mock{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);overflow:hidden;margin:1.25rem 0}
+.ui-mock-bar{background:var(--bg4);border-bottom:0.5px solid var(--border);padding:7px 12px;font-size:11px;color:var(--text3);font-family:var(--mono);display:flex;align-items:center;gap:6px}
+.ui-mock-dot{width:7px;height:7px;border-radius:50%}
+.ui-mock-content{padding:12px}
+
+.mock-input{background:var(--bg2);border:0.5px solid var(--border2);border-radius:5px;padding:6px 10px;font-size:12px;color:var(--text3);font-family:var(--mono);width:100%;margin-bottom:6px}
+.mock-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:5px;font-size:12px;font-family:var(--mono);color:var(--text2);cursor:pointer;transition:background 0.1s}
+.mock-row:hover{background:var(--bg2)}
+.mock-row.active{background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.2)}
+
+.badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:100px;font-size:9px;font-family:var(--mono);border:0.5px solid;vertical-align:middle;margin-left:4px}
+.badge-pk{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
+.badge-mapped{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
+.badge-ai{background:var(--purple-bg);border-color:rgba(168,85,247,0.3);color:var(--purple)}
+.badge-warn{background:var(--amber-bg);border-color:rgba(245,166,35,0.3);color:var(--amber)}
+
+/* ── Mapping table ── */
+.map-grid{display:grid;grid-template-columns:1fr 30px 1fr;gap:6px;margin:1rem 0}
+.map-header{font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 4px}
+.map-row{display:contents}
+.map-src{background:var(--bg3);border:0.5px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px;font-family:var(--mono);color:var(--text)}
+.map-arr{display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px}
+.map-tgt{background:var(--bg3);border:0.5px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px;font-family:var(--mono);color:var(--text2)}
+.map-tgt.ok{border-color:rgba(34,201,122,0.25);color:var(--green)}
+.map-tgt.none{color:var(--text3);font-style:italic}
+
+/* ── SQL block ── */
+.sql-block{background:#070910;border:0.5px solid var(--border2);border-radius:var(--r);padding:14px 16px;font-size:11px;font-family:var(--mono);line-height:1.8;margin:1rem 0;overflow-x:auto}
+.kw{color:var(--accent)}
+.tbl{color:var(--amber)}
+.col{color:var(--green)}
+.cmt{color:var(--text3)}
+
+/* ── Tip / warn boxes ── */
+.tip{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);padding:0.75rem 1rem;font-size:12px;color:var(--text2);line-height:1.55;display:flex;gap:8px;margin:1rem 0}
+.tip-icon{color:var(--accent);flex-shrink:0;font-size:13px;margin-top:1px}
+.warn{background:var(--amber-bg);border:0.5px solid rgba(245,166,35,0.2);border-radius:var(--r);padding:0.75rem 1rem;font-size:12px;color:var(--text2);line-height:1.55;display:flex;gap:8px;margin:1rem 0}
+.warn-icon{color:var(--amber);flex-shrink:0;font-size:13px;margin-top:1px}
+.success{background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.2);border-radius:var(--r);padding:1rem 1.25rem;margin:1rem 0}
+.success-title{font-size:13px;font-weight:600;color:var(--green);margin-bottom:4px}
+.success-body{font-size:12px;color:var(--text2)}
+
+/* ── Checklist ── */
+.checklist{display:flex;flex-direction:column;gap:0.75rem;margin:1rem 0}
+.check-item{display:flex;gap:10px;padding:10px 12px;border-radius:var(--r);border:0.5px solid var(--border);background:var(--bg3)}
+.check-num{font-size:13px;color:var(--text3);font-family:var(--mono);min-width:18px}
+.check-title{font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px}
+.check-body{font-size:12px;color:var(--text2)}
+code{font-family:var(--mono);font-size:11px;background:var(--bg4);padding:1px 5px;border-radius:4px;border:0.5px solid var(--border2);color:var(--text)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border-radius:6px;font-size:12px;font-family:var(--serif);font-weight:500;border:0.5px solid var(--border2);cursor:pointer;transition:all 0.15s;color:var(--text2);background:transparent}
+.btn:hover{background:var(--bg3);color:var(--text)}
+.btn-primary{background:var(--accent);border-color:var(--accent2);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-ai{background:var(--purple-bg);border-color:rgba(168,85,247,0.3);color:var(--purple)}
+
+/* ── Nav ── */
+.step-nav{display:flex;align-items:center;justify-content:space-between}
+.nav-btn{display:flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--r);font-size:13px;font-family:var(--serif);font-weight:500;border:0.5px solid var(--border2);cursor:pointer;transition:all 0.15s;color:var(--text2);background:transparent}
+.nav-btn:hover{background:var(--bg3);color:var(--text)}
+.nav-btn.next-btn{background:var(--accent);border-color:var(--accent2);color:#fff}
+.nav-btn.next-btn:hover{background:var(--accent2)}
+.nav-btn:disabled{opacity:0.3;cursor:default;pointer-events:none}
+.step-counter{font-size:12px;color:var(--text3);font-family:var(--mono)}
+
+/* ── Mock action bar ── */
+.action-bar{display:flex;gap:6px;margin:0.75rem 0}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:1.25rem">
+    <a href="/object_mapping.html" class="back-link">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Back to Mapper
+    </a>
+    <a href="/" class="logo">Cyge<span>nix</span><span class="logo-console">Guide</span></a>
+  </div>
+  <a href="/help.html" class="back-link">Help & docs →</a>
+</div>
+
+<div class="page">
+
+  <div class="page-header">
+    <div class="guide-tag">📖 Step-by-step guide</div>
+    <div class="page-title">How to map a table</div>
+    <div class="page-sub">Connect your databases, select tables, run AI mapping, review, generate SQL and save as a migration job. 7 steps, ~10 minutes.</div>
+  </div>
+
+  <div class="step-track" id="step-track"></div>
+  <div class="step-card" id="step-card"></div>
+
+  <div class="step-nav">
+    <button class="nav-btn" id="prev-btn" onclick="nav(-1)">← Previous</button>
+    <span class="step-counter" id="counter"></span>
+    <button class="nav-btn next-btn" id="next-btn" onclick="nav(1)">Next →</button>
+  </div>
+
+</div>
+
+<script>
+const STEPS = [
+  {
+    label: 'Connect',
+    heading: 'Connect to your databases',
+    body: 'Before mapping, the Mapper needs to read both schemas. Set up your connections in Dashboard → Configure → Connections first. If already configured, the Mapper connects automatically when it opens.',
+    render() { return `
+      <div class="tip"><div class="tip-icon">ℹ</div><div>Connections are set up once in <strong>Dashboard → Configure → Connections</strong>. After that, the Mapper remembers them automatically every time you open it.</div></div>
+      <div class="ui-mock">
+        <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--amber)"></div>Mapper · Connection bar (not yet connected)</div>
+        <div class="ui-mock-content">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <div style="flex:1;padding:6px 10px;border-radius:5px;border:0.5px solid rgba(245,166,35,0.3);background:rgba(245,166,35,0.06);font-size:12px;font-family:var(--mono);color:var(--amber)">Source: not connected</div>
+            <div class="btn btn-primary" style="font-size:11px;padding:5px 10px">🔌 Connect</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;padding:6px 10px;border-radius:5px;border:0.5px solid rgba(245,166,35,0.3);background:rgba(245,166,35,0.06);font-size:12px;font-family:var(--mono);color:var(--amber)">Target: not connected</div>
+            <div class="btn btn-primary" style="font-size:11px;padding:5px 10px">🔌 Connect</div>
+          </div>
+        </div>
+      </div>
+      <div class="ui-mock">
+        <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--green)"></div>Mapper · Connection bar (connected)</div>
+        <div class="ui-mock-content">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <div style="flex:1;padding:6px 10px;border-radius:5px;border:0.5px solid rgba(34,201,122,0.3);background:rgba(34,201,122,0.06);font-size:12px;font-family:var(--mono);color:var(--green)">✓ Source: PROD-SQL-01 · AdventureWorks</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;padding:6px 10px;border-radius:5px;border:0.5px solid rgba(34,201,122,0.3);background:rgba(34,201,122,0.06);font-size:12px;font-family:var(--mono);color:var(--green)">✓ Target: AZURE-SQL-01 · AdventureWorks_New</div>
+          </div>
+        </div>
+      </div>
+    `; }
+  },
+  {
+    label: 'Source table',
+    heading: 'Select the source table',
+    body: 'In the left panel, type to search for the table you want to migrate from. The search filters all schemas in real time. Click the table name to select it — its columns load below.',
+    render() { return `
+      <div class="ui-mock">
+        <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--green)"></div>Source panel</div>
+        <div class="ui-mock-content">
+          <div class="mock-input">🔍 cli…</div>
+          <div class="mock-row">dbo.ClientHistory</div>
+          <div class="mock-row active">▶ dbo.Clients <span style="font-size:10px;color:var(--accent);font-family:var(--serif);margin-left:4px">Selected</span></div>
+          <div class="mock-row">dbo.ClientContacts</div>
+        </div>
+      </div>
+      <div style="margin-top:1rem;font-size:13px;font-weight:500;color:var(--text);margin-bottom:0.5rem">Columns loaded from dbo.Clients:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:0.75rem">
+        <div style="padding:4px 10px;border-radius:5px;border:0.5px solid var(--border2);font-size:12px;font-family:var(--mono);background:var(--bg3)">ClientID <span class="badge badge-pk">PK</span></div>
+        <div style="padding:4px 10px;border-radius:5px;border:0.5px solid var(--border2);font-size:12px;font-family:var(--mono);background:var(--bg3)">FullName</div>
+        <div style="padding:4px 10px;border-radius:5px;border:0.5px solid var(--border2);font-size:12px;font-family:var(--mono);background:var(--bg3)">EmailAddr</div>
+        <div style="padding:4px 10px;border-radius:5px;border:0.5px solid var(--border2);font-size:12px;font-family:var(--mono);background:var(--bg3)">Tel_No</div>
+        <div style="padding:4px 10px;border-radius:5px;border:0.5px solid var(--border2);font-size:12px;font-family:var(--mono);background:var(--bg3)">LegacyCode</div>
+      </div>
+      <div class="tip"><div class="tip-icon">ℹ</div><div>The column type (VARCHAR, INT, DATETIME etc.) is shown when you hover over each chip. This helps spot potential data type mismatches before mapping.</div></div>
+    `; }
+  },
+  {
+    label: 'Target table',
+    heading: 'Select the target table',
+    body: 'In the right panel, search for the table you\'re migrating into. You can map one source table to multiple targets if needed — click + Add target table below the panel.',
+    render() { return `
+      <div class="ui-mock">
+        <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--green)"></div>Target panel</div>
+        <div class="ui-mock-content">
+          <div class="mock-input">🔍 Search target tables…</div>
+          <div class="mock-row">dbo.Clients_New</div>
+          <div class="mock-row active">▶ dbo.ClientsMigrated <span style="font-size:10px;color:var(--accent);font-family:var(--serif);margin-left:4px">Selected</span></div>
+          <div class="mock-row">dbo.ClientArchive</div>
+        </div>
+      </div>
+      <div class="warn"><div class="warn-icon">⚠</div><div>If the target table doesn't exist yet, create it in the <strong>SQL Editor</strong> first using a CREATE TABLE statement, then come back to Mapper.</div></div>
+      <div class="tip"><div class="tip-icon">ℹ</div><div>For <strong>one-to-many</strong> mapping (splitting one source table across two targets), click <strong>+ Add target table</strong> at the bottom of the right panel. Each target gets its own column mapping.</div></div>
+    `; }
+  },
+  {
+    label: 'AI mapping',
+    heading: 'Run AI column mapping',
+    body: 'Click AI Map columns and Claude analyses both table schemas, matches columns by name, data type and business context, then fills in the mapping grid automatically. This takes a few seconds.',
+    render() { return `
+      <div class="action-bar">
+        <div class="btn btn-ai">✨ AI Map columns</div>
+        <div class="btn">Clear all</div>
+      </div>
+      <div style="margin:0.75rem 0;font-size:13px;font-weight:500;color:var(--text)">Result after AI mapping:</div>
+      <div class="map-grid">
+        <div class="map-header">Source column</div>
+        <div></div>
+        <div class="map-header">Target column</div>
+
+        <div class="map-src">ClientID <span class="badge badge-pk">PK</span></div>
+        <div class="map-arr">→</div>
+        <div class="map-tgt ok">ClientID <span class="badge badge-mapped">✓</span></div>
+
+        <div class="map-src">FullName</div>
+        <div class="map-arr">→</div>
+        <div class="map-tgt ok">ClientName <span class="badge badge-ai">AI</span></div>
+
+        <div class="map-src">EmailAddr</div>
+        <div class="map-arr">→</div>
+        <div class="map-tgt ok">Email <span class="badge badge-ai">AI</span></div>
+
+        <div class="map-src">Tel_No</div>
+        <div class="map-arr">→</div>
+        <div class="map-tgt ok">PhoneNumber <span class="badge badge-ai">AI</span></div>
+
+        <div class="map-src" style="color:var(--text3)">LegacyCode</div>
+        <div class="map-arr">—</div>
+        <div class="map-tgt none">No match found</div>
+      </div>
+      <div class="tip"><div class="tip-icon">ℹ</div><div><strong class="badge badge-ai" style="font-size:10px">AI</strong> = Claude matched by semantic meaning (e.g. <code>FullName</code> → <code>ClientName</code>). <strong class="badge badge-mapped" style="font-size:10px">✓</strong> = exact name match. Columns with no match need manual assignment — drag them from the source list.</div></div>
+    `; }
+  },
+  {
+    label: 'Review',
+    heading: 'Review and adjust the mapping',
+    body: 'Always review AI mappings before generating SQL. Check for type mismatches, unmapped required columns, and any columns that need value transformations.',
+    render() { return `
+      <div class="checklist">
+        <div class="check-item">
+          <div class="check-num">1</div>
+          <div>
+            <div class="check-title">Data type mismatches</div>
+            <div class="check-body">If source is <code>VARCHAR(200)</code> and target is <code>VARCHAR(50)</code>, data will be truncated. The mapper flags these with an amber <span class="badge badge-warn">!</span> — review each one and either widen the target column or add a SUBSTRING transform.</div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="check-num">2</div>
+          <div>
+            <div class="check-title">Unmapped required columns</div>
+            <div class="check-body">Target columns marked NOT NULL need a source value. If nothing maps naturally, you can drag any source column onto it, or add a hardcoded default value using the column options (click the column name to expand).</div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="check-num">3</div>
+          <div>
+            <div class="check-title">Was/Is value transformations</div>
+            <div class="check-body">If values change between systems (e.g. source uses <code>M</code>/<code>F</code>, target uses <code>Male</code>/<code>Female</code>), click the <strong>Was/Is</strong> button on that column mapping to set up translation rules. Claude can suggest the rules automatically.</div>
+          </div>
+        </div>
+        <div class="check-item">
+          <div class="check-num">4</div>
+          <div>
+            <div class="check-title">Unmapped source columns you don't need</div>
+            <div class="check-body">Columns like <code>LegacyCode</code> that don't map to anything and aren't needed in the target are fine to leave unmapped — they won't be included in the generated SQL.</div>
+          </div>
+        </div>
+      </div>
+    `; }
+  },
+  {
+    label: 'Generate SQL',
+    heading: 'Generate the migration SQL',
+    body: 'Once the mapping looks correct, click Generate SQL. Cygenix produces three scripts automatically: the main INSERT migration, a schema validation query, and a row-count verification.',
+    render() { return `
+      <div class="action-bar">
+        <div class="btn btn-primary">⚡ Generate SQL</div>
+      </div>
+      <div class="sql-block">
+        <span class="cmt">-- Cygenix migration: dbo.Clients → dbo.ClientsMigrated</span><br>
+        <span class="cmt">-- Generated by AI mapping · 4 columns · 15 Apr 2026</span><br><br>
+        <span class="kw">INSERT INTO</span> <span class="tbl">dbo.ClientsMigrated</span> (<br>
+        &nbsp;&nbsp;<span class="col">ClientID</span>,<br>
+        &nbsp;&nbsp;<span class="col">ClientName</span>,<br>
+        &nbsp;&nbsp;<span class="col">Email</span>,<br>
+        &nbsp;&nbsp;<span class="col">PhoneNumber</span><br>
+        )<br>
+        <span class="kw">SELECT</span><br>
+        &nbsp;&nbsp;<span class="col">ClientID</span>,<br>
+        &nbsp;&nbsp;<span class="col">FullName</span>        <span class="cmt">-- AI: FullName → ClientName</span><br>
+        &nbsp;&nbsp;<span class="col">EmailAddr</span>,      <span class="cmt">-- AI: EmailAddr → Email</span><br>
+        &nbsp;&nbsp;<span class="col">Tel_No</span>          <span class="cmt">-- AI: Tel_No → PhoneNumber</span><br>
+        <span class="kw">FROM</span> <span class="tbl">dbo.Clients</span><span class="cmt">;</span>
+      </div>
+      <div class="tip"><div class="tip-icon">ℹ</div><div>Switch between the <strong>Insert</strong>, <strong>Schema</strong>, and <strong>Verify</strong> tabs to see all three generated scripts. You can edit the SQL directly in the editor before running it.</div></div>
+      <div class="warn"><div class="warn-icon">⚠</div><div>Always run the <strong>Schema</strong> validation script first, then the <strong>Insert</strong>, then the <strong>Verify</strong> row-count check. This order prevents data issues.</div></div>
+    `; }
+  },
+  {
+    label: 'Save job',
+    heading: 'Save as a migration job',
+    body: 'Click Save as job to store this mapping permanently. Jobs appear on the Dashboard, can be re-run, edited, and grouped into a full migration sequence.',
+    render() { return `
+      <div class="action-bar">
+        <div class="btn btn-primary">💾 Save as job</div>
+      </div>
+      <div class="ui-mock">
+        <div class="ui-mock-bar"><div class="ui-mock-dot" style="background:var(--green)"></div>Dashboard · Jobs panel</div>
+        <div class="ui-mock-content">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:5px;background:var(--bg2);border:0.5px solid rgba(34,201,122,0.2)">
+            <div>
+              <div style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px">dbo.Clients → dbo.ClientsMigrated</div>
+              <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">4 columns · AI mapped · Saved just now</div>
+              <div style="display:flex;gap:5px;margin-top:6px">
+                <div class="badge badge-mapped">✓ Mapping complete</div>
+                <div class="badge" style="background:var(--bg3);border-color:var(--border2)">SQL ready</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <div class="btn">Edit</div>
+              <div class="btn btn-primary">Run</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="success">
+        <div class="success-title">✓ Mapping complete</div>
+        <div class="success-body">Your job is saved to Cosmos DB and syncs across all your devices automatically. To edit it later, go to Dashboard → Jobs, find the job, and click Edit — the Mapper reopens with all mappings pre-loaded.</div>
+      </div>
+      <div class="tip"><div class="tip-icon">ℹ</div><div>To run the migration, click <strong>Run</strong> on the job card. This sends the SQL to the SQL Editor where you can execute it against your target database and see real-time row counts.</div></div>
+    `; }
+  }
+];
+
+let cur = 0;
+
+function buildTrack() {
+  const t = document.getElementById('step-track');
+  t.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    if (i > 0) {
+      const c = document.createElement('div');
+      c.className = 'step-connector' + (i <= cur ? ' done' : '');
+      t.appendChild(c);
+    }
+    const d = document.createElement('div');
+    d.className = 'step-dot' + (i < cur ? ' done' : '') + (i === cur ? ' active' : '');
+    d.onclick = () => go(i);
+    d.innerHTML = `<div class="step-dot-circle">${i < cur ? '✓' : i + 1}</div><div class="step-dot-label">${s.label}</div>`;
+    t.appendChild(d);
+  });
+}
+
+function buildCard() {
+  const s = STEPS[cur];
+  document.getElementById('step-card').innerHTML = `
+    <div class="step-label"><div class="step-num">${cur + 1}</div>Step ${cur + 1} of ${STEPS.length}</div>
+    <div class="step-heading">${s.heading}</div>
+    <div class="step-body">${s.body}</div>
+    ${s.render()}
+  `;
+}
+
+function buildNav() {
+  document.getElementById('prev-btn').disabled = cur === 0;
+  const nb = document.getElementById('next-btn');
+  if (cur === STEPS.length - 1) {
+    nb.textContent = '↺ Start over';
+    nb.onclick = () => go(0);
+  } else {
+    nb.textContent = 'Next →';
+    nb.onclick = () => nav(1);
+  }
+  document.getElementById('counter').textContent = cur + 1 + ' / ' + STEPS.length;
+}
+
+function nav(d) { go(cur + d); }
+function go(n) {
+  if (n < 0 || n >= STEPS.length) return;
+  cur = n;
+  buildTrack(); buildCard(); buildNav();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+go(0);
+</script>
+<script src="/cookie-consent.js"></script>
+</body>
+</html>
