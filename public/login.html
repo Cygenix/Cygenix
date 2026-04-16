@@ -355,20 +355,21 @@ async function acceptInvite(token) {
       return;
     }
 
-    // Update name if provided
-    if (name && data.access_token) {
+    // Explicitly set password and name on the user account
+    // This ensures email+password login works after invite acceptance
+    if (data.access_token) {
+      const updateBody = { password };
+      if (name) updateBody.data = { full_name: name };
       await fetch(GOTRUE + '/user', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.access_token },
-        body: JSON.stringify({ data: { full_name: name } })
-      }).catch(() => {});
+        body: JSON.stringify(updateBody)
+      }).catch(e => console.warn('Password update warning:', e.message));
     }
 
     // Save session and redirect — user is now logged in
-    // The verify response contains the full auth token
     if (data.access_token) {
       saveSession(data);
-      // Small delay to let session save, then redirect
       setTimeout(() => {
         window.location.href = getRedirectUrl();
         sessionStorage.removeItem('cygenix_redirect_after_login');
