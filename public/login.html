@@ -263,7 +263,9 @@ async function acceptInvite(token) {
 
     if (!res.ok) {
       const msg = data.msg || data.error_description || data.error || 'Failed to accept invitation.';
-      if (alertEl) { alertEl.textContent = msg; alertEl.style.display = 'block'; }
+      const detail = `${msg} (HTTP ${res.status}) — Raw: ${JSON.stringify(data)}`;
+      console.error('Invite error:', detail);
+      if (alertEl) { alertEl.textContent = detail; alertEl.style.display = 'block'; }
       if (btn) { btn.textContent = 'Accept invitation & sign in'; btn.disabled = false; }
       return;
     }
