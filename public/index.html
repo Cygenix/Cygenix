@@ -3,456 +3,609 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cygenix – AI-Powered SQL Database Migration Platform</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0d0f14">
-<meta name="description" content="Cygenix connects to your SQL Server databases, maps columns intelligently with Claude AI, validates data and executes migrations — all from the browser. Built for UK enterprises.">
-<meta property="og:title" content="Cygenix – AI-Powered SQL Database Migration">
-<meta property="og:description" content="Map columns, validate data and execute SQL Server migrations with AI. Browser-based. No installation required.">
-<meta property="og:url" content="https://cygenix.netlify.app/">
+<meta name="description" content="See what Cygenix can do — AI column mapping, validation, project planning and more.">
+<meta property="og:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
+<meta property="og:description" content="See what Cygenix can do — AI column mapping, validation, project planning and more.">
+<meta property="og:url" content="https://cygenix.co.uk/">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://cygenix.netlify.app/og-image.png">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – AI-Powered SQL Database Migration Platform">
+<meta name="twitter:description" content="See what Cygenix can do — AI column mapping, validation, project planning and more.">
+<title>Cygenix – AI-Powered SQL Database Migration Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bricolage+Grotesque:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --ink:#0f1117;--ink2:#3a3d4a;--ink3:#6b7080;
-  --surface:#ffffff;--surface2:#f6f7f9;--surface3:#eef0f4;
-  --accent:#1a56e8;--accent2:#0e3bbf;--accent-light:#e8eefb;
-  --teal:#0e8c6a;--teal-light:#e1f5ee;
-  --purple:#7c3aed;--purple-light:#f3f0ff;
-  --border:rgba(0,0,0,0.08);--border2:rgba(0,0,0,0.14);
-  --serif:'DM Serif Display',Georgia,serif;
-  --sans:'DM Sans',system-ui,sans-serif;
-  --radius:10px;--radius-lg:16px;
+  --bg:#080b12;--bg2:#0d1220;--bg3:#111827;--bg4:#1a2236;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --text:#f0f2f8;--text2:#8892a8;--text3:#3d4a5c;
+  --accent:#4f8eff;--accent2:#2563eb;--glow:rgba(79,142,255,0.15);
+  --green:#10d48a;--green-g:rgba(16,212,138,0.12);
+  --amber:#f5a623;--amber-g:rgba(245,166,35,0.12);
+  --red:#f04070;--red-g:rgba(240,64,112,0.12);
+  --teal:#22d3ee;--purple:#a78bfa;
+  --serif:'Bricolage Grotesque',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
 }
 html{scroll-behavior:smooth}
-body{font-family:var(--sans);background:var(--surface);color:var(--ink);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
-
-/* NAV */
-nav{display:flex;align-items:center;justify-content:space-between;padding:1.25rem 2.5rem;border-bottom:0.5px solid var(--border);position:sticky;top:0;background:rgba(255,255,255,0.96);backdrop-filter:blur(8px);z-index:100}
-.logo{font-family:var(--serif);font-size:1.4rem;color:var(--ink);letter-spacing:-0.02em;text-decoration:none;display:flex;align-items:center;gap:8px}
-.logo-mark{width:28px;height:28px;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--serif);font-size:16px;font-weight:700;flex-shrink:0}
-.logo span{color:var(--accent)}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);overflow-x:hidden;-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:rgba(8,11,18,0.85);backdrop-filter:blur(20px);border-bottom:0.5px solid var(--border)}
+.nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}.nav-logo span{color:var(--accent)}
 .nav-links{display:flex;gap:2rem;align-items:center}
-.nav-links a{font-size:14px;color:var(--ink2);text-decoration:none;font-weight:400;transition:color 0.2s}.nav-links a:hover{color:var(--accent)}
-.nav-cta{background:var(--accent);color:#fff!important;padding:0.5rem 1.25rem;border-radius:var(--radius);font-weight:500!important;transition:background 0.2s!important}
-.nav-cta:hover{background:var(--accent2)!important}
-.hamburger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:4px}
-.hamburger span{display:block;width:22px;height:1.5px;background:var(--ink)}
-
-/* HERO */
-.hero{max-width:1100px;margin:0 auto;padding:5rem 2.5rem 4rem;display:grid;grid-template-columns:1fr 1fr;gap:4rem;align-items:center}
-.badge{display:inline-flex;align-items:center;gap:6px;background:var(--accent-light);color:var(--accent);font-size:12px;font-weight:500;padding:0.3rem 0.75rem;border-radius:100px;margin-bottom:1.5rem;letter-spacing:0.04em;text-transform:uppercase}
-.badge-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-h1{font-family:var(--serif);font-size:3.2rem;line-height:1.1;letter-spacing:-0.03em;color:var(--ink);margin-bottom:1.25rem}
-h1 em{font-style:italic;color:var(--accent)}
-.hero-sub{font-size:1.05rem;color:var(--ink2);line-height:1.7;margin-bottom:2rem;max-width:460px;font-weight:300}
-.hero-actions{display:flex;gap:0.75rem;flex-wrap:wrap}
-.btn-primary{background:var(--accent);color:#fff;padding:0.8rem 1.75rem;border-radius:var(--radius);font-size:15px;font-weight:500;border:none;cursor:pointer;transition:background 0.2s,transform 0.1s;text-decoration:none;display:inline-block}
-.btn-primary:hover{background:var(--accent2);transform:translateY(-1px)}
-.btn-secondary{background:transparent;color:var(--ink);padding:0.8rem 1.75rem;border-radius:var(--radius);font-size:15px;font-weight:400;border:1px solid var(--border2);cursor:pointer;transition:border-color 0.2s,background 0.2s;text-decoration:none;display:inline-block}
-.btn-secondary:hover{background:var(--surface2);border-color:var(--ink3)}
-.hero-trust{display:flex;align-items:center;gap:0.5rem;margin-top:1.5rem;font-size:13px;color:var(--ink3)}
-.hero-trust svg{opacity:0.4}
-
-/* HERO MOCK */
-.hero-mock{background:var(--surface2);border-radius:var(--radius-lg);padding:1.25rem;border:0.5px solid var(--border)}
-.mock-topbar{display:flex;align-items:center;gap:5px;margin-bottom:1rem}
-.mock-dot{width:9px;height:9px;border-radius:50%}
-.mock-title-bar{flex:1;background:var(--surface3);border-radius:4px;height:16px;margin-left:6px}
-.mock-table{width:100%;border-collapse:collapse;font-size:12px;font-family:monospace}
-.mock-table th{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.05em;padding:0.4rem 0.5rem;text-align:left;background:var(--surface3);border-bottom:1px solid var(--border)}
-.mock-table td{padding:0.4rem 0.5rem;border-bottom:0.5px solid var(--border);color:var(--ink2);vertical-align:middle}
-.badge-high{background:#dcfce7;color:#166534;font-size:10px;padding:1px 7px;border-radius:100px;font-family:var(--sans)}
-.badge-med{background:#fef9c3;color:#854d0e;font-size:10px;padding:1px 7px;border-radius:100px;font-family:var(--sans)}
-.badge-ai{background:var(--accent-light);color:var(--accent);font-size:10px;padding:1px 7px;border-radius:100px;font-family:var(--sans)}
-.ai-badge-row{margin-top:0.875rem;background:var(--accent-light);border:1px solid rgba(26,86,232,0.15);border-radius:var(--radius);padding:0.6rem 0.875rem;font-size:12px;color:var(--accent2);display:flex;align-items:center;gap:8px;font-weight:500}
-
-/* LOGOS */
-.logos-section{background:var(--surface2);padding:2rem 2.5rem;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);text-align:center}
-.logos-label{font-size:12px;color:var(--ink3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:1.25rem}
-.logos-row{display:flex;justify-content:center;align-items:center;gap:1.5rem;flex-wrap:wrap}
-.logo-chip{background:var(--surface);border:0.5px solid var(--border2);border-radius:var(--radius);padding:0.5rem 1.1rem;font-size:13px;font-weight:500;color:var(--ink2)}
-
-/* SECTIONS */
-.section{max-width:1100px;margin:0 auto;padding:5rem 2.5rem}
-.section-label{font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:0.08em;font-weight:500;margin-bottom:0.75rem}
-.section-title{font-family:var(--serif);font-size:2.4rem;line-height:1.15;letter-spacing:-0.025em;color:var(--ink);margin-bottom:1rem}
-.section-sub{font-size:1rem;color:var(--ink2);max-width:540px;font-weight:300;line-height:1.7;margin-bottom:3rem}
-
-/* HOW IT WORKS */
-.steps{display:grid;grid-template-columns:repeat(5,1fr);gap:0}
-.step{padding:1.5rem;border-right:0.5px solid var(--border);position:relative}
-.step:last-child{border-right:none}
-.step-num{width:32px;height:32px;border-radius:50%;background:var(--accent-light);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;margin-bottom:0.875rem;font-family:var(--sans)}
-.step h3{font-size:14px;font-weight:500;color:var(--ink);margin-bottom:0.4rem}
-.step p{font-size:13px;color:var(--ink3);line-height:1.6}
-.step-connector{position:absolute;top:2.3rem;right:-12px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;color:var(--ink3);font-size:16px;z-index:1}
-
-/* FEATURES */
-.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;margin-bottom:1.25rem}
-.feature{background:var(--surface);padding:1.75rem;transition:background 0.15s}
-.feature:hover{background:var(--surface2)}
-.feature-icon{font-size:1.4rem;margin-bottom:0.75rem}
-.feature h3{font-size:15px;font-weight:500;color:var(--ink);margin-bottom:0.4rem}
-.feature p{font-size:13px;color:var(--ink3);line-height:1.65}
-
-/* PRICING */
-.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
-.pricing-card{background:var(--surface);border:0.5px solid var(--border2);border-radius:var(--radius-lg);padding:2rem;position:relative;transition:box-shadow 0.2s}
-.pricing-card:hover{box-shadow:0 4px 24px rgba(0,0,0,0.07)}
-.pricing-card.featured{border:2px solid var(--accent);box-shadow:0 4px 24px rgba(26,86,232,0.1)}
-.feat-tag{position:absolute;top:1rem;right:1rem;background:var(--accent);color:#fff;font-size:11px;font-weight:500;padding:0.25rem 0.6rem;border-radius:100px}
-.plan-name{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink3);margin-bottom:0.75rem}
-.plan-price{font-family:var(--serif);font-size:2.4rem;color:var(--ink);line-height:1;margin-bottom:0.25rem}
-.plan-price span{font-family:var(--sans);font-size:14px;color:var(--ink3);font-weight:300}
-.plan-desc{font-size:13px;color:var(--ink3);margin-bottom:1.5rem;padding-bottom:1.5rem;border-bottom:0.5px solid var(--border);line-height:1.6}
-.plan-features{list-style:none;margin-bottom:1.75rem}
-.plan-features li{font-size:13px;color:var(--ink2);padding:0.35rem 0;display:flex;align-items:flex-start;gap:8px;line-height:1.5}
-.check{width:16px;height:16px;border-radius:50%;background:var(--teal-light);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
-.check::after{content:'';width:4px;height:7px;border:1.5px solid var(--teal);border-top:none;border-left:none;transform:rotate(45deg) translateY(-1px);display:block}
-.plan-btn{width:100%;padding:0.75rem;border-radius:var(--radius);font-size:14px;font-weight:500;cursor:pointer;border:1px solid var(--border2);background:var(--surface2);color:var(--ink);transition:all 0.2s;font-family:var(--sans)}
-.plan-btn:hover{background:var(--surface3)}
-.plan-btn.accent{background:var(--accent);color:#fff;border-color:var(--accent)}
-.plan-btn.accent:hover{background:var(--accent2)}
-
-/* TESTIMONIALS */
-.testimonials{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;margin-bottom:4rem}
-.testimonial{background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem}
-.testimonial-text{font-size:14px;color:var(--ink2);line-height:1.7;margin-bottom:1rem;font-style:italic}
-.testimonial-author{font-size:13px;font-weight:500;color:var(--ink)}
-.testimonial-role{font-size:12px;color:var(--ink3)}
-
-/* CTA */
-.cta-section{background:var(--ink);margin:0 2.5rem 5rem;border-radius:var(--radius-lg);padding:4rem 3rem;display:grid;grid-template-columns:1fr auto;gap:3rem;align-items:center}
-.cta-section h2{font-family:var(--serif);font-size:2.2rem;color:#fff;line-height:1.2;letter-spacing:-0.025em}
-.cta-section p{font-size:15px;color:rgba(255,255,255,0.55);margin-top:0.75rem;font-weight:300}
-.cta-right{display:flex;flex-direction:column;gap:0.75rem;min-width:200px}
-.btn-white{background:#fff;color:var(--ink);padding:0.8rem 1.75rem;border-radius:var(--radius);font-size:15px;font-weight:500;border:none;cursor:pointer;text-align:center;text-decoration:none;display:block;transition:opacity 0.2s;font-family:var(--sans)}
-.btn-white:hover{opacity:0.9}
-.btn-ghost-white{background:transparent;color:rgba(255,255,255,0.7);padding:0.8rem 1.75rem;border-radius:var(--radius);font-size:15px;font-weight:400;border:1px solid rgba(255,255,255,0.2);cursor:pointer;text-align:center;text-decoration:none;display:block;transition:all 0.2s;font-family:var(--sans)}
-.btn-ghost-white:hover{border-color:rgba(255,255,255,0.5);color:#fff}
-
-/* FOOTER */
-.footer-wrap{border-top:0.5px solid var(--border);padding:2.5rem;max-width:1100px;margin:0 auto}
-.footer-grid{display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:2.5rem;margin-bottom:2.5rem}
-.footer-logo{font-family:var(--serif);font-size:1.2rem;color:var(--ink);letter-spacing:-0.02em;margin-bottom:0.5rem;display:flex;align-items:center;gap:6px}
-.footer-logo-mark{width:22px;height:22px;background:var(--accent);border-radius:5px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--serif);font-size:12px;font-weight:700;flex-shrink:0}
-.footer-logo span{color:var(--accent)}
-.footer-tagline{font-size:13px;color:var(--ink3);line-height:1.6;margin-top:0.25rem;max-width:220px}
-.footer-col-title{font-size:12px;font-weight:600;color:var(--ink);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.875rem}
-.footer-link{display:block;font-size:13px;color:var(--ink3);text-decoration:none;margin-bottom:0.5rem;transition:color 0.15s}
-.footer-link:hover{color:var(--ink)}
-.footer-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:1.5rem;border-top:0.5px solid var(--border);font-size:12px;color:var(--ink3);flex-wrap:wrap;gap:0.5rem}
-
-/* RESPONSIVE */
-@media(max-width:900px){
-  .hero{grid-template-columns:1fr;padding:3rem 1.5rem 2rem}
-  .hero-right{display:none}
-  h1{font-size:2.4rem}
-  .steps{grid-template-columns:1fr 1fr}
-  .features-grid{grid-template-columns:1fr}
-  .pricing-grid{grid-template-columns:1fr}
-  .testimonials{grid-template-columns:1fr}
-  .cta-section{grid-template-columns:1fr;margin:0 1.5rem 3rem;padding:2.5rem 2rem}
-  .cta-right{flex-direction:row;flex-wrap:wrap}
-  .section{padding:3rem 1.5rem}
-  nav{padding:1rem 1.5rem}
-  .nav-links{display:none}
-  .hamburger{display:flex}
-  .footer-grid{grid-template-columns:1fr 1fr;gap:1.5rem}
-  .steps{grid-template-columns:1fr}
-  .step{border-right:none;border-bottom:0.5px solid var(--border)}
-  .step:last-child{border-bottom:none}
-}
+.nav-links a{font-size:13px;color:var(--text2);text-decoration:none;transition:color 0.2s}.nav-links a:hover{color:var(--text)}
+.nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}.nav-cta:hover{background:var(--accent2);color:#fff}
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6rem 2rem 4rem;position:relative;z-index:1}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--glow);border:0.5px solid rgba(79,142,255,0.3);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:500;color:var(--accent);font-family:var(--mono);letter-spacing:0.05em;margin-bottom:2rem;animation:fadeUp 0.6s ease both}
+.hero-badge::before{content:'◆';font-size:8px}
+.hero h1{font-size:clamp(2.8rem,7vw,5.5rem);font-weight:800;letter-spacing:-0.04em;line-height:1.05;margin-bottom:1.5rem;animation:fadeUp 0.6s ease 0.1s both}
+.line1{display:block;color:var(--text)}
+.line2{display:block;background:linear-gradient(135deg,var(--accent) 0%,var(--teal) 50%,var(--purple) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:clamp(1rem,2vw,1.2rem);color:var(--text2);max-width:640px;line-height:1.7;margin-bottom:2.5rem;font-weight:400;animation:fadeUp 0.6s ease 0.2s both}
+.hero-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;animation:fadeUp 0.6s ease 0.3s both}
+.btn-hero{padding:0.75rem 1.75rem;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:none;transition:all 0.2s}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 0 30px rgba(79,142,255,0.3)}.btn-primary:hover{background:var(--accent2);box-shadow:0 0 40px rgba(79,142,255,0.5);transform:translateY(-1px)}
+.btn-secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}.btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
+.stats-row{display:flex;gap:3rem;justify-content:center;flex-wrap:wrap;padding:1.5rem 2rem;animation:fadeUp 0.6s ease 0.4s both}
+.stat{text-align:center}
+.stat-num{font-size:2rem;font-weight:800;letter-spacing:-0.03em;color:var(--text);line-height:1}
+.stat-num span{background:linear-gradient(135deg,var(--accent),var(--teal));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-label{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px;letter-spacing:0.05em}
+.section{padding:6rem 2rem;position:relative;z-index:1}
+.section-tag{font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem}
+.section-title{font-size:clamp(2rem,4vw,3rem);font-weight:800;letter-spacing:-0.03em;line-height:1.1;margin-bottom:1rem}
+.section-sub{font-size:15px;color:var(--text2);line-height:1.7;max-width:560px}
+.container{max-width:1200px;margin:0 auto}
+.container-sm{max-width:860px;margin:0 auto}
+.divider{height:0.5px;background:linear-gradient(90deg,transparent,var(--border2),transparent);margin:0 auto;max-width:800px}
+.feature-block{display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center;padding:5rem 0}
+.feature-block.reverse{direction:rtl}.feature-block.reverse > *{direction:ltr}
+.feature-tag{font-size:10px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:0.75rem}
+.feature-title{font-size:1.9rem;font-weight:700;letter-spacing:-0.03em;line-height:1.15;margin-bottom:1rem}
+.feature-body{font-size:14px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem}
+.feature-points{list-style:none;display:flex;flex-direction:column;gap:0.6rem}
+.feature-points li{font-size:13px;color:var(--text2);display:flex;align-items:flex-start;gap:0.6rem;line-height:1.6}
+.feature-points li::before{content:'→';color:var(--accent);flex-shrink:0;font-family:var(--mono);margin-top:1px}
+.mock{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,0.6),0 0 0 0.5px rgba(79,142,255,0.1);position:relative}
+.mock-topbar{background:var(--bg3);border-bottom:0.5px solid var(--border);padding:0.6rem 1rem;display:flex;align-items:center;gap:0.6rem}
+.mock-dot{width:8px;height:8px;border-radius:50%}
+.mock-body{padding:1rem;font-size:11px}
+.mapping-row{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04)}
+.col-pill{background:var(--bg4);border-radius:4px;padding:2px 8px;font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap}
+.confidence{font-size:9px;padding:1px 6px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
+.c-high{background:var(--green-g);color:var(--green)}.c-med{background:var(--amber-g);color:var(--amber)}.c-low{background:var(--red-g);color:var(--red)}
+.val-row{display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);font-size:10px}
+.val-name{flex:1;font-family:var(--mono);color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.val-badge{font-size:9px;padding:1px 7px;border-radius:100px;font-family:var(--mono);white-space:nowrap}
+.v-pass{background:var(--green-g);color:var(--green)}.v-fail{background:var(--red-g);color:var(--red)}.v-pending{background:rgba(255,255,255,0.05);color:var(--text3)}.v-error{background:var(--amber-g);color:var(--amber)}
+.proj-step{display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.6rem;border-radius:6px;margin-bottom:0.35rem;background:var(--bg3);border:0.5px solid var(--border)}
+.proj-icon{width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0}
+.proj-info{flex:1;min-width:0}
+.proj-name{font-size:10px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-meta{font-size:9px;font-family:var(--mono);color:var(--text3)}
+.sql-block{background:var(--bg);border-radius:6px;padding:0.6rem;font-family:var(--mono);font-size:9px;line-height:1.7;overflow:hidden;max-height:160px}
+.sql-kw{color:#569cd6}.sql-str{color:#ce9178}.sql-fn{color:#dcdcaa}.sql-cm{color:#6a9955}.sql-num{color:#b5cea8}
+.features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;margin-top:3rem}
+.feature-card{background:var(--bg2);padding:1.75rem;transition:background 0.2s;cursor:default}.feature-card:hover{background:var(--bg3)}
+.feature-card-icon{font-size:1.5rem;margin-bottom:0.875rem}
+.feature-card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:0.5rem}
+.feature-card-body{font-size:12px;color:var(--text3);line-height:1.7}
+.flow{display:flex;align-items:center;justify-content:center;gap:0;flex-wrap:nowrap;margin:3rem 0;overflow-x:auto;padding:1rem 0}
+.flow-step{background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;padding:1.1rem 1.25rem;text-align:center;min-width:130px;flex-shrink:0;transition:all 0.2s;cursor:default}
+.flow-step:hover{border-color:var(--accent);background:var(--bg3);transform:translateY(-2px)}
+.flow-step-num{font-size:9px;font-family:var(--mono);color:var(--accent);margin-bottom:0.4rem;letter-spacing:0.05em}
+.flow-step-icon{font-size:1.4rem;margin-bottom:0.4rem}
+.flow-step-label{font-size:11px;font-weight:600;color:var(--text);line-height:1.3}
+.flow-arrow{color:var(--text3);font-size:1.2rem;flex-shrink:0;padding:0 0.5rem;margin-top:-0.5rem}
+.cta-section{padding:8rem 2rem;text-align:center;position:relative;z-index:1}
+.cta-section::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 800px 400px at 50% 50%,rgba(79,142,255,0.06) 0%,transparent 70%);pointer-events:none}
+.cta-title{font-size:clamp(2.2rem,5vw,3.5rem);font-weight:800;letter-spacing:-0.04em;margin-bottom:1rem}
+.cta-sub{font-size:15px;color:var(--text2);max-width:500px;margin:0 auto 2.5rem;line-height:1.7}
+.cta-btns{display:flex;gap:1rem;justify-content:center}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+.animate-on-scroll{opacity:0;transform:translateY(30px);transition:opacity 0.7s ease,transform 0.7s ease}
+.animate-on-scroll.visible{opacity:1;transform:translateY(0)}
+.orb{position:fixed;border-radius:50%;pointer-events:none;filter:blur(80px);opacity:0.4}
+.orb1{width:400px;height:400px;background:rgba(79,142,255,0.15);top:-100px;right:-100px;animation:orbFloat 8s ease-in-out infinite}
+.orb2{width:300px;height:300px;background:rgba(167,139,250,0.1);bottom:100px;left:-80px;animation:orbFloat 10s ease-in-out infinite reverse}
+@keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,30px)}}
+footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3);position:relative;z-index:1}
+.ticker-wrap{overflow:hidden;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg2);padding:0.6rem 0}
+.ticker{display:flex;gap:4rem;white-space:nowrap;animation:tick 30s linear infinite}
+.ticker-item{display:flex;align-items:center;gap:0.5rem;font-size:11px;color:var(--text3);font-family:var(--mono)}
+.ticker-item span{color:var(--accent)}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+/* cal mock */
+.cal-mini-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-family:var(--mono);font-size:9px}
+.cal-cell{text-align:center;padding:3px 2px;border-radius:3px;color:var(--text3)}
+.cal-cell.today{background:var(--accent);color:#fff;border-radius:50%}
+.cal-cell.has-ev{position:relative}.cal-cell.has-ev::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--teal)}
+.cal-ev{font-size:9px;padding:1px 5px;border-radius:3px;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}}
 </style>
 </head>
 <body>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
 
-<!-- NAV -->
 <nav>
-  <a href="/" class="logo">
-    <div class="logo-mark">C</div>Cygenix</a>
+  <div class="nav-logo">Cyge<span>nix</span></div>
   <div class="nav-links">
+    <a href="/about.html">About</a>
     <a href="#features">Features</a>
-    <a href="#how-it-works">How it works</a>
-    <a href="#pricing">Pricing</a>
-    <a href="/help.html" target="_blank">Docs</a>
-    <a href="/demo.html">See demo</a>
+    <a href="#mapper">Mapper</a>
+    <a href="#validation">Validation</a>
+    <a href="#planner">Project Planner</a>
+    <a href="#sql-editor">SQL Editor</a>
   </div>
-  <div style="display:flex;align-items:center;gap:0.75rem">
-    <a href="/login.html" style="font-size:14px;color:var(--ink2);text-decoration:none;font-weight:400">Sign in</a>
-    <a href="/login.html" class="nav-cta">Get started →</a>
-    <div class="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
-  </div>
+  <a href="/login.html" class="nav-cta">Sign in →</a>
 </nav>
 
 <!-- HERO -->
-<div class="hero">
-  <div class="hero-left">
-    <div class="badge"><div class="badge-dot"></div>Powered by Claude AI</div>
-    <h1>SQL database migration, <em>done right</em></h1>
-    <p class="hero-sub">Cygenix connects to your source and target SQL Server databases, maps every column using Claude AI, runs validation scripts, and executes migrations — all from your browser. No installation. No guesswork.</p>
-    <div class="hero-actions">
-      <a href="/login.html" class="btn-primary">Start your migration →</a>
-      <a href="/demo.html" class="btn-secondary">See the platform</a>
+<section class="hero">
+  <div class="hero-badge">AI-POWERED · ENTERPRISE READY · AZURE NATIVE</div>
+  <h1>
+    <span class="line1">Database Migration,</span>
+    <span class="line2">Reimagined with AI</span>
+  </h1>
+  <p class="hero-sub">Cygenix connects to any SQL Server database, maps your schema intelligently using Claude AI, validates results, and delivers professional reports — in minutes, not months.</p>
+  <div class="hero-btns">
+    <a href="/login.html" class="btn-hero btn-primary">Request access →</a>
+    <a href="#features" class="btn-hero btn-secondary">See the platform</a>
+  </div>
+  <div class="stats-row" style="margin-top:3rem">
+    <div class="stat"><div class="stat-num"><span>AI</span></div><div class="stat-label">COLUMN MAPPING</div></div>
+    <div class="stat"><div class="stat-num"><span>Any</span></div><div class="stat-label">VALIDATION TABLE</div></div>
+    <div class="stat"><div class="stat-num"><span>Azure</span></div><div class="stat-label">MANAGED IDENTITY</div></div>
+    <div class="stat"><div class="stat-num"><span>100%</span></div><div class="stat-label">BROWSER-BASED</div></div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker-wrap">
+  <div class="ticker">
+    <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
+    <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
+    <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
+    <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
+    <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
+    <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
+    <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
+    <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
+    <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
+    <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
+    <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
+    <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
+  </div>
+</div>
+
+<!-- FEATURES GRID -->
+<section class="section" id="features">
+  <div class="container">
+    <div class="animate-on-scroll" style="text-align:center;margin-bottom:1rem">
+      <div class="section-tag">Platform Features</div>
+      <div class="section-title">Everything you need to<br>migrate with confidence</div>
     </div>
-    <div class="hero-trust">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1l1.5 3 3.3.5-2.4 2.3.6 3.2L7 8.5 4 10l.6-3.2L2.2 4.5l3.3-.5L7 1z" stroke="#6b7080" stroke-width="1.2" stroke-linejoin="round"/></svg>
-      Browser-based · Azure SQL ready · UK-based team
+    <div class="features-grid animate-on-scroll">
+      <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Live Database Connection</div><div class="feature-card-body">Connect directly to SQL Server on-premises or Azure SQL via connection string or Azure Function with Managed Identity. No VPN or firewall changes required.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">AI Column Mapping</div><div class="feature-card-body">Claude AI automatically maps columns between source and target schemas. Target-driven layout shows every target column with a source dropdown, fixed value override and truncation warnings.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🔄</div><div class="feature-card-title">Was/Is Value Translation</div><div class="feature-card-body">Upload translation tables to automatically convert values during migration — status codes, lookup IDs, department names, currency codes, and more.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">✅</div><div class="feature-card-title">Flexible Validation</div><div class="feature-card-body">Add any table as a validation source. Pick which column holds the SQL, choose which columns appear in the report. Run any number of validation tables against any database.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📋</div><div class="feature-card-title">Conversion Projects</div><div class="feature-card-body">Sequence multiple table migrations and custom SQL scripts into a single ordered project. Retry, skip, or abort steps on failure. Full execution log.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Professional Reports</div><div class="feature-card-body">Export client-ready Excel reports with summary, migration results, column mapping, Was/Is rules applied, and execution logs — ready to hand to stakeholders.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📅</div><div class="feature-card-title">Project Planner</div><div class="feature-card-body">Full calendar (year/month/week/day views), task tracking, blocker management, execution phase tracker, and activity log — driven by your project completion date.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">⚡</div><div class="feature-card-title">Performance Tuning</div><div class="feature-card-body">Configure fetch page size, insert batch size, concurrency, timeouts and retry behaviour. Quick presets for Small DB, Large DB, Azure SQL and Cautious mode.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">💻</div><div class="feature-card-title">SQL Editor</div><div class="feature-card-body">Full-featured SQL editor with script library, connection selector, find & replace, results grid, history, AI assistant, and one-to-many mapper for complex transformations.</div></div>
     </div>
   </div>
-  <div class="hero-right">
-    <div class="hero-mock">
-      <div class="mock-topbar">
-        <div class="mock-dot" style="background:#f04646"></div>
-        <div class="mock-dot" style="background:#f5a623"></div>
-        <div class="mock-dot" style="background:#22c97a"></div>
-        <div class="mock-title-bar"></div>
+</section>
+
+<div class="divider"></div>
+
+<!-- MAPPER -->
+<section class="section" id="mapper">
+  <div class="container-sm">
+    <div class="animate-on-scroll" style="text-align:center">
+      <div class="section-tag">Intelligent Column Mapping</div>
+      <div class="section-title">Target-driven mapping<br>with AI confidence</div>
+      <div class="section-sub" style="margin:0 auto 1rem">Every target column shown as a fixed row. Source column, fixed value override, truncation warnings and AI confidence — all in one place.</div>
+    </div>
+
+    <div class="feature-block animate-on-scroll">
+      <div>
+        <div class="feature-tag">Simple Map</div>
+        <div class="feature-title">One table to one table, mapped in seconds</div>
+        <div class="feature-body">Select source and target tables. Claude AI maps every column automatically. Override any row, add a fixed SQL value, hide unmapped columns, filter by match confidence.</div>
+        <ul class="feature-points">
+          <li>Target-driven layout — every target column shown, source is a dropdown</li>
+          <li>Fixed value column — type any SQL literal (N'Value', NULL, GETDATE())</li>
+          <li>⚠ Truncation warnings when source char type is wider than target</li>
+          <li>👁 Show/Hide Unmapped toggle to focus on what matters</li>
+          <li>AI uses Haiku with automatic retry on overload</li>
+        </ul>
       </div>
-      <table class="mock-table">
-        <thead><tr><th>Source column</th><th>Target column</th><th>Type</th><th>Match</th></tr></thead>
-        <tbody>
-          <tr><td>client_id</td><td>ClientID</td><td>INT</td><td><span class="badge-high">HIGH</span></td></tr>
-          <tr><td>company_name</td><td>CompanyName</td><td>NVARCHAR</td><td><span class="badge-high">HIGH</span></td></tr>
-          <tr><td>contact_email</td><td>EmailAddress</td><td>NVARCHAR</td><td><span class="badge-med">REVIEW</span></td></tr>
-          <tr><td>acct_status</td><td>StatusCode</td><td>NVARCHAR</td><td><span class="badge-ai">AI</span></td></tr>
-          <tr><td>created_dt</td><td>CreatedDate</td><td>DATETIME</td><td><span class="badge-high">HIGH</span></td></tr>
-          <tr><td>legacy_ref</td><td>—</td><td>—</td><td style="color:#6b7080;font-size:11px">unmapped</td></tr>
-        </tbody>
-      </table>
-      <div class="ai-badge-row">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#1a56e8" stroke-width="1.3"/><path d="M5 8l2 2 4-4" stroke="#1a56e8" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Claude mapped 18 of 20 columns · 2 need review
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Mapper · Simple Map</div>
+          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">👁 Hide Unmapped</div>
+        </div>
+        <div class="mock-body">
+          <div style="display:grid;grid-template-columns:1fr 0.7fr 1fr 0.8fr 0.8fr;gap:0.3rem;padding:0.25rem 0;margin-bottom:0.3rem">
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Source col</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Src type</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Target col ▲</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Fixed value</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Match</div>
+          </div>
+          <div id="mapper-rows"></div>
+          <div style="margin-top:0.6rem;font-size:9px;color:var(--green);font-family:var(--mono)">✓ 15 columns mapped · 2 hidden (unmapped)</div>
+          <div style="margin-top:0.4rem;background:var(--bg3);border-radius:4px;padding:0.4rem 0.6rem;font-family:var(--mono);font-size:9px;color:var(--text3)">
+            <span class="sql-kw">INSERT INTO</span> [TargetDB].[dbo].[effective_dated_records]<br>
+            <span class="sql-kw">SELECT</span> [run_number], [code], <span class="sql-fn">LEFT</span>([description_text], <span class="sql-num">100</span>), <span class="sql-str">N'Enterprise'</span>, [active_flag]<br>
+            <span class="sql-kw">FROM</span> [SourceDB].[dbo].[effective_dated_records]
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider" style="margin:2rem 0"></div>
+
+    <div class="feature-block reverse animate-on-scroll">
+      <div>
+        <div class="feature-tag">One-to-Many Map</div>
+        <div class="feature-title">One source, multiple target tables</div>
+        <div class="feature-body">Map a single source table into multiple target tables in one operation. Each target card has its own AI mapping, filter, hide-unmapped toggle, FK relationships and fixed values.</div>
+        <ul class="feature-points">
+          <li>Add as many target table cards as needed</li>
+          <li>PK mode per card — Identity, GUID or natural key</li>
+          <li>FK columns reference PK variables from parent cards</li>
+          <li>AI maps each card independently with overload retry</li>
+          <li>Single generated SQL script covers all target tables</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Mapper · One-to-Many · 3 target tables</div>
+        </div>
+        <div class="mock-body">
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
+              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--teal)">dbo.ClientMaster</span>
+              <span style="font-size:9px;color:var(--text3);margin-left:auto">5 mapped</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(167,139,250,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
+              <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">👁 Hide Unmapped</span>
+            </div>
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · @ClientID · 5 cols mapped</div>
+          </div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
+              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--accent)">dbo.ClientAddress</span>
+              <span style="font-size:9px;color:var(--text3);margin-left:auto">4 mapped</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(167,139,250,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
+            </div>
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: GUID · FK → @ClientID</div>
+          </div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem">
+            <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.3rem">
+              <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--amber)">dbo.ClientContact</span>
+              <span style="font-size:9px;color:var(--text3);margin-left:auto">3 mapped</span>
+              <span style="font-size:9px;background:var(--purple-g,rgba(167,139,250,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
+            </div>
+            <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · FK → @ClientID</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- TECH LOGOS -->
-<div class="logos-section">
-  <div class="logos-label">Works with</div>
-  <div class="logos-row">
-    <div class="logo-chip">SQL Server 2012+</div>
-    <div class="logo-chip">Azure SQL</div>
-    <div class="logo-chip">Azure Managed Identity</div>
-    <div class="logo-chip">Netlify</div>
-    <div class="logo-chip">Claude AI (Anthropic)</div>
-    <div class="logo-chip">Excel / XLSX export</div>
-  </div>
-</div>
+<div class="divider"></div>
 
-<!-- HOW IT WORKS -->
-<div class="section" id="how-it-works">
-  <div class="section-label">How it works</div>
-  <div class="section-title">From connection to completion</div>
-  <p class="section-sub">Cygenix walks you through every stage of the migration — source, target, AI mapping, validation and execution — in a single browser session.</p>
-  <div class="steps" style="background:var(--surface2);border:0.5px solid var(--border);border-radius:var(--radius-lg);overflow:hidden">
-    <div class="step">
-      <div class="step-num">1</div>
-      <h3>Connect databases</h3>
-      <p>Paste a SQL Server connection string or use an Azure Function with Managed Identity. No firewall changes needed.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">2</div>
-      <h3>AI column mapping</h3>
-      <p>Claude AI analyses both schemas and maps every target column automatically — with confidence scores and truncation warnings.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">3</div>
-      <h3>Was/Is value translation</h3>
-      <p>Upload a translation table to automatically convert lookup values, status codes and department names during migration.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">4</div>
-      <h3>Run validation</h3>
-      <p>Execute pre and post-migration validation scripts from any database table. Any rows returned = data quality issue.</p>
-    </div>
-    <div class="step">
-      <div class="step-num">5</div>
-      <h3>Execute & report</h3>
-      <p>Run the migration, monitor step-by-step progress, and export a client-ready Excel report when done.</p>
-    </div>
-  </div>
-</div>
-
-<!-- FEATURES -->
-<div class="section" id="features" style="padding-top:0">
-  <div class="section-label">Platform features</div>
-  <div class="section-title">Everything in one place</div>
-  <p class="section-sub">No stitching together separate tools. Cygenix handles the full lifecycle — from first connection to final report.</p>
-  <div class="features-grid">
-    <div class="feature">
-      <div class="feature-icon">🤖</div>
-      <h3>AI column mapping</h3>
-      <p>Claude Haiku maps every target column automatically. Override any row, add fixed SQL values, and get ⚠ truncation warnings when types don't fit.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">🔄</div>
-      <h3>One-to-many mapping</h3>
-      <p>Map a single source table into multiple target tables with FK relationships, PK variables and per-card AI mapping — all in one generated SQL script.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">✅</div>
-      <h3>Flexible validation</h3>
-      <p>Add any table as a validation source. Pick the SQL column, choose report columns, and run pre/post-migration checks against any database.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">💻</div>
-      <h3>SQL Editor</h3>
-      <p>Full-featured SQL workspace with script library, find & replace, results grid, history, Excel export and an AI assistant that writes SQL on request.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">📅</div>
-      <h3>Project Planner</h3>
-      <p>Calendar (year/month/week/day), tasks, blockers, phase tracker and activity log — driven by your project completion date. Syncs with Smartsheet and Jira.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">⚡</div>
-      <h3>Performance tuning</h3>
-      <p>Configure fetch page size, batch size, concurrency, timeouts and retry behaviour. Presets for Small DB, Large DB, Azure SQL and Cautious mode.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">📊</div>
-      <h3>Professional reports</h3>
-      <p>Export client-ready Excel reports with summary, migration results, column mapping, Was/Is rules applied and full execution log.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">💬</div>
-      <h3>Ask AI assistant</h3>
-      <p>Project-aware AI with full context of your tasks, jobs, blockers and timeline. Ask anything — it only answers about your migration project.</p>
-    </div>
-    <div class="feature">
-      <div class="feature-icon">🔌</div>
-      <h3>Azure native</h3>
-      <p>Azure SQL with Managed Identity — no passwords in connection strings. Deployed on Netlify with an Azure Function backend for secure DB access.</p>
+<!-- VALIDATION -->
+<section class="section" id="validation">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div>
+        <div class="section-tag">Flexible Validation</div>
+        <div class="section-title" style="font-size:2.2rem">Any table. Any SQL. Any database.</div>
+        <div class="section-sub">No longer locked to a fixed validation_scripts table. Add any table, pick which column holds the SQL to execute, choose which columns appear in the failure report, and run against any database.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>Add multiple validation tables from different connections</li>
+          <li>Pick the SQL column, name column and report columns per source</li>
+          <li>Run all, run selected (checkboxes), or run one source at a time</li>
+          <li>Inline result rows shown with your chosen report columns</li>
+          <li>Export to Excel — summary + one sheet per failed script</li>
+          <li>⏹ Stop mid-run at any time</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Data Validation · 3 sources</div>
+        </div>
+        <div class="mock-body">
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem;display:flex;align-items:center;gap:0.5rem">
+            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--teal)">Post-migration checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.val_scripts · SQL col: script_sql · 24 scripts</div></div>
+            <span style="font-size:9px;background:var(--red-g);color:var(--red);padding:1px 6px;border-radius:100px;font-family:var(--mono)">3 fail</span>
+            <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">21 pass</span>
+          </div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.5rem">
+            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--amber)">GL Integrity checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.gl_checks · SQL col: check_query · 8 scripts</div></div>
+            <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">8 pass</span>
+          </div>
+          <div id="val-rows-mock"></div>
+          <div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green)">✓ Pass: <span id="val-pass-count">0</span></span>
+            <span style="color:var(--red)">✕ Fail: <span id="val-fail-count">0</span></span>
+            <span style="color:var(--text3)">⏳ Pending: <span id="val-pend-count">0</span></span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
-</div>
+</section>
 
-<!-- PRICING -->
-<div class="section" id="pricing" style="padding-top:0">
-  <div class="section-label">Pricing</div>
-  <div class="section-title">Simple, project-based pricing</div>
-  <p class="section-sub">Pay per migration engagement — not per seat, not per month. We scope the work, you approve, we deliver.</p>
-  <div class="pricing-grid">
-    <div class="pricing-card">
-      <div class="plan-name">Starter</div>
-      <div class="plan-price">£1,500 <span>/ engagement</span></div>
-      <p class="plan-desc">Up to 10 tables. Ideal for a single module or proof-of-concept migration.</p>
-      <ul class="plan-features">
-        <li><span class="check"></span>Up to 10 source tables</li>
-        <li><span class="check"></span>AI column mapping</li>
-        <li><span class="check"></span>Was/Is value translation</li>
-        <li><span class="check"></span>Pre/post validation scripts</li>
-        <li><span class="check"></span>Conversion report (Excel)</li>
-        <li><span class="check"></span>Email support</li>
-      </ul>
-      <button class="plan-btn" onclick="scrollToContact()">Get in touch</button>
-    </div>
-    <div class="pricing-card featured">
-      <div class="feat-tag">Most popular</div>
-      <div class="plan-name">Professional</div>
-      <div class="plan-price">£4,500 <span>/ engagement</span></div>
-      <p class="plan-desc">Up to 50 tables. Full migration with project management and client portal.</p>
-      <ul class="plan-features">
-        <li><span class="check"></span>Up to 50 source tables</li>
-        <li><span class="check"></span>One-to-many mapping</li>
-        <li><span class="check"></span>Custom SQL steps & stored procs</li>
-        <li><span class="check"></span>Jira / Smartsheet integration</li>
-        <li><span class="check"></span>Project Planner with calendar</li>
-        <li><span class="check"></span>Client portal</li>
-        <li><span class="check"></span>Priority support</li>
-      </ul>
-      <button class="plan-btn accent" onclick="scrollToContact()">Get in touch</button>
-    </div>
-    <div class="pricing-card">
-      <div class="plan-name">Enterprise</div>
-      <div class="plan-price">Custom</div>
-      <p class="plan-desc">Unlimited tables. Dedicated migration engineer, SLA-backed delivery and on-site option.</p>
-      <ul class="plan-features">
-        <li><span class="check"></span>Unlimited tables</li>
-        <li><span class="check"></span>Dedicated migration engineer</li>
-        <li><span class="check"></span>Custom integrations</li>
-        <li><span class="check"></span>On-site scoping available</li>
-        <li><span class="check"></span>SLA-backed delivery</li>
-        <li><span class="check"></span>24/7 support</li>
-      </ul>
-      <button class="plan-btn" onclick="scrollToContact()">Contact sales</button>
+<div class="divider"></div>
+
+<!-- PROJECT PLANNER -->
+<section class="section" id="planner">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Project Plan · Calendar — April 2026</div>
+        </div>
+        <div class="mock-body" style="padding:0.5rem">
+          <!-- Mini calendar -->
+          <div style="display:flex;gap:0.4rem;margin-bottom:0.4rem">
+            <div style="font-size:9px;background:var(--bg4);color:var(--accent);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Year</div>
+            <div style="font-size:9px;background:var(--accent);color:#fff;padding:2px 7px;border-radius:4px;font-family:var(--mono)">Month</div>
+            <div style="font-size:9px;background:var(--bg4);color:var(--text3);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Week</div>
+            <div style="font-size:9px;background:var(--bg4);color:var(--text3);padding:2px 7px;border-radius:4px;font-family:var(--mono)">Day</div>
+            <div style="margin-left:auto;font-size:9px;color:var(--text3);font-family:var(--mono)">◀ April 2026 ▶</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;font-family:var(--mono);font-size:9px;text-align:center;margin-bottom:2px">
+            <div style="color:var(--text3)">M</div><div style="color:var(--text3)">T</div><div style="color:var(--text3)">W</div><div style="color:var(--text3)">T</div><div style="color:var(--text3)">F</div><div style="color:var(--text3)">S</div><div style="color:var(--text3)">S</div>
+          </div>
+          <div id="cal-mock-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;font-family:var(--mono);font-size:9px"></div>
+          <!-- Stats row -->
+          <div style="display:flex;gap:0.4rem;margin-top:0.5rem;flex-wrap:wrap">
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--accent)">7</div><div style="font-size:8px;color:var(--text3)">days left</div></div>
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--green)">12</div><div style="font-size:8px;color:var(--text3)">done</div></div>
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--amber)">3</div><div style="font-size:8px;color:var(--text3)">in progress</div></div>
+            <div style="background:var(--bg3);border-radius:4px;padding:0.3rem 0.5rem;text-align:center;flex:1"><div style="font-size:11px;font-weight:700;color:var(--red)">1</div><div style="font-size:8px;color:var(--text3)">blocker</div></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="section-tag">Project Planner</div>
+        <div class="section-title" style="font-size:2.2rem">Plan, track and deliver your migration</div>
+        <div class="section-sub">A full project management tool built into Cygenix. Calendar views, task tracking, blockers, phase progress and activity log — all driven by your project completion date from Project Settings.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>Year / Month / Week / Day calendar views — click to add events</li>
+          <li>Outlook-style event modal with type, time, location, attendees</li>
+          <li>Task table with status, priority, phase, owner and due date</li>
+          <li>Blocker management with impact level and resolution tracking</li>
+          <li>7-stage execution phase tracker — click to set current phase</li>
+          <li>Activity log records every change automatically</li>
+        </ul>
+      </div>
     </div>
   </div>
-</div>
+</section>
+
+<div class="divider"></div>
+
+<!-- SQL EDITOR -->
+<section class="section" id="sql-editor">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div>
+        <div class="section-tag">SQL Editor</div>
+        <div class="section-title" style="font-size:2.2rem">Full-featured SQL workspace</div>
+        <div class="section-sub">Write, save, run and manage SQL scripts against source or target databases. AI assistant, find & replace, history, results grid with pivot view and Excel export.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>Script library — save, name and load any number of scripts</li>
+          <li>Ctrl+Enter to run, Ctrl+F to find, Ctrl+/ to comment selection</li>
+          <li>Results grid with row / pivot view and Excel export</li>
+          <li>Query history with re-load and timestamp</li>
+          <li>AI assistant — describe what you need, Claude writes the SQL</li>
+          <li>Snippet toolbar — SELECT, WHERE, INSERT, UPDATE, TRAN</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">SQL Editor · Source DB</div>
+        </div>
+        <div class="sql-block" style="margin:0.5rem;max-height:130px">
+          <span class="sql-cm">-- Count records by status for reconciliation</span><br>
+          <span class="sql-kw">SELECT</span><br>
+          &nbsp;&nbsp;[status_code],<br>
+          &nbsp;&nbsp;<span class="sql-fn">COUNT</span>(*) <span class="sql-kw">AS</span> record_count,<br>
+          &nbsp;&nbsp;<span class="sql-fn">SUM</span>([amount]) <span class="sql-kw">AS</span> total_amount<br>
+          <span class="sql-kw">FROM</span> [dbo].[transactions]<br>
+          <span class="sql-kw">WHERE</span> [created_date] &gt;= <span class="sql-str">'2024-01-01'</span><br>
+          &nbsp;&nbsp;<span class="sql-kw">AND</span> [active_flag] = <span class="sql-num">1</span><br>
+          <span class="sql-kw">GROUP BY</span> [status_code]<br>
+          <span class="sql-kw">ORDER BY</span> record_count <span class="sql-kw">DESC</span>
+        </div>
+        <div style="background:var(--bg3);border-top:0.5px solid var(--border);padding:0.4rem 0.6rem;display:flex;gap:0.5rem;font-family:var(--mono);font-size:9px;color:var(--text3)">
+          <span style="color:var(--green)">▶ Run (Ctrl+Enter)</span>
+          <span>|</span><span>🔍 Find</span><span>|</span><span>⬇ Export</span>
+        </div>
+        <div style="padding:0.4rem 0.6rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.3rem;font-family:var(--mono);font-size:9px;background:var(--bg3);border-radius:4px;padding:0.3rem">
+            <div style="color:var(--text3);text-transform:uppercase;font-size:8px">status_code</div><div style="color:var(--text3);text-transform:uppercase;font-size:8px">record_count</div><div style="color:var(--text3);text-transform:uppercase;font-size:8px">total_amount</div>
+            <div style="color:var(--teal)">ACTIVE</div><div style="color:var(--text2)">1,842</div><div style="color:var(--green)">£2,341,990</div>
+            <div style="color:var(--teal)">PENDING</div><div style="color:var(--text2)">234</div><div style="color:var(--amber)">£89,450</div>
+            <div style="color:var(--teal)">CLOSED</div><div style="color:var(--text2)">89</div><div style="color:var(--text3)">£12,100</div>
+          </div>
+          <div style="font-size:9px;color:var(--green);font-family:var(--mono);margin-top:0.3rem">✓ 3 rows · 12ms</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- PERFORMANCE -->
+<section class="section" id="performance">
+  <div class="container-sm animate-on-scroll" style="text-align:center">
+    <div class="section-tag">Performance Tuning</div>
+    <div class="section-title">Tuned for your environment</div>
+    <div class="section-sub" style="margin:0 auto 3rem">Quick presets for common scenarios. Fine-tune batch sizes, timeouts, concurrency and data loading to match your server's capacity. Import and export settings as JSON.</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0.75rem;margin-bottom:2rem">
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--green);margin-bottom:0.3rem">Small DB</div>
+        <div style="font-size:9px;color:var(--text3)">1,000 rows/page<br>1 thread<br>Full verify</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--accent);margin-bottom:0.3rem">Medium DB</div>
+        <div style="font-size:9px;color:var(--text3)">2,000 rows/page<br>2 threads<br>Balanced</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid rgba(79,142,255,0.4);border-radius:8px;padding:0.875rem;text-align:center;background:var(--bg3)">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--amber);margin-bottom:0.3rem">Large DB</div>
+        <div style="font-size:9px;color:var(--text3)">5,000 rows/page<br>4 threads<br>NOLOCK</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--teal);margin-bottom:0.3rem">Azure SQL</div>
+        <div style="font-size:9px;color:var(--text3)">90s connect<br>5 retries<br>DTU-safe</div>
+      </div>
+      <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:0.875rem;text-align:center">
+        <div style="font-size:10px;font-family:var(--mono);color:var(--purple);margin-bottom:0.3rem">Cautious</div>
+        <div style="font-size:9px;color:var(--text3)">100 rows/batch<br>1 thread<br>Row verify</div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- CTA -->
-<div class="cta-section" id="contact">
-  <div>
-    <h2>Ready to start your migration?</h2>
-    <p>Book a free 30-minute scoping call. We'll review your source and target systems and give you a clear delivery plan.</p>
+<section class="cta-section">
+  <div class="cta-title">Ready to migrate<br>with confidence?</div>
+  <div class="cta-sub">Cygenix handles the complexity — AI mapping, value translation, flexible validation, project planning and performance tuning — so your team can focus on the migration, not the tooling.</div>
+  <div class="cta-btns">
+    <a href="/login.html" class="btn-hero btn-primary">Request access →</a>
+    <a href="/help.html" class="btn-hero btn-secondary" target="_blank">Read the docs</a>
   </div>
-  <div class="cta-right">
-    <a href="https://wa.me/4407809873223" class="btn-white" target="_blank" rel="noopener">Book free call</a>
-    <a href="mailto:hello@cygenix.co.uk" class="btn-ghost-white">Email an engineer</a>
-  </div>
-</div>
+</section>
 
-<!-- FOOTER -->
-<div class="footer-wrap">
-  <div class="footer-grid">
-    <div>
-      <div class="footer-logo"><div class="footer-logo-mark">C</div>Cygenix</div>
-      <div class="footer-tagline">AI-powered SQL database migration for UK enterprises. Powered by Claude AI.</div>
-    </div>
-    <div>
-      <div class="footer-col-title">Platform</div>
-      <a href="/demo.html" class="footer-link">Demo reel</a>
-      <a href="/help.html" class="footer-link" target="_blank">Documentation</a>
-      <a href="/login.html" class="footer-link">Sign in</a>
-      <a href="#pricing" class="footer-link">Pricing</a>
-    </div>
-    <div>
-      <div class="footer-col-title">Features</div>
-      <a href="/demo.html#mapper" class="footer-link">AI Column Mapping</a>
-      <a href="/demo.html#validation" class="footer-link">Data Validation</a>
-      <a href="/demo.html#planner" class="footer-link">Project Planner</a>
-      <a href="/demo.html#sql-editor" class="footer-link">SQL Editor</a>
-    </div>
-    <div>
-      <div class="footer-col-title">Company</div>
-      <a href="mailto:hello@cygenix.co.uk" class="footer-link">Contact</a>
-      <a href="https://wa.me/4407809873223" class="footer-link" target="_blank" rel="noopener">WhatsApp</a>
-      <a href="/privacy-policy" class="footer-link">Privacy Policy</a>
-    </div>
-  </div>
-  <div class="footer-bottom">
-    <p>© 2026 Cygenix Ltd · Weybridge, Surrey, UK · GDPR Compliant</p>
-    <p>Powered by <a href="https://anthropic.com" style="color:var(--ink3);text-decoration:none" target="_blank" rel="noopener">Claude AI</a> · Built on Netlify & Azure</p>
-  </div>
-</div>
+<footer>
+  Cygenix AI Migration Platform · Claude AI Column Mapping · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">Dashboard</a> · <a href="/help.html" style="color:var(--accent);text-decoration:none">Help</a>
+</footer>
 
 <script>
-function toggleMenu(){
-  const links=document.querySelector('.nav-links');
-  const isOpen=links.style.display==='flex';
-  links.style.display=isOpen?'none':'flex';
-  links.style.flexDirection='column';
-  links.style.position='absolute';
-  links.style.top='60px';
-  links.style.left='0';
-  links.style.right='0';
-  links.style.background='#fff';
-  links.style.padding='1.25rem 1.5rem';
-  links.style.borderBottom='0.5px solid rgba(0,0,0,0.08)';
-  links.style.zIndex='99';
-  links.style.gap='1rem';
+// Mapper rows animation
+const mapData = [
+  ['run_number','SMALLINT','run_number','SMALLINT','','high'],
+  ['code','NVARCHAR(50)','code','NVARCHAR(50)','','high'],
+  ['description_text','NVARCHAR(200)','description_text','NVARCHAR(100)','','med'],
+  ['active_flag','BIT','active_flag','BIT','','high'],
+  ['region','NVARCHAR','territory','NVARCHAR','N\'EMEA\'','fixed'],
+  ['legacy_id','INT','—','—','','low'],
+];
+const mapBody = document.getElementById('mapper-rows');
+if(mapBody){
+  mapData.forEach((r,i)=>{
+    setTimeout(()=>{
+      const d=document.createElement('div');
+      d.style.cssText='display:grid;grid-template-columns:1fr 0.7fr 1fr 0.8fr 0.8fr;gap:0.3rem;padding:0.25rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);align-items:center;opacity:0;transition:opacity 0.3s';
+      const isTrunc=r[0]==='description_text';
+      const isFixed=r[4]!=='';
+      const badgeCls=r[5]==='high'?'c-high':r[5]==='med'?'c-med':r[5]==='fixed'?'c-high':'c-low';
+      const badgeTxt=r[5]==='high'?'HIGH':r[5]==='med'?'MED ⚠':r[5]==='fixed'?'FIXED':'LOW';
+      d.innerHTML=`
+        <div style="font-family:var(--mono);font-size:9px;color:${r[5]==='low'?'var(--text3)':'var(--text2)'}">${r[0]}</div>
+        <div style="font-size:8px;color:var(--text3);font-family:var(--mono)">${r[1]}</div>
+        <div style="font-family:var(--mono);font-size:9px;color:${r[2]==='—'?'var(--text3)':'var(--teal)'}">${r[2]}${isTrunc?'<span style="font-size:8px;color:var(--amber)"> ⚠ LEFT(100)</span>':''}</div>
+        <div style="font-family:var(--mono);font-size:9px;color:${isFixed?'var(--teal)':'var(--text3)'}">${r[4]||'—'}</div>
+        <div><span class="confidence ${badgeCls}">${badgeTxt}</span></div>`;
+      mapBody.appendChild(d);
+      requestAnimationFrame(()=>d.style.opacity='1');
+    },i*100);
+  });
 }
-function scrollToContact(){
-  document.getElementById('contact').scrollIntoView({behavior:'smooth'});
+
+// Validation rows animation
+const valData=[
+  ['CheckGLBalances','pass',0],
+  ['CheckOrphanVouchers','fail',14],
+  ['CheckDuplicateInvoices','fail',3],
+  ['CheckVendorRefs','pass',0],
+  ['CheckPeriodTotals','pending',0],
+];
+const valBody=document.getElementById('val-rows-mock');
+let vp=0,vf=0,vpend=0;
+if(valBody){
+  valData.forEach((r,i)=>{
+    setTimeout(()=>{
+      const row=document.createElement('div');
+      row.className='val-row';
+      const badge=r[1]==='pass'?'<span class="val-badge v-pass">🟢 Pass</span>':r[1]==='fail'?'<span class="val-badge v-fail">🔴 Fail</span>':'<span class="val-badge v-pending">— pending —</span>';
+      row.innerHTML=`<input type="checkbox" ${r[1]!=='pending'?'checked':''} style="accent-color:var(--accent);width:10px;flex-shrink:0"><div class="val-name">${r[0]}</div>${badge}<div class="val-rows">${r[2]>0?r[2]+' rows':''}</div>`;
+      valBody.appendChild(row);
+      if(r[1]==='pass'){vp++;document.getElementById('val-pass-count').textContent=vp;}
+      if(r[1]==='fail'){vf++;document.getElementById('val-fail-count').textContent=vf;}
+      if(r[1]==='pending'){vpend++;document.getElementById('val-pend-count').textContent=vpend;}
+    },400+i*280);
+  });
 }
+
+// Calendar mock
+const calGrid=document.getElementById('cal-mock-grid');
+if(calGrid){
+  const today=14; // April 14 2026
+  const eventDays={8:'ev-task',11:'ev-deadline',14:'ev-milestone',18:'ev-task',21:'ev-meeting',25:'ev-deadline'};
+  const evNames={8:'Schema review',11:'UAT deadline',14:'Go-live!',18:'Data QA',21:'Stakeholder sync',25:'Sign-off'};
+  const evCols={'ev-task':'var(--accent)','ev-deadline':'var(--red)','ev-milestone':'var(--amber)','ev-meeting':'var(--purple)'};
+  // April 2026: starts Wednesday (dow=2 → Mon=0 based → offset=2)
+  for(let i=0;i<2;i++) calGrid.innerHTML+=`<div style="color:var(--text3);text-align:center;padding:2px"></div>`;
+  for(let d=1;d<=30;d++){
+    const isToday=d===today;
+    const ev=eventDays[d];
+    let inner=`<div style="text-align:center;padding:2px;font-size:9px;border-radius:${isToday?'50%':'3px'};background:${isToday?'var(--accent)':'transparent'};color:${isToday?'#fff':'var(--text3)'};font-family:var(--mono);cursor:pointer;position:relative">${d}`;
+    if(ev) inner+=`<span style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:${evCols[ev]}"></span>`;
+    inner+=`</div>`;
+    if(ev){
+      inner=`<div style="position:relative">
+        <div style="text-align:center;padding:2px;font-size:9px;border-radius:${isToday?'50%':'3px'};background:${isToday?'var(--accent)':'transparent'};color:${isToday?'#fff':'var(--text3)'};font-family:var(--mono);cursor:pointer">${d}</div>
+        <div style="font-size:8px;padding:1px 3px;border-radius:2px;background:${evCols[ev]}22;color:${evCols[ev]};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;border-left:2px solid ${evCols[ev]}">${evNames[d]}</div>
+      </div>`;
+    }
+    calGrid.innerHTML+=inner;
+  }
+}
+
+// Scroll animations
+const observer=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){e.target.style.transitionDelay=(e.target.dataset.delay||0)+'ms';e.target.classList.add('visible');}
+  });
+},{threshold:0.1});
+document.querySelectorAll('.animate-on-scroll').forEach(el=>observer.observe(el));
+
+// Nav scroll
+const sections=document.querySelectorAll('section[id]');
+const navLinks=document.querySelectorAll('.nav-links a');
+window.addEventListener('scroll',()=>{
+  let cur='';
+  sections.forEach(s=>{if(window.scrollY>=s.offsetTop-100)cur=s.id;});
+  navLinks.forEach(a=>{a.style.color=a.getAttribute('href')==='#'+cur?'var(--text)':'';});
+},{passive:true});
 </script>
 </body>
 </html>

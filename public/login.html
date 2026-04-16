@@ -8,10 +8,10 @@
 <meta name="description" content="Sign in to Cygenix, the AI-powered SQL database migration platform.">
 <meta property="og:title" content="Cygenix – Sign In">
 <meta property="og:description" content="Sign in to Cygenix, the AI-powered SQL database migration platform.">
-<meta property="og:url" content="https://cygenix.netlify.app/login.html">
+<meta property="og:url" content="https://cygenix.co.uk/login.html">
 <meta property="og:site_name" content="Cygenix">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://cygenix.netlify.app/og-image.png">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Cygenix – Sign In">
 <meta name="twitter:description" content="Sign in to Cygenix, the AI-powered SQL database migration platform.">
@@ -68,7 +68,12 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 <body>
 <div class="card">
   <div class="logo">Cyge<span>nix</span></div>
-  <div class="tagline">AI-powered cloud migration platform</div>
+  <div class="tagline" id="login-tagline">AI-powered SQL database migration</div>
+
+  <!-- Shown when redirected from a protected page -->
+  <div id="access-banner" style="display:none;background:rgba(61,126,255,0.1);border:0.5px solid rgba(61,126,255,0.3);border-radius:8px;padding:0.75rem;margin-bottom:1.25rem;text-align:center;font-size:13px;color:var(--accent)">
+    🔒 <strong>Sign in or create a free account</strong> to access the platform
+  </div>
 
   <div class="tabs">
     <div class="tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</div>
@@ -108,7 +113,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
       <input id="signup-password" class="form-input" type="password" placeholder="Choose a strong password"
         autocomplete="new-password" onkeydown="if(event.key==='Enter')signUp()"/>
     </div>
-    <button class="btn btn-primary" id="signup-btn" onclick="signUp()">Create account</button>
+    <button class="btn btn-primary" id="signup-btn" onclick="signUp()">Create free account</button>
   </div>
 
   <div class="divider">or continue with</div>
@@ -124,7 +129,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   </button>
 
   <div class="footer-link" id="footer-signin">
-    Don't have an account? <a onclick="switchTab('signup')">Sign up free</a>
+    No account yet? <a onclick="switchTab('signup')">Create a free account</a>
   </div>
   <div class="footer-link" id="footer-signup" style="display:none">
     Already have an account? <a onclick="switchTab('signin')">Sign in</a>
@@ -136,6 +141,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 
 <script>
 const GOTRUE = window.location.origin + '/.netlify/identity';
+
+// Show access banner if redirected from a protected page
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('reason') === 'protected') {
+    const banner = document.getElementById('access-banner');
+    if (banner) banner.style.display = 'block';
+    // Auto-switch to sign-up tab if no account hint
+    const tab = params.get('tab');
+    if (tab === 'signup') switchTab('signup');
+  }
+})();
+
+// After successful login, redirect back to where they came from
+function getRedirectUrl() {
+  return sessionStorage.getItem('cygenix_redirect_after_login') || '/dashboard.html';
+}
 
 function saveSession(data) {
   sessionStorage.setItem('cygenix_token',   data.access_token);
