@@ -252,12 +252,12 @@ async function acceptInvite(token) {
   if (btn) { btn.textContent = 'Accepting…'; btn.disabled = true; }
 
   try {
-    // Accept the invite via GoTrue /invite endpoint
-    // This is the correct endpoint for invite_token acceptance
-    const res = await fetch(GOTRUE + '/invite', {
-      method: 'PUT',
+    // Accept invite via GoTrue /verify with type signup
+    // This is confirmed correct for Netlify Identity invite tokens
+    const res = await fetch(GOTRUE + '/verify', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, password })
+      body: JSON.stringify({ token, password, type: 'signup' })
     });
     const data = await res.json().catch(() => ({}));
 
