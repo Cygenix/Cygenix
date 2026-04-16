@@ -367,7 +367,27 @@ async function acceptInvite(token) {
       return;
     }
 
-    const email = data.email || data.user?.email || '';
+    // Extract email — try multiple places including JWT decode
+    let email = data.email || data.user?.email || '';
+    if (!email && data.access_token) {
+      try {
+        const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+        email = payload.email || '';
+        console.log('[Invite] Email from JWT:', email);
+      } catch(e) { console.warn('[Invite] JWT decode failed:', e.message); }
+    }
+    // Also fetch from /user endpoint if still empty
+    if (!email && data.access_token) {
+      try {
+        const ur = await fetch(GOTRUE + '/user', {
+          headers: { 'Authorization': 'Bearer ' + data.access_token }
+        });
+        const ud = await ur.json();
+        email = ud.email || '';
+        console.log('[Invite] Email from /user:', email);
+      } catch(e) {}
+    }
+    console.log('[Invite] Final email:', email, '| Full data keys:', Object.keys(data).join(','));
 
     // Step 2: Update name if provided
     if (data.access_token && name) {
@@ -381,11 +401,14 @@ async function acceptInvite(token) {
     // Step 3: Send recovery email — this is the ONLY reliable way to set
     // a persistent password in Netlify Identity for invited users
     if (email) {
-      await fetch(GOTRUE + '/recover', {
+      const recRes = await fetch(GOTRUE + '/recover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
-      }).catch(() => {});
+      });
+      console.log('[Invite] Recovery email status:', recRes.status);
+    } else {
+      console.error('[Invite] No email found — cannot send recovery email');
     }
 
     // Step 4: Show confirmation — session is active for now, password email sent
