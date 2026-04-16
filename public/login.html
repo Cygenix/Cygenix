@@ -188,22 +188,43 @@ if (sessionStorage.getItem('cygenix_token') &&
   } catch { window.location.href = getRedirectUrl(); }
 }
 
-// Handle URL hash tokens — invite_token and access_token (OAuth)
-(function handleHashTokens() {
-  const hash = window.location.hash;
+// Handle URL tokens — checks query string (?token=) AND hash (#token=)
+// Query string survives Microsoft SafeLinks / Outlook wrapping; hash does not
+(function handleTokens() {
+
+  // ── Check query string first — survives SafeLinks redirects ──────────────
+  const qp = new URLSearchParams(window.location.search);
+  const qInvite    = qp.get('invite_token');
+  const qRecovery  = qp.get('recovery_token');
+
+  if (qInvite) {
+    window.history.replaceState(null, '', window.location.pathname);
+    showInviteAccept(qInvite);
+    return;
+  }
+  if (qRecovery) {
+    window.history.replaceState(null, '', window.location.pathname);
+    showPasswordReset(qRecovery);
+    return;
+  }
+
+  // ── Check hash — used by Netlify default emails and OAuth ─────────────────
+  let hash = window.location.hash;
+  if (!hash || hash === '#') {
+    const stored = sessionStorage.getItem('cygenix_pending_token');
+    if (stored) { hash = stored; }
+  }
+  sessionStorage.removeItem('cygenix_pending_token');
   if (!hash) return;
   const params = new URLSearchParams(hash.replace(/^#/, ''));
 
-  // ── Invite token — user clicked invite email link ──────────────────────────
   const inviteToken = params.get('invite_token');
   if (inviteToken) {
     window.history.replaceState(null, '', window.location.pathname);
-    // Show invite acceptance UI
     showInviteAccept(inviteToken);
     return;
   }
 
-  // ── Recovery token — user clicked password reset email link ──────────────
   const recoveryToken = params.get('recovery_token');
   if (recoveryToken) {
     window.history.replaceState(null, '', window.location.pathname);
