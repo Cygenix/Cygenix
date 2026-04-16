@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+// Redirect invite/recovery tokens to login.html before anything loads
+(function(){
+  const h = window.location.hash;
+  if (h && (h.includes('invite_token') || h.includes('recovery_token') || h.includes('confirmation_token'))) {
+    window.location.replace('/login.html' + h);
+  }
+})();
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -607,5 +616,6 @@ window.addEventListener('scroll',()=>{
   navLinks.forEach(a=>{a.style.color=a.getAttribute('href')==='#'+cur?'var(--text)':'';});
 },{passive:true});
 </script>
+<script src="/cookie-consent.js"></script>
 </body>
 </html>
