@@ -364,18 +364,22 @@ app.http('data', {
           const netlifySiteId = process.env.NETLIFY_SITE_ID || 'cygenix.netlify.app';
           if (!netlifyToken) return err(500, 'NETLIFY_TOKEN not configured');
 
-          // Send invite via Netlify Identity admin API
-          const inviteRes = await fetch(
-            `https://api.netlify.com/api/v1/sites/${netlifySiteId}/identity/users/invite`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${netlifyToken}`
-              },
-              body: JSON.stringify({ emails: [email] })
-            }
-          );
+          // GoTrue invite endpoint — runs on the site itself
+          // Must use the site's own identity URL, not the Netlify API
+          const identityUrl = `https://${netlifySiteId}/.netlify/identity`;
+
+          const inviteRes = await fetch(`${identityUrl}/admin/users`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${netlifyToken}`
+            },
+            body: JSON.stringify({
+              email,
+              data: { full_name: body.name || email.split('@')[0] },
+              send_email: true
+            })
+          });
 
           const inviteData = await inviteRes.json().catch(() => ({}));
           ctx.log('Netlify invite response:', inviteRes.status, JSON.stringify(inviteData));
@@ -416,10 +420,10 @@ app.http('data', {
           if (!netlifyToken) return err(500, 'NETLIFY_TOKEN not configured');
 
           // Fetch from Netlify Identity
-          const netlifyRes = await fetch(
-            `https://api.netlify.com/api/v1/sites/${netlifySiteId}/identity/users?per_page=100`,
-            { headers: { 'Authorization': `Bearer ${netlifyToken}` } }
-          );
+          const identityUrl = `https://${netlifySiteId}/.netlify/identity`;
+          const netlifyRes = await fetch(`${identityUrl}/admin/users?per_page=100`, {
+            headers: { 'Authorization': `Bearer ${netlifyToken}` }
+          });
 
           if (!netlifyRes.ok) {
             const errText = await netlifyRes.text();
