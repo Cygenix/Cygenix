@@ -272,45 +272,66 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
           <div class="page-title">Invite Users</div>
           <div class="page-sub">Send access invitations to testers and clients</div>
         </div>
+        <button class="btn btn-primary" onclick="window.open('https://app.netlify.com/sites/cygenix/identity','_blank')">Open Netlify Identity ↗</button>
       </div>
 
       <div class="netlify-note">
-        Invitations are sent via <strong>Netlify Identity</strong>. The user receives an email with a link to set their password and access the platform.
-        Make sure <strong>Invite only</strong> mode is enabled in Netlify → Identity → Settings → Registration if you want to control who can sign up.
+        ℹ️ <strong>Invitations are sent directly from Netlify Identity.</strong>
+        Click the button above to open the Netlify Identity panel, then click <strong>Invite users</strong> and enter the email address.
+        The user receives an email with a link to set their password and access <strong>cygenix.co.uk</strong>.
       </div>
 
-      <div class="panel" style="max-width:520px">
-        <div class="panel-header">
-          <div class="panel-title">Send invitation</div>
-        </div>
-        <div style="padding:1.5rem">
-          <div class="form-row">
-            <label class="form-label">Full name</label>
-            <input class="form-input" id="invite-name" type="text" placeholder="John Smith"/>
+      <div class="panel" style="max-width:600px">
+        <div class="panel-header"><div class="panel-title">How to invite a user — 3 steps</div></div>
+        <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">1</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Open Netlify Identity</div>
+              <div style="font-size:12px;color:var(--text2)">Click <strong>Open Netlify Identity ↗</strong> above, or go to app.netlify.com → your site → Identity tab</div>
+            </div>
           </div>
-          <div class="form-row">
-            <label class="form-label">Email address</label>
-            <input class="form-input" id="invite-email" type="email" placeholder="john@company.com"/>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">2</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Click "Invite users"</div>
+              <div style="font-size:12px;color:var(--text2)">Enter the user's email address. You can invite multiple at once by entering one per line.</div>
+            </div>
           </div>
-          <div class="form-row">
-            <label class="form-label">Note (optional)</label>
-            <input class="form-input" id="invite-note" type="text" placeholder="e.g. Beta tester — Acme Corp"/>
-          </div>
-          <div style="display:flex;gap:0.75rem;margin-top:1.25rem">
-            <button class="btn btn-primary" onclick="sendInvite()">Send invitation</button>
-            <button class="btn btn-ghost" onclick="clearInviteForm()">Clear</button>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">3</div>
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">User receives invite email</div>
+              <div style="font-size:12px;color:var(--text2)">They get an email from Netlify with a link to set their password. Once done, they can log in at <strong>cygenix.co.uk/login.html</strong>. Their record will appear in the Users tab here after first login.</div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="panel" style="max-width:520px">
-        <div class="panel-header"><div class="panel-title">Bulk invite</div></div>
+      <div class="panel" style="max-width:600px;margin-top:1rem">
+        <div class="panel-header"><div class="panel-title">Registration mode</div></div>
         <div style="padding:1.5rem">
-          <div class="form-row">
-            <label class="form-label">Email addresses (one per line)</label>
-            <textarea class="form-input" id="bulk-emails" rows="5" placeholder="john@company.com&#10;jane@agency.com&#10;bob@startup.io" style="resize:vertical;line-height:1.6"></textarea>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+            <div>
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Current mode: <span id="reg-mode-label" style="color:var(--accent)">checking…</span></div>
+              <div style="font-size:12px;color:var(--text2)">Controls whether anyone can sign up or only invited users</div>
+            </div>
           </div>
-          <button class="btn btn-primary" onclick="sendBulkInvites()" style="margin-top:0.5rem">Send all invitations</button>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+            <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid var(--border2);background:var(--bg3);flex:1;min-width:200px">
+              <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">🔓 Open registration</div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Anyone can create a free account. Good for public beta.</div>
+              <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Open</div>
+            </div>
+            <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid rgba(61,126,255,0.3);background:var(--accent-glow);flex:1;min-width:200px">
+              <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px">🔒 Invite only</div>
+              <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Only invited users can register. Best for controlled testing.</div>
+              <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Invite only</div>
+            </div>
+          </div>
+          <div style="margin-top:1rem">
+            <button class="btn btn-ghost" onclick="window.open('https://app.netlify.com/sites/cygenix/settings/identity','_blank')">Change registration mode ↗</button>
+          </div>
         </div>
       </div>
     </div>
