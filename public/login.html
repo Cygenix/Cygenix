@@ -230,16 +230,15 @@ function showInviteAccept(token) {
     <div class="logo">Cyge<span>nix</span></div>
     <div class="tagline">You've been invited to Cygenix</div>
     <div id="invite-alert" class="alert alert-error" style="display:none"></div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:1.25rem;text-align:center">
+      Enter your name then click below.<br>You'll receive an email to set your password.
+    </div>
     <div class="form-row">
       <label class="form-label">Your name <span style="color:var(--text3);font-size:10px;text-transform:none">(optional)</span></label>
-      <input id="invite-name" class="form-input" type="text" placeholder="Your full name" autocomplete="name"/>
+      <input id="invite-name" class="form-input" type="text" placeholder="Your full name" autocomplete="name"
+        onkeydown="if(event.key==='Enter')acceptInvite('${token}')"/>
     </div>
-    <div class="form-row">
-      <label class="form-label">Set your password <span style="color:var(--text3);font-size:10px;text-transform:none">(min 8 chars)</span></label>
-      <input id="invite-password" class="form-input" type="password" placeholder="Choose a strong password"
-        autocomplete="new-password" onkeydown="if(event.key==='Enter')acceptInvite('${token}')"/>
-    </div>
-    <button class="btn btn-primary" onclick="acceptInvite('${token}')" style="width:100%">Accept invitation →</button>
+    <button class="btn btn-primary" onclick="acceptInvite('${token}')" style="width:100%">Activate account &amp; set password →</button>
     <div class="footer-link" style="margin-top:1rem">
       <a href="/" style="color:var(--text3)">← Back to cygenix.co.uk</a>
     </div>
@@ -324,98 +323,87 @@ async function doPasswordReset(token) {
 }
 
 async function acceptInvite(token) {
-  const name     = document.getElementById('invite-name')?.value?.trim() || '';
-  const password = document.getElementById('invite-password')?.value || '';
-  const alertEl  = document.getElementById('invite-alert');
-  const btn      = document.querySelector('.btn-primary');
-
-  if (!password || password.length < 8) {
-    if (alertEl) { alertEl.textContent = 'Password must be at least 8 characters.'; alertEl.style.display = 'block'; }
-    return;
-  }
-  if (btn) { btn.textContent = 'Accepting…'; btn.disabled = true; }
+  const name    = document.getElementById('invite-name')?.value?.trim() || '';
+  const alertEl = document.getElementById('invite-alert');
+  const btn     = document.querySelector('.btn-primary');
+  if (btn) { btn.textContent = 'Activating…'; btn.disabled = true; }
 
   try {
-    // Step 1: Verify invite token — Netlify requires password here
+    // Step 1: Confirm the invite — Netlify needs a dummy password just to accept the token
+    // The real password is set via the recovery email in step 3
+    const dummyPw = 'Temp!' + Math.random().toString(36).slice(2,10) + 'Ax9';
     const res = await fetch(GOTRUE + '/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, type: 'signup', password })
+      body: JSON.stringify({ token, type: 'signup', password: dummyPw })
     });
     const data = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const msg = data.msg || data.error_description || data.error || 'Failed to accept invitation.';
+      const msg = data.msg || data.error_description || data.error || 'Failed to activate account.';
       if (alertEl) { alertEl.textContent = `${msg} (HTTP ${res.status})`; alertEl.style.display = 'block'; }
-      if (btn) { btn.textContent = 'Accept invitation →'; btn.disabled = false; }
+      if (btn) { btn.textContent = 'Activate account & set password →'; btn.disabled = false; }
       return;
-    }
-
-    // Step 2: Explicitly set password + name via PUT /user
-    // This is the critical step that makes email/password login work afterwards
-    if (data.access_token) {
-      const updateBody = { password };
-      if (name) updateBody.data = { full_name: name };
-      const putRes = await fetch(GOTRUE + '/user', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.access_token },
-        body: JSON.stringify(updateBody)
-      });
-      console.log('[Invite] PUT /user status:', putRes.status);
     }
 
     const email = data.email || data.user?.email || '';
 
-    // Step 3: Verify password was set by attempting a test login
+    // Step 2: Update name if provided
+    if (data.access_token && name) {
+      await fetch(GOTRUE + '/user', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.access_token },
+        body: JSON.stringify({ data: { full_name: name } })
+      }).catch(() => {});
+    }
+
+    // Step 3: Send recovery email — this is the ONLY reliable way to set
+    // a persistent password in Netlify Identity for invited users
     if (email) {
-      const testRes = await fetch(GOTRUE + '/token?grant_type=password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-      const testData = await testRes.json().catch(() => ({}));
-      console.log('[Invite] Login test status:', testRes.status, testData.token_type || testData.msg);
-
-      if (testRes.ok && testData.access_token) {
-        // Password confirmed working — save this fresh session and redirect
-        saveSession(testData);
-        setTimeout(() => { window.location.href = getRedirectUrl(); }, 300);
-        return;
-      }
-
-      // Password test failed — send recovery email as fallback
-      console.warn('[Invite] Password login test failed, sending recovery email');
       await fetch(GOTRUE + '/recover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       }).catch(() => {});
-
-      const card = document.querySelector('.card');
-      if (card) card.innerHTML = `
-        <div class="logo">Cyge<span>nix</span></div>
-        <div class="tagline" style="color:var(--green)">✓ Account activated!</div>
-        <div style="font-size:13px;color:var(--text2);text-align:center;margin:0.75rem 0 1.5rem;line-height:1.7">
-          Your account is ready but we need you to confirm your password.<br>
-          We've sent a <strong style="color:var(--text)">password confirmation email</strong> to
-          <strong style="color:var(--text)">${email}</strong>.<br>
-          Click the link in that email to complete setup.
-        </div>
-        <button class="btn btn-ghost" style="width:100%" onclick="window.location.href='/login.html'">← Back to sign in</button>
-      `;
-      return;
     }
 
-    // Step 4: No email returned — just save session and redirect
-    if (data.access_token) {
-      saveSession(data);
-      setTimeout(() => { window.location.href = getRedirectUrl(); }, 300);
-    }
+    // Step 4: Show confirmation — session is active for now, password email sent
+    if (data.access_token) saveSession(data);
+
+    const card = document.querySelector('.card');
+    if (card) card.innerHTML = `
+      <div class="logo">Cyge<span>nix</span></div>
+      <div style="font-size:1.4rem;font-weight:600;color:#22c97a;margin-bottom:0.5rem;text-align:center">✓ Account activated!</div>
+      <div style="font-size:13px;color:var(--text2);text-align:center;margin:0.75rem 0 1.5rem;line-height:1.75">
+        We've sent a <strong style="color:var(--text)">password setup email</strong> to<br>
+        <strong style="color:var(--accent)">${email}</strong><br><br>
+        Click the link in that email to set your password.<br>
+        After that you can sign in here with your email and password.
+      </div>
+      <div style="background:rgba(34,201,122,0.07);border:0.5px solid rgba(34,201,122,0.25);border-radius:8px;padding:0.875rem 1rem;font-size:12px;color:var(--text2);margin-bottom:1.25rem;line-height:1.6">
+        💡 Can't find the email? Check your spam folder or click below to resend.
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-bottom:0.75rem"
+        onclick="resendSetupEmail('${email}',this)">Resend password setup email</button>
+      <button class="btn btn-ghost" style="width:100%"
+        onclick="window.location.href='/dashboard.html'">Go to dashboard (set password later) →</button>
+    `;
 
   } catch(e) {
     if (alertEl) { alertEl.textContent = 'Error: ' + e.message; alertEl.style.display = 'block'; }
-    if (btn) { btn.textContent = 'Accept invitation →'; btn.disabled = false; }
+    if (btn) { btn.textContent = 'Activate account & set password →'; btn.disabled = false; }
   }
+}
+
+async function resendSetupEmail(email, btn) {
+  if (!email) return;
+  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
+  await fetch(GOTRUE + '/recover', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  }).catch(() => {});
+  if (btn) { btn.textContent = '✓ Sent — check your inbox'; }
 }
 
 async function goTrue(path, body) {
