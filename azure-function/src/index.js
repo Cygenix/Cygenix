@@ -1,3 +1,4 @@
+// Cosmos DB integration v2 - audit + admin-users + invite
 const { app } = require('@azure/functions');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
@@ -461,8 +462,23 @@ app.http('data', {
           return ok({ users: enriched, total: enriched.length });
         }
 
+        // ── AUDIT log — recent activity from Cosmos DB ──────────────────────
+        // GET /api/data/audit
+        case 'audit': {
+          try {
+            const container = getCosmosContainer('audit');
+            const { resources } = await container.items
+              .query('SELECT TOP 50 * FROM c ORDER BY c._ts DESC')
+              .fetchAll();
+            return ok({ entries: resources || [] });
+          } catch(e) {
+            ctx.log('Audit query error:', e.message);
+            return ok({ entries: [] });
+          }
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit`);
       }
 
     } catch (e) {
@@ -471,5 +487,3 @@ app.http('data', {
     }
   }
 });
-
-// Cosmos DB integration - deployed after env var cleanup
