@@ -106,6 +106,7 @@ select.form-input option{background:var(--bg3)}
 .view-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 /* event type colours */
 .ev-task    {background:var(--accent-glow);color:var(--accent);border-left:3px solid var(--accent)}
+.ev-jobrun  {background:rgba(34,201,122,0.08);color:var(--green);border-left:3px solid var(--green)}
 .ev-deadline{background:var(--red-bg);color:var(--red);border-left:3px solid var(--red)}
 .ev-milestone{background:var(--amber-bg);color:var(--amber);border-left:3px solid var(--amber)}
 .ev-meeting {background:var(--purple-bg);color:var(--purple);border-left:3px solid var(--purple)}
@@ -880,6 +881,7 @@ const EV_TYPES = {
   deadline: {label:'Deadline',  cls:'ev-deadline',  dot:'var(--red)'},
   milestone:{label:'Milestone', cls:'ev-milestone', dot:'var(--amber)'},
   meeting:  {label:'Meeting',   cls:'ev-meeting',   dot:'var(--purple)'},
+  jobrun:   {label:'Jobs Run',  cls:'ev-jobrun',    dot:'var(--green)'},
 };
 
 const DAYS_SHORT  = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -890,7 +892,37 @@ function toYMD(d){ return d.toISOString().slice(0,10); }
 function isoToDate(s){ return new Date(s+'T00:00:00'); }
 function sameDay(a,b){ return toYMD(a)===toYMD(b); }
 
-// Build all calendar events from tasks + dedicated calEvents
+// Load executed jobs from localStorage and group by date
+function getJobRunEvents(){
+  try {
+    const raw = localStorage.getItem('cygenix_jobs');
+    if (!raw) return [];
+    const jobs = JSON.parse(raw);
+    // Group jobs that have been run (have a lastRun or executedAt date) by date
+    const byDate = {};
+    jobs.forEach(j => {
+      // Check various date fields jobs might have
+      const runDate = j.lastRun || j.executedAt || j.completedAt || j.runDate;
+      if (!runDate) return;
+      const ymd = runDate.slice(0, 10);
+      if (!byDate[ymd]) byDate[ymd] = [];
+      byDate[ymd].push(j);
+    });
+    // Create one event per day that has job runs
+    return Object.entries(byDate).map(([date, dayJobs]) => ({
+      id:      'jobrun-' + date,
+      title:   '⚡ ' + dayJobs.length + ' job' + (dayJobs.length > 1 ? 's' : '') + ' run',
+      date,
+      type:    'jobrun',
+      cls:     'ev-jobrun',
+      allDay:  true,
+      _jobs:   dayJobs,
+      desc:    dayJobs.map(j => j.name || j.srcTable || 'Job').join(', ')
+    }));
+  } catch { return []; }
+}
+
+// Build all calendar events from tasks + dedicated calEvents + job runs
 function getAllEvents(){
   const all = [];
   // Tasks → calendar events (due date = event date)
@@ -903,6 +935,8 @@ function getAllEvents(){
   if(projectEnd) all.push({id:'proj-end', title:'🏁 Completion: '+projectName, date:projectEnd, type:'deadline', cls:'ev-deadline', allDay:true});
   // Dedicated calendar events
   calEvents.forEach(e=> all.push({...e, cls: EV_TYPES[e.type]?.cls||'ev-task'}));
+  // Job run history from migration jobs
+  getJobRunEvents().forEach(e => all.push(e));
   return all;
 }
 
@@ -1080,6 +1114,12 @@ function renderCalDay(body,title){
 
 // ── Calendar event CRUD ───────────────────────────────────────────────────────
 function openCalEventModal(id, prefillDate, prefillTime){
+  // ── Job run events get their own summary modal ────────────────────────────
+  if(id && id.startsWith('jobrun-')){
+    const ev = getJobRunEvents().find(x=>x.id===id);
+    if(ev) { showJobRunSummary(ev); return; }
+  }
+
   const modal=$('cal-event-modal');
   $('cal-event-modal-title').textContent = id ? 'Edit event' : 'New event';
   $('ce-edit-id').value=id||'';
@@ -1112,6 +1152,70 @@ function openCalEventModal(id, prefillDate, prefillTime){
   setTimeout(()=>$('ce-title').focus(),100);
 }
 function closeCalEventModal(){ $('cal-event-modal')?.classList.remove('open'); }
+
+// ── Job run summary modal ─────────────────────────────────────────────────────
+function showJobRunSummary(ev){
+  // Create modal if it doesn't exist
+  let modal = document.getElementById('jobrun-modal');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'jobrun-modal';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem';
+    modal.onclick = e => { if(e.target===modal) modal.remove(); };
+    document.body.appendChild(modal);
+  }
+
+  const date = ev.date ? new Date(ev.date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : ev.date;
+  const jobs = ev._jobs || [];
+
+  const jobRows = jobs.map(j => {
+    const runTime = j.lastRun ? new Date(j.lastRun).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}) : '—';
+    const rows = j.lastRowCount !== undefined ? j.lastRowCount.toLocaleString() + ' rows' : '—';
+    const history = (j.runHistory||[]).filter(r => r.ts.slice(0,10) === ev.date);
+    const latestRun = history[0];
+    return `
+      <div style="padding:0.875rem 1rem;border-bottom:0.5px solid rgba(255,255,255,0.07);display:flex;align-items:flex-start;gap:0.75rem">
+        <div style="width:8px;height:8px;border-radius:50%;background:${j.status==='complete'?'var(--green)':'var(--amber)'};flex-shrink:0;margin-top:5px"></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:#e8eaf0;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(j.name||j.source||'Job')}</div>
+          <div style="font-size:11px;color:#8b90a0;font-family:'IBM Plex Mono',monospace">${esc(j.source||'')} ${j.target?'→ '+esc(j.target):''}</div>
+          ${latestRun ? `<div style="font-size:11px;color:#22c97a;margin-top:3px">✓ ${parseInt(latestRun.rowsAffected||0).toLocaleString()} rows · ${latestRun.ms}ms · ${new Date(latestRun.ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}</div>` : ''}
+        </div>
+        <div style="font-size:10px;color:#555a6a;font-family:'IBM Plex Mono',monospace;flex-shrink:0">${j.status||'—'}</div>
+      </div>`;
+  }).join('');
+
+  const totalRows = jobs.reduce((sum, j) => {
+    const h = (j.runHistory||[]).filter(r => r.ts.slice(0,10) === ev.date);
+    return sum + (h[0]?.rowsAffected || 0);
+  }, 0);
+
+  modal.innerHTML = `
+    <div style="background:#13161d;border:0.5px solid rgba(255,255,255,0.12);border-radius:12px;width:100%;max-width:540px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;font-family:'Syne',system-ui,sans-serif">
+      <div style="padding:1.25rem 1.5rem;border-bottom:0.5px solid rgba(255,255,255,0.07);display:flex;align-items:flex-start;justify-content:space-between;gap:1rem">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <div style="width:10px;height:10px;border-radius:50%;background:var(--green);flex-shrink:0"></div>
+            <div style="font-size:15px;font-weight:600;color:#e8eaf0">Migration activity</div>
+          </div>
+          <div style="font-size:12px;color:#8b90a0">${date}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:1.5rem;font-weight:600;color:var(--green);letter-spacing:-0.02em">${jobs.length}</div>
+          <div style="font-size:10px;color:#555a6a;text-transform:uppercase;letter-spacing:0.06em">job${jobs.length!==1?'s':''} run</div>
+        </div>
+      </div>
+      ${totalRows > 0 ? `
+      <div style="padding:0.75rem 1.5rem;border-bottom:0.5px solid rgba(255,255,255,0.07);display:flex;align-items:center;gap:1.5rem;background:rgba(34,201,122,0.05)">
+        <div><div style="font-size:1.1rem;font-weight:600;color:var(--green)">${totalRows.toLocaleString()}</div><div style="font-size:10px;color:#555a6a;text-transform:uppercase;letter-spacing:0.05em">total rows migrated</div></div>
+        <div style="font-size:12px;color:#8b90a0">All jobs completed successfully on this date.</div>
+      </div>` : ''}
+      <div style="overflow-y:auto;flex:1">${jobRows || '<div style="padding:2rem;text-align:center;color:#555a6a;font-size:13px">No job details available</div>'}</div>
+      <div style="padding:1rem 1.5rem;border-top:0.5px solid rgba(255,255,255,0.07);display:flex;justify-content:flex-end;gap:0.75rem">
+        <button onclick="document.getElementById('jobrun-modal').remove()" style="padding:7px 16px;border-radius:6px;font-size:13px;font-family:inherit;font-weight:500;border:0.5px solid rgba(255,255,255,0.12);background:transparent;color:#8b90a0;cursor:pointer">Close</button>
+      </div>
+    </div>`;
+}
 
 function toggleCalAllDay(){
   const allDay=$('ce-allday')?.checked;
@@ -1801,5 +1905,6 @@ function clearSyncLog(){
 
 function setIntFooter(msg){ const el=$('int-footer-status'); if(el) el.textContent=msg; }
 </script>
+<script src="/cookie-consent.js"></script>
 </body>
 </html>
