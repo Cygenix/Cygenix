@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Cygenix – Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/cygenix-cosmos-sync.js"></script>
+<style>
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.08);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.08);
+  --amber:#f5a623;--amber-bg:rgba(245,166,35,0.08);
+  --serif:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh}
+
+/* ── Layout ── */
+.app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:230px 1fr;height:100vh;overflow:hidden}
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
+.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto}
+.main{padding:1.75rem;overflow-y:auto;background:var(--bg)}
+.nav-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 1.25rem;margin-bottom:0.5rem;margin-top:1rem}
+.nav-item{display:flex;align-items:center;gap:10px;padding:0.5rem 1.25rem;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
+.nav-item.active{color:var(--accent);background:var(--accent-glow);border-left-color:var(--accent)}
+.back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px;transition:color 0.15s}
+.back-link:hover{color:var(--text2)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--bg4);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--text2)}
+
+/* ── Page header ── */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.75rem}
+.page-title{font-size:1.3rem;font-weight:600;letter-spacing:-0.02em}
+.page-sub{font-size:13px;color:var(--text3);margin-top:2px}
+
+/* ── Stat cards ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.75rem}
+.stat-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem}
+.stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;font-family:var(--mono);margin-bottom:0.5rem}
+.stat-value{font-size:2rem;font-weight:600;letter-spacing:-0.03em;line-height:1}
+.stat-sub{font-size:11px;color:var(--text3);margin-top:0.25rem}
+
+/* ── Panel ── */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1.5rem}
+.panel-header{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:0.5px solid var(--border)}
+.panel-title{font-size:13px;font-weight:600}
+.panel-actions{display:flex;gap:0.5rem}
+
+/* ── Table ── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;padding:0.75rem 1.25rem;text-align:left;border-bottom:0.5px solid var(--border);background:var(--bg3);font-family:var(--mono)}
+td{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);font-size:13px;color:var(--text2)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
+.user-email{font-family:var(--mono);font-size:12px;color:var(--text)}
+.user-name{font-size:13px;color:var(--text2)}
+.user-date{font-family:var(--mono);font-size:11px;color:var(--text3)}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:500;font-family:var(--mono);border:0.5px solid}
+.badge-active{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
+.badge-trial{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
+.badge-suspended{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
+.badge-pending{background:var(--amber-bg);border-color:rgba(245,166,35,0.3);color:var(--amber)}
+.badge-paid{background:rgba(34,201,122,0.12);border-color:rgba(34,201,122,0.4);color:var(--green)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;font-size:12px;font-family:var(--serif);font-weight:500;border:0.5px solid;cursor:pointer;transition:all 0.15s;text-decoration:none}
+.btn-primary{background:var(--accent);border-color:var(--accent2);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-ghost{background:transparent;border-color:var(--border2);color:var(--text2)}
+.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-danger{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
+.btn-danger:hover{background:rgba(240,70,70,0.15)}
+.btn-sm{padding:3px 8px;font-size:11px}
+.btn-success{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
+.btn-success:hover{background:rgba(34,201,122,0.15)}
+
+/* ── Search / filter bar ── */
+.filter-bar{display:flex;align-items:center;gap:0.75rem;padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
+.search-input{flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+.search-input::placeholder{color:var(--text3)}
+.search-input:focus{border-color:var(--accent)}
+.filter-select{background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text2);font-family:var(--serif);outline:none;cursor:pointer}
+
+/* ── Invite modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.75rem;width:440px;max-width:90vw}
+.modal-title{font-size:15px;font-weight:600;margin-bottom:0.5rem}
+.modal-sub{font-size:12px;color:var(--text3);margin-bottom:1.5rem}
+.form-row{margin-bottom:1rem}
+.form-label{font-size:11px;color:var(--text3);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;font-family:var(--mono)}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:8px 10px;font-size:13px;color:var(--text);font-family:var(--mono);outline:none}
+.form-input:focus{border-color:var(--accent)}
+.modal-actions{display:flex;gap:0.75rem;justify-content:flex-end;margin-top:1.5rem}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:3rem;color:var(--text3)}
+.empty-icon{font-size:2rem;margin-bottom:0.75rem}
+.empty-text{font-size:13px}
+
+/* ── Loading ── */
+.loading{display:flex;align-items:center;justify-content:center;padding:3rem;color:var(--text3);gap:0.75rem;font-size:13px}
+.spinner{width:18px;height:18px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Alert ── */
+.alert{padding:0.75rem 1rem;border-radius:var(--r);font-size:13px;margin-bottom:1rem;display:none}
+.alert-success{background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.3);color:var(--green)}
+.alert-error{background:var(--red-bg);border:0.5px solid rgba(240,70,70,0.3);color:var(--red)}
+.alert.show{display:block}
+
+/* ── Admin badge in topbar ── */
+.admin-badge{font-size:10px;font-family:var(--mono);background:rgba(240,70,70,0.1);border:0.5px solid rgba(240,70,70,0.3);color:var(--red);padding:2px 8px;border-radius:100px;letter-spacing:0.05em}
+
+/* ── Section tabs ── */
+.section-tabs{display:flex;gap:0;border-bottom:0.5px solid var(--border);margin-bottom:1.75rem}
+.section-tab{padding:0.6rem 1.25rem;font-size:13px;color:var(--text3);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;margin-bottom:-0.5px}
+.section-tab:hover{color:var(--text2)}
+.section-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ── Netlify Identity note ── */
+.netlify-note{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);padding:0.875rem 1rem;font-size:12px;color:var(--text2);margin-bottom:1.5rem;line-height:1.6}
+.netlify-note a{color:var(--accent);text-decoration:none}
+.netlify-note a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:1.25rem">
+      <a href="/dashboard.html" class="back-link">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Dashboard
+      </a>
+      <a href="/" class="logo">Cyge<span>nix</span><span class="logo-console">Admin Console</span></a>
+    </div>
+    <div style="display:flex;align-items:center;gap:1rem">
+      <span class="admin-badge">ADMIN</span>
+      <div class="avatar" id="admin-avatar">?</div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="nav-label">Admin</div>
+    <div class="nav-item active" onclick="showSection('users')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 7a3 3 0 100-6 3 3 0 000 6zm-5 6s-.5-5 5-5 5 5 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Users
+    </div>
+    <div class="nav-item" onclick="showSection('invites')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M2 4h11v8H2zM2 4l5.5 5L13 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Invite Users
+    </div>
+    <div class="nav-item" onclick="showSection('activity')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1 7.5h2l2-5 2 10 2-7 2 4 1-2h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Activity Log
+    </div>
+    <div class="nav-label">Platform</div>
+    <div class="nav-item" onclick="window.open('https://app.netlify.com','_blank')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1L13 4v7l-5.5 3L2 11V4z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Netlify Console ↗
+    </div>
+    <div class="nav-item" onclick="window.open('https://portal.azure.com','_blank')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
+      Azure Portal ↗
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- ALERT -->
+    <div class="alert alert-success" id="alert-success"></div>
+    <div class="alert alert-error" id="alert-error"></div>
+
+    <!-- ── USERS SECTION ── -->
+    <div id="section-users">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Users</div>
+          <div class="page-sub">All registered accounts on Cygenix</div>
+        </div>
+        <div style="display:flex;gap:0.75rem">
+          <button class="btn btn-ghost" onclick="loadUsers()">↻ Refresh</button>
+          <button class="btn btn-primary" onclick="openInviteModal()">+ Invite user</button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Users</div>
+          <div class="stat-value" id="stat-total">—</div>
+          <div class="stat-sub">registered accounts</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Trial</div>
+          <div class="stat-value" style="color:var(--accent)" id="stat-trial">—</div>
+          <div class="stat-sub">on free trial</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Active Paid</div>
+          <div class="stat-value" style="color:var(--green)" id="stat-paid">—</div>
+          <div class="stat-sub">paying subscribers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Suspended</div>
+          <div class="stat-value" style="color:var(--red)" id="stat-suspended">—</div>
+          <div class="stat-sub">access removed</div>
+        </div>
+      </div>
+
+      <div class="netlify-note">
+        💡 <strong>Auth is managed by Netlify Identity.</strong> Use this panel to view user data and manage access. To invite users or change passwords, also use the
+        <a href="https://app.netlify.com" target="_blank">Netlify Console → Identity tab</a>.
+        User records here come from Cosmos DB and are created on first login.
+      </div>
+
+      <!-- Users table -->
+      <div class="panel">
+        <div class="filter-bar">
+          <input class="search-input" id="user-search" placeholder="Search by email or name…" oninput="filterUsers()"/>
+          <select class="filter-select" id="plan-filter" onchange="filterUsers()">
+            <option value="">All plans</option>
+            <option value="trial">Trial</option>
+            <option value="paid">Paid</option>
+            <option value="suspended">Suspended</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Plan</th>
+                <th>Signed up</th>
+                <th>Trial ends</th>
+                <th>Last sync</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody">
+              <tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading users from Cosmos DB…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INVITES SECTION ── -->
+    <div id="section-invites" style="display:none">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Invite Users</div>
+          <div class="page-sub">Send access invitations to testers and clients</div>
+        </div>
+      </div>
+
+      <div class="netlify-note">
+        Invitations are sent via <strong>Netlify Identity</strong>. The user receives an email with a link to set their password and access the platform.
+        Make sure <strong>Invite only</strong> mode is enabled in Netlify → Identity → Settings → Registration if you want to control who can sign up.
+      </div>
+
+      <div class="panel" style="max-width:520px">
+        <div class="panel-header">
+          <div class="panel-title">Send invitation</div>
+        </div>
+        <div style="padding:1.5rem">
+          <div class="form-row">
+            <label class="form-label">Full name</label>
+            <input class="form-input" id="invite-name" type="text" placeholder="John Smith"/>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Email address</label>
+            <input class="form-input" id="invite-email" type="email" placeholder="john@company.com"/>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Note (optional)</label>
+            <input class="form-input" id="invite-note" type="text" placeholder="e.g. Beta tester — Acme Corp"/>
+          </div>
+          <div style="display:flex;gap:0.75rem;margin-top:1.25rem">
+            <button class="btn btn-primary" onclick="sendInvite()">Send invitation</button>
+            <button class="btn btn-ghost" onclick="clearInviteForm()">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="max-width:520px">
+        <div class="panel-header"><div class="panel-title">Bulk invite</div></div>
+        <div style="padding:1.5rem">
+          <div class="form-row">
+            <label class="form-label">Email addresses (one per line)</label>
+            <textarea class="form-input" id="bulk-emails" rows="5" placeholder="john@company.com&#10;jane@agency.com&#10;bob@startup.io" style="resize:vertical;line-height:1.6"></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="sendBulkInvites()" style="margin-top:0.5rem">Send all invitations</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ACTIVITY SECTION ── -->
+    <div id="section-activity" style="display:none">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Activity Log</div>
+          <div class="page-sub">Recent save and sync events from Cosmos DB audit log</div>
+        </div>
+        <button class="btn btn-ghost" onclick="loadActivity()">↻ Refresh</button>
+      </div>
+
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Action</th>
+                <th>Keys synced</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="activity-tbody">
+              <tr><td colspan="4"><div class="loading"><div class="spinner"></div>Loading activity…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── INVITE MODAL ── -->
+<div class="modal-overlay" id="invite-modal">
+  <div class="modal">
+    <div class="modal-title">Invite user</div>
+    <div class="modal-sub">They'll receive an email to set their password and access Cygenix.</div>
+    <div class="form-row">
+      <label class="form-label">Email</label>
+      <input class="form-input" id="modal-invite-email" type="email" placeholder="user@company.com"/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeInviteModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="sendModalInvite()">Send invitation</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── USER DETAIL MODAL ── -->
+<div class="modal-overlay" id="user-modal">
+  <div class="modal" style="width:520px">
+    <div class="modal-title" id="user-modal-title">User details</div>
+    <div id="user-modal-body" style="margin-bottom:1rem"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeUserModal()">Close</button>
+      <button class="btn btn-danger btn-sm" id="user-modal-suspend" onclick="suspendUser()">Suspend access</button>
+      <button class="btn btn-success btn-sm" id="user-modal-activate" onclick="activateUser()" style="display:none">Restore access</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config ───────────────────────────────────────────────────────────────────
+const API   = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+const CODE  = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+const NETLIFY_ID = window.location.origin + '/.netlify/identity';
+
+let _users = [];
+let _selectedUser = null;
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // Set admin avatar
+  const adminEmail = CygenixSync?.getUserId?.() || 'Admin';
+  const initials = adminEmail.split('@')[0].substring(0,2).toUpperCase();
+  document.getElementById('admin-avatar').textContent = initials;
+
+  await loadUsers();
+});
+
+// ── Section navigation ────────────────────────────────────────────────────────
+function showSection(name) {
+  ['users','invites','activity'].forEach(s => {
+    document.getElementById('section-' + s).style.display = s === name ? 'block' : 'none';
+  });
+  document.querySelectorAll('.nav-item').forEach((el, i) => {
+    el.classList.toggle('active', i === ['users','invites','activity'].indexOf(name));
+  });
+  if (name === 'activity') loadActivity();
+}
+
+// ── API helper ────────────────────────────────────────────────────────────────
+async function cosmosApi(action, method, body, userId) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (userId) headers['x-user-id'] = userId;
+  const r = await fetch(`${API}/${action}?code=${CODE}`, {
+    method: method || 'GET', headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  return r.ok ? r.json() : null;
+}
+
+// ── Netlify Identity API ──────────────────────────────────────────────────────
+async function netlifyApi(path, method, body) {
+  const token = sessionStorage.getItem('cygenix_token');
+  if (!token) return null;
+  try {
+    const r = await fetch(NETLIFY_ID + path, {
+      method: method || 'GET',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer ' + token },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    return r.ok ? r.json() : { error: await r.text(), status: r.status };
+  } catch(e) { return { error: e.message }; }
+}
+
+// ── Load users from Cosmos DB ─────────────────────────────────────────────────
+async function loadUsers() {
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = '<tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading users from Cosmos DB…</div></td></tr>';
+
+  // Query all users from Cosmos DB via the admin endpoint
+  try {
+    const token = sessionStorage.getItem('cygenix_token');
+    const r = await fetch(`${API}/admin-users?code=${CODE}`, {
+      headers: { 'Content-Type':'application/json', 'x-user-id': CygenixSync?.getUserId?.() || 'admin', 'Authorization': 'Bearer ' + token }
+    });
+
+    if (r.status === 404) {
+      // admin-users endpoint not built yet — show Cosmos users we know about
+      // Fall back to showing what we can from the audit log
+      tbody.innerHTML = `<tr><td colspan="6">
+        <div class="empty">
+          <div class="empty-icon">🔧</div>
+          <div class="empty-text">The admin-users endpoint needs to be added to the Azure Function.<br>
+          For now, use <a href="https://app.netlify.com" target="_blank" style="color:var(--accent)">Netlify → Identity</a> to manage users.</div>
+        </div>
+      </td></tr>`;
+      return;
+    }
+
+    const data = r.ok ? await r.json() : null;
+    if (data?.users) {
+      _users = data.users;
+      renderUsers(_users);
+      updateStats(_users);
+      return;
+    }
+  } catch {}
+
+  // Fallback: load from Netlify Identity API directly
+  const netlifyUsers = await netlifyApi('/admin/users?per_page=100');
+
+  if (netlifyUsers?.error || !netlifyUsers?.users) {
+    // Not an admin — show message
+    tbody.innerHTML = `<tr><td colspan="6">
+      <div class="empty">
+        <div class="empty-icon">🔒</div>
+        <div class="empty-text" style="max-width:400px;margin:0 auto">
+          To view all users, your account needs admin access in Netlify Identity.<br><br>
+          Go to <a href="https://app.netlify.com" target="_blank" style="color:var(--accent)">Netlify → Identity</a>
+          to manage users directly, or contact Netlify support to grant admin access.<br><br>
+          <strong style="color:var(--text)">Users registered so far are visible in Netlify → Identity → Users.</strong>
+        </div>
+      </div>
+    </td></tr>`;
+    return;
+  }
+
+  // Enrich Netlify users with Cosmos DB data where possible
+  _users = netlifyUsers.users.map(u => ({
+    id:         u.id,
+    email:      u.email,
+    name:       u.user_metadata?.full_name || u.email.split('@')[0],
+    plan:       'trial',
+    status:     u.confirmed_at ? 'active' : 'pending',
+    createdAt:  u.created_at,
+    lastSignIn: u.last_sign_in_at,
+    confirmed:  !!u.confirmed_at,
+    provider:   u.app_metadata?.provider || 'email'
+  }));
+
+  renderUsers(_users);
+  updateStats(_users);
+}
+
+// ── Render users table ────────────────────────────────────────────────────────
+function renderUsers(users) {
+  const tbody = document.getElementById('users-tbody');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">👥</div><div class="empty-text">No users yet</div></div></td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = users.map(u => {
+    const planBadge = u.status === 'suspended'
+      ? '<span class="badge badge-suspended">suspended</span>'
+      : u.plan === 'paid'
+      ? '<span class="badge badge-paid">paid</span>'
+      : u.status === 'pending'
+      ? '<span class="badge badge-pending">pending</span>'
+      : '<span class="badge badge-trial">trial</span>';
+
+    const signupDate = u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—';
+    const trialEnd = u.trialEndsAt ? new Date(u.trialEndsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : '—';
+    const lastSync = u.updatedAt ? new Date(u.updatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
+    const provider = u.provider === 'google' ? '🔵 ' : u.provider === 'azure' ? '🟦 ' : '✉️ ';
+
+    return `<tr onclick="openUserModal('${u.email}')" style="cursor:pointer">
+      <td>
+        <div class="user-email">${provider}${u.email}</div>
+        <div class="user-name">${u.name || ''}</div>
+      </td>
+      <td>${planBadge}</td>
+      <td class="user-date">${signupDate}</td>
+      <td class="user-date">${trialEnd}</td>
+      <td class="user-date">${lastSync}</td>
+      <td onclick="event.stopPropagation()">
+        <div style="display:flex;gap:0.5rem">
+          <button class="btn btn-ghost btn-sm" onclick="openUserModal('${u.email}')">View</button>
+          ${u.status !== 'suspended'
+            ? `<button class="btn btn-danger btn-sm" onclick="confirmSuspend('${u.email}')">Suspend</button>`
+            : `<button class="btn btn-success btn-sm" onclick="confirmActivate('${u.email}')">Restore</button>`}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Update stats ──────────────────────────────────────────────────────────────
+function updateStats(users) {
+  document.getElementById('stat-total').textContent = users.length;
+  document.getElementById('stat-trial').textContent = users.filter(u => u.plan === 'trial' && u.status !== 'suspended').length;
+  document.getElementById('stat-paid').textContent = users.filter(u => u.plan === 'paid').length;
+  document.getElementById('stat-suspended').textContent = users.filter(u => u.status === 'suspended').length;
+}
+
+// ── Filter users ──────────────────────────────────────────────────────────────
+function filterUsers() {
+  const q = document.getElementById('user-search').value.toLowerCase();
+  const plan = document.getElementById('plan-filter').value;
+  const filtered = _users.filter(u => {
+    const matchQ = !q || u.email.toLowerCase().includes(q) || (u.name||'').toLowerCase().includes(q);
+    const matchPlan = !plan || u.plan === plan || u.status === plan;
+    return matchQ && matchPlan;
+  });
+  renderUsers(filtered);
+}
+
+// ── User detail modal ─────────────────────────────────────────────────────────
+function openUserModal(email) {
+  const u = _users.find(x => x.email === email);
+  if (!u) return;
+  _selectedUser = u;
+
+  document.getElementById('user-modal-title').textContent = u.name || u.email;
+  document.getElementById('user-modal-suspend').style.display = u.status !== 'suspended' ? 'inline-flex' : 'none';
+  document.getElementById('user-modal-activate').style.display = u.status === 'suspended' ? 'inline-flex' : 'none';
+
+  document.getElementById('user-modal-body').innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px;width:120px">Email</td><td style="font-family:var(--mono);font-size:12px">${u.email}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Name</td><td style="font-size:13px">${u.name || '—'}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Plan</td><td>${u.plan === 'paid' ? '<span class="badge badge-paid">paid</span>' : '<span class="badge badge-trial">trial</span>'}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Status</td><td>${u.status === 'suspended' ? '<span class="badge badge-suspended">suspended</span>' : u.status === 'pending' ? '<span class="badge badge-pending">pending</span>' : '<span class="badge badge-active">active</span>'}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Sign-up</td><td style="font-family:var(--mono);font-size:11px">${u.createdAt ? new Date(u.createdAt).toLocaleString('en-GB') : '—'}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Trial ends</td><td style="font-family:var(--mono);font-size:11px">${u.trialEndsAt ? new Date(u.trialEndsAt).toLocaleString('en-GB') : '—'}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Auth provider</td><td style="font-size:12px">${u.provider || 'email'}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Last sync</td><td style="font-family:var(--mono);font-size:11px">${u.updatedAt ? new Date(u.updatedAt).toLocaleString('en-GB') : '—'}</td></tr>
+    </table>`;
+
+  document.getElementById('user-modal').classList.add('open');
+}
+
+function closeUserModal() {
+  document.getElementById('user-modal').classList.remove('open');
+  _selectedUser = null;
+}
+
+// ── Suspend / activate ────────────────────────────────────────────────────────
+async function confirmSuspend(email) {
+  if (!confirm(`Suspend access for ${email}?\n\nThey will be redirected to login if they try to access the platform.`)) return;
+  await updateUserStatus(email, 'suspended');
+}
+
+async function confirmActivate(email) {
+  await updateUserStatus(email, 'active');
+}
+
+async function suspendUser() {
+  if (_selectedUser) {
+    closeUserModal();
+    await confirmSuspend(_selectedUser.email);
+  }
+}
+
+async function activateUser() {
+  if (_selectedUser) {
+    closeUserModal();
+    await confirmActivate(_selectedUser.email);
+  }
+}
+
+async function updateUserStatus(email, status) {
+  const result = await cosmosApi('user-update', 'POST', { status }, email);
+  if (result) {
+    const u = _users.find(x => x.email === email);
+    if (u) u.status = status;
+    renderUsers(_users);
+    updateStats(_users);
+    showAlert('success', `User ${email} ${status === 'suspended' ? 'suspended' : 'restored'} successfully.`);
+  } else {
+    showAlert('error', 'Failed to update user status. Please try again.');
+  }
+}
+
+// ── Invite via Netlify Identity ───────────────────────────────────────────────
+function openInviteModal() {
+  document.getElementById('invite-modal').classList.add('open');
+}
+function closeInviteModal() {
+  document.getElementById('invite-modal').classList.remove('open');
+}
+
+async function sendModalInvite() {
+  const email = document.getElementById('modal-invite-email').value.trim();
+  if (!email) return;
+  await doInvite(email);
+  closeInviteModal();
+  document.getElementById('modal-invite-email').value = '';
+}
+
+async function sendInvite() {
+  const email = document.getElementById('invite-email').value.trim();
+  const name  = document.getElementById('invite-name').value.trim();
+  if (!email) { showAlert('error', 'Please enter an email address.'); return; }
+  await doInvite(email, name);
+}
+
+async function sendBulkInvites() {
+  const raw = document.getElementById('bulk-emails').value.trim();
+  const emails = raw.split('\n').map(e => e.trim()).filter(Boolean);
+  if (!emails.length) { showAlert('error', 'Please enter at least one email address.'); return; }
+
+  let sent = 0, failed = 0;
+  for (const email of emails) {
+    const ok = await doInvite(email, '', false);
+    ok ? sent++ : failed++;
+  }
+  showAlert('success', `Sent ${sent} invitation${sent !== 1 ? 's' : ''}${failed ? ` (${failed} failed)` : ''}.`);
+  if (!failed) document.getElementById('bulk-emails').value = '';
+}
+
+async function doInvite(email, name, showMsg = true) {
+  try {
+    const result = await netlifyApi('/admin/users', 'POST', {
+      email,
+      data: { full_name: name || email.split('@')[0] },
+      send_email: true
+    });
+
+    if (result?.error) {
+      if (showMsg) showAlert('error', `Failed to invite ${email}: ${result.error}`);
+      return false;
+    }
+
+    // Pre-create user record in Cosmos DB
+    await cosmosApi('user-create', 'POST', { email, name: name || '' }, email);
+
+    if (showMsg) showAlert('success', `Invitation sent to ${email}`);
+    await loadUsers();
+    return true;
+  } catch(e) {
+    if (showMsg) showAlert('error', `Error inviting ${email}: ${e.message}`);
+    return false;
+  }
+}
+
+function clearInviteForm() {
+  document.getElementById('invite-name').value = '';
+  document.getElementById('invite-email').value = '';
+  document.getElementById('invite-note').value = '';
+}
+
+// ── Activity log from Cosmos audit container ──────────────────────────────────
+async function loadActivity() {
+  const tbody = document.getElementById('activity-tbody');
+  tbody.innerHTML = '<tr><td colspan="4"><div class="loading"><div class="spinner"></div>Loading activity…</div></td></tr>';
+
+  try {
+    const r = await fetch(`${API}/audit?code=${CODE}`, {
+      headers: { 'Content-Type':'application/json', 'x-user-id': CygenixSync?.getUserId?.() || 'admin' }
+    });
+    const data = r.ok ? await r.json() : null;
+
+    if (data?.entries?.length) {
+      tbody.innerHTML = data.entries.map(e => `
+        <tr>
+          <td class="user-email">${e.userId}</td>
+          <td><span class="badge badge-trial">${e.action}</span></td>
+          <td style="font-size:11px;color:var(--text3);font-family:var(--mono)">${(e.keys||[]).join(', ') || '—'}</td>
+          <td class="user-date">${new Date(e.timestamp).toLocaleString('en-GB')}</td>
+        </tr>`).join('');
+      return;
+    }
+  } catch {}
+
+  tbody.innerHTML = `<tr><td colspan="4">
+    <div class="empty">
+      <div class="empty-icon">📋</div>
+      <div class="empty-text">Activity log requires the audit endpoint in the Azure Function.<br>
+      Data syncs are being recorded in Cosmos DB → audit container.</div>
+    </div>
+  </td></tr>`;
+}
+
+// ── Alert helper ──────────────────────────────────────────────────────────────
+function showAlert(type, msg) {
+  const el = document.getElementById('alert-' + type);
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+// ── Close modals on overlay click ─────────────────────────────────────────────
+document.getElementById('invite-modal').addEventListener('click', e => { if(e.target === e.currentTarget) closeInviteModal(); });
+document.getElementById('user-modal').addEventListener('click', e => { if(e.target === e.currentTarget) closeUserModal(); });
+</script>
+</body>
+</html>
