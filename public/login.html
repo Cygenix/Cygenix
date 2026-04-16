@@ -173,9 +173,9 @@ function redirectAfterLogin(userData) {
   // Check role in app_metadata (set via Netlify Identity admin)
   const role = userData?.app_metadata?.role || userData?.role || '';
   if (role === 'client') {
-    window.location.href = '/client.html';
+    window.location.href = '/dashboard.html';
   } else {
-    window.location.href = '/projects.html';
+    window.location.href = getRedirectUrl();
   }
 }
 
@@ -185,7 +185,7 @@ if (sessionStorage.getItem('cygenix_token') &&
   try {
     const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
     redirectAfterLogin(u);
-  } catch { window.location.href = '/projects.html'; }
+  } catch { window.location.href = getRedirectUrl(); }
 }
 
 // Handle URL hash tokens — invite_token and access_token (OAuth)
@@ -279,9 +279,30 @@ async function acceptInvite(token) {
       }).catch(() => {});
     }
 
-    // Save session and redirect
-    saveSession(data);
-    redirectAfterLogin(data);
+    // Save session and redirect — user is now logged in
+    // The verify response contains the full auth token
+    if (data.access_token) {
+      saveSession(data);
+      // Small delay to let session save, then redirect
+      setTimeout(() => {
+        window.location.href = getRedirectUrl();
+        sessionStorage.removeItem('cygenix_redirect_after_login');
+      }, 300);
+    } else {
+      // Verify succeeded but no token returned — ask them to log in manually
+      const alertEl = document.getElementById('invite-alert');
+      const card = document.querySelector('.card');
+      if (card) {
+        card.innerHTML = `
+          <div class="logo">Cyge<span>nix</span></div>
+          <div class="tagline" style="color:var(--green)">✓ Account created successfully!</div>
+          <div style="font-size:13px;color:var(--text2);text-align:center;margin:1rem 0 1.5rem;line-height:1.6">
+            Your account is ready. Please sign in with your email and password.
+          </div>
+          <button class="btn btn-primary" onclick="window.location.href='/login.html'" style="width:100%">Sign in now →</button>
+        `;
+      }
+    }
 
   } catch(e) {
     if (alertEl) { alertEl.textContent = 'Error: ' + e.message; alertEl.style.display = 'block'; }
@@ -342,7 +363,7 @@ async function forgotPassword() {
 
 function oauthLogin(provider) {
   clearAlerts();
-  const redirectTo = encodeURIComponent(window.location.origin + '/projects.html');
+  const redirectTo = encodeURIComponent(window.location.origin + '/dashboard.html');
   window.location.href = GOTRUE + '/authorize?provider=' + provider + '&redirect_to=' + redirectTo;
 }
 
