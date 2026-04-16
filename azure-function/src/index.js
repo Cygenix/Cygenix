@@ -471,3 +471,5 @@ app.http('data', {
     }
   }
 });
+
+// Cosmos DB integration - deployed after env var cleanup
