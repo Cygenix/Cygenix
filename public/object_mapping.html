@@ -179,6 +179,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
         <button class="mode-btn" id="mode-otm" onclick="setMode('otm')">⊞ One-to-many</button>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
+      <input id="job-name-input" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Job name (optional)" maxlength="120" />
       <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled>💾 Save as job</button>
     </div>
   </div>
@@ -1607,15 +1608,31 @@ function downloadSQL(){
 }
 
 // ── Save as job ───────────────────────────────────────────────────────────────
+// Returns a unique job name. If `requested` is empty, uses `autoName`.
+// If the chosen name already exists in `jobs` (ignoring the job being edited),
+// appends " (2)", " (3)", etc.
+function uniqueJobName(requested, autoName, jobs, currentEditId){
+  const base = (requested && requested.trim()) ? requested.trim() : autoName;
+  const taken = new Set(
+    jobs.filter(j => j.id !== currentEditId).map(j => (j.name||'').trim())
+  );
+  if (!taken.has(base)) return base;
+  let i = 2;
+  while (taken.has(base+' ('+i+')')) i++;
+  return base+' ('+i+')';
+}
+
 function saveAsJob(){
   if(!srcTable){ alert('Select a source table first.'); return; }
   if(!generatedSQL.insert&&mode==='single'&&!columnMapping.filter(m=>m.tgtCol).length){ alert('Generate SQL first.'); return; }
 
   const jobs=(() => { try{ return JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); }catch{return[];} })();
+  const userTyped = ($('job-name-input')?.value || '').trim();
 
   if(mode==='single'){
     if(!tgtTable){ alert('Select a target table first.'); return; }
-    const jobName = srcTable.name+' → '+tgtTable.name;
+    const autoName = srcTable.name+' → '+tgtTable.name;
+    const jobName = uniqueJobName(userTyped, autoName, jobs, editJobId);
     const job={
       id: editJobId||'job_'+Date.now(),
       name: jobName,
@@ -1642,11 +1659,13 @@ function saveAsJob(){
     showStatus('✓ Saved job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
     setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    if(!editJobId && $('job-name-input')) $('job-name-input').value='';
 
   } else {
     // OTM
     if(!targetTables.length){ alert('Add at least one target table.'); return; }
-    const jobName=srcTable.name+' → '+targetTables.map(t=>t.name).join(', ');
+    const autoName = srcTable.name+' → '+targetTables.map(t=>t.name).join(', ');
+    const jobName = uniqueJobName(userTyped, autoName, jobs, editJobId);
     const job={
       id: editJobId||'job_'+Date.now(),
       name: jobName,
@@ -1671,6 +1690,7 @@ function saveAsJob(){
     showStatus('✓ Saved OTM job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
     setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    if(!editJobId && $('job-name-input')) $('job-name-input').value='';
   }
 }
 
@@ -1686,6 +1706,7 @@ function checkEditMode(){
 
   $('edit-banner').style.display='flex';
   $('edit-job-name').textContent=job.name;
+  if($('job-name-input')) $('job-name-input').value = job.name||'';
 
   // Set mode
   const isOTM=job.jobType==='one-to-many'||job.oneToManyConfig;
@@ -1780,6 +1801,7 @@ function restoreJobMapping(job,isOTM){
 function clearEditMode(){
   editJobId=null;
   $('edit-banner').style.display='none';
+  if($('job-name-input')) $('job-name-input').value='';
   history.replaceState({},document.title,location.pathname);
 }
 
