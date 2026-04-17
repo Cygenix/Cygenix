@@ -110,12 +110,22 @@ let msalInstance = null;
 
 // ── Handle redirect after login ──────────────────────────────────────────────
 async function init() {
+  // If user just signed out, skip silent re-login and show the login UI
+  const justSignedOut = sessionStorage.getItem('cygenix_just_signed_out') === '1';
+  sessionStorage.removeItem('cygenix_just_signed_out');
+
   try {
     const result = await msalInstance.handleRedirectPromise();
     if (result) {
       // Came back from Entra login redirect
       saveSession(result);
       redirectAfterLogin();
+      return;
+    }
+
+    if (justSignedOut) {
+      console.log('[Auth] User just signed out — showing login UI');
+      showCard();
       return;
     }
 

@@ -2451,20 +2451,48 @@ document.addEventListener('click', function(e) {
   }
 });
 
-function signOut() {
-  // Clear all local session and MSAL cache data
+async function signOut() {
+  // Flag so login.html doesn't auto-resign-in via acquireTokenSilent
+  sessionStorage.setItem('cygenix_just_signed_out', '1');
+
+  // Clear our own app keys
   ['cygenix_token','cygenix_user','cygenix_expires',
-   'cygenix_active_project','cygenix_entra_account'].forEach(k => {
+   'cygenix_active_project','cygenix_entra_account',
+   'cygenix_active_user'].forEach(k => {
     sessionStorage.removeItem(k);
     localStorage.removeItem(k);
   });
-  Object.keys(localStorage).filter(k => k.startsWith('msal.')).forEach(k => localStorage.removeItem(k));
-  localStorage.removeItem('cygenix_active_user');
 
-  // Hit the Entra logout endpoint to clear server-side session
-  const logoutUrl = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
-    + '?post_logout_redirect_uri=' + encodeURIComponent('https://cygenix.co.uk/login.html');
-  window.location.href = logoutUrl;
+  // Use MSAL's own logout so it clears its full cache (not just msal.* keys)
+  try {
+    const msalInstance = new msal.PublicClientApplication({
+      auth: {
+        clientId:    'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+        authority:   'https://cygenix.ciamlogin.com/',
+        knownAuthorities: ['cygenix.ciamlogin.com'],
+        redirectUri: window.location.origin + '/login.html',
+      },
+      cache: { cacheLocation: 'localStorage' },
+    });
+    await msalInstance.initialize();
+
+    const account = msalInstance.getAllAccounts()[0];
+    await msalInstance.logoutRedirect({
+      account,
+      postLogoutRedirectUri: window.location.origin + '/login.html',
+    });
+  } catch (e) {
+    console.warn('[signOut] MSAL logout failed, falling back:', e);
+    // Hard fallback — nuke anything MSAL-shaped and redirect to Entra logout
+    const CLIENT_ID = 'f3478996-b2b5-4b21-9a23-a6b97a0e5b13';
+    Object.keys(localStorage).forEach(k => {
+      if (k.includes('msal') || k.includes(CLIENT_ID) || k.startsWith('{')) {
+        localStorage.removeItem(k);
+      }
+    });
+    window.location.href = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
+  }
 }
 
 
