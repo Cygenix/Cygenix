@@ -134,6 +134,15 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 .group-body-empty{text-align:center;padding:0.8rem;font-size:11px;color:var(--text3);font-style:italic}
 .add-group-btn{margin-top:0.5rem;padding:0.6rem;background:var(--bg2);border:1px dashed var(--border2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.15s}
 .add-group-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── Run selection (checkboxes) ──────────────────────────────────────────── */
+.plan-select-bar{display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.75rem;margin-bottom:0.5rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);font-size:12px;color:var(--text2)}
+.plan-select-bar .sel-count{font-family:var(--mono);font-size:11px;color:var(--text3);margin-left:auto}
+.sel-check{width:14px;height:14px;cursor:pointer;accent-color:var(--accent);flex-shrink:0;margin:0}
+.sel-check:disabled{cursor:not-allowed;opacity:0.4}
+.step-card.disabled{opacity:0.45}
+.step-card.disabled .step-name,.step-card.disabled .step-meta{text-decoration:line-through;text-decoration-color:var(--text3)}
+.group-card.all-disabled .group-header{opacity:0.7}
 </style>
 <script src="/connections.js"></script>
 </head>
@@ -231,7 +240,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
-        <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run project</button>
+        <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
       </div>
     </div>
@@ -263,6 +272,13 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <span>Jobs</span>
         <span id="step-count" style="font-size:11px;color:var(--text3);font-weight:400"></span>
         <span style="font-size:11px;color:var(--text3);font-weight:400;margin-left:auto">Drag to reorder · click job on left to add</span>
+      </div>
+
+      <!-- Master selection bar -->
+      <div class="plan-select-bar" id="plan-select-bar" style="display:none">
+        <input type="checkbox" class="sel-check" id="sel-all" onchange="setAllEnabled(this.checked)" title="Select all / none">
+        <label for="sel-all" style="cursor:pointer;user-select:none">Select all</label>
+        <span class="sel-count" id="sel-count">0 of 0 selected</span>
       </div>
 
       <div id="steps-list">
@@ -500,6 +516,7 @@ function renderSteps() {
     groupEl.innerHTML = `
       <div class="group-header ${collapsed?'collapsed':''}">
         <span class="group-drag" title="Drag to reorder groups" draggable="true">⠿</span>
+        <input type="checkbox" class="sel-check group-check" id="grp-check-${gi}" onchange="setGroupEnabled(${gi}, this.checked)" title="Select all jobs in this group">
         <span class="group-chev ${collapsed?'collapsed':''}" onclick="toggleGroupCollapse(${gi})">▼</span>
         <input class="group-name-input" value="${esc(group.name||'')}"
           oninput="renameGroup(${gi}, this.value)"
@@ -527,8 +544,9 @@ function renderSteps() {
     } else {
       group.steps.forEach((step, si) => {
         stepCounter++;
+        const enabled = step.enabled !== false;  // default true
         const card = document.createElement('div');
-        card.className = 'step-card';
+        card.className = 'step-card' + (enabled ? '' : ' disabled');
         card.dataset.groupIndex = gi;
         card.dataset.stepIndex  = si;
         card.draggable = true;
@@ -547,6 +565,7 @@ function renderSteps() {
         card.innerHTML = `
           <div class="step-card-header">
             <span class="step-drag">⠿</span>
+            <input type="checkbox" class="sel-check" ${enabled?'checked':''} onchange="setStepEnabled(${gi},${si}, this.checked)" title="Include in Run Selected">
             <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:var(--mono);min-width:20px;text-align:center;flex-shrink:0">${stepCounter}</div>
             <div class="step-icon" style="background:${color}">${icon}</div>
             <div class="step-info">
@@ -649,6 +668,73 @@ function renderSteps() {
   addBtn.textContent = '+ Add group';
   addBtn.onclick = addGroup;
   list.appendChild(addBtn);
+
+  // Sync the checkbox UI with current state
+  syncSelectionUI();
+}
+
+// ── Step/group/all enable toggles ─────────────────────────────────────────────
+function isStepEnabled(step){ return step.enabled !== false; }
+function groupEnabledCount(group){ return (group.steps||[]).filter(isStepEnabled).length; }
+
+function setStepEnabled(gi, si, enabled){
+  const step = project.groups[gi]?.steps[si];
+  if (!step) return;
+  step.enabled = !!enabled;
+  markDirty();
+  renderSteps();
+}
+function setGroupEnabled(gi, enabled){
+  const group = project.groups[gi];
+  if (!group) return;
+  group.steps.forEach(s => s.enabled = !!enabled);
+  markDirty();
+  renderSteps();
+}
+function setAllEnabled(enabled){
+  project.groups.forEach(g => g.steps.forEach(s => s.enabled = !!enabled));
+  markDirty();
+  renderSteps();
+}
+
+// Updates checkbox tristate + selection counter to match project state.
+// Called after every renderSteps.
+function syncSelectionUI(){
+  const flat = getAllStepsFlat();
+  const totalSteps = flat.length;
+  const enabledCount = flat.filter(x => isStepEnabled(x.step)).length;
+
+  const bar = document.getElementById('plan-select-bar');
+  if (bar) bar.style.display = totalSteps ? 'flex' : 'none';
+  const counter = document.getElementById('sel-count');
+  if (counter) counter.textContent = enabledCount + ' of ' + totalSteps + ' selected';
+
+  // Master checkbox tristate
+  const master = document.getElementById('sel-all');
+  if (master){
+    if (enabledCount === 0){ master.checked = false; master.indeterminate = false; }
+    else if (enabledCount === totalSteps){ master.checked = true; master.indeterminate = false; }
+    else { master.checked = false; master.indeterminate = true; }
+  }
+
+  // Per-group tristate
+  project.groups.forEach((g, gi) => {
+    const cb = document.getElementById('grp-check-'+gi);
+    if (!cb) return;
+    const n = g.steps.length;
+    const on = groupEnabledCount(g);
+    if (!n){
+      cb.checked = false; cb.indeterminate = false; cb.disabled = true;
+    } else {
+      cb.disabled = false;
+      if (on === 0){ cb.checked = false; cb.indeterminate = false; }
+      else if (on === n){ cb.checked = true; cb.indeterminate = false; }
+      else { cb.checked = false; cb.indeterminate = true; }
+    }
+    // Visual marker when every step in the group is off
+    const card = cb.closest('.group-card');
+    if (card) card.classList.toggle('all-disabled', n>0 && on===0);
+  });
 }
 
 // ── Group operations ──────────────────────────────────────────────────────────
@@ -844,14 +930,20 @@ async function runProject() {
   ensureAtLeastOneGroup();
   const flat = getAllStepsFlat();
   if (!flat.length) { alert('Add at least one job first.'); return; }
+  // Only run steps the user has selected (enabled !== false)
+  const selectedFlat = flat.filter(x => isStepEnabled(x.step));
+  if (!selectedFlat.length) { alert('Nothing selected to run. Tick at least one job.'); return; }
   const srcConn = project.srcConn;
   const tgtConn = project.tgtConn;
   if (!tgtConn) { alert('Please enter a target connection.'); return; }
-  if (!confirm('Run ' + flat.length + ' step(s) across ' + project.groups.length + ' group(s)? Execution stops on any error.')) return;
+
+  // Count groups that have at least one selected step
+  const selectedGroups = new Set(selectedFlat.map(x => x.gi));
+  if (!confirm('Run ' + selectedFlat.length + ' selected step(s) across ' + selectedGroups.size + ' group(s)? Execution stops on any error.')) return;
 
   isRunning = true;
-  // Reset all step statuses
-  project.groups.forEach(g => g.steps.forEach(s => { s.status='pending'; s.log=''; }));
+  // Reset statuses only on steps that will be run; disabled ones keep their prior status
+  selectedFlat.forEach(x => { x.step.status='pending'; x.step.log=''; });
   renderSteps();
 
   const panel = document.getElementById('exec-panel');
@@ -877,15 +969,17 @@ async function runProject() {
   };
 
   let passed=0, failed=0, done=0;
-  const total = flat.length;
+  const total = selectedFlat.length;
 
   outer:
   for (let gi=0; gi<project.groups.length; gi++){
     if (abortRequested) { log('Stopped by user.','err'); break; }
     const group = project.groups[gi];
-    if (!group.steps.length) continue;
+    // Skip groups with no selected steps
+    const selectedInGroup = group.steps.filter(isStepEnabled).length;
+    if (!selectedInGroup) continue;
 
-    log('─── Group '+(gi+1)+'/'+project.groups.length+': '+(group.name||'(unnamed)')+' — '+(group.executionMode||'sequential')+' ───', 'grp');
+    log('─── Group '+(gi+1)+'/'+project.groups.length+': '+(group.name||'(unnamed)')+' ('+selectedInGroup+' selected, '+(group.executionMode||'sequential')+') ───', 'grp');
 
     // NOTE: Parallel execution is a Phase 3 item. For now we run sequentially
     // regardless of the toggle, but we log when the user's chosen parallel
@@ -897,6 +991,7 @@ async function runProject() {
     for (let si=0; si<group.steps.length; si++){
       if (abortRequested) { log('Stopped by user.','err'); break outer; }
       const step = group.steps[si];
+      if (!isStepEnabled(step)) continue;   // skip deselected steps
       done++;
       const pct = Math.round((done-1)/total*100);
       document.getElementById('exec-prog').style.width = pct+'%';
@@ -946,7 +1041,7 @@ async function runProject() {
   document.getElementById('exec-title').textContent = summary;
   log('\n'+summary, failed===0?'ok':'err');
   document.getElementById('run-btn').disabled=false;
-  document.getElementById('run-btn').textContent='▶ Run project';
+  document.getElementById('run-btn').textContent='▶ Run selected';
   document.getElementById('stop-btn').style.display='none';
   isRunning=false;
   abortRequested=false;
