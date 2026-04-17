@@ -32,6 +32,13 @@ function getUserId(req) {
   return req.headers.get('x-user-id') || req.query.get('userId') || null;
 }
 
+// ── Helper: stable SHA-256 hash for version dedupe ───────────────────────────
+function hashSnapshot(obj) {
+  const crypto = require('crypto');
+  const canonical = JSON.stringify(obj, Object.keys(obj || {}).sort());
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE 1: /api/db/{action} — existing SQL Server endpoint (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -456,8 +463,102 @@ app.http('data', {
           }
         }
 
+        // ── VERSION-CREATE: snapshot a job ──────────────────────────────────
+        // POST /api/data/version-create
+        // Body: { jobId, snapshot, label?, note? }
+        case 'version-create': {
+          const body = await req.json().catch(() => null);
+          if (!body || !body.jobId || !body.snapshot) {
+            return err(400, 'jobId and snapshot are required');
+          }
+
+          const jobId    = String(body.jobId);
+          const snapshot = body.snapshot;
+          const label    = body.label || 'auto';
+          const note     = body.note  || '';
+          const hash     = hashSnapshot(snapshot);
+
+          const container = getCosmosContainer('job_versions');
+
+          // Dedupe against most recent version for this job
+          const { resources: latest } = await container.items
+            .query({
+              query: 'SELECT TOP 1 c.hash, c.version FROM c WHERE c.jobId = @jobId ORDER BY c.version DESC',
+              parameters: [{ name: '@jobId', value: jobId }]
+            }, { partitionKey: jobId })
+            .fetchAll();
+
+          if (latest.length && latest[0].hash === hash) {
+            return ok({ created: false, reason: 'duplicate', version: latest[0].version });
+          }
+
+          const nextVersion = (latest[0]?.version || 0) + 1;
+          const now = new Date().toISOString();
+          const id  = `ver_${jobId}_${Date.now()}`;
+
+          const doc = {
+            id,
+            jobId,
+            userId,
+            version:   nextVersion,
+            createdAt: now,
+            label,
+            note,
+            hash,
+            snapshot
+          };
+
+          await container.items.create(doc);
+          ctx.log(`Created version ${nextVersion} for job ${jobId}`);
+
+          await getCosmosContainer('audit').items.create({
+            id:        `${userId}-ver-${Date.now()}`,
+            userId,
+            action:    'version-create',
+            jobId,
+            version:   nextVersion,
+            label,
+            timestamp: now
+          }).catch(e => ctx.log('Audit write failed (non-fatal):', e.message));
+
+          return ok({ created: true, version: nextVersion, id });
+        }
+
+        // ── VERSION-LIST: list all versions for a job ───────────────────────
+        // GET /api/data/version-list?jobId=XYZ
+        case 'version-list': {
+          const jobId = req.query.get('jobId');
+          if (!jobId) return err(400, 'jobId query param is required');
+
+          const { resources } = await getCosmosContainer('job_versions').items
+            .query({
+              query: 'SELECT c.id, c.jobId, c.userId, c.version, c.createdAt, c.label, c.note, c.hash FROM c WHERE c.jobId = @jobId ORDER BY c.version DESC',
+              parameters: [{ name: '@jobId', value: jobId }]
+            }, { partitionKey: jobId })
+            .fetchAll();
+          return ok({ versions: resources || [] });
+        }
+
+        // ── VERSION-GET: fetch one version with full snapshot ───────────────
+        // GET /api/data/version-get?id=ver_xxx&jobId=job_xxx
+        case 'version-get': {
+          const id    = req.query.get('id');
+          const jobId = req.query.get('jobId');
+          if (!id || !jobId) return err(400, 'id and jobId query params are required');
+
+          try {
+            const { resource } = await getCosmosContainer('job_versions')
+              .item(id, jobId).read();
+            if (!resource) return err(404, 'Version not found');
+            return ok(resource);
+          } catch (e) {
+            if (e.code === 404) return err(404, 'Version not found');
+            throw e;
+          }
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get`);
       }
 
     } catch (e) {
