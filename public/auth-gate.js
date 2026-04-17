@@ -9,15 +9,21 @@
   const path = window.location.pathname;
   if (PUBLIC.some(p => path === p || path.endsWith(p))) return;
 
-  // Check for valid Entra session in sessionStorage
   function isAuthenticated() {
     try {
-      const acct = sessionStorage.getItem('cygenix_entra_account');
-      if (!acct) return false;
-      const { exp } = JSON.parse(acct);
+      // Check sessionStorage first, then localStorage (MSAL uses localStorage)
+      const raw = sessionStorage.getItem('cygenix_entra_account')
+               || localStorage.getItem('cygenix_entra_account');
+      if (!raw) return false;
+      const { exp } = JSON.parse(raw);
       if (exp && Date.now() > exp) {
         sessionStorage.removeItem('cygenix_entra_account');
+        localStorage.removeItem('cygenix_entra_account');
         return false;
+      }
+      // Copy to sessionStorage if only in localStorage
+      if (!sessionStorage.getItem('cygenix_entra_account')) {
+        sessionStorage.setItem('cygenix_entra_account', raw);
       }
       return true;
     } catch { return false; }

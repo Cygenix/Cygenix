@@ -24,11 +24,12 @@ const CygenixSync = (() => {
 
   // Extract userId — supports Entra External ID (primary) and legacy fallbacks
   function getUserId() {
-    // Method 1: Entra External ID session (new primary auth)
+    // Method 1: Entra External ID session (check both storages)
     try {
-      const entra = sessionStorage.getItem('cygenix_entra_account');
-      if (entra) {
-        const u = JSON.parse(entra);
+      const entraRaw = sessionStorage.getItem('cygenix_entra_account')
+                    || localStorage.getItem('cygenix_entra_account');
+      if (entraRaw) {
+        const u = JSON.parse(entraRaw);
         if (u.email)  return u.email;
         if (u.userId) return u.userId;
       }

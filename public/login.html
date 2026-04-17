@@ -97,7 +97,7 @@ const msalConfig = {
     navigateToLoginRequestUrl: false,  // prevent redirect to pre-login URL
   },
   cache: {
-    cacheLocation: 'sessionStorage',
+    cacheLocation: 'localStorage',
     storeAuthStateInCookie: false,
   },
   system: {
@@ -194,28 +194,36 @@ function saveSession(authResult) {
   const account = authResult.account;
   const claims  = authResult.idTokenClaims || {};
 
-  const sessionData = {
-    email:      claims.email || claims.preferred_username || account.username || '',
-    name:       claims.name  || account.name || '',
-    userId:     claims.sub   || account.homeAccountId || account.username || '',
+  const email  = claims.email || claims.preferred_username || account?.username || '';
+  const name   = claims.name  || account?.name || '';
+  const userId = claims.sub   || account?.homeAccountId || account?.username || email;
+  const exp    = claims.exp ? (claims.exp * 1000) : (Date.now() + 3600000);
+
+  const sessionData = { email, name, userId, exp,
     accessToken: authResult.accessToken,
-    idToken:    authResult.idToken,
-    exp:        (claims.exp * 1000) || (Date.now() + 3600000),
-    provider:   claims.idp  || 'entra',
+    idToken:     authResult.idToken,
+    provider:    claims.idp || 'entra',
   };
 
-  sessionStorage.setItem('cygenix_entra_account', JSON.stringify(sessionData));
+  // Store in BOTH localStorage and sessionStorage for resilience
+  const sessionJson = JSON.stringify(sessionData);
+  localStorage.setItem('cygenix_entra_account',   sessionJson);
+  sessionStorage.setItem('cygenix_entra_account', sessionJson);
 
-  // Legacy keys — keeps cosmos-sync and nav working without changes
-  sessionStorage.setItem('cygenix_token',   authResult.idToken || authResult.accessToken);
-  sessionStorage.setItem('cygenix_expires', String(sessionData.exp));
-  sessionStorage.setItem('cygenix_user',    JSON.stringify({
-    email:       sessionData.email,
+  // Legacy keys — keeps cosmos-sync and nav working
+  const token = authResult.idToken || authResult.accessToken;
+  localStorage.setItem('cygenix_token',   token);
+  sessionStorage.setItem('cygenix_token', token);
+  sessionStorage.setItem('cygenix_expires', String(exp));
+  const userJson = JSON.stringify({
+    email, name,
     access_token: authResult.accessToken,
-    user_metadata: { full_name: sessionData.name },
-  }));
+    user_metadata: { full_name: name },
+  });
+  localStorage.setItem('cygenix_user',   userJson);
+  sessionStorage.setItem('cygenix_user', userJson);
 
-  console.log('[Auth] Session saved for:', sessionData.email);
+  console.log('[Auth] Session saved for:', email);
 }
 
 // ── Redirect after login ─────────────────────────────────────────────────────

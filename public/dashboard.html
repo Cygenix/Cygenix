@@ -2385,40 +2385,46 @@ function escapeAttr(s) { return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 // ── User + Project ─────────────────────────────────────────────────────────────
 function initUserAndProject() {
-  // Load user from session — GoTrue nests the user object differently depending on flow
+  // Load user — check Entra session first, then legacy fallbacks
   try {
-    const raw  = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
-    // GoTrue may return { user: {...}, access_token } or the user directly
-    const user = raw.user || raw;
-    let email = user.email || raw.email || '';
+    let email = '', name = '';
 
-    // If no email found, decode it from the access_token JWT
-    if (!email && raw.access_token) {
-      try {
-        const payload = JSON.parse(atob(raw.access_token.split('.')[1]));
-        email = payload.email || payload.sub || '';
-      } catch {}
+    // 1. Entra External ID session (primary)
+    const entraRaw = sessionStorage.getItem('cygenix_entra_account')
+                  || localStorage.getItem('cygenix_entra_account');
+    if (entraRaw) {
+      const entra = JSON.parse(entraRaw);
+      email = entra.email || entra.userId || '';
+      name  = entra.name  || '';
     }
 
-    // Also try cygenix_token directly
+    // 2. Legacy cygenix_user fallback
     if (!email) {
-      try {
-        const token = sessionStorage.getItem('cygenix_token');
-        if (token) {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          email = payload.email || payload.sub || '';
-        }
-      } catch {}
+      const raw  = JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user') || '{}');
+      const user = raw.user || raw;
+      email = user.email || raw.email || '';
+      name  = user.user_metadata?.full_name || raw.user_metadata?.full_name || '';
+    }
+
+    // 3. Decode from JWT token
+    if (!email) {
+      const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        email = payload.email || payload.preferred_username || payload.sub || '';
+        name  = payload.name || '';
+      }
     }
 
     if (email) {
-      const name = user.user_metadata?.full_name || raw.user_metadata?.full_name || email.split('@')[0];
+      if (!name) name = email.split('@')[0];
       const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
-      $('user-name') && ($('user-name').textContent = name);
-      $('user-avatar') && ($('user-avatar').textContent = initials);
+      $('user-name')       && ($('user-name').textContent = name);
+      $('user-avatar')     && ($('user-avatar').textContent = initials);
       $('user-email-menu') && ($('user-email-menu').textContent = email);
+      console.log('[Dashboard] User:', email);
     }
-  } catch {}
+  } catch(e) { console.warn('[Dashboard] initUserAndProject error:', e.message); }
 
   // Load active project name
   try {
