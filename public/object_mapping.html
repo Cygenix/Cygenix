@@ -158,6 +158,74 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 
 /* Edit job banner */
 .edit-banner{padding:0.625rem 1rem;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);border-radius:var(--r);font-size:12px;color:var(--amber);margin-bottom:1rem;display:flex;align-items:center;gap:0.75rem}
+/* ── Visual drag-and-drop view ─────────────────────────────────────────────── */
+.visual-view{padding:0.75rem}
+.visual-hint{font-size:11px;color:var(--text3);margin-bottom:0.75rem;padding:0.4rem 0.6rem;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--accent)}
+.visual-canvas{position:relative;display:grid;grid-template-columns:max-content 1fr max-content;min-height:400px;user-select:none;padding:0 1rem;max-width:1200px;margin:0 auto}
+.visual-canvas > .visual-col:first-child{grid-column:1}
+.visual-canvas > .visual-col:last-child{grid-column:3;justify-self:end}
+.visual-canvas > .visual-lines{grid-column:1 / -1}
+
+/* Fullscreen visual view */
+.visual-view.fullscreen{
+  position:fixed;
+  inset:0;
+  z-index:9000;
+  background:var(--bg);
+  padding:1.25rem;
+  overflow:auto;
+  margin:0;
+}
+.visual-view.fullscreen .visual-canvas{max-width:none;min-height:calc(100vh - 6rem)}
+.visual-fs-btn{
+  background:var(--bg3);
+  border:0.5px solid var(--border2);
+  color:var(--text2);
+  border-radius:var(--r);
+  padding:0.35rem 0.75rem;
+  font-size:11px;
+  cursor:pointer;
+  font-family:var(--serif);
+  transition:all 0.15s;
+}
+.visual-fs-btn:hover{border-color:var(--accent);color:var(--text)}
+.visual-toolbar{display:flex;justify-content:space-between;align-items:center;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap}
+.visual-col{display:flex;flex-direction:column;gap:0.3rem;min-width:0}
+.visual-col-multi{gap:1rem}
+.visual-col-head{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;padding:0 0.3rem;margin-bottom:0.3rem}
+.visual-pills{display:flex;flex-direction:column;gap:0.35rem;min-width:220px}
+.visual-pill{
+  display:flex;align-items:center;justify-content:space-between;gap:0.5rem;
+  padding:0.45rem 0.7rem;
+  background:var(--bg3);border:0.5px solid var(--border2);
+  border-radius:var(--r);
+  font-family:var(--mono);font-size:11px;color:var(--text2);
+  cursor:grab;position:relative;
+  transition:all 0.12s;
+}
+.visual-pill:hover{border-color:var(--accent);color:var(--text)}
+.visual-pill.dragging{opacity:0.4;cursor:grabbing}
+.visual-pill.drag-over{border-color:var(--accent);background:var(--accent-glow);transform:scale(1.02)}
+.visual-pill .vp-type{font-size:9px;color:var(--text3);padding:1px 5px;background:var(--bg4);border-radius:3px;flex-shrink:0}
+.visual-pill.src-mapped{opacity:0.55}
+.visual-pill.match-HIGH{border-color:rgba(34,201,122,0.45);background:rgba(34,201,122,0.06)}
+.visual-pill.match-MEDIUM{border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.06)}
+.visual-pill.match-LOW{border-color:rgba(240,70,70,0.35);background:rgba(240,70,70,0.05)}
+.visual-pill.match-none{border-color:var(--border);color:var(--text3)}
+.visual-pill .vp-remove{
+  display:none;background:none;border:none;color:var(--red);
+  font-size:13px;cursor:pointer;padding:0 2px;margin-left:0.25rem;
+}
+.visual-pill:hover .vp-remove{display:inline-block}
+.visual-lines{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1}
+.visual-lines path{fill:none;stroke-width:1.5;cursor:pointer;pointer-events:stroke;transition:stroke-width 0.12s}
+.visual-lines path:hover{stroke-width:3}
+.vo-target-group{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.5rem 0.6rem}
+.vo-target-group-head{font-size:11px;font-weight:600;color:var(--text);margin-bottom:0.3rem;font-family:var(--mono)}
+@media(max-width:700px){
+  .visual-canvas{grid-template-columns:1fr;gap:1.5rem}
+  .visual-lines{display:none}
+}
 </style>
 </head>
 <body>
@@ -177,6 +245,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
       <div class="mode-toggle" id="mode-toggle">
         <button class="mode-btn active" id="mode-single" onclick="setMode('single')">◈ Single map</button>
         <button class="mode-btn" id="mode-otm" onclick="setMode('otm')">⊞ One-to-many</button>
+      </div>
+      <div class="mode-toggle" id="view-toggle" style="margin-left:0">
+        <button class="mode-btn active" id="view-table" onclick="setView('table')" title="Table view">☰ Table</button>
+        <button class="mode-btn" id="view-visual" onclick="setView('visual')" title="Visual drag-and-drop view">✦ Visual</button>
       </div>
       <button class="btn btn-green btn-sm" onclick="newMap()" title="Start a new map (will prompt to save current work)">✨ New map</button>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
@@ -331,7 +403,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
               <div id="wasis-stats" style="display:none;margin-top:0.5rem;font-size:11px;color:var(--text3);font-family:var(--mono)"></div>
             </div>
 
-            <!-- Column mapping table -->
+            <!-- Column mapping table (Table view) -->
             <div id="mapping-wrap" style="display:none">
               <!-- Filter + sort toolbar -->
               <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;margin-bottom:0.5rem">
@@ -367,6 +439,28 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
                 <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
               </div>
             </div>
+
+            <!-- Visual drag-and-drop view (Single-map) -->
+            <div id="visual-single" class="visual-view" style="display:none">
+              <div class="visual-toolbar">
+                <div class="visual-hint" style="margin:0">Drag a source column onto a target column to map it. Click a connection line to remove.</div>
+                <button class="visual-fs-btn" onclick="toggleVisualFullscreen('visual-single')" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
+              </div>
+              <div class="visual-canvas" id="vs-canvas">
+                <div class="visual-col" id="vs-src-col">
+                  <div class="visual-col-head">Source columns</div>
+                  <div class="visual-pills" id="vs-src-pills"></div>
+                </div>
+                <svg class="visual-lines" id="vs-lines" xmlns="http://www.w3.org/2000/svg"></svg>
+                <div class="visual-col" id="vs-tgt-col">
+                  <div class="visual-col-head">Target columns</div>
+                  <div class="visual-pills" id="vs-tgt-pills"></div>
+                </div>
+              </div>
+              <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
+              </div>
+            </div>
             <div id="single-empty" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
               Select source and target tables to build the column mapping
             </div>
@@ -391,10 +485,28 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
               <div class="search-drop" id="otm-tgt-drop" style="display:none"></div>
             </div>
           </div>
-          <!-- Target cards rendered here -->
+          <!-- Target cards (Table view) -->
           <div id="otm-cards" style="padding:0 1.25rem 1rem"></div>
           <div id="otm-empty" style="padding:2rem;text-align:center;color:var(--text3);font-size:12px">
             Connect source and target databases, pick a source table, then add target tables above
+          </div>
+
+          <!-- Visual drag-and-drop view (OTM) -->
+          <div id="visual-otm" class="visual-view" style="display:none;padding:0 1.25rem 1rem">
+            <div class="visual-toolbar">
+              <div class="visual-hint" style="margin:0">Drag a source column onto a target column to map it. Click a connection line to remove.</div>
+              <button class="visual-fs-btn" onclick="toggleVisualFullscreen('visual-otm')" title="Fullscreen (Esc to exit)">⛶ Fullscreen</button>
+            </div>
+            <div class="visual-canvas" id="vo-canvas">
+              <div class="visual-col" id="vo-src-col">
+                <div class="visual-col-head">Source columns</div>
+                <div class="visual-pills" id="vo-src-pills"></div>
+              </div>
+              <svg class="visual-lines" id="vo-lines" xmlns="http://www.w3.org/2000/svg"></svg>
+              <div class="visual-col visual-col-multi" id="vo-tgt-col">
+                <!-- Target groups rendered by renderVisualOTM -->
+              </div>
+            </div>
           </div>
           <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap" id="otm-actions" style="display:none">
             <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()">⚡ Generate cursor SQL</button>
@@ -630,7 +742,346 @@ function setMode(m){
   $('tx-mode-wrap').style.display = m==='otm'?'':'none';
   $('row-limit-wrap').style.display = m==='single'?'':'none';
   $('sql-panel').style.display = 'none';
+  // Re-apply current view so the right sub-panel is shown in the new mode
+  setView(window._viewMode || 'table');
 }
+
+// ══ VIEW TOGGLE ══════════════════════════════════════════════════════════════
+window._viewMode = 'table';  // 'table' | 'visual'
+function setView(v){
+  window._viewMode = v;
+  $('view-table').classList.toggle('active', v==='table');
+  $('view-visual').classList.toggle('active', v==='visual');
+  // Single-map panels
+  const mw = $('mapping-wrap'), vs = $('visual-single');
+  if(mode==='single'){
+    // Show the appropriate panel if we have a mapping (otherwise keep empty-state visible)
+    const hasData = !!(srcTable && tgtTable && columnMapping.length);
+    if(hasData){
+      if(v==='visual'){ mw.style.display='none'; vs.style.display='block'; renderVisualSingle(); }
+      else            { vs.style.display='none'; mw.style.display='block'; }
+    } else {
+      mw.style.display='none'; vs.style.display='none';
+    }
+  }
+  // OTM panels
+  const oc = $('otm-cards'), vo = $('visual-otm');
+  if(mode==='otm'){
+    if(targetTables.length){
+      if(v==='visual'){ oc.style.display='none'; vo.style.display='block'; renderVisualOTM(); }
+      else            { vo.style.display='none'; oc.style.display='block'; }
+    } else {
+      vo.style.display='none'; oc.style.display='block';
+    }
+  }
+}
+
+// ══ VISUAL VIEW — helpers ════════════════════════════════════════════════════
+function getAllSourceCols(){
+  if(!srcTable) return [];
+  const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+  return [
+    ...(srcTable.columns||[]).map(c=>({
+      name: typeof c==='string'?c:c.name,
+      type: typeof c==='object'?(c.type||''):'',
+      fromJoin: false
+    })),
+    ...joinCols.map(c=>({name:c.name, type:c.type||'', fromJoin:true, alias:c.alias}))
+  ];
+}
+
+function matchClass(m){
+  if(!m) return 'match-none';
+  return 'match-' + m;
+}
+
+// Escape for HTML attributes
+function escAttr(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ══ VISUAL VIEW — SINGLE-MAP ═════════════════════════════════════════════════
+function renderVisualSingle(){
+  if(!srcTable || !tgtTable) return;
+  const srcCols = getAllSourceCols();
+  const tgtCols = (tgtTable.columns||[]).filter(c=>!c.isIdentity);
+  const mappedSrcNames = new Set(columnMapping.filter(m=>m.srcCol&&m.tgtCol).map(m=>m.srcCol));
+
+  // Render source pills
+  $('vs-src-pills').innerHTML = srcCols.map(c => `
+    <div class="visual-pill ${mappedSrcNames.has(c.name)?'src-mapped':''}"
+         data-side="src" data-col="${escAttr(c.name)}"
+         draggable="true">
+      <span>${c.fromJoin?'<span style="color:var(--teal);font-size:9px">⊞ </span>':''}${escAttr(c.name)}</span>
+      <span class="vp-type">${escAttr(c.type)}</span>
+    </div>`).join('');
+
+  // Render target pills with match colour + mapped state
+  $('vs-tgt-pills').innerHTML = tgtCols.map(c => {
+    const m = columnMapping.find(x => x.tgtCol === c.name);
+    const mapped = m && m.srcCol;
+    const matchCls = matchClass(m?.match);
+    return `
+    <div class="visual-pill ${matchCls}"
+         data-side="tgt" data-col="${escAttr(c.name)}">
+      <span>
+        ${escAttr(c.name)}
+        ${mapped ? `<span style="color:var(--text3);font-size:10px"> ← ${escAttr(m.srcCol)}</span>` : ''}
+      </span>
+      <span style="display:flex;align-items:center;gap:0.3rem">
+        <span class="vp-type">${escAttr(c.type)}</span>
+        ${mapped ? `<button class="vp-remove" onclick="event.stopPropagation();unmapTgt('${escAttr(c.name)}')" title="Remove mapping">✕</button>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+
+  wireVisualPills('vs-src-pills','vs-tgt-pills', (srcName, tgtName) => {
+    mapSingleDrop(srcName, tgtName);
+  });
+  redrawVisualLines('vs-canvas','vs-lines','vs-src-pills','vs-tgt-pills', (pillEl) => {
+    // get the mapping for this target pill
+    const tgtName = pillEl.getAttribute('data-col');
+    const m = columnMapping.find(x => x.tgtCol === tgtName);
+    return m && m.srcCol ? {srcName:m.srcCol, match:m.match||''} : null;
+  });
+}
+
+function mapSingleDrop(srcName, tgtName){
+  if(!srcName || !tgtName) return;
+  let row = columnMapping.find(m => m.tgtCol === tgtName);
+  if(!row){
+    row = { srcCol:'', tgtCol:tgtName, transform:'NONE', match:'' };
+    columnMapping.push(row);
+  }
+  row.srcCol = srcName;
+  row.match  = 'HIGH';   // user-confirmed = highest confidence
+  renderVisualSingle();
+  renderMappingTable();   // keep table in sync
+  renderSrcColList();
+  tryAutoGenSQL();
+}
+
+function unmapTgt(tgtName){
+  const row = columnMapping.find(m => m.tgtCol === tgtName);
+  if(!row) return;
+  row.srcCol = '';
+  row.match  = '';
+  if(mode==='single'){
+    renderVisualSingle();
+    renderMappingTable();
+  } else {
+    renderVisualOTM();
+    renderOTMCards();
+  }
+  renderSrcColList();
+  tryAutoGenSQL();
+}
+
+// ══ VISUAL VIEW — OTM ════════════════════════════════════════════════════════
+function renderVisualOTM(){
+  if(!srcTable || !targetTables.length) return;
+  const srcCols = getAllSourceCols();
+  const allMappedSrc = new Set();
+  targetTables.forEach(tt => tt.mappings.forEach(m => { if(m.srcCol&&m.tgtCol) allMappedSrc.add(m.srcCol); }));
+
+  $('vo-src-pills').innerHTML = srcCols.map(c => `
+    <div class="visual-pill ${allMappedSrc.has(c.name)?'src-mapped':''}"
+         data-side="src" data-col="${escAttr(c.name)}"
+         draggable="true">
+      <span>${c.fromJoin?'<span style="color:var(--teal);font-size:9px">⊞ </span>':''}${escAttr(c.name)}</span>
+      <span class="vp-type">${escAttr(c.type)}</span>
+    </div>`).join('');
+
+  // Render one group per target table, each containing that table's target-col pills
+  $('vo-tgt-col').innerHTML = targetTables.map((tt,ti) => {
+    const tgtCols = (tt.columns||[]).filter(c=>!c.isIdentity);
+    const pills = tgtCols.map(c => {
+      const m = (tt.mappings||[]).find(x => x.tgtCol === c.name);
+      const mapped = m && m.srcCol;
+      const matchCls = matchClass(m?.match);
+      return `
+      <div class="visual-pill ${matchCls}"
+           data-side="tgt" data-tgt-idx="${ti}" data-col="${escAttr(c.name)}">
+        <span>
+          ${escAttr(c.name)}
+          ${mapped ? `<span style="color:var(--text3);font-size:10px"> ← ${escAttr(m.srcCol)}</span>` : ''}
+        </span>
+        <span style="display:flex;align-items:center;gap:0.3rem">
+          <span class="vp-type">${escAttr(c.type||'')}</span>
+          ${mapped ? `<button class="vp-remove" onclick="event.stopPropagation();unmapOTM(${ti},'${escAttr(c.name)}')" title="Remove mapping">✕</button>` : ''}
+        </span>
+      </div>`;
+    }).join('');
+    return `
+      <div class="vo-target-group">
+        <div class="vo-target-group-head">${escAttr(tt.fullName||tt.name)}</div>
+        <div class="visual-pills">${pills}</div>
+      </div>`;
+  }).join('');
+
+  // Wire drop: all source pills, any tgt pill across groups
+  wireVisualPills('vo-src-pills','vo-tgt-col', (srcName, tgtName, tgtIdx) => {
+    mapOTMDrop(srcName, parseInt(tgtIdx), tgtName);
+  }, true);
+  redrawVisualLines('vo-canvas','vo-lines','vo-src-pills','vo-tgt-col', (pillEl) => {
+    const tgtName = pillEl.getAttribute('data-col');
+    const tgtIdx  = parseInt(pillEl.getAttribute('data-tgt-idx'));
+    const tt = targetTables[tgtIdx];
+    const m = tt?.mappings.find(x => x.tgtCol === tgtName);
+    return m && m.srcCol ? {srcName:m.srcCol, match:m.match||''} : null;
+  });
+}
+
+function mapOTMDrop(srcName, tgtIdx, tgtName){
+  if(!srcName || !tgtName || isNaN(tgtIdx)) return;
+  const tt = targetTables[tgtIdx]; if(!tt) return;
+  let row = tt.mappings.find(m => m.tgtCol === tgtName);
+  if(!row){ row = { srcCol:'', tgtCol:tgtName, transform:'NONE', match:'' }; tt.mappings.push(row); }
+  row.srcCol = srcName;
+  row.match  = 'HIGH';
+  renderVisualOTM();
+  renderOTMCards();
+  renderSrcColList();
+}
+
+function unmapOTM(tgtIdx, tgtName){
+  const tt = targetTables[tgtIdx]; if(!tt) return;
+  const row = tt.mappings.find(m => m.tgtCol === tgtName);
+  if(row){ row.srcCol=''; row.match=''; }
+  renderVisualOTM();
+  renderOTMCards();
+  renderSrcColList();
+}
+
+// ══ DRAG/DROP WIRING ═════════════════════════════════════════════════════════
+function wireVisualPills(srcContainerId, tgtContainerId, onDrop, multiGroup){
+  const srcWrap = document.getElementById(srcContainerId);
+  const tgtWrap = document.getElementById(tgtContainerId);
+  if(!srcWrap || !tgtWrap) return;
+
+  let dragging = null;
+
+  srcWrap.addEventListener('dragstart', e => {
+    const pill = e.target.closest('.visual-pill');
+    if(!pill) return;
+    dragging = pill.getAttribute('data-col');
+    pill.classList.add('dragging');
+    try { e.dataTransfer.setData('text/plain', dragging); } catch {}
+    e.dataTransfer.effectAllowed = 'link';
+  });
+  srcWrap.addEventListener('dragend', e => {
+    const pill = e.target.closest('.visual-pill');
+    if(pill) pill.classList.remove('dragging');
+    dragging = null;
+  });
+
+  const targetPillSelector = '.visual-pill[data-side="tgt"]';
+  tgtWrap.addEventListener('dragover', e => {
+    const pill = e.target.closest(targetPillSelector);
+    if(!pill) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'link';
+    pill.classList.add('drag-over');
+  });
+  tgtWrap.addEventListener('dragleave', e => {
+    const pill = e.target.closest(targetPillSelector);
+    if(pill) pill.classList.remove('drag-over');
+  });
+  tgtWrap.addEventListener('drop', e => {
+    const pill = e.target.closest(targetPillSelector);
+    if(!pill) return;
+    e.preventDefault();
+    pill.classList.remove('drag-over');
+    const srcName = dragging || e.dataTransfer.getData('text/plain');
+    const tgtName = pill.getAttribute('data-col');
+    if(multiGroup){
+      const tgtIdx = pill.getAttribute('data-tgt-idx');
+      onDrop(srcName, tgtName, tgtIdx);
+    } else {
+      onDrop(srcName, tgtName);
+    }
+  });
+}
+
+// ══ CONNECTION LINES ═════════════════════════════════════════════════════════
+function redrawVisualLines(canvasId, svgId, srcPillsId, tgtPillsId, getMapping){
+  const canvas = document.getElementById(canvasId);
+  const svg    = document.getElementById(svgId);
+  const srcWrap = document.getElementById(srcPillsId);
+  const tgtWrap = document.getElementById(tgtPillsId);
+  if(!canvas || !svg || !srcWrap || !tgtWrap) return;
+
+  const cRect = canvas.getBoundingClientRect();
+  svg.setAttribute('width',  cRect.width);
+  svg.setAttribute('height', cRect.height);
+  svg.setAttribute('viewBox', `0 0 ${cRect.width} ${cRect.height}`);
+
+  const colorFor = m => {
+    if(m === 'HIGH')   return 'rgba(34,201,122,0.55)';
+    if(m === 'MEDIUM') return 'rgba(245,158,11,0.55)';
+    if(m === 'LOW')    return 'rgba(240,70,70,0.5)';
+    return 'rgba(255,255,255,0.28)';
+  };
+
+  const paths = [];
+  const tgtPills = tgtWrap.querySelectorAll('.visual-pill[data-side="tgt"]');
+  tgtPills.forEach(tp => {
+    const info = getMapping(tp);
+    if(!info) return;
+    const srcPill = srcWrap.querySelector(`.visual-pill[data-side="src"][data-col="${CSS.escape(info.srcName)}"]`);
+    if(!srcPill) return;
+
+    const sRect = srcPill.getBoundingClientRect();
+    const tRect = tp.getBoundingClientRect();
+    // Translate into SVG/canvas coords
+    const sx = sRect.right  - cRect.left;
+    const sy = sRect.top    + sRect.height/2 - cRect.top;
+    const tx = tRect.left   - cRect.left;
+    const ty = tRect.top    + tRect.height/2 - cRect.top;
+    // Bezier for a smooth curve
+    const dx = Math.max(40, (tx - sx) * 0.45);
+    const d = `M ${sx} ${sy} C ${sx+dx} ${sy}, ${tx-dx} ${ty}, ${tx} ${ty}`;
+    const tgtName = tp.getAttribute('data-col');
+    const tgtIdx  = tp.getAttribute('data-tgt-idx');
+    const onclick = tgtIdx != null
+      ? `onclick="unmapOTM(${tgtIdx},'${escAttr(tgtName)}')"`
+      : `onclick="unmapTgt('${escAttr(tgtName)}')"`;
+    paths.push(`<path d="${d}" stroke="${colorFor(info.match)}" ${onclick}><title>Click to remove mapping</title></path>`);
+  });
+  svg.innerHTML = paths.join('');
+}
+
+// Redraw lines on scroll/resize (debounced via rAF)
+let _lineRedrawPending = false;
+function scheduleLineRedraw(){
+  if(_lineRedrawPending) return;
+  _lineRedrawPending = true;
+  requestAnimationFrame(() => {
+    _lineRedrawPending = false;
+    if(window._viewMode !== 'visual') return;
+    if(mode==='single' && $('visual-single')?.style.display !== 'none') renderVisualSingle();
+    if(mode==='otm'    && $('visual-otm')?.style.display    !== 'none') renderVisualOTM();
+  });
+}
+window.addEventListener('resize', scheduleLineRedraw);
+window.addEventListener('scroll',  scheduleLineRedraw, true);
+
+// ══ FULLSCREEN TOGGLE ════════════════════════════════════════════════════════
+function toggleVisualFullscreen(viewId){
+  const el = document.getElementById(viewId);
+  if(!el) return;
+  const nowFs = el.classList.toggle('fullscreen');
+  document.body.style.overflow = nowFs ? 'hidden' : '';
+  // Update button label
+  const btn = el.querySelector('.visual-fs-btn');
+  if(btn) btn.textContent = nowFs ? '⛶ Exit fullscreen' : '⛶ Fullscreen';
+  // Lines need redrawing after layout change
+  scheduleLineRedraw();
+  setTimeout(scheduleLineRedraw, 100);  // after CSS transition settles
+}
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  const fs = document.querySelector('.visual-view.fullscreen');
+  if(fs) toggleVisualFullscreen(fs.id);
+});
 
 // ── Source panel toggle & size ────────────────────────────────────────────────
 let srcOpen = true;
@@ -941,6 +1392,10 @@ function toggleUnmappedCols(){
     btn.style.borderColor = _hidingUnmapped ? 'rgba(245,158,11,0.4)' : '';
   }
   applyMapFilter();
+  // Keep the visual view in sync if it's visible
+  if(window._viewMode==='visual' && mode==='single' && $('visual-single')?.style.display !== 'none'){
+    renderVisualSingle();
+  }
 }
 
 function clearMapFilter(){
@@ -1301,6 +1756,10 @@ function renderOTMCards(){
       </div>
     </div>`;
   }).join('');
+  // Keep the visual view in sync if it's visible
+  if(window._viewMode==='visual' && mode==='otm' && $('visual-otm')?.style.display !== 'none'){
+    renderVisualOTM();
+  }
 }
 
 function moveTgt(ti,dir){
