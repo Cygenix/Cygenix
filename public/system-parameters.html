@@ -65,6 +65,13 @@ table.params tr:last-child td{border-bottom:none}
 .toast.show{opacity:1;transform:translateY(0)}
 .add-row{padding:0.6rem;background:var(--bg2);border:1px dashed var(--border2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3);cursor:pointer;margin-top:0.5rem;transition:all 0.15s}
 .add-row:hover{border-color:var(--accent);color:var(--accent)}
+.filter-bar{display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.9rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
+.filter-input{flex:1;min-width:200px;max-width:420px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.45rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
+.filter-input:focus{border-color:var(--accent)}
+.filter-count{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto}
+.sort-ind{opacity:0.4;font-size:10px;margin-left:3px;transition:opacity 0.15s}
+th:hover .sort-ind{opacity:0.75}
+.sort-ind.active{opacity:1;color:var(--accent)}
 </style>
 </head>
 <body>
@@ -106,6 +113,11 @@ table.params tr:last-child td{border-bottom:none}
       Names become codes automatically. <code>Start Date</code> → <code>@@StartDate</code>.
       Use the code exactly as shown (case-insensitive) wherever you want the value substituted.
     </div>
+    <div class="filter-bar" id="filter-bar" style="display:none">
+      <input type="text" id="filter-input" class="filter-input" placeholder="🔍 Filter by name, description, value, or code…" oninput="applyFilter()">
+      <button class="btn btn-sm" id="filter-clear" onclick="clearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
+      <span id="filter-count" class="filter-count"></span>
+    </div>
     <div id="list-wrap">
       <div class="empty" id="empty-state">
         <div class="emoji">🏷</div>
@@ -115,15 +127,20 @@ table.params tr:last-child td{border-bottom:none}
       <table class="params" id="params-table" style="display:none">
         <thead>
           <tr>
-            <th style="width:22%">Name</th>
-            <th style="width:28%">Description</th>
-            <th style="width:28%">Value</th>
-            <th style="width:18%">Code</th>
+            <th style="width:22%;cursor:pointer;user-select:none" onclick="sortBy('name')">Name <span class="sort-ind" id="sort-ind-name">⇅</span></th>
+            <th style="width:28%;cursor:pointer;user-select:none" onclick="sortBy('description')">Description <span class="sort-ind" id="sort-ind-description">⇅</span></th>
+            <th style="width:28%;cursor:pointer;user-select:none" onclick="sortBy('value')">Value <span class="sort-ind" id="sort-ind-value">⇅</span></th>
+            <th style="width:18%;cursor:pointer;user-select:none" onclick="sortBy('code')">Code <span class="sort-ind" id="sort-ind-code">⇅</span></th>
             <th style="width:4%"></th>
           </tr>
         </thead>
         <tbody id="params-tbody"></tbody>
       </table>
+      <div class="empty" id="empty-filter-state" style="display:none">
+        <div class="emoji">🔎</div>
+        <div>No parameters match the filter.</div>
+        <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="clearFilter();return false" style="color:var(--accent)">clear the filter</a>.</div>
+      </div>
     </div>
   </div>
 
@@ -211,29 +228,129 @@ function save(){
 // ── Render ───────────────────────────────────────────────────────────────────
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-function render(){
-  const tbl   = document.getElementById('params-table');
-  const empty = document.getElementById('empty-state');
-  const tbody = document.getElementById('params-tbody');
+// Filter / sort state
+let filterQuery = '';
+let sortCol = null;   // 'name' | 'description' | 'value' | 'code' | null
+let sortDir = 1;      // 1 asc, -1 desc
 
+function getDisplayedRows(){
+  // Returns an array of {row, origIdx} for rendering, applying filter + sort.
+  // origIdx is the real index into params[], needed for onclick handlers.
+  const q = filterQuery.trim().toLowerCase();
+  let indexed = params.map((p, origIdx) => ({
+    row: {
+      name: p.name || '',
+      description: p.description || '',
+      value: p.value != null ? String(p.value) : '',
+      code: CygenixParams.codeFromName(p.name || '')
+    },
+    origIdx
+  }));
+  if (q) {
+    indexed = indexed.filter(({row}) =>
+      row.name.toLowerCase().includes(q) ||
+      row.description.toLowerCase().includes(q) ||
+      row.value.toLowerCase().includes(q) ||
+      row.code.toLowerCase().includes(q)
+    );
+  }
+  if (sortCol) {
+    indexed.sort((a, b) => {
+      const av = (a.row[sortCol] || '').toLowerCase();
+      const bv = (b.row[sortCol] || '').toLowerCase();
+      if (av < bv) return -1 * sortDir;
+      if (av > bv) return  1 * sortDir;
+      return 0;
+    });
+  }
+  return indexed;
+}
+
+function render(){
+  const tbl         = document.getElementById('params-table');
+  const empty       = document.getElementById('empty-state');
+  const emptyFilter = document.getElementById('empty-filter-state');
+  const tbody       = document.getElementById('params-tbody');
+  const filterBar   = document.getElementById('filter-bar');
+
+  // No data at all
   if (!params.length){
     tbl.style.display = 'none';
     empty.style.display = 'block';
+    emptyFilter.style.display = 'none';
+    filterBar.style.display = 'none';
     return;
   }
   empty.style.display = 'none';
+  filterBar.style.display = 'flex';
+
+  const displayed = getDisplayedRows();
+
+  // Update sort indicators
+  ['name','description','value','code'].forEach(c => {
+    const el = document.getElementById('sort-ind-'+c);
+    if (!el) return;
+    if (c === sortCol){
+      el.textContent = sortDir === 1 ? '▲' : '▼';
+      el.classList.add('active');
+    } else {
+      el.textContent = '⇅';
+      el.classList.remove('active');
+    }
+  });
+
+  // Update count / clear-button visibility
+  const count = document.getElementById('filter-count');
+  const clr   = document.getElementById('filter-clear');
+  if (filterQuery.trim() || sortCol){
+    count.textContent = displayed.length + ' of ' + params.length;
+  } else {
+    count.textContent = params.length + ' parameter' + (params.length === 1 ? '' : 's');
+  }
+  clr.style.display = filterQuery.trim() ? 'inline-flex' : 'none';
+
+  // Nothing matched the filter
+  if (!displayed.length){
+    tbl.style.display = 'none';
+    emptyFilter.style.display = 'block';
+    return;
+  }
+  emptyFilter.style.display = 'none';
   tbl.style.display = '';
 
-  tbody.innerHTML = params.map((p, i) => {
-    const code = CygenixParams.codeFromName(p.name || '');
+  tbody.innerHTML = displayed.map(({row, origIdx}) => {
+    const code = row.code;
     return `<tr>
-      <td><input class="cell-input" value="${esc(p.name)}" oninput="updateField(${i},'name',this.value)" placeholder="StartDate"></td>
-      <td><input class="cell-input" value="${esc(p.description)}" oninput="updateField(${i},'description',this.value)" placeholder="Migration cutoff date"></td>
-      <td><input class="cell-input mono" value="${esc(p.value)}" oninput="updateField(${i},'value',this.value)" placeholder="'2024-01-01'"></td>
-      <td><span class="cell-code" id="code-${i}" title="Click to copy" onclick="copyCode('${esc(code)}')">${esc(code) || '—'}</span></td>
-      <td style="text-align:right"><button class="icon-btn danger" onclick="removeRow(${i})" title="Delete">✕</button></td>
+      <td><input class="cell-input" value="${esc(row.name)}" oninput="updateField(${origIdx},'name',this.value)" placeholder="StartDate"></td>
+      <td><input class="cell-input" value="${esc(row.description)}" oninput="updateField(${origIdx},'description',this.value)" placeholder="Migration cutoff date"></td>
+      <td><input class="cell-input mono" value="${esc(row.value)}" oninput="updateField(${origIdx},'value',this.value)" placeholder="'2024-01-01'"></td>
+      <td><span class="cell-code" id="code-${origIdx}" title="Click to copy" onclick="copyCode('${esc(code)}')">${esc(code) || '—'}</span></td>
+      <td style="text-align:right"><button class="icon-btn danger" onclick="removeRow(${origIdx})" title="Delete">✕</button></td>
     </tr>`;
   }).join('');
+}
+
+function applyFilter(){
+  filterQuery = document.getElementById('filter-input').value || '';
+  render();
+}
+
+function clearFilter(){
+  filterQuery = '';
+  const input = document.getElementById('filter-input');
+  if (input) input.value = '';
+  render();
+}
+
+function sortBy(col){
+  if (sortCol !== col){
+    sortCol = col; sortDir = 1;              // new column → asc
+  } else if (sortDir === 1){
+    sortDir = -1;                            // asc → desc
+  } else {
+    sortCol = null; sortDir = 1;             // desc → clear
+  }
+  render();
 }
 
 function updateField(i, field, value){
@@ -251,6 +368,12 @@ function updateField(i, field, value){
 
 function addRow(){
   params.push({ name:'', description:'', value:'', code:'' });
+  // Clear any active filter so the new blank row is visible
+  if (filterQuery.trim()){
+    filterQuery = '';
+    const input = document.getElementById('filter-input');
+    if (input) input.value = '';
+  }
   save();
   render();
   // Focus the new row's name input
