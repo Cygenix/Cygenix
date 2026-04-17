@@ -94,10 +94,14 @@ const msalConfig = {
     authority:   ENTRA.authority,
     redirectUri: ENTRA.redirectUri,
     knownAuthorities: ['cygenix.ciamlogin.com'],
+    navigateToLoginRequestUrl: false,  // prevent redirect to pre-login URL
   },
   cache: {
     cacheLocation: 'sessionStorage',
     storeAuthStateInCookie: false,
+  },
+  system: {
+    allowNativeBroker: false,
   },
 };
 
