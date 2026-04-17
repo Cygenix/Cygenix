@@ -102,6 +102,23 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .proj-meta{font-size:9px;font-family:var(--mono);color:var(--text3)}
 .sql-block{background:var(--bg);border-radius:6px;padding:0.6rem;font-family:var(--mono);font-size:9px;line-height:1.7;overflow:hidden;max-height:160px}
 .sql-kw{color:#569cd6}.sql-str{color:#ce9178}.sql-fn{color:#dcdcaa}.sql-cm{color:#6a9955}.sql-num{color:#b5cea8}
+/* Visual mapper widget */
+.vm-canvas{position:relative;display:grid;grid-template-columns:max-content 1fr max-content;align-items:start;user-select:none;padding:0.25rem 0.2rem}
+.vm-col{display:flex;flex-direction:column;gap:0.3rem;min-width:140px}
+.vm-lines{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:1}
+.vm-lines path{fill:none;stroke-width:1.5;pointer-events:stroke;cursor:pointer;transition:stroke-width 0.12s;stroke-dasharray:200;stroke-dashoffset:200;animation:vmDraw 0.4s ease-out forwards}
+.vm-lines path:hover{stroke-width:2.5}
+@keyframes vmDraw{to{stroke-dashoffset:0}}
+.vm-pill{display:flex;align-items:center;justify-content:space-between;gap:0.4rem;padding:0.35rem 0.55rem;background:var(--bg4);border:0.5px solid var(--border2);border-radius:5px;font-family:var(--mono);font-size:9.5px;color:var(--text2);position:relative;z-index:2}
+.vm-pill[data-side="src"]{cursor:grab}
+.vm-pill[data-side="src"]:active{cursor:grabbing}
+.vm-pill[data-side="src"]:hover{border-color:var(--accent);color:var(--text)}
+.vm-pill.dragging{opacity:0.45}
+.vm-pill.drag-over{border-color:var(--accent);background:rgba(79,142,255,0.15);transform:scale(1.03)}
+.vm-pill .vm-type{font-size:8.5px;color:var(--text3);background:var(--bg2);padding:1px 4px;border-radius:3px;flex-shrink:0}
+.vm-pill.match-HIGH{border-color:rgba(34,201,122,0.45);background:rgba(34,201,122,0.07)}
+.vm-pill.match-MED{border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.07)}
+.vm-pill.match-LOW{border-color:rgba(240,70,70,0.35);background:rgba(240,70,70,0.06)}
 .features-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border);border:0.5px solid var(--border);border-radius:12px;overflow:hidden;margin-top:3rem}
 .feature-card{background:var(--bg2);padding:1.75rem;transition:background 0.2s;cursor:default}.feature-card:hover{background:var(--bg3)}
 .feature-card-icon{font-size:1.5rem;margin-bottom:0.875rem}
@@ -286,6 +303,40 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div class="divider" style="margin:2rem 0"></div>
 
     <div class="feature-block reverse animate-on-scroll">
+      <div>
+        <div class="feature-tag">Visual Mapping</div>
+        <div class="feature-title">See the whole schema at once</div>
+        <div class="feature-body">Switch from the table view to a drag-and-drop pill view. Source columns left, target columns right, connection lines fanning across — colour-coded by AI confidence. Fullscreen mode expands the canvas to your full window for complex jobs.</div>
+        <ul class="feature-points">
+          <li>Drag any source pill onto a target to create the mapping</li>
+          <li>Bezier connection lines redraw on every scroll and resize</li>
+          <li>Click a line (or the ✕ on a target pill) to remove the mapping</li>
+          <li>Green / amber / red / grey pills — HIGH / MEDIUM / LOW / unmapped</li>
+          <li>⛶ Fullscreen toggle expands to the full browser window; Esc to exit</li>
+          <li>Bidirectional state sync with the Table view — switch any time</li>
+        </ul>
+        <div style="margin-top:1rem;font-size:12px;color:var(--text3);font-style:italic">👉 Try it — drag a source pill onto a target, or click a line to remove it</div>
+      </div>
+      <div class="mock" id="vm-mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;background:var(--bg4);border-radius:4px;height:16px;margin:0 8px;font-family:var(--mono);font-size:9px;color:var(--text3);display:flex;align-items:center;padding:0 8px">Mapper · Visual view</div>
+          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">⛶ Fullscreen</div>
+        </div>
+        <div class="mock-body" style="padding:0.75rem 0.5rem">
+          <div class="vm-canvas" id="vm-canvas">
+            <div class="vm-col" id="vm-src-col"></div>
+            <svg class="vm-lines" id="vm-lines" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+            <div class="vm-col" id="vm-tgt-col"></div>
+          </div>
+          <div style="margin-top:0.4rem;font-size:9px;color:var(--text3);font-family:var(--mono);text-align:right" id="vm-counter">5 mapped · drag to add more</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider" style="margin:2rem 0"></div>
+
+    <div class="feature-block animate-on-scroll">
       <div>
         <div class="feature-tag">One-to-Many Map</div>
         <div class="feature-title">One source, multiple target tables</div>
@@ -631,6 +682,153 @@ window.addEventListener('scroll',()=>{
   sections.forEach(s=>{if(window.scrollY>=s.offsetTop-100)cur=s.id;});
   navLinks.forEach(a=>{a.style.color=a.getAttribute('href')==='#'+cur?'var(--text)':'';});
 },{passive:true});
+
+// ── Visual mapper interactive widget ────────────────────────────────────────
+(function vmInit(){
+  const srcCol = document.getElementById('vm-src-col');
+  const tgtCol = document.getElementById('vm-tgt-col');
+  const canvas = document.getElementById('vm-canvas');
+  const lines  = document.getElementById('vm-lines');
+  const counter= document.getElementById('vm-counter');
+  if (!srcCol || !tgtCol || !canvas || !lines) return;
+
+  const sources = [
+    {name:'clnum',    type:'VARCHAR(20)'},
+    {name:'clname1',  type:'NVARCHAR(120)'},
+    {name:'clsort',   type:'VARCHAR(60)'},
+    {name:'cbustype', type:'INT'},
+    {name:'address1', type:'NVARCHAR(200)'},
+    {name:'postcode', type:'VARCHAR(10)'},
+    {name:'region',   type:'NVARCHAR(32)'},
+  ];
+  const targets = [
+    {name:'ClientID',    type:'UNIQUEID'},
+    {name:'ClientNum',   type:'VARCHAR(20)'},
+    {name:'DisplayName', type:'NVARCHAR(120)'},
+    {name:'SortKey',     type:'VARCHAR(60)'},
+    {name:'BizType',     type:'INT'},
+    {name:'Addr1',       type:'NVARCHAR(200)'},
+    {name:'Postal',      type:'VARCHAR(10)'},
+  ];
+  // Initial mappings — srcName → tgtName, with AI confidence colour
+  const mappings = {
+    'clnum':    {tgt:'ClientNum',   match:'HIGH'},
+    'clname1':  {tgt:'DisplayName', match:'HIGH'},
+    'clsort':   {tgt:'SortKey',     match:'HIGH'},
+    'cbustype': {tgt:'BizType',     match:'MED'},
+    'postcode': {tgt:'Postal',      match:'HIGH'},
+  };
+  // Reverse index: tgt → src (one target can only have one mapping here)
+  function tgtToSrc(){
+    const m = {};
+    Object.keys(mappings).forEach(s => { m[mappings[s].tgt] = {src:s, match:mappings[s].match}; });
+    return m;
+  }
+
+  function renderPills(){
+    const mapped = new Set(Object.keys(mappings));
+    const revMap = tgtToSrc();
+    srcCol.innerHTML = sources.map(s => `
+      <div class="vm-pill${mapped.has(s.name)?' vm-src-mapped':''}" data-side="src" data-col="${s.name}" draggable="true" style="${mapped.has(s.name)?'opacity:0.6':''}">
+        <span>${s.name}</span><span class="vm-type">${s.type}</span>
+      </div>`).join('');
+    tgtCol.innerHTML = targets.map(t => {
+      const m = revMap[t.name];
+      const matchCls = m ? ' match-'+m.match : '';
+      return `<div class="vm-pill${matchCls}" data-side="tgt" data-col="${t.name}">
+        <span>${t.name}${m?` <span style="color:var(--text3);font-size:8px">← ${m.src}</span>`:''}</span><span class="vm-type">${t.type}</span>
+      </div>`;
+    }).join('');
+    updateCounter();
+  }
+
+  function updateCounter(){
+    const n = Object.keys(mappings).length;
+    if (counter) counter.textContent = n + ' mapped · drag to add more';
+  }
+
+  function redrawLines(){
+    const cRect = canvas.getBoundingClientRect();
+    lines.setAttribute('width',  cRect.width);
+    lines.setAttribute('height', cRect.height);
+    lines.setAttribute('viewBox', `0 0 ${cRect.width} ${cRect.height}`);
+    const colorFor = m => ({HIGH:'rgba(34,201,122,0.7)',MED:'rgba(245,158,11,0.7)',LOW:'rgba(240,70,70,0.6)'}[m] || 'rgba(255,255,255,0.3)');
+    const paths = [];
+    Object.keys(mappings).forEach(srcName => {
+      const {tgt, match} = mappings[srcName];
+      const sp = srcCol.querySelector(`.vm-pill[data-col="${srcName}"]`);
+      const tp = tgtCol.querySelector(`.vm-pill[data-col="${tgt}"]`);
+      if (!sp || !tp) return;
+      const sR = sp.getBoundingClientRect();
+      const tR = tp.getBoundingClientRect();
+      const sx = sR.right - cRect.left;
+      const sy = sR.top + sR.height/2 - cRect.top;
+      const tx = tR.left - cRect.left;
+      const ty = tR.top + tR.height/2 - cRect.top;
+      const dx = Math.max(30, (tx - sx) * 0.5);
+      const d = `M ${sx} ${sy} C ${sx+dx} ${sy}, ${tx-dx} ${ty}, ${tx} ${ty}`;
+      paths.push(`<path d="${d}" stroke="${colorFor(match)}" data-src="${srcName}"><title>Click to remove</title></path>`);
+    });
+    lines.innerHTML = paths.join('');
+    // Wire click-to-remove on lines
+    lines.querySelectorAll('path').forEach(p => {
+      p.addEventListener('click', e => {
+        const s = p.getAttribute('data-src');
+        delete mappings[s];
+        renderPills();
+        requestAnimationFrame(redrawLines);
+      });
+    });
+  }
+
+  // Drag and drop
+  let dragging = null;
+  srcCol.addEventListener('dragstart', e => {
+    const pill = e.target.closest('.vm-pill');
+    if (!pill || pill.getAttribute('data-side') !== 'src') return;
+    dragging = pill.getAttribute('data-col');
+    pill.classList.add('dragging');
+    try { e.dataTransfer.setData('text/plain', dragging); } catch {}
+    e.dataTransfer.effectAllowed = 'link';
+  });
+  srcCol.addEventListener('dragend', e => {
+    e.target.closest('.vm-pill')?.classList.remove('dragging');
+    dragging = null;
+  });
+  tgtCol.addEventListener('dragover', e => {
+    const pill = e.target.closest('.vm-pill[data-side="tgt"]');
+    if (!pill) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'link';
+    pill.classList.add('drag-over');
+  });
+  tgtCol.addEventListener('dragleave', e => {
+    e.target.closest('.vm-pill')?.classList.remove('drag-over');
+  });
+  tgtCol.addEventListener('drop', e => {
+    const pill = e.target.closest('.vm-pill[data-side="tgt"]');
+    if (!pill) return;
+    e.preventDefault();
+    pill.classList.remove('drag-over');
+    const srcName = dragging || e.dataTransfer.getData('text/plain');
+    const tgtName = pill.getAttribute('data-col');
+    if (!srcName || !tgtName) return;
+    // Remove any existing mapping for this source or this target
+    delete mappings[srcName];
+    Object.keys(mappings).forEach(k => { if (mappings[k].tgt === tgtName) delete mappings[k]; });
+    mappings[srcName] = { tgt: tgtName, match: 'HIGH' };
+    renderPills();
+    requestAnimationFrame(redrawLines);
+  });
+
+  // Initial render
+  renderPills();
+  // Redraw lines after layout settles (fonts, images, etc.)
+  requestAnimationFrame(redrawLines);
+  setTimeout(redrawLines, 400);
+  // Also redraw on window resize
+  window.addEventListener('resize', redrawLines);
+})();
 </script>
 <script src="/cookie-consent.js"></script>
 </body>
