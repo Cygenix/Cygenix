@@ -231,6 +231,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 <body>
 <script src="/connections.js"></script>
 <script src="/nav.js"></script>
+<script src="/cygenix-params.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 
 <div class="page">
@@ -1596,8 +1597,12 @@ function generateSingleSQL(silent){
   const schemaSQL=`SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA='${tgtTable.schema}' AND TABLE_NAME='${tgtTable.name}'\nORDER BY ORDINAL_POSITION;`;
   const verifySQL=`SELECT '${srcDB?srcDB+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFullQ}${where?' WHERE '+where:''}\nUNION ALL\nSELECT '${tgtDB?tgtDB+'.':''}${tgtTable.fullName}', COUNT(*) FROM ${tgtFullQ};`;
 
-  generatedSQL={insert:sql, schema:schemaSQL, verify:verifySQL};
-  showSQLOutput(sql, warnings, !silent);
+  // Apply system-parameter substitution (@@Token → value) to all generated SQL
+  const sub = (typeof CygenixParams !== 'undefined')
+    ? (s => CygenixParams.substituteParams(s))
+    : (s => s);
+  generatedSQL={insert:sub(sql), schema:sub(schemaSQL), verify:sub(verifySQL)};
+  showSQLOutput(generatedSQL.insert, warnings, !silent);
   $('save-job-btn').disabled=false;
   $('tab-schema').style.display='';
   $('tab-verify').style.display='';
@@ -2078,10 +2083,14 @@ function generateOTMSQL(){
   _lastTruncWarnings=truncWarnings;
   const verifySQL=`-- Verify row counts\nSELECT '${srcDb?srcDb+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFullQualified}${where?' WHERE '+where:''}\n`+
     targetTables.map(tt=>`UNION ALL\nSELECT '${tgtDb?tgtDb+'.':''}${tt.fullName}', COUNT(*) FROM ${tgtDb?'['+tgtDb+'].':''} [${tt.schema}].[${tt.name}]`).join('\n')+';\n';
-  generatedSQL={insert:sql, schema:'', verify:verifySQL};
+  // Apply system-parameter substitution (@@Token → value) to generated SQL
+  const sub = (typeof CygenixParams !== 'undefined')
+    ? (s => CygenixParams.substituteParams(s))
+    : (s => s);
+  generatedSQL={insert:sub(sql), schema:'', verify:sub(verifySQL)};
 
   const warnings=truncWarnings.map(w=>`[${w.srcCol}] → [${w.tgtTable}.${w.tgtCol}] truncated to ${w.tgtLen} chars via LEFT()`);
-  showSQLOutput(sql, warnings, true);
+  showSQLOutput(generatedSQL.insert, warnings, true);
   $('save-job-btn').disabled=false;
   $('tab-schema').style.display='none';
   $('tab-verify').style.display='none';

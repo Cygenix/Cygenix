@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script src="/cygenix-params.js"></script>
 <script src="/project-manager.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -1206,10 +1207,17 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
     if (!step.insertSQL) throw new Error('No generated SQL found — open the One-to-Many Mapper, generate SQL, then save the job again');
     const tgtNames = step.tables?.map(t=>t.name||t.fullName).filter(Boolean) || [step.tgtTable];
     add('Running one-to-many migration: '+step.srcTable+' → '+tgtNames.join(', '));
+    // Apply parameter substitution to the cursor SQL
+    let otmSQL = step.insertSQL;
+    if (typeof CygenixParams !== 'undefined'){
+      const before = otmSQL;
+      otmSQL = CygenixParams.substituteParams(otmSQL);
+      if (otmSQL !== before) add('Substituted parameters in cursor SQL');
+    }
     add('Executing generated cursor SQL on target DB…');
     try {
       // Execute the cursor script
-      await dbCall(tgtConn, { action:'execute', sql: step.insertSQL });
+      await dbCall(tgtConn, { action:'execute', sql: otmSQL });
 
       // rowsAffected from a cursor script is unreliable (counts all statements, not just INSERTs).
       // Instead: query actual row counts from each target table after execution.
@@ -1336,8 +1344,19 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 async function runSqlStep(step, srcConn, tgtConn, log) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
-  const sql = step.sql || step.insertSQL || '';
+  let sql = step.sql || step.insertSQL || '';
   if (!sql) throw new Error('No SQL in this step');
+  // Apply system-parameter substitution (@@Token → value) if available
+  if (typeof CygenixParams !== 'undefined'){
+    const before = sql;
+    sql = CygenixParams.substituteParams(sql);
+    if (sql !== before){
+      const tokens = CygenixParams.findTokens(before).filter(t =>
+        CygenixParams.substituteParams(t) !== t
+      );
+      if (tokens.length) add('Substituted parameters: ' + tokens.join(', '));
+    }
+  }
   const useConn   = step.connOn === 'source' ? srcConn : tgtConn;
   const connLabel = step.connOn === 'source' ? 'source' : 'target';
   if (!useConn) throw new Error('No '+connLabel+' connection configured');
