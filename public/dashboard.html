@@ -2417,12 +2417,13 @@ function initUserAndProject() {
     }
 
     if (email) {
-      if (!name) name = email.split('@')[0];
+      // Use email prefix if name is missing or literally "unknown"
+      if (!name || name === 'unknown') name = email.split('@')[0];
       const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
       $('user-name')       && ($('user-name').textContent = name);
       $('user-avatar')     && ($('user-avatar').textContent = initials);
       $('user-email-menu') && ($('user-email-menu').textContent = email);
-      console.log('[Dashboard] User:', email);
+      console.log('[Dashboard] User:', email, '| Name:', name);
     }
   } catch(e) { console.warn('[Dashboard] initUserAndProject error:', e.message); }
 
@@ -2451,39 +2452,19 @@ document.addEventListener('click', function(e) {
 });
 
 function signOut() {
-  // Clear all session data
+  // Clear all local session and MSAL cache data
   ['cygenix_token','cygenix_user','cygenix_expires',
-   'cygenix_active_project','cygenix_entra_account'].forEach(k => sessionStorage.removeItem(k));
+   'cygenix_active_project','cygenix_entra_account'].forEach(k => {
+    sessionStorage.removeItem(k);
+    localStorage.removeItem(k);
+  });
+  Object.keys(localStorage).filter(k => k.startsWith('msal.')).forEach(k => localStorage.removeItem(k));
   localStorage.removeItem('cygenix_active_user');
 
-  // Sign out via MSAL if available
-  if (window.msal) {
-    const msalConfig = {
-      auth: {
-        clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
-        authority: 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f',
-        redirectUri: window.location.origin + '/login.html',
-        knownAuthorities: ['cygenix.ciamlogin.com'],
-      },
-      cache: { cacheLocation: 'sessionStorage' },
-    };
-    try {
-      const instance = new msal.PublicClientApplication(msalConfig);
-      instance.initialize().then(() => {
-        const accounts = instance.getAllAccounts();
-        if (accounts.length > 0) {
-          instance.logoutRedirect({
-            account: accounts[0],
-            postLogoutRedirectUri: window.location.origin + '/login.html',
-          });
-          return;
-        }
-        window.location.href = '/login.html';
-      });
-      return;
-    } catch(e) { console.warn('MSAL signout error:', e); }
-  }
-  window.location.href = '/login.html';
+  // Hit the Entra logout endpoint to clear server-side session
+  const logoutUrl = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
+    + '?post_logout_redirect_uri=' + encodeURIComponent('https://cygenix.co.uk/login.html');
+  window.location.href = logoutUrl;
 }
 
 
