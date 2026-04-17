@@ -161,7 +161,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 /* ── Visual drag-and-drop view ─────────────────────────────────────────────── */
 .visual-view{padding:0.75rem}
 .visual-hint{font-size:11px;color:var(--text3);margin-bottom:0.75rem;padding:0.4rem 0.6rem;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--accent)}
-.visual-canvas{position:relative;display:grid;grid-template-columns:max-content max-content;gap:12rem;min-height:400px;user-select:none;justify-content:center}
+.visual-canvas{position:relative;display:grid;grid-template-columns:max-content 1fr max-content;min-height:400px;user-select:none;padding:0 1rem}
+.visual-canvas > .visual-col:first-child{grid-column:1}
+.visual-canvas > .visual-col:last-child{grid-column:3;justify-self:end}
+.visual-canvas > .visual-lines{grid-column:1 / -1}
 .visual-col{display:flex;flex-direction:column;gap:0.3rem;min-width:0}
 .visual-col-multi{gap:1rem}
 .visual-col-head{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;padding:0 0.3rem;margin-bottom:0.3rem}
