@@ -45,7 +45,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .logo span{color:var(--accent)}
 .logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
 .topbar-right{display:flex;align-items:center;gap:1rem}
-.conn-badge{font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono);border:0.5px solid;white-space:nowrap}
+.conn-badge{font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono);border:0.5px solid}
 .conn-badge.ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
 .conn-badge.err{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
 .conn-badge.checking{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
@@ -252,111 +252,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 /* SECTION NOTE */
 .section-note{font-size:12px;color:var(--text3);background:var(--bg3);border-radius:var(--r);padding:0.6rem 0.75rem;margin-bottom:1rem;border-left:2px solid var(--accent)}
 
-/* HAMBURGER (mobile only) */
-.hamburger{
-  display:none;
-  align-items:center;
-  justify-content:center;
-  width:34px;
-  height:34px;
-  background:transparent;
-  border:0.5px solid var(--border2);
-  border-radius:8px;
-  color:var(--text2);
-  cursor:pointer;
-  padding:0;
-  margin-right:0.25rem;
-}
-.hamburger:hover{color:var(--text);border-color:var(--accent)}
-.hamburger svg{width:18px;height:18px}
-
 @media(max-width:900px){
-  /* Tablet: collapse grid, sidebar becomes off-canvas drawer */
   .app{grid-template-columns:1fr;grid-template-rows:52px 1fr}
-  .sidebar{
-    display:block;
-    position:fixed;
-    top:52px;
-    left:0;
-    height:calc(100vh - 52px);
-    width:240px;
-    max-width:80vw;
-    z-index:150;
-    transform:translateX(-100%);
-    transition:transform 0.25s ease;
-    box-shadow:4px 0 20px rgba(0,0,0,0.5);
-  }
-  .sidebar.open{transform:translateX(0)}
-  .sidebar-scrim{
-    display:none;
-    position:fixed;
-    inset:52px 0 0 0;
-    background:rgba(0,0,0,0.5);
-    z-index:140;
-  }
-  .sidebar-scrim.open{display:block}
-  .hamburger{display:flex!important}
+  .sidebar{display:none}
   .stats-row{grid-template-columns:1fr 1fr}
   .two-col{grid-template-columns:1fr}
-  .main{grid-column:1;padding:1.25rem}
-}
-
-@media(max-width:600px){
-  /* Phone: release viewport lock, allow page scroll, tighter spacing */
-  html,body{height:auto;min-height:100vh;overflow-x:hidden;max-width:100vw}
-  .app{
-    height:auto;
-    min-height:100vh;
-    width:100%;
-    max-width:100%;
-    grid-template-rows:52px auto;
-    overflow-x:hidden;
-  }
-  .topbar,.main{max-width:100%;min-width:0}
-  .topbar{
-    position:sticky;
-    top:0;
-    z-index:100;
-    padding:0 0.75rem;
-  }
-  .main{
-    padding:1rem 0.875rem;
-    overflow-y:visible;
-    grid-row:2;
-  }
-  .back-link span,.back-link{font-size:0}
-  .back-link svg{font-size:14px}
-  .logo-console{display:none}
-  .logo{font-size:1rem}
-  .topbar-right{gap:0.5rem}
-  #sync-btn{padding:3px 8px;font-size:10px}
-  .conn-badge{font-size:10px;padding:2px 7px}
-  .user-pill span{display:none}
-  .user-pill{padding:4px!important;gap:0!important}
-  .stats-row{grid-template-columns:1fr;gap:0.75rem;margin-bottom:1.25rem}
-  .stat-card{padding:0.9rem 1rem}
-  .stat-val{font-size:1.4rem}
-  .panel{padding:1rem}
-  .panel-header{flex-wrap:wrap;gap:0.5rem}
-  .upload-zone{padding:1.25rem}
-  /* Modals go full-screen on phones */
-  .modal,.preview-modal{
-    width:100%;
-    max-width:100%;
-    max-height:100%;
-    height:100vh;
-    border-radius:0;
-    border:none;
-  }
-  .modal{padding:1.25rem}
-  .modal-actions{justify-content:stretch;flex-direction:column}
-  .modal-actions button{width:100%}
-  /* Tables scroll horizontally instead of overflowing */
-  .jobs-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .jobs-table{min-width:560px}
-  /* Wider tap targets on interactive items */
-  .nav-item{padding:0.7rem 1.25rem}
-  .file-item{flex-wrap:wrap;gap:0.5rem}
 }
 </style>
 <script src="/connections.js"></script>
@@ -369,9 +269,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
   <!-- TOPBAR -->
   <div class="topbar">
     <div style="display:flex;align-items:center;gap:1.25rem">
-      <button class="hamburger" id="hamburger-btn" onclick="toggleSidebar()" aria-label="Toggle menu">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
       <a href="/" class="back-link">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Back
@@ -396,11 +293,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
   </div>
 
-  <!-- SIDEBAR SCRIM (mobile) -->
-  <div class="sidebar-scrim" id="sidebar-scrim" onclick="toggleSidebar()"></div>
-
   <!-- SIDEBAR -->
-  <div class="sidebar" id="sidebar">
+  <div class="sidebar">
     <!-- MIGRATE section -->
     <div class="nav-section">
       <div class="nav-label">Migrate</div>
@@ -2326,7 +2220,7 @@ function jobsTableHTML(jobs) {
     return '<span style="font-size:10px;color:var(--text3)">' + d.toLocaleDateString('en-GB') + '</span>';
   }
 
-  return '<div class="jobs-table-wrap"><table class="jobs-table"><thead><tr>' +
+  return '<table class="jobs-table"><thead><tr>' +
     '<th style="width:40px">#</th>' +
     '<th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
     '<th>Exec Status</th><th>Last Run</th><th>Actions</th>' +
@@ -2355,7 +2249,7 @@ function jobsTableHTML(jobs) {
         <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')">Report</button>
         <button class="btn btn-ghost btn-sm" onclick="renameJob(this)" data-jobid="${j.id}">✎ Rename</button>
         <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Delete">✕</button>
-      </td></tr>`).join('') + '</tbody></table></div>';
+      </td></tr>`).join('') + '</tbody></table>';
 }
 
 function editJob(jobId) {
@@ -2547,24 +2441,6 @@ function toggleUserMenu() {
   const menu = $('user-menu');
   menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
 }
-
-function toggleSidebar() {
-  const sb = document.getElementById('sidebar');
-  const scrim = document.getElementById('sidebar-scrim');
-  if (!sb || !scrim) return;
-  const isOpen = sb.classList.toggle('open');
-  scrim.classList.toggle('open', isOpen);
-  document.body.style.overflow = isOpen ? 'hidden' : '';
-}
-
-// Close sidebar on nav click (mobile)
-document.addEventListener('click', function(e) {
-  const navItem = e.target.closest('.nav-item');
-  if (navItem && window.innerWidth <= 900) {
-    const sb = document.getElementById('sidebar');
-    if (sb && sb.classList.contains('open')) toggleSidebar();
-  }
-});
 
 // Close user menu when clicking outside
 document.addEventListener('click', function(e) {
