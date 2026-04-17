@@ -739,6 +739,31 @@ function quickMap(colName){
 }
 
 // ── Single-map column mapping ─────────────────────────────────────────────────
+// Ensure every non-identity target column appears as a row in the mapping.
+// Claude's API sometimes returns fewer rows than the target has columns.
+// Any returned rows are kept; missing target columns are appended as unmapped.
+// Also dedupes any duplicate tgtCol entries.
+function ensureAllTargetCols(mapping, tgt){
+  if(!tgt) return mapping;
+  const tgtCols = (tgt.columns||[]).filter(c=>!c.isIdentity);
+  const seen = new Set();
+  const deduped = [];
+  for(const m of mapping){
+    const key = (m.tgtCol||'').toLowerCase();
+    if(!key) continue;
+    if(seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(m);
+  }
+  // Append any target columns that didn't come back
+  for(const tc of tgtCols){
+    if(!seen.has(tc.name.toLowerCase())){
+      deduped.push({srcCol:'', tgtCol:tc.name, transform:'NONE', match:''});
+    }
+  }
+  return deduped;
+}
+
 async function buildMappingIfReady(){
   if(!srcTable||!tgtTable) return;
   const apiKey = ($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
@@ -751,6 +776,7 @@ async function buildMappingIfReady(){
   } else {
     columnMapping = autoMap(srcTable, tgtTable);
   }
+  columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
   renderMappingTable();
   $('mapping-wrap').style.display='block';
   $('single-empty').style.display='none';
@@ -770,6 +796,7 @@ async function remapWithClaude(){
   showStatus('Claude is re-mapping columns…','info');
   try {
     columnMapping = await askClaudeForMapping(srcTable, tgtTable, apiKey);
+    columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
     renderMappingTable();
     renderSrcColList();
   } catch(e) { showStatus('Remap error: '+e.message,'err'); }
@@ -923,7 +950,15 @@ function renderMappingTable(){
   if(!tgtTable) return;
   const tgtCols = tgtTable.columns||[];
   const tbody=$('mapping-tbody'); if(!tbody) return;
-  const srcColOpts = (srcTable?.columns||[]).map(c=>{const n=typeof c==='string'?c:c.name; return `<option value="${esc(n)}">${esc(n)}</option>`;}).join('');
+  // Include primary source cols AND any joined-table cols so users can pick either
+  const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+  const srcColEntries = [
+    ...(srcTable?.columns||[]).map(c=>({name:typeof c==='string'?c:c.name, fromJoin:false})),
+    ...joinCols.map(c=>({name:c.name, fromJoin:true, alias:c.alias}))
+  ];
+  const srcColOpts = srcColEntries.map(c =>
+    `<option value="${esc(c.name)}">${c.fromJoin?'⊞ ':''}${esc(c.name)}</option>`
+  ).join('');
   tbody.innerHTML = columnMapping.map((m,i)=>{
     const srcDef = (srcTable?.columns||[]).find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
     const srcType = srcDef&&typeof srcDef==='object'?srcDef.type:'';
@@ -1389,7 +1424,8 @@ async function aiMapOTM(ti){
         catch { arr=[]; }
       }
       // Merge AI result into mappings (target-driven)
-      targetTables[ti].mappings=arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',literalValue:'',match:m.match||''}));
+      const raw2 = arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',literalValue:'',match:m.match||''}));
+      targetTables[ti].mappings = ensureAllTargetCols(raw2, targetTables[ti]);
       renderOTMCards();
       renderSrcColList();
       break;
