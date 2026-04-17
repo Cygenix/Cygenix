@@ -184,18 +184,26 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
   <div class="ticker">
     <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
+    <div class="ticker-item">🎨 <span>Visual mapper</span> · 47 connections drawn</div>
     <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
     <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item">🏷 <span>@@StartDate substituted</span> · 14 SQL files</div>
     <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
+    <div class="ticker-item">🔗 <span>Jira sync</span> · 23 tasks imported</div>
     <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
     <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
     <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
+    <div class="ticker-item">🎨 <span>Visual mapper</span> · 47 connections drawn</div>
     <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
     <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
+    <div class="ticker-item">🏷 <span>@@StartDate substituted</span> · 14 SQL files</div>
     <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
+    <div class="ticker-item">🔗 <span>Jira sync</span> · 23 tasks imported</div>
     <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
     <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
   </div>
@@ -211,11 +219,14 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div class="features-grid animate-on-scroll">
       <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Live Database Connection</div><div class="feature-card-body">Connect directly to SQL Server on-premises or Azure SQL via connection string or Azure Function with Managed Identity. No VPN or firewall changes required.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">AI Column Mapping</div><div class="feature-card-body">Claude AI automatically maps columns between source and target schemas. Target-driven layout shows every target column with a source dropdown, fixed value override and truncation warnings.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🎨</div><div class="feature-card-title">Visual Drag-and-Drop Mapping</div><div class="feature-card-body">See the whole schema at once. Source columns left, target columns right, connection lines fanning across — colour-coded by AI confidence. Drag to map, click a line to remove, tap Fullscreen for complex jobs.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔄</div><div class="feature-card-title">Was/Is Value Translation</div><div class="feature-card-body">Upload translation tables to automatically convert values during migration — status codes, lookup IDs, department names, currency codes, and more.</div></div>
       <div class="feature-card"><div class="feature-card-icon">✅</div><div class="feature-card-title">Flexible Validation</div><div class="feature-card-body">Add any table as a validation source. Pick which column holds the SQL, choose which columns appear in the report. Run any number of validation tables against any database.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">📋</div><div class="feature-card-title">Conversion Projects</div><div class="feature-card-body">Sequence multiple table migrations and custom SQL scripts into a single ordered project. Retry, skip, or abort steps on failure. Full execution log.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📦</div><div class="feature-card-title">Grouped Execution Plans</div><div class="feature-card-body">Organise jobs the way an enterprise migration actually runs — group by concern (Static Config, Masters, Transactions), drag jobs between groups, pick sequential or parallel per group. Tick-box selection runs only what you need.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🏷</div><div class="feature-card-title">System Parameters</div><div class="feature-card-body">Define <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">@@Tokens</code> once, use them everywhere. Values get substituted across SQL, Wasis rules, WHERE clauses, literal mappings and custom jobs at runtime. CSV / JSON import and export, filter and sort.</div></div>
       <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Professional Reports</div><div class="feature-card-body">Export client-ready Excel reports with summary, migration results, column mapping, Was/Is rules applied, and execution logs — ready to hand to stakeholders.</div></div>
       <div class="feature-card"><div class="feature-card-icon">📅</div><div class="feature-card-title">Project Planner</div><div class="feature-card-body">Full calendar (year/month/week/day views), task tracking, blocker management, execution phase tracker, and activity log — driven by your project completion date.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🔗</div><div class="feature-card-title">Jira & Smartsheet Sync</div><div class="feature-card-body">Your migration plan doesn't live in a silo. Bidirectional sync between Cygenix tasks and Atlassian Jira or Smartsheet — import existing issues, push new tasks, map your own fields. Credentials stay in your browser.</div></div>
       <div class="feature-card"><div class="feature-card-icon">⚡</div><div class="feature-card-title">Performance Tuning</div><div class="feature-card-body">Configure fetch page size, insert batch size, concurrency, timeouts and retry behaviour. Quick presets for Small DB, Large DB, Azure SQL and Cautious mode.</div></div>
       <div class="feature-card"><div class="feature-card-icon">💻</div><div class="feature-card-title">SQL Editor</div><div class="feature-card-body">Full-featured SQL editor with script library, connection selector, find & replace, results grid, history, AI assistant, and one-to-many mapper for complex transformations.</div></div>
     </div>
@@ -240,6 +251,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="feature-body">Select source and target tables. Claude AI maps every column automatically. Override any row, add a fixed SQL value, hide unmapped columns, filter by match confidence.</div>
         <ul class="feature-points">
           <li>Target-driven layout — every target column shown, source is a dropdown</li>
+          <li>✦ Visual mode — drag-and-drop pill view with connection lines and fullscreen</li>
           <li>Fixed value column — type any SQL literal (N'Value', NULL, GETDATE())</li>
           <li>⚠ Truncation warnings when source char type is wider than target</li>
           <li>👁 Show/Hide Unmapped toggle to focus on what matters</li>
@@ -412,6 +424,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <li>Task table with status, priority, phase, owner and due date</li>
           <li>Blocker management with impact level and resolution tracking</li>
           <li>7-stage execution phase tracker — click to set current phase</li>
+          <li>🔗 Jira &amp; Smartsheet sync — bidirectional, field-mapped, full sync history</li>
           <li>Activity log records every change automatically</li>
         </ul>
       </div>
@@ -509,7 +522,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <!-- CTA -->
 <section class="cta-section">
   <div class="cta-title">Ready to migrate<br>with confidence?</div>
-  <div class="cta-sub">Cygenix handles the complexity — AI mapping, value translation, flexible validation, project planning and performance tuning — so your team can focus on the migration, not the tooling.</div>
+  <div class="cta-sub">Cygenix handles the complexity — AI mapping, visual drag-and-drop, value translation, grouped execution plans, system parameters, flexible validation, project planning with Jira and Smartsheet sync, and performance tuning — so your team can focus on the migration, not the tooling.</div>
   <div class="cta-btns">
     <a href="/login.html" class="btn-hero btn-primary">Request access →</a>
     <a href="/help.html" class="btn-hero btn-secondary" target="_blank">Read the docs</a>
