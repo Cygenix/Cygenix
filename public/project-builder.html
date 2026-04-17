@@ -111,6 +111,29 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 .nav-sub.collapsed{max-height:0!important}
 .nav-sub .nav-item{padding-left:2rem;font-size:11px}
 .nav-count{margin-left:auto;background:var(--bg4);color:var(--text3);font-size:10px;padding:1px 6px;border-radius:100px;font-family:var(--mono)}
+/* ── Groups ──────────────────────────────────────────────────────────────── */
+.group-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.75rem;overflow:hidden;transition:border-color 0.15s}
+.group-card.drag-over-group{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+.group-header{display:flex;align-items:center;gap:0.5rem;padding:0.75rem 1rem;background:var(--bg3);border-bottom:0.5px solid var(--border);cursor:default}
+.group-header.collapsed{border-bottom:none}
+.group-drag{color:var(--text3);font-size:16px;cursor:grab;padding:0 0.25rem;flex-shrink:0;user-select:none}
+.group-drag:active{cursor:grabbing}
+.group-chev{font-size:10px;color:var(--text3);cursor:pointer;user-select:none;padding:4px;transition:transform 0.15s;flex-shrink:0}
+.group-chev.collapsed{transform:rotate(-90deg)}
+.group-name-input{background:transparent;border:none;font-family:var(--serif);font-size:13px;font-weight:600;color:var(--text);outline:none;flex:1;min-width:80px;padding:2px 4px;border-radius:4px}
+.group-name-input:hover,.group-name-input:focus{background:var(--bg4)}
+.group-stepcount{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.group-mode-select{background:var(--bg4);border:0.5px solid var(--border2);border-radius:4px;color:var(--text2);font-size:10px;font-family:var(--mono);padding:2px 5px;outline:none;cursor:pointer}
+.group-mode-select:focus{border-color:var(--accent)}
+.group-actions{display:flex;gap:0.25rem;flex-shrink:0}
+.group-icon-btn{background:none;border:none;color:var(--text3);font-size:13px;cursor:pointer;padding:3px 6px;border-radius:4px;transition:all 0.15s}
+.group-icon-btn:hover{background:var(--bg4);color:var(--text)}
+.group-icon-btn.danger:hover{color:var(--red)}
+.group-body{padding:0.6rem;min-height:44px}
+.group-body.drag-over-empty{background:var(--accent-glow);outline:1px dashed var(--accent);outline-offset:-4px;border-radius:var(--r)}
+.group-body-empty{text-align:center;padding:0.8rem;font-size:11px;color:var(--text3);font-style:italic}
+.add-group-btn{margin-top:0.5rem;padding:0.6rem;background:var(--bg2);border:1px dashed var(--border2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.15s}
+.add-group-btn:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 <script src="/connections.js"></script>
 </head>
@@ -321,14 +344,36 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
 // ── Project state ─────────────────────────────────────────────────────────────
 const PROJ_KEY = 'cygenix_conv_project';
-let project = { id:'proj_'+Date.now(), name:'', srcConn:'', tgtConn:'', steps:[] };
+let project = { id:'proj_'+Date.now(), name:'', srcConn:'', tgtConn:'', groups:[] };
 let isDirty = false;
+
+// ── Group helpers ─────────────────────────────────────────────────────────────
+function newGroupId(){ return 'grp_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
+function newGroup(name, mode){ return { id:newGroupId(), name:name||'New group', executionMode:mode||'sequential', collapsed:false, steps:[] }; }
+function ensureAtLeastOneGroup(){
+  if(!project.groups || !project.groups.length){
+    project.groups = [ newGroup('Default','sequential') ];
+  }
+}
+// Returns a flat array of {step, gi, si} for every step across all groups, in run order
+function getAllStepsFlat(){
+  const out = [];
+  (project.groups||[]).forEach((g, gi) => (g.steps||[]).forEach((s, si) => out.push({step:s, gi, si})));
+  return out;
+}
 
 (function loadProject(){
   try {
     const saved = localStorage.getItem(PROJ_KEY);
     if (saved) project = JSON.parse(saved);
   } catch {}
+  // ── Migrate old flat format → groups ─────────────────────────────────────
+  if (!project.groups) project.groups = [];
+  if (Array.isArray(project.steps) && project.steps.length && !project.groups.length){
+    project.groups = [ { id:newGroupId(), name:'Default', executionMode:'sequential', collapsed:false, steps: project.steps } ];
+    delete project.steps;
+  }
+  ensureAtLeastOneGroup();
   // Pre-fill connections from last connect.html session
   if (!project.srcConn) {
     project.srcConn = sessionStorage.getItem('cygenix_src_conn_string') || '';
@@ -412,94 +457,268 @@ function addJobAsStep(jobIndex) {
     status:          'pending',
     log:             ''
   };
-  project.steps.push(step);
+  // Add to the last (or most recently used) group; ensure at least one group exists
+  ensureAtLeastOneGroup();
+  const gi = (typeof project._lastGroupIdx === 'number' && project.groups[project._lastGroupIdx])
+    ? project._lastGroupIdx : project.groups.length - 1;
+  project.groups[gi].steps.push(step);
   renderSteps();
   markDirty();
-  showToast('Added: ' + step.name);
+  showToast('Added to "'+project.groups[gi].name+'": ' + step.name);
 }
 
-// ── Steps ─────────────────────────────────────────────────────────────────────
+// ── Steps (rendered inside groups) ────────────────────────────────────────────
 function renderSteps() {
   const list  = document.getElementById('steps-list');
   const empty = document.getElementById('steps-empty');
-  document.getElementById('step-count').textContent = project.steps.length ? '('+project.steps.length+')' : '';
+  ensureAtLeastOneGroup();
 
-  // Remove old cards
-  list.querySelectorAll('.step-card').forEach(el => el.remove());
+  const flat = getAllStepsFlat();
+  const totalSteps = flat.length;
+  document.getElementById('step-count').textContent = totalSteps ? '('+totalSteps+' in '+project.groups.length+' group'+(project.groups.length===1?'':'s')+')' : '';
 
-  if (!project.steps.length) { empty.style.display='block'; return; }
-  empty.style.display = 'none';
+  // Clear existing group cards + add-group button
+  list.querySelectorAll('.group-card, .add-group-btn').forEach(el => el.remove());
 
-  project.steps.forEach((step, i) => {
-    const card = document.createElement('div');
-    card.className = 'step-card';
-    card.dataset.index = i;
-    card.draggable = true;
+  if (!totalSteps && project.groups.length === 1 && !project.groups[0].steps.length) {
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+  }
 
-    const isMigration = step.type === 'migration';
-    const icon  = isMigration ? '🔗' : '📝';
-    const color = isMigration ? 'var(--teal-bg)' : 'var(--accent-glow)';
-    const meta  = isMigration
-      ? esc(step.srcTable||'?') + ' → ' + esc(step.tgtTable||'?') + ' · ' + (step.columnMapping?.filter(m=>m.tgtCol).length||0) + ' cols'
-      : (step.connOn==='source'?'[source] ':'[target] ') + (step.sql||'').slice(0,55) + '…';
-    const statusCls = 'status-' + (step.status||'pending');
-    const statusEmoji = {pending:'⚪',running:'🟡',passed:'🟢',failed:'🔴',skipped:'🟠'}[step.status||'pending'] || '⚪';
+  // Track running step number across groups for user-facing numbering
+  let stepCounter = 0;
 
-    card.innerHTML = `
-      <div class="step-card-header">
-        <span class="step-drag">⠿</span>
-        <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:var(--mono);min-width:20px;text-align:center;flex-shrink:0">${i+1}</div>
-        <div class="step-icon" style="background:${color}">${icon}</div>
-        <div class="step-info">
-          <div class="step-name">${esc(step.name)}</div>
-          <div class="step-meta">${meta}</div>
-        </div>
-        <div class="step-right">
-          <span style="font-size:16px;line-height:1" title="${step.status||'pending'}">${statusEmoji}</span>
-          <span class="step-status ${statusCls}">${step.status||'pending'}</span>
-          <button class="btn btn-sm" onclick="runSingleStep(${i})" id="run-step-${i}"
-            style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.25);padding:3px 8px">▶ Run</button>
-          <button class="btn btn-ghost btn-sm" onclick="deleteStep(${i})" style="color:var(--red);padding:3px 8px">✕</button>
-          ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${i})" style="padding:3px 8px">Log</button>` : ''}
+  project.groups.forEach((group, gi) => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'group-card';
+    groupEl.dataset.groupIndex = gi;
+
+    const collapsed = !!group.collapsed;
+    const modeVal = group.executionMode || 'sequential';
+
+    groupEl.innerHTML = `
+      <div class="group-header ${collapsed?'collapsed':''}">
+        <span class="group-drag" title="Drag to reorder groups" draggable="true">⠿</span>
+        <span class="group-chev ${collapsed?'collapsed':''}" onclick="toggleGroupCollapse(${gi})">▼</span>
+        <input class="group-name-input" value="${esc(group.name||'')}"
+          oninput="renameGroup(${gi}, this.value)"
+          onfocus="project._lastGroupIdx=${gi}"
+          placeholder="Group name" />
+        <span class="group-stepcount">${group.steps.length} job${group.steps.length===1?'':'s'}</span>
+        <select class="group-mode-select" title="Execution mode" onchange="setGroupMode(${gi}, this.value)">
+          <option value="sequential" ${modeVal==='sequential'?'selected':''}>⇢ sequential</option>
+          <option value="parallel"   ${modeVal==='parallel'?'selected':''}>⇉ parallel (coming soon)</option>
+        </select>
+        <div class="group-actions">
+          <button class="group-icon-btn" onclick="moveGroup(${gi},-1)" title="Move up" ${gi===0?'disabled':''}>↑</button>
+          <button class="group-icon-btn" onclick="moveGroup(${gi},1)"  title="Move down" ${gi===project.groups.length-1?'disabled':''}>↓</button>
+          <button class="group-icon-btn danger" onclick="deleteGroup(${gi})" title="Delete group">✕</button>
         </div>
       </div>
-      ${step.log ? `<div class="step-log-area" id="log-${i}"><div class="step-log">${esc(step.log)}</div></div>` : ''}`;
+      <div class="group-body" id="group-body-${gi}" data-group-index="${gi}" style="${collapsed?'display:none':''}"></div>
+    `;
+    list.appendChild(groupEl);
 
-    // Drag handlers
-    card.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', i); card.style.opacity='0.5'; });
-    card.addEventListener('dragend',   () => card.style.opacity='1');
-    card.addEventListener('dragover',  e => { e.preventDefault(); card.classList.add('drag-over'); });
-    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
-    card.addEventListener('drop', e => {
-      e.preventDefault(); card.classList.remove('drag-over');
-      const from = parseInt(e.dataTransfer.getData('text/plain'));
-      const to   = parseInt(card.dataset.index);
-      if (from !== to) { const [s]=project.steps.splice(from,1); project.steps.splice(to,0,s); renderSteps(); markDirty(); }
+    const body = groupEl.querySelector('.group-body');
+
+    if (!group.steps.length) {
+      body.innerHTML = '<div class="group-body-empty">Drop jobs here, or click a job on the left while this group is selected</div>';
+    } else {
+      group.steps.forEach((step, si) => {
+        stepCounter++;
+        const card = document.createElement('div');
+        card.className = 'step-card';
+        card.dataset.groupIndex = gi;
+        card.dataset.stepIndex  = si;
+        card.draggable = true;
+
+        const isMigration = step.type === 'migration';
+        const icon  = isMigration ? '🔗' : '📝';
+        const color = isMigration ? 'var(--teal-bg)' : 'var(--accent-glow)';
+        const meta  = isMigration
+          ? esc(step.srcTable||'?') + ' → ' + esc(step.tgtTable||'?') + ' · ' + (step.columnMapping?.filter(m=>m.tgtCol).length||0) + ' cols'
+          : (step.connOn==='source'?'[source] ':'[target] ') + (step.sql||'').slice(0,55) + '…';
+        const statusCls = 'status-' + (step.status||'pending');
+        const statusEmoji = {pending:'⚪',running:'🟡',passed:'🟢',failed:'🔴',skipped:'🟠'}[step.status||'pending'] || '⚪';
+        const runBtnId = `run-step-${gi}-${si}`;
+        const logId    = `log-${gi}-${si}`;
+
+        card.innerHTML = `
+          <div class="step-card-header">
+            <span class="step-drag">⠿</span>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:var(--mono);min-width:20px;text-align:center;flex-shrink:0">${stepCounter}</div>
+            <div class="step-icon" style="background:${color}">${icon}</div>
+            <div class="step-info">
+              <div class="step-name">${esc(step.name)}</div>
+              <div class="step-meta">${meta}</div>
+            </div>
+            <div class="step-right">
+              <span style="font-size:16px;line-height:1" title="${step.status||'pending'}">${statusEmoji}</span>
+              <span class="step-status ${statusCls}">${step.status||'pending'}</span>
+              <button class="btn btn-sm" onclick="runSingleStep(${gi},${si})" id="${runBtnId}"
+                style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.25);padding:3px 8px">▶ Run</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteStep(${gi},${si})" style="color:var(--red);padding:3px 8px">✕</button>
+              ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${gi},${si})" style="padding:3px 8px">Log</button>` : ''}
+            </div>
+          </div>
+          ${step.log ? `<div class="step-log-area" id="${logId}"><div class="step-log">${esc(step.log)}</div></div>` : ''}`;
+
+        // Step drag
+        card.addEventListener('dragstart', e => {
+          e.stopPropagation();
+          e.dataTransfer.setData('text/plain', JSON.stringify({kind:'step', gi, si}));
+          card.style.opacity = '0.5';
+        });
+        card.addEventListener('dragend', () => card.style.opacity = '1');
+        card.addEventListener('dragover',  e => { e.preventDefault(); e.stopPropagation(); card.classList.add('drag-over'); });
+        card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+        card.addEventListener('drop', e => {
+          e.preventDefault(); e.stopPropagation();
+          card.classList.remove('drag-over');
+          let data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+          if (!data || data.kind !== 'step') return;
+          const from = { gi: data.gi, si: data.si };
+          const to   = { gi: parseInt(card.dataset.groupIndex), si: parseInt(card.dataset.stepIndex) };
+          if (from.gi === to.gi && from.si === to.si) return;
+          const [s] = project.groups[from.gi].steps.splice(from.si, 1);
+          let insertAt = to.si;
+          // If moving within same group and from is before to, the index shifts after splice
+          if (from.gi === to.gi && from.si < to.si) insertAt = to.si; else insertAt = to.si;
+          project.groups[to.gi].steps.splice(insertAt, 0, s);
+          renderSteps(); markDirty();
+        });
+
+        body.appendChild(card);
+      });
+    }
+
+    // Group body is also a drop target (for dropping into an empty group, or at the end)
+    body.addEventListener('dragover', e => {
+      const data = e.dataTransfer.types.includes('text/plain');
+      if (!data) return;
+      e.preventDefault(); e.stopPropagation();
+      if (!group.steps.length) body.classList.add('drag-over-empty');
+    });
+    body.addEventListener('dragleave', () => body.classList.remove('drag-over-empty'));
+    body.addEventListener('drop', e => {
+      e.preventDefault(); e.stopPropagation();
+      body.classList.remove('drag-over-empty');
+      let data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+      if (!data || data.kind !== 'step') return;
+      // Append to end of this group
+      const [s] = project.groups[data.gi].steps.splice(data.si, 1);
+      project.groups[gi].steps.push(s);
+      renderSteps(); markDirty();
     });
 
-    list.appendChild(card);
+    // Group-level drag (header handle reorders groups)
+    const dragHandle = groupEl.querySelector('.group-drag');
+    dragHandle.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', JSON.stringify({kind:'group', gi}));
+      groupEl.style.opacity = '0.5';
+    });
+    dragHandle.addEventListener('dragend', () => groupEl.style.opacity = '1');
+    groupEl.addEventListener('dragover', e => {
+      // Only accept group drags on the outer card
+      if (!e.dataTransfer.types.includes('text/plain')) return;
+      const targetStep = e.target.closest('.step-card');
+      if (targetStep) return; // let the step handle it
+      e.preventDefault();
+      groupEl.classList.add('drag-over-group');
+    });
+    groupEl.addEventListener('dragleave', e => {
+      if (!groupEl.contains(e.relatedTarget)) groupEl.classList.remove('drag-over-group');
+    });
+    groupEl.addEventListener('drop', e => {
+      let data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch { return; }
+      if (!data || data.kind !== 'group') return;
+      e.preventDefault(); e.stopPropagation();
+      groupEl.classList.remove('drag-over-group');
+      const from = data.gi, to = gi;
+      if (from === to) return;
+      const [g] = project.groups.splice(from, 1);
+      project.groups.splice(to, 0, g);
+      renderSteps(); markDirty();
+    });
   });
+
+  // "Add group" button below all groups
+  const addBtn = document.createElement('div');
+  addBtn.className = 'add-group-btn';
+  addBtn.textContent = '+ Add group';
+  addBtn.onclick = addGroup;
+  list.appendChild(addBtn);
 }
 
-function toggleLog(i) {
-  const el = document.getElementById('log-'+i);
+// ── Group operations ──────────────────────────────────────────────────────────
+function addGroup(){
+  const g = newGroup('New group','sequential');
+  project.groups.push(g);
+  project._lastGroupIdx = project.groups.length - 1;
+  renderSteps(); markDirty();
+  // Focus the new group name for immediate rename
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('.group-name-input');
+    const last = inputs[inputs.length - 1];
+    if (last) { last.focus(); last.select(); }
+  }, 50);
+}
+function renameGroup(gi, name){
+  if (!project.groups[gi]) return;
+  project.groups[gi].name = name;
+  markDirty();
+  // Don't renderSteps here — that'd steal focus from the input mid-type
+}
+function setGroupMode(gi, mode){
+  if (!project.groups[gi]) return;
+  project.groups[gi].executionMode = mode;
+  markDirty();
+}
+function toggleGroupCollapse(gi){
+  if (!project.groups[gi]) return;
+  project.groups[gi].collapsed = !project.groups[gi].collapsed;
+  renderSteps();
+}
+function moveGroup(gi, dir){
+  const to = gi + dir;
+  if (to < 0 || to >= project.groups.length) return;
+  [project.groups[gi], project.groups[to]] = [project.groups[to], project.groups[gi]];
+  renderSteps(); markDirty();
+}
+function deleteGroup(gi){
+  const g = project.groups[gi];
+  if (!g) return;
+  if (g.steps.length && !confirm('Delete group "' + (g.name||'Unnamed') + '" and its ' + g.steps.length + ' job(s)?')) return;
+  project.groups.splice(gi, 1);
+  ensureAtLeastOneGroup();
+  renderSteps(); markDirty();
+}
+
+function toggleLog(gi, si) {
+  const el = document.getElementById('log-'+gi+'-'+si);
   if (el) el.classList.toggle('open');
 }
 
-function deleteStep(i) {
-  if (!confirm('Remove this job?')) return;
-  project.steps.splice(i,1);
+function deleteStep(gi, si) {
+  if (!confirm('Remove this job from the group?')) return;
+  project.groups[gi].steps.splice(si, 1);
   renderSteps(); markDirty();
 }
 
 // ── SQL modal ─────────────────────────────────────────────────────────────────
+// editingSqlIndex is either null (new step) or {gi, si} (editing existing step)
 let editingSqlIndex = null;
 
-function openSqlModal(editIndex) {
-  editingSqlIndex = editIndex !== undefined ? editIndex : null;
+function openSqlModal(gi, si) {
+  if (gi !== undefined && si !== undefined) {
+    editingSqlIndex = { gi, si };
+  } else {
+    editingSqlIndex = null;
+  }
   document.getElementById('sql-modal-title').textContent = editingSqlIndex !== null ? 'Edit SQL job' : 'Add SQL job';
   if (editingSqlIndex !== null) {
-    const s = project.steps[editingSqlIndex];
+    const s = project.groups[editingSqlIndex.gi].steps[editingSqlIndex.si];
     document.getElementById('sql-name').value = s.name || '';
     document.getElementById('sql-body').value = s.sql  || '';
   } else {
@@ -507,7 +726,9 @@ function openSqlModal(editIndex) {
     document.getElementById('sql-body').value = '';
   }
   // Restore radio selection when editing
-  const connOn = editingSqlIndex !== null ? (project.steps[editingSqlIndex].connOn || 'target') : 'target';
+  const connOn = editingSqlIndex !== null
+    ? (project.groups[editingSqlIndex.gi].steps[editingSqlIndex.si].connOn || 'target')
+    : 'target';
   document.querySelectorAll('input[name="sql-conn"]').forEach(r => { r.checked = r.value === connOn; });
   document.getElementById('sql-modal').style.display = 'flex';
 }
@@ -527,10 +748,15 @@ function confirmSqlStep() {
   const connOn  = document.querySelector('input[name="sql-conn"]:checked')?.value || 'target';
   if (!sql) { alert('Please enter SQL or upload a file.'); return; }
   const step = { type:'sql', name, sql, connOn, status:'pending', log:'' };
+  ensureAtLeastOneGroup();
   if (editingSqlIndex !== null) {
-    project.steps[editingSqlIndex] = { ...project.steps[editingSqlIndex], ...step };
+    const existing = project.groups[editingSqlIndex.gi].steps[editingSqlIndex.si];
+    project.groups[editingSqlIndex.gi].steps[editingSqlIndex.si] = { ...existing, ...step };
   } else {
-    project.steps.push(step);
+    // Add to the last used / default group
+    const gi = (typeof project._lastGroupIdx === 'number' && project.groups[project._lastGroupIdx])
+      ? project._lastGroupIdx : project.groups.length - 1;
+    project.groups[gi].steps.push(step);
   }
   closeSqlModal(); renderSteps(); markDirty();
 }
@@ -571,10 +797,12 @@ async function dbCall(conn, body) {
 let isRunning = false;
 let abortRequested = false;
 
-async function runSingleStep(i) {
-  const step = project.steps[i];
+async function runSingleStep(gi, si) {
+  const group = project.groups[gi];
+  const step = group ? group.steps[si] : null;
   if (!step) return;
-  const btn = document.getElementById('run-step-'+i);
+  const btnId = 'run-step-'+gi+'-'+si;
+  const btn = document.getElementById(btnId);
   if (btn) { btn.disabled=true; btn.textContent='⏳'; }
 
   const srcConn = project.srcConn || CygenixConnections.get().srcConnString || '';
@@ -584,7 +812,7 @@ async function runSingleStep(i) {
   })() || '';
 
   const logs = [];
-  const log = m => { logs.push(m); console.log('[Step '+i+']', m); };
+  const log = m => { logs.push(m); console.log('[Step '+gi+'.'+si+']', m); };
 
   step.status = 'running'; renderSteps();
   try {
@@ -606,21 +834,24 @@ async function runSingleStep(i) {
     step.status = 'failed'; step.log = 'Error: ' + e.message;
   }
   renderSteps();
-  if (btn) { btn.disabled=false; btn.textContent='▶ Run'; }
+  const btn2 = document.getElementById(btnId);
+  if (btn2) { btn2.disabled=false; btn2.textContent='▶ Run'; }
 }
 
 async function runProject() {
   if (isRunning) return;
   saveProject();
-  const steps  = project.steps;
-  if (!steps.length) { alert('Add at least one job first.'); return; }
+  ensureAtLeastOneGroup();
+  const flat = getAllStepsFlat();
+  if (!flat.length) { alert('Add at least one job first.'); return; }
   const srcConn = project.srcConn;
   const tgtConn = project.tgtConn;
   if (!tgtConn) { alert('Please enter a target connection.'); return; }
-  if (!confirm('Run ' + steps.length + ' step(s)? Execution stops on any error.')) return;
+  if (!confirm('Run ' + flat.length + ' step(s) across ' + project.groups.length + ' group(s)? Execution stops on any error.')) return;
 
   isRunning = true;
-  steps.forEach(s => { s.status='pending'; s.log=''; });
+  // Reset all step statuses
+  project.groups.forEach(g => g.steps.forEach(s => { s.status='pending'; s.log=''; }));
   renderSteps();
 
   const panel = document.getElementById('exec-panel');
@@ -634,67 +865,84 @@ async function runProject() {
 
   const log = (msg, type) => {
     const ts = new Date().toLocaleTimeString();
-    const p  = type==='err'?'✕':type==='ok'?'✓':'·';
+    const p  = type==='err'?'✕':type==='ok'?'✓':type==='grp'?'▸':'·';
     logEl.textContent += '['+ts+'] '+p+' '+msg+'\n';
     logEl.scrollTop = logEl.scrollHeight;
   };
 
-  const setStatus = (i, status, stepLog) => {
-    project.steps[i].status = status;
-    project.steps[i].log    = stepLog;
+  const setStatus = (gi, si, status, stepLog) => {
+    project.groups[gi].steps[si].status = status;
+    project.groups[gi].steps[si].log    = stepLog;
     renderSteps();
   };
 
-  let passed=0, failed=0;
+  let passed=0, failed=0, done=0;
+  const total = flat.length;
 
-  for (let i=0; i<steps.length; i++) {
+  outer:
+  for (let gi=0; gi<project.groups.length; gi++){
     if (abortRequested) { log('Stopped by user.','err'); break; }
-    const step = steps[i];
-    const pct  = Math.round(i/steps.length*100);
-    document.getElementById('exec-prog').style.width = pct+'%';
-    document.getElementById('exec-pct').textContent  = pct+'%';
-    document.getElementById('exec-step-label').textContent = 'Job '+(i+1)+'/'+steps.length;
-    document.getElementById('exec-title').textContent = 'Running: '+step.name;
+    const group = project.groups[gi];
+    if (!group.steps.length) continue;
 
-    setStatus(i, 'running', 'Running…');
-    log('Step '+(i+1)+': '+step.name);
+    log('─── Group '+(gi+1)+'/'+project.groups.length+': '+(group.name||'(unnamed)')+' — '+(group.executionMode||'sequential')+' ───', 'grp');
 
-    const t0 = Date.now();
-    let stepLog='', ok=true;
-    try {
-      if (step.type === 'migration') {
-        const r = await runMigrationStep(step, srcConn, tgtConn, log);
-        stepLog=r.log; ok=r.ok;
-        // Ensure rowsInserted and tables are explicitly set on project.steps[i]
-        if (r.rowsInserted !== undefined) project.steps[i].rowsInserted = r.rowsInserted;
-        if (r.tables)                     project.steps[i].tables       = r.tables;
+    // NOTE: Parallel execution is a Phase 3 item. For now we run sequentially
+    // regardless of the toggle, but we log when the user's chosen parallel
+    // so it's clear the preference is recorded.
+    if (group.executionMode === 'parallel') {
+      log('(parallel execution not yet wired up — running sequentially for now)');
+    }
+
+    for (let si=0; si<group.steps.length; si++){
+      if (abortRequested) { log('Stopped by user.','err'); break outer; }
+      const step = group.steps[si];
+      done++;
+      const pct = Math.round((done-1)/total*100);
+      document.getElementById('exec-prog').style.width = pct+'%';
+      document.getElementById('exec-pct').textContent  = pct+'%';
+      document.getElementById('exec-step-label').textContent = 'Step '+done+'/'+total+' (group '+(gi+1)+', job '+(si+1)+')';
+      document.getElementById('exec-title').textContent = 'Running: '+step.name;
+
+      setStatus(gi, si, 'running', 'Running…');
+      log('Step '+done+': '+step.name);
+
+      const t0 = Date.now();
+      let stepLog='', ok=true;
+      try {
+        if (step.type === 'migration') {
+          const r = await runMigrationStep(step, srcConn, tgtConn, log);
+          stepLog=r.log; ok=r.ok;
+          if (r.rowsInserted !== undefined) step.rowsInserted = r.rowsInserted;
+          if (r.tables)                     step.tables       = r.tables;
+        } else {
+          const r = await runSqlStep(step, srcConn, tgtConn, log);
+          stepLog=r.log; ok=r.ok;
+        }
+      } catch(e) { stepLog='Error: '+e.message; ok=false; log('Error: '+e.message,'err'); }
+
+      const dur = ((Date.now()-t0)/1000).toFixed(1)+'s';
+      stepLog += '\nDuration: '+dur;
+
+      if (ok) {
+        passed++;
+        setStatus(gi, si, 'passed', stepLog);
+        log('Step '+done+' passed ('+dur+')', 'ok');
       } else {
-        const r = await runSqlStep(step, srcConn, tgtConn, log);
-        stepLog=r.log; ok=r.ok;
+        failed++;
+        setStatus(gi, si, 'failed', stepLog);
+        log('Step '+done+' FAILED — stopping.', 'err');
+        const decision = await waitForDecision();
+        if (decision==='abort') { log('Aborted.','err'); break outer; }
+        if (decision==='skip')  { setStatus(gi,si,'skipped',stepLog+'\n[Skipped]'); log('Skipped.','err'); continue; }
+        if (decision==='retry') { si--; done--; log('Retrying…'); continue; }
       }
-    } catch(e) { stepLog='Error: '+e.message; ok=false; log('Error: '+e.message,'err'); }
-
-    const dur = ((Date.now()-t0)/1000).toFixed(1)+'s';
-    stepLog += '\nDuration: '+dur;
-
-    if (ok) {
-      passed++;
-      setStatus(i, 'passed', stepLog);
-      log('Step '+(i+1)+' passed ('+dur+')', 'ok');
-    } else {
-      failed++;
-      setStatus(i, 'failed', stepLog);
-      log('Step '+(i+1)+' FAILED — stopping.', 'err');
-      const decision = await waitForDecision();
-      if (decision==='abort') { log('Aborted.','err'); break; }
-      if (decision==='skip')  { setStatus(i,'skipped',stepLog+'\n[Skipped]'); log('Skipped.','err'); continue; }
-      if (decision==='retry') { i--; log('Retrying…'); continue; }
     }
   }
 
   document.getElementById('exec-prog').style.width = '100%';
   document.getElementById('exec-pct').textContent  = '100%';
-  const summary = failed===0 ? '✓ All '+steps.length+' steps passed' : '⚠ '+passed+' passed, '+failed+' failed';
+  const summary = failed===0 ? '✓ All '+total+' steps passed' : '⚠ '+passed+' passed, '+failed+' failed';
   document.getElementById('exec-title').textContent = summary;
   log('\n'+summary, failed===0?'ok':'err');
   document.getElementById('run-btn').disabled=false;
@@ -704,8 +952,9 @@ async function runProject() {
   abortRequested=false;
   saveProject();
 
-  // Build and store report data
-  const reportData = buildProjectReport(steps, passed, failed, srcConn, tgtConn);
+  // Build and store report data — pass a flat list of steps for backward compat
+  const flatSteps = getAllStepsFlat().map(x => x.step);
+  const reportData = buildProjectReport(flatSteps, passed, failed, srcConn, tgtConn);
   console.log('[Cygenix Report] tables:', reportData.tables?.map(t=>t.name+':'+t.insertedRows));
   try { sessionStorage.setItem('cygenix_report', JSON.stringify(reportData)); localStorage.setItem('cygenix_report', JSON.stringify(reportData)); } catch {}
   // Save to jobs list
@@ -713,7 +962,7 @@ async function runProject() {
     const dashJob = {
       id: reportData.id, name: project.name || 'Conversion Project',
       source: srcConn ? 'Source DB' : '', target: tgtConn,
-      files: [], tables: steps.filter(s=>s.type==='migration').flatMap(s=>{
+      files: [], tables: flatSteps.filter(s=>s.type==='migration').flatMap(s=>{
         // One-to-many: expand into per-target-table rows
         if ((s.jobType==='one-to-many'||s.oneToManyConfig) && s.tables && s.tables.length) {
           return s.tables.map(t=>({ name:t.name||t.fullName||'', rows:t.rows||0, cols:t.cols||0 }));
