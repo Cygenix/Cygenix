@@ -22,18 +22,24 @@ const CygenixSync = (() => {
     issues:'cygenix_issues', inventory:'cygenix_inventory',
   };
 
-  // Extract userId from session — handles all Netlify Identity auth formats
+  // Extract userId — supports Entra External ID (primary) and legacy fallbacks
   function getUserId() {
-    // Method 1: cygenix_user object (may have email at top level or nested)
+    // Method 1: Entra External ID session (new primary auth)
+    try {
+      const entra = sessionStorage.getItem('cygenix_entra_account');
+      if (entra) {
+        const u = JSON.parse(entra);
+        if (u.email)  return u.email;
+        if (u.userId) return u.userId;
+      }
+    } catch {}
+    // Method 2: cygenix_user object (legacy / compatibility)
     try {
       const raw = sessionStorage.getItem('cygenix_user');
       if (raw) {
         const u = JSON.parse(raw);
-        // Direct email field
         if (u.email) return u.email;
-        // Nested under user object
         if (u.user?.email) return u.user.email;
-        // Try decoding the access_token inside the user object
         const at = u.access_token;
         if (at) {
           const p = JSON.parse(atob(at.split('.')[1]));
@@ -42,22 +48,13 @@ const CygenixSync = (() => {
         }
       }
     } catch {}
-    // Method 2: decode cygenix_token JWT directly
+    // Method 3: decode cygenix_token JWT directly
     try {
       const token = sessionStorage.getItem('cygenix_token');
       if (token) {
         const p = JSON.parse(atob(token.split('.')[1]));
         if (p.email) return p.email;
         if (p.sub && p.sub.includes('@')) return p.sub;
-      }
-    } catch {}
-    // Method 3: cygenix_active_project has user context
-    try {
-      const proj = sessionStorage.getItem('cygenix_active_project');
-      if (proj) {
-        const p = JSON.parse(proj);
-        if (p.userEmail) return p.userEmail;
-        if (p.userId)    return p.userId;
       }
     } catch {}
     return null;

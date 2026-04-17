@@ -261,6 +261,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -2444,9 +2445,38 @@ document.addEventListener('click', function(e) {
 });
 
 function signOut() {
-  ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k => sessionStorage.removeItem(k));
-  // Clear user marker so next login detects a user switch and loads correct data
+  // Clear all session data
+  ['cygenix_token','cygenix_user','cygenix_expires',
+   'cygenix_active_project','cygenix_entra_account'].forEach(k => sessionStorage.removeItem(k));
   localStorage.removeItem('cygenix_active_user');
+
+  // Sign out via MSAL if available
+  if (window.msal) {
+    const msalConfig = {
+      auth: {
+        clientId:  '43154cd5-4111-45cf-8c9e-0a243c6a4d64',
+        authority: 'https://cygenix.ciamlogin.com/b809b12b-5ff1-46c0-9315-c40d007b5bb8',
+        redirectUri: window.location.origin + '/login.html',
+        knownAuthorities: ['cygenix.ciamlogin.com'],
+      },
+      cache: { cacheLocation: 'sessionStorage' },
+    };
+    try {
+      const instance = new msal.PublicClientApplication(msalConfig);
+      instance.initialize().then(() => {
+        const accounts = instance.getAllAccounts();
+        if (accounts.length > 0) {
+          instance.logoutRedirect({
+            account: accounts[0],
+            postLogoutRedirectUri: window.location.origin + '/login.html',
+          });
+          return;
+        }
+        window.location.href = '/login.html';
+      });
+      return;
+    } catch(e) { console.warn('MSAL signout error:', e); }
+  }
   window.location.href = '/login.html';
 }
 

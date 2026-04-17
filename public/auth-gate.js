@@ -1,44 +1,30 @@
 /**
- * auth-gate.js
- * Protects all product pages — redirects unauthenticated users to login.
- * Include in <head> of every protected page BEFORE any other scripts.
- * 
- * Phase 1 (now):    Free registration — anyone can sign up
- * Phase 2 (later):  Subscription required — check plan status in Cosmos DB
+ * auth-gate.js — Cygenix v2
+ * Protects product pages using Azure Entra External ID (MSAL.js).
+ * Include in <head> of every protected page BEFORE other scripts.
  */
-
 (function() {
-  // Pages that are always public — no auth needed
-  const PUBLIC_PAGES = ['/', '/index.html', '/login.html', '/demo.html', '/about.html', '/help.html', '/privacy-policy'];
-
+  const PUBLIC = ['/', '/index.html', '/login.html', '/demo.html',
+                  '/about.html', '/help.html', '/terms.html', '/privacy.html'];
   const path = window.location.pathname;
-  const isPublic = PUBLIC_PAGES.some(p => path === p || path.endsWith(p));
-  if (isPublic) return; // don't gate public pages
+  if (PUBLIC.some(p => path === p || path.endsWith(p))) return;
 
-  // ── Check if user is authenticated ─────────────────────────────────────────
+  // Check for valid Entra session in sessionStorage
   function isAuthenticated() {
-    // Check session token
-    const token = sessionStorage.getItem('cygenix_token');
-    const expires = sessionStorage.getItem('cygenix_expires');
-    if (!token) return false;
-
-    // Check token hasn't expired
-    if (expires && Date.now() > parseInt(expires)) {
-      // Try to refresh — if refresh token exists let the page handle it
-      const refresh = localStorage.getItem('cygenix_refresh_token');
-      if (!refresh) {
-        sessionStorage.clear();
+    try {
+      const acct = sessionStorage.getItem('cygenix_entra_account');
+      if (!acct) return false;
+      const { exp } = JSON.parse(acct);
+      if (exp && Date.now() > exp) {
+        sessionStorage.removeItem('cygenix_entra_account');
         return false;
       }
-    }
-    return true;
+      return true;
+    } catch { return false; }
   }
 
-  // ── Redirect to login if not authenticated ──────────────────────────────────
   if (!isAuthenticated()) {
-    // Store the page they were trying to reach so we can redirect after login
     sessionStorage.setItem('cygenix_redirect_after_login', window.location.href);
     window.location.replace('/login.html?reason=protected');
   }
-
 })();

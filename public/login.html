@@ -4,17 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#0d0f14">
-<meta name="description" content="Sign in to Cygenix, the AI-powered SQL database migration platform.">
-<meta property="og:title" content="Cygenix – Sign In">
-<meta property="og:description" content="Sign in to Cygenix, the AI-powered SQL database migration platform.">
-<meta property="og:url" content="https://cygenix.co.uk/login.html">
-<meta property="og:site_name" content="Cygenix">
-<meta property="og:type" content="website">
-<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Cygenix – Sign In">
-<meta name="twitter:description" content="Sign in to Cygenix, the AI-powered SQL database migration platform.">
 <title>Cygenix – Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -25,8 +14,7 @@
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.14);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
   --accent:#3d7eff;--accent2:#2563eb;
-  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-  --red:#f04646;
+  --green:#22c97a;--red:#f04646;
   --serif:'DM Serif Display',Georgia,serif;
   --sans:'DM Sans',system-ui,sans-serif;
   --r:10px;--r-lg:16px;
@@ -36,503 +24,210 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .logo{font-family:var(--serif);font-size:1.8rem;color:var(--text);letter-spacing:-0.02em;text-align:center;margin-bottom:0.25rem}
 .logo span{color:var(--accent)}
 .tagline{font-size:13px;color:var(--text3);text-align:center;margin-bottom:2rem}
-.tabs{display:flex;border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:1.75rem}
-.tab{flex:1;padding:0.6rem;text-align:center;font-size:13px;font-weight:500;cursor:pointer;color:var(--text3);transition:all 0.15s}
-.tab.active{background:var(--accent);color:#fff}
-.form-row{margin-bottom:1rem}
-.form-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;display:block}
-.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.7rem 0.9rem;font-size:14px;color:var(--text);font-family:var(--sans);outline:none;transition:border-color 0.15s}
-.form-input:focus{border-color:var(--accent)}
 .btn{width:100%;padding:0.8rem;border-radius:var(--r);font-size:14px;font-weight:500;cursor:pointer;border:none;font-family:var(--sans);transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:0.75rem}
 .btn:last-child{margin-bottom:0}
 .btn-primary{background:var(--accent);color:#fff}
 .btn-primary:hover{background:var(--accent2)}
 .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
-.btn-social{background:var(--bg3);color:var(--text);border:0.5px solid var(--border2)}
-.btn-social:hover{opacity:0.85}
+.btn-ghost{background:transparent;border:0.5px solid var(--border2);color:var(--text2)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--text)}
+.btn-google{background:#fff;color:#3c4043;border:0.5px solid #dadce0}
+.btn-google:hover{background:#f8f9fa}
 .divider{display:flex;align-items:center;gap:0.75rem;margin:1.25rem 0;color:var(--text3);font-size:12px}
 .divider::before,.divider::after{content:'';flex:1;height:0.5px;background:var(--border)}
-.alert{border-radius:var(--r);padding:0.75rem;font-size:13px;margin-bottom:1rem;display:none}
-.alert.visible{display:block}
-.alert-error{background:rgba(240,70,70,0.1);border:0.5px solid rgba(240,70,70,0.3);color:var(--red)}
-.alert-success{background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.3);color:var(--green)}
-.footer-link{text-align:center;font-size:12px;color:var(--text3);margin-top:1.25rem}
-.footer-link a{color:var(--accent);text-decoration:none;cursor:pointer}
-.forgot-link{text-align:right;margin-top:-0.5rem;margin-bottom:1rem}
-.forgot-link a{font-size:12px;color:var(--text3);text-decoration:none;cursor:pointer}
-.forgot-link a:hover{color:var(--text2)}
-.spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.6s linear infinite}
+.alert{padding:0.7rem 1rem;border-radius:var(--r);font-size:13px;margin-bottom:1rem}
+.alert-error{background:rgba(240,70,70,0.1);border:0.5px solid rgba(240,70,70,0.3);color:#f8a0a0}
+.spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+.footer{text-align:center;font-size:12px;color:var(--text3);margin-top:1.5rem}
+.footer a{color:var(--text2);text-decoration:none}
+.footer a:hover{color:var(--text)}
 </style>
 </head>
 <body>
-<div class="card">
+<div class="card" id="main-card">
   <div class="logo">Cyge<span>nix</span></div>
-  <div class="tagline" id="login-tagline">AI-powered SQL database migration</div>
+  <div class="tagline">AI-powered SQL database migration</div>
 
-  <!-- Shown when redirected from a protected page -->
-  <div id="access-banner" style="display:none;background:rgba(61,126,255,0.1);border:0.5px solid rgba(61,126,255,0.3);border-radius:8px;padding:0.75rem;margin-bottom:1.25rem;text-align:center;font-size:13px;color:var(--accent)">
-    🔒 <strong>Sign in or create a free account</strong> to access the platform
-  </div>
+  <div id="alert" class="alert alert-error" style="display:none"></div>
 
-  <div class="tabs">
-    <div class="tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</div>
-    <div class="tab" id="tab-signup" onclick="switchTab('signup')">Create account</div>
-  </div>
-
-  <div id="alert-error" class="alert alert-error"></div>
-  <div id="alert-success" class="alert alert-success"></div>
-
-  <!-- SIGN IN -->
-  <div id="form-signin">
-    <div class="form-row">
-      <label class="form-label">Email</label>
-      <input id="signin-email" class="form-input" type="email" placeholder="you@company.com" autocomplete="email"/>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Password</label>
-      <input id="signin-password" class="form-input" type="password" placeholder="Your password"
-        autocomplete="current-password" onkeydown="if(event.key==='Enter')signIn()"/>
-    </div>
-    <div class="forgot-link"><a onclick="forgotPassword()">Forgot password?</a></div>
-    <button class="btn btn-primary" id="signin-btn" onclick="signIn()">Sign in</button>
-  </div>
-
-  <!-- SIGN UP -->
-  <div id="form-signup" style="display:none">
-    <div class="form-row">
-      <label class="form-label">Full name</label>
-      <input id="signup-name" class="form-input" type="text" placeholder="Your name" autocomplete="name"/>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Email</label>
-      <input id="signup-email" class="form-input" type="email" placeholder="you@company.com" autocomplete="email"/>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Password <span style="color:var(--text3);font-size:10px;text-transform:none">(min 8 chars)</span></label>
-      <input id="signup-password" class="form-input" type="password" placeholder="Choose a strong password"
-        autocomplete="new-password" onkeydown="if(event.key==='Enter')signUp()"/>
-    </div>
-    <button class="btn btn-primary" id="signup-btn" onclick="signUp()">Create free account</button>
-  </div>
-
-  <div class="divider">or continue with</div>
-
-  <button class="btn btn-social" onclick="oauthLogin('google')">
-    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+  <button class="btn btn-google" id="google-btn" onclick="signInWithGoogle()">
+    <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 5.29C4.672 3.163 6.656 1.58 9 1.58z"/></svg>
     Continue with Google
   </button>
 
-  <button class="btn btn-social" onclick="oauthLogin('microsoft')">
-    <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#f25022" d="M1 1h10v10H1z"/><path fill="#00a4ef" d="M13 1h10v10H13z"/><path fill="#7fba00" d="M1 13h10v10H1z"/><path fill="#ffb900" d="M13 13h10v10H13z"/></svg>
-    Continue with Microsoft
+  <div class="divider">or</div>
+
+  <button class="btn btn-primary" id="email-btn" onclick="signInWithEmail()">
+    Sign in with email &amp; password
   </button>
 
-  <div class="footer-link" id="footer-signin">
-    No account yet? <a onclick="switchTab('signup')">Create a free account</a>
-  </div>
-  <div class="footer-link" id="footer-signup" style="display:none">
-    Already have an account? <a onclick="switchTab('signin')">Sign in</a>
-  </div>
-  <div class="footer-link" style="margin-top:0.5rem">
-    <a href="/" style="color:var(--text3)">← Back to cygenix.co.uk</a>
+  <div id="loading" style="display:none;text-align:center;padding:2rem">
+    <div class="spinner" style="margin:0 auto 1rem"></div>
+    <div style="font-size:13px;color:var(--text2)" id="loading-msg">Signing in…</div>
   </div>
 </div>
 
-<script>
-const GOTRUE = window.location.origin + '/.netlify/identity';
+<div class="footer">
+  <a href="/">← Back to cygenix.co.uk</a>
+  &nbsp;·&nbsp;
+  <a href="/terms.html">Terms</a>
+  &nbsp;·&nbsp;
+  <a href="/privacy.html">Privacy</a>
+</div>
 
-// Show access banner if redirected from a protected page
-(function(){
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('reason') === 'protected') {
-    const banner = document.getElementById('access-banner');
-    if (banner) banner.style.display = 'block';
-    // Auto-switch to sign-up tab if no account hint
-    const tab = params.get('tab');
-    if (tab === 'signup') switchTab('signup');
-  }
-})();
-
-// After successful login, redirect back to where they came from
-function getRedirectUrl() {
-  return sessionStorage.getItem('cygenix_redirect_after_login') || '/dashboard.html';
-}
-
-function saveSession(data) {
-  sessionStorage.setItem('cygenix_token',   data.access_token);
-  sessionStorage.setItem('cygenix_user',    JSON.stringify(data));
-  sessionStorage.setItem('cygenix_expires', String(Date.now() + (data.expires_in || 3600) * 1000));
-  if (data.refresh_token) localStorage.setItem('cygenix_refresh_token', data.refresh_token);
-  if (data.token_type === 'bearer' && data.user) {
-    sessionStorage.setItem('cygenix_user', JSON.stringify({ ...data, ...data.user, access_token: data.access_token }));
-  }
-}
-
-function redirectAfterLogin(userData) {
-  // Check role in app_metadata (set via Netlify Identity admin)
-  const role = userData?.app_metadata?.role || userData?.role || '';
-  if (role === 'client') {
-    window.location.href = '/dashboard.html';
-  } else {
-    window.location.href = getRedirectUrl();
-  }
-}
-
-// Already logged in — go straight to projects
-if (sessionStorage.getItem('cygenix_token') &&
-    Date.now() < parseInt(sessionStorage.getItem('cygenix_expires') || '0')) {
-  try {
-    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
-    redirectAfterLogin(u);
-  } catch { window.location.href = getRedirectUrl(); }
-}
-
-// Handle URL tokens — checks query string (?token=) AND hash (#token=)
-// Query string survives Microsoft SafeLinks / Outlook wrapping; hash does not
-(function handleTokens() {
-
-  // ── Check query string first — survives SafeLinks redirects ──────────────
-  const qp = new URLSearchParams(window.location.search);
-  const qInvite    = qp.get('invite_token');
-  const qRecovery  = qp.get('recovery_token');
-
-  if (qInvite) {
-    window.history.replaceState(null, '', window.location.pathname);
-    showInviteAccept(qInvite);
-    return;
-  }
-  if (qRecovery) {
-    window.history.replaceState(null, '', window.location.pathname);
-    showPasswordReset(qRecovery);
-    return;
-  }
-
-  // ── Check hash — used by Netlify default emails and OAuth ─────────────────
-  let hash = window.location.hash;
-  if (!hash || hash === '#') {
-    const stored = sessionStorage.getItem('cygenix_pending_token');
-    if (stored) { hash = stored; }
-  }
-  sessionStorage.removeItem('cygenix_pending_token');
-  if (!hash) return;
-  const params = new URLSearchParams(hash.replace(/^#/, ''));
-
-  const inviteToken = params.get('invite_token');
-  if (inviteToken) {
-    window.history.replaceState(null, '', window.location.pathname);
-    showInviteAccept(inviteToken);
-    return;
-  }
-
-  const recoveryToken = params.get('recovery_token');
-  if (recoveryToken) {
-    window.history.replaceState(null, '', window.location.pathname);
-    showPasswordReset(recoveryToken);
-    return;
-  }
-
-  // ── Access token — OAuth redirect (Google, Microsoft) ──────────────────────
-  const accessToken = params.get('access_token');
-  if (accessToken) {
-    saveSession({ access_token: accessToken, expires_in: parseInt(params.get('expires_in') || '3600') });
-    window.history.replaceState(null, '', window.location.pathname);
-    try {
-      const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
-      redirectAfterLogin(u);
-    } catch { window.location.href = '/dashboard.html'; }
-  }
-})();
-
-// Show invite acceptance form — user sets their password
-function showInviteAccept(token) {
-  const card = document.querySelector('.card') || document.body;
-  card.innerHTML = `
-    <div class="logo">Cyge<span>nix</span></div>
-    <div class="tagline">You've been invited to Cygenix</div>
-    <div id="invite-alert" class="alert alert-error" style="display:none"></div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:1.25rem;text-align:center">
-      Enter your name then click below.<br>You'll receive an email to set your password.
-    </div>
-    <div class="form-row">
-      <label class="form-label">Your name <span style="color:var(--text3);font-size:10px;text-transform:none">(optional)</span></label>
-      <input id="invite-name" class="form-input" type="text" placeholder="Your full name" autocomplete="name"
-        onkeydown="if(event.key==='Enter')acceptInvite('${token}')"/>
-    </div>
-    <button class="btn btn-primary" onclick="acceptInvite('${token}')" style="width:100%">Activate account &amp; set password →</button>
-    <div class="footer-link" style="margin-top:1rem">
-      <a href="/" style="color:var(--text3)">← Back to cygenix.co.uk</a>
-    </div>
-  `;
-}
-
-// Show password reset form — user sets new password via recovery token
-function showPasswordReset(token) {
-  const card = document.querySelector('.card') || document.body;
-  card.innerHTML = `
-    <div class="logo">Cyge<span>nix</span></div>
-    <div class="tagline">Set your new password</div>
-    <div id="reset-alert" class="alert alert-error" style="display:none"></div>
-    <div class="form-row">
-      <label class="form-label">New password <span style="color:var(--text3);font-size:10px;text-transform:none">(min 8 chars)</span></label>
-      <input id="reset-password" class="form-input" type="password" placeholder="Choose a strong password"
-        autocomplete="new-password" onkeydown="if(event.key==='Enter')doPasswordReset('${token}')"/>
-    </div>
-    <div class="form-row">
-      <label class="form-label">Confirm password</label>
-      <input id="reset-password2" class="form-input" type="password" placeholder="Repeat your password"
-        autocomplete="new-password" onkeydown="if(event.key==='Enter')doPasswordReset('${token}')"/>
-    </div>
-    <button class="btn btn-primary" onclick="doPasswordReset('${token}')">Set new password &amp; sign in</button>
-    <div class="footer-link" style="margin-top:1rem">
-      <a href="/login.html" style="color:var(--text3)">← Back to sign in</a>
-    </div>
-  `;
-}
-
-async function doPasswordReset(token) {
-  const password  = document.getElementById('reset-password')?.value || '';
-  const password2 = document.getElementById('reset-password2')?.value || '';
-  const alertEl   = document.getElementById('reset-alert');
-
-  if (!password || password.length < 8) {
-    if (alertEl) { alertEl.textContent = 'Password must be at least 8 characters.'; alertEl.style.display = 'block'; }
-    return;
-  }
-  if (password !== password2) {
-    if (alertEl) { alertEl.textContent = 'Passwords do not match.'; alertEl.style.display = 'block'; }
-    return;
-  }
-
-  const btn = document.querySelector('.btn-primary');
-  if (btn) { btn.textContent = 'Setting password…'; btn.disabled = true; }
-
-  try {
-    const res = await fetch(GOTRUE + '/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, type: 'recovery', password })
-    });
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      const msg = data.msg || data.error_description || data.error || 'Failed to reset password.';
-      if (alertEl) { alertEl.textContent = `${msg} (HTTP ${res.status})`; alertEl.style.display = 'block'; }
-      if (btn) { btn.textContent = 'Set new password & sign in'; btn.disabled = false; }
-      return;
-    }
-
-    // Auto-login with returned token
-    if (data.access_token) {
-      saveSession(data);
-      setTimeout(() => { window.location.href = getRedirectUrl(); }, 300);
-    } else {
-      const card = document.querySelector('.card');
-      if (card) card.innerHTML = `
-        <div class="logo">Cyge<span>nix</span></div>
-        <div class="tagline" style="color:var(--green)">✓ Password updated!</div>
-        <div style="font-size:13px;color:var(--text2);text-align:center;margin:1rem 0 1.5rem;line-height:1.6">
-          Your password has been set. Please sign in.
-        </div>
-        <button class="btn btn-primary" onclick="window.location.href='/login.html'" style="width:100%">Sign in now →</button>
-      `;
-    }
-  } catch(e) {
-    if (alertEl) { alertEl.textContent = 'Error: ' + e.message; alertEl.style.display = 'block'; }
-    if (btn) { btn.textContent = 'Set new password & sign in'; btn.disabled = false; }
-  }
-}
-
-async function acceptInvite(token) {
-  const name    = document.getElementById('invite-name')?.value?.trim() || '';
-  const alertEl = document.getElementById('invite-alert');
-  const btn     = document.querySelector('.btn-primary');
-  if (btn) { btn.textContent = 'Activating…'; btn.disabled = true; }
-
-  try {
-    // Step 1: Confirm the invite — Netlify needs a dummy password just to accept the token
-    // The real password is set via the recovery email in step 3
-    const dummyPw = 'Temp!' + Math.random().toString(36).slice(2,10) + 'Ax9';
-    const res = await fetch(GOTRUE + '/verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, type: 'signup', password: dummyPw })
-    });
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      const msg = data.msg || data.error_description || data.error || 'Failed to activate account.';
-      if (alertEl) { alertEl.textContent = `${msg} (HTTP ${res.status})`; alertEl.style.display = 'block'; }
-      if (btn) { btn.textContent = 'Activate account & set password →'; btn.disabled = false; }
-      return;
-    }
-
-    // Extract email — try multiple places including JWT decode
-    let email = data.email || data.user?.email || '';
-    if (!email && data.access_token) {
-      try {
-        const payload = JSON.parse(atob(data.access_token.split('.')[1]));
-        email = payload.email || '';
-        console.log('[Invite] Email from JWT:', email);
-      } catch(e) { console.warn('[Invite] JWT decode failed:', e.message); }
-    }
-    // Also fetch from /user endpoint if still empty
-    if (!email && data.access_token) {
-      try {
-        const ur = await fetch(GOTRUE + '/user', {
-          headers: { 'Authorization': 'Bearer ' + data.access_token }
-        });
-        const ud = await ur.json();
-        email = ud.email || '';
-        console.log('[Invite] Email from /user:', email);
-      } catch(e) {}
-    }
-    console.log('[Invite] Final email:', email, '| Full data keys:', Object.keys(data).join(','));
-
-    // Step 2: Update name if provided
-    if (data.access_token && name) {
-      await fetch(GOTRUE + '/user', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + data.access_token },
-        body: JSON.stringify({ data: { full_name: name } })
-      }).catch(() => {});
-    }
-
-    // Step 3: Send recovery email — this is the ONLY reliable way to set
-    // a persistent password in Netlify Identity for invited users
-    if (email) {
-      const recRes = await fetch(GOTRUE + '/recover', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      console.log('[Invite] Recovery email status:', recRes.status);
-    } else {
-      console.error('[Invite] No email found — cannot send recovery email');
-    }
-
-    // Step 4: Show confirmation — session is active for now, password email sent
-    if (data.access_token) saveSession(data);
-
-    const card = document.querySelector('.card');
-    if (card) card.innerHTML = `
-      <div class="logo">Cyge<span>nix</span></div>
-      <div style="font-size:1.4rem;font-weight:600;color:#22c97a;margin-bottom:0.5rem;text-align:center">✓ Account activated!</div>
-      <div style="font-size:13px;color:var(--text2);text-align:center;margin:0.75rem 0 1.5rem;line-height:1.75">
-        We've sent a <strong style="color:var(--text)">password setup email</strong> to<br>
-        <strong style="color:var(--accent)">${email}</strong><br><br>
-        Click the link in that email to set your password.<br>
-        After that you can sign in here with your email and password.
-      </div>
-      <div style="background:rgba(34,201,122,0.07);border:0.5px solid rgba(34,201,122,0.25);border-radius:8px;padding:0.875rem 1rem;font-size:12px;color:var(--text2);margin-bottom:1.25rem;line-height:1.6">
-        💡 Can't find the email? Check your spam folder or click below to resend.
-      </div>
-      <button class="btn btn-primary" style="width:100%;margin-bottom:0.75rem"
-        onclick="resendSetupEmail('${email}',this)">Resend password setup email</button>
-      <button class="btn btn-ghost" style="width:100%"
-        onclick="window.location.href='/dashboard.html'">Go to dashboard (set password later) →</button>
-    `;
-
-  } catch(e) {
-    if (alertEl) { alertEl.textContent = 'Error: ' + e.message; alertEl.style.display = 'block'; }
-    if (btn) { btn.textContent = 'Activate account & set password →'; btn.disabled = false; }
-  }
-}
-
-async function resendSetupEmail(email, btn) {
-  if (!email) return;
-  if (btn) { btn.textContent = 'Sending…'; btn.disabled = true; }
-  await fetch(GOTRUE + '/recover', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email })
-  }).catch(() => {});
-  if (btn) { btn.textContent = '✓ Sent — check your inbox'; }
-}
-
-async function goTrue(path, body) {
-  const res = await fetch(GOTRUE + path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.msg || data.error_description || data.error || 'Error ' + res.status);
-  return data;
-}
-
-async function signIn() {
-  const email    = val('signin-email');
-  const password = val('signin-password');
-  if (!email || !password) { showError('Please enter your email and password.'); return; }
-  setLoading('signin-btn', true, 'Sign in');
-  clearAlerts();
-  try {
-    const data = await goTrue('/token?grant_type=password', { email, password });
-    saveSession(data);
-    redirectAfterLogin(data.user || data);
-  } catch(e) { showError(friendly(e.message)); }
-  setLoading('signin-btn', false, 'Sign in');
-}
-
-async function signUp() {
-  const name     = val('signup-name');
-  const email    = val('signup-email');
-  const password = val('signup-password');
-  if (!name || !email || !password) { showError('Please fill in all fields.'); return; }
-  if (password.length < 8) { showError('Password must be at least 8 characters.'); return; }
-  setLoading('signup-btn', true, 'Create account');
-  clearAlerts();
-  try {
-    await goTrue('/signup', { email, password, data: { full_name: name } });
-    showSuccess('Account created! Check your email for a confirmation link, then sign in.');
-    switchTab('signin');
-  } catch(e) { showError(friendly(e.message)); }
-  setLoading('signup-btn', false, 'Create account');
-}
-
-async function forgotPassword() {
-  const email = val('signin-email');
-  if (!email) { showError('Enter your email address above first.'); return; }
-  clearAlerts();
-  try {
-    await goTrue('/recover', { email });
-    showSuccess('Password reset email sent — check your inbox.');
-  } catch(e) { showError(friendly(e.message)); }
-}
-
-function oauthLogin(provider) {
-  clearAlerts();
-  const redirectTo = encodeURIComponent(window.location.origin + '/dashboard.html');
-  window.location.href = GOTRUE + '/authorize?provider=' + provider + '&redirect_to=' + redirectTo;
-}
-
-function switchTab(tab) {
-  const s = tab === 'signin';
-  $('tab-signin').classList.toggle('active', s);
-  $('tab-signup').classList.toggle('active', !s);
-  $('form-signin').style.display = s ? 'block' : 'none';
-  $('form-signup').style.display = s ? 'none'  : 'block';
-  $('footer-signin').style.display = s ? 'block' : 'none';
-  $('footer-signup').style.display = s ? 'none'  : 'block';
-  clearAlerts();
-}
-
-function $(id) { return document.getElementById(id); }
-function val(id) { return ($(id)?.value || '').trim(); }
-function showError(m)   { const e=$('alert-error');   e.textContent=m; e.classList.add('visible'); $('alert-success').classList.remove('visible'); }
-function showSuccess(m) { const e=$('alert-success'); e.textContent=m; e.classList.add('visible'); $('alert-error').classList.remove('visible'); }
-function clearAlerts()  { $('alert-error').classList.remove('visible'); $('alert-success').classList.remove('visible'); }
-function setLoading(id, on, label) { const b=$(id); b.disabled=on; b.innerHTML=on?'<div class="spinner"></div>':label; }
-function friendly(msg) {
-  if (!msg) return 'Something went wrong. Please try again.';
-  if (msg.includes('invalid_grant') || msg.includes('Invalid login credentials')) return 'Incorrect email or password.';
-  if (msg.includes('already registered') || msg.includes('already exists')) return 'This email is already registered — try signing in.';
-  if (msg.includes('Email not confirmed')) return 'Please check your email and click the confirmation link first.';
-  if (msg.includes('signup is not enabled')) return 'Signups are currently disabled. Contact your administrator.';
-  return msg;
-}
-</script>
+<!-- MSAL.js from CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 <script src="/cookie-consent.js"></script>
+<script>
+// ── Entra External ID config ─────────────────────────────────────────────────
+const ENTRA = {
+  clientId:  '43154cd5-4111-45cf-8c9e-0a243c6a4d64',
+  tenantId:  'b809b12b-5ff1-46c0-9315-c40d007b5bb8',
+  authority: 'https://cygenix.ciamlogin.com/b809b12b-5ff1-46c0-9315-c40d007b5bb8',
+  redirectUri: window.location.origin + '/login.html',
+  scopes: ['openid', 'profile', 'email'],
+};
+
+const msalConfig = {
+  auth: {
+    clientId:   ENTRA.clientId,
+    authority:  ENTRA.authority,
+    redirectUri: ENTRA.redirectUri,
+    knownAuthorities: ['cygenix.ciamlogin.com'],
+  },
+  cache: {
+    cacheLocation: 'sessionStorage',
+    storeAuthStateInCookie: false,
+  },
+};
+
+const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+// ── Handle redirect after login ──────────────────────────────────────────────
+async function init() {
+  try {
+    const result = await msalInstance.handleRedirectPromise();
+    if (result) {
+      // Came back from Entra login redirect
+      saveSession(result);
+      redirectAfterLogin();
+      return;
+    }
+
+    // Already signed in?
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      // Try silent token refresh
+      try {
+        const silent = await msalInstance.acquireTokenSilent({
+          scopes: ENTRA.scopes,
+          account: accounts[0],
+        });
+        saveSession(silent);
+        redirectAfterLogin();
+        return;
+      } catch(e) {
+        // Silent failed — fall through to show login buttons
+        console.log('[Auth] Silent token failed, showing login UI');
+      }
+    }
+  } catch(e) {
+    console.error('[Auth] Init error:', e);
+    showError('Authentication error: ' + e.message);
+  }
+  // Show login UI
+  showCard();
+}
+
+function showCard() {
+  document.getElementById('main-card').style.display = '';
+  document.getElementById('loading').style.display = 'none';
+}
+
+function showLoading(msg) {
+  document.getElementById('loading').style.display = 'block';
+  document.getElementById('loading-msg').textContent = msg || 'Signing in…';
+  document.getElementById('google-btn').style.display = 'none';
+  document.getElementById('email-btn').style.display = 'none';
+}
+
+function showError(msg) {
+  const el = document.getElementById('alert');
+  el.textContent = msg;
+  el.style.display = 'block';
+  showCard();
+}
+
+// ── Sign in methods ──────────────────────────────────────────────────────────
+async function signInWithGoogle() {
+  showLoading('Redirecting to Google…');
+  try {
+    await msalInstance.loginRedirect({
+      scopes: ENTRA.scopes,
+      extraQueryParameters: { domain_hint: 'google.com' },
+    });
+  } catch(e) {
+    showError('Google sign-in failed: ' + e.message);
+  }
+}
+
+async function signInWithEmail() {
+  showLoading('Redirecting to sign in…');
+  try {
+    await msalInstance.loginRedirect({
+      scopes: ENTRA.scopes,
+    });
+  } catch(e) {
+    showError('Sign-in failed: ' + e.message);
+  }
+}
+
+// ── Save session ─────────────────────────────────────────────────────────────
+function saveSession(authResult) {
+  const account = authResult.account;
+  const claims  = authResult.idTokenClaims || {};
+
+  const sessionData = {
+    email:      claims.email || claims.preferred_username || account.username || '',
+    name:       claims.name  || account.name || '',
+    userId:     claims.sub   || account.homeAccountId || account.username || '',
+    accessToken: authResult.accessToken,
+    idToken:    authResult.idToken,
+    exp:        (claims.exp * 1000) || (Date.now() + 3600000),
+    provider:   claims.idp  || 'entra',
+  };
+
+  sessionStorage.setItem('cygenix_entra_account', JSON.stringify(sessionData));
+
+  // Legacy keys — keeps cosmos-sync and nav working without changes
+  sessionStorage.setItem('cygenix_token',   authResult.idToken || authResult.accessToken);
+  sessionStorage.setItem('cygenix_expires', String(sessionData.exp));
+  sessionStorage.setItem('cygenix_user',    JSON.stringify({
+    email:       sessionData.email,
+    access_token: authResult.accessToken,
+    user_metadata: { full_name: sessionData.name },
+  }));
+
+  console.log('[Auth] Session saved for:', sessionData.email);
+}
+
+// ── Redirect after login ─────────────────────────────────────────────────────
+function redirectAfterLogin() {
+  const redirect = sessionStorage.getItem('cygenix_redirect_after_login');
+  sessionStorage.removeItem('cygenix_redirect_after_login');
+  window.location.href = redirect || '/dashboard.html';
+}
+
+// ── Start ────────────────────────────────────────────────────────────────────
+// Hide card until we know auth state
+document.getElementById('main-card').style.display = 'none';
+document.getElementById('loading').style.display = 'block';
+document.getElementById('loading-msg').textContent = 'Checking session…';
+
+msalInstance.initialize().then(init).catch(e => {
+  showError('Failed to initialise authentication: ' + e.message);
+});
+</script>
 </body>
 </html>
