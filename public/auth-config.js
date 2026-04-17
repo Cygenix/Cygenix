@@ -4,8 +4,8 @@
  * Single source of truth — all auth files reference this.
  */
 const CYGENIX_AUTH = {
-  clientId:   '43154cd5-4111-45cf-8c9e-0a243c6a4d64',
-  tenantId:   'b809b12b-5ff1-46c0-9315-c40d007b5bb8',
+  clientId:   'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+  tenantId:   'fc8dfc7a-645f-4a5c-8f59-6762f97c803f',
   tenantName: 'cygenix',
   userFlow:   'cygenix_signin',
   get authority() {
