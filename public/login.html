@@ -77,7 +77,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 </div>
 
 <!-- MSAL.js from CDN -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
 <script src="/cookie-consent.js"></script>
 <script>
 // ── Entra External ID config ─────────────────────────────────────────────────
@@ -230,22 +230,31 @@ function startMsal() {
   try {
     msalInstance = new msal.PublicClientApplication(msalConfig);
     msalInstance.initialize().then(init).catch(e => {
-      showError('Failed to initialise authentication: ' + e.message);
+      console.error('[Auth] Init failed:', e);
+      showError('Authentication init failed: ' + e.message);
+      showCard();
     });
   } catch(e) {
-    showError('MSAL failed to load: ' + e.message);
+    console.error('[Auth] MSAL create failed:', e);
+    showError('Authentication failed to load: ' + e.message);
+    showCard();
   }
 }
 
-// Wait for MSAL CDN script to be available
-if (typeof msal !== 'undefined') {
-  startMsal();
-} else {
-  document.querySelector('script[src*="msal-browser"]').addEventListener('load', startMsal);
-  document.querySelector('script[src*="msal-browser"]').addEventListener('error', () => {
-    showError('Failed to load authentication library. Please check your connection and refresh.');
-  });
+// Retry loop — wait up to 5s for MSAL to load from CDN
+let msalWait = 0;
+function waitForMsal() {
+  if (typeof msal !== 'undefined') {
+    startMsal();
+  } else if (msalWait < 50) {
+    msalWait++;
+    setTimeout(waitForMsal, 100);
+  } else {
+    showError('Authentication library failed to load. Please refresh the page.');
+    showCard();
+  }
 }
+waitForMsal();
 </script>
 </body>
 </html>
