@@ -83,7 +83,6 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 // ── Entra External ID config ─────────────────────────────────────────────────
 const ENTRA = {
   clientId:  '43154cd5-4111-45cf-8c9e-0a243c6a4d64',
-  tenantId:  'b809b12b-5ff1-46c0-9315-c40d007b5bb8',
   authority: 'https://cygenix.ciamlogin.com/b809b12b-5ff1-46c0-9315-c40d007b5bb8',
   redirectUri: window.location.origin + '/login.html',
   scopes: ['openid', 'profile', 'email'],
@@ -91,8 +90,8 @@ const ENTRA = {
 
 const msalConfig = {
   auth: {
-    clientId:   ENTRA.clientId,
-    authority:  ENTRA.authority,
+    clientId:    ENTRA.clientId,
+    authority:   ENTRA.authority,
     redirectUri: ENTRA.redirectUri,
     knownAuthorities: ['cygenix.ciamlogin.com'],
   },
@@ -102,7 +101,8 @@ const msalConfig = {
   },
 };
 
-const msalInstance = new msal.PublicClientApplication(msalConfig);
+// msalInstance is set after MSAL.js CDN script loads and initializes
+let msalInstance = null;
 
 // ── Handle redirect after login ──────────────────────────────────────────────
 async function init() {
@@ -161,6 +161,7 @@ function showError(msg) {
 
 // ── Sign in methods ──────────────────────────────────────────────────────────
 async function signInWithGoogle() {
+  if (!msalInstance) { showError('Auth not ready — please wait a moment and try again.'); return; }
   showLoading('Redirecting to Google…');
   try {
     await msalInstance.loginRedirect({
@@ -173,6 +174,7 @@ async function signInWithGoogle() {
 }
 
 async function signInWithEmail() {
+  if (!msalInstance) { showError('Auth not ready — please wait a moment and try again.'); return; }
   showLoading('Redirecting to sign in…');
   try {
     await msalInstance.loginRedirect({
@@ -219,15 +221,31 @@ function redirectAfterLogin() {
   window.location.href = redirect || '/dashboard.html';
 }
 
-// ── Start ────────────────────────────────────────────────────────────────────
-// Hide card until we know auth state
+// ── Start — wait for MSAL CDN to load then initialise ───────────────────────
 document.getElementById('main-card').style.display = 'none';
 document.getElementById('loading').style.display = 'block';
 document.getElementById('loading-msg').textContent = 'Checking session…';
 
-msalInstance.initialize().then(init).catch(e => {
-  showError('Failed to initialise authentication: ' + e.message);
-});
+function startMsal() {
+  try {
+    msalInstance = new msal.PublicClientApplication(msalConfig);
+    msalInstance.initialize().then(init).catch(e => {
+      showError('Failed to initialise authentication: ' + e.message);
+    });
+  } catch(e) {
+    showError('MSAL failed to load: ' + e.message);
+  }
+}
+
+// Wait for MSAL CDN script to be available
+if (typeof msal !== 'undefined') {
+  startMsal();
+} else {
+  document.querySelector('script[src*="msal-browser"]').addEventListener('load', startMsal);
+  document.querySelector('script[src*="msal-browser"]').addEventListener('error', () => {
+    showError('Failed to load authentication library. Please check your connection and refresh.');
+  });
+}
 </script>
 </body>
 </html>
