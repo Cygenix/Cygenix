@@ -1810,7 +1810,7 @@ function restoreJobMapping(job,isOTM){
         const ti=targetTables.length-1;
         if(jtt.pkMode) targetTables[ti].pkMode=jtt.pkMode;
         if(jtt.pkCol)  targetTables[ti].pkCol=jtt.pkCol;
-        if(jtt.mappings) targetTables[ti].mappings=jtt.mappings;
+        if(jtt.mappings) targetTables[ti].mappings = ensureAllTargetCols(jtt.mappings, targetTables[ti]);
         if(jtt.fks)    targetTables[ti].fks=jtt.fks;
       }
     });
@@ -1822,6 +1822,7 @@ function restoreJobMapping(job,isOTM){
     // tgtTable already selected by checkEditMode — just restore the mapping
     if(job.columnMapping?.length){
       columnMapping = job.columnMapping.map(m=>({...m}));
+      columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
       $('mapping-wrap').style.display='block';
       $('single-empty').style.display='none';
       renderMappingTable();
