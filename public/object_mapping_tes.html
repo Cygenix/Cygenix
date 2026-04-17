@@ -161,11 +161,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 /* ── Visual drag-and-drop view ─────────────────────────────────────────────── */
 .visual-view{padding:0.75rem}
 .visual-hint{font-size:11px;color:var(--text3);margin-bottom:0.75rem;padding:0.4rem 0.6rem;background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--accent)}
-.visual-canvas{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:3rem;min-height:400px;user-select:none}
+.visual-canvas{position:relative;display:grid;grid-template-columns:max-content max-content;gap:3rem;min-height:400px;user-select:none;justify-content:center}
 .visual-col{display:flex;flex-direction:column;gap:0.3rem;min-width:0}
 .visual-col-multi{gap:1rem}
 .visual-col-head{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;padding:0 0.3rem;margin-bottom:0.3rem}
-.visual-pills{display:flex;flex-direction:column;gap:0.35rem}
+.visual-pills{display:flex;flex-direction:column;gap:0.35rem;min-width:220px}
 .visual-pill{
   display:flex;align-items:center;justify-content:space-between;gap:0.5rem;
   padding:0.45rem 0.7rem;
