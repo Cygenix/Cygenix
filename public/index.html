@@ -6,7 +6,10 @@
 (function(){
   const h = window.location.hash;
   if (h && (h.includes('invite_token') || h.includes('recovery_token') || h.includes('confirmation_token'))) {
-    window.location.replace('/login.html' + h);
+    // Use href not replace — more reliable for preserving hash across browsers
+    // Also store in sessionStorage as backup in case hash is lost
+    sessionStorage.setItem('cygenix_pending_token', h);
+    window.location.href = '/login.html' + h;
   }
 })();
 </script>
