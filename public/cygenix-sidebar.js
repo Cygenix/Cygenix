@@ -47,7 +47,7 @@
       { key:'project-plan',      label:'Project Planner',   href:'/project-plan.html', color:'var(--green)',  icon: iconCalendar() },
     ]},
     { section: 'Develop', group:'develop', items: [
-      { key:'object-mapping',    label:'Mapper',            href:'/object_mapping.html', color:'var(--teal)',   icon: iconArrows() },
+      { key:'object-mapping',    label:'Object Mapping',    href:'/object_mapping.html', color:'var(--teal)',   icon: iconArrows() },
       { key:'sql-editor',        label:'SQL Editor',        href:'/sql-editor.html',    color:'var(--teal)',   icon: iconCode() },
     ]},
     { section: 'Analysis', group:'analysis', items: [

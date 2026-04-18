@@ -1720,7 +1720,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 
   // ── One-to-many job: use the pre-generated cursor SQL ──────────────────────
   if (step.jobType === 'one-to-many' || step.oneToManyConfig) {
-    if (!step.insertSQL) throw new Error('No generated SQL found — open the One-to-Many Mapper, generate SQL, then save the job again');
+    if (!step.insertSQL) throw new Error('No generated SQL found — open the One-to-Many Object Mapping page, generate SQL, then save the job again');
     const tgtNames = step.tables?.map(t=>t.name||t.fullName).filter(Boolean) || [step.tgtTable];
     add('Running one-to-many migration: '+step.srcTable+' → '+tgtNames.join(', '));
     // Apply parameter substitution to the cursor SQL
