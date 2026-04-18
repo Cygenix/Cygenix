@@ -51,6 +51,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .main-header{padding:1.25rem 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .proj-name-input{background:transparent;border:none;font-family:var(--serif);font-size:1.2rem;font-weight:600;color:var(--text);outline:none;flex:1;min-width:200px}
 .proj-name-input::placeholder{color:var(--text3)}
+select.proj-name-input{appearance:none;background-image:linear-gradient(45deg, transparent 50%, var(--text3) 50%),linear-gradient(135deg, var(--text3) 50%, transparent 50%);background-position:calc(100% - 14px) 52%,calc(100% - 9px) 52%;background-size:5px 5px;background-repeat:no-repeat;padding-right:26px}
+select.proj-name-input:focus{background-color:var(--bg3);border-radius:6px}
 .main-body{flex:1;padding:1.5rem}
 .conn-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem}
 .conn-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem}
@@ -238,7 +240,14 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
   <!-- RIGHT: Project builder -->
   <div class="main">
     <div class="main-header">
-      <input class="proj-name-input" id="proj-name" placeholder="Conversion project name…" oninput="markDirty()">
+      <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:0">
+        <select id="proj-selector" class="proj-name-input" onchange="handleProjectSwitch(this.value)" style="flex:1;min-width:0;padding:0.4rem 0.6rem;cursor:pointer">
+          <!-- populated by refreshProjectSelector() -->
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="newProjectPrompt()" title="Create a new project">+ New</button>
+        <button class="btn btn-ghost btn-sm" onclick="renameProjectPrompt()" title="Rename this project">✎ Rename</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteProjectPrompt()" title="Delete this project" style="color:var(--red)">🗑</button>
+      </div>
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
@@ -438,9 +447,61 @@ async function signOut(){
 }
 
 // ── Project state ─────────────────────────────────────────────────────────────
-const PROJ_KEY = 'cygenix_conv_project';
+// Storage:
+//   cygenix_projects              — array of {id, name, createdAt, srcConn, tgtConn, groups}
+//   cygenix_active_project_id     — id of the project currently on screen
+// Legacy:
+//   cygenix_conv_project          — single-project key from before multi-project existed
+//                                   On first load we migrate this into the projects list.
+const PROJ_KEY        = 'cygenix_conv_project';         // legacy single-project key, read on migration
+const PROJECTS_KEY    = 'cygenix_projects';
+const ACTIVE_ID_KEY   = 'cygenix_active_project_id';
+
 let project = { id:'proj_'+Date.now(), name:'', srcConn:'', tgtConn:'', groups:[] };
+let projects = [];  // all projects, source of truth
 let isDirty = false;
+
+function newProjectId(){ return 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
+
+function loadProjectsList(){
+  try {
+    const raw = localStorage.getItem(PROJECTS_KEY);
+    if (raw){
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch {}
+  return [];
+}
+function persistProjectsList(){
+  try { localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects)); } catch {}
+}
+
+// One-time migration: if the new projects list is empty but the legacy single-project key exists,
+// wrap it as "Project 1" in the new list. Leave the legacy key in place as a backup.
+function migrateLegacyProject(){
+  if (projects.length > 0) return;
+  try {
+    const legacyRaw = localStorage.getItem(PROJ_KEY);
+    if (!legacyRaw) return;
+    const legacy = JSON.parse(legacyRaw);
+    if (!legacy) return;
+    // Normalise — legacy project had the same shape, just give it a fallback name
+    legacy.id        = legacy.id || newProjectId();
+    legacy.name      = legacy.name || 'Project 1';
+    legacy.createdAt = legacy.createdAt || new Date().toISOString();
+    legacy.srcConn   = legacy.srcConn || '';
+    legacy.tgtConn   = legacy.tgtConn || '';
+    legacy.groups    = legacy.groups || [];
+    if (Array.isArray(legacy.steps) && legacy.steps.length && !legacy.groups.length){
+      legacy.groups = [ { id:newGroupId(), name:'Default', executionMode:'sequential', collapsed:false, steps:legacy.steps } ];
+      delete legacy.steps;
+    }
+    projects = [ legacy ];
+    persistProjectsList();
+    localStorage.setItem(ACTIVE_ID_KEY, legacy.id);
+  } catch {}
+}
 
 // ── Group helpers ─────────────────────────────────────────────────────────────
 function newGroupId(){ return 'grp_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
@@ -457,45 +518,168 @@ function getAllStepsFlat(){
   return out;
 }
 
-(function loadProject(){
-  try {
-    const saved = localStorage.getItem(PROJ_KEY);
-    if (saved) project = JSON.parse(saved);
-  } catch {}
-  // ── Migrate old flat format → groups ─────────────────────────────────────
-  if (!project.groups) project.groups = [];
-  if (Array.isArray(project.steps) && project.steps.length && !project.groups.length){
-    project.groups = [ { id:newGroupId(), name:'Default', executionMode:'sequential', collapsed:false, steps: project.steps } ];
-    delete project.steps;
-  }
+// Fallback connections from the global session (used if a project has none set)
+function globalSrcConn(){
+  return sessionStorage.getItem('cygenix_src_conn_string') || '';
+}
+function globalTgtConn(){
+  const fn  = sessionStorage.getItem('cygenix_fn_url') || '';
+  const key = sessionStorage.getItem('cygenix_fn_key') || '';
+  const cs  = sessionStorage.getItem('cygenix_conn_string') || '';
+  return fn ? (fn + (key ? '?code='+encodeURIComponent(key) : '')) : cs;
+}
+
+// Hydrate UI from the currently-active `project` object
+function hydrateProjectIntoUI(){
   ensureAtLeastOneGroup();
-  // Pre-fill connections from last connect.html session
-  if (!project.srcConn) {
-    project.srcConn = sessionStorage.getItem('cygenix_src_conn_string') || '';
-  }
-  if (!project.tgtConn) {
-    const fn  = sessionStorage.getItem('cygenix_fn_url') || '';
-    const key = sessionStorage.getItem('cygenix_fn_key') || '';
-    const cs  = sessionStorage.getItem('cygenix_conn_string') || '';
-    project.tgtConn = fn ? (fn + (key ? '?code='+encodeURIComponent(key) : '')) : cs;
-  }
-  document.getElementById('proj-name').value    = project.name    || '';
-  document.getElementById('proj-src-conn').value = project.srcConn || '';
-  document.getElementById('proj-tgt-conn').value = project.tgtConn || '';
+  const sel = document.getElementById('proj-selector');
+  if (sel) sel.value = project.id;
+  // Connections — project value wins; fall back to global if project has none
+  const srcInUse = project.srcConn || globalSrcConn();
+  const tgtInUse = project.tgtConn || globalTgtConn();
+  document.getElementById('proj-src-conn').value = srcInUse;
+  document.getElementById('proj-tgt-conn').value = tgtInUse;
   renderSteps();
   renderJobs();
+}
+
+function refreshProjectSelector(){
+  const sel = document.getElementById('proj-selector');
+  if (!sel) return;
+  if (!projects.length){
+    sel.innerHTML = '<option value="">— no projects —</option>';
+    return;
+  }
+  // Sort alphabetically so analysts who prefix-name (ACME-..., BeanCo-...) see natural grouping
+  const sorted = [...projects].sort((a, b) => (a.name||'').localeCompare(b.name||''));
+  sel.innerHTML = sorted.map(p =>
+    `<option value="${p.id}"${p.id===project.id?' selected':''}>${(p.name || '(unnamed project)').replace(/</g,'&lt;')}</option>`
+  ).join('');
+}
+
+(function loadProject(){
+  projects = loadProjectsList();
+  migrateLegacyProject();
+
+  // Pick the active project
+  let activeId = localStorage.getItem(ACTIVE_ID_KEY);
+  let active = projects.find(p => p.id === activeId);
+  if (!active && projects.length) active = projects[0];
+
+  if (!active){
+    // No projects yet — create a blank default
+    active = {
+      id: newProjectId(),
+      name: 'My first project',
+      createdAt: new Date().toISOString(),
+      srcConn: '', tgtConn: '',
+      groups: []
+    };
+    projects.push(active);
+    persistProjectsList();
+    localStorage.setItem(ACTIVE_ID_KEY, active.id);
+  }
+
+  project = active;
+  refreshProjectSelector();
+  hydrateProjectIntoUI();
 })();
 
 function markDirty() { isDirty = true; document.getElementById('dirty-badge').style.display='inline'; }
 
 function saveProject() {
-  project.name    = document.getElementById('proj-name').value.trim();
+  // Pull the current connection values back onto the project — they may have been edited
   project.srcConn = document.getElementById('proj-src-conn').value.trim();
   project.tgtConn = document.getElementById('proj-tgt-conn').value.trim();
-  localStorage.setItem(PROJ_KEY, JSON.stringify(project));
+  // Project name comes from the <option> currently selected; we don't let users edit it inline
+  // (use the Rename button instead).
+  // Write back into the projects array in place
+  const idx = projects.findIndex(p => p.id === project.id);
+  if (idx >= 0) projects[idx] = project;
+  else projects.push(project);
+  persistProjectsList();
+  // Also keep legacy key in sync so any old consumers still work until we migrate them
+  try { localStorage.setItem(PROJ_KEY, JSON.stringify(project)); } catch {}
+  localStorage.setItem(ACTIVE_ID_KEY, project.id);
   isDirty = false;
   document.getElementById('dirty-badge').style.display = 'none';
   showToast('Project saved');
+}
+
+// ── Multi-project actions ────────────────────────────────────────────────────
+function handleProjectSwitch(newId){
+  if (!newId || newId === project.id) return;
+  if (isDirty){
+    const ok = confirm('You have unsaved changes in "' + (project.name||'this project') + '". Discard and switch?');
+    if (!ok){
+      // Revert the dropdown to the current project
+      document.getElementById('proj-selector').value = project.id;
+      return;
+    }
+  }
+  const next = projects.find(p => p.id === newId);
+  if (!next) return;
+  project = next;
+  localStorage.setItem(ACTIVE_ID_KEY, project.id);
+  isDirty = false;
+  document.getElementById('dirty-badge').style.display = 'none';
+  hydrateProjectIntoUI();
+  showToast('Switched to ' + (project.name || 'project'));
+}
+
+function newProjectPrompt(){
+  const name = (prompt('Name for the new project:') || '').trim();
+  if (!name) return;
+  // Decide whether to carry over current connections — ask the analyst
+  const copyConns = confirm('Copy connection strings from "' + (project.name||'current project') + '"?\n\nOK = copy · Cancel = start with no connections');
+  const p = {
+    id: newProjectId(),
+    name,
+    createdAt: new Date().toISOString(),
+    srcConn: copyConns ? (document.getElementById('proj-src-conn').value.trim() || project.srcConn || '') : '',
+    tgtConn: copyConns ? (document.getElementById('proj-tgt-conn').value.trim() || project.tgtConn || '') : '',
+    groups: [ newGroup('Default', 'sequential') ]
+  };
+  projects.push(p);
+  persistProjectsList();
+  project = p;
+  localStorage.setItem(ACTIVE_ID_KEY, project.id);
+  isDirty = false;
+  document.getElementById('dirty-badge').style.display = 'none';
+  refreshProjectSelector();
+  hydrateProjectIntoUI();
+  showToast('Created "' + name + '"');
+}
+
+function renameProjectPrompt(){
+  const next = (prompt('Rename project:', project.name || '') || '').trim();
+  if (!next || next === project.name) return;
+  project.name = next;
+  const idx = projects.findIndex(p => p.id === project.id);
+  if (idx >= 0) projects[idx] = project;
+  persistProjectsList();
+  refreshProjectSelector();
+  showToast('Renamed');
+}
+
+function deleteProjectPrompt(){
+  if (projects.length <= 1){
+    alert('Cannot delete the last project. Rename it instead, or create a new one first.');
+    return;
+  }
+  const ok = confirm('Delete "' + (project.name||'this project') + '"?\n\nAll of its groups, jobs and mappings will be removed.\nThis cannot be undone.');
+  if (!ok) return;
+  const removedId = project.id;
+  projects = projects.filter(p => p.id !== removedId);
+  persistProjectsList();
+  // Switch to the first remaining project
+  project = projects[0];
+  localStorage.setItem(ACTIVE_ID_KEY, project.id);
+  isDirty = false;
+  document.getElementById('dirty-badge').style.display = 'none';
+  refreshProjectSelector();
+  hydrateProjectIntoUI();
+  showToast('Project deleted');
 }
 
 // ── Jobs sidebar ──────────────────────────────────────────────────────────────
