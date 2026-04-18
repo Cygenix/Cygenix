@@ -39,12 +39,22 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .sidebar-header{padding:1.25rem;border-bottom:0.5px solid var(--border)}
 .sidebar-title{font-size:13px;font-weight:600;margin-bottom:0.25rem}
 .sidebar-sub{font-size:11px;color:var(--text3)}
-.job-list{padding:0.75rem;flex:1}
-.job-item{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;margin-bottom:0.5rem;cursor:pointer;transition:all 0.15s}
+.job-list{padding:0.5rem;flex:1;overflow-y:auto}
+.job-filter-bar{padding:0.65rem 0.75rem 0.5rem;border-bottom:0.5px solid var(--border);display:flex;flex-direction:column;gap:0.4rem;background:var(--bg2);position:sticky;top:0;z-index:2}
+.job-filter-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:5px 9px 5px 26px;font-size:11.5px;color:var(--text);font-family:var(--serif);outline:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='7' cy='7' r='4.5' fill='none' stroke='%23555a6a' stroke-width='1.3'/><path d='M10.2 10.2l3 3' stroke='%23555a6a' stroke-width='1.3' stroke-linecap='round'/></svg>");background-repeat:no-repeat;background-position:7px center;background-size:13px}
+.job-filter-input:focus{border-color:var(--accent)}
+.job-filter-tools{display:flex;align-items:center;gap:0.4rem;font-size:10.5px;color:var(--text3);font-family:var(--mono)}
+.job-filter-tools .sort-btn{background:none;border:0.5px solid var(--border2);color:var(--text3);padding:1px 7px;border-radius:4px;cursor:pointer;font-family:var(--mono);font-size:10px}
+.job-filter-tools .sort-btn:hover{border-color:var(--accent);color:var(--text2)}
+.job-filter-tools .count{margin-left:auto}
+.job-item{background:var(--bg3);border:0.5px solid var(--border2);border-radius:5px;padding:5px 8px;margin-bottom:3px;cursor:pointer;transition:border-color 0.12s,background 0.12s;display:flex;align-items:center;gap:6px;min-height:26px}
 .job-item:hover{border-color:var(--accent);background:var(--accent-glow)}
-.job-item-name{font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px}
-.job-item-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
-.job-item-badge{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono);margin-top:4px}
+.job-item-icon{flex:0 0 14px;font-size:11px;opacity:0.7;line-height:1}
+.job-item-body{flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;overflow:hidden}
+.job-item-name{font-size:11.5px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0}
+.job-item-path{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:2;min-width:0}
+.job-item-stats{font-size:9.5px;color:var(--text3);font-family:var(--mono);flex-shrink:0;white-space:nowrap;opacity:0.75}
+.job-item-empty{font-size:11px;color:var(--text3);text-align:center;padding:1.5rem 1rem;font-style:italic}
 .add-sql-btn{margin:0.75rem;padding:0.6rem;background:var(--bg3);border:1.5px dashed var(--border2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.15s}
 .add-sql-btn:hover{border-color:var(--accent);color:var(--accent)}
 .main{overflow-y:auto;display:flex;flex-direction:column}
@@ -153,7 +163,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 <body>
 
 <div class="topbar">
-  <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Execute Jobs</span></a>
+  <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Project Execution</span></a>
   <div class="topbar-right">
     <div class="user-pill" onclick="signOut()">
       <div class="avatar" id="user-avatar">?</div>
@@ -196,7 +206,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
     </a>
     <a class="nav-item active" href="/project-builder.html" style="color:var(--purple)">
       <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-      Execute Jobs
+      Project Execution
     </a>
     <a class="nav-item" href="/dashboard.html#jobs" onclick="sessionStorage.setItem('cyg_goto','jobs')">
       <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
@@ -224,15 +234,19 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
   <!-- LEFT: Job library -->
   <div class="sidebar">
-    <div class="sidebar-header">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div class="sidebar-title">Migration jobs</div>
+    <div class="job-filter-bar">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+        <div style="font-size:12px;font-weight:600">Migration jobs</div>
         <button onclick="renderJobs()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 6px" title="Refresh jobs list">↻</button>
       </div>
-      <div class="sidebar-sub">Click a job to add it as a step →</div>
+      <input type="text" id="job-filter" class="job-filter-input" placeholder="Filter jobs…" oninput="renderJobs()" autocomplete="off">
+      <div class="job-filter-tools">
+        <button class="sort-btn" id="job-sort-btn" onclick="toggleJobSort()" title="Toggle sort order">Newest ▾</button>
+        <span class="count" id="job-count">–</span>
+      </div>
     </div>
     <div class="job-list" id="job-list">
-      <div style="font-size:12px;color:var(--text3);text-align:center;padding:2rem">No jobs found.<br>Run a migration in Live DB Migration first.</div>
+      <div class="job-item-empty">No jobs found.<br>Run a migration in Live DB Migration first.</div>
     </div>
     <div class="add-sql-btn" onclick="openSqlModal()">+ Add custom SQL job</div>
   </div>
@@ -460,6 +474,9 @@ const ACTIVE_ID_KEY   = 'cygenix_active_project_id';
 let project = { id:'proj_'+Date.now(), name:'', srcConn:'', tgtConn:'', groups:[] };
 let projects = [];  // all projects, source of truth
 let isDirty = false;
+// Job-sidebar sort mode: 'newest' (default) or 'alpha'. Declared early because the initial
+// loadProject() IIFE below calls renderJobs() which reads this.
+let jobSortMode = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cygenix_job_sort')) || 'newest';
 
 function newProjectId(){ return 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
 
@@ -683,27 +700,97 @@ function deleteProjectPrompt(){
 }
 
 // ── Jobs sidebar ──────────────────────────────────────────────────────────────
+// Sort mode: 'newest' (default) or 'alpha'. Declared higher up near project state.
+function toggleJobSort(){
+  jobSortMode = (jobSortMode === 'newest') ? 'alpha' : 'newest';
+  sessionStorage.setItem('cygenix_job_sort', jobSortMode);
+  const btn = document.getElementById('job-sort-btn');
+  if (btn) btn.textContent = (jobSortMode === 'newest') ? 'Newest ▾' : 'A–Z ▾';
+  renderJobs();
+}
+
 function renderJobs() {
   const list = document.getElementById('job-list');
+  const countEl = document.getElementById('job-count');
+  const sortBtn = document.getElementById('job-sort-btn');
+  if (sortBtn) sortBtn.textContent = (jobSortMode === 'newest') ? 'Newest ▾' : 'A–Z ▾';
+
   let jobs = [];
   try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch(e) {
-    list.innerHTML = '<div style="font-size:11px;color:var(--red);padding:1rem">Error reading jobs: ' + e.message + '</div>';
+    list.innerHTML = '<div class="job-item-empty" style="color:var(--red)">Error reading jobs: ' + esc(e.message) + '</div>';
+    if (countEl) countEl.textContent = '';
     return;
   }
-  if (!jobs.length) {
-    list.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:2rem">No jobs found.<br>Run a migration in Live DB Migration first.</div>';
+  const total = jobs.length;
+  if (!total) {
+    list.innerHTML = '<div class="job-item-empty">No jobs found.<br>Run a migration in Live DB Migration first.</div>';
+    if (countEl) countEl.textContent = '0';
     return;
   }
-  list.innerHTML = jobs.map((j,i) => {
+
+  // Preserve original indices so click-to-add still addresses the real array
+  const enriched = jobs.map((j, i) => ({ j, origIdx: i }));
+
+  // Filter
+  const filterInput = document.getElementById('job-filter');
+  const q = (filterInput?.value || '').trim().toLowerCase();
+  let filtered = enriched;
+  if (q) {
+    filtered = enriched.filter(({j}) => {
+      const hay = ((j.name||'') + ' ' + (j.source||'') + ' ' + (j.target||'')).toLowerCase();
+      return hay.includes(q);
+    });
+  }
+
+  // Sort
+  if (jobSortMode === 'alpha') {
+    filtered.sort((a,b) => (a.j.name||'').localeCompare(b.j.name||''));
+  } else {
+    // Newest first — use created timestamp, fall back to original order (which is insertion order)
+    filtered.sort((a,b) => {
+      const ta = a.j.created ? Date.parse(a.j.created) : 0;
+      const tb = b.j.created ? Date.parse(b.j.created) : 0;
+      if (ta !== tb) return tb - ta;
+      return b.origIdx - a.origIdx;
+    });
+  }
+
+  if (countEl) countEl.textContent = q ? (filtered.length + ' of ' + total) : String(total);
+
+  if (!filtered.length) {
+    list.innerHTML = '<div class="job-item-empty">No matches for "' + esc(q) + '"</div>';
+    return;
+  }
+
+  list.innerHTML = filtered.map(({j, origIdx}) => {
     try {
-      const cols = (j.columnMapping||[]).filter(m=>m&&m.tgtCol).length;
-      const date = j.created ? new Date(j.created).toLocaleDateString('en-GB') : '';
-      return '<div class="job-item" onclick="addJobAsStep('+i+')" title="Click to add as a project step">' +
-        '<div class="job-item-name">'+esc(j.name||'Unnamed job')+'</div>' +
-        '<div class="job-item-meta">'+esc(j.source||'')+(j.target?' → '+esc(j.target):'')+'</div>' +
-        '<div class="job-item-meta">'+(j.totalRows||0).toLocaleString()+' rows'+( date?' · '+date:'')+'</div>' +
-        (cols ? '<span class="job-item-badge">'+cols+' cols mapped</span>' : '') +
-        '</div>';
+      const isSql = j.type === 'sql' || j.jobType === 'sql' || j.jobType === 'sql-script';
+      const icon = isSql ? '⌘' : '→';
+      const name = esc(j.name || 'Unnamed job');
+      // Path: show "source → target" compact, or just "sql" for SQL jobs
+      let path = '';
+      if (isSql) {
+        path = 'sql';
+      } else if (j.source || j.target) {
+        path = (j.source || '?') + (j.target ? ' → ' + j.target : '');
+      }
+      // Stats: mapped-cols takes priority, else rowcount
+      const cols = (j.columnMapping||[]).filter(m => m && m.tgtCol).length;
+      let stats = '';
+      if (cols)      stats = cols + ' cols';
+      else if (j.totalRows) stats = (j.totalRows >= 1000 ? Math.round(j.totalRows/1000)+'k' : j.totalRows) + ' rows';
+      const title = (j.name || 'Unnamed job')
+                  + (path ? '\n' + path.replace(/ → /g, ' → ') : '')
+                  + (j.created ? '\n' + new Date(j.created).toLocaleString('en-GB') : '')
+                  + (cols ? '\n' + cols + ' columns mapped' : '');
+      return '<div class="job-item" onclick="addJobAsStep('+origIdx+')" title="'+esc(title)+'">' +
+             '<span class="job-item-icon">'+icon+'</span>' +
+             '<div class="job-item-body">' +
+               '<span class="job-item-name">'+name+'</span>' +
+               (path ? '<span class="job-item-path">'+esc(path)+'</span>' : '') +
+             '</div>' +
+             (stats ? '<span class="job-item-stats">'+esc(stats)+'</span>' : '') +
+             '</div>';
     } catch(e) { return ''; }
   }).join('');
 }
