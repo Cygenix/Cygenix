@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Cygenix – Data Cleansing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script src="/connections.js"></script>
+<script src="/nav.js"></script>
+<script src="/cygenix-params.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px}
+.back-link:hover{color:var(--text2)}
+.user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
+.container{max-width:1400px;margin:0 auto;padding:1.5rem}
+.page-head{margin-bottom:1.25rem}
+.page-title{font-size:1.5rem;font-weight:600;margin-bottom:0.25rem}
+.page-sub{font-size:12px;color:var(--text3);max-width:860px;line-height:1.6}
+.page-sub code{font-family:var(--mono);font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--text2)}
+
+.layout{display:grid;grid-template-columns:340px 1fr;gap:1rem}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.panel-head{padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg3);display:flex;align-items:center;justify-content:space-between;gap:0.5rem}
+.panel-title{font-size:13px;font-weight:600}
+.panel-body{padding:1rem}
+
+.btn{padding:0.5rem 0.9rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);color:var(--text2);cursor:pointer;font-size:12px;font-family:var(--serif);transition:all 0.15s;display:inline-flex;align-items:center;gap:0.4rem}
+.btn:hover{border-color:var(--accent);color:var(--text)}
+.btn:disabled{opacity:0.45;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:#5b95ff;color:#fff}
+.btn-green{background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.3)}
+.btn-sm{padding:3px 9px;font-size:11px}
+.btn-ghost{background:transparent}
+
+.form-label{display:block;font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+.form-row{margin-bottom:0.85rem}
+
+.status{font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:0.35rem}
+.status.ok{color:var(--green)}
+.status.err{color:var(--red)}
+.hint{padding:0.5rem 0.7rem;font-size:11px;color:var(--text3);background:var(--bg3);border-radius:var(--r);border-left:2px solid var(--accent);line-height:1.6;margin-bottom:0.85rem}
+
+.col-list{display:flex;flex-direction:column;gap:0.25rem;max-height:380px;overflow-y:auto;padding-right:0.25rem}
+.col-row{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.5rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;font-size:11px}
+.col-row.selected{border-color:var(--accent);background:rgba(61,126,255,0.08)}
+.col-row input[type="checkbox"]{width:13px;height:13px;cursor:pointer;accent-color:var(--accent);flex-shrink:0;margin:0}
+.col-name{font-family:var(--mono);color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-type{font-family:var(--mono);font-size:9px;color:var(--text3);padding:1px 5px;background:var(--bg4);border-radius:3px}
+.col-strategy{background:var(--bg4);border:0.5px solid var(--border2);border-radius:4px;color:var(--text2);font-size:10px;font-family:var(--mono);padding:2px 5px;outline:none;cursor:pointer}
+.col-strategy:disabled{opacity:0.35;cursor:not-allowed}
+
+.progress-bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin:0.5rem 0}
+.progress-fill{height:100%;background:var(--accent);transition:width 0.2s;border-radius:2px}
+
+.cluster-toolbar{display:flex;gap:0.5rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg3);align-items:center;flex-wrap:wrap}
+.cluster-stats{display:flex;gap:1rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);font-size:11px;font-family:var(--mono);color:var(--text3)}
+.cluster-stats .stat-val{color:var(--text);font-weight:600}
+.cluster-stats .stat-val.green{color:var(--green)}
+.cluster-stats .stat-val.amber{color:var(--amber)}
+.cluster-stats .stat-val.red{color:var(--red)}
+
+.cluster-list{padding:0.75rem;display:flex;flex-direction:column;gap:0.6rem;max-height:calc(100vh - 280px);overflow-y:auto}
+.cluster-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden}
+.cluster-head{padding:0.55rem 0.75rem;border-bottom:0.5px solid var(--border);display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;background:var(--bg2)}
+.cluster-badge{font-size:9px;padding:1px 7px;border-radius:100px;font-family:var(--mono);font-weight:500}
+.cluster-badge.confidence-HIGH{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.25)}
+.cluster-badge.confidence-MED{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.25)}
+.cluster-badge.confidence-LOW{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)}
+.cluster-badge.ai-agreed{background:rgba(61,126,255,0.1);color:var(--accent);border:0.5px solid rgba(61,126,255,0.25)}
+.cluster-badge.ai-rejected{background:rgba(167,139,250,0.1);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)}
+.cluster-reason{padding:0.5rem 0.75rem;font-size:11px;color:var(--text2);background:rgba(61,126,255,0.04);border-bottom:0.5px solid var(--border);line-height:1.5;font-style:italic}
+.cluster-body{padding:0.35rem 0.75rem 0.6rem}
+.cluster-row{display:grid;grid-template-columns:18px 28px 1fr;gap:0.4rem;padding:0.25rem 0;font-size:11px;align-items:center;border-bottom:0.5px solid rgba(255,255,255,0.03)}
+.cluster-row:last-child{border-bottom:none}
+.cluster-row input{width:13px;height:13px;accent-color:var(--accent);cursor:pointer;margin:0}
+.cluster-row-idx{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.cluster-row-data{display:flex;gap:0.6rem;flex-wrap:wrap}
+.cluster-row-data .f{display:inline-flex;gap:3px;align-items:baseline;font-family:var(--mono);font-size:10.5px}
+.cluster-row-data .f .k{color:var(--text3)}
+.cluster-row-data .f .v{color:var(--text)}
+.cluster-row-data .f.hi .v{color:var(--green);font-weight:500}
+.cluster-ignore{font-size:10px;color:var(--text3);margin-left:auto;cursor:pointer;padding:2px 7px;border-radius:4px;border:0.5px solid var(--border2);background:transparent}
+.cluster-ignore:hover{color:var(--red);border-color:rgba(240,70,70,0.3)}
+.cluster-ignore.active{background:var(--red-bg);color:var(--red);border-color:rgba(240,70,70,0.4)}
+
+.empty{padding:3rem 1.5rem;text-align:center;color:var(--text3);font-size:13px}
+.empty .emoji{font-size:36px;opacity:0.35;margin-bottom:0.6rem}
+
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.7rem 1rem;font-size:12px;color:var(--text2);z-index:500;opacity:0;transform:translateY(10px);transition:all 0.2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+
+.log{background:var(--bg);border:0.5px solid var(--border);border-radius:6px;padding:0.55rem 0.75rem;font-family:var(--mono);font-size:10.5px;color:var(--text2);max-height:140px;overflow-y:auto;margin-top:0.6rem;line-height:1.7}
+.log .ok{color:var(--green)}.log .err{color:var(--red)}.log .hi{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:1.25rem">
+    <a href="/dashboard.html" class="back-link">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Back
+    </a>
+    <a href="/" class="logo">Cyge<span>nix</span></a>
+  </div>
+  <div style="display:flex;align-items:center;gap:0.75rem">
+    <div class="user-pill" onclick="signOut()">
+      <div class="avatar" id="user-avatar">?</div>
+      <span id="user-name" style="font-size:12px;color:var(--text2)">Loading…</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="page-head">
+    <div class="page-title">🧹 Data Cleansing · Dedup detection</div>
+    <div class="page-sub">
+      Find near-duplicate rows in a source table before migrating. Pick the columns to match on and a strategy per column
+      (<code>exact</code>, <code>fuzzy</code>, <code>phonetic</code>, or <code>numeric</code>), run detection on a sample,
+      then review the candidate clusters. Optionally ask Claude to review ambiguous clusters for false positives.
+      <strong>No rows are merged or changed</strong> — this module only detects and exports cluster groups.
+    </div>
+  </div>
+
+  <div class="layout">
+
+    <!-- LEFT: settings panel -->
+    <div style="display:flex;flex-direction:column;gap:1rem">
+
+      <!-- Source & table -->
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">1 · Source table</div></div>
+        <div class="panel-body">
+          <div class="form-row">
+            <label class="form-label">Connection</label>
+            <select id="sel-conn" class="form-input" onchange="onConnChange()">
+              <option value="">— pick a source —</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">Table</label>
+            <input id="inp-table" class="form-input" placeholder="🔍 schema.tablename" autocomplete="off" oninput="filterTables()" onfocus="openTableDrop()">
+            <div id="table-drop" style="display:none;max-height:220px;overflow-y:auto;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-top:0.35rem"></div>
+            <div id="conn-status" class="status">Not connected</div>
+          </div>
+          <button class="btn btn-sm" onclick="loadColumns()" id="btn-load-cols" disabled>↓ Load columns</button>
+        </div>
+      </div>
+
+      <!-- Columns & match strategy -->
+      <div class="panel" id="columns-panel" style="display:none">
+        <div class="panel-head">
+          <div class="panel-title">2 · Match columns</div>
+          <span id="cols-selected-count" style="font-size:10px;color:var(--text3);font-family:var(--mono)">0 selected</span>
+        </div>
+        <div class="panel-body">
+          <div class="hint">Tick columns to compare on and pick a strategy:<br>
+            <strong>exact</strong>: same value · <strong>fuzzy</strong>: Levenshtein ≥70% (best for longer text)<br>
+            <strong>phonetic</strong>: Soundex — catches Smith/Smyth, Jon/John · <strong>numeric</strong>: digits only, with country-code suffix match for phones</div>
+          <div class="col-list" id="col-list"></div>
+        </div>
+      </div>
+
+      <!-- Run settings -->
+      <div class="panel" id="run-panel" style="display:none">
+        <div class="panel-head"><div class="panel-title">3 · Run</div></div>
+        <div class="panel-body">
+          <div class="form-row">
+            <label class="form-label">Sample size (max rows to scan)</label>
+            <input id="inp-sample" class="form-input" type="number" value="5000" min="100" max="20000" step="100">
+          </div>
+          <div class="form-row">
+            <label class="form-label">Cluster threshold (min columns matching)</label>
+            <input id="inp-threshold" class="form-input" type="number" value="2" min="1" max="10">
+          </div>
+          <div class="form-row">
+            <label class="form-label" style="display:flex;align-items:center;gap:6px;cursor:pointer">
+              <input id="inp-use-ai" type="checkbox" style="width:13px;height:13px;accent-color:var(--accent)" checked> Ask Claude to review ambiguous clusters
+            </label>
+            <div style="font-size:10px;color:var(--text3);margin-top:0.35rem;line-height:1.5">AI reviews clusters that scored MED confidence — flags false positives and explains why rows are / aren't duplicates. Requires API key.</div>
+          </div>
+          <div class="form-row" id="api-key-row" style="display:none">
+            <label class="form-label">Anthropic API key</label>
+            <input id="inp-api-key" class="form-input" type="password" placeholder="sk-ant-…">
+          </div>
+          <button class="btn btn-primary" onclick="runDetection()" id="btn-run" disabled style="width:100%;justify-content:center">▶ Run detection</button>
+          <div class="progress-bar" id="prog-bar" style="display:none"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+          <div id="run-log" class="log" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: results -->
+    <div>
+      <div class="panel" id="results-panel">
+        <div class="panel-head">
+          <div class="panel-title">Clusters</div>
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn btn-sm" onclick="exportCSV()" id="btn-export-csv" disabled>⬇ Export CSV</button>
+            <button class="btn btn-sm" onclick="exportJSON()" id="btn-export-json" disabled>⬇ Export JSON</button>
+          </div>
+        </div>
+        <div class="cluster-stats" id="cluster-stats" style="display:none">
+          <div><span class="stat-val" id="stat-clusters">0</span> clusters</div>
+          <div><span class="stat-val" id="stat-rows">0</span> duplicate rows</div>
+          <div><span class="stat-val green" id="stat-high">0</span> HIGH</div>
+          <div><span class="stat-val amber" id="stat-med">0</span> MED</div>
+          <div><span class="stat-val red" id="stat-low">0</span> LOW</div>
+          <div style="margin-left:auto"><span class="stat-val" id="stat-sample">0</span> of <span id="stat-total">0</span> rows sampled</div>
+        </div>
+        <div id="results-body">
+          <div class="empty">
+            <div class="emoji">🧹</div>
+            <div>Pick a source, load columns, and run detection to see candidate duplicate clusters.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Auth ────────────────────────────────────────────────────────────────────
+(function initUser(){
+  if (!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) {
+    window.location.href='/login.html'; return;
+  }
+  try {
+    let email='', name='';
+    const entraRaw = sessionStorage.getItem('cygenix_entra_account') || localStorage.getItem('cygenix_entra_account');
+    if (entraRaw){ const e = JSON.parse(entraRaw); email = e.email||e.userId||''; name = e.name||''; }
+    if (!email){
+      const raw = JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user') || '{}');
+      email = raw.email || raw.user?.email || '';
+      name  = raw.user_metadata?.full_name || raw.user?.user_metadata?.full_name || '';
+    }
+    if (!email){
+      const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
+      if (token){ try { const p = JSON.parse(atob(token.split('.')[1])); email = p.email||p.preferred_username||p.sub||''; name = p.name||''; } catch {} }
+    }
+    if (email){
+      if (!name || name==='unknown') name = email.split('@')[0];
+      const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+      document.getElementById('user-avatar').textContent = initials;
+      document.getElementById('user-name').textContent = name;
+    }
+  } catch(e){ console.warn('user init:', e.message); }
+})();
+
+async function signOut(){
+  sessionStorage.setItem('cygenix_just_signed_out', '1');
+  ['cygenix_token','cygenix_user','cygenix_expires','cygenix_entra_account','cygenix_active_user']
+    .forEach(k => { sessionStorage.removeItem(k); localStorage.removeItem(k); });
+  try {
+    if (typeof msal === 'undefined') throw new Error('MSAL not loaded');
+    const m = new msal.PublicClientApplication({
+      auth:{ clientId:'f3478996-b2b5-4b21-9a23-a6b97a0e5b13', authority:'https://cygenix.ciamlogin.com/',
+             knownAuthorities:['cygenix.ciamlogin.com'], redirectUri: window.location.origin + '/login.html' },
+      cache:{ cacheLocation:'localStorage' },
+    });
+    await m.initialize();
+    const account = m.getAllAccounts()[0];
+    await m.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin + '/login.html' });
+  } catch(e){
+    window.location.href = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
+  }
+}
+
+// ── DB call (same pattern as object_mapping) ─────────────────────────────────
+function isFn(c){ return c.startsWith('https://') || c.startsWith('http://'); }
+async function dbCall(conn, body){
+  const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn(conn) ? body : {...body, connectionString: conn};
+  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(120000)});
+  const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+  if(!res.ok) throw new Error(data.error||res.statusText);
+  return data;
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let currentConn = '';
+let allTables = [];         // [{schema, name, fullName}]
+let columns = [];           // [{name, type}]
+let colConfig = {};         // colName -> {selected:bool, strategy:'exact'|'fuzzy'|'phonetic'|'numeric'}
+let lastClusters = [];      // [{id, rows:[rowObj], confidence, score, aiVerdict?}]
+let lastSampleSize = 0;
+let lastTotalRows = 0;
+
+// ── Connection setup ─────────────────────────────────────────────────────────
+(function initConns(){
+  // Populate the connection dropdown from whatever CygenixConnections gives us.
+  // Falls back to just the active src/tgt if no list API is available.
+  const sel = document.getElementById('sel-conn');
+  const opts = [];
+  try {
+    const all = (typeof CygenixConnections?.getAll === 'function') ? CygenixConnections.getAll() : [];
+    all.forEach(c => {
+      const label = c.name || c.srcConnString || c.tgtConnString || c.tgtFnUrl;
+      if (label) opts.push({value:label, label:(c.name||'Connection') + ' · ' + String(label).slice(0,40)+'…', conn:c});
+    });
+  } catch {}
+  // Always add the currently active src + tgt as quick picks
+  try {
+    const c = CygenixConnections?.get?.() || {};
+    if (c.srcConnString && !opts.find(o=>o.value===c.srcConnString)) opts.push({value:c.srcConnString,label:'Active source'});
+    const tgt = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : c.tgtConnString;
+    if (tgt && !opts.find(o=>o.value===tgt)) opts.push({value:tgt,label:'Active target'});
+  } catch {}
+  opts.forEach(o => { const opt=document.createElement('option'); opt.value=o.value; opt.textContent=o.label; sel.appendChild(opt); });
+})();
+
+async function onConnChange(){
+  const sel = document.getElementById('sel-conn');
+  currentConn = sel.value;
+  const status = document.getElementById('conn-status');
+  if (!currentConn){ status.textContent='Not connected'; status.className='status'; return; }
+  status.textContent='Connecting…'; status.className='status';
+  try {
+    const r = await dbCall(currentConn, { action:'list-tables' });
+    allTables = (r.tables||[]).map(t => typeof t === 'string'
+      ? { schema:(t.split('.')[0]||'dbo'), name:(t.split('.')[1]||t), fullName:t }
+      : { schema:t.schema||'dbo', name:t.name||t.table, fullName:(t.schema||'dbo')+'.'+(t.name||t.table) }
+    );
+    status.textContent = '✓ Connected · '+allTables.length+' tables'; status.className='status ok';
+  } catch(e){
+    status.textContent = '✕ '+e.message; status.className='status err';
+    allTables = [];
+  }
+}
+
+// ── Table search drop ────────────────────────────────────────────────────────
+function openTableDrop(){ renderTableDrop(''); document.getElementById('table-drop').style.display='block'; }
+function filterTables(){ renderTableDrop(document.getElementById('inp-table').value); }
+function renderTableDrop(q){
+  const drop = document.getElementById('table-drop');
+  const ql = (q||'').toLowerCase();
+  const matches = allTables.filter(t => t.fullName.toLowerCase().includes(ql)).slice(0, 50);
+  drop.innerHTML = matches.map(t => `<div style="padding:0.4rem 0.75rem;cursor:pointer;font-family:var(--mono);font-size:11px;border-bottom:0.5px solid var(--border)" onmouseenter="this.style.background='var(--bg4)'" onmouseleave="this.style.background=''" onclick="pickTable('${t.fullName}')">${t.fullName}</div>`).join('');
+  document.getElementById('btn-load-cols').disabled = true;
+}
+function pickTable(fullName){
+  document.getElementById('inp-table').value = fullName;
+  document.getElementById('table-drop').style.display = 'none';
+  document.getElementById('btn-load-cols').disabled = false;
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#inp-table') && !e.target.closest('#table-drop')){
+    document.getElementById('table-drop').style.display='none';
+  }
+});
+
+// ── Load columns ─────────────────────────────────────────────────────────────
+async function loadColumns(){
+  const table = document.getElementById('inp-table').value.trim();
+  if (!table || !currentConn) return;
+  const btn = document.getElementById('btn-load-cols');
+  btn.disabled = true; btn.textContent = '⏳ Loading…';
+  try {
+    const r = await dbCall(currentConn, { action:'describe', table });
+    columns = (r.columns||[]).map(c => ({ name:c.name||c.COLUMN_NAME, type:c.type||c.DATA_TYPE||'' }));
+    if (!columns.length) throw new Error('No columns returned');
+    colConfig = {};
+    columns.forEach(c => colConfig[c.name] = { selected:false, strategy:defaultStrategy(c) });
+    renderColList();
+    document.getElementById('columns-panel').style.display = '';
+    document.getElementById('run-panel').style.display = '';
+    document.getElementById('inp-use-ai').addEventListener('change', e => {
+      document.getElementById('api-key-row').style.display = e.target.checked ? '' : 'none';
+    });
+    document.getElementById('api-key-row').style.display = document.getElementById('inp-use-ai').checked ? '' : 'none';
+    const savedKey = localStorage.getItem('cygenix_api_key') || '';
+    if (savedKey) document.getElementById('inp-api-key').value = savedKey;
+    syncSelectionCount();
+  } catch(e){
+    showToast('✕ '+e.message);
+  }
+  btn.disabled = false; btn.textContent = '↓ Load columns';
+}
+
+function defaultStrategy(c){
+  const t = (c.type||'').toLowerCase();
+  const n = (c.name||'').toLowerCase();
+  if (/phone|tel|mobile|fax/.test(n)) return 'numeric';
+  if (/email|mail/.test(n))           return 'fuzzy';
+  // Name fields — Soundex catches Smith/Smyth/Jon/John where Levenshtein struggles
+  if (/name|first|last|surname|fname|lname/.test(n)) return 'phonetic';
+  if (/int|numeric|decimal|bit|bigint|smallint|tinyint|money|float|real/.test(t)) return 'exact';
+  if (/char|text|varchar|nvarchar/.test(t)) return 'fuzzy';
+  return 'exact';
+}
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderColList(){
+  const el = document.getElementById('col-list');
+  el.innerHTML = columns.map(c => {
+    const cfg = colConfig[c.name];
+    return `<div class="col-row ${cfg.selected?'selected':''}" data-col="${esc(c.name)}">
+      <input type="checkbox" ${cfg.selected?'checked':''} onchange="toggleCol('${esc(c.name)}', this.checked)">
+      <span class="col-name">${esc(c.name)}</span>
+      <span class="col-type">${esc(c.type)}</span>
+      <select class="col-strategy" onchange="setStrategy('${esc(c.name)}', this.value)" ${cfg.selected?'':'disabled'}>
+        <option value="exact"    ${cfg.strategy==='exact'?'selected':''}>exact</option>
+        <option value="fuzzy"    ${cfg.strategy==='fuzzy'?'selected':''}>fuzzy</option>
+        <option value="phonetic" ${cfg.strategy==='phonetic'?'selected':''}>phonetic</option>
+        <option value="numeric"  ${cfg.strategy==='numeric'?'selected':''}>numeric</option>
+      </select>
+    </div>`;
+  }).join('');
+}
+function toggleCol(name, on){ colConfig[name].selected = on; renderColList(); syncSelectionCount(); }
+function setStrategy(name, strat){ colConfig[name].strategy = strat; }
+function syncSelectionCount(){
+  const n = Object.values(colConfig).filter(c => c.selected).length;
+  document.getElementById('cols-selected-count').textContent = n + ' selected';
+  document.getElementById('btn-run').disabled = n === 0;
+}
+
+// ── Detection ────────────────────────────────────────────────────────────────
+// Levenshtein-based normalised similarity (0..1)
+function levSim(a, b){
+  a = String(a||'').toLowerCase().trim(); b = String(b||'').toLowerCase().trim();
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  const m = a.length, n = b.length;
+  // Don't short-circuit for very short strings — length diffs matter less there
+  if (Math.max(m, n) >= 8 && Math.abs(m - n) / Math.max(m, n) > 0.4) return 0;
+  const dp = Array(n + 1).fill(0).map((_, i) => i);
+  for (let i = 1; i <= m; i++){
+    let prev = i;
+    dp[0] = i;
+    for (let j = 1; j <= n; j++){
+      const tmp = dp[j];
+      dp[j] = a[i-1] === b[j-1] ? prev : 1 + Math.min(prev, dp[j], dp[j-1]);
+      prev = tmp;
+    }
+  }
+  return Math.max(0, 1 - dp[n] / Math.max(m, n));
+}
+
+// Simple Soundex
+function soundex(s){
+  s = String(s||'').toUpperCase().replace(/[^A-Z]/g, '');
+  if (!s) return '';
+  const map = {B:'1',F:'1',P:'1',V:'1',C:'2',G:'2',J:'2',K:'2',Q:'2',S:'2',X:'2',Z:'2',D:'3',T:'3',L:'4',M:'5',N:'5',R:'6'};
+  let out = s[0];
+  let last = map[s[0]] || '';
+  for (let i = 1; i < s.length && out.length < 4; i++){
+    const code = map[s[i]] || '';
+    if (code && code !== last) out += code;
+    if (code !== last) last = code;
+  }
+  return (out + '0000').slice(0, 4);
+}
+
+function numericOnly(s){ return String(s||'').replace(/\D+/g, ''); }
+// For phone numbers with country-code variants, match if one is a suffix of the other
+function numericMatch(a, b){
+  const na = numericOnly(a), nb = numericOnly(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  // Match if one ends with the other (e.g. 442079460958 ends with 2079460958)
+  // but only when the shorter is at least 7 digits (meaningful phone length)
+  const [short, long] = na.length < nb.length ? [na, nb] : [nb, na];
+  if (short.length >= 7 && long.endsWith(short)) return true;
+  return false;
+}
+
+// Column match scoring — 0 to 1
+function colMatch(a, b, strategy){
+  if (a == null || b == null || a === '' || b === '') return 0;
+  if (strategy === 'exact'){
+    return String(a).trim().toLowerCase() === String(b).trim().toLowerCase() ? 1 : 0;
+  }
+  if (strategy === 'numeric'){
+    return numericMatch(a, b) ? 1 : 0;
+  }
+  if (strategy === 'phonetic'){
+    const pa = soundex(a), pb = soundex(b);
+    return pa && pa === pb ? 1 : 0;
+  }
+  // fuzzy — threshold lowered to 0.7 to catch short-name matches like John/Jon/Smith/Smyth
+  const sim = levSim(a, b);
+  return sim >= 0.7 ? sim : 0;
+}
+
+async function runDetection(){
+  const sample = parseInt(document.getElementById('inp-sample').value) || 5000;
+  const threshold = parseInt(document.getElementById('inp-threshold').value) || 2;
+  const table = document.getElementById('inp-table').value.trim();
+  const useAI = document.getElementById('inp-use-ai').checked;
+  const apiKey = document.getElementById('inp-api-key').value.trim();
+  if (useAI && !apiKey){ showToast('✕ API key required for AI review, or untick the option'); return; }
+  if (useAI) localStorage.setItem('cygenix_api_key', apiKey);
+  const selected = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k,v]) => ({ name:k, strategy:v.strategy }));
+  if (!selected.length){ showToast('Pick at least one column'); return; }
+
+  const logEl = document.getElementById('run-log');
+  const progBar = document.getElementById('prog-bar');
+  const progFill = document.getElementById('prog-fill');
+  logEl.style.display = ''; progBar.style.display = ''; logEl.innerHTML = '';
+  const log = (msg, cls) => { logEl.innerHTML += `<div class="${cls||''}">${esc(msg)}</div>`; logEl.scrollTop = logEl.scrollHeight; };
+  const setProg = p => progFill.style.width = Math.round(p*100)+'%';
+
+  document.getElementById('btn-run').disabled = true;
+  document.getElementById('btn-run').textContent = '⏳ Running…';
+
+  try {
+    // 1 · count total rows
+    log('Counting rows…');
+    const cntRes = await dbCall(currentConn, { action:'count', sql:'SELECT * FROM '+table });
+    const total = cntRes.count || 0;
+    lastTotalRows = total;
+    log('Total rows: '+total.toLocaleString());
+
+    // 2 · fetch sample (via fetch-page with offset=0)
+    const take = Math.min(sample, total || sample);
+    log('Fetching sample of '+take.toLocaleString()+' rows…');
+    const fetchRes = await dbCall(currentConn, { action:'fetch-page', sql:'SELECT '+selected.map(s=>'['+s.name+']').join(', ')+' FROM '+table, offset:0, pageSize:take });
+    const rows = fetchRes.rows || [];
+    lastSampleSize = rows.length;
+    log('Got '+rows.length.toLocaleString()+' rows', 'ok');
+
+    // 3 · pairwise compare — O(N^2/2)
+    log('Comparing rows on '+selected.length+' column(s)…');
+    const clusters = [];   // array of { rows:[rowIdx], score }
+    const assigned = new Array(rows.length).fill(-1);
+    let pairs = 0; const maxPairs = rows.length * (rows.length - 1) / 2;
+
+    // Fast path: compute per-column keys once for strategies that use equality (exact, phonetic).
+    // Fuzzy and numeric (which does suffix match for phone country codes) use the ad-hoc path.
+    const keys = selected.map(s => {
+      if (s.strategy === 'exact')    return rows.map(r => String(r[s.name]||'').trim().toLowerCase());
+      if (s.strategy === 'phonetic') return rows.map(r => soundex(r[s.name]));
+      return null;  // fuzzy + numeric computed ad-hoc
+    });
+
+    for (let i = 0; i < rows.length; i++){
+      for (let j = i + 1; j < rows.length; j++){
+        let matches = 0, scoreSum = 0;
+        for (let k = 0; k < selected.length; k++){
+          const s = selected[k];
+          let m = 0;
+          if (keys[k]){
+            const a = keys[k][i], b = keys[k][j];
+            if (a && a === b) m = 1;
+          } else {
+            m = colMatch(rows[i][s.name], rows[j][s.name], s.strategy);
+          }
+          if (m > 0){ matches++; scoreSum += m; }
+        }
+        if (matches >= threshold){
+          // Union-find-lite: if either is already in a cluster, merge there; else create
+          let clusterIdx = assigned[i] >= 0 ? assigned[i] : (assigned[j] >= 0 ? assigned[j] : -1);
+          if (clusterIdx < 0){
+            clusterIdx = clusters.length;
+            clusters.push({ rows:[i, j], scores:[scoreSum/selected.length], matchCols:[matches] });
+            assigned[i] = assigned[j] = clusterIdx;
+          } else {
+            const c = clusters[clusterIdx];
+            if (assigned[i] < 0){ c.rows.push(i); assigned[i] = clusterIdx; }
+            if (assigned[j] < 0){ c.rows.push(j); assigned[j] = clusterIdx; }
+            c.scores.push(scoreSum / selected.length);
+            c.matchCols.push(matches);
+          }
+        }
+        pairs++;
+      }
+      if (i % 200 === 0){ setProg(pairs / maxPairs); await new Promise(r => setTimeout(r, 0)); }
+    }
+    setProg(1);
+
+    // 4 · Assign confidence + normalise clusters
+    const built = clusters.map((c, idx) => {
+      const avgScore = c.scores.reduce((a,b) => a+b, 0) / c.scores.length;
+      const avgMatchCols = c.matchCols.reduce((a,b) => a+b, 0) / c.matchCols.length;
+      const confidence = avgMatchCols >= selected.length && avgScore >= 0.95 ? 'HIGH'
+                       : avgMatchCols >= Math.max(2, selected.length-1) && avgScore >= 0.8 ? 'MED'
+                       : 'LOW';
+      return {
+        id: 'c'+idx,
+        rows: c.rows.map(rIdx => rows[rIdx]),
+        score: avgScore,
+        matchCols: avgMatchCols,
+        confidence,
+        aiVerdict: null,
+        aiReason: null,
+        ignored: new Set()
+      };
+    }).filter(c => c.rows.length >= 2)
+      .sort((a,b) => (b.rows.length - a.rows.length) || (b.score - a.score));
+
+    log('Found '+built.length+' cluster(s) · '+built.reduce((a,c) => a+c.rows.length, 0)+' total duplicate row(s)', 'ok');
+
+    // 5 · Claude review of ambiguous (MED) clusters
+    if (useAI && apiKey && built.length){
+      const toReview = built.filter(c => c.confidence === 'MED').slice(0, 20);
+      if (toReview.length){
+        log('Asking Claude to review '+toReview.length+' ambiguous cluster(s)…', 'hi');
+        for (let i = 0; i < toReview.length; i++){
+          setProg(i / toReview.length);
+          try {
+            const verdict = await reviewWithClaude(toReview[i], selected, apiKey);
+            toReview[i].aiVerdict = verdict.verdict;
+            toReview[i].aiReason  = verdict.reason;
+            log('  cluster #'+(built.indexOf(toReview[i])+1)+': '+verdict.verdict+' — '+(verdict.reason||'').slice(0,80));
+          } catch(e){
+            log('  AI review failed: '+e.message, 'err');
+          }
+        }
+      }
+    }
+
+    lastClusters = built;
+    renderClusters();
+    log('Done.', 'ok');
+  } catch(e){
+    log('ERROR: '+e.message, 'err');
+    showToast('✕ '+e.message);
+  }
+  document.getElementById('btn-run').disabled = false;
+  document.getElementById('btn-run').textContent = '▶ Run detection';
+}
+
+async function reviewWithClaude(cluster, selected, apiKey){
+  const colNames = selected.map(s => s.name);
+  const preview = cluster.rows.slice(0, 6).map((r, i) => i+': '+colNames.map(c => c+'='+JSON.stringify(r[c]||'')).join(' '));
+  const prompt =
+`You are reviewing a candidate duplicate cluster found in a SQL table. Your job: decide whether these rows plausibly represent the SAME real-world entity (e.g. same customer, same product) or are genuinely different entities that happen to share some fields.
+
+Be conservative — only say DUPLICATE if the evidence is strong. Say NOT_DUPLICATE if rows could be different entities (e.g. siblings with same surname and address, employees at the same company). Say UNCERTAIN if it genuinely could go either way.
+
+Cluster rows (${cluster.rows.length} total${cluster.rows.length>6?', showing first 6':''}):
+${preview.join('\n')}
+
+Reply in exactly this format, no other text:
+VERDICT: <DUPLICATE|NOT_DUPLICATE|UNCERTAIN>
+REASON: <one short sentence explaining>`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({ model:'claude-haiku-4-5-20251001', max_tokens:200, messages:[{role:'user', content:prompt}] })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || 'API error');
+  const text = (data.content?.[0]?.text || '').trim();
+  const vM = text.match(/VERDICT:\s*(\w+)/i);
+  const rM = text.match(/REASON:\s*(.+)/i);
+  return { verdict: (vM?.[1] || 'UNCERTAIN').toUpperCase(), reason: (rM?.[1] || '').trim() };
+}
+
+// ── Cluster rendering ────────────────────────────────────────────────────────
+function renderClusters(){
+  const body = document.getElementById('results-body');
+  const stats = document.getElementById('cluster-stats');
+  if (!lastClusters.length){
+    body.innerHTML = '<div class="empty"><div class="emoji">✨</div><div>No duplicate clusters found with the current settings.</div><div style="font-size:11px;margin-top:0.4rem">Try lowering the cluster threshold, changing column strategies, or scanning a larger sample.</div></div>';
+    stats.style.display = 'none';
+    document.getElementById('btn-export-csv').disabled = true;
+    document.getElementById('btn-export-json').disabled = true;
+    return;
+  }
+
+  // Stats
+  stats.style.display = '';
+  document.getElementById('stat-clusters').textContent = lastClusters.length;
+  document.getElementById('stat-rows').textContent = lastClusters.reduce((a,c) => a+c.rows.length, 0);
+  document.getElementById('stat-high').textContent = lastClusters.filter(c => c.confidence==='HIGH').length;
+  document.getElementById('stat-med').textContent  = lastClusters.filter(c => c.confidence==='MED').length;
+  document.getElementById('stat-low').textContent  = lastClusters.filter(c => c.confidence==='LOW').length;
+  document.getElementById('stat-sample').textContent = lastSampleSize.toLocaleString();
+  document.getElementById('stat-total').textContent  = lastTotalRows.toLocaleString();
+
+  const selCols = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k]) => k);
+
+  body.innerHTML = '<div class="cluster-list">' + lastClusters.map((c, i) => {
+    const aiBadge = c.aiVerdict === 'DUPLICATE' ? '<span class="cluster-badge ai-agreed">AI: duplicate ✓</span>'
+                  : c.aiVerdict === 'NOT_DUPLICATE' ? '<span class="cluster-badge ai-rejected">AI: false positive</span>'
+                  : c.aiVerdict === 'UNCERTAIN' ? '<span class="cluster-badge" style="background:var(--bg4);color:var(--text3)">AI: uncertain</span>'
+                  : '';
+    const reason = c.aiReason ? `<div class="cluster-reason">🤖 ${esc(c.aiReason)}</div>` : '';
+    return `<div class="cluster-card" id="cluster-${c.id}">
+      <div class="cluster-head">
+        <span style="font-size:11px;font-weight:600">Cluster #${i+1}</span>
+        <span class="cluster-badge confidence-${c.confidence}">${c.confidence}</span>
+        ${aiBadge}
+        <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">${c.rows.length} rows · ${(c.score*100).toFixed(0)}% avg match</span>
+        <button class="cluster-ignore" onclick="toggleClusterIgnore('${c.id}')" id="ig-${c.id}">Mark as false positive</button>
+      </div>
+      ${reason}
+      <div class="cluster-body">
+        ${c.rows.map((r, ri) => `<div class="cluster-row">
+          <input type="checkbox" checked onchange="toggleRowIgnore('${c.id}',${ri},!this.checked)">
+          <span class="cluster-row-idx">#${ri+1}</span>
+          <div class="cluster-row-data">${selCols.map(col => `<span class="f"><span class="k">${esc(col)}:</span><span class="v">${esc(r[col]==null?'<null>':String(r[col]))}</span></span>`).join('')}</div>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+
+  document.getElementById('btn-export-csv').disabled = false;
+  document.getElementById('btn-export-json').disabled = false;
+}
+
+function toggleClusterIgnore(clusterId){
+  const c = lastClusters.find(x => x.id === clusterId);
+  if (!c) return;
+  c.rejected = !c.rejected;
+  const btn = document.getElementById('ig-'+clusterId);
+  const card = document.getElementById('cluster-'+clusterId);
+  if (c.rejected){
+    btn.textContent = 'Restore'; btn.classList.add('active');
+    if (card) card.style.opacity = '0.5';
+  } else {
+    btn.textContent = 'Mark as false positive'; btn.classList.remove('active');
+    if (card) card.style.opacity = '';
+  }
+}
+function toggleRowIgnore(clusterId, rowIdx, ignored){
+  const c = lastClusters.find(x => x.id === clusterId);
+  if (!c) return;
+  if (!c.ignored) c.ignored = new Set();
+  ignored ? c.ignored.add(rowIdx) : c.ignored.delete(rowIdx);
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+function download(filename, content, mime){
+  const blob = new Blob([content], { type: mime });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportJSON(){
+  const selCols = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k]) => k);
+  const data = {
+    generatedAt: new Date().toISOString(),
+    table: document.getElementById('inp-table').value.trim(),
+    sampleSize: lastSampleSize, totalRows: lastTotalRows,
+    matchColumns: selCols,
+    clusters: lastClusters.filter(c => !c.rejected).map((c, i) => ({
+      clusterId: i+1,
+      confidence: c.confidence,
+      aiVerdict: c.aiVerdict,
+      aiReason: c.aiReason,
+      avgScore: c.score,
+      avgMatchCols: c.matchCols,
+      rowCount: c.rows.length,
+      rows: c.rows.filter((_, ri) => !c.ignored?.has(ri))
+    }))
+  };
+  download('cygenix-duplicates.json', JSON.stringify(data, null, 2), 'application/json');
+  showToast('Exported JSON');
+}
+function exportCSV(){
+  const selCols = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k]) => k);
+  const quote = v => '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const rows = [ ['cluster_id','confidence','ai_verdict','row_index_in_cluster', ...selCols].map(quote).join(',') ];
+  lastClusters.filter(c => !c.rejected).forEach((c, ci) => {
+    c.rows.forEach((r, ri) => {
+      if (c.ignored?.has(ri)) return;
+      rows.push([ci+1, c.confidence, c.aiVerdict||'', ri+1, ...selCols.map(col => r[col]==null?'':r[col])].map(quote).join(','));
+    });
+  });
+  download('cygenix-duplicates.csv', rows.join('\n'), 'text/csv');
+  showToast('Exported CSV');
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+</script>
+
+</body>
+</html>
