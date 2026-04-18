@@ -213,6 +213,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
             <strong>exact</strong>: same value · acts as a <strong style="color:var(--red)">veto</strong> — if both values are non-null and differ, rows cannot cluster<br>
             <strong>fuzzy</strong>: Levenshtein ≥70% (best for longer text) · <strong>phonetic</strong>: Soundex — catches Smith/Smyth, Jon/John<br>
             <strong>numeric</strong>: digits only, with country-code suffix match for phones</div>
+          <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-sm" onclick="selectAllCols(true)">✓ Select all</button>
+            <button class="btn btn-sm" onclick="selectAllCols(false)">✕ Clear</button>
+            <input id="col-filter" class="form-input" style="flex:1;min-width:120px;padding:4px 8px;font-size:11px" placeholder="🔍 Filter columns…" oninput="filterCols()">
+          </div>
           <div class="col-list" id="col-list"></div>
         </div>
       </div>
@@ -486,7 +491,13 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&am
 
 function renderColList(){
   const el = document.getElementById('col-list');
-  el.innerHTML = columns.map(c => {
+  const filter = (document.getElementById('col-filter')?.value || '').toLowerCase().trim();
+  const visible = columns.filter(c => !filter || c.name.toLowerCase().includes(filter));
+  if (!visible.length){
+    el.innerHTML = '<div style="padding:0.6rem;font-size:11px;color:var(--text3);text-align:center">No columns match the filter.</div>';
+    return;
+  }
+  el.innerHTML = visible.map(c => {
     const cfg = colConfig[c.name];
     return `<div class="col-row ${cfg.selected?'selected':''}" data-col="${esc(c.name)}">
       <input type="checkbox" ${cfg.selected?'checked':''} onchange="toggleCol('${esc(c.name)}', this.checked)">
@@ -503,6 +514,17 @@ function renderColList(){
 }
 function toggleCol(name, on){ colConfig[name].selected = on; renderColList(); syncSelectionCount(); }
 function setStrategy(name, strat){ colConfig[name].strategy = strat; }
+function filterCols(){ renderColList(); }
+// Select-all / clear applies to the currently visible (filtered) set, so
+// "filter 'name'" + "select all" = select all name-like columns, which is the useful workflow.
+function selectAllCols(on){
+  const filter = (document.getElementById('col-filter')?.value || '').toLowerCase().trim();
+  columns.forEach(c => {
+    if (!filter || c.name.toLowerCase().includes(filter)) colConfig[c.name].selected = on;
+  });
+  renderColList();
+  syncSelectionCount();
+}
 function syncSelectionCount(){
   const n = Object.values(colConfig).filter(c => c.selected).length;
   document.getElementById('cols-selected-count').textContent = n + ' selected';
