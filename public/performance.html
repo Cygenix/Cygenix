@@ -20,7 +20,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="/connections.js"></script>
-<script src="/nav.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -37,8 +36,9 @@
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-bottom:80px}
-.page{max-width:900px;margin:0 auto;padding:1.75rem 1.5rem}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-bottom:80px;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{max-width:1400px;margin:0 auto;padding:1.75rem 2rem}
 .panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.25rem;overflow:hidden}
 .panel-head{padding:0.875rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.75rem}
 .panel-icon{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px}
@@ -82,6 +82,10 @@ select.form-input option{background:var(--bg3)}
 </style>
 </head>
 <body>
+
+<div id="cyg-sidebar-mount" data-active="performance"></div>
+<script src="/cygenix-sidebar.js"></script>
+
 <div class="page">
   <div style="margin-bottom:1.5rem">
     <div style="font-size:1.3rem;font-weight:600;margin-bottom:0.3rem">Performance Settings</div>
@@ -553,5 +557,7 @@ const cfg=loadSettings();
 applyToUI(cfg);
 renderSummary(cfg);
 </script>
+<script src="/cookie-consent.js"></script>
+<script src="/cygenix-cookie-cleanup.js"></script>
 </body>
 </html>
