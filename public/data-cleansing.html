@@ -719,6 +719,16 @@ function renderClusters(){
   document.getElementById('stat-total').textContent  = lastTotalRows.toLocaleString();
 
   const selCols = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k]) => k);
+  // Defensive fallback: if colConfig got lost, use whatever keys the first row has,
+  // otherwise the cards would render as empty bars with no visible content.
+  const firstRow = lastClusters[0]?.rows?.[0];
+  const displayCols = selCols.length
+    ? selCols
+    : (firstRow ? Object.keys(firstRow) : []);
+  // Also filter selCols to only keys that actually exist in the row data
+  // (handles case where SQL returned differently-cased keys than expected)
+  const filtered = displayCols.filter(c => firstRow && c in firstRow);
+  const finalCols = filtered.length ? filtered : displayCols;
 
   body.innerHTML = '<div class="cluster-list">' + lastClusters.map((c, i) => {
     const aiBadge = c.aiVerdict === 'DUPLICATE' ? '<span class="cluster-badge ai-agreed">AI: duplicate ✓</span>'
@@ -739,7 +749,7 @@ function renderClusters(){
         ${c.rows.map((r, ri) => `<div class="cluster-row">
           <input type="checkbox" checked onchange="toggleRowIgnore('${c.id}',${ri},!this.checked)">
           <span class="cluster-row-idx">#${ri+1}</span>
-          <div class="cluster-row-data">${selCols.map(col => `<span class="f"><span class="k">${esc(col)}:</span><span class="v">${esc(r[col]==null?'<null>':String(r[col]))}</span></span>`).join('')}</div>
+          <div class="cluster-row-data">${finalCols.map(col => `<span class="f"><span class="k">${esc(col)}:</span><span class="v">${esc(r[col]==null?'<null>':String(r[col]))}</span></span>`).join('')}</div>
         </div>`).join('')}
       </div>
     </div>`;
