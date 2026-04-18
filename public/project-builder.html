@@ -277,7 +277,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <div class="conn-panel">
           <div class="conn-label">Source connection string</div>
           <div style="display:flex;gap:0.5rem">
-            <input class="conn-input" id="proj-src-conn" placeholder="Server=source;Database=db;..." oninput="markDirty()">
+            <input class="conn-input" id="proj-src-conn" placeholder="Server=source;Database=db;..." oninput="markDirty();renderConnFallbackHints()" onblur="captureConnOnBlur('src')">
             <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">🔌 Connect source</button>
           </div>
           <div class="conn-status" id="src-conn-status"></div>
@@ -285,7 +285,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <div class="conn-panel">
           <div class="conn-label">Target — Azure Function URL or connection string</div>
           <div style="display:flex;gap:0.5rem">
-            <input class="conn-input" id="proj-tgt-conn" placeholder="https://fn.azurewebsites.net/api/db?code=..." oninput="markDirty()">
+            <input class="conn-input" id="proj-tgt-conn" placeholder="https://fn.azurewebsites.net/api/db?code=..." oninput="markDirty();renderConnFallbackHints()" onblur="captureConnOnBlur('tgt')">
             <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">🔌 Connect target</button>
           </div>
           <div class="conn-status" id="tgt-conn-status"></div>
@@ -546,18 +546,54 @@ function globalTgtConn(){
   return fn ? (fn + (key ? '?code='+encodeURIComponent(key) : '')) : cs;
 }
 
-// Hydrate UI from the currently-active `project` object
+// Hydrate UI from the currently-active `project` object.
+// IMPORTANT: we set input values to ONLY what the project itself has stored.
+// We never silently pre-fill with the global fallback, because saving would then
+// write those fallback values back into the project — silently "stealing" them.
+// The global fallback is still used at run-time via effectiveSrcConn() / effectiveTgtConn().
 function hydrateProjectIntoUI(){
   ensureAtLeastOneGroup();
   const sel = document.getElementById('proj-selector');
   if (sel) sel.value = project.id;
-  // Connections — project value wins; fall back to global if project has none
-  const srcInUse = project.srcConn || globalSrcConn();
-  const tgtInUse = project.tgtConn || globalTgtConn();
-  document.getElementById('proj-src-conn').value = srcInUse;
-  document.getElementById('proj-tgt-conn').value = tgtInUse;
+  document.getElementById('proj-src-conn').value = project.srcConn || '';
+  document.getElementById('proj-tgt-conn').value = project.tgtConn || '';
+  renderConnFallbackHints();
   renderSteps();
   renderJobs();
+}
+
+// Effective connection strings — project value wins, fall back to global at run time.
+// Use these anywhere we need to actually CONNECT, not what to display in the fields.
+function effectiveSrcConn(){
+  return (project.srcConn && project.srcConn.trim()) || globalSrcConn();
+}
+function effectiveTgtConn(){
+  return (project.tgtConn && project.tgtConn.trim()) || globalTgtConn();
+}
+
+// Show or clear a small "using global" hint under each empty connection field.
+function renderConnFallbackHints(){
+  const setHint = (fieldId, hintId, globalValue) => {
+    const field = document.getElementById(fieldId);
+    let hint = document.getElementById(hintId);
+    const isEmpty = !field || !field.value.trim();
+    if (isEmpty && globalValue){
+      if (!hint){
+        hint = document.createElement('div');
+        hint.id = hintId;
+        hint.style.cssText = 'font-size:10px;color:var(--text3);font-style:italic;margin-top:3px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        field.parentElement.parentElement.appendChild(hint);
+      }
+      // Show a preview — truncate long connection strings to keep the hint compact
+      const preview = globalValue.length > 60 ? globalValue.slice(0, 57) + '…' : globalValue;
+      hint.textContent = 'inherits global: ' + preview;
+      hint.style.display = 'block';
+    } else if (hint){
+      hint.style.display = 'none';
+    }
+  };
+  setHint('proj-src-conn', 'src-conn-hint', globalSrcConn());
+  setHint('proj-tgt-conn', 'tgt-conn-hint', globalTgtConn());
 }
 
 function refreshProjectSelector(){
@@ -624,8 +660,47 @@ function saveProject() {
 }
 
 // ── Multi-project actions ────────────────────────────────────────────────────
+
+// Called on blur of either connection field. Writes the field value back into
+// the active project and persists to the projects list immediately — so the
+// user never has to click Save just for a connection change.
+function captureConnOnBlur(which){
+  const field = document.getElementById(which === 'src' ? 'proj-src-conn' : 'proj-tgt-conn');
+  if (!field) return;
+  const val = field.value.trim();
+  const key = (which === 'src') ? 'srcConn' : 'tgtConn';
+  if ((project[key] || '') === val) return;   // no change — nothing to do
+  project[key] = val;
+  // Persist immediately so a page reload / switch won't lose it
+  const idx = projects.findIndex(p => p.id === project.id);
+  if (idx >= 0) projects[idx] = project;
+  persistProjectsList();
+  try { localStorage.setItem(PROJ_KEY, JSON.stringify(project)); } catch {}
+  localStorage.setItem(ACTIVE_ID_KEY, project.id);
+  renderConnFallbackHints();
+  // Clear dirty flag if the connection edit was the only unsaved change.
+  // We don't know for sure — so leave dirty as-is. Save button just becomes a no-op in that case.
+}
+
+// Before swapping projects, make sure whatever the user has typed into the
+// connection fields is captured onto the current project. Otherwise typed-but-
+// unblurred edits could land on the wrong project.
+function captureBothConnsToProject(){
+  const srcVal = (document.getElementById('proj-src-conn')?.value || '').trim();
+  const tgtVal = (document.getElementById('proj-tgt-conn')?.value || '').trim();
+  if ((project.srcConn || '') !== srcVal) project.srcConn = srcVal;
+  if ((project.tgtConn || '') !== tgtVal) project.tgtConn = tgtVal;
+  const idx = projects.findIndex(p => p.id === project.id);
+  if (idx >= 0) projects[idx] = project;
+  persistProjectsList();
+  try { localStorage.setItem(PROJ_KEY, JSON.stringify(project)); } catch {}
+}
+
 function handleProjectSwitch(newId){
   if (!newId || newId === project.id) return;
+  // Always capture connection-field values into the current project before switching.
+  // (Other project state — name, groups, steps — still requires explicit Save.)
+  captureBothConnsToProject();
   if (isDirty){
     const ok = confirm('You have unsaved changes in "' + (project.name||'this project') + '". Discard and switch?');
     if (!ok){
@@ -1283,8 +1358,8 @@ async function runProject() {
   // Only run steps the user has selected (enabled !== false)
   const selectedFlat = flat.filter(x => isStepEnabled(x.step));
   if (!selectedFlat.length) { alert('Nothing selected to run. Tick at least one job.'); return; }
-  const srcConn = project.srcConn;
-  const tgtConn = project.tgtConn;
+  const srcConn = effectiveSrcConn();
+  const tgtConn = effectiveTgtConn();
   if (!tgtConn) { alert('Please enter a target connection.'); return; }
 
   // Count groups that have at least one selected step
