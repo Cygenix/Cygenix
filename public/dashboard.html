@@ -365,11 +365,49 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-integrations .in-result.err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)}
 #view-integrations .in-enable-row{display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border);margin-top:0.5rem}
 #view-integrations .in-enable-row label{font-size:12px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-family:var(--serif);text-transform:none;letter-spacing:0}
+
+/* ─── System Parameters view (scoped) ──────────────────────────────────── */
+#view-system-parameters .sp-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+#view-system-parameters .sp-title{font-size:1.4rem;font-weight:600}
+#view-system-parameters .sp-sub{font-size:12px;color:var(--text3);margin-top:0.25rem;max-width:720px;line-height:1.55}
+#view-system-parameters .sp-sub code{background:var(--bg4);color:var(--text);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:11px}
+#view-system-parameters .sp-toolbar{display:flex;gap:0.5rem;flex-wrap:wrap}
+
+#view-system-parameters .sp-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:10px;overflow:hidden}
+#view-system-parameters .sp-hint{padding:0.6rem 0.9rem;font-size:12px;color:var(--text3);background:var(--bg3);border-bottom:0.5px solid var(--border);line-height:1.6}
+#view-system-parameters .sp-hint code{background:var(--bg4);color:var(--text);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:11px}
+
+#view-system-parameters table.sp-params{width:100%;border-collapse:collapse}
+#view-system-parameters table.sp-params th{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);font-weight:500;text-align:left;padding:0.6rem 0.8rem;background:var(--bg3);border-bottom:0.5px solid var(--border);user-select:none}
+#view-system-parameters table.sp-params td{padding:0.4rem 0.5rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+#view-system-parameters table.sp-params tr:last-child td{border-bottom:none}
+
+#view-system-parameters .sp-cell-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
+#view-system-parameters .sp-cell-input:focus{border-color:var(--accent)}
+#view-system-parameters .sp-cell-input.mono{font-family:var(--mono);font-size:11px}
+#view-system-parameters .sp-cell-code{font-family:var(--mono);font-size:11px;color:var(--accent);padding:0.4rem 0.6rem;background:var(--bg3);border-radius:6px;border:0.5px dashed var(--border2);display:block;user-select:all}
+
+#view-system-parameters .sp-icon-btn{background:none;border:none;cursor:pointer;padding:4px 6px;font-size:13px;border-radius:4px;color:var(--text3);transition:all 0.15s}
+#view-system-parameters .sp-icon-btn:hover{background:var(--bg4);color:var(--text)}
+#view-system-parameters .sp-icon-btn.danger:hover{color:var(--red)}
+
+#view-system-parameters .sp-empty{padding:2.5rem;text-align:center;color:var(--text3);font-size:13px}
+#view-system-parameters .sp-empty .sp-emoji{font-size:32px;opacity:0.4;margin-bottom:0.5rem}
+#view-system-parameters .sp-empty a{color:var(--accent);text-decoration:none}
+
+#view-system-parameters .sp-filter-bar{display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.9rem;border-bottom:0.5px solid var(--border);background:var(--bg3)}
+#view-system-parameters .sp-filter-input{flex:1;min-width:200px;max-width:420px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.45rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
+#view-system-parameters .sp-filter-input:focus{border-color:var(--accent)}
+#view-system-parameters .sp-filter-count{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto}
+#view-system-parameters .sp-sort-ind{opacity:0.4;font-size:10px;margin-left:3px;transition:opacity 0.15s}
+#view-system-parameters th:hover .sp-sort-ind{opacity:0.75}
+#view-system-parameters .sp-sort-ind.active{opacity:1;color:var(--accent)}
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 <script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-integrations.js"></script>
+<script src="/cygenix-params.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 </head>
 <body>
@@ -435,7 +473,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 12 L5 7 L8 9 L11 4 L14 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14" cy="6" r="1.5" fill="currentColor"/></svg>
           Performance
         </div>
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/system-parameters.html'" style="color:var(--accent)">
+        <div class="nav-item" onclick="event.stopPropagation();showView('system-parameters')" style="color:var(--accent)">
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M3.5 12.5l1.5-1.5M11 5l1.5-1.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
           System Parameters
         </div>
@@ -1122,6 +1160,60 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
     <!-- END INTEGRATIONS -->
 
+    <!-- SYSTEM PARAMETERS VIEW -->
+    <div id="view-system-parameters" class="view">
+      <div class="sp-head">
+        <div>
+          <div class="sp-title">⚙ System parameters</div>
+          <div class="sp-sub">Parameters are tokens like <code>@@StartDate</code> that get substituted with their value wherever they appear — in generated SQL, custom SQL jobs, WHERE clauses, Wasis rules, transforms, and literal values. The code is derived automatically from the name.</div>
+        </div>
+        <div class="sp-toolbar">
+          <input type="file" id="sp-import-file" accept=".csv,.json" style="display:none" onchange="spImportFile(this)">
+          <button class="btn" onclick="document.getElementById('sp-import-file').click()" title="Import from CSV or JSON">⬆ Import</button>
+          <button class="btn" onclick="spExportCSV()" title="Download as CSV">⬇ Export CSV</button>
+          <button class="btn" onclick="spExportJSON()" title="Download as JSON">⬇ Export JSON</button>
+          <button class="btn btn-primary" onclick="spAddRow()">+ Add parameter</button>
+        </div>
+      </div>
+
+      <div class="sp-panel">
+        <div class="sp-hint">
+          Names become codes automatically. <code>Start Date</code> → <code>@@StartDate</code>.
+          Use the code exactly as shown (case-insensitive) wherever you want the value substituted.
+        </div>
+        <div class="sp-filter-bar" id="sp-filter-bar" style="display:none">
+          <input type="text" id="sp-filter-input" class="sp-filter-input" placeholder="🔍 Filter by name, description, value, or code…" oninput="spApplyFilter()">
+          <button class="btn btn-sm" id="sp-filter-clear" onclick="spClearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
+          <span id="sp-filter-count" class="sp-filter-count"></span>
+        </div>
+        <div id="sp-list-wrap">
+          <div class="sp-empty" id="sp-empty-state">
+            <div class="sp-emoji">🏷</div>
+            <div>No parameters yet.</div>
+            <div style="font-size:11px;margin-top:0.4rem">Click <strong>+ Add parameter</strong>, or import a CSV/JSON file.</div>
+          </div>
+          <table class="sp-params" id="sp-params-table" style="display:none">
+            <thead>
+              <tr>
+                <th style="width:22%;cursor:pointer;user-select:none" onclick="spSortBy('name')">Name <span class="sp-sort-ind" id="sp-sort-ind-name">⇅</span></th>
+                <th style="width:28%;cursor:pointer;user-select:none" onclick="spSortBy('description')">Description <span class="sp-sort-ind" id="sp-sort-ind-description">⇅</span></th>
+                <th style="width:28%;cursor:pointer;user-select:none" onclick="spSortBy('value')">Value <span class="sp-sort-ind" id="sp-sort-ind-value">⇅</span></th>
+                <th style="width:18%;cursor:pointer;user-select:none" onclick="spSortBy('code')">Code <span class="sp-sort-ind" id="sp-sort-ind-code">⇅</span></th>
+                <th style="width:4%"></th>
+              </tr>
+            </thead>
+            <tbody id="sp-params-tbody"></tbody>
+          </table>
+          <div class="sp-empty" id="sp-empty-filter-state" style="display:none">
+            <div class="sp-emoji">🔎</div>
+            <div>No parameters match the filter.</div>
+            <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="spClearFilter();return false">clear the filter</a>.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- END SYSTEM PARAMETERS -->
+
     <!-- CONNECTIONS VIEW -->
     <div id="view-connections" class="view">
       <div class="panel-header">
@@ -1544,6 +1636,7 @@ function showView(v) {
   if (v === 'backup')             initBackupView();
   if (v === 'privacy-security')  initPrivacySecurityView();
   if (v === 'integrations')      initIntegrationsView();
+  if (v === 'system-parameters') initSystemParametersView();
 }
 
 function selectTarget(el, name) {
@@ -4393,6 +4486,327 @@ function showInResult(kind, message){
   el.className = 'in-result ' + kind;
   el.textContent = message;
   el.style.display = 'block';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SYSTEM PARAMETERS VIEW
+// ═══════════════════════════════════════════════════════════════════════════
+let spParams = [];
+let spFilterQuery = '';
+let spSortCol = null;  // 'name' | 'description' | 'value' | 'code' | null
+let spSortDir = 1;     // 1 asc, -1 desc
+
+function initSystemParametersView(){
+  if (!window.CygenixParams){ console.warn('CygenixParams helper not loaded'); return; }
+  spLoad();
+}
+
+function spEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function spLoad(){
+  try { spParams = JSON.parse(localStorage.getItem('cygenix_sys_params') || '[]'); }
+  catch { spParams = []; }
+  // Normalise any older rows that may lack expected fields
+  spParams = spParams.map(p => ({
+    name:        p.name || '',
+    description: p.description || '',
+    value:       p.value != null ? String(p.value) : '',
+    code:        CygenixParams.codeFromName(p.name || '')
+  }));
+  spRender();
+}
+
+function spSave(){
+  // Re-derive codes before persisting (keeps stored data clean)
+  const toSave = spParams.map(p => ({
+    name:        p.name || '',
+    description: p.description || '',
+    value:       p.value != null ? String(p.value) : '',
+    code:        CygenixParams.codeFromName(p.name || '')
+  }));
+  localStorage.setItem('cygenix_sys_params', JSON.stringify(toSave));
+}
+
+function spGetDisplayedRows(){
+  const q = spFilterQuery.trim().toLowerCase();
+  let indexed = spParams.map((p, origIdx) => ({
+    row: {
+      name: p.name || '',
+      description: p.description || '',
+      value: p.value != null ? String(p.value) : '',
+      code: CygenixParams.codeFromName(p.name || '')
+    },
+    origIdx
+  }));
+  if (q){
+    indexed = indexed.filter(({row}) =>
+      row.name.toLowerCase().includes(q) ||
+      row.description.toLowerCase().includes(q) ||
+      row.value.toLowerCase().includes(q) ||
+      row.code.toLowerCase().includes(q)
+    );
+  }
+  if (spSortCol){
+    indexed.sort((a, b) => {
+      const av = (a.row[spSortCol] || '').toLowerCase();
+      const bv = (b.row[spSortCol] || '').toLowerCase();
+      if (av < bv) return -1 * spSortDir;
+      if (av > bv) return  1 * spSortDir;
+      return 0;
+    });
+  }
+  return indexed;
+}
+
+function spRender(){
+  const tbl         = document.getElementById('sp-params-table');
+  const empty       = document.getElementById('sp-empty-state');
+  const emptyFilter = document.getElementById('sp-empty-filter-state');
+  const tbody       = document.getElementById('sp-params-tbody');
+  const filterBar   = document.getElementById('sp-filter-bar');
+  if (!tbl || !empty || !tbody || !filterBar) return;
+
+  if (!spParams.length){
+    tbl.style.display = 'none';
+    empty.style.display = 'block';
+    emptyFilter.style.display = 'none';
+    filterBar.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  filterBar.style.display = 'flex';
+
+  const displayed = spGetDisplayedRows();
+
+  // Sort indicators
+  ['name','description','value','code'].forEach(c => {
+    const el = document.getElementById('sp-sort-ind-'+c);
+    if (!el) return;
+    if (c === spSortCol){
+      el.textContent = spSortDir === 1 ? '▲' : '▼';
+      el.classList.add('active');
+    } else {
+      el.textContent = '⇅';
+      el.classList.remove('active');
+    }
+  });
+
+  const count = document.getElementById('sp-filter-count');
+  const clr   = document.getElementById('sp-filter-clear');
+  if (count){
+    if (spFilterQuery.trim() || spSortCol){
+      count.textContent = displayed.length + ' of ' + spParams.length;
+    } else {
+      count.textContent = spParams.length + ' parameter' + (spParams.length === 1 ? '' : 's');
+    }
+  }
+  if (clr) clr.style.display = spFilterQuery.trim() ? 'inline-flex' : 'none';
+
+  if (!displayed.length){
+    tbl.style.display = 'none';
+    emptyFilter.style.display = 'block';
+    return;
+  }
+  emptyFilter.style.display = 'none';
+  tbl.style.display = '';
+
+  tbody.innerHTML = displayed.map(({row, origIdx}) => {
+    const code = row.code;
+    return `<tr>
+      <td><input class="sp-cell-input" value="${spEsc(row.name)}" oninput="spUpdateField(${origIdx},'name',this.value)" placeholder="StartDate"></td>
+      <td><input class="sp-cell-input" value="${spEsc(row.description)}" oninput="spUpdateField(${origIdx},'description',this.value)" placeholder="Migration cutoff date"></td>
+      <td><input class="sp-cell-input mono" value="${spEsc(row.value)}" oninput="spUpdateField(${origIdx},'value',this.value)" placeholder="'2024-01-01'"></td>
+      <td><span class="sp-cell-code" id="sp-code-${origIdx}" title="Click to copy" onclick="spCopyCode('${spEsc(code)}')">${spEsc(code) || '—'}</span></td>
+      <td style="text-align:right"><button class="sp-icon-btn danger" onclick="spRemoveRow(${origIdx})" title="Delete">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function spApplyFilter(){
+  spFilterQuery = document.getElementById('sp-filter-input').value || '';
+  spRender();
+}
+
+function spClearFilter(){
+  spFilterQuery = '';
+  const input = document.getElementById('sp-filter-input');
+  if (input) input.value = '';
+  spRender();
+}
+
+function spSortBy(col){
+  if (spSortCol !== col){
+    spSortCol = col; spSortDir = 1;    // new column → asc
+  } else if (spSortDir === 1){
+    spSortDir = -1;                     // asc → desc
+  } else {
+    spSortCol = null; spSortDir = 1;    // desc → clear
+  }
+  spRender();
+}
+
+function spUpdateField(i, field, value){
+  if (!spParams[i]) return;
+  spParams[i][field] = value;
+  if (field === 'name'){
+    // Live-update the code cell without a full re-render (keeps focus)
+    const code = CygenixParams.codeFromName(value);
+    const codeEl = document.getElementById('sp-code-'+i);
+    if (codeEl){ codeEl.textContent = code || '—'; codeEl.setAttribute('onclick', "spCopyCode('"+spEsc(code)+"')"); }
+    spParams[i].code = code;
+  }
+  spSave();
+}
+
+function spAddRow(){
+  spParams.push({ name:'', description:'', value:'', code:'' });
+  // Clear any active filter so the new blank row is visible
+  if (spFilterQuery.trim()){
+    spFilterQuery = '';
+    const input = document.getElementById('sp-filter-input');
+    if (input) input.value = '';
+  }
+  spSave();
+  spRender();
+  // Focus the new row's name input
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#sp-params-tbody tr:last-child input');
+    if (inputs[0]) inputs[0].focus();
+  }, 50);
+}
+
+function spRemoveRow(i){
+  const p = spParams[i];
+  if (!p) return;
+  if (p.name && !confirm('Remove parameter "' + p.name + '"?')) return;
+  spParams.splice(i, 1);
+  spSave();
+  spRender();
+}
+
+function spCopyCode(code){
+  if (!code) return;
+  navigator.clipboard?.writeText(code).then(
+    () => showToast('Copied: ' + code),
+    () => showToast('Copy failed')
+  );
+}
+
+// ── CSV/JSON export ──────────────────────────────────────────────────────
+function spDownload(filename, content, mime){
+  const blob = new Blob([content], { type: mime });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function spExportJSON(){
+  const data = spParams.map(p => ({
+    name: p.name||'', description: p.description||'', value: p.value||'',
+    code: CygenixParams.codeFromName(p.name||'')
+  }));
+  spDownload('cygenix-parameters.json', JSON.stringify(data, null, 2), 'application/json');
+  showToast('Exported JSON');
+}
+
+function spExportCSV(){
+  const quote = v => { const s = String(v||''); return '"' + s.replace(/"/g,'""') + '"'; };
+  const rows = [ ['name','description','value','code'].join(',') ];
+  spParams.forEach(p => rows.push([p.name||'', p.description||'', p.value||'', CygenixParams.codeFromName(p.name||'')].map(quote).join(',')));
+  spDownload('cygenix-parameters.csv', rows.join('\n'), 'text/csv');
+  showToast('Exported CSV');
+}
+
+// ── Import ───────────────────────────────────────────────────────────────
+function spImportFile(input){
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    let imported;
+    try {
+      if (f.name.toLowerCase().endsWith('.json')){
+        imported = JSON.parse(text);
+        if (!Array.isArray(imported)) throw new Error('JSON must be an array of objects');
+      } else {
+        imported = spParseCSV(text);
+      }
+    } catch(err){
+      alert('Import failed: ' + err.message);
+      input.value = '';
+      return;
+    }
+    const replace = spParams.length === 0 || confirm(
+      'Replace all ' + spParams.length + ' existing parameter(s)?\n\n' +
+      'OK = replace all with imported ' + imported.length + '\n' +
+      'Cancel = merge (imported overrides same-name, others kept)'
+    );
+    if (replace){
+      spParams = imported.map(spNormaliseImported);
+    } else {
+      const byName = new Map(spParams.map(p => [((p.name||'').toLowerCase()), p]));
+      imported.forEach(r => { const n = spNormaliseImported(r); if (n.name) byName.set(n.name.toLowerCase(), n); });
+      spParams = Array.from(byName.values());
+    }
+    spSave();
+    spRender();
+    showToast('Imported ' + imported.length + ' parameter(s)');
+    input.value = '';
+  };
+  reader.readAsText(f);
+}
+
+function spNormaliseImported(r){
+  const name = (r.name || r.Name || '').toString().trim();
+  return {
+    name,
+    description: (r.description || r.Description || '').toString(),
+    value:       (r.value != null ? r.value : (r.Value != null ? r.Value : '')).toString(),
+    code:        CygenixParams.codeFromName(name)
+  };
+}
+
+// Minimal CSV parser — handles quoted fields, commas inside quotes, "" escape.
+function spParseCSV(text){
+  const lines = [];
+  let cur = []; let field = ''; let inQ = false; let i = 0;
+  while (i < text.length){
+    const c = text[i];
+    if (inQ){
+      if (c === '"'){
+        if (text[i+1] === '"'){ field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"'){ inQ = true; i++; continue; }
+    if (c === ','){ cur.push(field); field = ''; i++; continue; }
+    if (c === '\r'){ i++; continue; }
+    if (c === '\n'){ cur.push(field); lines.push(cur); cur = []; field = ''; i++; continue; }
+    field += c; i++;
+  }
+  if (field.length || cur.length){ cur.push(field); lines.push(cur); }
+  if (!lines.length) return [];
+  const header = lines[0].map(h => h.trim().toLowerCase());
+  const nameIdx = header.indexOf('name');
+  const descIdx = header.indexOf('description');
+  const valIdx  = header.indexOf('value');
+  if (nameIdx === -1) throw new Error('CSV is missing a "name" header column');
+  const out = [];
+  for (let k = 1; k < lines.length; k++){
+    const row = lines[k];
+    if (!row.length || (row.length === 1 && !row[0])) continue;
+    out.push({
+      name:        row[nameIdx] || '',
+      description: descIdx !== -1 ? (row[descIdx] || '') : '',
+      value:       valIdx  !== -1 ? (row[valIdx]  || '') : ''
+    });
+  }
+  return out;
 }
 
 // Issue Management JS moved to /issues.html
