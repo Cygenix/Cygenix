@@ -366,6 +366,115 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-integrations .in-enable-row{display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border);margin-top:0.5rem}
 #view-integrations .in-enable-row label{font-size:12px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-family:var(--serif);text-transform:none;letter-spacing:0}
 
+/* ─── Migration Pipeline (dashboard) ──────────────────────────────────── */
+.pipeline-wrap{
+  background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;
+  padding:2rem 1.5rem 3.5rem;margin-bottom:1rem;
+  position:relative;overflow:hidden;
+}
+.pipeline-wrap::before{
+  /* subtle background grid, echo of index.html hero grid */
+  content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);
+  background-size:32px 32px;pointer-events:none;opacity:0.6;
+}
+.pipeline{
+  position:relative;z-index:1;
+  display:grid;grid-template-columns:repeat(var(--pipe-count, 7), 1fr);gap:0;
+  align-items:start;
+}
+.pipe-lines{
+  position:absolute;inset:0;pointer-events:none;z-index:0;
+}
+.pipe-lines path{
+  fill:none;stroke-width:2.5;
+  stroke-dasharray:600;stroke-dashoffset:600;
+  animation:pipeDraw 0.9s ease-out 0.2s forwards;
+  opacity:0.85;
+}
+@keyframes pipeDraw{ to { stroke-dashoffset:0; } }
+@keyframes pipeDotPop{
+  from{ opacity:0; r:0; }
+  70%{ opacity:1; r:6; }
+  to{ opacity:1; r:4; }
+}
+.pipe-lines circle{ filter:drop-shadow(0 0 4px rgba(45,212,191,0.6)); }
+.pipe-lines .pulse{
+  stroke-dasharray:8 12;
+  stroke-dashoffset:0;
+  animation:pipePulse 2.4s linear infinite;
+  opacity:0;
+}
+@keyframes pipePulse{
+  0%{ opacity:0; stroke-dashoffset:0; }
+  15%{ opacity:0.8; }
+  85%{ opacity:0.8; }
+  100%{ opacity:0; stroke-dashoffset:-200; }
+}
+.pipe-node{
+  position:relative;z-index:2;
+  display:flex;flex-direction:column;align-items:center;gap:0.5rem;
+  padding:0 0.4rem;
+  opacity:0;animation:pipeFadeUp 0.5s ease-out forwards;
+}
+@keyframes pipeFadeUp{ from{ opacity:0; transform:translateY(8px);} to{ opacity:1; transform:translateY(0);} }
+.pipe-card{
+  width:100%;
+  background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;
+  padding:0.85rem 0.7rem;
+  text-align:center;cursor:pointer;
+  transition:transform 0.18s ease,border-color 0.18s ease,background 0.18s ease;
+  position:relative;
+}
+.pipe-card:hover{ border-color:var(--accent); background:var(--bg2); transform:translateY(-3px); box-shadow:0 6px 22px rgba(79,142,255,0.12); }
+.pipe-card .pipe-dot{
+  position:absolute;top:8px;right:8px;
+  width:7px;height:7px;border-radius:50%;
+  background:var(--text3);
+  box-shadow:0 0 0 2px var(--bg3);
+}
+.pipe-card.status-ok .pipe-dot{ background:var(--green); box-shadow:0 0 0 2px var(--bg3),0 0 8px rgba(34,201,122,0.6); }
+.pipe-card.status-warn .pipe-dot{ background:var(--amber); box-shadow:0 0 0 2px var(--bg3),0 0 8px rgba(245,158,11,0.6); }
+.pipe-card.status-err .pipe-dot{ background:var(--red); box-shadow:0 0 0 2px var(--bg3),0 0 8px rgba(240,70,70,0.6); }
+
+.pipe-card-icon{
+  display:flex;align-items:center;justify-content:center;
+  width:38px;height:38px;margin:0 auto 0.5rem;
+  border-radius:10px;
+  background:linear-gradient(135deg,rgba(79,142,255,0.10),rgba(45,212,191,0.08));
+  border:0.5px solid rgba(79,142,255,0.2);
+}
+.pipe-card-icon svg{ width:18px;height:18px;color:var(--accent); }
+.pipe-card.status-warn .pipe-card-icon{ background:linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06));border-color:rgba(245,158,11,0.3); }
+.pipe-card.status-warn .pipe-card-icon svg{ color:var(--amber); }
+.pipe-card.status-err .pipe-card-icon{ background:linear-gradient(135deg,rgba(240,70,70,0.12),rgba(240,70,70,0.06));border-color:rgba(240,70,70,0.3); }
+.pipe-card.status-err .pipe-card-icon svg{ color:var(--red); }
+
+.pipe-metric{
+  font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;
+  line-height:1;
+  background:linear-gradient(135deg,var(--accent),var(--teal));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  margin-bottom:0.15rem;
+}
+.pipe-card.status-warn .pipe-metric{ background:linear-gradient(135deg,var(--amber),#f59e0b); -webkit-background-clip:text;background-clip:text; }
+.pipe-card.status-err .pipe-metric{ background:linear-gradient(135deg,var(--red),#f04646); -webkit-background-clip:text;background-clip:text; }
+.pipe-card.status-idle .pipe-metric{ color:var(--text3); background:none; -webkit-text-fill-color:var(--text3); }
+
+.pipe-metric-unit{ font-size:10px;font-weight:500;color:var(--text3);margin-left:2px; }
+.pipe-label{ font-size:10.5px;color:var(--text2);font-weight:600;line-height:1.3;margin-bottom:0.1rem; }
+.pipe-sub{ font-size:9.5px;color:var(--text3);font-family:var(--mono);letter-spacing:0.02em; }
+
+/* Responsive: stack at narrow widths */
+@media (max-width: 960px){
+  .pipeline{grid-template-columns:repeat(4,1fr);row-gap:1.25rem;}
+  .pipe-lines{display:none;}
+}
+@media (max-width: 600px){
+  .pipeline{grid-template-columns:repeat(2,1fr);}
+}
+
+
 /* ─── System Parameters view (scoped) ──────────────────────────────────── */
 #view-system-parameters .sp-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
 #view-system-parameters .sp-title{font-size:1.4rem;font-weight:600}
@@ -634,8 +743,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
         <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
       </div>
-      <div class="panel-header"><div class="panel-title">Recent Jobs</div></div>
-      <div id="dashboard-jobs"></div>
+      <div class="panel-header" style="margin-top:1.5rem"><div class="panel-title">Migration Pipeline</div><div class="panel-sub">Click any stage to jump to that module</div></div>
+      <div id="dashboard-pipeline" class="pipeline-wrap"></div>
     </div>
 
     <!-- NEW JOB -->
@@ -2821,7 +2930,219 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2500);
 }
 
-function renderDashboard()     { $('dashboard-jobs').innerHTML = jobsTableHTML(state.jobs.slice(0,5)); updateStats(); }
+function renderDashboard() {
+  // The Recent Jobs table has been replaced by the Migration Pipeline visual.
+  // We still call updateStats() for the stat cards at the top.
+  updateStats();
+  renderPipeline();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MIGRATION PIPELINE — live visual of each module's state
+// Every metric here reads real data from localStorage. Do not add demo values.
+// ══════════════════════════════════════════════════════════════════════════
+function renderPipeline(){
+  const host = document.getElementById('dashboard-pipeline');
+  if (!host) return;
+
+  const jobs      = safeArr('cygenix_jobs');
+  const projects  = safeArr('cygenix_projects');
+  const wasis     = safeArr('cygenix_wasis_rules');
+  const conns     = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  const privacyMode = (window.CygenixPrivacy && window.CygenixPrivacy.getMode && window.CygenixPrivacy.getMode()) || 'full';
+
+  // Metric derivations — each pulls from real data
+  const mappedJobs   = jobs.filter(j => (j.columnMapping || []).some(m => m && m.tgtCol)).length;
+  const sqlJobs      = jobs.filter(j => j.type === 'sql' || j.jobType === 'sql' || j.jobType === 'sql-script').length;
+  const validated    = jobs.filter(j => j.verifySQL && String(j.verifySQL).trim().length > 20).length;
+  const weekAgo      = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recentRuns   = jobs.filter(j => j.lastRun && Date.parse(j.lastRun) > weekAgo).length;
+  const connsConfigured = (conns.srcConnString ? 1 : 0) + (conns.tgtConnString || conns.fnUrl ? 1 : 0);
+
+  // Governance mode mapped to visual status
+  const govLabel = privacyMode === 'full' ? 'Full' : privacyMode === 'schema-only' ? 'Schema only' : 'No AI';
+  const govStatus = privacyMode === 'full' ? 'warn' : privacyMode === 'no-ai' ? 'err' : 'ok';
+  // NB: "warn" on full-mode isn't a criticism — it's the highest-access mode and the
+  // dashboard surfaces that so operators don't forget they chose it.
+
+  const nodes = [
+    {
+      key:'projects', label:'Projects', sub:'scoped migrations',
+      metric: projects.length, unit: projects.length === 1 ? 'project' : 'projects',
+      status: projects.length > 0 ? 'ok' : 'idle',
+      icon: svgFolder(),
+      onClick: () => showView('project-settings')
+    },
+    {
+      key:'connections', label:'Connections', sub:'src · tgt databases',
+      metric: connsConfigured, unit: '/ 2',
+      status: connsConfigured === 2 ? 'ok' : connsConfigured === 1 ? 'warn' : 'idle',
+      icon: svgPlug(),
+      onClick: () => showView('connections')
+    },
+    {
+      key:'mapper', label:'Mapper', sub:'columns mapped',
+      metric: mappedJobs, unit: mappedJobs === 1 ? 'job' : 'jobs',
+      status: mappedJobs > 0 ? 'ok' : 'idle',
+      icon: svgMap(),
+      onClick: () => { window.location.href = '/object_mapping.html'; }
+    },
+    {
+      key:'sql', label:'SQL Editor', sub:'custom scripts',
+      metric: sqlJobs, unit: sqlJobs === 1 ? 'script' : 'scripts',
+      status: sqlJobs > 0 ? 'ok' : 'idle',
+      icon: svgCode(),
+      onClick: () => { window.location.href = '/sql-editor.html'; }
+    },
+    {
+      key:'cleansing', label:'Cleansing', sub:'Was/Is rules',
+      metric: wasis.length, unit: wasis.length === 1 ? 'rule' : 'rules',
+      status: wasis.length > 0 ? 'ok' : 'idle',
+      icon: svgSparkles(),
+      onClick: () => { window.location.href = '/data-cleansing.html'; }
+    },
+    {
+      key:'execution', label:'Execution', sub:'last 7 days',
+      metric: recentRuns, unit: recentRuns === 1 ? 'run' : 'runs',
+      status: recentRuns > 0 ? 'ok' : 'idle',
+      icon: svgPlay(),
+      onClick: () => { window.location.href = '/project-builder.html'; }
+    },
+    {
+      key:'validation', label:'Validation', sub:'verify SQL set',
+      metric: validated, unit: validated === 1 ? 'check' : 'checks',
+      status: validated > 0 ? 'ok' : 'idle',
+      icon: svgCheckCircle(),
+      onClick: () => { window.location.href = '/validation.html'; }
+    },
+  ];
+
+  // Governance badge sits at the very end — a policy gate, visually distinct
+  nodes.push({
+    key:'governance', label:'Governance', sub:'AI access mode',
+    metric: govLabel, unit: '',
+    isText: true,
+    status: govStatus,
+    icon: svgShield(),
+    onClick: () => showView('privacy-security')
+  });
+
+  // Build markup
+  const nodeHTML = nodes.map((n, i) => {
+    const metricContent = n.isText
+      ? `<div class="pipe-metric" style="font-size:0.95rem;font-weight:600;letter-spacing:0">${escP(n.metric)}</div>`
+      : `<div class="pipe-metric">${Number(n.metric).toLocaleString()}<span class="pipe-metric-unit">${escP(n.unit)}</span></div>`;
+    return `
+      <div class="pipe-node" style="animation-delay:${(i*60+100)}ms">
+        <div class="pipe-card status-${n.status}" data-key="${n.key}" title="Open ${escP(n.label)}">
+          <span class="pipe-dot"></span>
+          <div class="pipe-card-icon">${n.icon}</div>
+          ${metricContent}
+          <div class="pipe-label">${escP(n.label)}</div>
+          <div class="pipe-sub">${escP(n.sub)}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div class="pipeline" style="--pipe-count:${nodes.length}">
+      <svg class="pipe-lines" id="pipe-lines" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="pipeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#4f8eff" stop-opacity="0.85"/>
+            <stop offset="50%" stop-color="#2dd4bf" stop-opacity="0.85"/>
+            <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.85"/>
+          </linearGradient>
+          <linearGradient id="pipeGradBright" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#4f8eff"/>
+            <stop offset="50%" stop-color="#2dd4bf"/>
+            <stop offset="100%" stop-color="#a78bfa"/>
+          </linearGradient>
+        </defs>
+        <path id="pipe-path-base" d="" stroke="url(#pipeGrad)"/>
+        <path id="pipe-path-pulse" class="pulse" d="" stroke="url(#pipeGradBright)"/>
+      </svg>
+      ${nodeHTML}
+    </div>
+  `;
+
+  // Wire clicks
+  host.querySelectorAll('.pipe-card').forEach(el => {
+    const key = el.dataset.key;
+    const n = nodes.find(x => x.key === key);
+    if (n && n.onClick) el.addEventListener('click', n.onClick);
+  });
+
+  // Draw connecting line once layout is settled. Two RAFs = after reflow.
+  requestAnimationFrame(() => requestAnimationFrame(() => drawPipelineLine()));
+}
+
+function drawPipelineLine(){
+  const wrap   = document.querySelector('.pipeline');
+  const svg    = document.getElementById('pipe-lines');
+  const base   = document.getElementById('pipe-path-base');
+  const pulse  = document.getElementById('pipe-path-pulse');
+  if (!wrap || !svg || !base || !pulse) return;
+
+  const cards = wrap.querySelectorAll('.pipe-card');
+  if (cards.length < 2) return;
+
+  const wrapRect = wrap.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${wrapRect.width} ${wrapRect.height}`);
+  svg.setAttribute('width',  wrapRect.width);
+  svg.setAttribute('height', wrapRect.height);
+
+  // Route the line through a point just below each card, so it's visible against
+  // the panel background rather than hidden inside the icon tiles.
+  const points = Array.from(cards).map(c => {
+    const r = c.getBoundingClientRect();
+    return { x: r.left - wrapRect.left + r.width / 2, y: r.bottom - wrapRect.top + 14 };
+  });
+
+  // Build a smooth path using cubic bezier between each pair of points
+  let d = `M ${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length; i++){
+    const prev = points[i-1];
+    const cur  = points[i];
+    const midX = (prev.x + cur.x) / 2;
+    d += ` C ${midX} ${prev.y}, ${midX} ${cur.y}, ${cur.x} ${cur.y}`;
+  }
+  base.setAttribute('d', d);
+  pulse.setAttribute('d', d);
+
+  // Remove any existing anchor dots, then draw a small dot at each node point
+  svg.querySelectorAll('.pipe-anchor').forEach(n => n.remove());
+  const anchorColor = '#2dd4bf';
+  points.forEach((p, i) => {
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('cx', p.x);
+    c.setAttribute('cy', p.y);
+    c.setAttribute('r', '4');
+    c.setAttribute('fill', anchorColor);
+    c.setAttribute('class', 'pipe-anchor');
+    c.style.animation = `pipeDotPop 0.4s ease-out ${i * 80 + 400}ms both`;
+    c.style.opacity = '0';
+    svg.appendChild(c);
+  });
+}
+
+// Re-draw on resize so the path stays aligned
+window.addEventListener('resize', () => {
+  if (document.getElementById('dashboard-pipeline')) drawPipelineLine();
+});
+
+function safeArr(key){ try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } }
+function escP(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Inline SVG icons — consistent stroke-based style matching the sidebar
+function svgFolder()     { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>'; }
+function svgPlug()       { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/><circle cx="4" cy="12" r="2.5"/><circle cx="20" cy="12" r="2.5"/><path d="M10 9v6M14 9v6"/></svg>'; }
+function svgMap()        { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h6l2-2M20 17h-6l-2 2"/><path d="M8 7l-4 4 4 4M16 17l4-4-4-4"/></svg>'; }
+function svgCode()       { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l-2 2 2 2M16 10l2 2-2 2M13 9l-2 6"/></svg>'; }
+function svgSparkles()   { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/></svg>'; }
+function svgPlay()       { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg>'; }
+function svgCheckCircle(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>'; }
+function svgShield()     { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>'; }
 function renderAllJobs() {
   // Populate the project filter dropdown from cygenix_projects (+ Active / All / Unassigned entries)
   const select = document.getElementById('jobs-project-filter');
