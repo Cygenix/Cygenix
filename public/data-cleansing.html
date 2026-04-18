@@ -992,14 +992,20 @@ async function generateMergeSQL(){
     chunks.push('-- Primary key: ' + sqlIdent(pk));
     chunks.push('-- Clusters: ' + accepted.length + ' · Removal mode: ' + mergeSettings.removalMode.toUpperCase());
     chunks.push('-- FK references to rewrite: ' + fks.length + ' (across ' + (new Set(fks.map(f => f.parentSchema+'.'+f.parentTable))).size + ' tables)');
-    chunks.push('-- Review carefully before running. Wrapped in a single transaction.');
+    chunks.push('-- Review carefully before running. Wrapped in a single transaction for SSMS.');
+    chunks.push('-- NOTE for "Run now": this script is split on GO boundaries and sent as');
+    chunks.push('-- separate batches through the driver. Transaction atomicity across batches');
+    chunks.push('-- depends on the driver reusing the same connection — this is best-effort.');
+    chunks.push('-- For guaranteed atomicity, copy to SSMS and run manually.');
     chunks.push('-- ══════════════════════════════════════════════════════════════════════════════');
     chunks.push('');
 
     // ── Soft-delete column auto-provisioning ────────────────────────────────
-    // If removal mode is 'soft' and the tracking columns don't exist, emit ALTER TABLE statements.
-    // They live inside the transaction — if the merge rolls back, the columns revert too (safe default).
-    // The IF NOT EXISTS guards make the script idempotent across reruns.
+    // Order matters here:
+    //   1. BEGIN TRANSACTION  — so everything is atomic
+    //   2. ALTER TABLE ... GO — schema change + batch break (required for the UPDATEs below to see the new columns)
+    //   3. UPDATE/DELETE      — merge logic referencing the new columns
+    //   4. COMMIT (commented) — user uncomments or Run-now auto-uncomments
     chunks.push('BEGIN TRANSACTION;');
     chunks.push('');
     if (mergeSettings.removalMode === 'soft'){
@@ -1015,12 +1021,16 @@ async function generateMergeSQL(){
         chunks.push('-- Idempotent: guarded by sys.columns existence checks.');
         if (needDelCol){
           chunks.push(`IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('${schemaPart}.${tableName}') AND name = '${mergeSettings.softDeleteCol}')`);
-          chunks.push(`  EXEC sp_executesql N'ALTER TABLE ${qTable} ADD ${sqlIdent(mergeSettings.softDeleteCol)} BIT NOT NULL CONSTRAINT DF_${tableName}_${mergeSettings.softDeleteCol} DEFAULT 0';`);
+          chunks.push(`  ALTER TABLE ${qTable} ADD ${sqlIdent(mergeSettings.softDeleteCol)} BIT NOT NULL CONSTRAINT DF_${tableName}_${mergeSettings.softDeleteCol} DEFAULT 0;`);
         }
         if (needMergeCol){
           chunks.push(`IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('${schemaPart}.${tableName}') AND name = '${mergeSettings.mergedIntoCol}')`);
-          chunks.push(`  EXEC sp_executesql N'ALTER TABLE ${qTable} ADD ${sqlIdent(mergeSettings.mergedIntoCol)} ${pkType} NULL';`);
+          chunks.push(`  ALTER TABLE ${qTable} ADD ${sqlIdent(mergeSettings.mergedIntoCol)} ${pkType} NULL;`);
         }
+        // GO ends the batch so the UPDATEs that follow can see the new columns.
+        // When using "Run now", we split on GO and send each batch separately through the driver
+        // (which doesn't understand GO natively).
+        chunks.push('GO');
         chunks.push('');
       }
     }
@@ -1174,24 +1184,57 @@ function openInSqlEditor(){
   window.open('/sql-editor.html?load=pending', '_blank');
 }
 
+// Split SQL on GO batch separators. GO must appear on its own line (optionally indented, case-insensitive).
+// Returns an array of non-empty batches with GO removed.
+function splitOnGo(sql){
+  return sql.split(/^\s*GO\s*$/gmi)
+            .map(s => s.trim())
+            .filter(Boolean);
+}
+
 async function runMergeSQL(){
   const backdrop = document.querySelector('.modal-backdrop');
   if (!backdrop) return;
   const raw = backdrop.dataset.sql;
   if (!raw) return;
-  // Wrap the SQL: user's script has BEGIN TRAN and commented-out COMMIT.
-  // For Run Now, we want to auto-commit (or roll back on error).
-  const autoSql = raw.replace(/^--\s*COMMIT TRANSACTION;\s*$/m, 'COMMIT TRANSACTION;')
-                     + '\n-- If this file reaches here without COMMIT, a ROLLBACK follows:\nIF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;';
+
+  // Uncomment COMMIT so the transaction actually commits when we reach the end
+  const committed = raw.replace(/^--\s*COMMIT TRANSACTION;\s*$/m, 'COMMIT TRANSACTION;');
+  // Split on GO so each batch is a separate driver call
+  const batches = splitOnGo(committed);
+
   const btn = document.getElementById('btn-run-now');
   btn.disabled = true; btn.textContent = '⏳ Running…';
+
+  let totalRows = 0;
+  let failedAt = -1;
+  let errMsg = '';
   try {
-    const res = await dbCall(currentConn, { action:'execute', sql: autoSql });
-    const rowsAffected = res.rowsAffected || 0;
-    showToast('✓ Merge executed · rows affected: ' + rowsAffected);
+    for (let i = 0; i < batches.length; i++){
+      btn.textContent = `⏳ Batch ${i+1}/${batches.length}…`;
+      try {
+        const res = await dbCall(currentConn, { action:'execute', sql: batches[i] });
+        totalRows += (res.rowsAffected || 0);
+      } catch(e){
+        failedAt = i;
+        errMsg = e.message;
+        break;
+      }
+    }
+
+    if (failedAt >= 0){
+      // A batch failed — the BEGIN TRAN from batch 0 left an open transaction on this connection.
+      // Send an explicit rollback so we don't leave an orphan transaction if the server supports it.
+      // Note: the mssql driver may have already reset the connection, in which case this is a no-op.
+      try {
+        await dbCall(currentConn, { action:'execute', sql: 'IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;' });
+      } catch {}
+      throw new Error(`Batch ${failedAt+1} failed: ${errMsg}`);
+    }
+
+    showToast('✓ Merge executed · rows affected: ' + totalRows);
     btn.textContent = '✓ Done';
     setTimeout(() => backdrop.remove(), 1200);
-    // Clear cluster cache so the user knows to re-run detection if they want to see results
     lastClusters = [];
     renderClusters();
   } catch(e){
