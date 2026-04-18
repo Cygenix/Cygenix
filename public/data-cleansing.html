@@ -993,10 +993,9 @@ async function generateMergeSQL(){
     chunks.push('-- Clusters: ' + accepted.length + ' · Removal mode: ' + mergeSettings.removalMode.toUpperCase());
     chunks.push('-- FK references to rewrite: ' + fks.length + ' (across ' + (new Set(fks.map(f => f.parentSchema+'.'+f.parentTable))).size + ' tables)');
     chunks.push('-- Review carefully before running. Wrapped in a single transaction for SSMS.');
-    chunks.push('-- NOTE for "Run now": this script is split on GO boundaries and sent as');
-    chunks.push('-- separate batches through the driver. Transaction atomicity across batches');
-    chunks.push('-- depends on the driver reusing the same connection — this is best-effort.');
-    chunks.push('-- For guaranteed atomicity, copy to SSMS and run manually.');
+    chunks.push('-- NOTE for "Run now": DDL (ALTER TABLE) runs standalone first, then the merge');
+    chunks.push('-- statements run as their own atomic transaction. If the merge fails, the DDL');
+    chunks.push('-- columns stay (harmless — re-runs skip them). For guaranteed atomicity, use SSMS.');
     chunks.push('-- ══════════════════════════════════════════════════════════════════════════════');
     chunks.push('');
 
@@ -1184,12 +1183,24 @@ function openInSqlEditor(){
   window.open('/sql-editor.html?load=pending', '_blank');
 }
 
-// Split SQL on GO batch separators. GO must appear on its own line (optionally indented, case-insensitive).
-// Returns an array of non-empty batches with GO removed.
+// Split SQL on GO batch separators. GO must appear on its own line.
 function splitOnGo(sql){
-  return sql.split(/^\s*GO\s*$/gmi)
-            .map(s => s.trim())
-            .filter(Boolean);
+  return sql.split(/^\s*GO\s*$/gmi).map(s => s.trim()).filter(Boolean);
+}
+
+// Strip BEGIN/COMMIT/ROLLBACK TRANSACTION lines — used when we need to run batches through the
+// driver, which doesn't allow a transaction to span batches. We wrap the caller's batch in our
+// own BEGIN/COMMIT instead.
+function stripTxnStatements(sql){
+  return sql
+    .replace(/^\s*BEGIN\s+TRAN(?:SACTION)?\s*;?\s*$/gmi,   '')
+    .replace(/^\s*COMMIT\s+TRAN(?:SACTION)?\s*;?\s*$/gmi,  '')
+    .replace(/^\s*ROLLBACK\s+TRAN(?:SACTION)?\s*;?\s*$/gmi,'')
+    .replace(/^\s*--\s*COMMIT\s+TRAN(?:SACTION)?\s*;?\s*$/gmi, '')
+    .replace(/^\s*--\s*Or to abandon[^\n]*$/gmi, '')
+    .replace(/^\s*--\s*Uncomment the next[^\n]*$/gmi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 async function runMergeSQL(){
@@ -1198,38 +1209,41 @@ async function runMergeSQL(){
   const raw = backdrop.dataset.sql;
   if (!raw) return;
 
-  // Uncomment COMMIT so the transaction actually commits when we reach the end
-  const committed = raw.replace(/^--\s*COMMIT TRANSACTION;\s*$/m, 'COMMIT TRANSACTION;');
-  // Split on GO so each batch is a separate driver call
-  const batches = splitOnGo(committed);
+  // Split into GO-delimited batches. First batch (if it contains ALTER) is DDL; subsequent
+  // batches are the merge logic. We strip any cross-batch transaction statements and wrap
+  // the merge batches ourselves so they're atomic within a single driver call.
+  const rawBatches = splitOnGo(raw);
+  const ddlBatches   = [];
+  const mergeBatches = [];
+  for (const b of rawBatches){
+    const cleaned = stripTxnStatements(b);
+    if (!cleaned) continue;
+    // Heuristic: a batch that touches ALTER TABLE and only DDL-ish statements goes to DDL;
+    // anything else (UPDATE / DELETE / INSERT) goes to merge.
+    if (/\bALTER\s+TABLE\b/i.test(cleaned) && !/\b(UPDATE|DELETE|INSERT)\b/i.test(cleaned)){
+      ddlBatches.push(cleaned);
+    } else {
+      mergeBatches.push(cleaned);
+    }
+  }
 
   const btn = document.getElementById('btn-run-now');
   btn.disabled = true; btn.textContent = '⏳ Running…';
 
   let totalRows = 0;
-  let failedAt = -1;
-  let errMsg = '';
   try {
-    for (let i = 0; i < batches.length; i++){
-      btn.textContent = `⏳ Batch ${i+1}/${batches.length}…`;
-      try {
-        const res = await dbCall(currentConn, { action:'execute', sql: batches[i] });
-        totalRows += (res.rowsAffected || 0);
-      } catch(e){
-        failedAt = i;
-        errMsg = e.message;
-        break;
-      }
+    // 1 · DDL batches — run standalone, no wrapping transaction. DDL is idempotent via IF NOT EXISTS.
+    for (let i = 0; i < ddlBatches.length; i++){
+      btn.textContent = `⏳ DDL ${i+1}/${ddlBatches.length}…`;
+      await dbCall(currentConn, { action:'execute', sql: ddlBatches[i] });
     }
 
-    if (failedAt >= 0){
-      // A batch failed — the BEGIN TRAN from batch 0 left an open transaction on this connection.
-      // Send an explicit rollback so we don't leave an orphan transaction if the server supports it.
-      // Note: the mssql driver may have already reset the connection, in which case this is a no-op.
-      try {
-        await dbCall(currentConn, { action:'execute', sql: 'IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;' });
-      } catch {}
-      throw new Error(`Batch ${failedAt+1} failed: ${errMsg}`);
+    // 2 · Merge batches — wrap the lot in a single transaction sent as one batch through the driver.
+    if (mergeBatches.length){
+      btn.textContent = '⏳ Running merge…';
+      const mergeSQL = 'BEGIN TRANSACTION;\n\n' + mergeBatches.join('\n\n') + '\n\nCOMMIT TRANSACTION;';
+      const res = await dbCall(currentConn, { action:'execute', sql: mergeSQL });
+      totalRows = res.rowsAffected || 0;
     }
 
     showToast('✓ Merge executed · rows affected: ' + totalRows);
@@ -1238,6 +1252,8 @@ async function runMergeSQL(){
     lastClusters = [];
     renderClusters();
   } catch(e){
+    // If the merge batch failed, its own transaction already rolled back (single-batch rule).
+    // If the DDL batch failed, nothing committed. No orphan transactions possible.
     showToast('✕ Merge failed: ' + e.message);
     btn.disabled = false;
     btn.textContent = '▶ Run now';
