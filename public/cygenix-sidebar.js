@@ -66,6 +66,9 @@
     { section: 'Service', items: [
       { key:'ask',               label:'Ask',               href:'/ask.html',           color:'var(--purple)', icon: iconAsk() },
     ]},
+    { section: null, items: [
+      { key:'cookie-prefs',      label:'Cookie preferences', action:'cookie-preferences', color:'var(--text3)',  icon: iconCookie() },
+    ]},
   ];
 
   // ── Icons (returns SVG string) ──────────────────────────────────────────
@@ -90,6 +93,7 @@
   function iconReport(){       return svg('<path d="M4 2h6l3 3v9H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v3h3M6 8h4M6 11h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }
   function iconAlert(){        return svg('<path d="M8 2l6 11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3M8 11v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconAsk(){          return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6 6c0-1 1-2 2-2s2 1 2 2-1 2-2 2v1M8 11v0.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
+  function iconCookie(){       return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/>'); }
 
   // ── State ───────────────────────────────────────────────────────────────
   function isCollapsed(){
@@ -288,6 +292,10 @@
     // If the item is a dashboard view AND we're on dashboard, call showView directly.
     // Otherwise, stash cyg_goto and navigate to dashboard (if view) or the page (if href).
     const onDashboard = /\/dashboard\.html?$|^\/$/.test(location.pathname);
+    if (item.action === 'cookie-preferences'){
+      if (typeof window.openCookiePreferences === 'function') window.openCookiePreferences();
+      return;
+    }
     if (item.view){
       if (onDashboard && typeof window.showView === 'function'){
         window.showView(item.view);

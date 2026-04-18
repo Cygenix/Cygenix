@@ -765,6 +765,16 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
       </div>
     </div>
+
+    <!-- Cookie preferences — last item, required for GDPR/ePrivacy so users can
+         revoke or change consent. Clicking this triggers the cookie library's
+         own settings flow via the hidden #cc-settings-btn. -->
+    <div class="nav-section" style="margin-top:auto;border-top:0.5px solid var(--border);padding-top:0.75rem">
+      <div class="nav-item" onclick="event.stopPropagation();window.openCookiePreferences && window.openCookiePreferences()" style="color:var(--text3);font-size:11px" title="Change or revoke your cookie preferences">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/></svg>
+        Cookie preferences
+      </div>
+    </div>
   </div>
 
   <!-- MAIN -->
