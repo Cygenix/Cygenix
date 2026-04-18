@@ -310,7 +310,8 @@ async function dbCall(conn, body){
 
 // ── State ────────────────────────────────────────────────────────────────────
 let currentConn = '';
-let allTables = [];         // [{schema, name, fullName}]
+let allTables = [];         // [{schema, name, fullName, rowCount}]
+let schemaCache = {};       // fullName -> {schema, name, rowCount, columns:[...]}
 let columns = [];           // [{name, type}]
 let colConfig = {};         // colName -> {selected:bool, strategy:'exact'|'fuzzy'|'phonetic'|'numeric'}
 let lastClusters = [];      // [{id, rows:[rowObj], confidence, score, aiVerdict?}]
@@ -345,17 +346,21 @@ async function onConnChange(){
   currentConn = sel.value;
   const status = document.getElementById('conn-status');
   if (!currentConn){ status.textContent='Not connected'; status.className='status'; return; }
-  status.textContent='Connecting…'; status.className='status';
+  status.textContent='Loading schema…'; status.className='status';
   try {
-    const r = await dbCall(currentConn, { action:'list-tables' });
-    allTables = (r.tables||[]).map(t => typeof t === 'string'
-      ? { schema:(t.split('.')[0]||'dbo'), name:(t.split('.')[1]||t), fullName:t }
-      : { schema:t.schema||'dbo', name:t.name||t.table, fullName:(t.schema||'dbo')+'.'+(t.name||t.table) }
-    );
+    const r = await dbCall(currentConn, { action:'schema' });
+    // schema returns { tables: [{schema, name, rowCount, columns:[{name, type, nullable, isIdentity, ordinal}], primaryKeys, foreignKeys}] }
+    schemaCache = {};
+    allTables = (r.tables||[]).map(t => {
+      const fullName = (t.schema||'dbo')+'.'+t.name;
+      schemaCache[fullName] = t;
+      return { schema:t.schema||'dbo', name:t.name, fullName, rowCount:t.rowCount||0 };
+    });
     status.textContent = '✓ Connected · '+allTables.length+' tables'; status.className='status ok';
   } catch(e){
     status.textContent = '✕ '+e.message; status.className='status err';
     allTables = [];
+    schemaCache = {};
   }
 }
 
@@ -380,16 +385,24 @@ document.addEventListener('click', e => {
   }
 });
 
-// ── Load columns ─────────────────────────────────────────────────────────────
+// ── Load columns (from the already-fetched schema) ──────────────────────────
 async function loadColumns(){
   const table = document.getElementById('inp-table').value.trim();
   if (!table || !currentConn) return;
   const btn = document.getElementById('btn-load-cols');
   btn.disabled = true; btn.textContent = '⏳ Loading…';
   try {
-    const r = await dbCall(currentConn, { action:'describe', table });
-    columns = (r.columns||[]).map(c => ({ name:c.name||c.COLUMN_NAME, type:c.type||c.DATA_TYPE||'' }));
-    if (!columns.length) throw new Error('No columns returned');
+    // Look up in schema cache first (populated by onConnChange)
+    let tableMeta = schemaCache[table];
+    if (!tableMeta){
+      // Try case-insensitive lookup
+      const lowerKey = Object.keys(schemaCache).find(k => k.toLowerCase() === table.toLowerCase());
+      if (lowerKey) tableMeta = schemaCache[lowerKey];
+    }
+    if (!tableMeta || !tableMeta.columns?.length){
+      throw new Error('Table not found in cached schema — try picking from the dropdown');
+    }
+    columns = tableMeta.columns.map(c => ({ name:c.name, type:c.type||'' }));
     colConfig = {};
     columns.forEach(c => colConfig[c.name] = { selected:false, strategy:defaultStrategy(c) });
     renderColList();
@@ -539,16 +552,18 @@ async function runDetection(){
   try {
     // 1 · count total rows
     log('Counting rows…');
-    const cntRes = await dbCall(currentConn, { action:'count', sql:'SELECT * FROM '+table });
-    const total = cntRes.count || 0;
+    // Use execute with raw SQL — supported by both Azure Function and Netlify db-connect
+    const cntRes = await dbCall(currentConn, { action:'execute', sql:'SELECT COUNT(*) AS cnt FROM '+table });
+    const total = cntRes.recordset?.[0]?.cnt || 0;
     lastTotalRows = total;
     log('Total rows: '+total.toLocaleString());
 
-    // 2 · fetch sample (via fetch-page with offset=0)
+    // 2 · fetch sample via TOP N
     const take = Math.min(sample, total || sample);
     log('Fetching sample of '+take.toLocaleString()+' rows…');
-    const fetchRes = await dbCall(currentConn, { action:'fetch-page', sql:'SELECT '+selected.map(s=>'['+s.name+']').join(', ')+' FROM '+table, offset:0, pageSize:take });
-    const rows = fetchRes.rows || [];
+    const colList = selected.map(s=>'['+s.name+']').join(', ');
+    const fetchRes = await dbCall(currentConn, { action:'execute', sql:'SELECT TOP '+take+' '+colList+' FROM '+table });
+    const rows = fetchRes.recordset || [];
     lastSampleSize = rows.length;
     log('Got '+rows.length.toLocaleString()+' rows', 'ok');
 
