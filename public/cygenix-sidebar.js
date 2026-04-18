@@ -38,7 +38,6 @@
     { section: 'Configure', group:'configure', items: [
       { key:'project-settings',  label:'Project Settings',  view:'project-settings',   color:'var(--amber)',  icon: iconSettings() },
       { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug() },
-      { key:'backup',            label:'Backup & Restore',  view:'backup',             color:'var(--purple)', icon: iconDownload() },
       { key:'performance',       label:'Performance',       href:'/performance.html',  color:'var(--teal)',   icon: iconChart() },
       { key:'system-parameters', label:'System Parameters', view:'system-parameters',  color:'var(--accent)', icon: iconParams() },
       { key:'privacy-security',  label:'Governance',        view:'privacy-security',   color:'var(--red)',    icon: iconShield() },
