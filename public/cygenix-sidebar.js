@@ -62,7 +62,6 @@
     ]},
     { section: 'Outputs', group:'reports', items: [
       { key:'reports',           label:'Conversion Report', view:'reports',             color:'var(--purple)', icon: iconReport() },
-      { key:'issues',            label:'Issue Management',  href:'/issues.html',        color:'var(--red)',    icon: iconAlert() },
     ]},
     { section: 'Service', items: [
       { key:'ask',               label:'Ask',               href:'/ask.html',           color:'var(--purple)', icon: iconAsk() },
