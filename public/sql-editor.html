@@ -37,9 +37,11 @@
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:220px}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
 
-.topbar{position:fixed;top:0;right:0;left:220px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem}
+.topbar{position:fixed;top:0;right:0;left:230px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem;transition:left 0.2s ease}
+body.cyg-collapsed .topbar{left:54px}
 .logo{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
 .page{display:grid;grid-template-rows:52px 1fr;height:100vh;padding-left:0}
 .editor-layout{display:flex;flex-direction:row;height:calc(100vh - 52px);overflow:hidden;margin-top:52px}
@@ -169,6 +171,9 @@ body.fullscreen .script-panel { display:none }
 </style>
 </head>
 <body>
+
+<div id="cyg-sidebar-mount" data-active="sql-editor"></div>
+<script src="/cygenix-sidebar.js"></script>
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
@@ -1351,6 +1356,7 @@ function addToJobs() {
   const job = {
     id:      'job_'+Date.now(),
     name,
+    projectId: localStorage.getItem('cygenix_active_project_id') || '',
     source:  conn==='source' ? (CygenixConnections.get().srcConnString||'').slice(0,50) : '',
     target:  conn==='target' ? CygenixConnections.tgtConn().slice(0,50) : '',
     jobType: 'sql',

@@ -35,7 +35,8 @@
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
 
 /* ── Layout ── */
 .page{padding:1.5rem 2rem;max-width:100%}
@@ -230,10 +231,12 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 </head>
 <body>
 <script src="/connections.js"></script>
-<script src="/nav.js"></script>
 <script src="/cygenix-params.js"></script>
 <script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
+
+<div id="cyg-sidebar-mount" data-active="object-mapping"></div>
+<script src="/cygenix-sidebar.js"></script>
 
 <div class="page">
   <!-- Page header -->

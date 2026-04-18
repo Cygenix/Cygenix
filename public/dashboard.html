@@ -329,8 +329,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-integrations .in-section-sub{font-size:11px;color:var(--text3)}
 
 #view-integrations .in-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.75rem}
-#view-integrations .in-grid-muted .in-card{opacity:0.55;cursor:default}
-#view-integrations .in-grid-muted .in-card:hover{border-color:var(--border2);transform:none}
+#view-integrations .in-grid-muted .in-card{opacity:0.72;cursor:pointer}
+#view-integrations .in-grid-muted .in-card:hover{border-color:var(--accent);opacity:0.92;transform:translateY(-1px)}
 
 #view-integrations .in-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:10px;padding:1rem;cursor:pointer;transition:border-color 0.15s,transform 0.15s;display:flex;flex-direction:column;gap:0.5rem;position:relative}
 #view-integrations .in-card:hover{border-color:var(--accent);transform:translateY(-1px)}
@@ -1149,11 +1149,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <div class="in-grid" id="in-available-grid"></div>
       </div>
 
-      <!-- Coming soon -->
+      <!-- Extensions Available - Contact Sales -->
       <div class="in-section" style="margin-top:1.5rem">
         <div class="in-section-head">
-          <div class="in-section-title">Coming soon</div>
-          <div class="in-section-sub">Planned connectors. Not yet functional.</div>
+          <div class="in-section-title">Extensions Available — Contact Sales</div>
+          <div class="in-section-sub">Additional connectors available on request. Get in touch to discuss your requirements.</div>
         </div>
         <div class="in-grid in-grid-muted" id="in-coming-grid"></div>
       </div>
@@ -1624,6 +1624,8 @@ function showView(v) {
     const oc = item.getAttribute('onclick') || '';
     if (oc.includes("showView('" + v + "')")) item.classList.add('active');
   });
+  // Keep the shared sidebar (cygenix-sidebar.js) in sync too
+  if (window.CygenixSidebar) window.CygenixSidebar.setActive(v);
   if (v === 'jobs')              renderAllJobs();
   if (v === 'schema')            renderSchemaLibrary();
   if (v === 'migration-sql')     renderMigrationLibrary();
@@ -4301,11 +4303,11 @@ function renderIntegrationsGrids(){
   const cardHTML = (c) => {
     const enabled = c.status === 'available' && window.CygenixIntegrations.isEnabled(c.id);
     const badge = c.status === 'coming-soon'
-      ? '<span class="in-card-badge soon">soon</span>'
+      ? '<span class="in-card-badge soon">contact</span>'
       : enabled ? '<span class="in-card-badge enabled">● on</span>' : '';
     const onClick = c.status === 'available'
       ? `openIntegrationModal('${c.id}')`
-      : ''; // coming-soon cards are informational only
+      : `openContactSalesModal('${c.id}')`;
     return `
       <div class="in-card${enabled?' enabled':''}" onclick="${onClick}" data-connector="${c.id}">
         ${badge}
@@ -4432,6 +4434,60 @@ function openIntegrationModal(id){
 function closeIntegrationModal(){
   const m = document.getElementById('in-modal-overlay');
   if (m) m.remove();
+}
+
+// Contact-sales modal for 'coming-soon' connectors. Provides a mailto link and
+// a honest message about what's on offer. Doesn't pretend the connector is
+// already built — we're gathering interest, not selling vapourware.
+function openContactSalesModal(connectorId){
+  const c = window.CygenixIntegrations.getConnector(connectorId);
+  if (!c) return;
+  const subject = encodeURIComponent('Cygenix extension request: ' + c.name);
+  const body    = encodeURIComponent(
+    "Hi,\n\n" +
+    "I'd like to know more about the " + c.name + " integration for Cygenix.\n\n" +
+    "My use case: \n\n" +
+    "Thanks"
+  );
+  const mailto = 'mailto:sales@cygenix.co.uk?subject=' + subject + '&body=' + body;
+
+  const existing = document.getElementById('in-modal-overlay');
+  if (existing) existing.remove();
+
+  const modalHTML = `
+    <div class="in-modal-overlay show" id="in-modal-overlay" onclick="if(event.target===this)closeIntegrationModal()">
+      <div class="in-modal">
+        <div class="in-modal-head">
+          <div class="in-card-icon">${c.icon}</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600">${escIn(c.name)}</div>
+            <div style="font-size:11px;color:var(--text3)">${escIn(c.description)}</div>
+          </div>
+          <button onclick="closeIntegrationModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0 4px">✕</button>
+        </div>
+        <div class="in-modal-body">
+          <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:0.75rem">
+            The <strong>${escIn(c.name)}</strong> connector is available as a paid extension.
+            Get in touch to discuss your use case, implementation timeline, and pricing.
+          </div>
+          <div class="in-form-note">
+            <strong>What to include in your message:</strong>
+            <ul style="margin:0.4rem 0 0;padding-left:1.2rem;line-height:1.7">
+              <li>Your target system version / edition</li>
+              <li>Expected event volume (migrations per day / week)</li>
+              <li>Any auth constraints (OAuth, SSO, service principals)</li>
+              <li>Rough target go-live date</li>
+            </ul>
+          </div>
+        </div>
+        <div class="in-modal-foot">
+          <button class="btn btn-ghost btn-sm" onclick="closeIntegrationModal()">Close</button>
+          <a class="btn btn-primary btn-sm" href="${mailto}" style="text-decoration:none">📧 Email sales</a>
+        </div>
+      </div>
+    </div>`;
+
+  document.getElementById('view-integrations').insertAdjacentHTML('beforeend', modalHTML);
 }
 
 function saveIntegrationConfig(id){
