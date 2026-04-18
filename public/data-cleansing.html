@@ -210,8 +210,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
         </div>
         <div class="panel-body">
           <div class="hint">Tick columns to compare on and pick a strategy:<br>
-            <strong>exact</strong>: same value · <strong>fuzzy</strong>: Levenshtein ≥70% (best for longer text)<br>
-            <strong>phonetic</strong>: Soundex — catches Smith/Smyth, Jon/John · <strong>numeric</strong>: digits only, with country-code suffix match for phones</div>
+            <strong>exact</strong>: same value · acts as a <strong style="color:var(--red)">veto</strong> — if both values are non-null and differ, rows cannot cluster<br>
+            <strong>fuzzy</strong>: Levenshtein ≥70% (best for longer text) · <strong>phonetic</strong>: Soundex — catches Smith/Smyth, Jon/John<br>
+            <strong>numeric</strong>: digits only, with country-code suffix match for phones</div>
           <div class="col-list" id="col-list"></div>
         </div>
       </div>
@@ -634,14 +635,21 @@ async function runDetection(){
     });
 
     for (let i = 0; i < rows.length; i++){
-      for (let j = i + 1; j < rows.length; j++){
+      pairLoop: for (let j = i + 1; j < rows.length; j++){
         let matches = 0, scoreSum = 0;
         for (let k = 0; k < selected.length; k++){
           const s = selected[k];
           let m = 0;
           if (keys[k]){
+            // Exact and phonetic strategies use pre-computed keys
             const a = keys[k][i], b = keys[k][j];
             if (a && a === b) m = 1;
+            // ── VETO: exact-strategy mismatch on two non-null values rules this pair out ──
+            // (a GUID column with 'exact' strategy should prevent clustering if GUIDs differ)
+            if (s.strategy === 'exact' && a && b && a !== b){
+              pairs++;
+              continue pairLoop;
+            }
           } else {
             m = colMatch(rows[i][s.name], rows[j][s.name], s.strategy);
           }
