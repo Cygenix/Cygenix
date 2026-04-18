@@ -995,8 +995,35 @@ async function generateMergeSQL(){
     chunks.push('-- Review carefully before running. Wrapped in a single transaction.');
     chunks.push('-- ══════════════════════════════════════════════════════════════════════════════');
     chunks.push('');
+
+    // ── Soft-delete column auto-provisioning ────────────────────────────────
+    // If removal mode is 'soft' and the tracking columns don't exist, emit ALTER TABLE statements.
+    // They live inside the transaction — if the merge rolls back, the columns revert too (safe default).
+    // The IF NOT EXISTS guards make the script idempotent across reruns.
     chunks.push('BEGIN TRANSACTION;');
     chunks.push('');
+    if (mergeSettings.removalMode === 'soft'){
+      const tableCols = (schemaCache[table]?.columns || []).map(c => c.name.toLowerCase());
+      const needDelCol   = !tableCols.includes(mergeSettings.softDeleteCol.toLowerCase());
+      const needMergeCol = !tableCols.includes(mergeSettings.mergedIntoCol.toLowerCase());
+      if (needDelCol || needMergeCol){
+        // Derive PK type so the merged_into_id column matches the reference type
+        const pkColMeta = (schemaCache[table]?.columns || []).find(c => c.name === pk);
+        const pkType = pkColMeta?.type || 'INT';
+        chunks.push('-- ── Soft-delete tracking columns auto-provisioned ──');
+        chunks.push('-- Required for soft-delete mode but not yet present on the table.');
+        chunks.push('-- Idempotent: guarded by sys.columns existence checks.');
+        if (needDelCol){
+          chunks.push(`IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('${schemaPart}.${tableName}') AND name = '${mergeSettings.softDeleteCol}')`);
+          chunks.push(`  EXEC sp_executesql N'ALTER TABLE ${qTable} ADD ${sqlIdent(mergeSettings.softDeleteCol)} BIT NOT NULL CONSTRAINT DF_${tableName}_${mergeSettings.softDeleteCol} DEFAULT 0';`);
+        }
+        if (needMergeCol){
+          chunks.push(`IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('${schemaPart}.${tableName}') AND name = '${mergeSettings.mergedIntoCol}')`);
+          chunks.push(`  EXEC sp_executesql N'ALTER TABLE ${qTable} ADD ${sqlIdent(mergeSettings.mergedIntoCol)} ${pkType} NULL';`);
+        }
+        chunks.push('');
+      }
+    }
 
     let clusterNo = 0;
     for (const c of accepted){
