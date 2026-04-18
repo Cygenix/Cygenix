@@ -241,6 +241,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       </div>
       <input type="text" id="job-filter" class="job-filter-input" placeholder="Filter jobs…" oninput="renderJobs()" autocomplete="off">
       <div class="job-filter-tools">
+        <button class="sort-btn" id="job-scope-btn" onclick="cycleJobScope()" title="Cycle: this project → all → unassigned">This project ▾</button>
         <button class="sort-btn" id="job-sort-btn" onclick="toggleJobSort()" title="Toggle sort order">Newest ▾</button>
         <span class="count" id="job-count">–</span>
       </div>
@@ -248,7 +249,10 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
     <div class="job-list" id="job-list">
       <div class="job-item-empty">No jobs found.<br>Run a migration in Live DB Migration first.</div>
     </div>
-    <div class="add-sql-btn" onclick="openSqlModal()">+ Add custom SQL job</div>
+    <div style="display:flex;gap:0.4rem;padding:0.5rem 0.75rem 0.75rem">
+      <div class="add-sql-btn" onclick="openSqlModal()" style="flex:1;margin:0">+ Add SQL job</div>
+      <div class="add-sql-btn" onclick="openBulkImportModal()" style="flex:1;margin:0" title="Import one or more .sql files as jobs">📥 Import .sql</div>
+    </div>
   </div>
 
   <!-- RIGHT: Project builder -->
@@ -371,6 +375,41 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
   </div>
 </div>
 
+<!-- Bulk SQL import modal — creates library jobs from .sql files -->
+<div class="modal-overlay" id="bulk-import-modal" style="display:none" onclick="if(event.target===this)closeBulkImportModal()">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div style="font-size:14px;font-weight:600">Import SQL scripts</div>
+      <button onclick="closeBulkImportModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+        Select one or more <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">.sql</code> files. Each file becomes a job in the sidebar — filename (minus <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">.sql</code>) is used as the job name. Imported jobs are attached to the current project and target the <strong>target database</strong> by default.
+      </div>
+      <div class="form-row">
+        <label class="form-label">Project: <span id="bulk-active-project" style="color:var(--purple);font-family:var(--mono);font-size:11px"></span></label>
+        <input type="file" id="bulk-sql-files" accept=".sql,.txt" multiple style="font-size:12px;color:var(--text2);margin-top:0.4rem">
+      </div>
+      <div class="form-row" style="margin-bottom:0">
+        <label class="form-label">Run on</label>
+        <div style="display:flex;gap:1.5rem">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text2)">
+            <input type="radio" name="bulk-sql-conn" value="target" checked style="accent-color:var(--accent)"> Target database
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text2)">
+            <input type="radio" name="bulk-sql-conn" value="source" style="accent-color:var(--accent)"> Source database
+          </label>
+        </div>
+      </div>
+      <div id="bulk-import-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:16px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeBulkImportModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmBulkImport()">Import files</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
 (function initUser(){
@@ -477,6 +516,8 @@ let isDirty = false;
 // Job-sidebar sort mode: 'newest' (default) or 'alpha'. Declared early because the initial
 // loadProject() IIFE below calls renderJobs() which reads this.
 let jobSortMode = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cygenix_job_sort')) || 'newest';
+// Scope filter: 'project' | 'all' | 'unassigned'. Same reason — read during first renderJobs().
+let jobScope = (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('cygenix_job_scope')) || 'project';
 
 function newProjectId(){ return 'proj_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
 
@@ -784,11 +825,23 @@ function toggleJobSort(){
   renderJobs();
 }
 
+// Scope: 'project' (current only) | 'all' (every job) | 'unassigned' (no projectId)
+function cycleJobScope(){
+  jobScope = (jobScope === 'project') ? 'all' : (jobScope === 'all') ? 'unassigned' : 'project';
+  sessionStorage.setItem('cygenix_job_scope', jobScope);
+  renderJobs();
+}
+function jobScopeLabel(){
+  return jobScope === 'project' ? 'This project' : jobScope === 'all' ? 'All projects' : 'Unassigned';
+}
+
 function renderJobs() {
   const list = document.getElementById('job-list');
   const countEl = document.getElementById('job-count');
   const sortBtn = document.getElementById('job-sort-btn');
+  const scopeBtn = document.getElementById('job-scope-btn');
   if (sortBtn) sortBtn.textContent = (jobSortMode === 'newest') ? 'Newest ▾' : 'A–Z ▾';
+  if (scopeBtn) scopeBtn.textContent = jobScopeLabel() + ' ▾';
 
   let jobs = [];
   try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch(e) {
@@ -806,12 +859,21 @@ function renderJobs() {
   // Preserve original indices so click-to-add still addresses the real array
   const enriched = jobs.map((j, i) => ({ j, origIdx: i }));
 
-  // Filter
+  // Scope filter (project-aware)
+  let scoped = enriched;
+  if (jobScope === 'project'){
+    scoped = enriched.filter(({j}) => (j.projectId || '') === (project?.id || ''));
+  } else if (jobScope === 'unassigned'){
+    scoped = enriched.filter(({j}) => !j.projectId);
+  }
+  // 'all' — no filtering
+
+  // Text filter
   const filterInput = document.getElementById('job-filter');
   const q = (filterInput?.value || '').trim().toLowerCase();
-  let filtered = enriched;
+  let filtered = scoped;
   if (q) {
-    filtered = enriched.filter(({j}) => {
+    filtered = scoped.filter(({j}) => {
       const hay = ((j.name||'') + ' ' + (j.source||'') + ' ' + (j.target||'')).toLowerCase();
       return hay.includes(q);
     });
@@ -830,10 +892,18 @@ function renderJobs() {
     });
   }
 
-  if (countEl) countEl.textContent = q ? (filtered.length + ' of ' + total) : String(total);
+  // Count display: "N of M" when filtered or scoped, plain "N" when showing everything
+  if (countEl) {
+    const showingAll = (jobScope === 'all' && !q);
+    countEl.textContent = showingAll ? String(total) : (filtered.length + ' of ' + total);
+  }
 
   if (!filtered.length) {
-    list.innerHTML = '<div class="job-item-empty">No matches for "' + esc(q) + '"</div>';
+    const reason = q ? 'No matches for "' + esc(q) + '"'
+                   : jobScope === 'project' ? 'No jobs in this project yet'
+                   : jobScope === 'unassigned' ? 'No unassigned jobs'
+                   : 'No jobs';
+    list.innerHTML = '<div class="job-item-empty">' + reason + '</div>';
     return;
   }
 
@@ -1245,6 +1315,121 @@ function openSqlModal(gi, si) {
 }
 
 function closeSqlModal() { document.getElementById('sql-modal').style.display='none'; editingSqlIndex=null; }
+
+// ── Bulk SQL import ──────────────────────────────────────────────────────────
+function openBulkImportModal(){
+  if (!project || !project.id){
+    alert('Create or select a project first.');
+    return;
+  }
+  document.getElementById('bulk-active-project').textContent = project.name || '(unnamed)';
+  document.getElementById('bulk-sql-files').value = '';
+  document.getElementById('bulk-import-status').textContent = '';
+  document.querySelector('input[name="bulk-sql-conn"][value="target"]').checked = true;
+  document.getElementById('bulk-import-modal').style.display = 'flex';
+}
+function closeBulkImportModal(){
+  document.getElementById('bulk-import-modal').style.display = 'none';
+}
+
+// Read a File object as text. Returns a Promise.
+function readFileAsText(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result);
+    r.onerror = () => reject(new Error('Could not read ' + file.name));
+    r.readAsText(file);
+  });
+}
+
+async function confirmBulkImport(){
+  const fileInput = document.getElementById('bulk-sql-files');
+  const statusEl  = document.getElementById('bulk-import-status');
+  const files     = Array.from(fileInput.files || []);
+  if (!files.length){
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = 'Pick at least one file.';
+    return;
+  }
+  const connTarget = (document.querySelector('input[name="bulk-sql-conn"]:checked') || {value:'target'}).value;
+  const pid = project.id;
+
+  // Load existing library, validate we can parse it
+  let jobs = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = 'Could not read existing jobs library.';
+    return;
+  }
+
+  let added = 0, skipped = 0, failed = 0;
+  const skippedNames = [];
+  for (const file of files){
+    try {
+      const sql = await readFileAsText(file);
+      if (!sql || !sql.trim()){
+        skipped++; skippedNames.push(file.name + ' (empty)');
+        continue;
+      }
+      const baseName = file.name.replace(/\.(sql|txt)$/i, '');
+      // Deduplicate: if the active project already has a job with this exact name, skip.
+      // Jobs with the same name in other projects are fine.
+      const dupe = jobs.find(j => j.projectId === pid && (j.name||'') === baseName);
+      if (dupe){
+        skipped++; skippedNames.push(file.name + ' (duplicate name in this project)');
+        continue;
+      }
+      const job = {
+        id: 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+        name: baseName,
+        jobType: 'sql-script',
+        type: 'sql',
+        projectId: pid,
+        sql: sql,
+        connTarget: connTarget,    // 'target' | 'source'
+        source: connTarget === 'source' ? 'sql · source' : 'sql · target',
+        target: '',
+        totalRows: 0,
+        columnMapping: [],
+        status: 'ready',
+        created: new Date().toISOString(),
+        imported: true,
+        originalFilename: file.name
+      };
+      jobs.unshift(job);
+      added++;
+    } catch(e){
+      failed++;
+      console.warn('Import failed for', file.name, e);
+    }
+  }
+
+  // Persist, cap to 100 to match existing behaviour
+  try {
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0, 100)));
+  } catch(e){
+    statusEl.style.color = 'var(--red)';
+    statusEl.textContent = 'Storage error: ' + e.message;
+    return;
+  }
+
+  // Report result
+  const bits = [];
+  if (added)   bits.push(added + ' imported');
+  if (skipped) bits.push(skipped + ' skipped');
+  if (failed)  bits.push(failed + ' failed');
+  statusEl.style.color = added ? 'var(--green)' : 'var(--amber)';
+  statusEl.textContent = '✓ ' + bits.join(' · ') + (skippedNames.length ? ' — ' + skippedNames.slice(0,3).join(', ') : '');
+
+  // Refresh sidebar
+  renderJobs();
+
+  // Close the modal after a short delay so the user sees the result
+  if (added){
+    setTimeout(() => closeBulkImportModal(), 1200);
+    showToast('Imported ' + added + ' SQL job' + (added===1?'':'s'));
+  }
+}
 
 function loadSqlFile(input) {
   const f = input.files[0]; if (!f) return;

@@ -670,6 +670,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <div class="panel-title">All Migration Jobs</div>
         <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
       </div>
+      <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
+        <label style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Project</label>
+        <select id="jobs-project-filter" class="form-input" style="width:auto;min-width:220px;padding:5px 10px;font-size:12px" onchange="renderAllJobs()"></select>
+        <span id="jobs-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
+      </div>
       <div id="all-jobs"></div>
     </div>
 
@@ -2540,7 +2545,52 @@ function showToast(msg) {
 }
 
 function renderDashboard()     { $('dashboard-jobs').innerHTML = jobsTableHTML(state.jobs.slice(0,5)); updateStats(); }
-function renderAllJobs()       { $('all-jobs').innerHTML = jobsTableHTML(state.jobs); }
+function renderAllJobs() {
+  // Populate the project filter dropdown from cygenix_projects (+ Active / All / Unassigned entries)
+  const select = document.getElementById('jobs-project-filter');
+  let projects = [];
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]'); } catch {}
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  const currentValue = select?.value || 'active';
+
+  if (select){
+    const sortedProjects = [...projects].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+    const options = [
+      `<option value="active">Active project${activeId ? (' — ' + (projects.find(p=>p.id===activeId)?.name || '(unknown)')) : ''}</option>`,
+      `<option value="__all">All projects</option>`,
+      `<option value="__unassigned">Unassigned (no project)</option>`,
+      `<option disabled>──────────</option>`,
+      ...sortedProjects.map(p => `<option value="${p.id}">${(p.name||'(unnamed)').replace(/</g,'&lt;')}</option>`)
+    ];
+    select.innerHTML = options.join('');
+    // Try to keep the previous selection; fall back to 'active'
+    const valid = Array.from(select.options).some(o => o.value === currentValue);
+    select.value = valid ? currentValue : 'active';
+  }
+
+  // Apply filter
+  const filterValue = select?.value || 'active';
+  let shown = state.jobs;
+  if (filterValue === 'active'){
+    shown = state.jobs.filter(j => (j.projectId||'') === activeId);
+  } else if (filterValue === '__all'){
+    shown = state.jobs;
+  } else if (filterValue === '__unassigned'){
+    shown = state.jobs.filter(j => !j.projectId);
+  } else {
+    shown = state.jobs.filter(j => j.projectId === filterValue);
+  }
+
+  // Count display
+  const countEl = document.getElementById('jobs-filter-count');
+  if (countEl){
+    countEl.textContent = (filterValue === '__all') ? `${state.jobs.length} total` : `${shown.length} of ${state.jobs.length}`;
+  }
+
+  $('all-jobs').innerHTML = shown.length
+    ? jobsTableHTML(shown)
+    : '<div style="padding:2rem;text-align:center;color:var(--text3);font-size:12px;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg)">No jobs match this filter.</div>';
+}
 
 function codePanel(job, type) {
   const content = type==='schema' ? job.schemaSQL : job.migrationSQL;
