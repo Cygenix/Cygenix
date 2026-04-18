@@ -1280,7 +1280,7 @@ async function askClaudeForMapping(src, tgt, apiKey){
   // Privacy: check mode + filter out excluded columns before sending schema to Claude
   const P = window.CygenixPrivacy;
   if (P && !P.isAIAllowed('schema')){
-    throw new Error('AI mapping is disabled by project privacy settings (mode: '+P.getMode().toUpperCase()+'). Change on the Privacy & Security page.');
+    throw new Error('AI mapping is disabled by project privacy settings (mode: '+P.getMode().toUpperCase()+'). Change on the Governance page.');
   }
   const srcColsAll = src.columns.map(c=>typeof c==='string'?c:c.name);
   const tgtColsAll = tgt.columns.filter(c=>!c.isIdentity);

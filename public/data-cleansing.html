@@ -729,7 +729,7 @@ async function runDetection(){
       if (P && !P.isAIAllowed('rowdata')){
         const mode = P.getMode();
         log('AI review skipped · Privacy mode: '+mode.toUpperCase()+' (row data cannot be sent to Claude)', 'err');
-        log('  → Change the mode on the Privacy & Security page if you want AI review.', 'err');
+        log('  → Change the mode on the Governance page if you want AI review.', 'err');
       } else {
         const toReview = built.filter(c => c.confidence === 'MED').slice(0, 20);
         if (toReview.length){

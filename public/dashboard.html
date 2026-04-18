@@ -317,10 +317,59 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-privacy-security .ps-transport code{font-family:var(--mono);background:var(--bg3);padding:1px 4px;border-radius:3px}
 
 #view-privacy-security .ps-mode-indicator{font-size:10px;color:var(--text3);font-family:var(--mono)}
+
+/* ─── Integrations view (scoped) ──────────────────────────────────────── */
+#view-integrations .in-head{margin-bottom:1.25rem}
+#view-integrations .in-title{font-size:1.4rem;font-weight:600;margin-bottom:0.25rem}
+#view-integrations .in-sub{font-size:12px;color:var(--text3);max-width:900px;line-height:1.6}
+
+#view-integrations .in-section{margin-bottom:0.5rem}
+#view-integrations .in-section-head{margin-bottom:0.75rem}
+#view-integrations .in-section-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:2px}
+#view-integrations .in-section-sub{font-size:11px;color:var(--text3)}
+
+#view-integrations .in-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.75rem}
+#view-integrations .in-grid-muted .in-card{opacity:0.55;cursor:default}
+#view-integrations .in-grid-muted .in-card:hover{border-color:var(--border2);transform:none}
+
+#view-integrations .in-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:10px;padding:1rem;cursor:pointer;transition:border-color 0.15s,transform 0.15s;display:flex;flex-direction:column;gap:0.5rem;position:relative}
+#view-integrations .in-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+#view-integrations .in-card.enabled{border-color:var(--green);background:linear-gradient(180deg, rgba(34,201,122,0.04) 0%, var(--bg2) 80%)}
+#view-integrations .in-card.enabled:hover{border-color:var(--green)}
+#view-integrations .in-card-top{display:flex;align-items:flex-start;gap:0.6rem}
+#view-integrations .in-card-icon{font-size:22px;line-height:1;flex-shrink:0}
+#view-integrations .in-card-meta{flex:1;min-width:0}
+#view-integrations .in-card-name{font-size:13px;font-weight:600;margin-bottom:2px}
+#view-integrations .in-card-category{font-size:9.5px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.08em}
+#view-integrations .in-card-desc{font-size:11.5px;color:var(--text2);line-height:1.5;min-height:32px}
+#view-integrations .in-card-badge{position:absolute;top:9px;right:9px;font-size:9px;padding:2px 7px;border-radius:100px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;font-weight:500}
+#view-integrations .in-card-badge.enabled{background:var(--green-bg);color:var(--green)}
+#view-integrations .in-card-badge.soon{background:var(--bg3);color:var(--text3)}
+
+/* Detail modal */
+#view-integrations .in-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.72);display:none;align-items:center;justify-content:center;z-index:800;padding:1rem}
+#view-integrations .in-modal-overlay.show{display:flex}
+#view-integrations .in-modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:12px;width:100%;max-width:540px;max-height:85vh;overflow-y:auto}
+#view-integrations .in-modal-head{padding:1rem 1.2rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.75rem}
+#view-integrations .in-modal-head .in-card-icon{font-size:26px}
+#view-integrations .in-modal-body{padding:1.1rem 1.2rem}
+#view-integrations .in-modal-foot{padding:0.8rem 1.2rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;justify-content:flex-end;align-items:center}
+#view-integrations .in-form-row{margin-bottom:0.75rem}
+#view-integrations .in-form-row label{display:block;font-size:11px;color:var(--text3);margin-bottom:0.3rem;text-transform:uppercase;letter-spacing:0.05em;font-family:var(--mono)}
+#view-integrations .in-form-row input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+#view-integrations .in-form-row input:focus{border-color:var(--accent)}
+#view-integrations .in-form-note{font-size:11px;color:var(--text3);line-height:1.55;background:var(--bg3);border-radius:6px;padding:0.6rem 0.75rem;margin-top:0.5rem}
+#view-integrations .in-form-note.warn{background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.25);color:var(--amber)}
+#view-integrations .in-result{font-size:11.5px;padding:0.6rem 0.75rem;border-radius:6px;font-family:var(--mono);margin-top:0.75rem;line-height:1.5;word-break:break-word}
+#view-integrations .in-result.ok{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.25)}
+#view-integrations .in-result.err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)}
+#view-integrations .in-enable-row{display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border);margin-top:0.5rem}
+#view-integrations .in-enable-row label{font-size:12px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-family:var(--serif);text-transform:none;letter-spacing:0}
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 <script src="/cygenix-privacy.js"></script>
+<script src="/cygenix-integrations.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 </head>
 <body>
@@ -392,7 +441,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
         <div class="nav-item" onclick="event.stopPropagation();showView('privacy-security')" style="color:var(--red)">
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M8 2 L3 4 V8 C3 11 5 13 8 14 C11 13 13 11 13 8 V4 Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 8l1.5 1.5L10.5 7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Privacy &amp; Security
+          Governance
+        </div>
+        <div class="nav-item" onclick="event.stopPropagation();showView('integrations')" style="color:var(--teal)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 4h4M6 12h4M4 6v4M12 6v4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+          Integrations
         </div>
       </div>
 
@@ -673,6 +726,12 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
         <label style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Project</label>
         <select id="jobs-project-filter" class="form-input" style="width:auto;min-width:220px;padding:5px 10px;font-size:12px" onchange="renderAllJobs()"></select>
+        <div id="jobs-bulk-actions" style="display:none;gap:0.5rem;align-items:center">
+          <span style="font-size:11px;color:var(--accent);font-family:var(--mono)"><span id="jobs-selected-count">0</span> selected</span>
+          <select id="jobs-move-target" class="form-input" style="width:auto;min-width:180px;padding:4px 8px;font-size:11px"></select>
+          <button class="btn btn-primary btn-sm" onclick="bulkMoveJobsToProject()">Move →</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearJobSelection()">Clear</button>
+        </div>
         <span id="jobs-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
       </div>
       <div id="all-jobs"></div>
@@ -925,7 +984,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     <!-- PRIVACY & SECURITY VIEW -->
     <div id="view-privacy-security" class="view">
       <div class="ps-head">
-        <div class="ps-title">🔒 Privacy &amp; Security</div>
+        <div class="ps-title">🔒 Governance</div>
         <div class="ps-sub">
           Control how much of your data reaches Claude during a migration. Settings are stored in your browser (localStorage) and apply across all Cygenix pages that call AI.
           These controls affect what Cygenix sends to the Anthropic API on your behalf — they do not change anything about Anthropic's own
@@ -1033,6 +1092,35 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
     </div>
     <!-- END PRIVACY & SECURITY -->
+
+    <!-- INTEGRATIONS VIEW -->
+    <div id="view-integrations" class="view">
+      <div class="in-head">
+        <div class="in-title">🔌 Integrations</div>
+        <div class="in-sub">
+          Connect Cygenix to external tools — import/export project bundles, post webhooks on migration events, and more. Credentials are stored in your browser (localStorage) and are not sent to Cygenix servers.
+        </div>
+      </div>
+
+      <!-- Available connectors -->
+      <div class="in-section">
+        <div class="in-section-head">
+          <div class="in-section-title">Available now</div>
+          <div class="in-section-sub">Working connectors. Configure and use today.</div>
+        </div>
+        <div class="in-grid" id="in-available-grid"></div>
+      </div>
+
+      <!-- Coming soon -->
+      <div class="in-section" style="margin-top:1.5rem">
+        <div class="in-section-head">
+          <div class="in-section-title">Coming soon</div>
+          <div class="in-section-sub">Planned connectors. Not yet functional.</div>
+        </div>
+        <div class="in-grid in-grid-muted" id="in-coming-grid"></div>
+      </div>
+    </div>
+    <!-- END INTEGRATIONS -->
 
     <!-- CONNECTIONS VIEW -->
     <div id="view-connections" class="view">
@@ -1455,6 +1543,7 @@ function showView(v) {
   if (v === 'project-settings')  initProjectSettingsView();
   if (v === 'backup')             initBackupView();
   if (v === 'privacy-security')  initPrivacySecurityView();
+  if (v === 'integrations')      initIntegrationsView();
 }
 
 function selectTarget(el, name) {
@@ -2402,6 +2491,97 @@ function updateStats() {
   $('jobs-count').textContent    = state.jobs.length;
 }
 
+// ── Bulk-select + move jobs to project ─────────────────────────────────────
+const selectedJobIds = new Set();
+
+function onJobSelectToggle(){
+  // Rebuild selectedJobIds from whatever boxes are currently ticked
+  selectedJobIds.clear();
+  document.querySelectorAll('.job-select-cb:checked').forEach(cb => {
+    selectedJobIds.add(cb.dataset.jobId);
+  });
+  refreshJobsBulkBar();
+}
+
+function toggleAllJobsSelection(on){
+  document.querySelectorAll('.job-select-cb').forEach(cb => {
+    cb.checked = !!on;
+    if (on) selectedJobIds.add(cb.dataset.jobId);
+    else    selectedJobIds.delete(cb.dataset.jobId);
+  });
+  refreshJobsBulkBar();
+}
+
+function clearJobSelection(){
+  selectedJobIds.clear();
+  document.querySelectorAll('.job-select-cb').forEach(cb => cb.checked = false);
+  const all = document.getElementById('jobs-select-all');
+  if (all) all.checked = false;
+  refreshJobsBulkBar();
+}
+
+function refreshJobsBulkBar(){
+  const bar = document.getElementById('jobs-bulk-actions');
+  const count = document.getElementById('jobs-selected-count');
+  if (!bar) return;
+  if (selectedJobIds.size === 0){
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  count.textContent = selectedJobIds.size;
+
+  // Populate the move-target dropdown with project options (+ "Unassigned")
+  const target = document.getElementById('jobs-move-target');
+  if (target && !target.options.length){
+    refreshJobsMoveTargetDropdown();
+  }
+}
+
+function refreshJobsMoveTargetDropdown(){
+  const target = document.getElementById('jobs-move-target');
+  if (!target) return;
+  let projects = [];
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]'); } catch {}
+  const sorted = [...projects].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+  target.innerHTML = '<option value="">— pick a destination —</option>'
+    + sorted.map(p => `<option value="${p.id}">${(p.name||'(unnamed)').replace(/</g,'&lt;')}</option>`).join('')
+    + '<option value="__unassigned">(Remove project — make unassigned)</option>';
+}
+
+function bulkMoveJobsToProject(){
+  const target = document.getElementById('jobs-move-target');
+  const destValue = target?.value || '';
+  if (!destValue){ alert('Pick a destination project first.'); return; }
+  if (!selectedJobIds.size){ return; }
+
+  const destLabel = (destValue === '__unassigned')
+    ? 'Unassigned'
+    : (JSON.parse(localStorage.getItem('cygenix_projects')||'[]').find(p => p.id===destValue)?.name || destValue);
+  if (!confirm(`Move ${selectedJobIds.size} job(s) to "${destLabel}"?`)) return;
+
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    let moved = 0;
+    for (const job of jobs){
+      if (selectedJobIds.has(job.id)){
+        job.projectId = (destValue === '__unassigned') ? '' : destValue;
+        moved++;
+      }
+    }
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+    // Refresh local state if it's mirrored
+    if (state && Array.isArray(state.jobs)){
+      state.jobs = jobs;
+    }
+    clearJobSelection();
+    renderAllJobs();
+    showToast(`Moved ${moved} job(s) to ${destLabel}`);
+  } catch(e){
+    alert('Could not move jobs: ' + e.message);
+  }
+}
+
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
 
@@ -2426,11 +2606,13 @@ function jobsTableHTML(jobs) {
   }
 
   return '<table class="jobs-table"><thead><tr>' +
+    '<th style="width:28px"><input type="checkbox" id="jobs-select-all" onchange="toggleAllJobsSelection(this.checked)" style="cursor:pointer"></th>' +
     '<th style="width:40px">#</th>' +
     '<th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
     '<th>Exec Status</th><th>Last Run</th><th>Actions</th>' +
     '</tr></thead><tbody>' +
     jobs.map((j, idx) => `<tr id="job-row-${j.id}" data-job-id="${j.id}">
+      <td style="text-align:center"><input type="checkbox" class="job-select-cb" data-job-id="${j.id}" onchange="onJobSelectToggle()" style="cursor:pointer" ${selectedJobIds.has(j.id)?'checked':''}></td>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${idx+1}</td>
       <td>
         <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:2px">
@@ -2590,6 +2772,14 @@ function renderAllJobs() {
   $('all-jobs').innerHTML = shown.length
     ? jobsTableHTML(shown)
     : '<div style="padding:2rem;text-align:center;color:var(--text3);font-size:12px;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg)">No jobs match this filter.</div>';
+
+  // Sync bulk-select UI with what's on screen: drop any previously-selected IDs that are no longer visible
+  const visibleIds = new Set(shown.map(j => j.id));
+  for (const id of [...selectedJobIds]){
+    if (!visibleIds.has(id)) selectedJobIds.delete(id);
+  }
+  refreshJobsMoveTargetDropdown();
+  refreshJobsBulkBar();
 }
 
 function codePanel(job, type) {
@@ -3998,6 +4188,211 @@ function psExportLog(){
 function psToast(msg){
   if (typeof showToast === 'function'){ showToast(msg); return; }
   console.log('[privacy]', msg);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTEGRATIONS VIEW
+// ═══════════════════════════════════════════════════════════════════════════
+function initIntegrationsView(){
+  if (!window.CygenixIntegrations){ console.warn('CygenixIntegrations not loaded'); return; }
+  renderIntegrationsGrids();
+}
+
+function escIn(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderIntegrationsGrids(){
+  const connectors = window.CygenixIntegrations.list();
+  const available = connectors.filter(c => c.status === 'available');
+  const coming    = connectors.filter(c => c.status === 'coming-soon');
+
+  const cardHTML = (c) => {
+    const enabled = c.status === 'available' && window.CygenixIntegrations.isEnabled(c.id);
+    const badge = c.status === 'coming-soon'
+      ? '<span class="in-card-badge soon">soon</span>'
+      : enabled ? '<span class="in-card-badge enabled">● on</span>' : '';
+    const onClick = c.status === 'available'
+      ? `openIntegrationModal('${c.id}')`
+      : ''; // coming-soon cards are informational only
+    return `
+      <div class="in-card${enabled?' enabled':''}" onclick="${onClick}" data-connector="${c.id}">
+        ${badge}
+        <div class="in-card-top">
+          <div class="in-card-icon">${c.icon}</div>
+          <div class="in-card-meta">
+            <div class="in-card-name">${escIn(c.name)}</div>
+            <div class="in-card-category">${escIn(c.category)}</div>
+          </div>
+        </div>
+        <div class="in-card-desc">${escIn(c.description)}</div>
+      </div>`;
+  };
+
+  document.getElementById('in-available-grid').innerHTML = available.map(cardHTML).join('');
+  document.getElementById('in-coming-grid').innerHTML    = coming.map(cardHTML).join('');
+}
+
+// ── Detail modal ─────────────────────────────────────────────────────────
+function openIntegrationModal(id){
+  const c = window.CygenixIntegrations.getConnector(id);
+  if (!c || c.status !== 'available') return;
+  const cfg = window.CygenixIntegrations.getConfig(id) || {};
+
+  // Build modal content by connector type.
+  let body = '';
+  let primaryBtn = '';
+
+  // Config fields (shared rendering)
+  const configFieldsHTML = (c.configFields || []).map(f => `
+    <div class="in-form-row">
+      <label>${escIn(f.label)}</label>
+      <input type="${escIn(f.type||'text')}" id="in-field-${escIn(f.key)}" placeholder="${escIn(f.placeholder||'')}" value="${escIn(cfg[f.key]||'')}">
+    </div>
+  `).join('');
+
+  if (id === 'webhook'){
+    body = configFieldsHTML + `
+      <div class="in-form-note warn">
+        <strong>CORS heads-up:</strong> browser-to-external-webhook calls are blocked by most services. A successful "test" below means your endpoint explicitly allows cross-origin POSTs. If your service doesn't, use a relay (e.g. webhook.site works; most SaaS webhooks don't accept browser calls).
+      </div>
+      <div class="in-enable-row">
+        <input type="checkbox" id="in-enable-toggle" ${cfg.enabled?'checked':''}>
+        <label for="in-enable-toggle">Enabled — receive Cygenix events</label>
+      </div>
+    `;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="testIntegration('${id}')">🧪 Test webhook</button>`;
+
+  } else if (id === 'json-export'){
+    body = `
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:0.5rem">
+        Exports the currently-active project — its settings, groups, and all jobs attached to it — as a single JSON file. Useful for backups, handover, or feeding into external ETL pipelines.
+      </div>
+      <div class="in-form-note">
+        The bundle includes: project metadata · source/target connection strings · groups and steps · associated jobs (with mappings + SQL). It does NOT include: API keys · privacy audit log · other projects.
+      </div>
+    `;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runIntegration('${id}')">⬇ Download bundle</button>`;
+
+  } else if (id === 'json-import'){
+    body = `
+      <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:0.75rem">
+        Read a Cygenix JSON bundle from your computer and bring its project into your workspace.
+      </div>
+      <div class="in-form-row">
+        <label>Bundle file (.json)</label>
+        <input type="file" id="in-import-file" accept=".json" style="padding:0.4rem">
+      </div>
+      <div class="in-form-row">
+        <label>Import mode</label>
+        <div style="display:flex;gap:1.25rem;padding:0.4rem 0">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;text-transform:none;letter-spacing:0;font-family:var(--serif)">
+            <input type="radio" name="in-import-mode" value="new" checked> Create as new project
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;text-transform:none;letter-spacing:0;font-family:var(--serif)">
+            <input type="radio" name="in-import-mode" value="replace"> Replace current project
+          </label>
+        </div>
+      </div>
+      <div class="in-form-note warn">
+        "Replace current project" overwrites the active project's groups, steps, connection strings, and jobs. There is no undo. Use "Create as new project" unless you're certain.
+      </div>
+    `;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runImportIntegration()">📥 Import bundle</button>`;
+
+  } else if (id === 'csv-jobs'){
+    body = `
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">
+        Exports every job in the library as a CSV — includes project name, job name, source, target, created date, and status. Useful for inventory review in Excel or Google Sheets.
+      </div>
+    `;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="runIntegration('${id}')">⬇ Download CSV</button>`;
+  }
+
+  const modalHTML = `
+    <div class="in-modal-overlay show" id="in-modal-overlay" onclick="if(event.target===this)closeIntegrationModal()">
+      <div class="in-modal">
+        <div class="in-modal-head">
+          <div class="in-card-icon">${c.icon}</div>
+          <div style="flex:1">
+            <div style="font-size:14px;font-weight:600">${escIn(c.name)}</div>
+            <div style="font-size:11px;color:var(--text3)">${escIn(c.description)}</div>
+          </div>
+          <button onclick="closeIntegrationModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0 4px">✕</button>
+        </div>
+        <div class="in-modal-body">
+          ${body}
+          <div id="in-result" style="display:none"></div>
+        </div>
+        <div class="in-modal-foot">
+          <button class="btn btn-ghost btn-sm" onclick="saveIntegrationConfig('${id}')">💾 Save</button>
+          ${primaryBtn}
+          <button class="btn btn-ghost btn-sm" onclick="closeIntegrationModal()">Close</button>
+        </div>
+      </div>
+    </div>`;
+
+  // Insert into DOM
+  const existing = document.getElementById('in-modal-overlay');
+  if (existing) existing.remove();
+  document.getElementById('view-integrations').insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function closeIntegrationModal(){
+  const m = document.getElementById('in-modal-overlay');
+  if (m) m.remove();
+}
+
+function saveIntegrationConfig(id){
+  const c = window.CygenixIntegrations.getConnector(id);
+  if (!c) return;
+  const cfg = {};
+  (c.configFields || []).forEach(f => {
+    const el = document.getElementById('in-field-'+f.key);
+    if (el) cfg[f.key] = el.value.trim();
+  });
+  const toggle = document.getElementById('in-enable-toggle');
+  if (toggle) cfg.enabled = toggle.checked;
+  window.CygenixIntegrations.saveConfig(id, cfg);
+  showInResult('ok', '✓ Saved');
+  renderIntegrationsGrids();
+}
+
+async function testIntegration(id){
+  // Save first so test uses the current form values
+  saveIntegrationConfig(id);
+  showInResult('ok', '⏳ Testing…');
+  const r = await window.CygenixIntegrations.test(id);
+  showInResult(r.ok ? 'ok' : 'err', (r.ok ? '✓ ' : '✕ ') + r.message);
+}
+
+async function runIntegration(id){
+  showInResult('ok', '⏳ Running…');
+  const r = await window.CygenixIntegrations.run(id);
+  showInResult(r.ok ? 'ok' : 'err', (r.ok ? '✓ ' : '✕ ') + r.message);
+  if (r.ok && typeof showToast === 'function') showToast(r.message);
+}
+
+async function runImportIntegration(){
+  const file = document.getElementById('in-import-file')?.files?.[0];
+  if (!file){ showInResult('err', '✕ Pick a file first'); return; }
+  const mode = (document.querySelector('input[name="in-import-mode"]:checked') || {value:'new'}).value;
+  showInResult('ok', '⏳ Reading…');
+  try {
+    const text = await file.text();
+    const bundle = JSON.parse(text);
+    const r = await window.CygenixIntegrations.run('json-import', { bundle, mode });
+    showInResult(r.ok ? 'ok' : 'err', (r.ok ? '✓ ' : '✕ ') + r.message);
+    if (r.ok && typeof showToast === 'function') showToast(r.message);
+  } catch(e){
+    showInResult('err', '✕ Could not read bundle: ' + e.message);
+  }
+}
+
+function showInResult(kind, message){
+  const el = document.getElementById('in-result');
+  if (!el) return;
+  el.className = 'in-result ' + kind;
+  el.textContent = message;
+  el.style.display = 'block';
 }
 
 // Issue Management JS moved to /issues.html
