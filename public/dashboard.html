@@ -366,6 +366,57 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-integrations .in-enable-row{display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border);margin-top:0.5rem}
 #view-integrations .in-enable-row label{font-size:12px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-family:var(--serif);text-transform:none;letter-spacing:0}
 
+/* ─── Ring chart (job status breakdown) ─────────────────────────────── */
+.ring-wrap{
+  background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;
+  padding:1.5rem 2rem;margin-bottom:1rem;
+  display:grid;grid-template-columns:auto 1fr;gap:2rem;align-items:center;
+  position:relative;overflow:hidden;
+}
+.ring-wrap::before{
+  content:'';position:absolute;inset:0;
+  background-image:radial-gradient(circle at 30% 40%, rgba(79,142,255,0.04), transparent 50%);
+  pointer-events:none;
+}
+.ring-svg-col{ position:relative;z-index:1; }
+.ring-info-col{ position:relative;z-index:1;min-width:0; }
+.ring-info-head{ font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.25rem; }
+.ring-info-title{ font-size:1.15rem;font-weight:600;color:var(--text);margin-bottom:0.25rem;letter-spacing:-0.01em; }
+.ring-info-sub{ font-size:12px;color:var(--text3);margin-bottom:1rem; }
+.ring-legend{ display:flex;flex-direction:column;gap:0.55rem; }
+.ring-leg-row{ display:flex;align-items:center;gap:0.6rem;font-size:12px; }
+.ring-leg-swatch{ width:10px;height:10px;border-radius:3px;flex-shrink:0; }
+.ring-leg-label{ flex:1;color:var(--text2); }
+.ring-leg-count{ font-family:var(--mono);font-size:11px;color:var(--text);font-weight:600; }
+.ring-leg-pct{ font-family:var(--mono);font-size:10px;color:var(--text3);margin-left:0.4rem; }
+
+.ring-svg{ display:block; }
+.ring-bg{ fill:none;stroke:var(--bg3);stroke-width:14; }
+.ring-seg{
+  fill:none;stroke-width:14;stroke-linecap:butt;
+  transform:rotate(-90deg);transform-origin:center;
+  transition:stroke-width 0.2s ease;
+  stroke-dasharray:0 1000;
+  animation:ringDraw 1.1s ease-out forwards;
+}
+@keyframes ringDraw{ /* replaced per-element via JS style */ }
+.ring-seg:hover{ stroke-width:18; }
+
+.ring-centre{ text-anchor:middle;dominant-baseline:central; }
+.ring-centre-num{
+  font-family:var(--serif);font-size:32px;font-weight:700;
+  fill:#fff;letter-spacing:-0.02em;
+}
+.ring-centre-lbl{ font-family:var(--mono);font-size:10px;fill:var(--text3);text-transform:uppercase;letter-spacing:0.12em; }
+
+@media (max-width: 720px){
+  .ring-wrap{ grid-template-columns:1fr;text-align:center; }
+  .ring-svg-col{ justify-self:center; }
+  .ring-info-head,.ring-info-title,.ring-info-sub{ text-align:center; }
+  .ring-legend{ align-items:center; }
+}
+
+
 /* ─── Migration Pipeline (dashboard) ──────────────────────────────────── */
 .pipeline-wrap{
   background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;
@@ -735,7 +786,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     <div id="view-dashboard" class="view active">
       <div class="panel-header">
         <div><div class="panel-title">SQL Migration Overview</div><div class="panel-sub" id="today-date"></div></div>
-        <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
       </div>
       <div class="stats-row">
         <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All time</div></div>
@@ -743,6 +793,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
         <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
       </div>
+      <div id="dashboard-ring-wrap"></div>
       <div class="panel-header" style="margin-top:1.5rem"><div class="panel-title">Migration Pipeline</div><div class="panel-sub">Click any stage to jump to that module</div></div>
       <div id="dashboard-pipeline" class="pipeline-wrap"></div>
     </div>
@@ -2934,7 +2985,123 @@ function renderDashboard() {
   // The Recent Jobs table has been replaced by the Migration Pipeline visual.
   // We still call updateStats() for the stat cards at the top.
   updateStats();
+  renderRing();
   renderPipeline();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// RING CHART — job status breakdown
+// Shows proportion of jobs in each lifecycle state. Uses real data only.
+// ══════════════════════════════════════════════════════════════════════════
+function renderRing(){
+  const host = document.getElementById('dashboard-ring-wrap');
+  if (!host) return;
+  const jobs = safeArr('cygenix_jobs');
+
+  // Bucket jobs by status. A job's status field is loose: 'ready', 'complete',
+  // 'success', 'failed', 'running', 'pending' — map to 4 canonical buckets.
+  const buckets = { complete: 0, ready: 0, failed: 0, pending: 0 };
+  jobs.forEach(j => {
+    const s = (j.executionStatus || j.status || '').toLowerCase();
+    if (s === 'complete' || s === 'success')            buckets.complete++;
+    else if (s === 'ready' || s === 'sql_ready')        buckets.ready++;
+    else if (s === 'failed' || s === 'error')           buckets.failed++;
+    else                                                 buckets.pending++;
+  });
+  const total = jobs.length;
+
+  const segments = [
+    { key:'complete', label:'Complete',     count: buckets.complete, color:'#22c97a' },
+    { key:'ready',    label:'SQL Ready',    count: buckets.ready,    color:'#4f8eff' },
+    { key:'failed',   label:'Failed',       count: buckets.failed,   color:'#f04646' },
+    { key:'pending',  label:'Pending',      count: buckets.pending,  color:'#a78bfa' },
+  ];
+
+  // Empty state — zero jobs total. Still show the ring as a muted full circle
+  // so the shape is there when the first job arrives, visually reassuring.
+  if (total === 0){
+    host.innerHTML = `
+      <div class="ring-wrap">
+        <div class="ring-svg-col">
+          ${ringSVG([], 0, 'No jobs', 'yet')}
+        </div>
+        <div class="ring-info-col">
+          <div class="ring-info-head">Job Status</div>
+          <div class="ring-info-title">No jobs yet</div>
+          <div class="ring-info-sub">Once you create a migration job, this chart tracks how jobs move through the lifecycle: pending → ready → complete.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const completePct = Math.round((buckets.complete / total) * 100);
+  const visibleSegs = segments.filter(s => s.count > 0);
+
+  // Legend rows — shown in the info column alongside the ring
+  const legendHTML = segments.map(s => {
+    const pct = total ? Math.round((s.count/total)*100) : 0;
+    const dim = s.count === 0;
+    return `
+      <div class="ring-leg-row" ${dim ? 'style="opacity:0.4"' : ''}>
+        <span class="ring-leg-swatch" style="background:${s.color}"></span>
+        <span class="ring-leg-label">${escP(s.label)}</span>
+        <span class="ring-leg-count">${s.count}</span>
+        <span class="ring-leg-pct">${pct}%</span>
+      </div>`;
+  }).join('');
+
+  host.innerHTML = `
+    <div class="ring-wrap">
+      <div class="ring-svg-col">
+        ${ringSVG(visibleSegs, total, String(completePct) + '%', 'complete')}
+      </div>
+      <div class="ring-info-col">
+        <div class="ring-info-head">Job Status Breakdown</div>
+        <div class="ring-info-title">${total} total job${total === 1 ? '' : 's'}</div>
+        <div class="ring-info-sub">Live view of where every job sits in the migration lifecycle.</div>
+        <div class="ring-legend">${legendHTML}</div>
+      </div>
+    </div>`;
+}
+
+// Build an animated SVG ring with the given segments. Segments must already
+// be filtered to ones with count > 0.
+function ringSVG(segments, total, centreNum, centreLabel){
+  const size = 180;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r  = 72;
+  const circumference = 2 * Math.PI * r;
+
+  // Each segment occupies (count / total) of the circumference, drawn
+  // sequentially. We use stroke-dasharray + stroke-dashoffset to carve out
+  // each segment on one shared circle path.
+  let offsetAccum = 0;
+  const segPaths = segments.map((s, i) => {
+    const frac = total ? (s.count / total) : 0;
+    const segLen = frac * circumference;
+    // Animate each segment by revealing its stroke-dasharray over time.
+    const animStyle = `animation: ringReveal${i} 0.9s cubic-bezier(0.22, 1, 0.36, 1) ${i * 120 + 100}ms forwards;`;
+    // Inline @keyframes per segment — safe: generated once per render.
+    const kf = `@keyframes ringReveal${i}{from{stroke-dasharray:0 ${circumference};}to{stroke-dasharray:${segLen - 2} ${circumference};}}`;
+    const html = `
+      <circle class="ring-seg" cx="${cx}" cy="${cy}" r="${r}"
+              stroke="${s.color}"
+              stroke-dasharray="0 ${circumference}"
+              stroke-dashoffset="${-offsetAccum}"
+              style="${animStyle}"/>
+      <style>${kf}</style>`;
+    offsetAccum += segLen;
+    return html;
+  }).join('');
+
+  return `
+    <svg class="ring-svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <circle class="ring-bg" cx="${cx}" cy="${cy}" r="${r}"/>
+      <g transform="rotate(-90 ${cx} ${cy})">${segPaths}</g>
+      <text class="ring-centre ring-centre-num" x="${cx}" y="${cy - 6}">${escP(centreNum)}</text>
+      <text class="ring-centre ring-centre-lbl" x="${cx}" y="${cy + 18}">${escP(centreLabel)}</text>
+    </svg>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
