@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Cygenix – Privacy & Security</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script src="/cygenix-privacy.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px}
+.back-link:hover{color:var(--text2)}
+.user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
+
+.container{max-width:1100px;margin:0 auto;padding:1.5rem 1.5rem 3rem}
+.page-head{margin-bottom:1.5rem}
+.page-title{font-size:1.5rem;font-weight:600;margin-bottom:0.25rem}
+.page-sub{font-size:12px;color:var(--text3);max-width:900px;line-height:1.6}
+
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1.25rem}
+.panel-head{padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg3);display:flex;align-items:center;gap:0.5rem}
+.panel-title{font-size:13px;font-weight:600;flex:1}
+.panel-body{padding:1.1rem 1rem}
+
+.btn{padding:0.5rem 0.9rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);color:var(--text2);cursor:pointer;font-size:12px;font-family:var(--serif);transition:all 0.15s;display:inline-flex;align-items:center;gap:0.4rem}
+.btn:hover{border-color:var(--accent);color:var(--text)}
+.btn:disabled{opacity:0.45;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:#5b95ff;color:#fff}
+.btn-sm{padding:3px 9px;font-size:11px}
+
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+
+/* Mode selector — three big cards */
+.mode-grid{display:grid;grid-template-columns:repeat(3, 1fr);gap:0.75rem;margin-bottom:0.5rem}
+.mode-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:1rem;cursor:pointer;transition:all 0.15s;position:relative}
+.mode-card:hover{border-color:var(--accent)}
+.mode-card.active{border-color:var(--accent);background:rgba(61,126,255,0.08);box-shadow:0 0 0 2px rgba(61,126,255,0.2)}
+.mode-title{font-size:13px;font-weight:600;margin-bottom:0.35rem;display:flex;align-items:center;gap:6px}
+.mode-body{font-size:11.5px;color:var(--text2);line-height:1.55}
+.mode-card.active .mode-title::after{content:"✓";margin-left:auto;color:var(--accent)}
+
+/* Toggle row */
+.toggle-row{display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem 0;border-bottom:0.5px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.toggle-switch{flex:0 0 44px;width:44px;height:24px;background:var(--bg4);border:0.5px solid var(--border2);border-radius:12px;cursor:pointer;position:relative;transition:all 0.2s;margin-top:2px}
+.toggle-switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--text3);border-radius:50%;transition:all 0.2s}
+.toggle-switch.on{background:var(--accent);border-color:var(--accent)}
+.toggle-switch.on::after{left:22px;background:#fff}
+.toggle-info{flex:1}
+.toggle-label{font-size:13px;font-weight:500;margin-bottom:0.2rem}
+.toggle-desc{font-size:11.5px;color:var(--text3);line-height:1.5}
+
+/* Exclusion list */
+.exclusion-input-row{display:flex;gap:0.5rem;margin-bottom:0.5rem}
+.exclusion-list{display:flex;flex-wrap:wrap;gap:0.4rem}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:3px 10px 3px 12px;font-family:var(--mono);font-size:11px;color:var(--text2)}
+.chip-x{background:none;border:none;color:var(--text3);cursor:pointer;padding:0 2px;font-size:13px;line-height:1}
+.chip-x:hover{color:var(--red)}
+
+/* Disclosure panel */
+.disclosure-section{margin-bottom:1rem}
+.disclosure-title{font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.4rem;display:flex;align-items:center;gap:6px}
+.disclosure-title.sees{color:var(--amber)}
+.disclosure-title.doesnt{color:var(--green)}
+.disclosure-list{font-size:11.5px;color:var(--text2);line-height:1.7;padding-left:1rem}
+.disclosure-list li{margin-bottom:0.15rem}
+.disclosure-list strong{color:var(--text)}
+
+/* Audit log */
+.log-table{width:100%;font-family:var(--mono);font-size:11px}
+.log-row{display:grid;grid-template-columns:130px 120px 90px 1fr;gap:0.75rem;padding:0.4rem 0;border-bottom:0.5px solid rgba(255,255,255,0.04);align-items:baseline}
+.log-ts{color:var(--text3)}
+.log-feat{color:var(--accent)}
+.log-mode{color:var(--text2);text-transform:uppercase;font-size:10px}
+.log-details{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.log-empty{text-align:center;padding:2rem 1rem;color:var(--text3);font-size:12px}
+
+/* Toast */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.7rem 1rem;font-size:12px;color:var(--text2);z-index:500;opacity:0;transform:translateY(10px);transition:all 0.2s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:1.25rem">
+    <a href="/dashboard.html" class="back-link">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Back
+    </a>
+    <a href="/" class="logo">Cyge<span>nix</span></a>
+  </div>
+  <div class="user-pill" onclick="signOut()">
+    <div class="avatar" id="user-avatar">?</div>
+    <span id="user-name" style="font-size:12px;color:var(--text2)">Loading…</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="page-head">
+    <div class="page-title">🔒 Privacy &amp; Security</div>
+    <div class="page-sub">
+      Control how much of your data reaches Claude during a migration. Settings are stored in your browser (localStorage) and apply across all Cygenix pages that call AI.
+      These controls affect what Cygenix sends to the Anthropic API on your behalf — they do not change anything about Anthropic's own
+      <a href="https://www.anthropic.com/legal/commercial-terms" target="_blank" style="color:var(--accent)">API policies</a>
+      (which state that API inputs are not used to train Claude).
+    </div>
+  </div>
+
+  <!-- ── Transparency / what Claude sees today ───────────────────────────── -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">How Cygenix uses AI — plain-English disclosure</div></div>
+    <div class="panel-body">
+      <div class="disclosure-section">
+        <div class="disclosure-title sees">⚠ Where Claude currently sees data</div>
+        <ul class="disclosure-list">
+          <li><strong>Dedup AI review</strong> — sends row values from MED-confidence clusters to help judge if they're true duplicates (names, addresses, phone numbers, etc.). <em>Only the columns you ticked as match columns, only the clusters that are ambiguous.</em></li>
+          <li><strong>SQL Editor AI helper</strong> — sends whatever SQL you write in the editor, including any literal values in WHERE clauses or INSERT statements.</li>
+          <li><strong>WHERE clause natural-language helper</strong> — sends your request plus the table schema (column names + types).</li>
+        </ul>
+      </div>
+      <div class="disclosure-section">
+        <div class="disclosure-title doesnt">✓ Where Claude does NOT see data</div>
+        <ul class="disclosure-list">
+          <li><strong>AI column mapping</strong> (source ↔ target) — only sends schema (column names, types), never row data.</li>
+          <li><strong>One-to-many mapping</strong> — only sends schema.</li>
+          <li><strong>Validation</strong> — no AI involved, pure SQL execution against your DB.</li>
+          <li><strong>Migration execution</strong> — no AI involved.</li>
+          <li><strong>Data insights</strong> — schema-only analysis.</li>
+        </ul>
+      </div>
+      <div style="background:rgba(45,212,191,0.06);border:0.5px solid rgba(45,212,191,0.25);border-radius:var(--r);padding:0.75rem 0.9rem;font-size:11.5px;color:var(--text2);line-height:1.6;margin-top:0.5rem">
+        <strong style="color:var(--teal)">Transport:</strong> your Anthropic API key lives in your browser's localStorage and is sent directly from your browser to <code style="font-family:var(--mono);background:var(--bg3);padding:1px 4px;border-radius:3px">api.anthropic.com</code>. Cygenix servers never see the key or the AI content.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Mode toggle ─────────────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">AI access mode</div>
+      <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">Active: <span id="mode-indicator">—</span></span>
+    </div>
+    <div class="panel-body">
+      <div class="mode-grid">
+        <div class="mode-card" data-mode="full" onclick="setMode('full')">
+          <div class="mode-title">🟢 Full</div>
+          <div class="mode-body">All AI features enabled. Row data and schema can be sent to Claude for mapping, dedup review, and SQL help.</div>
+        </div>
+        <div class="mode-card" data-mode="schema-only" onclick="setMode('schema-only')">
+          <div class="mode-title">🟡 Schema-only</div>
+          <div class="mode-body">AI features that would send row data are blocked. Schema-level AI (column mapping) still works. Recommended for client production migrations.</div>
+        </div>
+        <div class="mode-card" data-mode="no-ai" onclick="setMode('no-ai')">
+          <div class="mode-title">🔴 No AI</div>
+          <div class="mode-body">All Anthropic API calls disabled. Cygenix works as a pure SQL tool — mapping is manual, no AI assistance anywhere.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Redaction toggle ────────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-head"><div class="panel-title">Value redaction</div></div>
+    <div class="panel-body">
+      <div class="toggle-row">
+        <div class="toggle-switch" id="tog-redact" onclick="toggleRedact()"></div>
+        <div class="toggle-info">
+          <div class="toggle-label">Mask values before sending to AI</div>
+          <div class="toggle-desc">When AI does see row data (dedup review), mask the values first. <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:10.5px">Jane Smith → J**e S***h</code>, <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:10.5px">jane@acme.com → j**e@a**e.com</code>. Claude can still recognise patterns (email, name shape) without seeing the actual content.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Column exclusion list ───────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Sensitive column exclusion</div>
+      <span style="font-size:10px;color:var(--text3);font-family:var(--mono)"><span id="chip-count">0</span> patterns</span>
+    </div>
+    <div class="panel-body">
+      <div style="font-size:11.5px;color:var(--text3);line-height:1.6;margin-bottom:0.75rem">
+        Columns matching these glob patterns are hidden from AI prompts wherever Cygenix calls Claude — schema introspection, column mapping, dedup review, everything. Use <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px;font-size:10.5px">*</code> as a wildcard. Matches are case-insensitive.
+      </div>
+      <div class="exclusion-input-row">
+        <input id="new-pattern" class="form-input" placeholder="e.g. *salary*, DateOfBirth, *ssn*" onkeydown="if(event.key==='Enter'){event.preventDefault();addPattern();}" style="flex:1">
+        <button class="btn btn-sm btn-primary" onclick="addPattern()">+ Add pattern</button>
+      </div>
+      <div class="exclusion-list" id="exclusion-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Audit log ───────────────────────────────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">AI access audit log</div>
+      <button class="btn btn-sm" onclick="exportLog()">⬇ Export CSV</button>
+      <button class="btn btn-sm" onclick="clearLogUI()" style="color:var(--red)">Clear log</button>
+    </div>
+    <div class="panel-body" style="padding:0">
+      <div id="log-container">
+        <div class="log-empty">No AI access yet. The log captures every call from a Cygenix page to Claude.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Auth (consistent pattern with other Cygenix pages) ──────────────────────
+(function initUser(){
+  if (!sessionStorage.getItem('cygenix_token') && !localStorage.getItem('cygenix_token')) {
+    window.location.href='/login.html'; return;
+  }
+  try {
+    let email='', name='';
+    const entraRaw = sessionStorage.getItem('cygenix_entra_account') || localStorage.getItem('cygenix_entra_account');
+    if (entraRaw){ const e = JSON.parse(entraRaw); email = e.email||e.userId||''; name = e.name||''; }
+    if (!email){
+      const raw = JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user') || '{}');
+      email = raw.email || raw.user?.email || '';
+      name  = raw.user_metadata?.full_name || raw.user?.user_metadata?.full_name || '';
+    }
+    if (!email){
+      const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
+      if (token){ try { const p = JSON.parse(atob(token.split('.')[1])); email = p.email||p.preferred_username||p.sub||''; name = p.name||''; } catch {} }
+    }
+    if (email){
+      if (!name || name==='unknown') name = email.split('@')[0];
+      const initials = name.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+      document.getElementById('user-avatar').textContent = initials;
+      document.getElementById('user-name').textContent = name;
+    }
+  } catch(e){ console.warn('user init:', e.message); }
+})();
+
+async function signOut(){
+  sessionStorage.setItem('cygenix_just_signed_out', '1');
+  ['cygenix_token','cygenix_user','cygenix_expires','cygenix_entra_account','cygenix_active_user']
+    .forEach(k => { sessionStorage.removeItem(k); localStorage.removeItem(k); });
+  try {
+    if (typeof msal === 'undefined') throw new Error('MSAL not loaded');
+    const m = new msal.PublicClientApplication({
+      auth:{ clientId:'f3478996-b2b5-4b21-9a23-a6b97a0e5b13', authority:'https://cygenix.ciamlogin.com/',
+             knownAuthorities:['cygenix.ciamlogin.com'], redirectUri: window.location.origin + '/login.html' },
+      cache:{ cacheLocation:'localStorage' },
+    });
+    await m.initialize();
+    const account = m.getAllAccounts()[0];
+    await m.logoutRedirect({ account, postLogoutRedirectUri: window.location.origin + '/login.html' });
+  } catch(e){
+    window.location.href = 'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
+  }
+}
+
+const P = window.CygenixPrivacy;
+if (!P) { alert('Privacy helper failed to load — please reload'); throw new Error('no privacy helper'); }
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderMode(){
+  const mode = P.getMode();
+  document.querySelectorAll('.mode-card').forEach(el => el.classList.toggle('active', el.dataset.mode === mode));
+  document.getElementById('mode-indicator').textContent = mode.toUpperCase();
+}
+function setMode(mode){
+  P.saveSettings({ mode });
+  renderMode();
+  showToast('Mode set to ' + mode.toUpperCase());
+}
+
+function renderRedact(){
+  const on = P.getSettings().redactAIValues;
+  document.getElementById('tog-redact').classList.toggle('on', on);
+}
+function toggleRedact(){
+  const on = !P.getSettings().redactAIValues;
+  P.saveSettings({ redactAIValues: on });
+  renderRedact();
+  showToast(on ? 'Redaction enabled' : 'Redaction disabled');
+}
+
+function renderExclusions(){
+  const list = P.getSettings().columnExcludeList || [];
+  const el = document.getElementById('exclusion-list');
+  el.innerHTML = list.length
+    ? list.map((pat, i) => `<span class="chip">${esc(pat)} <button class="chip-x" onclick="removePattern(${i})" title="Remove">×</button></span>`).join('')
+    : '<div style="font-size:11px;color:var(--text3);font-style:italic">No patterns yet — add one above.</div>';
+  document.getElementById('chip-count').textContent = list.length;
+}
+function addPattern(){
+  const inp = document.getElementById('new-pattern');
+  const pat = inp.value.trim();
+  if (!pat) return;
+  const list = [...(P.getSettings().columnExcludeList || [])];
+  if (list.includes(pat)){ showToast('Already in the list'); return; }
+  list.push(pat);
+  P.saveSettings({ columnExcludeList: list });
+  inp.value = '';
+  renderExclusions();
+  showToast('Added: ' + pat);
+}
+function removePattern(idx){
+  const list = [...(P.getSettings().columnExcludeList || [])];
+  if (idx < 0 || idx >= list.length) return;
+  const removed = list.splice(idx, 1)[0];
+  P.saveSettings({ columnExcludeList: list });
+  renderExclusions();
+  showToast('Removed: ' + removed);
+}
+
+function renderLog(){
+  const log = P.getLog();
+  const el = document.getElementById('log-container');
+  if (!log.length){
+    el.innerHTML = '<div class="log-empty">No AI access yet. The log captures every call from a Cygenix page to Claude.</div>';
+    return;
+  }
+  // Newest first
+  const rev = [...log].reverse();
+  el.innerHTML = '<div style="padding:0.5rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg3)"><div class="log-row" style="border-bottom:none;font-weight:600;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.05em"><div>Timestamp</div><div>Feature</div><div>Mode</div><div>Details</div></div></div>'
+    + '<div class="log-table" style="padding:0 1rem">'
+    + rev.map(entry => {
+        const d = new Date(entry.ts);
+        const ts = d.toLocaleString('en-GB', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const details = typeof entry.details === 'object' ? JSON.stringify(entry.details) : String(entry.details||'');
+        return `<div class="log-row"><div class="log-ts">${esc(ts)}</div><div class="log-feat">${esc(entry.feature)}</div><div class="log-mode">${esc(entry.mode)}</div><div class="log-details" title="${esc(details)}">${esc(details)}</div></div>`;
+      }).join('')
+    + '</div>';
+}
+
+function clearLogUI(){
+  if (!confirm('Delete all audit log entries? This cannot be undone.')) return;
+  P.clearLog();
+  renderLog();
+  showToast('Log cleared');
+}
+
+function exportLog(){
+  const log = P.getLog();
+  if (!log.length){ showToast('Log is empty — nothing to export'); return; }
+  const q = v => '"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const rows = [['timestamp','feature','mode','details'].map(q).join(',')];
+  log.forEach(e => rows.push([e.ts, e.feature, e.mode, typeof e.details==='object'?JSON.stringify(e.details):e.details].map(q).join(',')));
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'cygenix-privacy-log.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Log exported');
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// Initial render
+renderMode();
+renderRedact();
+renderExclusions();
+renderLog();
+</script>
+
+</body>
+</html>

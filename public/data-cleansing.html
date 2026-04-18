@@ -11,6 +11,7 @@
 <script src="/connections.js"></script>
 <script src="/nav.js"></script>
 <script src="/cygenix-params.js"></script>
+<script src="/cygenix-privacy.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -722,20 +723,35 @@ async function runDetection(){
 
     log('Found '+built.length+' cluster(s) · '+built.reduce((a,c) => a+c.rows.length, 0)+' total duplicate row(s)', 'ok');
 
-    // 5 · Claude review of ambiguous (MED) clusters
+    // 5 · Claude review of ambiguous (MED) clusters — gated by privacy mode
     if (useAI && apiKey && built.length){
-      const toReview = built.filter(c => c.confidence === 'MED').slice(0, 20);
-      if (toReview.length){
-        log('Asking Claude to review '+toReview.length+' ambiguous cluster(s)…', 'hi');
-        for (let i = 0; i < toReview.length; i++){
-          setProg(i / toReview.length);
-          try {
-            const verdict = await reviewWithClaude(toReview[i], selected, apiKey);
-            toReview[i].aiVerdict = verdict.verdict;
-            toReview[i].aiReason  = verdict.reason;
-            log('  cluster #'+(built.indexOf(toReview[i])+1)+': '+verdict.verdict+' — '+(verdict.reason||'').slice(0,80));
-          } catch(e){
-            log('  AI review failed: '+e.message, 'err');
+      const P = window.CygenixPrivacy;
+      if (P && !P.isAIAllowed('rowdata')){
+        const mode = P.getMode();
+        log('AI review skipped · Privacy mode: '+mode.toUpperCase()+' (row data cannot be sent to Claude)', 'err');
+        log('  → Change the mode on the Privacy & Security page if you want AI review.', 'err');
+      } else {
+        const toReview = built.filter(c => c.confidence === 'MED').slice(0, 20);
+        if (toReview.length){
+          const redactOn = P?.getSettings()?.redactAIValues;
+          log('Asking Claude to review '+toReview.length+' ambiguous cluster(s)'+(redactOn?' (values will be redacted)':'')+'…', 'hi');
+          for (let i = 0; i < toReview.length; i++){
+            setProg(i / toReview.length);
+            try {
+              const verdict = await reviewWithClaude(toReview[i], selected, apiKey);
+              toReview[i].aiVerdict = verdict.verdict;
+              toReview[i].aiReason  = verdict.reason;
+              log('  cluster #'+(built.indexOf(toReview[i])+1)+': '+verdict.verdict+' — '+(verdict.reason||'').slice(0,80));
+              // Audit log — record each call that actually went out
+              P?.logAIAccess('dedup-ai-review', {
+                clusterRows: toReview[i].rows.length,
+                matchColumns: selected.map(s=>s.name),
+                redacted: !!redactOn,
+                verdict: verdict.verdict
+              });
+            } catch(e){
+              log('  AI review failed: '+e.message, 'err');
+            }
           }
         }
       }
@@ -753,12 +769,24 @@ async function runDetection(){
 }
 
 async function reviewWithClaude(cluster, selected, apiKey){
-  const colNames = selected.map(s => s.name);
-  const preview = cluster.rows.slice(0, 6).map((r, i) => i+': '+colNames.map(c => c+'='+JSON.stringify(r[c]||'')).join(' '));
+  const P = window.CygenixPrivacy;
+  const redactOn = P?.getSettings()?.redactAIValues;
+  // Filter out excluded columns (sensitive glob matches) — Claude never sees them
+  const safeSelected = selected.filter(s => !P?.isColumnExcluded(s.name));
+  const colNames = safeSelected.map(s => s.name);
+  const preview = cluster.rows.slice(0, 6).map((r, i) => {
+    const cells = colNames.map(c => {
+      const v = r[c];
+      const shown = redactOn ? P.redactValue(v) : v;
+      return c + '=' + JSON.stringify(shown == null ? '' : shown);
+    });
+    return i + ': ' + cells.join(' ');
+  });
+  const redactNote = redactOn ? '\n(Note: values have been redacted for privacy — pattern-match on structure rather than content.)' : '';
   const prompt =
 `You are reviewing a candidate duplicate cluster found in a SQL table. Your job: decide whether these rows plausibly represent the SAME real-world entity (e.g. same customer, same product) or are genuinely different entities that happen to share some fields.
 
-Be conservative — only say DUPLICATE if the evidence is strong. Say NOT_DUPLICATE if rows could be different entities (e.g. siblings with same surname and address, employees at the same company). Say UNCERTAIN if it genuinely could go either way.
+Be conservative — only say DUPLICATE if the evidence is strong. Say NOT_DUPLICATE if rows could be different entities (e.g. siblings with same surname and address, employees at the same company). Say UNCERTAIN if it genuinely could go either way.${redactNote}
 
 Cluster rows (${cluster.rows.length} total${cluster.rows.length>6?', showing first 6':''}):
 ${preview.join('\n')}

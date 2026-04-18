@@ -232,6 +232,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 <script src="/connections.js"></script>
 <script src="/nav.js"></script>
 <script src="/cygenix-params.js"></script>
+<script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 
 <div class="page">
@@ -1276,11 +1277,21 @@ async function remapWithClaude(){
 }
 
 async function askClaudeForMapping(src, tgt, apiKey){
-  const srcCols = src.columns.map(c=>typeof c==='string'?c:c.name);
-  const tgtCols = tgt.columns.filter(c=>!c.isIdentity).map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
+  // Privacy: check mode + filter out excluded columns before sending schema to Claude
+  const P = window.CygenixPrivacy;
+  if (P && !P.isAIAllowed('schema')){
+    throw new Error('AI mapping is disabled by project privacy settings (mode: '+P.getMode().toUpperCase()+'). Change on the Privacy & Security page.');
+  }
+  const srcColsAll = src.columns.map(c=>typeof c==='string'?c:c.name);
+  const tgtColsAll = tgt.columns.filter(c=>!c.isIdentity);
+  const srcCols = srcColsAll.filter(name => !P?.isColumnExcluded(name));
+  const tgtCols = tgtColsAll.filter(c => !P?.isColumnExcluded(c.name)).map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
+  const srcExcluded = srcColsAll.length - srcCols.length;
+  const tgtExcluded = tgtColsAll.length - tgtCols.length;
+  const excludeNote = (srcExcluded+tgtExcluded) > 0 ? `\n(${srcExcluded+tgtExcluded} column(s) hidden by privacy exclusion list.)` : '';
   const prompt = 'You are a data migration expert. Map source columns to target columns.\n\n'+
     'Source table: '+src.fullName+'\nSource columns:\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
-    'Target table: '+tgt.fullName+'\nTarget columns:\n'+tgtCols.map(c=>'  '+c).join('\n')+'\n\n'+
+    'Target table: '+tgt.fullName+'\nTarget columns:\n'+tgtCols.map(c=>'  '+c).join('\n')+excludeNote+'\n\n'+
     'Return a JSON array only — ONE ENTRY PER TARGET COLUMN (not per source column).\n'+
     'Each element: {"srcCol":"matching source col name or empty string","tgtCol":"target col name","transform":"NONE","match":"HIGH|MEDIUM|LOW|","note":"reason"}\n'+
     'Every non-identity target column must appear exactly once. Leave srcCol empty if no match.\n'+
@@ -1303,6 +1314,14 @@ async function askClaudeForMapping(src, tgt, apiKey){
     if(!res.ok) throw new Error(data.error?.message||res.statusText);
     const raw = (data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
     const arr = JSON.parse(raw);
+    // Log the AI access — schema only, no row data
+    P?.logAIAccess('column-mapping', {
+      sourceTable: src.fullName,
+      targetTable: tgt.fullName,
+      srcCols: srcCols.length,
+      tgtCols: tgtCols.length,
+      excludedCols: srcExcluded + tgtExcluded
+    });
     return arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',match:m.match||'',note:m.note||''}));
   }
 }
