@@ -107,6 +107,36 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 .cluster-ignore:hover{color:var(--red);border-color:rgba(240,70,70,0.3)}
 .cluster-ignore.active{background:var(--red-bg);color:var(--red);border-color:rgba(240,70,70,0.4)}
 
+/* ── Merge workflow ─────────────────────────────────────────────────────── */
+.merge-strategy-sel{background:var(--bg4);border:0.5px solid var(--border2);border-radius:4px;color:var(--text2);font-size:10px;font-family:var(--mono);padding:2px 6px;outline:none;cursor:pointer}
+.merge-strategy-sel:focus{border-color:var(--accent)}
+.cluster-row.is-master{background:rgba(34,201,122,0.05);border-left:2px solid var(--green)}
+.cluster-row.is-master .cluster-row-idx::before{content:"⭐ ";color:var(--green)}
+.master-radio{width:14px;height:14px;accent-color:var(--green);cursor:pointer;flex:0 0 auto;margin:0}
+.master-radio-label{font-size:9.5px;color:var(--text3);font-family:var(--mono)}
+.merge-toolbar{display:flex;gap:0.75rem;align-items:center;padding:0.65rem 0.9rem;background:var(--bg3);border-bottom:0.5px solid var(--border);flex-wrap:wrap;font-size:11px;color:var(--text2)}
+.merge-toolbar label{display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}
+.merge-toolbar select{background:var(--bg4);border:0.5px solid var(--border2);border-radius:4px;color:var(--text);font-size:11px;font-family:var(--mono);padding:3px 7px;outline:none;cursor:pointer}
+
+/* Modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:400;display:flex;align-items:center;justify-content:center;padding:2rem}
+.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);max-width:900px;width:100%;max-height:calc(100vh - 4rem);display:flex;flex-direction:column;overflow:hidden}
+.modal-head{padding:0.9rem 1.2rem;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:var(--bg3)}
+.modal-title{font-size:15px;font-weight:600}
+.modal-body{padding:1rem 1.2rem;overflow-y:auto;flex:1}
+.modal-foot{padding:0.75rem 1.2rem;border-top:0.5px solid var(--border);background:var(--bg3);display:flex;gap:0.5rem;justify-content:flex-end;align-items:center;flex-wrap:wrap}
+.modal-close{background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;padding:4px;line-height:1}
+.modal-close:hover{color:var(--text)}
+.sql-preview{background:var(--bg);border:0.5px solid var(--border);border-radius:var(--r);padding:0.9rem;font-family:var(--mono);font-size:11.5px;color:var(--text2);white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;line-height:1.6}
+.sql-preview .kw{color:#6FA8DC}
+.sql-preview .str{color:#CE9178}
+.sql-preview .cm{color:#6A9955}
+.confirm-input{background:var(--bg3);border:0.5px solid var(--red);border-radius:4px;color:var(--text);font-family:var(--mono);padding:5px 10px;font-size:12px;outline:none;margin-left:0.5rem}
+.confirm-input:focus{border-color:var(--red);box-shadow:0 0 0 2px rgba(240,70,70,0.15)}
+.btn-red{background:var(--red-bg);color:var(--red);border-color:rgba(240,70,70,0.4)}
+.btn-red:hover{background:rgba(240,70,70,0.2);color:var(--red)}
+.btn-red:disabled{opacity:0.4}
+
 .empty{padding:3rem 1.5rem;text-align:center;color:var(--text3);font-size:13px}
 .empty .emoji{font-size:36px;opacity:0.35;margin-bottom:0.6rem}
 
@@ -233,6 +263,17 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
           <div><span class="stat-val red" id="stat-low">0</span> LOW</div>
           <div style="margin-left:auto"><span class="stat-val" id="stat-sample">0</span> of <span id="stat-total">0</span> rows sampled</div>
         </div>
+        <div class="merge-toolbar" id="merge-toolbar" style="display:none">
+          <label><strong style="color:var(--text)">Merge settings:</strong></label>
+          <label>Remove non-masters:
+            <select id="sel-removal" onchange="mergeSettings.removalMode=this.value">
+              <option value="soft" selected>Soft delete (set is_deleted=1)</option>
+              <option value="hard">Hard DELETE</option>
+              <option value="audit">Move to audit table</option>
+            </select>
+          </label>
+          <button class="btn btn-sm btn-primary" onclick="generateMergeSQL()" id="btn-gen-sql" style="margin-left:auto">⚙ Generate Merge SQL</button>
+        </div>
         <div id="results-body">
           <div class="empty">
             <div class="emoji">🧹</div>
@@ -310,12 +351,20 @@ async function dbCall(conn, body){
 // ── State ────────────────────────────────────────────────────────────────────
 let currentConn = '';
 let allTables = [];         // [{schema, name, fullName, rowCount}]
-let schemaCache = {};       // fullName -> {schema, name, rowCount, columns:[...]}
+let schemaCache = {};       // fullName -> {schema, name, rowCount, columns:[...], primaryKeys:[]}
 let columns = [];           // [{name, type}]
 let colConfig = {};         // colName -> {selected:bool, strategy:'exact'|'fuzzy'|'phonetic'|'numeric'}
-let lastClusters = [];      // [{id, rows:[rowObj], confidence, score, aiVerdict?}]
+let lastClusters = [];      // [{id, rows:[rowObj], confidence, score, aiVerdict?, masterIdx?, mergeStrategy?}]
 let lastSampleSize = 0;
 let lastTotalRows = 0;
+// Merge workflow state — populated after detection and used by the merge SQL generator
+let mergeSettings = {
+  removalMode: 'soft',          // 'hard' | 'soft' | 'audit'
+  softDeleteCol: 'is_deleted',  // used when removalMode==='soft'
+  mergedIntoCol: 'merged_into_id',
+  auditTable: 'dedup_audit'
+};
+let fkCache = null;             // incoming FK refs for the cleansed table (fetched on demand)
 
 // ── Connection setup ─────────────────────────────────────────────────────────
 (function initConns(){
@@ -557,14 +606,18 @@ async function runDetection(){
     lastTotalRows = total;
     log('Total rows: '+total.toLocaleString());
 
-    // 2 · fetch sample via TOP N
+    // 2 · fetch sample via TOP N — include PKs silently for merge workflow
     const take = Math.min(sample, total || sample);
     log('Fetching sample of '+take.toLocaleString()+' rows…');
-    const colList = selected.map(s=>'['+s.name+']').join(', ');
+    const pks = (schemaCache[table]?.primaryKeys) || [];
+    const selNames = selected.map(s => s.name);
+    // Merge PKs into selected col list without duplicating
+    const allCols = [...pks.filter(p => !selNames.includes(p)), ...selNames];
+    const colList = allCols.map(c => '['+c+']').join(', ');
     const fetchRes = await dbCall(currentConn, { action:'execute', sql:'SELECT TOP '+take+' '+colList+' FROM '+table });
     const rows = fetchRes.recordset || [];
     lastSampleSize = rows.length;
-    log('Got '+rows.length.toLocaleString()+' rows', 'ok');
+    log('Got '+rows.length.toLocaleString()+' rows'+(pks.length?' (+ '+pks.length+' PK column(s))':''), 'ok');
 
     // 3 · pairwise compare — O(N^2/2)
     log('Comparing rows on '+selected.length+' column(s)…');
@@ -630,7 +683,9 @@ async function runDetection(){
         confidence,
         aiVerdict: null,
         aiReason: null,
-        ignored: new Set()
+        ignored: new Set(),
+        masterIdx: 0,          // row 0 is master by default; user can change
+        mergeStrategy: 'coalesce'  // 'replace' | 'coalesce' | 'perfield'
       };
     }).filter(c => c.rows.length >= 2)
       .sort((a,b) => (b.rows.length - a.rows.length) || (b.score - a.score));
@@ -702,6 +757,7 @@ function renderClusters(){
   if (!lastClusters.length){
     body.innerHTML = '<div class="empty"><div class="emoji">✨</div><div>No duplicate clusters found with the current settings.</div><div style="font-size:11px;margin-top:0.4rem">Try lowering the cluster threshold, changing column strategies, or scanning a larger sample.</div></div>';
     stats.style.display = 'none';
+    document.getElementById('merge-toolbar').style.display = 'none';
     document.getElementById('btn-export-csv').disabled = true;
     document.getElementById('btn-export-json').disabled = true;
     return;
@@ -709,6 +765,7 @@ function renderClusters(){
 
   // Stats
   stats.style.display = '';
+  document.getElementById('merge-toolbar').style.display = '';
   document.getElementById('stat-clusters').textContent = lastClusters.length;
   document.getElementById('stat-rows').textContent = lastClusters.reduce((a,c) => a+c.rows.length, 0);
   document.getElementById('stat-high').textContent = lastClusters.filter(c => c.confidence==='HIGH').length;
@@ -750,23 +807,36 @@ function renderClusters(){
                   : c.aiVerdict === 'UNCERTAIN' ? '<span class="cluster-badge" style="background:var(--bg4);color:var(--text3)">AI: uncertain</span>'
                   : '';
     const reason = c.aiReason ? `<div class="cluster-reason">🤖 ${esc(c.aiReason)}</div>` : '';
+    const tableFull = document.getElementById('inp-table').value.trim();
+    const pks = (schemaCache[tableFull]?.primaryKeys)||[];
+    const pkLabel = pks.length ? `<span style="font-size:10px;color:var(--text3);font-family:var(--mono)">PK: ${pks.join(', ')}</span>` : `<span style="font-size:10px;color:var(--amber);font-family:var(--mono)" title="No primary key found — merge SQL may not work cleanly">⚠ no PK</span>`;
     return `<div class="cluster-card" id="cluster-${c.id}">
       <div class="cluster-head">
         <span style="font-size:11px;font-weight:600">Cluster #${i+1}</span>
         <span class="cluster-badge confidence-${c.confidence}">${c.confidence}</span>
         ${aiBadge}
         <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">${c.rows.length} rows · ${(c.score*100).toFixed(0)}% avg match</span>
+        ${pkLabel}
+        <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text3);font-family:var(--mono);margin-left:0.5rem">
+          Merge:
+          <select class="merge-strategy-sel" onchange="setClusterMergeStrategy('${c.id}', this.value)">
+            <option value="coalesce" ${c.mergeStrategy==='coalesce'?'selected':''}>Coalesce (fill master nulls)</option>
+            <option value="replace" ${c.mergeStrategy==='replace'?'selected':''}>Replace (master wins all)</option>
+            <option value="perfield" ${c.mergeStrategy==='perfield'?'selected':''}>Per-field (future)</option>
+          </select>
+        </label>
         <button class="cluster-ignore" onclick="toggleClusterIgnore('${c.id}')" id="ig-${c.id}">Mark as false positive</button>
       </div>
       ${reason}
       <div class="cluster-body">
         ${c.rows.map((r, ri) => {
-          // Build the cell content; if finalCols produced nothing useful, dump the whole row as JSON
           const cellHtml = finalCols.length
             ? finalCols.map(col => `<span class="f"><span class="k">${esc(col)}:</span><span class="v">${esc(r[col]==null?'<null>':String(r[col]))}</span></span>`).join('')
             : `<span class="f" style="color:var(--text2)">${esc(JSON.stringify(r))}</span>`;
-          return `<div class="cluster-row">
-            <input type="checkbox" checked onchange="toggleRowIgnore('${c.id}',${ri},!this.checked)">
+          const isMaster = (c.masterIdx ?? 0) === ri;
+          return `<div class="cluster-row ${isMaster?'is-master':''}">
+            <input type="radio" class="master-radio" name="master-${c.id}" ${isMaster?'checked':''} onchange="setMasterRow('${c.id}',${ri})" title="Set as master (survivor)">
+            <input type="checkbox" checked onchange="toggleRowIgnore('${c.id}',${ri},!this.checked)" title="Exclude this row from the cluster">
             <span class="cluster-row-idx">#${ri+1}</span>
             <div class="cluster-row-data">${cellHtml}</div>
           </div>`;
@@ -798,6 +868,280 @@ function toggleRowIgnore(clusterId, rowIdx, ignored){
   if (!c) return;
   if (!c.ignored) c.ignored = new Set();
   ignored ? c.ignored.add(rowIdx) : c.ignored.delete(rowIdx);
+}
+
+function setMasterRow(clusterId, rowIdx){
+  const c = lastClusters.find(x => x.id === clusterId);
+  if (!c) return;
+  c.masterIdx = rowIdx;
+  // Re-render only this cluster's body for speed (simpler: full re-render)
+  renderClusters();
+}
+
+function setClusterMergeStrategy(clusterId, strategy){
+  const c = lastClusters.find(x => x.id === clusterId);
+  if (!c) return;
+  c.mergeStrategy = strategy;
+}
+
+// ── Merge workflow ──────────────────────────────────────────────────────────
+async function fetchIncomingFKs(fullTableName){
+  // Returns [{ parentSchema, parentTable, fkCol, referencedCol }]
+  // i.e. tables that REFERENCE our cleansed table — those need their FKs rewritten.
+  const [schema, name] = fullTableName.includes('.') ? fullTableName.split('.') : ['dbo', fullTableName];
+  const sql = `
+SELECT
+  OBJECT_SCHEMA_NAME(fk.parent_object_id) AS parentSchema,
+  OBJECT_NAME(fk.parent_object_id)        AS parentTable,
+  c.name                                  AS fkCol,
+  rc.name                                 AS referencedCol
+FROM sys.foreign_keys fk
+JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+JOIN sys.columns c  ON c.object_id  = fkc.parent_object_id     AND c.column_id  = fkc.parent_column_id
+JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+WHERE fk.referenced_object_id = OBJECT_ID('${schema}.${name}')
+ORDER BY parentSchema, parentTable, fkCol`;
+  const res = await dbCall(currentConn, { action:'execute', sql });
+  return res.recordset || [];
+}
+
+// SQL literal formatting — conservative; wraps strings in N''-quoted form, numeric as-is, null as NULL
+function sqlLit(v){
+  if (v === null || v === undefined) return 'NULL';
+  if (typeof v === 'number' && !isNaN(v)) return String(v);
+  if (typeof v === 'boolean') return v ? '1' : '0';
+  // Dates come back as JS Date objects from mssql driver; ISO format round-trips safely
+  if (v instanceof Date) return "'" + v.toISOString() + "'";
+  // Everything else → quoted string, doubling single quotes
+  return "N'" + String(v).replace(/'/g, "''") + "'";
+}
+
+function sqlIdent(name){ return '[' + String(name).replace(/]/g, ']]') + ']'; }
+
+async function generateMergeSQL(){
+  const table = document.getElementById('inp-table').value.trim();
+  if (!table){ showToast('Pick a table first'); return; }
+  const pks = (schemaCache[table]?.primaryKeys) || [];
+  if (!pks.length){
+    showToast('✕ Table has no primary key — merge cannot safely target rows');
+    return;
+  }
+  if (pks.length > 1){
+    showToast('✕ Composite primary keys are not yet supported in merge SQL');
+    return;
+  }
+  const pk = pks[0];
+
+  const accepted = lastClusters.filter(c => !c.rejected);
+  if (!accepted.length){ showToast('No clusters accepted (all dismissed)'); return; }
+
+  const btn = document.getElementById('btn-gen-sql');
+  btn.disabled = true; btn.textContent = '⏳ Fetching FK references…';
+
+  try {
+    // Fetch incoming FKs once per run, cache it
+    if (fkCache === null || fkCache.forTable !== table){
+      const fks = await fetchIncomingFKs(table);
+      fkCache = { forTable: table, fks };
+    }
+    const fks = fkCache.fks;
+    btn.textContent = '⏳ Building SQL…';
+
+    // All non-match columns (for coalesce/replace we need to read every column)
+    const allCols = (schemaCache[table]?.columns || []).map(c => c.name);
+    const matchCols = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k]) => k);
+
+    const [schemaPart, tableName] = table.includes('.') ? table.split('.') : ['dbo', table];
+    const qTable = sqlIdent(schemaPart) + '.' + sqlIdent(tableName);
+
+    const chunks = [];
+    chunks.push('-- ══════════════════════════════════════════════════════════════════════════════');
+    chunks.push('-- Cygenix Data Cleansing — Merge SQL');
+    chunks.push('-- Generated: ' + new Date().toISOString());
+    chunks.push('-- Target table: ' + qTable);
+    chunks.push('-- Primary key: ' + sqlIdent(pk));
+    chunks.push('-- Clusters: ' + accepted.length + ' · Removal mode: ' + mergeSettings.removalMode.toUpperCase());
+    chunks.push('-- FK references to rewrite: ' + fks.length + ' (across ' + (new Set(fks.map(f => f.parentSchema+'.'+f.parentTable))).size + ' tables)');
+    chunks.push('-- Review carefully before running. Wrapped in a single transaction.');
+    chunks.push('-- ══════════════════════════════════════════════════════════════════════════════');
+    chunks.push('');
+    chunks.push('BEGIN TRANSACTION;');
+    chunks.push('');
+
+    let clusterNo = 0;
+    for (const c of accepted){
+      clusterNo++;
+      const activeRows = c.rows.filter((_, ri) => !(c.ignored?.has(ri)));
+      if (activeRows.length < 2) continue;
+      const masterIdx = c.masterIdx ?? 0;
+      const master = c.rows[masterIdx];
+      if (!master || c.ignored?.has(masterIdx)){
+        chunks.push(`-- Cluster #${clusterNo}: master row is ignored — skipping`);
+        continue;
+      }
+      const masterPK = master[pk];
+      if (masterPK == null){
+        chunks.push(`-- Cluster #${clusterNo}: master has null PK — skipping`);
+        continue;
+      }
+      const nonMasters = c.rows.filter((r, ri) => ri !== masterIdx && !(c.ignored?.has(ri)) && r[pk] != null);
+      if (!nonMasters.length) continue;
+      const nonMasterPKs = nonMasters.map(r => r[pk]);
+
+      chunks.push(`-- ─── Cluster #${clusterNo} ─── master ${pk}=${sqlLit(masterPK)} · merging ${nonMasters.length} row(s): ${nonMasterPKs.map(sqlLit).join(', ')}`);
+
+      // 1 · Rewrite every incoming FK to point to the master
+      for (const fk of fks){
+        const qFKTable = sqlIdent(fk.parentSchema) + '.' + sqlIdent(fk.parentTable);
+        const qFKCol   = sqlIdent(fk.fkCol);
+        chunks.push(`UPDATE ${qFKTable} SET ${qFKCol} = ${sqlLit(masterPK)} WHERE ${qFKCol} IN (${nonMasterPKs.map(sqlLit).join(', ')});`);
+      }
+
+      // 2 · Coalesce / replace master field values
+      if (c.mergeStrategy === 'coalesce' || c.mergeStrategy === 'replace'){
+        // Only touch match columns plus any column where master has null and a non-master has a value (for coalesce)
+        // For replace: no field changes on master (master keeps its own values)
+        if (c.mergeStrategy === 'coalesce'){
+          const setClauses = [];
+          for (const col of allCols){
+            if (col === pk) continue;
+            if (master[col] == null){
+              // Find first non-master with a non-null value for this column
+              const donor = nonMasters.find(n => n[col] != null);
+              if (donor){
+                setClauses.push(sqlIdent(col) + ' = ' + sqlLit(donor[col]));
+              }
+            }
+          }
+          if (setClauses.length){
+            chunks.push(`UPDATE ${qTable} SET ${setClauses.join(', ')} WHERE ${sqlIdent(pk)} = ${sqlLit(masterPK)};`);
+          }
+        }
+        // replace: master already wins; no-op on master
+      } else if (c.mergeStrategy === 'perfield'){
+        chunks.push(`-- Per-field merge not yet implemented; master kept as-is for this cluster`);
+      }
+
+      // 3 · Remove non-master rows
+      const inList = nonMasterPKs.map(sqlLit).join(', ');
+      if (mergeSettings.removalMode === 'hard'){
+        chunks.push(`DELETE FROM ${qTable} WHERE ${sqlIdent(pk)} IN (${inList});`);
+      } else if (mergeSettings.removalMode === 'soft'){
+        chunks.push(`UPDATE ${qTable} SET ${sqlIdent(mergeSettings.softDeleteCol)} = 1, ${sqlIdent(mergeSettings.mergedIntoCol)} = ${sqlLit(masterPK)} WHERE ${sqlIdent(pk)} IN (${inList});`);
+      } else if (mergeSettings.removalMode === 'audit'){
+        chunks.push(`INSERT INTO ${sqlIdent(mergeSettings.auditTable)} (source_table, merged_pk, master_pk, merged_at, payload)`);
+        for (const nm of nonMasters){
+          chunks.push(`  SELECT ${sqlLit(schemaPart+'.'+tableName)}, ${sqlLit(nm[pk])}, ${sqlLit(masterPK)}, GETDATE(), (SELECT * FROM ${qTable} WHERE ${sqlIdent(pk)}=${sqlLit(nm[pk])} FOR JSON PATH, WITHOUT_ARRAY_WRAPPER) UNION ALL`);
+        }
+        // Remove trailing UNION ALL
+        const last = chunks.pop();
+        chunks.push(last.replace(/ UNION ALL$/, ';'));
+        chunks.push(`DELETE FROM ${qTable} WHERE ${sqlIdent(pk)} IN (${inList});`);
+      }
+      chunks.push('');
+    }
+
+    chunks.push('-- Uncomment the next line when you are ready to apply the changes:');
+    chunks.push('-- COMMIT TRANSACTION;');
+    chunks.push('-- Or to abandon the run: ROLLBACK TRANSACTION;');
+
+    const finalSQL = chunks.join('\n');
+    showSqlPreview(finalSQL, accepted);
+  } catch(e){
+    showToast('✕ '+e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '⚙ Generate Merge SQL';
+}
+
+function showSqlPreview(sql, acceptedClusters){
+  const totalRows = acceptedClusters.reduce((a,c) => {
+    const active = c.rows.filter((_, ri) => !(c.ignored?.has(ri)));
+    return a + Math.max(0, active.length - 1);  // non-masters only
+  }, 0);
+  const fks = fkCache?.fks?.length || 0;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="modal">
+      <div class="modal-head">
+        <div class="modal-title">Preview merge SQL</div>
+        <button class="modal-close" onclick="this.closest('.modal-backdrop').remove()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:0.75rem;line-height:1.6">
+          This SQL will merge <strong style="color:var(--text)">${acceptedClusters.length}</strong> cluster(s),
+          affecting <strong style="color:var(--text)">${totalRows}</strong> non-master row(s),
+          and rewriting FK references across <strong style="color:var(--text)">${fks}</strong> foreign-key column(s).
+          <strong style="color:var(--amber)">Nothing is committed — the transaction is wrapped in BEGIN TRAN and left uncommitted.</strong>
+        </div>
+        <div class="sql-preview" id="sql-preview-text"></div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-sm" onclick="copyMergeSQL()">📋 Copy to clipboard</button>
+        <button class="btn btn-sm" onclick="openInSqlEditor()">↗ Open in SQL Editor</button>
+        <div style="flex:1"></div>
+        <label style="font-size:11px;color:var(--text3);display:flex;align-items:center">
+          Type <strong style="color:var(--red);font-family:var(--mono);margin:0 4px">RUN</strong> to enable:
+          <input id="run-confirm" class="confirm-input" autocomplete="off" spellcheck="false" oninput="document.getElementById('btn-run-now').disabled = this.value.trim() !== 'RUN'">
+        </label>
+        <button id="btn-run-now" class="btn btn-sm btn-red" disabled onclick="runMergeSQL()">▶ Run now</button>
+      </div>
+    </div>`;
+  // syntax-highlight the SQL (simple)
+  const highlighted = esc(sql)
+    .replace(/\b(BEGIN|COMMIT|ROLLBACK|TRANSACTION|UPDATE|SELECT|SET|FROM|WHERE|DELETE|INSERT|INTO|AND|OR|IN|IS|NULL|UNION|ALL|NOT|VALUES|GETDATE|AS)\b/g, '<span class="kw">$1</span>')
+    .replace(/(N?'(?:[^']|'')*')/g, '<span class="str">$1</span>')
+    .replace(/(--[^\n]*)/g, '<span class="cm">$1</span>');
+  backdrop.querySelector('#sql-preview-text').innerHTML = highlighted;
+  // Store raw SQL for copy/run
+  backdrop.dataset.sql = sql;
+  document.body.appendChild(backdrop);
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.remove(); });
+}
+
+function copyMergeSQL(){
+  const backdrop = document.querySelector('.modal-backdrop');
+  if (!backdrop) return;
+  navigator.clipboard.writeText(backdrop.dataset.sql).then(
+    () => showToast('SQL copied to clipboard'),
+    () => showToast('✕ Copy failed — select and copy manually')
+  );
+}
+
+function openInSqlEditor(){
+  const backdrop = document.querySelector('.modal-backdrop');
+  if (!backdrop) return;
+  // Stash to sessionStorage so SQL Editor can pick it up on load (pattern used elsewhere in Cygenix)
+  try { sessionStorage.setItem('cygenix_pending_sql', backdrop.dataset.sql); } catch {}
+  window.open('/sql-editor.html?load=pending', '_blank');
+}
+
+async function runMergeSQL(){
+  const backdrop = document.querySelector('.modal-backdrop');
+  if (!backdrop) return;
+  const raw = backdrop.dataset.sql;
+  if (!raw) return;
+  // Wrap the SQL: user's script has BEGIN TRAN and commented-out COMMIT.
+  // For Run Now, we want to auto-commit (or roll back on error).
+  const autoSql = raw.replace(/^--\s*COMMIT TRANSACTION;\s*$/m, 'COMMIT TRANSACTION;')
+                     + '\n-- If this file reaches here without COMMIT, a ROLLBACK follows:\nIF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;';
+  const btn = document.getElementById('btn-run-now');
+  btn.disabled = true; btn.textContent = '⏳ Running…';
+  try {
+    const res = await dbCall(currentConn, { action:'execute', sql: autoSql });
+    const rowsAffected = res.rowsAffected || 0;
+    showToast('✓ Merge executed · rows affected: ' + rowsAffected);
+    btn.textContent = '✓ Done';
+    setTimeout(() => backdrop.remove(), 1200);
+    // Clear cluster cache so the user knows to re-run detection if they want to see results
+    lastClusters = [];
+    renderClusters();
+  } catch(e){
+    showToast('✕ Merge failed: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '▶ Run now';
+  }
 }
 
 // ── Export ───────────────────────────────────────────────────────────────────
