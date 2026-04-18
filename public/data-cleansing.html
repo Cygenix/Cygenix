@@ -692,8 +692,8 @@ REASON: <one short sentence explaining>`;
   if (!res.ok) throw new Error(data.error?.message || 'API error');
   const text = (data.content?.[0]?.text || '').trim();
   const vM = text.match(/VERDICT:\s*(\w+)/i);
-  const rM = text.match(/REASON:\s*(.+)/i);
-  return { verdict: (vM?.[1] || 'UNCERTAIN').toUpperCase(), reason: (rM?.[1] || '').trim() };
+  const rM = text.match(/REASON:\s*([\s\S]+?)(?:\n\n|$)/i);
+  return { verdict: (vM?.[1] || 'UNCERTAIN').toUpperCase(), reason: (rM?.[1] || text).replace(/VERDICT:.*$/gm,'').trim().slice(0, 300) };
 }
 
 // ── Cluster rendering ────────────────────────────────────────────────────────
@@ -718,19 +718,34 @@ function renderClusters(){
   document.getElementById('stat-sample').textContent = lastSampleSize.toLocaleString();
   document.getElementById('stat-total').textContent  = lastTotalRows.toLocaleString();
 
-  const selCols = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k]) => k);
-  // Defensive fallback: if colConfig got lost, use whatever keys the first row has,
-  // otherwise the cards would render as empty bars with no visible content.
-  const firstRow = lastClusters[0]?.rows?.[0];
-  const displayCols = selCols.length
-    ? selCols
-    : (firstRow ? Object.keys(firstRow) : []);
-  // Also filter selCols to only keys that actually exist in the row data
-  // (handles case where SQL returned differently-cased keys than expected)
-  const filtered = displayCols.filter(c => firstRow && c in firstRow);
-  const finalCols = filtered.length ? filtered : displayCols;
+  // Explanatory header — tells the user what they're looking at
+  const aiRejected = lastClusters.filter(c => c.aiVerdict === 'NOT_DUPLICATE').length;
+  const aiApproved = lastClusters.filter(c => c.aiVerdict === 'DUPLICATE').length;
+  const explainHtml = `<div style="padding:0.6rem 1rem;background:var(--bg2);border-bottom:0.5px solid var(--border);font-size:11px;color:var(--text2);line-height:1.6">
+    <strong style="color:var(--text)">How to read this:</strong>
+    Each <strong>cluster</strong> is a group of rows we flagged as possibly duplicates.
+    <span style="color:var(--green)">HIGH</span>/<span style="color:var(--amber)">MED</span>/<span style="color:var(--red)">LOW</span> = our matching confidence.
+    ${aiRejected||aiApproved ? `Claude reviewed the MED ones and said ${aiApproved} are real duplicates, ${aiRejected} are false positives.` : ''}
+    Review each cluster, untick any row that's a wrong match, click "Mark as false positive" to dismiss a whole cluster, then Export CSV/JSON.
+    <strong>Nothing is deleted or merged</strong> — this is detection only.
+  </div>`;
 
-  body.innerHTML = '<div class="cluster-list">' + lastClusters.map((c, i) => {
+  const selCols = Object.entries(colConfig).filter(([_,v]) => v.selected).map(([k]) => k);
+  // Defensive fallback: if colConfig got lost, use whatever keys the first row has.
+  const firstRow = lastClusters[0]?.rows?.[0];
+  const rowKeys = firstRow ? Object.keys(firstRow) : [];
+  // Filter selCols to only keys that actually exist on the row (handles case mismatch)
+  const matchedSel = selCols.filter(c => firstRow && c in firstRow);
+  // Final display columns: prefer matched selection, else all row keys, else selCols as-is
+  const finalCols = matchedSel.length ? matchedSel : (rowKeys.length ? rowKeys : selCols);
+
+  // Debug banner — shows when something looks off so user can report it
+  let debugBanner = '';
+  if (firstRow && selCols.length && !matchedSel.length){
+    debugBanner = `<div style="padding:0.5rem 0.9rem;background:rgba(245,158,11,0.08);border-bottom:0.5px solid rgba(245,158,11,0.2);font-size:11px;color:var(--amber);font-family:var(--mono)">⚠ Column-name mismatch detected. Selected: [${selCols.join(', ')}]. Actual row keys: [${rowKeys.join(', ')}]. Showing all keys.</div>`;
+  }
+
+  body.innerHTML = explainHtml + debugBanner + '<div class="cluster-list">' + lastClusters.map((c, i) => {
     const aiBadge = c.aiVerdict === 'DUPLICATE' ? '<span class="cluster-badge ai-agreed">AI: duplicate ✓</span>'
                   : c.aiVerdict === 'NOT_DUPLICATE' ? '<span class="cluster-badge ai-rejected">AI: false positive</span>'
                   : c.aiVerdict === 'UNCERTAIN' ? '<span class="cluster-badge" style="background:var(--bg4);color:var(--text3)">AI: uncertain</span>'
@@ -746,11 +761,17 @@ function renderClusters(){
       </div>
       ${reason}
       <div class="cluster-body">
-        ${c.rows.map((r, ri) => `<div class="cluster-row">
-          <input type="checkbox" checked onchange="toggleRowIgnore('${c.id}',${ri},!this.checked)">
-          <span class="cluster-row-idx">#${ri+1}</span>
-          <div class="cluster-row-data">${finalCols.map(col => `<span class="f"><span class="k">${esc(col)}:</span><span class="v">${esc(r[col]==null?'<null>':String(r[col]))}</span></span>`).join('')}</div>
-        </div>`).join('')}
+        ${c.rows.map((r, ri) => {
+          // Build the cell content; if finalCols produced nothing useful, dump the whole row as JSON
+          const cellHtml = finalCols.length
+            ? finalCols.map(col => `<span class="f"><span class="k">${esc(col)}:</span><span class="v">${esc(r[col]==null?'<null>':String(r[col]))}</span></span>`).join('')
+            : `<span class="f" style="color:var(--text2)">${esc(JSON.stringify(r))}</span>`;
+          return `<div class="cluster-row">
+            <input type="checkbox" checked onchange="toggleRowIgnore('${c.id}',${ri},!this.checked)">
+            <span class="cluster-row-idx">#${ri+1}</span>
+            <div class="cluster-row-data">${cellHtml}</div>
+          </div>`;
+        }).join('')}
       </div>
     </div>`;
   }).join('') + '</div>';
