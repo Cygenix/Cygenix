@@ -1663,6 +1663,14 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
            query them from the SQL Editor with OPENQUERY or four-part names. Target-only
            because only elevated users on the target can run sp_addlinkedserver. -->
       <div id="conn-tab-linked" style="display:none">
+        <!-- Target identification banner — so users can see exactly which target
+             SQL Server the setup SQL will run against before committing. -->
+        <div id="ls-target-banner" style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;font-size:12px">
+          <span style="color:var(--text3);font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.08em">Target</span>
+          <span id="ls-target-text" style="color:var(--text);font-family:var(--mono);font-size:12px">—</span>
+          <span id="ls-target-status" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>
+        </div>
+
         <!-- Section 1: Draft a new linked server config -->
         <div class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
@@ -1719,6 +1727,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
             <button class="btn btn-primary btn-sm" onclick="lsSaveDraft()">💾 Save draft</button>
             <button class="btn btn-ghost btn-sm" onclick="lsClearDraftForm()">✕ Clear form</button>
             <span id="ls-draft-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+          </div>
+          <div style="font-size:10.5px;color:var(--text3);margin-top:6px;line-height:1.4">
+            Tip: save multiple linked servers by giving each a unique name. Same name prompts to overwrite.
           </div>
         </div>
 
@@ -5330,43 +5341,135 @@ function lsPreviewSql(id){
 }
 
 // ─── Run setup — execute the SQL against the target ─────────────────────
+// Describe the target in a short, human-readable way. Extracts either a host
+// from an Azure Function URL (the Function configures the actual server), or
+// a host from a connection string. Used in the target banner and confirm
+// dialog so users know which SQL Server the setup will run against.
+function lsDescribeTarget(){
+  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  const ss = k => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
+
+  const fnUrl = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url');
+  if (fnUrl){
+    const host = (fnUrl.match(/^https?:\/\/([^\/]+)/) || [])[1] || fnUrl;
+    return { kind:'azure', label:'Azure Function → ' + host, raw:host };
+  }
+  const cs = c.tgtConnString || c.connString || ss('cygenix_conn_string');
+  if (cs){
+    // Try ADO.NET "Server=..." first, then URL form
+    let host = (cs.match(/Server\s*=\s*([^;,]+)/i) || [])[1];
+    let db   = (cs.match(/(?:Database|Initial Catalog)\s*=\s*([^;]+)/i) || [])[1];
+    if (!host){
+      const m = cs.match(/^[a-z]+:\/\/[^@]+@([^:/]+)/i);
+      if (m) host = m[1];
+    }
+    if (host){
+      return { kind:'direct', label: host + (db ? ' / ' + db : ''), raw:host };
+    }
+    return { kind:'direct', label:'Direct connection string', raw:'unknown' };
+  }
+  return { kind:'none', label:'Not configured', raw:null };
+}
+
+// Update the target banner at the top of the Linked servers tab.
+function lsUpdateTargetBanner(){
+  const txt = document.getElementById('ls-target-text');
+  const status = document.getElementById('ls-target-status');
+  if (!txt) return;
+  const t = lsDescribeTarget();
+  txt.textContent = t.label;
+  if (t.kind === 'none'){
+    txt.style.color = 'var(--red)';
+    if (status) status.innerHTML = '<a href="#" onclick="switchConnTab(\'databases\');return false" style="color:var(--accent);text-decoration:none">Configure target →</a>';
+  } else {
+    txt.style.color = 'var(--text)';
+    if (status) status.textContent = 'Drafts you run setup for will be created here';
+  }
+}
+
 async function lsRunSetup(id){
   const drafts = lsGetDrafts();
   const d = drafts.find(x => x.id === id);
   if (!d) return;
 
-  const confirmMsg = `Create linked server "${d.name}" on the target SQL Server?\n\n` +
-    `This will execute sp_addlinkedserver and sp_addlinkedsrvlogin against your target database. ` +
-    `You need ALTER ANY LINKED SERVER permission (or sysadmin) for this to succeed.\n\n` +
-    `Remote: ${d.host}:${d.port}/${d.database}`;
-  if (!confirm(confirmMsg)) return;
-
-  const tgtConn = impGetConn('tgt');  // reuse the hardened target resolver
-  if (!tgtConn){
+  const target = lsDescribeTarget();
+  if (target.kind === 'none'){
     lsShowResult(id, '🔴 No target database connection configured. Set it up in the Database connections tab first.', 'err');
     return;
   }
 
+  const confirmMsg = `Create linked server "${d.name}"?\n\n` +
+    `On target:  ${target.label}\n` +
+    `Remote:     ${d.host}:${d.port}/${d.database}\n\n` +
+    `This will execute sp_addlinkedserver and sp_addlinkedsrvlogin against the target. ` +
+    `You need ALTER ANY LINKED SERVER permission (or sysadmin) for this to succeed.`;
+  if (!confirm(confirmMsg)) return;
+
+  const tgtConn = impGetConn('tgt');
+  if (!tgtConn){
+    lsShowResult(id, '🔴 No target database connection configured.', 'err');
+    return;
+  }
+
   const sql = lsBuildSetupSql(d);
-  lsShowResult(id, 'Running sp_addlinkedserver on target…', 'info');
+  lsShowResult(id, 'Running sp_addlinkedserver on ' + target.label + '…', 'info');
 
   try {
-    // Use the existing dispatcher. For linked server DDL we want the whole script
-    // in one call (sp_addlinkedserver + sp_addlinkedsrvlogin together).
     const res = await impDbCall(tgtConn, { action:'execute', sql });
     if (res && res.error){
-      lsShowResult(id, '🔴 Setup failed: ' + res.error + (res.hint ? '\n\nHint: ' + res.hint : ''), 'err');
+      lsShowSetupError(id, res.error, d);
       return;
     }
     // Mark draft as applied
     const drafts2 = lsGetDrafts();
     const d2 = drafts2.find(x => x.id === id);
     if (d2){ d2.applied = true; d2.appliedAt = new Date().toISOString(); lsSetDrafts(drafts2); }
-    lsShowResult(id, '✓ Linked server "' + d.name + '" created on target. Use [' + d.name + '] in your SQL Editor.', 'ok');
+    lsShowResult(id, '✓ Linked server "' + d.name + '" created on ' + target.label + '. Use [' + d.name + '] in your SQL Editor.', 'ok');
     lsRenderDrafts();
-    lsRefreshServerList();  // refresh the Existing list
+    lsRefreshServerList();
   } catch (e) {
-    lsShowResult(id, '🔴 Setup failed: ' + (e.message || String(e)), 'err');
+    lsShowSetupError(id, e.message || String(e), d);
+  }
+}
+
+// Render a setup error with context-aware guidance. The most common failure
+// by far is "User does not have permission" — for that we show the specific
+// GRANT statement the DBA needs to run, and offer to copy the SQL to run manually.
+function lsShowSetupError(id, rawMsg, draft){
+  const el = document.getElementById('ls-draft-result-' + id);
+  if (!el) return;
+  const lower = String(rawMsg || '').toLowerCase();
+  const isPerm = lower.includes('permission') || lower.includes('alter any linked server') || lower.includes('sysadmin');
+
+  el.style.display = 'block';
+  el.style.background = 'rgba(239,68,68,0.08)';
+  el.style.color = 'var(--text)';
+  el.style.padding = '10px 12px';
+  el.style.whiteSpace = 'normal';
+
+  if (isPerm){
+    el.innerHTML = `
+      <div style="color:var(--red);font-weight:500;margin-bottom:6px">🔴 Permission denied</div>
+      <div style="font-size:11.5px;color:var(--text2);line-height:1.5;margin-bottom:8px">
+        The target SQL Server rejected the request: <em>${escHtml(rawMsg)}</em>
+      </div>
+      <div style="font-size:11.5px;color:var(--text2);line-height:1.6;margin-bottom:8px">
+        Creating linked servers requires <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:11px">ALTER ANY LINKED SERVER</code> or <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:11px">sysadmin</code>. Your current login doesn't have that.
+      </div>
+      <div style="font-size:11.5px;color:var(--text2);line-height:1.6">
+        <strong style="color:var(--text)">Three ways to fix this:</strong>
+        <ol style="margin:6px 0 0;padding-left:20px;font-size:11px">
+          <li style="margin-bottom:4px"><strong>Get a DBA to grant you the permission</strong>:<br>
+            <code style="background:var(--bg3);padding:4px 8px;border-radius:3px;font-family:var(--mono);font-size:11px;display:inline-block;margin-top:2px">GRANT ALTER ANY LINKED SERVER TO [your_cygenix_login];</code>
+          </li>
+          <li style="margin-bottom:4px"><strong>Run the setup SQL manually as sysadmin</strong> — click <em>Preview SQL</em> above (password is redacted in view — use the draft values when you paste).</li>
+          <li><strong>Point Cygenix at a sysadmin connection temporarily</strong>, run setup, then switch back.</li>
+        </ol>
+      </div>`;
+  } else {
+    el.innerHTML = `
+      <div style="color:var(--red);font-weight:500;margin-bottom:6px">🔴 Setup failed</div>
+      <div style="font-size:11.5px;color:var(--text2);line-height:1.5;font-family:var(--mono);word-break:break-word">${escHtml(rawMsg)}</div>`;
   }
 }
 
@@ -5375,6 +5478,7 @@ function lsShowResult(id, msg, kind){
   if (!el) return;
   el.style.display = 'block';
   el.style.whiteSpace = 'pre-wrap';
+  el.style.padding = '0.4rem 0.6rem';
   if (kind === 'ok')      { el.style.background = 'rgba(34,197,94,0.1)';  el.style.color = 'var(--green)'; }
   else if (kind === 'err'){ el.style.background = 'rgba(239,68,68,0.1)';   el.style.color = 'var(--red)'; }
   else                    { el.style.background = 'var(--bg3)';             el.style.color = 'var(--text2)'; }
@@ -5523,6 +5627,7 @@ function switchConnTab(tab){
   if (c) c.style.display = tab === 'databases' ? '' : 'none';
   // When switching TO the linked tab, load drafts and refresh remote list
   if (tab === 'linked'){
+    lsUpdateTargetBanner();
     lsRenderDrafts();
     lsRefreshServerList();  // fire-and-forget; UI will update when done
   }
