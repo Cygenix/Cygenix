@@ -167,15 +167,57 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <nav>
   <div class="nav-logo">Cyge<span>nix</span></div>
   <div class="nav-links">
-    <a href="/about.html">About</a>
     <a href="#features">Features</a>
     <a href="#mapper">Object Mapping</a>
     <a href="#validation">Validation</a>
     <a href="#planner">Project Planner</a>
     <a href="#sql-editor">SQL Editor</a>
+    <a href="#" onclick="openContactModal();return false">Contact us</a>
   </div>
   <a href="/login.html" class="nav-cta">Sign in →</a>
 </nav>
+
+<!-- Contact & Pricing modal — hidden by default, shown by openContactModal().
+     Kept inside the page (rather than a separate /contact.html) so the whole
+     call-to-action flow stays on the landing page. Closes on backdrop click or
+     the ✕ button. Contact details and pricing intentionally simple — no form
+     submission; we direct users to email/phone so inquiries route straight to
+     a human without needing a form-handler backend. -->
+<div id="contact-modal" style="display:none;position:fixed;inset:0;background:rgba(4,7,14,0.8);z-index:200;align-items:center;justify-content:center;padding:2rem;backdrop-filter:blur(8px)"
+     onclick="if(event.target===this)closeContactModal()">
+  <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;width:min(520px,100%);padding:2.25rem 2rem;position:relative">
+    <button onclick="closeContactModal()" aria-label="Close"
+            style="position:absolute;top:12px;right:14px;background:transparent;border:none;color:var(--text3);font-size:22px;cursor:pointer;line-height:1;padding:4px 8px">✕</button>
+
+    <div style="font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.75rem">Get in Touch</div>
+    <h2 style="font-size:1.8rem;font-weight:700;letter-spacing:-0.02em;margin:0 0 0.75rem;color:var(--text)">Let's talk.</h2>
+    <p style="font-size:14px;color:var(--text2);line-height:1.6;margin:0 0 1.75rem">Cygenix is currently in private preview. Reach out to discuss pricing, scope a migration, or request a demo.</p>
+
+    <div style="display:grid;gap:0.75rem;margin-bottom:1.75rem">
+      <a href="mailto:curtis.morris@cygenix.co.uk" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
+         onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
+        <span style="font-size:18px">✉️</span>
+        <div style="flex:1">
+          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Email</div>
+          <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">curtis.morris@cygenix.co.uk</div>
+        </div>
+      </a>
+      <a href="tel:+447809873223" style="display:flex;align-items:center;gap:0.85rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;text-decoration:none;color:var(--text);transition:all 0.2s"
+         onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border2)'">
+        <span style="font-size:18px">📞</span>
+        <div style="flex:1">
+          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Phone</div>
+          <div style="font-size:14px;font-weight:500;color:var(--text);font-family:var(--mono)">+44 7809 873223</div>
+        </div>
+      </a>
+    </div>
+
+    <div style="padding-top:1.5rem;border-top:0.5px solid var(--border)">
+      <div style="font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:0.5rem">Pricing</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.6;margin:0">Tailored to your migration — scoped by database size, number of projects, and support level. Get in touch for a quote.</p>
+    </div>
+  </div>
+</div>
 
 <!-- HERO -->
 <section class="hero">
@@ -686,6 +728,25 @@ window.addEventListener('scroll',()=>{
   sections.forEach(s=>{if(window.scrollY>=s.offsetTop-100)cur=s.id;});
   navLinks.forEach(a=>{a.style.color=a.getAttribute('href')==='#'+cur?'var(--text)':'';});
 },{passive:true});
+
+// ── Contact modal ───────────────────────────────────────────────────────────
+// Simple show/hide. Esc closes. No form — users click through to email/phone
+// so inquiries land with a human directly.
+function openContactModal(){
+  const m = document.getElementById('contact-modal');
+  if (!m) return;
+  m.style.display = 'flex';
+  document.body.style.overflow = 'hidden';  // prevent background scroll while modal is open
+}
+function closeContactModal(){
+  const m = document.getElementById('contact-modal');
+  if (!m) return;
+  m.style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeContactModal();
+});
 
 // ── Visual mapper interactive widget ────────────────────────────────────────
 (function vmInit(){
