@@ -231,21 +231,29 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 
     <div class="main-body">
 
-      <!-- Connections -->
+      <!-- Connections — read-only mirror of Dashboard > Connections globals.
+           Single source of truth. Users change them on the Connections page;
+           Project Builder always reflects the current state. -->
       <div class="conn-row">
         <div class="conn-panel">
-          <div class="conn-label">Source connection string</div>
+          <div class="conn-label" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+            <span>Source connection</span>
+            <a href="/dashboard.html#connections" style="font-size:10px;color:var(--accent);text-decoration:none">Set on Connections page →</a>
+          </div>
           <div style="display:flex;gap:0.5rem">
-            <input class="conn-input" id="proj-src-conn" placeholder="Server=source;Database=db;..." oninput="markDirty();renderConnFallbackHints()" onblur="captureConnOnBlur('src')">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">🔌 Connect source</button>
+            <input class="conn-input" id="proj-src-conn" placeholder="(not configured — open Connections page)" readonly style="cursor:default;opacity:0.85">
+            <button class="btn btn-ghost btn-sm" onclick="testConn('src')" style="flex-shrink:0">🔌 Test source</button>
           </div>
           <div class="conn-status" id="src-conn-status"></div>
         </div>
         <div class="conn-panel">
-          <div class="conn-label">Target — Azure Function URL or connection string</div>
+          <div class="conn-label" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">
+            <span>Target connection</span>
+            <a href="/dashboard.html#connections" style="font-size:10px;color:var(--accent);text-decoration:none">Set on Connections page →</a>
+          </div>
           <div style="display:flex;gap:0.5rem">
-            <input class="conn-input" id="proj-tgt-conn" placeholder="https://fn.azurewebsites.net/api/db?code=..." oninput="markDirty();renderConnFallbackHints()" onblur="captureConnOnBlur('tgt')">
-            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">🔌 Connect target</button>
+            <input class="conn-input" id="proj-tgt-conn" placeholder="(not configured — open Connections page)" readonly style="cursor:default;opacity:0.85">
+            <button class="btn btn-ghost btn-sm" onclick="testConn('tgt')" style="flex-shrink:0">🔌 Test target</button>
           </div>
           <div class="conn-status" id="tgt-conn-status"></div>
         </div>
@@ -536,15 +544,22 @@ function getAllStepsFlat(){
 // raw sessionStorage if the helper is unavailable or returns empty. This matches
 // the defensive pattern used by the Data Import feature so behaviour is consistent
 // across pages.
+// Read the Dashboard > Connections global connection. CygenixConnections is a
+// let/const at the top of connections.js (module-level) — NOT on window — so we
+// reference it bare, inside a try/catch for safety. If unavailable, fall through
+// to sessionStorage. This mirrors the simple pattern used in object_mapping.html
+// which has always worked reliably.
 function globalSrcConn(){
-  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  let c = {};
+  try { c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get && CygenixConnections.get()) || {}; } catch {}
   return c.srcConnString
       || c.srcFnUrl
       || sessionStorage.getItem('cygenix_src_conn_string')
       || '';
 }
 function globalTgtConn(){
-  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  let c = {};
+  try { c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get && CygenixConnections.get()) || {}; } catch {}
   const fnUrl = c.tgtFnUrl || c.fnUrl || sessionStorage.getItem('cygenix_fn_url') || '';
   const fnKey = c.tgtFnKey || c.fnKey || sessionStorage.getItem('cygenix_fn_key') || '';
   if (fnUrl) return fnUrl + (fnKey ? (fnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(fnKey) : '');
@@ -555,78 +570,34 @@ function globalTgtConn(){
 }
 
 // Hydrate UI from the currently-active `project` object.
-// IMPORTANT: we set input values to ONLY what the project itself has stored.
-// We never silently pre-fill with the global fallback, because saving would then
-// write those fallback values back into the project — silently "stealing" them.
-// The global fallback is still used at run-time via effectiveSrcConn() / effectiveTgtConn().
+// Connection fields always reflect the Dashboard > Connections global (single
+// source of truth). Per-project connection overrides have been removed — they
+// created confusing "why doesn't Project Builder remember?" bugs. If users ever
+// need per-project connections again, add an explicit override toggle rather
+// than silently caching state.
 function hydrateProjectIntoUI(){
   ensureAtLeastOneGroup();
   const sel = document.getElementById('proj-selector');
   if (sel) sel.value = project.id;
-  document.getElementById('proj-src-conn').value = project.srcConn || '';
-  document.getElementById('proj-tgt-conn').value = project.tgtConn || '';
-  renderConnFallbackHints();
+  document.getElementById('proj-src-conn').value = globalSrcConn() || '';
+  document.getElementById('proj-tgt-conn').value = globalTgtConn() || '';
   renderSteps();
   renderJobs();
 }
 
-// Effective connection strings — project value wins, fall back to global at run time.
-// Use these anywhere we need to actually CONNECT, not what to display in the fields.
-function effectiveSrcConn(){
-  return (project.srcConn && project.srcConn.trim()) || globalSrcConn();
-}
-function effectiveTgtConn(){
-  return (project.tgtConn && project.tgtConn.trim()) || globalTgtConn();
-}
+// Effective connection strings — always the Dashboard global.
+// Kept as named functions so existing call sites don't need updating.
+function effectiveSrcConn(){ return globalSrcConn(); }
+function effectiveTgtConn(){ return globalTgtConn(); }
 
-// Show an obvious "Using global connection" indicator below each empty connection field.
-// The original design kept fields empty on purpose (so saving didn't silently capture
-// global values into the project record), but the italic hint was too subtle — users
-// thought their connections had been forgotten. This version shows a clear teal banner
-// with an explicit "Use this" button that populates the field if wanted.
-function renderConnFallbackHints(){
-  const setHint = (fieldId, hintId, globalValue, side) => {
-    const field = document.getElementById(fieldId);
-    let hint = document.getElementById(hintId);
-    const isEmpty = !field || !field.value.trim();
-    if (isEmpty && globalValue){
-      if (!hint){
-        hint = document.createElement('div');
-        hint.id = hintId;
-        hint.style.cssText = 'font-size:11px;margin-top:6px;padding:6px 10px;background:rgba(45,212,191,0.08);border:0.5px solid rgba(45,212,191,0.25);border-radius:6px;color:var(--teal);display:flex;align-items:center;gap:0.5rem;font-family:var(--mono)';
-        field.parentElement.parentElement.appendChild(hint);
-      }
-      const preview = globalValue.length > 50 ? globalValue.slice(0, 47) + '…' : globalValue;
-      // Mask passwords in the preview
-      const safe = preview
-        .replace(/(password|pwd|pass)\s*=\s*[^;&\s]*/gi, '$1=***')
-        .replace(/(:\/\/[^:]+):([^@]+)@/, '$1:***@');
-      hint.innerHTML = `
-        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          <strong style="font-family:var(--serif);font-weight:500">✓ Using global ${side}:</strong> ${safe}
-        </span>
-        <button type="button" onclick="copyGlobalIntoField('${fieldId}','${side}')" style="background:rgba(45,212,191,0.15);border:0.5px solid var(--teal);color:var(--teal);font-size:10px;font-family:var(--serif);padding:2px 8px;border-radius:4px;cursor:pointer;flex-shrink:0">Use for this project</button>
-      `;
-      hint.style.display = 'flex';
-    } else if (hint){
-      hint.style.display = 'none';
-    }
-  };
-  setHint('proj-src-conn', 'src-conn-hint', globalSrcConn(),  'source');
-  setHint('proj-tgt-conn', 'tgt-conn-hint', globalTgtConn(),  'target');
-}
+// Banner hint retired — connection fields now show the global directly, so there's
+// no "empty field with hint below" state to handle. Kept as a no-op function so any
+// remaining callers (from old code paths) don't throw.
+function renderConnFallbackHints(){ /* no-op */ }
 
-// Copy the global value into the project-level field. Explicit user action, not silent.
-function copyGlobalIntoField(fieldId, side){
-  const field = document.getElementById(fieldId);
-  if (!field) return;
-  const val = side === 'source' ? globalSrcConn() : globalTgtConn();
-  if (!val) return;
-  field.value = val;
-  markDirty();
-  captureConnOnBlur(side === 'source' ? 'src' : 'tgt');
-  renderConnFallbackHints();  // hint will now hide itself
-}
+// Also retired. Kept as no-op for backwards compat with any html-level call sites
+// that may have survived the refactor.
+function copyGlobalIntoField(){ /* no-op */ }
 
 function refreshProjectSelector(){
   const sel = document.getElementById('proj-selector');
@@ -670,20 +641,33 @@ function refreshProjectSelector(){
   hydrateProjectIntoUI();
 })();
 
+// Re-sync connection display when the user returns to this page (from dashboard,
+// another tab, etc.). We only refresh the conn fields — project state is
+// otherwise managed by hydrate on navigation. Tiny helper so we don't repaint
+// more than needed.
+function rerenderConnectionsFromGlobal(){
+  const src = globalSrcConn() || '';
+  const tgt = globalTgtConn() || '';
+  const s = document.getElementById('proj-src-conn');
+  const t = document.getElementById('proj-tgt-conn');
+  if (s && s.value !== src) s.value = src;
+  if (t && t.value !== tgt) t.value = tgt;
+}
+window.addEventListener('focus',    rerenderConnectionsFromGlobal);
+window.addEventListener('pageshow', rerenderConnectionsFromGlobal);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') rerenderConnectionsFromGlobal();
+});
+
 function markDirty() { isDirty = true; document.getElementById('dirty-badge').style.display='inline'; }
 
 function saveProject() {
-  // Pull the current connection values back onto the project — they may have been edited
-  project.srcConn = document.getElementById('proj-src-conn').value.trim();
-  project.tgtConn = document.getElementById('proj-tgt-conn').value.trim();
-  // Project name comes from the <option> currently selected; we don't let users edit it inline
-  // (use the Rename button instead).
-  // Write back into the projects array in place
+  // Connection fields are no longer persisted per-project — they always reflect
+  // the Dashboard > Connections global. We only save project metadata + steps.
   const idx = projects.findIndex(p => p.id === project.id);
   if (idx >= 0) projects[idx] = project;
   else projects.push(project);
   persistProjectsList();
-  // Also keep legacy key in sync so any old consumers still work until we migrate them
   try { localStorage.setItem(PROJ_KEY, JSON.stringify(project)); } catch {}
   localStorage.setItem(ACTIVE_ID_KEY, project.id);
   isDirty = false;
@@ -693,40 +677,11 @@ function saveProject() {
 
 // ── Multi-project actions ────────────────────────────────────────────────────
 
-// Called on blur of either connection field. Writes the field value back into
-// the active project and persists to the projects list immediately — so the
-// user never has to click Save just for a connection change.
-function captureConnOnBlur(which){
-  const field = document.getElementById(which === 'src' ? 'proj-src-conn' : 'proj-tgt-conn');
-  if (!field) return;
-  const val = field.value.trim();
-  const key = (which === 'src') ? 'srcConn' : 'tgtConn';
-  if ((project[key] || '') === val) return;   // no change — nothing to do
-  project[key] = val;
-  // Persist immediately so a page reload / switch won't lose it
-  const idx = projects.findIndex(p => p.id === project.id);
-  if (idx >= 0) projects[idx] = project;
-  persistProjectsList();
-  try { localStorage.setItem(PROJ_KEY, JSON.stringify(project)); } catch {}
-  localStorage.setItem(ACTIVE_ID_KEY, project.id);
-  renderConnFallbackHints();
-  // Clear dirty flag if the connection edit was the only unsaved change.
-  // We don't know for sure — so leave dirty as-is. Save button just becomes a no-op in that case.
-}
-
-// Before swapping projects, make sure whatever the user has typed into the
-// connection fields is captured onto the current project. Otherwise typed-but-
-// unblurred edits could land on the wrong project.
-function captureBothConnsToProject(){
-  const srcVal = (document.getElementById('proj-src-conn')?.value || '').trim();
-  const tgtVal = (document.getElementById('proj-tgt-conn')?.value || '').trim();
-  if ((project.srcConn || '') !== srcVal) project.srcConn = srcVal;
-  if ((project.tgtConn || '') !== tgtVal) project.tgtConn = tgtVal;
-  const idx = projects.findIndex(p => p.id === project.id);
-  if (idx >= 0) projects[idx] = project;
-  persistProjectsList();
-  try { localStorage.setItem(PROJ_KEY, JSON.stringify(project)); } catch {}
-}
+// Kept as no-ops so existing onblur="captureConnOnBlur('src')" handlers in
+// the HTML still bind without reference errors. The connection fields are
+// now read-only displays of the Dashboard global — there's nothing to capture.
+function captureConnOnBlur(which){ /* no-op: see saveProject comment */ }
+function captureBothConnsToProject(){ /* no-op: see saveProject comment */ }
 
 function handleProjectSwitch(newId){
   if (!newId || newId === project.id) return;
@@ -754,14 +709,11 @@ function handleProjectSwitch(newId){
 function newProjectPrompt(){
   const name = (prompt('Name for the new project:') || '').trim();
   if (!name) return;
-  // Decide whether to carry over current connections — ask the analyst
-  const copyConns = confirm('Copy connection strings from "' + (project.name||'current project') + '"?\n\nOK = copy · Cancel = start with no connections');
+  // Connections are no longer stored per-project — they always come from Dashboard globals.
   const p = {
     id: newProjectId(),
     name,
     createdAt: new Date().toISOString(),
-    srcConn: copyConns ? (document.getElementById('proj-src-conn').value.trim() || project.srcConn || '') : '',
-    tgtConn: copyConns ? (document.getElementById('proj-tgt-conn').value.trim() || project.tgtConn || '') : '',
     groups: [ newGroup('Default', 'sequential') ]
   };
   projects.push(p);
