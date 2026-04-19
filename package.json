@@ -4,7 +4,8 @@
   "description": "Cygenix SQL migration platform",
   "dependencies": {
     "@netlify/blobs": "^7.3.0",
-    "mssql": "^10.0.4"
+    "mssql": "^10.0.4",
+    "pg": "^8.11.3"
   },
   "engines": {
     "node": ">=18.0.0"
