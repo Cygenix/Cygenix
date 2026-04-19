@@ -1514,6 +1514,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <button class="cx-tab" data-tab="import" onclick="switchConnTab('import')">
           ⬆ Data import
         </button>
+        <button class="cx-tab" data-tab="linked" onclick="switchConnTab('linked')">
+          🔗 Linked servers
+        </button>
       </div>
 
       <!-- Tab: Database connections -->
@@ -1653,6 +1656,90 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
             <button id="imp-run-btn" class="btn btn-primary btn-sm" onclick="impRun()">⬆ Import to database</button>
             <button class="btn btn-ghost btn-sm" onclick="impReset()">✕ Start over</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Tab: Linked servers — create SQL Server linked server objects on the target,
+           query them from the SQL Editor with OPENQUERY or four-part names. Target-only
+           because only elevated users on the target can run sp_addlinkedserver. -->
+      <div id="conn-tab-linked" style="display:none">
+        <!-- Section 1: Draft a new linked server config -->
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">Add a linked server</div>
+            <span style="font-size:10.5px;color:var(--text3)">Configure the remote DB, save as a draft, then run the SQL explicitly.</span>
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-bottom:1rem;line-height:1.5;background:var(--bg3);padding:8px 12px;border-radius:var(--r)">
+            <strong style="color:var(--amber)">⚠ Requires elevated permissions</strong> on the target SQL Server (<code style="background:var(--bg4);padding:1px 4px;border-radius:3px">ALTER ANY LINKED SERVER</code> or <code style="background:var(--bg4);padding:1px 4px;border-radius:3px">sysadmin</code>). Drafts are stored locally — nothing runs until you click <em>Run setup</em>.
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
+            <div>
+              <label class="form-label">Linked server name</label>
+              <input id="ls-draft-name" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="MyLinkedPostgres" oninput="lsValidateDraftName()">
+              <div id="ls-draft-name-err" style="font-size:10.5px;color:var(--red);margin-top:3px;display:none"></div>
+            </div>
+            <div>
+              <label class="form-label">Remote type</label>
+              <select id="ls-draft-type" class="form-input" style="font-family:var(--mono);font-size:12px">
+                <option value="postgres">PostgreSQL (via OLE DB for ODBC — MSDASQL)</option>
+                <option value="mssql">SQL Server (native SQLNCLI)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
+            <div>
+              <label class="form-label">Remote host</label>
+              <input id="ls-draft-host" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="host.example.com">
+            </div>
+            <div>
+              <label class="form-label">Port</label>
+              <input id="ls-draft-port" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="5432" type="number">
+            </div>
+          </div>
+
+          <div style="margin-bottom:0.75rem">
+            <label class="form-label">Remote database</label>
+            <input id="ls-draft-database" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="mydb">
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.75rem">
+            <div>
+              <label class="form-label">Remote username</label>
+              <input id="ls-draft-user" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="reader">
+            </div>
+            <div>
+              <label class="form-label">Remote password</label>
+              <input id="ls-draft-pass" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="••••••••" type="password">
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="lsSaveDraft()">💾 Save draft</button>
+            <button class="btn btn-ghost btn-sm" onclick="lsClearDraftForm()">✕ Clear form</button>
+            <span id="ls-draft-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+          </div>
+        </div>
+
+        <!-- Section 2: Drafts -->
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+            <div style="font-size:13px;font-weight:600">Drafts</div>
+            <span id="ls-drafts-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:100px">0</span>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Review, then click <em>Run setup</em> to create on the target.</span>
+          </div>
+          <div id="ls-drafts-list"></div>
+        </div>
+
+        <!-- Section 3: Existing linked servers on target -->
+        <div class="panel">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+            <div style="font-size:13px;font-weight:600">Existing on target</div>
+            <span id="ls-remote-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:100px">–</span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="lsRefreshServerList()">↻ Refresh</button>
+          </div>
+          <div id="ls-remote-list" style="font-size:12px;color:var(--text3)">Click Refresh or switch to this tab to load existing linked servers on the target SQL Server.</div>
         </div>
       </div>
 
@@ -5009,6 +5096,402 @@ function sconnDelete(id){
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// LINKED SERVERS — draft + run SQL Server sp_addlinkedserver setup against
+// the target. Users draft configs in localStorage, review them, then click
+// Run setup to actually create the linked server on the target DB.
+// Also lists existing linked servers and allows dropping them.
+// Used by SQL Editor to surface OPENQUERY / four-part-name snippets.
+// ══════════════════════════════════════════════════════════════════════════
+
+const LS_KEY = 'cygenix_linked_server_drafts';
+
+// ─── Storage helpers ─────────────────────────────────────────────────────
+function lsGetDrafts(){
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+function lsSetDrafts(list){
+  try { localStorage.setItem(LS_KEY, JSON.stringify(list.slice(0, 30))); }
+  catch (e) { console.error('[linked-servers] localStorage write failed:', e); }
+}
+
+// ─── Draft form validation ───────────────────────────────────────────────
+// Linked server names are used as T-SQL identifiers in OPENQUERY and
+// four-part names. We accept [A-Za-z0-9_] only to avoid quoting headaches.
+function lsValidateDraftName(){
+  const el = document.getElementById('ls-draft-name');
+  const errEl = document.getElementById('ls-draft-name-err');
+  const v = (el?.value || '').trim();
+  let err = '';
+  if (v && !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(v)){
+    err = 'Use letters, digits, underscore only (start with letter). Max 64 chars.';
+  }
+  if (errEl){
+    errEl.textContent = err;
+    errEl.style.display = err ? 'block' : 'none';
+  }
+  return !err;
+}
+
+function lsClearDraftForm(){
+  ['ls-draft-name','ls-draft-host','ls-draft-port','ls-draft-database','ls-draft-user','ls-draft-pass']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const err = document.getElementById('ls-draft-name-err');
+  if (err) err.style.display = 'none';
+  const status = document.getElementById('ls-draft-status');
+  if (status) status.textContent = '';
+}
+
+function lsSaveDraft(){
+  if (!lsValidateDraftName()) return;
+
+  const name     = (document.getElementById('ls-draft-name')?.value     || '').trim();
+  const type     = document.getElementById('ls-draft-type')?.value;
+  const host     = (document.getElementById('ls-draft-host')?.value     || '').trim();
+  const port     = (document.getElementById('ls-draft-port')?.value     || '').trim();
+  const database = (document.getElementById('ls-draft-database')?.value || '').trim();
+  const user     = (document.getElementById('ls-draft-user')?.value     || '').trim();
+  const pass     = (document.getElementById('ls-draft-pass')?.value     || '');
+
+  if (!name){ alert('Linked server name is required.'); return; }
+  if (!host){ alert('Remote host is required.'); return; }
+  if (!database){ alert('Remote database is required.'); return; }
+
+  // Default port per type if left blank
+  const defaultPort = type === 'postgres' ? '5432' : '1433';
+  const resolvedPort = port || defaultPort;
+
+  const drafts = lsGetDrafts();
+  const existingIdx = drafts.findIndex(d => d.name === name);
+  const draft = {
+    id: existingIdx >= 0 ? drafts[existingIdx].id : 'ls_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    name, type, host, port: resolvedPort, database, user, pass,
+    savedAt: new Date().toISOString(),
+    applied: existingIdx >= 0 ? drafts[existingIdx].applied : false,
+  };
+
+  if (existingIdx >= 0){
+    if (!confirm(`A draft named "${name}" already exists. Overwrite?`)) return;
+    drafts[existingIdx] = draft;
+  } else {
+    drafts.push(draft);
+  }
+  lsSetDrafts(drafts);
+
+  const status = document.getElementById('ls-draft-status');
+  if (status){
+    status.textContent = '✓ Draft saved';
+    status.style.color = 'var(--green)';
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  }
+  lsClearDraftForm();
+  lsRenderDrafts();
+}
+
+// ─── Draft list render ───────────────────────────────────────────────────
+function lsRenderDrafts(){
+  const container = document.getElementById('ls-drafts-list');
+  const counter   = document.getElementById('ls-drafts-count');
+  if (!container) return;
+  const drafts = lsGetDrafts();
+  if (counter) counter.textContent = drafts.length;
+
+  if (drafts.length === 0){
+    container.innerHTML = '<div style="font-size:11px;color:var(--text3);font-style:italic;padding:0.5rem 0">No drafts yet — fill the form above and click Save draft.</div>';
+    return;
+  }
+
+  container.innerHTML = drafts.map(d => {
+    const typeLabel = d.type === 'postgres' ? 'POSTGRES' : 'SQL SERVER';
+    const typeColor = d.type === 'postgres' ? 'var(--teal)' : '#6ea4ff';
+    const appliedBadge = d.applied
+      ? '<span style="background:rgba(34,197,94,0.15);color:var(--green);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">APPLIED</span>'
+      : '<span style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">DRAFT</span>';
+    return `<div style="padding:0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.5rem;background:var(--bg2)">
+      <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;margin-bottom:0.5rem">
+        <strong style="font-family:var(--mono);font-size:13px;color:var(--text)">${escHtml(d.name)}</strong>
+        <span style="font-family:var(--mono);font-size:10px;color:${typeColor}">${typeLabel}</span>
+        ${appliedBadge}
+        <span style="font-size:11px;color:var(--text3);margin-left:auto;font-family:var(--mono)">${escHtml(d.host)}:${escHtml(d.port)}/${escHtml(d.database)}</span>
+      </div>
+      <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="lsRunSetup('${d.id}')" title="Execute sp_addlinkedserver on target">▶ Run setup</button>
+        <button class="btn btn-ghost btn-sm" onclick="lsPreviewSql('${d.id}')">👁 Preview SQL</button>
+        <button class="btn btn-ghost btn-sm" onclick="lsEditDraft('${d.id}')">✎ Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="lsDeleteDraft('${d.id}')" style="color:var(--red)">✕ Delete draft</button>
+      </div>
+      <div id="ls-draft-result-${d.id}" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;display:none;padding:0.4rem 0.6rem;border-radius:var(--r)"></div>
+    </div>`;
+  }).join('');
+}
+
+function lsEditDraft(id){
+  const drafts = lsGetDrafts();
+  const d = drafts.find(x => x.id === id);
+  if (!d) return;
+  document.getElementById('ls-draft-name').value     = d.name || '';
+  document.getElementById('ls-draft-type').value     = d.type || 'postgres';
+  document.getElementById('ls-draft-host').value     = d.host || '';
+  document.getElementById('ls-draft-port').value     = d.port || '';
+  document.getElementById('ls-draft-database').value = d.database || '';
+  document.getElementById('ls-draft-user').value     = d.user || '';
+  document.getElementById('ls-draft-pass').value     = d.pass || '';
+  // Scroll form into view
+  document.getElementById('ls-draft-name').scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+function lsDeleteDraft(id){
+  const drafts = lsGetDrafts();
+  const d = drafts.find(x => x.id === id);
+  if (!d) return;
+  if (!confirm(`Delete draft "${d.name}"? This does NOT drop the linked server if it was already created on the target — use the Existing list below to drop that.`)) return;
+  lsSetDrafts(drafts.filter(x => x.id !== id));
+  lsRenderDrafts();
+}
+
+// ─── SQL generation ──────────────────────────────────────────────────────
+// Build the sp_addlinkedserver + sp_addlinkedsrvlogin calls for a draft.
+// We do all string escaping here (single-quote doubling) because user-supplied
+// host/db/password go straight into the T-SQL.
+function lsBuildSetupSql(draft){
+  const esc = s => String(s || '').replace(/'/g, "''");
+  const name = esc(draft.name);
+
+  if (draft.type === 'postgres'){
+    // Postgres via generic OLE DB (MSDASQL) — needs a System DSN named after the linked
+    // server (or an inline connection string). We use the inline connection string form,
+    // which requires 'RPC Out' disabled (it's default). The SQL Server host must have the
+    // PostgreSQL ODBC driver installed (psqlODBC, typically "PostgreSQL Unicode(x64)").
+    const dsn = `Driver={PostgreSQL Unicode(x64)};Server=${esc(draft.host)};Port=${esc(draft.port)};Database=${esc(draft.database)};Uid=${esc(draft.user)};Pwd=${esc(draft.pass)};`;
+    return [
+      `-- Linked server "${name}" → PostgreSQL ${esc(draft.host)}:${esc(draft.port)}/${esc(draft.database)}`,
+      `-- Requires: psqlODBC driver installed on the SQL Server host`,
+      `EXEC master.dbo.sp_addlinkedserver`,
+      `    @server     = N'${name}',`,
+      `    @srvproduct = N'PostgreSQL',`,
+      `    @provider   = N'MSDASQL',`,
+      `    @provstr    = N'${esc(dsn)}';`,
+      ``,
+      `EXEC master.dbo.sp_addlinkedsrvlogin`,
+      `    @rmtsrvname  = N'${name}',`,
+      `    @useself     = N'FALSE',`,
+      `    @locallogin  = NULL,`,
+      `    @rmtuser     = N'${esc(draft.user)}',`,
+      `    @rmtpassword = N'${esc(draft.pass)}';`,
+      ``,
+      `-- Enable remote queries (usually on by default, here for safety):`,
+      `EXEC master.dbo.sp_serveroption @server = N'${name}', @optname = N'rpc out',        @optvalue = N'true';`,
+      `EXEC master.dbo.sp_serveroption @server = N'${name}', @optname = N'data access',   @optvalue = N'true';`,
+    ].join('\n');
+  }
+
+  // SQL Server → SQL Server via native SQL Native Client
+  const dataSrc = draft.port && draft.port !== '1433' ? `${esc(draft.host)},${esc(draft.port)}` : esc(draft.host);
+  return [
+    `-- Linked server "${name}" → SQL Server ${esc(draft.host)}:${esc(draft.port || '1433')}/${esc(draft.database)}`,
+    `EXEC master.dbo.sp_addlinkedserver`,
+    `    @server     = N'${name}',`,
+    `    @srvproduct = N'',`,
+    `    @provider   = N'SQLNCLI',`,
+    `    @datasrc    = N'${dataSrc}',`,
+    `    @catalog    = N'${esc(draft.database)}';`,
+    ``,
+    `EXEC master.dbo.sp_addlinkedsrvlogin`,
+    `    @rmtsrvname  = N'${name}',`,
+    `    @useself     = N'FALSE',`,
+    `    @locallogin  = NULL,`,
+    `    @rmtuser     = N'${esc(draft.user)}',`,
+    `    @rmtpassword = N'${esc(draft.pass)}';`,
+  ].join('\n');
+}
+
+function lsPreviewSql(id){
+  const drafts = lsGetDrafts();
+  const d = drafts.find(x => x.id === id);
+  if (!d) return;
+  const sql = lsBuildSetupSql(d);
+  // Show in the inline result box under this draft — password is in the SQL
+  // by necessity (it gets sent to the server), but we DO redact it in the
+  // preview so it's not visible on screen.
+  const redacted = sql.replace(/@rmtpassword\s*=\s*N'[^']*'/g, "@rmtpassword = N'<REDACTED>'")
+                      .replace(/Pwd=[^;]*;/g, 'Pwd=<REDACTED>;');
+  const el = document.getElementById('ls-draft-result-' + id);
+  if (el){
+    el.style.display = 'block';
+    el.style.background = 'var(--bg3)';
+    el.style.color = 'var(--text2)';
+    el.innerHTML = '<div style="font-weight:500;color:var(--text);margin-bottom:0.25rem">SQL that will be executed (password redacted in view):</div><pre style="white-space:pre-wrap;margin:0;font-size:11px;line-height:1.5">' + escHtml(redacted) + '</pre>';
+  }
+}
+
+// ─── Run setup — execute the SQL against the target ─────────────────────
+async function lsRunSetup(id){
+  const drafts = lsGetDrafts();
+  const d = drafts.find(x => x.id === id);
+  if (!d) return;
+
+  const confirmMsg = `Create linked server "${d.name}" on the target SQL Server?\n\n` +
+    `This will execute sp_addlinkedserver and sp_addlinkedsrvlogin against your target database. ` +
+    `You need ALTER ANY LINKED SERVER permission (or sysadmin) for this to succeed.\n\n` +
+    `Remote: ${d.host}:${d.port}/${d.database}`;
+  if (!confirm(confirmMsg)) return;
+
+  const tgtConn = impGetConn('tgt');  // reuse the hardened target resolver
+  if (!tgtConn){
+    lsShowResult(id, '🔴 No target database connection configured. Set it up in the Database connections tab first.', 'err');
+    return;
+  }
+
+  const sql = lsBuildSetupSql(d);
+  lsShowResult(id, 'Running sp_addlinkedserver on target…', 'info');
+
+  try {
+    // Use the existing dispatcher. For linked server DDL we want the whole script
+    // in one call (sp_addlinkedserver + sp_addlinkedsrvlogin together).
+    const res = await impDbCall(tgtConn, { action:'execute', sql });
+    if (res && res.error){
+      lsShowResult(id, '🔴 Setup failed: ' + res.error + (res.hint ? '\n\nHint: ' + res.hint : ''), 'err');
+      return;
+    }
+    // Mark draft as applied
+    const drafts2 = lsGetDrafts();
+    const d2 = drafts2.find(x => x.id === id);
+    if (d2){ d2.applied = true; d2.appliedAt = new Date().toISOString(); lsSetDrafts(drafts2); }
+    lsShowResult(id, '✓ Linked server "' + d.name + '" created on target. Use [' + d.name + '] in your SQL Editor.', 'ok');
+    lsRenderDrafts();
+    lsRefreshServerList();  // refresh the Existing list
+  } catch (e) {
+    lsShowResult(id, '🔴 Setup failed: ' + (e.message || String(e)), 'err');
+  }
+}
+
+function lsShowResult(id, msg, kind){
+  const el = document.getElementById('ls-draft-result-' + id);
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.whiteSpace = 'pre-wrap';
+  if (kind === 'ok')      { el.style.background = 'rgba(34,197,94,0.1)';  el.style.color = 'var(--green)'; }
+  else if (kind === 'err'){ el.style.background = 'rgba(239,68,68,0.1)';   el.style.color = 'var(--red)'; }
+  else                    { el.style.background = 'var(--bg3)';             el.style.color = 'var(--text2)'; }
+  el.textContent = msg;
+}
+
+// ─── Existing linked servers on target ───────────────────────────────────
+// Queries sys.servers + sys.linked_logins for what's already set up on the
+// target, so the user can see them and drop them.
+async function lsRefreshServerList(){
+  const container = document.getElementById('ls-remote-list');
+  const counter   = document.getElementById('ls-remote-count');
+  if (!container) return;
+
+  const tgtConn = impGetConn('tgt');
+  if (!tgtConn){
+    container.innerHTML = '<div style="font-size:11px;color:var(--amber);padding:0.5rem 0">⚠ No target database connection configured. Set it up in the Database connections tab first.</div>';
+    if (counter) counter.textContent = '–';
+    return;
+  }
+
+  container.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:0.5rem 0">Loading…</div>';
+
+  try {
+    // sys.servers: server_id > 0 means linked servers (0 is the local server itself).
+    const res = await impDbCall(tgtConn, { action:'execute', sql: `
+      SELECT s.name, s.product, s.provider, s.data_source, s.catalog, s.is_data_access_enabled, s.modify_date
+      FROM sys.servers s
+      WHERE s.server_id > 0
+      ORDER BY s.name
+    `});
+    const rows = res?.recordset || [];
+    if (counter) counter.textContent = rows.length;
+
+    if (rows.length === 0){
+      container.innerHTML = '<div style="font-size:11px;color:var(--text3);font-style:italic;padding:0.5rem 0">No linked servers configured on target. Create one from a draft above.</div>';
+      return;
+    }
+
+    container.innerHTML = rows.map(r => {
+      const n = escHtml(r.name);
+      const provider = escHtml(r.provider || '');
+      const ds = escHtml(r.data_source || '');
+      const cat = escHtml(r.catalog || '');
+      return `<div style="padding:0.6rem 0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.4rem;background:var(--bg2)">
+        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+          <strong style="font-family:var(--mono);font-size:12.5px">${n}</strong>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--text3)">${provider}</span>
+          <span style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto">${ds}${cat ? ' · ' + cat : ''}</span>
+          <button class="btn btn-ghost btn-sm" onclick="lsDropServer('${r.name.replace(/'/g,"\\'")}')" style="color:var(--red)" title="sp_dropserver with droplogins">✕ Drop</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    container.innerHTML = '<div style="font-size:11px;color:var(--red);padding:0.5rem 0">🔴 Could not list linked servers: ' + escHtml(e.message || String(e)) + '</div>';
+    if (counter) counter.textContent = '–';
+  }
+}
+
+async function lsDropServer(name){
+  // Defensive — name comes from sys.servers and has already been quoted into HTML,
+  // but we also validate against the same strict identifier regex.
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name)){
+    alert('Refusing to drop — name contains characters outside the allowed identifier set: ' + name);
+    return;
+  }
+  if (!confirm(`Drop linked server "${name}"?\n\nThis runs sp_dropserver with droplogins. Any views, procedures, or jobs referencing this server will break.`)) return;
+
+  const tgtConn = impGetConn('tgt');
+  if (!tgtConn){ alert('No target database connection configured.'); return; }
+
+  try {
+    await impDbCall(tgtConn, { action:'execute', sql:
+      `EXEC master.dbo.sp_dropserver @server = N'${name}', @droplogins = 'droplogins';`
+    });
+    lsRefreshServerList();
+  } catch (e) {
+    alert('Drop failed: ' + (e.message || String(e)));
+  }
+}
+
+// ─── Helper used by the SQL Editor via window.cygenixLinkedServers ───────
+// Returns [{ name, type, host, database, applied }] so SQL Editor can render
+// a linked-servers dropdown and generate OPENQUERY / four-part-name snippets.
+// Only "applied" drafts appear — unapplied ones don't exist on the server yet.
+window.cygenixLinkedServers = {
+  list(){
+    return lsGetDrafts().filter(d => d.applied).map(d => ({
+      name: d.name, type: d.type, host: d.host, database: d.database, applied: true,
+    }));
+  },
+  // Convenience — build a snippet the editor can insert at the cursor.
+  // kind: 'openquery' | 'fourpart'
+  snippet(name, kind, opts){
+    opts = opts || {};
+    if (kind === 'openquery'){
+      const inner = opts.innerSql || 'SELECT * FROM your_remote_table';
+      return `SELECT * FROM OPENQUERY([${name}], '${inner.replace(/'/g, "''")}')`;
+    }
+    // four-part: [srv].[db].[schema].[table]
+    const db = opts.database || 'db';
+    const schema = opts.schema || 'dbo';
+    const table = opts.table || 'table_name';
+    return `[${name}].[${db}].[${schema}].[${table}]`;
+  }
+};
+
+// Simple HTML escape used by the linked-servers renderers. If the page already
+// has an escP/esc helper we'd reuse it — but define our own to avoid cross-
+// dependency fragility.
+function escHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // DATA IMPORT — Session 1: CSV → SQL Server table via existing Azure Function
 // Limits: CSV only, up to ~50k rows, all columns created as inferred type but
 // nullable (no user override yet). Excel/JSON and type customisation come in
@@ -5029,13 +5512,20 @@ function switchConnTab(tab){
   });
   const db = document.getElementById('conn-tab-databases');
   const im = document.getElementById('conn-tab-import');
+  const lk = document.getElementById('conn-tab-linked');
   if (db) db.style.display = tab === 'databases' ? 'block' : 'none';
-  if (im) im.style.display = tab === 'import' ? 'block' : 'none';
-  // Hide save/clear buttons when on import tab (they only apply to db connections)
+  if (im) im.style.display = tab === 'import'    ? 'block' : 'none';
+  if (lk) lk.style.display = tab === 'linked'    ? 'block' : 'none';
+  // Hide save/clear buttons when not on db connections tab
   const s = document.getElementById('conn-tab-save-btn');
   const c = document.getElementById('conn-tab-clear-btn');
   if (s) s.style.display = tab === 'databases' ? '' : 'none';
   if (c) c.style.display = tab === 'databases' ? '' : 'none';
+  // When switching TO the linked tab, load drafts and refresh remote list
+  if (tab === 'linked'){
+    lsRenderDrafts();
+    lsRefreshServerList();  // fire-and-forget; UI will update when done
+  }
 }
 
 function impDragOver(e){ e.preventDefault(); document.getElementById('imp-drop')?.classList.add('drag-over'); }

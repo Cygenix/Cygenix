@@ -245,6 +245,12 @@ body.fullscreen .script-panel { display:none }
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('DELETE FROM ')">DELETE</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('BEGIN TRAN;\n\n\n\nROLLBACK; -- COMMIT;')">TRAN</button>
       <div style="width:0.5px;background:var(--border2);height:16px;margin:0 2px;flex-shrink:0"></div>
+      <!-- Linked Servers dropdown -->
+      <div style="position:relative;display:inline-block" id="ls-dropdown-wrap">
+        <button class="btn btn-ghost btn-sm" onclick="toggleLinkedServersMenu(event)" id="ls-dropdown-btn" title="Insert OPENQUERY or four-part name for a linked server">🔗 Linked ▾</button>
+        <div id="ls-dropdown-menu" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);box-shadow:0 4px 12px rgba(0,0,0,0.4);z-index:100;min-width:280px;max-height:360px;overflow-y:auto;padding:4px"></div>
+      </div>
+      <div style="width:0.5px;background:var(--border2);height:16px;margin:0 2px;flex-shrink:0"></div>
       <!-- Editor tools -->
       <button class="btn btn-ghost btn-sm" onclick="toggleFind()" title="Find (Ctrl+F)" id="btn-find">🔍 Find</button>
       <button class="btn btn-ghost btn-sm" onclick="commentSelection()" title="Toggle comment (Ctrl+/)">// Comment</button>
@@ -1000,6 +1006,106 @@ function insertSnippet(text) {
   el.selectionStart = el.selectionEnd = start + text.length;
   el.focus();
   updateStatus();
+}
+
+// ─── Linked Servers dropdown ─────────────────────────────────────────────
+// Reads applied linked-server drafts from localStorage (shared with dashboard)
+// and lets the user insert OPENQUERY or four-part-name snippets at the cursor.
+const LS_KEY_EDITOR = 'cygenix_linked_server_drafts';
+
+function getLinkedServersForEditor(){
+  try {
+    const raw = localStorage.getItem(LS_KEY_EDITOR);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    // Only show servers that have been actually applied on the target —
+    // drafts aren't queryable yet.
+    return arr.filter(d => d.applied);
+  } catch { return []; }
+}
+
+function toggleLinkedServersMenu(e){
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('ls-dropdown-menu');
+  if (!menu) return;
+  if (menu.style.display === 'block'){
+    menu.style.display = 'none';
+    return;
+  }
+  renderLinkedServersMenu();
+  menu.style.display = 'block';
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', closeLinkedServersMenuOnce, { once:true });
+  }, 0);
+}
+
+function closeLinkedServersMenuOnce(){
+  const menu = document.getElementById('ls-dropdown-menu');
+  if (menu) menu.style.display = 'none';
+}
+
+function renderLinkedServersMenu(){
+  const menu = document.getElementById('ls-dropdown-menu');
+  if (!menu) return;
+  const servers = getLinkedServersForEditor();
+
+  if (servers.length === 0){
+    menu.innerHTML = `
+      <div style="padding:0.75rem;font-size:11.5px;color:var(--text3);line-height:1.5">
+        <strong style="color:var(--text2);display:block;margin-bottom:0.35rem">No linked servers available</strong>
+        Configure one in <em>Connections → Linked servers</em>, then run setup on the target.
+        <br><br>
+        <a href="/dashboard.html#connections" style="color:var(--accent);text-decoration:none">Go to Connections →</a>
+      </div>`;
+    return;
+  }
+
+  menu.innerHTML = `
+    <div style="padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em">
+      Applied linked servers
+    </div>
+    ${servers.map(s => {
+      const typeLabel = s.type === 'postgres' ? 'POSTGRES' : 'MSSQL';
+      const nameEsc = editorEscHtml(s.name);
+      const remoteEsc = editorEscHtml(`${s.host}:${s.port || '?'}/${s.database || '?'}`);
+      return `
+      <div style="padding:8px 10px;border-bottom:0.5px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:6px">
+          <strong style="font-family:var(--mono);font-size:12px">${nameEsc}</strong>
+          <span style="font-family:var(--mono);font-size:9px;color:var(--text3);background:var(--bg3);padding:1px 6px;border-radius:100px">${typeLabel}</span>
+        </div>
+        <div style="font-size:10.5px;color:var(--text3);font-family:var(--mono);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${remoteEsc}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="insertLinkedServerSnippet('${s.name.replace(/'/g,"\\'")}', 'openquery')" title="Insert OPENQUERY wrapper — writes remote-dialect SQL inside the quotes">OPENQUERY</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="insertLinkedServerSnippet('${s.name.replace(/'/g,"\\'")}', 'fourpart', '${(s.database||'').replace(/'/g,"\\'")}')" title="Insert [server].[db].[schema].[table] — T-SQL against the linked server">Four-part</button>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+function insertLinkedServerSnippet(serverName, kind, defaultDb){
+  let snippet = '';
+  if (kind === 'openquery'){
+    // OPENQUERY takes the REMOTE dialect inside the quotes — for Postgres
+    // that's PG syntax, for SQL Server it's T-SQL. We insert a placeholder
+    // SELECT and leave the cursor-useful positioning to the user.
+    snippet = `SELECT * FROM OPENQUERY([${serverName}], 'SELECT * FROM your_remote_table')`;
+  } else {
+    // Four-part name. Users usually know their schema/table, so we insert
+    // placeholders they can tab through.
+    snippet = `[${serverName}].[${defaultDb || 'database'}].[schema].[table]`;
+  }
+  insertSnippet(snippet);
+  closeLinkedServersMenuOnce();
+}
+
+function editorEscHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
 }
 
 function handleEditorKey(e) {
