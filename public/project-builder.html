@@ -531,15 +531,27 @@ function getAllStepsFlat(){
   return out;
 }
 
-// Fallback connections from the global session (used if a project has none set)
+// Fallback connections from the global session (used if a project has none set).
+// Multi-key fallback — reads from CygenixConnections helper first, falls back to
+// raw sessionStorage if the helper is unavailable or returns empty. This matches
+// the defensive pattern used by the Data Import feature so behaviour is consistent
+// across pages.
 function globalSrcConn(){
-  return sessionStorage.getItem('cygenix_src_conn_string') || '';
+  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  return c.srcConnString
+      || c.srcFnUrl
+      || sessionStorage.getItem('cygenix_src_conn_string')
+      || '';
 }
 function globalTgtConn(){
-  const fn  = sessionStorage.getItem('cygenix_fn_url') || '';
-  const key = sessionStorage.getItem('cygenix_fn_key') || '';
-  const cs  = sessionStorage.getItem('cygenix_conn_string') || '';
-  return fn ? (fn + (key ? '?code='+encodeURIComponent(key) : '')) : cs;
+  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  const fnUrl = c.tgtFnUrl || c.fnUrl || sessionStorage.getItem('cygenix_fn_url') || '';
+  const fnKey = c.tgtFnKey || c.fnKey || sessionStorage.getItem('cygenix_fn_key') || '';
+  if (fnUrl) return fnUrl + (fnKey ? (fnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(fnKey) : '');
+  return c.tgtConnString
+      || c.connString
+      || sessionStorage.getItem('cygenix_conn_string')
+      || '';
 }
 
 // Hydrate UI from the currently-active `project` object.
@@ -567,9 +579,13 @@ function effectiveTgtConn(){
   return (project.tgtConn && project.tgtConn.trim()) || globalTgtConn();
 }
 
-// Show or clear a small "using global" hint under each empty connection field.
+// Show an obvious "Using global connection" indicator below each empty connection field.
+// The original design kept fields empty on purpose (so saving didn't silently capture
+// global values into the project record), but the italic hint was too subtle — users
+// thought their connections had been forgotten. This version shows a clear teal banner
+// with an explicit "Use this" button that populates the field if wanted.
 function renderConnFallbackHints(){
-  const setHint = (fieldId, hintId, globalValue) => {
+  const setHint = (fieldId, hintId, globalValue, side) => {
     const field = document.getElementById(fieldId);
     let hint = document.getElementById(hintId);
     const isEmpty = !field || !field.value.trim();
@@ -577,19 +593,39 @@ function renderConnFallbackHints(){
       if (!hint){
         hint = document.createElement('div');
         hint.id = hintId;
-        hint.style.cssText = 'font-size:10px;color:var(--text3);font-style:italic;margin-top:3px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        hint.style.cssText = 'font-size:11px;margin-top:6px;padding:6px 10px;background:rgba(45,212,191,0.08);border:0.5px solid rgba(45,212,191,0.25);border-radius:6px;color:var(--teal);display:flex;align-items:center;gap:0.5rem;font-family:var(--mono)';
         field.parentElement.parentElement.appendChild(hint);
       }
-      // Show a preview — truncate long connection strings to keep the hint compact
-      const preview = globalValue.length > 60 ? globalValue.slice(0, 57) + '…' : globalValue;
-      hint.textContent = 'inherits global: ' + preview;
-      hint.style.display = 'block';
+      const preview = globalValue.length > 50 ? globalValue.slice(0, 47) + '…' : globalValue;
+      // Mask passwords in the preview
+      const safe = preview
+        .replace(/(password|pwd|pass)\s*=\s*[^;&\s]*/gi, '$1=***')
+        .replace(/(:\/\/[^:]+):([^@]+)@/, '$1:***@');
+      hint.innerHTML = `
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <strong style="font-family:var(--serif);font-weight:500">✓ Using global ${side}:</strong> ${safe}
+        </span>
+        <button type="button" onclick="copyGlobalIntoField('${fieldId}','${side}')" style="background:rgba(45,212,191,0.15);border:0.5px solid var(--teal);color:var(--teal);font-size:10px;font-family:var(--serif);padding:2px 8px;border-radius:4px;cursor:pointer;flex-shrink:0">Use for this project</button>
+      `;
+      hint.style.display = 'flex';
     } else if (hint){
       hint.style.display = 'none';
     }
   };
-  setHint('proj-src-conn', 'src-conn-hint', globalSrcConn());
-  setHint('proj-tgt-conn', 'tgt-conn-hint', globalTgtConn());
+  setHint('proj-src-conn', 'src-conn-hint', globalSrcConn(),  'source');
+  setHint('proj-tgt-conn', 'tgt-conn-hint', globalTgtConn(),  'target');
+}
+
+// Copy the global value into the project-level field. Explicit user action, not silent.
+function copyGlobalIntoField(fieldId, side){
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  const val = side === 'source' ? globalSrcConn() : globalTgtConn();
+  if (!val) return;
+  field.value = val;
+  markDirty();
+  captureConnOnBlur(side === 'source' ? 'src' : 'tgt');
+  renderConnFallbackHints();  // hint will now hide itself
 }
 
 function refreshProjectSelector(){
