@@ -1522,11 +1522,15 @@ async function runSingleStep(gi, si) {
   const btn = document.getElementById(btnId);
   if (btn) { btn.disabled=true; btn.textContent='⏳'; }
 
-  const srcConn = project.srcConn || CygenixConnections.get().srcConnString || '';
-  const tgtConn = project.tgtConn || (() => {
-    const c = CygenixConnections.get();
-    return c.tgtFnUrl ? c.tgtFnUrl+(c.tgtFnKey?'?code='+encodeURIComponent(c.tgtFnKey):'') : c.tgtConnString;
-  })() || '';
+  // Use the same hardened resolvers as the "Run selected" path (effectiveSrcConn
+  // and effectiveTgtConn) — those check project.srcConn first, then fall back
+  // via globalSrcConn()/globalTgtConn() which read from CygenixConnections.get()
+  // AND raw sessionStorage with multi-key fallback. The previous narrow form
+  // (`project.srcConn || CygenixConnections.get().srcConnString`) missed cases
+  // where the dashboard had written to sessionStorage but CygenixConnections
+  // in-memory state was cold.
+  const srcConn = effectiveSrcConn();
+  const tgtConn = effectiveTgtConn();
 
   const logs = [];
   const log = m => { logs.push(m); console.log('[Step '+gi+'.'+si+']', m); };
