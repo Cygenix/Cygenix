@@ -36,6 +36,7 @@
 // function (db-schema-background.js) and have the browser poll for result,
 // rather than bumping timeouts further.
 
+// CM V2 Forced 
 const mssql = require('mssql');
 const { Client: PgClient } = require('pg');
 
