@@ -179,19 +179,19 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
 <!-- HERO -->
 <section class="hero">
-  <div class="hero-badge">AI-POWERED · ENTERPRISE READY · AZURE NATIVE</div>
+  <div class="hero-badge">AI-POWERED · ENTERPRISE READY · SQL SERVER &amp; POSTGRES</div>
   <h1>
     <span class="line1">Database Migration,</span>
     <span class="line2">Reimagined with AI</span>
   </h1>
-  <p class="hero-sub">Cygenix connects to any SQL Server database, maps your schema intelligently using Claude AI, validates results, and delivers professional reports — in minutes, not months.</p>
+  <p class="hero-sub">Cygenix connects to SQL Server, Azure SQL, Postgres and file sources (CSV, Excel, text) — on-premises or in any cloud. It maps your schema intelligently using Claude AI, validates results, and delivers professional reports — in minutes, not months.</p>
   <div class="hero-btns">
     <a href="/login.html" class="btn-hero btn-primary">Request access →</a>
     <a href="#features" class="btn-hero btn-secondary">See the platform</a>
   </div>
   <div class="stats-row" style="margin-top:3rem">
     <div class="stat"><div class="stat-num"><span>AI</span></div><div class="stat-label">COLUMN MAPPING</div></div>
-    <div class="stat"><div class="stat-num"><span>Any</span></div><div class="stat-label">VALIDATION TABLE</div></div>
+    <div class="stat"><div class="stat-num"><span>Any</span></div><div class="stat-label">VALIDATION SOURCE</div></div>
     <div class="stat"><div class="stat-num"><span>Azure</span></div><div class="stat-label">MANAGED IDENTITY</div></div>
     <div class="stat"><div class="stat-num"><span>100%</span></div><div class="stat-label">BROWSER-BASED</div></div>
   </div>
@@ -235,7 +235,9 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       <div class="section-title">Everything you need to<br>migrate with confidence</div>
     </div>
     <div class="features-grid animate-on-scroll">
-      <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Live Database Connection</div><div class="feature-card-body">Connect directly to SQL Server on-premises or Azure SQL via connection string or Azure Function with Managed Identity. No VPN or firewall changes required.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Live Database Connection</div><div class="feature-card-body">Connect directly via standard connection strings to SQL Server (on-prem, Azure SQL, Azure Managed Instance, AWS RDS, Google Cloud SQL) and PostgreSQL (self-hosted, RDS, Aurora, Azure Database, Cloud SQL, Supabase, Neon). Azure Function with Managed Identity also supported.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📁</div><div class="feature-card-title">File Import as a Source</div><div class="feature-card-body">Drop a <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.csv</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.xlsx</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.tsv</code> or <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.txt</code> file to use as a source for mapping and migration. Multi-sheet Excel workbooks handled; map columns to target schema like any other source.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🔀</div><div class="feature-card-title">Cross-Engine Migration</div><div class="feature-card-body">Migrate between different database engines — Postgres to SQL Server, SQL Server to Postgres. Built-in DDL generator creates target tables from the source schema with opinionated type mappings and clear warnings for lossy conversions (jsonb, arrays, hierarchyid and similar).</div></div>
       <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">AI Column Mapping</div><div class="feature-card-body">Claude AI automatically maps columns between source and target schemas. Target-driven layout shows every target column with a source dropdown, fixed value override and truncation warnings.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🎨</div><div class="feature-card-title">Visual Drag-and-Drop Mapping</div><div class="feature-card-body">See the whole schema at once. Source columns left, target columns right, connection lines fanning across — colour-coded by AI confidence. Drag to map, click a line to remove, tap Fullscreen for complex jobs.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔄</div><div class="feature-card-title">Was/Is Value Translation</div><div class="feature-card-body">Upload translation tables to automatically convert values during migration — status codes, lookup IDs, department names, currency codes, and more.</div></div>
@@ -396,7 +398,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       <div>
         <div class="section-tag">Flexible Validation</div>
         <div class="section-title" style="font-size:2.2rem">Any table. Any SQL. Any database.</div>
-        <div class="section-sub">No longer locked to a fixed validation_scripts table. Add any table, pick which column holds the SQL to execute, choose which columns appear in the failure report, and run against any database.</div>
+        <div class="section-sub">No longer locked to a fixed schema or table name. Add any table as a validation source, pick which column holds the SQL to execute, choose which columns appear in the failure report, and run against any database.</div>
         <ul class="feature-points" style="margin-top:1.5rem">
           <li>Add multiple validation tables from different connections</li>
           <li>Pick the SQL column, name column and report columns per source</li>
@@ -413,12 +415,12 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         </div>
         <div class="mock-body">
           <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.4rem;display:flex;align-items:center;gap:0.5rem">
-            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--teal)">Post-migration checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.val_scripts · SQL col: script_sql · 24 scripts</div></div>
+            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--teal)">Post-migration checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.PostMigrationChecks · SQL col: CheckSQL · 24 scripts</div></div>
             <span style="font-size:9px;background:var(--red-g);color:var(--red);padding:1px 6px;border-radius:100px;font-family:var(--mono)">3 fail</span>
             <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">21 pass</span>
           </div>
           <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.6rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.5rem">
-            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--amber)">GL Integrity checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.gl_checks · SQL col: check_query · 8 scripts</div></div>
+            <div style="flex:1"><div style="font-size:10px;font-weight:600;font-family:var(--mono);color:var(--amber)">GL Integrity checks</div><div style="font-size:9px;color:var(--text3)">Table: dbo.GLIntegrityChecks · SQL col: CheckQuery · 8 scripts</div></div>
             <span style="font-size:9px;background:var(--green-g);color:var(--green);padding:1px 6px;border-radius:100px;font-family:var(--mono)">8 pass</span>
           </div>
           <div id="val-rows-mock"></div>
@@ -574,7 +576,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <!-- CTA -->
 <section class="cta-section">
   <div class="cta-title">Ready to migrate<br>with confidence?</div>
-  <div class="cta-sub">Cygenix handles the complexity — AI mapping, visual drag-and-drop, value translation, grouped execution plans, system parameters, flexible validation, project planning with Jira and Smartsheet sync, and performance tuning — so your team can focus on the migration, not the tooling.</div>
+  <div class="cta-sub">Cygenix handles the complexity — AI mapping, visual drag-and-drop, cross-engine migration (Postgres ↔ SQL Server), file imports (CSV, Excel, text), value translation, grouped execution plans, system parameters, flexible validation, project planning with Jira and Smartsheet sync, and performance tuning — so your team can focus on the migration, not the tooling.</div>
   <div class="cta-btns">
     <a href="/login.html" class="btn-hero btn-primary">Request access →</a>
     <a href="/help.html" class="btn-hero btn-secondary" target="_blank">Read the docs</a>
