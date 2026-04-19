@@ -410,19 +410,19 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-connections .imp-type-bool{ background:rgba(245,158,11,0.12);color:#f59e0b; }
 #view-connections .imp-type-string{ background:rgba(255,255,255,0.06);color:var(--text2); }
 
-/* Overwrite-exists modal — reuses the preview-modal-overlay pattern */
-#imp-exists-modal{ display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:400;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(2px); }
-#imp-exists-modal.open{ display:flex; }
-#imp-exists-modal .imp-exists-dialog{
+/* Overwrite-exists modal (and sheet picker) — reuses the preview-modal-overlay pattern */
+#imp-exists-modal, #imp-sheet-modal{ display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:400;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(2px); }
+#imp-exists-modal.open, #imp-sheet-modal.open{ display:flex; }
+#imp-exists-modal .imp-exists-dialog, #imp-sheet-modal .imp-exists-dialog{
   background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);
   max-width:540px;width:100%;padding:1.5rem;
 }
-#imp-exists-modal h3{ margin:0 0 0.5rem;font-size:15px;font-weight:600; }
-#imp-exists-modal p{ margin:0 0 1rem;font-size:13px;color:var(--text2);line-height:1.5; }
-#imp-exists-modal .imp-exists-row{ display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.5rem;cursor:pointer;transition:border-color 0.15s,background 0.15s; }
-#imp-exists-modal .imp-exists-row:hover{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
-#imp-exists-modal .imp-exists-row strong{ display:block;font-size:13px;margin-bottom:2px; }
-#imp-exists-modal .imp-exists-row span{ font-size:11.5px;color:var(--text3);line-height:1.4; }
+#imp-exists-modal h3, #imp-sheet-modal h3{ margin:0 0 0.5rem;font-size:15px;font-weight:600; }
+#imp-exists-modal p, #imp-sheet-modal p{ margin:0 0 1rem;font-size:13px;color:var(--text2);line-height:1.5; }
+#imp-exists-modal .imp-exists-row, #imp-sheet-modal .imp-exists-row{ display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.5rem;cursor:pointer;transition:border-color 0.15s,background 0.15s; }
+#imp-exists-modal .imp-exists-row:hover, #imp-sheet-modal .imp-exists-row:hover{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
+#imp-exists-modal .imp-exists-row strong, #imp-sheet-modal .imp-exists-row strong{ display:block;font-size:13px;margin-bottom:2px; }
+#imp-exists-modal .imp-exists-row span, #imp-sheet-modal .imp-exists-row span{ font-size:11.5px;color:var(--text3);line-height:1.4; }
 #imp-exists-modal .imp-exists-row.danger strong{ color:var(--red); }
 
 
@@ -629,6 +629,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 <script src="/cygenix-params.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -1523,15 +1524,15 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <div class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
             <div style="font-size:13px;font-weight:600">1 · Choose a file</div>
-            <span style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 8px;border-radius:100px">CSV</span>
-            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Up to ~50,000 rows per file. Excel and JSON coming in next release.</span>
+            <span style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 8px;border-radius:100px">CSV · Excel</span>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Up to ~50,000 rows per file. JSON coming in next release.</span>
           </div>
 
           <div id="imp-drop" class="imp-drop" onclick="document.getElementById('imp-file').click()" ondragover="impDragOver(event)" ondragleave="impDragLeave(event)" ondrop="impDrop(event)">
-            <input type="file" id="imp-file" accept=".csv,.tsv,.txt" style="display:none" onchange="impHandleFile(this.files[0])">
+            <input type="file" id="imp-file" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="impHandleFile(this.files[0])">
             <div style="font-size:28px;margin-bottom:0.4rem;opacity:0.5">📄</div>
-            <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop a CSV here or click to browse</div>
-            <div style="font-size:11px;color:var(--text3)">First row should contain column headers</div>
+            <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop a CSV or Excel file here or click to browse</div>
+            <div style="font-size:11px;color:var(--text3)">First row should contain column headers · Multi-sheet workbooks will prompt for a sheet</div>
           </div>
 
           <div id="imp-file-meta" style="display:none;margin-top:0.75rem;padding:0.75rem 0.9rem;background:var(--bg3);border-radius:var(--r);font-family:var(--mono);font-size:11px"></div>
@@ -1579,6 +1580,18 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
     </div>
     <!-- END CONNECTIONS VIEW -->
+
+    <!-- Data import — sheet picker modal for multi-sheet Excel workbooks -->
+    <div id="imp-sheet-modal" onclick="if(event.target===this) impCloseSheetModal()">
+      <div class="imp-exists-dialog">
+        <h3>Pick a sheet</h3>
+        <p>This workbook has multiple sheets. Choose which one to import:</p>
+        <div id="imp-sheet-list"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+          <button class="btn btn-ghost btn-sm" onclick="impCloseSheetModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Data import — overwrite existing table modal -->
     <div id="imp-exists-modal" onclick="if(event.target===this) impCloseExistsModal()">
@@ -4710,8 +4723,10 @@ function impDrop(e){
 
 function impHandleFile(file){
   if (!file) return;
-  if (!/\.(csv|tsv|txt)$/i.test(file.name)){
-    impShowError('Only CSV, TSV, or TXT files are supported in this release.');
+  const isCSV   = /\.(csv|tsv|txt)$/i.test(file.name);
+  const isExcel = /\.(xlsx|xls)$/i.test(file.name);
+  if (!isCSV && !isExcel){
+    impShowError('Only CSV, TSV, TXT, XLSX, or XLS files are supported in this release.');
     return;
   }
   if (file.size > 100 * 1024 * 1024){  // 100 MB
@@ -4723,14 +4738,22 @@ function impHandleFile(file){
   const meta = document.getElementById('imp-file-meta');
   if (meta){
     meta.style.display = 'block';
+    meta.style.color = '';
     meta.innerHTML = `⏳ Parsing <strong>${escP(file.name)}</strong> (${(file.size/1024).toFixed(1)} KB)…`;
   }
 
+  if (isCSV){
+    impParseCSV(file);
+  } else {
+    impParseExcel(file);
+  }
+}
+
+function impParseCSV(file){
   if (typeof Papa === 'undefined'){
     impShowError('CSV parser failed to load. Check your internet connection and reload the page.');
     return;
   }
-
   Papa.parse(file, {
     header: true,
     skipEmptyLines: true,
@@ -4739,45 +4762,134 @@ function impHandleFile(file){
     complete: (result) => {
       if (result.errors && result.errors.length){
         // Non-fatal parse warnings. Show count; keep going with whatever parsed.
-        console.warn('[data-import] Parse warnings:', result.errors.slice(0, 5));
+        console.warn('[data-import] CSV parse warnings:', result.errors.slice(0, 5));
       }
-      const rows = result.data || [];
-      if (rows.length === 0){
-        impShowError('The file appears to be empty or has no data rows.');
-        return;
-      }
-      if (rows.length > 50000){
-        impShowError('File has ' + rows.length.toLocaleString() + ' rows. Maximum supported is 50,000 in this release.');
-        return;
-      }
-
-      const firstRow = rows[0];
-      const cols = Object.keys(firstRow || {}).filter(Boolean);
-      if (cols.length === 0){
-        impShowError('No column headers detected. Make sure the first row contains header names.');
-        return;
-      }
-
-      impState.rows     = rows;
-      impState.rowCount = rows.length;
-      impState.columns  = impInferSchema(cols, rows);
-
-      // Render meta + schema + target
-      if (meta){
-        meta.innerHTML = `✓ Parsed <strong>${escP(file.name)}</strong> — ${rows.length.toLocaleString()} rows, ${cols.length} columns`;
-      }
-      impRenderSchemaTable();
-      document.getElementById('imp-schema-wrap').style.display = 'block';
-      document.getElementById('imp-target-wrap').style.display = 'block';
-
-      // Default the target-table name to the filename stem, prefixed with dbo.
-      const stem = file.name.replace(/\.(csv|tsv|txt)$/i, '').replace(/[^A-Za-z0-9_]/g, '_');
-      document.getElementById('imp-target-table').value = 'dbo.' + stem;
+      impFinalizeRows(file.name, result.data || []);
     },
     error: (err) => {
-      impShowError('Parse failed: ' + (err?.message || String(err)));
+      impShowError('CSV parse failed: ' + (err?.message || String(err)));
     }
   });
+}
+
+function impParseExcel(file){
+  if (typeof XLSX === 'undefined'){
+    impShowError('Excel parser failed to load. Check your internet connection and reload the page.');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onerror = () => impShowError('Failed to read file.');
+  reader.onload = (ev) => {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, { type:'array', cellDates:true });
+      const sheets = wb.SheetNames || [];
+      if (sheets.length === 0){
+        impShowError('Workbook has no sheets.');
+        return;
+      }
+      if (sheets.length === 1){
+        impExtractSheet(file.name, wb, sheets[0]);
+      } else {
+        // Prompt the user to pick a sheet
+        impOpenSheetModal(file.name, wb, sheets);
+      }
+    } catch (e) {
+      impShowError('Excel parse failed: ' + (e?.message || String(e)));
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function impOpenSheetModal(fileName, wb, sheets){
+  const list = document.getElementById('imp-sheet-list');
+  if (!list) return;
+  list.innerHTML = sheets.map((name, idx) => {
+    // Best-effort row count preview for each sheet
+    const ws = wb.Sheets[name];
+    let rowHint = '';
+    try {
+      const ref = ws && ws['!ref'];
+      if (ref){
+        const range = XLSX.utils.decode_range(ref);
+        const rowCount = Math.max(0, range.e.r - range.s.r); // minus header
+        const colCount = range.e.c - range.s.c + 1;
+        rowHint = `${rowCount.toLocaleString()} rows · ${colCount} columns`;
+      }
+    } catch {}
+    return `<div class="imp-exists-row" data-sheet-idx="${idx}">
+      <div style="font-size:18px">📊</div>
+      <div>
+        <strong>${escP(name)}</strong>
+        <span>${rowHint || 'Click to import this sheet'}</span>
+      </div>
+    </div>`;
+  }).join('');
+  // Wire clicks
+  list.querySelectorAll('.imp-exists-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = parseInt(row.dataset.sheetIdx, 10);
+      document.getElementById('imp-sheet-modal').classList.remove('open');
+      impExtractSheet(fileName, wb, sheets[idx]);
+    });
+  });
+  document.getElementById('imp-sheet-modal').classList.add('open');
+}
+function impCloseSheetModal(){
+  document.getElementById('imp-sheet-modal').classList.remove('open');
+  impReset();
+}
+
+function impExtractSheet(fileName, wb, sheetName){
+  const ws = wb.Sheets[sheetName];
+  // defval:'' treats empty cells as empty strings so downstream null-detection works
+  // raw:false converts cells to formatted strings (matching what the user sees in Excel)
+  const rows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false, blankrows:false });
+  // Track sheet name in fileName so the default table name includes it when multi-sheet
+  const displayName = wb.SheetNames.length > 1 ? `${fileName} [${sheetName}]` : fileName;
+  impFinalizeRows(displayName, rows, { sheetName, multiSheet: wb.SheetNames.length > 1 });
+}
+
+// Shared post-parse logic: row validation, schema inference, UI render.
+function impFinalizeRows(fileName, rows, opts){
+  opts = opts || {};
+  if (rows.length === 0){
+    impShowError('The file appears to be empty or has no data rows.');
+    return;
+  }
+  if (rows.length > 50000){
+    impShowError('File has ' + rows.length.toLocaleString() + ' rows. Maximum supported is 50,000 in this release.');
+    return;
+  }
+
+  const firstRow = rows[0];
+  const cols = Object.keys(firstRow || {}).filter(k => k != null && k !== '');
+  if (cols.length === 0){
+    impShowError('No column headers detected. Make sure the first row contains header names.');
+    return;
+  }
+
+  impState.rows     = rows;
+  impState.rowCount = rows.length;
+  impState.columns  = impInferSchema(cols, rows);
+
+  const meta = document.getElementById('imp-file-meta');
+  if (meta){
+    meta.innerHTML = `✓ Parsed <strong>${escP(fileName)}</strong> — ${rows.length.toLocaleString()} rows, ${cols.length} columns`;
+  }
+  impRenderSchemaTable();
+  document.getElementById('imp-schema-wrap').style.display = 'block';
+  document.getElementById('imp-target-wrap').style.display = 'block';
+
+  // Default the target-table name. For Excel with a sheet, incorporate the sheet name.
+  let stem;
+  if (opts.multiSheet){
+    const fnStem = fileName.replace(/\s*\[.*\]$/, '').replace(/\.(csv|tsv|txt|xlsx|xls)$/i, '');
+    stem = (fnStem + '_' + opts.sheetName).replace(/[^A-Za-z0-9_]/g, '_');
+  } else {
+    stem = fileName.replace(/\.(csv|tsv|txt|xlsx|xls)$/i, '').replace(/[^A-Za-z0-9_]/g, '_');
+  }
+  document.getElementById('imp-target-table').value = 'dbo.' + stem;
 }
 
 // Type inference over a sample of rows. Returns column descriptors.
@@ -4915,7 +5027,11 @@ async function impCheckTableExists(tableName){
   const dbChoice = document.getElementById('imp-target-db').value;
   const conn = impGetConn(dbChoice);
   if (!conn){
-    impRunResult('Destination database is not configured. Set up the connection in the Database connections tab first.', 'err');
+    const target = dbChoice === 'src' ? 'source' : 'target';
+    impRunResult(
+      `No ${target} database connection configured. Open the “Database connections” tab above, enter the ${target} connection, click “Connect & test” (the dot should turn green), then press “Save connections”. See console for diagnostics.`,
+      'err'
+    );
     return;
   }
 
@@ -5047,19 +5163,40 @@ function impRunResult(msg, kind){
 
 // Resolve the active connection for 'src' or 'tgt' into a URL or connection
 // string we can hand to the Azure Function.
+// Handles both the CygenixConnections helper's shape AND a direct-sessionStorage
+// fallback — because different pages on different deploy versions have used
+// different key names.
 function impGetConn(which){
   const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  const ss = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
+
+  // ─── Source ─────────────────────────────────────────────────────────
   if (which === 'src'){
-    // Source uses srcConnString (which is either a connection string or a Function URL, depending on mode)
-    return c.srcConnString || '';
+    return c.srcConnString
+        || c.srcFnUrl
+        || ss('cygenix_src_conn_string')
+        || '';
   }
-  // Target — prefer explicit Function URL+key, fall back to connection string
-  if (c.tgtFnUrl){
-    return c.tgtFnKey
-      ? c.tgtFnUrl + (c.tgtFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(c.tgtFnKey)
-      : c.tgtFnUrl;
+
+  // ─── Target ─────────────────────────────────────────────────────────
+  // Priority: Azure Function URL (most commonly configured) → connection string.
+  // Each path checks the helper object first, then falls back to sessionStorage keys.
+  const fnUrl = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url');
+  const fnKey = c.tgtFnKey || c.fnKey || ss('cygenix_fn_key');
+  if (fnUrl){
+    return fnKey
+      ? fnUrl + (fnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(fnKey)
+      : fnUrl;
   }
-  return c.tgtConnString || '';
+  const cs = c.tgtConnString || c.connString || ss('cygenix_conn_string');
+  if (cs) return cs;
+
+  // Diagnostic — surface what WAS present so the user can debug
+  console.warn('[data-import] No target connection found. Inspected keys:', {
+    'CygenixConnections.get()': c,
+    'sessionStorage keys': Object.keys(sessionStorage).filter(k => k.startsWith('cygenix_'))
+  });
+  return '';
 }
 
 // Dispatch a DB call — direct URL (Azure Function) or connection-string via netlify proxy.
