@@ -126,6 +126,93 @@ async function handleMssql(action, connectionString, database, body) {
         break;
       }
 
+      // Lightweight: return only table schema/name/rowCount. No columns, no keys.
+      // Used to populate table-lists on pages with very large schemas (9k+ tables)
+      // where the full `schema` response would exceed Netlify's 6 MB response cap.
+      // For any individual table's columns the client should call `schema-columns`.
+      case 'schema-tables': {
+        const tablesR = await pool.request().query(`
+          SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
+            COALESCE(p.rows,0) AS row_count
+          FROM INFORMATION_SCHEMA.TABLES t
+          LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
+          LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
+          WHERE t.TABLE_TYPE='BASE TABLE'
+          ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`);
+        result = {
+          success: true,
+          tables: tablesR.recordset.map(t => ({
+            schema: t.TABLE_SCHEMA,
+            name: t.TABLE_NAME,
+            rowCount: parseInt(t.row_count) || 0,
+          })),
+        };
+        break;
+      }
+
+      // Fetch full details (columns, PKs, FKs) for ONE table. Cheap regardless of
+      // DB size. Requires body.schemaName and body.tableName.
+      case 'schema-columns': {
+        const schemaName = body.schemaName;
+        const tableName  = body.tableName;
+        if (!schemaName || !tableName) return err('schemaName and tableName are required', null, 400);
+        const [colsR, pkR, fkR] = await Promise.all([
+          pool.request()
+            .input('s', mssql.NVarChar, schemaName)
+            .input('t', mssql.NVarChar, tableName)
+            .query(`
+              SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH,
+                c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE,
+                c.COLUMN_DEFAULT, c.ORDINAL_POSITION,
+                CAST(COALESCE(sc.is_identity, 0) AS INT) AS is_identity
+              FROM INFORMATION_SCHEMA.COLUMNS c
+              LEFT JOIN sys.schemas ss ON ss.name = c.TABLE_SCHEMA
+              LEFT JOIN sys.tables  so ON so.name = c.TABLE_NAME AND so.schema_id = ss.schema_id
+              LEFT JOIN sys.columns sc ON sc.object_id = so.object_id AND sc.name = c.COLUMN_NAME
+              WHERE c.TABLE_SCHEMA = @s AND c.TABLE_NAME = @t
+              ORDER BY c.ORDINAL_POSITION`),
+          pool.request()
+            .input('s', mssql.NVarChar, schemaName)
+            .input('t', mssql.NVarChar, tableName)
+            .query(`
+              SELECT kcu.COLUMN_NAME
+              FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+              JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                ON tc.CONSTRAINT_NAME=kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA=kcu.TABLE_SCHEMA
+              WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY'
+                AND tc.TABLE_SCHEMA=@s AND tc.TABLE_NAME=@t`),
+          pool.request()
+            .input('s', mssql.NVarChar, schemaName)
+            .input('t', mssql.NVarChar, tableName)
+            .query(`
+              SELECT COL_NAME(fkc.parent_object_id,fkc.parent_column_id) AS fk_column,
+                OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
+                OBJECT_NAME(fk.referenced_object_id) AS ref_table,
+                COL_NAME(fkc.referenced_object_id,fkc.referenced_column_id) AS ref_column
+              FROM sys.foreign_keys fk
+              JOIN sys.foreign_key_columns fkc ON fk.object_id=fkc.constraint_object_id
+              WHERE OBJECT_SCHEMA_NAME(fk.parent_object_id)=@s
+                AND OBJECT_NAME(fk.parent_object_id)=@t`)
+        ]);
+        const columns = colsR.recordset.map(c => {
+          let type = c.DATA_TYPE.toUpperCase();
+          if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
+          else if (c.NUMERIC_PRECISION!=null && c.NUMERIC_SCALE!=null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+          return { name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE==='YES', default: c.COLUMN_DEFAULT, isIdentity: c.is_identity===1, ordinal: c.ORDINAL_POSITION };
+        });
+        result = {
+          success: true,
+          table: {
+            schema: schemaName,
+            name: tableName,
+            columns,
+            primaryKeys: pkR.recordset.map(r => r.COLUMN_NAME),
+            foreignKeys: fkR.recordset.map(r => ({ column: r.fk_column, references: `${r.ref_schema}.${r.ref_table}(${r.ref_column})` })),
+          },
+        };
+        break;
+      }
+
       case 'schema': {
         const [tablesR, colsR, pkR, fkR] = await Promise.all([
           pool.request().query(`
@@ -313,6 +400,85 @@ async function handlePostgres(action, connectionString, database, body) {
           version: row.version.split(' on ')[0].trim(),
           database: row.dbname,
           user: row.sysuser,
+        };
+        break;
+      }
+
+      // See mssql case above for rationale. Lightweight tables-only listing.
+      case 'schema-tables': {
+        const tablesR = await client.query(`
+          SELECT n.nspname  AS table_schema,
+                 c.relname  AS table_name,
+                 COALESCE(c.reltuples, 0)::bigint AS row_count
+          FROM   pg_class c
+          JOIN   pg_namespace n ON n.oid = c.relnamespace
+          WHERE  c.relkind = 'r'
+            AND  n.nspname NOT IN ('pg_catalog','information_schema')
+            AND  n.nspname NOT LIKE 'pg_toast%'
+          ORDER  BY n.nspname, c.relname
+        `);
+        result = {
+          success: true,
+          tables: tablesR.rows.map(t => ({
+            schema: t.table_schema,
+            name: t.table_name,
+            rowCount: parseInt(t.row_count) || 0,
+          })),
+        };
+        break;
+      }
+
+      // Single-table detail: columns + PKs + FKs. Cheap regardless of DB size.
+      case 'schema-columns': {
+        const schemaName = body.schemaName;
+        const tableName  = body.tableName;
+        if (!schemaName || !tableName) return err('schemaName and tableName are required', null, 400);
+        const [colsR, pkR, fkR] = await Promise.all([
+          client.query(`
+            SELECT c.column_name, c.data_type, c.character_maximum_length,
+                   c.numeric_precision, c.numeric_scale,
+                   c.is_nullable, c.column_default, c.ordinal_position,
+                   (c.is_identity = 'YES' OR c.column_default LIKE 'nextval%') AS is_identity
+            FROM   information_schema.columns c
+            WHERE  c.table_schema = $1 AND c.table_name = $2
+            ORDER  BY c.ordinal_position
+          `, [schemaName, tableName]),
+          client.query(`
+            SELECT kcu.column_name
+            FROM   information_schema.table_constraints tc
+            JOIN   information_schema.key_column_usage kcu
+                   ON tc.constraint_name = kcu.constraint_name
+                   AND tc.table_schema   = kcu.table_schema
+            WHERE  tc.constraint_type = 'PRIMARY KEY'
+              AND  tc.table_schema = $1 AND tc.table_name = $2
+          `, [schemaName, tableName]),
+          client.query(`
+            SELECT kcu.column_name  AS fk_column,
+                   ccu.table_schema AS ref_schema, ccu.table_name AS ref_table,
+                   ccu.column_name  AS ref_column
+            FROM   information_schema.referential_constraints rc
+            JOIN   information_schema.key_column_usage kcu
+                   ON rc.constraint_name = kcu.constraint_name
+            JOIN   information_schema.constraint_column_usage ccu
+                   ON rc.unique_constraint_name = ccu.constraint_name
+            WHERE  kcu.table_schema = $1 AND kcu.table_name = $2
+          `, [schemaName, tableName]),
+        ]);
+        const columns = colsR.rows.map(c => {
+          let type = (c.data_type || '').toUpperCase();
+          if (c.character_maximum_length) type += `(${c.character_maximum_length})`;
+          else if (c.numeric_precision != null && c.numeric_scale != null) type += `(${c.numeric_precision},${c.numeric_scale})`;
+          return { name: c.column_name, type, nullable: c.is_nullable === 'YES', default: c.column_default, isIdentity: c.is_identity === true, ordinal: c.ordinal_position };
+        });
+        result = {
+          success: true,
+          table: {
+            schema: schemaName,
+            name: tableName,
+            columns,
+            primaryKeys: pkR.rows.map(r => r.column_name),
+            foreignKeys: fkR.rows.map(r => ({ column: r.fk_column, references: `${r.ref_schema}.${r.ref_table}(${r.ref_column})` })),
+          },
         };
         break;
       }

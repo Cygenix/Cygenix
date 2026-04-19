@@ -366,11 +366,14 @@ async function connectSrc(){
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
   if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
-    const res=await dbCall(conn,{action:'schema'});
+    // Paginated schema: fetch table list only (cheap even on 9k-table DBs).
+    // Columns are loaded on demand when the user picks a specific table — see
+    // the call to ensureColumnsForTable() in selectSrcTable/selectTgtTable below.
+    const res=await dbCall(conn,{action:'schema-tables'});
     // Parse database name from connection string since schema response doesn't include it
     const srcDbName = parseDbName(_oc.srcConnString);
     srcSchema = { ...res, database: srcDbName };
-    srcAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
+    srcAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:null,rowCount:t.rowCount||0}));
     if(st) { st.textContent='🟢 '+srcDbName+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Source: '+srcDbName;
@@ -380,12 +383,13 @@ async function connectSrc(){
     if (pendingEditCfg && pendingEditCfg.srcTable) {
       const tbl = srcAllTables.find(t => t.value === pendingEditCfg.srcTable || t.label === pendingEditCfg.srcTable);
       if (tbl) {
-        srcTable = { fullName: tbl.value, schema: tbl.schema, name: tbl.name, columns: tbl.columns, rows: [] };
+        try { await ensureColumnsForTable('src', tbl); } catch(e) { console.warn('[one-to-many] edit-mode restore: could not load columns', e); }
+        srcTable = { fullName: tbl.value, schema: tbl.schema, name: tbl.name, columns: tbl.columns||[], rows: [] };
         const inp = document.getElementById('src-table-input');
         if (inp) inp.value = tbl.label;
         document.getElementById('src-col-list-wrap').style.display = 'block';
         document.getElementById('src-col-count').style.display = 'inline';
-        document.getElementById('src-col-count').textContent = tbl.columns.length + ' cols';
+        document.getElementById('src-col-count').textContent = (tbl.columns||[]).length + ' cols';
         renderSrcColList();
         checkReady();
       }
@@ -395,6 +399,27 @@ async function connectSrc(){
     if(dot) dot.style.background='var(--red)';
     if(btn) { btn.disabled=false; btn.textContent='🔌 Retry'; }
   }
+}
+
+// Lazy-load columns+PKs+FKs for a single table. side = 'src' | 'tgt'. Returns
+// the table object with .columns populated (cached on subsequent calls).
+async function ensureColumnsForTable(side, table){
+  if (!table) return table;
+  if (Array.isArray(table.columns) && table.columns.length > 0) return table;
+  const _oc = CygenixConnections.get();
+  let conn;
+  if (side === 'src') conn = _oc.srcConnString || '';
+  else {
+    conn = _oc.tgtFnUrl || _oc.tgtConnString || '';
+    if (_oc.tgtFnUrl && _oc.tgtFnKey) conn = _oc.tgtFnUrl + '?code=' + encodeURIComponent(_oc.tgtFnKey);
+  }
+  if (!conn) throw new Error(side + ' connection not set');
+  const res = await dbCall(conn, { action:'schema-columns', schemaName: table.schema, tableName: table.name });
+  if (!res || !res.table) throw new Error('No column info returned for ' + table.value);
+  table.columns     = res.table.columns     || [];
+  table.primaryKeys = res.table.primaryKeys || [];
+  table.foreignKeys = res.table.foreignKeys || [];
+  return table;
 }
 async function connectTgt(){
   const _oc2=CygenixConnections.get();
@@ -408,11 +433,11 @@ async function connectTgt(){
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
   if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
-    const res=await dbCall(conn,{action:'schema'});
+    const res=await dbCall(conn,{action:'schema-tables'});
     // Parse database name from connection string since schema response doesn't include it
     const tgtDbName = parseDbName(conn);
     tgtSchema = { ...res, database: tgtDbName };
-    tgtAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns,rowCount:t.rowCount||0}));
+    tgtAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:null,rowCount:t.rowCount||0}));
     if(st) { st.textContent='🟢 '+tgtDbName+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Target: '+tgtDbName;
@@ -458,9 +483,20 @@ function renderSrcDrop(q){
   drop.innerHTML=filtered.map(t=>`<div class="drop-item" onclick="selectSrcTable('${t.value}')"><span>${t.label}</span><span class="drop-rows">${t.rowCount.toLocaleString()}</span></div>`).join('');
   if(data.length>80) drop.innerHTML+=`<div class="drop-empty">${data.length-80} more — type to filter</div>`;
 }
-function selectSrcTable(value){
+async function selectSrcTable(value){
   const t=srcAllTables.find(t=>t.value===value);
   if(!t) return;
+  const inpEl = document.getElementById('src-table-input');
+  const prev = inpEl?.placeholder;
+  try {
+    if (inpEl) inpEl.placeholder = 'Loading columns…';
+    await ensureColumnsForTable('src', t);
+  } catch(e) {
+    showStatus && showStatus('Could not load columns for ' + t.value + ': ' + e.message, 'err');
+    if (inpEl) inpEl.placeholder = prev || '';
+    return;
+  }
+  if (inpEl) inpEl.placeholder = prev || '';
   srcTable={fullName:t.value,schema:t.schema,name:t.name,columns:t.columns,rows:[]};
   document.getElementById('src-table-input').value=t.label;
   document.getElementById('src-table-drop').style.display='none';
@@ -532,10 +568,21 @@ function renderTgtDrop(q){
   if(data.length>80) drop.innerHTML+=`<div class="drop-empty">${data.length-80} more — type to filter</div>`;
 }
 function addTargetTable(){openTgtDrop();}
-function selectTgtTable(value){
+async function selectTgtTable(value){
   const t=tgtAllTables.find(t=>t.value===value);
   if(!t) return;
   if(targetTables.find(tt=>tt.fullName===value)){showStatus('Table already added','err');return;}
+  const inpEl = document.getElementById('tgt-table-input');
+  const prev = inpEl?.placeholder;
+  try {
+    if (inpEl) inpEl.placeholder = 'Loading columns…';
+    await ensureColumnsForTable('tgt', t);
+  } catch(e) {
+    showStatus && showStatus('Could not load columns for ' + t.value + ': ' + e.message, 'err');
+    if (inpEl) inpEl.placeholder = prev || '';
+    return;
+  }
+  if (inpEl) inpEl.placeholder = prev || '';
   const tt={
     id:'tt_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
     fullName:t.value,schema:t.schema,name:t.name,
@@ -1438,7 +1485,7 @@ function addWhereChatMsg(text, role) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-// ── JOIN Builder (shared between connect.html and one-to-many.html) ──────────
+// ── JOIN Builder (originally shared with connect.html, now used by one-to-many) ─
 // Usage: initJoinBuilder(containerEl, getTablesFunc, getBaseTableFunc, onJoinChange)
 // getTablesFunc() → array of {value, label, schema, name, columns}
 // getBaseTableFunc() → {fullName, schema, name, columns}

@@ -816,6 +816,28 @@ async function schemaCallForConn(connStr) {
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30000)
   });
+  // Netlify returns 502 + errorType: Function.ResponseSizeTooLarge when the
+  // schema JSON exceeds 6 MB — typical for DBs with 9k+ tables. When that
+  // happens, fall back to the lightweight table-list-only action so the sidebar
+  // still populates and the AI at least knows the table names exist.
+  if (res.status === 502) {
+    const txt = await res.text().catch(()=>'');
+    if (/ResponseSizeTooLarge/i.test(txt)) {
+      console.warn('[schema] full schema exceeded Netlify 6MB cap — falling back to schema-tables (names only)');
+      const fallback = isFn(connStr) ? {action:'schema-tables'} : {action:'schema-tables', connectionString:connStr};
+      const res2 = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(fallback),
+        signal: AbortSignal.timeout(30000)
+      });
+      const data2 = await res2.json().catch(()=>({}));
+      if (!res2.ok) throw new Error(data2.error || res2.statusText);
+      data2._tableListOnly = true;  // flag so AI-prompt code knows columns aren't present
+      return data2;
+    }
+    throw new Error('HTTP 502 — ' + (txt.slice(0, 200) || 'unknown'));
+  }
   const data = await res.json().catch(()=>({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;

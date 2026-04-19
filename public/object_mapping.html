@@ -1035,13 +1035,19 @@ async function dbCall(conn, body){
   return data;
 }
 
+// ── Paginated schema loading ────────────────────────────────────────────────
+// Large databases (9k+ tables) produce >6 MB schema JSON which Netlify refuses
+// to deliver. We fetch a lightweight table-list first (name + rowCount only)
+// and lazy-load each table's columns/PKs/FKs when the user actually picks it.
+// See db-connect.js `schema-tables` and `schema-columns` actions.
+
 async function connectSrc(){
   const c = CygenixConnections.get();
   srcConn = c.srcConnString || '';
   if(!srcConn){ showStatus('No source connection configured — set in Dashboard → Configure → Connections','err'); return; }
   setBanner('src','connecting','Source: connecting…');
   try {
-    const res = await dbCall(srcConn,{action:'schema'});
+    const res = await dbCall(srcConn,{action:'schema-tables'});
     srcSchema = res;
     srcAllTables = (res.tables||[]).map(t=>({
       value: t.schema+'.'+t.name,
@@ -1049,9 +1055,10 @@ async function connectSrc(){
       schema: t.schema, name: t.name,
       fullName: t.schema+'.'+t.name,
       rowCount: t.rowCount||0,
-      columns: t.columns||[],
-      primaryKeys: t.primaryKeys||[],
-      foreignKeys: t.foreignKeys||[],
+      // columns/PKs/FKs intentionally omitted — loaded on demand via ensureColumns()
+      columns: null,
+      primaryKeys: null,
+      foreignKeys: null,
     }));
     setBanner('src','ok','Source: '+(res.database||parseDbName(srcConn))+' · '+srcAllTables.length+' tables');
     window._joinAllTables = srcAllTables;
@@ -1066,20 +1073,35 @@ async function connectTgt(){
   if(!tgtConn){ setBanner('tgt','err','Target: not configured'); return; }
   setBanner('tgt','connecting','Target: connecting…');
   try {
-    const res = await dbCall(tgtConn,{action:'schema'});
+    const res = await dbCall(tgtConn,{action:'schema-tables'});
     tgtSchema = res;
     tgtAllTables = (res.tables||[]).map(t=>({
       value: t.schema+'.'+t.name, label: t.schema+'.'+t.name,
       schema: t.schema, name: t.name, fullName: t.schema+'.'+t.name,
-      rowCount: t.rowCount||0, columns: t.columns||[],
-      primaryKeys: t.primaryKeys||[],
-      foreignKeys: t.foreignKeys||[],
+      rowCount: t.rowCount||0,
+      columns: null, primaryKeys: null, foreignKeys: null,
     }));
     window._joinAllTables = window._joinAllTables || [];
     setBanner('tgt','ok','Target: '+(res.database||parseDbName(tgtConn))+' · '+tgtAllTables.length+' tables');
   } catch(e){
     setBanner('tgt','err','Target: '+e.message);
   }
+}
+
+// Lazy-load columns/PKs/FKs for a specific table when the user picks it. Cached
+// on the table object so subsequent reads are free. Returns the table object
+// with .columns populated, or throws if the fetch fails.
+async function ensureColumns(side, table){
+  if (!table) return table;
+  if (Array.isArray(table.columns) && table.columns.length > 0) return table;  // cached
+  const conn = side === 'src' ? srcConn : tgtConn;
+  if (!conn) throw new Error(side + ' connection not set');
+  const res = await dbCall(conn, { action:'schema-columns', schemaName: table.schema, tableName: table.name });
+  if (!res || !res.table) throw new Error('No column info returned for ' + table.fullName);
+  table.columns     = res.table.columns     || [];
+  table.primaryKeys = res.table.primaryKeys || [];
+  table.foreignKeys = res.table.foreignKeys || [];
+  return table;
 }
 
 function setBanner(side, state, text){
@@ -1483,10 +1505,28 @@ function renderDrop(which, q){
   </div>`).join('');
   if(all.length>80) drop.innerHTML+=`<div class="drop-empty">${all.length-80} more — type to filter</div>`;
 }
-function selectTable(which, value){
+async function selectTable(which, value){
   const t = (which==='src'?srcAllTables:tgtAllTables).find(t=>t.value===value);
   if(!t) return;
   $(which+'-drop').style.display='none';
+
+  // Lazy-load columns for this table if we haven't yet. Blocks the UI briefly
+  // (typically <500ms for one table, cached thereafter). Any caller expecting
+  // t.columns to exist after selectTable() returns sees the populated version.
+  const inputId = which==='src' ? 'src-table-input'
+                : which==='tgt' ? 'tgt-table-input'
+                : 'otm-tgt-input';
+  const inputEl = $(inputId);
+  const priorPlaceholder = inputEl?.placeholder;
+  try {
+    if (inputEl) inputEl.placeholder = 'Loading columns…';
+    await ensureColumns(which === 'otm-tgt' ? 'tgt' : which, t);
+  } catch (e) {
+    showStatus('Could not load columns for ' + t.fullName + ': ' + e.message, 'err');
+    if (inputEl) inputEl.placeholder = priorPlaceholder || '';
+    return;
+  }
+  if (inputEl) inputEl.placeholder = priorPlaceholder || '';
 
   if(which==='src'){
     $('src-table-input').value=t.label;
@@ -2650,7 +2690,7 @@ function checkEditMode(){
   }
 }
 
-function restoreJobMapping(job,isOTM){
+async function restoreJobMapping(job,isOTM){
   // ── Restore JOIN state first (both modes) ─────────────────────────────────
   if(job.joinState && Array.isArray(job.joinState) && job.joinState.length){
     // Re-init the join builder with saved state so user can add/remove/edit joins
@@ -2671,9 +2711,14 @@ function restoreJobMapping(job,isOTM){
 
   if(isOTM){
     // ── Restore OTM target tables ───────────────────────────────────────────
-    (job.tables||[]).forEach(jtt=>{
-      const t=tgtAllTables.find(t=>t.value===jtt.name||t.label===jtt.name);
-      if(t&&!targetTables.find(tt=>tt.fullName===t.value)){
+    // Each saved target needs its columns loaded before we can add it to the
+    // OTM UI (which reads t.columns). Do them sequentially so row-counts stay
+    // ordered predictably in the cards.
+    for (const jtt of (job.tables||[])) {
+      const t = tgtAllTables.find(t=>t.value===jtt.name||t.label===jtt.name);
+      if (t && !targetTables.find(tt=>tt.fullName===t.value)) {
+        try { await ensureColumns('tgt', t); }
+        catch(e) { showStatus('Could not load columns for ' + t.fullName + ': ' + e.message, 'err'); continue; }
         addOTMTargetFromTable(t);
         const ti=targetTables.length-1;
         if(jtt.pkMode) targetTables[ti].pkMode=jtt.pkMode;
@@ -2681,7 +2726,7 @@ function restoreJobMapping(job,isOTM){
         if(jtt.mappings) targetTables[ti].mappings = ensureAllTargetCols(jtt.mappings, targetTables[ti]);
         if(jtt.fks)    targetTables[ti].fks=jtt.fks;
       }
-    });
+    }
     renderOTMCards();
     // Regenerate SQL from restored config so it's live-editable
     generateOTMSQL();

@@ -403,12 +403,16 @@ async function onConnChange(){
   if (!currentConn){ status.textContent='Not connected'; status.className='status'; return; }
   status.textContent='Loading schema…'; status.className='status';
   try {
-    const r = await dbCall(currentConn, { action:'schema' });
-    // schema returns { tables: [{schema, name, rowCount, columns:[{name, type, nullable, isIdentity, ordinal}], primaryKeys, foreignKeys}] }
+    // Paginated schema — list only. Column details are fetched on demand in
+    // loadColumns() via the schema-columns action below. This avoids Netlify's
+    // 6 MB response size cap which blocks the full `schema` action on DBs
+    // with thousands of tables.
+    const r = await dbCall(currentConn, { action:'schema-tables' });
     schemaCache = {};
     allTables = (r.tables||[]).map(t => {
       const fullName = (t.schema||'dbo')+'.'+t.name;
-      schemaCache[fullName] = t;
+      // Cache the basic info; columns will be filled on pickTable via fetchOneTableSchema()
+      schemaCache[fullName] = { schema: t.schema||'dbo', name: t.name, rowCount: t.rowCount||0, columns: null, primaryKeys: null, foreignKeys: null };
       return { schema:t.schema||'dbo', name:t.name, fullName, rowCount:t.rowCount||0 };
     });
     status.textContent = '✓ Connected · '+allTables.length+' tables'; status.className='status ok';
@@ -417,6 +421,20 @@ async function onConnChange(){
     allTables = [];
     schemaCache = {};
   }
+}
+
+// Fetch columns + PKs + FKs for one table via the lightweight schema-columns
+// action. Populates schemaCache[fullName] so subsequent lookups don't re-fetch.
+async function fetchOneTableSchema(fullName){
+  const entry = schemaCache[fullName];
+  if (!entry) throw new Error('Table not in schema cache: ' + fullName);
+  if (Array.isArray(entry.columns) && entry.columns.length > 0) return entry;
+  const res = await dbCall(currentConn, { action:'schema-columns', schemaName: entry.schema, tableName: entry.name });
+  if (!res || !res.table) throw new Error('No column info returned for ' + fullName);
+  entry.columns     = res.table.columns     || [];
+  entry.primaryKeys = res.table.primaryKeys || [];
+  entry.foreignKeys = res.table.foreignKeys || [];
+  return entry;
 }
 
 // ── Table search drop ────────────────────────────────────────────────────────
@@ -440,22 +458,27 @@ document.addEventListener('click', e => {
   }
 });
 
-// ── Load columns (from the already-fetched schema) ──────────────────────────
+// ── Load columns (lazy-fetched via schema-columns) ──────────────────────────
 async function loadColumns(){
   const table = document.getElementById('inp-table').value.trim();
   if (!table || !currentConn) return;
   const btn = document.getElementById('btn-load-cols');
   btn.disabled = true; btn.textContent = '⏳ Loading…';
   try {
-    // Look up in schema cache first (populated by onConnChange)
-    let tableMeta = schemaCache[table];
-    if (!tableMeta){
-      // Try case-insensitive lookup
+    // Look up in schema cache (populated by onConnChange with table-list only)
+    let tableKey = table;
+    if (!schemaCache[tableKey]){
+      // Case-insensitive fallback for user-typed names
       const lowerKey = Object.keys(schemaCache).find(k => k.toLowerCase() === table.toLowerCase());
-      if (lowerKey) tableMeta = schemaCache[lowerKey];
+      if (lowerKey) tableKey = lowerKey;
     }
-    if (!tableMeta || !tableMeta.columns?.length){
-      throw new Error('Table not found in cached schema — try picking from the dropdown');
+    if (!schemaCache[tableKey]){
+      throw new Error('Table not found in schema — pick from the dropdown');
+    }
+    // Fetch columns on demand (cached after first call per table)
+    const tableMeta = await fetchOneTableSchema(tableKey);
+    if (!tableMeta.columns || !tableMeta.columns.length){
+      throw new Error('No columns returned for ' + tableKey);
     }
     columns = tableMeta.columns.map(c => ({ name:c.name, type:c.type||'' }));
     colConfig = {};
