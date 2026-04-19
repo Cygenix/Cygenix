@@ -1385,7 +1385,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div class="panel-header">
         <div>
           <div class="panel-title">🔌 Project Connections</div>
-          <div class="panel-sub">Configure source, staging and target database connections once — all pages inherit these settings automatically</div>
+          <div class="panel-sub">Configure source and target database connections once — all pages inherit these settings automatically</div>
         </div>
         <div style="display:flex;gap:0.75rem;align-items:center">
           <div id="conn-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</div>
@@ -1394,7 +1394,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.25rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
         <!-- Source -->
         <div class="panel">
           <div style="font-size:13px;font-weight:600;color:var(--teal);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
@@ -1417,31 +1417,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           </div>
           <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
           <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
-        </div>
-
-        <!-- Staging / Conversion -->
-        <div class="panel">
-          <div style="font-size:13px;font-weight:600;color:var(--amber);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
-            Staging / Conversion
-            <span id="stg-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--text3)"></span>
-          </div>
-          <div style="font-size:10.5px;color:var(--text3);margin-bottom:0.875rem;line-height:1.5">Optional. Holds empty copies of production tables for conversion / QA. Jobs can read from or write to staging.</div>
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
-            <button id="stg-mode-direct" class="btn btn-sm" onclick="setStgMode('direct')" style="flex:1;justify-content:center">Direct</button>
-            <button id="stg-mode-azure" class="btn btn-sm" onclick="setStgMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
-          </div>
-          <div id="stg-direct-wrap">
-            <label class="form-label">Connection string</label>
-            <input id="proj-stg-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="Server=host;Database=db;User Id=u;Password=p;Encrypt=true;">
-          </div>
-          <div id="stg-azure-wrap" style="display:none">
-            <label class="form-label">Azure Function URL</label>
-            <input id="proj-stg-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
-            <label class="form-label">Function key</label>
-            <input id="proj-stg-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="testProjConn('stg')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
-          <div id="stg-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
         </div>
 
         <!-- Target -->
@@ -4396,7 +4371,15 @@ function saveProjectSettings() {
 }
 
 // ── Project Connections ───────────────────────────────────────────────────────
-let srcMode = 'direct', tgtMode = 'azure', stgMode = 'direct';
+let srcMode = 'direct', tgtMode = 'azure';
+
+// Clean up orphaned staging sessionStorage keys from before Staging was removed.
+// Harmless for users who never had staging set, but tidies returning users.
+try {
+  ['cygenix_staging_conn_mode','cygenix_staging_conn_string',
+   'cygenix_staging_fn_url','cygenix_staging_fn_key'
+  ].forEach(k => sessionStorage.removeItem(k));
+} catch {}
 
 function setSrcMode(mode) {
   srcMode = mode;
@@ -4426,31 +4409,6 @@ function setTgtMode(mode) {
   styles('tgt-mode-direct', mode==='direct');
   styles('tgt-mode-azure',  mode==='azure');
 }
-function setStgMode(mode) {
-  stgMode = mode;
-  document.getElementById('stg-direct-wrap').style.display = mode==='direct' ? 'block' : 'none';
-  document.getElementById('stg-azure-wrap').style.display  = mode==='azure'  ? 'block' : 'none';
-  const styles = (id, active) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.style.background = active ? 'var(--accent-glow)' : 'transparent';
-    el.style.color = active ? 'var(--accent)' : 'var(--text2)';
-    el.style.border = active ? '0.5px solid rgba(61,126,255,0.3)' : '0.5px solid var(--border2)';
-  };
-  styles('stg-mode-direct', mode==='direct');
-  styles('stg-mode-azure',  mode==='azure');
-}
-
-// Thin staging accessor. Reads sessionStorage directly since connections.js doesn't know
-// about staging yet. Other pages that need staging can use this same key convention.
-function getStagingConn() {
-  const mode = sessionStorage.getItem('cygenix_staging_conn_mode') || 'direct';
-  const cs   = sessionStorage.getItem('cygenix_staging_conn_string') || '';
-  const url  = sessionStorage.getItem('cygenix_staging_fn_url') || '';
-  const key  = sessionStorage.getItem('cygenix_staging_fn_key') || '';
-  if (mode === 'direct') return { mode, connString: cs, fnUrl: '', fnKey: '' };
-  return { mode, connString: '', fnUrl: url, fnKey: key };
-}
 
 function initConnectionsView() {
   const c = CygenixConnections.get();
@@ -4463,13 +4421,6 @@ function initConnectionsView() {
   set('proj-tgt-cs',     c.tgtConnString);
   set('proj-tgt-fn-url', c.tgtFnUrl);
   set('proj-tgt-fn-key', c.tgtFnKey);
-  // Staging: read directly from sessionStorage (connections.js doesn't know about it yet)
-  const stg = getStagingConn();
-  stgMode = stg.mode;
-  setStgMode(stgMode);
-  set('proj-stg-cs',     stg.connString);
-  set('proj-stg-fn-url', stg.fnUrl);
-  set('proj-stg-fn-key', stg.fnKey);
   updateConnDots();
 }
 
@@ -4477,14 +4428,9 @@ function updateConnDots() {
   const c = CygenixConnections.get();
   const srcOk = !!(c.srcConnString);
   const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
-  const stg = getStagingConn();
-  const stgConfigured = !!(stg.connString || stg.fnUrl);
   const setDot = (id, ok) => { const el=document.getElementById(id); if(el) el.style.background=ok?'var(--green)':'var(--red)'; };
   setDot('src-conn-dot', srcOk);
   setDot('tgt-conn-dot', tgtOk);
-  // Staging dot: grey when unconfigured (optional), red/green only once user has set a value
-  const stgEl = document.getElementById('stg-conn-dot');
-  if (stgEl) stgEl.style.background = stgConfigured ? 'var(--amber)' : 'var(--text3)';
   setDot('conn-status-dot', srcOk&&tgtOk);
   const navDot = document.getElementById('conn-status-dot');
   if (navDot) navDot.style.background = srcOk&&tgtOk ? 'var(--green)' : (srcOk||tgtOk) ? 'var(--amber)' : 'var(--red)';
@@ -4499,12 +4445,6 @@ async function testProjConn(which) {
     conn = srcMode==='direct'
       ? (document.getElementById('proj-src-cs')?.value.trim()||'')
       : (document.getElementById('proj-src-fn-url')?.value.trim()||'');
-  } else if (which==='stg') {
-    conn = stgMode==='direct'
-      ? (document.getElementById('proj-stg-cs')?.value.trim()||'')
-      : (document.getElementById('proj-stg-fn-url')?.value.trim()||'');
-    const key = document.getElementById('proj-stg-fn-key')?.value.trim()||'';
-    if (stgMode==='azure'&&key) conn += (conn.includes('?')?'&':'?')+'code='+encodeURIComponent(key);
   } else {
     conn = tgtMode==='direct'
       ? (document.getElementById('proj-tgt-cs')?.value.trim()||'')
