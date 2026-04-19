@@ -298,10 +298,17 @@ body.cyg-collapsed{padding-left:54px}
           <span id="src-panel-toggle" style="color:var(--text3);font-size:14px;line-height:1;transition:transform 0.2s">▼</span>
         </div>
         <div class="panel-body" id="src-panel-body">
-          <div class="search-wrap" style="margin-bottom:0.75rem">
+          <div class="search-wrap" style="margin-bottom:0.75rem;position:relative">
             <input id="src-table-input" class="form-input" placeholder="🔍 Search source tables…" autocomplete="off"
-              oninput="filterDrop('src')" onfocus="openDrop('src')" onclick="event.stopPropagation()">
+              oninput="filterDrop('src');ddlCheckCreateVisibility('src')" onfocus="openDrop('src')" onclick="event.stopPropagation()">
             <div class="search-drop" id="src-drop" style="display:none"></div>
+            <!-- Create-table affordance: appears when the typed name doesn't exist in the schema cache
+                 AND a TARGET table is selected (so we have columns to create from).
+                 Deliberately unobtrusive — a small button under the input rather than blocking UI. -->
+            <div id="src-create-hint" style="display:none;margin-top:6px;padding:6px 10px;background:rgba(79,142,255,0.08);border:0.5px solid rgba(79,142,255,0.25);border-radius:var(--r);font-size:11.5px;color:var(--text2);display:none;align-items:center;gap:8px;flex-wrap:wrap">
+              <span>Doesn't exist.</span>
+              <button class="btn btn-primary btn-sm" onclick="ddlOpenModal('src')" style="font-size:11px;padding:2px 8px">+ Create from target schema</button>
+            </div>
           </div>
           <!-- Column list -->
           <div id="src-col-wrap" style="display:none">
@@ -376,10 +383,16 @@ body.cyg-collapsed{padding-left:54px}
           </div>
           <div class="panel-body">
             <!-- Target table picker -->
-            <div class="search-wrap" style="margin-bottom:1rem">
+            <div class="search-wrap" style="margin-bottom:1rem;position:relative">
               <input id="tgt-table-input" class="form-input" placeholder="🔍 Search target tables…" autocomplete="off"
-                oninput="filterDrop('tgt')" onfocus="openDrop('tgt')">
+                oninput="filterDrop('tgt');ddlCheckCreateVisibility('tgt')" onfocus="openDrop('tgt')">
               <div class="search-drop" id="tgt-drop" style="display:none"></div>
+              <!-- Create-table affordance for target — appears when source is selected and typed
+                   target name doesn't yet exist. Same pattern as source side. -->
+              <div id="tgt-create-hint" style="display:none;margin-top:6px;padding:6px 10px;background:rgba(236,72,153,0.08);border:0.5px solid rgba(236,72,153,0.25);border-radius:var(--r);font-size:11.5px;color:var(--text2);align-items:center;gap:8px;flex-wrap:wrap">
+                <span>Doesn't exist.</span>
+                <button class="btn btn-primary btn-sm" onclick="ddlOpenModal('tgt')" style="font-size:11px;padding:2px 8px">+ Create from source schema</button>
+              </div>
             </div>
 
             <!-- Wasis panel -->
@@ -609,6 +622,33 @@ body.cyg-collapsed{padding-left:54px}
   </div>
 </div>
 
+<!-- DDL preview modal — shown when user clicks "+ Create from source/target schema".
+     Lets user review the generated CREATE TABLE, edit it freely, see warnings,
+     and execute against the appropriate connection. Close on backdrop click. -->
+<div id="ddl-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;padding:2rem" onclick="if(event.target===this)ddlCloseModal()">
+  <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);width:min(900px, 100%);max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.75rem">
+      <div style="font-size:14px;font-weight:600">Create table</div>
+      <div id="ddl-modal-direction" style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-left:auto"></div>
+      <button class="btn btn-ghost btn-sm" onclick="ddlCloseModal()" style="color:var(--text3)">✕</button>
+    </div>
+    <div style="padding:0.75rem 1.25rem;overflow-y:auto;flex:1">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Review the generated DDL. You can edit column names, types, add constraints, add or remove columns — anything that is valid SQL will run as-is.</div>
+      <textarea id="ddl-textarea" spellcheck="false"
+        style="width:100%;min-height:280px;max-height:400px;font-family:var(--mono);font-size:12px;background:var(--bg3);color:var(--text);border:0.5px solid var(--border2);border-radius:var(--r);padding:10px;resize:vertical;line-height:1.5"></textarea>
+      <div id="ddl-warnings" style="margin-top:0.75rem;display:none">
+        <div style="font-size:11px;font-weight:600;color:var(--amber);margin-bottom:4px">Translation notes (edit DDL if any of these are wrong for your case)</div>
+        <ul id="ddl-warnings-list" style="margin:0;padding-left:20px;font-size:11px;color:var(--text2);line-height:1.5"></ul>
+      </div>
+      <div id="ddl-result" style="margin-top:0.75rem;display:none;padding:8px 12px;border-radius:var(--r);font-size:12px;font-family:var(--mono);white-space:pre-wrap"></div>
+    </div>
+    <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="ddlCloseModal()">Cancel</button>
+      <button id="ddl-run-btn" class="btn btn-primary btn-sm" onclick="ddlRun()">▶ Run</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Auth ──────────────────────────────────────────────────────────────────────
 if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login.html';
@@ -654,6 +694,317 @@ function showStatus(msg, type='info'){
 }
 function todayStr(){ return new Date().toLocaleDateString('en-GB'); }
 
+// ══════════════════════════════════════════════════════════════════════════
+// DDL GENERATOR — cross-dialect CREATE TABLE (Postgres ↔ SQL Server)
+// Inlined from ddl_generator.js. Unit-tested separately (63 tests). Same
+// function bodies, re-exposed on window so existing code paths and the modal
+// can call them.
+//
+// Type mappings here are opinionated and lossy by design — see warnings[] in
+// each mapper. The UI shows these warnings; users can edit the generated DDL
+// freely in the modal textarea before executing.
+// ══════════════════════════════════════════════════════════════════════════
+
+function ddlParseType(rawType) {
+  if (!rawType) return { base: '', raw: '' };
+  const raw = String(rawType).trim();
+  const m = raw.match(/^([A-Z][A-Z0-9 _]*?)(?:\(([^)]+)\))?$/i);
+  if (!m) return { base: raw.toUpperCase(), raw };
+  const base = m[1].trim().toUpperCase();
+  const params = m[2];
+  if (!params) return { base, raw };
+  const parts = params.split(',').map(p => p.trim());
+  const length = parts[0] === 'MAX' ? 'MAX' : parseInt(parts[0], 10);
+  if (parts.length === 1) return { base, length: isNaN(length) ? parts[0] : length, raw };
+  const scale = parseInt(parts[1], 10);
+  return { base, precision: isNaN(length) ? parts[0] : length, scale: isNaN(scale) ? parts[1] : scale, raw };
+}
+
+function ddlPgToMssql(parsed) {
+  const { base, length, precision, scale } = parsed;
+  const warnings = [];
+  let out;
+  switch (base) {
+    case 'SMALLINT':                  out = 'SMALLINT'; break;
+    case 'INTEGER': case 'INT':        out = 'INT'; break;
+    case 'BIGINT':                     out = 'BIGINT'; break;
+    case 'SERIAL':                     out = 'INT IDENTITY(1,1)'; warnings.push('SERIAL → INT IDENTITY — consider whether you want identity on the target'); break;
+    case 'BIGSERIAL':                  out = 'BIGINT IDENTITY(1,1)'; warnings.push('BIGSERIAL → BIGINT IDENTITY'); break;
+    case 'SMALLSERIAL':                out = 'SMALLINT IDENTITY(1,1)'; break;
+    case 'REAL':                       out = 'REAL'; break;
+    case 'DOUBLE PRECISION':           out = 'FLOAT(53)'; break;
+    case 'NUMERIC': case 'DECIMAL':
+      if (precision != null && scale != null) out = `DECIMAL(${precision},${scale})`;
+      else if (precision != null)              out = `DECIMAL(${precision})`;
+      else                                      out = 'DECIMAL(38,10)';
+      break;
+    case 'MONEY':                      out = 'MONEY'; break;
+    case 'CHARACTER VARYING': case 'VARCHAR':
+      if (length === 'MAX' || length == null) out = 'NVARCHAR(MAX)';
+      else if (length > 4000)                  out = 'NVARCHAR(MAX)';
+      else                                      out = `NVARCHAR(${length})`;
+      break;
+    case 'CHARACTER': case 'CHAR':
+      if (length == null) out = 'NCHAR(1)';
+      else if (length > 4000) { out = 'NVARCHAR(MAX)'; warnings.push(`CHAR(${length}) exceeds NCHAR max — mapped to NVARCHAR(MAX)`); }
+      else                     out = `NCHAR(${length})`;
+      break;
+    case 'TEXT':                       out = 'NVARCHAR(MAX)'; break;
+    case 'CITEXT':                     out = 'NVARCHAR(MAX)'; warnings.push('CITEXT is case-insensitive in PG; target will follow SQL Server collation — verify'); break;
+    case 'DATE':                       out = 'DATE'; break;
+    case 'TIME': case 'TIME WITHOUT TIME ZONE':     out = 'TIME(7)'; break;
+    case 'TIME WITH TIME ZONE':        out = 'TIME(7)'; warnings.push('TIME WITH TIME ZONE → TIME — timezone info is lost'); break;
+    case 'TIMESTAMP': case 'TIMESTAMP WITHOUT TIME ZONE': out = 'DATETIME2(7)'; break;
+    case 'TIMESTAMP WITH TIME ZONE': case 'TIMESTAMPTZ': out = 'DATETIMEOFFSET(7)'; break;
+    case 'INTERVAL':                   out = 'VARCHAR(100)'; warnings.push('INTERVAL has no direct SQL Server equivalent — mapped to VARCHAR(100); consider BIGINT for microseconds'); break;
+    case 'BOOLEAN': case 'BOOL':       out = 'BIT'; break;
+    case 'BYTEA':                      out = 'VARBINARY(MAX)'; break;
+    case 'JSON': case 'JSONB':         out = 'NVARCHAR(MAX)'; warnings.push(`${base} → NVARCHAR(MAX) — loses JSON indexing; SQL Server 2016+ has JSON functions on NVARCHAR`); break;
+    case 'UUID':                       out = 'UNIQUEIDENTIFIER'; break;
+    case 'XML':                        out = 'XML'; break;
+    case 'INET': case 'CIDR':          out = 'VARCHAR(43)'; warnings.push(`${base} → VARCHAR(43) — SQL Server has no network type`); break;
+    case 'MACADDR':                    out = 'VARCHAR(17)'; warnings.push('MACADDR → VARCHAR(17) — SQL Server has no MAC address type'); break;
+    case 'TSVECTOR': case 'TSQUERY':   out = 'NVARCHAR(MAX)'; warnings.push(`${base} → NVARCHAR(MAX) — SQL Server has its own Full-Text Search`); break;
+    default:
+      if (base.endsWith('[]') || /ARRAY$/i.test(base)) { out = 'NVARCHAR(MAX)'; warnings.push(`Array type "${base}" has no SQL Server equivalent — mapped to NVARCHAR(MAX)`); }
+      else if (base === 'HSTORE')                      { out = 'NVARCHAR(MAX)'; warnings.push('HSTORE → NVARCHAR(MAX) — consider JSON'); }
+      else                                              { out = 'NVARCHAR(MAX)'; warnings.push(`Unknown Postgres type "${base}" — defaulted to NVARCHAR(MAX); edit DDL if needed`); }
+  }
+  return { type: out, warnings };
+}
+
+function ddlMssqlToPg(parsed) {
+  const { base, length, precision, scale } = parsed;
+  const warnings = [];
+  let out;
+  switch (base) {
+    case 'TINYINT':                    out = 'SMALLINT'; warnings.push('TINYINT (0-255 unsigned) → SMALLINT (signed) — range differs'); break;
+    case 'SMALLINT':                   out = 'SMALLINT'; break;
+    case 'INT': case 'INTEGER':        out = 'INTEGER'; break;
+    case 'BIGINT':                     out = 'BIGINT'; break;
+    case 'BIT':                        out = 'BOOLEAN'; break;
+    case 'REAL':                       out = 'REAL'; break;
+    case 'FLOAT':                      out = 'DOUBLE PRECISION'; break;
+    case 'DECIMAL': case 'NUMERIC':
+      if (precision != null && scale != null) out = `NUMERIC(${precision},${scale})`;
+      else if (precision != null)              out = `NUMERIC(${precision})`;
+      else                                      out = 'NUMERIC(38,10)';
+      break;
+    case 'MONEY':                      out = 'MONEY'; break;
+    case 'SMALLMONEY':                 out = 'NUMERIC(10,4)'; warnings.push('SMALLMONEY → NUMERIC(10,4) — PG has no SMALLMONEY'); break;
+    case 'CHAR': case 'NCHAR':         out = length != null ? `CHAR(${length})` : 'CHAR(1)'; break;
+    case 'VARCHAR': case 'NVARCHAR':
+      if (length === 'MAX' || length == null) out = 'TEXT';
+      else                                     out = `VARCHAR(${length})`;
+      break;
+    case 'TEXT': case 'NTEXT':         out = 'TEXT'; break;
+    case 'DATE':                       out = 'DATE'; break;
+    case 'TIME':                       out = 'TIME'; break;
+    case 'DATETIME':                   out = 'TIMESTAMP'; warnings.push('DATETIME → TIMESTAMP — precision is higher on PG (microseconds vs 3.33ms)'); break;
+    case 'DATETIME2':                  out = 'TIMESTAMP'; break;
+    case 'SMALLDATETIME':              out = 'TIMESTAMP'; warnings.push('SMALLDATETIME → TIMESTAMP — range 1900-2079 is lost'); break;
+    case 'DATETIMEOFFSET':             out = 'TIMESTAMP WITH TIME ZONE'; break;
+    case 'TIMESTAMP':                  out = 'BYTEA'; warnings.push('SQL Server TIMESTAMP is a rowversion (8 bytes), NOT a timestamp — mapped to BYTEA; remove if not needed'); break;
+    case 'BINARY': case 'VARBINARY':   out = 'BYTEA'; break;
+    case 'IMAGE':                      out = 'BYTEA'; break;
+    case 'UNIQUEIDENTIFIER':           out = 'UUID'; break;
+    case 'XML':                        out = 'XML'; break;
+    case 'GEOGRAPHY': case 'GEOMETRY': out = 'TEXT'; warnings.push(`${base} → TEXT — install PostGIS and use GEOGRAPHY/GEOMETRY types instead if spatial ops are needed`); break;
+    case 'SQL_VARIANT':                out = 'TEXT'; warnings.push('SQL_VARIANT is polymorphic — collapsed to TEXT'); break;
+    case 'HIERARCHYID':                out = 'TEXT'; warnings.push('HIERARCHYID → TEXT — SQL Server-specific; consider PG ltree extension'); break;
+    default:                           out = 'TEXT'; warnings.push(`Unknown SQL Server type "${base}" — defaulted to TEXT; edit DDL if needed`);
+  }
+  return { type: out, warnings };
+}
+
+function ddlQuoteIdent(dialect, name) {
+  if (!name) return '';
+  if (dialect === 'postgres') return '"' + String(name).replace(/"/g, '""') + '"';
+  return '[' + String(name).replace(/]/g, ']]') + ']';
+}
+
+function ddlSplitQualified(fullName) {
+  const idx = fullName.indexOf('.');
+  if (idx < 0) return { schema: null, name: fullName };
+  return { schema: fullName.slice(0, idx), name: fullName.slice(idx + 1) };
+}
+
+function ddlDetectDialect(connString) {
+  if (!connString) return 'mssql';
+  const s = String(connString).trim().toLowerCase();
+  if (s.startsWith('postgres://') || s.startsWith('postgresql://')) return 'postgres';
+  return 'mssql';
+}
+
+function ddlGenerateCreateTable({ sourceDialect, targetDialect, sourceColumns, sourcePrimaryKeys, targetQualifiedName }) {
+  if (!sourceDialect || !targetDialect) throw new Error('Both sourceDialect and targetDialect are required');
+  if (!Array.isArray(sourceColumns) || sourceColumns.length === 0) throw new Error('sourceColumns must be a non-empty array');
+  if (!targetQualifiedName) throw new Error('targetQualifiedName is required');
+  const mapper =
+    sourceDialect === 'postgres' && targetDialect === 'mssql'    ? ddlPgToMssql :
+    sourceDialect === 'mssql'    && targetDialect === 'postgres' ? ddlMssqlToPg : null;
+  const warnings = [], typeMap = [], lines = [];
+  const sameDialect = sourceDialect === targetDialect;
+  for (const col of sourceColumns) {
+    const parsed = ddlParseType(col.type);
+    let tgtType;
+    if (sameDialect) tgtType = parsed.raw || parsed.base;
+    else { const r = mapper(parsed); tgtType = r.type; for (const w of r.warnings) warnings.push(`${col.name}: ${w}`); }
+    typeMap.push({ column: col.name, srcType: col.type, tgtType });
+    const nullable = col.nullable === false || col.nullable === 'NO' ? 'NOT NULL' : 'NULL';
+    lines.push(`    ${ddlQuoteIdent(targetDialect, col.name)} ${tgtType} ${nullable}`);
+    if (col.isIdentity && !/IDENTITY|GENERATED/i.test(tgtType)) warnings.push(`${col.name}: source column is identity — add identity syntax manually if needed`);
+    if (col.default != null && col.default !== '') warnings.push(`${col.name}: default "${col.default}" dropped — re-add manually (syntax differs)`);
+  }
+  if (sourcePrimaryKeys && sourcePrimaryKeys.length > 0) {
+    const pkCols = sourcePrimaryKeys.map(c => ddlQuoteIdent(targetDialect, c)).join(', ');
+    lines.push(`    PRIMARY KEY (${pkCols})`);
+  }
+  const { schema, name } = ddlSplitQualified(targetQualifiedName);
+  const qualifiedTarget = schema
+    ? `${ddlQuoteIdent(targetDialect, schema)}.${ddlQuoteIdent(targetDialect, name)}`
+    : ddlQuoteIdent(targetDialect, name);
+  return { ddl: `CREATE TABLE ${qualifiedTarget} (\n${lines.join(',\n')}\n);`, warnings, typeMap };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Modal + visibility wiring
+// ──────────────────────────────────────────────────────────────────────────
+
+// Shown when: (a) user typed a name in the create-side field that doesn't
+// match any existing table in that side's schema cache, AND (b) the OTHER
+// side has a table selected (so we have columns to base the CREATE on).
+// The hint auto-hides when any of those conditions stops being true.
+function ddlCheckCreateVisibility(createSide) {
+  // createSide = 'src' (user creating a source table) or 'tgt' (user creating a target table)
+  const input = document.getElementById(createSide + '-table-input');
+  const hint  = document.getElementById(createSide + '-create-hint');
+  if (!input || !hint) return;
+
+  const typed = (input.value || '').trim();
+  const otherSide = createSide === 'src' ? 'tgt' : 'src';
+  const otherTable = createSide === 'src' ? tgtTable : srcTable;
+  const tables = createSide === 'src' ? srcAllTables : tgtAllTables;
+
+  // Hide if nothing typed
+  if (!typed) { hint.style.display = 'none'; return; }
+  // Hide if there's no "donor" table (nothing to base columns on)
+  if (!otherTable || !otherTable.columns || otherTable.columns.length === 0) { hint.style.display = 'none'; return; }
+  // Hide if a matching table exists
+  const exists = tables.some(t => t.fullName === typed || t.name === typed);
+  if (exists) { hint.style.display = 'none'; return; }
+  hint.style.display = 'flex';
+}
+
+let _ddlCtx = null;  // {createSide, targetDialect, conn, typedName}
+
+function ddlOpenModal(createSide) {
+  // Resolve context: who's creating, from which donor, in which dialect, on which connection
+  const otherTable = createSide === 'src' ? tgtTable : srcTable;
+  if (!otherTable) {
+    showStatus('Select the other side first so we know the column structure','err');
+    return;
+  }
+  const createConn    = createSide === 'src' ? srcConn : tgtConn;
+  const donorConn     = createSide === 'src' ? tgtConn : srcConn;
+  if (!createConn)  { showStatus('No ' + createSide + ' connection configured','err'); return; }
+
+  const createDialect = ddlDetectDialect(createConn);
+  const donorDialect  = ddlDetectDialect(donorConn);
+  const typedName     = (document.getElementById(createSide + '-table-input').value || '').trim();
+  if (!typedName) { showStatus('Type a target table name first','err'); return; }
+
+  // Generate initial DDL
+  let result;
+  try {
+    result = ddlGenerateCreateTable({
+      sourceDialect: donorDialect,
+      targetDialect: createDialect,
+      sourceColumns: otherTable.columns,
+      sourcePrimaryKeys: otherTable.primaryKeys || [],
+      targetQualifiedName: typedName,
+    });
+  } catch (e) {
+    showStatus('Could not generate DDL: ' + e.message, 'err');
+    return;
+  }
+
+  _ddlCtx = { createSide, createDialect, donorDialect, conn: createConn, typedName };
+
+  // Populate modal
+  document.getElementById('ddl-modal-direction').textContent =
+    donorDialect.toUpperCase() + ' (' + otherTable.fullName + ') → ' + createDialect.toUpperCase() + ' (' + typedName + ')';
+  document.getElementById('ddl-textarea').value = result.ddl;
+  const warnList = document.getElementById('ddl-warnings-list');
+  const warnWrap = document.getElementById('ddl-warnings');
+  warnList.innerHTML = '';
+  if (result.warnings.length > 0) {
+    for (const w of result.warnings) {
+      const li = document.createElement('li');
+      li.textContent = w;
+      warnList.appendChild(li);
+    }
+    warnWrap.style.display = 'block';
+  } else {
+    warnWrap.style.display = 'none';
+  }
+  document.getElementById('ddl-result').style.display = 'none';
+  document.getElementById('ddl-run-btn').disabled = false;
+  document.getElementById('ddl-run-btn').textContent = '▶ Run';
+  document.getElementById('ddl-modal').style.display = 'flex';
+}
+
+function ddlCloseModal() {
+  document.getElementById('ddl-modal').style.display = 'none';
+  _ddlCtx = null;
+}
+
+async function ddlRun() {
+  if (!_ddlCtx) return;
+  const sql = document.getElementById('ddl-textarea').value.trim();
+  if (!sql) { ddlShowResult('DDL is empty','err'); return; }
+
+  const btn = document.getElementById('ddl-run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  ddlShowResult('Executing against ' + _ddlCtx.createSide + ' (' + _ddlCtx.createDialect + ')…', 'info');
+
+  try {
+    const res = await dbCall(_ddlCtx.conn, { action:'execute', sql });
+    if (res && res.error) {
+      ddlShowResult('🔴 ' + res.error, 'err');
+      btn.disabled = false; btn.textContent = '▶ Run';
+      return;
+    }
+    ddlShowResult('✓ Created. Refreshing schema…', 'ok');
+
+    // Refresh the relevant schema cache and auto-select the new table
+    if (_ddlCtx.createSide === 'tgt') {
+      await connectTgt();
+      const match = tgtAllTables.find(t => t.fullName === _ddlCtx.typedName || t.name === _ddlCtx.typedName.split('.').pop());
+      if (match) { selectTable('tgt', match.value); ddlShowResult('✓ Created and selected ' + match.fullName, 'ok'); }
+    } else {
+      await connectSrc();
+      const match = srcAllTables.find(t => t.fullName === _ddlCtx.typedName || t.name === _ddlCtx.typedName.split('.').pop());
+      if (match) { selectTable('src', match.value); ddlShowResult('✓ Created and selected ' + match.fullName, 'ok'); }
+    }
+    setTimeout(ddlCloseModal, 1200);
+  } catch (e) {
+    ddlShowResult('🔴 Error: ' + (e.message || String(e)), 'err');
+    btn.disabled = false; btn.textContent = '▶ Run';
+  }
+}
+
+function ddlShowResult(msg, kind) {
+  const el = document.getElementById('ddl-result');
+  if (!el) return;
+  el.style.display = 'block';
+  if (kind === 'ok')      { el.style.background = 'rgba(34,197,94,0.1)';  el.style.color = 'var(--green)'; }
+  else if (kind === 'err'){ el.style.background = 'rgba(239,68,68,0.1)';  el.style.color = 'var(--red)'; }
+  else                    { el.style.background = 'var(--bg3)';            el.style.color = 'var(--text2)'; }
+  el.textContent = msg;
+}
+
 // ── Connections (auto-load from CygenixConnections) ────────────────────────
 (function init(){
   const c = CygenixConnections.get();
@@ -698,7 +1049,9 @@ async function connectSrc(){
       schema: t.schema, name: t.name,
       fullName: t.schema+'.'+t.name,
       rowCount: t.rowCount||0,
-      columns: t.columns||[]
+      columns: t.columns||[],
+      primaryKeys: t.primaryKeys||[],
+      foreignKeys: t.foreignKeys||[],
     }));
     setBanner('src','ok','Source: '+(res.database||parseDbName(srcConn))+' · '+srcAllTables.length+' tables');
     window._joinAllTables = srcAllTables;
@@ -718,7 +1071,9 @@ async function connectTgt(){
     tgtAllTables = (res.tables||[]).map(t=>({
       value: t.schema+'.'+t.name, label: t.schema+'.'+t.name,
       schema: t.schema, name: t.name, fullName: t.schema+'.'+t.name,
-      rowCount: t.rowCount||0, columns: t.columns||[]
+      rowCount: t.rowCount||0, columns: t.columns||[],
+      primaryKeys: t.primaryKeys||[],
+      foreignKeys: t.foreignKeys||[],
     }));
     window._joinAllTables = window._joinAllTables || [];
     setBanner('tgt','ok','Target: '+(res.database||parseDbName(tgtConn))+' · '+tgtAllTables.length+' tables');
