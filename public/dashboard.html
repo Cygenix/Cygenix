@@ -366,7 +366,66 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-integrations .in-enable-row{display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border);margin-top:0.5rem}
 #view-integrations .in-enable-row label{font-size:12px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-family:var(--serif);text-transform:none;letter-spacing:0}
 
-/* ─── Ring chart (job status breakdown) ─────────────────────────────── */
+/* ─── Data import (Connections view, tabbed) ───────────────────────── */
+#view-connections .cx-tabs{ }
+#view-connections .cx-tab{
+  background:transparent;border:none;color:var(--text3);
+  font-family:var(--serif);font-size:12px;font-weight:500;
+  padding:0.7rem 1.1rem;cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:color 0.15s,border-color 0.15s;
+}
+#view-connections .cx-tab:hover{ color:var(--text2); }
+#view-connections .cx-tab-active{ color:var(--accent);border-bottom-color:var(--accent); }
+
+#view-connections .imp-drop{
+  border:1.5px dashed var(--border2);border-radius:var(--r);
+  padding:2.25rem 1rem;text-align:center;cursor:pointer;
+  background:var(--bg3);
+  transition:border-color 0.15s,background 0.15s;
+}
+#view-connections .imp-drop:hover,
+#view-connections .imp-drop.drag-over{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
+
+#view-connections .imp-schema-table{
+  width:100%;border-collapse:collapse;font-size:12px;
+}
+#view-connections .imp-schema-table th{
+  text-align:left;font-weight:500;color:var(--text3);
+  font-size:10px;text-transform:uppercase;letter-spacing:0.08em;
+  padding:0.5rem 0.75rem;border-bottom:0.5px solid var(--border);
+}
+#view-connections .imp-schema-table td{
+  padding:0.5rem 0.75rem;border-bottom:0.5px solid rgba(255,255,255,0.04);
+  font-family:var(--mono);font-size:11.5px;color:var(--text2);vertical-align:top;
+}
+#view-connections .imp-schema-table td:first-child{ color:var(--text);font-weight:500; }
+#view-connections .imp-type{
+  display:inline-block;padding:1px 7px;border-radius:4px;
+  font-size:10px;font-weight:500;letter-spacing:0.02em;
+}
+#view-connections .imp-type-int{ background:rgba(79,142,255,0.12);color:#6ea4ff; }
+#view-connections .imp-type-decimal{ background:rgba(45,212,191,0.12);color:#2dd4bf; }
+#view-connections .imp-type-date{ background:rgba(167,139,250,0.12);color:#a78bfa; }
+#view-connections .imp-type-bool{ background:rgba(245,158,11,0.12);color:#f59e0b; }
+#view-connections .imp-type-string{ background:rgba(255,255,255,0.06);color:var(--text2); }
+
+/* Overwrite-exists modal — reuses the preview-modal-overlay pattern */
+#imp-exists-modal{ display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:400;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(2px); }
+#imp-exists-modal.open{ display:flex; }
+#imp-exists-modal .imp-exists-dialog{
+  background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);
+  max-width:540px;width:100%;padding:1.5rem;
+}
+#imp-exists-modal h3{ margin:0 0 0.5rem;font-size:15px;font-weight:600; }
+#imp-exists-modal p{ margin:0 0 1rem;font-size:13px;color:var(--text2);line-height:1.5; }
+#imp-exists-modal .imp-exists-row{ display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.5rem;cursor:pointer;transition:border-color 0.15s,background 0.15s; }
+#imp-exists-modal .imp-exists-row:hover{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
+#imp-exists-modal .imp-exists-row strong{ display:block;font-size:13px;margin-bottom:2px; }
+#imp-exists-modal .imp-exists-row span{ font-size:11.5px;color:var(--text3);line-height:1.4; }
+#imp-exists-modal .imp-exists-row.danger strong{ color:var(--red); }
+
+
 .ring-wrap{
   background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;
   padding:1.5rem 2rem;margin-bottom:1rem;
@@ -569,6 +628,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 <script src="/cygenix-integrations.js"></script>
 <script src="/cygenix-params.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 </head>
 <body>
 <div class="app">
@@ -1389,62 +1449,161 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
         <div style="display:flex;gap:0.75rem;align-items:center">
           <div id="conn-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</div>
-          <button class="btn btn-primary btn-sm" onclick="saveProjectConnections()">💾 Save connections</button>
-          <button class="btn btn-ghost btn-sm" onclick="clearProjectConnections()" style="color:var(--red)">✕ Clear all</button>
+          <button id="conn-tab-save-btn" class="btn btn-primary btn-sm" onclick="saveProjectConnections()">💾 Save connections</button>
+          <button id="conn-tab-clear-btn" class="btn btn-ghost btn-sm" onclick="clearProjectConnections()" style="color:var(--red)">✕ Clear all</button>
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
-        <!-- Source -->
-        <div class="panel">
-          <div style="font-size:13px;font-weight:600;color:var(--teal);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
-            Source Database
-            <span id="src-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
+      <!-- Tab bar -->
+      <div class="cx-tabs" style="display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border)">
+        <button class="cx-tab cx-tab-active" data-tab="databases" onclick="switchConnTab('databases')">
+          🔌 Database connections
+        </button>
+        <button class="cx-tab" data-tab="import" onclick="switchConnTab('import')">
+          ⬆ Data import
+        </button>
+      </div>
+
+      <!-- Tab: Database connections -->
+      <div id="conn-tab-databases">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
+          <!-- Source -->
+          <div class="panel">
+            <div style="font-size:13px;font-weight:600;color:var(--teal);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
+              Source Database
+              <span id="src-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
+              <button id="src-mode-direct" class="btn btn-sm" onclick="setSrcMode('direct')" style="flex:1;justify-content:center">Direct</button>
+              <button id="src-mode-azure" class="btn btn-sm" onclick="setSrcMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+            </div>
+            <div id="src-direct-wrap">
+              <label class="form-label">Connection string</label>
+              <input id="proj-src-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="Server=host;Database=db;User Id=u;Password=p;Encrypt=true;">
+            </div>
+            <div id="src-azure-wrap" style="display:none">
+              <label class="form-label">Azure Function URL</label>
+              <input id="proj-src-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
+              <label class="form-label">Function key</label>
+              <input id="proj-src-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
+            <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
           </div>
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
-            <button id="src-mode-direct" class="btn btn-sm" onclick="setSrcMode('direct')" style="flex:1;justify-content:center">Direct</button>
-            <button id="src-mode-azure" class="btn btn-sm" onclick="setSrcMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+
+          <!-- Target -->
+          <div class="panel">
+            <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
+              Target Database
+              <span id="tgt-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
+            </div>
+            <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
+              <button id="tgt-mode-direct" class="btn btn-sm" onclick="setTgtMode('direct')" style="flex:1;justify-content:center">Direct</button>
+              <button id="tgt-mode-azure" class="btn btn-sm" onclick="setTgtMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+            </div>
+            <div id="tgt-direct-wrap" style="display:none">
+              <label class="form-label">Connection string</label>
+              <input id="proj-tgt-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="Server=host;Database=db;User Id=u;Password=p;Encrypt=true;">
+            </div>
+            <div id="tgt-azure-wrap">
+              <label class="form-label">Azure Function URL</label>
+              <input id="proj-tgt-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
+              <label class="form-label">Function key</label>
+              <input id="proj-tgt-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
+            <div id="tgt-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
           </div>
-          <div id="src-direct-wrap">
-            <label class="form-label">Connection string</label>
-            <input id="proj-src-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="Server=host;Database=db;User Id=u;Password=p;Encrypt=true;">
+        </div>
+      </div>
+
+      <!-- Tab: Data import — CSV only in Session 1. Excel/JSON/type override come in Session 2. -->
+      <div id="conn-tab-import" style="display:none">
+        <!-- Step 1: file + parse -->
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+            <div style="font-size:13px;font-weight:600">1 · Choose a file</div>
+            <span style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 8px;border-radius:100px">CSV</span>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Up to ~50,000 rows per file. Excel and JSON coming in next release.</span>
           </div>
-          <div id="src-azure-wrap" style="display:none">
-            <label class="form-label">Azure Function URL</label>
-            <input id="proj-src-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
-            <label class="form-label">Function key</label>
-            <input id="proj-src-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
+
+          <div id="imp-drop" class="imp-drop" onclick="document.getElementById('imp-file').click()" ondragover="impDragOver(event)" ondragleave="impDragLeave(event)" ondrop="impDrop(event)">
+            <input type="file" id="imp-file" accept=".csv,.tsv,.txt" style="display:none" onchange="impHandleFile(this.files[0])">
+            <div style="font-size:28px;margin-bottom:0.4rem;opacity:0.5">📄</div>
+            <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop a CSV here or click to browse</div>
+            <div style="font-size:11px;color:var(--text3)">First row should contain column headers</div>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
-          <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
+
+          <div id="imp-file-meta" style="display:none;margin-top:0.75rem;padding:0.75rem 0.9rem;background:var(--bg3);border-radius:var(--r);font-family:var(--mono);font-size:11px"></div>
         </div>
 
-        <!-- Target -->
-        <div class="panel">
-          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem">
-            Target Database
-            <span id="tgt-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
+        <!-- Step 2: schema preview -->
+        <div id="imp-schema-wrap" class="panel" style="margin-bottom:1rem;display:none">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+            <div style="font-size:13px;font-weight:600">2 · Review schema</div>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Types inferred from first 500 rows. All columns will be created as NULLable. Type override coming in next release.</span>
           </div>
-          <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
-            <button id="tgt-mode-direct" class="btn btn-sm" onclick="setTgtMode('direct')" style="flex:1;justify-content:center">Direct</button>
-            <button id="tgt-mode-azure" class="btn btn-sm" onclick="setTgtMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+          <div style="overflow-x:auto">
+            <table class="imp-schema-table" id="imp-schema-table">
+              <thead><tr><th>Column</th><th>Detected type</th><th>Sample</th><th>Nulls</th></tr></thead>
+              <tbody></tbody>
+            </table>
           </div>
-          <div id="tgt-direct-wrap" style="display:none">
-            <label class="form-label">Connection string</label>
-            <input id="proj-tgt-cs" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="Server=host;Database=db;User Id=u;Password=p;Encrypt=true;">
+        </div>
+
+        <!-- Step 3: target + execute -->
+        <div id="imp-target-wrap" class="panel" style="display:none">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+            <div style="font-size:13px;font-weight:600">3 · Choose target</div>
           </div>
-          <div id="tgt-azure-wrap">
-            <label class="form-label">Azure Function URL</label>
-            <input id="proj-tgt-fn-url" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="https://fn.azurewebsites.net/api/db">
-            <label class="form-label">Function key</label>
-            <input id="proj-tgt-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:0.75rem">
+            <div>
+              <label class="form-label">Destination database</label>
+              <select id="imp-target-db" class="form-input" style="font-size:12px">
+                <option value="src">Source database</option>
+                <option value="tgt" selected>Target database</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Table name</label>
+              <input id="imp-target-table" class="form-input" style="font-family:var(--mono);font-size:12px" placeholder="dbo.ImportedTable">
+            </div>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
-          <div id="tgt-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
+          <div id="imp-run-result" style="font-size:12px;color:var(--text3);font-family:var(--mono);min-height:20px;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--bg3);border-radius:var(--r);display:none"></div>
+          <div style="display:flex;gap:0.5rem">
+            <button id="imp-run-btn" class="btn btn-primary btn-sm" onclick="impRun()">⬆ Import to database</button>
+            <button class="btn btn-ghost btn-sm" onclick="impReset()">✕ Start over</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <!-- END CONNECTIONS VIEW -->
+
+    <!-- Data import — overwrite existing table modal -->
+    <div id="imp-exists-modal" onclick="if(event.target===this) impCloseExistsModal()">
+      <div class="imp-exists-dialog">
+        <h3>Table already exists</h3>
+        <p id="imp-exists-body">The table <code id="imp-exists-tablename" style="background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:12px"></code> already exists in the destination. What would you like to do?</p>
+        <div class="imp-exists-row" onclick="impProceed('append')">
+          <div style="font-size:18px">➕</div>
+          <div>
+            <strong>Append to existing</strong>
+            <span>Insert the new rows alongside current data. Column names and order must match.</span>
+          </div>
+        </div>
+        <div class="imp-exists-row danger" onclick="impProceed('overwrite')">
+          <div style="font-size:18px">⚠️</div>
+          <div>
+            <strong>Overwrite (drop + recreate)</strong>
+            <span>DROP the existing table and recreate it from this file. All existing rows will be deleted. Cannot be undone.</span>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+          <button class="btn btn-ghost btn-sm" onclick="impCloseExistsModal()">Cancel</button>
         </div>
       </div>
     </div>
-    <!-- END CONNECTIONS VIEW -->
 
     <!-- DIAGNOSTICS -->
     <div id="view-diagnostics" class="view">
@@ -4508,6 +4667,410 @@ function clearProjectConnections() {
     .forEach(id=>{const el=document.getElementById(id);if(el) el.value='';});
   ['src-conn-result','tgt-conn-result'].forEach(id=>{const el=document.getElementById(id);if(el) el.textContent='';});
   updateConnDots();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// DATA IMPORT — Session 1: CSV → SQL Server table via existing Azure Function
+// Limits: CSV only, up to ~50k rows, all columns created as inferred type but
+// nullable (no user override yet). Excel/JSON and type customisation come in
+// Session 2.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Parsed state lives in memory until Import runs. Cleared on reset.
+let impState = {
+  fileName: null,
+  rows: null,       // array of row objects keyed by column name
+  columns: null,    // array of { name, type, nullable, samples, nullCount }
+  rowCount: 0,
+};
+
+function switchConnTab(tab){
+  document.querySelectorAll('#view-connections .cx-tab').forEach(el => {
+    el.classList.toggle('cx-tab-active', el.dataset.tab === tab);
+  });
+  const db = document.getElementById('conn-tab-databases');
+  const im = document.getElementById('conn-tab-import');
+  if (db) db.style.display = tab === 'databases' ? 'block' : 'none';
+  if (im) im.style.display = tab === 'import' ? 'block' : 'none';
+  // Hide save/clear buttons when on import tab (they only apply to db connections)
+  const s = document.getElementById('conn-tab-save-btn');
+  const c = document.getElementById('conn-tab-clear-btn');
+  if (s) s.style.display = tab === 'databases' ? '' : 'none';
+  if (c) c.style.display = tab === 'databases' ? '' : 'none';
+}
+
+function impDragOver(e){ e.preventDefault(); document.getElementById('imp-drop')?.classList.add('drag-over'); }
+function impDragLeave(e){ document.getElementById('imp-drop')?.classList.remove('drag-over'); }
+function impDrop(e){
+  e.preventDefault();
+  document.getElementById('imp-drop')?.classList.remove('drag-over');
+  const f = e.dataTransfer?.files?.[0];
+  if (f) impHandleFile(f);
+}
+
+function impHandleFile(file){
+  if (!file) return;
+  if (!/\.(csv|tsv|txt)$/i.test(file.name)){
+    impShowError('Only CSV, TSV, or TXT files are supported in this release.');
+    return;
+  }
+  if (file.size > 100 * 1024 * 1024){  // 100 MB
+    impShowError('File is over 100MB. This release supports files up to 100MB / 50,000 rows.');
+    return;
+  }
+  impState.fileName = file.name;
+
+  const meta = document.getElementById('imp-file-meta');
+  if (meta){
+    meta.style.display = 'block';
+    meta.innerHTML = `⏳ Parsing <strong>${escP(file.name)}</strong> (${(file.size/1024).toFixed(1)} KB)…`;
+  }
+
+  if (typeof Papa === 'undefined'){
+    impShowError('CSV parser failed to load. Check your internet connection and reload the page.');
+    return;
+  }
+
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    dynamicTyping: false,   // we do our own type inference below
+    transformHeader: h => String(h || '').trim(),
+    complete: (result) => {
+      if (result.errors && result.errors.length){
+        // Non-fatal parse warnings. Show count; keep going with whatever parsed.
+        console.warn('[data-import] Parse warnings:', result.errors.slice(0, 5));
+      }
+      const rows = result.data || [];
+      if (rows.length === 0){
+        impShowError('The file appears to be empty or has no data rows.');
+        return;
+      }
+      if (rows.length > 50000){
+        impShowError('File has ' + rows.length.toLocaleString() + ' rows. Maximum supported is 50,000 in this release.');
+        return;
+      }
+
+      const firstRow = rows[0];
+      const cols = Object.keys(firstRow || {}).filter(Boolean);
+      if (cols.length === 0){
+        impShowError('No column headers detected. Make sure the first row contains header names.');
+        return;
+      }
+
+      impState.rows     = rows;
+      impState.rowCount = rows.length;
+      impState.columns  = impInferSchema(cols, rows);
+
+      // Render meta + schema + target
+      if (meta){
+        meta.innerHTML = `✓ Parsed <strong>${escP(file.name)}</strong> — ${rows.length.toLocaleString()} rows, ${cols.length} columns`;
+      }
+      impRenderSchemaTable();
+      document.getElementById('imp-schema-wrap').style.display = 'block';
+      document.getElementById('imp-target-wrap').style.display = 'block';
+
+      // Default the target-table name to the filename stem, prefixed with dbo.
+      const stem = file.name.replace(/\.(csv|tsv|txt)$/i, '').replace(/[^A-Za-z0-9_]/g, '_');
+      document.getElementById('imp-target-table').value = 'dbo.' + stem;
+    },
+    error: (err) => {
+      impShowError('Parse failed: ' + (err?.message || String(err)));
+    }
+  });
+}
+
+// Type inference over a sample of rows. Returns column descriptors.
+// Priority order: all rows empty → string; all parse as int → int;
+// all parse as decimal → decimal; all parse as date → date;
+// all parse as bool → bool; fallback → string.
+function impInferSchema(cols, rows){
+  const SAMPLE = Math.min(rows.length, 500);
+  const isInt     = v => /^-?\d+$/.test(v) && Math.abs(Number(v)) < 2**53;
+  const isDecimal = v => /^-?\d+(\.\d+)?$/.test(v) || /^-?\.\d+$/.test(v);
+  const isDate    = v => {
+    if (!/^\d{4}-\d{2}-\d{2}|^\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(v)) return false;
+    const d = new Date(v); return !isNaN(d.getTime());
+  };
+  const isBool    = v => /^(true|false|yes|no|y|n|1|0)$/i.test(v);
+  const isNully   = v => v === null || v === undefined || v === '' || /^(null|n\/a|na|-|—)$/i.test(String(v));
+
+  return cols.map(name => {
+    const vals = [];
+    let nullCount = 0;
+    for (let i = 0; i < SAMPLE; i++){
+      const v = rows[i]?.[name];
+      if (isNully(v)) { nullCount++; continue; }
+      vals.push(String(v).trim());
+    }
+
+    const samples = vals.slice(0, 3);
+    if (vals.length === 0) return { name, type:'string', maxLen:0, nullCount, samples };
+
+    let type = 'string';
+    if (vals.every(isInt)) type = 'int';
+    else if (vals.every(isDecimal)) type = 'decimal';
+    else if (vals.every(isDate)) type = 'date';
+    else if (vals.every(isBool)) type = 'bool';
+
+    // For strings, track max length across ALL rows (not just sample), capped
+    let maxLen = 0;
+    if (type === 'string'){
+      for (let i = 0; i < rows.length; i++){
+        const v = rows[i]?.[name];
+        if (!isNully(v)){
+          const len = String(v).length;
+          if (len > maxLen) maxLen = len;
+          if (maxLen > 4000) break; // stop at NVARCHAR limit — upgrade to NVARCHAR(MAX)
+        }
+      }
+    }
+    return { name, type, maxLen, nullCount, samples };
+  });
+}
+
+function impRenderSchemaTable(){
+  const tbl = document.getElementById('imp-schema-table');
+  if (!tbl) return;
+  const tbody = tbl.querySelector('tbody');
+  tbody.innerHTML = impState.columns.map(c => {
+    const typeBadge = `<span class="imp-type imp-type-${c.type}">${impDisplayType(c)}</span>`;
+    const sample = c.samples.length
+      ? c.samples.map(s => escP(String(s).length > 30 ? String(s).slice(0,27)+'…' : s)).join(', ')
+      : '<span style="color:var(--text3)">—</span>';
+    return `<tr>
+      <td>${escP(c.name)}</td>
+      <td>${typeBadge}</td>
+      <td>${sample}</td>
+      <td>${c.nullCount > 0 ? c.nullCount + '/500' : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Maps inferred types to a human label (and later to SQL Server types).
+function impDisplayType(col){
+  if (col.type === 'int')     return 'INT';
+  if (col.type === 'decimal') return 'DECIMAL';
+  if (col.type === 'date')    return 'DATETIME2';
+  if (col.type === 'bool')    return 'BIT';
+  if (col.type === 'string')  return col.maxLen > 4000 ? 'NVARCHAR(MAX)' : `NVARCHAR(${Math.max(50, Math.ceil(col.maxLen/50)*50)})`;
+  return 'NVARCHAR(255)';
+}
+
+function impSqlType(col){
+  // SQL Server dialect. When we add Postgres/Oracle we'll switch on target dialect.
+  if (col.type === 'int')     return 'INT';
+  if (col.type === 'decimal') return 'DECIMAL(18,6)';
+  if (col.type === 'date')    return 'DATETIME2';
+  if (col.type === 'bool')    return 'BIT';
+  if (col.type === 'string')  return col.maxLen > 4000 ? 'NVARCHAR(MAX)' : `NVARCHAR(${Math.max(50, Math.ceil(col.maxLen/50)*50)})`;
+  return 'NVARCHAR(255)';
+}
+
+function impShowError(msg){
+  const meta = document.getElementById('imp-file-meta');
+  if (meta){
+    meta.style.display = 'block';
+    meta.style.color = 'var(--red)';
+    meta.innerHTML = '🔴 ' + escP(msg);
+  }
+  console.warn('[data-import]', msg);
+}
+
+function impReset(){
+  impState = { fileName:null, rows:null, columns:null, rowCount:0 };
+  const fileInput = document.getElementById('imp-file');
+  if (fileInput) fileInput.value = '';
+  const meta = document.getElementById('imp-file-meta');
+  if (meta){ meta.style.display = 'none'; meta.style.color = ''; meta.innerHTML = ''; }
+  document.getElementById('imp-schema-wrap').style.display = 'none';
+  document.getElementById('imp-target-wrap').style.display = 'none';
+  const result = document.getElementById('imp-run-result');
+  if (result){ result.style.display = 'none'; result.textContent = ''; }
+  document.getElementById('imp-target-table').value = '';
+}
+
+// ── Execution flow ────────────────────────────────────────────────────────
+
+function impRun(){
+  if (!impState.rows || !impState.columns){
+    impShowError('Parse a file first.');
+    return;
+  }
+  const tableName = (document.getElementById('imp-target-table').value || '').trim();
+  if (!tableName){
+    impRunResult('Enter a table name.', 'err');
+    return;
+  }
+  if (!/^[A-Za-z0-9_\.\[\]]+$/.test(tableName)){
+    impRunResult('Table name can only contain letters, numbers, underscore, dot, and square brackets.', 'err');
+    return;
+  }
+  // Check table existence first, then route to append / overwrite / fresh-create
+  impCheckTableExists(tableName);
+}
+
+async function impCheckTableExists(tableName){
+  impRunResult('Checking if table exists…', 'info');
+  const dbChoice = document.getElementById('imp-target-db').value;
+  const conn = impGetConn(dbChoice);
+  if (!conn){
+    impRunResult('Destination database is not configured. Set up the connection in the Database connections tab first.', 'err');
+    return;
+  }
+
+  // Probe with a harmless SELECT. If it returns, the table exists.
+  // Using OBJECT_ID keeps the permission surface small.
+  const probeSQL = `SELECT CASE WHEN OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NULL THEN 0 ELSE 1 END AS [exists];`;
+  try {
+    const res = await impDbCall(conn, { action:'execute', sql: probeSQL });
+    const exists = (res?.rows?.[0]?.exists === 1) || (res?.rows?.[0]?.['(No column name)'] === 1);
+    if (exists){
+      impOpenExistsModal(tableName);
+    } else {
+      // No existing table → just create fresh
+      impExecute(tableName, 'create');
+    }
+  } catch (e) {
+    // If probe fails (permissions, syntax, driver) — surface the error and stop.
+    // We do NOT silently proceed; accidentally dropping a table we can't see
+    // would be catastrophic.
+    impRunResult('Could not verify target table: ' + (e.message || e) + '. Fix the connection or permissions and try again.', 'err');
+  }
+}
+
+let _impPendingTable = null;
+function impOpenExistsModal(tableName){
+  _impPendingTable = tableName;
+  document.getElementById('imp-exists-tablename').textContent = tableName;
+  document.getElementById('imp-exists-modal').classList.add('open');
+  impRunResult('Table exists. Choose how to proceed in the dialog.', 'info');
+}
+function impCloseExistsModal(){
+  _impPendingTable = null;
+  document.getElementById('imp-exists-modal').classList.remove('open');
+  impRunResult('Cancelled.', 'info');
+}
+function impProceed(mode){
+  const tableName = _impPendingTable;
+  document.getElementById('imp-exists-modal').classList.remove('open');
+  _impPendingTable = null;
+  if (!tableName) return;
+  impExecute(tableName, mode);   // 'append' or 'overwrite'
+}
+
+async function impExecute(tableName, mode){
+  const btn = document.getElementById('imp-run-btn');
+  if (btn){ btn.disabled = true; btn.textContent = 'Importing…'; }
+
+  const dbChoice = document.getElementById('imp-target-db').value;
+  const conn = impGetConn(dbChoice);
+
+  const cols = impState.columns;
+  const rows = impState.rows;
+  const totalRows = rows.length;
+
+  try {
+    // Build CREATE TABLE (or DROP+CREATE for overwrite). For 'append' we skip creation.
+    const createSQL = cols.map(c => `[${c.name.replace(/]/g, ']]')}] ${impSqlType(c)} NULL`).join(',\n  ');
+    if (mode === 'create' || mode === 'overwrite'){
+      const dropFirst = (mode === 'overwrite')
+        ? `IF OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NOT NULL DROP TABLE ${tableName};\n`
+        : '';
+      const ddl = `${dropFirst}CREATE TABLE ${tableName} (\n  ${createSQL}\n);`;
+      impRunResult(mode === 'overwrite' ? 'Dropping and recreating table…' : 'Creating table…', 'info');
+      await impDbCall(conn, { action:'execute', sql: ddl });
+    }
+
+    // Insert in batches of 500 rows (stays well under SQL Server's 1000-row
+    // INSERT VALUES limit and keeps request bodies manageable).
+    const BATCH = 500;
+    const colNames = cols.map(c => `[${c.name.replace(/]/g, ']]')}]`).join(',');
+    const insertedSoFar = { n: 0 };
+
+    for (let i = 0; i < totalRows; i += BATCH){
+      const slice = rows.slice(i, i + BATCH);
+      const valuesSql = slice.map(r => {
+        const tuple = cols.map(c => impLiteral(r[c.name], c.type));
+        return '(' + tuple.join(',') + ')';
+      }).join(',\n');
+      const batchSql = `INSERT INTO ${tableName} (${colNames}) VALUES\n${valuesSql};`;
+      await impDbCall(conn, { action:'execute', sql: batchSql });
+      insertedSoFar.n += slice.length;
+      impRunResult(`Imported ${insertedSoFar.n.toLocaleString()} / ${totalRows.toLocaleString()} rows…`, 'info');
+    }
+
+    impRunResult(`✓ Imported ${totalRows.toLocaleString()} rows into ${tableName}.`, 'ok');
+  } catch (e) {
+    impRunResult('🔴 Import failed: ' + (e.message || e), 'err');
+  } finally {
+    if (btn){ btn.disabled = false; btn.textContent = '⬆ Import to database'; }
+  }
+}
+
+// Convert a raw value to a SQL Server literal, typed correctly.
+function impLiteral(v, type){
+  if (v === null || v === undefined || v === '') return 'NULL';
+  const s = String(v).trim();
+  if (/^(null|n\/a|na|-|—)$/i.test(s)) return 'NULL';
+  if (type === 'int'){
+    return /^-?\d+$/.test(s) ? s : 'NULL';
+  }
+  if (type === 'decimal'){
+    return /^-?\d+(\.\d+)?$/.test(s) || /^-?\.\d+$/.test(s) ? s : 'NULL';
+  }
+  if (type === 'bool'){
+    if (/^(true|yes|y|1)$/i.test(s)) return '1';
+    if (/^(false|no|n|0)$/i.test(s)) return '0';
+    return 'NULL';
+  }
+  if (type === 'date'){
+    // ISO or parseable — emit as N'yyyy-mm-dd[ hh:mm:ss]'
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return 'NULL';
+    const iso = d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
+    return `N'${iso}'`;
+  }
+  // string — escape single quotes, wrap in N''
+  return `N'${s.replace(/'/g, "''")}'`;
+}
+
+function impRunResult(msg, kind){
+  const el = document.getElementById('imp-run-result');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg;
+  el.style.color = kind === 'err' ? 'var(--red)'
+                 : kind === 'ok'  ? 'var(--green)'
+                 : 'var(--text2)';
+}
+
+// Resolve the active connection for 'src' or 'tgt' into a URL or connection
+// string we can hand to the Azure Function.
+function impGetConn(which){
+  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  if (which === 'src'){
+    // Source uses srcConnString (which is either a connection string or a Function URL, depending on mode)
+    return c.srcConnString || '';
+  }
+  // Target — prefer explicit Function URL+key, fall back to connection string
+  if (c.tgtFnUrl){
+    return c.tgtFnKey
+      ? c.tgtFnUrl + (c.tgtFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(c.tgtFnKey)
+      : c.tgtFnUrl;
+  }
+  return c.tgtConnString || '';
+}
+
+// Dispatch a DB call — direct URL (Azure Function) or connection-string via netlify proxy.
+async function impDbCall(conn, body){
+  const isFn = conn.startsWith('https://') || conn.startsWith('http://');
+  const res = isFn
+    ? await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(60000) })
+    : await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body, connectionString: conn}), signal:AbortSignal.timeout(60000) });
+  const data = await res.json().catch(() => ({ error:'Non-JSON response' }));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
 }
 
 // Update nav dot on load
