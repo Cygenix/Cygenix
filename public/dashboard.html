@@ -410,20 +410,40 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-connections .imp-type-bool{ background:rgba(245,158,11,0.12);color:#f59e0b; }
 #view-connections .imp-type-string{ background:rgba(255,255,255,0.06);color:var(--text2); }
 
-/* Overwrite-exists modal (and sheet picker) — reuses the preview-modal-overlay pattern */
-#imp-exists-modal, #imp-sheet-modal{ display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:400;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(2px); }
-#imp-exists-modal.open, #imp-sheet-modal.open{ display:flex; }
-#imp-exists-modal .imp-exists-dialog, #imp-sheet-modal .imp-exists-dialog{
+/* Overwrite-exists modal (and sheet picker, and validation failure) — reuses the preview-modal-overlay pattern */
+#imp-exists-modal, #imp-sheet-modal, #imp-validate-modal{ display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:400;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(2px); }
+#imp-exists-modal.open, #imp-sheet-modal.open, #imp-validate-modal.open{ display:flex; }
+#imp-exists-modal .imp-exists-dialog, #imp-sheet-modal .imp-exists-dialog, #imp-validate-modal .imp-exists-dialog{
   background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);
-  max-width:540px;width:100%;padding:1.5rem;
+  max-width:640px;width:100%;padding:1.5rem;max-height:90vh;overflow-y:auto;
 }
-#imp-exists-modal h3, #imp-sheet-modal h3{ margin:0 0 0.5rem;font-size:15px;font-weight:600; }
-#imp-exists-modal p, #imp-sheet-modal p{ margin:0 0 1rem;font-size:13px;color:var(--text2);line-height:1.5; }
-#imp-exists-modal .imp-exists-row, #imp-sheet-modal .imp-exists-row{ display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.5rem;cursor:pointer;transition:border-color 0.15s,background 0.15s; }
-#imp-exists-modal .imp-exists-row:hover, #imp-sheet-modal .imp-exists-row:hover{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
-#imp-exists-modal .imp-exists-row strong, #imp-sheet-modal .imp-exists-row strong{ display:block;font-size:13px;margin-bottom:2px; }
-#imp-exists-modal .imp-exists-row span, #imp-sheet-modal .imp-exists-row span{ font-size:11.5px;color:var(--text3);line-height:1.4; }
+#imp-exists-modal h3, #imp-sheet-modal h3, #imp-validate-modal h3{ margin:0 0 0.5rem;font-size:15px;font-weight:600; }
+#imp-exists-modal p, #imp-sheet-modal p, #imp-validate-modal p{ margin:0 0 1rem;font-size:13px;color:var(--text2);line-height:1.5; }
+#imp-exists-modal .imp-exists-row, #imp-sheet-modal .imp-exists-row, #imp-validate-modal .imp-exists-row{ display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.5rem;cursor:pointer;transition:border-color 0.15s,background 0.15s; }
+#imp-exists-modal .imp-exists-row:hover, #imp-sheet-modal .imp-exists-row:hover, #imp-validate-modal .imp-exists-row:hover{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
+#imp-exists-modal .imp-exists-row strong, #imp-sheet-modal .imp-exists-row strong, #imp-validate-modal .imp-exists-row strong{ display:block;font-size:13px;margin-bottom:2px; }
+#imp-exists-modal .imp-exists-row span, #imp-sheet-modal .imp-exists-row span, #imp-validate-modal .imp-exists-row span{ font-size:11.5px;color:var(--text3);line-height:1.4; }
 #imp-exists-modal .imp-exists-row.danger strong{ color:var(--red); }
+
+#imp-validate-modal .imp-issue-list{
+  max-height:240px;overflow-y:auto;background:var(--bg3);border-radius:var(--r);
+  padding:0.6rem 0.8rem;margin-bottom:1rem;
+  font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.6;
+}
+#imp-validate-modal .imp-issue-list .imp-issue-col{ color:var(--amber);font-weight:500; }
+#imp-validate-modal .imp-issue-list .imp-issue-val{ color:var(--text3); }
+
+/* Type dropdown + nullable checkbox inline in the schema table */
+#view-connections .imp-type-select{
+  background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);
+  font-family:var(--mono);font-size:11px;padding:3px 6px;border-radius:4px;
+  cursor:pointer;min-width:140px;
+}
+#view-connections .imp-type-select:hover{ border-color:var(--accent); }
+#view-connections .imp-type-select.overridden{ border-color:var(--accent);color:var(--accent); }
+#view-connections .imp-null-check{
+  accent-color:var(--accent);cursor:pointer;transform:scale(0.95);
+}
 
 
 .ring-wrap{
@@ -1540,13 +1560,16 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
         <!-- Step 2: schema preview -->
         <div id="imp-schema-wrap" class="panel" style="margin-bottom:1rem;display:none">
-          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
             <div style="font-size:13px;font-weight:600">2 · Review schema</div>
-            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Types inferred from first 500 rows. All columns will be created as NULLable. Type override coming in next release.</span>
+            <span style="font-size:10.5px;color:var(--text3)">Types inferred from first 500 rows. Override any column using the dropdown.</span>
+            <button class="btn btn-ghost btn-sm" onclick="impAllToMax()" style="margin-left:auto;font-size:11px" title="Set every column to TEXT (MAX). Good for problem files — imports always succeed, clean up in SQL after.">
+              🛟 All to TEXT (MAX)
+            </button>
           </div>
           <div style="overflow-x:auto">
             <table class="imp-schema-table" id="imp-schema-table">
-              <thead><tr><th>Column</th><th>Detected type</th><th>Sample</th><th>Nulls</th></tr></thead>
+              <thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Sample</th><th>Nulls in data</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -1614,6 +1637,39 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
         <div style="display:flex;justify-content:flex-end;margin-top:1rem">
           <button class="btn btn-ghost btn-sm" onclick="impCloseExistsModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data import — validation failure modal. Shown when rows won't fit chosen types. -->
+    <div id="imp-validate-modal" onclick="if(event.target===this) impCloseValidateModal()">
+      <div class="imp-exists-dialog">
+        <h3>Some rows don't fit the chosen types</h3>
+        <p id="imp-validate-summary">Review the issues below and decide how to handle them.</p>
+        <div class="imp-issue-list" id="imp-validate-issues"></div>
+        <div class="imp-exists-row" onclick="impValidateProceed('null')">
+          <div style="font-size:18px">🔄</div>
+          <div>
+            <strong>Convert bad values to NULL</strong>
+            <span>Keep every row. Values that don't fit the chosen type are stored as NULL. Recommended when a small number of values are dirty.</span>
+          </div>
+        </div>
+        <div class="imp-exists-row" onclick="impValidateProceed('skip')">
+          <div style="font-size:18px">⏭️</div>
+          <div>
+            <strong>Skip affected rows</strong>
+            <span>Drop any row that has at least one bad value. Only clean rows get imported.</span>
+          </div>
+        </div>
+        <div class="imp-exists-row" onclick="impValidateProceed('max')">
+          <div style="font-size:18px">🛟</div>
+          <div>
+            <strong>Switch affected columns to TEXT (MAX)</strong>
+            <span>Change just the problem columns to NVARCHAR(MAX) and import everything as-is. Escape hatch — fix it up in SQL after.</span>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+          <button class="btn btn-ghost btn-sm" onclick="impCloseValidateModal()">Cancel</button>
         </div>
       </div>
     </div>
@@ -4896,9 +4952,24 @@ function impFinalizeRows(fileName, rows, opts){
 // Priority order: all rows empty → string; all parse as int → int;
 // all parse as decimal → decimal; all parse as date → date;
 // all parse as bool → bool; fallback → string.
+// Type catalog — 9 entries, exposed via a dropdown in the schema preview.
+// Order matters: this is how they'll appear in the menu.
+const IMP_TYPE_CATALOG = [
+  { key:'int',        label:'INT',              sql:'INT' },
+  { key:'bigint',     label:'BIGINT',           sql:'BIGINT' },
+  { key:'decimal',    label:'DECIMAL',          sql:'DECIMAL(18,6)' },
+  { key:'money',      label:'MONEY',            sql:'MONEY' },
+  { key:'datetime',   label:'DATETIME',         sql:'DATETIME2' },
+  { key:'date',       label:'DATE',             sql:'DATE' },
+  { key:'bool',       label:'BIT (Yes/No)',     sql:'BIT' },
+  { key:'string',     label:'TEXT (auto-sized)',sql:null },  // computed per-column from maxLen
+  { key:'max',        label:'TEXT (MAX)',       sql:'NVARCHAR(MAX)' },
+];
+
 function impInferSchema(cols, rows){
   const SAMPLE = Math.min(rows.length, 500);
-  const isInt     = v => /^-?\d+$/.test(v) && Math.abs(Number(v)) < 2**53;
+  const isInt     = v => /^-?\d+$/.test(v) && Math.abs(Number(v)) < 2**31;       // INT fits
+  const isBigint  = v => /^-?\d+$/.test(v) && Math.abs(Number(v)) < 2**53;       // BIGINT-ish; >INT range
   const isDecimal = v => /^-?\d+(\.\d+)?$/.test(v) || /^-?\.\d+$/.test(v);
   const isDate    = v => {
     if (!/^\d{4}-\d{2}-\d{2}|^\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(v)) return false;
@@ -4917,27 +4988,26 @@ function impInferSchema(cols, rows){
     }
 
     const samples = vals.slice(0, 3);
-    if (vals.length === 0) return { name, type:'string', maxLen:0, nullCount, samples };
+    if (vals.length === 0) return { name, inferredType:'string', chosenType:'string', maxLen:0, nullCount, samples, nullable:true };
 
-    let type = 'string';
-    if (vals.every(isInt)) type = 'int';
-    else if (vals.every(isDecimal)) type = 'decimal';
-    else if (vals.every(isDate)) type = 'date';
-    else if (vals.every(isBool)) type = 'bool';
+    let inferred = 'string';
+    if (vals.every(isInt))           inferred = 'int';
+    else if (vals.every(isBigint))   inferred = 'bigint';
+    else if (vals.every(isDecimal))  inferred = 'decimal';
+    else if (vals.every(isDate))     inferred = 'date';    // date-only by default; user can flip to DATETIME
+    else if (vals.every(isBool))     inferred = 'bool';
 
-    // For strings, track max length across ALL rows (not just sample), capped
+    // Track max length across ALL rows (not just sample) so TEXT auto-sizing is right
     let maxLen = 0;
-    if (type === 'string'){
-      for (let i = 0; i < rows.length; i++){
-        const v = rows[i]?.[name];
-        if (!isNully(v)){
-          const len = String(v).length;
-          if (len > maxLen) maxLen = len;
-          if (maxLen > 4000) break; // stop at NVARCHAR limit — upgrade to NVARCHAR(MAX)
-        }
+    for (let i = 0; i < rows.length; i++){
+      const v = rows[i]?.[name];
+      if (!isNully(v)){
+        const len = String(v).length;
+        if (len > maxLen) maxLen = len;
+        if (maxLen > 4000) break;
       }
     }
-    return { name, type, maxLen, nullCount, samples };
+    return { name, inferredType:inferred, chosenType:inferred, maxLen, nullCount, samples, nullable:true };
   });
 }
 
@@ -4945,38 +5015,72 @@ function impRenderSchemaTable(){
   const tbl = document.getElementById('imp-schema-table');
   if (!tbl) return;
   const tbody = tbl.querySelector('tbody');
-  tbody.innerHTML = impState.columns.map(c => {
-    const typeBadge = `<span class="imp-type imp-type-${c.type}">${impDisplayType(c)}</span>`;
+  tbody.innerHTML = impState.columns.map((c, idx) => {
+    const dropdown = IMP_TYPE_CATALOG.map(t => {
+      const sel = t.key === c.chosenType ? 'selected' : '';
+      // For the 'string' option, suffix the auto length so the user sees what they're getting
+      const label = t.key === 'string'
+        ? `TEXT (${impAutoNvarcharSize(c)})`
+        : t.label;
+      return `<option value="${t.key}" ${sel}>${label}</option>`;
+    }).join('');
+    const overridden = c.chosenType !== c.inferredType;
+    const cls = 'imp-type-select' + (overridden ? ' overridden' : '');
     const sample = c.samples.length
       ? c.samples.map(s => escP(String(s).length > 30 ? String(s).slice(0,27)+'…' : s)).join(', ')
       : '<span style="color:var(--text3)">—</span>';
+    const nullChecked = c.nullable ? 'checked' : '';
     return `<tr>
       <td>${escP(c.name)}</td>
-      <td>${typeBadge}</td>
+      <td><select class="${cls}" onchange="impSetColType(${idx}, this.value)">${dropdown}</select></td>
+      <td style="text-align:center"><input type="checkbox" class="imp-null-check" ${nullChecked} onchange="impSetColNullable(${idx}, this.checked)"></td>
       <td>${sample}</td>
       <td>${c.nullCount > 0 ? c.nullCount + '/500' : '—'}</td>
     </tr>`;
   }).join('');
 }
 
-// Maps inferred types to a human label (and later to SQL Server types).
-function impDisplayType(col){
-  if (col.type === 'int')     return 'INT';
-  if (col.type === 'decimal') return 'DECIMAL';
-  if (col.type === 'date')    return 'DATETIME2';
-  if (col.type === 'bool')    return 'BIT';
-  if (col.type === 'string')  return col.maxLen > 4000 ? 'NVARCHAR(MAX)' : `NVARCHAR(${Math.max(50, Math.ceil(col.maxLen/50)*50)})`;
-  return 'NVARCHAR(255)';
+// Per-column auto-size rule for NVARCHAR(n). Rounds up to the next 50 chars,
+// with a floor of 50 and a cap of 4000 (beyond that we'd need NVARCHAR(MAX)).
+function impAutoNvarcharSize(col){
+  if (col.maxLen > 4000) return 'MAX';
+  return Math.max(50, Math.ceil(col.maxLen/50)*50);
 }
 
+function impSetColType(idx, newType){
+  if (!impState.columns || !impState.columns[idx]) return;
+  impState.columns[idx].chosenType = newType;
+  impRenderSchemaTable();
+}
+
+function impSetColNullable(idx, isNullable){
+  if (!impState.columns || !impState.columns[idx]) return;
+  impState.columns[idx].nullable = isNullable;
+}
+
+// "All to TEXT (MAX)" — the nuclear option. Flips every column to NVARCHAR(MAX)
+// and re-renders. Good for pathological files where you just want the data IN.
+function impAllToMax(){
+  if (!impState.columns) return;
+  impState.columns.forEach(c => { c.chosenType = 'max'; });
+  impRenderSchemaTable();
+  impRunResult('All columns set to TEXT (MAX). Type validation will be skipped — values go in as-is.', 'info');
+}
+
+// Return the SQL Server type string for a column, honouring the user's override.
 function impSqlType(col){
-  // SQL Server dialect. When we add Postgres/Oracle we'll switch on target dialect.
-  if (col.type === 'int')     return 'INT';
-  if (col.type === 'decimal') return 'DECIMAL(18,6)';
-  if (col.type === 'date')    return 'DATETIME2';
-  if (col.type === 'bool')    return 'BIT';
-  if (col.type === 'string')  return col.maxLen > 4000 ? 'NVARCHAR(MAX)' : `NVARCHAR(${Math.max(50, Math.ceil(col.maxLen/50)*50)})`;
-  return 'NVARCHAR(255)';
+  const t = col.chosenType || col.inferredType;
+  if (t === 'string'){
+    const size = impAutoNvarcharSize(col);
+    return size === 'MAX' ? 'NVARCHAR(MAX)' : `NVARCHAR(${size})`;
+  }
+  const entry = IMP_TYPE_CATALOG.find(x => x.key === t);
+  return entry?.sql || 'NVARCHAR(255)';
+}
+
+// Display label for the SQL type (used in a few places that still surface type badges).
+function impDisplayType(col){
+  return impSqlType(col);
 }
 
 function impShowError(msg){
@@ -5018,8 +5122,178 @@ function impRun(){
     impRunResult('Table name can only contain letters, numbers, underscore, dot, and square brackets.', 'err');
     return;
   }
-  // Check table existence first, then route to append / overwrite / fresh-create
+
+  // Pre-flight: validate rows against chosen column types. String/max columns
+  // are skipped (they accept anything).
+  const issues = impValidateRows();
+  if (issues.bad.length > 0){
+    impOpenValidateModal(issues, tableName);
+    return;
+  }
+
+  // No issues → proceed to existence check, then create/overwrite/append flow
   impCheckTableExists(tableName);
+}
+
+// Scan every row against every column's chosenType. For each value that
+// doesn't fit, record the issue. Returns { bad, byColumn, skipRowSet }.
+//  - bad       : array of { rowIdx, col, val, expected } — capped at 100 for UI
+//  - byColumn  : { colName: count } summary
+//  - skipRowSet: Set<number> of row indices that have at least one bad value
+// NVARCHAR(string)/NVARCHAR(MAX) columns are never flagged.
+function impValidateRows(){
+  const cols = impState.columns;
+  const rows = impState.rows;
+  const bad = [];
+  const byColumn = {};
+  const skipRowSet = new Set();
+  const MAX_REPORT = 100;
+
+  const fitsType = (v, type) => {
+    if (v === null || v === undefined || v === '') return true;  // null is fine
+    const s = String(v).trim();
+    if (/^(null|n\/a|na|-|—)$/i.test(s)) return true;
+    if (type === 'string' || type === 'max') return true;
+    if (type === 'int'){
+      if (!/^-?\d+$/.test(s)) return false;
+      const n = Number(s);
+      return Math.abs(n) < 2**31;  // INT range
+    }
+    if (type === 'bigint'){
+      if (!/^-?\d+$/.test(s)) return false;
+      return Math.abs(Number(s)) < 2**53;
+    }
+    if (type === 'decimal'){
+      return /^-?\d+(\.\d+)?$/.test(s) || /^-?\.\d+$/.test(s);
+    }
+    if (type === 'money'){
+      const cleaned = s.replace(/[£$€,\s]/g, '');
+      return /^-?\d+(\.\d+)?$/.test(cleaned) || /^-?\.\d+$/.test(cleaned);
+    }
+    if (type === 'bool'){
+      return /^(true|false|yes|no|y|n|1|0)$/i.test(s);
+    }
+    if (type === 'date' || type === 'datetime'){
+      const d = new Date(s);
+      return !isNaN(d.getTime());
+    }
+    return true;
+  };
+
+  for (let i = 0; i < rows.length; i++){
+    const r = rows[i];
+    for (const c of cols){
+      const v = r[c.name];
+      const type = c.chosenType || c.inferredType;
+      if (!fitsType(v, type)){
+        byColumn[c.name] = (byColumn[c.name] || 0) + 1;
+        skipRowSet.add(i);
+        if (bad.length < MAX_REPORT){
+          bad.push({ rowIdx:i, col:c.name, val:String(v ?? ''), expected:impSqlType(c) });
+        }
+      }
+    }
+  }
+  return { bad, byColumn, skipRowSet };
+}
+
+let _impPendingValidate = null;  // holds { issues, tableName } while modal is open
+
+function impOpenValidateModal(issues, tableName){
+  _impPendingValidate = { issues, tableName };
+  const byCol = issues.byColumn;
+  const summaryParts = Object.keys(byCol).map(name => `<span class="imp-issue-col">${escP(name)}</span>: ${byCol[name].toLocaleString()}`).join(' · ');
+  document.getElementById('imp-validate-summary').innerHTML =
+    `<strong>${issues.skipRowSet.size.toLocaleString()} rows</strong> have values that don't fit the chosen types. ` +
+    `Affected columns: ${summaryParts}.`;
+
+  // Show up to 20 example bad values
+  const sample = issues.bad.slice(0, 20).map(b =>
+    `row ${b.rowIdx+1} · <span class="imp-issue-col">${escP(b.col)}</span> = <span class="imp-issue-val">${escP(b.val.length > 60 ? b.val.slice(0,57)+'…' : b.val)}</span> (expected ${escP(b.expected)})`
+  ).join('<br>');
+  document.getElementById('imp-validate-issues').innerHTML = sample +
+    (issues.bad.length > 20 ? `<br><span style="color:var(--text3)">…and ${(issues.bad.length - 20).toLocaleString()} more (showing first 20).</span>` : '');
+
+  document.getElementById('imp-validate-modal').classList.add('open');
+  impRunResult('Validation found issues. Choose how to proceed.', 'info');
+}
+
+function impCloseValidateModal(){
+  _impPendingValidate = null;
+  document.getElementById('imp-validate-modal').classList.remove('open');
+  impRunResult('Cancelled.', 'info');
+}
+
+// User clicked one of the three options. Apply the fix, then resume the flow.
+function impValidateProceed(mode){
+  const pending = _impPendingValidate;
+  document.getElementById('imp-validate-modal').classList.remove('open');
+  _impPendingValidate = null;
+  if (!pending) return;
+
+  const { issues, tableName } = pending;
+
+  if (mode === 'max'){
+    // Switch affected columns to NVARCHAR(MAX) and re-validate (which should pass).
+    Object.keys(issues.byColumn).forEach(colName => {
+      const col = impState.columns.find(c => c.name === colName);
+      if (col) col.chosenType = 'max';
+    });
+    impRenderSchemaTable();
+    impRunResult(`Converted ${Object.keys(issues.byColumn).length} column(s) to TEXT (MAX). Retrying import…`, 'info');
+    impCheckTableExists(tableName);
+    return;
+  }
+
+  if (mode === 'skip'){
+    // Remove affected rows from impState.rows — this permanently discards them
+    // for this import run (user can Start Over to get them back).
+    const keep = [];
+    for (let i = 0; i < impState.rows.length; i++){
+      if (!issues.skipRowSet.has(i)) keep.push(impState.rows[i]);
+    }
+    const dropped = impState.rows.length - keep.length;
+    impState.rows = keep;
+    impState.rowCount = keep.length;
+    impRunResult(`Skipped ${dropped.toLocaleString()} row(s) with bad values. Proceeding with ${keep.length.toLocaleString()} rows.`, 'info');
+    impCheckTableExists(tableName);
+    return;
+  }
+
+  if (mode === 'null'){
+    // Coerce bad values to null in-place by replacing them with empty string,
+    // which impLiteral treats as NULL. We don't mutate values that were already fine.
+    const badSet = new Map();
+    issues.bad.forEach(b => {  // Note: bad is capped at 100; use full scan instead
+      badSet.set(b.rowIdx + '/' + b.col, true);
+    });
+    // Full scan to catch the ones beyond MAX_REPORT
+    const cols = impState.columns;
+    let patched = 0;
+    for (let i = 0; i < impState.rows.length; i++){
+      const r = impState.rows[i];
+      for (const c of cols){
+        const type = c.chosenType || c.inferredType;
+        if (type === 'string' || type === 'max') continue;
+        const v = r[c.name];
+        if (v === null || v === undefined || v === '') continue;
+        const s = String(v).trim();
+        if (/^(null|n\/a|na|-|—)$/i.test(s)) continue;
+        // Re-check fitness inline (small duplication vs impValidateRows)
+        let fits = true;
+        if (type === 'int') fits = /^-?\d+$/.test(s) && Math.abs(Number(s)) < 2**31;
+        else if (type === 'bigint') fits = /^-?\d+$/.test(s) && Math.abs(Number(s)) < 2**53;
+        else if (type === 'decimal') fits = /^-?\d+(\.\d+)?$/.test(s) || /^-?\.\d+$/.test(s);
+        else if (type === 'money'){ const cl = s.replace(/[£$€,\s]/g,''); fits = /^-?\d+(\.\d+)?$/.test(cl) || /^-?\.\d+$/.test(cl); }
+        else if (type === 'bool') fits = /^(true|false|yes|no|y|n|1|0)$/i.test(s);
+        else if (type === 'date' || type === 'datetime'){ fits = !isNaN(new Date(s).getTime()); }
+        if (!fits){ r[c.name] = ''; patched++; }
+      }
+    }
+    impRunResult(`Converted ${patched.toLocaleString()} bad value(s) to NULL. Proceeding with full row set.`, 'info');
+    impCheckTableExists(tableName);
+    return;
+  }
 }
 
 async function impCheckTableExists(tableName){
@@ -5088,7 +5362,10 @@ async function impExecute(tableName, mode){
 
   try {
     // Build CREATE TABLE (or DROP+CREATE for overwrite). For 'append' we skip creation.
-    const createSQL = cols.map(c => `[${c.name.replace(/]/g, ']]')}] ${impSqlType(c)} NULL`).join(',\n  ');
+    const createSQL = cols.map(c => {
+      const nullness = c.nullable === false ? 'NOT NULL' : 'NULL';
+      return `[${c.name.replace(/]/g, ']]')}] ${impSqlType(c)} ${nullness}`;
+    }).join(',\n  ');
     if (mode === 'create' || mode === 'overwrite'){
       const dropFirst = (mode === 'overwrite')
         ? `IF OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NOT NULL DROP TABLE ${tableName};\n`
@@ -5107,7 +5384,7 @@ async function impExecute(tableName, mode){
     for (let i = 0; i < totalRows; i += BATCH){
       const slice = rows.slice(i, i + BATCH);
       const valuesSql = slice.map(r => {
-        const tuple = cols.map(c => impLiteral(r[c.name], c.type));
+        const tuple = cols.map(c => impLiteral(r[c.name], c.chosenType || c.inferredType));
         return '(' + tuple.join(',') + ')';
       }).join(',\n');
       const batchSql = `INSERT INTO ${tableName} (${colNames}) VALUES\n${valuesSql};`;
@@ -5125,15 +5402,19 @@ async function impExecute(tableName, mode){
 }
 
 // Convert a raw value to a SQL Server literal, typed correctly.
+// `type` is the column's chosenType key from IMP_TYPE_CATALOG.
 function impLiteral(v, type){
   if (v === null || v === undefined || v === '') return 'NULL';
   const s = String(v).trim();
   if (/^(null|n\/a|na|-|—)$/i.test(s)) return 'NULL';
-  if (type === 'int'){
+
+  if (type === 'int' || type === 'bigint'){
     return /^-?\d+$/.test(s) ? s : 'NULL';
   }
-  if (type === 'decimal'){
-    return /^-?\d+(\.\d+)?$/.test(s) || /^-?\.\d+$/.test(s) ? s : 'NULL';
+  if (type === 'decimal' || type === 'money'){
+    // Strip common currency symbols and thousands separators for money
+    const cleaned = type === 'money' ? s.replace(/[£$€,\s]/g, '') : s;
+    return /^-?\d+(\.\d+)?$/.test(cleaned) || /^-?\.\d+$/.test(cleaned) ? cleaned : 'NULL';
   }
   if (type === 'bool'){
     if (/^(true|yes|y|1)$/i.test(s)) return '1';
@@ -5141,13 +5422,18 @@ function impLiteral(v, type){
     return 'NULL';
   }
   if (type === 'date'){
-    // ISO or parseable — emit as N'yyyy-mm-dd[ hh:mm:ss]'
+    // DATE — emit as N'yyyy-mm-dd' (no time component)
     const d = new Date(s);
     if (isNaN(d.getTime())) return 'NULL';
-    const iso = d.toISOString().replace('T', ' ').replace(/\.\d+Z$/, '');
-    return `N'${iso}'`;
+    return `N'${d.toISOString().slice(0,10)}'`;
   }
-  // string — escape single quotes, wrap in N''
+  if (type === 'datetime'){
+    // DATETIME — emit as N'yyyy-mm-dd hh:mm:ss'
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return 'NULL';
+    return `N'${d.toISOString().replace('T',' ').replace(/\.\d+Z$/,'')}'`;
+  }
+  // string or max — escape single quotes, wrap in N''
   return `N'${s.replace(/'/g, "''")}'`;
 }
 
