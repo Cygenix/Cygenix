@@ -366,6 +366,28 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-integrations .in-enable-row{display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border);margin-top:0.5rem}
 #view-integrations .in-enable-row label{font-size:12px;color:var(--text2);cursor:pointer;display:flex;align-items:center;gap:0.5rem;font-family:var(--serif);text-transform:none;letter-spacing:0}
 
+/* ─── Saved connections (page-contained, per-user localStorage) ──────── */
+#view-connections .sconn-chip{
+  display:inline-flex;align-items:center;gap:0.4rem;
+  background:var(--bg3);border:0.5px solid var(--border2);
+  border-radius:100px;padding:3px 4px 3px 10px;
+  font-family:var(--serif);font-size:11px;color:var(--text2);
+  cursor:pointer;transition:border-color 0.15s,background 0.15s,color 0.15s;
+}
+#view-connections .sconn-chip:hover{ border-color:var(--accent);color:var(--text);background:rgba(79,142,255,0.06); }
+#view-connections .sconn-chip .sconn-dialect{ font-family:var(--mono);font-size:9px;opacity:0.6; }
+#view-connections .sconn-chip .sconn-actions{
+  display:flex;gap:2px;margin-left:0.25rem;opacity:0.5;transition:opacity 0.15s;
+}
+#view-connections .sconn-chip:hover .sconn-actions{ opacity:1; }
+#view-connections .sconn-chip .sconn-action-btn{
+  background:none;border:none;color:var(--text3);cursor:pointer;
+  padding:2px 4px;font-size:11px;line-height:1;border-radius:3px;
+}
+#view-connections .sconn-chip .sconn-action-btn:hover{ background:var(--bg4);color:var(--text); }
+#view-connections .sconn-chip .sconn-action-btn.danger:hover{ color:var(--red); }
+#view-connections .sconn-empty{ font-size:11px;color:var(--text3);font-style:italic; }
+
 /* ─── Data import (Connections view, tabbed) ───────────────────────── */
 #view-connections .cx-tabs{ }
 #view-connections .cx-tab{
@@ -787,6 +809,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div class="nav-item" onclick="showView('inventory')">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h8v2H2z" stroke="currentColor" stroke-width="1.1" fill="none"/><circle cx="13" cy="12" r="2.5" stroke="currentColor" stroke-width="1.1"/><path d="M12.3 12l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Inventory <span class="nav-count" id="inv-count">0</span>
+      </div>
+      <div class="nav-item" onclick="showView('task-agent')" style="color:var(--text3)">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4v4l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Task Agent <span class="nav-count" style="background:var(--bg4);color:var(--text3);font-size:9px">soon</span>
       </div>
     </div>
 
@@ -1471,7 +1497,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
             <span style="color:var(--text2);font-weight:500">Supported:</span>
             <span style="background:rgba(79,142,255,0.12);color:#6ea4ff;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">SQL&nbsp;Server</span>
             <span style="background:rgba(45,212,191,0.12);color:#2dd4bf;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">PostgreSQL</span>
-            <span style="color:var(--text3);font-size:10.5px;margin-left:0.25rem">MySQL &amp; Oracle coming soon</span>
           </div>
         </div>
         <div style="display:flex;gap:0.75rem;align-items:center">
@@ -1515,8 +1540,19 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
               <label class="form-label">Function key</label>
               <input id="proj-src-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
             </div>
-            <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
+            <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
+              <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')">🔌 Connect &amp; test</button>
+              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('src')" title="Save current connection under a name">💾 Save as…</button>
+            </div>
             <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
+
+            <!-- Saved connections list (src) -->
+            <div style="margin-top:0.875rem;padding-top:0.875rem;border-top:0.5px solid var(--border)">
+              <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
+                Saved source connections <span id="sconn-src-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
+              </div>
+              <div id="sconn-src-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
+            </div>
           </div>
 
           <!-- Target -->
@@ -1540,8 +1576,19 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
               <label class="form-label">Function key</label>
               <input id="proj-tgt-fn-key" class="form-input" style="font-family:var(--mono);font-size:11px;margin-bottom:0.5rem" placeholder="function-key" type="password">
             </div>
-            <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')" style="margin-top:0.25rem">🔌 Connect &amp; test</button>
+            <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
+              <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')">🔌 Connect &amp; test</button>
+              <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('tgt')" title="Save current connection under a name">💾 Save as…</button>
+            </div>
             <div id="tgt-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
+
+            <!-- Saved connections list (tgt) -->
+            <div style="margin-top:0.875rem;padding-top:0.875rem;border-top:0.5px solid var(--border)">
+              <div style="font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">
+                Saved target connections <span id="sconn-tgt-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:9px;padding:1px 6px;border-radius:100px">0</span>
+              </div>
+              <div id="sconn-tgt-list" style="display:flex;flex-wrap:wrap;gap:0.4rem;min-height:20px"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -1851,6 +1898,32 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <div class="inv-doc-grid" id="inv-doc-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
       </div><!-- end right panel -->
     </div><!-- end view-inventory -->
+
+    <!-- TASK AGENT (placeholder — feature not yet built) -->
+    <div id="view-task-agent" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">⏱ Task Agent</div>
+          <div class="panel-sub">Schedule and run migration jobs automatically</div>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:3rem 2rem;text-align:center;max-width:640px;margin:2rem auto">
+        <div style="font-size:40px;margin-bottom:1rem;opacity:0.5">🛠️</div>
+        <div style="font-size:16px;font-weight:600;margin-bottom:0.5rem">Coming soon</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:1.5rem">
+          The Task Agent will let you schedule jobs on a cron or run them on demand, chain jobs together, and get notified on failure.
+          This feature depends on server-side state, which is in the Phase&nbsp;1 roadmap.
+        </div>
+        <div style="display:inline-flex;gap:0.5rem;padding:0.5rem 1rem;background:var(--bg3);border-radius:100px;font-family:var(--mono);font-size:11px;color:var(--text3)">
+          <span>Planned features:</span>
+          <span style="color:var(--text)">cron schedules</span>·
+          <span style="color:var(--text)">job chaining</span>·
+          <span style="color:var(--text)">retry on failure</span>·
+          <span style="color:var(--text)">failure notifications</span>
+        </div>
+      </div>
+    </div>
 
         <div id="view-reports" class="view">
       <div class="panel-header">
@@ -4658,6 +4731,9 @@ function initConnectionsView() {
   set('proj-tgt-fn-url', c.tgtFnUrl);
   set('proj-tgt-fn-key', c.tgtFnKey);
   updateConnDots();
+  // Render saved-connection chips for both sides
+  sconnRender('src');
+  sconnRender('tgt');
 }
 
 function updateConnDots() {
@@ -4744,6 +4820,192 @@ function clearProjectConnections() {
     .forEach(id=>{const el=document.getElementById(id);if(el) el.value='';});
   ['src-conn-result','tgt-conn-result'].forEach(id=>{const el=document.getElementById(id);if(el) el.textContent='';});
   updateConnDots();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// NAMED SAVED CONNECTIONS — page-contained, per-browser, localStorage-backed
+// Lets users save the currently-entered source/target connection under a
+// friendly name, then click to restore it later. Stored in localStorage
+// (same posture as the existing sessionStorage connection cache — it's still
+// per-browser, per-user, never leaves the device).
+// ══════════════════════════════════════════════════════════════════════════
+
+const SCONN_KEY = 'cygenix_saved_connections';
+
+// Read the saved list. Returns [] on any parse error — never throws.
+function sconnGetAll(){
+  try {
+    const raw = localStorage.getItem(SCONN_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
+// Write the full list. Caps at 50 entries (reasonable headroom; most consultants
+// manage fewer than 20 client migrations at a time).
+function sconnSetAll(list){
+  const capped = list.slice(0, 50);
+  try { localStorage.setItem(SCONN_KEY, JSON.stringify(capped)); }
+  catch (e) { console.error('[sconn] localStorage write failed:', e); }
+}
+
+// Shortened preview string for display — never shows passwords.
+function sconnPreview(entry){
+  if (entry.mode === 'azure') return (entry.fnUrl || '').replace(/^https?:\/\//, '').slice(0, 40);
+  const cs = entry.connString || '';
+  // Strip any password-ish segments from the preview
+  const sanitized = cs
+    .replace(/(password|pwd|pass)\s*=\s*[^;&\s]*/gi, '$1=***')
+    .replace(/(:\/\/[^:]+):([^@]+)@/, '$1:***@');
+  return sanitized.slice(0, 50);
+}
+
+// Dialect label for the chip (pure display).
+function sconnDialectLabel(entry){
+  if (entry.mode === 'azure') return 'AZURE';
+  const cs = (entry.connString || '').trim().toLowerCase();
+  if (cs.startsWith('postgres://') || cs.startsWith('postgresql://')) return 'PG';
+  return 'MSSQL';
+}
+
+// Save current connection under a name. Reads the live fields.
+function sconnSaveAs(side){
+  // Read the current mode + fields
+  const mode = side === 'src' ? srcMode : tgtMode;
+  const entry = { side, mode, savedAt: new Date().toISOString() };
+
+  if (mode === 'direct'){
+    const csEl = document.getElementById('proj-' + side + '-cs');
+    const cs = (csEl?.value || '').trim();
+    if (!cs){
+      alert('Enter a connection string before saving.');
+      return;
+    }
+    entry.connString = cs;
+  } else {
+    const urlEl = document.getElementById('proj-' + side + '-fn-url');
+    const keyEl = document.getElementById('proj-' + side + '-fn-key');
+    const url = (urlEl?.value || '').trim();
+    if (!url){
+      alert('Enter an Azure Function URL before saving.');
+      return;
+    }
+    entry.fnUrl = url;
+    entry.fnKey = (keyEl?.value || '').trim();
+  }
+
+  // Default name suggestion — domain from the URL or first 30 chars of CS
+  let defaultName = '';
+  if (entry.mode === 'azure') defaultName = (entry.fnUrl.match(/https?:\/\/([^\/]+)/) || [])[1] || 'Azure Function';
+  else if (entry.connString.startsWith('postgres')) {
+    defaultName = (entry.connString.match(/@([^:/]+)/) || [])[1] || 'Postgres';
+  } else {
+    defaultName = (entry.connString.match(/Server\s*=\s*([^;,]+)/i) || [])[1] || 'SQL Server';
+  }
+
+  const name = prompt('Name this connection:', defaultName);
+  if (!name || !name.trim()) return;
+  entry.name = name.trim().slice(0, 60);
+  entry.id = 'sconn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+  const all = sconnGetAll();
+  // Block exact-name duplicates for the same side — confirm overwrite
+  const existing = all.find(s => s.side === side && s.name === entry.name);
+  if (existing){
+    if (!confirm(`A ${side === 'src' ? 'source' : 'target'} connection named "${entry.name}" already exists. Overwrite?`)) return;
+    const idx = all.indexOf(existing);
+    all[idx] = { ...entry, id: existing.id };  // keep the old id for stability
+  } else {
+    all.push(entry);
+  }
+  sconnSetAll(all);
+  sconnRender(side);
+}
+
+// Render the chip list for one side.
+function sconnRender(side){
+  const container = document.getElementById('sconn-' + side + '-list');
+  const counter   = document.getElementById('sconn-' + side + '-count');
+  if (!container) return;
+
+  const all = sconnGetAll().filter(s => s.side === side);
+  if (counter) counter.textContent = all.length;
+
+  if (all.length === 0){
+    container.innerHTML = '<span class="sconn-empty">None saved yet — enter a connection above and click “Save as…”</span>';
+    return;
+  }
+
+  container.innerHTML = all.map(entry => {
+    const dialect = sconnDialectLabel(entry);
+    const preview = sconnPreview(entry);
+    const nameEsc = (entry.name || '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    const previewEsc = preview.replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    return `<span class="sconn-chip" title="${previewEsc}" data-sconn-id="${entry.id}">
+      <span class="sconn-dialect">${dialect}</span>
+      <span onclick="sconnLoad('${entry.id}')">${nameEsc}</span>
+      <span class="sconn-actions">
+        <button class="sconn-action-btn" onclick="sconnRename('${entry.id}')" title="Rename">✎</button>
+        <button class="sconn-action-btn danger" onclick="sconnDelete('${entry.id}')" title="Delete">✕</button>
+      </span>
+    </span>`;
+  }).join('');
+}
+
+// Load a saved connection into the live fields. Switches mode if needed.
+function sconnLoad(id){
+  const all = sconnGetAll();
+  const entry = all.find(s => s.id === id);
+  if (!entry){
+    console.warn('[sconn] entry not found:', id);
+    return;
+  }
+
+  const side = entry.side;
+  // Switch mode
+  if (side === 'src') setSrcMode(entry.mode); else setTgtMode(entry.mode);
+
+  // Populate fields
+  if (entry.mode === 'direct'){
+    const el = document.getElementById('proj-' + side + '-cs');
+    if (el) el.value = entry.connString || '';
+  } else {
+    const urlEl = document.getElementById('proj-' + side + '-fn-url');
+    const keyEl = document.getElementById('proj-' + side + '-fn-key');
+    if (urlEl) urlEl.value = entry.fnUrl || '';
+    if (keyEl) keyEl.value = entry.fnKey || '';
+  }
+
+  // Flash feedback
+  const resultEl = document.getElementById(side + '-conn-result');
+  if (resultEl){
+    resultEl.textContent = '✓ Loaded “' + entry.name + '”. Click Connect & test to verify.';
+    resultEl.style.color = 'var(--green)';
+  }
+}
+
+// Rename a saved connection.
+function sconnRename(id){
+  const all = sconnGetAll();
+  const entry = all.find(s => s.id === id);
+  if (!entry) return;
+  const newName = prompt('Rename connection:', entry.name);
+  if (!newName || !newName.trim()) return;
+  entry.name = newName.trim().slice(0, 60);
+  sconnSetAll(all);
+  sconnRender(entry.side);
+}
+
+// Delete a saved connection (with confirm).
+function sconnDelete(id){
+  const all = sconnGetAll();
+  const entry = all.find(s => s.id === id);
+  if (!entry) return;
+  if (!confirm('Delete “' + entry.name + '”?')) return;
+  const next = all.filter(s => s.id !== id);
+  sconnSetAll(next);
+  sconnRender(entry.side);
 }
 
 // ══════════════════════════════════════════════════════════════════════════
