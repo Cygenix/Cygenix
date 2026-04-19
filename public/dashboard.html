@@ -1671,6 +1671,18 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           <span id="ls-target-status" style="margin-left:auto;font-size:11px;color:var(--text3)"></span>
         </div>
 
+        <!-- Heads-up about MSDASQL flakiness — surface what we learned so users don't
+             repeat the SSMS troubleshooting loop. SQL Server → SQL Server path is
+             reliable; Postgres via MSDASQL often silently fails at runtime. -->
+        <div style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid rgba(245,158,11,0.3);background:rgba(245,158,11,0.06);border-radius:var(--r);font-size:11.5px;color:var(--text2);line-height:1.55">
+          <strong style="color:var(--amber)">Heads up — Postgres linked servers are unreliable.</strong>
+          The Microsoft MSDASQL ↔ psqlODBC path silently fails on many SQL Server installs (Msg 7303/7399 with no error detail) even when the driver and network work. SQL Server → SQL Server linked servers work fine. For pulling Postgres data into your conversion database, use
+          <a href="#" onclick="showView('connections');switchConnTab('import');return false" style="color:var(--accent);text-decoration:none">Data import</a>
+          or
+          <a href="#" onclick="window.location.href='/project-builder.html';return false" style="color:var(--accent);text-decoration:none">Project Builder</a>
+          — both reach Postgres directly via Cygenix's proxy, no MSDASQL.
+        </div>
+
         <!-- Section 1: Draft a new linked server config -->
         <div class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap">
@@ -5274,20 +5286,47 @@ function lsBuildSetupSql(draft){
   const name = esc(draft.name);
 
   if (draft.type === 'postgres'){
-    // Postgres via generic OLE DB (MSDASQL) — needs a System DSN named after the linked
-    // server (or an inline connection string). We use the inline connection string form,
-    // which requires 'RPC Out' disabled (it's default). The SQL Server host must have the
-    // PostgreSQL ODBC driver installed (psqlODBC, typically "PostgreSQL Unicode(x64)").
-    const dsn = `Driver={PostgreSQL Unicode(x64)};Server=${esc(draft.host)};Port=${esc(draft.port)};Database=${esc(draft.database)};Uid=${esc(draft.user)};Pwd=${esc(draft.pass)};`;
+    // Postgres via generic OLE DB (MSDASQL).
+    //
+    // ⚠ IMPORTANT: MSDASQL + psqlODBC has a well-known silent-failure mode
+    // on modern SQL Server versions — the connection succeeds standalone via
+    // DSN test but MSDASQL fails with Msg 7303/7399 and no useful error text.
+    // This is a Microsoft-side issue (MSDASQL is deprecated) and can't be
+    // worked around from SQL. If you hit it, the setup SQL ran fine but
+    // OPENQUERY will fail at runtime. Options:
+    //   1. Install a native Postgres OLE DB provider (PGNP or CData) and
+    //      change @provider below from MSDASQL to the native provider name
+    //   2. Use Cygenix's Project Builder / Data Import flows instead
+    //      (they reach Postgres directly via the Netlify proxy)
+    //
+    // What's correct here vs what might look wrong:
+    // - Credentials go in sp_addlinkedsrvlogin, NOT in @provstr. Putting
+    //   Uid/Pwd in the ODBC string is redundant and some builds reject it.
+    // - SSLmode=require is in @provstr because MSDASQL does NOT inherit
+    //   settings from User or System DSNs — it uses the string verbatim.
+    // - Driver name is "PostgreSQL Unicode(x64)" — the default for the
+    //   official psqlODBC installer. If yours installed under a different
+    //   name, use the Edit button, change the driver field, save again.
+    const provStr = `Driver={PostgreSQL Unicode(x64)};Server=${esc(draft.host)};Port=${esc(draft.port)};Database=${esc(draft.database)};SSLmode=require;`;
     return [
       `-- Linked server "${name}" → PostgreSQL ${esc(draft.host)}:${esc(draft.port)}/${esc(draft.database)}`,
-      `-- Requires: psqlODBC driver installed on the SQL Server host`,
+      `-- Requires: psqlODBC driver installed on the SQL Server host (System-wide, not just User DSN)`,
+      `-- Warning: MSDASQL + psqlODBC is flaky on modern SQL Server. If OPENQUERY fails with`,
+      `-- Msg 7303/7399 (no error detail), the Microsoft MSDASQL layer is the cause. Consider`,
+      `-- a native Postgres OLE DB provider (PGNP, CData) or using Cygenix's direct-connection flows.`,
+      ``,
+      `-- 1. Make sure MSDASQL can run in-process (required on SQL Server 2005+)`,
+      `EXEC master.dbo.sp_MSset_oledb_prop N'MSDASQL', N'AllowInProcess',      1;`,
+      `EXEC master.dbo.sp_MSset_oledb_prop N'MSDASQL', N'DynamicParameters',   1;`,
+      ``,
+      `-- 2. Create the linked server`,
       `EXEC master.dbo.sp_addlinkedserver`,
       `    @server     = N'${name}',`,
       `    @srvproduct = N'PostgreSQL',`,
       `    @provider   = N'MSDASQL',`,
-      `    @provstr    = N'${esc(dsn)}';`,
+      `    @provstr    = N'${esc(provStr)}';`,
       ``,
+      `-- 3. Set the remote login (credentials NOT in provstr — go here)`,
       `EXEC master.dbo.sp_addlinkedsrvlogin`,
       `    @rmtsrvname  = N'${name}',`,
       `    @useself     = N'FALSE',`,
@@ -5295,16 +5334,22 @@ function lsBuildSetupSql(draft){
       `    @rmtuser     = N'${esc(draft.user)}',`,
       `    @rmtpassword = N'${esc(draft.pass)}';`,
       ``,
-      `-- Enable remote queries (usually on by default, here for safety):`,
-      `EXEC master.dbo.sp_serveroption @server = N'${name}', @optname = N'rpc out',        @optvalue = N'true';`,
-      `EXEC master.dbo.sp_serveroption @server = N'${name}', @optname = N'data access',   @optvalue = N'true';`,
+      `-- 4. Set server options that Postgres linked servers commonly need`,
+      `EXEC master.dbo.sp_serveroption @server = N'${name}', @optname = N'rpc out',     @optvalue = N'true';`,
+      `EXEC master.dbo.sp_serveroption @server = N'${name}', @optname = N'data access', @optvalue = N'true';`,
+      ``,
+      `-- Test (run separately after setup):`,
+      `-- SELECT * FROM OPENQUERY([${name}], 'SELECT 1 AS test');`,
     ].join('\n');
   }
 
-  // SQL Server → SQL Server via native SQL Native Client
+  // SQL Server → SQL Server via native SQL Native Client.
+  // No MSDASQL here, no ODBC layer, no known flakiness. This is the path
+  // that actually works reliably in modern SQL Server.
   const dataSrc = draft.port && draft.port !== '1433' ? `${esc(draft.host)},${esc(draft.port)}` : esc(draft.host);
   return [
     `-- Linked server "${name}" → SQL Server ${esc(draft.host)}:${esc(draft.port || '1433')}/${esc(draft.database)}`,
+    ``,
     `EXEC master.dbo.sp_addlinkedserver`,
     `    @server     = N'${name}',`,
     `    @srvproduct = N'',`,
@@ -5318,6 +5363,9 @@ function lsBuildSetupSql(draft){
     `    @locallogin  = NULL,`,
     `    @rmtuser     = N'${esc(draft.user)}',`,
     `    @rmtpassword = N'${esc(draft.pass)}';`,
+    ``,
+    `-- Test (run separately after setup):`,
+    `-- SELECT * FROM OPENQUERY([${name}], 'SELECT 1 AS test');`,
   ].join('\n');
 }
 
