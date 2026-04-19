@@ -7,11 +7,12 @@
 //
 // The response shape is identical across dialects so the client doesn't need
 // to care which backend answered:
-//   test:      { success, version, database, user }
-//   schema:    { success, tables: [{ schema, name, rowCount, columns, primaryKeys, foreignKeys }, ...] }
-//   execute:   { success, rowsAffected, recordset }
-//   batch:     { success, totalBatches, totalRowsAffected, errors, results }
-//   rowcounts: { success, counts: { 'schema.table': n, ... } }
+//   test:       { success, version, database, user }
+//   schema:     { success, tables: [{ schema, name, rowCount, columns, primaryKeys, foreignKeys }, ...] }
+//   execute:    { success, rowsAffected, recordset }
+//   fetch-page: { success, rows: [...], hasMore, offset, pageSize }  — paginated SELECT for streaming
+//   batch:      { success, totalBatches, totalRowsAffected, errors, results }
+//   rowcounts:  { success, counts: { 'schema.table': n, ... } }
 //
 // All three dialects mirror the same destructive-statement guard pattern used
 // today — it catches common accidents, not determined misuse. This is
@@ -174,6 +175,33 @@ async function handleMssql(action, connectionString, database, body) {
         break;
       }
 
+      case 'fetch-page': {
+        // Paginated SELECT for streaming large tables. Used by project-builder's
+        // migration runner. Never exposes user input inside SQL — offset/pageSize
+        // are integer-coerced, base SQL has trailing semicolons stripped.
+        const baseSql = body.sql;
+        if (!baseSql) return err('sql is required', null, 400);
+        const offset   = Math.max(0, parseInt(body.offset)   || 0);
+        const pageSize = Math.max(1, Math.min(50000, parseInt(body.pageSize) || 1000));
+        // Strip trailing semicolons/whitespace so we can wrap the statement
+        const cleaned = String(baseSql).trim().replace(/;+\s*$/, '');
+        // SQL Server requires ORDER BY for OFFSET/FETCH. If the user's SQL already has
+        // one, we just append OFFSET/FETCH. Otherwise we add a stable order by constant
+        // so SQL Server accepts the pagination — callers who want deterministic order
+        // should include ORDER BY in their SQL.
+        const hasOrderBy = /\border\s+by\b/i.test(cleaned);
+        const paged = hasOrderBy
+          ? `${cleaned}\nOFFSET ${offset} ROWS FETCH NEXT ${pageSize + 1} ROWS ONLY`
+          : `${cleaned}\nORDER BY (SELECT NULL) OFFSET ${offset} ROWS FETCH NEXT ${pageSize + 1} ROWS ONLY`;
+        // Fetch pageSize+1 to learn whether another page exists without a second call.
+        const r = await pool.request().query(paged);
+        const rows = r.recordset || [];
+        const hasMore = rows.length > pageSize;
+        if (hasMore) rows.pop();  // drop the probe row before returning
+        result = { success: true, rows, hasMore, offset, pageSize };
+        break;
+      }
+
       case 'batch': {
         const batchSql = body.batchSql;
         if (!Array.isArray(batchSql)||!batchSql.length) return err('batchSql array required', null, 400);
@@ -210,7 +238,7 @@ async function handleMssql(action, connectionString, database, body) {
       }
 
       default:
-        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | batch | rowcounts', 400);
+        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | fetch-page | batch | rowcounts', 400);
     }
 
     return ok(result);
@@ -368,6 +396,28 @@ async function handlePostgres(action, connectionString, database, body) {
         break;
       }
 
+      case 'fetch-page': {
+        // Paginated SELECT using Postgres LIMIT/OFFSET. Same fetch-pageSize+1 trick
+        // as MSSQL so we can detect hasMore without a second query.
+        const baseSql = body.sql;
+        if (!baseSql) return err('sql is required', null, 400);
+        const offset   = Math.max(0, parseInt(body.offset)   || 0);
+        const pageSize = Math.max(1, Math.min(50000, parseInt(body.pageSize) || 1000));
+        const cleaned = String(baseSql).trim().replace(/;+\s*$/, '');
+        // Postgres doesn't require ORDER BY for LIMIT/OFFSET, but without one row
+        // order is undefined and pagination isn't repeatable. We don't add a
+        // synthetic ORDER BY because Postgres doesn't accept OFFSET-of-constant
+        // ordering the way MSSQL does — caller should include ORDER BY if they
+        // want deterministic pages.
+        const paged = `${cleaned}\nLIMIT ${pageSize + 1} OFFSET ${offset}`;
+        const r = await client.query(paged);
+        const rows = r.rows || [];
+        const hasMore = rows.length > pageSize;
+        if (hasMore) rows.pop();
+        result = { success: true, rows, hasMore, offset, pageSize };
+        break;
+      }
+
       case 'batch': {
         const batchSql = body.batchSql;
         if (!Array.isArray(batchSql) || !batchSql.length) return err('batchSql array required', null, 400);
@@ -404,7 +454,7 @@ async function handlePostgres(action, connectionString, database, body) {
       }
 
       default:
-        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | batch | rowcounts', 400);
+        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | fetch-page | batch | rowcounts', 400);
     }
 
     return ok(result);
