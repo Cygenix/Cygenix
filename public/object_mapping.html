@@ -1041,13 +1041,43 @@ async function dbCall(conn, body){
 // and lazy-load each table's columns/PKs/FKs when the user actually picks it.
 // See db-connect.js `schema-tables` and `schema-columns` actions.
 
+// True once we've established whether the backend supports the paginated
+// schema-tables / schema-columns actions. null = unknown yet, true/false = known.
+// If false, connectSrc/connectTgt/ensureColumns use the legacy `schema` action
+// and populate columns greedily (works for DBs <6 MB of schema JSON, i.e. most).
+let _paginatedSchemaSupported = null;
+
+// Try a paginated-schema call and detect whether the backend knows the action.
+// Returns { res, paginated } — paginated=false means the caller should use the
+// legacy flow (all columns returned up-front in res.tables).
+async function _fetchSchemaSmart(conn) {
+  // If we already know pagination isn't supported, skip straight to legacy
+  if (_paginatedSchemaSupported === false) {
+    const res = await dbCall(conn, { action:'schema' });
+    return { res, paginated: false };
+  }
+  try {
+    const res = await dbCall(conn, { action:'schema-tables' });
+    _paginatedSchemaSupported = true;
+    return { res, paginated: true };
+  } catch (e) {
+    // Backend doesn't know schema-tables yet → legacy
+    if (/Unknown action/i.test(e.message) || /schema-tables/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      const res = await dbCall(conn, { action:'schema' });
+      return { res, paginated: false };
+    }
+    throw e;
+  }
+}
+
 async function connectSrc(){
   const c = CygenixConnections.get();
   srcConn = c.srcConnString || '';
   if(!srcConn){ showStatus('No source connection configured — set in Dashboard → Configure → Connections','err'); return; }
   setBanner('src','connecting','Source: connecting…');
   try {
-    const res = await dbCall(srcConn,{action:'schema-tables'});
+    const { res, paginated } = await _fetchSchemaSmart(srcConn);
     srcSchema = res;
     srcAllTables = (res.tables||[]).map(t=>({
       value: t.schema+'.'+t.name,
@@ -1055,10 +1085,11 @@ async function connectSrc(){
       schema: t.schema, name: t.name,
       fullName: t.schema+'.'+t.name,
       rowCount: t.rowCount||0,
-      // columns/PKs/FKs intentionally omitted — loaded on demand via ensureColumns()
-      columns: null,
-      primaryKeys: null,
-      foreignKeys: null,
+      // If paginated: columns loaded lazily via ensureColumns() on table-select.
+      // If legacy: columns came with the initial response, use them directly.
+      columns: paginated ? null : (t.columns||[]),
+      primaryKeys: paginated ? null : (t.primaryKeys||[]),
+      foreignKeys: paginated ? null : (t.foreignKeys||[]),
     }));
     setBanner('src','ok','Source: '+(res.database||parseDbName(srcConn))+' · '+srcAllTables.length+' tables');
     window._joinAllTables = srcAllTables;
@@ -1073,13 +1104,15 @@ async function connectTgt(){
   if(!tgtConn){ setBanner('tgt','err','Target: not configured'); return; }
   setBanner('tgt','connecting','Target: connecting…');
   try {
-    const res = await dbCall(tgtConn,{action:'schema-tables'});
+    const { res, paginated } = await _fetchSchemaSmart(tgtConn);
     tgtSchema = res;
     tgtAllTables = (res.tables||[]).map(t=>({
       value: t.schema+'.'+t.name, label: t.schema+'.'+t.name,
       schema: t.schema, name: t.name, fullName: t.schema+'.'+t.name,
       rowCount: t.rowCount||0,
-      columns: null, primaryKeys: null, foreignKeys: null,
+      columns: paginated ? null : (t.columns||[]),
+      primaryKeys: paginated ? null : (t.primaryKeys||[]),
+      foreignKeys: paginated ? null : (t.foreignKeys||[]),
     }));
     window._joinAllTables = window._joinAllTables || [];
     setBanner('tgt','ok','Target: '+(res.database||parseDbName(tgtConn))+' · '+tgtAllTables.length+' tables');
@@ -1088,19 +1121,41 @@ async function connectTgt(){
   }
 }
 
-// Lazy-load columns/PKs/FKs for a specific table when the user picks it. Cached
-// on the table object so subsequent reads are free. Returns the table object
-// with .columns populated, or throws if the fetch fails.
+// Lazy-load columns for a specific table. In legacy mode (backend pre-pagination)
+// this is a no-op because connectSrc/connectTgt already populated columns.
 async function ensureColumns(side, table){
   if (!table) return table;
-  if (Array.isArray(table.columns) && table.columns.length > 0) return table;  // cached
+  if (Array.isArray(table.columns) && table.columns.length > 0) return table;  // cached or legacy
+  if (_paginatedSchemaSupported === false) {
+    // Legacy backend: columns should already be present. If they're empty, just
+    // return the table — downstream code will treat it as having no columns
+    // rather than erroring.
+    table.columns = table.columns || [];
+    table.primaryKeys = table.primaryKeys || [];
+    table.foreignKeys = table.foreignKeys || [];
+    return table;
+  }
   const conn = side === 'src' ? srcConn : tgtConn;
   if (!conn) throw new Error(side + ' connection not set');
-  const res = await dbCall(conn, { action:'schema-columns', schemaName: table.schema, tableName: table.name });
-  if (!res || !res.table) throw new Error('No column info returned for ' + table.fullName);
-  table.columns     = res.table.columns     || [];
-  table.primaryKeys = res.table.primaryKeys || [];
-  table.foreignKeys = res.table.foreignKeys || [];
+  try {
+    const res = await dbCall(conn, { action:'schema-columns', schemaName: table.schema, tableName: table.name });
+    if (!res || !res.table) throw new Error('No column info returned for ' + table.fullName);
+    table.columns     = res.table.columns     || [];
+    table.primaryKeys = res.table.primaryKeys || [];
+    table.foreignKeys = res.table.foreignKeys || [];
+  } catch (e) {
+    // If the backend has schema-tables but not schema-columns, fall back to legacy
+    if (/Unknown action/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      const res = await dbCall(conn, { action:'schema' });
+      const found = (res.tables||[]).find(t => t.schema === table.schema && t.name === table.name);
+      table.columns     = found?.columns     || [];
+      table.primaryKeys = found?.primaryKeys || [];
+      table.foreignKeys = found?.foreignKeys || [];
+    } else {
+      throw e;
+    }
+  }
   return table;
 }
 

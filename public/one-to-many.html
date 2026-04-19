@@ -355,6 +355,27 @@ async function dbCall(conn, body){
   return data;
 }
 
+// Paginated-schema support detection — same pattern as object_mapping.html.
+// Falls back to legacy `schema` action if the backend doesn't know the new
+// schema-tables / schema-columns actions yet (e.g. HTML deployed before backend).
+let _paginatedSchemaSupported = null;
+async function _fetchSchemaSmart(conn) {
+  if (_paginatedSchemaSupported === false) {
+    return { res: await dbCall(conn, { action:'schema' }), paginated: false };
+  }
+  try {
+    const res = await dbCall(conn, { action:'schema-tables' });
+    _paginatedSchemaSupported = true;
+    return { res, paginated: true };
+  } catch (e) {
+    if (/Unknown action/i.test(e.message) || /schema-tables/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      return { res: await dbCall(conn, { action:'schema' }), paginated: false };
+    }
+    throw e;
+  }
+}
+
 // ── Connect ───────────────────────────────────────────────────────────────────
 async function connectSrc(){
   const _oc=CygenixConnections.get(); const conn=_oc.srcConnString||'';
@@ -366,14 +387,15 @@ async function connectSrc(){
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
   if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
-    // Paginated schema: fetch table list only (cheap even on 9k-table DBs).
-    // Columns are loaded on demand when the user picks a specific table — see
-    // the call to ensureColumnsForTable() in selectSrcTable/selectTgtTable below.
-    const res=await dbCall(conn,{action:'schema-tables'});
+    const { res, paginated } = await _fetchSchemaSmart(conn);
     // Parse database name from connection string since schema response doesn't include it
     const srcDbName = parseDbName(_oc.srcConnString);
     srcSchema = { ...res, database: srcDbName };
-    srcAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:null,rowCount:t.rowCount||0}));
+    srcAllTables=(res.tables||[]).map(t=>({
+      value:t.schema+'.'+t.name, label:t.schema+'.'+t.name, schema:t.schema, name:t.name,
+      columns: paginated ? null : (t.columns||[]),
+      rowCount:t.rowCount||0,
+    }));
     if(st) { st.textContent='🟢 '+srcDbName+' · '+srcAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Source: '+srcDbName;
@@ -406,6 +428,12 @@ async function connectSrc(){
 async function ensureColumnsForTable(side, table){
   if (!table) return table;
   if (Array.isArray(table.columns) && table.columns.length > 0) return table;
+  // Legacy backend: columns should have come with the initial schema. If they
+  // didn't (empty array), treat as no-op rather than erroring.
+  if (_paginatedSchemaSupported === false) {
+    table.columns = table.columns || [];
+    return table;
+  }
   const _oc = CygenixConnections.get();
   let conn;
   if (side === 'src') conn = _oc.srcConnString || '';
@@ -414,11 +442,24 @@ async function ensureColumnsForTable(side, table){
     if (_oc.tgtFnUrl && _oc.tgtFnKey) conn = _oc.tgtFnUrl + '?code=' + encodeURIComponent(_oc.tgtFnKey);
   }
   if (!conn) throw new Error(side + ' connection not set');
-  const res = await dbCall(conn, { action:'schema-columns', schemaName: table.schema, tableName: table.name });
-  if (!res || !res.table) throw new Error('No column info returned for ' + table.value);
-  table.columns     = res.table.columns     || [];
-  table.primaryKeys = res.table.primaryKeys || [];
-  table.foreignKeys = res.table.foreignKeys || [];
+  try {
+    const res = await dbCall(conn, { action:'schema-columns', schemaName: table.schema, tableName: table.name });
+    if (!res || !res.table) throw new Error('No column info returned for ' + table.value);
+    table.columns     = res.table.columns     || [];
+    table.primaryKeys = res.table.primaryKeys || [];
+    table.foreignKeys = res.table.foreignKeys || [];
+  } catch (e) {
+    if (/Unknown action/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      const res = await dbCall(conn, { action:'schema' });
+      const found = (res.tables||[]).find(t => t.schema === table.schema && t.name === table.name);
+      table.columns     = found?.columns     || [];
+      table.primaryKeys = found?.primaryKeys || [];
+      table.foreignKeys = found?.foreignKeys || [];
+    } else {
+      throw e;
+    }
+  }
   return table;
 }
 async function connectTgt(){
@@ -433,11 +474,15 @@ async function connectTgt(){
   if(st) { st.textContent='Connecting…'; st.style.color='var(--accent)'; }
   if(btn) { btn.disabled=true; btn.textContent='⏳'; }
   try{
-    const res=await dbCall(conn,{action:'schema-tables'});
+    const { res, paginated } = await _fetchSchemaSmart(conn);
     // Parse database name from connection string since schema response doesn't include it
     const tgtDbName = parseDbName(conn);
     tgtSchema = { ...res, database: tgtDbName };
-    tgtAllTables=(res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:null,rowCount:t.rowCount||0}));
+    tgtAllTables=(res.tables||[]).map(t=>({
+      value:t.schema+'.'+t.name, label:t.schema+'.'+t.name, schema:t.schema, name:t.name,
+      columns: paginated ? null : (t.columns||[]),
+      rowCount:t.rowCount||0,
+    }));
     if(st) { st.textContent='🟢 '+tgtDbName+' · '+tgtAllTables.length+' tables'; st.style.color='var(--green)'; }
     if(dot) dot.style.background='var(--green)';
     if(lbl) lbl.textContent='Target: '+tgtDbName;

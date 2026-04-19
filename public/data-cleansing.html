@@ -403,16 +403,31 @@ async function onConnChange(){
   if (!currentConn){ status.textContent='Not connected'; status.className='status'; return; }
   status.textContent='Loading schema…'; status.className='status';
   try {
-    // Paginated schema — list only. Column details are fetched on demand in
-    // loadColumns() via the schema-columns action below. This avoids Netlify's
-    // 6 MB response size cap which blocks the full `schema` action on DBs
-    // with thousands of tables.
-    const r = await dbCall(currentConn, { action:'schema-tables' });
+    // Try paginated schema first; fall back to legacy `schema` if the backend
+    // doesn't know the new actions yet (avoids a hard break when HTML is
+    // deployed before the new db-connect.js).
+    let r, paginated;
+    try {
+      r = await dbCall(currentConn, { action:'schema-tables' });
+      paginated = true;
+    } catch (e) {
+      if (/Unknown action/i.test(e.message)) {
+        r = await dbCall(currentConn, { action:'schema' });
+        paginated = false;
+      } else { throw e; }
+    }
+    _paginatedSchemaSupported_dc = paginated;
     schemaCache = {};
     allTables = (r.tables||[]).map(t => {
       const fullName = (t.schema||'dbo')+'.'+t.name;
-      // Cache the basic info; columns will be filled on pickTable via fetchOneTableSchema()
-      schemaCache[fullName] = { schema: t.schema||'dbo', name: t.name, rowCount: t.rowCount||0, columns: null, primaryKeys: null, foreignKeys: null };
+      // In paginated mode, columns are fetched on pickTable via fetchOneTableSchema().
+      // In legacy mode, use the columns that came with the schema response.
+      schemaCache[fullName] = {
+        schema: t.schema||'dbo', name: t.name, rowCount: t.rowCount||0,
+        columns: paginated ? null : (t.columns||[]),
+        primaryKeys: paginated ? null : (t.primaryKeys||[]),
+        foreignKeys: paginated ? null : (t.foreignKeys||[]),
+      };
       return { schema:t.schema||'dbo', name:t.name, fullName, rowCount:t.rowCount||0 };
     });
     status.textContent = '✓ Connected · '+allTables.length+' tables'; status.className='status ok';
@@ -423,17 +438,35 @@ async function onConnChange(){
   }
 }
 
-// Fetch columns + PKs + FKs for one table via the lightweight schema-columns
-// action. Populates schemaCache[fullName] so subsequent lookups don't re-fetch.
+let _paginatedSchemaSupported_dc = null;
+
 async function fetchOneTableSchema(fullName){
   const entry = schemaCache[fullName];
   if (!entry) throw new Error('Table not in schema cache: ' + fullName);
   if (Array.isArray(entry.columns) && entry.columns.length > 0) return entry;
-  const res = await dbCall(currentConn, { action:'schema-columns', schemaName: entry.schema, tableName: entry.name });
-  if (!res || !res.table) throw new Error('No column info returned for ' + fullName);
-  entry.columns     = res.table.columns     || [];
-  entry.primaryKeys = res.table.primaryKeys || [];
-  entry.foreignKeys = res.table.foreignKeys || [];
+  if (_paginatedSchemaSupported_dc === false) {
+    // Legacy mode: columns should have been populated at onConnChange time.
+    // If they're null here, it means the schema response had no columns for
+    // this table — treat as empty rather than erroring.
+    entry.columns = entry.columns || [];
+    return entry;
+  }
+  try {
+    const res = await dbCall(currentConn, { action:'schema-columns', schemaName: entry.schema, tableName: entry.name });
+    if (!res || !res.table) throw new Error('No column info returned for ' + fullName);
+    entry.columns     = res.table.columns     || [];
+    entry.primaryKeys = res.table.primaryKeys || [];
+    entry.foreignKeys = res.table.foreignKeys || [];
+  } catch (e) {
+    if (/Unknown action/i.test(e.message)) {
+      _paginatedSchemaSupported_dc = false;
+      const res = await dbCall(currentConn, { action:'schema' });
+      const found = (res.tables||[]).find(t => (t.schema||'dbo') === entry.schema && t.name === entry.name);
+      entry.columns     = found?.columns     || [];
+      entry.primaryKeys = found?.primaryKeys || [];
+      entry.foreignKeys = found?.foreignKeys || [];
+    } else { throw e; }
+  }
   return entry;
 }
 
