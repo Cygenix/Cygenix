@@ -1672,9 +1672,55 @@ async function runProject() {
     localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,20)));
   } catch {}
 
-  // Show report button
+  // Show report button + Save-to-Cosmos button. Save is user-requested (not
+  // auto) — see saveReportToCloud() below for the POST to reports.js.
   document.getElementById('exec-btns').innerHTML =
-    `<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(167,139,250,0.3)">📄 View Conversion Report</button>`;
+    `<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(167,139,250,0.3)">📄 View Conversion Report</button>
+     <button class="btn btn-sm" id="save-report-btn" onclick="saveReportToCloud()" style="background:transparent;border:0.5px solid var(--border2);color:var(--text);margin-left:0.5rem">💾 Save Report</button>`;
+}
+
+// Save the current cygenix_report to Cosmos via reports.js function.
+// On success the button briefly shows "✓ Saved". On failure we alert so the
+// user doesn't think their run-result is persisted when it isn't.
+async function saveReportToCloud() {
+  const btn = document.getElementById('save-report-btn');
+  if (!btn) return;
+  const prev = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Saving…';
+  try {
+    let report;
+    try {
+      const raw = localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report');
+      report = raw ? JSON.parse(raw) : null;
+    } catch { report = null; }
+    if (!report) throw new Error('No report data available to save');
+
+    let email = '', name = '';
+    try {
+      const rawAcc = sessionStorage.getItem('cygenix_entra_account')
+                  || localStorage.getItem('cygenix_entra_account');
+      if (rawAcc) {
+        const acc = JSON.parse(rawAcc);
+        email = (acc.email || acc.userId || '').toLowerCase().trim();
+        name  = acc.name || '';
+      }
+    } catch {}
+    if (!email) throw new Error('Not signed in — please sign in before saving.');
+
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', userEmail: email, userName: name, report }),
+    });
+    const data = await r.json().catch(() => ({ error: 'Non-JSON response (' + r.status + ')' }));
+    if (!r.ok) throw new Error(data.error || ('Save failed: HTTP ' + r.status));
+
+    btn.textContent = '✓ Saved';
+    setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 2500);
+  } catch (e) {
+    alert('Could not save report: ' + e.message);
+    btn.textContent = prev; btn.disabled = false;
+  }
 }
 
 function stopProject() {

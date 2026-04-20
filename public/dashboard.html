@@ -840,7 +840,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div class="nav-sub" id="reports-sub" style="max-height:200px">
         <div class="nav-item" onclick="event.stopPropagation();showView('reports')" style="color:var(--purple)">
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="var(--bg2)" stroke="currentColor" stroke-width="1.2"/><path d="M11 12l.8.8L13 11" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Conversion Report
+          Conversion Reports
         </div>
       </div>
 
@@ -2050,12 +2050,12 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div class="panel-header">
         <div>
           <div class="panel-title">Conversion Reports</div>
-          <div class="panel-sub">Generate a professional client-ready report for any completed migration job</div>
+          <div class="panel-sub">Saved runs from Project Execution — last 10 per user</div>
         </div>
       </div>
       <div style="display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center">
-        <span style="font-size:12px;color:var(--text3)">Jobs are saved in your browser. Run a migration to add jobs here.</span>
-        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="clearAllJobs()">Clear all jobs</button>
+        <span style="font-size:12px;color:var(--text3)">After a migration completes, click <strong>Save Report</strong> to archive it here. Oldest is auto-deleted when you save an 11th.</span>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="renderReportsList()" title="Refresh the list">↻ Refresh</button>
       </div>
       <div id="reports-list"></div>
     </div>
@@ -4033,7 +4033,29 @@ function openReport(jobId) {
 }
 
 
-// ── Reports list ──────────────────────────────────────────────────────────────
+// ── Conversion Reports list (Cosmos-backed) ─────────────────────────────────
+//
+// Previously this rendered per-job entries from localStorage (state.jobs —
+// capped at 20, one per configured table). It now reads per-run reports saved
+// by the user to Cosmos via /.netlify/functions/reports (action: 'list').
+//
+// Each row represents one full Project Execution run that the user chose to
+// save. Max 10 per user (server-side cap — oldest is silently pruned when an
+// 11th is saved). Rows show summary stats + buttons to view the full report
+// or delete the entry.
+//
+// Signed-out / empty-account case: we render a clear message rather than
+// trying to fetch. The reports endpoint would 400 without a userEmail.
+
+function currentCygenixEmail() {
+  try {
+    const rawAcc = sessionStorage.getItem('cygenix_entra_account')
+                || localStorage.getItem('cygenix_entra_account');
+    if (!rawAcc) return '';
+    const acc = JSON.parse(rawAcc);
+    return ((acc.email || acc.userId) || '').toLowerCase().trim();
+  } catch { return ''; }
+}
 
 function clearAllJobs() {
   if (!confirm('Clear all saved jobs from this browser? This cannot be undone.')) return;
@@ -4044,32 +4066,111 @@ function clearAllJobs() {
   renderDashboard();
 }
 
-function renderReportsList() {
+async function renderReportsList() {
   const el = $('reports-list');
   if (!el) return;
-  if (!state.jobs.length) {
-    el.innerHTML = '<div class="empty-state"><h3>No migration jobs yet</h3><p>Run a migration analysis first, then come back here to generate a client report.</p></div>';
+
+  const email = currentCygenixEmail();
+  if (!email) {
+    el.innerHTML = '<div class="empty-state"><h3>Please sign in</h3><p>Conversion Reports are saved per user. Sign in to see yours.</p></div>';
     return;
   }
-  el.innerHTML = state.jobs.map(j => {
-    const rows    = j.totalRows?.toLocaleString() || '—';
-    const tables  = j.tables?.length || j.files?.length || '—';
-    const date    = new Date(j.created).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-    return `<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
-      <div>
-        <div style="font-size:14px;font-weight:600;margin-bottom:0.3rem">${j.name}</div>
-        <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">${date} &nbsp;·&nbsp; ${tables} table(s) &nbsp;·&nbsp; ${rows} rows &nbsp;·&nbsp; ${j.target||'SQL Server'}</div>
-        ${j.source ? `<div style="font-size:11px;color:var(--text3);margin-top:3px">Source: ${j.source}</div>` : ''}
-      </div>
-      <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
-        <span class="badge badge-green" style="font-size:11px">SQL Ready</span>
-        <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25);font-size:12px;padding:0.45rem 1.1rem" onclick="openReport('${j.id}')">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style="flex-shrink:0"><rect x="1" y="1" width="11" height="11" rx="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3.5 4h6M3.5 6.5h6M3.5 9h3.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
-          Generate Report
-        </button>
-      </div>
-    </div>`;
+
+  el.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Loading reports…</p></div>';
+
+  let reports = [];
+  try {
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list', userEmail: email }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    reports = data.reports || [];
+  } catch (e) {
+    el.innerHTML = '<div class="empty-state"><h3>Could not load reports</h3><p style="color:var(--red)">' + (e.message || e) + '</p>'
+                 + '<p style="font-size:12px;color:var(--text3);margin-top:0.5rem">If this is the first deploy, check that COSMOS_ENDPOINT and COSMOS_KEY are set in Netlify environment variables, and that the <code>project_reports</code> container exists in the <code>cygenix</code> database.</p></div>';
+    return;
+  }
+
+  if (!reports.length) {
+    el.innerHTML = '<div class="empty-state"><h3>No saved reports yet</h3><p>After a migration finishes in Project Execution, click <strong>Save Report</strong> to archive it here.</p></div>';
+    return;
+  }
+
+  el.innerHTML = reports.map(r => {
+    const name  = escapeHtml(r.projectName || 'Untitled run');
+    const date  = r.savedAt ? new Date(r.savedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+    const rows  = Number(r.totalRows || r.insertedRows || 0).toLocaleString();
+    const src   = escapeHtml(r.sourceSystem || '—');
+    const tgt   = escapeHtml(r.targetSystem || '—');
+    const errs  = Number(r.errors || 0);
+    const tables = Number(r.tableCount || 0);
+    const errBadge = errs > 0
+      ? '<span class="badge badge-red" style="font-size:11px">' + errs + ' error' + (errs === 1 ? '' : 's') + '</span>'
+      : '<span class="badge badge-green" style="font-size:11px">Clean</span>';
+    const tblText = tables > 0 ? (tables + ' table' + (tables === 1 ? '' : 's')) : '—';
+    return '<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">'
+      + '<div>'
+      +   '<div style="font-size:14px;font-weight:600;margin-bottom:0.3rem">' + name + '</div>'
+      +   '<div style="font-size:12px;color:var(--text3);font-family:var(--mono)">' + date + ' &nbsp;·&nbsp; ' + tblText + ' &nbsp;·&nbsp; ' + rows + ' rows</div>'
+      +   '<div style="font-size:11px;color:var(--text3);margin-top:3px">Source: ' + src + ' &nbsp;→&nbsp; Target: ' + tgt + '</div>'
+      + '</div>'
+      + '<div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">'
+      +   errBadge
+      +   '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25);font-size:12px;padding:0.45rem 1.1rem" onclick="openSavedReport(\'' + r.id + '\')">View</button>'
+      +   '<button class="btn btn-sm" style="background:transparent;color:var(--red);border:0.5px solid rgba(239,68,68,0.25);font-size:12px;padding:0.45rem 0.9rem" onclick="deleteSavedReport(\'' + r.id + '\', \'' + name.replace(/'/g,"\\'") + '\')" title="Delete this report">✕</button>'
+      + '</div>'
+      + '</div>';
   }).join('');
+}
+
+// View a saved report: fetch its full body, stash in sessionStorage, open report.html.
+async function openSavedReport(id) {
+  const email = currentCygenixEmail();
+  if (!email) { alert('Please sign in first.'); return; }
+  try {
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get', userEmail: email, id }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    if (!data.report) throw new Error('Report not returned');
+    // Same storage keys report.html reads
+    sessionStorage.setItem('cygenix_report', JSON.stringify(data.report));
+    try { localStorage.setItem('cygenix_report', JSON.stringify(data.report)); } catch {}
+    window.open('/report.html', '_blank');
+  } catch (e) {
+    alert('Could not open report: ' + e.message);
+  }
+}
+
+// Delete confirm + refresh the list.
+async function deleteSavedReport(id, name) {
+  if (!confirm('Delete saved report "' + name + '"? This cannot be undone.')) return;
+  const email = currentCygenixEmail();
+  if (!email) { alert('Please sign in first.'); return; }
+  try {
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', userEmail: email, id }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    renderReportsList();
+  } catch (e) {
+    alert('Could not delete report: ' + e.message);
+  }
+}
+
+// Minimal html-entity escaper — we inline projectName etc. into HTML above so
+// a naïvely-named run ("My <Bad> Run") can't break layout or inject markup.
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 

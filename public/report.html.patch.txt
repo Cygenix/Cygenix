@@ -1,0 +1,88 @@
+REPORT.HTML PATCH — Add "Save Report" button to toolbar
+========================================================
+
+Two changes to report.html:
+
+1. In the toolbar (search for: id="excel-btn")
+   AFTER the Excel export button, insert a new Save button.
+
+2. In the <script> block, add saveToCygenix() function.
+
+
+── CHANGE 1 — toolbar ────────────────────────────────────────────────────────
+
+FIND:
+    <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
+  </div>
+</div>
+
+REPLACE WITH:
+    <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
+    <button class="btn btn-ghost" onclick="saveToCygenix()" id="save-btn">💾 Save Report</button>
+  </div>
+</div>
+
+
+── CHANGE 2 — script (add at end of existing <script> block, before </script>) ─
+
+FIND (last few lines of the existing script, just before </script>):
+    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+  }
+}
+</script>
+
+REPLACE WITH:
+    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+  }
+}
+
+// ── Save to Cygenix (Cosmos) ────────────────────────────────────────────────
+// Saves the current report to the user's account. Silent prune: if they
+// already have 10, the oldest one is deleted server-side before the new one
+// is written. User sees a toast on success or an error message on failure.
+async function saveToCygenix() {
+  const btn = document.getElementById('save-btn');
+  if (!btn) return;
+  const prevLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving…';
+
+  try {
+    // Load the report data the same way the renderer does
+    let report;
+    try {
+      const raw = localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report');
+      report = raw ? JSON.parse(raw) : null;
+    } catch { report = null; }
+    if (!report) throw new Error('No report data to save');
+
+    // Resolve the current user's email from the Entra account record.
+    let email = '', name = '';
+    try {
+      const rawAcc = sessionStorage.getItem('cygenix_entra_account')
+                  || localStorage.getItem('cygenix_entra_account');
+      if (rawAcc) {
+        const acc = JSON.parse(rawAcc);
+        email = (acc.email || acc.userId || '').toLowerCase().trim();
+        name  = acc.name || '';
+      }
+    } catch {}
+    if (!email) throw new Error('Not signed in — cannot save report.');
+
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', userEmail: email, userName: name, report }),
+    });
+    const data = await r.json().catch(() => ({ error: 'Non-JSON response (' + r.status + ')' }));
+    if (!r.ok) throw new Error(data.error || ('Save failed (' + r.status + ')'));
+
+    btn.textContent = '✓ Saved';
+    setTimeout(() => { btn.textContent = prevLabel; btn.disabled = false; }, 2500);
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+    btn.textContent = prevLabel;
+    btn.disabled = false;
+  }
+}
+</script>
