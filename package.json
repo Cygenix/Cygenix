@@ -3,6 +3,7 @@
   "version": "2.0.0",
   "description": "Cygenix SQL migration platform",
   "dependencies": {
+    "@azure/cosmos": "^4.0.0",
     "@netlify/blobs": "^7.3.0",
     "mssql": "^10.0.4",
     "pg": "^8.11.3"
