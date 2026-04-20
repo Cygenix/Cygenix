@@ -4940,11 +4940,17 @@ function clearProjectConnections() {
 // per-browser, per-user, never leaves the device).
 // ══════════════════════════════════════════════════════════════════════════
 
-const SCONN_KEY = 'cygenix_saved_connections';
+const SCONN_KEY = 'cygenix_saved_connections';  // legacy — retained only so any external ref still compiles. Real reads/writes now go through CygenixConnections.savedGetAll / savedSetAll which scope by user.
 
-// Read the saved list. Returns [] on any parse error — never throws.
+// Read the saved list. Delegates to CygenixConnections so the data is
+// per-user-scoped (users can't see each other's saved connections). Returns
+// [] if nobody is signed in. Never throws.
 function sconnGetAll(){
   try {
+    if (CygenixConnections && typeof CygenixConnections.savedGetAll === 'function') {
+      return CygenixConnections.savedGetAll();
+    }
+    // Fallback only — shouldn't happen if connections.js loaded correctly.
     const raw = localStorage.getItem(SCONN_KEY);
     if (!raw) return [];
     const arr = JSON.parse(raw);
@@ -4952,12 +4958,22 @@ function sconnGetAll(){
   } catch { return []; }
 }
 
-// Write the full list. Caps at 50 entries (reasonable headroom; most consultants
-// manage fewer than 20 client migrations at a time).
+// Write the full list. Caps at 50 entries. Writes per-user via CygenixConnections.
+// If nobody is signed in, the write is silently dropped to avoid leaking.
 function sconnSetAll(list){
   const capped = list.slice(0, 50);
-  try { localStorage.setItem(SCONN_KEY, JSON.stringify(capped)); }
-  catch (e) { console.error('[sconn] localStorage write failed:', e); }
+  try {
+    if (CygenixConnections && typeof CygenixConnections.savedGetAll === 'function') {
+      // Direct replacement — CygenixConnections.savedGetAll+savedAdd is the
+      // per-entry API, but we already have the full list. Use the flat
+      // writer directly here by scoping ourselves to preserve atomic replace.
+      const uid = (CygenixConnections.currentUserTag && CygenixConnections.currentUserTag()) || '';
+      if (!uid) return;  // not signed in — drop silently
+      localStorage.setItem(SCONN_KEY + '::' + uid, JSON.stringify(capped));
+      return;
+    }
+    localStorage.setItem(SCONN_KEY, JSON.stringify(capped));
+  } catch (e) { console.error('[sconn] localStorage write failed:', e); }
 }
 
 // Shortened preview string for display — never shows passwords.
