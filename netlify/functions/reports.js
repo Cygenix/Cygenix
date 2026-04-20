@@ -116,7 +116,7 @@ exports.handler = async function (event) {
 // ─────────────────────────────────────────────────────────────────────────────
 async function listReports(container, userId) {
   const query = {
-    query: 'SELECT c.id, c.projectName, c.savedAt, c.userName, c.userEmail, c.sourceSystem, c.targetSystem, c.totalRows, c.insertedRows, c.errors, c.tableCount FROM c WHERE c.userId = @uid ORDER BY c.savedAt DESC',
+    query: 'SELECT c.id, c.projectName, c.savedAt, c.userName, c.userEmail, c.sourceSystem, c.targetSystem, c.totalRows, c.insertedRows, c.errors, ARRAY_LENGTH(c.tables) AS tableCount FROM c WHERE c.userId = @uid ORDER BY c.savedAt DESC',
     parameters: [{ name: '@uid', value: userId }],
   };
   const { resources } = await container.items.query(query, { partitionKey: userId }).fetchAll();
