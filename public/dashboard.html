@@ -842,6 +842,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="var(--bg2)" stroke="currentColor" stroke-width="1.2"/><path d="M11 12l.8.8L13 11" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Conversion Reports
         </div>
+        <div class="nav-item" onclick="event.stopPropagation();showView('report-settings')" style="color:var(--text2)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+          Settings
+        </div>
       </div>
 
       <div class="nav-item" onclick="showView('audit')" style="display:none">
@@ -2061,6 +2065,22 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div id="reports-list"></div>
     </div>
 
+    <!-- REPORTS → SETTINGS: per-job reconciliation config ────────────────────
+         Pilot scope (option A minimum): configure ONE metric per job.
+         Options: SUM(column) or COUNT(DISTINCT column). User sets tolerance.
+         Fail behaviour is warn-only — job status doesn't flip red on miss.
+         Executed by project-builder runner around each migration step. -->
+    <div id="view-report-settings" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Report settings</div>
+          <div class="panel-sub">Per-job reconciliation — pick a column to total or count, and Cygenix will compare source vs target on every run.</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:1rem">Showing jobs from your saved project. Changes are saved back to the job record.</div>
+      <div id="recon-settings-list"></div>
+    </div>
+
 
 
 
@@ -2209,6 +2229,7 @@ function showView(v) {
   if (v === 'privacy-security')  initPrivacySecurityView();
   if (v === 'integrations')      initIntegrationsView();
   if (v === 'system-parameters') initSystemParametersView();
+  if (v === 'report-settings')   renderReportSettings();
 }
 
 function selectTarget(el, name) {
@@ -4180,6 +4201,152 @@ async function deleteSavedReport(id, name) {
 // a naïvely-named run ("My <Bad> Run") can't break layout or inject markup.
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── Report settings: per-job reconciliation config ─────────────────────────
+// Pilot scope: one metric per job. Two metric types (SUM, COUNT_DISTINCT).
+// Data lives on the job record (cygenix_jobs in localStorage) under a
+// `reconciliation` field. Runner reads it at run time in project-builder.html.
+// No Cosmos/backend work — the results travel in the report document itself.
+
+function reconLoadJobs() {
+  try { return JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); }
+  catch { return []; }
+}
+
+function reconSaveJobs(jobs) {
+  try { localStorage.setItem('cygenix_jobs', JSON.stringify(jobs)); }
+  catch (e) { console.error('[recon] save failed', e); alert('Could not save: ' + e.message); }
+}
+
+// Pulls the list of candidate columns from a job's columnMapping. For SUM we
+// show every tgt column (user picks the numeric one themselves — we don't
+// introspect types). For COUNT_DISTINCT any column is valid.
+function reconColumnsForJob(job) {
+  const cm = Array.isArray(job.columnMapping) ? job.columnMapping : [];
+  // We offer BOTH source and target column names. Source SUMs the pre-migration
+  // value, target SUMs the post-migration value — they usually match but may
+  // differ (different transform / rename).
+  const srcCols = cm.filter(m => m.srcCol).map(m => m.srcCol);
+  const tgtCols = cm.filter(m => m.tgtCol).map(m => m.tgtCol);
+  return { srcCols: [...new Set(srcCols)], tgtCols: [...new Set(tgtCols)] };
+}
+
+function renderReportSettings() {
+  const el = document.getElementById('recon-settings-list');
+  if (!el) return;
+  const jobs = reconLoadJobs();
+  const migrationJobs = jobs.filter(j => {
+    // Heuristic: only migration-type jobs make sense for reconciliation.
+    // SQL-script jobs (no columnMapping) don't have a natural source/target to compare.
+    return Array.isArray(j.columnMapping) && j.columnMapping.length > 0;
+  });
+  if (migrationJobs.length === 0) {
+    el.innerHTML = '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create an Object Mapping job first, then come back here to add a reconciliation check.</p></div>';
+    return;
+  }
+  el.innerHTML = migrationJobs.map(job => reconRenderJobCard(job)).join('');
+}
+
+function reconRenderJobCard(job) {
+  const r = job.reconciliation || { enabled: false, metric: 'SUM', sourceColumn: '', targetColumn: '', tolerance: 0.01 };
+  const { srcCols, tgtCols } = reconColumnsForJob(job);
+  const jobIdEsc = escapeHtml(job.id);
+  const srcTable = escapeHtml(job.sourceTable || job.source || '—');
+  const tgtTable = escapeHtml(job.targetTable || job.target || '—');
+  const srcOpts  = srcCols.map(c => `<option value="${escapeHtml(c)}"${r.sourceColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  const tgtOpts  = tgtCols.map(c => `<option value="${escapeHtml(c)}"${r.targetColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  const metricSum = r.metric === 'SUM'              ? 'selected' : '';
+  const metricCnt = r.metric === 'COUNT_DISTINCT'   ? 'selected' : '';
+  const enabled   = r.enabled ? 'checked' : '';
+  const tolerance = r.tolerance != null ? r.tolerance : 0.01;
+  const statusLabel = r.enabled
+    ? '<span class="badge badge-green" style="font-size:10px">Active</span>'
+    : '<span class="badge" style="font-size:10px;background:var(--bg3);color:var(--text3)">Off</span>';
+
+  return `<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem" data-recon-job="${jobIdEsc}">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem">
+      <div>
+        <div style="font-size:14px;font-weight:600">${escapeHtml(job.name || 'Unnamed job')}</div>
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px">${srcTable} &nbsp;→&nbsp; ${tgtTable}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.75rem">
+        ${statusLabel}
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
+          <input type="checkbox" data-recon-field="enabled" ${enabled} style="cursor:pointer">
+          Enable check
+        </label>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:140px 1fr 1fr 140px;gap:0.75rem;align-items:end">
+      <div>
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Metric</label>
+        <select data-recon-field="metric" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
+          <option value="SUM" ${metricSum}>SUM</option>
+          <option value="COUNT_DISTINCT" ${metricCnt}>COUNT DISTINCT</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Source column</label>
+        <select data-recon-field="sourceColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
+          <option value="">— pick —</option>
+          ${srcOpts}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Target column</label>
+        <select data-recon-field="targetColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
+          <option value="">— pick —</option>
+          ${tgtOpts}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Tolerance</label>
+        <input type="number" step="0.01" min="0" data-recon-field="tolerance" value="${tolerance}" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px;font-family:var(--mono)">
+      </div>
+    </div>
+    <div style="margin-top:0.75rem;display:flex;justify-content:flex-end;gap:0.5rem">
+      <button class="btn btn-sm btn-ghost" onclick="reconSaveOne('${jobIdEsc}')" style="font-size:12px">Save</button>
+    </div>
+  </div>`;
+}
+
+// Save one job's recon config from its card. Reads every data-recon-field
+// input inside the card and builds the new reconciliation object.
+function reconSaveOne(jobId) {
+  const card = document.querySelector(`[data-recon-job="${CSS.escape(jobId)}"]`);
+  if (!card) return;
+  const jobs = reconLoadJobs();
+  const job = jobs.find(j => j.id === jobId);
+  if (!job) { alert('Job not found'); return; }
+  const fields = {};
+  card.querySelectorAll('[data-recon-field]').forEach(inp => {
+    const f = inp.getAttribute('data-recon-field');
+    if (inp.type === 'checkbox') fields[f] = inp.checked;
+    else if (inp.type === 'number') fields[f] = parseFloat(inp.value) || 0;
+    else                            fields[f] = (inp.value || '').trim();
+  });
+  // Validation: if enabled, must have metric + at least one column
+  if (fields.enabled) {
+    if (!fields.metric) { alert('Pick a metric before enabling.'); return; }
+    if (!fields.sourceColumn && !fields.targetColumn) { alert('Pick at least one column before enabling.'); return; }
+  }
+  job.reconciliation = {
+    enabled:      !!fields.enabled,
+    metric:       fields.metric || 'SUM',
+    sourceColumn: fields.sourceColumn || '',
+    targetColumn: fields.targetColumn || '',
+    tolerance:    fields.tolerance >= 0 ? fields.tolerance : 0.01,
+  };
+  reconSaveJobs(jobs);
+  // Brief visual confirm — swap Save → ✓ Saved for 2s
+  const btn = card.querySelector('button');
+  if (btn) {
+    const prev = btn.textContent;
+    btn.textContent = '✓ Saved';
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = prev; btn.disabled = false; renderReportSettings(); }, 1500);
+  }
 }
 
 

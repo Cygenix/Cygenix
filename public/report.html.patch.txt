@@ -1,88 +1,131 @@
-REPORT.HTML PATCH — Add "Save Report" button to toolbar
-========================================================
+REPORT.HTML PATCH — Add Reconciliation section + XLSX sheet
+=============================================================
 
-Two changes to report.html:
-
-1. In the toolbar (search for: id="excel-btn")
-   AFTER the Excel export button, insert a new Save button.
-
-2. In the <script> block, add saveToCygenix() function.
+Three changes to report.html. All go inside the existing file.
 
 
-── CHANGE 1 — toolbar ────────────────────────────────────────────────────────
+── CHANGE 1 — RENDERER MARKUP ────────────────────────────────────────────────
 
-FIND:
-    <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
+FIND (the Column Mapping section — it looks like this):
+
+  <!-- COLUMN MAPPING -->
+  <div class="section">
+    <div class="section-title">Column mapping</div>
+    <div id="col-mapping-list"></div>
   </div>
-</div>
 
-REPLACE WITH:
-    <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
-    <button class="btn btn-ghost" onclick="saveToCygenix()" id="save-btn">💾 Save Report</button>
+INSERT *BEFORE* it:
+
+  <!-- RECONCILIATION (shown only if any step had reconciliation configured) -->
+  <div class="section" id="recon-section" style="display:none">
+    <div class="section-title">Reconciliation</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem">
+      Source vs target aggregate comparison. A delta within tolerance is a pass.
+    </div>
+    <table class="results-table">
+      <thead>
+        <tr>
+          <th>Step</th>
+          <th>Metric</th>
+          <th>Column</th>
+          <th style="text-align:right">Source</th>
+          <th style="text-align:right">Target</th>
+          <th style="text-align:right">Delta</th>
+          <th style="text-align:right">Tolerance</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody id="recon-tbody"></tbody>
+    </table>
   </div>
-</div>
 
 
-── CHANGE 2 — script (add at end of existing <script> block, before </script>) ─
+── CHANGE 2 — RENDERER SCRIPT ────────────────────────────────────────────────
 
-FIND (last few lines of the existing script, just before </script>):
-    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+FIND (at the end of the renderReport function — this is the last block):
+
+    // Footer
+    set('footer-date', new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'}));
   }
-}
-</script>
 
-REPLACE WITH:
-    btn.textContent = '📊 Export to Excel'; btn.disabled = false;
+REPLACE with:
+
+    // Footer
+    set('footer-date', new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'}));
+
+    // Reconciliation — shown only if the run had recon data
+    renderReconSection(d.reconciliation || []);
   }
-}
 
-// ── Save to Cygenix (Cosmos) ────────────────────────────────────────────────
-// Saves the current report to the user's account. Silent prune: if they
-// already have 10, the oldest one is deleted server-side before the new one
-// is written. User sees a toast on success or an error message on failure.
-async function saveToCygenix() {
-  const btn = document.getElementById('save-btn');
-  if (!btn) return;
-  const prevLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ Saving…';
-
-  try {
-    // Load the report data the same way the renderer does
-    let report;
-    try {
-      const raw = localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report');
-      report = raw ? JSON.parse(raw) : null;
-    } catch { report = null; }
-    if (!report) throw new Error('No report data to save');
-
-    // Resolve the current user's email from the Entra account record.
-    let email = '', name = '';
-    try {
-      const rawAcc = sessionStorage.getItem('cygenix_entra_account')
-                  || localStorage.getItem('cygenix_entra_account');
-      if (rawAcc) {
-        const acc = JSON.parse(rawAcc);
-        email = (acc.email || acc.userId || '').toLowerCase().trim();
-        name  = acc.name || '';
-      }
-    } catch {}
-    if (!email) throw new Error('Not signed in — cannot save report.');
-
-    const r = await fetch('/.netlify/functions/reports', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save', userEmail: email, userName: name, report }),
-    });
-    const data = await r.json().catch(() => ({ error: 'Non-JSON response (' + r.status + ')' }));
-    if (!r.ok) throw new Error(data.error || ('Save failed (' + r.status + ')'));
-
-    btn.textContent = '✓ Saved';
-    setTimeout(() => { btn.textContent = prevLabel; btn.disabled = false; }, 2500);
-  } catch (e) {
-    alert('Save failed: ' + e.message);
-    btn.textContent = prevLabel;
-    btn.disabled = false;
+  // Populate the Reconciliation section. Hidden when the array is empty.
+  function renderReconSection(entries) {
+    const section = document.getElementById('recon-section');
+    const tbody   = document.getElementById('recon-tbody');
+    if (!section || !tbody) return;
+    if (!Array.isArray(entries) || entries.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = 'block';
+    const fmt = v => (v == null) ? '—' : Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+    tbody.innerHTML = entries.map(e => {
+      const col = e.sourceColumn || e.targetColumn || '';
+      const passBadge = e.passed === true
+        ? '<span class="badge badge-green">Pass</span>'
+        : e.passed === false
+          ? '<span class="badge badge-red">Warn</span>'
+          : '<span class="badge badge-amber">Skipped</span>';
+      const deltaStyle = (e.passed === false) ? 'color:var(--red);font-weight:500' : '';
+      return '<tr>'
+        + '<td style="font-family:var(--mono);font-size:11px">' + (e.stepName || '') + '</td>'
+        + '<td style="font-family:var(--mono);font-size:11px">' + (e.metric || '') + '</td>'
+        + '<td style="font-family:var(--mono);font-size:11px">' + col + '</td>'
+        + '<td style="text-align:right;font-family:var(--mono)">' + fmt(e.sourceValue) + '</td>'
+        + '<td style="text-align:right;font-family:var(--mono)">' + fmt(e.targetValue) + '</td>'
+        + '<td style="text-align:right;font-family:var(--mono);' + deltaStyle + '">' + fmt(e.delta) + '</td>'
+        + '<td style="text-align:right;font-family:var(--mono);color:var(--text3)">' + fmt(e.tolerance) + '</td>'
+        + '<td>' + passBadge + '</td>'
+        + '</tr>';
+    }).join('');
   }
-}
-</script>
+
+
+── CHANGE 3 — XLSX EXPORT (new Reconciliation sheet) ─────────────────────────
+
+FIND (inside doExport — locate the Warnings sheet block):
+
+    // ── Sheet 6: Warnings ─────────────────────────────────────────────────────
+    if (d.warnings && d.warnings.length > 0) {
+      const warnData = [['#', 'Warning']].concat(d.warnings.map((w,i) => [i+1, w]));
+      const wsWarn = XLSX.utils.aoa_to_sheet(warnData);
+      wsWarn['!cols'] = [{wch:5},{wch:90}];
+      XLSX.utils.book_append_sheet(wb, wsWarn, 'Warnings');
+    }
+
+INSERT *AFTER* the Warnings block (before the filename/writeFile lines):
+
+    // ── Sheet 7: Reconciliation ──────────────────────────────────────────────
+    if (Array.isArray(d.reconciliation) && d.reconciliation.length > 0) {
+      const reconData = [
+        ['Step', 'Source table', 'Target table', 'Metric', 'Source column', 'Target column',
+         'Source value', 'Target value', 'Delta', 'Tolerance', 'Result']
+      ].concat(d.reconciliation.map(e => [
+        e.stepName || '',
+        e.srcTable || '',
+        e.tgtTable || '',
+        e.metric || '',
+        e.sourceColumn || '',
+        e.targetColumn || '',
+        e.sourceValue != null ? Number(e.sourceValue) : '',
+        e.targetValue != null ? Number(e.targetValue) : '',
+        e.delta       != null ? Number(e.delta)       : '',
+        e.tolerance   != null ? Number(e.tolerance)   : '',
+        e.passed === true ? 'Pass' : e.passed === false ? 'Warn' : 'Skipped'
+      ]));
+      const wsRecon = XLSX.utils.aoa_to_sheet(reconData);
+      wsRecon['!cols'] = [
+        {wch:35},{wch:30},{wch:30},{wch:16},{wch:22},{wch:22},
+        {wch:16},{wch:16},{wch:14},{wch:12},{wch:10}
+      ];
+      XLSX.utils.book_append_sheet(wb, wsRecon, 'Reconciliation');
+    }

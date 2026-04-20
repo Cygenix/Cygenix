@@ -938,6 +938,11 @@ function addJobAsStep(jobIndex) {
     connOn:          job.connOn || 'target',
     tables:          job.tables || [],
     warnings:        job.warnings || [],
+    // Reconciliation config (Reports → Settings). Lives on the job record;
+    // we snapshot it onto the step when it's added to the project. If the user
+    // updates the recon config later, the runner re-reads via step.jobId to
+    // pick up the fresh config — see runReconBefore() lookup.
+    reconciliation:  job.reconciliation || null,
     status:          'pending',
     log:             ''
   };
@@ -1742,6 +1747,92 @@ function waitForDecision() {
   });
 }
 
+// ── Reconciliation (Reports → Settings) ────────────────────────────────────
+// Pilot scope: one metric per job. Config lives on step.reconciliation (the
+// step inherits it from the stored job record via getAllStepsFlat). We run a
+// source aggregation query BEFORE the migration and the same-shaped query on
+// target AFTER. Results stashed on step.reconResult for the report to pick up.
+//
+// Warn-only on mismatch — we don't flip the step's status to failed. The
+// report renderer shows a red delta so a human can notice.
+async function runReconQuery(conn, tableName, whereClause, metric, column) {
+  if (!tableName || !column) return null;
+  const safeTable = String(tableName).trim();
+  const safeCol   = String(column).trim();
+  // We reject column/table names containing quotes or semicolons — paranoia
+  // even though this connection usually runs as a low-priv user. The legitimate
+  // column names from a schema intro never need these chars.
+  if (/[;'"`]/.test(safeCol) || /[;'"`]/.test(safeTable)) return null;
+  let aggSql;
+  if (metric === 'SUM') {
+    aggSql = `SELECT SUM(CAST([${safeCol.replace(/\]/g,']]')}] AS DECIMAL(38,6))) AS recon_val FROM ${safeTable}`;
+  } else if (metric === 'COUNT_DISTINCT') {
+    aggSql = `SELECT COUNT(DISTINCT [${safeCol.replace(/\]/g,']]')}]) AS recon_val FROM ${safeTable}`;
+  } else {
+    return null;
+  }
+  if (whereClause && whereClause.trim()) {
+    aggSql += ' WHERE ' + whereClause.trim().replace(/^where\s+/i, '');
+  }
+  try {
+    const r = await dbCall(conn, { action:'execute', sql: aggSql });
+    const row = r.recordset?.[0];
+    if (!row) return null;
+    // Value key is aliased `recon_val`; drivers may lowercase
+    const v = row.recon_val ?? row.RECON_VAL ?? row.ReconVal ?? Object.values(row)[0];
+    if (v == null) return 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  } catch (e) {
+    console.warn('[recon] query failed:', e.message, 'sql=', aggSql.slice(0, 200));
+    return null;
+  }
+}
+
+async function runReconBefore(step, srcConn) {
+  // Prefer fresh config from the job record so edits in Reports → Settings
+  // apply to existing steps without needing to re-add them to the project.
+  let cfg = step.reconciliation;
+  if (step.jobId) {
+    try {
+      const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+      const fresh = jobs.find(j => j.id === step.jobId);
+      if (fresh && fresh.reconciliation) cfg = fresh.reconciliation;
+    } catch {}
+  }
+  step.reconciliation = cfg;  // mirror back so runReconAfter sees the same
+  if (!cfg || !cfg.enabled) return null;
+  const col = cfg.sourceColumn || cfg.targetColumn;
+  const src = await runReconQuery(srcConn, step.srcTable, step.srcWhere, cfg.metric, col);
+  return {
+    metric: cfg.metric,
+    sourceColumn: col,
+    sourceValue: src,
+    tolerance: cfg.tolerance,
+    capturedAt: 'before',
+  };
+}
+
+async function runReconAfter(step, tgtConn, preResult) {
+  const cfg = step.reconciliation;
+  if (!cfg || !cfg.enabled) return null;
+  const col = cfg.targetColumn || cfg.sourceColumn;
+  const tgt = await runReconQuery(tgtConn, step.tgtTable, null, cfg.metric, col);
+  const src = preResult?.sourceValue;
+  const delta = (src != null && tgt != null) ? (tgt - src) : null;
+  const passed = delta != null ? Math.abs(delta) <= (cfg.tolerance || 0) : null;
+  return {
+    metric: cfg.metric,
+    sourceColumn: preResult?.sourceColumn || col,
+    targetColumn: col,
+    sourceValue: src,
+    targetValue: tgt,
+    delta,
+    tolerance: cfg.tolerance,
+    passed,
+  };
+}
+
 async function runMigrationStep(step, srcConn, tgtConn, log) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
@@ -1755,6 +1846,14 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   if (!step.srcTable) throw new Error('Source table not set');
   if (!srcConn)       throw new Error('Source connection not configured');
   if (!tgtConn)       throw new Error('Target connection not configured');
+
+  // ── Reconciliation: capture source baseline BEFORE migration ────────────
+  // Only fires if the job has a reconciliation config (configured via
+  // Reports → Settings). Warn-only on mismatch. Results end up on step.reconResult.
+  const reconBefore = await runReconBefore(step, srcConn);
+  if (reconBefore) {
+    add('Reconciliation baseline: source ' + reconBefore.metric + '(' + reconBefore.sourceColumn + ') = ' + (reconBefore.sourceValue != null ? reconBefore.sourceValue.toLocaleString() : 'null'));
+  }
 
   // ── One-to-many job: use the pre-generated cursor SQL ──────────────────────
   if (step.jobType === 'one-to-many' || step.oneToManyConfig) {
@@ -1805,6 +1904,23 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         });
       }
       console.log('[Cygenix] rows after count:', step.tables?.map(t=>t.name+':'+t.rows));
+
+      // Post-migration reconciliation check (OTM path)
+      if (reconBefore) {
+        try {
+          const res = await runReconAfter(step, tgtConn, reconBefore);
+          if (res) {
+            step.reconResult = res;
+            const fmt = v => v != null ? Number(v).toLocaleString(undefined, {maximumFractionDigits: 2}) : 'null';
+            if (res.passed) {
+              add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
+            } else {
+              add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+            }
+          }
+        } catch (e) { console.warn('[recon] post-check failed:', e.message); }
+      }
+
       return { ok: true, log: stepLog, rowsInserted: totalInserted, tables: step.tables };
     } catch(e) {
       add('Error: ' + e.message);
@@ -1892,6 +2008,23 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 
   add('Complete — ' + totalInserted.toLocaleString() + ' total rows inserted from ' + pageNum + ' page(s)');
   step.rowsInserted = totalInserted;
+
+  // Post-migration reconciliation check
+  if (reconBefore) {
+    try {
+      const res = await runReconAfter(step, tgtConn, reconBefore);
+      if (res) {
+        step.reconResult = res;
+        const fmt = v => v != null ? Number(v).toLocaleString(undefined, {maximumFractionDigits: 2}) : 'null';
+        if (res.passed) {
+          add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
+        } else {
+          add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+        }
+      }
+    } catch (e) { console.warn('[recon] post-check failed:', e.message); }
+  }
+
   return { ok: true, log: stepLog };
 }
 
@@ -2003,8 +2136,27 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
       srcTable: s.srcTable || '',
       tgtTable: s.tgtTable || '',
       rowsInserted: s.rowsInserted || 0,
-      connOn:  s.connOn || 'target'
+      connOn:  s.connOn || 'target',
+      reconResult: s.reconResult || null
     })),
+    // Reconciliation summary — one row per step that has a recon result.
+    // Lives at top level so report.html + XLSX can read it directly without
+    // walking the steps array. Empty array if no step had recon configured.
+    reconciliation: steps
+      .filter(s => s.reconResult)
+      .map(s => ({
+        stepName:    s.name,
+        srcTable:    s.srcTable || '',
+        tgtTable:    s.tgtTable || '',
+        metric:      s.reconResult.metric,
+        sourceColumn: s.reconResult.sourceColumn,
+        targetColumn: s.reconResult.targetColumn,
+        sourceValue: s.reconResult.sourceValue,
+        targetValue: s.reconResult.targetValue,
+        delta:       s.reconResult.delta,
+        tolerance:   s.reconResult.tolerance,
+        passed:      s.reconResult.passed,
+      })),
     tables: migrationSteps.flatMap(s => {
       // One-to-many: use actual per-table row counts stored in step.tables after execution
       if ((s.jobType==='one-to-many'||s.oneToManyConfig) && s.tables && s.tables.length) {
