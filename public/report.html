@@ -256,7 +256,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   <!-- RECONCILIATION (shown only if any step had reconciliation configured) ─────
        Populated by renderReconSection(d.reconciliation) at the end of renderReport.
        A delta within tolerance renders as Pass; over tolerance renders as Warn
-       in red; a null result (query failed or not configured) renders Skipped. -->
+       in red; a null result (query failed or not configured) renders Skipped.
+       Grouped entries (one row per group-by value) show the Group by column and
+       Group value; scalar (ungrouped) entries show — in those columns. -->
   <div class="section" id="recon-section" style="display:none">
     <div class="section-title">Reconciliation</div>
     <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem">
@@ -268,6 +270,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
           <th>Step</th>
           <th>Metric</th>
           <th>Column</th>
+          <th>Group by</th>
+          <th>Group value</th>
           <th style="text-align:right">Source</th>
           <th style="text-align:right">Target</th>
           <th style="text-align:right">Delta</th>
@@ -501,8 +505,10 @@ function renderReport(d) {
 // Populates the Reconciliation table. Hidden entirely when no entries.
 // Entry shape (per step that had reconciliation configured):
 //   { stepName, srcTable, tgtTable, metric, sourceColumn, targetColumn,
-//     sourceValue, targetValue, delta, tolerance, passed }
+//     groupByColumn, groupKey, sourceValue, targetValue, delta, tolerance, passed }
 // passed === true  → green Pass; false → red Warn; null/undefined → amber Skipped.
+// Grouped entries (multiple rows per step): each row shows its own group key.
+// Scalar entries (no group-by): Group by and Group value columns show —.
 function renderReconSection(entries) {
   const section = document.getElementById('recon-section');
   const tbody   = document.getElementById('recon-tbody');
@@ -513,8 +519,11 @@ function renderReconSection(entries) {
   }
   section.style.display = 'block';
   const fmtNum = v => (v == null) ? '—' : Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   tbody.innerHTML = entries.map(e => {
     const col = e.sourceColumn || e.targetColumn || '';
+    const grpCol = e.groupByColumn || '';
+    const grpKey = grpCol ? (e.groupKey == null ? '' : String(e.groupKey)) : '';
     const passBadge = e.passed === true
       ? '<span class="badge badge-green">Pass</span>'
       : e.passed === false
@@ -522,9 +531,11 @@ function renderReconSection(entries) {
         : '<span class="badge badge-amber">Skipped</span>';
     const deltaStyle = (e.passed === false) ? 'color:var(--red);font-weight:500' : '';
     return '<tr>'
-      + '<td style="font-family:var(--mono);font-size:11px">' + (e.stepName || '') + '</td>'
-      + '<td style="font-family:var(--mono);font-size:11px">' + (e.metric || '') + '</td>'
-      + '<td style="font-family:var(--mono);font-size:11px">' + col + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px">' + esc(e.stepName || '') + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px">' + esc(e.metric || '') + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px">' + esc(col) + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + (grpCol ? esc(grpCol) : '—') + '</td>'
+      + '<td style="font-family:var(--mono);font-size:11px">' + (grpCol ? esc(grpKey) : '—') + '</td>'
       + '<td style="text-align:right;font-family:var(--mono)">' + fmtNum(e.sourceValue) + '</td>'
       + '<td style="text-align:right;font-family:var(--mono)">' + fmtNum(e.targetValue) + '</td>'
       + '<td style="text-align:right;font-family:var(--mono);' + deltaStyle + '">' + fmtNum(e.delta) + '</td>'
@@ -754,9 +765,12 @@ function doExport() {
     }
     // ── Sheet 7: Reconciliation ──────────────────────────────────────────────
     // Only included if the run had a reconciliation array populated.
+    // Grouped entries produce one row per group (flattened upstream); scalar
+    // entries produce one row total. Group by / Group value are blank for scalar.
     if (Array.isArray(d.reconciliation) && d.reconciliation.length > 0) {
       const reconData = [
         ['Step', 'Source table', 'Target table', 'Metric', 'Source column', 'Target column',
+         'Group by', 'Group value',
          'Source value', 'Target value', 'Delta', 'Tolerance', 'Result']
       ].concat(d.reconciliation.map(e => [
         e.stepName || '',
@@ -765,6 +779,8 @@ function doExport() {
         e.metric || '',
         e.sourceColumn || '',
         e.targetColumn || '',
+        e.groupByColumn || '',
+        e.groupByColumn ? (e.groupKey == null ? '' : String(e.groupKey)) : '',
         e.sourceValue != null ? Number(e.sourceValue) : '',
         e.targetValue != null ? Number(e.targetValue) : '',
         e.delta       != null ? Number(e.delta)       : '',
@@ -774,6 +790,7 @@ function doExport() {
       const wsRecon = XLSX.utils.aoa_to_sheet(reconData);
       wsRecon['!cols'] = [
         {wch:35},{wch:30},{wch:30},{wch:16},{wch:22},{wch:22},
+        {wch:18},{wch:20},
         {wch:16},{wch:16},{wch:14},{wch:12},{wch:10}
       ];
       XLSX.utils.book_append_sheet(wb, wsRecon, 'Reconciliation');

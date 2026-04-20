@@ -1748,38 +1748,67 @@ function waitForDecision() {
 }
 
 // ── Reconciliation (Reports → Settings) ────────────────────────────────────
-// Pilot scope: one metric per job. Config lives on step.reconciliation (the
-// step inherits it from the stored job record via getAllStepsFlat). We run a
-// source aggregation query BEFORE the migration and the same-shaped query on
-// target AFTER. Results stashed on step.reconResult for the report to pick up.
+// Per-job reconciliation. Two metrics: SUM, COUNT_DISTINCT.
+// Optional GROUP BY: if cfg.groupByColumn is set, metric is computed per
+// distinct value of that column. Source and target are joined post-query
+// on the group-key; missing groups on either side produce a per-group warn.
 //
-// Warn-only on mismatch — we don't flip the step's status to failed. The
-// report renderer shows a red delta so a human can notice.
-async function runReconQuery(conn, tableName, whereClause, metric, column) {
+// Warn-only on mismatch — step.status stays "passed". Report renderer surfaces
+// the red delta. Never blocks the migration.
+//
+// Return shapes:
+//   Scalar (no group-by): { metric, sourceValue, targetValue, delta, tolerance, passed, ... }
+//   Grouped:              { ...same..., grouped: true, groups: [{key, sourceValue, targetValue, delta, passed}, ...] }
+
+async function runReconQuery(conn, tableName, whereClause, metric, column, groupByColumn) {
   if (!tableName || !column) return null;
   const safeTable = String(tableName).trim();
   const safeCol   = String(column).trim();
-  // We reject column/table names containing quotes or semicolons — paranoia
-  // even though this connection usually runs as a low-priv user. The legitimate
-  // column names from a schema intro never need these chars.
+  const safeGrp   = groupByColumn ? String(groupByColumn).trim() : '';
+  // Reject quotes/semicolons in any identifier — defence against injection even
+  // though a legitimate schema introspection will never return such names.
   if (/[;'"`]/.test(safeCol) || /[;'"`]/.test(safeTable)) return null;
+  if (safeGrp && /[;'"`]/.test(safeGrp)) return null;
+
+  // Build metric expression
+  const colBracket = '[' + safeCol.replace(/\]/g,']]') + ']';
+  let metricExpr;
+  if (metric === 'SUM')                metricExpr = 'SUM(CAST(' + colBracket + ' AS DECIMAL(38,6)))';
+  else if (metric === 'COUNT_DISTINCT') metricExpr = 'COUNT(DISTINCT ' + colBracket + ')';
+  else return null;
+
   let aggSql;
-  if (metric === 'SUM') {
-    aggSql = `SELECT SUM(CAST([${safeCol.replace(/\]/g,']]')}] AS DECIMAL(38,6))) AS recon_val FROM ${safeTable}`;
-  } else if (metric === 'COUNT_DISTINCT') {
-    aggSql = `SELECT COUNT(DISTINCT [${safeCol.replace(/\]/g,']]')}]) AS recon_val FROM ${safeTable}`;
+  if (safeGrp) {
+    const grpBracket = '[' + safeGrp.replace(/\]/g,']]') + ']';
+    aggSql = 'SELECT ' + grpBracket + ' AS recon_grp, ' + metricExpr + ' AS recon_val FROM ' + safeTable;
   } else {
-    return null;
+    aggSql = 'SELECT ' + metricExpr + ' AS recon_val FROM ' + safeTable;
   }
   if (whereClause && whereClause.trim()) {
     aggSql += ' WHERE ' + whereClause.trim().replace(/^where\s+/i, '');
   }
+  if (safeGrp) {
+    const grpBracket = '[' + safeGrp.replace(/\]/g,']]') + ']';
+    aggSql += ' GROUP BY ' + grpBracket;
+  }
+
   try {
     const r = await dbCall(conn, { action:'execute', sql: aggSql });
-    const row = r.recordset?.[0];
+    const rows = r.recordset || [];
+    // Helper to pull the aliased value out — drivers may normalise case
+    const getField = (row, name) => row[name] ?? row[name.toUpperCase()] ?? row[name.toLowerCase()];
+    if (safeGrp) {
+      // Return array of {key, value}
+      return rows.map(row => {
+        const k = getField(row, 'recon_grp');
+        const v = getField(row, 'recon_val');
+        const n = v == null ? 0 : Number(v);
+        return { key: k == null ? '(null)' : String(k), value: Number.isFinite(n) ? n : null };
+      });
+    }
+    const row = rows[0];
     if (!row) return null;
-    // Value key is aliased `recon_val`; drivers may lowercase
-    const v = row.recon_val ?? row.RECON_VAL ?? row.ReconVal ?? Object.values(row)[0];
+    const v = getField(row, 'recon_val') ?? Object.values(row)[0];
     if (v == null) return 0;
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
@@ -1790,8 +1819,8 @@ async function runReconQuery(conn, tableName, whereClause, metric, column) {
 }
 
 async function runReconBefore(step, srcConn) {
-  // Prefer fresh config from the job record so edits in Reports → Settings
-  // apply to existing steps without needing to re-add them to the project.
+  // Re-read fresh config from the job record so Reports → Settings edits
+  // apply to existing steps without re-adding them to the project.
   let cfg = step.reconciliation;
   if (step.jobId) {
     try {
@@ -1800,14 +1829,19 @@ async function runReconBefore(step, srcConn) {
       if (fresh && fresh.reconciliation) cfg = fresh.reconciliation;
     } catch {}
   }
-  step.reconciliation = cfg;  // mirror back so runReconAfter sees the same
+  step.reconciliation = cfg;
   if (!cfg || !cfg.enabled) return null;
-  const col = cfg.sourceColumn || cfg.targetColumn;
-  const src = await runReconQuery(srcConn, step.srcTable, step.srcWhere, cfg.metric, col);
+  const col     = cfg.sourceColumn || cfg.targetColumn;
+  const grouped = !!cfg.groupByColumn;
+  const src     = await runReconQuery(srcConn, step.srcTable, step.srcWhere, cfg.metric, col, cfg.groupByColumn);
   return {
     metric: cfg.metric,
     sourceColumn: col,
-    sourceValue: src,
+    groupByColumn: cfg.groupByColumn || '',
+    grouped,
+    // Scalar case: sourceValue is a number; grouped case: sourceGroups is an array
+    sourceValue:  grouped ? null : src,
+    sourceGroups: grouped ? (src || []) : null,
     tolerance: cfg.tolerance,
     capturedAt: 'before',
   };
@@ -1816,20 +1850,56 @@ async function runReconBefore(step, srcConn) {
 async function runReconAfter(step, tgtConn, preResult) {
   const cfg = step.reconciliation;
   if (!cfg || !cfg.enabled) return null;
-  const col = cfg.targetColumn || cfg.sourceColumn;
-  const tgt = await runReconQuery(tgtConn, step.tgtTable, null, cfg.metric, col);
-  const src = preResult?.sourceValue;
-  const delta = (src != null && tgt != null) ? (tgt - src) : null;
-  const passed = delta != null ? Math.abs(delta) <= (cfg.tolerance || 0) : null;
+  const col     = cfg.targetColumn || cfg.sourceColumn;
+  const grouped = !!cfg.groupByColumn;
+  const tol     = cfg.tolerance || 0;
+  const tgt     = await runReconQuery(tgtConn, step.tgtTable, null, cfg.metric, col, cfg.groupByColumn);
+
+  if (!grouped) {
+    const src   = preResult?.sourceValue;
+    const delta = (src != null && tgt != null) ? (tgt - src) : null;
+    const passed = delta != null ? Math.abs(delta) <= tol : null;
+    return {
+      metric: cfg.metric,
+      sourceColumn: preResult?.sourceColumn || col,
+      targetColumn: col,
+      groupByColumn: '',
+      grouped: false,
+      sourceValue: src,
+      targetValue: tgt,
+      delta,
+      tolerance: tol,
+      passed,
+    };
+  }
+
+  // Grouped case: outer-join source/target by group key, compute per-group delta
+  const srcGroups = preResult?.sourceGroups || [];
+  const tgtGroups = tgt || [];
+  const srcMap = new Map(srcGroups.map(g => [g.key, g.value]));
+  const tgtMap = new Map(tgtGroups.map(g => [g.key, g.value]));
+  const allKeys = Array.from(new Set([...srcMap.keys(), ...tgtMap.keys()])).sort();
+
+  const groupDeltas = allKeys.map(key => {
+    const s = srcMap.has(key) ? srcMap.get(key) : null;
+    const t = tgtMap.has(key) ? tgtMap.get(key) : null;
+    const delta = (s != null && t != null) ? (t - s) : null;
+    const passed = delta != null ? Math.abs(delta) <= tol : false;
+    return { key, sourceValue: s, targetValue: t, delta, passed };
+  });
+
+  // Overall pass = every group passes
+  const overallPass = groupDeltas.length > 0 && groupDeltas.every(g => g.passed === true);
+
   return {
     metric: cfg.metric,
     sourceColumn: preResult?.sourceColumn || col,
     targetColumn: col,
-    sourceValue: src,
-    targetValue: tgt,
-    delta,
-    tolerance: cfg.tolerance,
-    passed,
+    groupByColumn: cfg.groupByColumn,
+    grouped: true,
+    tolerance: tol,
+    groups: groupDeltas,
+    passed: overallPass,
   };
 }
 
@@ -1852,7 +1922,12 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   // Reports → Settings). Warn-only on mismatch. Results end up on step.reconResult.
   const reconBefore = await runReconBefore(step, srcConn);
   if (reconBefore) {
-    add('Reconciliation baseline: source ' + reconBefore.metric + '(' + reconBefore.sourceColumn + ') = ' + (reconBefore.sourceValue != null ? reconBefore.sourceValue.toLocaleString() : 'null'));
+    if (reconBefore.grouped) {
+      const n = (reconBefore.sourceGroups || []).length;
+      add('Reconciliation baseline: source ' + reconBefore.metric + '(' + reconBefore.sourceColumn + ') grouped by ' + reconBefore.groupByColumn + ' → ' + n + ' group(s)');
+    } else {
+      add('Reconciliation baseline: source ' + reconBefore.metric + '(' + reconBefore.sourceColumn + ') = ' + (reconBefore.sourceValue != null ? reconBefore.sourceValue.toLocaleString() : 'null'));
+    }
   }
 
   // ── One-to-many job: use the pre-generated cursor SQL ──────────────────────
@@ -1912,10 +1987,20 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
           if (res) {
             step.reconResult = res;
             const fmt = v => v != null ? Number(v).toLocaleString(undefined, {maximumFractionDigits: 2}) : 'null';
-            if (res.passed) {
-              add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
+            if (res.grouped) {
+              const fails = (res.groups || []).filter(g => !g.passed);
+              if (fails.length === 0) {
+                add('Reconciliation ✓: ' + res.groups.length + ' group(s) all matched (metric ' + res.metric + '(' + res.sourceColumn + ') by ' + res.groupByColumn + ')');
+              } else {
+                add('Reconciliation ⚠: ' + fails.length + ' of ' + res.groups.length + ' group(s) failed tolerance ' + fmt(res.tolerance));
+                fails.forEach(g => add('  • ' + res.groupByColumn + '=' + g.key + ': source=' + fmt(g.sourceValue) + ', target=' + fmt(g.targetValue) + ', delta=' + fmt(g.delta)));
+              }
             } else {
-              add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+              if (res.passed) {
+                add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
+              } else {
+                add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+              }
             }
           }
         } catch (e) { console.warn('[recon] post-check failed:', e.message); }
@@ -2016,10 +2101,20 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       if (res) {
         step.reconResult = res;
         const fmt = v => v != null ? Number(v).toLocaleString(undefined, {maximumFractionDigits: 2}) : 'null';
-        if (res.passed) {
-          add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
+        if (res.grouped) {
+          const fails = (res.groups || []).filter(g => !g.passed);
+          if (fails.length === 0) {
+            add('Reconciliation ✓: ' + res.groups.length + ' group(s) all matched (metric ' + res.metric + '(' + res.sourceColumn + ') by ' + res.groupByColumn + ')');
+          } else {
+            add('Reconciliation ⚠: ' + fails.length + ' of ' + res.groups.length + ' group(s) failed tolerance ' + fmt(res.tolerance));
+            fails.forEach(g => add('  • ' + res.groupByColumn + '=' + g.key + ': source=' + fmt(g.sourceValue) + ', target=' + fmt(g.targetValue) + ', delta=' + fmt(g.delta)));
+          }
         } else {
-          add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+          if (res.passed) {
+            add('Reconciliation ✓: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta));
+          } else {
+            add('Reconciliation ⚠: source=' + fmt(res.sourceValue) + ', target=' + fmt(res.targetValue) + ', delta=' + fmt(res.delta) + ' (tolerance ' + fmt(res.tolerance) + ')');
+          }
         }
       }
     } catch (e) { console.warn('[recon] post-check failed:', e.message); }
@@ -2139,24 +2234,46 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
       connOn:  s.connOn || 'target',
       reconResult: s.reconResult || null
     })),
-    // Reconciliation summary — one row per step that has a recon result.
-    // Lives at top level so report.html + XLSX can read it directly without
-    // walking the steps array. Empty array if no step had recon configured.
+    // Reconciliation summary — one entry per measured row.
+    // For scalar recon (no group-by): one entry per step with reconResult.
+    // For grouped recon: one entry PER GROUP per step (so a job grouped by
+    // currency with 3 currencies produces 3 entries for that step). This lets
+    // report.html render each row independently without special-casing groups.
     reconciliation: steps
       .filter(s => s.reconResult)
-      .map(s => ({
-        stepName:    s.name,
-        srcTable:    s.srcTable || '',
-        tgtTable:    s.tgtTable || '',
-        metric:      s.reconResult.metric,
-        sourceColumn: s.reconResult.sourceColumn,
-        targetColumn: s.reconResult.targetColumn,
-        sourceValue: s.reconResult.sourceValue,
-        targetValue: s.reconResult.targetValue,
-        delta:       s.reconResult.delta,
-        tolerance:   s.reconResult.tolerance,
-        passed:      s.reconResult.passed,
-      })),
+      .flatMap(s => {
+        const r = s.reconResult;
+        const base = {
+          stepName:     s.name,
+          srcTable:     s.srcTable || '',
+          tgtTable:     s.tgtTable || '',
+          metric:       r.metric,
+          sourceColumn: r.sourceColumn,
+          targetColumn: r.targetColumn,
+          groupByColumn: r.groupByColumn || '',
+          tolerance:    r.tolerance,
+        };
+        if (r.grouped && Array.isArray(r.groups)) {
+          // One row per group — key + per-group values
+          return r.groups.map(g => ({
+            ...base,
+            groupKey:    g.key,
+            sourceValue: g.sourceValue,
+            targetValue: g.targetValue,
+            delta:       g.delta,
+            passed:      g.passed,
+          }));
+        }
+        // Scalar case — single entry
+        return [{
+          ...base,
+          groupKey:    '',
+          sourceValue: r.sourceValue,
+          targetValue: r.targetValue,
+          delta:       r.delta,
+          passed:      r.passed,
+        }];
+      }),
     tables: migrationSteps.flatMap(s => {
       // One-to-many: use actual per-table row counts stored in step.tables after execution
       if ((s.jobType==='one-to-many'||s.oneToManyConfig) && s.tables && s.tables.length) {

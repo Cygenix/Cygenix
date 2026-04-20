@@ -4245,13 +4245,17 @@ function renderReportSettings() {
 }
 
 function reconRenderJobCard(job) {
-  const r = job.reconciliation || { enabled: false, metric: 'SUM', sourceColumn: '', targetColumn: '', tolerance: 0.01 };
+  const r = job.reconciliation || { enabled: false, metric: 'SUM', sourceColumn: '', targetColumn: '', groupByColumn: '', tolerance: 0.01 };
   const { srcCols, tgtCols } = reconColumnsForJob(job);
   const jobIdEsc = escapeHtml(job.id);
   const srcTable = escapeHtml(job.sourceTable || job.source || '—');
   const tgtTable = escapeHtml(job.targetTable || job.target || '—');
   const srcOpts  = srcCols.map(c => `<option value="${escapeHtml(c)}"${r.sourceColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
   const tgtOpts  = tgtCols.map(c => `<option value="${escapeHtml(c)}"${r.targetColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  // Group-by options use SOURCE columns (we GROUP BY the same column on both sides,
+  // matching by column name — if source has 'currency' and target has 'Currency',
+  // future work will let user map separately). For pilot, identical names assumed.
+  const groupOpts = srcCols.map(c => `<option value="${escapeHtml(c)}"${r.groupByColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
   const metricSum = r.metric === 'SUM'              ? 'selected' : '';
   const metricCnt = r.metric === 'COUNT_DISTINCT'   ? 'selected' : '';
   const enabled   = r.enabled ? 'checked' : '';
@@ -4260,51 +4264,103 @@ function reconRenderJobCard(job) {
     ? '<span class="badge badge-green" style="font-size:10px">Active</span>'
     : '<span class="badge" style="font-size:10px;background:var(--bg3);color:var(--text3)">Off</span>';
 
-  return `<div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1rem" data-recon-job="${jobIdEsc}">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem">
-      <div>
-        <div style="font-size:14px;font-weight:600">${escapeHtml(job.name || 'Unnamed job')}</div>
-        <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:3px">${srcTable} &nbsp;→&nbsp; ${tgtTable}</div>
+  // Collapsed summary line — shows current config at a glance when card is closed.
+  // For enabled jobs shows metric + column + group-by; for disabled shows "not configured".
+  let summary;
+  if (r.enabled) {
+    const col = r.sourceColumn || r.targetColumn || '?';
+    const grp = r.groupByColumn ? ` grouped by ${escapeHtml(r.groupByColumn)}` : '';
+    summary = `${r.metric}(${escapeHtml(col)})${grp}, tolerance ${tolerance}`;
+  } else {
+    summary = 'Not configured';
+  }
+
+  return `<div class="recon-card" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.5rem" data-recon-job="${jobIdEsc}" data-recon-open="false">
+    <!-- Header (always visible, click to toggle) -->
+    <div class="recon-card-head" onclick="reconToggleCard('${jobIdEsc}')" style="padding:0.9rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;cursor:pointer;user-select:none">
+      <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
+        <span class="recon-chevron" style="color:var(--text3);font-size:10px;transition:transform 0.15s;display:inline-block;flex-shrink:0">▶</span>
+        <div style="min-width:0">
+          <div style="font-size:13px;font-weight:600">${escapeHtml(job.name || 'Unnamed job')}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">${srcTable} &nbsp;→&nbsp; ${tgtTable}</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:3px" class="recon-summary">${summary}</div>
+        </div>
       </div>
-      <div style="display:flex;align-items:center;gap:0.75rem">
-        ${statusLabel}
+      <div style="flex-shrink:0">${statusLabel}</div>
+    </div>
+    <!-- Body (collapsed by default, shown when data-recon-open="true") -->
+    <div class="recon-card-body" style="display:none;padding:0 1.25rem 1.1rem;border-top:0.5px solid var(--border)">
+      <div style="padding-top:0.9rem;margin-bottom:0.75rem">
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
           <input type="checkbox" data-recon-field="enabled" ${enabled} style="cursor:pointer">
           Enable check
         </label>
       </div>
-    </div>
-    <div style="display:grid;grid-template-columns:140px 1fr 1fr 140px;gap:0.75rem;align-items:end">
-      <div>
-        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Metric</label>
-        <select data-recon-field="metric" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
-          <option value="SUM" ${metricSum}>SUM</option>
-          <option value="COUNT_DISTINCT" ${metricCnt}>COUNT DISTINCT</option>
-        </select>
+      <div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr 120px;gap:0.6rem;align-items:end">
+        <div>
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Metric</label>
+          <select data-recon-field="metric" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
+            <option value="SUM" ${metricSum}>SUM</option>
+            <option value="COUNT_DISTINCT" ${metricCnt}>COUNT DISTINCT</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Source column</label>
+          <select data-recon-field="sourceColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
+            <option value="">— pick —</option>
+            ${srcOpts}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Target column</label>
+          <select data-recon-field="targetColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
+            <option value="">— pick —</option>
+            ${tgtOpts}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px" title="Optional — if set, metric is calculated per distinct value of this column">Group by <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:normal">(optional)</span></label>
+          <select data-recon-field="groupByColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
+            <option value="">— no grouping —</option>
+            ${groupOpts}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Tolerance</label>
+          <input type="number" step="0.01" min="0" data-recon-field="tolerance" value="${tolerance}" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px;font-family:var(--mono)">
+        </div>
       </div>
-      <div>
-        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Source column</label>
-        <select data-recon-field="sourceColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
-          <option value="">— pick —</option>
-          ${srcOpts}
-        </select>
+      <div style="margin-top:0.8rem;display:flex;justify-content:flex-end;gap:0.5rem">
+        <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();reconSaveOne('${jobIdEsc}')" style="font-size:12px">Save</button>
       </div>
-      <div>
-        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Target column</label>
-        <select data-recon-field="targetColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
-          <option value="">— pick —</option>
-          ${tgtOpts}
-        </select>
-      </div>
-      <div>
-        <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Tolerance</label>
-        <input type="number" step="0.01" min="0" data-recon-field="tolerance" value="${tolerance}" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px;font-family:var(--mono)">
-      </div>
-    </div>
-    <div style="margin-top:0.75rem;display:flex;justify-content:flex-end;gap:0.5rem">
-      <button class="btn btn-sm btn-ghost" onclick="reconSaveOne('${jobIdEsc}')" style="font-size:12px">Save</button>
     </div>
   </div>`;
+}
+
+// Toggle card open/closed. Ensures only ONE card is open at a time — clicking
+// an already-closed card opens it and collapses all others. Clicking the open
+// card collapses it. This keeps the page short and focused on the job being edited.
+function reconToggleCard(jobId) {
+  const cards = document.querySelectorAll('.recon-card');
+  const target = document.querySelector(`[data-recon-job="${CSS.escape(jobId)}"]`);
+  if (!target) return;
+  const wasOpen = target.getAttribute('data-recon-open') === 'true';
+  // Close everything first
+  cards.forEach(c => {
+    c.setAttribute('data-recon-open', 'false');
+    const body = c.querySelector('.recon-card-body');
+    const chev = c.querySelector('.recon-chevron');
+    if (body) body.style.display = 'none';
+    if (chev) chev.style.transform = 'rotate(0deg)';
+  });
+  // Then open the clicked one if it was closed
+  if (!wasOpen) {
+    target.setAttribute('data-recon-open', 'true');
+    const body = target.querySelector('.recon-card-body');
+    const chev = target.querySelector('.recon-chevron');
+    if (body) body.style.display = 'block';
+    if (chev) chev.style.transform = 'rotate(90deg)';
+  }
 }
 
 // Save one job's recon config from its card. Reads every data-recon-field
@@ -4328,20 +4384,28 @@ function reconSaveOne(jobId) {
     if (!fields.sourceColumn && !fields.targetColumn) { alert('Pick at least one column before enabling.'); return; }
   }
   job.reconciliation = {
-    enabled:      !!fields.enabled,
-    metric:       fields.metric || 'SUM',
-    sourceColumn: fields.sourceColumn || '',
-    targetColumn: fields.targetColumn || '',
-    tolerance:    fields.tolerance >= 0 ? fields.tolerance : 0.01,
+    enabled:       !!fields.enabled,
+    metric:        fields.metric || 'SUM',
+    sourceColumn:  fields.sourceColumn || '',
+    targetColumn:  fields.targetColumn || '',
+    groupByColumn: fields.groupByColumn || '',
+    tolerance:     fields.tolerance >= 0 ? fields.tolerance : 0.01,
   };
   reconSaveJobs(jobs);
-  // Brief visual confirm — swap Save → ✓ Saved for 2s
+  // Brief visual confirm — swap Save → ✓ Saved for 2s, then re-render keeping
+  // this card open so the user sees the updated "Active" badge and summary line.
   const btn = card.querySelector('button');
   if (btn) {
     const prev = btn.textContent;
     btn.textContent = '✓ Saved';
     btn.disabled = true;
-    setTimeout(() => { btn.textContent = prev; btn.disabled = false; renderReportSettings(); }, 1500);
+    setTimeout(() => {
+      btn.textContent = prev;
+      btn.disabled = false;
+      renderReportSettings();
+      // Re-open the card we just saved so user can verify
+      setTimeout(() => reconToggleCard(jobId), 50);
+    }, 1500);
   }
 }
 
