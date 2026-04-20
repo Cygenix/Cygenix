@@ -4107,6 +4107,13 @@ async function renderReportsList() {
     const tgt   = escapeHtml(r.targetSystem || '—');
     const errs  = Number(r.errors || 0);
     const tables = Number(r.tableCount || 0);
+    // Analyst: prefer userName, but if it's blank / 'unknown' / whitespace, fall back to email.
+    // Google-SSO paths currently write "unknown" as the name on the account record — this is
+    // a display fix, not a data fix. Proper name extraction from the JWT's given/family claims
+    // is a separate task, tracked in the security backlog.
+    const userNameRaw = String(r.userName || '').trim();
+    const isUnnamed = !userNameRaw || /^unknown$/i.test(userNameRaw);
+    const analyst = escapeHtml(isUnnamed ? (r.userEmail || '—') : userNameRaw);
     const errBadge = errs > 0
       ? '<span class="badge badge-red" style="font-size:11px">' + errs + ' error' + (errs === 1 ? '' : 's') + '</span>'
       : '<span class="badge badge-green" style="font-size:11px">Clean</span>';
@@ -4116,6 +4123,7 @@ async function renderReportsList() {
       +   '<div style="font-size:14px;font-weight:600;margin-bottom:0.3rem">' + name + '</div>'
       +   '<div style="font-size:12px;color:var(--text3);font-family:var(--mono)">' + date + ' &nbsp;·&nbsp; ' + tblText + ' &nbsp;·&nbsp; ' + rows + ' rows</div>'
       +   '<div style="font-size:11px;color:var(--text3);margin-top:3px">Source: ' + src + ' &nbsp;→&nbsp; Target: ' + tgt + '</div>'
+      +   '<div style="font-size:11px;color:var(--text3);margin-top:2px">Analyst: ' + analyst + '</div>'
       + '</div>'
       + '<div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">'
       +   errBadge
