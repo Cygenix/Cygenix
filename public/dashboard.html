@@ -6729,35 +6729,57 @@ function impRunResult(msg, kind){
 // Handles both the CygenixConnections helper's shape AND a direct-sessionStorage
 // fallback — because different pages on different deploy versions have used
 // different key names.
+
 function impGetConn(which){
   const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
   const ss = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
+  // F24 — Third fallback. The active Connections view writes its state to
+  // localStorage under `cygenix_project_connections` as a JSON wrapper object
+  // (keys: cygenix_src_conn_string, cygenix_src_conn_mode, cygenix_fn_url,
+  // cygenix_fn_key, cygenix_conn_mode, cygenix_conn_string). Without this
+  // fallback the Data Import flow silently reports "No target database
+  // connection configured" even when the user has working, green-dot
+  // connections, because nothing populates `window.CygenixConnections` or
+  // copies values into sessionStorage.
+  let pc = {};
+  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
+  const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
+  // Helper to tell HTTP URLs apart from DB connection strings. The Connections
+  // page has been observed saving e.g. "mssql://host:port/db" under cygenix_fn_url
+  // when the UI mode is 'azure' but the field holds a raw connection string.
+  // Without this check we'd try to fetch() that string as an HTTPS endpoint
+  // and get a network error. Only treat it as a function URL if it's actually
+  // http(s).
+  const isHttpUrl = (s) => /^https?:\/\//i.test(s || '');
 
   // ─── Source ─────────────────────────────────────────────────────────
   if (which === 'src'){
     return c.srcConnString
         || c.srcFnUrl
         || ss('cygenix_src_conn_string')
+        || pcGet('cygenix_src_conn_string')
+        || pcGet('cygenix_src_fn_url')
         || '';
   }
 
   // ─── Target ─────────────────────────────────────────────────────────
-  // Priority: Azure Function URL (most commonly configured) → connection string.
-  // Each path checks the helper object first, then falls back to sessionStorage keys.
-  const fnUrl = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url');
-  const fnKey = c.tgtFnKey || c.fnKey || ss('cygenix_fn_key');
-  if (fnUrl){
+  // Priority: Azure Function URL (only if it's a real HTTP URL) → connection string.
+  const rawFnUrl = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url') || pcGet('cygenix_fn_url');
+  const fnKey    = c.tgtFnKey || c.fnKey || ss('cygenix_fn_key') || pcGet('cygenix_fn_key');
+  if (isHttpUrl(rawFnUrl)){
     return fnKey
-      ? fnUrl + (fnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(fnKey)
-      : fnUrl;
+      ? rawFnUrl + (rawFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(fnKey)
+      : rawFnUrl;
   }
-  const cs = c.tgtConnString || c.connString || ss('cygenix_conn_string');
+  // Not an HTTP URL — treat anything in fn_url or conn_string as a connection string
+  const cs = c.tgtConnString || c.connString || ss('cygenix_conn_string') || pcGet('cygenix_conn_string') || rawFnUrl;
   if (cs) return cs;
 
   // Diagnostic — surface what WAS present so the user can debug
   console.warn('[data-import] No target connection found. Inspected keys:', {
     'CygenixConnections.get()': c,
-    'sessionStorage keys': Object.keys(sessionStorage).filter(k => k.startsWith('cygenix_'))
+    'sessionStorage keys': Object.keys(sessionStorage).filter(k => k.startsWith('cygenix_')),
+    'cygenix_project_connections keys': Object.keys(pc),
   });
   return '';
 }
