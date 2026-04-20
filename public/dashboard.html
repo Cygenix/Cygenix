@@ -797,9 +797,20 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
       </div>
 
-      <div class="nav-item" onclick="window.location.href='/project-builder.html'" style="color:var(--purple)">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="var(--bg2)" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Project Execution
+      <!-- Execute sub-menu — groups the migration-runner entry point so it
+           lives visually alongside Develop/Analysis rather than floating on
+           its own. Single child today (Execute Migration), but the group
+           gives us a home for future execution-related pages. -->
+      <div class="nav-sub-label open" id="execute-label" onclick="toggleSubMenu('execute')">
+        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><path d="M2 2l8 4-8 4V2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+        Execute
+        <span class="chevron">▶</span>
+      </div>
+      <div class="nav-sub" id="execute-sub" style="max-height:200px">
+        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/project-builder.html'" style="color:var(--purple)">
+          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="var(--bg2)" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Execute Migration
+        </div>
       </div>
 
       <div class="nav-item" onclick="showView('jobs')">
