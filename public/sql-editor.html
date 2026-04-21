@@ -1166,7 +1166,25 @@ async function runSQL() {
   } finally {
     btn.disabled=false; btn.textContent='▶ Run';
     switchRightTab('results');
+    // Auto-expand the results panel if it's collapsed, so the user sees the
+    // outcome (rows / DML message / error) without needing to drag it open.
+    autoExpandResultsPane();
   }
+}
+
+// Opens the bottom results panel if it's currently collapsed. Keeps state
+// consistent with toggleResultsPane() by updating the chevron and flag.
+function autoExpandResultsPane() {
+  const rb  = document.getElementById('results-bottom');
+  if (!rb) return;
+  // Consider it collapsed if the state flag says so, or if its height is still
+  // the 36px header-only height we set in markup.
+  const isCollapsed = resultsCollapsed || rb.offsetHeight <= 40;
+  if (!isCollapsed) return;
+  expandResults();
+  resultsCollapsed = false;
+  const btn = document.getElementById('results-toggle');
+  if (btn) { btn.textContent = '⌃'; btn.title = 'Collapse results'; }
 }
 
 // Store last results for export/pivot
