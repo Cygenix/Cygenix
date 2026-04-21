@@ -110,12 +110,6 @@ body.cyg-collapsed{padding-left:54px}
 .drop-empty{padding:8px 10px;font-size:11px;color:var(--text3);font-style:italic}
 .drop-rows{font-size:10px;color:var(--text3)}
 
-/* ── Wasis ── */
-.wasis-panel{background:var(--bg3);border:0.5px solid rgba(245,158,11,0.2);border-radius:var(--r);padding:0.875rem;margin-bottom:1rem}
-.wasis-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
-.wasis-table th,.wasis-table td{padding:4px 8px;border-bottom:0.5px solid var(--border);text-align:left}
-.wasis-table th{color:var(--text3);font-size:10px;text-transform:uppercase;background:var(--bg4)}
-
 /* ── SQL Preview ── */
 .sql-box{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:1rem;font-family:var(--mono);font-size:11px;color:var(--text2);white-space:pre;overflow:auto;max-height:400px;max-width:300ch;line-height:1.6}
 .sql-tab{padding:0.4rem 0.875rem;font-size:12px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;font-family:var(--serif);background:none;border-top:none;border-left:none;border-right:none}
@@ -394,30 +388,15 @@ body.cyg-collapsed{padding-left:54px}
               </div>
             </div>
 
-            <!-- Wasis panel -->
-            <div class="wasis-panel" id="wasis-panel">
-              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
-                <div>
-                  <div style="font-size:12px;font-weight:600;color:var(--amber);display:flex;align-items:center;gap:6px">
-                    🔄 Was/Is value mapping
-                    <span class="badge badge-green" id="wasis-badge" style="display:none">Active</span>
-                  </div>
-                  <div style="font-size:11px;color:var(--text3);margin-top:2px" id="wasis-desc">Upload a Was/Is file to translate old values to new values during migration</div>
-                </div>
-                <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-                  <input type="file" id="wasis-file" style="display:none" accept=".csv,.tsv,.xlsx,.xls,.txt" onchange="loadWasisFile(this.files[0])">
-                  <button class="btn btn-ghost btn-sm" onclick="document.getElementById('wasis-file').click()">⬆ Load Wasis file</button>
-                  <button class="btn btn-ghost btn-sm" id="wasis-clear-btn" onclick="clearWasis()" style="display:none;color:var(--red)">✕ Clear</button>
-                  <button class="btn btn-ghost btn-sm" id="wasis-preview-btn" onclick="toggleWasisPreview()" style="display:none">👁 Preview</button>
-                </div>
-              </div>
-              <div id="wasis-preview" style="display:none;margin-top:0.75rem;overflow-x:auto;max-height:180px;overflow-y:auto">
-                <table class="wasis-table" id="wasis-table">
-                  <thead><tr><th>Table</th><th>Field</th><th>Old value</th><th>New value</th><th>Description</th></tr></thead>
-                  <tbody id="wasis-tbody"></tbody>
-                </table>
-              </div>
-              <div id="wasis-stats" style="display:none;margin-top:0.5rem;font-size:11px;color:var(--text3);font-family:var(--mono)"></div>
+            <!-- Was/Is status banner (rules managed in System Parameters) -->
+            <div id="wasis-status" style="display:none;background:var(--bg3);border:0.5px solid rgba(245,158,11,0.2);border-radius:var(--r);padding:0.625rem 0.875rem;margin-bottom:1rem;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap">
+              <span>
+                <span style="color:var(--amber);font-weight:600">🔄 Was/Is:</span>
+                <span id="wasis-status-text">No rules loaded</span>
+                <span style="opacity:0.7"> — manage in</span>
+                <a href="dashboard.html#system-parameters" style="color:var(--accent);text-decoration:none">System parameters → Was/Is value mapping</a>
+              </span>
+              <button class="btn btn-ghost btn-sm" onclick="reloadWasisFromStorage()" title="Reload rules from System Parameters">↻ Reload</button>
             </div>
 
             <!-- Column mapping table (Table view) -->
@@ -1013,9 +992,10 @@ function ddlShowResult(msg, kind) {
   const ak = localStorage.getItem('cygenix_api_key')||'';
   if(ak) $('api-key').value = ak;
 
-  // Load wasis from localStorage
+  // Load wasis from localStorage (managed in Dashboard → System Parameters → Was/Is tab)
   try { wasisRules = JSON.parse(localStorage.getItem(WASIS_KEY)||'[]'); } catch { wasisRules=[]; }
-  if(wasisRules.length) renderWasisStats();
+  if(!Array.isArray(wasisRules)) wasisRules = [];
+  renderWasisStatusBanner();
 
   // Reflect current connection state in banner. If a connection is configured
   // we fetch schema; if not, the connect fn sets an error banner pointing the
@@ -2758,8 +2738,12 @@ function checkEditMode(){
   const isOTM=job.jobType==='one-to-many'||job.oneToManyConfig;
   setMode(isOTM?'otm':'single');
 
-  // Restore wasis
-  if(job.wasisRules?.length){ wasisRules=job.wasisRules; renderWasisStats(); }
+  // Restore wasis — jobs saved before the System Parameters → Was/Is tab
+  // existed carry their own snapshot; newer jobs rely on the global rules
+  // managed in System Parameters. If the job has a snapshot we use it here
+  // (for reproducibility of the saved job's SQL); otherwise we keep whatever
+  // was already loaded from localStorage.
+  if(job.wasisRules?.length){ wasisRules=job.wasisRules; renderWasisStatusBanner(); }
 
   // Wait for BOTH schemas to load, then restore source + target + mapping
   const srcFull = job.sourceTable||job.source||'';
@@ -2931,95 +2915,44 @@ function confirmNewMap(action){
 }
 
 // ── Wasis ─────────────────────────────────────────────────────────────────────
-function loadWasisFile(file){
-  if(!file) return;
-  const ext=file.name.split('.').pop().toLowerCase();
-  if(ext==='xlsx'||ext==='xls'){ readExcelWasis(file); return; }
-  const reader=new FileReader();
-  reader.onload=e=>{ finishWasisLoad(parseWasisCSV(e.target.result, file.name)); };
-  reader.readAsText(file);
+// Rules are authored in Dashboard → System Parameters → Was/Is value mapping.
+// This page only READS them from localStorage and shows a status banner.
+// The SQL generator below still consumes `wasisRules` to emit CASE WHEN clauses.
+
+function renderWasisStatusBanner(){
+  const banner = $('wasis-status');
+  const textEl = $('wasis-status-text');
+  if (!banner || !textEl) return;
+  banner.style.display = 'flex';
+  if (!wasisRules.length){
+    textEl.textContent = 'No rules loaded';
+    return;
+  }
+  const tables = new Set(wasisRules.map(r => r.srcTable).filter(Boolean));
+  const fields = new Set(wasisRules.map(r => r.srcField).filter(Boolean));
+  textEl.textContent = wasisRules.length + ' rule' + (wasisRules.length===1?'':'s') +
+                       ' · ' + tables.size + ' table' + (tables.size===1?'':'s') +
+                       ' · ' + fields.size + ' field' + (fields.size===1?'':'s');
 }
 
-function readExcelWasis(file){
-  // Load SheetJS dynamically
-  if(window.XLSX){ doExcelParse(file); return; }
-  const s=document.createElement('script');
-  s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-  s.onload=()=>doExcelParse(file);
-  document.head.appendChild(s);
+// Re-read rules from localStorage. Useful if the user edits them in another
+// tab (Dashboard → System Parameters) and wants to pick up the change here
+// without reloading the page.
+function reloadWasisFromStorage(){
+  try { wasisRules = JSON.parse(localStorage.getItem(WASIS_KEY)||'[]'); } catch { wasisRules=[]; }
+  if (!Array.isArray(wasisRules)) wasisRules = [];
+  renderWasisStatusBanner();
+  showStatus('✓ Was/Is reloaded: '+wasisRules.length+' rule'+(wasisRules.length===1?'':'s'), 'info');
 }
 
-function doExcelParse(file){
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const wb=XLSX.read(e.target.result,{type:'array'});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-    finishWasisLoad(parseWasisRows(rows));
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function parseWasisCSV(text, filename){
-  const delim=text.includes('\t')?'\t':',';
-  const rows=text.split('\n').filter(l=>l.trim()).map(l=>l.split(delim).map(c=>c.replace(/^"|"$/g,'').trim()));
-  return parseWasisRows(rows);
-}
-
-function parseWasisRows(rows){
-  if(!rows.length) return [];
-  const hdr=rows[0].map(h=>h.toLowerCase().replace(/\s+/g,''));
-  const col=k=>{ const i=hdr.findIndex(h=>h.includes(k)); return i>=0?i:-1; };
-  const iTable=col('table')||col('srctable'); const iField=col('field')||col('col')||col('column');
-  const iOld=col('old')||col('was')||col('from')||col('source'); const iNew=col('new')||col('is')||col('to')||col('target');
-  const iDesc=col('desc')||col('description')||col('note');
-  return rows.slice(1).filter(r=>r.length>=2&&r.join('').trim()).map(r=>({
-    srcTable:(iTable>=0?r[iTable]:'').toLowerCase().trim(),
-    srcField:(iField>=0?r[iField]:'').toLowerCase().trim(),
-    oldVal: iOld>=0?r[iOld]:'',
-    newVal: iNew>=0?r[iNew]:'',
-    desc:   iDesc>=0?r[iDesc]:''
-  })).filter(r=>r.oldVal!==''||r.newVal!=='');
-}
-
-function finishWasisLoad(rules){
-  wasisRules=rules;
-  try{ localStorage.setItem(WASIS_KEY,JSON.stringify(rules)); }catch{}
-  renderWasisStats();
-  if(rules.length) showStatus('✓ Was/Is loaded: '+rules.length+' rules','info');
-}
-
-function renderWasisStats(){
-  if(!wasisRules.length){ clearWasis(); return; }
-  const tables=new Set(wasisRules.map(r=>r.srcTable).filter(Boolean));
-  const fields=new Set(wasisRules.map(r=>r.srcField).filter(Boolean));
-  $('wasis-badge').style.display='inline';
-  $('wasis-desc').textContent=wasisRules.length+' rules · '+tables.size+' tables · '+fields.size+' fields';
-  $('wasis-clear-btn').style.display='';
-  $('wasis-preview-btn').style.display='';
-  $('wasis-stats').style.display='block';
-  $('wasis-stats').textContent='Rules: '+wasisRules.length+' · Tables: '+tables.size+' · Fields: '+fields.size;
-  // Render preview table
-  $('wasis-tbody').innerHTML=wasisRules.slice(0,200).map(r=>`
-    <tr><td>${esc(r.srcTable)}</td><td>${esc(r.srcField)}</td><td>${esc(r.oldVal)}</td><td>${esc(r.newVal)}</td><td>${esc(r.desc)}</td></tr>
-  `).join('');
-}
-
-function clearWasis(){
-  wasisRules=[];
-  try{ localStorage.removeItem(WASIS_KEY); }catch{}
-  $('wasis-badge').style.display='none';
-  $('wasis-desc').textContent='Upload a Was/Is file to translate old values to new values during migration';
-  $('wasis-clear-btn').style.display='none';
-  $('wasis-preview-btn').style.display='none';
-  $('wasis-stats').style.display='none';
-  $('wasis-preview').style.display='none';
-}
-
-function toggleWasisPreview(){
-  const p=$('wasis-preview');
-  p.style.display=p.style.display==='none'?'block':'none';
-}
+// Keep this tab in sync automatically when another tab writes to the key.
+window.addEventListener('storage', e => {
+  if (e.key === WASIS_KEY){
+    try { wasisRules = JSON.parse(e.newValue || '[]'); } catch { wasisRules = []; }
+    if (!Array.isArray(wasisRules)) wasisRules = [];
+    renderWasisStatusBanner();
+  }
+});
 
 // ── WHERE modal ───────────────────────────────────────────────────────────────
 let whereApiKey='';

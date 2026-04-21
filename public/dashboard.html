@@ -663,6 +663,17 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 #view-system-parameters .sp-sort-ind{opacity:0.4;font-size:10px;margin-left:3px;transition:opacity 0.15s}
 #view-system-parameters th:hover .sp-sort-ind{opacity:0.75}
 #view-system-parameters .sp-sort-ind.active{opacity:1;color:var(--accent)}
+
+/* Tab bar (mirrors Connections view) */
+#view-system-parameters .cx-tab{
+  background:transparent;border:none;color:var(--text3);
+  font-family:var(--serif);font-size:12px;font-weight:500;
+  padding:0.7rem 1.1rem;cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:color 0.15s,border-color 0.15s;
+}
+#view-system-parameters .cx-tab:hover{ color:var(--text2); }
+#view-system-parameters .cx-tab-active{ color:var(--accent);border-bottom-color:var(--accent); }
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
@@ -1448,19 +1459,38 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     <div id="view-system-parameters" class="view">
       <div class="sp-head">
         <div>
-          <div class="sp-title">⚙ System parameters</div>
-          <div class="sp-sub">Parameters are tokens like <code>@@StartDate</code> that get substituted with their value wherever they appear — in generated SQL, custom SQL jobs, WHERE clauses, Wasis rules, transforms, and literal values. The code is derived automatically from the name.</div>
+          <div class="sp-title" id="sp-view-title">⚙ System parameters</div>
+          <div class="sp-sub" id="sp-view-sub-params">Parameters are tokens like <code>@@StartDate</code> that get substituted with their value wherever they appear — in generated SQL, custom SQL jobs, WHERE clauses, Wasis rules, transforms, and literal values. The code is derived automatically from the name.</div>
+          <div class="sp-sub" id="sp-view-sub-wasis" style="display:none">Was/Is rules translate old source values to new target values during migration. Each rule matches on an optional source table and field (leave blank to match any) and rewrites <code>oldVal</code> → <code>newVal</code> via a generated <code>CASE</code> expression.</div>
         </div>
-        <div class="sp-toolbar">
+        <div class="sp-toolbar" id="sp-toolbar-params">
           <input type="file" id="sp-import-file" accept=".csv,.json" style="display:none" onchange="spImportFile(this)">
           <button class="btn" onclick="document.getElementById('sp-import-file').click()" title="Import from CSV or JSON">⬆ Import</button>
           <button class="btn" onclick="spExportCSV()" title="Download as CSV">⬇ Export CSV</button>
           <button class="btn" onclick="spExportJSON()" title="Download as JSON">⬇ Export JSON</button>
           <button class="btn btn-primary" onclick="spAddRow()">+ Add parameter</button>
         </div>
+        <div class="sp-toolbar" id="sp-toolbar-wasis" style="display:none">
+          <input type="file" id="wi-import-file" accept=".csv,.tsv,.xlsx,.xls,.txt,.json" style="display:none" onchange="wiImportFile(this)">
+          <button class="btn" onclick="document.getElementById('wi-import-file').click()" title="Import from CSV, TSV, Excel, or JSON">⬆ Import</button>
+          <button class="btn" onclick="wiExportCSV()" title="Download as CSV">⬇ Export CSV</button>
+          <button class="btn" onclick="wiExportJSON()" title="Download as JSON">⬇ Export JSON</button>
+          <button class="btn btn-primary" onclick="wiAddRow()">+ Add rule</button>
+        </div>
       </div>
 
-      <div class="sp-panel">
+      <!-- Tab bar -->
+      <div class="cx-tabs sp-tabs" style="display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border)">
+        <button class="cx-tab cx-tab-active" data-sp-tab="params" onclick="switchSysTab('params')">
+          ⚙ Parameters
+        </button>
+        <button class="cx-tab" data-sp-tab="wasis" onclick="switchSysTab('wasis')">
+          🔄 Was/Is value mapping
+        </button>
+      </div>
+
+      <!-- Tab: Parameters -->
+      <div id="sp-tab-params" class="sp-panel">
         <div class="sp-hint">
           Names become codes automatically. <code>Start Date</code> → <code>@@StartDate</code>.
           Use the code exactly as shown (case-insensitive) wherever you want the value substituted.
@@ -1492,6 +1522,45 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
             <div class="sp-emoji">🔎</div>
             <div>No parameters match the filter.</div>
             <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="spClearFilter();return false">clear the filter</a>.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Was/Is value mapping -->
+      <div id="sp-tab-wasis" class="sp-panel" style="display:none">
+        <div class="sp-hint">
+          Each rule rewrites <code>oldVal</code> → <code>newVal</code> for a matching column.
+          Leave <strong>Table</strong> or <strong>Field</strong> blank to match any.
+          Rules are applied during SQL generation as a <code>CASE WHEN</code> expression on the source column.
+        </div>
+        <div class="sp-filter-bar" id="wi-filter-bar" style="display:none">
+          <input type="text" id="wi-filter-input" class="sp-filter-input" placeholder="🔍 Filter by table, field, old value, new value, or description…" oninput="wiApplyFilter()">
+          <button class="btn btn-sm" id="wi-filter-clear" onclick="wiClearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
+          <span id="wi-filter-count" class="sp-filter-count"></span>
+        </div>
+        <div id="wi-list-wrap">
+          <div class="sp-empty" id="wi-empty-state">
+            <div class="sp-emoji">🔄</div>
+            <div>No Was/Is rules yet.</div>
+            <div style="font-size:11px;margin-top:0.4rem">Click <strong>+ Add rule</strong>, or import a CSV/TSV/XLSX/JSON file.</div>
+          </div>
+          <table class="sp-params" id="wi-rules-table" style="display:none">
+            <thead>
+              <tr>
+                <th style="width:15%;cursor:pointer;user-select:none" onclick="wiSortBy('srcTable')">Table <span class="sp-sort-ind" id="wi-sort-ind-srcTable">⇅</span></th>
+                <th style="width:15%;cursor:pointer;user-select:none" onclick="wiSortBy('srcField')">Field <span class="sp-sort-ind" id="wi-sort-ind-srcField">⇅</span></th>
+                <th style="width:22%;cursor:pointer;user-select:none" onclick="wiSortBy('oldVal')">Old value <span class="sp-sort-ind" id="wi-sort-ind-oldVal">⇅</span></th>
+                <th style="width:22%;cursor:pointer;user-select:none" onclick="wiSortBy('newVal')">New value <span class="sp-sort-ind" id="wi-sort-ind-newVal">⇅</span></th>
+                <th style="width:22%;cursor:pointer;user-select:none" onclick="wiSortBy('desc')">Description <span class="sp-sort-ind" id="wi-sort-ind-desc">⇅</span></th>
+                <th style="width:4%"></th>
+              </tr>
+            </thead>
+            <tbody id="wi-rules-tbody"></tbody>
+          </table>
+          <div class="sp-empty" id="wi-empty-filter-state" style="display:none">
+            <div class="sp-emoji">🔎</div>
+            <div>No rules match the filter.</div>
+            <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="wiClearFilter();return false">clear the filter</a>.</div>
           </div>
         </div>
       </div>
@@ -7779,6 +7848,14 @@ let spSortDir = 1;     // 1 asc, -1 desc
 function initSystemParametersView(){
   if (!window.CygenixParams){ console.warn('CygenixParams helper not loaded'); return; }
   spLoad();
+  // Default to the Parameters tab on every (re-)entry. If the user was
+  // previously on the Was/Is tab, switching views and coming back will
+  // take them back to Parameters — consistent with the way the view
+  // looked before tabs existed.
+  switchSysTab('params');
+  // Keep the Was/Is cache fresh in case another page (object_mapping.html)
+  // edited the underlying localStorage while we were away.
+  if (wiInitialized) wiLoad();
 }
 
 function spEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -8087,6 +8164,359 @@ function spParseCSV(text){
     });
   }
   return out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SYSTEM PARAMETERS — TAB SWITCHER (Parameters ↔ Was/Is)
+// ═══════════════════════════════════════════════════════════════════════════
+function switchSysTab(tab){
+  document.querySelectorAll('#view-system-parameters .cx-tab').forEach(el => {
+    el.classList.toggle('cx-tab-active', el.dataset.spTab === tab);
+  });
+  const tabParams = document.getElementById('sp-tab-params');
+  const tabWasis  = document.getElementById('sp-tab-wasis');
+  const toolParams = document.getElementById('sp-toolbar-params');
+  const toolWasis  = document.getElementById('sp-toolbar-wasis');
+  const subParams  = document.getElementById('sp-view-sub-params');
+  const subWasis   = document.getElementById('sp-view-sub-wasis');
+  const title      = document.getElementById('sp-view-title');
+
+  const onParams = tab === 'params';
+  if (tabParams) tabParams.style.display = onParams ? '' : 'none';
+  if (tabWasis)  tabWasis.style.display  = onParams ? 'none' : '';
+  if (toolParams) toolParams.style.display = onParams ? '' : 'none';
+  if (toolWasis)  toolWasis.style.display  = onParams ? 'none' : '';
+  if (subParams) subParams.style.display = onParams ? '' : 'none';
+  if (subWasis)  subWasis.style.display  = onParams ? 'none' : '';
+  if (title) title.textContent = onParams ? '⚙ System parameters' : '🔄 Was/Is value mapping';
+
+  // Lazy-init the Was/Is tab the first time it's opened
+  if (!onParams && !wiInitialized){ wiLoad(); wiInitialized = true; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WAS/IS VALUE MAPPING VIEW
+// ═══════════════════════════════════════════════════════════════════════════
+// Storage key kept the same as object_mapping.html so both pages share data.
+const WI_STORAGE_KEY = 'cygenix_wasis_rules';
+let wiRules = [];
+let wiFilterQuery = '';
+let wiSortCol = null;  // 'srcTable' | 'srcField' | 'oldVal' | 'newVal' | 'desc' | null
+let wiSortDir = 1;     // 1 asc, -1 desc
+let wiInitialized = false;
+
+function wiEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function wiNormaliseRule(r){
+  return {
+    srcTable: (r && r.srcTable != null ? String(r.srcTable) : '').toLowerCase().trim(),
+    srcField: (r && r.srcField != null ? String(r.srcField) : '').toLowerCase().trim(),
+    oldVal:   r && r.oldVal   != null ? String(r.oldVal)   : '',
+    newVal:   r && r.newVal   != null ? String(r.newVal)   : '',
+    desc:     r && r.desc     != null ? String(r.desc)     : ''
+  };
+}
+
+function wiLoad(){
+  try { wiRules = JSON.parse(localStorage.getItem(WI_STORAGE_KEY) || '[]'); }
+  catch { wiRules = []; }
+  if (!Array.isArray(wiRules)) wiRules = [];
+  wiRules = wiRules.map(wiNormaliseRule);
+  wiRender();
+}
+
+function wiSave(){
+  // object_mapping.html expects srcTable/srcField lowercased. Preserve that.
+  const toSave = wiRules.map(wiNormaliseRule);
+  try { localStorage.setItem(WI_STORAGE_KEY, JSON.stringify(toSave)); }
+  catch(e){ console.warn('wiSave failed', e); }
+}
+
+function wiGetDisplayedRows(){
+  const q = wiFilterQuery.trim().toLowerCase();
+  let indexed = wiRules.map((r, origIdx) => ({ row: wiNormaliseRule(r), origIdx }));
+  if (q){
+    indexed = indexed.filter(({row}) =>
+      row.srcTable.toLowerCase().includes(q) ||
+      row.srcField.toLowerCase().includes(q) ||
+      row.oldVal.toLowerCase().includes(q)   ||
+      row.newVal.toLowerCase().includes(q)   ||
+      row.desc.toLowerCase().includes(q)
+    );
+  }
+  if (wiSortCol){
+    indexed.sort((a, b) => {
+      const av = (a.row[wiSortCol] || '').toLowerCase();
+      const bv = (b.row[wiSortCol] || '').toLowerCase();
+      if (av < bv) return -1 * wiSortDir;
+      if (av > bv) return  1 * wiSortDir;
+      return 0;
+    });
+  }
+  return indexed;
+}
+
+function wiRender(){
+  const tbl         = document.getElementById('wi-rules-table');
+  const empty       = document.getElementById('wi-empty-state');
+  const emptyFilter = document.getElementById('wi-empty-filter-state');
+  const tbody       = document.getElementById('wi-rules-tbody');
+  const filterBar   = document.getElementById('wi-filter-bar');
+  if (!tbl || !empty || !tbody || !filterBar) return;
+
+  if (!wiRules.length){
+    tbl.style.display = 'none';
+    empty.style.display = 'block';
+    emptyFilter.style.display = 'none';
+    filterBar.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  filterBar.style.display = 'flex';
+
+  const displayed = wiGetDisplayedRows();
+
+  // Sort indicators
+  ['srcTable','srcField','oldVal','newVal','desc'].forEach(c => {
+    const el = document.getElementById('wi-sort-ind-'+c);
+    if (!el) return;
+    if (c === wiSortCol){
+      el.textContent = wiSortDir === 1 ? '▲' : '▼';
+      el.classList.add('active');
+    } else {
+      el.textContent = '⇅';
+      el.classList.remove('active');
+    }
+  });
+
+  const count = document.getElementById('wi-filter-count');
+  const clr   = document.getElementById('wi-filter-clear');
+  if (count){
+    if (wiFilterQuery.trim() || wiSortCol){
+      count.textContent = displayed.length + ' of ' + wiRules.length;
+    } else {
+      count.textContent = wiRules.length + ' rule' + (wiRules.length === 1 ? '' : 's');
+    }
+  }
+  if (clr) clr.style.display = wiFilterQuery.trim() ? 'inline-flex' : 'none';
+
+  if (!displayed.length){
+    tbl.style.display = 'none';
+    emptyFilter.style.display = 'block';
+    return;
+  }
+  emptyFilter.style.display = 'none';
+  tbl.style.display = '';
+
+  tbody.innerHTML = displayed.map(({row, origIdx}) => {
+    return `<tr>
+      <td><input class="sp-cell-input mono" value="${wiEsc(row.srcTable)}" oninput="wiUpdateField(${origIdx},'srcTable',this.value)" placeholder="any table"></td>
+      <td><input class="sp-cell-input mono" value="${wiEsc(row.srcField)}" oninput="wiUpdateField(${origIdx},'srcField',this.value)" placeholder="any field"></td>
+      <td><input class="sp-cell-input mono" value="${wiEsc(row.oldVal)}" oninput="wiUpdateField(${origIdx},'oldVal',this.value)" placeholder="old value"></td>
+      <td><input class="sp-cell-input mono" value="${wiEsc(row.newVal)}" oninput="wiUpdateField(${origIdx},'newVal',this.value)" placeholder="new value"></td>
+      <td><input class="sp-cell-input" value="${wiEsc(row.desc)}" oninput="wiUpdateField(${origIdx},'desc',this.value)" placeholder="optional note"></td>
+      <td style="text-align:right"><button class="sp-icon-btn danger" onclick="wiRemoveRow(${origIdx})" title="Delete">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function wiApplyFilter(){
+  wiFilterQuery = document.getElementById('wi-filter-input').value || '';
+  wiRender();
+}
+
+function wiClearFilter(){
+  wiFilterQuery = '';
+  const input = document.getElementById('wi-filter-input');
+  if (input) input.value = '';
+  wiRender();
+}
+
+function wiSortBy(col){
+  if (wiSortCol !== col){
+    wiSortCol = col; wiSortDir = 1;    // new column → asc
+  } else if (wiSortDir === 1){
+    wiSortDir = -1;                     // asc → desc
+  } else {
+    wiSortCol = null; wiSortDir = 1;    // desc → clear
+  }
+  wiRender();
+}
+
+function wiUpdateField(i, field, value){
+  if (!wiRules[i]) return;
+  // Lowercase srcTable and srcField at save time (matches object_mapping
+  // expectations — SQL generation compares against r.srcField.toLowerCase()).
+  // Keep the input value as-typed for this edit; renormalise on save.
+  if (field === 'srcTable' || field === 'srcField'){
+    wiRules[i][field] = (value || '').toLowerCase();
+  } else {
+    wiRules[i][field] = value;
+  }
+  wiSave();
+}
+
+function wiAddRow(){
+  wiRules.push({ srcTable:'', srcField:'', oldVal:'', newVal:'', desc:'' });
+  // Clear any active filter so the new blank row is visible
+  if (wiFilterQuery.trim()){
+    wiFilterQuery = '';
+    const input = document.getElementById('wi-filter-input');
+    if (input) input.value = '';
+  }
+  wiSave();
+  wiRender();
+  // Focus the new row's first input
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#wi-rules-tbody tr:last-child input');
+    if (inputs[0]) inputs[0].focus();
+  }, 50);
+}
+
+function wiRemoveRow(i){
+  const r = wiRules[i];
+  if (!r) return;
+  const label = r.oldVal || r.newVal || r.srcField || r.srcTable;
+  if (label && !confirm('Remove Was/Is rule "' + label + '"?')) return;
+  wiRules.splice(i, 1);
+  wiSave();
+  wiRender();
+}
+
+// ── CSV/JSON export ──────────────────────────────────────────────────────
+function wiDownload(filename, content, mime){
+  const blob = new Blob([content], { type: mime });
+  const url  = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function wiExportJSON(){
+  const data = wiRules.map(wiNormaliseRule);
+  wiDownload('cygenix-wasis-rules.json', JSON.stringify(data, null, 2), 'application/json');
+  if (typeof showToast === 'function') showToast('Exported JSON');
+}
+
+function wiExportCSV(){
+  const quote = v => { const s = String(v==null?'':v); return '"' + s.replace(/"/g,'""') + '"'; };
+  const rows = [ ['table','field','oldVal','newVal','description'].join(',') ];
+  wiRules.forEach(r => {
+    const n = wiNormaliseRule(r);
+    rows.push([n.srcTable, n.srcField, n.oldVal, n.newVal, n.desc].map(quote).join(','));
+  });
+  wiDownload('cygenix-wasis-rules.csv', rows.join('\n'), 'text/csv');
+  if (typeof showToast === 'function') showToast('Exported CSV');
+}
+
+// ── Import (CSV / TSV / JSON / XLSX) ─────────────────────────────────────
+function wiImportFile(input){
+  const f = input.files && input.files[0];
+  if (!f) return;
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+
+  const onDone = imported => {
+    if (!Array.isArray(imported) || !imported.length){
+      alert('No valid Was/Is rows found in the file.');
+      input.value = '';
+      return;
+    }
+    const replace = wiRules.length === 0 || confirm(
+      'Replace all ' + wiRules.length + ' existing rule(s)?\n\n' +
+      'OK = replace all with imported ' + imported.length + '\n' +
+      'Cancel = append imported to existing'
+    );
+    if (replace){
+      wiRules = imported.map(wiNormaliseRule);
+    } else {
+      wiRules = wiRules.concat(imported.map(wiNormaliseRule));
+    }
+    wiSave();
+    wiRender();
+    if (typeof showToast === 'function') showToast('Imported ' + imported.length + ' rule(s)');
+    input.value = '';
+  };
+
+  const onFail = msg => { alert('Import failed: ' + msg); input.value = ''; };
+
+  if (ext === 'json'){
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        if (!Array.isArray(parsed)) throw new Error('JSON must be an array of objects');
+        onDone(parsed);
+      } catch(err){ onFail(err.message); }
+    };
+    reader.readAsText(f);
+    return;
+  }
+
+  if (ext === 'xlsx' || ext === 'xls'){
+    // Load SheetJS dynamically if needed (same approach as object_mapping.html)
+    const doParse = () => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const wb = window.XLSX.read(e.target.result, { type:'array' });
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = window.XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+          onDone(wiParseRows(rows));
+        } catch(err){ onFail(err.message); }
+      };
+      reader.readAsArrayBuffer(f);
+    };
+    if (window.XLSX){ doParse(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = doParse;
+    s.onerror = () => onFail('Failed to load XLSX library');
+    document.head.appendChild(s);
+    return;
+  }
+
+  // CSV / TSV / TXT
+  const reader = new FileReader();
+  reader.onload = e => {
+    try { onDone(wiParseCSV(e.target.result)); }
+    catch(err){ onFail(err.message); }
+  };
+  reader.readAsText(f);
+}
+
+function wiParseCSV(text){
+  const delim = text.includes('\t') ? '\t' : ',';
+  const rows = text.split('\n')
+    .filter(l => l.trim())
+    .map(l => l.split(delim).map(c => c.replace(/^"|"$/g,'').trim()));
+  return wiParseRows(rows);
+}
+
+// Accepts a 2D array of cells (header row first) and returns normalised rules.
+// Column names are matched loosely to tolerate the various header styles the
+// old Wasis loader accepted (table/field/old/new/desc and their synonyms).
+function wiParseRows(rows){
+  if (!rows || !rows.length) return [];
+  const hdr = rows[0].map(h => String(h||'').toLowerCase().replace(/\s+/g,''));
+  const col = k => { const i = hdr.findIndex(h => h.includes(k)); return i >= 0 ? i : -1; };
+  const iTable = (()=>{ const a = col('table'); return a >= 0 ? a : col('srctable'); })();
+  const iField = (()=>{ const a = col('field'); if (a >= 0) return a; const b = col('col'); return b >= 0 ? b : col('column'); })();
+  const iOld   = (()=>{ const a = col('old'); if (a >= 0) return a; const b = col('was'); if (b >= 0) return b; const c = col('from'); return c >= 0 ? c : col('source'); })();
+  const iNew   = (()=>{ const a = col('new'); if (a >= 0) return a; const b = col('is');  if (b >= 0) return b; const c = col('to');   return c >= 0 ? c : col('target'); })();
+  const iDesc  = (()=>{ const a = col('desc'); if (a >= 0) return a; const b = col('description'); return b >= 0 ? b : col('note'); })();
+
+  return rows.slice(1)
+    .filter(r => r && r.length >= 2 && r.join('').trim())
+    .map(r => wiNormaliseRule({
+      srcTable: iTable >= 0 ? r[iTable] : '',
+      srcField: iField >= 0 ? r[iField] : '',
+      oldVal:   iOld   >= 0 ? r[iOld]   : '',
+      newVal:   iNew   >= 0 ? r[iNew]   : '',
+      desc:     iDesc  >= 0 ? r[iDesc]  : ''
+    }))
+    .filter(r => r.oldVal !== '' || r.newVal !== '' || r.srcField !== '' || r.srcTable !== '');
 }
 
 </script>
