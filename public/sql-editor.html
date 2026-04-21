@@ -40,6 +40,28 @@
 body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
 
+/* ── COLLAPSED SIDEBAR FIX ─────────────────────────────────────────────────
+   When the sidebar collapses, cygenix-sidebar.js keeps both the narrow icon
+   rail and the wider expanded panel in the DOM. The expanded panel needs to
+   be hidden on this page — we cover several class-name patterns the sidebar
+   script might use so whichever one it is, it gets hidden.                */
+body.cyg-collapsed .cyg-sidebar-expanded,
+body.cyg-collapsed .cyg-sidebar-labels,
+body.cyg-collapsed .cyg-sidebar-menu,
+body.cyg-collapsed .cyg-sidebar-panel,
+body.cyg-collapsed [data-cyg-expanded],
+body.cyg-collapsed [data-cyg-role="expanded"]{
+  display:none!important;
+}
+/* Fallback — force anything inside the sidebar mount to fit inside the 54px
+   rail. This catches any wider element the more specific rules miss.      */
+body.cyg-collapsed #cyg-sidebar-mount,
+body.cyg-collapsed .cyg-sidebar,
+body.cyg-collapsed #cyg-sidebar{
+  max-width:54px!important;
+  overflow:hidden!important;
+}
+
 .topbar{position:fixed;top:0;right:0;left:230px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem;transition:left 0.2s ease}
 body.cyg-collapsed .topbar{left:54px}
 .logo{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
@@ -144,11 +166,19 @@ body.fullscreen .script-panel { display:none }
 /* ── LINE NUMBERS ──────────────────────────────────────────────────────────── */
 .editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:row}
 .line-numbers{display:none}
-#sql-editor{flex:1;min-width:0}
-
-/* ── WORD WRAP toggle ──────────────────────────────────────────────────────── */
-#sql-editor.wrap-on{white-space:pre-wrap;word-break:break-all}
-#sql-editor.wrap-off{white-space:pre;overflow-x:hidden}
+/* The textarea is now a hidden proxy — Monaco provides the visible editor */
+#sql-editor{position:absolute!important;left:-9999px!important;top:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+#monaco-host{flex:1;min-width:0;height:100%;position:relative}
+#monaco-host .monaco-editor,
+#monaco-host .monaco-editor .overflow-guard{border-radius:0}
+/* Match Monaco chrome to our dark theme */
+#monaco-host .monaco-editor .margin,
+#monaco-host .monaco-editor,
+#monaco-host .monaco-editor-background,
+#monaco-host .monaco-editor .monaco-editor-background{background:var(--bg)!important}
+#monaco-host .monaco-editor .line-numbers{color:var(--text3)!important}
+#monaco-host .monaco-editor .current-line ~ .line-numbers{color:var(--text)!important}
+#monaco-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-family:var(--mono);font-size:12px;background:var(--bg);z-index:5}
 
 /* ── STATUS PILLS ──────────────────────────────────────────────────────────── */
 .status-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:100px;font-size:9px;font-family:var(--mono);background:var(--bg4);color:var(--text3);border:0.5px solid var(--border)}
@@ -279,6 +309,7 @@ body.fullscreen .script-panel { display:none }
         <div class="editor-wrap-inner">
           <div class="line-numbers" id="line-numbers">1</div>
           <textarea id="sql-editor" spellcheck="false" class="wrap-off" placeholder="-- Write SQL here | Ctrl+Enter to run | Ctrl+F to find | Ctrl+/ to comment&#10;&#10;SELECT TOP 100 * FROM [dbo].[YourTable]" onkeydown="handleEditorKey(event)" oninput="updateStatus();updateLineNumbers()" onscroll="syncScroll()" onclick="updateStatus()"></textarea>
+          <div id="monaco-host"><div id="monaco-loading">Loading editor…</div></div>
         </div>
       </div>
       <div class="editor-status">
@@ -360,6 +391,495 @@ body.fullscreen .script-panel { display:none }
 <script>
 // ── Auth ───────────────────────────────────────────────────────────────────────
 if (!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Monaco Editor bootstrap + textarea proxy shim
+// ──────────────────────────────────────────────────────────────────────────────
+// We keep the <textarea id="sql-editor"> in the DOM as a hidden proxy so all
+// existing code that reads/writes .value, selectionStart, selectionEnd keeps
+// working. A Monaco instance is the visible editor and the source of truth —
+// the proxy just forwards to it once it's ready.
+// ══════════════════════════════════════════════════════════════════════════════
+window.__cygMonaco = { editor: null, ready: false, pendingValue: '', pendingSel: null };
+
+(function setupEditorProxy(){
+  const ta = document.getElementById('sql-editor');
+  if (!ta) return;
+
+  // Capture the original descriptors from HTMLTextAreaElement.prototype so we
+  // can still use the textarea as storage until Monaco mounts.
+  const proto = HTMLTextAreaElement.prototype;
+  const origValue = Object.getOwnPropertyDescriptor(proto, 'value');
+  const origSelStart = Object.getOwnPropertyDescriptor(proto, 'selectionStart');
+  const origSelEnd   = Object.getOwnPropertyDescriptor(proto, 'selectionEnd');
+
+  // Define per-instance overrides on the textarea element only (not the prototype)
+  Object.defineProperty(ta, 'value', {
+    configurable: true,
+    get(){
+      const m = window.__cygMonaco;
+      return m.ready && m.editor ? m.editor.getValue() : (m.pendingValue || origValue.get.call(this));
+    },
+    set(v){
+      const val = v == null ? '' : String(v);
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor) {
+        const model = m.editor.getModel();
+        if (model.getValue() !== val) model.setValue(val);
+      } else {
+        m.pendingValue = val;
+        origValue.set.call(this, val);
+      }
+    }
+  });
+
+  Object.defineProperty(ta, 'selectionStart', {
+    configurable: true,
+    get(){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const sel = m.editor.getSelection();
+        return sel ? m.editor.getModel().getOffsetAt({lineNumber:sel.startLineNumber, column:sel.startColumn}) : 0;
+      }
+      return origSelStart.get.call(this);
+    },
+    set(v){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const pos = m.editor.getModel().getPositionAt(v|0);
+        const sel = m.editor.getSelection();
+        if (sel){
+          m.editor.setSelection({
+            startLineNumber: pos.lineNumber, startColumn: pos.column,
+            endLineNumber: sel.endLineNumber, endColumn: sel.endColumn
+          });
+        } else {
+          m.editor.setPosition(pos);
+        }
+      } else {
+        origSelStart.set && origSelStart.set.call(this, v);
+      }
+    }
+  });
+
+  Object.defineProperty(ta, 'selectionEnd', {
+    configurable: true,
+    get(){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const sel = m.editor.getSelection();
+        return sel ? m.editor.getModel().getOffsetAt({lineNumber:sel.endLineNumber, column:sel.endColumn}) : 0;
+      }
+      return origSelEnd.get.call(this);
+    },
+    set(v){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const pos = m.editor.getModel().getPositionAt(v|0);
+        const sel = m.editor.getSelection();
+        if (sel){
+          m.editor.setSelection({
+            startLineNumber: sel.startLineNumber, startColumn: sel.startColumn,
+            endLineNumber: pos.lineNumber, endColumn: pos.column
+          });
+        } else {
+          m.editor.setPosition(pos);
+        }
+      } else {
+        origSelEnd.set && origSelEnd.set.call(this, v);
+      }
+    }
+  });
+
+  // setSelectionRange is used by the find bar
+  ta.setSelectionRange = function(start, end){
+    const m = window.__cygMonaco;
+    if (m.ready && m.editor){
+      const model = m.editor.getModel();
+      const p1 = model.getPositionAt(start|0);
+      const p2 = model.getPositionAt(end|0);
+      m.editor.setSelection({
+        startLineNumber:p1.lineNumber, startColumn:p1.column,
+        endLineNumber:p2.lineNumber, endColumn:p2.column
+      });
+      m.editor.revealRangeInCenterIfOutsideViewport({
+        startLineNumber:p1.lineNumber, startColumn:p1.column,
+        endLineNumber:p2.lineNumber, endColumn:p2.column
+      });
+    }
+  };
+
+  // focus() should focus Monaco, not the hidden textarea
+  const origFocus = ta.focus.bind(ta);
+  ta.focus = function(){
+    const m = window.__cygMonaco;
+    if (m.ready && m.editor) m.editor.focus();
+    else origFocus();
+  };
+})();
+
+// Load Monaco from CDN
+(function loadMonaco(){
+  const host = document.getElementById('monaco-host');
+  if (!host) return;
+
+  const loaderScript = document.createElement('script');
+  loaderScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
+  loaderScript.onload = function(){
+    window.require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+    window.require(['vs/editor/editor.main'], function(){
+      initMonaco();
+    });
+  };
+  loaderScript.onerror = function(){
+    document.getElementById('monaco-loading').textContent = 'Failed to load editor — check network connection';
+  };
+  document.head.appendChild(loaderScript);
+})();
+
+function initMonaco(){
+  const host = document.getElementById('monaco-host');
+  const loading = document.getElementById('monaco-loading');
+
+  // ── Custom dark theme matching Cygenix palette ───────────────────────────────
+  monaco.editor.defineTheme('cygenix-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'keyword.sql',      foreground: '3d7eff', fontStyle: 'bold' },
+      { token: 'operator.sql',     foreground: 'a78bfa' },
+      { token: 'string.sql',       foreground: '22c97a' },
+      { token: 'number.sql',       foreground: 'f59e0b' },
+      { token: 'comment.sql',      foreground: '555a6a', fontStyle: 'italic' },
+      { token: 'predefined.sql',   foreground: '2dd4bf' },
+      { token: 'identifier.sql',   foreground: 'e8eaf0' },
+      { token: 'delimiter.sql',    foreground: '8b90a0' },
+      { token: 'delimiter.square.sql', foreground: 'a78bfa' }
+    ],
+    colors: {
+      'editor.background':              '#0d0f14',
+      'editor.foreground':              '#e8eaf0',
+      'editorLineNumber.foreground':    '#555a6a',
+      'editorLineNumber.activeForeground':'#8b90a0',
+      'editor.selectionBackground':     '#3d7eff40',
+      'editor.lineHighlightBackground': '#13161d',
+      'editorCursor.foreground':        '#3d7eff',
+      'editorIndentGuide.background':   '#1a1e28',
+      'editorIndentGuide.activeBackground':'#3d7eff40',
+      'editorBracketMatch.background':  '#3d7eff30',
+      'editorBracketMatch.border':      '#3d7eff',
+      'editorWidget.background':        '#13161d',
+      'editorWidget.border':            '#ffffff1f',
+      'editorSuggestWidget.background': '#13161d',
+      'editorSuggestWidget.border':     '#ffffff1f',
+      'editorSuggestWidget.selectedBackground':'#3d7eff26',
+      'editorSuggestWidget.highlightForeground':'#3d7eff',
+      'editorHoverWidget.background':   '#13161d',
+      'editorHoverWidget.border':       '#ffffff1f',
+      'scrollbarSlider.background':     '#ffffff14',
+      'scrollbarSlider.hoverBackground':'#ffffff26',
+      'scrollbarSlider.activeBackground':'#3d7eff59'
+    }
+  });
+
+  // ── Create the editor ────────────────────────────────────────────────────────
+  const ta = document.getElementById('sql-editor');
+  const initial = window.__cygMonaco.pendingValue || '';
+
+  const editor = monaco.editor.create(host, {
+    value: initial,
+    language: 'sql',
+    theme: 'cygenix-dark',
+    fontFamily: "'IBM Plex Mono', monospace",
+    fontSize: 13,
+    lineHeight: 22,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    renderLineHighlight: 'line',
+    lineNumbers: 'on',
+    folding: true,
+    wordWrap: 'off',
+    tabSize: 2,
+    insertSpaces: true,
+    automaticLayout: true,
+    suggestOnTriggerCharacters: true,
+    quickSuggestions: { other: true, comments: false, strings: false },
+    acceptSuggestionOnEnter: 'smart',
+    snippetSuggestions: 'inline',
+    formatOnPaste: false,
+    formatOnType: false,
+    bracketPairColorization: { enabled: true },
+    padding: { top: 12, bottom: 12 }
+  });
+
+  window.__cygMonaco.editor = editor;
+  window.__cygMonaco.ready  = true;
+
+  if (loading) loading.remove();
+
+  // ── Sync Monaco → existing status/unsaved hooks ──────────────────────────────
+  editor.onDidChangeModelContent(() => {
+    if (typeof updateStatus === 'function') updateStatus();
+    const savedEl = document.getElementById('status-saved');
+    if (savedEl) { savedEl.textContent='Unsaved'; savedEl.style.color='var(--amber)'; }
+    // Fire a synthetic input event so any other listeners still work
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  editor.onDidChangeCursorPosition(() => {
+    if (typeof updateStatus === 'function') updateStatus();
+  });
+  editor.onDidChangeCursorSelection(() => {
+    if (typeof updateStatus === 'function') updateStatus();
+  });
+
+  // ── Keybindings ──────────────────────────────────────────────────────────────
+  // Ctrl+Enter runs the query
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+    if (typeof runSQL === 'function') runSQL();
+  });
+  // Ctrl+S saves the script (prevent browser save)
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+    if (typeof saveScript === 'function') saveScript();
+  });
+  // Ctrl+/ toggles line comment — use Monaco's built-in action, it handles
+  // selection & uncomment natively and works better than our textarea version
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => {
+    editor.getAction('editor.action.commentLine').run();
+  });
+  // Ctrl+F — let Monaco's built-in Find widget handle it; the custom find bar
+  // still works via its buttons but Ctrl+F inside the editor is native now.
+
+  // ── SQL completion provider (keywords, functions, snippets, schema) ──────────
+  registerSqlCompletions();
+
+  // ── Set initial value if we had anything queued ──────────────────────────────
+  if (window.__cygMonaco.pendingValue && editor.getValue() !== window.__cygMonaco.pendingValue){
+    editor.setValue(window.__cygMonaco.pendingValue);
+  }
+  window.__cygMonaco.pendingValue = '';
+
+  // Focus the editor for immediate typing
+  setTimeout(() => editor.focus(), 100);
+}
+
+// ── T-SQL completion provider ───────────────────────────────────────────────────
+function registerSqlCompletions(){
+  const KEYWORDS = [
+    'SELECT','FROM','WHERE','JOIN','INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','CROSS JOIN',
+    'ON','AND','OR','NOT','IN','NOT IN','EXISTS','NOT EXISTS','BETWEEN','LIKE','IS NULL','IS NOT NULL',
+    'INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','MERGE','OUTPUT',
+    'GROUP BY','ORDER BY','HAVING','UNION','UNION ALL','INTERSECT','EXCEPT',
+    'TOP','DISTINCT','AS','WITH','CTE','OVER','PARTITION BY',
+    'CASE','WHEN','THEN','ELSE','END',
+    'BEGIN','END','IF','ELSE','WHILE','BREAK','CONTINUE','RETURN','GOTO','TRY','CATCH',
+    'DECLARE','EXEC','EXECUTE','PRINT','RAISERROR','THROW',
+    'CREATE TABLE','ALTER TABLE','DROP TABLE','TRUNCATE TABLE',
+    'CREATE INDEX','DROP INDEX','CREATE VIEW','CREATE PROCEDURE','CREATE FUNCTION',
+    'PRIMARY KEY','FOREIGN KEY','REFERENCES','CONSTRAINT','UNIQUE','CHECK','DEFAULT','IDENTITY',
+    'BEGIN TRAN','BEGIN TRANSACTION','COMMIT','ROLLBACK','SAVE TRAN',
+    'USE','GO','SCHEMA','TABLE','VIEW','INDEX','PROCEDURE','FUNCTION','TRIGGER'
+  ];
+
+  const FUNCTIONS = [
+    // Aggregates
+    {name:'COUNT',        insert:'COUNT(${1:*})',         doc:'Count of rows'},
+    {name:'SUM',          insert:'SUM(${1:column})',      doc:'Sum of values'},
+    {name:'AVG',          insert:'AVG(${1:column})',      doc:'Average of values'},
+    {name:'MIN',          insert:'MIN(${1:column})',      doc:'Minimum value'},
+    {name:'MAX',          insert:'MAX(${1:column})',      doc:'Maximum value'},
+    // String
+    {name:'LEN',          insert:'LEN(${1:expr})',        doc:'String length'},
+    {name:'LTRIM',        insert:'LTRIM(${1:expr})',      doc:'Trim left whitespace'},
+    {name:'RTRIM',        insert:'RTRIM(${1:expr})',      doc:'Trim right whitespace'},
+    {name:'TRIM',         insert:'TRIM(${1:expr})',       doc:'Trim whitespace'},
+    {name:'UPPER',        insert:'UPPER(${1:expr})',      doc:'Uppercase'},
+    {name:'LOWER',        insert:'LOWER(${1:expr})',      doc:'Lowercase'},
+    {name:'SUBSTRING',    insert:'SUBSTRING(${1:expr}, ${2:start}, ${3:length})', doc:'Extract substring'},
+    {name:'REPLACE',      insert:'REPLACE(${1:expr}, ${2:find}, ${3:replace})',   doc:'Replace text'},
+    {name:'CHARINDEX',    insert:'CHARINDEX(${1:find}, ${2:expr})', doc:'Position of substring'},
+    {name:'CONCAT',       insert:'CONCAT(${1:a}, ${2:b})', doc:'Concatenate strings'},
+    {name:'FORMAT',       insert:'FORMAT(${1:value}, ${2:\'format\'})', doc:'Format value'},
+    // Date
+    {name:'GETDATE',      insert:'GETDATE()',              doc:'Current date/time'},
+    {name:'GETUTCDATE',   insert:'GETUTCDATE()',           doc:'Current UTC date/time'},
+    {name:'SYSDATETIME',  insert:'SYSDATETIME()',          doc:'High-precision datetime'},
+    {name:'DATEADD',      insert:'DATEADD(${1:day}, ${2:1}, ${3:date})', doc:'Add to date'},
+    {name:'DATEDIFF',     insert:'DATEDIFF(${1:day}, ${2:from}, ${3:to})', doc:'Difference between dates'},
+    {name:'DATEPART',     insert:'DATEPART(${1:year}, ${2:date})', doc:'Extract part of date'},
+    {name:'YEAR',         insert:'YEAR(${1:date})',        doc:'Year from date'},
+    {name:'MONTH',        insert:'MONTH(${1:date})',       doc:'Month from date'},
+    {name:'DAY',          insert:'DAY(${1:date})',         doc:'Day from date'},
+    // Conversion
+    {name:'CAST',         insert:'CAST(${1:expr} AS ${2:type})', doc:'Type conversion'},
+    {name:'CONVERT',      insert:'CONVERT(${1:type}, ${2:expr})', doc:'Type conversion with style'},
+    {name:'TRY_CAST',     insert:'TRY_CAST(${1:expr} AS ${2:type})', doc:'Safe type conversion (null on failure)'},
+    {name:'TRY_CONVERT',  insert:'TRY_CONVERT(${1:type}, ${2:expr})', doc:'Safe convert (null on failure)'},
+    // Null handling
+    {name:'ISNULL',       insert:'ISNULL(${1:expr}, ${2:default})', doc:'Replace null with default'},
+    {name:'COALESCE',     insert:'COALESCE(${1:a}, ${2:b})', doc:'First non-null value'},
+    {name:'NULLIF',       insert:'NULLIF(${1:a}, ${2:b})', doc:'Null if equal'},
+    // Window
+    {name:'ROW_NUMBER',   insert:'ROW_NUMBER() OVER (ORDER BY ${1:col})', doc:'Sequential row number'},
+    {name:'RANK',         insert:'RANK() OVER (ORDER BY ${1:col})', doc:'Ranking with gaps'},
+    {name:'DENSE_RANK',   insert:'DENSE_RANK() OVER (ORDER BY ${1:col})', doc:'Ranking without gaps'},
+    {name:'LAG',          insert:'LAG(${1:col}, ${2:1}) OVER (ORDER BY ${3:col})', doc:'Previous row value'},
+    {name:'LEAD',         insert:'LEAD(${1:col}, ${2:1}) OVER (ORDER BY ${3:col})', doc:'Next row value'},
+    // Meta
+    {name:'OBJECT_ID',    insert:'OBJECT_ID(\'${1:name}\')', doc:'Object ID by name'},
+    {name:'DB_NAME',      insert:'DB_NAME()',              doc:'Current database name'},
+    {name:'SCHEMA_NAME',  insert:'SCHEMA_NAME()',          doc:'Current schema name'},
+    {name:'@@VERSION',    insert:'@@VERSION',              doc:'SQL Server version'},
+    {name:'@@ROWCOUNT',   insert:'@@ROWCOUNT',             doc:'Rows affected by last statement'},
+    {name:'@@IDENTITY',   insert:'@@IDENTITY',             doc:'Last identity value'}
+  ];
+
+  const SNIPPETS = [
+    {
+      name:'select-top',
+      doc:'SELECT TOP n … FROM …',
+      insert:'SELECT TOP ${1:100} *\nFROM ${2:[schema].[table]}\nWHERE ${3:1=1}'
+    },
+    {
+      name:'select-join',
+      doc:'SELECT … JOIN … ON …',
+      insert:'SELECT ${1:t1}.*, ${2:t2}.*\nFROM ${3:[schema].[table1]} ${1:t1}\nINNER JOIN ${4:[schema].[table2]} ${2:t2} ON ${1:t1}.${5:id} = ${2:t2}.${6:fk}\nWHERE ${7:1=1}'
+    },
+    {
+      name:'cte',
+      doc:'WITH … AS (…) SELECT …',
+      insert:'WITH ${1:cte_name} AS (\n  SELECT ${2:*}\n  FROM ${3:table}\n  WHERE ${4:1=1}\n)\nSELECT * FROM ${1:cte_name}'
+    },
+    {
+      name:'tran-rollback',
+      doc:'BEGIN TRAN / ROLLBACK template',
+      insert:'BEGIN TRAN;\n\n${1:-- statements}\n\nROLLBACK; -- COMMIT;'
+    },
+    {
+      name:'try-catch',
+      doc:'BEGIN TRY / BEGIN CATCH block',
+      insert:'BEGIN TRY\n  ${1:-- statements}\nEND TRY\nBEGIN CATCH\n  SELECT\n    ERROR_NUMBER()  AS ErrorNumber,\n    ERROR_MESSAGE() AS ErrorMessage,\n    ERROR_LINE()    AS ErrorLine;\nEND CATCH'
+    },
+    {
+      name:'merge',
+      doc:'MERGE into target USING source',
+      insert:'MERGE ${1:target} AS t\nUSING ${2:source} AS s\n  ON t.${3:id} = s.${3:id}\nWHEN MATCHED THEN\n  UPDATE SET t.${4:col} = s.${4:col}\nWHEN NOT MATCHED BY TARGET THEN\n  INSERT (${5:cols}) VALUES (${6:vals});'
+    },
+    {
+      name:'case',
+      doc:'CASE WHEN … THEN … END',
+      insert:'CASE\n  WHEN ${1:condition} THEN ${2:value}\n  ELSE ${3:default}\nEND'
+    },
+    {
+      name:'upsert-ifexists',
+      doc:'IF EXISTS … UPDATE ELSE INSERT',
+      insert:'IF EXISTS (SELECT 1 FROM ${1:target} WHERE ${2:id} = ${3:@id})\n  UPDATE ${1:target} SET ${4:col} = ${5:@val} WHERE ${2:id} = ${3:@id};\nELSE\n  INSERT INTO ${1:target} (${2:id}, ${4:col}) VALUES (${3:@id}, ${5:@val});'
+    }
+  ];
+
+  monaco.languages.registerCompletionItemProvider('sql', {
+    triggerCharacters: [' ', '.', '[', '@'],
+    provideCompletionItems: function(model, position){
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber:   position.lineNumber,
+        startColumn:     word.startColumn,
+        endColumn:       word.endColumn
+      };
+      const lineText = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+      const suggestions = [];
+
+      // Keywords
+      KEYWORDS.forEach(kw => {
+        suggestions.push({
+          label: kw,
+          kind: monaco.languages.CompletionItemKind.Keyword,
+          insertText: kw,
+          range,
+          sortText: '1_' + kw
+        });
+      });
+
+      // Functions
+      FUNCTIONS.forEach(fn => {
+        suggestions.push({
+          label: fn.name,
+          kind: monaco.languages.CompletionItemKind.Function,
+          insertText: fn.insert,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          documentation: fn.doc,
+          detail: 'T-SQL function',
+          range,
+          sortText: '2_' + fn.name
+        });
+      });
+
+      // Snippets
+      SNIPPETS.forEach(sn => {
+        suggestions.push({
+          label: sn.name,
+          kind: monaco.languages.CompletionItemKind.Snippet,
+          insertText: sn.insert,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          documentation: sn.doc,
+          detail: 'Snippet',
+          range,
+          sortText: '0_' + sn.name
+        });
+      });
+
+      // Schema (tables & columns) from live schema cache if present
+      try {
+        const schema = window.__schemaCache || window.schemaCache || null;
+        if (schema) {
+          // Support a few shapes: { tables: [{name, schema, columns:[...]}, ...] }
+          // or flat { 'dbo.table': ['col1','col2', ...] }
+          const afterDot = /\.\s*$/.test(lineText) || /\[\s*$/.test(lineText);
+
+          const addTable = (schemaName, tableName) => {
+            const full = schemaName ? `[${schemaName}].[${tableName}]` : `[${tableName}]`;
+            suggestions.push({
+              label: tableName,
+              kind: monaco.languages.CompletionItemKind.Class,
+              insertText: full,
+              detail: schemaName ? `Table in [${schemaName}]` : 'Table',
+              range,
+              sortText: '3_' + tableName
+            });
+          };
+          const addColumn = (colName, tableName) => {
+            suggestions.push({
+              label: colName,
+              kind: monaco.languages.CompletionItemKind.Field,
+              insertText: colName,
+              detail: tableName ? `Column of ${tableName}` : 'Column',
+              range,
+              sortText: (afterDot ? '0_' : '4_') + colName
+            });
+          };
+
+          if (Array.isArray(schema.tables)) {
+            schema.tables.forEach(t => {
+              addTable(t.schema || t.schema_name || 'dbo', t.name || t.table_name);
+              (t.columns || []).forEach(c => addColumn(c.name || c, t.name));
+            });
+          } else if (typeof schema === 'object') {
+            Object.keys(schema).forEach(key => {
+              const parts = key.split('.');
+              addTable(parts.length > 1 ? parts[0] : null, parts[parts.length - 1]);
+              const cols = schema[key];
+              if (Array.isArray(cols)) cols.forEach(c => addColumn(typeof c === 'string' ? c : c.name, key));
+            });
+          }
+        }
+      } catch(e) { /* schema cache absent or malformed — fine */ }
+
+      return { suggestions };
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const SCRIPTS_KEY = 'cygenix_sql_scripts';
@@ -1020,6 +1540,28 @@ function applySQLFromAI(id) {
 // ── Snippets & Editor helpers ──────────────────────────────────────────────────
 function insertSnippet(text) {
   const el = document.getElementById('sql-editor');
+  const m  = window.__cygMonaco;
+  if (m && m.ready && m.editor){
+    const editor = m.editor;
+    editor.focus();
+    // If the text contains ${1:...} style tabstops, use snippet insertion so
+    // tabstops actually work; otherwise a plain edit is fine.
+    if (/\$\{?\d/.test(text)){
+      const contrib = editor.getContribution('snippetController2');
+      if (contrib && typeof contrib.insert === 'function'){
+        contrib.insert(text);
+        return;
+      }
+    }
+    const sel = editor.getSelection();
+    editor.executeEdits('insertSnippet', [{ range: sel, text, forceMoveMarkers: true }]);
+    const model = editor.getModel();
+    const pos = model.getPositionAt(model.getOffsetAt({lineNumber:sel.startLineNumber, column:sel.startColumn}) + text.length);
+    editor.setPosition(pos);
+    updateStatus();
+    return;
+  }
+  // Fallback for the brief window before Monaco loads
   const start = el.selectionStart;
   const before = el.value.slice(0,start);
   const after = el.value.slice(el.selectionEnd);
@@ -1142,40 +1684,121 @@ function handleEditorKey(e) {
 
 function formatSQL() {
   const el = document.getElementById('sql-editor');
-  let sql = el.value;
-  // Basic formatting: uppercase keywords
-  const kws = ['SELECT','FROM','WHERE','JOIN','LEFT JOIN','RIGHT JOIN','INNER JOIN','ON','AND','OR','NOT','INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','GROUP BY','ORDER BY','HAVING','UNION','UNION ALL','TOP','DISTINCT','AS','BEGIN','END','IF','ELSE','RETURN','DECLARE','SET','EXEC','EXECUTE','CAST','CONVERT','ISNULL','COALESCE'];
-  kws.forEach(kw => {
-    el.value = el.value.replace(new RegExp('\\b'+kw+'\\b','gi'), kw);
-  });
+  const m  = window.__cygMonaco;
+
+  // Proper T-SQL prettifier: indent clauses, uppercase keywords, align JOINs.
+  // Used whether Monaco is ready or not.
+  function prettify(sql){
+    if (!sql || !sql.trim()) return sql;
+
+    const KW = ['SELECT','FROM','WHERE','INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','CROSS JOIN','JOIN','ON','AND','OR','NOT','IN','EXISTS','BETWEEN','LIKE','IS NULL','IS NOT NULL',
+                'INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','MERGE','USING','WHEN MATCHED','WHEN NOT MATCHED','THEN','ELSE','END',
+                'GROUP BY','ORDER BY','HAVING','UNION ALL','UNION','INTERSECT','EXCEPT',
+                'TOP','DISTINCT','AS','WITH','OVER','PARTITION BY','CASE','WHEN','THEN','ELSE',
+                'BEGIN','END','IF','WHILE','DECLARE','EXEC','EXECUTE','PRINT','RETURN','TRY','CATCH',
+                'CREATE TABLE','ALTER TABLE','DROP TABLE','CREATE INDEX','CREATE VIEW','CREATE PROCEDURE','CREATE FUNCTION',
+                'PRIMARY KEY','FOREIGN KEY','REFERENCES','CONSTRAINT','UNIQUE','CHECK','DEFAULT','IDENTITY',
+                'BEGIN TRAN','BEGIN TRANSACTION','COMMIT','ROLLBACK','USE','GO',
+                'ASC','DESC'];
+
+      // 1) Uppercase keywords (word-boundary, case-insensitive)
+      // Sort longest first so 'INNER JOIN' beats 'JOIN'.
+      const sorted = KW.slice().sort((a,b)=>b.length-a.length);
+      let out = sql;
+      sorted.forEach(kw => {
+        out = out.replace(new RegExp('\\b'+kw.replace(/ /g,'\\s+')+'\\b','gi'), kw);
+      });
+
+      // 2) Put major clauses on their own lines
+      const majors = ['SELECT','FROM','WHERE','GROUP BY','ORDER BY','HAVING',
+                      'INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','CROSS JOIN','JOIN',
+                      'UNION ALL','UNION','INTERSECT','EXCEPT',
+                      'INSERT INTO','VALUES','UPDATE','SET','DELETE FROM',
+                      'USING','WHEN MATCHED','WHEN NOT MATCHED'];
+      majors.forEach(kw => {
+        out = out.replace(new RegExp('\\s*\\b'+kw.replace(/ /g,'\\s+')+'\\b','g'), '\n'+kw);
+      });
+
+      // 3) Indent ON/AND/OR inside JOIN/WHERE by two spaces
+      out = out.replace(/\n(ON|AND|OR)\b/g, '\n  $1');
+
+      // 4) Split comma-separated select lists onto new lines when the SELECT
+      //    clause is long — keep things readable without over-splitting short ones.
+      out = out.replace(/SELECT\s+([^]*?)\n(FROM\b)/g, (_, cols, from) => {
+        if (cols.length < 60 || cols.includes('\n')) return 'SELECT ' + cols.trim() + '\n' + from;
+        const parts = cols.split(/,(?![^(]*\))/).map(s=>s.trim()).filter(Boolean);
+        return 'SELECT\n  ' + parts.join(',\n  ') + '\n' + from;
+      });
+
+      // 5) Collapse triple blank lines, trim leading whitespace on the whole thing
+      out = out.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
+      return out;
+    }
+
+  const formatted = prettify(el.value);
+  if (m.ready && m.editor) {
+    const editor = m.editor;
+    const model  = editor.getModel();
+    const sel    = editor.getSelection();
+    editor.executeEdits('format', [{
+      range: model.getFullModelRange(),
+      text: formatted,
+      forceMoveMarkers: true
+    }]);
+    if (sel) editor.setSelection(sel);
+  } else {
+    el.value = formatted;
+  }
   updateStatus();
 }
 
 // ── Editor state ─────────────────────────────────────────────────────────────
 let wordWrapOn   = false;
-let lineNumsOn   = false;
+let lineNumsOn   = true;   // Monaco shows line numbers by default
 let isFullscreen = false;
 let findMatches  = [];
 let findIdx      = 0;
 
 function updateStatus() {
-  const el   = document.getElementById('sql-editor');
-  const val  = el.value;
-  const pos  = el.selectionStart;
-  const lines= val.split('\n');
-  let lineNum=1, col=1, chars=0;
-  for (let i=0;i<lines.length;i++){
-    if (chars+lines[i].length+1>pos){ col=pos-chars+1; break; }
-    chars+=lines[i].length+1; lineNum++;
+  const el = document.getElementById('sql-editor');
+  const m  = window.__cygMonaco;
+  let val, lineNum, col, selLen;
+
+  if (m && m.ready && m.editor){
+    val = m.editor.getValue();
+    const pos = m.editor.getPosition();
+    lineNum = pos ? pos.lineNumber : 1;
+    col     = pos ? pos.column : 1;
+    const sel = m.editor.getSelection();
+    if (sel){
+      const model = m.editor.getModel();
+      const a = model.getOffsetAt({lineNumber:sel.startLineNumber, column:sel.startColumn});
+      const b = model.getOffsetAt({lineNumber:sel.endLineNumber, column:sel.endColumn});
+      selLen = Math.abs(b - a);
+    } else selLen = 0;
+  } else {
+    val = el.value;
+    const pos = el.selectionStart || 0;
+    const lines = val.split('\n');
+    lineNum = 1; col = 1;
+    let chars = 0;
+    for (let i=0;i<lines.length;i++){
+      if (chars+lines[i].length+1>pos){ col=pos-chars+1; break; }
+      chars+=lines[i].length+1; lineNum++;
+    }
+    selLen = (el.selectionEnd||0) - (el.selectionStart||0);
   }
-  const selLen = el.selectionEnd - el.selectionStart;
-  document.getElementById('status-lines').textContent = 'Ln '+lineNum;
-  document.getElementById('status-col').textContent   = 'Col '+col;
-  document.getElementById('status-chars').textContent = val.length.toLocaleString()+' chars';
-  const selEl = document.getElementById('status-sel');
-  if (selLen>0){ selEl.textContent=selLen+' selected'; selEl.style.display='inline-flex'; }
-  else { selEl.style.display='none'; }
-  updateLineNumbers();
+
+  const $ = id => document.getElementById(id);
+  if ($('status-lines')) $('status-lines').textContent = 'Ln '+lineNum;
+  if ($('status-col'))   $('status-col').textContent   = 'Col '+col;
+  if ($('status-chars')) $('status-chars').textContent = val.length.toLocaleString()+' chars';
+  const selEl = $('status-sel');
+  if (selEl){
+    if (selLen>0){ selEl.textContent=selLen+' selected'; selEl.style.display='inline-flex'; }
+    else { selEl.style.display='none'; }
+  }
+  if (typeof updateLineNumbers === 'function') updateLineNumbers();
 }
 
 function updateConnLabel() {
@@ -1201,20 +1824,18 @@ function syncScroll() {
 
 function toggleLineNumbers() {
   lineNumsOn = !lineNumsOn;
-  const ln  = document.getElementById('line-numbers');
   const btn = document.getElementById('btn-lnum');
-  if (ln)  ln.style.display  = lineNumsOn ? 'block' : 'none';
-  if (btn) { btn.style.color = lineNumsOn ? 'var(--accent)' : ''; }
-  updateLineNumbers();
+  const m = window.__cygMonaco;
+  if (m && m.ready && m.editor) m.editor.updateOptions({ lineNumbers: lineNumsOn ? 'on' : 'off' });
+  if (btn) btn.style.color = lineNumsOn ? 'var(--accent)' : '';
 }
 
 // ── Word wrap ─────────────────────────────────────────────────────────────────
 function toggleWordWrap() {
   wordWrapOn = !wordWrapOn;
-  const el  = document.getElementById('sql-editor');
   const btn = document.getElementById('btn-wrap');
-  el.classList.toggle('wrap-on', wordWrapOn);
-  el.classList.toggle('wrap-off', !wordWrapOn);
+  const m = window.__cygMonaco;
+  if (m && m.ready && m.editor) m.editor.updateOptions({ wordWrap: wordWrapOn ? 'on' : 'off' });
   if (btn) btn.style.color = wordWrapOn ? 'var(--accent)' : '';
 }
 
@@ -1237,6 +1858,13 @@ function toggleFullscreen() {
 
 // ── Comment / uncomment selection ─────────────────────────────────────────────
 function commentSelection() {
+  const m = window.__cygMonaco;
+  if (m && m.ready && m.editor){
+    m.editor.focus();
+    m.editor.getAction('editor.action.commentLine').run();
+    return;
+  }
+  // Fallback (pre-Monaco)
   const el    = document.getElementById('sql-editor');
   const start = el.selectionStart;
   const end   = el.selectionEnd;
@@ -1329,9 +1957,11 @@ document.addEventListener('keydown', e => {
   if (e.key==='Escape' && isFullscreen) { toggleFullscreen(); return; }
   // F11 toggle fullscreen
   if (e.key==='F11') { e.preventDefault(); toggleFullscreen(); return; }
-  // Ctrl+F find
-  if ((e.ctrlKey||e.metaKey) && e.key==='f' && document.activeElement.id==='sql-editor') {
-    e.preventDefault(); toggleFind(); return;
+  // Ctrl+F find — trigger when Monaco is focused (its inner textarea becomes activeElement)
+  if ((e.ctrlKey||e.metaKey) && e.key==='f') {
+    const ae = document.activeElement;
+    const inEditor = ae && (ae.id==='sql-editor' || document.getElementById('monaco-host')?.contains(ae));
+    if (inEditor) { e.preventDefault(); toggleFind(); return; }
   }
   // Ctrl+/ comment
   if ((e.ctrlKey||e.metaKey) && e.key==='/') { e.preventDefault(); commentSelection(); return; }
