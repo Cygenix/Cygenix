@@ -36,8 +36,10 @@
   --r:8px;--r-lg:12px;
 }
 html,body{height:100%;overflow:hidden}
-body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
-.app{display:grid;grid-template-columns:230px 1fr;grid-template-rows:52px 1fr;height:100vh;width:100vw}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.app{display:grid;grid-template-columns:1fr;grid-template-rows:52px 1fr;height:100vh;width:calc(100vw - 230px);transition:width 0.2s ease}
+body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
 /* TOPBAR */
 .topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
@@ -53,26 +55,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px;transition:color 0.15s}
 .back-link:hover{color:var(--text2)}
 
-/* SIDEBAR */
-.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto;overflow-x:hidden;width:230px;flex-shrink:0}
-.nav-section{margin-bottom:1.5rem}
-.nav-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0 1.25rem;margin-bottom:0.5rem}
-.nav-item{display:flex;align-items:center;gap:10px;padding:0.5rem 1.25rem;font-size:13px;color:var(--text2);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent;user-select:none}
-.nav-sub-label{font-size:10px;font-weight:600;color:var(--text3);padding:0.4rem 1.25rem 0.2rem 1.5rem;text-transform:uppercase;letter-spacing:0.07em;display:flex;align-items:center;gap:0.4rem;cursor:pointer;user-select:none;transition:color 0.15s}
-.nav-sub-label:hover{color:var(--text2)}
-.nav-sub-label .chevron{font-size:8px;transition:transform 0.2s;color:var(--text3)}
-.nav-sub-label.open .chevron{transform:rotate(90deg)}
-.nav-sub{overflow:hidden;transition:max-height 0.25s ease}
-.nav-sub.collapsed{max-height:0!important}
-.nav-sub .nav-item{padding-left:2rem;font-size:12px}
-.nav-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
-.nav-item.active{color:var(--accent);background:var(--accent-glow);border-left-color:var(--accent)}
-.nav-icon{width:16px;height:16px;opacity:0.7;flex-shrink:0}
-.nav-item.active .nav-icon{opacity:1}
-.nav-count{margin-left:auto;background:var(--bg4);color:var(--text3);font-size:10px;padding:1px 6px;border-radius:100px;font-family:var(--mono)}
+/* SIDEBAR — rendered and styled by /cygenix-sidebar.js. Sits outside .app
+   (position:fixed). Body padding-left reserves space for it. */
 
 /* MAIN */
-.main{padding:1.75rem;overflow-y:auto;background:var(--bg);min-width:0;grid-column:2;grid-row:2}
+.main{padding:1.75rem;overflow-y:auto;background:var(--bg);min-width:0;grid-column:1;grid-row:2}
 .main::-webkit-scrollbar{width:4px}
 .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
@@ -253,8 +240,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .section-note{font-size:12px;color:var(--text3);background:var(--bg3);border-radius:var(--r);padding:0.6rem 0.75rem;margin-bottom:1rem;border-left:2px solid var(--accent)}
 
 @media(max-width:900px){
-  .app{grid-template-columns:1fr;grid-template-rows:52px 1fr}
-  .sidebar{display:none}
+  body{padding-left:0}
+  body.cyg-collapsed{padding-left:0}
+  .app{width:100vw}
+  body.cyg-collapsed .app{width:100vw}
+  .cyg-sidebar{display:none}
   .stats-row{grid-template-columns:1fr 1fr}
   .two-col{grid-template-columns:1fr}
 }
@@ -710,201 +700,13 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div>
   </div>
 
-  <!-- SIDEBAR -->
-  <div class="sidebar">
-    <!-- MIGRATE section -->
-    <div class="nav-section">
-      <div class="nav-label">Migrate</div>
-      <div class="nav-item active" onclick="showView('dashboard')">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
-        Dashboard
-      </div>
 
-      <!-- Configure sub-menu -->
-      <div class="nav-sub-label open" id="configure-label" onclick="toggleSubMenu('configure')">
-        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M2.5 9.5l.7-.7M8.8 3.2l.7-.7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="6" cy="6" r="2" stroke="currentColor" stroke-width="1.1"/></svg>
-        Configure
-        <span class="chevron">▶</span>
-      </div>
-      <div class="nav-sub" id="configure-sub" style="max-height:300px">
-        <div class="nav-item" onclick="event.stopPropagation();showView('project-settings')" style="color:var(--amber)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Project Settings
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();showView('connections')" style="color:var(--green)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Connections <span id="conn-status-dot" style="margin-left:auto;width:7px;height:7px;border-radius:50%;background:var(--red);flex-shrink:0"></span>
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/performance.html'" style="color:var(--teal)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 12 L5 7 L8 9 L11 4 L14 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14" cy="6" r="1.5" fill="currentColor"/></svg>
-          Performance
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();showView('system-parameters')" style="color:var(--accent)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.5 1.5M11 11l1.5 1.5M3.5 12.5l1.5-1.5M11 5l1.5-1.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
-          System Parameters
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();showView('privacy-security')" style="color:var(--red)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M8 2 L3 4 V8 C3 11 5 13 8 14 C11 13 13 11 13 8 V4 Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M6 8l1.5 1.5L10.5 7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Governance
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();showView('integrations')" style="color:var(--teal)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 4h4M6 12h4M4 6v4M12 6v4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
-          Integrations
-        </div>
-      </div>
+  <!-- SIDEBAR — rendered by /cygenix-sidebar.js; data-active matches the
+       initial showView in startup code. Updated dynamically via
+       CygenixSidebar.setActive(v) on each showView call. -->
+  <div id="cyg-sidebar-mount" data-active="dashboard"></div>
+  <script src="/cygenix-sidebar.js"></script>
 
-      <!-- Plan sub-menu -->
-      <div class="nav-sub-label open" id="plan-label" onclick="toggleSubMenu('plan')">
-        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3 4h6M3 6h6M3 8h3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/><path d="M8 7l1.5 1.5L12 6" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Plan
-        <span class="chevron">▶</span>
-      </div>
-      <div class="nav-sub" id="plan-sub" style="max-height:120px">
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/project-plan.html'" style="color:var(--green)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M11 8l1.5 1.5L15 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Project Planner
-        </div>
-      </div>
-
-      <!-- Develop sub-menu -->
-      <div class="nav-sub-label open" id="mapping-label" onclick="toggleSubMenu('mapping')">
-        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><path d="M1 3h4M1 6h4M1 9h4M7 3h4M7 6h4M7 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-        Develop
-        <span class="chevron">▶</span>
-      </div>
-      <div class="nav-sub" id="mapping-sub" style="max-height:300px">
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/object_mapping.html'" style="color:var(--teal)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><path d="M2 4h5M2 8h5M2 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M9 4h5M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M7 4l2 4-2 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Object Mapping
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/sql-editor.html'" style="color:var(--teal)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6l3 2-3 2M9 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          SQL Editor
-        </div>
-      </div>
-
-      <!-- Analysis sub-menu -->
-      <div class="nav-sub-label open" id="analysis-label" onclick="toggleSubMenu('analysis')">
-        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><path d="M1 9l3-3 2 2 3-4 2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Analysis
-        <span class="chevron">▶</span>
-      </div>
-      <div class="nav-sub" id="analysis-sub" style="max-height:250px">
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/insights.html'" style="color:var(--purple)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M3 14c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M11 7l1.5 1.5M13 7h1.5M11 9l1.5-1.5" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
-          Data Insights
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/data-cleansing.html'" style="color:var(--teal)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><path d="M3 10c0 1.5 1 3 2.5 3s2.5-1 2.5-3M8 10c0 1.5 1 3 2.5 3s2.5-1 2.5-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M5.5 2v8M10.5 2v8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="5.5" cy="2.5" r="0.8" fill="currentColor"/><circle cx="10.5" cy="2.5" r="0.8" fill="currentColor"/></svg>
-          Data Cleansing
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/validation.html'" style="color:var(--amber)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Validation
-        </div>
-      </div>
-
-      <!-- Execute sub-menu — groups the migration-runner entry point so it
-           lives visually alongside Develop/Analysis rather than floating on
-           its own. Single child today (Execute Migration), but the group
-           gives us a home for future execution-related pages. -->
-      <div class="nav-sub-label open" id="execute-label" onclick="toggleSubMenu('execute')">
-        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><path d="M2 2l8 4-8 4V2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
-        Execute
-        <span class="chevron">▶</span>
-      </div>
-      <div class="nav-sub" id="execute-sub" style="max-height:200px">
-        <div class="nav-item" onclick="event.stopPropagation();window.location.href='/project-builder.html'" style="color:var(--purple)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="var(--bg2)" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Execute Migration
-        </div>
-      </div>
-
-      <div class="nav-item" onclick="showView('search')">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-        Search
-      </div>
-      <div class="nav-item" onclick="showView('jobs')">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-        All Jobs <span class="nav-count" id="jobs-count">0</span>
-      </div>
-      <div class="nav-item" onclick="showView('inventory')">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h8v2H2z" stroke="currentColor" stroke-width="1.1" fill="none"/><circle cx="13" cy="12" r="2.5" stroke="currentColor" stroke-width="1.1"/><path d="M12.3 12l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Inventory <span class="nav-count" id="inv-count">0</span>
-      </div>
-      <div class="nav-item" onclick="showView('task-agent')" style="color:var(--text3)">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4v4l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Task Agent <span class="nav-count" style="background:var(--bg4);color:var(--text3);font-size:9px">soon</span>
-      </div>
-    </div>
-
-    <!-- OUTPUTS section -->
-    <div class="nav-section">
-      <div class="nav-label">Outputs</div>
-
-      <!-- Reports sub-menu -->
-      <div class="nav-sub-label open" id="reports-label" onclick="toggleSubMenu('reports')">
-        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><rect x="1.5" y="1" width="9" height="10" rx="1.5" stroke="currentColor" stroke-width="1.1"/><path d="M3.5 4h5M3.5 6h5M3.5 8h3" stroke="currentColor" stroke-width="1" stroke-linecap="round"/></svg>
-        Reports
-        <span class="chevron">▶</span>
-      </div>
-      <div class="nav-sub" id="reports-sub" style="max-height:200px">
-        <div class="nav-item" onclick="event.stopPropagation();showView('reports')" style="color:var(--purple)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="var(--bg2)" stroke="currentColor" stroke-width="1.2"/><path d="M11 12l.8.8L13 11" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Conversion Reports
-        </div>
-      </div>
-
-      <div class="nav-item" onclick="showView('audit')" style="display:none">
-      </div>
-    </div>
-
-    <!-- Service section -->
-    <div class="nav-section">
-      <div class="nav-label">Service</div>
-      <div class="nav-item" onclick="event.stopPropagation();window.location.href='/ask.html'" style="color:var(--purple)">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><path d="M2 3h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-3 2v-2H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5 7h6M5 9.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-        Ask
-      </div>
-    </div>
-
-    <!-- More section -->
-    <div class="nav-section">
-      <div class="nav-sub-label open" id="more-label" onclick="toggleSubMenu('more')">
-        <svg viewBox="0 0 12 12" fill="none" style="width:10px;height:10px;flex-shrink:0"><circle cx="2" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="10" cy="6" r="1" fill="currentColor"/></svg>
-        More
-        <span class="chevron">▶</span>
-      </div>
-      <div class="nav-sub" id="more-sub" style="max-height:300px">
-        <div class="nav-item" onclick="event.stopPropagation();showView('audit')" style="color:var(--text2)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-          Audit Log
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();showView('supported')" style="color:var(--text2)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-          Supported Formats
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();showView('diagnostics')" style="color:var(--text2)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          Diagnostics
-        </div>
-        <div class="nav-item" onclick="event.stopPropagation();window.open('/help.html','_blank')" style="color:var(--accent)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/></svg>
-          Help &amp; Guide
-        </div>
-      </div>
-    </div>
-
-    <!-- Cookie preferences — last item, required for GDPR/ePrivacy so users can
-         revoke or change consent. Clicking this triggers the cookie library's
-         own settings flow via the hidden #cc-settings-btn. -->
-    <div class="nav-section" style="margin-top:auto;border-top:0.5px solid var(--border);padding-top:0.75rem">
-      <div class="nav-item" onclick="event.stopPropagation();window.openCookiePreferences && window.openCookiePreferences()" style="color:var(--text3);font-size:11px" title="Change or revoke your cookie preferences">
-        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/></svg>
-        Cookie preferences
-      </div>
-    </div>
-  </div>
 
   <!-- MAIN -->
   <div class="main">
@@ -2154,7 +1956,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <div class="panel-header">
         <div>
           <div class="panel-title">Conversion Reports</div>
-          <div class="panel-sub">Saved runs from Project Execution — last 10 per user</div>
+          <div class="panel-sub">Saved runs from Projects → Execute — last 10 per user</div>
         </div>
       </div>
       <div style="display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center">
@@ -2329,13 +2131,7 @@ function showView(v) {
   // Scroll .main to top so the view is visible
   const mainEl = document.querySelector('.main');
   if (mainEl) { mainEl.scrollTop = 0; }
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  // Highlight the correct nav item by matching onclick attribute
-  document.querySelectorAll('.nav-item').forEach(item => {
-    const oc = item.getAttribute('onclick') || '';
-    if (oc.includes("showView('" + v + "')")) item.classList.add('active');
-  });
-  // Keep the shared sidebar (cygenix-sidebar.js) in sync too
+  // Tell the shared sidebar which item to highlight
   if (window.CygenixSidebar) window.CygenixSidebar.setActive(v);
   if (v === 'jobs')              renderAllJobs();
   if (v === 'search')            initGlobalSearch();
@@ -4183,7 +3979,7 @@ function openReport(jobId) {
 // capped at 20, one per configured table). It now reads per-run reports saved
 // by the user to Cosmos via /.netlify/functions/reports (action: 'list').
 //
-// Each row represents one full Project Execution run that the user chose to
+// Each row represents one full Projects → Execute run that the user chose to
 // save. Max 10 per user (server-side cap — oldest is silently pruned when an
 // 11th is saved). Rows show summary stats + buttons to view the full report
 // or delete the entry.
@@ -4239,7 +4035,7 @@ async function renderReportsList() {
   }
 
   if (!reports.length) {
-    el.innerHTML = '<div class="empty-state"><h3>No saved reports yet</h3><p>After a migration finishes in Project Execution, click <strong>Save Report</strong> to archive it here.</p></div>';
+    el.innerHTML = '<div class="empty-state"><h3>No saved reports yet</h3><p>After a migration finishes in Projects → Execute, click <strong>Save Report</strong> to archive it here.</p></div>';
     return;
   }
 
@@ -7370,14 +7166,6 @@ async function impDbCall(conn, body){
 // Update nav dot on load
 setTimeout(updateConnDots, 500);
 
-function toggleSubMenu(id) {
-  const sub   = document.getElementById(id + '-sub');
-  const label = document.getElementById(id + '-label');
-  if (!sub || !label) return;
-  const isOpen = !sub.classList.contains('collapsed');
-  sub.classList.toggle('collapsed', isOpen);
-  label.classList.toggle('open', !isOpen);
-}
 </script>
 
 <script>

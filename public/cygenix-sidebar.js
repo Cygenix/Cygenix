@@ -30,14 +30,19 @@
   // ── Nav structure ───────────────────────────────────────────────────────
   // `key` is the identifier used for both `data-active` matching and dashboard showView.
   // `href` means it's a separate HTML page; `view` means it's a dashboard embedded view.
-  // Only ONE of href/view is set per item.
+  // `action` is a named client-side action (e.g. cookie-preferences, open-help).
+  // Only ONE of href/view/action is set per item.
+  //
+  // `badgeId` (optional) renders a small status dot next to the label. Dashboard
+  // code updates these dots by ID — same element IDs the legacy inline sidebar
+  // used, so existing update code keeps working unchanged.
   const NAV = [
     { section: 'Migrate', items: [
       { key:'dashboard', label:'Dashboard', view:'dashboard', icon: iconDashboard() }
     ]},
     { section: 'Configure', group:'configure', items: [
       { key:'project-settings',  label:'Project Settings',  view:'project-settings',   color:'var(--amber)',  icon: iconSettings() },
-      { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug() },
+      { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug(), badgeId:'conn-status-dot' },
       { key:'performance',       label:'Performance',       href:'/performance.html',  color:'var(--teal)',   icon: iconChart() },
       { key:'system-parameters', label:'System Parameters', view:'system-parameters',  color:'var(--accent)', icon: iconParams() },
       { key:'privacy-security',  label:'Governance',        view:'privacy-security',   color:'var(--red)',    icon: iconShield() },
@@ -55,8 +60,11 @@
       { key:'data-cleansing',    label:'Data Cleansing',    href:'/data-cleansing.html',color:'var(--teal)',   icon: iconClean() },
       { key:'validation',        label:'Validation',        href:'/validation.html',    color:'var(--amber)',  icon: iconCheck() },
     ]},
+    { section: 'Projects', group:'projects', items: [
+      { key:'project-builder',   label:'Execute',           href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
+    ]},
     { section: null, items: [
-      { key:'project-builder',   label:'Project Execution', href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
+      { key:'search',            label:'Search',            view:'search',              icon: iconSearch() },
       { key:'jobs',              label:'All Jobs',          view:'jobs',                icon: iconList() },
       { key:'inventory',         label:'Inventory',         view:'inventory',           icon: iconGrid() },
       { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--text3)', icon: iconClock() },
@@ -66,6 +74,12 @@
     ]},
     { section: 'Service', items: [
       { key:'ask',               label:'Ask',               href:'/ask.html',           color:'var(--purple)', icon: iconAsk() },
+    ]},
+    { section: 'More', group:'more', items: [
+      { key:'audit',             label:'Audit Log',         view:'audit',               color:'var(--text2)', icon: iconAuditLog() },
+      { key:'supported',         label:'Supported Formats', view:'supported',           color:'var(--text2)', icon: iconInfo() },
+      { key:'diagnostics',       label:'Diagnostics',       view:'diagnostics',         color:'var(--text2)', icon: iconPulse() },
+      { key:'help',              label:'Help & Guide',      action:'open-help',         color:'var(--accent)', icon: iconHelp() },
     ]},
     { section: null, items: [
       { key:'cookie-prefs',      label:'Cookie preferences', action:'cookie-preferences', color:'var(--text3)',  icon: iconCookie() },
@@ -96,6 +110,11 @@
   function iconAlert(){        return svg('<path d="M8 2l6 11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3M8 11v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconAsk(){          return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6 6c0-1 1-2 2-2s2 1 2 2-1 2-2 2v1M8 11v0.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconCookie(){       return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/>'); }
+  function iconSearch(){       return svg('<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
+  function iconAuditLog(){     return svg('<rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
+  function iconInfo(){         return svg('<circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'); }
+  function iconPulse(){        return svg('<path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
+  function iconHelp(){         return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/>'); }
 
   // ── State ───────────────────────────────────────────────────────────────
   function isCollapsed(){
@@ -200,6 +219,16 @@
       .cyg-sidebar.collapsed .cyg-nav-sub{ max-height:none !important; }
       .cyg-sidebar.collapsed .cyg-nav-sub .cyg-nav-item{ padding-left:0; }
       .cyg-sidebar.collapsed .cyg-nav-section{ margin-bottom:0.4rem; }
+
+      /* Live status dot (e.g. connection status) rendered next to a nav label */
+      .cyg-nav-badge{
+        margin-left:auto;
+        width:7px;height:7px;border-radius:50%;
+        background:var(--red);
+        flex-shrink:0;
+        transition:background 0.15s;
+      }
+      .cyg-sidebar.collapsed .cyg-nav-badge{ display:none; }
     `;
     document.head.appendChild(style);
   }
@@ -211,10 +240,14 @@
         ICON_BY_KEY[item.key] = item.icon;
         const cls  = 'cyg-nav-item' + (item.key === activeKey ? ' active' : '');
         const styleAttr = item.color ? ` style="color:${item.color}"` : '';
+        const badge = item.badgeId
+          ? '<span class="cyg-nav-badge" id="'+esc(item.badgeId)+'"></span>'
+          : '';
         return (
           '<div class="'+cls+'" data-key="'+item.key+'"'+styleAttr+' title="'+esc(item.label)+'">' +
             item.icon +
             '<span class="cyg-nav-item-label">'+esc(item.label)+'</span>' +
+            badge +
           '</div>'
         );
       }).join('');
@@ -296,6 +329,10 @@
     const onDashboard = /\/dashboard\.html?$|^\/$/.test(location.pathname);
     if (item.action === 'cookie-preferences'){
       if (typeof window.openCookiePreferences === 'function') window.openCookiePreferences();
+      return;
+    }
+    if (item.action === 'open-help'){
+      window.open('/help.html', '_blank');
       return;
     }
     if (item.view){
