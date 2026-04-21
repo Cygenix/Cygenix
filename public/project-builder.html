@@ -1493,26 +1493,23 @@ let abortRequested = false;
 window._lastExecutedSQL = '';
 window._lastExecutedSQLContext = '';
 
-function captureExecutedSQL(sql, context, opts) {
+function captureExecutedSQL(sql, context) {
   if (typeof sql !== 'string' || !sql) return;
   window._lastExecutedSQL = sql;
   window._lastExecutedSQLContext = context || '';
   const btn = document.getElementById('copy-last-sql-btn');
   if (btn) btn.disabled = false;
-  // Also inline a preview into the visible exec log so failures have
-  // on-screen evidence without the user having to click "Copy last SQL".
-  // opts.inline defaults to true for SQL step / OTM (small-ish) and should
-  // be set to 'preview' by callers that pass huge multi-row batch INSERTs,
-  // which we truncate to the first 3 VALUES rows to keep the log readable.
-  const logEl = document.getElementById('exec-log');
-  if (!logEl) return;
-  const mode = (opts && opts.inline) || 'full';
-  if (mode === 'none') return;
+}
+
+// Format a SQL statement as a compact, bordered block for inclusion in the
+// step log. Very large batch INSERTs get truncated to their first few lines
+// with a pointer to "Copy last SQL" for the full content. Returns a multi-line
+// string suitable for passing to the runner's add() function so it reaches
+// both step.log (the Log button drawer) and the main exec panel.
+function formatSQLForLog(sql, context, mode) {
+  if (typeof sql !== 'string' || !sql) return '';
   let snippet = sql;
   if (mode === 'preview') {
-    // Trim a multi-row INSERT ... VALUES block to its first few rows so the
-    // log doesn't balloon with 500 value tuples per batch. Falls back to a
-    // char-count trim if the regex shape doesn't match.
     const lines = sql.split('\n');
     if (lines.length > 8) {
       snippet = lines.slice(0, 6).join('\n') +
@@ -1523,11 +1520,9 @@ function captureExecutedSQL(sql, context, opts) {
   } else if (sql.length > 4000) {
     snippet = sql.slice(0, 4000) + '\n... (' + (sql.length-4000) + ' more chars — click "Copy last SQL" for the full statement)';
   }
-  const ts = new Date().toLocaleTimeString();
-  logEl.textContent += '\n[' + ts + '] ┌─ SQL · ' + (context || 'executed') + '\n' +
-                       snippet.split('\n').map(l => '│ ' + l).join('\n') +
-                       '\n└─ end SQL (' + sql.length.toLocaleString() + ' chars total)\n\n';
-  logEl.scrollTop = logEl.scrollHeight;
+  return '┌─ SQL · ' + (context || 'executed') + '\n' +
+         snippet.split('\n').map(l => '│ ' + l).join('\n') +
+         '\n└─ end SQL (' + sql.length.toLocaleString() + ' chars total)';
 }
 
 // Copy the full execution log. Uses the clipboard API with a textarea
@@ -2085,7 +2080,9 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
     add('Executing generated cursor SQL on target DB…');
     try {
       // Execute the cursor script
-      captureExecutedSQL(otmSQL, 'One-to-many migration · ' + step.srcTable + ' → ' + tgtNames.join(', '));
+      const otmCtx = 'One-to-many migration · ' + step.srcTable + ' → ' + tgtNames.join(', ');
+      captureExecutedSQL(otmSQL, otmCtx);
+      add(formatSQLForLog(otmSQL, otmCtx, 'full'));
       await dbCall(tgtConn, { action:'execute', sql: otmSQL });
 
       // rowsAffected from a cursor script is unreliable (counts all statements, not just INSERTs).
@@ -2229,16 +2226,14 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       // "Copy last SQL" gives the user a runnable statement they can paste
       // into the SQL Editor to reproduce failures. On error the failing batch
       // (if identifiable) will be captured below, overriding this. We only
-      // inline a preview into the visible log on the first page and on error,
-      // to avoid flooding the log when runs succeed normally.
+      // dump an inline preview into the step log on the first page, to avoid
+      // flooding successful multi-page runs with hundreds of SQL blocks.
       if (batches.length) {
-        captureExecutedSQL(
-          batches[0],
-          'Migration batch · page ' + (pageNum) + ' · batch 1/' + batches.length +
-          ' · ' + (step.srcTable || '?') + ' → ' + (step.tgtTable || '?') +
-          (batches.length > 1 ? ' (showing first of ' + batches.length + ' batches this page)' : ''),
-          { inline: pageNum === 1 ? 'preview' : 'none' }
-        );
+        const ctx = 'Migration batch · page ' + pageNum + ' · batch 1/' + batches.length +
+                    ' · ' + (step.srcTable || '?') + ' → ' + (step.tgtTable || '?') +
+                    (batches.length > 1 ? ' (first of ' + batches.length + ' batches this page)' : '');
+        captureExecutedSQL(batches[0], ctx);
+        if (pageNum === 1) add(formatSQLForLog(batches[0], ctx, 'preview'));
       }
 
       const pageRes2 = await dbCall(tgtConn, { action:'batch', batchSql: batches });
@@ -2249,18 +2244,45 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, inserted ' + inserted.toLocaleString() + ' — total ' + totalInserted.toLocaleString() + pct);
 
       if (pageRes2.errors) {
-        batchErrorCount += pageRes2.errors;
+        // Normalize the "errors" field: historically a count (number), but
+        // some backend versions return an array of error strings/objects.
+        const errCount = Array.isArray(pageRes2.errors) ? pageRes2.errors.length : (pageRes2.errors || 0);
+        batchErrorCount += errCount;
         // Surface the first concrete error message the backend returned so
         // the step log actually contains something actionable, not just
-        // a "⚠ N batch error(s)" count.
+        // a "⚠ N batch error(s)" count. Tries every field shape the Azure
+        // Function has historically used; falls back to a stringified
+        // snippet of the response body so SOMETHING shows up even on new
+        // response shapes.
         if (!firstBatchErrorMsg) {
-          firstBatchErrorMsg =
-            (Array.isArray(pageRes2.errorMessages) && pageRes2.errorMessages[0]) ||
-            pageRes2.errorMessage ||
-            pageRes2.firstError ||
-            ('' + pageRes2.errors + ' batch error(s) on page ' + pageNum);
+          const tryFields = [
+            Array.isArray(pageRes2.errorMessages) ? pageRes2.errorMessages[0] : null,
+            Array.isArray(pageRes2.errors) ? pageRes2.errors[0] : null,
+            pageRes2.errorMessage,
+            pageRes2.firstError,
+            pageRes2.error,
+            pageRes2.message,
+            Array.isArray(pageRes2.batchErrors) ? (pageRes2.batchErrors[0]?.message || pageRes2.batchErrors[0]?.error || JSON.stringify(pageRes2.batchErrors[0])) : null,
+            Array.isArray(pageRes2.results) ? (() => {
+              const failed = pageRes2.results.find(r => r && (r.error || r.message || r.err));
+              return failed ? (failed.error || failed.message || failed.err) : null;
+            })() : null
+          ];
+          const extracted = tryFields.find(v => typeof v === 'string' && v);
+          if (extracted) {
+            firstBatchErrorMsg = extracted;
+          } else {
+            // Last resort: dump a snippet of the whole response so the user
+            // can see SOMETHING, even if field names have changed again.
+            let dump = '';
+            try {
+              dump = JSON.stringify(pageRes2).slice(0, 400);
+            } catch { dump = String(pageRes2).slice(0, 400); }
+            firstBatchErrorMsg = '' + errCount + ' batch error(s) on page ' + pageNum +
+                                 ' — backend did not return a recognizable error message field. Raw: ' + dump;
+          }
         }
-        add('  ⚠ ' + pageRes2.errors + ' batch error(s) on this page' +
+        add('  ⚠ ' + errCount + ' batch error(s) on this page' +
             (firstBatchErrorMsg ? ' — ' + firstBatchErrorMsg : ''));
         // If the backend tells us which batch(es) failed, replace the captured
         // sample SQL with the actual failing batch so "Copy last SQL" gives
@@ -2268,24 +2290,25 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         // the pre-dispatch sample (batches[0]) when no index info is available.
         const failIdx = Array.isArray(pageRes2.errorIndices) ? pageRes2.errorIndices[0]
                       : (typeof pageRes2.firstErrorIndex === 'number' ? pageRes2.firstErrorIndex : -1);
+        let errCtx, errSql;
         if (failIdx >= 0 && failIdx < batches.length) {
-          captureExecutedSQL(
-            batches[failIdx],
-            'FAILING batch · page ' + pageNum + ' · batch ' + (failIdx+1) + '/' + batches.length +
-            ' · ' + step.srcTable + ' → ' + step.tgtTable +
-            ' · error: ' + (firstBatchErrorMsg || 'unknown'),
-            { inline: 'preview' }
-          );
+          errCtx = 'FAILING batch · page ' + pageNum + ' · batch ' + (failIdx+1) + '/' + batches.length +
+                   ' · ' + step.srcTable + ' → ' + step.tgtTable +
+                   ' · error: ' + (firstBatchErrorMsg || 'unknown');
+          errSql = batches[failIdx];
         } else {
-          // No batch index info — re-capture the first batch with inline preview
-          // so the user sees a sample right in the log.
-          captureExecutedSQL(
-            batches[0],
-            'Sample batch from failing page ' + pageNum + ' · ' + step.srcTable + ' → ' + step.tgtTable +
-            ' · error: ' + (firstBatchErrorMsg || 'unknown'),
-            { inline: 'preview' }
-          );
+          errCtx = 'Sample batch from failing page ' + pageNum + ' · ' + step.srcTable + ' → ' + step.tgtTable +
+                   ' · error: ' + (firstBatchErrorMsg || 'unknown');
+          errSql = batches[0];
         }
+        captureExecutedSQL(errSql, errCtx);
+        add(formatSQLForLog(errSql, errCtx, 'preview'));
+        // Also dump the raw backend response so we can see any additional
+        // fields (error arrays, stacks) that we don't currently extract.
+        try {
+          const keys = Object.keys(pageRes2).filter(k => k !== 'rows').slice(0, 20);
+          if (keys.length) add('Backend response keys: ' + keys.join(', '));
+        } catch {}
       }
 
       offset += rows.length;
@@ -2378,7 +2401,9 @@ async function runSqlStep(step, srcConn, tgtConn, log) {
   }
   add('Executing on '+connLabel+' DB ('+sql.length+' chars)…');
   try {
-    captureExecutedSQL(sql, 'SQL step · ' + connLabel + ' DB' + (step.name ? ' · ' + step.name : ''));
+    const sqlCtx = 'SQL step · ' + connLabel + ' DB' + (step.name ? ' · ' + step.name : '');
+    captureExecutedSQL(sql, sqlCtx);
+    add(formatSQLForLog(sql, sqlCtx, 'full'));
     const res = await dbCall(useConn, { action:'execute', sql });
     const affected = Array.isArray(res.rowsAffected)
       ? res.rowsAffected.reduce((a,b) => a+(b||0), 0)
