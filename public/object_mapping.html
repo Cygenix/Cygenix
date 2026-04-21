@@ -1832,6 +1832,29 @@ function applyMapFilter(){
   if(fc) fc.textContent = (q||matchF||_hidingUnmapped) ? visible+' of '+total+' shown' : '';
 }
 
+// Silently persist the current columnMapping + regenerated SQL back to the
+// saved job in localStorage. Only applies when editing an existing job
+// (editJobId set); for a brand-new unsaved map there's nothing to write to yet.
+function persistMappingToSavedJob(){
+  if(!editJobId) return;
+  if(mode!=='single') return;           // OTM handled separately
+  if(!srcTable || !tgtTable) return;
+  try{
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    const idx = jobs.findIndex(j => j.id === editJobId);
+    if(idx < 0) return;
+    const existing = jobs[idx];
+    jobs[idx] = Object.assign({}, existing, {
+      columnMapping: columnMapping.filter(m => m.tgtCol),
+      insertSQL: generatedSQL.insert || existing.insertSQL,
+      schemaSQL: generatedSQL.schema || existing.schemaSQL,
+      verifySQL: generatedSQL.verify || existing.verifySQL,
+      warnings: _lastTruncWarnings ? _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen) : (existing.warnings||[])
+    });
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,100)));
+  }catch(e){ /* non-fatal */ }
+}
+
 function removeUnmappedCols(){
   const before = columnMapping.length;
   const removed = columnMapping.filter(m => !m.srcCol && !m.literalValue);
@@ -1840,8 +1863,10 @@ function removeUnmappedCols(){
   columnMapping = columnMapping.filter(m => m.srcCol || m.literalValue);
   renderMappingTable();
   tryAutoGenSQL();
+  persistMappingToSavedJob();
   $('undo-remove-btn').style.display = 'inline-flex';
-  showStatus('Removed '+removed.length+' unmapped row'+(removed.length===1?'':'s')+' — click Undo to restore','info');
+  const savedNote = editJobId ? ' and saved' : '';
+  showStatus('Removed '+removed.length+' unmapped row'+(removed.length===1?'':'s')+savedNote+' — click Undo to restore','info');
 }
 
 let _removedUnmappedCols = [];
@@ -1852,6 +1877,7 @@ function undoRemoveUnmappedCols(){
   _removedUnmappedCols = [];
   renderMappingTable();
   tryAutoGenSQL();
+  persistMappingToSavedJob();
   $('undo-remove-btn').style.display = 'none';
   showStatus('Restored unmapped columns','info');
 }
