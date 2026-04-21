@@ -1263,7 +1263,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="sp-head">
         <div>
           <div class="sp-title" id="sp-view-title">⚙ System parameters</div>
-          <div class="sp-sub" id="sp-view-sub-params">Parameters are tokens like <code>@@StartDate</code> that get substituted with their value wherever they appear — in generated SQL, custom SQL jobs, WHERE clauses, Wasis rules, transforms, and literal values. The code is derived automatically from the name.</div>
+          <div class="sp-sub" id="sp-view-sub-params">Parameters are tokens like <code>@@StartDate</code> that get substituted with their value wherever they appear — in generated SQL, custom SQL jobs, WHERE clauses, Wasis rules, transforms, and literal values. The code is derived automatically from the name. Pick a <strong>Type</strong>: <code>number</code> emits unquoted, <code>text</code> and <code>date</code> emit quoted (<code>'ABC'</code>, <code>'20260101'</code>), <code>raw</code> passes through verbatim for expressions like <code>GETDATE()</code> or <code>NULL</code>.</div>
           <div class="sp-sub" id="sp-view-sub-wasis" style="display:none">Was/Is rules translate old source values to new target values during migration. Each rule matches on an optional source table and field (leave blank to match any) and rewrites <code>oldVal</code> → <code>newVal</code> via a generated <code>CASE</code> expression.</div>
         </div>
         <div class="sp-toolbar" id="sp-toolbar-params">
@@ -1312,9 +1312,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <table class="sp-params" id="sp-params-table" style="display:none">
             <thead>
               <tr>
-                <th style="width:22%;cursor:pointer;user-select:none" onclick="spSortBy('name')">Name <span class="sp-sort-ind" id="sp-sort-ind-name">⇅</span></th>
-                <th style="width:28%;cursor:pointer;user-select:none" onclick="spSortBy('description')">Description <span class="sp-sort-ind" id="sp-sort-ind-description">⇅</span></th>
-                <th style="width:28%;cursor:pointer;user-select:none" onclick="spSortBy('value')">Value <span class="sp-sort-ind" id="sp-sort-ind-value">⇅</span></th>
+                <th style="width:20%;cursor:pointer;user-select:none" onclick="spSortBy('name')">Name <span class="sp-sort-ind" id="sp-sort-ind-name">⇅</span></th>
+                <th style="width:24%;cursor:pointer;user-select:none" onclick="spSortBy('description')">Description <span class="sp-sort-ind" id="sp-sort-ind-description">⇅</span></th>
+                <th style="width:10%;cursor:pointer;user-select:none" onclick="spSortBy('type')" title="How the value is emitted into SQL">Type <span class="sp-sort-ind" id="sp-sort-ind-type">⇅</span></th>
+                <th style="width:24%;cursor:pointer;user-select:none" onclick="spSortBy('value')">Value <span class="sp-sort-ind" id="sp-sort-ind-value">⇅</span></th>
                 <th style="width:18%;cursor:pointer;user-select:none" onclick="spSortBy('code')">Code <span class="sp-sort-ind" id="sp-sort-ind-code">⇅</span></th>
                 <th style="width:4%"></th>
               </tr>
@@ -7657,6 +7658,7 @@ function spLoad(){
     name:        p.name || '',
     description: p.description || '',
     value:       p.value != null ? String(p.value) : '',
+    type:        CygenixParams.typeOf(p),
     code:        CygenixParams.codeFromName(p.name || '')
   }));
   spRender();
@@ -7668,6 +7670,7 @@ function spSave(){
     name:        p.name || '',
     description: p.description || '',
     value:       p.value != null ? String(p.value) : '',
+    type:        CygenixParams.typeOf(p),
     code:        CygenixParams.codeFromName(p.name || '')
   }));
   localStorage.setItem('cygenix_sys_params', JSON.stringify(toSave));
@@ -7680,6 +7683,7 @@ function spGetDisplayedRows(){
       name: p.name || '',
       description: p.description || '',
       value: p.value != null ? String(p.value) : '',
+      type: CygenixParams.typeOf(p),
       code: CygenixParams.codeFromName(p.name || '')
     },
     origIdx
@@ -7689,6 +7693,7 @@ function spGetDisplayedRows(){
       row.name.toLowerCase().includes(q) ||
       row.description.toLowerCase().includes(q) ||
       row.value.toLowerCase().includes(q) ||
+      row.type.toLowerCase().includes(q) ||
       row.code.toLowerCase().includes(q)
     );
   }
@@ -7725,7 +7730,7 @@ function spRender(){
   const displayed = spGetDisplayedRows();
 
   // Sort indicators
-  ['name','description','value','code'].forEach(c => {
+  ['name','description','type','value','code'].forEach(c => {
     const el = document.getElementById('sp-sort-ind-'+c);
     if (!el) return;
     if (c === spSortCol){
@@ -7758,10 +7763,14 @@ function spRender(){
 
   tbody.innerHTML = displayed.map(({row, origIdx}) => {
     const code = row.code;
+    const typeOpts = CygenixParams.PARAM_TYPES.map(t =>
+      `<option value="${t}"${row.type === t ? ' selected' : ''}>${t}</option>`
+    ).join('');
     return `<tr>
       <td><input class="sp-cell-input" value="${spEsc(row.name)}" oninput="spUpdateField(${origIdx},'name',this.value)" placeholder="StartDate"></td>
       <td><input class="sp-cell-input" value="${spEsc(row.description)}" oninput="spUpdateField(${origIdx},'description',this.value)" placeholder="Migration cutoff date"></td>
-      <td><input class="sp-cell-input mono" value="${spEsc(row.value)}" oninput="spUpdateField(${origIdx},'value',this.value)" placeholder="'2024-01-01'"></td>
+      <td><select class="sp-cell-input" onchange="spUpdateField(${origIdx},'type',this.value)" title="number=unquoted, text/date=quoted, raw=verbatim">${typeOpts}</select></td>
+      <td><input class="sp-cell-input mono" value="${spEsc(row.value)}" oninput="spUpdateField(${origIdx},'value',this.value)" placeholder="20260101"></td>
       <td><span class="sp-cell-code" id="sp-code-${origIdx}" title="Click to copy" onclick="spCopyCode('${spEsc(code)}')">${spEsc(code) || '—'}</span></td>
       <td style="text-align:right"><button class="sp-icon-btn danger" onclick="spRemoveRow(${origIdx})" title="Delete">✕</button></td>
     </tr>`;
@@ -7805,7 +7814,7 @@ function spUpdateField(i, field, value){
 }
 
 function spAddRow(){
-  spParams.push({ name:'', description:'', value:'', code:'' });
+  spParams.push({ name:'', description:'', value:'', type:'text', code:'' });
   // Clear any active filter so the new blank row is visible
   if (spFilterQuery.trim()){
     spFilterQuery = '';
@@ -7908,10 +7917,14 @@ function spImportFile(input){
 
 function spNormaliseImported(r){
   const name = (r.name || r.Name || '').toString().trim();
+  const rawType = (r.type || r.Type || '').toString().toLowerCase().trim();
+  const value = (r.value != null ? r.value : (r.Value != null ? r.Value : '')).toString();
+  const typed = rawType ? { type: rawType, value } : { value };
   return {
     name,
     description: (r.description || r.Description || '').toString(),
-    value:       (r.value != null ? r.value : (r.Value != null ? r.Value : '')).toString(),
+    value,
+    type:        CygenixParams.typeOf(typed),
     code:        CygenixParams.codeFromName(name)
   };
 }
@@ -7941,6 +7954,7 @@ function spParseCSV(text){
   const nameIdx = header.indexOf('name');
   const descIdx = header.indexOf('description');
   const valIdx  = header.indexOf('value');
+  const typeIdx = header.indexOf('type');
   if (nameIdx === -1) throw new Error('CSV is missing a "name" header column');
   const out = [];
   for (let k = 1; k < lines.length; k++){
@@ -7949,7 +7963,8 @@ function spParseCSV(text){
     out.push({
       name:        row[nameIdx] || '',
       description: descIdx !== -1 ? (row[descIdx] || '') : '',
-      value:       valIdx  !== -1 ? (row[valIdx]  || '') : ''
+      value:       valIdx  !== -1 ? (row[valIdx]  || '') : '',
+      type:        typeIdx !== -1 ? (row[typeIdx] || '') : ''
     });
   }
   return out;

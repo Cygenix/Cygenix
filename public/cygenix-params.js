@@ -6,6 +6,11 @@
 (function(global){
   const STORAGE_KEY = 'cygenix_sys_params';
 
+  // Supported parameter types. Any value outside this set is treated as
+  // the default ('text') to keep old unmigrated params working.
+  const PARAM_TYPES = ['number', 'text', 'date', 'raw'];
+  const DEFAULT_TYPE = 'text';
+
   // ── Storage ────────────────────────────────────────────────────────────────
   function getParams(){
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
@@ -13,6 +18,46 @@
   }
   function saveParams(list){
     localStorage.setItem(STORAGE_KEY, JSON.stringify(list || []));
+  }
+
+  // ── Type handling ─────────────────────────────────────────────────────────
+  // Returns a concrete type for a param, defaulting sensibly when missing.
+  // A value that parses as a number with no stored type is treated as 'number'
+  // so existing untyped rows that happen to hold numbers keep emitting
+  // unquoted values. Everything else defaults to 'text'.
+  function typeOf(p){
+    const t = p && p.type ? String(p.type).toLowerCase() : '';
+    if (PARAM_TYPES.includes(t)) return t;
+    const v = p && p.value != null ? String(p.value).trim() : '';
+    if (v !== '' && /^-?\d+(\.\d+)?$/.test(v)) return 'number';
+    return DEFAULT_TYPE;
+  }
+
+  // Format a parameter's value for substitution into SQL based on its type.
+  //   number → as-is, unquoted (trimmed). Non-numeric values fall through
+  //            to text formatting so a mistyped 'abc' doesn't blow up silently.
+  //   text   → 'value', with embedded single quotes doubled ('O''Brien')
+  //   date   → same quoting as text. Users store dates as '20260101',
+  //            '2026-01-01', '31/12/2019' etc — SQL Server converts at runtime.
+  //   raw    → passed through verbatim. Escape hatch for NULL, GETDATE(),
+  //            SUSER_SNAME(), subqueries, or any expression.
+  function formatValue(p){
+    const raw = p && p.value != null ? String(p.value) : '';
+    switch (typeOf(p)){
+      case 'number': {
+        const trimmed = raw.trim();
+        if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed;
+        // Value doesn't look numeric — fall through to quoted text so we
+        // don't emit invalid SQL. The dashboard UI flags this as a warning.
+        return "'" + raw.replace(/'/g, "''") + "'";
+      }
+      case 'raw':
+        return raw;
+      case 'date':
+      case 'text':
+      default:
+        return "'" + raw.replace(/'/g, "''") + "'";
+    }
   }
 
   // ── Name → Code derivation ────────────────────────────────────────────────
@@ -27,7 +72,11 @@
   }
 
   // ── Substitution ──────────────────────────────────────────────────────────
-  // Replace every @@Token in `text` with the matching parameter's Value.
+  // Replace every @@Token in `text` with the matching parameter's formatted
+  // value. Formatting is driven by each param's `type` field:
+  //   number → unquoted; text/date → quoted with embedded ' escaped; raw →
+  //   passed through verbatim for things like GETDATE() / NULL.
+  //
   // - Case-insensitive matching on the token name
   // - Longest-token-first order so @@StartDate doesn't accidentally match
   //   inside @@StartDateUTC
@@ -49,7 +98,7 @@
       // Use a word boundary on the right so @@Foo doesn't match @@FooBar.
       const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const re = new RegExp(escaped + '(?![A-Za-z0-9_])', 'gi');
-      out = out.replace(re, p.value != null ? String(p.value) : '');
+      out = out.replace(re, formatValue(p));
     }
     return out;
   }
@@ -80,7 +129,9 @@
   // Export
   global.CygenixParams = {
     STORAGE_KEY,
+    PARAM_TYPES, DEFAULT_TYPE,
     getParams, saveParams, codeFromName,
+    typeOf, formatValue,
     substituteParams, substituteParamsDeep, findTokens
   };
 })(typeof window !== 'undefined' ? window : globalThis);
