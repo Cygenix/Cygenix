@@ -1458,11 +1458,16 @@ async function dbCall(conn, body) {
     const res  = await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(120000) });
     const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
     if (!res.ok) throw new Error(data.error||res.statusText);
+    // Some backends return HTTP 200 with an `error` field in the body when
+    // the SQL failed server-side. Treat that as a failure too, otherwise
+    // jobs would be reported as passed (green) when they actually failed.
+    if (data && data.error) throw new Error(data.error);
     return data;
   } else {
     const res  = await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body,connectionString:conn}), signal:AbortSignal.timeout(120000) });
     const data = await res.json().catch(()=>({ error:'Non-JSON (HTTP '+res.status+')' }));
     if (!res.ok) throw new Error(data.error||res.statusText);
+    if (data && data.error) throw new Error(data.error);
     return data;
   }
 }
@@ -1501,7 +1506,16 @@ async function runSingleStep(gi, si) {
       res = await runSqlStep(step, srcConn, tgtConn, log);
     }
     step.status = res.ok ? 'passed' : 'failed';
-    step.log = logs.join('\n') + (res.log ? '\n'+res.log : '');
+    // Compose the step log from both the outer `logs` array (everything
+    // relayed via the `log` callback) and the runner's own `res.log` string.
+    // Prefer `res.log` if present since the runner builds a richer multi-line
+    // view, but fall back to the outer logs if not. If the step failed,
+    // append the concrete error message so the red-status step shows
+    // exactly why it failed.
+    const baseLog = res.log || logs.join('\n');
+    step.log = res.ok
+      ? baseLog
+      : baseLog + (res.error ? '\n\n✕ ' + res.error : '');
     // Stamp lastRun on the source job
     try {
       const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
@@ -1509,7 +1523,12 @@ async function runSingleStep(gi, si) {
       if (j) { j.lastRun=new Date().toISOString(); j.executionStatus=step.status==='passed'?'complete':'failed'; localStorage.setItem('cygenix_jobs',JSON.stringify(jobs)); }
     } catch {}
   } catch(e) {
-    step.status = 'failed'; step.log = 'Error: ' + e.message;
+    // Preserve everything that was logged before the throw so the user can
+    // see what ran up to the point of failure — previously the step log
+    // just showed "Error: X" and lost all the prior progress messages.
+    step.status = 'failed';
+    const prior = logs.join('\n');
+    step.log = (prior ? prior + '\n\n' : '') + '✕ Error: ' + e.message;
   }
   renderSteps();
   const btn2 = document.getElementById(btnId);
@@ -1595,21 +1614,35 @@ async function runProject() {
       log('Step '+done+': '+step.name);
 
       const t0 = Date.now();
-      let stepLog='', ok=true;
+      let stepLog='', ok=true, stepError='';
       try {
         if (step.type === 'migration') {
           const r = await runMigrationStep(step, srcConn, tgtConn, log);
-          stepLog=r.log; ok=r.ok;
+          stepLog=r.log; ok=r.ok; stepError=r.error||'';
           if (r.rowsInserted !== undefined) step.rowsInserted = r.rowsInserted;
           if (r.tables)                     step.tables       = r.tables;
         } else {
           const r = await runSqlStep(step, srcConn, tgtConn, log);
-          stepLog=r.log; ok=r.ok;
+          stepLog=r.log; ok=r.ok; stepError=r.error||'';
         }
-      } catch(e) { stepLog='Error: '+e.message; ok=false; log('Error: '+e.message,'err'); }
+      } catch(e) {
+        // Thrown exception (e.g. pre-flight check like "Source table not set"
+        // or a network failure that wasn't caught by the runner). Record a
+        // red/failed status with the error in the log — without this, the
+        // step could end up with no log at all.
+        stepLog = (stepLog || '') + (stepLog ? '\n' : '') + '✕ Error: ' + e.message;
+        stepError = e.message;
+        ok = false;
+        log('Error: '+e.message,'err');
+      }
 
       const dur = ((Date.now()-t0)/1000).toFixed(1)+'s';
       stepLog += '\nDuration: '+dur;
+      // If the step failed and the error isn't already visible in the log,
+      // append it so the red-status step always shows WHY it failed.
+      if (!ok && stepError && !stepLog.includes(stepError)) {
+        stepLog += '\n✕ ' + stepError;
+      }
 
       if (ok) {
         passed++;
@@ -1618,7 +1651,7 @@ async function runProject() {
       } else {
         failed++;
         setStatus(gi, si, 'failed', stepLog);
-        log('Step '+done+' FAILED — stopping.', 'err');
+        log('Step '+done+' FAILED' + (stepError ? ' — ' + stepError : '') + ' — stopping.', 'err');
         const decision = await waitForDecision();
         if (decision==='abort') { log('Aborted.','err'); break outer; }
         if (decision==='skip')  { setStatus(gi,si,'skipped',stepLog+'\n[Skipped]'); log('Skipped.','err'); continue; }
@@ -2008,8 +2041,8 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 
       return { ok: true, log: stepLog, rowsInserted: totalInserted, tables: step.tables };
     } catch(e) {
-      add('Error: ' + e.message);
-      return { ok: false, log: stepLog, rowsInserted: 0 };
+      add('✕ Error: ' + e.message);
+      return { ok: false, log: stepLog, error: e.message, rowsInserted: 0 };
     }
   }
 
@@ -2040,55 +2073,97 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   let pageNum = 0;
   let offset = 0;
   let hasMore = true;
+  // Track any batch-level errors reported by the target backend. Even if the
+  // fetch/batch calls don't throw, the target can report per-batch failures
+  // inside the response body — those previously got only a ⚠ log line while
+  // the step still reported passed/green. We now accumulate them and fail
+  // the step at the end if any occurred.
+  let batchErrorCount = 0;
+  let firstBatchErrorMsg = '';
 
-  while (hasMore) {
-    // Fetch one page of source rows
-    const pageRes = await dbCall(srcConn, {
-      action: 'fetch-page',
-      sql: srcSelectSQL,
-      offset,
-      pageSize: PAGE_SIZE
-    });
-    const rows = pageRes.rows || [];
-    hasMore = pageRes.hasMore && rows.length === PAGE_SIZE;
-    pageNum++;
+  try {
+    while (hasMore) {
+      // Fetch one page of source rows
+      const pageRes = await dbCall(srcConn, {
+        action: 'fetch-page',
+        sql: srcSelectSQL,
+        offset,
+        pageSize: PAGE_SIZE
+      });
+      const rows = pageRes.rows || [];
+      hasMore = pageRes.hasMore && rows.length === PAGE_SIZE;
+      pageNum++;
 
-    if (!rows.length) break;
+      if (!rows.length) break;
 
-    // Build mapping on first page
-    if (offset === 0) {
-      if (!mapping.length) {
-        mapping = Object.keys(rows[0]).map(c => ({ srcCol:c, tgtCol:c, transform:'NONE' }));
-        add('Auto-mapping ' + mapping.length + ' columns by name');
-      } else {
-        add('Using saved mapping: ' + mapping.length + ' columns');
+      // Build mapping on first page
+      if (offset === 0) {
+        if (!mapping.length) {
+          mapping = Object.keys(rows[0]).map(c => ({ srcCol:c, tgtCol:c, transform:'NONE' }));
+          add('Auto-mapping ' + mapping.length + ' columns by name');
+        } else {
+          add('Using saved mapping: ' + mapping.length + ' columns');
+        }
+        colList = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
       }
-      colList = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+
+      // Split page into INSERT batches
+      const batches = [];
+      for (let i = 0; i < rows.length; i += INSERT_BATCH) {
+        const batch = rows.slice(i, i + INSERT_BATCH);
+        batches.push(
+          'INSERT INTO ' + step.tgtTable + ' (' + colList + ') VALUES\n' +
+          batch.map(row => '    (' + mapping.map(m => fmtVal(row[m.srcCol])).join(', ') + ')').join(',\n') + ';'
+        );
+      }
+
+      const pageRes2 = await dbCall(tgtConn, { action:'batch', batchSql: batches });
+      const inserted = pageRes2.totalRowsAffected || 0;
+      totalInserted += inserted;
+
+      const pct = totalRows > 0 ? ' (' + Math.round(totalInserted/totalRows*100) + '%)' : '';
+      add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, inserted ' + inserted.toLocaleString() + ' — total ' + totalInserted.toLocaleString() + pct);
+
+      if (pageRes2.errors) {
+        batchErrorCount += pageRes2.errors;
+        // Surface the first concrete error message the backend returned so
+        // the step log actually contains something actionable, not just
+        // a "⚠ N batch error(s)" count.
+        if (!firstBatchErrorMsg) {
+          firstBatchErrorMsg =
+            (Array.isArray(pageRes2.errorMessages) && pageRes2.errorMessages[0]) ||
+            pageRes2.errorMessage ||
+            pageRes2.firstError ||
+            ('' + pageRes2.errors + ' batch error(s) on page ' + pageNum);
+        }
+        add('  ⚠ ' + pageRes2.errors + ' batch error(s) on this page' +
+            (firstBatchErrorMsg ? ' — ' + firstBatchErrorMsg : ''));
+      }
+
+      offset += rows.length;
+
+      // Safety: if hasMore is ambiguous, stop when offset >= totalRows
+      if (totalRows > 0 && offset >= totalRows) hasMore = false;
     }
+  } catch(e) {
+    // Capture the actual DB / network error that broke the migration loop.
+    // Previously this would bubble up and the step log would lose everything
+    // we'd added with `add()` up to this point, because runSingleStep /
+    // runProject only saved `'Error: ' + e.message`. Now we return the full
+    // log PLUS the error so the user can see both what ran and what broke.
+    add('✕ Error: ' + e.message);
+    step.rowsInserted = totalInserted;
+    return { ok:false, log:stepLog, error:e.message, rowsInserted: totalInserted };
+  }
 
-    // Split page into INSERT batches
-    const batches = [];
-    for (let i = 0; i < rows.length; i += INSERT_BATCH) {
-      const batch = rows.slice(i, i + INSERT_BATCH);
-      batches.push(
-        'INSERT INTO ' + step.tgtTable + ' (' + colList + ') VALUES\n' +
-        batch.map(row => '    (' + mapping.map(m => fmtVal(row[m.srcCol])).join(', ') + ')').join(',\n') + ';'
-      );
-    }
-
-    const pageRes2 = await dbCall(tgtConn, { action:'batch', batchSql: batches });
-    const inserted = pageRes2.totalRowsAffected || 0;
-    totalInserted += inserted;
-
-    const pct = totalRows > 0 ? ' (' + Math.round(totalInserted/totalRows*100) + '%)' : '';
-    add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, inserted ' + inserted.toLocaleString() + ' — total ' + totalInserted.toLocaleString() + pct);
-
-    if (pageRes2.errors) add('  ⚠ ' + pageRes2.errors + ' batch error(s) on this page');
-
-    offset += rows.length;
-
-    // Safety: if hasMore is ambiguous, stop when offset >= totalRows
-    if (totalRows > 0 && offset >= totalRows) hasMore = false;
+  // If batches reported errors without throwing, fail the step with a
+  // meaningful message rather than quietly returning green.
+  if (batchErrorCount > 0) {
+    const msg = batchErrorCount + ' batch error(s) during insert' +
+                (firstBatchErrorMsg ? ' — ' + firstBatchErrorMsg : '');
+    add('✕ ' + msg);
+    step.rowsInserted = totalInserted;
+    return { ok:false, log:stepLog, error:msg, rowsInserted: totalInserted };
   }
 
   add('Complete — ' + totalInserted.toLocaleString() + ' total rows inserted from ' + pageNum + ' page(s)');
@@ -2127,7 +2202,10 @@ async function runSqlStep(step, srcConn, tgtConn, log) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
   let sql = step.sql || step.insertSQL || '';
-  if (!sql) throw new Error('No SQL in this step');
+  if (!sql) {
+    add('Error: No SQL in this step');
+    return { ok:false, log:stepLog, error:'No SQL in this step' };
+  }
   // Apply system-parameter substitution (@@Token → value) if available
   if (typeof CygenixParams !== 'undefined'){
     const before = sql;
@@ -2141,15 +2219,28 @@ async function runSqlStep(step, srcConn, tgtConn, log) {
   }
   const useConn   = step.connOn === 'source' ? srcConn : tgtConn;
   const connLabel = step.connOn === 'source' ? 'source' : 'target';
-  if (!useConn) throw new Error('No '+connLabel+' connection configured');
+  if (!useConn) {
+    const msg = 'No '+connLabel+' connection configured';
+    add('Error: ' + msg);
+    return { ok:false, log:stepLog, error:msg };
+  }
   add('Executing on '+connLabel+' DB ('+sql.length+' chars)…');
-  const res = await dbCall(useConn, { action:'execute', sql });
-  const affected = Array.isArray(res.rowsAffected)
-    ? res.rowsAffected.reduce((a,b) => a+(b||0), 0)
-    : (res.rowsAffected || 0);
-  add('✓ Done · '+affected.toLocaleString()+' rows affected');
-  step.rowsInserted = affected;
-  return { ok:true, log:stepLog };
+  try {
+    const res = await dbCall(useConn, { action:'execute', sql });
+    const affected = Array.isArray(res.rowsAffected)
+      ? res.rowsAffected.reduce((a,b) => a+(b||0), 0)
+      : (res.rowsAffected || 0);
+    add('✓ Done · '+affected.toLocaleString()+' rows affected');
+    step.rowsInserted = affected;
+    return { ok:true, log:stepLog };
+  } catch(e) {
+    // Capture the real DB error in the step log so the user can see it.
+    // Without this, the error message would only exist as an uncaught throw
+    // and the step log would just say "Executing…" with no explanation of
+    // why the job turned red.
+    add('✕ Error: ' + e.message);
+    return { ok:false, log:stepLog, error:e.message };
+  }
 }
 
 function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
