@@ -1493,12 +1493,41 @@ let abortRequested = false;
 window._lastExecutedSQL = '';
 window._lastExecutedSQLContext = '';
 
-function captureExecutedSQL(sql, context) {
+function captureExecutedSQL(sql, context, opts) {
   if (typeof sql !== 'string' || !sql) return;
   window._lastExecutedSQL = sql;
   window._lastExecutedSQLContext = context || '';
   const btn = document.getElementById('copy-last-sql-btn');
   if (btn) btn.disabled = false;
+  // Also inline a preview into the visible exec log so failures have
+  // on-screen evidence without the user having to click "Copy last SQL".
+  // opts.inline defaults to true for SQL step / OTM (small-ish) and should
+  // be set to 'preview' by callers that pass huge multi-row batch INSERTs,
+  // which we truncate to the first 3 VALUES rows to keep the log readable.
+  const logEl = document.getElementById('exec-log');
+  if (!logEl) return;
+  const mode = (opts && opts.inline) || 'full';
+  if (mode === 'none') return;
+  let snippet = sql;
+  if (mode === 'preview') {
+    // Trim a multi-row INSERT ... VALUES block to its first few rows so the
+    // log doesn't balloon with 500 value tuples per batch. Falls back to a
+    // char-count trim if the regex shape doesn't match.
+    const lines = sql.split('\n');
+    if (lines.length > 8) {
+      snippet = lines.slice(0, 6).join('\n') +
+                '\n    ... (' + (lines.length - 6) + ' more lines — click "Copy last SQL" for the full batch)';
+    } else if (sql.length > 1500) {
+      snippet = sql.slice(0, 1500) + '\n... (' + (sql.length-1500) + ' more chars — click "Copy last SQL" for the full statement)';
+    }
+  } else if (sql.length > 4000) {
+    snippet = sql.slice(0, 4000) + '\n... (' + (sql.length-4000) + ' more chars — click "Copy last SQL" for the full statement)';
+  }
+  const ts = new Date().toLocaleTimeString();
+  logEl.textContent += '\n[' + ts + '] ┌─ SQL · ' + (context || 'executed') + '\n' +
+                       snippet.split('\n').map(l => '│ ' + l).join('\n') +
+                       '\n└─ end SQL (' + sql.length.toLocaleString() + ' chars total)\n\n';
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
 // Copy the full execution log. Uses the clipboard API with a textarea
@@ -2199,13 +2228,16 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       // Expose the first batch of this page as the "last executed SQL" so
       // "Copy last SQL" gives the user a runnable statement they can paste
       // into the SQL Editor to reproduce failures. On error the failing batch
-      // (if identifiable) will be captured below, overriding this.
+      // (if identifiable) will be captured below, overriding this. We only
+      // inline a preview into the visible log on the first page and on error,
+      // to avoid flooding the log when runs succeed normally.
       if (batches.length) {
         captureExecutedSQL(
           batches[0],
           'Migration batch · page ' + (pageNum) + ' · batch 1/' + batches.length +
           ' · ' + (step.srcTable || '?') + ' → ' + (step.tgtTable || '?') +
-          (batches.length > 1 ? ' (showing first of ' + batches.length + ' batches this page)' : '')
+          (batches.length > 1 ? ' (showing first of ' + batches.length + ' batches this page)' : ''),
+          { inline: pageNum === 1 ? 'preview' : 'none' }
         );
       }
 
@@ -2241,11 +2273,18 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
             batches[failIdx],
             'FAILING batch · page ' + pageNum + ' · batch ' + (failIdx+1) + '/' + batches.length +
             ' · ' + step.srcTable + ' → ' + step.tgtTable +
-            ' · error: ' + (firstBatchErrorMsg || 'unknown')
+            ' · error: ' + (firstBatchErrorMsg || 'unknown'),
+            { inline: 'preview' }
           );
-          add('  ▸ Failing batch SQL captured — click "Copy last SQL" to inspect');
         } else {
-          add('  ▸ Sample batch SQL available — click "Copy last SQL" to inspect');
+          // No batch index info — re-capture the first batch with inline preview
+          // so the user sees a sample right in the log.
+          captureExecutedSQL(
+            batches[0],
+            'Sample batch from failing page ' + pageNum + ' · ' + step.srcTable + ' → ' + step.tgtTable +
+            ' · error: ' + (firstBatchErrorMsg || 'unknown'),
+            { inline: 'preview' }
+          );
         }
       }
 
