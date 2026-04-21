@@ -292,6 +292,13 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <div class="progress-bar" style="flex:1"><div class="progress-fill" id="exec-prog" style="width:0%"></div></div>
           <span style="font-size:12px;color:var(--text3)" id="exec-pct">0%</span>
         </div>
+        <!-- Log tools: always-visible copy actions so users can grab the full log
+             or the last SQL that was dispatched to the DB when debugging failures. -->
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap">
+          <button type="button" class="btn btn-ghost btn-sm" id="copy-log-btn" onclick="copyExecLog()" title="Copy the full execution log to the clipboard">📋 Copy log</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="copy-last-sql-btn" onclick="copyLastExecutedSQL()" title="Copy the last SQL statement that was sent to the database" disabled>📋 Copy last SQL</button>
+          <span id="copy-hint" style="font-size:11px;color:var(--text3);align-self:center"></span>
+        </div>
         <div class="exec-log" id="exec-log"></div>
       </div>
 
@@ -1476,6 +1483,69 @@ async function dbCall(conn, body) {
 let isRunning = false;
 let abortRequested = false;
 
+// Debug capture: the last SQL statement actually dispatched to the backend,
+// across all execution paths (migration batches, OTM cursor scripts, ad-hoc SQL
+// steps, and aggregate queries). The "Copy last SQL" button reads this so the
+// user can paste the failing statement back into the SQL Editor to reproduce
+// and fix issues. captureExecutedSQL() is called right before each dbCall().
+// We also keep _lastExecutedSQLContext so the log can say "(from Step 3 —
+// migration to dbo.Matterload)" when referencing it.
+window._lastExecutedSQL = '';
+window._lastExecutedSQLContext = '';
+
+function captureExecutedSQL(sql, context) {
+  if (typeof sql !== 'string' || !sql) return;
+  window._lastExecutedSQL = sql;
+  window._lastExecutedSQLContext = context || '';
+  const btn = document.getElementById('copy-last-sql-btn');
+  if (btn) btn.disabled = false;
+}
+
+// Copy the full execution log. Uses the clipboard API with a textarea
+// fallback for older browsers / insecure contexts.
+async function copyExecLog() {
+  const logEl = document.getElementById('exec-log');
+  const text = logEl ? logEl.textContent : '';
+  await _copyToClipboard(text, 'Log copied');
+}
+
+async function copyLastExecutedSQL() {
+  const sql = window._lastExecutedSQL || '';
+  if (!sql) {
+    _showCopyHint('No SQL captured yet');
+    return;
+  }
+  const ctx = window._lastExecutedSQLContext;
+  const payload = ctx ? '-- ' + ctx + '\n' + sql : sql;
+  await _copyToClipboard(payload, 'SQL copied (' + sql.length.toLocaleString() + ' chars)');
+}
+
+async function _copyToClipboard(text, okMsg) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // Fallback for older browsers: ephemeral textarea + execCommand.
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    _showCopyHint(okMsg);
+  } catch (e) {
+    _showCopyHint('Copy failed: ' + e.message);
+  }
+}
+
+function _showCopyHint(msg) {
+  const hint = document.getElementById('copy-hint');
+  if (!hint) return;
+  hint.textContent = msg;
+  clearTimeout(_showCopyHint._t);
+  _showCopyHint._t = setTimeout(() => { hint.textContent = ''; }, 2500);
+}
+
 async function runSingleStep(gi, si) {
   const group = project.groups[gi];
   const step = group ? group.steps[si] : null;
@@ -1561,6 +1631,14 @@ async function runProject() {
   const logEl = document.getElementById('exec-log');
   panel.classList.add('visible');
   logEl.textContent = '';
+  // Reset the SQL debug buffer at the start of each run so "Copy last SQL"
+  // only reflects the current invocation.
+  window._lastExecutedSQL = '';
+  window._lastExecutedSQLContext = '';
+  const copySqlBtn = document.getElementById('copy-last-sql-btn');
+  if (copySqlBtn) copySqlBtn.disabled = true;
+  const copyHint = document.getElementById('copy-hint');
+  if (copyHint) copyHint.textContent = '';
   document.getElementById('run-btn').disabled = true;
   document.getElementById('run-btn').textContent = '⏹ Running…';
   document.getElementById('stop-btn').style.display = 'inline-flex';
@@ -1978,6 +2056,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
     add('Executing generated cursor SQL on target DB…');
     try {
       // Execute the cursor script
+      captureExecutedSQL(otmSQL, 'One-to-many migration · ' + step.srcTable + ' → ' + tgtNames.join(', '));
       await dbCall(tgtConn, { action:'execute', sql: otmSQL });
 
       // rowsAffected from a cursor script is unreliable (counts all statements, not just INSERTs).
@@ -2117,6 +2196,19 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         );
       }
 
+      // Expose the first batch of this page as the "last executed SQL" so
+      // "Copy last SQL" gives the user a runnable statement they can paste
+      // into the SQL Editor to reproduce failures. On error the failing batch
+      // (if identifiable) will be captured below, overriding this.
+      if (batches.length) {
+        captureExecutedSQL(
+          batches[0],
+          'Migration batch · page ' + (pageNum) + ' · batch 1/' + batches.length +
+          ' · ' + (step.srcTable || '?') + ' → ' + (step.tgtTable || '?') +
+          (batches.length > 1 ? ' (showing first of ' + batches.length + ' batches this page)' : '')
+        );
+      }
+
       const pageRes2 = await dbCall(tgtConn, { action:'batch', batchSql: batches });
       const inserted = pageRes2.totalRowsAffected || 0;
       totalInserted += inserted;
@@ -2138,6 +2230,23 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         }
         add('  ⚠ ' + pageRes2.errors + ' batch error(s) on this page' +
             (firstBatchErrorMsg ? ' — ' + firstBatchErrorMsg : ''));
+        // If the backend tells us which batch(es) failed, replace the captured
+        // sample SQL with the actual failing batch so "Copy last SQL" gives
+        // the user a directly-reproducible statement. Falls back silently to
+        // the pre-dispatch sample (batches[0]) when no index info is available.
+        const failIdx = Array.isArray(pageRes2.errorIndices) ? pageRes2.errorIndices[0]
+                      : (typeof pageRes2.firstErrorIndex === 'number' ? pageRes2.firstErrorIndex : -1);
+        if (failIdx >= 0 && failIdx < batches.length) {
+          captureExecutedSQL(
+            batches[failIdx],
+            'FAILING batch · page ' + pageNum + ' · batch ' + (failIdx+1) + '/' + batches.length +
+            ' · ' + step.srcTable + ' → ' + step.tgtTable +
+            ' · error: ' + (firstBatchErrorMsg || 'unknown')
+          );
+          add('  ▸ Failing batch SQL captured — click "Copy last SQL" to inspect');
+        } else {
+          add('  ▸ Sample batch SQL available — click "Copy last SQL" to inspect');
+        }
       }
 
       offset += rows.length;
@@ -2152,6 +2261,10 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
     // runProject only saved `'Error: ' + e.message`. Now we return the full
     // log PLUS the error so the user can see both what ran and what broke.
     add('✕ Error: ' + e.message);
+    // The pre-dispatch captureExecutedSQL above already put the first batch
+    // of the page that threw into the debug buffer, so the user can grab it
+    // with "Copy last SQL" without any extra work here.
+    if (window._lastExecutedSQL) add('▸ Last executed SQL captured — click "Copy last SQL" to inspect');
     step.rowsInserted = totalInserted;
     return { ok:false, log:stepLog, error:e.message, rowsInserted: totalInserted };
   }
@@ -2226,6 +2339,7 @@ async function runSqlStep(step, srcConn, tgtConn, log) {
   }
   add('Executing on '+connLabel+' DB ('+sql.length+' chars)…');
   try {
+    captureExecutedSQL(sql, 'SQL step · ' + connLabel + ' DB' + (step.name ? ' · ' + step.name : ''));
     const res = await dbCall(useConn, { action:'execute', sql });
     const affected = Array.isArray(res.rowsAffected)
       ? res.rowsAffected.reduce((a,b) => a+(b||0), 0)
