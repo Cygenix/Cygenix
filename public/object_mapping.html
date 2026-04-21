@@ -1989,7 +1989,10 @@ function renderMappingTable(){
 function generateSingleSQL(silent){
   if(!srcTable){ if(!silent) alert('Select a source table.'); return; }
   if(!tgtTable){ if(!silent) alert('Select a target table.'); return; }
-  const mapping = columnMapping.filter(m=>m.tgtCol||m.literalValue);
+  // A row is only a real mapping if it has a target column AND either a source
+  // column or a fixed literal value. Rows with just a tgtCol (empty srcCol and
+  // no literalValue) would emit garbage like "[] AS [colname]" in the SELECT.
+  const mapping = columnMapping.filter(m=>m.tgtCol && (m.srcCol || (m.literalValue!==undefined && m.literalValue!=='')));
   if(!mapping.length){ if(!silent) alert('No columns mapped.'); return; }
 
   const warnings = [];
@@ -2115,7 +2118,7 @@ function updateTransform(i, val){
 }
 
 function tryAutoGenSQL(){
-  if(srcTable && tgtTable && columnMapping.filter(m=>m.tgtCol||m.literalValue).length > 0){
+  if(srcTable && tgtTable && columnMapping.filter(m=>m.tgtCol && (m.srcCol || (m.literalValue!==undefined && m.literalValue!==''))).length > 0){
     try { generateSingleSQL(true); } catch(e) {}
   }
 }
