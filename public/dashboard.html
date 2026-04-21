@@ -667,6 +667,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
+<script src="/cygenix-wasis.js"></script>
 <script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-integrations.js"></script>
 <script src="/cygenix-params.js"></script>
@@ -8006,18 +8007,30 @@ function wiNormaliseRule(r){
 }
 
 function wiLoad(){
-  try { wiRules = JSON.parse(localStorage.getItem(WI_STORAGE_KEY) || '[]'); }
-  catch { wiRules = []; }
-  if (!Array.isArray(wiRules)) wiRules = [];
-  wiRules = wiRules.map(wiNormaliseRule);
+  // Prefer the shared helper when available so we benefit from inventory
+  // fallback and stay consistent with object_mapping.html. Fall back to the
+  // original localStorage read if the helper script didn't load for some
+  // reason.
+  if (typeof CygenixWasis !== 'undefined') {
+    wiRules = CygenixWasis.getRules();
+  } else {
+    try { wiRules = JSON.parse(localStorage.getItem(WI_STORAGE_KEY) || '[]'); }
+    catch { wiRules = []; }
+    if (!Array.isArray(wiRules)) wiRules = [];
+    wiRules = wiRules.map(wiNormaliseRule);
+  }
   wiRender();
 }
 
 function wiSave(){
   // object_mapping.html expects srcTable/srcField lowercased. Preserve that.
   const toSave = wiRules.map(wiNormaliseRule);
-  try { localStorage.setItem(WI_STORAGE_KEY, JSON.stringify(toSave)); }
-  catch(e){ console.warn('wiSave failed', e); }
+  if (typeof CygenixWasis !== 'undefined') {
+    CygenixWasis.saveRules(toSave);
+  } else {
+    try { localStorage.setItem(WI_STORAGE_KEY, JSON.stringify(toSave)); }
+    catch(e){ console.warn('wiSave failed', e); }
+  }
 }
 
 function wiGetDisplayedRows(){

@@ -226,6 +226,7 @@ body.cyg-collapsed{padding-left:54px}
 <body>
 <script src="/connections.js"></script>
 <script src="/cygenix-params.js"></script>
+<script src="/cygenix-wasis.js"></script>
 <script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 
@@ -992,10 +993,21 @@ function ddlShowResult(msg, kind) {
   const ak = localStorage.getItem('cygenix_api_key')||'';
   if(ak) $('api-key').value = ak;
 
-  // Load wasis from localStorage (managed in Dashboard → System Parameters → Was/Is tab)
-  try { wasisRules = JSON.parse(localStorage.getItem(WASIS_KEY)||'[]'); } catch { wasisRules=[]; }
+  // Load wasis via shared helper (managed in Dashboard → System Parameters → Was/Is tab)
+  // The helper handles primary key + inventory fallback so this page and dashboard
+  // can never drift on where the rules live.
+  wasisRules = (typeof CygenixWasis !== 'undefined') ? CygenixWasis.getRules() : [];
   if(!Array.isArray(wasisRules)) wasisRules = [];
   renderWasisStatusBanner();
+
+  // Refresh wasis cache whenever the helper notifies of a change (cross-tab
+  // dashboard edits, Cosmos sync hydration, etc.)
+  if (typeof CygenixWasis !== 'undefined') {
+    CygenixWasis.subscribe(function(){
+      wasisRules = CygenixWasis.getRules();
+      renderWasisStatusBanner();
+    });
+  }
 
   // Reflect current connection state in banner. If a connection is configured
   // we fetch schema; if not, the connect fn sets an error banner pointing the
@@ -2041,12 +2053,15 @@ function generateSingleSQL(silent){
         warnings.push('['+m.srcCol+'] truncated to '+lim+' chars via LEFT() (src: '+srcT+', tgt: '+tgtT+')');
       }
     }
-    // Was/Is as CASE
-    const colWasis=wasisRules.filter(r=>(r.srcField===m.srcCol.toLowerCase()||r.srcField==='')&&(r.srcTable===srcTable.name.toLowerCase()||r.srcTable===''));
-    if(colWasis.length){
-      const cases=colWasis.map(r=>`WHEN ${srcExpr} = ${formatSQLVal(r.oldVal)} THEN ${formatSQLVal(r.newVal)}`).join('\n        ');
-      srcExpr=`CASE\n        ${cases}\n        ELSE ${srcExpr}\n      END`;
-      warnings.push('Was/Is applied to ['+m.srcCol+']: '+colWasis.length+' rule(s)');
+    // Was/Is as CASE — delegated to shared helper so single-table and OTM
+    // apply rules identically.
+    if (typeof CygenixWasis !== 'undefined') {
+      srcExpr = CygenixWasis.wrapExpr(srcExpr, srcTable.name, m.srcCol, {
+        formatSQLVal: formatSQLVal,
+        onApplied: function(n){
+          warnings.push('Was/Is applied to ['+m.srcCol+']: '+n+' rule(s)');
+        }
+      });
     }
     return '      '+srcExpr+' AS ['+m.tgtCol+']';
   }).join(',\n');
@@ -2524,12 +2539,24 @@ function generateOTMSQL(){
           const sl=parseTypeLen(typeof srcColDef==='object'?srcColDef.type:''),tl=parseTypeLen(tgtCol.type);
           if(sl>tl&&tl!==Infinity){ truncLen=tl; truncWarnings.push({srcCol:m.srcCol,tgtCol:m.tgtCol,tgtTable:tt.fullName,tgtLen:tl}); }
         }
+        // Was/Is: wrap the source variable in a CASE WHEN when rules apply to
+        // this (srcTable, srcCol). Transforms below then act on the mapped value.
+        let baseExpr = varName;
+        if (typeof CygenixWasis !== 'undefined') {
+          baseExpr = CygenixWasis.wrapExpr(baseExpr, srcTable.name, m.srcCol, {
+            formatSQLVal: formatSQLVal,
+            indent: '      ',
+            onApplied: function(n){
+              truncWarnings.push({ srcCol:m.srcCol, tgtCol:m.tgtCol, tgtTable:tt.fullName, wasis:n });
+            }
+          });
+        }
         switch((m.transform||'NONE').toUpperCase()){
-          case 'TRIM': return '  TRIM('+varName+')';
-          case 'UPPER': return '  UPPER('+varName+')';
-          case 'LOWER': return '  LOWER('+varName+')';
-          case 'CAST': return '  CAST('+varName+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
-          default: if(truncLen) return '  LEFT('+varName+', '+truncLen+')'; return '  '+varName;
+          case 'TRIM': return '  TRIM('+baseExpr+')';
+          case 'UPPER': return '  UPPER('+baseExpr+')';
+          case 'LOWER': return '  LOWER('+baseExpr+')';
+          case 'CAST': return '  CAST('+baseExpr+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
+          default: if(truncLen) return '  LEFT('+baseExpr+', '+truncLen+')'; return '  '+baseExpr;
         }
       }),
       ...fkCols.map(fk=>`  ${fk.refTableVar}`)
