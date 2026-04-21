@@ -61,11 +61,11 @@
       { key:'validation',        label:'Validation',        href:'/validation.html',    color:'var(--amber)',  icon: iconCheck() },
     ]},
     { section: 'Projects', group:'projects', items: [
+      { key:'jobs',              label:'All Jobs',          view:'jobs',                icon: iconList() },
       { key:'project-builder',   label:'Execute',           href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
     ]},
     { section: null, items: [
       { key:'search',            label:'Search',            view:'search',              icon: iconSearch() },
-      { key:'jobs',              label:'All Jobs',          view:'jobs',                icon: iconList() },
       { key:'inventory',         label:'Inventory',         view:'inventory',           icon: iconGrid() },
       { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--text3)', icon: iconClock() },
     ]},
