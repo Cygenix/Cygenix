@@ -2176,14 +2176,57 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
     const ctx = 'Single-map migration · ' + step.srcTable + ' → ' + step.tgtTable;
     captureExecutedSQL(insertSQL, ctx);
     add(formatSQLForLog(insertSQL, ctx, 'full'));
+
+    // Capture pre-insert target row count so we can report an accurate
+    // delta. The saved INSERT script starts with SET NOCOUNT ON, which
+    // suppresses rowsAffected on the driver — so without this we'd report
+    // 0 rows inserted even on successful runs. Non-fatal: if the COUNT
+    // fails (permissions, odd table name), we fall back to rowsAffected.
+    let rowsBefore = null;
+    try {
+      const cr = await dbCall(tgtConn, { action:'execute', sql: 'SELECT COUNT(*) AS cnt FROM ' + step.tgtTable });
+      rowsBefore = cr.recordset?.[0]?.cnt ?? cr.recordsets?.[0]?.[0]?.cnt ?? null;
+    } catch (e) { /* non-fatal */ }
+
     try {
       const res = await dbCall(tgtConn, { action:'execute', sql: insertSQL });
-      // rowsAffected can be an array (multi-statement scripts) or a scalar.
-      const affected = Array.isArray(res.rowsAffected)
+
+      // Try, in order:
+      //  1. migrated_rows from the script's own COUNT SELECT (first recordset)
+      //  2. rowsAfter − rowsBefore delta (our most reliable signal since
+      //     SET NOCOUNT ON is in the generated script)
+      //  3. rowsAffected summed (works only if NOCOUNT wasn't actually on)
+      let rowsAfter = null;
+      try {
+        const cr2 = await dbCall(tgtConn, { action:'execute', sql: 'SELECT COUNT(*) AS cnt FROM ' + step.tgtTable });
+        rowsAfter = cr2.recordset?.[0]?.cnt ?? cr2.recordsets?.[0]?.[0]?.cnt ?? null;
+      } catch (e) { /* non-fatal */ }
+
+      // Pull migrated_rows from the script's own SELECT COUNT(*) if present.
+      const scriptCount =
+          res.recordset?.[0]?.migrated_rows
+       ?? res.recordsets?.[0]?.[0]?.migrated_rows
+       ?? null;
+
+      const rowsAffectedSum = Array.isArray(res.rowsAffected)
         ? res.rowsAffected.reduce((a,b) => a+(b||0), 0)
         : (res.rowsAffected || 0);
-      add('✓ Done · ' + affected.toLocaleString() + ' rows affected');
+
+      let affected;
+      if (rowsBefore != null && rowsAfter != null) {
+        affected = Math.max(0, rowsAfter - rowsBefore);
+        add('Target row count: ' + rowsBefore.toLocaleString() + ' before → ' + rowsAfter.toLocaleString() + ' after');
+      } else if (typeof scriptCount === 'number') {
+        affected = scriptCount;
+        add('Target migrated_rows: ' + scriptCount.toLocaleString());
+      } else {
+        affected = rowsAffectedSum;
+      }
+
+      add('✓ Done · ' + affected.toLocaleString() + ' rows inserted');
       step.rowsInserted = affected;
+      step.rowsBefore   = rowsBefore ?? undefined;
+      step.rowsAfter    = rowsAfter  ?? undefined;
 
       // Post-migration reconciliation check
       if (reconBefore) {
