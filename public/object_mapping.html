@@ -2658,8 +2658,9 @@ function saveAsJob(){
     if(!tgtTable){ alert('Select a target table first.'); return; }
     const autoName = srcTable.name+' → '+tgtTable.name;
     const jobName = uniqueJobName(userTyped, autoName, jobs, editJobId);
+    const newId = editJobId||'job_'+Date.now();
     const job={
-      id: editJobId||'job_'+Date.now(),
+      id: newId,
       name: jobName,
       jobType:'simple-map',
       type:'migration',
@@ -2682,18 +2683,27 @@ function saveAsJob(){
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
+    // Track the saved job for subsequent in-editor edits (e.g. Remove unused)
+    // so they can write back to the same record instead of being lost.
+    const wasNew = !editJobId;
+    editJobId = newId;
+    if(wasNew){
+      const eb = $('edit-banner'); if(eb) eb.style.display='flex';
+      const en = $('edit-job-name'); if(en) en.textContent = jobName;
+    }
     showStatus('✓ Saved job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
     setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
-    if(!editJobId && $('job-name-input')) $('job-name-input').value='';
+    if(wasNew && $('job-name-input')) $('job-name-input').value='';
 
   } else {
     // OTM
     if(!targetTables.length){ alert('Add at least one target table.'); return; }
     const autoName = srcTable.name+' → '+targetTables.map(t=>t.name).join(', ');
     const jobName = uniqueJobName(userTyped, autoName, jobs, editJobId);
+    const newId = editJobId||'job_'+Date.now();
     const job={
-      id: editJobId||'job_'+Date.now(),
+      id: newId,
       name: jobName,
       jobType:'one-to-many',
       type:'migration',
@@ -2714,10 +2724,16 @@ function saveAsJob(){
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
+    const wasNew = !editJobId;
+    editJobId = newId;
+    if(wasNew){
+      const eb = $('edit-banner'); if(eb) eb.style.display='flex';
+      const en = $('edit-job-name'); if(en) en.textContent = jobName;
+    }
     showStatus('✓ Saved OTM job: '+jobName,'info');
     $('save-job-btn').textContent='✓ Saved';
     setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
-    if(!editJobId && $('job-name-input')) $('job-name-input').value='';
+    if(wasNew && $('job-name-input')) $('job-name-input').value='';
   }
 }
 
