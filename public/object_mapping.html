@@ -1020,8 +1020,11 @@ function ddlShowResult(msg, kind) {
   // Reflect current connection state in banner. If a connection is configured
   // we fetch schema; if not, the connect fn sets an error banner pointing the
   // user to Dashboard → Connections.
-  connectSrc();
-  connectTgt();
+  //
+  // Deferred via queueMicrotask so that module-scoped `let` bindings declared
+  // *after* this IIFE (e.g. `_paginatedSchemaSupported`) are out of their
+  // temporal dead zone by the time connectSrc/connectTgt run.
+  queueMicrotask(() => { connectSrc(); connectTgt(); });
 
   // Check for edit mode
   checkEditMode();
