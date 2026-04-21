@@ -269,15 +269,14 @@ body.cyg-collapsed{padding-left:54px}
     <button class="btn btn-ghost btn-sm" onclick="clearEditMode()" style="margin-left:auto">✕ Cancel edit</button>
   </div>
 
-  <!-- Connection banner -->
+  <!-- Connection banner (read-only — connections are configured on the Dashboard → Connections page) -->
   <div class="conn-banner" id="conn-banner">
     <div class="conn-dot idle" id="src-dot"></div>
-    <span class="conn-label" id="src-label">Source: not connected</span>
-    <button class="conn-btn" id="src-connect-btn" onclick="connectSrc()">🔌 Connect</button>
+    <span class="conn-label" id="src-label">Source: not configured</span>
     <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
     <div class="conn-dot idle" id="tgt-dot"></div>
-    <span class="conn-label" id="tgt-label">Target: not connected</span>
-    <button class="conn-btn" id="tgt-connect-btn" onclick="connectTgt()">🔌 Connect</button>
+    <span class="conn-label" id="tgt-label">Target: not configured</span>
+    <a href="/dashboard.html#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none">⚙ Manage connections</a>
   </div>
 
   <!-- Status -->
@@ -1018,9 +1017,11 @@ function ddlShowResult(msg, kind) {
   try { wasisRules = JSON.parse(localStorage.getItem(WASIS_KEY)||'[]'); } catch { wasisRules=[]; }
   if(wasisRules.length) renderWasisStats();
 
-  // Auto-connect if connections exist
-  if(srcConn) connectSrc();
-  if(tgtConn) connectTgt();
+  // Reflect current connection state in banner. If a connection is configured
+  // we fetch schema; if not, the connect fn sets an error banner pointing the
+  // user to Dashboard → Connections.
+  connectSrc();
+  connectTgt();
 
   // Check for edit mode
   checkEditMode();
@@ -1074,7 +1075,7 @@ async function _fetchSchemaSmart(conn) {
 async function connectSrc(){
   const c = CygenixConnections.get();
   srcConn = c.srcConnString || '';
-  if(!srcConn){ showStatus('No source connection configured — set in Dashboard → Configure → Connections','err'); return; }
+  if(!srcConn){ setBanner('src','err','Source: not configured — set in Dashboard → Connections'); return; }
   setBanner('src','connecting','Source: connecting…');
   try {
     const { res, paginated } = await _fetchSchemaSmart(srcConn);
@@ -1101,7 +1102,7 @@ async function connectSrc(){
 async function connectTgt(){
   const c = CygenixConnections.get();
   tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
-  if(!tgtConn){ setBanner('tgt','err','Target: not configured'); return; }
+  if(!tgtConn){ setBanner('tgt','err','Target: not configured — set in Dashboard → Connections'); return; }
   setBanner('tgt','connecting','Target: connecting…');
   try {
     const { res, paginated } = await _fetchSchemaSmart(tgtConn);
@@ -1162,11 +1163,9 @@ async function ensureColumns(side, table){
 function setBanner(side, state, text){
   const dot=$('src-dot'); const tDot=$('tgt-dot');
   const lbl = $(side+'-label');
-  const btn = $(side+'-connect-btn');
   if(lbl) lbl.textContent = text;
   const el = side==='src'?dot:tDot;
   if(el) el.className = 'conn-dot '+(state==='ok'?'ok':state==='connecting'?'idle':'err');
-  if(btn) btn.textContent = state==='ok'?'↻ Refresh':'🔌 Connect';
 }
 
 // ── Mode toggle ───────────────────────────────────────────────────────────────
