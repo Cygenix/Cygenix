@@ -2721,24 +2721,37 @@ function checkEditMode(){
   const tgtFull = job.targetTable||job.target||'';
   if(srcFull){
     let attempts=0;
-    const tryRestore=setInterval(()=>{
+    const tryRestore=setInterval(async ()=>{
       attempts++;
       const srcReady = srcAllTables.length > 0;
       const tgtReady = !tgtFull || tgtAllTables.length > 0;
       if(srcReady && tgtReady){
         clearInterval(tryRestore);
-        // Select source table
+        // Select source table — awaited so columns are loaded before we move on.
+        // For large tables this network round-trip can take several seconds; the
+        // old fire-and-forget version raced with the setTimeout below and left
+        // tgtTable=null, causing renderMappingTable() to silently bail.
         const srcT = srcAllTables.find(t=>t.value===srcFull||t.label===srcFull);
         if(!srcT){ showStatus('Source table "'+srcFull+'" not found — reconnect source DB','err'); return; }
-        selectTable('src',srcT.value);
+        try { await selectTable('src',srcT.value); }
+        catch(e){ showStatus('Failed to load source columns for "'+srcFull+'": '+(e.message||e),'err'); return; }
         // Select target table directly (bypass buildMappingIfReady — editJobId is set)
         if(tgtFull && !isOTM){
           const tgtT = tgtAllTables.find(t=>t.value===tgtFull||t.label===tgtFull);
-          if(tgtT){ selectTable('tgt',tgtT.value); }
-          else { showStatus('Target table "'+tgtFull+'" not found — reconnect target DB','err'); }
+          if(tgtT){
+            try { await selectTable('tgt',tgtT.value); }
+            catch(e){ showStatus('Failed to load target columns for "'+tgtFull+'": '+(e.message||e),'err'); return; }
+          } else {
+            showStatus('Target table "'+tgtFull+'" not found — reconnect target DB','err');
+            return;
+          }
         }
-        // Give the DOM a moment then restore the full mapping
-        setTimeout(()=>restoreJobMapping(job,isOTM), 600);
+        // Guard against selectTable silently failing (e.g. columns returned
+        // empty). Without this the user saw a blank editor and no message.
+        if(!srcTable){ showStatus('Source table selected but columns never loaded — try re-opening the job','err'); return; }
+        if(tgtFull && !isOTM && !tgtTable){ showStatus('Target table selected but columns never loaded — try re-opening the job','err'); return; }
+        // Columns are now loaded synchronously in state; restore immediately.
+        restoreJobMapping(job,isOTM);
       } else if(attempts>40){
         clearInterval(tryRestore);
         showStatus('Schema not loaded — check connections and try again','err');
