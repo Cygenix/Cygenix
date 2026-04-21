@@ -201,11 +201,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 /* JOBS TABLE */
 .jobs-table{width:100%;border-collapse:collapse}
 .jobs-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;border-bottom:0.5px solid var(--border)}
-.jobs-table td{padding:0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.jobs-table td{padding:0.45rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle;white-space:nowrap}
 .jobs-table tr:last-child td{border-bottom:none}
 .jobs-table tr:hover td{background:rgba(255,255,255,0.02)}
-.job-name{font-size:13px;font-weight:500;color:var(--text)}
-.job-meta{font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+.job-name{font-size:13px;font-weight:500;color:var(--text);display:inline-block;max-width:240px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.job-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:0.5rem}
+.jobs-actions{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
+.jobs-actions .btn{padding:3px 8px;font-size:11px;line-height:1.4}
 
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center}
@@ -3221,11 +3223,9 @@ function jobsTableHTML(jobs) {
       <td style="text-align:center"><input type="checkbox" class="job-select-cb" data-job-id="${j.id}" onchange="onJobSelectToggle()" style="cursor:pointer" ${selectedJobIds.has(j.id)?'checked':''}></td>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${idx+1}</td>
       <td>
-        <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:2px">
-          <div class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="Double-click to rename">${j.name}</div>
-          ${j.jobType==='one-to-many'?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono);flex-shrink:0">1→M</span>':j.jobType==='sql'?'<span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono);flex-shrink:0">SQL</span>':''}
-        </div>
-        <div class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</div>
+        <span class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="${escapeAttr(j.name)} — double-click to rename">${j.name}</span>
+        ${j.jobType==='one-to-many'?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono)">1→M</span>':j.jobType==='sql'?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono)">SQL</span>':''}
+        <span class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</span>
       </td>
       <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
       <td><span style="font-size:12px;color:var(--text2)">${j.target||'—'}</span></td>
@@ -3233,15 +3233,17 @@ function jobsTableHTML(jobs) {
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.totalRows?.toLocaleString()||'—'}</span></td>
       <td>${jobStatusBadge(j)}</td>
       <td>${lastRunText(j)}</td>
-      <td style="display:flex;gap:6px;padding-top:0.75rem;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" onclick="openJobModal('${j.id}')">View</button>
-        <button class="btn btn-ghost btn-sm" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)">✏ Edit</button>
-        ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost btn-sm" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊 SQL</button>` : ''}
-        <button class="btn btn-teal btn-sm" onclick="downloadJobSQL('${j.id}','schema')">⬇ Schema</button>
-        <button class="btn btn-primary btn-sm" onclick="downloadJobSQL('${j.id}','migration')">⬇ Migration</button>
-        <button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')">Report</button>
-        <button class="btn btn-ghost btn-sm" onclick="renameJob(this)" data-jobid="${j.id}">✎ Rename</button>
-        <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Delete">✕</button>
+      <td>
+        <div class="jobs-actions">
+          <button class="btn btn-ghost" onclick="openJobModal('${j.id}')" title="View">View</button>
+          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
+          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
+          <button class="btn btn-teal" onclick="downloadJobSQL('${j.id}','schema')" title="Download schema SQL">⬇ Schema</button>
+          <button class="btn btn-primary" onclick="downloadJobSQL('${j.id}','migration')" title="Download migration SQL">⬇ Migration</button>
+          <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
+          <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename">✎</button>
+          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Delete">✕</button>
+        </div>
       </td></tr>`).join('') + '</tbody></table>';
 }
 
