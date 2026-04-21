@@ -2610,6 +2610,7 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
     // Project-specific fields for report.html
     isProjectReport: true,
     steps: steps.map(s => ({
+      jobId:   s.jobId || '',
       name:    s.name,
       type:    s.type,
       status:  s.status,

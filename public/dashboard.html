@@ -838,10 +838,6 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
           <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="var(--bg2)" stroke="currentColor" stroke-width="1.2"/><path d="M11 12l.8.8L13 11" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Conversion Reports
         </div>
-        <div class="nav-item" onclick="event.stopPropagation();showView('report-settings')" style="color:var(--text2)">
-          <svg class="nav-icon" viewBox="0 0 16 16" fill="none" style="opacity:1"><circle cx="8" cy="8" r="2.3" stroke="currentColor" stroke-width="1.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
-          Settings
-        </div>
       </div>
 
       <div class="nav-item" onclick="showView('audit')" style="display:none">
@@ -2100,6 +2096,28 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       </div>
     </div>
     <div class="preview-modal-body" id="preview-doc-body"></div>
+  </div>
+</div>
+
+<!-- REPORT RECONCILIATION SETTINGS MODAL ─────────────────────────────────────
+     Opened from the ⚙ button on a Conversion Reports card. Shows the
+     reconciliation config for ONLY the jobs that were part of that specific
+     report. Replaces the old global Reports → Settings nav item with a
+     per-report panel so the scope matches what the user is actually editing.
+     Jobs are looked up in this browser's localStorage (`cygenix_jobs`); if
+     the jobs aren't present (e.g. report opened on a different device) the
+     modal shows a friendly notice instead of an empty list. -->
+<div class="modal-overlay" id="report-settings-modal">
+  <div class="modal" style="width:860px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem">
+      <div style="min-width:0;flex:1">
+        <div class="modal-title" id="report-settings-title">Reconciliation settings</div>
+        <div class="modal-sub" id="report-settings-sub">Per-job reconciliation for this report's migration steps. Changes save back to the job record and apply on the next run.</div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="closeReportSettings()" title="Close">✕</button>
+    </div>
+    <div id="report-settings-notice" style="display:none;font-size:12px;color:var(--amber);background:var(--amber-bg);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.75rem 1rem;margin-bottom:1rem"></div>
+    <div id="report-recon-list"><div class="empty-state" style="padding:1.5rem"><p style="color:var(--text3)">Loading…</p></div></div>
   </div>
 </div>
 
@@ -4145,6 +4163,7 @@ async function renderReportsList() {
       + '</div>'
       + '<div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">'
       +   errBadge
+      +   '<button class="btn btn-sm" style="background:transparent;color:var(--text2);border:0.5px solid var(--border2);font-size:12px;padding:0.45rem 0.9rem" onclick="openReportSettings(\'' + r.id + '\')" title="Reconciliation settings for this report\'s jobs">⚙ Settings</button>'
       +   '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25);font-size:12px;padding:0.45rem 1.1rem" onclick="openSavedReport(\'' + r.id + '\')">View</button>'
       +   '<button class="btn btn-sm" style="background:transparent;color:var(--red);border:0.5px solid rgba(239,68,68,0.25);font-size:12px;padding:0.45rem 0.9rem" onclick="deleteSavedReport(\'' + r.id + '\', \'' + name.replace(/'/g,"\\'") + '\')" title="Delete this report">✕</button>'
       + '</div>'
@@ -4172,6 +4191,109 @@ async function openSavedReport(id) {
   } catch (e) {
     alert('Could not open report: ' + e.message);
   }
+}
+
+// Open the per-report reconciliation settings modal. Fetches the report,
+// pulls the jobIds out of its steps[], then renders the existing recon card
+// UI filtered to those jobs only. If the job records aren't in local
+// storage (e.g. the report was created on a different device), we show a
+// notice and a lookup-by-srcTable fallback so users on shared devices still
+// get something useful. Saves go through reconSaveOne() and update the
+// cygenix_jobs record like the old global Settings page did.
+async function openReportSettings(reportId) {
+  const modal  = document.getElementById('report-settings-modal');
+  const list   = document.getElementById('report-recon-list');
+  const notice = document.getElementById('report-settings-notice');
+  const title  = document.getElementById('report-settings-title');
+  const sub    = document.getElementById('report-settings-sub');
+  if (!modal || !list) return;
+  modal.classList.add('open');
+  list.innerHTML = '<div class="empty-state" style="padding:1.5rem"><p style="color:var(--text3)">Loading report…</p></div>';
+  if (notice) { notice.style.display = 'none'; notice.textContent = ''; }
+
+  const email = currentCygenixEmail();
+  if (!email) {
+    list.innerHTML = '<div class="empty-state"><h3>Please sign in</h3><p>Sign in to view report settings.</p></div>';
+    return;
+  }
+
+  let report;
+  try {
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get', userEmail: email, id: reportId }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    if (!data.report) throw new Error('Report not returned');
+    report = data.report;
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state"><h3>Could not load report</h3><p style="color:var(--red)">' + escapeHtml(e.message || String(e)) + '</p></div>';
+    return;
+  }
+
+  // Update modal header with this report's name so the user knows what scope
+  // they are editing.
+  if (title) title.textContent = 'Reconciliation settings · ' + (report.projectName || 'Report');
+  if (sub) sub.textContent = 'Reconciliation for the migration jobs that were part of this report. Changes save back to the job record and apply on the next run.';
+
+  // Collect every jobId referenced by migration steps in this report. Older
+  // reports (saved before jobId was captured) fall back to matching on
+  // srcTable/tgtTable for a best-effort lookup.
+  const steps = Array.isArray(report.steps) ? report.steps.filter(s => s && s.type === 'migration') : [];
+  const jobIds = [...new Set(steps.map(s => s.jobId).filter(Boolean))];
+  const tablePairs = steps
+    .filter(s => !s.jobId && (s.srcTable || s.tgtTable))
+    .map(s => (s.srcTable || '') + '→' + (s.tgtTable || ''));
+
+  const allJobs = reconLoadJobs();
+  let matched = allJobs.filter(j => jobIds.includes(j.id));
+  if (matched.length < jobIds.length + tablePairs.length) {
+    // Supplement id-matched jobs with srcTable/tgtTable matches for steps
+    // missing a jobId, deduping by job id.
+    const have = new Set(matched.map(j => j.id));
+    tablePairs.forEach(tp => {
+      const [src, tgt] = tp.split('→');
+      const j = allJobs.find(j =>
+        !have.has(j.id) &&
+        (j.sourceTable || j.source) === src &&
+        (j.targetTable || j.target) === tgt &&
+        Array.isArray(j.columnMapping) && j.columnMapping.length > 0
+      );
+      if (j) { matched.push(j); have.add(j.id); }
+    });
+  }
+
+  // Any steps we couldn't match up to a local job? Tell the user rather than
+  // showing a misleadingly short list.
+  const unmatched = steps.filter(s => {
+    if (s.jobId && !matched.find(j => j.id === s.jobId)) return true;
+    if (!s.jobId && !matched.find(j =>
+      (j.sourceTable || j.source) === s.srcTable &&
+      (j.targetTable || j.target) === s.tgtTable
+    )) return true;
+    return false;
+  });
+  if (unmatched.length && notice) {
+    notice.style.display = 'block';
+    notice.textContent = unmatched.length + ' migration step(s) in this report couldn\'t be matched to a job on this device — their reconciliation settings aren\'t editable here. Open this page on the browser where the jobs were created, or recreate them to configure reconciliation.';
+  }
+
+  if (!matched.length) {
+    list.innerHTML = '<div class="empty-state"><h3>No editable jobs</h3><p>None of the migration jobs in this report are present in this browser\'s storage. Open this page on the browser where the jobs were created to edit their reconciliation settings.</p></div>';
+    return;
+  }
+
+  // Reuse the exact same card UI the old global Settings view used — same
+  // form fields, same save handler (reconSaveOne). This keeps behaviour
+  // identical; all we've changed is the scope (which jobs appear).
+  list.innerHTML = matched.map(job => reconRenderJobCard(job)).join('');
+}
+
+function closeReportSettings() {
+  const modal = document.getElementById('report-settings-modal');
+  if (modal) modal.classList.remove('open');
 }
 
 // Delete confirm + refresh the list.
@@ -4394,7 +4516,13 @@ function reconSaveOne(jobId) {
   reconSaveJobs(jobs);
   // Brief visual confirm — swap Save → ✓ Saved for 2s, then re-render keeping
   // this card open so the user sees the updated "Active" badge and summary line.
+  // The card may live in the old global Settings view (#recon-settings-list)
+  // OR in the per-report modal (#report-recon-list) — figure out which and
+  // refresh the right container so the badge/summary actually update.
   const btn = card.querySelector('button');
+  const containerId = card.closest('#report-recon-list')
+    ? 'report-recon-list'
+    : 'recon-settings-list';
   if (btn) {
     const prev = btn.textContent;
     btn.textContent = '✓ Saved';
@@ -4402,7 +4530,19 @@ function reconSaveOne(jobId) {
     setTimeout(() => {
       btn.textContent = prev;
       btn.disabled = false;
-      renderReportSettings();
+      if (containerId === 'report-recon-list') {
+        // In the modal: re-render only the cards currently in the modal so
+        // we don't disturb the (closed) global view. We keep the same set
+        // of jobs since reconSaveJobs() just updated one job's .reconciliation.
+        const host = document.getElementById('report-recon-list');
+        if (host) {
+          const visibleIds = [...host.querySelectorAll('[data-recon-job]')].map(n => n.getAttribute('data-recon-job'));
+          const refreshed = reconLoadJobs().filter(j => visibleIds.includes(j.id));
+          host.innerHTML = refreshed.map(j => reconRenderJobCard(j)).join('');
+        }
+      } else {
+        renderReportSettings();
+      }
       // Re-open the card we just saved so user can verify
       setTimeout(() => reconToggleCard(jobId), 50);
     }, 1500);
