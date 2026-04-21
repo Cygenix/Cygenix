@@ -809,6 +809,10 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </div>
       </div>
 
+      <div class="nav-item" onclick="showView('search')">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        Search
+      </div>
       <div class="nav-item" onclick="showView('jobs')">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
         All Jobs <span class="nav-count" id="jobs-count">0</span>
@@ -2017,6 +2021,40 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
     </div><!-- end grid wrapper (opened line 1869) -->
     </div><!-- end view-inventory -->
 
+    <!-- SEARCH VIEW ─────────────────────────────────────────────────────────
+         Global search across jobs, projects, inventory, and saved reports.
+         Typing in the box runs a client-side search (plus an async remote
+         fetch for Cosmos-stored conversion reports) and renders results in
+         a single table with a "Go to" action per row. Search matches
+         multiple fields per source (name, tables, SQL, columns for jobs;
+         filename + note content for inventory; etc.) and displays the
+         matched field in a "Matched" column so the result is explicable. -->
+    <div id="view-search" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">🔍 Search</div>
+          <div class="panel-sub">Find jobs, maps, projects, inventory and saved reports from one place</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
+        <input type="text" id="search-input" placeholder="Search by name, table, column, SQL, filename…"
+          oninput="runGlobalSearch()" style="flex:1;min-width:260px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.7rem 0.9rem;font-size:13px;color:var(--text);outline:none">
+        <select id="search-scope" onchange="runGlobalSearch()" style="background:var(--bg2);border:0.5px solid var(--border2);color:var(--text);padding:0.55rem 0.75rem;border-radius:var(--r);font-size:12px">
+          <option value="all">All sources</option>
+          <option value="job">Jobs / Maps only</option>
+          <option value="project">Projects only</option>
+          <option value="inventory">Inventory only</option>
+          <option value="report">Reports only</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('search-input').value='';runGlobalSearch()" title="Clear search">✕ Clear</button>
+      </div>
+
+      <div id="search-summary" style="font-size:11px;color:var(--text3);margin-bottom:0.75rem;font-family:var(--mono)"></div>
+      <div id="search-results"></div>
+    </div>
+    <!-- END SEARCH VIEW ───────────────────────────────────────────────────-->
+
     <!-- TASK AGENT (placeholder — feature not yet built) -->
     <div id="view-task-agent" class="view">
       <div class="panel-header">
@@ -2231,6 +2269,7 @@ function showView(v) {
   // Keep the shared sidebar (cygenix-sidebar.js) in sync too
   if (window.CygenixSidebar) window.CygenixSidebar.setActive(v);
   if (v === 'jobs')              renderAllJobs();
+  if (v === 'search')            initGlobalSearch();
   if (v === 'schema')            renderSchemaLibrary();
   if (v === 'migration-sql')     renderMigrationLibrary();
   if (v === 'audit')             renderAuditLog();
@@ -4294,6 +4333,330 @@ async function openReportSettings(reportId) {
 function closeReportSettings() {
   const modal = document.getElementById('report-settings-modal');
   if (modal) modal.classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// GLOBAL SEARCH
+// ═══════════════════════════════════════════════════════════════════════════
+// Client-side search across the four data sources surfaced in this app:
+//   1. Jobs / Maps        — localStorage 'cygenix_jobs'
+//   2. Projects           — localStorage 'cygenix_projects'
+//   3. Inventory docs     — localStorage 'cygenix_inventory'
+//   4. Conversion reports — Cosmos via /.netlify/functions/reports
+//
+// Reports are fetched once per view-open and cached on the window to keep
+// typing fast (no per-keystroke network hits). Matches are case-insensitive
+// substring; each match also remembers WHICH field matched so the user can
+// see "name contains X" vs "SQL contains X" etc. Each row has a Go-to
+// action that routes to the right editor/view for the item's type.
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _searchReportCache = null;        // Cached reports list (null = not yet loaded)
+let _searchReportLoading = false;     // Prevents concurrent fetches during fast re-open
+
+async function initGlobalSearch() {
+  // Reset any stale summary from a prior open, render the empty-state
+  // prompt, focus the input, and kick off an async fetch of the user's
+  // saved reports (cached for this session).
+  const input = document.getElementById('search-input');
+  const res   = document.getElementById('search-results');
+  const sum   = document.getElementById('search-summary');
+  if (input) { setTimeout(() => input.focus(), 50); }
+  if (res) res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, inventory, and saved reports.</p></div>';
+  if (sum) sum.textContent = '';
+  // Fire-and-forget report prefetch — we don't await so the UI stays responsive.
+  // If it fails, search still works for the local sources; we just won't show
+  // remote reports until it recovers on the next view-open.
+  _prefetchReportsForSearch();
+}
+
+async function _prefetchReportsForSearch() {
+  if (_searchReportCache !== null || _searchReportLoading) return;
+  const email = currentCygenixEmail();
+  if (!email) return;
+  _searchReportLoading = true;
+  try {
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list', userEmail: email }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.ok && Array.isArray(data.reports)) {
+      _searchReportCache = data.reports;
+    } else {
+      _searchReportCache = []; // empty marker so we don't retry on every keystroke
+    }
+  } catch {
+    _searchReportCache = [];
+  } finally {
+    _searchReportLoading = false;
+    // If the user has already typed something while we were fetching, re-run
+    // the search so reports now appear in the results.
+    const input = document.getElementById('search-input');
+    if (input && input.value.trim()) runGlobalSearch();
+  }
+}
+
+function runGlobalSearch() {
+  const input = document.getElementById('search-input');
+  const scope = document.getElementById('search-scope');
+  const res   = document.getElementById('search-results');
+  const sum   = document.getElementById('search-summary');
+  if (!input || !res) return;
+  const qRaw  = input.value || '';
+  const q     = qRaw.trim().toLowerCase();
+  const scopeVal = scope ? scope.value : 'all';
+
+  if (!q) {
+    res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, inventory, and saved reports.</p></div>';
+    if (sum) sum.textContent = '';
+    return;
+  }
+
+  const rows = [];
+
+  // ── Jobs / Maps ──────────────────────────────────────────────────────────
+  // Matches name, source/target tables, column names (src + tgt), and the
+  // generated insertSQL body so users can find a job by any recognisable
+  // fragment — table, column, or ad-hoc SQL comment.
+  if (scopeVal === 'all' || scopeVal === 'job') {
+    const jobs = safeArr('cygenix_jobs');
+    jobs.forEach(j => {
+      const matches = [];
+      if (_matchField(j.name, q))         matches.push({ field: 'name',   text: j.name });
+      if (_matchField(j.sourceTable, q))  matches.push({ field: 'source', text: j.sourceTable });
+      if (_matchField(j.source, q) && j.source !== j.sourceTable) matches.push({ field: 'source', text: j.source });
+      if (_matchField(j.targetTable, q))  matches.push({ field: 'target', text: j.targetTable });
+      if (_matchField(j.target, q) && j.target !== j.targetTable) matches.push({ field: 'target', text: j.target });
+      // Column names: any srcCol/tgtCol in columnMapping
+      if (Array.isArray(j.columnMapping)) {
+        const colHit = j.columnMapping.find(m =>
+          (m.srcCol && String(m.srcCol).toLowerCase().includes(q)) ||
+          (m.tgtCol && String(m.tgtCol).toLowerCase().includes(q))
+        );
+        if (colHit) {
+          const col = colHit.srcCol && String(colHit.srcCol).toLowerCase().includes(q) ? colHit.srcCol : colHit.tgtCol;
+          matches.push({ field: 'column', text: col });
+        }
+      }
+      // SQL body — snippet around the match so users see context
+      if (_matchField(j.insertSQL, q)) matches.push({ field: 'SQL', text: _snippet(j.insertSQL, q) });
+      else if (_matchField(j.migrationSQL, q)) matches.push({ field: 'SQL', text: _snippet(j.migrationSQL, q) });
+      else if (_matchField(j.sql, q)) matches.push({ field: 'SQL', text: _snippet(j.sql, q) });
+      if (!matches.length) return;
+
+      const kind = j.jobType === 'sql'          ? 'SQL job'
+                 : j.jobType === 'one-to-many'  ? 'One-to-many map'
+                 : j.jobType === 'simple-map'   ? 'Object map'
+                 : 'Job';
+      const sub = [j.sourceTable || j.source, j.targetTable || j.target]
+        .filter(Boolean).join(' → ') || '';
+      rows.push({
+        type: 'Job',
+        typeColor: 'var(--accent)',
+        kind,
+        name: j.name || '(unnamed job)',
+        subtitle: sub,
+        matches,
+        gotoLabel: 'Edit',
+        gotoAction: "editJob('" + _jsEsc(j.id) + "')",
+      });
+    });
+  }
+
+  // ── Projects ─────────────────────────────────────────────────────────────
+  // Project records are loose in shape — most carry a name and a set of
+  // job refs. We search the name only (deep-search of nested job refs
+  // would double-count results since those jobs already show up above).
+  if (scopeVal === 'all' || scopeVal === 'project') {
+    const projects = safeArr('cygenix_projects');
+    projects.forEach(p => {
+      const matches = [];
+      if (_matchField(p.name, q)) matches.push({ field: 'name', text: p.name });
+      if (!matches.length) return;
+      const groupCount = Array.isArray(p.groups) ? p.groups.length : 0;
+      const stepCount  = Array.isArray(p.groups)
+        ? p.groups.reduce((n,g) => n + (Array.isArray(g.steps) ? g.steps.length : 0), 0)
+        : (Array.isArray(p.steps) ? p.steps.length : 0);
+      const sub = stepCount
+        ? (stepCount + ' step' + (stepCount===1?'':'s') + (groupCount>1 ? ' · ' + groupCount + ' groups' : ''))
+        : '';
+      rows.push({
+        type: 'Project',
+        typeColor: 'var(--green)',
+        kind: 'Project',
+        name: p.name || '(unnamed project)',
+        subtitle: sub,
+        matches,
+        gotoLabel: 'Open',
+        gotoAction: "_openProjectFromSearch('" + _jsEsc(p.id) + "')",
+      });
+    });
+  }
+
+  // ── Inventory ────────────────────────────────────────────────────────────
+  // Matches filename, type label, and note content (for text notes). The
+  // gotoAction switches to the Inventory view — we don't have a per-item
+  // deep link so this is best-effort navigation.
+  if (scopeVal === 'all' || scopeVal === 'inventory') {
+    let inv = [];
+    try { inv = JSON.parse(localStorage.getItem('cygenix_inventory') || '[]'); } catch {}
+    const typeLabel = t => (DOC_TYPES && DOC_TYPES[t] && DOC_TYPES[t].label) || t || 'Doc';
+    inv.forEach(d => {
+      const matches = [];
+      if (_matchField(d.name, q))     matches.push({ field: 'filename', text: d.name });
+      if (_matchField(typeLabel(d.type), q)) matches.push({ field: 'type', text: typeLabel(d.type) });
+      if (d.isNote && _matchField(d.content, q)) matches.push({ field: 'note', text: _snippet(d.content, q) });
+      if (!matches.length) return;
+      rows.push({
+        type: 'Inventory',
+        typeColor: 'var(--amber)',
+        kind: typeLabel(d.type),
+        name: d.name || '(unnamed document)',
+        subtitle: (d.ext ? d.ext.toUpperCase() : '') +
+                  (d.addedAt ? ' · ' + new Date(d.addedAt).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : ''),
+        matches,
+        gotoLabel: 'Open',
+        gotoAction: "_openInventoryFromSearch('" + _jsEsc(d.id) + "')",
+      });
+    });
+  }
+
+  // ── Conversion reports ──────────────────────────────────────────────────
+  // Uses the cached list from _prefetchReportsForSearch. If the cache is
+  // still loading we render the current results and the user will see
+  // reports appear on the next keystroke (prefetch re-runs runGlobalSearch
+  // when it finishes).
+  if ((scopeVal === 'all' || scopeVal === 'report') && Array.isArray(_searchReportCache)) {
+    _searchReportCache.forEach(r => {
+      const matches = [];
+      if (_matchField(r.projectName, q))  matches.push({ field: 'name',   text: r.projectName });
+      if (_matchField(r.sourceSystem, q)) matches.push({ field: 'source', text: r.sourceSystem });
+      if (_matchField(r.targetSystem, q)) matches.push({ field: 'target', text: r.targetSystem });
+      if (_matchField(r.userName, q))     matches.push({ field: 'analyst', text: r.userName });
+      if (_matchField(r.userEmail, q))    matches.push({ field: 'analyst', text: r.userEmail });
+      if (!matches.length) return;
+      const date = r.savedAt ? new Date(r.savedAt).toLocaleDateString('en-GB', {day:'numeric',month:'short',year:'numeric'}) : '';
+      rows.push({
+        type: 'Report',
+        typeColor: 'var(--purple)',
+        kind: 'Saved report',
+        name: r.projectName || '(untitled report)',
+        subtitle: date + (r.totalRows ? ' · ' + Number(r.totalRows).toLocaleString() + ' rows' : ''),
+        matches,
+        gotoLabel: 'View',
+        gotoAction: "openSavedReport('" + _jsEsc(r.id) + "')",
+      });
+    });
+  }
+
+  // Summary line
+  if (sum) {
+    const bySource = rows.reduce((acc, r) => { acc[r.type] = (acc[r.type]||0) + 1; return acc; }, {});
+    const parts = Object.keys(bySource).map(k => bySource[k] + ' ' + k.toLowerCase() + (bySource[k]===1?'':'s'));
+    sum.textContent = rows.length
+      ? rows.length + ' result' + (rows.length===1?'':'s') + (parts.length ? ' · ' + parts.join(', ') : '')
+      + (_searchReportCache === null && (scopeVal==='all'||scopeVal==='report') ? ' · (reports still loading…)' : '')
+      : 'No results';
+  }
+
+  if (!rows.length) {
+    res.innerHTML = '<div class="empty-state" style="padding:2rem"><h3>No matches</h3><p>Nothing matched "' + escapeHtml(qRaw) + '". Try a shorter or different term.</p></div>';
+    return;
+  }
+
+  // Render results table
+  res.innerHTML =
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">' +
+    '<thead><tr style="border-bottom:0.5px solid var(--border2);text-align:left">' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em">Type</th>' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em">What</th>' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em">Where matched</th>' +
+      '<th style="padding:0.5rem 0.75rem;font-weight:500;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.07em;width:100px"></th>' +
+    '</tr></thead><tbody>' +
+    rows.map(r =>
+      '<tr style="border-bottom:0.5px solid var(--border)">' +
+        '<td style="padding:0.7rem 0.75rem;vertical-align:top">' +
+          '<span style="display:inline-block;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:500;background:rgba(255,255,255,0.04);border:0.5px solid ' + r.typeColor + ';color:' + r.typeColor + '">' + escapeHtml(r.type) + '</span>' +
+          '<div style="font-size:10px;color:var(--text3);margin-top:3px">' + escapeHtml(r.kind) + '</div>' +
+        '</td>' +
+        '<td style="padding:0.7rem 0.75rem;vertical-align:top">' +
+          '<div style="font-weight:500;color:var(--text)">' + _highlight(r.name, q) + '</div>' +
+          (r.subtitle ? '<div style="font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)">' + _highlight(r.subtitle, q) + '</div>' : '') +
+        '</td>' +
+        '<td style="padding:0.7rem 0.75rem;vertical-align:top;font-size:11px">' +
+          r.matches.map(m =>
+            '<div style="margin-bottom:3px">' +
+              '<span style="color:var(--text3);font-family:var(--mono);font-size:10px;text-transform:uppercase;margin-right:6px">' + escapeHtml(m.field) + '</span>' +
+              '<span style="color:var(--text2);font-family:var(--mono)">' + _highlight(String(m.text||''), q) + '</span>' +
+            '</div>'
+          ).join('') +
+        '</td>' +
+        '<td style="padding:0.7rem 0.75rem;vertical-align:top;text-align:right">' +
+          '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25);font-size:12px;padding:0.35rem 0.85rem" onclick="' + r.gotoAction + '">' + escapeHtml(r.gotoLabel) + ' →</button>' +
+        '</td>' +
+      '</tr>'
+    ).join('') +
+    '</tbody></table></div>';
+}
+
+// Helpers used by runGlobalSearch only — underscored to flag their private
+// scope and keep the global namespace tidy.
+function _matchField(v, q) {
+  if (v == null) return false;
+  return String(v).toLowerCase().indexOf(q) !== -1;
+}
+
+// Highlight each case-insensitive occurrence of the query inside an escaped
+// string. We escape first, then splice in <mark> so user-controlled source
+// content can't inject HTML through the search results.
+function _highlight(text, q) {
+  const esc = escapeHtml(String(text == null ? '' : text));
+  if (!q) return esc;
+  const escQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return esc.replace(new RegExp('(' + escQ + ')', 'gi'),
+    '<mark style="background:rgba(245,158,11,0.25);color:var(--text);padding:0 2px;border-radius:2px">$1</mark>');
+}
+
+// Return a ~80-char window around the first match in a long string so long
+// SQL / note bodies don't blow up the table. Returns the full string if it's
+// already short.
+function _snippet(text, q) {
+  if (text == null) return '';
+  const s = String(text);
+  if (s.length <= 100) return s;
+  const i = s.toLowerCase().indexOf(q);
+  if (i < 0) return s.slice(0, 100) + '…';
+  const start = Math.max(0, i - 30);
+  const end   = Math.min(s.length, i + q.length + 50);
+  return (start > 0 ? '…' : '') + s.slice(start, end) + (end < s.length ? '…' : '');
+}
+
+// JS string escape for values interpolated into an onclick="…" attribute.
+// Prevents quote-breakout when a job id contains a single quote (unlikely
+// but safer to handle).
+function _jsEsc(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// Go-to actions for sources that don't already have a top-level openFoo()
+// helper. Projects open in the project-builder with the id pre-selected
+// (the builder reads cygenix_active_project_id). Inventory just switches
+// to the inventory view — we have no per-item deep link.
+function _openProjectFromSearch(projectId) {
+  if (projectId) {
+    try { localStorage.setItem('cygenix_active_project_id', projectId); } catch {}
+  }
+  window.location.href = '/project-builder.html';
+}
+
+function _openInventoryFromSearch(_docId) {
+  // Inventory doesn't deep-link to individual docs yet; the view re-renders
+  // all items and the user can filter from there. If/when per-doc anchors
+  // get added, stash the id in sessionStorage and have renderInventory()
+  // scroll to it.
+  showView('inventory');
 }
 
 // Delete confirm + refresh the list.
