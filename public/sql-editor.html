@@ -40,28 +40,6 @@
 body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
 
-/* ── COLLAPSED SIDEBAR FIX ─────────────────────────────────────────────────
-   When the sidebar collapses, cygenix-sidebar.js keeps both the narrow icon
-   rail and the wider expanded panel in the DOM. The expanded panel needs to
-   be hidden on this page — we cover several class-name patterns the sidebar
-   script might use so whichever one it is, it gets hidden.                */
-body.cyg-collapsed .cyg-sidebar-expanded,
-body.cyg-collapsed .cyg-sidebar-labels,
-body.cyg-collapsed .cyg-sidebar-menu,
-body.cyg-collapsed .cyg-sidebar-panel,
-body.cyg-collapsed [data-cyg-expanded],
-body.cyg-collapsed [data-cyg-role="expanded"]{
-  display:none!important;
-}
-/* Fallback — force anything inside the sidebar mount to fit inside the 54px
-   rail. This catches any wider element the more specific rules miss.      */
-body.cyg-collapsed #cyg-sidebar-mount,
-body.cyg-collapsed .cyg-sidebar,
-body.cyg-collapsed #cyg-sidebar{
-  max-width:54px!important;
-  overflow:hidden!important;
-}
-
 .topbar{position:fixed;top:0;right:0;left:230px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem;transition:left 0.2s ease}
 body.cyg-collapsed .topbar{left:54px}
 .logo{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
@@ -204,6 +182,59 @@ body.fullscreen .script-panel { display:none }
 
 <div id="cyg-sidebar-mount" data-active="sql-editor"></div>
 <script src="/cygenix-sidebar.js"></script>
+<script>
+// ── Sidebar width mirror ──────────────────────────────────────────────────────
+// cygenix-sidebar.js manages its own collapse state and width, but this page's
+// body padding is keyed off `body.cyg-collapsed`. Watch the sidebar's actual
+// rendered width and toggle the class to match — works regardless of whatever
+// internal state the sidebar script uses, and handles the initial load too.
+(function mirrorSidebarWidth(){
+  function findSidebarEl(){
+    // Try the mount first, then common class/id patterns the sidebar script
+    // might inject. We want the outermost sidebar element whose width actually
+    // changes between collapsed (~54px) and expanded (~230px).
+    const candidates = [
+      document.getElementById('cyg-sidebar'),
+      document.querySelector('.cyg-sidebar'),
+      document.getElementById('cyg-sidebar-mount')
+    ].filter(Boolean);
+    // Prefer the one that currently has non-zero width.
+    return candidates.find(el => el.offsetWidth > 0) || candidates[0];
+  }
+
+  function sync(width){
+    // The collapsed rail is typically ≤ 60px. Anything wider means expanded.
+    const shouldCollapse = width > 0 && width <= 80;
+    document.body.classList.toggle('cyg-collapsed', shouldCollapse);
+  }
+
+  function attach(){
+    const el = findSidebarEl();
+    if (!el) { setTimeout(attach, 50); return; }
+
+    // Initial sync — run after layout has settled
+    requestAnimationFrame(() => sync(el.offsetWidth));
+
+    if (typeof ResizeObserver !== 'undefined'){
+      const ro = new ResizeObserver(entries => {
+        for (const entry of entries) sync(entry.contentRect.width);
+      });
+      ro.observe(el);
+    } else {
+      // Legacy fallback — poll every 200ms. Cheap, and only runs if RO missing.
+      setInterval(() => sync(el.offsetWidth), 200);
+    }
+  }
+
+  // Wait for cygenix-sidebar.js to finish rendering. It's loaded synchronously
+  // above, but it may defer its DOM work to next tick.
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
+</script>
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
