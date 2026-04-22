@@ -3092,11 +3092,17 @@ function closeModal() { $('job-modal').classList.remove('open'); }
 // ── Render ────────────────────────────────────────────────────────────────────
 function addAudit(msg) { state.auditLog.unshift({ time: new Date().toLocaleTimeString(), msg }); }
 function updateStats() {
-  $('stat-total').textContent    = state.jobs.length;
-  $('stat-analysed').textContent = state.jobs.length;
-  $('stat-done').textContent     = state.jobs.filter(j=>j.status==='complete').length;
-  $('stat-files').textContent    = state.totalFilesProcessed;
-  $('jobs-count').textContent    = state.jobs.length;
+  // Guard every lookup — some stat elements may be absent on pages that
+  // include this script but don't render the dashboard markup, and at least
+  // one element (#jobs-count) isn't present on any page but is still
+  // referenced here from a legacy callsite. An unguarded assignment on null
+  // throws, which would halt renderDashboard() and leave the pipeline blank.
+  const set = (id, val) => { const el = $(id); if (el) el.textContent = val; };
+  set('stat-total',    state.jobs.length);
+  set('stat-analysed', state.jobs.length);
+  set('stat-done',     state.jobs.filter(j=>j.status==='complete').length);
+  set('stat-files',    state.totalFilesProcessed);
+  set('jobs-count',    state.jobs.length);
 }
 
 // ── Bulk-select + move jobs to project ─────────────────────────────────────
@@ -3761,20 +3767,52 @@ function escapeAttr(s) { return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 // ── User + Project ─────────────────────────────────────────────────────────────
 function initUserAndProject() {
-  // Load user — check Entra session first, then legacy fallbacks
+  // Load user — try sources in order of reliability. MSAL first (authoritative
+  // after Entra sign-in), then legacy session keys, then JWT decode as a last
+  // resort. Any exception in this block falls through to the outer catch and
+  // leaves the pill at "Loading…"; that's visible but not disruptive.
   try {
     let email = '', name = '';
 
-    // 1. Entra External ID session (primary)
-    const entraRaw = sessionStorage.getItem('cygenix_entra_account')
-                  || localStorage.getItem('cygenix_entra_account');
-    if (entraRaw) {
-      const entra = JSON.parse(entraRaw);
-      email = entra.email || entra.userId || '';
-      name  = entra.name  || '';
+    // 1. MSAL account cache — the authoritative source after Entra sign-in.
+    //    MSAL stores accounts in localStorage under its own keys; reading via
+    //    getAllAccounts() is the supported, version-stable way.
+    if (!email && typeof msal !== 'undefined') {
+      try {
+        const msalApp = new msal.PublicClientApplication({
+          auth: {
+            clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+            authority: 'https://cygenix.ciamlogin.com/',
+            knownAuthorities: ['cygenix.ciamlogin.com'],
+          },
+          cache: { cacheLocation: 'localStorage' },
+        });
+        // initialize() is synchronous-enough for cache reads but returns a
+        // Promise; since we only need the already-cached account, calling
+        // getAllAccounts() without awaiting init is safe in MSAL 3.x.
+        const accounts = msalApp.getAllAccounts() || [];
+        if (accounts.length) {
+          const a = accounts[0];
+          email = a.username || a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '';
+          name  = a.name || a.idTokenClaims?.name || '';
+        }
+      } catch (e) { /* MSAL not ready or misconfigured; fall through */ }
     }
 
-    // 2. Legacy cygenix_user fallback
+    // 2. Legacy custom session key (kept for back-compat with any flow that
+    //    manually writes this; nothing in the current codebase does, but
+    //    removing the read would break anyone mid-migration).
+    if (!email) {
+      const entraRaw = sessionStorage.getItem('cygenix_entra_account')
+                    || localStorage.getItem('cygenix_entra_account');
+      if (entraRaw) {
+        const entra = JSON.parse(entraRaw);
+        email = entra.email || entra.userId || '';
+        name  = entra.name  || '';
+      }
+    }
+
+    // 3. Netlify Identity legacy fallback (pre-migration accounts).
     if (!email) {
       const raw  = JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user') || '{}');
       const user = raw.user || raw;
@@ -3782,13 +3820,20 @@ function initUserAndProject() {
       name  = user.user_metadata?.full_name || raw.user_metadata?.full_name || '';
     }
 
-    // 3. Decode from JWT token
+    // 4. Decode from a raw JWT if one is stored directly. URL-safe base64
+    //    (`-`/`_` instead of `+`/`/`) isn't valid input to atob(), so we
+    //    normalise before decoding — a common gotcha that silently breaks
+    //    JWT decoding in browsers.
     if (!email) {
       const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
-      if (token) {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        email = payload.email || payload.preferred_username || payload.sub || '';
-        name  = payload.name || '';
+      if (token && token.split('.').length === 3) {
+        try {
+          let b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+          while (b64.length % 4) b64 += '=';
+          const payload = JSON.parse(atob(b64));
+          email = payload.email || payload.preferred_username || payload.sub || '';
+          name  = payload.name || '';
+        } catch (e) { /* token not a decodable JWT; skip */ }
       }
     }
 
@@ -3800,8 +3845,20 @@ function initUserAndProject() {
       $('user-avatar')     && ($('user-avatar').textContent = initials);
       $('user-email-menu') && ($('user-email-menu').textContent = email);
       console.log('[Dashboard] User:', email, '| Name:', name);
+    } else {
+      // Last resort — don't leave the pill stuck on "Loading…" if every
+      // lookup missed. Signed-in state is still implied by reaching this
+      // page (auth-gate would have redirected otherwise), we just couldn't
+      // extract identity.
+      $('user-name')   && ($('user-name').textContent   = 'Signed in');
+      $('user-avatar') && ($('user-avatar').textContent = '·');
+      console.warn('[Dashboard] No user identity found in MSAL, legacy keys, or JWT');
     }
-  } catch(e) { console.warn('[Dashboard] initUserAndProject error:', e.message); }
+  } catch(e) {
+    // Promoted from warn → error so a silent breakage here is visible in
+    // DevTools without being fatal.
+    console.error('[Dashboard] initUserAndProject error:', e);
+  }
 
   // Load active project name
   try {
