@@ -1274,6 +1274,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn" onclick="spExportCSV()" title="Download as CSV">⬇ Export CSV</button>
           <button class="btn" onclick="spExportJSON()" title="Download as JSON">⬇ Export JSON</button>
           <button class="btn btn-primary" onclick="spAddRow()">+ Add parameter</button>
+          <span id="sp-save-status" style="font-size:11px;color:var(--text3);margin-left:0.5rem;font-family:var(--mono);min-width:10ch"></span>
+          <button class="btn btn-ghost" id="sp-save-btn" onclick="spSaveToCloud()" title="Save parameters to cloud now">☁ Save to cloud</button>
         </div>
         <div class="sp-toolbar" id="sp-toolbar-wasis" style="display:none">
           <input type="file" id="wi-import-file" accept=".csv,.tsv,.xlsx,.xls,.txt,.json" style="display:none" onchange="wiImportFile(this)">
@@ -1281,6 +1283,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn" onclick="wiExportCSV()" title="Download as CSV">⬇ Export CSV</button>
           <button class="btn" onclick="wiExportJSON()" title="Download as JSON">⬇ Export JSON</button>
           <button class="btn btn-primary" onclick="wiAddRow()">+ Add rule</button>
+          <span id="wi-save-status" style="font-size:11px;color:var(--text3);margin-left:0.5rem;font-family:var(--mono);min-width:10ch"></span>
+          <button class="btn btn-ghost" id="wi-save-btn" onclick="wiSaveToCloud()" title="Save Was/Is rules to cloud now">☁ Save to cloud</button>
         </div>
       </div>
 
@@ -7911,6 +7915,44 @@ function spSave(){
   ShadowStore.save('cygenix_sys_params', toSave);
 }
 
+// Manual cloud save. spSave() already writes to localStorage, which the sync
+// module auto-pushes to Cosmos after a 3s debounce. This button gives the
+// user immediate confirmation and surfaces cloud errors that the silent
+// auto-save would otherwise swallow. Use CygenixSync.saveNow() so the pending
+// debounce is cancelled and we await the actual Cosmos POST.
+async function spSaveToCloud(){
+  const btn    = document.getElementById('sp-save-btn');
+  const status = document.getElementById('sp-save-status');
+  if (!btn) return;
+  spSave(); // ensure latest in localStorage before pushing
+  const prevText = btn.textContent;
+  btn.textContent = '☁ Saving…';
+  btn.disabled = true;
+  if (status) { status.textContent = ''; status.style.color = 'var(--text3)'; }
+  try {
+    if (typeof CygenixSync === 'undefined' || typeof CygenixSync.saveNow !== 'function') {
+      if (status) { status.textContent = 'Sync unavailable'; status.style.color = 'var(--red)'; }
+      btn.textContent = prevText;
+      btn.disabled = false;
+      return;
+    }
+    const res = await CygenixSync.saveNow();
+    if (res.ok) {
+      btn.textContent = '✓ Saved';
+      if (status) { status.textContent = 'Saved ' + new Date().toLocaleTimeString(); status.style.color = 'var(--green)'; }
+      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 1500);
+    } else {
+      btn.textContent = '✗ Failed';
+      if (status) { status.textContent = res.error === 'not-signed-in' ? 'Not signed in' : 'Cloud save failed'; status.style.color = 'var(--red)'; }
+      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
+    }
+  } catch (e) {
+    btn.textContent = '✗ Failed';
+    if (status) { status.textContent = e.message || 'Unknown error'; status.style.color = 'var(--red)'; }
+    setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
+  }
+}
+
 function spGetDisplayedRows(){
   const q = spFilterQuery.trim().toLowerCase();
   let indexed = spParams.map((p, origIdx) => ({
@@ -8334,6 +8376,44 @@ function wiSave(){
   // Mirror to shadow store. Skipped automatically when toSave is empty, so an
   // accidental or malicious wipe never overwrites a good prior backup.
   ShadowStore.save(WI_STORAGE_KEY, toSave);
+}
+
+// Manual cloud save for Was/Is rules. Same pattern as spSaveToCloud: commit
+// to localStorage, cancel any pending debounced sync, push immediately, then
+// surface the result. Important for a piece of data that has been observed
+// not reliably returning from the cloud after sign-out — so at minimum the
+// user can confirm it's actually in Cosmos before signing out.
+async function wiSaveToCloud(){
+  const btn    = document.getElementById('wi-save-btn');
+  const status = document.getElementById('wi-save-status');
+  if (!btn) return;
+  wiSave(); // ensure latest in localStorage before pushing
+  const prevText = btn.textContent;
+  btn.textContent = '☁ Saving…';
+  btn.disabled = true;
+  if (status) { status.textContent = ''; status.style.color = 'var(--text3)'; }
+  try {
+    if (typeof CygenixSync === 'undefined' || typeof CygenixSync.saveNow !== 'function') {
+      if (status) { status.textContent = 'Sync unavailable'; status.style.color = 'var(--red)'; }
+      btn.textContent = prevText;
+      btn.disabled = false;
+      return;
+    }
+    const res = await CygenixSync.saveNow();
+    if (res.ok) {
+      btn.textContent = '✓ Saved';
+      if (status) { status.textContent = 'Saved ' + new Date().toLocaleTimeString(); status.style.color = 'var(--green)'; }
+      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 1500);
+    } else {
+      btn.textContent = '✗ Failed';
+      if (status) { status.textContent = res.error === 'not-signed-in' ? 'Not signed in' : 'Cloud save failed'; status.style.color = 'var(--red)'; }
+      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
+    }
+  } catch (e) {
+    btn.textContent = '✗ Failed';
+    if (status) { status.textContent = e.message || 'Unknown error'; status.style.color = 'var(--red)'; }
+    setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
+  }
 }
 
 function wiGetDisplayedRows(){

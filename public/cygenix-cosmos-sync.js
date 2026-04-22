@@ -12,6 +12,7 @@ const CygenixSync = (() => {
     'cygenix_jobs','cygenix_project_settings','cygenix_project_plan',
     'cygenix_project_connections','cygenix_performance','cygenix_validation_sources',
     'cygenix_wasis_rules','cygenix_sql_scripts','cygenix_issues','cygenix_inventory',
+    'cygenix_sys_params',
   ];
 
   const FIELD_MAP = {
@@ -20,45 +21,85 @@ const CygenixSync = (() => {
     performance:'cygenix_performance', validation_sources:'cygenix_validation_sources',
     wasis_rules:'cygenix_wasis_rules', sql_scripts:'cygenix_sql_scripts',
     issues:'cygenix_issues', inventory:'cygenix_inventory',
+    sys_params:'cygenix_sys_params',
   };
 
-  // Extract userId — supports Entra External ID (primary) and legacy fallbacks
+  // Extract userId — MSAL-first (authoritative post-migration), with legacy
+  // fallbacks for back-compat. Critical that this returns a stable value: the
+  // init() flow uses it to decide whether to wipe localStorage as part of the
+  // user-switch protection, so instability here can cause data loss.
   function getUserId() {
-    // Method 1: Entra External ID session (check both storages)
+    // Method 1: MSAL account cache (authoritative after Entra sign-in).
+    //   Nothing in the app currently populates cygenix_entra_account, so
+    //   before this fallback existed, the function was falling all the way
+    //   through to JWT decode — which failed on URL-safe base64.
+    try {
+      if (typeof msal !== 'undefined') {
+        const msalApp = new msal.PublicClientApplication({
+          auth: {
+            clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+            authority: 'https://cygenix.ciamlogin.com/',
+            knownAuthorities: ['cygenix.ciamlogin.com'],
+          },
+          cache: { cacheLocation: 'localStorage' },
+        });
+        const accounts = msalApp.getAllAccounts() || [];
+        if (accounts.length) {
+          const a = accounts[0];
+          const id = (a.username || a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '').trim().toLowerCase();
+          if (id) return id;
+        }
+      }
+    } catch {}
+
+    // Method 2: Entra External ID session (legacy custom key)
     try {
       const entraRaw = sessionStorage.getItem('cygenix_entra_account')
                     || localStorage.getItem('cygenix_entra_account');
       if (entraRaw) {
         const u = JSON.parse(entraRaw);
-        if (u.email)  return u.email;
-        if (u.userId) return u.userId;
+        const id = (u.email || u.userId || '').trim().toLowerCase();
+        if (id) return id;
       }
     } catch {}
-    // Method 2: cygenix_user object (legacy / compatibility)
+    // Method 3: cygenix_user object (Netlify Identity era)
     try {
-      const raw = sessionStorage.getItem('cygenix_user');
+      const raw = sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user');
       if (raw) {
         const u = JSON.parse(raw);
-        if (u.email) return u.email;
-        if (u.user?.email) return u.user.email;
+        const email = u.email || u.user?.email;
+        if (email) return email.trim().toLowerCase();
         const at = u.access_token;
-        if (at) {
-          const p = JSON.parse(atob(at.split('.')[1]));
-          if (p.email) return p.email;
-          if (p.sub && p.sub.includes('@')) return p.sub;
+        if (at && at.split('.').length === 3) {
+          const claims = decodeJwt(at);
+          if (claims?.email) return claims.email.trim().toLowerCase();
+          if (claims?.sub && claims.sub.includes('@')) return claims.sub.trim().toLowerCase();
         }
       }
     } catch {}
-    // Method 3: decode cygenix_token JWT directly
+    // Method 4: decode cygenix_token JWT directly. URL-safe base64 must be
+    //   normalised before atob() or this silently throws — the root cause of
+    //   init() retrying for 20s and then giving up entirely for some users.
     try {
-      const token = sessionStorage.getItem('cygenix_token');
-      if (token) {
-        const p = JSON.parse(atob(token.split('.')[1]));
-        if (p.email) return p.email;
-        if (p.sub && p.sub.includes('@')) return p.sub;
+      const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
+      if (token && token.split('.').length === 3) {
+        const claims = decodeJwt(token);
+        if (claims?.email) return claims.email.trim().toLowerCase();
+        if (claims?.preferred_username) return claims.preferred_username.trim().toLowerCase();
+        if (claims?.sub && claims.sub.includes('@')) return claims.sub.trim().toLowerCase();
       }
     } catch {}
     return null;
+  }
+
+  // Decode a JWT payload, handling URL-safe base64 (-/_ instead of +//) and
+  // missing padding. Returns null on any failure — callers handle nulls.
+  function decodeJwt(token) {
+    try {
+      let b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      return JSON.parse(atob(b64));
+    } catch { return null; }
   }
 
   async function callApi(action, method, body) {
@@ -113,17 +154,57 @@ const CygenixSync = (() => {
 
   async function ensureUser() {
     const userId = getUserId(); if (!userId) return null;
+    let name = '';
+    // Prefer MSAL's account cache for the display name
     try {
-      const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
-      return callApi('user-create','POST',{ email: u.email || userId, name: u.user_metadata?.full_name || u.name || '' });
-    } catch { return null; }
+      if (typeof msal !== 'undefined') {
+        const msalApp = new msal.PublicClientApplication({
+          auth: {
+            clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+            authority: 'https://cygenix.ciamlogin.com/',
+            knownAuthorities: ['cygenix.ciamlogin.com'],
+          },
+          cache: { cacheLocation: 'localStorage' },
+        });
+        const acc = (msalApp.getAllAccounts() || [])[0];
+        if (acc) name = acc.name || acc.idTokenClaims?.name || '';
+      }
+    } catch {}
+    // Fall back to legacy cygenix_user shape if MSAL didn't give us a name
+    if (!name) {
+      try {
+        const u = JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user') || '{}');
+        name = u.user_metadata?.full_name || u.name || '';
+      } catch {}
+    }
+    return callApi('user-create','POST',{ email: userId, name });
   }
 
   async function ping() { return callApi('ping','GET'); }
   async function getSubscription() { return callApi('subscription','GET'); }
 
-  // Auto-save on localStorage writes
+  // Debounced auto-save on localStorage writes — shared timer so the manual
+  // saveNow() can cancel pending writes and flush immediately.
   let _saveTimer = null;
+
+  // Public-facing immediate save. Cancels any pending debounced save, flushes
+  // straight to Cosmos, and returns a structured result so UI callers can show
+  // accurate success / failure state. Use this for "Save" buttons — the
+  // auto-save debounce is fine for background writes but a button click
+  // should feel immediate and surface errors.
+  async function saveNow() {
+    if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+    if (!getUserId()) return { ok: false, error: 'not-signed-in' };
+    try {
+      const r = await save();
+      if (r?.saved) return { ok: true, updatedAt: r.updatedAt };
+      return { ok: false, error: 'no-response' };
+    } catch (e) {
+      return { ok: false, error: e.message || String(e) };
+    }
+  }
+
+  // Auto-save on localStorage writes
   const _orig = localStorage.setItem.bind(localStorage);
   localStorage.setItem = function(k, v) {
     _orig(k, v);
@@ -146,15 +227,25 @@ const CygenixSync = (() => {
     console.log('[CygenixSync] User:', userId);
 
     // ── Check if localStorage belongs to a DIFFERENT user ──────────────────
-    // If so, clear it so we don't accidentally push someone else's data
-    const storedUserId = localStorage.getItem('cygenix_active_user');
-    if (storedUserId && storedUserId !== userId) {
-      console.log('[CygenixSync] Different user detected — clearing local data for:', userId);
-      SYNC_KEYS.forEach(k => localStorage.removeItem(k));
+    // Normalise both sides before comparing — a casing or whitespace mismatch
+    // here was previously enough to trigger a full local wipe. If they really
+    // differ, snapshot the old data into sessionStorage first so the user has
+    // a recovery path within the same tab session.
+    const storedUserId = (localStorage.getItem('cygenix_active_user') || '').trim().toLowerCase();
+    const currentUserId = userId.trim().toLowerCase();
+    if (storedUserId && storedUserId !== currentUserId) {
+      console.log('[CygenixSync] Different user detected — snapshotting and clearing local data. Was:', storedUserId, 'Now:', currentUserId);
+      const snapshot = { wipedAt: new Date().toISOString(), wipedFrom: storedUserId, wipedFor: currentUserId, data: {} };
+      SYNC_KEYS.forEach(k => {
+        const v = localStorage.getItem(k);
+        if (v) snapshot.data[k] = v;
+        localStorage.removeItem(k);
+      });
       localStorage.removeItem('cygenix_active_project');
+      try { sessionStorage.setItem('cygenix_wiped_snapshot', JSON.stringify(snapshot)); } catch {}
     }
-    // Store current user so we can detect user switches
-    localStorage.setItem('cygenix_active_user', userId);
+    // Store current user (normalised) so future user-switch checks are stable
+    localStorage.setItem('cygenix_active_user', currentUserId);
 
     await ensureUser();
 
@@ -178,5 +269,5 @@ const CygenixSync = (() => {
   // Start after a short delay to let auth complete
   setTimeout(init, 800);
 
-  return { init, save, load, forceLoad, ensureUser, ping, getSubscription, getUserId };
+  return { init, save, saveNow, load, forceLoad, ensureUser, ping, getSubscription, getUserId };
 })();
