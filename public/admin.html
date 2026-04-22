@@ -173,6 +173,10 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1 7.5h2l2-5 2 10 2-7 2 4 1-2h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Activity Log
     </div>
+    <div class="nav-item" onclick="showSection('waitlist')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3 3h9v9H3zM3 6h9M6 3v9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Waitlist
+    </div>
     <div class="nav-label">Platform</div>
     <div class="nav-item" onclick="window.open('https://app.netlify.com','_blank')">
       <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 1L13 4v7l-5.5 3L2 11V4z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -365,6 +369,40 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
       </div>
     </div>
 
+    <!-- ── WAITLIST SECTION ── -->
+    <div id="section-waitlist" style="display:none">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Waitlist</div>
+          <div class="page-sub">People who've registered interest via /register.html</div>
+        </div>
+        <button class="btn btn-ghost" onclick="loadWaitlist()">↻ Refresh</button>
+      </div>
+
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Submitted</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Team</th>
+                <th>Use case</th>
+                <th>Source</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="waitlist-tbody">
+              <tr><td colspan="9"><div class="loading"><div class="spinner"></div>Loading waitlist…</div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -418,13 +456,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ── Section navigation ────────────────────────────────────────────────────────
 function showSection(name) {
-  ['users','invites','activity'].forEach(s => {
+  ['users','invites','activity','waitlist'].forEach(s => {
     document.getElementById('section-' + s).style.display = s === name ? 'block' : 'none';
   });
   document.querySelectorAll('.nav-item').forEach((el, i) => {
-    el.classList.toggle('active', i === ['users','invites','activity'].indexOf(name));
+    el.classList.toggle('active', i === ['users','invites','activity','waitlist'].indexOf(name));
   });
   if (name === 'activity') loadActivity();
+  if (name === 'waitlist') loadWaitlist();
 }
 
 // ── API helper ────────────────────────────────────────────────────────────────
@@ -742,6 +781,64 @@ async function loadActivity() {
       Data syncs are being recorded in Cosmos DB → audit container.</div>
     </div>
   </td></tr>`;
+}
+
+// ── Waitlist submissions from Cosmos waitlist container ──────────────────────
+async function loadWaitlist() {
+  const tbody = document.getElementById('waitlist-tbody');
+  tbody.innerHTML = '<tr><td colspan="9"><div class="loading"><div class="spinner"></div>Loading waitlist…</div></td></tr>';
+
+  try {
+    const r = await fetch(`${API}/waitlist-list?code=${CODE}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': CygenixSync?.getUserId?.() || 'admin'
+      }
+    });
+
+    if (!r.ok) {
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-text" style="color:var(--text3)">Couldn't load waitlist (${r.status}).</div></div></td></tr>`;
+      return;
+    }
+
+    const data = await r.json();
+    const entries = data.entries || [];
+
+    if (!entries.length) {
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No waitlist submissions yet.<br>Submissions from <a href="/register.html" style="color:var(--accent)">/register.html</a> will appear here.</div></div></td></tr>`;
+      return;
+    }
+
+    const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmtDate = iso => {
+      if (!iso) return '—';
+      try { return new Date(iso).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }); }
+      catch { return iso; }
+    };
+    const truncate = (s, n) => { s = String(s || ''); return s.length > n ? esc(s.slice(0, n)) + '…' : esc(s); };
+    const dash = '<span style="color:var(--text3)">—</span>';
+    const statusBadge = status => {
+      const cls = { new: 'badge-trial', contacted: 'badge-pending', invited: 'badge-active', declined: 'badge-suspended' }[status] || 'badge-trial';
+      return `<span class="badge ${cls}">${esc(status || 'new')}</span>`;
+    };
+
+    tbody.innerHTML = entries.map(e => `
+      <tr>
+        <td class="user-date">${fmtDate(e.createdAt)}</td>
+        <td class="user-name">${esc(e.name)}</td>
+        <td class="user-email">${esc(e.email)}</td>
+        <td>${esc(e.company) || dash}</td>
+        <td>${esc(e.role) || dash}</td>
+        <td>${esc(e.teamSize) || dash}</td>
+        <td title="${esc(e.useCase)}">${truncate(e.useCase, 60) || dash}</td>
+        <td>${esc(e.source) || dash}</td>
+        <td>${statusBadge(e.status)}</td>
+      </tr>
+    `).join('');
+
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty"><div class="empty-text" style="color:var(--red)">Error: ${err.message}</div></div></td></tr>`;
+  }
 }
 
 // ── Alert helper ──────────────────────────────────────────────────────────────
