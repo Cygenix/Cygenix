@@ -64,7 +64,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
 /* STATS */
-.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.75rem}
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.75rem}
 .stat-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.25rem}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem}
 .stat-val{font-size:1.6rem;font-weight:600;color:var(--text);line-height:1;margin-bottom:0.25rem}
@@ -723,7 +723,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All time</div></div>
         <div class="stat-card"><div class="stat-label">Analysed</div><div class="stat-val" id="stat-analysed" style="color:var(--purple)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--purple)"></span>Schema ready</div></div>
         <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
-        <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
       </div>
       <div id="dashboard-ring-wrap"></div>
       <div class="panel-header" style="margin-top:1.5rem"><div class="panel-title">Migration Pipeline</div><div class="panel-sub">Click any stage to jump to that module</div></div>
@@ -851,7 +850,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-jobs" class="view">
       <div class="panel-header">
         <div class="panel-title">All Migration Jobs</div>
-        <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
       </div>
       <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
         <label style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Project</label>
@@ -3105,7 +3103,6 @@ function updateStats() {
   set('stat-total',    state.jobs.length);
   set('stat-analysed', state.jobs.length);
   set('stat-done',     state.jobs.filter(j=>j.status==='complete').length);
-  set('stat-files',    state.totalFilesProcessed);
   set('jobs-count',    state.jobs.length);
 }
 
