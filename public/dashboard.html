@@ -7744,6 +7744,86 @@ let spFilterQuery = '';
 let spSortCol = null;  // 'name' | 'description' | 'value' | 'code' | null
 let spSortDir = 1;     // 1 asc, -1 desc
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Shadow-store: defensive local backup for data that can vanish between sessions
+// (observed after sign-out/sign-in: cygenix_wasis_rules didn't repopulate from
+// the cloud sync, and cygenix_sys_params came back slowly). This keeps a
+// parallel copy in a separate key so we can offer one-click recovery when the
+// primary is empty but the shadow has data.
+//
+// Rules:
+//  - Only written when saving NON-EMPTY data. An empty primary never clobbers
+//    the shadow — that's the classic backup failure mode and the whole point
+//    of this layer.
+//  - Never auto-restored. We surface a banner and let the user decide, because
+//    a zero-length primary might reflect an intentional "clear all" action.
+//  - Stored alongside a timestamp so the recovery banner can say how old it is.
+// ──────────────────────────────────────────────────────────────────────────────
+const ShadowStore = {
+  _shadowKey(primaryKey){ return primaryKey + '_shadow'; },
+
+  // Write a shadow copy — only if the payload is a non-empty array.
+  // value may be an array (what all current callers use) or already-stringified
+  // JSON; we accept either and normalise.
+  save(primaryKey, value){
+    try {
+      let arr = value;
+      if (typeof value === 'string') {
+        try { arr = JSON.parse(value); } catch { arr = null; }
+      }
+      if (!Array.isArray(arr) || arr.length === 0) return;  // never shadow an empty payload
+      const wrapper = { v: 1, savedAt: new Date().toISOString(), count: arr.length, data: arr };
+      localStorage.setItem(this._shadowKey(primaryKey), JSON.stringify(wrapper));
+    } catch (e) {
+      // Likely quota exceeded. Not critical — shadow is best-effort.
+      console.warn('[ShadowStore] save failed for', primaryKey, e.message);
+    }
+  },
+
+  // Read the shadow. Returns { data, savedAt, count } or null if absent/invalid.
+  read(primaryKey){
+    try {
+      const raw = localStorage.getItem(this._shadowKey(primaryKey));
+      if (!raw) return null;
+      const wrapper = JSON.parse(raw);
+      if (!wrapper || !Array.isArray(wrapper.data) || wrapper.data.length === 0) return null;
+      return wrapper;
+    } catch { return null; }
+  },
+
+  // Called on load: if primary is empty/missing but shadow has data, fire the
+  // onRecoverable callback. The callback receives the shadow wrapper so it can
+  // show a UI banner; recovery itself is the caller's responsibility via
+  // ShadowStore.restore(). Returns true if a recovery opportunity was surfaced.
+  checkRecovery(primaryKey, onRecoverable){
+    try {
+      const primaryRaw = localStorage.getItem(primaryKey);
+      const primary = primaryRaw ? JSON.parse(primaryRaw) : [];
+      if (Array.isArray(primary) && primary.length > 0) return false;  // primary is fine
+    } catch {
+      // Malformed primary — treat as empty and offer recovery
+    }
+    const shadow = this.read(primaryKey);
+    if (!shadow) return false;
+    try { onRecoverable && onRecoverable(shadow); } catch (e) { console.warn('[ShadowStore] onRecoverable threw', e); }
+    return true;
+  },
+
+  // Copy shadow → primary. Intentionally a separate explicit step from
+  // checkRecovery so the UI controls when restoration happens.
+  restore(primaryKey){
+    const shadow = this.read(primaryKey);
+    if (!shadow) return false;
+    try {
+      localStorage.setItem(primaryKey, JSON.stringify(shadow.data));
+      return true;
+    } catch (e) {
+      console.error('[ShadowStore] restore failed for', primaryKey, e);
+      return false;
+    }
+  }
+};
+
 function initSystemParametersView(){
   if (!window.CygenixParams){ console.warn('CygenixParams helper not loaded'); return; }
   spLoad();
@@ -7770,7 +7850,50 @@ function spLoad(){
     type:        CygenixParams.typeOf(p),
     code:        CygenixParams.codeFromName(p.name || '')
   }));
+  // Offer shadow-recovery when the primary is empty but we have a known-good
+  // prior copy. Surface as a banner in the params panel; user decides whether
+  // to restore (an empty primary could also be an intentional "clear all").
+  if (spParams.length === 0) {
+    ShadowStore.checkRecovery('cygenix_sys_params', shadow => showSpRecoveryBanner(shadow));
+  } else {
+    // Seed shadow on successful load so users who view-without-saving still
+    // get protected. ShadowStore.save is idempotent-safe and won't clobber a
+    // shadow with empty data.
+    ShadowStore.save('cygenix_sys_params', spParams);
+  }
   spRender();
+}
+
+function showSpRecoveryBanner(shadow){
+  const panel = document.getElementById('sp-tab-params');
+  if (!panel) return;
+  // Avoid stacking duplicates if spLoad() runs more than once
+  const existing = document.getElementById('sp-recovery-banner');
+  if (existing) existing.remove();
+  const ageMins = Math.max(1, Math.round((Date.now() - Date.parse(shadow.savedAt)) / 60000));
+  const ageLabel = ageMins < 60 ? ageMins + ' min ago'
+                 : ageMins < 1440 ? Math.round(ageMins/60) + ' hour' + (ageMins>=120?'s':'') + ' ago'
+                 : Math.round(ageMins/1440) + ' day' + (ageMins>=2880?'s':'') + ' ago';
+  const banner = document.createElement('div');
+  banner.id = 'sp-recovery-banner';
+  banner.style.cssText = 'background:rgba(245,158,11,0.1);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.75rem 0.875rem;font-size:12px;color:var(--amber);margin-bottom:0.875rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap';
+  banner.innerHTML =
+    '<span>🛟 <strong>System parameters look empty.</strong> A local backup with ' +
+    shadow.count + ' parameter' + (shadow.count===1?'':'s') + ' from ' + ageLabel + ' is available.</span>' +
+    '<button class="btn btn-sm btn-primary" onclick="restoreSpFromShadow()" style="margin-left:auto">Restore</button>' +
+    '<button class="btn btn-sm btn-ghost" onclick="document.getElementById(\'sp-recovery-banner\').remove()">Dismiss</button>';
+  panel.insertBefore(banner, panel.firstChild);
+}
+
+function restoreSpFromShadow(){
+  if (!ShadowStore.restore('cygenix_sys_params')) {
+    alert('Could not restore system parameters — the backup is empty or unreadable.');
+    return;
+  }
+  const banner = document.getElementById('sp-recovery-banner');
+  if (banner) banner.remove();
+  spLoad();
+  showToast('System parameters restored from local backup');
 }
 
 function spSave(){
@@ -7783,6 +7906,9 @@ function spSave(){
     code:        CygenixParams.codeFromName(p.name || '')
   }));
   localStorage.setItem('cygenix_sys_params', JSON.stringify(toSave));
+  // Mirror to shadow store so we can recover if the primary is wiped by a
+  // sync race or cache clear. No-op when toSave is empty — by design.
+  ShadowStore.save('cygenix_sys_params', toSave);
 }
 
 function spGetDisplayedRows(){
@@ -8143,7 +8269,57 @@ function wiLoad(){
     if (!Array.isArray(wiRules)) wiRules = [];
     wiRules = wiRules.map(wiNormaliseRule);
   }
+  // Offer shadow-recovery when rules are empty but a prior backup exists.
+  // This protects against the observed case of rules not repopulating after
+  // sign-out/sign-in when the cloud sync didn't cover them.
+  if (!wiRules.length) {
+    ShadowStore.checkRecovery(WI_STORAGE_KEY, shadow => showWiRecoveryBanner(shadow));
+  } else {
+    // Seed shadow on successful load — covers users who imported rules from
+    // elsewhere (CSV, object_mapping.html) and never explicitly saved on this
+    // page. Empty-payload writes are a no-op inside ShadowStore.
+    ShadowStore.save(WI_STORAGE_KEY, wiRules);
+  }
   wiRender();
+}
+
+function showWiRecoveryBanner(shadow){
+  const panel = document.getElementById('sp-tab-wasis');
+  if (!panel) return;
+  const existing = document.getElementById('wi-recovery-banner');
+  if (existing) existing.remove();
+  const ageMins = Math.max(1, Math.round((Date.now() - Date.parse(shadow.savedAt)) / 60000));
+  const ageLabel = ageMins < 60 ? ageMins + ' min ago'
+                 : ageMins < 1440 ? Math.round(ageMins/60) + ' hour' + (ageMins>=120?'s':'') + ' ago'
+                 : Math.round(ageMins/1440) + ' day' + (ageMins>=2880?'s':'') + ' ago';
+  const banner = document.createElement('div');
+  banner.id = 'wi-recovery-banner';
+  banner.style.cssText = 'background:rgba(245,158,11,0.1);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.75rem 0.875rem;font-size:12px;color:var(--amber);margin-bottom:0.875rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap';
+  banner.innerHTML =
+    '<span>🛟 <strong>Was/Is rules look empty.</strong> A local backup with ' +
+    shadow.count + ' rule' + (shadow.count===1?'':'s') + ' from ' + ageLabel + ' is available.</span>' +
+    '<button class="btn btn-sm btn-primary" onclick="restoreWiFromShadow()" style="margin-left:auto">Restore</button>' +
+    '<button class="btn btn-sm btn-ghost" onclick="document.getElementById(\'wi-recovery-banner\').remove()">Dismiss</button>';
+  panel.insertBefore(banner, panel.firstChild);
+}
+
+function restoreWiFromShadow(){
+  if (!ShadowStore.restore(WI_STORAGE_KEY)) {
+    alert('Could not restore Was/Is rules — the backup is empty or unreadable.');
+    return;
+  }
+  // Also push into the shared helper's cache if it's loaded, so object_mapping.html
+  // and other pages pick up the restored rules without needing a hard reload.
+  if (typeof CygenixWasis !== 'undefined' && typeof CygenixWasis.saveRules === 'function') {
+    try {
+      const restored = JSON.parse(localStorage.getItem(WI_STORAGE_KEY) || '[]');
+      CygenixWasis.saveRules(restored);
+    } catch {}
+  }
+  const banner = document.getElementById('wi-recovery-banner');
+  if (banner) banner.remove();
+  wiLoad();
+  showToast('Was/Is rules restored from local backup');
 }
 
 function wiSave(){
@@ -8155,6 +8331,9 @@ function wiSave(){
     try { localStorage.setItem(WI_STORAGE_KEY, JSON.stringify(toSave)); }
     catch(e){ console.warn('wiSave failed', e); }
   }
+  // Mirror to shadow store. Skipped automatically when toSave is empty, so an
+  // accidental or malicious wipe never overwrites a good prior backup.
+  ShadowStore.save(WI_STORAGE_KEY, toSave);
 }
 
 function wiGetDisplayedRows(){
