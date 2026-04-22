@@ -64,7 +64,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .main::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
 
 /* STATS */
-.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.75rem}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.75rem}
 .stat-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.1rem 1.25rem}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem}
 .stat-val{font-size:1.6rem;font-weight:600;color:var(--text);line-height:1;margin-bottom:0.25rem}
@@ -723,6 +723,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="stat-card"><div class="stat-label">Total Jobs</div><div class="stat-val" id="stat-total">0</div><div class="stat-sub">All time</div></div>
         <div class="stat-card"><div class="stat-label">Analysed</div><div class="stat-val" id="stat-analysed" style="color:var(--purple)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--purple)"></span>Schema ready</div></div>
         <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
+        <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
       </div>
       <div id="dashboard-ring-wrap"></div>
       <div class="panel-header" style="margin-top:1.5rem"><div class="panel-title">Migration Pipeline</div><div class="panel-sub">Click any stage to jump to that module</div></div>
@@ -850,6 +851,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-jobs" class="view">
       <div class="panel-header">
         <div class="panel-title">All Migration Jobs</div>
+        <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
       </div>
       <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem;flex-wrap:wrap">
         <label style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Project</label>
@@ -1272,8 +1274,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn" onclick="spExportCSV()" title="Download as CSV">⬇ Export CSV</button>
           <button class="btn" onclick="spExportJSON()" title="Download as JSON">⬇ Export JSON</button>
           <button class="btn btn-primary" onclick="spAddRow()">+ Add parameter</button>
-          <span id="sp-save-status" style="font-size:11px;color:var(--text3);margin-left:0.5rem;font-family:var(--mono);min-width:10ch"></span>
-          <button class="btn btn-ghost" id="sp-save-btn" onclick="spSaveToCloud()" title="Save parameters to cloud now">☁ Save to cloud</button>
         </div>
         <div class="sp-toolbar" id="sp-toolbar-wasis" style="display:none">
           <input type="file" id="wi-import-file" accept=".csv,.tsv,.xlsx,.xls,.txt,.json" style="display:none" onchange="wiImportFile(this)">
@@ -1281,8 +1281,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn" onclick="wiExportCSV()" title="Download as CSV">⬇ Export CSV</button>
           <button class="btn" onclick="wiExportJSON()" title="Download as JSON">⬇ Export JSON</button>
           <button class="btn btn-primary" onclick="wiAddRow()">+ Add rule</button>
-          <span id="wi-save-status" style="font-size:11px;color:var(--text3);margin-left:0.5rem;font-family:var(--mono);min-width:10ch"></span>
-          <button class="btn btn-ghost" id="wi-save-btn" onclick="wiSaveToCloud()" title="Save Was/Is rules to cloud now">☁ Save to cloud</button>
         </div>
       </div>
 
@@ -2123,7 +2121,7 @@ async function checkHealth() {
   try {
     const r = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(6000) });
     const d = await r.json();
-    if (d.apiKeyConfigured) { setBadge('ok'); $('key-alert').classList.remove('visible'); }
+    if (d.apiKeyConfigured) { setBadge('err'); $('key-alert').classList.add('visible'); }
     else { setBadge('err'); $('key-alert').classList.add('visible'); }
   } catch { setBadge('err'); $('key-alert').classList.add('visible'); }
 }
@@ -3094,16 +3092,11 @@ function closeModal() { $('job-modal').classList.remove('open'); }
 // ── Render ────────────────────────────────────────────────────────────────────
 function addAudit(msg) { state.auditLog.unshift({ time: new Date().toLocaleTimeString(), msg }); }
 function updateStats() {
-  // Guard every lookup — some stat elements may be absent on pages that
-  // include this script but don't render the dashboard markup, and at least
-  // one element (#jobs-count) isn't present on any page but is still
-  // referenced here from a legacy callsite. An unguarded assignment on null
-  // throws, which would halt renderDashboard() and leave the pipeline blank.
-  const set = (id, val) => { const el = $(id); if (el) el.textContent = val; };
-  set('stat-total',    state.jobs.length);
-  set('stat-analysed', state.jobs.length);
-  set('stat-done',     state.jobs.filter(j=>j.status==='complete').length);
-  set('jobs-count',    state.jobs.length);
+  $('stat-total').textContent    = state.jobs.length;
+  $('stat-analysed').textContent = state.jobs.length;
+  $('stat-done').textContent     = state.jobs.filter(j=>j.status==='complete').length;
+  $('stat-files').textContent    = state.totalFilesProcessed;
+  $('jobs-count').textContent    = state.jobs.length;
 }
 
 // ── Bulk-select + move jobs to project ─────────────────────────────────────
@@ -3768,52 +3761,20 @@ function escapeAttr(s) { return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 // ── User + Project ─────────────────────────────────────────────────────────────
 function initUserAndProject() {
-  // Load user — try sources in order of reliability. MSAL first (authoritative
-  // after Entra sign-in), then legacy session keys, then JWT decode as a last
-  // resort. Any exception in this block falls through to the outer catch and
-  // leaves the pill at "Loading…"; that's visible but not disruptive.
+  // Load user — check Entra session first, then legacy fallbacks
   try {
     let email = '', name = '';
 
-    // 1. MSAL account cache — the authoritative source after Entra sign-in.
-    //    MSAL stores accounts in localStorage under its own keys; reading via
-    //    getAllAccounts() is the supported, version-stable way.
-    if (!email && typeof msal !== 'undefined') {
-      try {
-        const msalApp = new msal.PublicClientApplication({
-          auth: {
-            clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
-            authority: 'https://cygenix.ciamlogin.com/',
-            knownAuthorities: ['cygenix.ciamlogin.com'],
-          },
-          cache: { cacheLocation: 'localStorage' },
-        });
-        // initialize() is synchronous-enough for cache reads but returns a
-        // Promise; since we only need the already-cached account, calling
-        // getAllAccounts() without awaiting init is safe in MSAL 3.x.
-        const accounts = msalApp.getAllAccounts() || [];
-        if (accounts.length) {
-          const a = accounts[0];
-          email = a.username || a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '';
-          name  = a.name || a.idTokenClaims?.name || '';
-        }
-      } catch (e) { /* MSAL not ready or misconfigured; fall through */ }
+    // 1. Entra External ID session (primary)
+    const entraRaw = sessionStorage.getItem('cygenix_entra_account')
+                  || localStorage.getItem('cygenix_entra_account');
+    if (entraRaw) {
+      const entra = JSON.parse(entraRaw);
+      email = entra.email || entra.userId || '';
+      name  = entra.name  || '';
     }
 
-    // 2. Legacy custom session key (kept for back-compat with any flow that
-    //    manually writes this; nothing in the current codebase does, but
-    //    removing the read would break anyone mid-migration).
-    if (!email) {
-      const entraRaw = sessionStorage.getItem('cygenix_entra_account')
-                    || localStorage.getItem('cygenix_entra_account');
-      if (entraRaw) {
-        const entra = JSON.parse(entraRaw);
-        email = entra.email || entra.userId || '';
-        name  = entra.name  || '';
-      }
-    }
-
-    // 3. Netlify Identity legacy fallback (pre-migration accounts).
+    // 2. Legacy cygenix_user fallback
     if (!email) {
       const raw  = JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user') || '{}');
       const user = raw.user || raw;
@@ -3821,20 +3782,13 @@ function initUserAndProject() {
       name  = user.user_metadata?.full_name || raw.user_metadata?.full_name || '';
     }
 
-    // 4. Decode from a raw JWT if one is stored directly. URL-safe base64
-    //    (`-`/`_` instead of `+`/`/`) isn't valid input to atob(), so we
-    //    normalise before decoding — a common gotcha that silently breaks
-    //    JWT decoding in browsers.
+    // 3. Decode from JWT token
     if (!email) {
       const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
-      if (token && token.split('.').length === 3) {
-        try {
-          let b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-          while (b64.length % 4) b64 += '=';
-          const payload = JSON.parse(atob(b64));
-          email = payload.email || payload.preferred_username || payload.sub || '';
-          name  = payload.name || '';
-        } catch (e) { /* token not a decodable JWT; skip */ }
+      if (token) {
+        const payload = JSON.parse(atob(token.split('.')[1]));
+        email = payload.email || payload.preferred_username || payload.sub || '';
+        name  = payload.name || '';
       }
     }
 
@@ -3846,20 +3800,8 @@ function initUserAndProject() {
       $('user-avatar')     && ($('user-avatar').textContent = initials);
       $('user-email-menu') && ($('user-email-menu').textContent = email);
       console.log('[Dashboard] User:', email, '| Name:', name);
-    } else {
-      // Last resort — don't leave the pill stuck on "Loading…" if every
-      // lookup missed. Signed-in state is still implied by reaching this
-      // page (auth-gate would have redirected otherwise), we just couldn't
-      // extract identity.
-      $('user-name')   && ($('user-name').textContent   = 'Signed in');
-      $('user-avatar') && ($('user-avatar').textContent = '·');
-      console.warn('[Dashboard] No user identity found in MSAL, legacy keys, or JWT');
     }
-  } catch(e) {
-    // Promoted from warn → error so a silent breakage here is visible in
-    // DevTools without being fatal.
-    console.error('[Dashboard] initUserAndProject error:', e);
-  }
+  } catch(e) { console.warn('[Dashboard] initUserAndProject error:', e.message); }
 
   // Load active project name
   try {
@@ -5222,36 +5164,7 @@ async function syncFromCloud(){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-
-// Consume the cross-page navigation intent FIRST so the user arriving from
-// another page (e.g. clicking "Connections" on performance.html) lands on
-// their target view immediately, without a flash of the Dashboard.
-// Belt-and-braces: look in sessionStorage, then in the URL hash (#goto=X).
-// The hash fallback survives auth-gate redirects and is also visible in
-// DevTools if anything goes wrong.
-const _cygGoto = (function(){
-  let g = null;
-  try {
-    g = sessionStorage.getItem('cyg_goto');
-    if (g) sessionStorage.removeItem('cyg_goto');
-  } catch {}
-  if (!g) {
-    const m = /(?:^|[#&])goto=([^&]+)/.exec(location.hash);
-    if (m) {
-      try { g = decodeURIComponent(m[1]); } catch { g = m[1]; }
-      // Strip goto= from the hash so it doesn't persist in the URL bar
-      try { history.replaceState(null, '', location.pathname + location.search); } catch {}
-    }
-  }
-  return g;
-})();
-
-if (_cygGoto && document.getElementById('view-' + _cygGoto)) {
-  showView(_cygGoto);
-} else {
-  renderDashboard();
-}
-
+renderDashboard();
 checkHealth();
 initUserAndProject();
 renderInventory();
@@ -5259,10 +5172,7 @@ updateInvCount();
 updateWasisBanner();
 
 // ── First-run onboarding ───────────────────────────────────────────────────────
-// Suppress onboarding when the user is mid-navigation from another page —
-// popping a modal over their intended view would be disorienting.
 (function checkFirstRun(){
-  if (_cygGoto) return;
   const dismissed = localStorage.getItem('cygenix_onboarded');
   const ps = JSON.parse(localStorage.getItem('cygenix_project_settings')||'{}');
   const hasProject = !!(ps.name || ps['src-system']);
@@ -5285,6 +5195,15 @@ function onboardGoTo(view){
   if(view === 'help') { window.open('/help.html','_blank'); return; }
   showView(view);
 }
+
+// Handle cyg_goto navigation from nav.js sidebar links on other pages
+(function(){
+  const goto = sessionStorage.getItem('cyg_goto');
+  if (goto) {
+    sessionStorage.removeItem('cyg_goto');
+    setTimeout(function(){ if(typeof showView==='function') showView(goto); }, 300);
+  }
+})();
 
 </script>
 <!-- ── First-run onboarding modal ── -->
@@ -5648,42 +5567,17 @@ function initConnectionsView() {
 }
 
 function updateConnDots() {
-  // Resolve src/tgt the same way impGetConn() does, so the indicator dot
-  // reflects the connection that Data Import will actually use. Previously
-  // this only read CygenixConnections.get() — which can return stale/empty
-  // values a few seconds after save (e.g. when cygenix-cosmos-sync.js
-  // refreshes the in-memory cache, or when the Connections page has
-  // misfiled a connection string under cygenix_fn_url). Net effect: the
-  // dot flipped green on Save then back to red shortly after, even though
-  // the underlying data was fine. Now mirrors the 3-tier fallback:
-  //   1. CygenixConnections (camelCase) in-memory object
-  //   2. sessionStorage (snake_case keys)
-  //   3. localStorage['cygenix_project_connections'] JSON wrapper
-  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
-  const ss = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
-  let pc = {};
-  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
-  const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
-
-  // Source — a direct connection string OR an Azure Function URL is enough.
-  const srcVal = c.srcConnString
-              || c.srcFnUrl
-              || ss('cygenix_src_conn_string')
-              || pcGet('cygenix_src_conn_string')
-              || pcGet('cygenix_src_fn_url')
-              || '';
-  const srcOk = !!srcVal;
-
-  // Target — either a reachable Function URL, or any connection string
-  // (including one misfiled under *_fn_url that isn't actually http[s]).
-  // Any non-empty value in either slot means we have something usable.
-  const tgtFnRaw = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url') || pcGet('cygenix_fn_url') || '';
-  const tgtCs    = c.tgtConnString || c.connString || ss('cygenix_conn_string') || pcGet('cygenix_conn_string') || '';
-  const tgtOk    = !!tgtFnRaw || !!tgtCs;
-
+  // CygenixConnections.get() now reads from the per-user slice of the
+  // localStorage blob at cygenix_project_connections, which persists
+  // across reloads and syncs to Cosmos. No fallback chain needed.
+  const c = CygenixConnections.get();
+  const srcOk = !!(c.srcConnString);
+  const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
   const setDot = (id, ok) => { const el=document.getElementById(id); if(el) el.style.background=ok?'var(--green)':'var(--red)'; };
   setDot('src-conn-dot', srcOk);
   setDot('tgt-conn-dot', tgtOk);
+  const navDot = document.getElementById('conn-status-dot');
+  if (navDot) navDot.style.background = srcOk&&tgtOk ? 'var(--green)' : (srcOk||tgtOk) ? 'var(--amber)' : 'var(--red)';
 }
 
 async function testProjConn(which) {
@@ -5722,33 +5616,40 @@ async function testProjConn(which) {
 }
 
 function saveProjectConnections() {
-  if (srcMode==='direct') {
-    const cs=document.getElementById('proj-src-cs')?.value.trim()||'';
-    sessionStorage.setItem('cygenix_src_conn_string',cs);
-    sessionStorage.setItem('cygenix_src_conn_mode','direct');
-  } else {
-    const url=document.getElementById('proj-src-fn-url')?.value.trim()||'';
-    sessionStorage.setItem('cygenix_src_conn_string',url);
-    sessionStorage.setItem('cygenix_src_conn_mode','azure');
+  // Read form values based on current UI mode, then write the whole active
+  // pair through CygenixConnections.setActive(). Previously this wrote flat
+  // sessionStorage keys and called save() to migrate them — that path
+  // silently no-oped whenever MSAL hadn't populated cygenix_entra_account
+  // (which turned out to be always), so connections weren't persisting.
+  // Going through setActive() writes directly to the localStorage blob,
+  // which the Cosmos sync picks up and propagates to Azure.
+  const srcCs  = document.getElementById('proj-src-cs')?.value.trim()     || '';
+  const srcUrl = document.getElementById('proj-src-fn-url')?.value.trim() || '';
+  const tgtCs  = document.getElementById('proj-tgt-cs')?.value.trim()     || '';
+  const tgtUrl = document.getElementById('proj-tgt-fn-url')?.value.trim() || '';
+  const tgtKey = document.getElementById('proj-tgt-fn-key')?.value.trim() || '';
+
+  const fields = {
+    srcConnString: srcMode === 'direct' ? srcCs : srcUrl,
+    srcConnMode  : srcMode === 'direct' ? 'direct' : 'azure',
+    tgtConnString: tgtMode === 'direct' ? tgtCs : '',
+    tgtConnMode  : tgtMode === 'direct' ? 'direct' : 'azure',
+    tgtFnUrl     : tgtMode === 'azure'  ? tgtUrl : '',
+    tgtFnKey     : tgtMode === 'azure'  ? tgtKey : '',
+  };
+
+  const ok = (typeof CygenixConnections.setActive === 'function')
+    ? CygenixConnections.setActive(fields)
+    : (CygenixConnections.save(), true); // fall through to legacy if setActive missing
+
+  if (!ok) {
+    // Most likely cause: user signed out, or MSAL cache not ready yet.
+    console.warn('[connections] Save refused — not signed in?');
   }
-  if (tgtMode==='direct') {
-    const cs=document.getElementById('proj-tgt-cs')?.value.trim()||'';
-    sessionStorage.setItem('cygenix_conn_string',cs);
-    sessionStorage.setItem('cygenix_fn_url','');
-    sessionStorage.setItem('cygenix_fn_key','');
-    sessionStorage.setItem('cygenix_conn_mode','direct');
-  } else {
-    const url=document.getElementById('proj-tgt-fn-url')?.value.trim()||'';
-    const key=document.getElementById('proj-tgt-fn-key')?.value.trim()||'';
-    sessionStorage.setItem('cygenix_fn_url',url);
-    sessionStorage.setItem('cygenix_fn_key',key);
-    sessionStorage.setItem('cygenix_conn_string','');
-    sessionStorage.setItem('cygenix_conn_mode','azure');
-  }
-  CygenixConnections.save();
+
   updateConnDots();
-  const ind=document.getElementById('conn-save-indicator');
-  if(ind){ind.style.display='block';setTimeout(()=>ind.style.display='none',2500);}
+  const ind = document.getElementById('conn-save-indicator');
+  if (ind) { ind.style.display = 'block'; setTimeout(() => ind.style.display = 'none', 2500); }
 }
 
 function clearProjectConnections() {
@@ -7745,86 +7646,6 @@ let spFilterQuery = '';
 let spSortCol = null;  // 'name' | 'description' | 'value' | 'code' | null
 let spSortDir = 1;     // 1 asc, -1 desc
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Shadow-store: defensive local backup for data that can vanish between sessions
-// (observed after sign-out/sign-in: cygenix_wasis_rules didn't repopulate from
-// the cloud sync, and cygenix_sys_params came back slowly). This keeps a
-// parallel copy in a separate key so we can offer one-click recovery when the
-// primary is empty but the shadow has data.
-//
-// Rules:
-//  - Only written when saving NON-EMPTY data. An empty primary never clobbers
-//    the shadow — that's the classic backup failure mode and the whole point
-//    of this layer.
-//  - Never auto-restored. We surface a banner and let the user decide, because
-//    a zero-length primary might reflect an intentional "clear all" action.
-//  - Stored alongside a timestamp so the recovery banner can say how old it is.
-// ──────────────────────────────────────────────────────────────────────────────
-const ShadowStore = {
-  _shadowKey(primaryKey){ return primaryKey + '_shadow'; },
-
-  // Write a shadow copy — only if the payload is a non-empty array.
-  // value may be an array (what all current callers use) or already-stringified
-  // JSON; we accept either and normalise.
-  save(primaryKey, value){
-    try {
-      let arr = value;
-      if (typeof value === 'string') {
-        try { arr = JSON.parse(value); } catch { arr = null; }
-      }
-      if (!Array.isArray(arr) || arr.length === 0) return;  // never shadow an empty payload
-      const wrapper = { v: 1, savedAt: new Date().toISOString(), count: arr.length, data: arr };
-      localStorage.setItem(this._shadowKey(primaryKey), JSON.stringify(wrapper));
-    } catch (e) {
-      // Likely quota exceeded. Not critical — shadow is best-effort.
-      console.warn('[ShadowStore] save failed for', primaryKey, e.message);
-    }
-  },
-
-  // Read the shadow. Returns { data, savedAt, count } or null if absent/invalid.
-  read(primaryKey){
-    try {
-      const raw = localStorage.getItem(this._shadowKey(primaryKey));
-      if (!raw) return null;
-      const wrapper = JSON.parse(raw);
-      if (!wrapper || !Array.isArray(wrapper.data) || wrapper.data.length === 0) return null;
-      return wrapper;
-    } catch { return null; }
-  },
-
-  // Called on load: if primary is empty/missing but shadow has data, fire the
-  // onRecoverable callback. The callback receives the shadow wrapper so it can
-  // show a UI banner; recovery itself is the caller's responsibility via
-  // ShadowStore.restore(). Returns true if a recovery opportunity was surfaced.
-  checkRecovery(primaryKey, onRecoverable){
-    try {
-      const primaryRaw = localStorage.getItem(primaryKey);
-      const primary = primaryRaw ? JSON.parse(primaryRaw) : [];
-      if (Array.isArray(primary) && primary.length > 0) return false;  // primary is fine
-    } catch {
-      // Malformed primary — treat as empty and offer recovery
-    }
-    const shadow = this.read(primaryKey);
-    if (!shadow) return false;
-    try { onRecoverable && onRecoverable(shadow); } catch (e) { console.warn('[ShadowStore] onRecoverable threw', e); }
-    return true;
-  },
-
-  // Copy shadow → primary. Intentionally a separate explicit step from
-  // checkRecovery so the UI controls when restoration happens.
-  restore(primaryKey){
-    const shadow = this.read(primaryKey);
-    if (!shadow) return false;
-    try {
-      localStorage.setItem(primaryKey, JSON.stringify(shadow.data));
-      return true;
-    } catch (e) {
-      console.error('[ShadowStore] restore failed for', primaryKey, e);
-      return false;
-    }
-  }
-};
-
 function initSystemParametersView(){
   if (!window.CygenixParams){ console.warn('CygenixParams helper not loaded'); return; }
   spLoad();
@@ -7851,50 +7672,7 @@ function spLoad(){
     type:        CygenixParams.typeOf(p),
     code:        CygenixParams.codeFromName(p.name || '')
   }));
-  // Offer shadow-recovery when the primary is empty but we have a known-good
-  // prior copy. Surface as a banner in the params panel; user decides whether
-  // to restore (an empty primary could also be an intentional "clear all").
-  if (spParams.length === 0) {
-    ShadowStore.checkRecovery('cygenix_sys_params', shadow => showSpRecoveryBanner(shadow));
-  } else {
-    // Seed shadow on successful load so users who view-without-saving still
-    // get protected. ShadowStore.save is idempotent-safe and won't clobber a
-    // shadow with empty data.
-    ShadowStore.save('cygenix_sys_params', spParams);
-  }
   spRender();
-}
-
-function showSpRecoveryBanner(shadow){
-  const panel = document.getElementById('sp-tab-params');
-  if (!panel) return;
-  // Avoid stacking duplicates if spLoad() runs more than once
-  const existing = document.getElementById('sp-recovery-banner');
-  if (existing) existing.remove();
-  const ageMins = Math.max(1, Math.round((Date.now() - Date.parse(shadow.savedAt)) / 60000));
-  const ageLabel = ageMins < 60 ? ageMins + ' min ago'
-                 : ageMins < 1440 ? Math.round(ageMins/60) + ' hour' + (ageMins>=120?'s':'') + ' ago'
-                 : Math.round(ageMins/1440) + ' day' + (ageMins>=2880?'s':'') + ' ago';
-  const banner = document.createElement('div');
-  banner.id = 'sp-recovery-banner';
-  banner.style.cssText = 'background:rgba(245,158,11,0.1);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.75rem 0.875rem;font-size:12px;color:var(--amber);margin-bottom:0.875rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap';
-  banner.innerHTML =
-    '<span>🛟 <strong>System parameters look empty.</strong> A local backup with ' +
-    shadow.count + ' parameter' + (shadow.count===1?'':'s') + ' from ' + ageLabel + ' is available.</span>' +
-    '<button class="btn btn-sm btn-primary" onclick="restoreSpFromShadow()" style="margin-left:auto">Restore</button>' +
-    '<button class="btn btn-sm btn-ghost" onclick="document.getElementById(\'sp-recovery-banner\').remove()">Dismiss</button>';
-  panel.insertBefore(banner, panel.firstChild);
-}
-
-function restoreSpFromShadow(){
-  if (!ShadowStore.restore('cygenix_sys_params')) {
-    alert('Could not restore system parameters — the backup is empty or unreadable.');
-    return;
-  }
-  const banner = document.getElementById('sp-recovery-banner');
-  if (banner) banner.remove();
-  spLoad();
-  showToast('System parameters restored from local backup');
 }
 
 function spSave(){
@@ -7907,47 +7685,6 @@ function spSave(){
     code:        CygenixParams.codeFromName(p.name || '')
   }));
   localStorage.setItem('cygenix_sys_params', JSON.stringify(toSave));
-  // Mirror to shadow store so we can recover if the primary is wiped by a
-  // sync race or cache clear. No-op when toSave is empty — by design.
-  ShadowStore.save('cygenix_sys_params', toSave);
-}
-
-// Manual cloud save. spSave() already writes to localStorage, which the sync
-// module auto-pushes to Cosmos after a 3s debounce. This button gives the
-// user immediate confirmation and surfaces cloud errors that the silent
-// auto-save would otherwise swallow. Use CygenixSync.saveNow() so the pending
-// debounce is cancelled and we await the actual Cosmos POST.
-async function spSaveToCloud(){
-  const btn    = document.getElementById('sp-save-btn');
-  const status = document.getElementById('sp-save-status');
-  if (!btn) return;
-  spSave(); // ensure latest in localStorage before pushing
-  const prevText = btn.textContent;
-  btn.textContent = '☁ Saving…';
-  btn.disabled = true;
-  if (status) { status.textContent = ''; status.style.color = 'var(--text3)'; }
-  try {
-    if (typeof CygenixSync === 'undefined' || typeof CygenixSync.saveNow !== 'function') {
-      if (status) { status.textContent = 'Sync unavailable'; status.style.color = 'var(--red)'; }
-      btn.textContent = prevText;
-      btn.disabled = false;
-      return;
-    }
-    const res = await CygenixSync.saveNow();
-    if (res.ok) {
-      btn.textContent = '✓ Saved';
-      if (status) { status.textContent = 'Saved ' + new Date().toLocaleTimeString(); status.style.color = 'var(--green)'; }
-      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 1500);
-    } else {
-      btn.textContent = '✗ Failed';
-      if (status) { status.textContent = res.error === 'not-signed-in' ? 'Not signed in' : 'Cloud save failed'; status.style.color = 'var(--red)'; }
-      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
-    }
-  } catch (e) {
-    btn.textContent = '✗ Failed';
-    if (status) { status.textContent = e.message || 'Unknown error'; status.style.color = 'var(--red)'; }
-    setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
-  }
 }
 
 function spGetDisplayedRows(){
@@ -8308,57 +8045,7 @@ function wiLoad(){
     if (!Array.isArray(wiRules)) wiRules = [];
     wiRules = wiRules.map(wiNormaliseRule);
   }
-  // Offer shadow-recovery when rules are empty but a prior backup exists.
-  // This protects against the observed case of rules not repopulating after
-  // sign-out/sign-in when the cloud sync didn't cover them.
-  if (!wiRules.length) {
-    ShadowStore.checkRecovery(WI_STORAGE_KEY, shadow => showWiRecoveryBanner(shadow));
-  } else {
-    // Seed shadow on successful load — covers users who imported rules from
-    // elsewhere (CSV, object_mapping.html) and never explicitly saved on this
-    // page. Empty-payload writes are a no-op inside ShadowStore.
-    ShadowStore.save(WI_STORAGE_KEY, wiRules);
-  }
   wiRender();
-}
-
-function showWiRecoveryBanner(shadow){
-  const panel = document.getElementById('sp-tab-wasis');
-  if (!panel) return;
-  const existing = document.getElementById('wi-recovery-banner');
-  if (existing) existing.remove();
-  const ageMins = Math.max(1, Math.round((Date.now() - Date.parse(shadow.savedAt)) / 60000));
-  const ageLabel = ageMins < 60 ? ageMins + ' min ago'
-                 : ageMins < 1440 ? Math.round(ageMins/60) + ' hour' + (ageMins>=120?'s':'') + ' ago'
-                 : Math.round(ageMins/1440) + ' day' + (ageMins>=2880?'s':'') + ' ago';
-  const banner = document.createElement('div');
-  banner.id = 'wi-recovery-banner';
-  banner.style.cssText = 'background:rgba(245,158,11,0.1);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.75rem 0.875rem;font-size:12px;color:var(--amber);margin-bottom:0.875rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap';
-  banner.innerHTML =
-    '<span>🛟 <strong>Was/Is rules look empty.</strong> A local backup with ' +
-    shadow.count + ' rule' + (shadow.count===1?'':'s') + ' from ' + ageLabel + ' is available.</span>' +
-    '<button class="btn btn-sm btn-primary" onclick="restoreWiFromShadow()" style="margin-left:auto">Restore</button>' +
-    '<button class="btn btn-sm btn-ghost" onclick="document.getElementById(\'wi-recovery-banner\').remove()">Dismiss</button>';
-  panel.insertBefore(banner, panel.firstChild);
-}
-
-function restoreWiFromShadow(){
-  if (!ShadowStore.restore(WI_STORAGE_KEY)) {
-    alert('Could not restore Was/Is rules — the backup is empty or unreadable.');
-    return;
-  }
-  // Also push into the shared helper's cache if it's loaded, so object_mapping.html
-  // and other pages pick up the restored rules without needing a hard reload.
-  if (typeof CygenixWasis !== 'undefined' && typeof CygenixWasis.saveRules === 'function') {
-    try {
-      const restored = JSON.parse(localStorage.getItem(WI_STORAGE_KEY) || '[]');
-      CygenixWasis.saveRules(restored);
-    } catch {}
-  }
-  const banner = document.getElementById('wi-recovery-banner');
-  if (banner) banner.remove();
-  wiLoad();
-  showToast('Was/Is rules restored from local backup');
 }
 
 function wiSave(){
@@ -8369,47 +8056,6 @@ function wiSave(){
   } else {
     try { localStorage.setItem(WI_STORAGE_KEY, JSON.stringify(toSave)); }
     catch(e){ console.warn('wiSave failed', e); }
-  }
-  // Mirror to shadow store. Skipped automatically when toSave is empty, so an
-  // accidental or malicious wipe never overwrites a good prior backup.
-  ShadowStore.save(WI_STORAGE_KEY, toSave);
-}
-
-// Manual cloud save for Was/Is rules. Same pattern as spSaveToCloud: commit
-// to localStorage, cancel any pending debounced sync, push immediately, then
-// surface the result. Important for a piece of data that has been observed
-// not reliably returning from the cloud after sign-out — so at minimum the
-// user can confirm it's actually in Cosmos before signing out.
-async function wiSaveToCloud(){
-  const btn    = document.getElementById('wi-save-btn');
-  const status = document.getElementById('wi-save-status');
-  if (!btn) return;
-  wiSave(); // ensure latest in localStorage before pushing
-  const prevText = btn.textContent;
-  btn.textContent = '☁ Saving…';
-  btn.disabled = true;
-  if (status) { status.textContent = ''; status.style.color = 'var(--text3)'; }
-  try {
-    if (typeof CygenixSync === 'undefined' || typeof CygenixSync.saveNow !== 'function') {
-      if (status) { status.textContent = 'Sync unavailable'; status.style.color = 'var(--red)'; }
-      btn.textContent = prevText;
-      btn.disabled = false;
-      return;
-    }
-    const res = await CygenixSync.saveNow();
-    if (res.ok) {
-      btn.textContent = '✓ Saved';
-      if (status) { status.textContent = 'Saved ' + new Date().toLocaleTimeString(); status.style.color = 'var(--green)'; }
-      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 1500);
-    } else {
-      btn.textContent = '✗ Failed';
-      if (status) { status.textContent = res.error === 'not-signed-in' ? 'Not signed in' : 'Cloud save failed'; status.style.color = 'var(--red)'; }
-      setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
-    }
-  } catch (e) {
-    btn.textContent = '✗ Failed';
-    if (status) { status.textContent = e.message || 'Unknown error'; status.style.color = 'var(--red)'; }
-    setTimeout(() => { btn.textContent = prevText; btn.disabled = false; }, 3000);
   }
 }
 

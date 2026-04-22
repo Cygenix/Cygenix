@@ -1,196 +1,236 @@
 // connections.js
 // ─────────────────────────────────────────────────────────────────────────────
-// Central helper for the Dashboard > Connections feature. Exposes a
-// module-level `CygenixConnections` (NOT attached to window — treat as a
-// script-global) so pages can read/save the "currently active" source/target
-// connection plus a list of saved connection recipes.
+// Central helper for Dashboard > Connections. Exposes `CygenixConnections`
+// (module-level, not attached to window — treat as script-global) for pages
+// to read/save the currently active source/target connection plus a list of
+// saved connection recipes.
 //
-// ── PER-USER ISOLATION (Session of 2026-04-19) ─────────────────────────────
-// Previously stored everything under flat keys like `cygenix_src_conn_string`
-// and `cygenix_saved_connections`. If User A saved connections on a shared
-// device and User B signed in, User B saw User A's connection strings,
-// passwords and all. Fixed by namespacing all connection storage by the
-// current user's email from `cygenix_entra_account`.
+// ── STORAGE MODEL (Session of 2026-04-22) ─────────────────────────────────
+// Previously stored the active pair in sessionStorage under per-user
+// namespaced keys (`cygenix_src_conn_string::uid`, etc). Two problems:
+//   1. sessionStorage is tab-scoped — connections evaporated on tab close.
+//   2. The Cosmos sync watches localStorage — so connections never reached
+//      the cloud, which meant they also never restored on a new device.
 //
-// Effective keys become:
-//    cygenix_src_conn_string :: foo@x.com   (etc.)
+// Now we store everything in localStorage under two keys the sync already
+// watches:
+//   cygenix_project_connections  — active src/tgt pair for every signed-in
+//                                   user, keyed by MSAL localAccountId:
+//     { "<uid-guid>": { srcConnString, srcConnMode, tgtConnString,
+//                       tgtConnMode, tgtFnUrl, tgtFnKey }, ... }
+//   cygenix_saved_connections    — saved connection recipes, also keyed by
+//                                   MSAL localAccountId:
+//     { "<uid-guid>": [ { id, name, ... }, ... ], ... }
 //
-// When nobody is signed in, reads return empty and writes are dropped. This
-// matches the intent "a user only sees their own connections."
+// Per-user isolation is preserved *inside* the blob rather than by
+// namespacing the key — that way the sync's existing allowlist picks up
+// both keys without any dynamic-key matching.
 //
-// SCOPE OF THIS FILE: connections only. Projects, jobs, plans, etc. are
-// handled elsewhere and still shared today — those need their own per-user
-// work in future sessions.
+// ── IDENTITY ───────────────────────────────────────────────────────────────
+// Unified across dashboard.html, connections.js, and cygenix-cosmos-sync.js:
+// MSAL `localAccountId` (stable GUID, same across email sign-in and Google
+// SSO for the same Entra user). Previous behaviour read from
+// `cygenix_entra_account` — which nothing populates — so every read/write
+// silently no-oped. That's been fixed.
+//
+// SCOPE: connections only. Projects, jobs, plans are still handled
+// elsewhere and are still shared across users on the same device. That
+// needs its own work in a later session.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let CygenixConnections = (function () {
-  // ── Per-user key building ────────────────────────────────────────────────
-  // `cygenix_entra_account` is written by login.html / MSAL flow and holds
-  // `{email, userId, name}`. Email is the stable per-user handle we key off.
-  // If no account present (not signed in, or legacy session) → empty uid →
-  // reads return empty and writes are no-ops.
+
+  // ── MSAL config (must match login.html and cygenix-cosmos-sync.js) ───────
+  const MSAL_CLIENT_ID = 'f3478996-b2b5-4b21-9a23-a6b97a0e5b13';
+  const MSAL_AUTHORITY = 'https://cygenix.ciamlogin.com/';
+  const MSAL_KNOWN_AUTHORITIES = ['cygenix.ciamlogin.com'];
+
+  // ── Storage keys (watched by cygenix-cosmos-sync.js) ─────────────────────
+  const LS_ACTIVE = 'cygenix_project_connections';
+  const LS_SAVED  = 'cygenix_saved_connections';
+
+  // ── Identity: MSAL-first, unified ───────────────────────────────────────
+  // Returns the current user's stable identifier (MSAL localAccountId GUID)
+  // or '' if nobody's signed in. Must match getUserId() in the sync file —
+  // if they disagree, one side writes under one uid and the other reads
+  // under another, and data appears to vanish.
   function currentUserTag() {
     try {
-      const raw = sessionStorage.getItem('cygenix_entra_account')
-               || localStorage.getItem('cygenix_entra_account');
-      if (!raw) return '';
-      const acc = JSON.parse(raw);
-      const email = (acc && (acc.email || acc.userId)) || '';
-      // Lowercase + trim to avoid two slightly-different tags for the same user.
-      return email.toLowerCase().trim();
+      if (typeof msal === 'undefined') return '';
+      // Reuse MSAL's existing localStorage cache; construct a lightweight
+      // PublicClientApplication just to read accounts. This is safe to call
+      // repeatedly — MSAL de-dupes internally.
+      const msalApp = new msal.PublicClientApplication({
+        auth: {
+          clientId: MSAL_CLIENT_ID,
+          authority: MSAL_AUTHORITY,
+          knownAuthorities: MSAL_KNOWN_AUTHORITIES,
+        },
+        cache: { cacheLocation: 'localStorage' },
+      });
+      const accounts = msalApp.getAllAccounts() || [];
+      if (!accounts.length) return '';
+      // localAccountId is the OID — stable across IdPs, not user-editable.
+      const id = accounts[0].localAccountId || '';
+      return id.toLowerCase().trim();
     } catch {
       return '';
     }
   }
 
-  // Build a per-user storage key. Returns '' when signed out so callers can
-  // no-op cleanly without having to branch.
-  function keyFor(base) {
-    const uid = currentUserTag();
-    if (!uid) return '';
-    return base + '::' + uid;
-  }
-
-  // Namespaced sessionStorage getters/setters. Transparent about when the
-  // user isn't signed in — return '' rather than fabricating defaults.
-  function ssGet(base) {
-    const k = keyFor(base);
-    if (!k) return '';
-    try { return sessionStorage.getItem(k) || ''; } catch { return ''; }
-  }
-  function ssSet(base, val) {
-    const k = keyFor(base);
-    if (!k) return;  // not signed in: silently drop — avoids cross-user leakage
+  // ── Blob readers/writers ────────────────────────────────────────────────
+  // These operate on the whole top-level object. Per-user slicing happens
+  // in get()/save()/savedGetAll()/savedSetAll(), not here.
+  function readBlob(key) {
     try {
-      if (val == null || val === '') sessionStorage.removeItem(k);
-      else                           sessionStorage.setItem(k, String(val));
-    } catch {}
+      const raw = localStorage.getItem(key);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      // Defensive: older code may have written a flat object (not keyed by
+      // uid). Treat anything that doesn't look like a uid-keyed map as
+      // empty — safer than silently exposing one user's data to another.
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      return parsed;
+    } catch { return {}; }
   }
-  function lsGet(base) {
-    const k = keyFor(base);
-    if (!k) return null;
-    try { return localStorage.getItem(k); } catch { return null; }
-  }
-  function lsSet(base, val) {
-    const k = keyFor(base);
-    if (!k) return;
-    try {
-      if (val == null) localStorage.removeItem(k);
-      else             localStorage.setItem(k, String(val));
-    } catch {}
+  function writeBlob(key, obj) {
+    try { localStorage.setItem(key, JSON.stringify(obj || {})); } catch {}
   }
 
-  // ── Public API ───────────────────────────────────────────────────────────
+  // ── Active pair: get / save / clear ──────────────────────────────────────
 
-  // Read the "currently active" connection pair. Returns a plain object
-  // with the legacy field names so existing callers don't need changes.
+  // Read the active src/tgt pair for the current user.
+  // Returns legacy field names so existing callers (dashboard, impGetConn,
+  // updateConnDots) don't need changes.
   function get() {
+    const uid = currentUserTag();
+    if (!uid) {
+      return {
+        srcConnString: '', srcConnMode: 'direct',
+        tgtConnString: '', tgtConnMode: 'direct',
+        tgtFnUrl: '', tgtFnKey: '',
+      };
+    }
+    const blob = readBlob(LS_ACTIVE);
+    const mine = (blob[uid] && typeof blob[uid] === 'object') ? blob[uid] : {};
     return {
-      srcConnString : ssGet('cygenix_src_conn_string'),
-      srcConnMode   : ssGet('cygenix_src_conn_mode') || 'direct',
-      tgtConnString : ssGet('cygenix_tgt_conn_string'),
-      tgtConnMode   : ssGet('cygenix_tgt_conn_mode') || 'direct',
-      tgtFnUrl      : ssGet('cygenix_fn_url'),
-      tgtFnKey      : ssGet('cygenix_fn_key'),
+      srcConnString: mine.srcConnString || '',
+      srcConnMode  : mine.srcConnMode   || 'direct',
+      tgtConnString: mine.tgtConnString || '',
+      tgtConnMode  : mine.tgtConnMode   || 'direct',
+      tgtFnUrl     : mine.tgtFnUrl      || '',
+      tgtFnKey     : mine.tgtFnKey      || '',
     };
   }
 
-  // Persist the currently active pair. Called by dashboard Save button.
-  // Caller typically writes directly to sessionStorage first (the raw values)
-  // and then calls save() to trigger any side-effects. We now also enforce
-  // per-user scoping: we copy any FLAT (unscoped) keys the caller may have
-  // set into the per-user slots, and clear the flat versions. That way old
-  // code paths that still write flat keys don't bypass isolation.
+  // Write the full active pair. Preferred API going forward — dashboard
+  // should call setActive({...}) rather than writing sessionStorage keys
+  // directly.
+  function setActive(fields) {
+    const uid = currentUserTag();
+    if (!uid) return false;
+    if (!fields || typeof fields !== 'object') return false;
+    const blob = readBlob(LS_ACTIVE);
+    blob[uid] = {
+      srcConnString: String(fields.srcConnString || ''),
+      srcConnMode  : fields.srcConnMode === 'azure' ? 'azure' : 'direct',
+      tgtConnString: String(fields.tgtConnString || ''),
+      tgtConnMode  : fields.tgtConnMode   === 'azure' ? 'azure' : 'direct',
+      tgtFnUrl     : String(fields.tgtFnUrl || ''),
+      tgtFnKey     : String(fields.tgtFnKey || ''),
+    };
+    writeBlob(LS_ACTIVE, blob);
+    return true;
+  }
+
+  // Back-compat save(). Old dashboard code wrote flat sessionStorage keys
+  // first and then called save() to commit. We still honour that path so
+  // the transition doesn't require all dashboard code to change in one go:
+  // sweep recognised sessionStorage keys into the active blob for this
+  // user, then clear them. Once all callers migrate to setActive() this
+  // fallback can be deleted.
   function save() {
     const uid = currentUserTag();
-    if (!uid) return;  // not signed in — refuse to persist anything
-    // Canonical keys we persist under.
-    const canonical = ['cygenix_src_conn_string','cygenix_src_conn_mode','cygenix_tgt_conn_string',
-                       'cygenix_tgt_conn_mode','cygenix_fn_url','cygenix_fn_key'];
-    canonical.forEach(flat => {
-      let v = '';
-      try { v = sessionStorage.getItem(flat); } catch {}
-      if (v) {
-        ssSet(flat, v);
-        try { sessionStorage.removeItem(flat); } catch {}
-      }
-    });
-    // Legacy aliases used by some older dashboard code:
-    //   cygenix_conn_string  → cygenix_tgt_conn_string (target, direct-mode)
-    //   cygenix_conn_mode    → cygenix_tgt_conn_mode   (target mode)
-    // Absorb them so we don't silently lose the value just because the caller
-    // used the old name.
-    const aliasMap = {
-      'cygenix_conn_string': 'cygenix_tgt_conn_string',
-      'cygenix_conn_mode'  : 'cygenix_tgt_conn_mode',
+    if (!uid) return;
+    const cur = get(); // current persisted state — we merge, not overwrite
+    const pullFlat = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
+    // Recognised legacy flat keys. `cygenix_conn_string` / `cygenix_conn_mode`
+    // are legacy aliases for target-direct.
+    const srcString = pullFlat('cygenix_src_conn_string');
+    const srcMode   = pullFlat('cygenix_src_conn_mode');
+    const tgtString = pullFlat('cygenix_tgt_conn_string') || pullFlat('cygenix_conn_string');
+    const tgtMode   = pullFlat('cygenix_tgt_conn_mode')   || pullFlat('cygenix_conn_mode');
+    const fnUrl     = pullFlat('cygenix_fn_url');
+    const fnKey     = pullFlat('cygenix_fn_key');
+    const merged = {
+      srcConnString: srcString || cur.srcConnString,
+      srcConnMode  : srcMode   || cur.srcConnMode,
+      tgtConnString: tgtString || cur.tgtConnString,
+      tgtConnMode  : tgtMode   || cur.tgtConnMode,
+      tgtFnUrl     : fnUrl     || cur.tgtFnUrl,
+      tgtFnKey     : fnKey     || cur.tgtFnKey,
     };
-    for (const [legacy, target] of Object.entries(aliasMap)) {
-      let v = '';
-      try { v = sessionStorage.getItem(legacy); } catch {}
-      if (v) {
-        ssSet(target, v);
-        try { sessionStorage.removeItem(legacy); } catch {}
-      }
+    setActive(merged);
+    // Now clear the flat sessionStorage keys we just absorbed — same
+    // behaviour as the old code, so nothing downstream sees stale flats.
+    ['cygenix_src_conn_string','cygenix_src_conn_mode','cygenix_tgt_conn_string',
+     'cygenix_tgt_conn_mode','cygenix_fn_url','cygenix_fn_key',
+     'cygenix_conn_string','cygenix_conn_mode'].forEach(k => {
+      try { sessionStorage.removeItem(k); } catch {}
+    });
+  }
+
+  // Kept for API compat — reads are already live so this is a no-op.
+  function load() { return get(); }
+
+  // Wipe the active pair for the current user only. Does not touch other
+  // users' data or the saved-connection list.
+  function clear() {
+    const uid = currentUserTag();
+    if (!uid) return;
+    const blob = readBlob(LS_ACTIVE);
+    if (blob[uid]) {
+      delete blob[uid];
+      writeBlob(LS_ACTIVE, blob);
     }
   }
 
-  // Force-rehydrate from storage. Kept for API compatibility — reads are
-  // already live so this is a no-op, but some callers expect the function
-  // to exist.
-  function load() {
-    return get();
-  }
-
-  // Wipe the currently active pair for THIS user only. Does not touch other
-  // users' data or the saved-connection list.
-  function clear() {
-    ['cygenix_src_conn_string','cygenix_src_conn_mode','cygenix_tgt_conn_string',
-     'cygenix_tgt_conn_mode','cygenix_fn_url','cygenix_fn_key']
-      .forEach(k => ssSet(k, ''));
-  }
-
   // ── Saved connections list (per-user) ────────────────────────────────────
-  // The dashboard has its own sconnGetAll/sconnSetAll helpers that use the
-  // LS_SAVED key below. Those call into these functions now so they inherit
-  // per-user scoping. See dashboard.html for UI of the saved-chip row.
-  const LS_SAVED = 'cygenix_saved_connections';
 
   function savedGetAll() {
-    const raw = lsGet(LS_SAVED);
-    if (!raw) return [];
-    try {
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr : [];
-    } catch { return []; }
+    const uid = currentUserTag();
+    if (!uid) return [];
+    const blob = readBlob(LS_SAVED);
+    const arr = blob[uid];
+    return Array.isArray(arr) ? arr : [];
   }
   function savedSetAll(list) {
-    // Cap at 50 — matches the existing dashboard cap
+    const uid = currentUserTag();
+    if (!uid) return;
     const capped = Array.isArray(list) ? list.slice(0, 50) : [];
-    lsSet(LS_SAVED, JSON.stringify(capped));
+    const blob = readBlob(LS_SAVED);
+    blob[uid] = capped;
+    writeBlob(LS_SAVED, blob);
   }
-  // Add a new saved entry. Assigns an id if caller didn't supply one.
   function savedAdd(entry) {
-    if (!currentUserTag()) return null;  // not signed in
+    if (!currentUserTag()) return null;
     if (!entry || typeof entry !== 'object') return null;
     const e = Object.assign({}, entry);
-    if (!e.id) e.id = 'sconn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    if (!e.id)      e.id      = 'sconn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
     if (!e.savedAt) e.savedAt = new Date().toISOString();
     const all = savedGetAll();
     all.push(e);
     savedSetAll(all);
     return e.id;
   }
-  // Delete by id. Returns true if something was deleted.
   function savedDelete(id) {
-    if (!currentUserTag()) return false;
-    if (!id) return false;
+    if (!currentUserTag() || !id) return false;
     const all = savedGetAll();
     const next = all.filter(c => c.id !== id);
     if (next.length === all.length) return false;
     savedSetAll(next);
     return true;
   }
-  // Update one entry (used by rename). Returns true on success.
   function savedUpdate(id, patch) {
     if (!currentUserTag() || !id || !patch) return false;
     const all = savedGetAll();
@@ -204,26 +244,17 @@ let CygenixConnections = (function () {
     return savedGetAll().find(c => c.id === id) || null;
   }
 
-  // ── Event surface ────────────────────────────────────────────────────────
-  // Minimal: we don't emit real events today. Consumers that expected `.on`
-  // should treat it as a no-op until the event system is put back.
+  // ── Event surface (no-op, reserved) ──────────────────────────────────────
   function on()       { /* no-op */ }
   function off()      { /* no-op */ }
   function onChange() { /* no-op */ }
-  function pingAll()  { /* no-op — reserved for live-refresh in a later session */ }
+  function pingAll()  { /* no-op */ }
 
-  // ── Back-compat nibs ─────────────────────────────────────────────────────
-  // Some older code reads CygenixConnections.srcConn / .tgtConn as strings.
-  // Expose them as computed getters over the current user's active pair.
-  // Returning '' when signed out matches what `get()` does.
+  // ── Public API + back-compat nibs ────────────────────────────────────────
   const api = {
-    get, save, load, clear,
-    // Saved list (per-user)
+    get, setActive, save, load, clear,
     savedGetAll, savedAdd, savedDelete, savedUpdate, savedGetById,
-    // Events (no-op today, reserved)
     on, off, onChange, pingAll,
-    // Current-user helpers (exposed so pages can show "logged in as X" hints
-    // and know whether any persistence will actually happen)
     currentUserTag,
   };
   Object.defineProperty(api, 'srcConn', {
