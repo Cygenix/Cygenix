@@ -2121,7 +2121,7 @@ async function checkHealth() {
   try {
     const r = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(6000) });
     const d = await r.json();
-    if (d.apiKeyConfigured) { setBadge('err'); $('key-alert').classList.add('visible'); }
+    if (d.apiKeyConfigured) { setBadge('ok'); $('key-alert').classList.remove('visible'); }
     else { setBadge('err'); $('key-alert').classList.add('visible'); }
   } catch { setBadge('err'); $('key-alert').classList.add('visible'); }
 }
@@ -5164,7 +5164,25 @@ async function syncFromCloud(){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-renderDashboard();
+
+// Consume cyg_goto FIRST so the user arriving from another page (e.g. clicking
+// "Connections" on performance.html) lands on their target view immediately,
+// without a flash of the Dashboard. Falls through to the dashboard view when
+// no redirect is pending.
+const _cygGoto = (function(){
+  try {
+    const g = sessionStorage.getItem('cyg_goto');
+    if (g) sessionStorage.removeItem('cyg_goto');
+    return g;
+  } catch { return null; }
+})();
+
+if (_cygGoto && document.getElementById('view-' + _cygGoto)) {
+  showView(_cygGoto);
+} else {
+  renderDashboard();
+}
+
 checkHealth();
 initUserAndProject();
 renderInventory();
@@ -5172,7 +5190,10 @@ updateInvCount();
 updateWasisBanner();
 
 // ── First-run onboarding ───────────────────────────────────────────────────────
+// Suppress onboarding when the user is mid-navigation from another page —
+// popping a modal over their intended view would be disorienting.
 (function checkFirstRun(){
+  if (_cygGoto) return;
   const dismissed = localStorage.getItem('cygenix_onboarded');
   const ps = JSON.parse(localStorage.getItem('cygenix_project_settings')||'{}');
   const hasProject = !!(ps.name || ps['src-system']);
@@ -5195,15 +5216,6 @@ function onboardGoTo(view){
   if(view === 'help') { window.open('/help.html','_blank'); return; }
   showView(view);
 }
-
-// Handle cyg_goto navigation from nav.js sidebar links on other pages
-(function(){
-  const goto = sessionStorage.getItem('cyg_goto');
-  if (goto) {
-    sessionStorage.removeItem('cyg_goto');
-    setTimeout(function(){ if(typeof showView==='function') showView(goto); }, 300);
-  }
-})();
 
 </script>
 <!-- ── First-run onboarding modal ── -->
