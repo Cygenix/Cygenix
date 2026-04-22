@@ -251,6 +251,7 @@ body.cyg-collapsed{padding-left:54px}
         <button class="mode-btn" id="view-visual" onclick="setView('visual')" title="Visual drag-and-drop view">✦ Visual</button>
       </div>
       <button class="btn btn-green btn-sm" onclick="newMap()" title="Start a new map (will prompt to save current work)">✨ New map</button>
+      <button class="btn btn-teal btn-sm" onclick="openLoadMapModal()" title="Load an existing saved map">📂 Load map</button>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
       <input id="job-name-input" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Job name (optional)" maxlength="120" />
       <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled>💾 Save as job</button>
@@ -597,6 +598,32 @@ body.cyg-collapsed{padding-left:54px}
         <button class="btn btn-red btn-sm" onclick="confirmNewMap('discard')">Discard &amp; continue</button>
         <button class="btn btn-green btn-sm" onclick="confirmNewMap('save')">💾 Save &amp; continue</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Load map modal ══ -->
+<div class="modal-overlay" id="load-map-modal">
+  <div class="modal" style="width:720px">
+    <div class="modal-head">
+      <div style="font-size:14px;font-weight:600">📂 Load existing map</div>
+      <button onclick="document.getElementById('load-map-modal').classList.remove('open')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap">
+        <input id="load-map-search" class="form-input" style="flex:1;min-width:200px;font-family:var(--serif)" placeholder="🔍 Search by name, source or target…" oninput="renderLoadMapList()">
+        <label style="display:flex;align-items:center;gap:0.35rem;font-size:11px;color:var(--text2);cursor:pointer">
+          <input type="checkbox" id="load-map-all-projects" onchange="renderLoadMapList()" style="cursor:pointer">
+          All projects
+        </label>
+        <select id="load-map-mode-filter" class="form-input" style="width:auto;font-family:var(--serif);font-size:12px" onchange="renderLoadMapList()">
+          <option value="">All types</option>
+          <option value="simple-map">◈ Single map</option>
+          <option value="one-to-many">⊞ One-to-many</option>
+        </select>
+      </div>
+      <div id="load-map-list" style="max-height:50vh;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg3)"></div>
+      <div style="font-size:10px;color:var(--text3);margin-top:0.5rem;text-align:right" id="load-map-count"></div>
     </div>
   </div>
 </div>
@@ -2939,6 +2966,138 @@ function confirmNewMap(action){
     showStatus('Discarded — ready for a new map','info');
   }
   // cancel: no-op (modal already closed)
+}
+
+// ── Load map modal ───────────────────────────────────────────────────────────
+// Opens a picker listing saved jobs from localStorage. Selecting one navigates
+// to ?edit=<id> which triggers checkEditMode() → restoreJobMapping() on load.
+// If there's unsaved work, we prompt via the existing new-map flow first.
+function openLoadMapModal(){
+  if(hasWorkInProgress() && !editJobId){
+    // Pending unsaved changes — warn before navigating away
+    if(!confirm('You have unsaved work on the current map. Load a different map and discard changes?')) return;
+  }
+  // Reset filters each open so user starts clean
+  const s=$('load-map-search'); if(s) s.value='';
+  const mf=$('load-map-mode-filter'); if(mf) mf.value='';
+  const ap=$('load-map-all-projects'); if(ap) ap.checked=false;
+  renderLoadMapList();
+  $('load-map-modal').classList.add('open');
+  setTimeout(()=>$('load-map-search')?.focus(),50);
+}
+
+function _getAllSavedJobs(){
+  try { return JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); }
+  catch { return []; }
+}
+
+function renderLoadMapList(){
+  const list=$('load-map-list'); if(!list) return;
+  const jobs=_getAllSavedJobs();
+  const query=(($('load-map-search')?.value)||'').trim().toLowerCase();
+  const modeFilter=($('load-map-mode-filter')?.value)||'';
+  const allProjects=$('load-map-all-projects')?.checked;
+  const activeProject=localStorage.getItem('cygenix_active_project_id')||'';
+
+  let filtered=jobs.filter(j=>{
+    // Project scope — default to active project, unless "All projects" is ticked
+    if(!allProjects && activeProject){
+      const jp=j.projectId||'';
+      // Include jobs that match active project OR have no projectId (legacy)
+      if(jp && jp!==activeProject) return false;
+    }
+    // Type filter
+    if(modeFilter){
+      const t=j.jobType || (j.oneToManyConfig?'one-to-many':'simple-map');
+      if(t!==modeFilter) return false;
+    }
+    // Text search — name, source, target
+    if(query){
+      const hay=((j.name||'')+' '+(j.source||j.sourceTable||'')+' '+(j.target||j.targetTable||'')).toLowerCase();
+      if(!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  // Sort newest-first using `created` when available, else preserve array order
+  filtered.sort((a,b)=>{
+    const ca=a.created?Date.parse(a.created):0;
+    const cb=b.created?Date.parse(b.created):0;
+    return cb-ca;
+  });
+
+  $('load-map-count').textContent = filtered.length+' of '+jobs.length+' job'+(jobs.length===1?'':'s');
+
+  if(!filtered.length){
+    list.innerHTML='<div style="padding:2rem 1rem;text-align:center;color:var(--text3);font-size:12px">'+
+      (jobs.length===0
+        ? 'No saved maps yet. Create a mapping and click 💾 Save as job.'
+        : 'No maps match your filters.')+
+      '</div>';
+    return;
+  }
+
+  list.innerHTML=filtered.map(j=>{
+    const isOTM = j.jobType==='one-to-many' || j.oneToManyConfig;
+    const typeLabel = isOTM ? '⊞ One-to-many' : '◈ Single map';
+    const typeColor = isOTM ? 'var(--purple)' : 'var(--teal)';
+    const src = esc(j.source||j.sourceTable||'—');
+    const tgt = esc(j.target||j.targetTable||'—');
+    const name = esc(j.name||'(unnamed)');
+    const created = j.created ? new Date(j.created).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}) : '';
+    const cols = isOTM
+      ? ((j.tables||[]).reduce((n,t)=>n+((t.mappings||[]).filter(m=>m.tgtCol).length),0)+' cols across '+((j.tables||[]).length)+' tables')
+      : ((j.columnMapping||[]).length+' columns');
+    const isCurrent = editJobId===j.id;
+    return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);${isCurrent?'background:rgba(61,126,255,0.06)':''}">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px">
+          <span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+          <span style="font-size:10px;color:${typeColor};font-weight:500;flex-shrink:0">${typeLabel}</span>
+          ${isCurrent?'<span style="font-size:10px;color:var(--accent);font-weight:500;flex-shrink:0">• currently editing</span>':''}
+        </div>
+        <div style="font-size:11px;color:var(--text2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${src} <span style="color:var(--text3)">→</span> ${tgt}
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:3px">
+          ${cols}${created?' · '+esc(created):''}
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="loadMapById('${esc(j.id)}')" ${isCurrent?'disabled':''} title="${isCurrent?'Already loaded':'Load this map'}">
+        ${isCurrent?'Loaded':'📂 Load'}
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="deleteSavedJob('${esc(j.id)}')" title="Delete this saved map" style="color:var(--red);border-color:rgba(240,70,70,0.3)">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function loadMapById(jobId){
+  const jobs=_getAllSavedJobs();
+  const job=jobs.find(j=>j.id===jobId);
+  if(!job){ showStatus('Map not found — it may have been deleted','err'); renderLoadMapList(); return; }
+  $('load-map-modal').classList.remove('open');
+  // Navigate with ?edit=<id> so the existing checkEditMode() restoration path runs
+  // on a clean page load. This is the same mechanism used from the Jobs dashboard.
+  const url = new URL(location.href);
+  url.searchParams.set('edit', jobId);
+  // Full reload ensures state (source/target selections, join builder, OTM cards)
+  // is rebuilt from scratch rather than layered on top of whatever's already loaded.
+  location.href = url.toString();
+}
+
+function deleteSavedJob(jobId){
+  const jobs=_getAllSavedJobs();
+  const job=jobs.find(j=>j.id===jobId);
+  if(!job) return;
+  if(!confirm('Delete saved map "'+(job.name||'(unnamed)')+'"?\n\nThis cannot be undone.')) return;
+  const remaining=jobs.filter(j=>j.id!==jobId);
+  localStorage.setItem('cygenix_jobs',JSON.stringify(remaining));
+  showStatus('Deleted map: '+(job.name||'(unnamed)'),'info');
+  // If the deleted job was the one currently being edited, clear edit mode
+  if(editJobId===jobId){
+    clearEditMode();
+  }
+  renderLoadMapList();
 }
 
 // ── Wasis ─────────────────────────────────────────────────────────────────────
