@@ -1,0 +1,51 @@
+═══════════════════════════════════════════════════════════════════════════
+PATCH INSTRUCTIONS FOR: public/privacy.html
+═══════════════════════════════════════════════════════════════════════════
+
+Your privacy policy already covers authenticated users' data. The waitlist
+introduces a NEW category of personal data: people who have NOT signed up
+but have voluntarily given you their name, email (and optionally company,
+role, team size, use case, source) through /register.html.
+
+Under UK GDPR this must be explicitly documented. Add a new section to
+privacy.html covering it. The section below follows the structure of a
+standard UK GDPR waitlist notice — it is generic enough that most small
+SaaS businesses can use it as-is, but you should still read it once and
+confirm it matches your actual practice.
+
+─── SECTION TO ADD ────────────────────────────────────────────────────────
+
+Find a sensible insertion point — typically after the section about
+account data and before the "Your rights" section. If your privacy.html
+uses <h2> section headings, match that pattern.
+
+<h2>Waitlist and registration of interest</h2>
+<p>If you submit the form on our <a href="/register.html">register interest</a> page, we collect the information you provide — which at minimum includes your name and email address, and optionally your company, role, team size, intended use case, and how you heard about us. We also automatically record your IP address, user-agent string, and the referring URL at the time of submission for abuse-prevention purposes.</p>
+
+<p><strong>Purpose.</strong> We use this information solely to:</p>
+<ul>
+  <li>Contact you about access to Cygenix when a spot becomes available;</li>
+  <li>Understand demand and prioritise which prospective users to onboard first;</li>
+  <li>Detect and prevent abuse of the registration form.</li>
+</ul>
+
+<p><strong>Lawful basis.</strong> We rely on our <em>legitimate interest</em> in running and growing the service (UK GDPR Article 6(1)(f)). By submitting the form you are explicitly requesting that we contact you — there is a clear relationship and reasonable expectation of processing.</p>
+
+<p><strong>Retention.</strong> Waitlist entries are retained for up to 24 months from submission, or until you ask us to delete them, whichever comes first. If you accept an invitation and become a Cygenix user, the waitlist record is superseded by your account data and the waitlist entry is deleted within 30 days.</p>
+
+<p><strong>Sharing.</strong> Waitlist data is stored in Azure Cosmos DB in the UK South region. We do not share it with any third party, use it for marketing other services, or sell it.</p>
+
+<p><strong>Your rights.</strong> You can ask us at any time to see what we hold, correct it, or delete it by emailing <a href="mailto:curtis.morris@cygenix.co.uk">curtis.morris@cygenix.co.uk</a>. We will respond within one month as required by UK GDPR.</p>
+
+
+─── NOTE ──────────────────────────────────────────────────────────────────
+
+If your existing privacy.html already contains a generic "Your rights"
+section that covers access/correction/deletion requests, you can shorten
+the last paragraph above to just the retention and sharing sections and
+reference the existing rights section.
+
+Also worth confirming: the Cosmos DB region. I've written "UK South" based
+on your Function URL (uksouth-01.azurewebsites.net) — if your Cosmos
+account is actually in a different region, change it. Mislabelling
+processing location is a compliance issue even if nothing else is wrong.

@@ -1,0 +1,29 @@
+═══════════════════════════════════════════════════════════════════════════
+PATCH INSTRUCTIONS FOR: public/index.html
+═══════════════════════════════════════════════════════════════════════════
+
+Two lines change. Both are currently "Request access" buttons pointing at
+/login.html — they should say "Register interest" and point at /register.html.
+
+The nav "Log in →" button we already did stays exactly as it is.
+
+─── LINE 231 (hero section) ───────────────────────────────────────────────
+
+FIND:
+    <a href="/login.html" class="btn-hero btn-primary">Request access →</a>
+
+REPLACE WITH:
+    <a href="/register.html" class="btn-hero btn-primary">Register interest →</a>
+
+
+─── LINE 624 (footer CTA section) ─────────────────────────────────────────
+
+FIND (same text, different location — same replacement):
+    <a href="/login.html" class="btn-hero btn-primary">Request access →</a>
+
+REPLACE WITH:
+    <a href="/register.html" class="btn-hero btn-primary">Register interest →</a>
+
+
+That's it. No CSS or JS changes needed — the existing .btn-hero.btn-primary
+styles already apply perfectly to the new text.

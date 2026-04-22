@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0d0f14">
+<meta name="description" content="Register your interest in Cygenix — AI-powered SQL database migration. Join the private preview waitlist.">
+<meta property="og:title" content="Register interest – Cygenix">
+<meta property="og:description" content="Join the Cygenix private preview waitlist. AI-powered SQL database migration.">
+<meta property="og:url" content="https://cygenix.co.uk/register.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<title>Register interest – Cygenix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bricolage+Grotesque:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#080b12;--bg2:#0d1220;--bg3:#111827;--bg4:#1a2236;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --text:#f0f2f8;--text2:#8892a8;--text3:#3d4a5c;
+  --accent:#4f8eff;--accent2:#2563eb;--glow:rgba(79,142,255,0.15);
+  --green:#10d48a;--green-g:rgba(16,212,138,0.12);
+  --amber:#f5a623;--amber-g:rgba(245,166,35,0.12);
+  --red:#f04070;--red-g:rgba(240,64,112,0.12);
+  --serif:'Bricolage Grotesque',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+html{scroll-behavior:smooth}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:rgba(8,11,18,0.85);backdrop-filter:blur(20px);border-bottom:0.5px solid var(--border)}
+.nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
+.nav-logo span{color:var(--accent)}
+.nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}
+.nav-cta:hover{background:var(--accent2)}
+
+.wrap{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:7rem 1.5rem 4rem}
+.badge{display:inline-block;font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem;padding:4px 10px;border:0.5px solid var(--accent);border-radius:100px;background:var(--glow)}
+h1{font-size:clamp(2rem,5vw,3rem);font-weight:700;letter-spacing:-0.03em;line-height:1.1;margin-bottom:0.75rem}
+.sub{font-size:15px;color:var(--text2);line-height:1.6;margin-bottom:2.5rem;max-width:520px}
+
+form{background:var(--bg2);border:0.5px solid var(--border);border-radius:14px;padding:2rem;display:grid;gap:1.25rem}
+.field{display:grid;gap:0.5rem}
+.label{font-size:11px;font-family:var(--mono);font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.08em;display:flex;align-items:center;gap:0.5rem}
+.label .req{color:var(--accent);font-size:10px}
+.label .opt{color:var(--text3);font-size:10px;font-style:italic}
+input,select,textarea{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.75rem 0.9rem;font-family:var(--serif);font-size:14px;color:var(--text);transition:border-color 0.15s,background 0.15s;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);background:var(--bg4)}
+textarea{min-height:90px;resize:vertical;font-family:var(--serif);line-height:1.5}
+select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%238892a8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 0.9rem center;padding-right:2.25rem}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+@media(max-width:520px){.row2{grid-template-columns:1fr}}
+
+.hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
+
+.actions{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:0.5rem}
+.submit{background:var(--accent);color:#fff;padding:0.75rem 1.5rem;border-radius:8px;font-size:14px;font-weight:600;font-family:var(--serif);border:none;cursor:pointer;transition:background 0.2s;display:inline-flex;align-items:center;gap:0.5rem}
+.submit:hover:not(:disabled){background:var(--accent2)}
+.submit:disabled{opacity:0.5;cursor:not-allowed}
+.privacy{font-size:11px;color:var(--text3);line-height:1.5;max-width:280px}
+.privacy a{color:var(--text2);text-decoration:underline;text-decoration-color:var(--text3)}
+.privacy a:hover{color:var(--text)}
+
+.note{font-size:12px;color:var(--text3);margin-top:1rem;text-align:center}
+.note a{color:var(--accent);text-decoration:none}
+.note a:hover{text-decoration:underline}
+
+.msg{padding:1rem 1.25rem;border-radius:8px;font-size:13px;line-height:1.5;margin-bottom:1rem;display:none}
+.msg.show{display:block}
+.msg.error{background:var(--red-g);border:0.5px solid var(--red);color:var(--red)}
+
+.success{display:none;background:var(--bg2);border:0.5px solid var(--green);border-radius:14px;padding:2.5rem 2rem;text-align:center}
+.success.show{display:block}
+.success-icon{width:56px;height:56px;border-radius:50%;background:var(--green-g);border:0.5px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;color:var(--green);font-size:26px}
+.success h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.5rem}
+.success p{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:1.5rem}
+.success a{color:var(--accent);text-decoration:none;font-size:13px;font-weight:500}
+.success a:hover{text-decoration:underline}
+
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="/" class="nav-logo">Cyge<span>nix</span></a>
+  <a href="/login.html" class="nav-cta">Log in →</a>
+</nav>
+
+<div class="wrap">
+
+  <div id="form-view">
+    <div class="badge">Private Preview</div>
+    <h1>Register your interest.</h1>
+    <p class="sub">Cygenix is currently in private preview. Tell us a little about you and we'll be in touch when a spot opens up.</p>
+
+    <div id="error-msg" class="msg error"></div>
+
+    <form id="waitlist-form" novalidate>
+      <!-- Honeypot: bots fill this, humans can't see it -->
+      <div class="hp" aria-hidden="true">
+        <label for="website">Website</label>
+        <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label class="label" for="name">Name <span class="req">Required</span></label>
+          <input type="text" id="name" name="name" autocomplete="name" required maxlength="100">
+        </div>
+        <div class="field">
+          <label class="label" for="email">Email <span class="req">Required</span></label>
+          <input type="email" id="email" name="email" autocomplete="email" required maxlength="254">
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="company">Company <span class="opt">Optional</span></label>
+        <input type="text" id="company" name="company" autocomplete="organization" maxlength="150">
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label class="label" for="role">Role <span class="opt">Optional</span></label>
+          <input type="text" id="role" name="role" autocomplete="organization-title" maxlength="100" placeholder="e.g. Data Engineer, CTO">
+        </div>
+        <div class="field">
+          <label class="label" for="teamSize">Team size <span class="opt">Optional</span></label>
+          <select id="teamSize" name="teamSize">
+            <option value="">Select…</option>
+            <option value="1">Just me</option>
+            <option value="2-10">2–10</option>
+            <option value="11-50">11–50</option>
+            <option value="51-200">51–200</option>
+            <option value="200+">200+</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="label" for="useCase">What are you migrating? <span class="opt">Optional</span></label>
+        <textarea id="useCase" name="useCase" maxlength="1000" placeholder="A few words about your source, target, scale, or timeline helps us prioritise."></textarea>
+      </div>
+
+      <div class="field">
+        <label class="label" for="source">How did you hear about us? <span class="opt">Optional</span></label>
+        <select id="source" name="source">
+          <option value="">Select…</option>
+          <option value="search">Google / search</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="referral">Referral from a colleague</option>
+          <option value="event">Event or conference</option>
+          <option value="article">Article or blog post</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <div class="actions">
+        <p class="privacy">We'll only use this to contact you about Cygenix. See our <a href="/privacy.html">privacy policy</a>.</p>
+        <button type="submit" class="submit" id="submit-btn">
+          <span id="submit-label">Register interest →</span>
+        </button>
+      </div>
+    </form>
+
+    <p class="note">Already have access? <a href="/login.html">Log in</a></p>
+  </div>
+
+  <div id="success-view" class="success">
+    <div class="success-icon">✓</div>
+    <h2>You're on the list.</h2>
+    <p>Thanks — we'll be in touch as soon as a spot opens up. If you have something urgent, email <a href="mailto:curtis.morris@cygenix.co.uk">curtis.morris@cygenix.co.uk</a>.</p>
+    <a href="/">← Back to home</a>
+  </div>
+
+</div>
+
+<script>
+// ── Waitlist form submission ────────────────────────────────────────────────
+// Posts to the Azure Function's /api/data/waitlist endpoint. This is a PUBLIC
+// endpoint — no auth required, which is correct for a waitlist but does mean
+// we depend on the honeypot + server-side validation to keep the container
+// clean. If spam becomes a problem, swap to Cloudflare Turnstile.
+const API  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+const CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+const form     = document.getElementById('waitlist-form');
+const btn      = document.getElementById('submit-btn');
+const btnLabel = document.getElementById('submit-label');
+const errBox   = document.getElementById('error-msg');
+const formView = document.getElementById('form-view');
+const okView   = document.getElementById('success-view');
+
+function showError(msg) {
+  errBox.textContent = msg;
+  errBox.classList.add('show');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function clearError() {
+  errBox.classList.remove('show');
+  errBox.textContent = '';
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+
+  const fd = new FormData(form);
+  const payload = {
+    name:     (fd.get('name')    || '').trim(),
+    email:    (fd.get('email')   || '').trim().toLowerCase(),
+    company:  (fd.get('company') || '').trim(),
+    role:     (fd.get('role')    || '').trim(),
+    teamSize: (fd.get('teamSize')|| '').trim(),
+    useCase:  (fd.get('useCase') || '').trim(),
+    source:   (fd.get('source')  || '').trim(),
+    website:  (fd.get('website') || '').trim()   // honeypot
+  };
+
+  // Client-side validation (server validates again; this is just for UX)
+  if (!payload.name || payload.name.length < 2) {
+    showError('Please enter your name.');
+    return;
+  }
+  if (!payload.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) {
+    showError('Please enter a valid email address.');
+    return;
+  }
+
+  btn.disabled = true;
+  btnLabel.innerHTML = '<span class="spinner"></span> Submitting…';
+
+  try {
+    const res = await fetch(`${API}/waitlist?code=${CODE}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    // Honeypot-caught submissions return 200 with received:true but don't store.
+    // Real submissions return 200 with received:true AND id. From the client
+    // we can't tell the difference — and we shouldn't, because we don't want
+    // bots to learn they were caught. Any 2xx = show success screen.
+    if (res.ok) {
+      formView.style.display = 'none';
+      okView.classList.add('show');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    // Non-2xx — show the server's error if we can parse one
+    let errMsg = 'Something went wrong. Please try again, or email curtis.morris@cygenix.co.uk directly.';
+    try {
+      const j = await res.json();
+      if (j && j.error) errMsg = j.error;
+    } catch {}
+    showError(errMsg);
+  } catch (netErr) {
+    showError('Network error. Please check your connection and try again.');
+  } finally {
+    btn.disabled = false;
+    btnLabel.textContent = 'Register interest →';
+  }
+});
+</script>
+
+</body>
+</html>

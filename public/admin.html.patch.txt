@@ -1,0 +1,176 @@
+═══════════════════════════════════════════════════════════════════════════
+PATCH INSTRUCTIONS FOR: public/admin.html
+═══════════════════════════════════════════════════════════════════════════
+
+Four edits. Follow in order — the order matters because showSection() needs
+to know about all sections before they're added to the DOM.
+
+
+─── EDIT 1: Add the sidebar nav item ──────────────────────────────────────
+
+FIND (around line 172, the Activity Log nav-item):
+
+    <div class="nav-item" onclick="showSection('activity')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1 7.5h2l2-5 2 10 2-7 2 4 1-2h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Activity Log
+    </div>
+
+REPLACE WITH (adds Waitlist nav-item immediately after Activity Log):
+
+    <div class="nav-item" onclick="showSection('activity')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M1 7.5h2l2-5 2 10 2-7 2 4 1-2h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Activity Log
+    </div>
+    <div class="nav-item" onclick="showSection('waitlist')">
+      <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M3 3h9v9H3zM3 6h9M6 3v9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Waitlist
+    </div>
+
+
+─── EDIT 2: Add the section markup ────────────────────────────────────────
+
+FIND the end of the Activity Log section. Look for the closing of
+`<div id="section-activity">` — it's a </div> roughly 40-50 lines after
+line 340. Add the new waitlist section IMMEDIATELY AFTER that closing </div>
+and BEFORE `</div> <!-- .main -->` (or whatever closes the main wrapper).
+
+If you can't find the exact spot, a reliable anchor is: put this block
+immediately before the `<script>` tag near the bottom of admin.html that
+contains `await loadUsers()`.
+
+PASTE THIS NEW SECTION:
+
+    <!-- ── WAITLIST SECTION ── -->
+    <div id="section-waitlist" style="display:none">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Waitlist</div>
+          <div class="page-sub">People who've registered interest via /register.html</div>
+        </div>
+        <button class="btn btn-ghost" onclick="loadWaitlist()">↻ Refresh</button>
+      </div>
+
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Submitted</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Team</th>
+                <th>Use case</th>
+                <th>Source</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="waitlist-tbody">
+              <tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text3)">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+
+─── EDIT 3: Register 'waitlist' with showSection() ────────────────────────
+
+FIND (around line 420):
+
+function showSection(name) {
+  ['users','invites','activity'].forEach(s => {
+    document.getElementById('section-' + s).style.display = s === name ? 'block' : 'none';
+  });
+  document.querySelectorAll('.nav-item').forEach((el, i) => {
+    el.classList.toggle('active', i === ['users','invites','activity'].indexOf(name));
+  });
+
+REPLACE WITH:
+
+function showSection(name) {
+  ['users','invites','activity','waitlist'].forEach(s => {
+    document.getElementById('section-' + s).style.display = s === name ? 'block' : 'none';
+  });
+  document.querySelectorAll('.nav-item').forEach((el, i) => {
+    el.classList.toggle('active', i === ['users','invites','activity','waitlist'].indexOf(name));
+  });
+  // Lazy-load waitlist data on first view
+  if (name === 'waitlist') loadWaitlist();
+
+
+─── EDIT 4: Add the loadWaitlist() function ───────────────────────────────
+
+Add this function anywhere in the main <script> block. Good spot: right
+after loadActivity() / loadUsers() alongside the other loaders.
+
+// ── Waitlist submissions from Cosmos waitlist container ──────────────────
+async function loadWaitlist() {
+  const tbody = document.getElementById('waitlist-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text3)">Loading…</td></tr>';
+
+  try {
+    const r = await fetch(`${API}/waitlist-list?code=${CODE}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': CygenixSync?.getUserId?.() || 'admin'
+      }
+    });
+
+    if (!r.ok) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text3)">
+        <div class="empty-text">Couldn't load waitlist (${r.status}).</div></td></tr>`;
+      return;
+    }
+
+    const data = await r.json();
+    const entries = data.entries || [];
+
+    if (!entries.length) {
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text3)">
+        <div class="empty-text">No waitlist submissions yet.</div></td></tr>`;
+      return;
+    }
+
+    const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const fmtDate = iso => {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' });
+      } catch { return iso; }
+    };
+    const truncate = (s, n) => { s = String(s || ''); return s.length > n ? esc(s.slice(0, n)) + '…' : esc(s); };
+    const statusBadge = status => {
+      const cls = { new: 'badge-trial', contacted: 'badge-pending', invited: 'badge-active', declined: 'badge-suspended' }[status] || 'badge-trial';
+      return `<span class="badge ${cls}">${esc(status || 'new')}</span>`;
+    };
+
+    tbody.innerHTML = entries.map(e => `
+      <tr>
+        <td class="user-date">${fmtDate(e.createdAt)}</td>
+        <td class="user-name">${esc(e.name)}</td>
+        <td class="user-email">${esc(e.email)}</td>
+        <td>${esc(e.company) || '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${esc(e.role) || '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${esc(e.teamSize) || '<span style="color:var(--text3)">—</span>'}</td>
+        <td title="${esc(e.useCase)}">${truncate(e.useCase, 60) || '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${esc(e.source) || '<span style="color:var(--text3)">—</span>'}</td>
+        <td>${statusBadge(e.status)}</td>
+      </tr>
+    `).join('');
+
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--red)">
+      <div class="empty-text">Error: ${err.message}</div></td></tr>`;
+  }
+}
+
+
+═══════════════════════════════════════════════════════════════════════════
+IMPORTANT — loadWaitlist() calls a NEW endpoint: /api/data/waitlist-list
+
+You also need to add this case to the Azure Function so the admin panel
+has something to list. See: index.js.patch.txt — EDIT 4 below.
+═══════════════════════════════════════════════════════════════════════════
