@@ -5567,13 +5567,42 @@ function initConnectionsView() {
 }
 
 function updateConnDots() {
-  const c = CygenixConnections.get();
-  const srcOk = !!(c.srcConnString);
-  const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
+  // Resolve src/tgt the same way impGetConn() does, so the indicator dot
+  // reflects the connection that Data Import will actually use. Previously
+  // this only read CygenixConnections.get() — which can return stale/empty
+  // values a few seconds after save (e.g. when cygenix-cosmos-sync.js
+  // refreshes the in-memory cache, or when the Connections page has
+  // misfiled a connection string under cygenix_fn_url). Net effect: the
+  // dot flipped green on Save then back to red shortly after, even though
+  // the underlying data was fine. Now mirrors the 3-tier fallback:
+  //   1. CygenixConnections (camelCase) in-memory object
+  //   2. sessionStorage (snake_case keys)
+  //   3. localStorage['cygenix_project_connections'] JSON wrapper
+  const c = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  const ss = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
+  let pc = {};
+  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
+  const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
+
+  // Source — a direct connection string OR an Azure Function URL is enough.
+  const srcVal = c.srcConnString
+              || c.srcFnUrl
+              || ss('cygenix_src_conn_string')
+              || pcGet('cygenix_src_conn_string')
+              || pcGet('cygenix_src_fn_url')
+              || '';
+  const srcOk = !!srcVal;
+
+  // Target — either a reachable Function URL, or any connection string
+  // (including one misfiled under *_fn_url that isn't actually http[s]).
+  // Any non-empty value in either slot means we have something usable.
+  const tgtFnRaw = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url') || pcGet('cygenix_fn_url') || '';
+  const tgtCs    = c.tgtConnString || c.connString || ss('cygenix_conn_string') || pcGet('cygenix_conn_string') || '';
+  const tgtOk    = !!tgtFnRaw || !!tgtCs;
+
   const setDot = (id, ok) => { const el=document.getElementById(id); if(el) el.style.background=ok?'var(--green)':'var(--red)'; };
   setDot('src-conn-dot', srcOk);
   setDot('tgt-conn-dot', tgtOk);
-  setDot('conn-status-dot', srcOk&&tgtOk);
   const navDot = document.getElementById('conn-status-dot');
   if (navDot) navDot.style.background = srcOk&&tgtOk ? 'var(--green)' : (srcOk||tgtOk) ? 'var(--amber)' : 'var(--red)';
 }
