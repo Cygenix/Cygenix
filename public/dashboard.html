@@ -5165,16 +5165,27 @@ async function syncFromCloud(){
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
-// Consume cyg_goto FIRST so the user arriving from another page (e.g. clicking
-// "Connections" on performance.html) lands on their target view immediately,
-// without a flash of the Dashboard. Falls through to the dashboard view when
-// no redirect is pending.
+// Consume the cross-page navigation intent FIRST so the user arriving from
+// another page (e.g. clicking "Connections" on performance.html) lands on
+// their target view immediately, without a flash of the Dashboard.
+// Belt-and-braces: look in sessionStorage, then in the URL hash (#goto=X).
+// The hash fallback survives auth-gate redirects and is also visible in
+// DevTools if anything goes wrong.
 const _cygGoto = (function(){
+  let g = null;
   try {
-    const g = sessionStorage.getItem('cyg_goto');
+    g = sessionStorage.getItem('cyg_goto');
     if (g) sessionStorage.removeItem('cyg_goto');
-    return g;
-  } catch { return null; }
+  } catch {}
+  if (!g) {
+    const m = /(?:^|[#&])goto=([^&]+)/.exec(location.hash);
+    if (m) {
+      try { g = decodeURIComponent(m[1]); } catch { g = m[1]; }
+      // Strip goto= from the hash so it doesn't persist in the URL bar
+      try { history.replaceState(null, '', location.pathname + location.search); } catch {}
+    }
+  }
+  return g;
 })();
 
 if (_cygGoto && document.getElementById('view-' + _cygGoto)) {

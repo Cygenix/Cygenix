@@ -341,8 +341,11 @@
         // Update active highlight in place
         updateActive(item.key);
       } else {
+        // Belt-and-braces: stash in sessionStorage AND pass in the URL hash.
+        // sessionStorage can be wiped by auth-gate redirects; the hash survives
+        // as long as the redirect preserves it. Dashboard reads either.
         try { sessionStorage.setItem('cyg_goto', item.view); } catch {}
-        window.location.href = '/dashboard.html';
+        window.location.href = '/dashboard.html#goto=' + encodeURIComponent(item.view);
       }
       return;
     }
