@@ -612,10 +612,9 @@ body.cyg-collapsed{padding-left:54px}
     <div class="modal-body">
       <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap">
         <input id="load-map-search" class="form-input" style="flex:1;min-width:200px;font-family:var(--serif)" placeholder="🔍 Search by name, source or target…" oninput="renderLoadMapList()">
-        <label style="display:flex;align-items:center;gap:0.35rem;font-size:11px;color:var(--text2);cursor:pointer">
-          <input type="checkbox" id="load-map-all-projects" onchange="renderLoadMapList()" style="cursor:pointer">
-          All projects
-        </label>
+        <select id="load-map-project-filter" class="form-input" style="width:auto;font-family:var(--serif);font-size:12px;max-width:220px" onchange="renderLoadMapList()" title="Filter by project">
+          <!-- populated by populateLoadMapProjectFilter() -->
+        </select>
         <select id="load-map-mode-filter" class="form-input" style="width:auto;font-family:var(--serif);font-size:12px" onchange="renderLoadMapList()">
           <option value="">All types</option>
           <option value="simple-map">◈ Single map</option>
@@ -2980,7 +2979,7 @@ function openLoadMapModal(){
   // Reset filters each open so user starts clean
   const s=$('load-map-search'); if(s) s.value='';
   const mf=$('load-map-mode-filter'); if(mf) mf.value='';
-  const ap=$('load-map-all-projects'); if(ap) ap.checked=false;
+  populateLoadMapProjectFilter();
   renderLoadMapList();
   $('load-map-modal').classList.add('open');
   setTimeout(()=>$('load-map-search')?.focus(),50);
@@ -2991,20 +2990,92 @@ function _getAllSavedJobs(){
   catch { return []; }
 }
 
+// Resolve a list of projects for the filter dropdown. We don't know for sure
+// where the master project list lives in localStorage, so we try several
+// likely keys in priority order. Whichever returns a usable array wins.
+// Falls back to deriving project IDs from saved jobs so the filter still
+// works (labelled by bare ID) even if we can't find project names.
+function _getProjectList(){
+  const candidates = [
+    'cygenix_projects','cygenix_project_list','cygenix_all_projects',
+    'cygenix_project_data'
+  ];
+  for (const key of candidates){
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const val = JSON.parse(raw);
+      if (Array.isArray(val) && val.length){
+        // Normalise to {id, name}
+        return val.map(p => ({
+          id: p.id || p.projectId || p._id || p.uuid || '',
+          name: p.name || p.title || p.label || p.id || '(unnamed project)'
+        })).filter(p => p.id);
+      }
+      // Some stores keep a dict keyed by id
+      if (val && typeof val==='object'){
+        return Object.entries(val).map(([id,p])=>({
+          id,
+          name: (p && (p.name||p.title||p.label)) || id
+        })).filter(p => p.id);
+      }
+    } catch {}
+  }
+  // Fallback — infer project set from saved jobs. Uses bare IDs as names.
+  const seen = new Map();
+  _getAllSavedJobs().forEach(j => {
+    const pid = j.projectId || '';
+    if (pid && !seen.has(pid)) seen.set(pid, { id: pid, name: pid });
+  });
+  return Array.from(seen.values());
+}
+
+function populateLoadMapProjectFilter(){
+  const sel = $('load-map-project-filter');
+  if(!sel) return;
+  const activeProject = localStorage.getItem('cygenix_active_project_id') || '';
+  const projects = _getProjectList();
+  // Sort with active project first, then alphabetical
+  projects.sort((a,b) => {
+    if (a.id===activeProject) return -1;
+    if (b.id===activeProject) return 1;
+    return (a.name||'').localeCompare(b.name||'');
+  });
+  // Count jobs per project for badges
+  const jobs = _getAllSavedJobs();
+  const countFor = (pid) => jobs.filter(j => (j.projectId||'')===pid).length;
+  const noProjectCount = jobs.filter(j => !j.projectId).length;
+
+  const opts = [];
+  opts.push(`<option value="__all__">All projects (${jobs.length})</option>`);
+  if (activeProject){
+    const activeName = (projects.find(p=>p.id===activeProject)?.name) || activeProject;
+    opts.push(`<option value="${esc(activeProject)}" selected>★ ${esc(activeName)} — current (${countFor(activeProject)})</option>`);
+  }
+  projects.filter(p => p.id !== activeProject).forEach(p => {
+    opts.push(`<option value="${esc(p.id)}">${esc(p.name)} (${countFor(p.id)})</option>`);
+  });
+  if (noProjectCount){
+    opts.push(`<option value="__none__">(No project assigned) (${noProjectCount})</option>`);
+  }
+  // If there's no active project, default selection is "All projects"
+  if (!activeProject) opts[0] = `<option value="__all__" selected>All projects (${jobs.length})</option>`;
+  sel.innerHTML = opts.join('');
+}
+
 function renderLoadMapList(){
   const list=$('load-map-list'); if(!list) return;
   const jobs=_getAllSavedJobs();
   const query=(($('load-map-search')?.value)||'').trim().toLowerCase();
   const modeFilter=($('load-map-mode-filter')?.value)||'';
-  const allProjects=$('load-map-all-projects')?.checked;
-  const activeProject=localStorage.getItem('cygenix_active_project_id')||'';
+  const projectFilter=($('load-map-project-filter')?.value)||'__all__';
 
   let filtered=jobs.filter(j=>{
-    // Project scope — default to active project, unless "All projects" is ticked
-    if(!allProjects && activeProject){
-      const jp=j.projectId||'';
-      // Include jobs that match active project OR have no projectId (legacy)
-      if(jp && jp!==activeProject) return false;
+    // Project filter
+    if (projectFilter==='__none__'){
+      if (j.projectId) return false;
+    } else if (projectFilter !== '__all__'){
+      if ((j.projectId||'') !== projectFilter) return false;
     }
     // Type filter
     if(modeFilter){
@@ -3037,6 +3108,12 @@ function renderLoadMapList(){
     return;
   }
 
+  // Build a lookup from projectId → display name so each row can show
+  // which project the map belongs to (useful when viewing "All projects").
+  const projects = _getProjectList();
+  const projectNameById = {};
+  projects.forEach(p => { projectNameById[p.id] = p.name; });
+
   list.innerHTML=filtered.map(j=>{
     const isOTM = j.jobType==='one-to-many' || j.oneToManyConfig;
     const typeLabel = isOTM ? '⊞ One-to-many' : '◈ Single map';
@@ -3049,11 +3126,15 @@ function renderLoadMapList(){
       ? ((j.tables||[]).reduce((n,t)=>n+((t.mappings||[]).filter(m=>m.tgtCol).length),0)+' cols across '+((j.tables||[]).length)+' tables')
       : ((j.columnMapping||[]).length+' columns');
     const isCurrent = editJobId===j.id;
+    const projLabel = j.projectId
+      ? esc(projectNameById[j.projectId] || j.projectId)
+      : '(no project)';
     return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);${isCurrent?'background:rgba(61,126,255,0.06)':''}">
       <div style="flex:1;min-width:0">
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
           <span style="font-size:10px;color:${typeColor};font-weight:500;flex-shrink:0">${typeLabel}</span>
+          <span style="font-size:10px;color:var(--text3);font-weight:500;flex-shrink:0" title="Project">📁 ${projLabel}</span>
           ${isCurrent?'<span style="font-size:10px;color:var(--accent);font-weight:500;flex-shrink:0">• currently editing</span>':''}
         </div>
         <div style="font-size:11px;color:var(--text2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
