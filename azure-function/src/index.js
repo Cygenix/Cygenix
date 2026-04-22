@@ -184,40 +184,76 @@ app.http('data', {
 
         // ── SAVE all project data ───────────────────────────────────────────
         // POST /api/data/save
-        // Body: { jobs, project_settings, project_plan, ... }
+        // Body: { jobs?, project_settings?, project_plan?, connections?, ... }
+        //
+        // IMPORTANT — merge, don't replace. The client's auto-save debounce
+        // sends whatever is currently in localStorage, but localStorage may
+        // only contain a subset of the fields at any given moment (pages load
+        // different keys at different times). If we upsert with `?? []` / `?? {}`
+        // defaults, a save that happens to not include `connections` will
+        // silently WIPE the user's connections in Cosmos. That is a real bug
+        // that has caused data loss — see: 21 Apr 2026 incident. The merge
+        // strategy below preserves any field the client didn't send, which
+        // means data loss requires an explicit intent to delete (handled via
+        // delete-all or an empty explicit value, not a field omission).
         case 'save': {
           const body = await req.json().catch(() => null);
           if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
 
-          const doc = {
-            id:                userId,   // one document per user, upserted
-            userId,
-            updatedAt:         new Date().toISOString(),
-            jobs:              body.jobs               ?? [],
-            project_settings:  body.project_settings   ?? {},
-            project_plan:      body.project_plan        ?? {},
-            connections:       body.connections         ?? {},
-            performance:       body.performance         ?? {},
-            validation_sources:body.validation_sources  ?? [],
-            wasis_rules:       body.wasis_rules          ?? [],
-            sql_scripts:       body.sql_scripts          ?? [],
-            issues:            body.issues               ?? [],
-            inventory:         body.inventory            ?? [],
-          };
+          const container = getCosmosContainer('projects');
 
-          await getCosmosContainer('projects').items.upsert(doc);
-          ctx.log('Saved project data to Cosmos');
+          // Read existing doc first (404 is fine — new user, empty base)
+          let existing = {};
+          try {
+            const { resource } = await container.item(userId, userId).read();
+            existing = resource || {};
+          } catch (e) {
+            if (e.code !== 404) throw e;
+          }
 
-          // Write audit log entry
+          // Whitelist of syncable fields. Anything not in this list is ignored
+          // from the body (prevents a malicious or buggy client from writing
+          // arbitrary keys like `role: 'admin'` into the projects container).
+          const SYNCABLE = [
+            'jobs', 'project_settings', 'project_plan', 'connections',
+            'performance', 'validation_sources', 'wasis_rules',
+            'sql_scripts', 'issues', 'inventory', 'sys_params'
+          ];
+
+          // Only overwrite fields explicitly present in the payload
+          const merged = { ...existing };
+          const touched = [];
+          for (const key of SYNCABLE) {
+            if (Object.prototype.hasOwnProperty.call(body, key)) {
+              merged[key] = body[key];
+              touched.push(key);
+            }
+          }
+
+          // If the client didn't send ANY recognised field, don't churn Cosmos
+          if (touched.length === 0) {
+            ctx.log('Save request with no syncable fields — ignored');
+            return ok({ saved: false, reason: 'no-syncable-fields', updatedAt: existing.updatedAt || null });
+          }
+
+          // Enforce ownership and metadata regardless of what the client sent
+          merged.id        = userId;
+          merged.userId    = userId;
+          merged.updatedAt = new Date().toISOString();
+
+          await container.items.upsert(merged);
+          ctx.log(`Saved fields [${touched.join(', ')}] for ${userId}`);
+
+          // Audit log — record exactly which fields were touched, not just keys from body
           await getCosmosContainer('audit').items.create({
             id:        `${userId}-${Date.now()}`,
             userId,
             action:    'save',
-            timestamp: new Date().toISOString(),
-            keys:      Object.keys(body)
+            timestamp: merged.updatedAt,
+            keys:      touched
           }).catch(e => ctx.log('Audit write failed (non-fatal):', e.message));
 
-          return ok({ saved: true, updatedAt: doc.updatedAt });
+          return ok({ saved: true, updatedAt: merged.updatedAt, fields: touched });
         }
 
         // ── LOAD project data ───────────────────────────────────────────────
