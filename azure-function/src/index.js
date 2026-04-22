@@ -166,10 +166,18 @@ app.http('data', {
     }
 
     const action = req.params.action;
-    const userId = getUserId(req);
-    if (!userId) return err(401, 'x-user-id header is required');
 
-    ctx.log(`data/${action} for user: ${userId}`);
+    // Public actions don't require x-user-id (e.g. waitlist submissions from
+    // anonymous visitors on /register.html). Every other action still enforces
+    // it. Keep this list tight — anything added here is callable by anyone.
+    const PUBLIC_ACTIONS = ['waitlist'];
+
+    const userId = getUserId(req);
+    if (!PUBLIC_ACTIONS.includes(action) && !userId) {
+      return err(401, 'x-user-id header is required');
+    }
+
+    ctx.log(`data/${action}${userId ? ' for user: ' + userId : ' (public)'}`);
 
     try {
       switch (action) {
@@ -358,6 +366,118 @@ app.http('data', {
             database: process.env.COSMOS_DATABASE || 'cygenix',
             endpoint: process.env.COSMOS_ENDPOINT?.replace(/\/+$/, '')
           });
+        }
+
+        // ── WAITLIST: public endpoint for /register.html submissions ────────
+        // POST /api/data/waitlist
+        // Body: { name, email, company?, role?, teamSize?, useCase?, source?, website? }
+        // `website` is a honeypot — if populated, silently accept but don't
+        // store. Returning 200 either way means bots can't tell they've been
+        // caught and won't adapt. NO x-user-id required (anonymous visitors).
+        case 'waitlist': {
+          const body = await req.json().catch(() => null);
+          if (!body || typeof body !== 'object') {
+            return err(400, 'Invalid JSON body');
+          }
+
+          // Honeypot check — pretend success, don't store
+          if (body.website && String(body.website).trim().length > 0) {
+            ctx.log('Waitlist honeypot triggered — silently dropping');
+            return ok({ received: true });
+          }
+
+          // Required fields
+          const name  = String(body.name  || '').trim();
+          const email = String(body.email || '').trim().toLowerCase();
+
+          if (!name || name.length < 2 || name.length > 100) {
+            return err(400, 'Name is required (2-100 characters).');
+          }
+          if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+            return err(400, 'A valid email address is required.');
+          }
+
+          // Optional fields — trimmed, capped, all strings
+          const cap = (v, max) => String(v || '').trim().slice(0, max);
+          const company  = cap(body.company,  150);
+          const role     = cap(body.role,     100);
+          const teamSize = cap(body.teamSize,  20);
+          const useCase  = cap(body.useCase, 1000);
+          const source   = cap(body.source,    50);
+
+          // Basic request metadata for abuse triage later
+          const ip        = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || null;
+          const userAgent = cap(req.headers.get('user-agent'), 300);
+          const referer   = cap(req.headers.get('referer'),    300);
+
+          const now = new Date().toISOString();
+          const id  = `wl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+          const doc = {
+            id,
+            email,
+            name,
+            company,
+            role,
+            teamSize,
+            useCase,
+            source,
+            status:    'new',    // new | contacted | invited | declined
+            createdAt: now,
+            ip,
+            userAgent,
+            referer
+          };
+
+          try {
+            await getCosmosContainer('waitlist').items.create(doc);
+            ctx.log('Waitlist submission stored:', email);
+          } catch (e) {
+            ctx.log.error('Waitlist write failed:', e.message);
+            return err(500, 'Could not record your submission. Please email curtis.morris@cygenix.co.uk directly.');
+          }
+
+          // Audit log (non-fatal if it fails)
+          await getCosmosContainer('audit').items.create({
+            id:        `waitlist-${Date.now()}`,
+            userId:    email,       // use email as pseudo-userId for audit
+            action:    'waitlist-submit',
+            timestamp: now,
+            company,
+            source
+          }).catch(e => ctx.log('Audit write failed (non-fatal):', e.message));
+
+          return ok({ received: true, id });
+        }
+
+        // ── LIST all waitlist submissions (admin-only UI, enforced later) ───
+        // GET /api/data/waitlist-list
+        // NOTE: currently behind the same x-user-id trust model as admin-users.
+        // Will be role-gated properly in Stage C of the security rollout.
+        case 'waitlist-list': {
+          try {
+            const { resources } = await getCosmosContainer('waitlist').items
+              .query('SELECT * FROM c ORDER BY c.createdAt DESC')
+              .fetchAll();
+
+            const entries = (resources || []).map(e => ({
+              id:        e.id,
+              name:      e.name,
+              email:     e.email,
+              company:   e.company   || '',
+              role:      e.role      || '',
+              teamSize:  e.teamSize  || '',
+              useCase:   e.useCase   || '',
+              source:    e.source    || '',
+              status:    e.status    || 'new',
+              createdAt: e.createdAt || null
+            }));
+
+            return ok({ entries, total: entries.length });
+          } catch(e) {
+            ctx.log('waitlist-list error:', e.message);
+            return err(500, `Failed to fetch waitlist: ${e.message}`);
+          }
         }
 
         // ── INVITE user via Netlify Identity ────────────────────────────────────
@@ -558,7 +678,7 @@ app.http('data', {
         }
 
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list`);
       }
 
     } catch (e) {
