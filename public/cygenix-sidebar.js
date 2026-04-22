@@ -42,7 +42,7 @@
     ]},
     { section: 'Configure', group:'configure', items: [
       { key:'project-settings',  label:'Project Settings',  view:'project-settings',   color:'var(--amber)',  icon: iconSettings() },
-      { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug(), badgeId:'conn-status-dot' },
+      { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug() },
       { key:'performance',       label:'Performance',       href:'/performance.html',  color:'var(--teal)',   icon: iconChart() },
       { key:'system-parameters', label:'System Parameters', view:'system-parameters',  color:'var(--accent)', icon: iconParams() },
       { key:'privacy-security',  label:'Governance',        view:'privacy-security',   color:'var(--red)',    icon: iconShield() },
@@ -381,58 +381,11 @@
     if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
 
     wireItemClicks(aside);
-    startBadgeUpdaters();
   }
 
   // ── Live status badges ──────────────────────────────────────────────────
-  // Paint nav badges (e.g. #conn-status-dot) from client-side state so every
-  // page gets an accurate indicator without each page needing its own logic.
-  // The default `.cyg-nav-badge` CSS colour is red (see injectStyles), so a
-  // misconfigured or unloaded state correctly shows red.
-  //
-  // For the Connections badge we check `CygenixConnections.get()` for a
-  // configured source + target. This is a CONFIG check, not a live ping —
-  // matching user expectation of an at-a-glance indicator. The dashboard's
-  // own live-health code, if any, is free to overwrite the same element after
-  // we run; we don't fight with it.
-  function updateConnBadge(){
-    const dot = document.getElementById('conn-status-dot');
-    if (!dot) return;
-    let ok = false;
-    try {
-      if (window.CygenixConnections && typeof window.CygenixConnections.get === 'function'){
-        const c = window.CygenixConnections.get() || {};
-        const srcOk = !!(c.srcConnString);
-        const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
-        ok = srcOk && tgtOk;
-      }
-    } catch {}
-    dot.style.background = ok ? 'var(--green)' : 'var(--red)';
-    dot.title = ok ? 'Source & target connections configured' : 'One or more connections not configured';
-  }
-
-  function startBadgeUpdaters(){
-    // Initial paint — defer one tick so /connections.js (loaded alongside this
-    // script on every page) has definitely initialised CygenixConnections.
-    setTimeout(updateConnBadge, 0);
-    // Re-check when user switches tabs / returns to the page — connections
-    // may have been edited on the Connections page in another tab.
-    window.addEventListener('focus', updateConnBadge);
-    // React to live changes from the Connections page within the same tab.
-    // The Connections page persists via CygenixConnections.set(), which (in the
-    // shared helper) writes to localStorage — so storage events fire in OTHER
-    // tabs. For same-tab changes we also listen for a custom event that the
-    // Connections page can dispatch; harmless if it never fires.
-    window.addEventListener('storage', (e) => {
-      if (!e.key) return;
-      if (e.key.indexOf('cygenix_') === 0) updateConnBadge();
-    });
-    window.addEventListener('cyg-connections-changed', updateConnBadge);
-    // Belt-and-braces: poll every 5s. Very cheap (one localStorage read +
-    // one style write), and catches edge cases where the active project
-    // changes or the helper initialises late on slow devices.
-    setInterval(updateConnBadge, 5000);
-  }
+  // (No live badges are currently rendered. Reintroduce an updater here and
+  // wire it from mount() if a future nav item uses `badgeId`.)
 
   // Public API (useful for dashboard to call on showView)
   window.CygenixSidebar = {
@@ -445,8 +398,7 @@
       setCollapsed(on);
       const toggle = el && el.querySelector('#cyg-sidebar-toggle');
       if (toggle) toggle.textContent = on ? '❯' : '❮';
-    },
-    updateConnBadge
+    }
   };
 
   // Auto-mount on DOMContentLoaded (or immediately if already past)

@@ -5615,8 +5615,6 @@ function updateConnDots() {
   const setDot = (id, ok) => { const el=document.getElementById(id); if(el) el.style.background=ok?'var(--green)':'var(--red)'; };
   setDot('src-conn-dot', srcOk);
   setDot('tgt-conn-dot', tgtOk);
-  const navDot = document.getElementById('conn-status-dot');
-  if (navDot) navDot.style.background = srcOk&&tgtOk ? 'var(--green)' : (srcOk||tgtOk) ? 'var(--amber)' : 'var(--red)';
 }
 
 async function testProjConn(which) {
