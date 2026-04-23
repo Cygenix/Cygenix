@@ -216,6 +216,7 @@ app.http('data', {
           // arbitrary keys like `role: 'admin'` into the projects container).
           const SYNCABLE = [
             'jobs', 'project_settings', 'project_plan', 'connections',
+            'saved_connections',
             'performance', 'validation_sources', 'wasis_rules',
             'sql_scripts', 'issues', 'inventory', 'sys_params'
           ];
