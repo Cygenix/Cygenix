@@ -3092,11 +3092,17 @@ function closeModal() { $('job-modal').classList.remove('open'); }
 // ── Render ────────────────────────────────────────────────────────────────────
 function addAudit(msg) { state.auditLog.unshift({ time: new Date().toLocaleTimeString(), msg }); }
 function updateStats() {
-  $('stat-total').textContent    = state.jobs.length;
-  $('stat-analysed').textContent = state.jobs.length;
-  $('stat-done').textContent     = state.jobs.filter(j=>j.status==='complete').length;
-  $('stat-files').textContent    = state.totalFilesProcessed;
-  $('jobs-count').textContent    = state.jobs.length;
+  // Null-guard every DOM update — if any of these elements is missing from the
+  // page (e.g. during A/B layouts or partial renders), the unguarded `.textContent`
+  // would throw TypeError and halt the entire init chain, including
+  // initUserAndProject() which runs after renderDashboard(). That manifests as
+  // a stuck "Loading..." user pill even though auth is working fine.
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  set('stat-total',    state.jobs.length);
+  set('stat-analysed', state.jobs.length);
+  set('stat-done',     state.jobs.filter(j=>j.status==='complete').length);
+  set('stat-files',    state.totalFilesProcessed);
+  set('jobs-count',    state.jobs.length);
 }
 
 // ── Bulk-select + move jobs to project ─────────────────────────────────────
