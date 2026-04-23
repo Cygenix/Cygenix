@@ -3765,13 +3765,62 @@ function initUserAndProject() {
   try {
     let email = '', name = '';
 
-    // 1. Entra External ID session (primary)
-    const entraRaw = sessionStorage.getItem('cygenix_entra_account')
-                  || localStorage.getItem('cygenix_entra_account');
-    if (entraRaw) {
-      const entra = JSON.parse(entraRaw);
-      email = entra.email || entra.userId || '';
-      name  = entra.name  || '';
+    // 0. MSAL account cache (primary since Entra migration).
+    //    Works whether msal-browser is loaded as a global on this page or
+    //    not — MSAL stores its accounts as JSON in localStorage under keys
+    //    shaped `msal.account.keys` plus per-account entries. We prefer the
+    //    library when available, then fall back to reading the cache
+    //    directly. Same pattern as CygenixSync.getUserId().
+    try {
+      if (typeof msal !== 'undefined') {
+        const msalApp = new msal.PublicClientApplication({
+          auth: {
+            clientId:         'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+            authority:        'https://cygenix.ciamlogin.com/',
+            knownAuthorities: ['cygenix.ciamlogin.com'],
+          },
+          cache: { cacheLocation: 'localStorage' },
+        });
+        const accounts = msalApp.getAllAccounts() || [];
+        if (accounts.length) {
+          const a = accounts[0];
+          email = (a.username || a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '').trim().toLowerCase();
+          name  = a.name || a.idTokenClaims?.name || '';
+        }
+      }
+    } catch {}
+
+    // 0b. MSAL library not loaded — read its localStorage cache directly.
+    //     MSAL writes one localStorage entry per account; the value is a
+    //     JSON object with username, name, idTokenClaims etc.
+    if (!email) {
+      try {
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (!k || !k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+          const raw = localStorage.getItem(k);
+          if (!raw || raw[0] !== '{') continue;
+          try {
+            const acc = JSON.parse(raw);
+            if (acc && acc.username && acc.authorityType) {
+              email = String(acc.username).trim().toLowerCase();
+              name  = acc.name || '';
+              break;
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
+    // 1. Entra External ID session (legacy custom key — kept for safety)
+    if (!email) {
+      const entraRaw = sessionStorage.getItem('cygenix_entra_account')
+                    || localStorage.getItem('cygenix_entra_account');
+      if (entraRaw) {
+        const entra = JSON.parse(entraRaw);
+        email = entra.email || entra.userId || '';
+        name  = entra.name  || name;
+      }
     }
 
     // 2. Legacy cygenix_user fallback
@@ -3779,7 +3828,7 @@ function initUserAndProject() {
       const raw  = JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user') || '{}');
       const user = raw.user || raw;
       email = user.email || raw.email || '';
-      name  = user.user_metadata?.full_name || raw.user_metadata?.full_name || '';
+      name  = user.user_metadata?.full_name || raw.user_metadata?.full_name || name;
     }
 
     // 3. Decode from JWT token
