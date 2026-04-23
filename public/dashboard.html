@@ -3802,15 +3802,19 @@ function initUserAndProject() {
     //     accumulate multiple account entries across sign-ins (e.g. after
     //     switching identities), so we can't just pick the first one — the
     //     first found may be stale. Strategy:
-    //       1. Collect all MSAL account records
-    //       2. For each, find a matching non-expired token in the cache
+    //       1. Collect all MSAL account records AND ID tokens (keyed by homeAccountId)
+    //       2. For each account, find a matching non-expired token
     //       3. Prefer accounts with a valid token; fall back to any account
-    //          if none have valid tokens (better than nothing).
+    //       4. Decode the chosen account's ID token for the real email
+    //          (Google-SSO and other federated logins have a synthetic
+    //          @<tenant>.onmicrosoft.com as account.username; the real
+    //          email lives in the ID token's `email` claim).
     if (!email) {
       try {
         const nowSec = Math.floor(Date.now() / 1000);
-        const accounts = [];  // { acc, homeId }
+        const accounts = [];
         const tokenExpiries = new Map();  // homeId → latest expiresOn (seconds)
+        const idTokens     = new Map();   // homeId → JWT secret string
 
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
@@ -3821,12 +3825,16 @@ function initUserAndProject() {
           try { obj = JSON.parse(raw); } catch { continue; }
           if (!obj) continue;
 
-          // An account record (has username + authorityType)
+          // An account record
           if (obj.username && obj.authorityType && obj.homeAccountId) {
             accounts.push({ acc: obj, homeId: obj.homeAccountId });
             continue;
           }
-          // A token record (has credentialType + homeAccountId + expiresOn)
+          // An ID token record — secret is the JWT we can decode
+          if (obj.credentialType === 'IdToken' && obj.homeAccountId && obj.secret) {
+            idTokens.set(obj.homeAccountId, obj.secret);
+          }
+          // A token-expiry record (Access/Refresh tokens)
           if (obj.credentialType && obj.homeAccountId && obj.expiresOn) {
             const exp = parseInt(obj.expiresOn, 10);
             if (isNaN(exp)) continue;
@@ -3835,20 +3843,41 @@ function initUserAndProject() {
           }
         }
 
-        // Prefer an account whose latest token is still valid
+        // Prefer an account whose latest access/refresh token is still valid
         let chosen = accounts.find(a => (tokenExpiries.get(a.homeId) || 0) > nowSec);
-        // Fallback: any account (arbitrary but consistent)
         if (!chosen && accounts.length) chosen = accounts[0];
 
         if (chosen) {
           const a = chosen.acc;
-          // Prefer real email from idTokenClaims over synthetic username for
-          // federated (Google SSO) identities where username is an opaque
-          // @<tenant>.onmicrosoft.com address. idTokenClaims isn't always
-          // serialised on the account record, but we try.
-          const claimEmail = a.idTokenClaims?.email || a.idTokenClaims?.preferred_username;
+
+          // Decode the ID token (if we have one for this account) to get
+          // the real email claim — necessary for Google SSO etc. where
+          // a.username is a synthetic opaque address.
+          let claimEmail = a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '';
+          let claimName  = a.idTokenClaims?.name || '';
+
+          if (!claimEmail || !claimName) {
+            const jwt = idTokens.get(chosen.homeId);
+            if (jwt && jwt.split('.').length === 3) {
+              try {
+                let b64 = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+                while (b64.length % 4) b64 += '=';
+                const claims = JSON.parse(atob(b64));
+                if (!claimEmail) {
+                  claimEmail = claims.email || claims.preferred_username || '';
+                  // Reject synthetic addresses — they're a last resort
+                  if (claimEmail.endsWith('@cygenix.onmicrosoft.com') && claims.sub && claims.sub.includes('@')) {
+                    claimEmail = claims.sub;
+                  }
+                }
+                if (!claimName) claimName = claims.name || '';
+              } catch {}
+            }
+          }
+
+          // Final fallback: account.username (may be synthetic but better than nothing)
           email = (claimEmail || a.username || '').trim().toLowerCase();
-          name  = a.name || a.idTokenClaims?.name || '';
+          name  = claimName || a.name || '';
         }
       } catch {}
     }
