@@ -234,6 +234,31 @@ function saveSession(authResult) {
   localStorage.setItem('cygenix_user',   userJson);
   sessionStorage.setItem('cygenix_user', userJson);
 
+  // ── Clean up stale MSAL account entries ─────────────────────────────────
+  // MSAL accumulates account entries across sign-ins — if you sign into
+  // account A, then later sign into account B without explicitly logging
+  // out of A first, A's entry stays in localStorage. That surfaces as the
+  // wrong name/email in the user pill if any page reads the first account
+  // from getAllAccounts() rather than the most recent.
+  //
+  // After a successful sign-in, purge every account that isn't the one
+  // we just authenticated. Uses MSAL's clearCacheForAccount (v3.x) which
+  // removes the account AND its associated tokens atomically. Non-fatal
+  // on any failure — the sign-in itself already succeeded.
+  try {
+    if (msalInstance && account && typeof msalInstance.clearCacheForAccount === 'function') {
+      const all = msalInstance.getAllAccounts() || [];
+      for (const other of all) {
+        if (other.homeAccountId !== account.homeAccountId) {
+          msalInstance.clearCacheForAccount(other);
+          console.log('[Auth] Purged stale account:', other.username);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Auth] Stale account cleanup failed (non-fatal):', e.message);
+  }
+
   console.log('[Auth] Session saved for:', email);
 }
 

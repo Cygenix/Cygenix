@@ -3797,23 +3797,58 @@ function initUserAndProject() {
     } catch {}
 
     // 0b. MSAL library not loaded — read its localStorage cache directly.
-    //     MSAL writes one localStorage entry per account; the value is a
-    //     JSON object with username, name, idTokenClaims etc.
+    //     MSAL writes one localStorage entry per account, plus separate
+    //     entries per token (id, access, refresh). A single browser can
+    //     accumulate multiple account entries across sign-ins (e.g. after
+    //     switching identities), so we can't just pick the first one — the
+    //     first found may be stale. Strategy:
+    //       1. Collect all MSAL account records
+    //       2. For each, find a matching non-expired token in the cache
+    //       3. Prefer accounts with a valid token; fall back to any account
+    //          if none have valid tokens (better than nothing).
     if (!email) {
       try {
+        const nowSec = Math.floor(Date.now() / 1000);
+        const accounts = [];  // { acc, homeId }
+        const tokenExpiries = new Map();  // homeId → latest expiresOn (seconds)
+
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
           if (!k || !k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
           const raw = localStorage.getItem(k);
           if (!raw || raw[0] !== '{') continue;
-          try {
-            const acc = JSON.parse(raw);
-            if (acc && acc.username && acc.authorityType) {
-              email = String(acc.username).trim().toLowerCase();
-              name  = acc.name || '';
-              break;
-            }
-          } catch {}
+          let obj;
+          try { obj = JSON.parse(raw); } catch { continue; }
+          if (!obj) continue;
+
+          // An account record (has username + authorityType)
+          if (obj.username && obj.authorityType && obj.homeAccountId) {
+            accounts.push({ acc: obj, homeId: obj.homeAccountId });
+            continue;
+          }
+          // A token record (has credentialType + homeAccountId + expiresOn)
+          if (obj.credentialType && obj.homeAccountId && obj.expiresOn) {
+            const exp = parseInt(obj.expiresOn, 10);
+            if (isNaN(exp)) continue;
+            const prev = tokenExpiries.get(obj.homeAccountId) || 0;
+            if (exp > prev) tokenExpiries.set(obj.homeAccountId, exp);
+          }
+        }
+
+        // Prefer an account whose latest token is still valid
+        let chosen = accounts.find(a => (tokenExpiries.get(a.homeId) || 0) > nowSec);
+        // Fallback: any account (arbitrary but consistent)
+        if (!chosen && accounts.length) chosen = accounts[0];
+
+        if (chosen) {
+          const a = chosen.acc;
+          // Prefer real email from idTokenClaims over synthetic username for
+          // federated (Google SSO) identities where username is an opaque
+          // @<tenant>.onmicrosoft.com address. idTokenClaims isn't always
+          // serialised on the account record, but we try.
+          const claimEmail = a.idTokenClaims?.email || a.idTokenClaims?.preferred_username;
+          email = (claimEmail || a.username || '').trim().toLowerCase();
+          name  = a.name || a.idTokenClaims?.name || '';
         }
       } catch {}
     }
