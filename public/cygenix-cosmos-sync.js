@@ -251,21 +251,60 @@ const CygenixSync = (() => {
 
     await ensureUser();
 
-    const hasLocal = SYNC_KEYS.some(k => localStorage.getItem(k) !== null);
-    if (!hasLocal) {
-      // No local data — load from cloud (may also be empty for new users)
-      const loaded = await load();
-      if (loaded) {
-        console.log('[CygenixSync] Reloading with cloud data...');
-        setTimeout(() => location.reload(), 500);
-      } else {
-        console.log('[CygenixSync] New user — starting fresh');
+    // ── Per-key gap-fill from cloud ────────────────────────────────────────
+    // Previously this was all-or-nothing: if ANY SYNC_KEY had local data, the
+    // cloud load was skipped entirely and all other keys stayed empty until
+    // the user happened to wipe localStorage. That's how the System
+    // Parameters and Was/Is pages rendered blank for 30+ minutes post-
+    // sign-in even though Cosmos had the data — the `.some()` short-circuit
+    // meant "local authoritative" for keys that had never been populated on
+    // this browser.
+    //
+    // New policy: ALWAYS fetch from cloud on init, fill only the gaps (keys
+    // where localStorage is null). Local values win on collision — that's
+    // deliberate; it preserves any edits made offline or before init
+    // completed, and avoids a class of clobber bugs. Then kick the debounced
+    // save so anything purely-local propagates up.
+    //
+    // No page reload needed. Views that read localStorage after this point
+    // will see the filled-in values; views that already rendered should
+    // re-read via their existing load hooks — see the cygenix-sync-loaded
+    // event dispatched below.
+    const cloud = await callApi('load', 'GET');
+    let filled = 0;
+    if (cloud && typeof cloud === 'object') {
+      for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
+        const cloudVal = cloud[cloudField];
+        if (cloudVal === undefined || cloudVal === null) continue;
+        if (localStorage.getItem(localKey) !== null) continue; // local wins
+        try {
+          localStorage.setItem(localKey, JSON.stringify(cloudVal));
+          filled++;
+        } catch (e) {
+          console.warn('[CygenixSync] Failed to fill', localKey, e.message);
+        }
       }
-    } else {
-      // Local data exists and belongs to this user — push to cloud
-      if (_saveTimer) clearTimeout(_saveTimer);
-      _saveTimer = setTimeout(save, 3000);
     }
+    if (filled > 0) {
+      console.log('[CygenixSync] Filled', filled, 'missing keys from Cosmos DB');
+      // Notify any views already rendered that they should re-read
+      // localStorage. Views that aren't listening will pick up the values
+      // naturally on their next load. Keeps this non-breaking for any page
+      // that doesn't know about the event.
+      try {
+        window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
+          detail: { filled, source: 'init' }
+        }));
+      } catch {}
+    } else {
+      console.log('[CygenixSync] No cloud gaps to fill');
+    }
+
+    // Push any local-only data back up (merge on the server preserves
+    // cloud-only fields, so this is safe). Debounced so multiple pages
+    // loading in quick succession don't each fire their own save.
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(save, 3000);
   }
 
   // Start after a short delay to let auth complete
