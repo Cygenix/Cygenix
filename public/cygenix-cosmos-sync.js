@@ -276,7 +276,29 @@ const CygenixSync = (() => {
       for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
         const cloudVal = cloud[cloudField];
         if (cloudVal === undefined || cloudVal === null) continue;
-        if (localStorage.getItem(localKey) !== null) continue; // local wins
+
+        // Treat empty-array localStorage values as "missing" for gap-fill.
+        // Helpers like CygenixWasis initialise their own storage to "[]"
+        // before the sync runs, which previously tripped the "local wins"
+        // branch and caused cloud data (e.g. wasis rules from another
+        // browser session) to never be pulled down. Only the empty-array
+        // shape is treated as missing — empty objects, empty strings, and
+        // other "empty-ish" values are left alone because they're less
+        // common here and broadening the check risks clobbering user data.
+        const localRaw = localStorage.getItem(localKey);
+        let localIsMissing = localRaw === null;
+        if (!localIsMissing) {
+          try {
+            const parsed = JSON.parse(localRaw);
+            if (Array.isArray(parsed) && parsed.length === 0) {
+              localIsMissing = true;
+            }
+          } catch {
+            // Unparseable local value — leave it alone, don't overwrite.
+          }
+        }
+        if (!localIsMissing) continue; // local wins
+
         try {
           localStorage.setItem(localKey, JSON.stringify(cloudVal));
           filled++;
