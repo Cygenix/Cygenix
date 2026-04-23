@@ -49,32 +49,117 @@ let CygenixConnections = (function () {
   const LS_ACTIVE = 'cygenix_project_connections';
   const LS_SAVED  = 'cygenix_saved_connections';
 
-  // ── Identity: MSAL-first, unified ───────────────────────────────────────
-  // Returns the current user's stable identifier (MSAL localAccountId GUID)
-  // or '' if nobody's signed in. Must match getUserId() in the sync file —
-  // if they disagree, one side writes under one uid and the other reads
-  // under another, and data appears to vanish.
+  // ── Identity: unified with cygenix-cosmos-sync.js ───────────────────────
+  // Returns the current user's email (lowercase), or '' if nobody's signed
+  // in. This MUST match getUserId() in the sync file — if they disagree,
+  // one side writes under one uid and the other reads under another, and
+  // data appears to vanish.
+  //
+  // HISTORY: Previously read MSAL.localAccountId (a GUID) and required the
+  // msal-browser library to be loaded as a global on the page. But many
+  // pages (including dashboard.html) don't load msal-browser, so this
+  // silently returned '' everywhere, and every setActive()/save() call
+  // bailed out without persisting. Rewritten 2026-04-23 to use the same
+  // fallback chain as the sync file's getUserId() — which works whether
+  // MSAL is loaded or not by reading MSAL's localStorage cache directly.
+  //
+  // NOTE: Now returns an email (e.g. 'user@example.com') not a GUID. The
+  // readBlob() callers below have been left unchanged — they read a
+  // per-user-keyed blob, and the key value has changed from GUID to email,
+  // but the structural shape is identical, so older GUID-keyed entries
+  // simply become orphaned. migrateLegacyBlob() below handles one-time
+  // rescue of data stored under the old GUID key.
   function currentUserTag() {
+    // Method 1: MSAL library loaded as a global (works when pages include
+    // msal-browser, e.g. login.html).
     try {
-      if (typeof msal === 'undefined') return '';
-      // Reuse MSAL's existing localStorage cache; construct a lightweight
-      // PublicClientApplication just to read accounts. This is safe to call
-      // repeatedly — MSAL de-dupes internally.
-      const msalApp = new msal.PublicClientApplication({
-        auth: {
-          clientId: MSAL_CLIENT_ID,
-          authority: MSAL_AUTHORITY,
-          knownAuthorities: MSAL_KNOWN_AUTHORITIES,
-        },
-        cache: { cacheLocation: 'localStorage' },
-      });
-      const accounts = msalApp.getAllAccounts() || [];
-      if (!accounts.length) return '';
-      // localAccountId is the OID — stable across IdPs, not user-editable.
-      const id = accounts[0].localAccountId || '';
-      return id.toLowerCase().trim();
-    } catch {
-      return '';
+      if (typeof msal !== 'undefined') {
+        const msalApp = new msal.PublicClientApplication({
+          auth: {
+            clientId:         MSAL_CLIENT_ID,
+            authority:        MSAL_AUTHORITY,
+            knownAuthorities: MSAL_KNOWN_AUTHORITIES,
+          },
+          cache: { cacheLocation: 'localStorage' },
+        });
+        const accounts = msalApp.getAllAccounts() || [];
+        if (accounts.length) {
+          const a = accounts[0];
+          const id = (a.username || a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '').trim().toLowerCase();
+          if (id) return id;
+        }
+      }
+    } catch {}
+
+    // Method 2: Legacy custom-shape session/local entry
+    try {
+      const entraRaw = sessionStorage.getItem('cygenix_entra_account')
+                    || localStorage.getItem('cygenix_entra_account');
+      if (entraRaw) {
+        const u = JSON.parse(entraRaw);
+        const id = (u.email || u.userId || '').trim().toLowerCase();
+        if (id) return id;
+      }
+    } catch {}
+
+    // Method 3: cygenix_user object (Netlify Identity era)
+    try {
+      const raw = sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        const email = u.email || u.user?.email;
+        if (email) return email.trim().toLowerCase();
+      }
+    } catch {}
+
+    // Method 4: decode cygenix_token JWT directly — handles URL-safe base64
+    // and missing padding.
+    try {
+      const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
+      if (token && token.split('.').length === 3) {
+        let b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        const claims = JSON.parse(atob(b64));
+        if (claims?.email)              return claims.email.trim().toLowerCase();
+        if (claims?.preferred_username) return claims.preferred_username.trim().toLowerCase();
+        if (claims?.sub && String(claims.sub).includes('@')) return String(claims.sub).trim().toLowerCase();
+      }
+    } catch {}
+
+    return '';
+  }
+
+  // ── One-time migration of GUID-keyed entries ────────────────────────────
+  // Before 2026-04-23 this module keyed its blobs by MSAL localAccountId
+  // (a GUID). Now it keys by email. Entries saved under the old GUID would
+  // be orphaned. On first call for a given key, if we find exactly one
+  // non-email-looking top-level key in the blob AND the current user's
+  // email slot is empty, we move the data across. Conservative: doesn't
+  // run if the user has data under both keys, doesn't run if blob shape
+  // is ambiguous.
+  const _migratedKeys = new Set();
+  function migrateLegacyBlob(key) {
+    if (_migratedKeys.has(key)) return;
+    _migratedKeys.add(key);
+    const email = currentUserTag();
+    if (!email) return;
+    let blob;
+    try { blob = JSON.parse(localStorage.getItem(key) || '{}'); } catch { return; }
+    if (!blob || typeof blob !== 'object' || Array.isArray(blob)) return;
+    const topKeys = Object.keys(blob);
+    if (!topKeys.length) return;
+    // Already migrated — user's email slot is populated
+    if (blob[email]) return;
+    // If there's exactly one top-level key and it's a GUID-shaped value,
+    // migrate it under the user's email.
+    const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const guidKeys = topKeys.filter(k => GUID_RE.test(k));
+    if (guidKeys.length === 1) {
+      blob[email] = blob[guidKeys[0]];
+      try {
+        localStorage.setItem(key, JSON.stringify(blob));
+        console.log(`[CygenixConnections] Migrated ${key} from GUID to email`);
+      } catch {}
     }
   }
 
@@ -111,6 +196,7 @@ let CygenixConnections = (function () {
         tgtFnUrl: '', tgtFnKey: '',
       };
     }
+    migrateLegacyBlob(LS_ACTIVE);
     const blob = readBlob(LS_ACTIVE);
     const mine = (blob[uid] && typeof blob[uid] === 'object') ? blob[uid] : {};
     return {
@@ -200,6 +286,7 @@ let CygenixConnections = (function () {
   function savedGetAll() {
     const uid = currentUserTag();
     if (!uid) return [];
+    migrateLegacyBlob(LS_SAVED);
     const blob = readBlob(LS_SAVED);
     const arr = blob[uid];
     return Array.isArray(arr) ? arr : [];
