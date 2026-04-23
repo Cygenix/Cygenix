@@ -52,6 +52,30 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 .stat-num.red{color:var(--red)}
 .stat-num.blue{color:var(--accent)}
 .stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em}
+/* ── AI narrative ───────────────────────────────────────────────────────────── */
+.narrative-section{padding:1.75rem 2.5rem;border-bottom:0.5px solid var(--border);background:linear-gradient(180deg,#fafbfe 0%,#ffffff 100%)}
+.narrative-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.9rem;gap:1rem}
+.narrative-title{font-size:12px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;display:inline-flex;align-items:center;gap:8px}
+.narrative-badge{display:inline-flex;align-items:center;gap:4px;background:var(--accent-light);color:var(--accent);font-size:10px;font-weight:500;padding:2px 8px;border-radius:100px;letter-spacing:0.04em;text-transform:none}
+.narrative-regen{background:none;border:0.5px solid var(--border2);color:var(--text2);font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;font-family:var(--sans);display:inline-flex;align-items:center;gap:4px;transition:all 0.15s}
+.narrative-regen:hover{background:var(--accent-light);color:var(--accent);border-color:var(--accent)}
+.narrative-regen:disabled{opacity:0.4;cursor:wait}
+.narrative-body{font-size:14px;line-height:1.75;color:var(--text)}
+.narrative-body p{margin-bottom:0.8rem}
+.narrative-body p:last-child{margin-bottom:0}
+.narrative-body strong{font-weight:500;color:var(--text)}
+.narrative-skeleton{display:flex;flex-direction:column;gap:8px}
+.narrative-skeleton div{height:12px;border-radius:4px;background:linear-gradient(90deg,#eef0f5 0%,#f6f7fa 50%,#eef0f5 100%);background-size:200% 100%;animation:shimmer 1.4s infinite}
+.narrative-skeleton div:nth-child(1){width:92%}
+.narrative-skeleton div:nth-child(2){width:88%}
+.narrative-skeleton div:nth-child(3){width:76%}
+.narrative-skeleton div:nth-child(4){width:64%}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.narrative-error{font-size:12px;color:var(--amber);background:var(--amber-light);padding:0.6rem 0.75rem;border-radius:8px}
+@media print{
+  .narrative-regen{display:none}
+  .narrative-section{background:#fff !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
 /* ── Sections ───────────────────────────────────────────────────────────────── */
 .section{padding:1.75rem 2.5rem;border-bottom:0.5px solid var(--border)}
 .section:last-child{border-bottom:none}
@@ -166,6 +190,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
     <div class="stat-cell">
       <div class="stat-num blue" id="stat-wasis">0</div>
       <div class="stat-label">Was/Is rules</div>
+    </div>
+  </div>
+  <!-- AI NARRATIVE -->
+  <div class="narrative-section" id="narrative-section">
+    <div class="narrative-head">
+      <div class="narrative-title">
+        Executive summary
+        <span class="narrative-badge">AI-generated</span>
+      </div>
+      <button class="narrative-regen" id="narrative-regen-btn" onclick="regenerateNarrative()" title="Regenerate narrative">
+        ↻ Regenerate
+      </button>
+    </div>
+    <div class="narrative-body" id="narrative-body">
+      <div class="narrative-skeleton">
+        <div></div><div></div><div></div><div></div>
+      </div>
     </div>
   </div>
   <!-- PROJECT DETAILS -->
@@ -499,6 +540,10 @@ function renderReport(d) {
   set('footer-date', new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'}));
   // Reconciliation — shown only if the run had recon data
   renderReconSection(d.reconciliation || []);
+  // Stash data globally so the regenerate button can access it
+  window._cygenixReportData = d;
+  // Kick off narrative — uses cache if present
+  loadNarrative(d, false);
 }
 
 // ── Reconciliation section ────────────────────────────────────────────────────
@@ -543,6 +588,141 @@ function renderReconSection(entries) {
       + '<td>' + passBadge + '</td>'
       + '</tr>';
   }).join('');
+}
+
+// ── AI narrative ──────────────────────────────────────────────────────────────
+// Generates an executive-summary paragraph via the Cygenix backend, which calls
+// Anthropic's API server-side (the API key is NEVER exposed to the frontend).
+//
+// Endpoint: POST {API_BASE}/api/narrative
+//   Request body: { report: <slim payload>, migrationId: string }
+//   Response:     { narrative: string }
+//
+// Caching: the generated narrative is stored on the report object under
+// `aiNarrative` and re-persisted to localStorage so it survives reloads and
+// matches whatever ends up in the saved Cosmos record.
+
+const NARRATIVE_API_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
+
+function loadNarrative(d, forceRegenerate) {
+  const body = document.getElementById('narrative-body');
+  const btn  = document.getElementById('narrative-regen-btn');
+  if (!body) return;
+
+  // Use cached narrative if we have one and not forcing regeneration
+  if (!forceRegenerate && d.aiNarrative && typeof d.aiNarrative === 'string') {
+    body.innerHTML = formatNarrative(d.aiNarrative);
+    return;
+  }
+
+  // Show skeleton while loading
+  body.innerHTML = '<div class="narrative-skeleton"><div></div><div></div><div></div><div></div></div>';
+  if (btn) btn.disabled = true;
+
+  // Build a slim payload — we don't send column mapping, PII, or connection
+  // strings to the LLM. Just the shape of the migration and its outcome.
+  const payload = buildNarrativePayload(d);
+
+  fetch(NARRATIVE_API_BASE + '/api/narrative', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ report: payload, migrationId: d.id || null })
+  })
+  .then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  })
+  .then(resp => {
+    const narrative = resp && resp.narrative;
+    if (!narrative) throw new Error('Empty response');
+    body.innerHTML = formatNarrative(narrative);
+    // Cache on the report object and persist back
+    d.aiNarrative = narrative;
+    try {
+      const key = localStorage.getItem('cygenix_report') ? 'cygenix_report' : null;
+      if (key) localStorage.setItem(key, JSON.stringify(d));
+      else sessionStorage.setItem('cygenix_report', JSON.stringify(d));
+    } catch (e) { /* storage full / disabled — narrative will regenerate next load */ }
+  })
+  .catch(err => {
+    body.innerHTML = '<div class="narrative-error">Unable to generate summary at this time. You can try again using the regenerate button. (' + (err.message || 'network error') + ')</div>';
+  })
+  .finally(() => { if (btn) btn.disabled = false; });
+}
+
+function buildNarrativePayload(d) {
+  const totalRows = d.tables?.reduce((s,t) => s + (t.sourceRows||0), 0) || d.totalRows || 0;
+  const inserted  = d.tables?.reduce((s,t) => s + (t.insertedRows||0), 0) || d.insertedRows || 0;
+  const errors    = d.tables?.reduce((s,t) => s + (t.errors||0), 0) || d.errors || 0;
+
+  let durationSec = null;
+  if (d.startedAt && d.completedAt) {
+    durationSec = Math.round((new Date(d.completedAt) - new Date(d.startedAt)) / 1000);
+  }
+
+  // Reconciliation summary — just counts, no raw values
+  let recon = null;
+  if (Array.isArray(d.reconciliation) && d.reconciliation.length > 0) {
+    recon = {
+      total:   d.reconciliation.length,
+      passed:  d.reconciliation.filter(e => e.passed === true).length,
+      warned:  d.reconciliation.filter(e => e.passed === false).length,
+      skipped: d.reconciliation.filter(e => e.passed !== true && e.passed !== false).length
+    };
+  }
+
+  // Per-table outcome — name + counts only
+  const tables = (d.tables || []).map(t => ({
+    name: t.name,
+    sourceRows: t.sourceRows || 0,
+    insertedRows: t.insertedRows || 0,
+    errors: t.errors || 0,
+    status: t.status || (t.errors > 0 ? 'partial' : 'success')
+  }));
+
+  return {
+    projectName:    d.projectName || null,
+    sourceSystem:   d.sourceSystem || null,
+    targetSystem:   d.targetSystem || null,
+    isProjectReport: !!d.isProjectReport,
+    totalRows, inserted, errors,
+    tableCount:     tables.length || 1,
+    durationSec,
+    wasisRuleCount: d.wasisRuleCount || 0,
+    wasisColCount:  d.wasisColCount || 0,
+    warningCount:   (d.warnings || []).length,
+    warnings:       (d.warnings || []).slice(0, 5), // cap to avoid bloat
+    columnsMapped:  d.columnMapping?.length || d.columnsMapped || 0,
+    rowsBefore:     d.rowsBefore ?? null,
+    rowsAfter:      d.rowsAfter ?? null,
+    reconciliation: recon,
+    tables,
+    stepCount:      (d.steps || []).length,
+    stepsPassed:    (d.steps || []).filter(s => s.status === 'passed').length,
+    stepsFailed:    (d.steps || []).filter(s => s.status === 'failed').length
+  };
+}
+
+// Turn the plain-text narrative into safe HTML paragraphs. We intentionally do
+// NOT render arbitrary HTML from the model — split on double-newlines and escape.
+function formatNarrative(text) {
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // Allow simple **bold** → <strong>, applied after escaping
+  const bold = s => s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  return text
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean)
+    .map(p => '<p>' + bold(esc(p)) + '</p>')
+    .join('');
+}
+
+function regenerateNarrative() {
+  const d = window._cygenixReportData;
+  if (!d) return;
+  // Clear the cached version so loadNarrative fetches fresh
+  delete d.aiNarrative;
+  loadNarrative(d, true);
 }
 
 function buildDemoData() {
