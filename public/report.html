@@ -56,7 +56,6 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 .narrative-section{padding:1.75rem 2.5rem;border-bottom:0.5px solid var(--border);background:linear-gradient(180deg,#fafbfe 0%,#ffffff 100%)}
 .narrative-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.9rem;gap:1rem}
 .narrative-title{font-size:12px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;display:inline-flex;align-items:center;gap:8px}
-.narrative-badge{display:inline-flex;align-items:center;gap:4px;background:var(--accent-light);color:var(--accent);font-size:10px;font-weight:500;padding:2px 8px;border-radius:100px;letter-spacing:0.04em;text-transform:none}
 .narrative-regen{background:none;border:0.5px solid var(--border2);color:var(--text2);font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;font-family:var(--sans);display:inline-flex;align-items:center;gap:4px;transition:all 0.15s}
 .narrative-regen:hover{background:var(--accent-light);color:var(--accent);border-color:var(--accent)}
 .narrative-regen:disabled{opacity:0.4;cursor:wait}
@@ -197,7 +196,6 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
     <div class="narrative-head">
       <div class="narrative-title">
         Executive summary
-        <span class="narrative-badge">AI-generated</span>
       </div>
       <button class="narrative-regen" id="narrative-regen-btn" onclick="regenerateNarrative()" title="Regenerate narrative">
         ↻ Regenerate
@@ -816,10 +814,12 @@ async function saveToCygenix() {
 function exportToExcel() {
   const btn = document.getElementById('excel-btn');
   btn.textContent = '⏳ Building…'; btn.disabled = true;
-  // Load SheetJS on demand
+  // Load SheetJS (xlsx-js-style fork — same API as xlsx@0.18.5 but supports
+  // cell styling on write: bold, fills, borders, alignment, number formats).
+  // The stock xlsx community edition silently drops .s style properties.
   if (window.XLSX) { doExport(); return; }
   const s = document.createElement('script');
-  s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  s.src = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
   s.onload  = doExport;
   s.onerror = () => { alert('Could not load Excel library. Check your internet connection.'); btn.textContent='📊 Export to Excel'; btn.disabled=false; };
   document.head.appendChild(s);
@@ -840,6 +840,111 @@ function doExport() {
     const secs = d.startedAt && d.completedAt
       ? Math.round((new Date(d.completedAt) - new Date(d.startedAt)) / 1000) : 0;
     const duration = secs < 60 ? secs+'s' : Math.floor(secs/60)+'m '+secs%60+'s';
+
+    // ── Style palette ─────────────────────────────────────────────────────────
+    // Matches the HTML report: accent #1A56E8, green #059669, red #DC2626,
+    // amber #D97706. Colour codes are ARGB (FF = fully opaque).
+    const BORDER_THIN   = { style: 'thin',   color: { rgb: 'E2E6EE' } };
+    const BORDER_MEDIUM = { style: 'medium', color: { rgb: '1A56E8' } };
+    const ALL_BORDERS_THIN = { top: BORDER_THIN, bottom: BORDER_THIN, left: BORDER_THIN, right: BORDER_THIN };
+
+    const STYLE = {
+      title: {
+        font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '0F1117' } },
+        alignment: { vertical: 'center', horizontal: 'left', indent: 1 }
+      },
+      sectionHeader: {
+        font: { bold: true, sz: 11, color: { rgb: '1A56E8' } },
+        alignment: { vertical: 'center' },
+        border: { bottom: BORDER_MEDIUM }
+      },
+      tableHeader: {
+        font: { bold: true, sz: 11, color: { rgb: 'FFFFFF' } },
+        fill: { fgColor: { rgb: '1A56E8' } },
+        alignment: { vertical: 'center', horizontal: 'left', wrapText: true },
+        border: ALL_BORDERS_THIN
+      },
+      label: {
+        font: { bold: true, sz: 10, color: { rgb: '4B5563' } },
+        alignment: { vertical: 'center' },
+        border: ALL_BORDERS_THIN
+      },
+      value: {
+        font: { sz: 10, color: { rgb: '111827' } },
+        alignment: { vertical: 'center', wrapText: true },
+        border: ALL_BORDERS_THIN
+      },
+      numeric: {
+        font: { sz: 10, color: { rgb: '111827' } },
+        alignment: { vertical: 'center', horizontal: 'right' },
+        numFmt: '#,##0',
+        border: ALL_BORDERS_THIN
+      },
+      statusSuccess: {
+        font: { bold: true, sz: 10, color: { rgb: '059669' } },
+        fill: { fgColor: { rgb: 'ECFDF5' } },
+        alignment: { vertical: 'center', horizontal: 'center' },
+        border: ALL_BORDERS_THIN
+      },
+      statusPartial: {
+        font: { bold: true, sz: 10, color: { rgb: 'D97706' } },
+        fill: { fgColor: { rgb: 'FFFBEB' } },
+        alignment: { vertical: 'center', horizontal: 'center' },
+        border: ALL_BORDERS_THIN
+      },
+      statusFailed: {
+        font: { bold: true, sz: 10, color: { rgb: 'DC2626' } },
+        fill: { fgColor: { rgb: 'FEF2F2' } },
+        alignment: { vertical: 'center', horizontal: 'center' },
+        border: ALL_BORDERS_THIN
+      },
+      narrativeTitle: {
+        font: { bold: true, sz: 18, color: { rgb: '0F1117' } },
+        alignment: { vertical: 'center' }
+      },
+      narrativeProse: {
+        font: { sz: 11, color: { rgb: '111827' } },
+        alignment: { vertical: 'top', horizontal: 'left', wrapText: true }
+      }
+    };
+
+    // Pick status style from status string
+    const statusStyle = (s) => {
+      const v = String(s||'').toLowerCase();
+      if (['success','passed','pass'].includes(v)) return STYLE.statusSuccess;
+      if (['partial','warned','warn','skipped'].includes(v)) return STYLE.statusPartial;
+      if (['failed','fail','error'].includes(v)) return STYLE.statusFailed;
+      return STYLE.value;
+    };
+
+    // Apply a style to every populated cell in a column range
+    const styleRange = (ws, r0, r1, c0, c1, style) => {
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          if (!ws[addr]) ws[addr] = { t: 's', v: '' };
+          ws[addr].s = style;
+        }
+      }
+    };
+
+    // Apply numeric format only where there's a number
+    const styleNumericRange = (ws, r0, r1, c0, c1) => {
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          const addr = XLSX.utils.encode_cell({ r, c });
+          if (!ws[addr]) continue;
+          // Convert numeric strings to numbers so numFmt applies
+          if (ws[addr].t === 's' && /^-?\d+(\.\d+)?$/.test(String(ws[addr].v))) {
+            ws[addr].v = Number(ws[addr].v);
+            ws[addr].t = 'n';
+          }
+          ws[addr].s = STYLE.numeric;
+        }
+      }
+    };
+
     // ── Sheet 1: Summary ──────────────────────────────────────────────────────
     const summaryRows = [
       ['Cygenix — Conversion Report', '', '', ''],
@@ -876,10 +981,106 @@ function doExport() {
       });
     }
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
-    // Style column widths
-    wsSummary['!cols'] = [{wch:22},{wch:35},{wch:22},{wch:18}];
-    // Bold the header
-    if (wsSummary['A1']) wsSummary['A1'].s = { font:{bold:true,sz:14} };
+    // Column widths
+    wsSummary['!cols'] = [{wch:24},{wch:38},{wch:24},{wch:20}];
+    // Row heights — title row taller, section headers medium
+    wsSummary['!rows'] = summaryRows.map((r, i) => {
+      if (i === 0) return { hpt: 30 };
+      if (r[0] === 'MIGRATION SUMMARY' || r[0] === 'PROJECT STEPS') return { hpt: 22 };
+      return { hpt: 18 };
+    });
+    // Merge title row across all four columns
+    wsSummary['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:3} }];
+
+    // Apply styles — row by row so we can handle section headers specially
+    summaryRows.forEach((row, r) => {
+      if (r === 0) {
+        // Title row
+        styleRange(wsSummary, 0, 0, 0, 3, STYLE.title);
+      } else if (row[0] === 'MIGRATION SUMMARY' || row[0] === 'PROJECT STEPS') {
+        // Section header
+        styleRange(wsSummary, r, r, 0, 3, STYLE.sectionHeader);
+        wsSummary['!merges'].push({ s:{r, c:0}, e:{r, c:3} });
+      } else if (row[0] === 'STATUS') {
+        // Status row — label left, value styled by outcome
+        const addrLabel = XLSX.utils.encode_cell({r, c:0});
+        const addrValue = XLSX.utils.encode_cell({r, c:1});
+        if (wsSummary[addrLabel]) wsSummary[addrLabel].s = STYLE.label;
+        if (wsSummary[addrValue]) wsSummary[addrValue].s = statusStyle(row[1]);
+        wsSummary['!merges'].push({ s:{r, c:1}, e:{r, c:3} });
+      } else if (row[0] === 'Step' && row[1] === 'Type') {
+        // Project steps table header
+        styleRange(wsSummary, r, r, 0, 3, STYLE.tableHeader);
+      } else if (row[0] && row[0] !== '') {
+        // Data row — label in col A, value in col B; optional label in C, value in D
+        const addrA = XLSX.utils.encode_cell({r, c:0});
+        const addrB = XLSX.utils.encode_cell({r, c:1});
+        const addrC = XLSX.utils.encode_cell({r, c:2});
+        const addrD = XLSX.utils.encode_cell({r, c:3});
+        if (wsSummary[addrA]) wsSummary[addrA].s = STYLE.label;
+        if (wsSummary[addrB]) wsSummary[addrB].s = STYLE.value;
+        if (row[2] && row[2] !== '') {
+          if (wsSummary[addrC]) wsSummary[addrC].s = STYLE.label;
+          if (wsSummary[addrD]) wsSummary[addrD].s = (typeof row[3] === 'number') ? STYLE.numeric : STYLE.value;
+        }
+      }
+    });
+    // Freeze title + metadata rows
+    wsSummary['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+    // ── Sheet 0: Executive Summary (narrative, if available) ──────────────────
+    // Added as the FIRST sheet so it's what opens by default. Splits the
+    // narrative on paragraph breaks so each paragraph lives in its own row.
+    if (d.aiNarrative && typeof d.aiNarrative === 'string' && d.aiNarrative.trim()) {
+      const paragraphs = d.aiNarrative
+        .split(/\n\s*\n/)
+        .map(p => p.replace(/\*\*(.+?)\*\*/g, '$1').trim()) // strip markdown bold
+        .filter(Boolean);
+      const narrRows = [
+        ['Executive Summary'],
+        [''],
+        ['Project', d.projectName || '—'],
+        ['Report ID', reportId],
+        ['Date', fmtDate(d.completedAt || now)],
+        ['']
+      ];
+      paragraphs.forEach(p => {
+        narrRows.push([p]);
+        narrRows.push(['']);
+      });
+      const wsNarr = XLSX.utils.aoa_to_sheet(narrRows);
+      wsNarr['!cols'] = [{wch:24},{wch:100}];
+
+      // Style title
+      if (wsNarr['A1']) wsNarr['A1'].s = STYLE.narrativeTitle;
+
+      // Metadata block (rows 2-4 → 0-indexed 2,3,4)
+      for (let r = 2; r <= 4; r++) {
+        const aAddr = XLSX.utils.encode_cell({r, c:0});
+        const bAddr = XLSX.utils.encode_cell({r, c:1});
+        if (wsNarr[aAddr]) wsNarr[aAddr].s = STYLE.label;
+        if (wsNarr[bAddr]) wsNarr[bAddr].s = STYLE.value;
+      }
+
+      // Narrative paragraph cells — styled prose
+      for (let i = 6; i < narrRows.length; i += 2) {
+        const addr = XLSX.utils.encode_cell({r:i, c:0});
+        if (wsNarr[addr]) wsNarr[addr].s = STYLE.narrativeProse;
+      }
+      // Merge A:B on each paragraph row so the prose spans the width
+      wsNarr['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:1} }];
+      for (let i = 6; i < narrRows.length; i += 2) {
+        wsNarr['!merges'].push({ s:{r:i,c:0}, e:{r:i,c:1} });
+      }
+      // Row heights: title taller, paragraphs generous
+      wsNarr['!rows'] = narrRows.map((_, i) => {
+        if (i === 0) return { hpt: 32 };
+        if (i >= 6 && i % 2 === 0) return { hpt: 80 };
+        return { hpt: 18 };
+      });
+      XLSX.utils.book_append_sheet(wb, wsNarr, 'Executive Summary');
+    }
+
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
     // ── Sheet 2: Migration Results ────────────────────────────────────────────
     const tables = d.tables || [{ name: d.targetTable||'migration', sourceRows: totalRows, insertedRows: inserted, errors, batches: Math.ceil(totalRows/100), status: errors===0?'success':'partial' }];
@@ -891,7 +1092,20 @@ function doExport() {
         d.sourceFile || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
     ]));
     const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
-    wsResults['!cols'] = [{wch:35},{wch:35},{wch:14},{wch:12},{wch:10},{wch:10},{wch:12}];
+    wsResults['!cols'] = [{wch:35},{wch:35},{wch:14},{wch:12},{wch:10},{wch:10},{wch:14}];
+    wsResults['!rows'] = resultsData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+    // Header row
+    styleRange(wsResults, 0, 0, 0, 6, STYLE.tableHeader);
+    // Data rows — text cols (0,1), numeric (2,3,4,5), status (6)
+    if (resultsData.length > 1) {
+      styleRange(wsResults, 1, resultsData.length-1, 0, 1, STYLE.value);
+      styleNumericRange(wsResults, 1, resultsData.length-1, 2, 5);
+      for (let r = 1; r < resultsData.length; r++) {
+        const addr = XLSX.utils.encode_cell({r, c:6});
+        if (wsResults[addr]) wsResults[addr].s = statusStyle(resultsData[r][6]);
+      }
+    }
+    wsResults['!freeze'] = { xSplit: 0, ySplit: 1 };
     XLSX.utils.book_append_sheet(wb, wsResults, 'Migration Results');
     // ── Sheet 3: Column Mapping ───────────────────────────────────────────────
     if (d.columnMapping && d.columnMapping.length > 0) {
@@ -908,6 +1122,12 @@ function doExport() {
       ]));
       const wsMap = XLSX.utils.aoa_to_sheet(mapData);
       wsMap['!cols'] = [{wch:30},{wch:28},{wch:30},{wch:28},{wch:18},{wch:14},{wch:35},{wch:40}];
+      wsMap['!rows'] = mapData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+      styleRange(wsMap, 0, 0, 0, 7, STYLE.tableHeader);
+      if (mapData.length > 1) {
+        styleRange(wsMap, 1, mapData.length-1, 0, 7, STYLE.value);
+      }
+      wsMap['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsMap, 'Column Mapping');
     }
     // ── Sheet 4: Execution Log (project reports) ──────────────────────────────
@@ -923,7 +1143,20 @@ function doExport() {
         ]);
       });
       const wsLog = XLSX.utils.aoa_to_sheet(logData);
-      wsLog['!cols'] = [{wch:35},{wch:14},{wch:12},{wch:14},{wch:80}];
+      wsLog['!cols'] = [{wch:35},{wch:14},{wch:14},{wch:16},{wch:80}];
+      wsLog['!rows'] = logData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+      styleRange(wsLog, 0, 0, 0, 4, STYLE.tableHeader);
+      if (logData.length > 1) {
+        styleRange(wsLog, 1, logData.length-1, 0, 1, STYLE.value);
+        // Status column
+        for (let r = 1; r < logData.length; r++) {
+          const addr = XLSX.utils.encode_cell({r, c:2});
+          if (wsLog[addr]) wsLog[addr].s = statusStyle(logData[r][2]);
+        }
+        styleNumericRange(wsLog, 1, logData.length-1, 3, 3);
+        styleRange(wsLog, 1, logData.length-1, 4, 4, STYLE.value);
+      }
+      wsLog['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsLog, 'Execution Log');
     }
     // ── Sheet 5: Was/Is rules ────────────────────────────────────────────────
@@ -935,6 +1168,12 @@ function doExport() {
       ]));
       const wsWasis = XLSX.utils.aoa_to_sheet(wasisData);
       wsWasis['!cols'] = [{wch:25},{wch:30},{wch:30},{wch:30}];
+      wsWasis['!rows'] = wasisData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+      styleRange(wsWasis, 0, 0, 0, 3, STYLE.tableHeader);
+      if (wasisData.length > 1) {
+        styleRange(wsWasis, 1, wasisData.length-1, 0, 3, STYLE.value);
+      }
+      wsWasis['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsWasis, 'Was-Is Rules');
     }
     // ── Sheet 6: Warnings ─────────────────────────────────────────────────────
@@ -942,6 +1181,20 @@ function doExport() {
       const warnData = [['#', 'Warning']].concat(d.warnings.map((w,i) => [i+1, w]));
       const wsWarn = XLSX.utils.aoa_to_sheet(warnData);
       wsWarn['!cols'] = [{wch:5},{wch:90}];
+      wsWarn['!rows'] = warnData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 24 });
+      styleRange(wsWarn, 0, 0, 0, 1, STYLE.tableHeader);
+      if (warnData.length > 1) {
+        styleNumericRange(wsWarn, 1, warnData.length-1, 0, 0);
+        // Warnings text in amber tone to mirror HTML styling
+        const warnTextStyle = {
+          font: { sz: 10, color: { rgb: '92400E' } },
+          fill: { fgColor: { rgb: 'FFFBEB' } },
+          alignment: { vertical: 'center', wrapText: true },
+          border: ALL_BORDERS_THIN
+        };
+        styleRange(wsWarn, 1, warnData.length-1, 1, 1, warnTextStyle);
+      }
+      wsWarn['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsWarn, 'Warnings');
     }
     // ── Sheet 7: Reconciliation ──────────────────────────────────────────────
@@ -972,8 +1225,22 @@ function doExport() {
       wsRecon['!cols'] = [
         {wch:35},{wch:30},{wch:30},{wch:16},{wch:22},{wch:22},
         {wch:18},{wch:20},
-        {wch:16},{wch:16},{wch:14},{wch:12},{wch:10}
+        {wch:16},{wch:16},{wch:14},{wch:12},{wch:12}
       ];
+      wsRecon['!rows'] = reconData.map((_, i) => i === 0 ? { hpt: 32 } : { hpt: 18 });
+      styleRange(wsRecon, 0, 0, 0, 12, STYLE.tableHeader);
+      if (reconData.length > 1) {
+        // Text columns (0-7)
+        styleRange(wsRecon, 1, reconData.length-1, 0, 7, STYLE.value);
+        // Numeric columns (8-11): source, target, delta, tolerance
+        styleNumericRange(wsRecon, 1, reconData.length-1, 8, 11);
+        // Result column (12)
+        for (let r = 1; r < reconData.length; r++) {
+          const addr = XLSX.utils.encode_cell({r, c:12});
+          if (wsRecon[addr]) wsRecon[addr].s = statusStyle(reconData[r][12]);
+        }
+      }
+      wsRecon['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsRecon, 'Reconciliation');
     }
     // Generate filename
