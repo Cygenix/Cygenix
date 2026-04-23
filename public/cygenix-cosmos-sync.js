@@ -18,31 +18,13 @@ const CygenixSync = (() => {
 
   const FIELD_MAP = {
     jobs:'cygenix_jobs', project_settings:'cygenix_project_settings',
-    project_plan:'cygenix_project_plan',
-    // save() emits payload keys by mechanically stripping the 'cygenix_' prefix,
-    // so cygenix_project_connections becomes 'project_connections' in the
-    // payload — NOT 'connections'. Previously FIELD_MAP said
-    //   connections: 'cygenix_project_connections'
-    // which meant save() uploaded as 'project_connections' but load() looked
-    // for 'connections' and found nothing. Connection blobs were silently
-    // one-way: upstream only, never coming back down. Fixed to match.
-    project_connections:'cygenix_project_connections',
+    project_plan:'cygenix_project_plan', connections:'cygenix_project_connections',
     saved_connections:'cygenix_saved_connections',
     performance:'cygenix_performance', validation_sources:'cygenix_validation_sources',
     wasis_rules:'cygenix_wasis_rules', sql_scripts:'cygenix_sql_scripts',
     issues:'cygenix_issues', inventory:'cygenix_inventory',
     sys_params:'cygenix_sys_params',
   };
-
-  // Keys in SYNC_KEYS whose contents are ALREADY per-user-scoped internally
-  // (top-level object keyed by user id). These are NOT wiped by the
-  // user-switch protection in init() — doing so would nuke other users'
-  // data that legitimately lives in the same blob. See connections.js for
-  // how the scoping works.
-  const SELF_SCOPED_KEYS = new Set([
-    'cygenix_project_connections',
-    'cygenix_saved_connections',
-  ]);
 
   // Extract userId — MSAL-first (authoritative post-migration), with legacy
   // fallbacks for back-compat. Critical that this returns a stable value: the
@@ -143,16 +125,6 @@ const CygenixSync = (() => {
       try { const v = localStorage.getItem(key); if (v) payload[key.replace('cygenix_','')] = JSON.parse(v); } catch {}
     });
     if (!Object.keys(payload).length) return null;
-    // NOTE on multi-user blobs (cygenix_project_connections,
-    // cygenix_saved_connections): these are self-scoped JSON objects keyed
-    // internally by MSAL localAccountId. This save() uploads whatever the
-    // local blob contains, which will include OTHER users who have signed
-    // in on this device. That's correct for this device, but if a different
-    // device with a different subset of users also saves, each device's
-    // view of the blob can diverge. If that becomes a real problem, the
-    // Azure Function needs a server-side merge that unions the per-uid
-    // entries instead of replacing the whole blob. Out of scope for now
-    // (sole-user setup).
     const r = await callApi('save','POST',payload);
     if (r?.saved) console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
     return r;
@@ -172,14 +144,7 @@ const CygenixSync = (() => {
 
   async function forceLoad() {
     const data = await callApi('load','GET');
-    // Symmetric with load(): if cloud returns null or an empty object, bail
-    // without touching local. Previously forceLoad would happily "force-load"
-    // zero keys over a valid local copy — effectively a no-op, but the
-    // asymmetry was confusing and made recovery logic harder to reason about.
-    if (!data || !Object.keys(data).length) {
-      console.log('[CygenixSync] Force-load: no cloud data, keeping local');
-      return false;
-    }
+    if (!data) return false;
     let n = 0;
     Object.entries(FIELD_MAP).forEach(([f,k]) => {
       const v = data[f];
@@ -266,21 +231,14 @@ const CygenixSync = (() => {
     // ── Check if localStorage belongs to a DIFFERENT user ──────────────────
     // Normalise both sides before comparing — a casing or whitespace mismatch
     // here was previously enough to trigger a full local wipe. If they really
-    // differ, snapshot the old non-self-scoped data into sessionStorage first
-    // so the user has a recovery path within the same tab session.
-    //
-    // Self-scoped keys (cygenix_project_connections, cygenix_saved_connections)
-    // are NOT wiped on user-switch: they contain entries for every user who's
-    // ever signed in on this device, keyed internally by MSAL localAccountId.
-    // Wiping them here would nuke data that legitimately belongs to other
-    // users on the shared device.
+    // differ, snapshot the old data into sessionStorage first so the user has
+    // a recovery path within the same tab session.
     const storedUserId = (localStorage.getItem('cygenix_active_user') || '').trim().toLowerCase();
     const currentUserId = userId.trim().toLowerCase();
     if (storedUserId && storedUserId !== currentUserId) {
-      console.log('[CygenixSync] Different user detected — snapshotting and clearing legacy per-device data. Was:', storedUserId, 'Now:', currentUserId);
+      console.log('[CygenixSync] Different user detected — snapshotting and clearing local data. Was:', storedUserId, 'Now:', currentUserId);
       const snapshot = { wipedAt: new Date().toISOString(), wipedFrom: storedUserId, wipedFor: currentUserId, data: {} };
       SYNC_KEYS.forEach(k => {
-        if (SELF_SCOPED_KEYS.has(k)) return; // preserve — self-scoped internally
         const v = localStorage.getItem(k);
         if (v) snapshot.data[k] = v;
         localStorage.removeItem(k);
