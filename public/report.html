@@ -603,6 +603,7 @@ function renderReconSection(entries) {
 // matches whatever ends up in the saved Cosmos record.
 
 const NARRATIVE_API_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
+const NARRATIVE_FUNCTION_KEY = 'jATDgtsp1xeRT47ze_p4IUe_bAuq6yfbvo09cqnhKwYgAzFuroyRhA==';
 
 function loadNarrative(d, forceRegenerate) {
   const body = document.getElementById('narrative-body');
@@ -623,7 +624,7 @@ function loadNarrative(d, forceRegenerate) {
   // strings to the LLM. Just the shape of the migration and its outcome.
   const payload = buildNarrativePayload(d);
 
-  fetch(NARRATIVE_API_BASE + '/api/narrative', {
+  fetch(NARRATIVE_API_BASE + '/api/narrative?code=' + encodeURIComponent(NARRATIVE_FUNCTION_KEY), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ report: payload, migrationId: d.id || null })
