@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 <script src="/connections.js"></script>
-<script src="/nav.js"></script>
+<script src="/cygenix-sidebar.js"></script>
 <script src="/cygenix-params.js"></script>
 <script src="/cygenix-privacy.js"></script>
 <style>
@@ -27,7 +27,8 @@
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
 .logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
 .logo span{color:var(--accent)}
@@ -149,6 +150,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 </style>
 </head>
 <body>
+
+<div id="cyg-sidebar-mount" data-active="data-cleansing"></div>
 
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:1.25rem">
