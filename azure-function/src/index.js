@@ -724,3 +724,99 @@ app.http('data', {
     }
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE 3: /api/narrative — AI-generated executive summary for migration reports
+// Calls Anthropic's Messages API server-side so the API key never touches the
+// browser. Requires app setting: ANTHROPIC_API_KEY.
+//
+// Request body: { report: <slim payload>, migrationId?: string }
+// Response:     { narrative: string } on 200; { error: string } otherwise.
+// ─────────────────────────────────────────────────────────────────────────────
+const NARRATIVE_SYSTEM_PROMPT = `You are writing an executive summary paragraph for a database migration report.
+You will receive a JSON object describing the migration outcome. Write 2-3 short paragraphs of plain prose
+(no headings, no bullet points, no markdown beyond **bold** for emphasis of key numbers).
+
+Structure:
+1. Opening: state the outcome (complete success, partial success, or failure) and the scale (rows, tables, duration).
+2. Middle: contextualize and quantify — compute throughput (rows/sec) if duration is given, mention Was/Is
+   transformation rules applied if any, note reconciliation pass rate if present, flag warnings or errors.
+3. Closing: one line on data integrity / verification status.
+
+Rules:
+- Reference actual numbers from the payload. Round large numbers (e.g. "1.2 million rows" not "1,234,567").
+- Be factual and neutral. Do not editorialize, recommend, or speculate.
+- British English spelling. No emoji. No "the user" or "the client" — use passive voice or "this migration".
+- If errors > 0, be honest about that. If reconciliation warned, mention it.
+- Output only the prose. No preamble like "Here is the summary:".
+- Maximum 180 words.`;
+
+app.http('narrative', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'function',
+  route: 'narrative',
+  handler: async (req, ctx) => {
+
+    if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    try {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        ctx.log.error('ANTHROPIC_API_KEY not configured');
+        return err(500, 'Server not configured — ANTHROPIC_API_KEY missing');
+      }
+
+      const body = await req.json().catch(() => null);
+      if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
+
+      const report = body.report;
+      if (!report || typeof report !== 'object') {
+        return err(400, 'Missing report payload');
+      }
+
+      ctx.log(`narrative for migration: ${body.migrationId || '(no id)'}`);
+
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type':      'application/json',
+          'x-api-key':         apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model:      'claude-sonnet-4-5',
+          max_tokens: 600,
+          system:     NARRATIVE_SYSTEM_PROMPT,
+          messages: [{
+            role: 'user',
+            content: 'Migration report data:\n\n```json\n' + JSON.stringify(report, null, 2) + '\n```\n\nWrite the executive summary.'
+          }]
+        })
+      });
+
+      if (!resp.ok) {
+        const errText = await resp.text();
+        ctx.log.error('Anthropic API error', resp.status, errText);
+        return err(502, `Upstream error (${resp.status})`);
+      }
+
+      const data = await resp.json();
+      const narrative = (data.content || [])
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim();
+
+      if (!narrative) {
+        ctx.log.error('Empty narrative in Anthropic response');
+        return err(502, 'Empty response from model');
+      }
+
+      return ok({ narrative });
+
+    } catch (e) {
+      ctx.log.error('Narrative generation failed:', e.message, e.stack?.split('\n').slice(0,3).join(' | '));
+      return err(500, `Narrative error: ${e.message}`);
+    }
+  }
+});
