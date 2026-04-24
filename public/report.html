@@ -118,8 +118,68 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 .report-footer-logo{font-family:var(--serif);font-size:1rem;color:var(--text2)}
 .report-footer-logo span{color:var(--accent)}
 .report-footer-text{font-size:11px;color:var(--text3)}
+/* ── DataGrid controls (power-user mode) ────────────────────────────────────── */
+.grid-wrap{position:relative}
+.grid-toolbar{display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.75rem;padding:0.6rem 0.75rem;background:#fafbfe;border:0.5px solid var(--border);border-radius:8px;font-size:12px}
+.grid-toolbar-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-right:0.25rem}
+.grid-input{font-family:var(--sans);font-size:12px;padding:4px 8px;border:0.5px solid var(--border2);border-radius:6px;background:#fff;color:var(--text);outline:none;min-width:160px;transition:border-color 0.15s}
+.grid-input:focus{border-color:var(--accent)}
+.grid-select{font-family:var(--sans);font-size:12px;padding:4px 24px 4px 8px;border:0.5px solid var(--border2);border-radius:6px;background:#fff url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3e%3cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.3' fill='none' stroke-linecap='round'/%3e%3c/svg%3e") no-repeat right 8px center;color:var(--text);outline:none;appearance:none;cursor:pointer;transition:border-color 0.15s}
+.grid-select:focus{border-color:var(--accent)}
+.grid-chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-light);color:var(--accent);font-size:11px;font-family:var(--mono);padding:3px 8px;border-radius:100px;border:0.5px solid rgba(26,86,232,0.25)}
+.grid-chip-x{cursor:pointer;opacity:0.6;font-weight:500;padding:0 2px}
+.grid-chip-x:hover{opacity:1}
+.grid-btn{font-family:var(--sans);font-size:11px;padding:4px 10px;border:0.5px solid var(--border2);border-radius:6px;background:#fff;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.15s}
+.grid-btn:hover{background:var(--accent-light);color:var(--accent);border-color:var(--accent)}
+.grid-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.grid-btn-add{background:var(--accent-light);color:var(--accent);border-color:rgba(26,86,232,0.3);font-weight:500}
+.grid-btn-add:hover{background:var(--accent);color:#fff}
+.grid-spacer{flex:1}
+.grid-meta{font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
+/* Sortable header */
+.results-table th.sortable{cursor:pointer;user-select:none;transition:color 0.15s;position:relative}
+.results-table th.sortable:hover{color:var(--accent)}
+.results-table th .sort-ind{margin-left:4px;opacity:0.4;font-size:9px}
+.results-table th.sort-asc .sort-ind,.results-table th.sort-desc .sort-ind{opacity:1;color:var(--accent)}
+.results-table th.calc-col{background:#f0f5ff}
+/* Aggregate footer row */
+.results-table tfoot td{background:#f0f5ff;border-top:1.5px solid var(--accent);font-weight:500;font-family:var(--mono);font-size:12px;color:var(--accent);padding:0.55rem 0.75rem}
+.results-table tr.group-header td{background:#eef2f9;font-weight:500;font-size:12px;color:var(--text);border-top:0.5px solid var(--border2)}
+.results-table tr.group-header .group-count{color:var(--text3);font-weight:400;margin-left:6px;font-size:11px}
+.results-table td.calc-col{background:#fafbff;font-family:var(--mono)}
+/* Modal (for Add Column) */
+.grid-modal-backdrop{position:fixed;inset:0;background:rgba(15,17,23,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem}
+.grid-modal{background:#fff;border-radius:12px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden;font-size:13px}
+.grid-modal-head{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.grid-modal-head h3{font-family:var(--serif);font-size:1.1rem;font-weight:normal}
+.grid-modal-close{background:none;border:none;font-size:1.2rem;color:var(--text3);cursor:pointer;padding:0 4px}
+.grid-modal-body{padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.75rem}
+.grid-modal-body label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px}
+.grid-modal-body .help{font-size:11px;color:var(--text3);line-height:1.5;background:#f9fafb;padding:0.5rem 0.6rem;border-radius:6px}
+.grid-modal-body .help code{font-family:var(--mono);font-size:10px;background:#fff;padding:1px 4px;border-radius:3px;border:0.5px solid var(--border)}
+.grid-modal-body .err{font-size:11px;color:var(--red);background:var(--red-light);padding:0.4rem 0.6rem;border-radius:6px;display:none}
+.grid-modal-foot{padding:0.75rem 1.25rem;background:#f9fafb;display:flex;gap:0.5rem;justify-content:flex-end;border-top:0.5px solid var(--border)}
+.grid-modal-foot .grid-btn{padding:6px 14px;font-size:12px}
+/* Pivot panel */
+.pivot-panel{display:none;margin-top:0.5rem;padding:0.75rem;background:#fff;border:0.5px solid var(--border);border-radius:8px;grid-template-columns:repeat(3,1fr);gap:0.75rem}
+.pivot-panel.open{display:grid}
+.pivot-slot{min-height:60px}
+.pivot-slot label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:5px}
+.pivot-slot select{width:100%;font-family:var(--sans);font-size:12px;padding:4px 8px;border:0.5px solid var(--border2);border-radius:6px;background:#fff;color:var(--text);outline:none}
+/* Charts section */
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+.chart-card{background:#fafbfe;border:0.5px solid var(--border);border-radius:10px;padding:1rem 1.25rem 1.25rem}
+.chart-title{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.75rem}
+.chart-legend{display:flex;flex-wrap:wrap;gap:0.75rem;margin-top:0.75rem;font-size:11px;color:var(--text2)}
+.chart-legend-item{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono)}
+.chart-legend-swatch{width:10px;height:10px;border-radius:2px;display:inline-block}
+@media(max-width:700px){
+  .charts-grid{grid-template-columns:1fr}
+  .pivot-panel.open{grid-template-columns:1fr}
+}
 /* ── Print styles ───────────────────────────────────────────────────────────── */
 @media print{
+  .grid-toolbar,.pivot-panel{display:none !important}
   .toolbar{display:none}
   body{background:#fff}
   .report-wrap{margin:0;padding:0;max-width:100%}
@@ -262,19 +322,12 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   <!-- MIGRATION RESULTS PER TABLE -->
   <div class="section">
     <div class="section-title">Migration results</div>
-    <table class="results-table">
-      <thead>
-        <tr>
-          <th>Table</th>
-          <th>Source rows</th>
-          <th>Inserted</th>
-          <th>Errors</th>
-          <th>Batches</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-      <tbody id="results-tbody"></tbody>
-    </table>
+    <div class="grid-wrap" id="grid-results"></div>
+  </div>
+  <!-- CHARTS (visual summary) -->
+  <div class="section" id="charts-section" style="display:none">
+    <div class="section-title">Visual summary</div>
+    <div class="charts-grid" id="charts-grid"></div>
   </div>
   <!-- PROJECT STEPS (only for project reports) -->
   <div class="section" id="steps-section" style="display:none">
@@ -303,28 +356,13 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
     <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem">
       Source vs target aggregate comparison. A delta within tolerance is a pass.
     </div>
-    <table class="results-table">
-      <thead>
-        <tr>
-          <th>Step</th>
-          <th>Metric</th>
-          <th>Column</th>
-          <th>Group by</th>
-          <th>Group value</th>
-          <th style="text-align:right">Source</th>
-          <th style="text-align:right">Target</th>
-          <th style="text-align:right">Delta</th>
-          <th style="text-align:right">Tolerance</th>
-          <th>Result</th>
-        </tr>
-      </thead>
-      <tbody id="recon-tbody"></tbody>
-    </table>
+    <div class="grid-wrap" id="grid-recon"></div>
   </div>
   <!-- COLUMN MAPPING -->
   <div class="section">
     <div class="section-title">Column mapping</div>
-    <div id="col-mapping-list"></div>
+    <div class="grid-wrap" id="grid-mapping"></div>
+    <div id="col-mapping-list" style="display:none"></div>
   </div>
   <!-- WARNINGS & NOTES -->
   <div class="section" id="warnings-section" style="display:none">
@@ -448,8 +486,7 @@ function renderReport(d) {
   set('tgt-auth',     d.authMethod || 'Managed Identity');
   set('tgt-rows-before', fmt(d.rowsBefore));
   set('tgt-rows-after',  fmt(d.rowsAfter));
-  // Results table
-  const tbody = $('results-tbody');
+  // Results table — mounted as an interactive DataGrid
   const tables = d.tables || [{
     name: d.targetTable || 'migration',
     sourceRows: totalRows,
@@ -458,24 +495,35 @@ function renderReport(d) {
     batches: Math.ceil(totalRows / 100),
     status: errors === 0 ? 'success' : 'partial'
   }];
-  tbody.innerHTML = tables.map(t => {
-    const statusBadge = t.status === 'success'
-      ? '<span class="badge badge-green">Success</span>'
-      : t.status === 'partial'
-      ? '<span class="badge badge-amber">Partial</span>'
-      : '<span class="badge badge-red">Failed</span>';
-    return `<tr>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${t.sourceName||d.sourceTable||d.sourceFile||'—'}</td>
-      <td style="font-family:var(--mono);font-weight:500">${t.name}</td>
-      <td style="text-align:right;font-family:var(--mono)">${fmt(t.sourceRows)}</td>
-      <td style="text-align:right;font-family:var(--mono);color:var(--green);font-weight:500">${fmt(t.insertedRows)}</td>
-      <td style="text-align:right;font-family:var(--mono);color:${(t.errors||0)>0?'var(--red)':'var(--text3)'}">${t.errors||0}</td>
-      <td style="text-align:right;font-family:var(--mono)">${t.batches||'—'}</td>
-      <td>${statusBadge}</td>
-    </tr>`;
-  }).join('');
-  // Column mapping
-  const mapList = $('col-mapping-list');
+  const srcFallback = d.sourceTable ||
+    (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
+    d.sourceFile || '—';
+  const resultsRows = tables.map(t => ({
+    source:       t.sourceName || srcFallback,
+    table:        t.name,
+    sourceRows:   t.sourceRows || 0,
+    inserted:     t.insertedRows || 0,
+    errors:       t.errors || 0,
+    batches:      t.batches || 0,
+    status:       t.status || (t.errors > 0 ? 'partial' : 'success'),
+  }));
+  window._grids = window._grids || {};
+  window._grids.results = new DataGrid({
+    mount: document.getElementById('grid-results'),
+    title: 'migration_results',
+    columns: [
+      { key: 'source',     label: 'Source',      type: 'text',    mono: true, size: 11, muted: true },
+      { key: 'table',      label: 'Table',       type: 'text',    mono: true, bold: true },
+      { key: 'sourceRows', label: 'Source rows', type: 'number',  align: 'right' },
+      { key: 'inserted',   label: 'Inserted',    type: 'number',  align: 'right', color: 'green', bold: true },
+      { key: 'errors',     label: 'Errors',      type: 'number',  align: 'right', dynamicColor: v => v > 0 ? 'var(--red)' : 'var(--text3)' },
+      { key: 'batches',    label: 'Batches',     type: 'number',  align: 'right' },
+      { key: 'status',     label: 'Status',      type: 'status' },
+    ],
+    rows: resultsRows,
+    emptyMsg: 'No migration results to display.',
+  });
+  // Column mapping (DataGrid mount happens below after steps section)
   // Project steps section
   if (d.isProjectReport && d.steps && d.steps.length) {
     document.getElementById('steps-section').style.display = 'block';
@@ -504,18 +552,34 @@ function renderReport(d) {
         ).join('');
     }
   }
-  if (d.columnMapping && d.columnMapping.length > 0) {
-    mapList.innerHTML = d.columnMapping.map(m => `
-      <div class="mapping-row">
-        <span class="col-src">${m.srcCol}</span>
-        <span class="col-arrow">→</span>
-        <span class="col-tgt">${m.tgtCol || '<em style="opacity:0.4">skipped</em>'}</span>
-        <span class="col-type">${m.tgtType || ''}</span>
-        ${m.transform && m.transform !== 'NONE' ? `<span class="col-transform">${m.transform}</span>` : ''}
-      </div>`).join('');
-  } else {
-    mapList.innerHTML = '<p style="font-size:13px;color:var(--text3)">No column mapping data available.</p>';
-  }
+  // Column mapping — mounted as an interactive DataGrid
+  const tgtTableName = d.targetTable || (d.tables?.[0]?.name) || '—';
+  const mappingData = (d.columnMapping || []).map(m => ({
+    srcTable:   m.srcTable || srcFallback,
+    srcCol:     m.srcCol || '',
+    tgtTable:   m.tgtTable || tgtTableName,
+    tgtCol:     m.tgtCol || '',
+    tgtType:    m.tgtType || '',
+    transform:  m.transform || 'NONE',
+    mapped:     m.tgtCol ? 1 : 0,
+  }));
+  window._grids.mapping = new DataGrid({
+    mount: document.getElementById('grid-mapping'),
+    title: 'column_mapping',
+    columns: [
+      { key: 'srcTable',  label: 'Source table',  type: 'text', mono: true, size: 11, muted: true },
+      { key: 'srcCol',    label: 'Source column', type: 'text', mono: true },
+      { key: 'tgtTable',  label: 'Target table',  type: 'text', mono: true, size: 11, muted: true },
+      { key: 'tgtCol',    label: 'Target column', type: 'text', mono: true, color: 'accent',
+        render: v => v || '<em style="opacity:0.4">skipped</em>' },
+      { key: 'tgtType',   label: 'Type',          type: 'text', mono: true, size: 11, muted: true },
+      { key: 'transform', label: 'Transform',     type: 'text', mono: true, size: 11,
+        render: v => v && v !== 'NONE' ? '<span class="col-transform">' + v + '</span>' : '<span style="color:var(--text3)">—</span>' },
+      { key: 'mapped',    label: 'Mapped',        type: 'number', align: 'right', hidden: true },
+    ],
+    rows: mappingData,
+    emptyMsg: 'No column mapping data available.',
+  });
   // Warnings
   const warnings = d.warnings || [];
   if (warnings.length > 0) {
@@ -538,6 +602,8 @@ function renderReport(d) {
   set('footer-date', new Date().toLocaleDateString('en-GB', {day:'numeric',month:'long',year:'numeric'}));
   // Reconciliation — shown only if the run had recon data
   renderReconSection(d.reconciliation || []);
+  // Charts — visual summary
+  renderCharts(d, tables);
   // Stash data globally so the regenerate button can access it
   window._cygenixReportData = d;
   // Kick off narrative — uses cache if present
@@ -545,47 +611,52 @@ function renderReport(d) {
 }
 
 // ── Reconciliation section ────────────────────────────────────────────────────
-// Populates the Reconciliation table. Hidden entirely when no entries.
-// Entry shape (per step that had reconciliation configured):
-//   { stepName, srcTable, tgtTable, metric, sourceColumn, targetColumn,
-//     groupByColumn, groupKey, sourceValue, targetValue, delta, tolerance, passed }
-// passed === true  → green Pass; false → red Warn; null/undefined → amber Skipped.
-// Grouped entries (multiple rows per step): each row shows its own group key.
-// Scalar entries (no group-by): Group by and Group value columns show —.
+// Mounts the reconciliation data into a full DataGrid (sort/filter/group/pivot
+// /calc columns) — hidden entirely when no entries.
 function renderReconSection(entries) {
   const section = document.getElementById('recon-section');
-  const tbody   = document.getElementById('recon-tbody');
-  if (!section || !tbody) return;
+  if (!section) return;
   if (!Array.isArray(entries) || entries.length === 0) {
     section.style.display = 'none';
     return;
   }
   section.style.display = 'block';
-  const fmtNum = v => (v == null) ? '—' : Number(v).toLocaleString(undefined, {maximumFractionDigits: 2});
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  tbody.innerHTML = entries.map(e => {
-    const col = e.sourceColumn || e.targetColumn || '';
-    const grpCol = e.groupByColumn || '';
-    const grpKey = grpCol ? (e.groupKey == null ? '' : String(e.groupKey)) : '';
-    const passBadge = e.passed === true
-      ? '<span class="badge badge-green">Pass</span>'
-      : e.passed === false
-        ? '<span class="badge badge-red">Warn</span>'
-        : '<span class="badge badge-amber">Skipped</span>';
-    const deltaStyle = (e.passed === false) ? 'color:var(--red);font-weight:500' : '';
-    return '<tr>'
-      + '<td style="font-family:var(--mono);font-size:11px">' + esc(e.stepName || '') + '</td>'
-      + '<td style="font-family:var(--mono);font-size:11px">' + esc(e.metric || '') + '</td>'
-      + '<td style="font-family:var(--mono);font-size:11px">' + esc(col) + '</td>'
-      + '<td style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + (grpCol ? esc(grpCol) : '—') + '</td>'
-      + '<td style="font-family:var(--mono);font-size:11px">' + (grpCol ? esc(grpKey) : '—') + '</td>'
-      + '<td style="text-align:right;font-family:var(--mono)">' + fmtNum(e.sourceValue) + '</td>'
-      + '<td style="text-align:right;font-family:var(--mono)">' + fmtNum(e.targetValue) + '</td>'
-      + '<td style="text-align:right;font-family:var(--mono);' + deltaStyle + '">' + fmtNum(e.delta) + '</td>'
-      + '<td style="text-align:right;font-family:var(--mono);color:var(--text3)">' + fmtNum(e.tolerance) + '</td>'
-      + '<td>' + passBadge + '</td>'
-      + '</tr>';
-  }).join('');
+  const rows = entries.map(e => ({
+    step:         e.stepName || '',
+    srcTable:     e.srcTable || '',
+    tgtTable:     e.tgtTable || '',
+    metric:       e.metric || '',
+    column:       e.sourceColumn || e.targetColumn || '',
+    groupBy:      e.groupByColumn || '',
+    groupValue:   e.groupByColumn ? (e.groupKey == null ? '' : String(e.groupKey)) : '',
+    sourceValue:  e.sourceValue != null ? Number(e.sourceValue) : null,
+    targetValue:  e.targetValue != null ? Number(e.targetValue) : null,
+    delta:        e.delta != null ? Number(e.delta) : null,
+    tolerance:    e.tolerance != null ? Number(e.tolerance) : null,
+    result:       e.passed === true ? 'Pass' : e.passed === false ? 'Warn' : 'Skipped',
+    _passed:      e.passed,
+  }));
+  window._grids = window._grids || {};
+  window._grids.recon = new DataGrid({
+    mount: document.getElementById('grid-recon'),
+    title: 'reconciliation',
+    columns: [
+      { key: 'step',        label: 'Step',         type: 'text',   mono: true, size: 11 },
+      { key: 'metric',      label: 'Metric',       type: 'text',   mono: true, size: 11 },
+      { key: 'column',      label: 'Column',       type: 'text',   mono: true, size: 11 },
+      { key: 'groupBy',     label: 'Group by',     type: 'text',   mono: true, size: 11, muted: true,
+        render: v => v || '—' },
+      { key: 'groupValue',  label: 'Group value',  type: 'text',   mono: true, size: 11,
+        render: v => v || '—' },
+      { key: 'sourceValue', label: 'Source',       type: 'number', align: 'right' },
+      { key: 'targetValue', label: 'Target',       type: 'number', align: 'right' },
+      { key: 'delta',       label: 'Delta',        type: 'number', align: 'right',
+        dynamicRowStyle: row => row._passed === false ? 'color:var(--red);font-weight:500' : '' },
+      { key: 'tolerance',   label: 'Tolerance',    type: 'number', align: 'right', muted: true },
+      { key: 'result',      label: 'Result',       type: 'status' },
+    ],
+    rows,
+  });
 }
 
 // ── AI narrative ──────────────────────────────────────────────────────────────
@@ -738,28 +809,724 @@ function buildDemoData() {
     targetDatabase: 'CygenixDB',
     targetTable: 'dbo.Customers',
     authMethod: 'Managed Identity',
-    startedAt: new Date(Date.now() - 120000).toISOString(),
+    startedAt: new Date(Date.now() - 385000).toISOString(),
     completedAt: new Date().toISOString(),
-    totalRows: 1250,
-    insertedRows: 1248,
-    errors: 2,
+    totalRows: 18750,
+    insertedRows: 18732,
+    errors: 18,
     rowsBefore: 0,
-    rowsAfter: 1248,
-    tables: [{ name: 'dbo.Customers', sourceRows: 1250, insertedRows: 1248, errors: 2, batches: 13, status: 'partial' }],
+    rowsAfter: 18732,
+    tables: [
+      { name: 'dbo.Customers',   sourceName: 'mysql.customers',     sourceRows: 1250,  insertedRows: 1248,  errors: 2,  batches: 13,  status: 'partial' },
+      { name: 'dbo.Orders',      sourceName: 'mysql.orders',        sourceRows: 8420,  insertedRows: 8420,  errors: 0,  batches: 85,  status: 'success' },
+      { name: 'dbo.Products',    sourceName: 'mysql.products',      sourceRows: 342,   insertedRows: 342,   errors: 0,  batches: 4,   status: 'success' },
+      { name: 'dbo.OrderItems',  sourceName: 'mysql.order_items',   sourceRows: 7240,  insertedRows: 7240,  errors: 0,  batches: 73,  status: 'success' },
+      { name: 'dbo.Addresses',   sourceName: 'mysql.addresses',     sourceRows: 1498,  insertedRows: 1482,  errors: 16, batches: 15,  status: 'partial' },
+    ],
     columnMapping: [
-      { srcCol: 'customer_id', tgtCol: 'CustomerID', tgtType: 'INT', transform: 'NONE' },
-      { srcCol: 'full_name', tgtCol: 'FullName', tgtType: 'NVARCHAR(100)', transform: 'TRIM' },
-      { srcCol: 'email_address', tgtCol: 'Email', tgtType: 'NVARCHAR(255)', transform: 'LOWER' },
-      { srcCol: 'created_date', tgtCol: 'CreatedAt', tgtType: 'DATETIME2', transform: 'CONVERT' },
-      { srcCol: 'is_active', tgtCol: 'IsActive', tgtType: 'BIT', transform: 'CAST' },
-      { srcCol: 'notes', tgtCol: null, tgtType: null, transform: 'NONE' },
+      { srcTable: 'mysql.customers',   srcCol: 'customer_id',    tgtTable: 'dbo.Customers', tgtCol: 'CustomerID',   tgtType: 'INT',            transform: 'NONE' },
+      { srcTable: 'mysql.customers',   srcCol: 'full_name',      tgtTable: 'dbo.Customers', tgtCol: 'FullName',     tgtType: 'NVARCHAR(100)',  transform: 'TRIM' },
+      { srcTable: 'mysql.customers',   srcCol: 'email_address',  tgtTable: 'dbo.Customers', tgtCol: 'Email',        tgtType: 'NVARCHAR(255)',  transform: 'LOWER' },
+      { srcTable: 'mysql.customers',   srcCol: 'created_date',   tgtTable: 'dbo.Customers', tgtCol: 'CreatedAt',    tgtType: 'DATETIME2',      transform: 'CONVERT' },
+      { srcTable: 'mysql.customers',   srcCol: 'is_active',      tgtTable: 'dbo.Customers', tgtCol: 'IsActive',     tgtType: 'BIT',            transform: 'CAST' },
+      { srcTable: 'mysql.customers',   srcCol: 'notes',          tgtTable: 'dbo.Customers', tgtCol: null,           tgtType: null,             transform: 'NONE' },
+      { srcTable: 'mysql.orders',      srcCol: 'order_id',       tgtTable: 'dbo.Orders',    tgtCol: 'OrderID',      tgtType: 'BIGINT',         transform: 'NONE' },
+      { srcTable: 'mysql.orders',      srcCol: 'total_amount',   tgtTable: 'dbo.Orders',    tgtCol: 'TotalAmount',  tgtType: 'DECIMAL(10,2)',  transform: 'NONE' },
+      { srcTable: 'mysql.products',    srcCol: 'product_name',   tgtTable: 'dbo.Products',  tgtCol: 'ProductName',  tgtType: 'NVARCHAR(200)',  transform: 'TRIM' },
+      { srcTable: 'mysql.products',    srcCol: 'price',          tgtTable: 'dbo.Products',  tgtCol: 'UnitPrice',    tgtType: 'DECIMAL(10,2)',  transform: 'NONE' },
+    ],
+    reconciliation: [
+      { stepName: 'Customer count check', srcTable: 'mysql.customers', tgtTable: 'dbo.Customers', metric: 'COUNT',    sourceColumn: '*',             targetColumn: '*',             sourceValue: 1250,     targetValue: 1248,     delta: 2,     tolerance: 5,   passed: true },
+      { stepName: 'Orders count check',   srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'COUNT',    sourceColumn: '*',             targetColumn: '*',             sourceValue: 8420,     targetValue: 8420,     delta: 0,     tolerance: 0,   passed: true },
+      { stepName: 'Revenue total',        srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'SUM',      sourceColumn: 'total_amount',  targetColumn: 'TotalAmount',   sourceValue: 842314.50, targetValue: 842314.50, delta: 0,     tolerance: 0.01, passed: true },
+      { stepName: 'Revenue by region',    srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'SUM',      sourceColumn: 'total_amount',  targetColumn: 'TotalAmount',   groupByColumn: 'region', groupKey: 'North', sourceValue: 312204.80, targetValue: 312204.80, delta: 0,    tolerance: 0.01, passed: true },
+      { stepName: 'Revenue by region',    srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'SUM',      sourceColumn: 'total_amount',  targetColumn: 'TotalAmount',   groupByColumn: 'region', groupKey: 'South', sourceValue: 285109.70, targetValue: 285109.70, delta: 0,    tolerance: 0.01, passed: true },
+      { stepName: 'Revenue by region',    srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'SUM',      sourceColumn: 'total_amount',  targetColumn: 'TotalAmount',   groupByColumn: 'region', groupKey: 'East',  sourceValue: 245000.00, targetValue: 245000.00, delta: 0,    tolerance: 0.01, passed: true },
+      { stepName: 'Addresses count',      srcTable: 'mysql.addresses', tgtTable: 'dbo.Addresses', metric: 'COUNT',    sourceColumn: '*',             targetColumn: '*',             sourceValue: 1498,     targetValue: 1482,     delta: 16,    tolerance: 5,   passed: false },
+      { stepName: 'Products price max',   srcTable: 'mysql.products',  tgtTable: 'dbo.Products',  metric: 'MAX',      sourceColumn: 'price',         targetColumn: 'UnitPrice',     sourceValue: 4999.99,  targetValue: null,     delta: null,  tolerance: 0.01, passed: null },
     ],
     warnings: [
-      '2 rows failed due to duplicate key violation on CustomerID — these were existing records.',
-      'Column "notes" was not mapped — no matching target column found.',
+      '2 rows failed on dbo.Customers due to duplicate key violation on CustomerID — these were existing records.',
+      '16 address rows failed: foreign-key constraint violation — parent customer records not yet migrated at row time.',
+      'Column "notes" on mysql.customers was not mapped — no matching target column found.',
+      'Reconciliation "Addresses count" exceeded tolerance (delta=16, tolerance=5).',
     ],
   };
 }
+// ══════════════════════════════════════════════════════════════════════════════
+// DataGrid — interactive table with sort / filter / group / aggregate / pivot /
+// calculated columns. Used for Migration Results, Reconciliation, and Column
+// Mapping. State lives on the instance; rendering is driven by a recompute()
+// that produces a derived row set based on current filters/sort/grouping.
+//
+// Column schema (each column object):
+//   key           field name on the row object
+//   label         column header text
+//   type          'text' | 'number' | 'status' | 'calc'
+//   align         'left' | 'right' (defaults: text→left, number/status→right)
+//   mono, bold, size, muted, color          display flags
+//   dynamicColor(value)       -> colour string (per-cell)
+//   dynamicRowStyle(row)      -> CSS string (per-cell, given whole row)
+//   render(value, row)        -> HTML string (overrides default formatting)
+//   hidden        start hidden (user can toggle)
+//   calc          user-defined formula for calculated columns
+// ══════════════════════════════════════════════════════════════════════════════
+
+class DataGrid {
+  constructor(opts) {
+    this.mount    = opts.mount;
+    this.title    = opts.title || 'grid';
+    this.columns  = (opts.columns || []).map(c => ({ ...c }));
+    this.rows     = (opts.rows || []).map((r, i) => ({ ...r, __i: i }));
+    this.emptyMsg = opts.emptyMsg || 'No data.';
+    // View state
+    this.filter   = '';
+    this.sort     = { key: null, dir: 'asc' };
+    this.groupBy  = null;
+    this.aggs     = {};        // { colKey: 'sum' | 'avg' | 'count' | 'min' | 'max' }
+    this.showTotals = false;
+    this.pivotOpen  = false;
+    this.pivotRow = null;      // row axis column key
+    this.pivotCol = null;      // column axis column key
+    this.pivotVal = null;      // value column key
+    this.pivotAgg = 'sum';
+    // Register numeric columns as default sum aggregates
+    this.columns.forEach(c => { if (c.type === 'number' && !c.hidden) this.aggs[c.key] = null; });
+    if (this.mount) this.render();
+  }
+
+  // ── Public: expose current view's data for export ────────────────────────────
+  getViewRows() {
+    return this._lastViewRows || [];
+  }
+  getColumns() {
+    return this.columns.filter(c => !c.hidden);
+  }
+
+  // ── Utilities ────────────────────────────────────────────────────────────────
+  static esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  static fmtNum(v) {
+    if (v == null || v === '') return '—';
+    const n = Number(v);
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  // Evaluate a user-entered formula against a row. Formulas reference other
+  // column keys by name; numeric arithmetic and simple Math.* calls are allowed.
+  // The parser is a sandbox — only column identifiers, numeric literals, basic
+  // operators, parentheses and a whitelist of Math functions are permitted.
+  evalFormula(expr, row) {
+    if (!expr) return null;
+    // Build a safe scope with numeric values from the row
+    const scope = {};
+    this.columns.forEach(c => {
+      let v = row[c.key];
+      if (v == null || v === '') v = 0;
+      else if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) v = Number(v);
+      scope[c.key] = (typeof v === 'number') ? v : String(v);
+    });
+    // Whitelist check — only allow identifiers that exist in scope or a
+    // short list of safe Math helpers, plus numbers, strings, and operators.
+    const safeIds = new Set(Object.keys(scope).concat(
+      ['Math','abs','round','floor','ceil','min','max','pow','sqrt','log','sign']));
+    // Strip whitespace then scan for bare identifiers
+    const ids = (expr.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []);
+    for (const id of ids) {
+      if (!safeIds.has(id) && !['true','false','null'].includes(id)) {
+        throw new Error('Unknown identifier: ' + id);
+      }
+    }
+    // Disallow property access that isn't on Math
+    if (/\.\s*(?!abs|round|floor|ceil|min|max|pow|sqrt|log|sign)/.test(expr)) {
+      throw new Error('Only Math.* property access is allowed');
+    }
+    // Disallow statement separators and assignment
+    if (/[;={}]/.test(expr)) throw new Error('Invalid characters in formula');
+    // Build function
+    const keys = Object.keys(scope);
+    const vals = keys.map(k => scope[k]);
+    try {
+      const fn = new Function(...keys, 'Math',
+        'abs','round','floor','ceil','min','max','pow','sqrt','log','sign',
+        'return (' + expr + ')');
+      const m = Math;
+      return fn(...vals, m, m.abs, m.round, m.floor, m.ceil, m.min, m.max,
+                m.pow, m.sqrt, m.log, m.sign);
+    } catch (e) {
+      throw new Error('Formula error: ' + e.message);
+    }
+  }
+
+  // ── Core: produce the displayed row set from current state ───────────────────
+  recompute() {
+    // 1. Start from source rows, applying calculated columns
+    let rows = this.rows.map(r => {
+      const out = { ...r };
+      this.columns.forEach(c => {
+        if (c.type === 'calc' && c.calc) {
+          try { out[c.key] = this.evalFormula(c.calc, out); }
+          catch { out[c.key] = '#ERR'; }
+        }
+      });
+      return out;
+    });
+    // 2. Filter (simple case-insensitive substring match across visible cols)
+    if (this.filter) {
+      const q = this.filter.toLowerCase();
+      const visible = this.columns.filter(c => !c.hidden);
+      rows = rows.filter(r =>
+        visible.some(c => String(r[c.key] ?? '').toLowerCase().includes(q)));
+    }
+    // 3. Sort
+    if (this.sort.key) {
+      const col = this.columns.find(c => c.key === this.sort.key);
+      const dir = this.sort.dir === 'desc' ? -1 : 1;
+      rows.sort((a, b) => {
+        const va = a[this.sort.key], vb = b[this.sort.key];
+        if (col && (col.type === 'number' || col.type === 'calc')) {
+          return dir * ((Number(va) || 0) - (Number(vb) || 0));
+        }
+        return dir * String(va ?? '').localeCompare(String(vb ?? ''));
+      });
+    }
+    return rows;
+  }
+
+  // ── Aggregate helpers ────────────────────────────────────────────────────────
+  aggregate(rows, key, fn) {
+    const nums = rows.map(r => Number(r[key])).filter(n => !isNaN(n) && isFinite(n));
+    if (fn === 'count')  return rows.length;
+    if (fn === 'countn') return nums.length;
+    if (!nums.length) return null;
+    if (fn === 'sum')    return nums.reduce((s, n) => s + n, 0);
+    if (fn === 'avg')    return nums.reduce((s, n) => s + n, 0) / nums.length;
+    if (fn === 'min')    return Math.min(...nums);
+    if (fn === 'max')    return Math.max(...nums);
+    return null;
+  }
+
+  // ── Render: toolbar + (table | pivot) ────────────────────────────────────────
+  render() {
+    if (!this.mount) return;
+    const rows = this.recompute();
+    this._lastViewRows = rows;
+    const parts = [];
+    parts.push(this.renderToolbar());
+    parts.push(this.renderPivotPanel());
+    if (this.pivotRow && this.pivotVal) {
+      parts.push(this.renderPivot(rows));
+    } else {
+      parts.push(this.renderTable(rows));
+    }
+    this.mount.innerHTML = parts.join('');
+    this.bindEvents();
+  }
+
+  renderToolbar() {
+    const cols = this.columns.filter(c => !c.hidden);
+    const groupOpts = '<option value="">— none —</option>' +
+      this.columns.filter(c => c.type === 'text' || c.type === 'status')
+        .map(c => `<option value="${c.key}"${this.groupBy === c.key ? ' selected' : ''}>${DataGrid.esc(c.label)}</option>`).join('');
+    const groupChip = this.groupBy
+      ? `<span class="grid-chip">Grouped by: ${DataGrid.esc(this.columns.find(c=>c.key===this.groupBy)?.label||'')}<span class="grid-chip-x" data-act="clear-group">×</span></span>`
+      : '';
+    const sortChip = this.sort.key
+      ? `<span class="grid-chip">Sort: ${DataGrid.esc(this.columns.find(c=>c.key===this.sort.key)?.label||'')} ${this.sort.dir}<span class="grid-chip-x" data-act="clear-sort">×</span></span>`
+      : '';
+    return `
+      <div class="grid-toolbar">
+        <input class="grid-input" type="text" placeholder="Filter rows…" data-act="filter" value="${DataGrid.esc(this.filter)}">
+        <span class="grid-toolbar-label">Group by</span>
+        <select class="grid-select" data-act="group">${groupOpts}</select>
+        <button class="grid-btn ${this.showTotals ? 'active' : ''}" data-act="totals">Σ Totals</button>
+        <button class="grid-btn ${this.pivotOpen ? 'active' : ''}" data-act="pivot-toggle">⊞ Pivot</button>
+        <button class="grid-btn grid-btn-add" data-act="add-col">+ Add column</button>
+        <div class="grid-spacer"></div>
+        ${groupChip}${sortChip}
+        <span class="grid-meta">${this._lastViewRows.length} of ${this.rows.length}</span>
+        <button class="grid-btn" data-act="reset" title="Reset view">↺</button>
+      </div>`;
+  }
+
+  renderPivotPanel() {
+    if (!this.pivotOpen) return '';
+    const opts = (filter) => '<option value="">—</option>' +
+      this.columns.filter(filter).map(c => `<option value="${c.key}">${DataGrid.esc(c.label)}</option>`).join('');
+    const sel = (html, key) => html.replace(
+      new RegExp(`value="${key}"`), `value="${key}" selected`);
+    let rowOpts = opts(c => c.type === 'text' || c.type === 'status');
+    let colOpts = opts(c => c.type === 'text' || c.type === 'status');
+    let valOpts = opts(c => c.type === 'number' || c.type === 'calc');
+    if (this.pivotRow) rowOpts = sel(rowOpts, this.pivotRow);
+    if (this.pivotCol) colOpts = sel(colOpts, this.pivotCol);
+    if (this.pivotVal) valOpts = sel(valOpts, this.pivotVal);
+    const aggOpts = ['sum','avg','count','min','max']
+      .map(a => `<option value="${a}"${this.pivotAgg===a?' selected':''}>${a.toUpperCase()}</option>`).join('');
+    return `
+      <div class="pivot-panel open">
+        <div class="pivot-slot"><label>Rows</label><select data-act="pivot-row">${rowOpts}</select></div>
+        <div class="pivot-slot"><label>Columns</label><select data-act="pivot-col">${colOpts}</select></div>
+        <div class="pivot-slot">
+          <label>Values</label>
+          <select data-act="pivot-val" style="margin-bottom:4px">${valOpts}</select>
+          <select data-act="pivot-agg">${aggOpts}</select>
+        </div>
+      </div>`;
+  }
+
+  renderTable(rows) {
+    const visible = this.columns.filter(c => !c.hidden);
+    if (!rows.length) {
+      return `<p style="font-size:13px;color:var(--text3);padding:1rem 0">${DataGrid.esc(this.emptyMsg)}</p>`;
+    }
+    // Header row
+    const header = visible.map(c => {
+      const sortCls = this.sort.key === c.key ? ' sort-' + this.sort.dir : '';
+      const calcCls = c.type === 'calc' ? ' calc-col' : '';
+      const style = c.align === 'right' || c.type === 'number' || c.type === 'calc' ? ' style="text-align:right"' : '';
+      const removeBtn = c.type === 'calc'
+        ? `<span style="margin-left:6px;opacity:0.5;cursor:pointer" data-act="del-col" data-key="${c.key}" title="Remove column">×</span>`
+        : '';
+      return `<th class="sortable${sortCls}${calcCls}"${style} data-sort="${c.key}">${DataGrid.esc(c.label)}<span class="sort-ind">${this.sort.key===c.key?(this.sort.dir==='asc'?'▲':'▼'):'▲▼'}</span>${removeBtn}</th>`;
+    }).join('');
+    // Body — with optional grouping
+    let body = '';
+    if (this.groupBy) {
+      const groups = new Map();
+      rows.forEach(r => {
+        const k = String(r[this.groupBy] ?? '—');
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(r);
+      });
+      const groupKeys = Array.from(groups.keys()).sort();
+      groupKeys.forEach(k => {
+        const groupRows = groups.get(k);
+        const span = visible.length;
+        // Group subtotal row: sum/count per-column
+        const cells = visible.map((c, idx) => {
+          if (idx === 0) {
+            return `<td colspan="1"><strong>${DataGrid.esc(k)}</strong><span class="group-count">(${groupRows.length})</span></td>`;
+          }
+          if (c.type === 'number' || c.type === 'calc') {
+            const total = this.aggregate(groupRows, c.key, 'sum');
+            return `<td style="text-align:right;font-family:var(--mono)"><strong>${DataGrid.fmtNum(total)}</strong></td>`;
+          }
+          return '<td></td>';
+        }).join('');
+        body += `<tr class="group-header">${cells}</tr>`;
+        body += groupRows.map(r => this.renderRow(r, visible)).join('');
+      });
+    } else {
+      body = rows.map(r => this.renderRow(r, visible)).join('');
+    }
+    // Totals row
+    let foot = '';
+    if (this.showTotals) {
+      const cells = visible.map((c, idx) => {
+        if (c.type === 'number' || c.type === 'calc') {
+          const total = this.aggregate(rows, c.key, 'sum');
+          return `<td style="text-align:right">${DataGrid.fmtNum(total)}</td>`;
+        }
+        if (idx === 0) return '<td>Total</td>';
+        return '<td></td>';
+      }).join('');
+      foot = `<tfoot><tr>${cells}</tr></tfoot>`;
+    }
+    return `<table class="results-table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody>${foot}</table>`;
+  }
+
+  renderRow(r, visible) {
+    const cells = visible.map(c => {
+      const v = r[c.key];
+      let html;
+      if (c.type === 'status') {
+        const lv = String(v||'').toLowerCase();
+        const cls = lv === 'success' || lv === 'pass' || lv === 'passed' ? 'badge-green'
+                  : lv === 'failed'  || lv === 'fail'  || lv === 'error'  ? 'badge-red'
+                  : lv === 'partial' || lv === 'warn'  || lv === 'skipped'|| lv === 'warned' ? 'badge-amber'
+                  : 'badge-blue';
+        const label = lv === 'success' ? 'Success' : lv === 'partial' ? 'Partial' : lv === 'failed' ? 'Failed'
+                    : lv === 'pass' ? 'Pass' : lv === 'warn' ? 'Warn' : lv === 'skipped' ? 'Skipped'
+                    : DataGrid.esc(String(v||''));
+        html = `<td><span class="badge ${cls}">${label}</span></td>`;
+      } else {
+        const style = [];
+        if (c.mono !== false) style.push('font-family:var(--mono)');
+        if (c.size) style.push('font-size:' + c.size + 'px');
+        if (c.muted) style.push('color:var(--text3)');
+        if (c.bold) style.push('font-weight:500');
+        if (c.color === 'accent') style.push('color:var(--accent)');
+        if (c.color === 'green') style.push('color:var(--green)');
+        if (c.align === 'right' || c.type === 'number' || c.type === 'calc') style.push('text-align:right');
+        if (c.dynamicColor) {
+          const col = c.dynamicColor(v);
+          if (col) style.push('color:' + col);
+        }
+        if (c.dynamicRowStyle) {
+          const s = c.dynamicRowStyle(r);
+          if (s) style.push(s);
+        }
+        const inner = c.render
+          ? c.render(v, r)
+          : c.type === 'number' || c.type === 'calc'
+            ? DataGrid.fmtNum(v)
+            : DataGrid.esc(String(v ?? ''));
+        const tdCls = c.type === 'calc' ? ' class="calc-col"' : '';
+        html = `<td${tdCls} style="${style.join(';')}">${inner}</td>`;
+      }
+      return html;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }
+
+  // ── Pivot table rendering ────────────────────────────────────────────────────
+  renderPivot(rows) {
+    const rowCol = this.columns.find(c => c.key === this.pivotRow);
+    const valCol = this.columns.find(c => c.key === this.pivotVal);
+    if (!rowCol || !valCol) return '<p style="font-size:13px;color:var(--text3);padding:1rem">Select a Rows axis and a Values column to see the pivot.</p>';
+    // Build row/col indices
+    const rowVals = Array.from(new Set(rows.map(r => String(r[this.pivotRow] ?? '—')))).sort();
+    const colVals = this.pivotCol
+      ? Array.from(new Set(rows.map(r => String(r[this.pivotCol] ?? '—')))).sort()
+      : [null];
+    // Accumulate cell values
+    const cellRows = rowVals.map(rv => {
+      const rowData = { _label: rv };
+      colVals.forEach(cv => {
+        const k = cv == null ? '__all' : cv;
+        rowData[k] = rows.filter(r =>
+          String(r[this.pivotRow] ?? '—') === rv &&
+          (cv == null || String(r[this.pivotCol] ?? '—') === cv));
+      });
+      return rowData;
+    });
+    // Headers
+    const headers = this.pivotCol
+      ? ['<th>' + DataGrid.esc(rowCol.label) + '</th>'].concat(
+          colVals.map(cv => `<th style="text-align:right">${DataGrid.esc(cv)}</th>`),
+          ['<th style="text-align:right">Total</th>']
+        ).join('')
+      : `<th>${DataGrid.esc(rowCol.label)}</th><th style="text-align:right">${this.pivotAgg.toUpperCase()} of ${DataGrid.esc(valCol.label)}</th>`;
+    // Body
+    const body = cellRows.map(cr => {
+      const cells = [`<td style="font-family:var(--mono)"><strong>${DataGrid.esc(cr._label)}</strong></td>`];
+      let rowTotal = 0;
+      colVals.forEach(cv => {
+        const k = cv == null ? '__all' : cv;
+        const agg = this.aggregate(cr[k], this.pivotVal, this.pivotAgg);
+        if (agg != null) rowTotal += agg;
+        cells.push(`<td style="text-align:right;font-family:var(--mono)">${DataGrid.fmtNum(agg)}</td>`);
+      });
+      if (this.pivotCol) {
+        cells.push(`<td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--accent)">${DataGrid.fmtNum(rowTotal)}</td>`);
+      }
+      return '<tr>' + cells.join('') + '</tr>';
+    }).join('');
+    // Column totals
+    let tfoot = '';
+    if (this.pivotCol) {
+      const totCells = ['<td><strong>Total</strong></td>'];
+      let grand = 0;
+      colVals.forEach(cv => {
+        const subset = rows.filter(r => String(r[this.pivotCol] ?? '—') === cv);
+        const agg = this.aggregate(subset, this.pivotVal, this.pivotAgg);
+        if (agg != null) grand += agg;
+        totCells.push(`<td style="text-align:right">${DataGrid.fmtNum(agg)}</td>`);
+      });
+      totCells.push(`<td style="text-align:right">${DataGrid.fmtNum(grand)}</td>`);
+      tfoot = '<tfoot><tr>' + totCells.join('') + '</tr></tfoot>';
+    }
+    return `<table class="results-table"><thead><tr>${headers}</tr></thead><tbody>${body}</tbody>${tfoot}</table>`;
+  }
+
+  // ── Events ──────────────────────────────────────────────────────────────────
+  bindEvents() {
+    const root = this.mount;
+    root.querySelectorAll('[data-act]').forEach(el => {
+      const act = el.getAttribute('data-act');
+      if (el.tagName === 'SELECT' || el.tagName === 'INPUT') {
+        el.addEventListener('change', e => this.handleAction(act, e.target));
+        if (el.tagName === 'INPUT') el.addEventListener('input', e => this.handleAction(act, e.target));
+      } else {
+        el.addEventListener('click', e => this.handleAction(act, el, e));
+      }
+    });
+    // Sortable headers (except when clicking the delete x)
+    root.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', e => {
+        if (e.target.getAttribute && e.target.getAttribute('data-act') === 'del-col') return;
+        const k = th.getAttribute('data-sort');
+        if (!k) return;
+        if (this.sort.key === k) this.sort.dir = this.sort.dir === 'asc' ? 'desc' : 'asc';
+        else { this.sort.key = k; this.sort.dir = 'asc'; }
+        this.render();
+      });
+    });
+  }
+
+  handleAction(act, el, ev) {
+    switch (act) {
+      case 'filter':       this.filter = el.value; this.render(); break;
+      case 'group':        this.groupBy = el.value || null; this.render(); break;
+      case 'clear-group':  this.groupBy = null; this.render(); break;
+      case 'clear-sort':   this.sort = { key: null, dir: 'asc' }; this.render(); break;
+      case 'totals':       this.showTotals = !this.showTotals; this.render(); break;
+      case 'pivot-toggle': this.pivotOpen = !this.pivotOpen; this.render(); break;
+      case 'pivot-row':    this.pivotRow = el.value || null; this.render(); break;
+      case 'pivot-col':    this.pivotCol = el.value || null; this.render(); break;
+      case 'pivot-val':    this.pivotVal = el.value || null; this.render(); break;
+      case 'pivot-agg':    this.pivotAgg = el.value || 'sum'; this.render(); break;
+      case 'add-col':      this.openAddColumnModal(); break;
+      case 'del-col':      this.removeCalcColumn(el.getAttribute('data-key')); break;
+      case 'reset':        this.reset(); break;
+    }
+  }
+
+  removeCalcColumn(key) {
+    this.columns = this.columns.filter(c => c.key !== key);
+    if (this.sort.key === key) this.sort = { key: null, dir: 'asc' };
+    this.render();
+  }
+
+  reset() {
+    this.filter = '';
+    this.sort = { key: null, dir: 'asc' };
+    this.groupBy = null;
+    this.showTotals = false;
+    this.pivotOpen = false;
+    this.pivotRow = null;
+    this.pivotCol = null;
+    this.pivotVal = null;
+    this.pivotAgg = 'sum';
+    // Remove calculated columns
+    this.columns = this.columns.filter(c => c.type !== 'calc');
+    this.render();
+  }
+
+  openAddColumnModal() {
+    const numericCols = this.columns.filter(c => c.type === 'number' || c.type === 'calc');
+    const help = numericCols.map(c => '<code>' + DataGrid.esc(c.key) + '</code>').join(', ');
+    const modalHtml = `
+      <div class="grid-modal-backdrop" data-act="modal-bg">
+        <div class="grid-modal">
+          <div class="grid-modal-head">
+            <h3>Add calculated column</h3>
+            <button class="grid-modal-close" data-act="modal-close">×</button>
+          </div>
+          <div class="grid-modal-body">
+            <div>
+              <label>Column name</label>
+              <input class="grid-input" id="gm-name" style="width:100%" placeholder="e.g. Success rate">
+            </div>
+            <div>
+              <label>Formula</label>
+              <input class="grid-input" id="gm-formula" style="width:100%;font-family:var(--mono)" placeholder="e.g. inserted / sourceRows * 100">
+            </div>
+            <div class="help">
+              Available numeric fields: ${help || '(none)'}.<br>
+              You can use <code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>(</code> <code>)</code> and <code>Math.round()</code>, <code>Math.abs()</code>, etc.<br>
+              Example: <code>Math.round(inserted / sourceRows * 100)</code>
+            </div>
+            <div class="err" id="gm-err"></div>
+          </div>
+          <div class="grid-modal-foot">
+            <button class="grid-btn" data-act="modal-close">Cancel</button>
+            <button class="grid-btn grid-btn-add" data-act="modal-add">Add column</button>
+          </div>
+        </div>
+      </div>`;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = modalHtml;
+    const node = wrap.firstElementChild;
+    document.body.appendChild(node);
+    const close = () => node.remove();
+    node.addEventListener('click', e => {
+      const a = e.target.getAttribute && e.target.getAttribute('data-act');
+      if (a === 'modal-bg' && e.target === node) close();
+      if (a === 'modal-close') close();
+      if (a === 'modal-add') {
+        const name = node.querySelector('#gm-name').value.trim();
+        const expr = node.querySelector('#gm-formula').value.trim();
+        const err  = node.querySelector('#gm-err');
+        err.style.display = 'none';
+        if (!name || !expr) {
+          err.textContent = 'Both name and formula are required.';
+          err.style.display = 'block'; return;
+        }
+        // Validate against first row
+        try {
+          const sample = this.rows[0] || {};
+          this.evalFormula(expr, sample);
+        } catch (ex) {
+          err.textContent = ex.message; err.style.display = 'block'; return;
+        }
+        const key = '_calc_' + Date.now().toString(36);
+        this.columns.push({
+          key, label: name, type: 'calc', calc: expr,
+          align: 'right', mono: true,
+        });
+        this.render();
+        close();
+      }
+    });
+    setTimeout(() => node.querySelector('#gm-name').focus(), 50);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Charts — pure SVG, no external deps. Renders only if data warrants it.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function renderCharts(d, tables) {
+  const section = document.getElementById('charts-section');
+  const grid    = document.getElementById('charts-grid');
+  if (!section || !grid) return;
+  const charts = [];
+
+  // Chart 1: Rows inserted per table (horizontal bar chart)
+  if (tables && tables.length > 0) {
+    const chartTables = tables.slice(0, 10); // cap for readability
+    charts.push(renderBarChart({
+      title: 'Rows inserted per table',
+      data: chartTables.map(t => ({
+        label: t.name || '(unnamed)',
+        value: t.insertedRows || 0,
+        secondary: t.sourceRows || 0,
+      })),
+      primaryLabel: 'Inserted',
+      secondaryLabel: 'Source rows',
+    }));
+  }
+
+  // Chart 2: Status donut — Success vs Partial vs Failed
+  if (tables && tables.length > 0) {
+    const counts = { success: 0, partial: 0, failed: 0 };
+    tables.forEach(t => {
+      const s = (t.status || (t.errors > 0 ? 'partial' : 'success')).toLowerCase();
+      if (counts[s] != null) counts[s]++; else counts.partial++;
+    });
+    if (counts.success + counts.partial + counts.failed > 0) {
+      charts.push(renderDonutChart({
+        title: 'Table status',
+        segments: [
+          { label: 'Success', value: counts.success, color: '#059669' },
+          { label: 'Partial', value: counts.partial, color: '#d97706' },
+          { label: 'Failed',  value: counts.failed,  color: '#dc2626' },
+        ].filter(s => s.value > 0),
+      }));
+    }
+  }
+
+  // Chart 3: Reconciliation donut (if present)
+  if (Array.isArray(d.reconciliation) && d.reconciliation.length > 0) {
+    const pass = d.reconciliation.filter(e => e.passed === true).length;
+    const warn = d.reconciliation.filter(e => e.passed === false).length;
+    const skip = d.reconciliation.filter(e => e.passed !== true && e.passed !== false).length;
+    if (pass + warn + skip > 0) {
+      charts.push(renderDonutChart({
+        title: 'Reconciliation results',
+        segments: [
+          { label: 'Pass',    value: pass, color: '#059669' },
+          { label: 'Warn',    value: warn, color: '#dc2626' },
+          { label: 'Skipped', value: skip, color: '#d97706' },
+        ].filter(s => s.value > 0),
+      }));
+    }
+  }
+
+  // Chart 4: Column mapping completeness
+  if (d.columnMapping && d.columnMapping.length > 0) {
+    const mapped  = d.columnMapping.filter(m => m.tgtCol).length;
+    const skipped = d.columnMapping.length - mapped;
+    if (skipped > 0 || mapped > 0) {
+      charts.push(renderDonutChart({
+        title: 'Column mapping coverage',
+        segments: [
+          { label: 'Mapped',  value: mapped,  color: '#1a56e8' },
+          { label: 'Skipped', value: skipped, color: '#9ca3af' },
+        ].filter(s => s.value > 0),
+      }));
+    }
+  }
+
+  if (charts.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  grid.innerHTML = charts.join('');
+}
+
+function renderBarChart({ title, data, primaryLabel, secondaryLabel }) {
+  const max = Math.max(1, ...data.map(d => Math.max(d.value || 0, d.secondary || 0)));
+  const barH = 18, gap = 8, labelW = 120, chartW = 300, padL = 8, padR = 60;
+  const rowH = barH + gap;
+  const h = data.length * rowH + 20;
+  const w = labelW + chartW + padL + padR;
+  const bars = data.map((row, i) => {
+    const y = i * rowH + 8;
+    const wPrim = Math.max(2, (row.value / max) * chartW);
+    const wSec  = Math.max(2, (row.secondary / max) * chartW);
+    // Truncate long labels
+    const label = row.label.length > 18 ? row.label.slice(0, 16) + '…' : row.label;
+    return `
+      <g>
+        <text x="${labelW - 6}" y="${y + barH/2 + 4}" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="end" fill="#4b5563">${DataGrid.esc(label)}</text>
+        <rect x="${labelW}" y="${y + 3}" width="${wSec}" height="${barH - 6}" fill="#e2e6ee" rx="2"/>
+        <rect x="${labelW}" y="${y}" width="${wPrim}" height="${barH}" fill="#1a56e8" rx="2"/>
+        <text x="${labelW + wPrim + 4}" y="${y + barH/2 + 4}" font-size="10" font-family="'IBM Plex Mono',monospace" fill="#111827">${(row.value||0).toLocaleString()}</text>
+      </g>`;
+  }).join('');
+  return `
+    <div class="chart-card">
+      <div class="chart-title">${DataGrid.esc(title)}</div>
+      <svg width="100%" viewBox="0 0 ${w} ${h}" style="max-width:100%;height:auto">${bars}</svg>
+      <div class="chart-legend">
+        <span class="chart-legend-item"><span class="chart-legend-swatch" style="background:#1a56e8"></span>${DataGrid.esc(primaryLabel)}</span>
+        <span class="chart-legend-item"><span class="chart-legend-swatch" style="background:#e2e6ee"></span>${DataGrid.esc(secondaryLabel)}</span>
+      </div>
+    </div>`;
+}
+
+function renderDonutChart({ title, segments }) {
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if (total === 0) return '';
+  const cx = 80, cy = 80, r = 60, ir = 38;
+  let angle = -Math.PI / 2;
+  const arcs = segments.map(seg => {
+    const frac = seg.value / total;
+    const end = angle + frac * Math.PI * 2;
+    const large = frac > 0.5 ? 1 : 0;
+    const x1 = cx + r * Math.cos(angle),  y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(end),    y2 = cy + r * Math.sin(end);
+    const x3 = cx + ir * Math.cos(end),   y3 = cy + ir * Math.sin(end);
+    const x4 = cx + ir * Math.cos(angle), y4 = cy + ir * Math.sin(angle);
+    angle = end;
+    // A full-circle path needs to split; we assume no single segment is 100%
+    // in multi-segment charts, and use a half-plus-half for one-segment charts.
+    if (segments.length === 1) {
+      return `<circle cx="${cx}" cy="${cy}" r="${(r+ir)/2}" fill="none" stroke="${seg.color}" stroke-width="${r-ir}"/>`;
+    }
+    return `<path d="M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${x3} ${y3} A ${ir} ${ir} 0 ${large} 0 ${x4} ${y4} Z" fill="${seg.color}"/>`;
+  }).join('');
+  const legend = segments.map(seg => {
+    const pct = Math.round((seg.value / total) * 100);
+    return `<span class="chart-legend-item"><span class="chart-legend-swatch" style="background:${seg.color}"></span>${DataGrid.esc(seg.label)} · ${seg.value} (${pct}%)</span>`;
+  }).join('');
+  return `
+    <div class="chart-card">
+      <div class="chart-title">${DataGrid.esc(title)}</div>
+      <div style="display:flex;align-items:center;gap:1rem">
+        <svg width="160" height="160" viewBox="0 0 160 160" style="flex-shrink:0">${arcs}
+          <text x="${cx}" y="${cy - 4}" font-size="22" font-family="'DM Serif Display',serif" text-anchor="middle" fill="#111827">${total}</text>
+          <text x="${cx}" y="${cy + 14}" font-size="10" font-family="'DM Sans',sans-serif" text-anchor="middle" fill="#9ca3af">TOTAL</text>
+        </svg>
+        <div class="chart-legend" style="flex-direction:column;gap:6px;margin:0">${legend}</div>
+      </div>
+    </div>`;
+}
+
 loadReport();
 
 // ── Save to Cygenix (Cosmos) ────────────────────────────────────────────────
@@ -1083,50 +1850,144 @@ function doExport() {
 
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
     // ── Sheet 2: Migration Results ────────────────────────────────────────────
-    const tables = d.tables || [{ name: d.targetTable||'migration', sourceRows: totalRows, insertedRows: inserted, errors, batches: Math.ceil(totalRows/100), status: errors===0?'success':'partial' }];
-    const resultsData = [
-      ['Source table', 'Target table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
-    ].concat(tables.map(t => [
-      t.sourceName || d.sourceTable || 
-        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
-        d.sourceFile || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
-    ]));
-    const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
-    wsResults['!cols'] = [{wch:35},{wch:35},{wch:14},{wch:12},{wch:10},{wch:10},{wch:14}];
-    wsResults['!rows'] = resultsData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
-    // Header row
-    styleRange(wsResults, 0, 0, 0, 6, STYLE.tableHeader);
-    // Data rows — text cols (0,1), numeric (2,3,4,5), status (6)
-    if (resultsData.length > 1) {
-      styleRange(wsResults, 1, resultsData.length-1, 0, 1, STYLE.value);
-      styleNumericRange(wsResults, 1, resultsData.length-1, 2, 5);
-      for (let r = 1; r < resultsData.length; r++) {
-        const addr = XLSX.utils.encode_cell({r, c:6});
-        if (wsResults[addr]) wsResults[addr].s = statusStyle(resultsData[r][6]);
+    // Uses the live grid view (sort/filter/calculated columns flow through).
+    const grid = (window._grids || {}).results;
+    if (grid) {
+      const visCols = grid.getColumns();
+      const viewRows = grid.getViewRows();
+      const resultsData = [ visCols.map(c => c.label) ].concat(
+        viewRows.map(r => visCols.map(c => {
+          const v = r[c.key];
+          if (v == null) return '';
+          if (c.type === 'number' || c.type === 'calc') return Number(v) || 0;
+          return v;
+        }))
+      );
+      // Optional totals row
+      if (grid.showTotals) {
+        resultsData.push(visCols.map((c, i) => {
+          if (c.type === 'number' || c.type === 'calc') return grid.aggregate(viewRows, c.key, 'sum') ?? '';
+          if (i === 0) return 'Total';
+          return '';
+        }));
       }
+      const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
+      wsResults['!cols'] = visCols.map(c => ({ wch: Math.max(12, c.label.length + 4) }));
+      wsResults['!rows'] = resultsData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+      styleRange(wsResults, 0, 0, 0, visCols.length - 1, STYLE.tableHeader);
+      if (resultsData.length > 1) {
+        // Apply numeric/text/status styles per column
+        const dataEnd = grid.showTotals ? resultsData.length - 2 : resultsData.length - 1;
+        visCols.forEach((c, ci) => {
+          if (c.type === 'status') {
+            for (let r = 1; r <= dataEnd; r++) {
+              const addr = XLSX.utils.encode_cell({r, c: ci});
+              if (wsResults[addr]) wsResults[addr].s = statusStyle(resultsData[r][ci]);
+            }
+          } else if (c.type === 'number' || c.type === 'calc') {
+            styleNumericRange(wsResults, 1, dataEnd, ci, ci);
+          } else {
+            styleRange(wsResults, 1, dataEnd, ci, ci, STYLE.value);
+          }
+        });
+        // Totals row styling
+        if (grid.showTotals) {
+          const totalRow = resultsData.length - 1;
+          const totalStyle = {
+            font: { bold: true, sz: 11, color: { rgb: '1A56E8' } },
+            fill: { fgColor: { rgb: 'F0F5FF' } },
+            alignment: { vertical: 'center' },
+            numFmt: '#,##0',
+            border: { top: BORDER_MEDIUM, bottom: BORDER_THIN, left: BORDER_THIN, right: BORDER_THIN }
+          };
+          visCols.forEach((c, ci) => {
+            const addr = XLSX.utils.encode_cell({r: totalRow, c: ci});
+            if (wsResults[addr]) {
+              if (c.type === 'number' || c.type === 'calc') {
+                const v = wsResults[addr].v;
+                if (v !== '' && v != null) {
+                  wsResults[addr].v = Number(v);
+                  wsResults[addr].t = 'n';
+                }
+                wsResults[addr].s = { ...totalStyle, alignment: { vertical: 'center', horizontal: 'right' } };
+              } else {
+                wsResults[addr].s = totalStyle;
+              }
+            }
+          });
+        }
+      }
+      wsResults['!freeze'] = { xSplit: 0, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, wsResults, 'Migration Results');
+    } else {
+      // Fallback — raw tables if grid not available
+      const tables = d.tables || [{ name: d.targetTable||'migration', sourceRows: totalRows, insertedRows: inserted, errors, batches: Math.ceil(totalRows/100), status: errors===0?'success':'partial' }];
+      const resultsData = [
+        ['Source table', 'Target table', 'Source rows', 'Inserted', 'Errors', 'Batches', 'Status']
+      ].concat(tables.map(t => [
+        t.sourceName || d.sourceTable || d.sourceFile || '—', t.name, t.sourceRows||0, t.insertedRows||0, t.errors||0, t.batches||0, t.status||'—'
+      ]));
+      const wsResults = XLSX.utils.aoa_to_sheet(resultsData);
+      wsResults['!cols'] = [{wch:35},{wch:35},{wch:14},{wch:12},{wch:10},{wch:10},{wch:14}];
+      wsResults['!rows'] = resultsData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+      styleRange(wsResults, 0, 0, 0, 6, STYLE.tableHeader);
+      if (resultsData.length > 1) {
+        styleRange(wsResults, 1, resultsData.length-1, 0, 1, STYLE.value);
+        styleNumericRange(wsResults, 1, resultsData.length-1, 2, 5);
+        for (let r = 1; r < resultsData.length; r++) {
+          const addr = XLSX.utils.encode_cell({r, c:6});
+          if (wsResults[addr]) wsResults[addr].s = statusStyle(resultsData[r][6]);
+        }
+      }
+      wsResults['!freeze'] = { xSplit: 0, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, wsResults, 'Migration Results');
     }
-    wsResults['!freeze'] = { xSplit: 0, ySplit: 1 };
-    XLSX.utils.book_append_sheet(wb, wsResults, 'Migration Results');
     // ── Sheet 3: Column Mapping ───────────────────────────────────────────────
-    if (d.columnMapping && d.columnMapping.length > 0) {
-      const srcTableName = d.sourceTable || 
+    // Uses the live grid view when available so calculated columns flow through.
+    const mapGrid = (window._grids || {}).mapping;
+    if (mapGrid && mapGrid.getViewRows().length > 0) {
+      const visCols = mapGrid.getColumns();
+      const viewRows = mapGrid.getViewRows();
+      const mapData = [ visCols.map(c => c.label) ].concat(
+        viewRows.map(r => visCols.map(c => {
+          const v = r[c.key];
+          if (v == null) return '';
+          if (c.type === 'number' || c.type === 'calc') return Number(v) || 0;
+          return v;
+        }))
+      );
+      const wsMap = XLSX.utils.aoa_to_sheet(mapData);
+      wsMap['!cols'] = visCols.map(c => ({ wch: Math.max(14, c.label.length + 4) }));
+      wsMap['!rows'] = mapData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+      styleRange(wsMap, 0, 0, 0, visCols.length - 1, STYLE.tableHeader);
+      if (mapData.length > 1) {
+        visCols.forEach((c, ci) => {
+          if (c.type === 'number' || c.type === 'calc') {
+            styleNumericRange(wsMap, 1, mapData.length - 1, ci, ci);
+          } else {
+            styleRange(wsMap, 1, mapData.length - 1, ci, ci, STYLE.value);
+          }
+        });
+      }
+      wsMap['!freeze'] = { xSplit: 0, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, wsMap, 'Column Mapping');
+    } else if (d.columnMapping && d.columnMapping.length > 0) {
+      const srcTableName = d.sourceTable ||
         (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
         d.sourceFile || '—';
       const tgtTableName = d.targetTable || (d.tables?.[0]?.name) || '—';
       const mapData = [
-        ['Source table', 'Source column', 'Target table', 'Target column', 'Target type', 'Transform', 'Transform expression', 'Was/Is rules']
+        ['Source table', 'Source column', 'Target table', 'Target column', 'Target type', 'Transform']
       ].concat(d.columnMapping.map(m => [
         m.srcTable || srcTableName, m.srcCol || '',
-        tgtTableName, m.tgtCol || '',
         m.tgtTable || tgtTableName, m.tgtCol || '',
+        m.tgtType || '', m.transform || 'NONE'
       ]));
       const wsMap = XLSX.utils.aoa_to_sheet(mapData);
-      wsMap['!cols'] = [{wch:30},{wch:28},{wch:30},{wch:28},{wch:18},{wch:14},{wch:35},{wch:40}];
+      wsMap['!cols'] = [{wch:30},{wch:28},{wch:30},{wch:28},{wch:18},{wch:14}];
       wsMap['!rows'] = mapData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
-      styleRange(wsMap, 0, 0, 0, 7, STYLE.tableHeader);
-      if (mapData.length > 1) {
-        styleRange(wsMap, 1, mapData.length-1, 0, 7, STYLE.value);
-      }
+      styleRange(wsMap, 0, 0, 0, 5, STYLE.tableHeader);
+      if (mapData.length > 1) styleRange(wsMap, 1, mapData.length-1, 0, 5, STYLE.value);
       wsMap['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsMap, 'Column Mapping');
     }
@@ -1198,10 +2059,43 @@ function doExport() {
       XLSX.utils.book_append_sheet(wb, wsWarn, 'Warnings');
     }
     // ── Sheet 7: Reconciliation ──────────────────────────────────────────────
-    // Only included if the run had a reconciliation array populated.
-    // Grouped entries produce one row per group (flattened upstream); scalar
-    // entries produce one row total. Group by / Group value are blank for scalar.
-    if (Array.isArray(d.reconciliation) && d.reconciliation.length > 0) {
+    // Uses the live grid view when available so calculated columns, filters,
+    // and grouping all flow into the exported sheet.
+    const reconGrid = (window._grids || {}).recon;
+    if (reconGrid && reconGrid.getViewRows().length > 0) {
+      const visCols = reconGrid.getColumns();
+      const viewRows = reconGrid.getViewRows();
+      const reconData = [ visCols.map(c => c.label) ].concat(
+        viewRows.map(r => visCols.map(c => {
+          const v = r[c.key];
+          if (v == null) return '';
+          if (c.type === 'number' || c.type === 'calc') return Number(v) || 0;
+          return v;
+        }))
+      );
+      const wsRecon = XLSX.utils.aoa_to_sheet(reconData);
+      wsRecon['!cols'] = visCols.map(c => ({ wch: Math.max(12, c.label.length + 4) }));
+      wsRecon['!rows'] = reconData.map((_, i) => i === 0 ? { hpt: 32 } : { hpt: 18 });
+      styleRange(wsRecon, 0, 0, 0, visCols.length - 1, STYLE.tableHeader);
+      if (reconData.length > 1) {
+        const statusIdx = visCols.findIndex(c => c.type === 'status');
+        visCols.forEach((c, ci) => {
+          if (c.type === 'status') {
+            for (let r = 1; r < reconData.length; r++) {
+              const addr = XLSX.utils.encode_cell({r, c: ci});
+              if (wsRecon[addr]) wsRecon[addr].s = statusStyle(reconData[r][ci]);
+            }
+          } else if (c.type === 'number' || c.type === 'calc') {
+            styleNumericRange(wsRecon, 1, reconData.length - 1, ci, ci);
+          } else {
+            styleRange(wsRecon, 1, reconData.length - 1, ci, ci, STYLE.value);
+          }
+        });
+      }
+      wsRecon['!freeze'] = { xSplit: 0, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, wsRecon, 'Reconciliation');
+    } else if (Array.isArray(d.reconciliation) && d.reconciliation.length > 0) {
+      // Fallback — raw reconciliation data
       const reconData = [
         ['Step', 'Source table', 'Target table', 'Metric', 'Source column', 'Target column',
          'Group by', 'Group value',
@@ -1230,11 +2124,8 @@ function doExport() {
       wsRecon['!rows'] = reconData.map((_, i) => i === 0 ? { hpt: 32 } : { hpt: 18 });
       styleRange(wsRecon, 0, 0, 0, 12, STYLE.tableHeader);
       if (reconData.length > 1) {
-        // Text columns (0-7)
         styleRange(wsRecon, 1, reconData.length-1, 0, 7, STYLE.value);
-        // Numeric columns (8-11): source, target, delta, tolerance
         styleNumericRange(wsRecon, 1, reconData.length-1, 8, 11);
-        // Result column (12)
         for (let r = 1; r < reconData.length; r++) {
           const addr = XLSX.utils.encode_cell({r, c:12});
           if (wsRecon[addr]) wsRecon[addr].s = statusStyle(reconData[r][12]);
