@@ -1227,7 +1227,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Source &amp; target connections</div>
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>All migration jobs</div>
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Was/Is rules</div>
-              <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Inventory items</div>
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Project artifacts</div>
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>API key</div>
             </div>
             <button class="btn btn-green" onclick="backupAll()" style="width:100%;justify-content:center">⬇ Download backup.json</button>
@@ -1881,8 +1881,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <!-- LEFT CONTROLS PANEL -->
       <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;position:sticky;top:0">
 
-        <div style="font-size:15px;font-weight:600;margin-bottom:0.2rem">Inventory</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:1.5rem">Reference documents for this project</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:0.2rem">Project Artifacts</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:1.5rem">Reference documents organised by project</div>
 
         <!-- Upload zone -->
         <div class="inv-upload-zone" id="inv-upload-zone"
@@ -1948,6 +1948,23 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
       <!-- RIGHT PANEL: document grid + forms -->
       <div>
+
+        <!-- HEADLINE + AI-USAGE EXPLAINER
+             Shown at the top of the main area so users understand WHY they're
+             uploading artifacts here and what the AI will do with them.
+             Keeps copy short; a dismissible "Learn more" link could be added
+             later if this grows too long. -->
+        <div style="margin-bottom:1.25rem">
+          <div style="display:flex;align-items:baseline;gap:0.6rem;margin-bottom:0.35rem;flex-wrap:wrap">
+            <h2 style="font-size:22px;font-weight:600;color:var(--text);letter-spacing:-0.01em;margin:0">Project Artifacts</h2>
+            <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">organised by project folder</span>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.6;background:var(--bg2);border:0.5px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r-lg);padding:0.85rem 1.1rem">
+            <span style="font-size:15px;margin-right:4px">✨</span>
+            <strong style="color:var(--text);font-weight:600">Context for Claude AI.</strong>
+            Documents uploaded here — emails, client briefs, sign-offs, attachments — are made available to Claude when generating narratives for conversion reports tied to this project. The AI uses them to add context, explain anomalies, and cite sources inline (e.g. <code style="font-family:var(--mono);font-size:11px;background:var(--bg3);padding:1px 5px;border-radius:3px;color:var(--accent)">[Email, 14&nbsp;Apr]</code>). Upload artifacts into a project folder and they'll be picked up automatically the next time that project's report runs.
+          </div>
+        </div>
 
         <!-- Type selector (inline, shown after file chosen) -->
         <div id="inv-type-modal" style="display:none;background:var(--bg2);border:0.5px solid var(--accent);border-radius:var(--r-lg);padding:1.5rem;margin-bottom:1.5rem">
@@ -2048,7 +2065,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div><!-- end view-inventory -->
 
     <!-- SEARCH VIEW ─────────────────────────────────────────────────────────
-         Global search across jobs, projects, inventory, and saved reports.
+         Global search across jobs, projects, artifacts, and saved reports.
          Typing in the box runs a client-side search (plus an async remote
          fetch for Cosmos-stored conversion reports) and renders results in
          a single table with a "Go to" action per row. Search matches
@@ -2059,7 +2076,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="panel-header">
         <div>
           <div class="panel-title">🔍 Search</div>
-          <div class="panel-sub">Find jobs, maps, projects, inventory and saved reports from one place</div>
+          <div class="panel-sub">Find jobs, maps, projects, artifacts and saved reports from one place</div>
         </div>
       </div>
 
@@ -2070,7 +2087,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <option value="all">All sources</option>
           <option value="job">Jobs / Maps only</option>
           <option value="project">Projects only</option>
-          <option value="inventory">Inventory only</option>
+          <option value="inventory">Artifacts only</option>
           <option value="report">Reports only</option>
         </select>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('search-input').value='';runGlobalSearch()" title="Clear search">✕ Clear</button>
@@ -2256,6 +2273,25 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </div>
 
 <!-- JOB DETAIL MODAL -->
+<!-- Move-artifact-to-project modal. Opened by invMoveDoc(id); confirmed by
+     invConfirmMove(); cancelled by invCloseMoveDocModal(). The selected
+     target is captured from the <select> rather than typed manually, so it
+     matches the rest of the dashboard's dark-theme styling. -->
+<div class="modal-overlay" id="move-doc-modal">
+  <div class="modal" style="width:460px">
+    <div class="modal-title">Move artifact to project</div>
+    <div class="modal-sub" id="move-doc-sub">Choose which project folder this document should live in.</div>
+    <div style="margin-bottom:1rem">
+      <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:6px">Target project</label>
+      <select id="move-doc-select" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.55rem 0.75rem;border-radius:var(--r);font-size:13px;font-family:var(--serif);outline:none"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="invCloseMoveDocModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="invConfirmMove()">Move</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="job-modal">
   <div class="modal">
     <div class="modal-title" id="modal-job-name">Job Detail</div>
@@ -4586,7 +4622,7 @@ async function initGlobalSearch() {
   const res   = document.getElementById('search-results');
   const sum   = document.getElementById('search-summary');
   if (input) { setTimeout(() => input.focus(), 50); }
-  if (res) res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, inventory, and saved reports.</p></div>';
+  if (res) res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, artifacts, and saved reports.</p></div>';
   if (sum) sum.textContent = '';
   // Fire-and-forget report prefetch — we don't await so the UI stays responsive.
   // If it fails, search still works for the local sources; we just won't show
@@ -4633,7 +4669,7 @@ function runGlobalSearch() {
   const scopeVal = scope ? scope.value : 'all';
 
   if (!q) {
-    res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, inventory, and saved reports.</p></div>';
+    res.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Start typing above to search across jobs, projects, artifacts, and saved reports.</p></div>';
     if (sum) sum.textContent = '';
     return;
   }
@@ -4734,7 +4770,7 @@ function runGlobalSearch() {
       if (d.isNote && _matchField(d.content, q)) matches.push({ field: 'note', text: _snippet(d.content, q) });
       if (!matches.length) return;
       rows.push({
-        type: 'Inventory',
+        type: 'Artifact',
         typeColor: 'var(--amber)',
         kind: typeLabel(d.type),
         name: d.name || '(unnamed document)',
@@ -5624,24 +5660,66 @@ function invRenderDocCard(doc, projectById) {
   </div>`;
 }
 
-// Move a doc to a different project folder (or unassign). Uses a minimal
-// prompt-style dropdown to keep the footprint small — if we need richer UX
-// later we can switch this to a modal.
+// Move a doc to a different project folder (or unassign). Uses a proper
+// styled modal instead of a browser prompt so the UX matches the rest of
+// the dashboard. The target id is stashed on `window._invMovingDocId` for
+// invConfirmMove to read — stateful in the DOM rather than in a closure so
+// the handlers can be wired as inline onclicks like the other modals.
 function invMoveDoc(id) {
   const doc = invItems.find(d => d.id === id);
   if (!doc) return;
+  window._invMovingDocId = id;
+
+  // Populate the dropdown with all projects + "Unassigned". Current project
+  // is pre-selected; if the doc's projectId points at a deleted project, we
+  // treat it as Unassigned.
   let projects = [];
   try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch {}
-  const choices = [{ id: '', name: '— Unassigned —' }].concat(projects.map(p => ({ id: p.id, name: p.name || p.id })));
+  const sel = document.getElementById('move-doc-select');
   const current = doc.projectId || '';
-  const list = choices.map((c, i) => `${i}. ${c.name}${c.id === current ? '  (current)' : ''}`).join('\n');
-  const ans = prompt(`Move "${doc.name}" to which project?\n\n${list}\n\nEnter number:`);
-  if (ans == null) return;
-  const idx = parseInt(ans, 10);
-  if (isNaN(idx) || idx < 0 || idx >= choices.length) return;
-  doc.projectId = choices[idx].id;
+  const currentExists = !current || projects.some(p => p.id === current);
+  const effectiveCurrent = currentExists ? current : '';
+  const opts = [{ id: '', name: '— Unassigned —' }]
+    .concat(projects.map(p => ({ id: p.id, name: p.name || p.id })));
+  sel.innerHTML = opts.map(o => {
+    const selected = o.id === effectiveCurrent ? ' selected' : '';
+    const suffix   = o.id === effectiveCurrent ? '  (current)' : '';
+    return `<option value="${escapeHtml(o.id)}"${selected}>${escapeHtml(o.name)}${suffix}</option>`;
+  }).join('');
+
+  // Subtitle reflects which doc we're moving (and notes the broken-link case)
+  const sub = document.getElementById('move-doc-sub');
+  if (sub) {
+    let msg = `Choose a project folder for <strong style="color:var(--text)">${escapeHtml(doc.name)}</strong>.`;
+    if (!currentExists && current) {
+      msg += ' <span style="color:var(--amber)">This document was linked to a project that no longer exists.</span>';
+    }
+    sub.innerHTML = msg;
+  }
+
+  document.getElementById('move-doc-modal').classList.add('open');
+  // Focus the dropdown so keyboard users can arrow-select immediately
+  setTimeout(() => sel.focus(), 30);
+}
+
+function invCloseMoveDocModal() {
+  document.getElementById('move-doc-modal').classList.remove('open');
+  window._invMovingDocId = null;
+}
+
+function invConfirmMove() {
+  const id = window._invMovingDocId;
+  if (!id) { invCloseMoveDocModal(); return; }
+  const doc = invItems.find(d => d.id === id);
+  if (!doc) { invCloseMoveDocModal(); return; }
+  const sel = document.getElementById('move-doc-select');
+  const newProjectId = sel ? sel.value : '';
+  // No-op if it hasn't changed — close silently rather than churn the render
+  if ((doc.projectId || '') === newProjectId) { invCloseMoveDocModal(); return; }
+  doc.projectId = newProjectId;
   saveInventory();
   renderInventory();
+  invCloseMoveDocModal();
 }
 
 function formatInvSize(b) {
