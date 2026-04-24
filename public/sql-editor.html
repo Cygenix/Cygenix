@@ -268,7 +268,6 @@ body.fullscreen .script-panel { display:none }
     <button class="btn btn-ghost btn-sm" onclick="formatSQL()">⌨ Format</button>
     <button class="btn btn-green btn-sm" onclick="saveScript()">💾 Save</button>
     <button id="save-to-job-btn" class="btn btn-teal btn-sm" onclick="saveBackToJob()" style="display:none" title="Save SQL changes back to the loaded job">💾 Save to Job</button>
-    <button class="btn btn-amber btn-sm" onclick="saveToInventory()" title="Save to Inventory">📋 Inventory</button>
     <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ New Job</button>
     <button class="btn btn-ghost btn-sm" onclick="document.getElementById('load-sql-file').click()" title="Load SQL from a .sql or .txt file">📂 Load File</button>
     <input type="file" id="load-sql-file" accept=".sql,.txt,.ddl" style="display:none" onchange="loadSQLFromFile(this)">
@@ -955,11 +954,14 @@ function renderScriptList() {
   if (!filtered.length) { list.innerHTML='<div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">'+(scripts.length?'No matches':'No scripts yet — write one and save it')+'</div>'; return; }
   list.innerHTML = filtered.map((s,i)=>`
     <div class="script-item ${currentScript===s.id?'active':''}" style="position:relative" onclick="loadScript('${s.id}')">
-      <div class="script-name" style="padding-right:22px">${esc(s.name)}</div>
+      <div class="script-name" style="padding-right:52px">${esc(s.name)}</div>
       <div class="script-meta" style="display:flex;align-items:center;gap:0.4rem;margin-top:2px">
         <span class="script-conn ${s.conn==='source'?'conn-src':'conn-tgt'}">${s.conn}</span>
         <span>${new Date(s.updated||s.created).toLocaleDateString('en-GB')}</span>
       </div>
+      <button onclick="event.stopPropagation();moveScriptToJob('${s.id}')"
+        style="position:absolute;top:6px;right:26px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;line-height:1;padding:2px 4px;border-radius:3px;opacity:0.7"
+        title="Move to Migration Jobs" onmouseover="this.style.opacity='1';this.style.color='var(--purple)'" onmouseout="this.style.opacity='0.7';this.style.color='var(--text3)'">→ Job</button>
       <button onclick="event.stopPropagation();deleteScript('${s.id}')"
         style="position:absolute;top:6px;right:6px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 3px;border-radius:3px;opacity:0.6"
         title="Delete script" onmouseover="this.style.opacity='1';this.style.color='var(--red)'" onmouseout="this.style.opacity='0.6';this.style.color='var(--text3)'">✕</button>
@@ -1031,6 +1033,70 @@ function deleteScript(id) {
   renderScriptList();
   setExecStatus('Script deleted', 'var(--red)');
   setTimeout(()=>setExecStatus('',''), 2000);
+}
+
+// ── Move a saved script to Migration Jobs ─────────────────────────────────────
+// Promotes the script into a job (same schema as addToJobs()) and, if the user
+// confirms, removes the script from the saved-scripts list so it's a true
+// "move" rather than a copy.
+function moveScriptToJob(id) {
+  const s = scripts.find(s => s.id === id);
+  if (!s) return;
+  if (!s.sql || !s.sql.trim()) { alert('This script has no SQL to move.'); return; }
+
+  const msg = 'Move "' + s.name + '" to Migration Jobs?\n\n'
+            + 'OK — move (script will be removed from Saved scripts)\n'
+            + 'Cancel — keep the script here';
+  if (!confirm(msg)) return;
+
+  const conn = s.conn || 'source';
+  const job = {
+    id:        'job_' + Date.now(),
+    name:      s.name,
+    projectId: localStorage.getItem('cygenix_active_project_id') || '',
+    source:    conn === 'source' ? (CygenixConnections.get().srcConnString || '').slice(0,50) : '',
+    target:    conn === 'target' ? CygenixConnections.tgtConn().slice(0,50) : '',
+    jobType:   'sql',
+    type:      'sql',
+    sql:       s.sql,
+    connOn:    conn,
+    status:    'ready',
+    created:   new Date().toISOString(),
+    tables:    [],
+    files:     [],
+    totalRows: 0,
+    columnMapping: [],
+    wasisRules:    [],
+    warnings:  ['SQL script moved from SQL Editor saved scripts'],
+    description: s.desc || '',
+  };
+
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    jobs.unshift(job);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,50)));
+  } catch(e) {
+    alert('Could not create job: ' + e.message);
+    return;
+  }
+
+  // Remove the script from saved scripts (this is a move, not a copy)
+  scripts = scripts.filter(x => x.id !== id);
+  saveScripts();
+  if (currentScript === id) {
+    currentScript = null;
+    document.getElementById('sql-editor').value = '';
+    updateLineNumbers();
+    const nm = document.getElementById('script-name');
+    if (nm) nm.value = 'New script';
+    clearResults();
+  }
+  renderScriptList();
+  // If the Jobs pane is visible, refresh it so the new job appears immediately
+  if (typeof renderJobsList === 'function') renderJobsList();
+
+  setExecStatus('✓ Moved to Migration Jobs: ' + s.name, 'var(--purple)');
+  setTimeout(()=>setExecStatus('',''), 3000);
 }
 
 // ── Load SQL from file ────────────────────────────────────────────────────────
