@@ -224,7 +224,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
-        <button class="btn btn-ghost btn-sm" onclick="openCreateTaskModal()" title="Save selected jobs as a task for the agent to run later">📅 Create task</button>
+        <button class="btn btn-ghost btn-sm" onclick="openCreateTaskModal()" title="Package selected jobs as a single task for the Task Agent to schedule and run">📦 Create task</button>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
       </div>
@@ -381,18 +381,18 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
   </div>
 </div>
 
-<!-- Create Task modal — snapshots selected jobs + current connections into a
-     stand-alone task that the task agent can run later without touching the
-     live project. -->
+<!-- Create Task modal — packages selected jobs as a single composite job in
+     cygenix_jobs so it appears in the Task Agent's Job dropdown. Scheduling
+     happens over there (Dashboard → Task Agent → + New schedule), not here. -->
 <div class="modal-overlay" id="create-task-modal" style="display:none" onclick="if(event.target===this)closeCreateTaskModal()">
   <div class="modal" style="max-width:560px">
     <div class="modal-header">
-      <div style="font-size:14px;font-weight:600">Create task from selected jobs</div>
+      <div style="font-size:14px;font-weight:600">Package task for Task Agent</div>
       <button onclick="closeCreateTaskModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
     </div>
     <div class="modal-body">
       <div style="font-size:12px;color:var(--text3);margin-bottom:0.9rem;line-height:1.6">
-        This saves a snapshot of the currently selected jobs — in their current order — as a task that the task agent can execute as a single conversion job. Connections and SQL are captured at save time, so later edits to this project won't affect the task.
+        Bundles the currently selected jobs — in their current order — into a single composite job. It appears in <strong>Task Agent → Job</strong> so you can schedule the whole bundle as one unit (cron, chained, or Run now).
       </div>
       <div class="form-row">
         <label class="form-label">Task name</label>
@@ -400,15 +400,14 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       </div>
       <div class="form-row">
         <label class="form-label">Description <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></label>
-        <textarea class="form-input" id="task-desc" rows="2" placeholder="Short note so you'll remember what this task does" style="font-family:var(--serif);font-size:13px"></textarea>
-      </div>
-      <div class="form-row">
-        <label class="form-label">Schedule <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(optional — leave blank to run on demand)</span></label>
-        <input class="form-input" id="task-scheduled" type="datetime-local" style="font-family:var(--mono);font-size:12px">
+        <textarea class="form-input" id="task-desc" rows="2" placeholder="Short note so you'll remember what this bundle does" style="font-family:var(--serif);font-size:13px"></textarea>
       </div>
       <div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.75rem 0.9rem;font-size:11.5px;color:var(--text2);font-family:var(--mono);line-height:1.7">
-        <div style="color:var(--text3);margin-bottom:0.4rem">Task summary</div>
+        <div style="color:var(--text3);margin-bottom:0.4rem">Task contents</div>
         <div id="task-summary-content">–</div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:0.75rem;line-height:1.5">
+        After saving, head to <strong style="color:var(--text2)">Dashboard → Task Agent → + New schedule</strong> and pick this task from the Job dropdown.
       </div>
     </div>
     <div class="modal-footer">
@@ -2747,59 +2746,60 @@ function showToast(msg) {
   setTimeout(()=>t.remove(),2500);
 }
 
-// ── Tasks ─────────────────────────────────────────────────────────────────────
-// A task is a self-contained snapshot of the currently selected jobs (in order,
-// grouped the same way) plus connections resolved at save time. The task agent
-// reads `cygenix_tasks` from localStorage and runs tasks whose `scheduledFor`
-// is due (or immediately, when status==='pending' and scheduledFor is empty).
+// ── Tasks (composite jobs for the Task Agent) ────────────────────────────────
+// A "task" here is really a composite job — a bundle of selected sub-jobs that
+// is stored alongside regular jobs in localStorage['cygenix_jobs'] so it shows
+// up in the Task Agent's Job dropdown (Dashboard → Task Agent → + New schedule).
+// Scheduling (cron / chained / on-demand) lives in the Task Agent UI, not here.
 //
-// Task shape:
+// Composite job shape (extends the normal job record so existing renderers,
+// filters, delete/rename, etc. continue to work unchanged):
+//
 //   {
-//     id, name, description, createdAt, scheduledFor (ISO string | ''),
-//     status: 'pending' | 'running' | 'passed' | 'failed',
-//     projectId, projectName,
-//     srcConn, tgtConn,                       // snapshot
-//     groups: [ { id, name, executionMode, steps: [ …selected steps… ] } ],
-//     stepCount, groupCount
+//     id: 'job_…',              // standard job id
+//     name, description,
+//     jobType: 'composite',     // marker — distinguishes from 'sql' / 'one-to-many' / 'simple-map'
+//     type: 'composite',        // mirror for older code paths that read `.type`
+//     created: ISO string,
+//     source: '(multiple)',     // summary strings so the Jobs table renders cleanly
+//     target: '(multiple)',
+//     totalRows: 0,
+//     tables: [],
+//
+//     // Composite-specific payload — snapshot of what to run:
+//     projectId, projectName,                          // provenance
+//     srcConn, tgtConn,                                // captured at save time
+//     childSteps: [                                    // flat, ordered, only selected
+//       { order, groupName, groupMode, …step fields… }
+//     ],
+//     childStepCount, groupCount
 //   }
-const TASKS_KEY = 'cygenix_tasks';
+//
+// NOTE: The Task Agent backend currently executes single-job snapshots. Running
+// a composite job will require the backend runner to recognise jobType==='composite'
+// and iterate childSteps. That's a separate piece of work — this change only
+// gets the bundle into the picker.
 
-function loadTasksList(){
-  try {
-    const raw = localStorage.getItem(TASKS_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return arr;
-    }
-  } catch {}
-  return [];
-}
-function persistTasksList(tasks){
-  try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {}
-}
-function newTaskId(){ return 'task_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
+function newCompositeJobId(){ return 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
 
-// Build the set of groups + steps that will go into a task. Only includes
-// steps where enabled !== false, preserves their order, and drops groups that
-// end up empty (so the task agent doesn't waste a cycle on them).
-function buildTaskGroupsFromSelection(){
+// Build a flat, ordered list of selected steps across all groups. Preserves
+// project order and attaches the group name/mode each step came from, so the
+// future composite runner can respect group boundaries if it wants to.
+function buildCompositeChildSteps(){
   const out = [];
+  let order = 0;
   (project.groups || []).forEach(g => {
-    const selectedSteps = (g.steps || []).filter(isStepEnabled);
-    if (!selectedSteps.length) return;
-    // Deep-clone steps so later edits to the project don't mutate the task.
-    // Reset runtime state (status/log) — the agent will populate those on run.
-    const snapshotSteps = selectedSteps.map(s => {
+    (g.steps || []).forEach(s => {
+      if (!isStepEnabled(s)) return;
+      // Deep-clone and reset runtime state so the bundle is a clean snapshot.
       const copy = JSON.parse(JSON.stringify(s));
       copy.status = 'pending';
       copy.log = '';
-      return copy;
-    });
-    out.push({
-      id: g.id,
-      name: g.name || '',
-      executionMode: g.executionMode || 'sequential',
-      steps: snapshotSteps
+      copy.order = order++;
+      copy.groupId = g.id;
+      copy.groupName = g.name || '';
+      copy.groupMode = g.executionMode || 'sequential';
+      out.push(copy);
     });
   });
   return out;
@@ -2810,29 +2810,29 @@ function openCreateTaskModal(){
   const flat = getAllStepsFlat();
   if (!flat.length) { alert('Add at least one job first.'); return; }
   const selectedFlat = flat.filter(x => isStepEnabled(x.step));
-  if (!selectedFlat.length) { alert('Nothing selected. Tick at least one job to save as a task.'); return; }
+  if (!selectedFlat.length) { alert('Nothing selected. Tick at least one job to package as a task.'); return; }
 
   const tgtConn = effectiveTgtConn();
   if (!tgtConn) {
-    if (!confirm('No target connection is configured. The task will be saved but the agent will not be able to run it until a target connection is set. Continue?')) return;
+    if (!confirm('No target connection is configured. The task will be saved but the Task Agent will not be able to run it until a target is set. Continue?')) return;
   }
 
-  // Pre-fill name with a sensible default: "<project name> – N jobs"
+  // Pre-fill a sensible default name
   const nameInput = document.getElementById('task-name');
   const defaultName = (project.name || 'Untitled project') + ' – ' + selectedFlat.length + ' job' + (selectedFlat.length===1?'':'s');
   nameInput.value = defaultName;
   document.getElementById('task-desc').value = '';
-  document.getElementById('task-scheduled').value = '';
 
-  // Render a quick summary so the user can sanity-check what's about to be saved.
-  const selectedGroups = buildTaskGroupsFromSelection();
+  // Summary panel — groups touched, total jobs, connection summary
+  const groupsTouched = new Set(selectedFlat.map(x => x.gi)).size;
   const srcConn = effectiveSrcConn() || '(not set)';
+  const truncate = (s, n) => s && s.length > n ? s.slice(0, n) + '…' : (s || '');
   const summary =
     'Project: ' + esc(project.name || 'Untitled') + '\n' +
-    'Groups:  ' + selectedGroups.length + '\n' +
+    'Groups:  ' + groupsTouched + '\n' +
     'Jobs:    ' + selectedFlat.length + '\n' +
-    'Source:  ' + esc(srcConn.length > 60 ? srcConn.slice(0,60)+'…' : srcConn) + '\n' +
-    'Target:  ' + esc((tgtConn || '(not set)').length > 60 ? (tgtConn || '').slice(0,60)+'…' : (tgtConn || '(not set)'));
+    'Source:  ' + esc(truncate(srcConn, 60)) + '\n' +
+    'Target:  ' + esc(truncate(tgtConn || '(not set)', 60));
   document.getElementById('task-summary-content').textContent = summary;
 
   document.getElementById('create-task-modal').style.display = 'flex';
@@ -2847,44 +2847,63 @@ function confirmCreateTask(){
   const name = (document.getElementById('task-name').value || '').trim();
   if (!name) { alert('Please give the task a name.'); return; }
 
-  const selectedGroups = buildTaskGroupsFromSelection();
-  if (!selectedGroups.length) { alert('Nothing selected to save.'); return; }
+  const childSteps = buildCompositeChildSteps();
+  if (!childSteps.length) { alert('Nothing selected to save.'); return; }
 
-  // Count steps across the built task so status text stays accurate even if
-  // selection changed between modal open and confirm.
-  const stepCount = selectedGroups.reduce((n, g) => n + g.steps.length, 0);
-
-  // datetime-local inputs return local-time strings without TZ. Convert to an
-  // ISO string so the task agent can parse unambiguously.
-  const schedRaw = (document.getElementById('task-scheduled').value || '').trim();
-  let scheduledFor = '';
-  if (schedRaw) {
-    const d = new Date(schedRaw);
-    if (!isNaN(d.getTime())) scheduledFor = d.toISOString();
+  // Check for a clashing job name so the Task Agent dropdown stays unambiguous.
+  let existingJobs = [];
+  try { existingJobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  if (!Array.isArray(existingJobs)) existingJobs = [];
+  if (existingJobs.some(j => (j.name || '').trim().toLowerCase() === name.toLowerCase())) {
+    if (!confirm('A job called "' + name + '" already exists. Save this task with the same name anyway?')) return;
   }
 
-  const task = {
-    id: newTaskId(),
+  const groupCount = new Set(childSteps.map(s => s.groupId)).size;
+
+  const compositeJob = {
+    id: newCompositeJobId(),
     name,
     description: (document.getElementById('task-desc').value || '').trim(),
-    createdAt: new Date().toISOString(),
-    scheduledFor,
-    status: 'pending',
-    projectId: project.id,
+    jobType: 'composite',
+    type: 'composite',                     // mirror for code paths that read .type
+    created: new Date().toISOString(),
+
+    // Summary fields so the standard Jobs table renders this row cleanly
+    source: '(multiple)',
+    target: '(multiple)',
+    totalRows: 0,
+    tables: [],
+
+    // Provenance
+    projectId:   project.id,
     projectName: project.name || '',
+
+    // Connection snapshot at save time — matches what Run selected would use
     srcConn: effectiveSrcConn() || '',
     tgtConn: effectiveTgtConn() || '',
-    groups: selectedGroups,
-    stepCount,
-    groupCount: selectedGroups.length
+
+    // Payload the task runner will iterate
+    childSteps,
+    childStepCount: childSteps.length,
+    groupCount
   };
 
-  const tasks = loadTasksList();
-  tasks.push(task);
-  persistTasksList(tasks);
+  // Prepend so the new task surfaces at the top of the Task Agent's Job dropdown
+  // (which is rendered in array order from cygenix_jobs).
+  existingJobs.unshift(compositeJob);
+  try {
+    localStorage.setItem('cygenix_jobs', JSON.stringify(existingJobs));
+  } catch (e) {
+    alert('Could not save task: ' + (e && e.message || 'storage error'));
+    return;
+  }
 
   closeCreateTaskModal();
-  showToast('Task created: ' + task.name);
+
+  // Refresh the sidebar so the new composite job is visible straight away
+  if (typeof renderJobs === 'function') { try { renderJobs(); } catch {} }
+
+  showToast('Task created: ' + compositeJob.name);
 }
 </script>
 </body>
