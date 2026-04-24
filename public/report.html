@@ -207,6 +207,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   <div class="toolbar-logo">Cyge<span>nix</span> <span style="font-size:11px;color:#555a6a;margin-left:4px;font-family:var(--mono)">Migration Report</span></div>
   <div class="toolbar-actions">
     <a href="/dashboard.html" class="btn btn-ghost">← Dashboard</a>
+    <a href="/report_settings.html" class="btn btn-ghost">⚙ Edit settings</a>
+    <button class="btn btn-ghost" onclick="window.print()">🖨 Print</button>
     <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
     <button class="btn btn-ghost" onclick="saveToCygenix()" id="save-btn">💾 Save Report</button>
   </div>
@@ -420,6 +422,25 @@ function set(id, val){ const el=$(id); if(el) el.textContent = val ?? '—'; }
 function fmt(n){ return n != null ? Number(n).toLocaleString() : '—'; }
 function fmtDate(iso){ return iso ? new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
 function fmtSize(b){ if(!b)return'—'; if(b<1024)return b+'B'; if(b<1048576)return(b/1024).toFixed(1)+'KB'; return(b/1048576).toFixed(1)+'MB'; }
+
+// Load report configuration from localStorage. Set by report_settings.html
+// before opening the report. Structure:
+//   {
+//     grids: {
+//       results: { sort, groupBy, showTotals, pivotRow, pivotCol, pivotVal, pivotAgg, calcColumns: [{label, formula}] },
+//       mapping: { ...same... },
+//       recon:   { ...same... },
+//     },
+//     showCharts: boolean
+//   }
+// Missing keys fall back to defaults (no sort/grouping, charts on).
+function loadReportConfig() {
+  try {
+    const raw = localStorage.getItem('cygenix_report_config')
+             || sessionStorage.getItem('cygenix_report_config');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
 function loadReport() {
   // Get report data from sessionStorage (set by dashboard before opening report)
   let data;
@@ -508,9 +529,12 @@ function renderReport(d) {
     status:       t.status || (t.errors > 0 ? 'partial' : 'success'),
   }));
   window._grids = window._grids || {};
+  const reportConfig = loadReportConfig();
+  const resultsConfig = (reportConfig && reportConfig.grids && reportConfig.grids.results) || {};
   window._grids.results = new DataGrid({
     mount: document.getElementById('grid-results'),
     title: 'migration_results',
+    readonly: true,
     columns: [
       { key: 'source',     label: 'Source',      type: 'text',    mono: true, size: 11, muted: true },
       { key: 'table',      label: 'Table',       type: 'text',    mono: true, bold: true },
@@ -522,6 +546,14 @@ function renderReport(d) {
     ],
     rows: resultsRows,
     emptyMsg: 'No migration results to display.',
+    initialSort:       resultsConfig.sort,
+    initialGroupBy:    resultsConfig.groupBy,
+    initialShowTotals: resultsConfig.showTotals,
+    initialPivotRow:   resultsConfig.pivotRow,
+    initialPivotCol:   resultsConfig.pivotCol,
+    initialPivotVal:   resultsConfig.pivotVal,
+    initialPivotAgg:   resultsConfig.pivotAgg,
+    calcColumns:       resultsConfig.calcColumns,
   });
   // Column mapping (DataGrid mount happens below after steps section)
   // Project steps section
@@ -563,9 +595,11 @@ function renderReport(d) {
     transform:  m.transform || 'NONE',
     mapped:     m.tgtCol ? 1 : 0,
   }));
+  const mappingConfig = (reportConfig && reportConfig.grids && reportConfig.grids.mapping) || {};
   window._grids.mapping = new DataGrid({
     mount: document.getElementById('grid-mapping'),
     title: 'column_mapping',
+    readonly: true,
     columns: [
       { key: 'srcTable',  label: 'Source table',  type: 'text', mono: true, size: 11, muted: true },
       { key: 'srcCol',    label: 'Source column', type: 'text', mono: true },
@@ -579,6 +613,10 @@ function renderReport(d) {
     ],
     rows: mappingData,
     emptyMsg: 'No column mapping data available.',
+    initialSort:       mappingConfig.sort,
+    initialGroupBy:    mappingConfig.groupBy,
+    initialShowTotals: mappingConfig.showTotals,
+    calcColumns:       mappingConfig.calcColumns,
   });
   // Warnings
   const warnings = d.warnings || [];
@@ -637,9 +675,12 @@ function renderReconSection(entries) {
     _passed:      e.passed,
   }));
   window._grids = window._grids || {};
+  const reportCfg = (typeof loadReportConfig === 'function') ? loadReportConfig() : null;
+  const reconConfig = (reportCfg && reportCfg.grids && reportCfg.grids.recon) || {};
   window._grids.recon = new DataGrid({
     mount: document.getElementById('grid-recon'),
     title: 'reconciliation',
+    readonly: true,
     columns: [
       { key: 'step',        label: 'Step',         type: 'text',   mono: true, size: 11 },
       { key: 'metric',      label: 'Metric',       type: 'text',   mono: true, size: 11 },
@@ -656,6 +697,14 @@ function renderReconSection(entries) {
       { key: 'result',      label: 'Result',       type: 'status' },
     ],
     rows,
+    initialSort:       reconConfig.sort,
+    initialGroupBy:    reconConfig.groupBy,
+    initialShowTotals: reconConfig.showTotals,
+    initialPivotRow:   reconConfig.pivotRow,
+    initialPivotCol:   reconConfig.pivotCol,
+    initialPivotVal:   reconConfig.pivotVal,
+    initialPivotAgg:   reconConfig.pivotAgg,
+    calcColumns:       reconConfig.calcColumns,
   });
 }
 
@@ -879,17 +928,28 @@ class DataGrid {
     this.columns  = (opts.columns || []).map(c => ({ ...c }));
     this.rows     = (opts.rows || []).map((r, i) => ({ ...r, __i: i }));
     this.emptyMsg = opts.emptyMsg || 'No data.';
+    this.readonly = !!opts.readonly;   // Suppresses toolbar/pivot/modal/sort-click
     // View state
-    this.filter   = '';
-    this.sort     = { key: null, dir: 'asc' };
-    this.groupBy  = null;
+    this.filter   = opts.initialFilter || '';
+    this.sort     = opts.initialSort || { key: null, dir: 'asc' };
+    this.groupBy  = opts.initialGroupBy || null;
     this.aggs     = {};        // { colKey: 'sum' | 'avg' | 'count' | 'min' | 'max' }
-    this.showTotals = false;
+    this.showTotals = !!opts.initialShowTotals;
     this.pivotOpen  = false;
-    this.pivotRow = null;      // row axis column key
-    this.pivotCol = null;      // column axis column key
-    this.pivotVal = null;      // value column key
-    this.pivotAgg = 'sum';
+    this.pivotRow = opts.initialPivotRow || null;
+    this.pivotCol = opts.initialPivotCol || null;
+    this.pivotVal = opts.initialPivotVal || null;
+    this.pivotAgg = opts.initialPivotAgg || 'sum';
+    // Apply any pre-configured calculated columns
+    if (Array.isArray(opts.calcColumns)) {
+      opts.calcColumns.forEach(cc => {
+        this.columns.push({
+          key: cc.key || ('_calc_' + Math.random().toString(36).slice(2,8)),
+          label: cc.label, type: 'calc', calc: cc.formula,
+          align: 'right', mono: true,
+        });
+      });
+    }
     // Register numeric columns as default sum aggregates
     this.columns.forEach(c => { if (c.type === 'number' && !c.hidden) this.aggs[c.key] = null; });
     if (this.mount) this.render();
@@ -1015,15 +1075,17 @@ class DataGrid {
     const rows = this.recompute();
     this._lastViewRows = rows;
     const parts = [];
-    parts.push(this.renderToolbar());
-    parts.push(this.renderPivotPanel());
+    if (!this.readonly) {
+      parts.push(this.renderToolbar());
+      parts.push(this.renderPivotPanel());
+    }
     if (this.pivotRow && this.pivotVal) {
       parts.push(this.renderPivot(rows));
     } else {
       parts.push(this.renderTable(rows));
     }
     this.mount.innerHTML = parts.join('');
-    this.bindEvents();
+    if (!this.readonly) this.bindEvents();
   }
 
   renderToolbar() {
@@ -1088,6 +1150,10 @@ class DataGrid {
       const sortCls = this.sort.key === c.key ? ' sort-' + this.sort.dir : '';
       const calcCls = c.type === 'calc' ? ' calc-col' : '';
       const style = c.align === 'right' || c.type === 'number' || c.type === 'calc' ? ' style="text-align:right"' : '';
+      if (this.readonly) {
+        // Static header — no sort indicator, no remove button, no sortable cursor
+        return `<th class="${calcCls.trim()}"${style}>${DataGrid.esc(c.label)}</th>`;
+      }
       const removeBtn = c.type === 'calc'
         ? `<span style="margin-left:6px;opacity:0.5;cursor:pointer" data-act="del-col" data-key="${c.key}" title="Remove column">×</span>`
         : '';
@@ -1385,6 +1451,9 @@ function renderCharts(d, tables) {
   const section = document.getElementById('charts-section');
   const grid    = document.getElementById('charts-grid');
   if (!section || !grid) return;
+  // Respect config toggle — default true when not configured
+  const cfg = loadReportConfig();
+  if (cfg && cfg.showCharts === false) { section.style.display = 'none'; return; }
   const charts = [];
 
   // Chart 1: Rows inserted per table (horizontal bar chart)

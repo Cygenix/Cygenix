@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cygenix – Report Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f8f9fb;--surface:#ffffff;--border:#e2e6ee;--border2:#c8cedd;
+  --text:#111827;--text2:#4b5563;--text3:#9ca3af;
+  --accent:#1a56e8;--accent-light:#eff4ff;
+  --green:#059669;--green-light:#ecfdf5;
+  --red:#dc2626;--red-light:#fef2f2;
+  --amber:#d97706;--amber-light:#fffbeb;
+  --serif:'DM Serif Display',Georgia,serif;
+  --sans:'DM Sans',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.toolbar{background:#0d0f14;padding:0.75rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.toolbar-logo{font-family:var(--serif);color:#fff;font-size:1rem}
+.toolbar-logo span{color:#3d7eff}
+.toolbar-actions{display:flex;gap:0.75rem;flex-wrap:wrap}
+.btn{padding:0.5rem 1.25rem;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--sans);transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+.btn:disabled{opacity:0.5;cursor:wait}
+.btn-primary{background:#3d7eff;color:#fff}
+.btn-primary:hover:not(:disabled){background:#2563eb}
+.btn-ghost{background:rgba(255,255,255,0.1);color:#e8eaf0;border:0.5px solid rgba(255,255,255,0.15)}
+.btn-ghost:hover:not(:disabled){background:rgba(255,255,255,0.15)}
+.btn-secondary{background:#fff;color:var(--text);border:0.5px solid var(--border2)}
+.btn-secondary:hover:not(:disabled){background:var(--accent-light);color:var(--accent);border-color:var(--accent)}
+.wrap{max-width:1100px;margin:2rem auto;padding:0 1.5rem 4rem}
+.card{background:var(--surface);border:0.5px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:1.5rem}
+.card-head{padding:1.5rem 2rem 1.25rem;background:linear-gradient(135deg,#0f1117 0%,#1a2040 100%);color:#fff}
+.card-head h1{font-family:var(--serif);font-size:1.6rem;line-height:1.2;margin-bottom:0.25rem;font-weight:normal}
+.card-head p{font-size:13px;color:rgba(255,255,255,0.6)}
+.card-body{padding:1.5rem 2rem}
+.card-title{font-size:12px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
+.card-title::after{content:'';flex:1;height:0.5px;background:var(--border)}
+.muted{color:var(--text3);font-size:12px}
+.help-text{font-size:12px;color:var(--text2);background:#f9fafb;padding:0.75rem 1rem;border-radius:8px;margin-bottom:1rem;line-height:1.6;border-left:3px solid var(--accent)}
+.help-text strong{color:var(--text)}
+.help-text code{font-family:var(--mono);font-size:11px;background:#fff;padding:1px 5px;border-radius:3px;border:0.5px solid var(--border)}
+/* Option rows */
+.opt-row{display:flex;align-items:center;gap:1rem;padding:0.75rem 0;border-bottom:0.5px solid #f3f4f6}
+.opt-row:last-child{border-bottom:none}
+.opt-label{flex:1}
+.opt-label-title{font-size:14px;font-weight:500;color:var(--text)}
+.opt-label-desc{font-size:12px;color:var(--text3);margin-top:2px}
+/* Toggle switch */
+.toggle{position:relative;width:40px;height:22px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--border2);border-radius:22px;cursor:pointer;transition:background 0.2s}
+.toggle-slider::before{content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:transform 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+.toggle input:checked + .toggle-slider{background:var(--accent)}
+.toggle input:checked + .toggle-slider::before{transform:translateX(18px)}
+/* Status pill for save indicator */
+.save-status{font-size:12px;color:var(--text3);padding:0 0.5rem;display:inline-flex;align-items:center;gap:5px}
+.save-status.saved{color:var(--green)}
+.save-status.dirty{color:var(--amber)}
+.save-status.error{color:var(--red)}
+/* DataGrid styles — copied from report.html verbatim so grids render identically */
+.grid-wrap{position:relative;margin-bottom:0.5rem}
+.grid-toolbar{display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.75rem;padding:0.6rem 0.75rem;background:#fafbfe;border:0.5px solid var(--border);border-radius:8px;font-size:12px}
+.grid-toolbar-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-right:0.25rem}
+.grid-input{font-family:var(--sans);font-size:12px;padding:4px 8px;border:0.5px solid var(--border2);border-radius:6px;background:#fff;color:var(--text);outline:none;min-width:160px;transition:border-color 0.15s}
+.grid-input:focus{border-color:var(--accent)}
+.grid-select{font-family:var(--sans);font-size:12px;padding:4px 24px 4px 8px;border:0.5px solid var(--border2);border-radius:6px;background:#fff url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3e%3cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.3' fill='none' stroke-linecap='round'/%3e%3c/svg%3e") no-repeat right 8px center;color:var(--text);outline:none;appearance:none;cursor:pointer;transition:border-color 0.15s}
+.grid-select:focus{border-color:var(--accent)}
+.grid-chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-light);color:var(--accent);font-size:11px;font-family:var(--mono);padding:3px 8px;border-radius:100px;border:0.5px solid rgba(26,86,232,0.25)}
+.grid-chip-x{cursor:pointer;opacity:0.6;font-weight:500;padding:0 2px}
+.grid-chip-x:hover{opacity:1}
+.grid-btn{font-family:var(--sans);font-size:11px;padding:4px 10px;border:0.5px solid var(--border2);border-radius:6px;background:#fff;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:4px;transition:all 0.15s}
+.grid-btn:hover{background:var(--accent-light);color:var(--accent);border-color:var(--accent)}
+.grid-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.grid-btn-add{background:var(--accent-light);color:var(--accent);border-color:rgba(26,86,232,0.3);font-weight:500}
+.grid-btn-add:hover{background:var(--accent);color:#fff}
+.grid-spacer{flex:1}
+.grid-meta{font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
+.results-table{width:100%;border-collapse:collapse;font-size:13px}
+.results-table th{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.6rem 0.75rem;text-align:left;border-bottom:1.5px solid var(--border2);background:#f9fafb}
+.results-table td{padding:0.65rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.results-table tr:last-child td{border-bottom:none}
+.results-table tr:hover td{background:#f9fafb}
+.results-table th.sortable{cursor:pointer;user-select:none;transition:color 0.15s;position:relative}
+.results-table th.sortable:hover{color:var(--accent)}
+.results-table th .sort-ind{margin-left:4px;opacity:0.4;font-size:9px}
+.results-table th.sort-asc .sort-ind,.results-table th.sort-desc .sort-ind{opacity:1;color:var(--accent)}
+.results-table th.calc-col{background:#f0f5ff}
+.results-table tfoot td{background:#f0f5ff;border-top:1.5px solid var(--accent);font-weight:500;font-family:var(--mono);font-size:12px;color:var(--accent);padding:0.55rem 0.75rem}
+.results-table tr.group-header td{background:#eef2f9;font-weight:500;font-size:12px;color:var(--text);border-top:0.5px solid var(--border2)}
+.results-table tr.group-header .group-count{color:var(--text3);font-weight:400;margin-left:6px;font-size:11px}
+.results-table td.calc-col{background:#fafbff;font-family:var(--mono)}
+.badge{display:inline-flex;align-items:center;font-size:11px;padding:2px 8px;border-radius:100px;font-weight:500}
+.badge-green{background:var(--green-light);color:var(--green)}
+.badge-red{background:var(--red-light);color:var(--red)}
+.badge-amber{background:var(--amber-light);color:var(--amber)}
+.badge-blue{background:var(--accent-light);color:var(--accent)}
+.col-transform{font-size:11px;background:var(--accent-light);color:var(--accent);padding:1px 6px;border-radius:4px;font-family:var(--mono)}
+/* Pivot panel */
+.pivot-panel{display:none;margin-top:0.5rem;padding:0.75rem;background:#fff;border:0.5px solid var(--border);border-radius:8px;grid-template-columns:repeat(3,1fr);gap:0.75rem}
+.pivot-panel.open{display:grid}
+.pivot-slot{min-height:60px}
+.pivot-slot label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:5px}
+.pivot-slot select{width:100%;font-family:var(--sans);font-size:12px;padding:4px 8px;border:0.5px solid var(--border2);border-radius:6px;background:#fff;color:var(--text);outline:none}
+/* Modal */
+.grid-modal-backdrop{position:fixed;inset:0;background:rgba(15,17,23,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:1rem}
+.grid-modal{background:#fff;border-radius:12px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.25);overflow:hidden;font-size:13px}
+.grid-modal-head{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.grid-modal-head h3{font-family:var(--serif);font-size:1.1rem;font-weight:normal}
+.grid-modal-close{background:none;border:none;font-size:1.2rem;color:var(--text3);cursor:pointer;padding:0 4px}
+.grid-modal-body{padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.75rem}
+.grid-modal-body label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px}
+.grid-modal-body .help{font-size:11px;color:var(--text3);line-height:1.5;background:#f9fafb;padding:0.5rem 0.6rem;border-radius:6px}
+.grid-modal-body .help code{font-family:var(--mono);font-size:10px;background:#fff;padding:1px 4px;border-radius:3px;border:0.5px solid var(--border)}
+.grid-modal-body .err{font-size:11px;color:var(--red);background:var(--red-light);padding:0.4rem 0.6rem;border-radius:6px;display:none}
+.grid-modal-foot{padding:0.75rem 1.25rem;background:#f9fafb;display:flex;gap:0.5rem;justify-content:flex-end;border-top:0.5px solid var(--border)}
+.grid-modal-foot .grid-btn{padding:6px 14px;font-size:12px}
+/* Tab switcher */
+.tabs{display:flex;gap:0.25rem;border-bottom:0.5px solid var(--border);margin-bottom:1.25rem}
+.tab{padding:0.65rem 1rem;font-size:13px;color:var(--text2);cursor:pointer;background:none;border:none;font-family:var(--sans);border-bottom:2px solid transparent;transition:all 0.15s;margin-bottom:-0.5px}
+.tab:hover{color:var(--accent)}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+@media(max-width:700px){
+  .pivot-panel.open{grid-template-columns:1fr}
+  .card-body{padding:1rem 1.25rem}
+  .toolbar-actions{flex-direction:column;align-items:stretch}
+  .btn{justify-content:center}
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <div class="toolbar-logo">Cyge<span>nix</span> <span style="font-size:11px;color:#555a6a;margin-left:4px;font-family:var(--mono)">Report settings</span></div>
+  <div class="toolbar-actions">
+    <span class="save-status" id="save-status"></span>
+    <a href="/dashboard.html" class="btn btn-ghost">← Dashboard</a>
+    <button class="btn btn-ghost" onclick="resetConfig()" id="reset-btn">↺ Reset</button>
+    <button class="btn btn-primary" onclick="saveAndPreview()" id="save-preview-btn">💾 Save &amp; preview</button>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="card">
+    <div class="card-head">
+      <h1>Configure report</h1>
+      <p>Group, sort, pivot, and add calculated columns. These settings apply to the final printable report.</p>
+    </div>
+    <div class="card-body">
+      <div class="help-text">
+        <strong>How this works.</strong> Set up each table the way you want it to appear in the final report — sort, group, calculated columns, pivot view. Hit <strong>Save &amp; preview</strong> to render the clean printable report with your settings applied. Your configuration is saved per-browser automatically and persisted to your account when you save.
+      </div>
+
+      <div class="card-title">Report options</div>
+      <div class="opt-row">
+        <div class="opt-label">
+          <div class="opt-label-title">Show visual summary charts</div>
+          <div class="opt-label-desc">Include bar and donut charts below the migration results.</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="opt-charts" checked onchange="markDirty()">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="card-title">Table configuration</div>
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="results">Migration results</button>
+        <button class="tab" data-tab="recon">Reconciliation</button>
+        <button class="tab" data-tab="mapping">Column mapping</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="results">
+        <div class="muted" style="margin-bottom:0.75rem">Per-table migration outcome. Group by status to see success vs. partial counts at a glance.</div>
+        <div class="grid-wrap" id="grid-results"></div>
+      </div>
+      <div class="tab-panel" data-panel="recon">
+        <div class="muted" style="margin-bottom:0.75rem">Source vs target aggregate comparison. Group by <code>step</code> to see per-check results; pivot by <code>groupBy</code> × <code>metric</code> for regional breakdowns.</div>
+        <div class="grid-wrap" id="grid-recon"></div>
+      </div>
+      <div class="tab-panel" data-panel="mapping">
+        <div class="muted" style="margin-bottom:0.75rem">Column-level mapping. Group by <code>srcTable</code> to see mappings per source table.</div>
+        <div class="grid-wrap" id="grid-mapping"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Data loaders ──────────────────────────────────────────────────────────────
+function loadReportData() {
+  try {
+    const raw = localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report');
+    return raw ? JSON.parse(raw) : buildDemoData();
+  } catch { return buildDemoData(); }
+}
+
+function loadSavedConfig() {
+  try {
+    const raw = localStorage.getItem('cygenix_report_config')
+             || sessionStorage.getItem('cygenix_report_config');
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+
+function buildDemoData() {
+  // Same shape as report.html's demo data so the two pages stay in sync
+  return {
+    projectName: 'Sample Migration Project',
+    sourceSystem: 'MySQL 8.0',
+    targetSystem: 'Microsoft SQL Server 2022',
+    tables: [
+      { name: 'dbo.Customers',   sourceName: 'mysql.customers',     sourceRows: 1250,  insertedRows: 1248,  errors: 2,  batches: 13,  status: 'partial' },
+      { name: 'dbo.Orders',      sourceName: 'mysql.orders',        sourceRows: 8420,  insertedRows: 8420,  errors: 0,  batches: 85,  status: 'success' },
+      { name: 'dbo.Products',    sourceName: 'mysql.products',      sourceRows: 342,   insertedRows: 342,   errors: 0,  batches: 4,   status: 'success' },
+      { name: 'dbo.OrderItems',  sourceName: 'mysql.order_items',   sourceRows: 7240,  insertedRows: 7240,  errors: 0,  batches: 73,  status: 'success' },
+      { name: 'dbo.Addresses',   sourceName: 'mysql.addresses',     sourceRows: 1498,  insertedRows: 1482,  errors: 16, batches: 15,  status: 'partial' },
+    ],
+    columnMapping: [
+      { srcTable: 'mysql.customers', srcCol: 'customer_id',   tgtTable: 'dbo.Customers', tgtCol: 'CustomerID',   tgtType: 'INT',           transform: 'NONE' },
+      { srcTable: 'mysql.customers', srcCol: 'full_name',     tgtTable: 'dbo.Customers', tgtCol: 'FullName',     tgtType: 'NVARCHAR(100)', transform: 'TRIM' },
+      { srcTable: 'mysql.customers', srcCol: 'email_address', tgtTable: 'dbo.Customers', tgtCol: 'Email',        tgtType: 'NVARCHAR(255)', transform: 'LOWER' },
+      { srcTable: 'mysql.customers', srcCol: 'notes',         tgtTable: 'dbo.Customers', tgtCol: null,           tgtType: null,            transform: 'NONE' },
+      { srcTable: 'mysql.orders',    srcCol: 'order_id',      tgtTable: 'dbo.Orders',    tgtCol: 'OrderID',      tgtType: 'BIGINT',        transform: 'NONE' },
+      { srcTable: 'mysql.orders',    srcCol: 'total_amount',  tgtTable: 'dbo.Orders',    tgtCol: 'TotalAmount',  tgtType: 'DECIMAL(10,2)', transform: 'NONE' },
+      { srcTable: 'mysql.products',  srcCol: 'product_name',  tgtTable: 'dbo.Products',  tgtCol: 'ProductName',  tgtType: 'NVARCHAR(200)', transform: 'TRIM' },
+      { srcTable: 'mysql.products',  srcCol: 'price',         tgtTable: 'dbo.Products',  tgtCol: 'UnitPrice',    tgtType: 'DECIMAL(10,2)', transform: 'NONE' },
+    ],
+    reconciliation: [
+      { stepName: 'Customer count check', srcTable: 'mysql.customers', tgtTable: 'dbo.Customers', metric: 'COUNT', sourceColumn: '*',             sourceValue: 1250,    targetValue: 1248,    delta: 2,  tolerance: 5,    passed: true },
+      { stepName: 'Orders count check',   srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'COUNT', sourceColumn: '*',             sourceValue: 8420,    targetValue: 8420,    delta: 0,  tolerance: 0,    passed: true },
+      { stepName: 'Revenue total',        srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'SUM',   sourceColumn: 'total_amount',  sourceValue: 842314.5, targetValue: 842314.5, delta: 0,  tolerance: 0.01, passed: true },
+      { stepName: 'Revenue by region',    srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'SUM',   sourceColumn: 'total_amount',  groupByColumn: 'region', groupKey: 'North', sourceValue: 312204.8, targetValue: 312204.8, delta: 0, tolerance: 0.01, passed: true },
+      { stepName: 'Revenue by region',    srcTable: 'mysql.orders',    tgtTable: 'dbo.Orders',    metric: 'SUM',   sourceColumn: 'total_amount',  groupByColumn: 'region', groupKey: 'South', sourceValue: 285109.7, targetValue: 285109.7, delta: 0, tolerance: 0.01, passed: true },
+      { stepName: 'Addresses count',      srcTable: 'mysql.addresses', tgtTable: 'dbo.Addresses', metric: 'COUNT', sourceColumn: '*',             sourceValue: 1498,    targetValue: 1482,    delta: 16, tolerance: 5,    passed: false },
+    ],
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DataGrid — same interactive component used by report.html. Lifted verbatim
+// so the behaviour is identical between settings configuration and the final
+// rendered report (which runs it in readonly mode).
+// ══════════════════════════════════════════════════════════════════════════════
+class DataGrid {
+  constructor(opts) {
+    this.mount    = opts.mount;
+    this.title    = opts.title || 'grid';
+    this.columns  = (opts.columns || []).map(c => ({ ...c }));
+    this.rows     = (opts.rows || []).map((r, i) => ({ ...r, __i: i }));
+    this.emptyMsg = opts.emptyMsg || 'No data.';
+    this.readonly = false;
+    this.onChange = opts.onChange || null;
+    this.filter   = opts.initialFilter || '';
+    this.sort     = opts.initialSort || { key: null, dir: 'asc' };
+    this.groupBy  = opts.initialGroupBy || null;
+    this.aggs     = {};
+    this.showTotals = !!opts.initialShowTotals;
+    this.pivotOpen  = !!(opts.initialPivotRow && opts.initialPivotVal);
+    this.pivotRow = opts.initialPivotRow || null;
+    this.pivotCol = opts.initialPivotCol || null;
+    this.pivotVal = opts.initialPivotVal || null;
+    this.pivotAgg = opts.initialPivotAgg || 'sum';
+    if (Array.isArray(opts.calcColumns)) {
+      opts.calcColumns.forEach(cc => {
+        this.columns.push({
+          key: cc.key || ('_calc_' + Math.random().toString(36).slice(2,8)),
+          label: cc.label, type: 'calc', calc: cc.formula,
+          align: 'right', mono: true,
+        });
+      });
+    }
+    this.columns.forEach(c => { if (c.type === 'number' && !c.hidden) this.aggs[c.key] = null; });
+    if (this.mount) this.render();
+  }
+  // ── Serialise current config for persistence ────────────────────────────────
+  serialize() {
+    return {
+      sort:       this.sort.key ? this.sort : null,
+      groupBy:    this.groupBy || null,
+      showTotals: this.showTotals || false,
+      pivotRow:   this.pivotRow || null,
+      pivotCol:   this.pivotCol || null,
+      pivotVal:   this.pivotVal || null,
+      pivotAgg:   this.pivotAgg || 'sum',
+      calcColumns: this.columns.filter(c => c.type === 'calc')
+        .map(c => ({ key: c.key, label: c.label, formula: c.calc })),
+    };
+  }
+  notifyChange() { if (this.onChange) this.onChange(); }
+  getViewRows() { return this._lastViewRows || []; }
+  getColumns() { return this.columns.filter(c => !c.hidden); }
+  static esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  static fmtNum(v) {
+    if (v == null || v === '') return '—';
+    const n = Number(v);
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  evalFormula(expr, row) {
+    if (!expr) return null;
+    const scope = {};
+    this.columns.forEach(c => {
+      let v = row[c.key];
+      if (v == null || v === '') v = 0;
+      else if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) v = Number(v);
+      scope[c.key] = (typeof v === 'number') ? v : String(v);
+    });
+    const safeIds = new Set(Object.keys(scope).concat(
+      ['Math','abs','round','floor','ceil','min','max','pow','sqrt','log','sign']));
+    const ids = (expr.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []);
+    for (const id of ids) {
+      if (!safeIds.has(id) && !['true','false','null'].includes(id)) {
+        throw new Error('Unknown identifier: ' + id);
+      }
+    }
+    if (/\.\s*(?!abs|round|floor|ceil|min|max|pow|sqrt|log|sign)/.test(expr)) {
+      throw new Error('Only Math.* property access is allowed');
+    }
+    if (/[;={}]/.test(expr)) throw new Error('Invalid characters in formula');
+    const keys = Object.keys(scope);
+    const vals = keys.map(k => scope[k]);
+    try {
+      const fn = new Function(...keys, 'Math',
+        'abs','round','floor','ceil','min','max','pow','sqrt','log','sign',
+        'return (' + expr + ')');
+      const m = Math;
+      return fn(...vals, m, m.abs, m.round, m.floor, m.ceil, m.min, m.max,
+                m.pow, m.sqrt, m.log, m.sign);
+    } catch (e) {
+      throw new Error('Formula error: ' + e.message);
+    }
+  }
+  recompute() {
+    let rows = this.rows.map(r => {
+      const out = { ...r };
+      this.columns.forEach(c => {
+        if (c.type === 'calc' && c.calc) {
+          try { out[c.key] = this.evalFormula(c.calc, out); }
+          catch { out[c.key] = '#ERR'; }
+        }
+      });
+      return out;
+    });
+    if (this.filter) {
+      const q = this.filter.toLowerCase();
+      const visible = this.columns.filter(c => !c.hidden);
+      rows = rows.filter(r =>
+        visible.some(c => String(r[c.key] ?? '').toLowerCase().includes(q)));
+    }
+    if (this.sort.key) {
+      const col = this.columns.find(c => c.key === this.sort.key);
+      const dir = this.sort.dir === 'desc' ? -1 : 1;
+      rows.sort((a, b) => {
+        const va = a[this.sort.key], vb = b[this.sort.key];
+        if (col && (col.type === 'number' || col.type === 'calc')) {
+          return dir * ((Number(va) || 0) - (Number(vb) || 0));
+        }
+        return dir * String(va ?? '').localeCompare(String(vb ?? ''));
+      });
+    }
+    return rows;
+  }
+  aggregate(rows, key, fn) {
+    const nums = rows.map(r => Number(r[key])).filter(n => !isNaN(n) && isFinite(n));
+    if (fn === 'count')  return rows.length;
+    if (fn === 'countn') return nums.length;
+    if (!nums.length) return null;
+    if (fn === 'sum')    return nums.reduce((s, n) => s + n, 0);
+    if (fn === 'avg')    return nums.reduce((s, n) => s + n, 0) / nums.length;
+    if (fn === 'min')    return Math.min(...nums);
+    if (fn === 'max')    return Math.max(...nums);
+    return null;
+  }
+  render() {
+    if (!this.mount) return;
+    const rows = this.recompute();
+    this._lastViewRows = rows;
+    const parts = [];
+    parts.push(this.renderToolbar());
+    parts.push(this.renderPivotPanel());
+    if (this.pivotRow && this.pivotVal) parts.push(this.renderPivot(rows));
+    else parts.push(this.renderTable(rows));
+    this.mount.innerHTML = parts.join('');
+    this.bindEvents();
+  }
+  renderToolbar() {
+    const groupOpts = '<option value="">— none —</option>' +
+      this.columns.filter(c => c.type === 'text' || c.type === 'status')
+        .map(c => `<option value="${c.key}"${this.groupBy === c.key ? ' selected' : ''}>${DataGrid.esc(c.label)}</option>`).join('');
+    const groupChip = this.groupBy
+      ? `<span class="grid-chip">Grouped by: ${DataGrid.esc(this.columns.find(c=>c.key===this.groupBy)?.label||'')}<span class="grid-chip-x" data-act="clear-group">×</span></span>` : '';
+    const sortChip = this.sort.key
+      ? `<span class="grid-chip">Sort: ${DataGrid.esc(this.columns.find(c=>c.key===this.sort.key)?.label||'')} ${this.sort.dir}<span class="grid-chip-x" data-act="clear-sort">×</span></span>` : '';
+    return `
+      <div class="grid-toolbar">
+        <input class="grid-input" type="text" placeholder="Filter rows…" data-act="filter" value="${DataGrid.esc(this.filter)}">
+        <span class="grid-toolbar-label">Group by</span>
+        <select class="grid-select" data-act="group">${groupOpts}</select>
+        <button class="grid-btn ${this.showTotals ? 'active' : ''}" data-act="totals">Σ Totals</button>
+        <button class="grid-btn ${this.pivotOpen ? 'active' : ''}" data-act="pivot-toggle">⊞ Pivot</button>
+        <button class="grid-btn grid-btn-add" data-act="add-col">+ Add column</button>
+        <div class="grid-spacer"></div>
+        ${groupChip}${sortChip}
+        <span class="grid-meta">${this._lastViewRows.length} of ${this.rows.length}</span>
+        <button class="grid-btn" data-act="reset" title="Reset this table">↺</button>
+      </div>`;
+  }
+  renderPivotPanel() {
+    if (!this.pivotOpen) return '';
+    const opts = (filter) => '<option value="">—</option>' +
+      this.columns.filter(filter).map(c => `<option value="${c.key}">${DataGrid.esc(c.label)}</option>`).join('');
+    const sel = (html, key) => html.replace(new RegExp(`value="${key}"`), `value="${key}" selected`);
+    let rowOpts = opts(c => c.type === 'text' || c.type === 'status');
+    let colOpts = opts(c => c.type === 'text' || c.type === 'status');
+    let valOpts = opts(c => c.type === 'number' || c.type === 'calc');
+    if (this.pivotRow) rowOpts = sel(rowOpts, this.pivotRow);
+    if (this.pivotCol) colOpts = sel(colOpts, this.pivotCol);
+    if (this.pivotVal) valOpts = sel(valOpts, this.pivotVal);
+    const aggOpts = ['sum','avg','count','min','max']
+      .map(a => `<option value="${a}"${this.pivotAgg===a?' selected':''}>${a.toUpperCase()}</option>`).join('');
+    return `
+      <div class="pivot-panel open">
+        <div class="pivot-slot"><label>Rows</label><select data-act="pivot-row">${rowOpts}</select></div>
+        <div class="pivot-slot"><label>Columns</label><select data-act="pivot-col">${colOpts}</select></div>
+        <div class="pivot-slot">
+          <label>Values</label>
+          <select data-act="pivot-val" style="margin-bottom:4px">${valOpts}</select>
+          <select data-act="pivot-agg">${aggOpts}</select>
+        </div>
+      </div>`;
+  }
+  renderTable(rows) {
+    const visible = this.columns.filter(c => !c.hidden);
+    if (!rows.length) {
+      return `<p style="font-size:13px;color:var(--text3);padding:1rem 0">${DataGrid.esc(this.emptyMsg)}</p>`;
+    }
+    const header = visible.map(c => {
+      const sortCls = this.sort.key === c.key ? ' sort-' + this.sort.dir : '';
+      const calcCls = c.type === 'calc' ? ' calc-col' : '';
+      const style = c.align === 'right' || c.type === 'number' || c.type === 'calc' ? ' style="text-align:right"' : '';
+      const removeBtn = c.type === 'calc'
+        ? `<span style="margin-left:6px;opacity:0.5;cursor:pointer" data-act="del-col" data-key="${c.key}" title="Remove column">×</span>` : '';
+      return `<th class="sortable${sortCls}${calcCls}"${style} data-sort="${c.key}">${DataGrid.esc(c.label)}<span class="sort-ind">${this.sort.key===c.key?(this.sort.dir==='asc'?'▲':'▼'):'▲▼'}</span>${removeBtn}</th>`;
+    }).join('');
+    let body = '';
+    if (this.groupBy) {
+      const groups = new Map();
+      rows.forEach(r => { const k = String(r[this.groupBy] ?? '—'); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+      Array.from(groups.keys()).sort().forEach(k => {
+        const groupRows = groups.get(k);
+        const cells = visible.map((c, idx) => {
+          if (idx === 0) return `<td><strong>${DataGrid.esc(k)}</strong><span class="group-count">(${groupRows.length})</span></td>`;
+          if (c.type === 'number' || c.type === 'calc') {
+            const total = this.aggregate(groupRows, c.key, 'sum');
+            return `<td style="text-align:right;font-family:var(--mono)"><strong>${DataGrid.fmtNum(total)}</strong></td>`;
+          }
+          return '<td></td>';
+        }).join('');
+        body += `<tr class="group-header">${cells}</tr>`;
+        body += groupRows.map(r => this.renderRow(r, visible)).join('');
+      });
+    } else {
+      body = rows.map(r => this.renderRow(r, visible)).join('');
+    }
+    let foot = '';
+    if (this.showTotals) {
+      const cells = visible.map((c, idx) => {
+        if (c.type === 'number' || c.type === 'calc') {
+          const total = this.aggregate(rows, c.key, 'sum');
+          return `<td style="text-align:right">${DataGrid.fmtNum(total)}</td>`;
+        }
+        if (idx === 0) return '<td>Total</td>';
+        return '<td></td>';
+      }).join('');
+      foot = `<tfoot><tr>${cells}</tr></tfoot>`;
+    }
+    return `<table class="results-table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody>${foot}</table>`;
+  }
+  renderRow(r, visible) {
+    const cells = visible.map(c => {
+      const v = r[c.key];
+      if (c.type === 'status') {
+        const lv = String(v||'').toLowerCase();
+        const cls = lv === 'success' || lv === 'pass' || lv === 'passed' ? 'badge-green'
+                  : lv === 'failed'  || lv === 'fail'  || lv === 'error'  ? 'badge-red'
+                  : lv === 'partial' || lv === 'warn'  || lv === 'skipped'|| lv === 'warned' ? 'badge-amber'
+                  : 'badge-blue';
+        const label = lv === 'success' ? 'Success' : lv === 'partial' ? 'Partial' : lv === 'failed' ? 'Failed'
+                    : lv === 'pass' ? 'Pass' : lv === 'warn' ? 'Warn' : lv === 'skipped' ? 'Skipped'
+                    : DataGrid.esc(String(v||''));
+        return `<td><span class="badge ${cls}">${label}</span></td>`;
+      }
+      const style = [];
+      if (c.mono !== false) style.push('font-family:var(--mono)');
+      if (c.size) style.push('font-size:' + c.size + 'px');
+      if (c.muted) style.push('color:var(--text3)');
+      if (c.bold) style.push('font-weight:500');
+      if (c.color === 'accent') style.push('color:var(--accent)');
+      if (c.color === 'green') style.push('color:var(--green)');
+      if (c.align === 'right' || c.type === 'number' || c.type === 'calc') style.push('text-align:right');
+      if (c.dynamicColor) { const col = c.dynamicColor(v); if (col) style.push('color:' + col); }
+      if (c.dynamicRowStyle) { const s = c.dynamicRowStyle(r); if (s) style.push(s); }
+      const inner = c.render ? c.render(v, r)
+        : (c.type === 'number' || c.type === 'calc') ? DataGrid.fmtNum(v)
+        : DataGrid.esc(String(v ?? ''));
+      const tdCls = c.type === 'calc' ? ' class="calc-col"' : '';
+      return `<td${tdCls} style="${style.join(';')}">${inner}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }
+  renderPivot(rows) {
+    const rowCol = this.columns.find(c => c.key === this.pivotRow);
+    const valCol = this.columns.find(c => c.key === this.pivotVal);
+    if (!rowCol || !valCol) return '<p style="font-size:13px;color:var(--text3);padding:1rem">Select a Rows axis and a Values column to see the pivot.</p>';
+    const rowVals = Array.from(new Set(rows.map(r => String(r[this.pivotRow] ?? '—')))).sort();
+    const colVals = this.pivotCol ? Array.from(new Set(rows.map(r => String(r[this.pivotCol] ?? '—')))).sort() : [null];
+    const cellRows = rowVals.map(rv => {
+      const rd = { _label: rv };
+      colVals.forEach(cv => {
+        const k = cv == null ? '__all' : cv;
+        rd[k] = rows.filter(r => String(r[this.pivotRow] ?? '—') === rv && (cv == null || String(r[this.pivotCol] ?? '—') === cv));
+      });
+      return rd;
+    });
+    const headers = this.pivotCol
+      ? ['<th>' + DataGrid.esc(rowCol.label) + '</th>'].concat(
+          colVals.map(cv => `<th style="text-align:right">${DataGrid.esc(cv)}</th>`),
+          ['<th style="text-align:right">Total</th>']).join('')
+      : `<th>${DataGrid.esc(rowCol.label)}</th><th style="text-align:right">${this.pivotAgg.toUpperCase()} of ${DataGrid.esc(valCol.label)}</th>`;
+    const body = cellRows.map(cr => {
+      const cells = [`<td style="font-family:var(--mono)"><strong>${DataGrid.esc(cr._label)}</strong></td>`];
+      let rowTotal = 0;
+      colVals.forEach(cv => {
+        const k = cv == null ? '__all' : cv;
+        const agg = this.aggregate(cr[k], this.pivotVal, this.pivotAgg);
+        if (agg != null) rowTotal += agg;
+        cells.push(`<td style="text-align:right;font-family:var(--mono)">${DataGrid.fmtNum(agg)}</td>`);
+      });
+      if (this.pivotCol) cells.push(`<td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--accent)">${DataGrid.fmtNum(rowTotal)}</td>`);
+      return '<tr>' + cells.join('') + '</tr>';
+    }).join('');
+    let tfoot = '';
+    if (this.pivotCol) {
+      const totCells = ['<td><strong>Total</strong></td>'];
+      let grand = 0;
+      colVals.forEach(cv => {
+        const subset = rows.filter(r => String(r[this.pivotCol] ?? '—') === cv);
+        const agg = this.aggregate(subset, this.pivotVal, this.pivotAgg);
+        if (agg != null) grand += agg;
+        totCells.push(`<td style="text-align:right">${DataGrid.fmtNum(agg)}</td>`);
+      });
+      totCells.push(`<td style="text-align:right">${DataGrid.fmtNum(grand)}</td>`);
+      tfoot = '<tfoot><tr>' + totCells.join('') + '</tr></tfoot>';
+    }
+    return `<table class="results-table"><thead><tr>${headers}</tr></thead><tbody>${body}</tbody>${tfoot}</table>`;
+  }
+  bindEvents() {
+    const root = this.mount;
+    root.querySelectorAll('[data-act]').forEach(el => {
+      const act = el.getAttribute('data-act');
+      if (el.tagName === 'SELECT' || el.tagName === 'INPUT') {
+        el.addEventListener('change', e => this.handleAction(act, e.target));
+        if (el.tagName === 'INPUT') el.addEventListener('input', e => this.handleAction(act, e.target));
+      } else {
+        el.addEventListener('click', e => this.handleAction(act, el, e));
+      }
+    });
+    root.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', e => {
+        if (e.target.getAttribute && e.target.getAttribute('data-act') === 'del-col') return;
+        const k = th.getAttribute('data-sort'); if (!k) return;
+        if (this.sort.key === k) this.sort.dir = this.sort.dir === 'asc' ? 'desc' : 'asc';
+        else { this.sort.key = k; this.sort.dir = 'asc'; }
+        this.render(); this.notifyChange();
+      });
+    });
+  }
+  handleAction(act, el, ev) {
+    switch (act) {
+      case 'filter':       this.filter = el.value; this.render(); return; // don't mark dirty for filters — transient
+      case 'group':        this.groupBy = el.value || null; break;
+      case 'clear-group':  this.groupBy = null; break;
+      case 'clear-sort':   this.sort = { key: null, dir: 'asc' }; break;
+      case 'totals':       this.showTotals = !this.showTotals; break;
+      case 'pivot-toggle': this.pivotOpen = !this.pivotOpen; break;
+      case 'pivot-row':    this.pivotRow = el.value || null; break;
+      case 'pivot-col':    this.pivotCol = el.value || null; break;
+      case 'pivot-val':    this.pivotVal = el.value || null; break;
+      case 'pivot-agg':    this.pivotAgg = el.value || 'sum'; break;
+      case 'add-col':      this.openAddColumnModal(); return;
+      case 'del-col':      this.removeCalcColumn(el.getAttribute('data-key')); break;
+      case 'reset':        this.resetSelf(); break;
+    }
+    this.render(); this.notifyChange();
+  }
+  removeCalcColumn(key) {
+    this.columns = this.columns.filter(c => c.key !== key);
+    if (this.sort.key === key) this.sort = { key: null, dir: 'asc' };
+  }
+  resetSelf() {
+    this.filter = ''; this.sort = { key: null, dir: 'asc' }; this.groupBy = null;
+    this.showTotals = false; this.pivotOpen = false; this.pivotRow = null;
+    this.pivotCol = null; this.pivotVal = null; this.pivotAgg = 'sum';
+    this.columns = this.columns.filter(c => c.type !== 'calc');
+  }
+  openAddColumnModal() {
+    const numericCols = this.columns.filter(c => c.type === 'number' || c.type === 'calc');
+    const help = numericCols.map(c => '<code>' + DataGrid.esc(c.key) + '</code>').join(', ');
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="grid-modal-backdrop" data-act="modal-bg">
+        <div class="grid-modal">
+          <div class="grid-modal-head">
+            <h3>Add calculated column</h3>
+            <button class="grid-modal-close" data-act="modal-close">×</button>
+          </div>
+          <div class="grid-modal-body">
+            <div><label>Column name</label><input class="grid-input" id="gm-name" style="width:100%" placeholder="e.g. Success rate"></div>
+            <div><label>Formula</label><input class="grid-input" id="gm-formula" style="width:100%;font-family:var(--mono)" placeholder="e.g. inserted / sourceRows * 100"></div>
+            <div class="help">Available numeric fields: ${help || '(none)'}.<br>You can use <code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>(</code> <code>)</code> and <code>Math.round()</code>, <code>Math.abs()</code>, etc.<br>Example: <code>Math.round(inserted / sourceRows * 100)</code></div>
+            <div class="err" id="gm-err"></div>
+          </div>
+          <div class="grid-modal-foot">
+            <button class="grid-btn" data-act="modal-close">Cancel</button>
+            <button class="grid-btn grid-btn-add" data-act="modal-add">Add column</button>
+          </div>
+        </div>
+      </div>`;
+    const node = wrap.firstElementChild;
+    document.body.appendChild(node);
+    const close = () => node.remove();
+    node.addEventListener('click', e => {
+      const a = e.target.getAttribute && e.target.getAttribute('data-act');
+      if (a === 'modal-bg' && e.target === node) close();
+      if (a === 'modal-close') close();
+      if (a === 'modal-add') {
+        const name = node.querySelector('#gm-name').value.trim();
+        const expr = node.querySelector('#gm-formula').value.trim();
+        const err  = node.querySelector('#gm-err');
+        err.style.display = 'none';
+        if (!name || !expr) { err.textContent = 'Both name and formula are required.'; err.style.display = 'block'; return; }
+        try { this.evalFormula(expr, this.rows[0] || {}); }
+        catch (ex) { err.textContent = ex.message; err.style.display = 'block'; return; }
+        const key = '_calc_' + Date.now().toString(36);
+        this.columns.push({ key, label: name, type: 'calc', calc: expr, align: 'right', mono: true });
+        this.render(); this.notifyChange();
+        close();
+      }
+    });
+    setTimeout(() => node.querySelector('#gm-name').focus(), 50);
+  }
+}
+
+// ── Mount the three grids with saved config preloaded ─────────────────────────
+const reportData = loadReportData();
+const savedConfig = loadSavedConfig();
+window._grids = {};
+
+function mountGrids() {
+  // Migration results
+  const srcFallback = reportData.sourceTable || reportData.sourceFile || '—';
+  const resultsRows = (reportData.tables || []).map(t => ({
+    source:     t.sourceName || srcFallback,
+    table:      t.name,
+    sourceRows: t.sourceRows || 0,
+    inserted:   t.insertedRows || 0,
+    errors:     t.errors || 0,
+    batches:    t.batches || 0,
+    status:     t.status || (t.errors > 0 ? 'partial' : 'success'),
+  }));
+  const rCfg = (savedConfig.grids && savedConfig.grids.results) || {};
+  window._grids.results = new DataGrid({
+    mount: document.getElementById('grid-results'), title: 'migration_results',
+    columns: [
+      { key: 'source',     label: 'Source',      type: 'text',    mono: true, size: 11, muted: true },
+      { key: 'table',      label: 'Table',       type: 'text',    mono: true, bold: true },
+      { key: 'sourceRows', label: 'Source rows', type: 'number',  align: 'right' },
+      { key: 'inserted',   label: 'Inserted',    type: 'number',  align: 'right', color: 'green', bold: true },
+      { key: 'errors',     label: 'Errors',      type: 'number',  align: 'right', dynamicColor: v => v > 0 ? 'var(--red)' : 'var(--text3)' },
+      { key: 'batches',    label: 'Batches',     type: 'number',  align: 'right' },
+      { key: 'status',     label: 'Status',      type: 'status' },
+    ],
+    rows: resultsRows,
+    emptyMsg: 'No migration results to display.',
+    initialSort: rCfg.sort, initialGroupBy: rCfg.groupBy, initialShowTotals: rCfg.showTotals,
+    initialPivotRow: rCfg.pivotRow, initialPivotCol: rCfg.pivotCol, initialPivotVal: rCfg.pivotVal, initialPivotAgg: rCfg.pivotAgg,
+    calcColumns: rCfg.calcColumns,
+    onChange: markDirty,
+  });
+
+  // Reconciliation
+  const reconEntries = reportData.reconciliation || [];
+  const reconRows = reconEntries.map(e => ({
+    step: e.stepName || '', srcTable: e.srcTable || '', tgtTable: e.tgtTable || '',
+    metric: e.metric || '', column: e.sourceColumn || e.targetColumn || '',
+    groupBy: e.groupByColumn || '',
+    groupValue: e.groupByColumn ? (e.groupKey == null ? '' : String(e.groupKey)) : '',
+    sourceValue: e.sourceValue != null ? Number(e.sourceValue) : null,
+    targetValue: e.targetValue != null ? Number(e.targetValue) : null,
+    delta:       e.delta != null ? Number(e.delta) : null,
+    tolerance:   e.tolerance != null ? Number(e.tolerance) : null,
+    result:      e.passed === true ? 'Pass' : e.passed === false ? 'Warn' : 'Skipped',
+    _passed:     e.passed,
+  }));
+  const xCfg = (savedConfig.grids && savedConfig.grids.recon) || {};
+  window._grids.recon = new DataGrid({
+    mount: document.getElementById('grid-recon'), title: 'reconciliation',
+    columns: [
+      { key: 'step',        label: 'Step',         type: 'text',   mono: true, size: 11 },
+      { key: 'metric',      label: 'Metric',       type: 'text',   mono: true, size: 11 },
+      { key: 'column',      label: 'Column',       type: 'text',   mono: true, size: 11 },
+      { key: 'groupBy',     label: 'Group by',     type: 'text',   mono: true, size: 11, muted: true, render: v => v || '—' },
+      { key: 'groupValue',  label: 'Group value',  type: 'text',   mono: true, size: 11, render: v => v || '—' },
+      { key: 'sourceValue', label: 'Source',       type: 'number', align: 'right' },
+      { key: 'targetValue', label: 'Target',       type: 'number', align: 'right' },
+      { key: 'delta',       label: 'Delta',        type: 'number', align: 'right',
+        dynamicRowStyle: row => row._passed === false ? 'color:var(--red);font-weight:500' : '' },
+      { key: 'tolerance',   label: 'Tolerance',    type: 'number', align: 'right', muted: true },
+      { key: 'result',      label: 'Result',       type: 'status' },
+    ],
+    rows: reconRows,
+    emptyMsg: 'No reconciliation entries configured for this report.',
+    initialSort: xCfg.sort, initialGroupBy: xCfg.groupBy, initialShowTotals: xCfg.showTotals,
+    initialPivotRow: xCfg.pivotRow, initialPivotCol: xCfg.pivotCol, initialPivotVal: xCfg.pivotVal, initialPivotAgg: xCfg.pivotAgg,
+    calcColumns: xCfg.calcColumns,
+    onChange: markDirty,
+  });
+
+  // Column mapping
+  const tgtTableName = reportData.targetTable || (reportData.tables?.[0]?.name) || '—';
+  const mappingRows = (reportData.columnMapping || []).map(m => ({
+    srcTable: m.srcTable || srcFallback, srcCol: m.srcCol || '',
+    tgtTable: m.tgtTable || tgtTableName, tgtCol: m.tgtCol || '',
+    tgtType: m.tgtType || '', transform: m.transform || 'NONE',
+    mapped: m.tgtCol ? 1 : 0,
+  }));
+  const mCfg = (savedConfig.grids && savedConfig.grids.mapping) || {};
+  window._grids.mapping = new DataGrid({
+    mount: document.getElementById('grid-mapping'), title: 'column_mapping',
+    columns: [
+      { key: 'srcTable',  label: 'Source table',  type: 'text', mono: true, size: 11, muted: true },
+      { key: 'srcCol',    label: 'Source column', type: 'text', mono: true },
+      { key: 'tgtTable',  label: 'Target table',  type: 'text', mono: true, size: 11, muted: true },
+      { key: 'tgtCol',    label: 'Target column', type: 'text', mono: true, color: 'accent',
+        render: v => v || '<em style="opacity:0.4">skipped</em>' },
+      { key: 'tgtType',   label: 'Type',          type: 'text', mono: true, size: 11, muted: true },
+      { key: 'transform', label: 'Transform',     type: 'text', mono: true, size: 11,
+        render: v => v && v !== 'NONE' ? '<span class="col-transform">' + v + '</span>' : '<span style="color:var(--text3)">—</span>' },
+      { key: 'mapped',    label: 'Mapped',        type: 'number', align: 'right', hidden: true },
+    ],
+    rows: mappingRows,
+    emptyMsg: 'No column mapping data available.',
+    initialSort: mCfg.sort, initialGroupBy: mCfg.groupBy, initialShowTotals: mCfg.showTotals,
+    calcColumns: mCfg.calcColumns,
+    onChange: markDirty,
+  });
+
+  // Apply saved charts toggle
+  if (savedConfig.showCharts === false) {
+    document.getElementById('opt-charts').checked = false;
+  }
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.getElementById('tabs').addEventListener('click', e => {
+  const btn = e.target.closest('.tab'); if (!btn) return;
+  const name = btn.getAttribute('data-tab');
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+  document.querySelectorAll('.tab-panel').forEach(p =>
+    p.classList.toggle('active', p.getAttribute('data-panel') === name));
+});
+
+// ── Config build / save ───────────────────────────────────────────────────────
+let _dirty = false;
+function setStatus(text, cls) {
+  const el = document.getElementById('save-status');
+  el.textContent = text || '';
+  el.className = 'save-status' + (cls ? ' ' + cls : '');
+}
+function markDirty() { _dirty = true; setStatus('Unsaved changes', 'dirty'); }
+
+function buildConfig() {
+  return {
+    showCharts: document.getElementById('opt-charts').checked,
+    grids: {
+      results: window._grids.results.serialize(),
+      recon:   window._grids.recon.serialize(),
+      mapping: window._grids.mapping.serialize(),
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+async function saveConfig(silent) {
+  const cfg = buildConfig();
+  const json = JSON.stringify(cfg);
+  // Always save locally first — fast path
+  try { localStorage.setItem('cygenix_report_config', json); }
+  catch { try { sessionStorage.setItem('cygenix_report_config', json); } catch {} }
+  // Attempt Cosmos save if signed in — non-blocking, best-effort
+  let cosmosOk = false;
+  try {
+    let email = '';
+    try {
+      const rawAcc = sessionStorage.getItem('cygenix_entra_account')
+                  || localStorage.getItem('cygenix_entra_account');
+      if (rawAcc) email = (JSON.parse(rawAcc).email || '').toLowerCase().trim();
+    } catch {}
+    if (email) {
+      // Tag the config with the current report's migration ID if available,
+      // so configs are saved per-report rather than per-user-globally.
+      let migrationId = null;
+      try {
+        const raw = localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report');
+        if (raw) migrationId = (JSON.parse(raw) || {}).id || null;
+      } catch {}
+      const r = await fetch('/.netlify/functions/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save-config', userEmail: email, migrationId, config: cfg }),
+      });
+      cosmosOk = r.ok;
+    }
+  } catch {}
+
+  _dirty = false;
+  if (!silent) {
+    setStatus(cosmosOk ? '✓ Saved to account' : '✓ Saved locally', 'saved');
+    setTimeout(() => { if (!_dirty) setStatus(''); }, 2500);
+  }
+  return cfg;
+}
+
+async function saveAndPreview() {
+  const btn = document.getElementById('save-preview-btn');
+  btn.disabled = true; const prev = btn.textContent; btn.textContent = '⏳ Saving…';
+  try {
+    await saveConfig(true);
+    setStatus('✓ Saved — opening preview', 'saved');
+    // Open the printable report in a new tab
+    window.open('report.html', '_blank');
+  } catch (e) {
+    setStatus('Save failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = prev;
+  }
+}
+
+function resetConfig() {
+  if (_dirty && !confirm('Discard unsaved changes and reset all configuration?')) return;
+  try { localStorage.removeItem('cygenix_report_config'); } catch {}
+  try { sessionStorage.removeItem('cygenix_report_config'); } catch {}
+  // Reset every grid and the charts toggle
+  Object.values(window._grids).forEach(g => { g.resetSelf(); g.render(); });
+  document.getElementById('opt-charts').checked = true;
+  _dirty = false;
+  setStatus('Reset to defaults', 'saved');
+  setTimeout(() => setStatus(''), 2000);
+}
+
+// Warn before leaving with unsaved changes
+window.addEventListener('beforeunload', e => {
+  if (_dirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+mountGrids();
+</script>
+</body>
+</html>

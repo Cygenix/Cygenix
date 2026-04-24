@@ -1,0 +1,88 @@
+// ─── Add this handler to /.netlify/functions/reports.js ─────────────────────
+// Handles the new `save-config` action sent by report_settings.html. The
+// client calls it with { action, userEmail, migrationId, config }.
+//
+// Design notes:
+// - Config is stored in the existing `users` container, not a new one, under
+//   a `reportConfigs` map keyed by migrationId. Avoids a new Cosmos container
+//   and keeps per-user lookups fast (single-doc read on subsequent loads).
+// - Global fallback: when migrationId is null (unsaved report), config is
+//   stored under `__default__`. Last-write-wins.
+// - No auth beyond email match to existing records, matching the pattern
+//   used by the `save` action. Consider adding an Entra token check when
+//   you harden this.
+
+// Place this block inside the existing switch/if chain that dispatches on
+// `action`. Example skeleton (adapt to your real handler layout):
+//
+//   if (action === 'save')         return handleSaveReport(...)
+//   if (action === 'list')         return handleListReports(...)
+//   if (action === 'save-config')  return handleSaveConfig(...)
+//   if (action === 'load-config')  return handleLoadConfig(...)
+
+async function handleSaveConfig({ userEmail, migrationId, config }, usersContainer) {
+  if (!userEmail) return { statusCode: 400, body: JSON.stringify({ error: 'userEmail required' }) };
+  if (!config || typeof config !== 'object') {
+    return { statusCode: 400, body: JSON.stringify({ error: 'config object required' }) };
+  }
+
+  const email = String(userEmail).toLowerCase().trim();
+  const key   = migrationId ? String(migrationId) : '__default__';
+
+  // Fetch existing user record — fall through to create if absent
+  let userDoc;
+  try {
+    const { resource } = await usersContainer.item(email, email).read();
+    userDoc = resource;
+  } catch (e) {
+    if (e.code === 404) userDoc = { id: email, email };
+    else throw e;
+  }
+  if (!userDoc) userDoc = { id: email, email };
+
+  // Merge the new config into the map
+  userDoc.reportConfigs = userDoc.reportConfigs || {};
+  userDoc.reportConfigs[key] = {
+    ...config,
+    savedAt: new Date().toISOString(),
+  };
+
+  // Upsert
+  await usersContainer.items.upsert(userDoc);
+
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ok: true, savedAt: userDoc.reportConfigs[key].savedAt }),
+  };
+}
+
+async function handleLoadConfig({ userEmail, migrationId }, usersContainer) {
+  if (!userEmail) return { statusCode: 400, body: JSON.stringify({ error: 'userEmail required' }) };
+
+  const email = String(userEmail).toLowerCase().trim();
+  const key   = migrationId ? String(migrationId) : '__default__';
+
+  let userDoc;
+  try {
+    const { resource } = await usersContainer.item(email, email).read();
+    userDoc = resource;
+  } catch (e) {
+    if (e.code === 404) return { statusCode: 200, body: JSON.stringify({ config: null }) };
+    throw e;
+  }
+
+  const config = userDoc?.reportConfigs?.[key] || null;
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config }),
+  };
+}
+
+// ─── Optional: also surface load-config from report.html ────────────────────
+// Currently report.html only reads from localStorage. If you want it to fall
+// back to Cosmos when localStorage is empty (e.g. user configured on desktop,
+// opened the report on mobile), wire loadReportConfig() to fetch from the
+// backend when local storage returns null. The settings page already writes
+// to both, so this is a read-path enhancement only.
