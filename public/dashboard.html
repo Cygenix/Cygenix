@@ -666,6 +666,95 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 #view-system-parameters .cx-tab:hover{ color:var(--text2); }
 #view-system-parameters .cx-tab-active{ color:var(--accent);border-bottom-color:var(--accent); }
+
+/* ── Report presentation panel (inside report settings modal) ──────────────── */
+.pres-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-top:1rem;overflow:hidden}
+.pres-panel-head{padding:0.9rem 1.25rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;gap:1rem}
+.pres-panel-head:hover{background:var(--bg3)}
+.pres-panel-head .chev{color:var(--text3);font-size:10px;transition:transform 0.15s;display:inline-block}
+.pres-panel[data-open="true"] .pres-panel-head .chev{transform:rotate(90deg)}
+.pres-panel-title{font-size:14px;font-weight:600;color:var(--text)}
+.pres-panel-sub{font-size:11px;color:var(--text3);margin-top:3px}
+.pres-panel-body{display:none;padding:1rem 1.25rem;border-top:0.5px solid var(--border)}
+.pres-panel[data-open="true"] .pres-panel-body{display:block}
+.pres-opt-row{display:flex;align-items:center;gap:1rem;padding:0.6rem 0;border-bottom:0.5px solid var(--border)}
+.pres-opt-row:last-child{border-bottom:none}
+.pres-opt-label{flex:1}
+.pres-opt-label-title{font-size:13px;color:var(--text);font-weight:500}
+.pres-opt-label-desc{font-size:11px;color:var(--text3);margin-top:2px}
+.pres-toggle{position:relative;width:36px;height:20px;flex-shrink:0}
+.pres-toggle input{opacity:0;width:0;height:0}
+.pres-toggle-slider{position:absolute;inset:0;background:var(--bg4);border:0.5px solid var(--border2);border-radius:20px;cursor:pointer;transition:background 0.2s}
+.pres-toggle-slider::before{content:'';position:absolute;width:14px;height:14px;left:2px;top:2px;background:var(--text2);border-radius:50%;transition:transform 0.2s}
+.pres-toggle input:checked + .pres-toggle-slider{background:var(--accent-glow);border-color:var(--accent)}
+.pres-toggle input:checked + .pres-toggle-slider::before{transform:translateX(16px);background:var(--accent)}
+.pres-sub-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);margin-top:0.75rem;overflow:hidden}
+.pres-sub-card-head{padding:0.7rem 1rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;gap:0.75rem}
+.pres-sub-card-head:hover{background:var(--bg4)}
+.pres-sub-card-head .chev{color:var(--text3);font-size:10px;transition:transform 0.15s;display:inline-block;width:10px}
+.pres-sub-card[data-open="true"] .pres-sub-card-head .chev{transform:rotate(90deg)}
+.pres-sub-card-title{font-size:13px;color:var(--text);font-weight:500;flex:1}
+.pres-sub-card-summary{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.pres-sub-card-body{display:none;padding:0.85rem 1rem;border-top:0.5px solid var(--border)}
+.pres-sub-card[data-open="true"] .pres-sub-card-body{display:block}
+.pres-dirty-chip{font-size:10px;color:var(--amber);padding:2px 7px;border-radius:100px;background:var(--amber-bg);border:0.5px solid rgba(245,158,11,0.25);margin-left:0.5rem;display:none}
+.pres-panel[data-dirty="true"] .pres-dirty-chip{display:inline-block}
+.pres-save-row{display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem;padding-top:0.75rem;border-top:0.5px solid var(--border)}
+
+/* ── DataGrid (dark-theme adapted for the dashboard) ───────────────────────── */
+.dg-wrap{position:relative;margin-bottom:0.5rem}
+.dg-toolbar{display:flex;flex-wrap:wrap;gap:0.4rem;align-items:center;margin-bottom:0.6rem;padding:0.5rem 0.65rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);font-size:11px}
+.dg-toolbar-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-right:0.15rem}
+.dg-input{font-family:var(--serif);font-size:11px;padding:3px 7px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);color:var(--text);outline:none;min-width:140px;transition:border-color 0.15s}
+.dg-input:focus{border-color:var(--accent)}
+.dg-select{font-family:var(--serif);font-size:11px;padding:3px 22px 3px 7px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3) url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3e%3cpath d='M1 1l4 4 4-4' stroke='%23555a6a' stroke-width='1.3' fill='none' stroke-linecap='round'/%3e%3c/svg%3e") no-repeat right 7px center;color:var(--text);outline:none;appearance:none;cursor:pointer;transition:border-color 0.15s}
+.dg-select:focus{border-color:var(--accent)}
+.dg-chip{display:inline-flex;align-items:center;gap:3px;background:var(--accent-glow);color:var(--accent);font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:100px;border:0.5px solid rgba(61,126,255,0.25)}
+.dg-chip-x{cursor:pointer;opacity:0.6;font-weight:500;padding:0 2px}
+.dg-chip-x:hover{opacity:1}
+.dg-btn{font-family:var(--serif);font-size:10px;padding:3px 9px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px;transition:all 0.15s}
+.dg-btn:hover{background:var(--bg4);color:var(--text);border-color:var(--border2)}
+.dg-btn.active{background:var(--accent-glow);color:var(--accent);border-color:var(--accent)}
+.dg-btn-add{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3);font-weight:500}
+.dg-btn-add:hover{background:var(--accent);color:#fff}
+.dg-spacer{flex:1}
+.dg-meta{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
+.dg-table{width:100%;border-collapse:collapse;font-size:12px}
+.dg-table th{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.6rem;text-align:left;border-bottom:1px solid var(--border2);background:var(--bg2)}
+.dg-table td{padding:0.5rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text);vertical-align:middle}
+.dg-table tr:last-child td{border-bottom:none}
+.dg-table tr:hover td{background:var(--bg3)}
+.dg-table th.sortable{cursor:pointer;user-select:none;transition:color 0.15s;position:relative}
+.dg-table th.sortable:hover{color:var(--accent)}
+.dg-table th .sort-ind{margin-left:4px;opacity:0.4;font-size:9px}
+.dg-table th.sort-asc .sort-ind,.dg-table th.sort-desc .sort-ind{opacity:1;color:var(--accent)}
+.dg-table th.calc-col{background:var(--accent-glow);color:var(--accent)}
+.dg-table tfoot td{background:var(--accent-glow);border-top:1px solid var(--accent);font-weight:500;font-family:var(--mono);font-size:11px;color:var(--accent);padding:0.5rem 0.6rem}
+.dg-table tr.group-header td{background:var(--bg4);font-weight:500;font-size:11px;color:var(--text);border-top:0.5px solid var(--border2)}
+.dg-table tr.group-header .group-count{color:var(--text3);font-weight:400;margin-left:6px;font-size:10px}
+.dg-table td.calc-col{background:rgba(61,126,255,0.04);font-family:var(--mono)}
+.dg-badge{display:inline-flex;align-items:center;font-size:10px;padding:2px 7px;border-radius:100px;font-weight:500}
+.dg-badge-green{background:rgba(34,201,122,0.15);color:#22c97a}
+.dg-badge-red{background:rgba(240,70,70,0.15);color:#f04646}
+.dg-badge-amber{background:var(--amber-bg);color:var(--amber)}
+.dg-badge-blue{background:var(--accent-glow);color:var(--accent)}
+.dg-pivot-panel{display:none;margin-top:0.5rem;padding:0.65rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);grid-template-columns:repeat(3,1fr);gap:0.65rem}
+.dg-pivot-panel.open{display:grid}
+.dg-pivot-slot label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px}
+.dg-pivot-slot select{width:100%;font-family:var(--serif);font-size:11px;padding:3px 7px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);color:var(--text);outline:none}
+.dg-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;padding:1rem}
+.dg-modal{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.4);overflow:hidden;font-size:12px}
+.dg-modal-head{padding:0.9rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.dg-modal-head h3{font-size:14px;color:var(--text);font-weight:600}
+.dg-modal-close{background:none;border:none;font-size:1.2rem;color:var(--text3);cursor:pointer;padding:0 4px}
+.dg-modal-close:hover{color:var(--text)}
+.dg-modal-body{padding:0.9rem 1.1rem;display:flex;flex-direction:column;gap:0.65rem}
+.dg-modal-body label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px}
+.dg-modal-body .help{font-size:10px;color:var(--text3);line-height:1.5;background:var(--bg3);padding:0.5rem 0.6rem;border-radius:var(--r)}
+.dg-modal-body .help code{font-family:var(--mono);font-size:10px;background:var(--bg4);color:var(--text);padding:1px 4px;border-radius:3px}
+.dg-modal-body .err{font-size:10px;color:var(--red);background:rgba(239,68,68,0.1);padding:0.4rem 0.6rem;border-radius:var(--r);display:none;border:0.5px solid rgba(239,68,68,0.25)}
+.dg-modal-foot{padding:0.7rem 1.1rem;background:var(--bg3);display:flex;gap:0.4rem;justify-content:flex-end;border-top:0.5px solid var(--border)}
+.dg-modal-foot .dg-btn{padding:5px 12px;font-size:11px}
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
@@ -2031,6 +2120,76 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div>
     <div id="report-settings-notice" style="display:none;font-size:12px;color:var(--amber);background:var(--amber-bg);border:0.5px solid rgba(245,158,11,0.3);border-radius:var(--r);padding:0.75rem 1rem;margin-bottom:1rem"></div>
     <div id="report-recon-list"><div class="empty-state" style="padding:1.5rem"><p style="color:var(--text3)">Loading…</p></div></div>
+
+    <!-- PRESENTATION PANEL ────────────────────────────────────────────────────
+         Collapsible section beneath the recon cards. Controls how the rendered
+         report presents its three tables (sort, group, pivot, calc columns,
+         totals) plus the overall charts toggle. Saves to the report record's
+         `presentationConfig` via the `save-presentation` action. Hidden until
+         a report is loaded successfully. -->
+    <div class="pres-panel" id="pres-panel" data-open="false" data-dirty="false" style="display:none">
+      <div class="pres-panel-head" onclick="togglePresPanel()">
+        <div style="display:flex;align-items:center;gap:0.75rem">
+          <span class="chev">▶</span>
+          <div>
+            <div class="pres-panel-title">Report presentation
+              <span class="pres-dirty-chip">Unsaved changes</span>
+            </div>
+            <div class="pres-panel-sub">Configure how the rendered report groups, sorts, and summarises its tables. Applies the next time the report is opened.</div>
+          </div>
+        </div>
+      </div>
+      <div class="pres-panel-body">
+        <div class="pres-opt-row">
+          <div class="pres-opt-label">
+            <div class="pres-opt-label-title">Show visual summary charts</div>
+            <div class="pres-opt-label-desc">Include bar and donut charts below the migration results.</div>
+          </div>
+          <label class="pres-toggle">
+            <input type="checkbox" id="pres-opt-charts" checked onchange="presMarkDirty()">
+            <span class="pres-toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="pres-sub-card" data-open="false" id="pres-card-results">
+          <div class="pres-sub-card-head" onclick="presToggleSubCard('results')">
+            <span class="chev">▶</span>
+            <div class="pres-sub-card-title">Migration results table</div>
+            <span class="pres-sub-card-summary" id="pres-summary-results">Not configured</span>
+          </div>
+          <div class="pres-sub-card-body">
+            <div class="dg-wrap" id="pres-grid-results"></div>
+          </div>
+        </div>
+
+        <div class="pres-sub-card" data-open="false" id="pres-card-recon">
+          <div class="pres-sub-card-head" onclick="presToggleSubCard('recon')">
+            <span class="chev">▶</span>
+            <div class="pres-sub-card-title">Reconciliation table</div>
+            <span class="pres-sub-card-summary" id="pres-summary-recon">Not configured</span>
+          </div>
+          <div class="pres-sub-card-body">
+            <div class="dg-wrap" id="pres-grid-recon"></div>
+          </div>
+        </div>
+
+        <div class="pres-sub-card" data-open="false" id="pres-card-mapping">
+          <div class="pres-sub-card-head" onclick="presToggleSubCard('mapping')">
+            <span class="chev">▶</span>
+            <div class="pres-sub-card-title">Column mapping table</div>
+            <span class="pres-sub-card-summary" id="pres-summary-mapping">Not configured</span>
+          </div>
+          <div class="pres-sub-card-body">
+            <div class="dg-wrap" id="pres-grid-mapping"></div>
+          </div>
+        </div>
+
+        <div class="pres-save-row">
+          <button class="btn btn-ghost btn-sm" onclick="presResetConfig()">↺ Reset</button>
+          <button class="btn btn-primary btn-sm" id="pres-save-btn" onclick="presSaveConfig()">💾 Save presentation</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4316,11 +4475,24 @@ async function openReportSettings(reportId) {
   // form fields, same save handler (reconSaveOne). This keeps behaviour
   // identical; all we've changed is the scope (which jobs appear).
   list.innerHTML = matched.map(job => reconRenderJobCard(job)).join('');
+
+  // Mount the presentation panel with this report's data + saved config.
+  // Lives beneath the recon cards in the same modal.
+  if (typeof presMountGrids === 'function') {
+    try { presMountGrids(report); } catch (e) { console.warn('[pres] mount failed', e); }
+  }
 }
 
 function closeReportSettings() {
+  // Guard against losing unsaved presentation changes
+  if (typeof presIsDirty === 'function' && presIsDirty()) {
+    if (!confirm('You have unsaved presentation changes. Discard them?')) return;
+  }
   const modal = document.getElementById('report-settings-modal');
   if (modal) modal.classList.remove('open');
+  // Reset the presentation panel state so the next open is clean
+  const panel = document.getElementById('pres-panel');
+  if (panel) { panel.style.display = 'none'; panel.setAttribute('data-open','false'); panel.setAttribute('data-dirty','false'); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5324,6 +5496,630 @@ function onboardGoTo(view){
   }
 })();
 
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// REPORT PRESENTATION PANEL — inside the report settings modal
+// ══════════════════════════════════════════════════════════════════════════════
+// Lives beneath the per-job reconciliation cards. Lets the user configure how
+// the rendered report presents its three tables (Migration Results,
+// Reconciliation, Column Mapping) — sort, group, totals, pivot, calculated
+// columns — plus an overall charts toggle. Saves to the report record's
+// `presentationConfig` field via the `save-presentation` action on the
+// /.netlify/functions/reports endpoint.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Current report in the settings modal (set by openReportSettings → presMountGrids)
+window._presCurrentReport = null;
+// Grid instances keyed by table name
+window._presGrids = {};
+// Dirty flag + initial snapshot for comparison
+window._presDirty = false;
+window._presInitialSnapshot = null;
+
+// ── DataGrid (dashboard-flavoured; uses .dg-* CSS classes) ────────────────────
+class DG {
+  constructor(opts) {
+    this.mount    = opts.mount;
+    this.title    = opts.title || 'grid';
+    this.columns  = (opts.columns || []).map(c => ({ ...c }));
+    this.rows     = (opts.rows || []).map((r, i) => ({ ...r, __i: i }));
+    this.emptyMsg = opts.emptyMsg || 'No data.';
+    this.onChange = opts.onChange || null;
+    this.filter   = opts.initialFilter || '';
+    this.sort     = opts.initialSort || { key: null, dir: 'asc' };
+    this.groupBy  = opts.initialGroupBy || null;
+    this.showTotals = !!opts.initialShowTotals;
+    this.pivotOpen  = !!(opts.initialPivotRow && opts.initialPivotVal);
+    this.pivotRow = opts.initialPivotRow || null;
+    this.pivotCol = opts.initialPivotCol || null;
+    this.pivotVal = opts.initialPivotVal || null;
+    this.pivotAgg = opts.initialPivotAgg || 'sum';
+    if (Array.isArray(opts.calcColumns)) {
+      opts.calcColumns.forEach(cc => {
+        this.columns.push({
+          key: cc.key || ('_calc_' + Math.random().toString(36).slice(2,8)),
+          label: cc.label, type: 'calc', calc: cc.formula,
+          align: 'right', mono: true,
+        });
+      });
+    }
+    if (this.mount) this.render();
+  }
+  // Serialise current config for persistence
+  serialize() {
+    return {
+      sort:       this.sort.key ? { key: this.sort.key, dir: this.sort.dir } : null,
+      groupBy:    this.groupBy || null,
+      showTotals: this.showTotals || false,
+      pivotRow:   this.pivotRow || null,
+      pivotCol:   this.pivotCol || null,
+      pivotVal:   this.pivotVal || null,
+      pivotAgg:   this.pivotAgg || 'sum',
+      calcColumns: this.columns.filter(c => c.type === 'calc')
+        .map(c => ({ key: c.key, label: c.label, formula: c.calc })),
+    };
+  }
+  notifyChange() { if (this.onChange) this.onChange(); }
+  static esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  static fmtNum(v) {
+    if (v == null || v === '') return '—';
+    const n = Number(v);
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  evalFormula(expr, row) {
+    if (!expr) return null;
+    const scope = {};
+    this.columns.forEach(c => {
+      let v = row[c.key];
+      if (v == null || v === '') v = 0;
+      else if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) v = Number(v);
+      scope[c.key] = (typeof v === 'number') ? v : String(v);
+    });
+    const safeIds = new Set(Object.keys(scope).concat(
+      ['Math','abs','round','floor','ceil','min','max','pow','sqrt','log','sign']));
+    const ids = (expr.match(/[A-Za-z_][A-Za-z0-9_]*/g) || []);
+    for (const id of ids) {
+      if (!safeIds.has(id) && !['true','false','null'].includes(id))
+        throw new Error('Unknown identifier: ' + id);
+    }
+    if (/\.\s*(?!abs|round|floor|ceil|min|max|pow|sqrt|log|sign)/.test(expr))
+      throw new Error('Only Math.* property access is allowed');
+    if (/[;={}]/.test(expr)) throw new Error('Invalid characters in formula');
+    const keys = Object.keys(scope);
+    const vals = keys.map(k => scope[k]);
+    try {
+      const fn = new Function(...keys, 'Math',
+        'abs','round','floor','ceil','min','max','pow','sqrt','log','sign',
+        'return (' + expr + ')');
+      const m = Math;
+      return fn(...vals, m, m.abs, m.round, m.floor, m.ceil, m.min, m.max,
+                m.pow, m.sqrt, m.log, m.sign);
+    } catch (e) { throw new Error('Formula error: ' + e.message); }
+  }
+  recompute() {
+    let rows = this.rows.map(r => {
+      const out = { ...r };
+      this.columns.forEach(c => {
+        if (c.type === 'calc' && c.calc) {
+          try { out[c.key] = this.evalFormula(c.calc, out); }
+          catch { out[c.key] = '#ERR'; }
+        }
+      });
+      return out;
+    });
+    if (this.filter) {
+      const q = this.filter.toLowerCase();
+      const visible = this.columns.filter(c => !c.hidden);
+      rows = rows.filter(r => visible.some(c => String(r[c.key] ?? '').toLowerCase().includes(q)));
+    }
+    if (this.sort.key) {
+      const col = this.columns.find(c => c.key === this.sort.key);
+      const dir = this.sort.dir === 'desc' ? -1 : 1;
+      rows.sort((a, b) => {
+        const va = a[this.sort.key], vb = b[this.sort.key];
+        if (col && (col.type === 'number' || col.type === 'calc'))
+          return dir * ((Number(va) || 0) - (Number(vb) || 0));
+        return dir * String(va ?? '').localeCompare(String(vb ?? ''));
+      });
+    }
+    return rows;
+  }
+  aggregate(rows, key, fn) {
+    const nums = rows.map(r => Number(r[key])).filter(n => !isNaN(n) && isFinite(n));
+    if (fn === 'count') return rows.length;
+    if (!nums.length) return null;
+    if (fn === 'sum') return nums.reduce((s, n) => s + n, 0);
+    if (fn === 'avg') return nums.reduce((s, n) => s + n, 0) / nums.length;
+    if (fn === 'min') return Math.min(...nums);
+    if (fn === 'max') return Math.max(...nums);
+    return null;
+  }
+  render() {
+    if (!this.mount) return;
+    const rows = this.recompute();
+    this._lastViewRows = rows;
+    const parts = [this.renderToolbar(), this.renderPivotPanel()];
+    if (this.pivotRow && this.pivotVal) parts.push(this.renderPivot(rows));
+    else parts.push(this.renderTable(rows));
+    this.mount.innerHTML = parts.join('');
+    this.bindEvents();
+  }
+  renderToolbar() {
+    const groupOpts = '<option value="">— none —</option>' +
+      this.columns.filter(c => c.type === 'text' || c.type === 'status')
+        .map(c => `<option value="${c.key}"${this.groupBy === c.key ? ' selected' : ''}>${DG.esc(c.label)}</option>`).join('');
+    const groupChip = this.groupBy
+      ? `<span class="dg-chip">Group: ${DG.esc(this.columns.find(c=>c.key===this.groupBy)?.label||'')}<span class="dg-chip-x" data-act="clear-group">×</span></span>` : '';
+    const sortChip = this.sort.key
+      ? `<span class="dg-chip">Sort: ${DG.esc(this.columns.find(c=>c.key===this.sort.key)?.label||'')} ${this.sort.dir}<span class="dg-chip-x" data-act="clear-sort">×</span></span>` : '';
+    return `
+      <div class="dg-toolbar">
+        <input class="dg-input" type="text" placeholder="Filter rows…" data-act="filter" value="${DG.esc(this.filter)}">
+        <span class="dg-toolbar-label">Group by</span>
+        <select class="dg-select" data-act="group">${groupOpts}</select>
+        <button class="dg-btn ${this.showTotals ? 'active' : ''}" data-act="totals">Σ Totals</button>
+        <button class="dg-btn ${this.pivotOpen ? 'active' : ''}" data-act="pivot-toggle">⊞ Pivot</button>
+        <button class="dg-btn dg-btn-add" data-act="add-col">+ Add column</button>
+        <div class="dg-spacer"></div>
+        ${groupChip}${sortChip}
+        <span class="dg-meta">${this._lastViewRows.length} of ${this.rows.length}</span>
+        <button class="dg-btn" data-act="reset" title="Reset this table">↺</button>
+      </div>`;
+  }
+  renderPivotPanel() {
+    if (!this.pivotOpen) return '';
+    const opts = (filter) => '<option value="">—</option>' +
+      this.columns.filter(filter).map(c => `<option value="${c.key}">${DG.esc(c.label)}</option>`).join('');
+    const sel = (html, key) => html.replace(new RegExp(`value="${key}"`), `value="${key}" selected`);
+    let rowOpts = opts(c => c.type === 'text' || c.type === 'status');
+    let colOpts = opts(c => c.type === 'text' || c.type === 'status');
+    let valOpts = opts(c => c.type === 'number' || c.type === 'calc');
+    if (this.pivotRow) rowOpts = sel(rowOpts, this.pivotRow);
+    if (this.pivotCol) colOpts = sel(colOpts, this.pivotCol);
+    if (this.pivotVal) valOpts = sel(valOpts, this.pivotVal);
+    const aggOpts = ['sum','avg','count','min','max']
+      .map(a => `<option value="${a}"${this.pivotAgg===a?' selected':''}>${a.toUpperCase()}</option>`).join('');
+    return `<div class="dg-pivot-panel open">
+      <div class="dg-pivot-slot"><label>Rows</label><select data-act="pivot-row">${rowOpts}</select></div>
+      <div class="dg-pivot-slot"><label>Columns</label><select data-act="pivot-col">${colOpts}</select></div>
+      <div class="dg-pivot-slot"><label>Values</label>
+        <select data-act="pivot-val" style="margin-bottom:4px">${valOpts}</select>
+        <select data-act="pivot-agg">${aggOpts}</select></div>
+      </div>`;
+  }
+  renderTable(rows) {
+    const visible = this.columns.filter(c => !c.hidden);
+    if (!rows.length) return `<p style="font-size:12px;color:var(--text3);padding:1rem 0">${DG.esc(this.emptyMsg)}</p>`;
+    const header = visible.map(c => {
+      const sortCls = this.sort.key === c.key ? ' sort-' + this.sort.dir : '';
+      const calcCls = c.type === 'calc' ? ' calc-col' : '';
+      const style = c.align === 'right' || c.type === 'number' || c.type === 'calc' ? ' style="text-align:right"' : '';
+      const removeBtn = c.type === 'calc'
+        ? `<span style="margin-left:6px;opacity:0.5;cursor:pointer" data-act="del-col" data-key="${c.key}" title="Remove column">×</span>` : '';
+      return `<th class="sortable${sortCls}${calcCls}"${style} data-sort="${c.key}">${DG.esc(c.label)}<span class="sort-ind">${this.sort.key===c.key?(this.sort.dir==='asc'?'▲':'▼'):'▲▼'}</span>${removeBtn}</th>`;
+    }).join('');
+    let body = '';
+    if (this.groupBy) {
+      const groups = new Map();
+      rows.forEach(r => { const k = String(r[this.groupBy] ?? '—'); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); });
+      Array.from(groups.keys()).sort().forEach(k => {
+        const groupRows = groups.get(k);
+        const cells = visible.map((c, idx) => {
+          if (idx === 0) return `<td><strong>${DG.esc(k)}</strong><span class="group-count">(${groupRows.length})</span></td>`;
+          if (c.type === 'number' || c.type === 'calc') {
+            const total = this.aggregate(groupRows, c.key, 'sum');
+            return `<td style="text-align:right;font-family:var(--mono)"><strong>${DG.fmtNum(total)}</strong></td>`;
+          }
+          return '<td></td>';
+        }).join('');
+        body += `<tr class="group-header">${cells}</tr>`;
+        body += groupRows.map(r => this.renderRow(r, visible)).join('');
+      });
+    } else {
+      body = rows.map(r => this.renderRow(r, visible)).join('');
+    }
+    let foot = '';
+    if (this.showTotals) {
+      const cells = visible.map((c, idx) => {
+        if (c.type === 'number' || c.type === 'calc') {
+          const total = this.aggregate(rows, c.key, 'sum');
+          return `<td style="text-align:right">${DG.fmtNum(total)}</td>`;
+        }
+        if (idx === 0) return '<td>Total</td>';
+        return '<td></td>';
+      }).join('');
+      foot = `<tfoot><tr>${cells}</tr></tfoot>`;
+    }
+    return `<table class="dg-table"><thead><tr>${header}</tr></thead><tbody>${body}</tbody>${foot}</table>`;
+  }
+  renderRow(r, visible) {
+    const cells = visible.map(c => {
+      const v = r[c.key];
+      if (c.type === 'status') {
+        const lv = String(v||'').toLowerCase();
+        const cls = lv === 'success' || lv === 'pass' || lv === 'passed' ? 'dg-badge-green'
+                  : lv === 'failed'  || lv === 'fail'  || lv === 'error'  ? 'dg-badge-red'
+                  : lv === 'partial' || lv === 'warn'  || lv === 'skipped'|| lv === 'warned' ? 'dg-badge-amber'
+                  : 'dg-badge-blue';
+        const label = lv === 'success' ? 'Success' : lv === 'partial' ? 'Partial' : lv === 'failed' ? 'Failed'
+                    : lv === 'pass' ? 'Pass' : lv === 'warn' ? 'Warn' : lv === 'skipped' ? 'Skipped'
+                    : DG.esc(String(v||''));
+        return `<td><span class="dg-badge ${cls}">${label}</span></td>`;
+      }
+      const style = [];
+      if (c.mono !== false) style.push('font-family:var(--mono)');
+      if (c.size) style.push('font-size:' + c.size + 'px');
+      if (c.muted) style.push('color:var(--text3)');
+      if (c.bold) style.push('font-weight:500');
+      if (c.color === 'accent') style.push('color:var(--accent)');
+      if (c.color === 'green') style.push('color:#22c97a');
+      if (c.align === 'right' || c.type === 'number' || c.type === 'calc') style.push('text-align:right');
+      if (c.dynamicColor) { const col = c.dynamicColor(v); if (col) style.push('color:' + col); }
+      const inner = c.render ? c.render(v, r)
+        : (c.type === 'number' || c.type === 'calc') ? DG.fmtNum(v)
+        : DG.esc(String(v ?? ''));
+      const tdCls = c.type === 'calc' ? ' class="calc-col"' : '';
+      return `<td${tdCls} style="${style.join(';')}">${inner}</td>`;
+    }).join('');
+    return `<tr>${cells}</tr>`;
+  }
+  renderPivot(rows) {
+    const rowCol = this.columns.find(c => c.key === this.pivotRow);
+    const valCol = this.columns.find(c => c.key === this.pivotVal);
+    if (!rowCol || !valCol) return '<p style="font-size:12px;color:var(--text3);padding:1rem">Select a Rows axis and a Values column to see the pivot.</p>';
+    const rowVals = Array.from(new Set(rows.map(r => String(r[this.pivotRow] ?? '—')))).sort();
+    const colVals = this.pivotCol ? Array.from(new Set(rows.map(r => String(r[this.pivotCol] ?? '—')))).sort() : [null];
+    const cellRows = rowVals.map(rv => {
+      const rd = { _label: rv };
+      colVals.forEach(cv => {
+        const k = cv == null ? '__all' : cv;
+        rd[k] = rows.filter(r => String(r[this.pivotRow] ?? '—') === rv && (cv == null || String(r[this.pivotCol] ?? '—') === cv));
+      });
+      return rd;
+    });
+    const headers = this.pivotCol
+      ? ['<th>' + DG.esc(rowCol.label) + '</th>'].concat(
+          colVals.map(cv => `<th style="text-align:right">${DG.esc(cv)}</th>`),
+          ['<th style="text-align:right">Total</th>']).join('')
+      : `<th>${DG.esc(rowCol.label)}</th><th style="text-align:right">${this.pivotAgg.toUpperCase()} of ${DG.esc(valCol.label)}</th>`;
+    const body = cellRows.map(cr => {
+      const cells = [`<td style="font-family:var(--mono)"><strong>${DG.esc(cr._label)}</strong></td>`];
+      let rowTotal = 0;
+      colVals.forEach(cv => {
+        const k = cv == null ? '__all' : cv;
+        const agg = this.aggregate(cr[k], this.pivotVal, this.pivotAgg);
+        if (agg != null) rowTotal += agg;
+        cells.push(`<td style="text-align:right;font-family:var(--mono)">${DG.fmtNum(agg)}</td>`);
+      });
+      if (this.pivotCol) cells.push(`<td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--accent)">${DG.fmtNum(rowTotal)}</td>`);
+      return '<tr>' + cells.join('') + '</tr>';
+    }).join('');
+    return `<table class="dg-table"><thead><tr>${headers}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+  bindEvents() {
+    const root = this.mount;
+    root.querySelectorAll('[data-act]').forEach(el => {
+      const act = el.getAttribute('data-act');
+      if (el.tagName === 'SELECT' || el.tagName === 'INPUT') {
+        el.addEventListener('change', e => this.handleAction(act, e.target));
+        if (el.tagName === 'INPUT') el.addEventListener('input', e => this.handleAction(act, e.target));
+      } else {
+        el.addEventListener('click', e => this.handleAction(act, el, e));
+      }
+    });
+    root.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', e => {
+        if (e.target.getAttribute && e.target.getAttribute('data-act') === 'del-col') return;
+        const k = th.getAttribute('data-sort'); if (!k) return;
+        if (this.sort.key === k) this.sort.dir = this.sort.dir === 'asc' ? 'desc' : 'asc';
+        else { this.sort.key = k; this.sort.dir = 'asc'; }
+        this.render(); this.notifyChange();
+      });
+    });
+  }
+  handleAction(act, el) {
+    switch (act) {
+      case 'filter':       this.filter = el.value; this.render(); return; // don't mark dirty
+      case 'group':        this.groupBy = el.value || null; break;
+      case 'clear-group':  this.groupBy = null; break;
+      case 'clear-sort':   this.sort = { key: null, dir: 'asc' }; break;
+      case 'totals':       this.showTotals = !this.showTotals; break;
+      case 'pivot-toggle': this.pivotOpen = !this.pivotOpen; break;
+      case 'pivot-row':    this.pivotRow = el.value || null; break;
+      case 'pivot-col':    this.pivotCol = el.value || null; break;
+      case 'pivot-val':    this.pivotVal = el.value || null; break;
+      case 'pivot-agg':    this.pivotAgg = el.value || 'sum'; break;
+      case 'add-col':      this.openAddColumnModal(); return;
+      case 'del-col':      this.removeCalcColumn(el.getAttribute('data-key')); break;
+      case 'reset':        this.resetSelf(); break;
+    }
+    this.render(); this.notifyChange();
+  }
+  removeCalcColumn(key) {
+    this.columns = this.columns.filter(c => c.key !== key);
+    if (this.sort.key === key) this.sort = { key: null, dir: 'asc' };
+  }
+  resetSelf() {
+    this.filter = ''; this.sort = { key: null, dir: 'asc' }; this.groupBy = null;
+    this.showTotals = false; this.pivotOpen = false; this.pivotRow = null;
+    this.pivotCol = null; this.pivotVal = null; this.pivotAgg = 'sum';
+    this.columns = this.columns.filter(c => c.type !== 'calc');
+  }
+  openAddColumnModal() {
+    const numericCols = this.columns.filter(c => c.type === 'number' || c.type === 'calc');
+    const help = numericCols.map(c => '<code>' + DG.esc(c.key) + '</code>').join(', ');
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="dg-modal-backdrop" data-act="modal-bg">
+        <div class="dg-modal">
+          <div class="dg-modal-head">
+            <h3>Add calculated column</h3>
+            <button class="dg-modal-close" data-act="modal-close">×</button>
+          </div>
+          <div class="dg-modal-body">
+            <div><label>Column name</label><input class="dg-input" id="dgm-name" style="width:100%" placeholder="e.g. Success rate"></div>
+            <div><label>Formula</label><input class="dg-input" id="dgm-formula" style="width:100%;font-family:var(--mono)" placeholder="e.g. inserted / sourceRows * 100"></div>
+            <div class="help">Numeric fields: ${help || '(none)'}.<br>Operators: <code>+</code> <code>-</code> <code>*</code> <code>/</code> <code>(</code> <code>)</code>. Math: <code>Math.round()</code>, <code>Math.abs()</code>, etc.</div>
+            <div class="err" id="dgm-err"></div>
+          </div>
+          <div class="dg-modal-foot">
+            <button class="dg-btn" data-act="modal-close">Cancel</button>
+            <button class="dg-btn dg-btn-add" data-act="modal-add">Add column</button>
+          </div>
+        </div>
+      </div>`;
+    const node = wrap.firstElementChild;
+    document.body.appendChild(node);
+    const close = () => node.remove();
+    node.addEventListener('click', e => {
+      const a = e.target.getAttribute && e.target.getAttribute('data-act');
+      if (a === 'modal-bg' && e.target === node) close();
+      if (a === 'modal-close') close();
+      if (a === 'modal-add') {
+        const name = node.querySelector('#dgm-name').value.trim();
+        const expr = node.querySelector('#dgm-formula').value.trim();
+        const err  = node.querySelector('#dgm-err');
+        err.style.display = 'none';
+        if (!name || !expr) { err.textContent = 'Both name and formula are required.'; err.style.display = 'block'; return; }
+        try { this.evalFormula(expr, this.rows[0] || {}); }
+        catch (ex) { err.textContent = ex.message; err.style.display = 'block'; return; }
+        const key = '_calc_' + Date.now().toString(36);
+        this.columns.push({ key, label: name, type: 'calc', calc: expr, align: 'right', mono: true });
+        this.render(); this.notifyChange();
+        close();
+      }
+    });
+    setTimeout(() => node.querySelector('#dgm-name').focus(), 50);
+  }
+}
+
+// ── Panel UI controllers ──────────────────────────────────────────────────────
+function togglePresPanel() {
+  const p = document.getElementById('pres-panel');
+  if (!p) return;
+  p.setAttribute('data-open', p.getAttribute('data-open') === 'true' ? 'false' : 'true');
+}
+
+function presToggleSubCard(which) {
+  const card = document.getElementById('pres-card-' + which);
+  if (!card) return;
+  card.setAttribute('data-open', card.getAttribute('data-open') === 'true' ? 'false' : 'true');
+}
+
+function presMarkDirty() {
+  window._presDirty = true;
+  const panel = document.getElementById('pres-panel');
+  if (panel) panel.setAttribute('data-dirty', 'true');
+}
+
+function presIsDirty() {
+  return !!window._presDirty;
+}
+
+// Build the current config from panel + grids
+function presBuildConfig() {
+  const g = window._presGrids;
+  return {
+    showCharts: document.getElementById('pres-opt-charts').checked,
+    grids: {
+      results: g.results ? g.results.serialize() : {},
+      recon:   g.recon   ? g.recon.serialize()   : {},
+      mapping: g.mapping ? g.mapping.serialize() : {},
+    },
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Per-grid summary (shown in each sub-card head)
+function presSummaryOf(gridCfg) {
+  if (!gridCfg) return 'Not configured';
+  const bits = [];
+  if (gridCfg.sort)     bits.push('Sort: ' + gridCfg.sort.key + ' ' + gridCfg.sort.dir);
+  if (gridCfg.groupBy)  bits.push('Group: ' + gridCfg.groupBy);
+  if (gridCfg.showTotals) bits.push('Σ totals');
+  if (gridCfg.pivotRow && gridCfg.pivotVal) bits.push('Pivot: ' + gridCfg.pivotRow + ' × ' + gridCfg.pivotVal);
+  const calcCount = (gridCfg.calcColumns || []).length;
+  if (calcCount) bits.push(calcCount + ' calc col' + (calcCount === 1 ? '' : 's'));
+  return bits.length ? bits.join(' · ') : 'Not configured';
+}
+
+function presRefreshSummaries() {
+  const cfg = presBuildConfig();
+  ['results','recon','mapping'].forEach(k => {
+    const el = document.getElementById('pres-summary-' + k);
+    if (el) el.textContent = presSummaryOf(cfg.grids[k]);
+  });
+}
+
+// ── Mount grids with the report's data + existing saved config ────────────────
+function presMountGrids(report) {
+  window._presCurrentReport = report;
+  window._presDirty = false;
+  const panel = document.getElementById('pres-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  panel.setAttribute('data-dirty', 'false');
+  panel.setAttribute('data-open', 'false');
+
+  const savedCfg = (report && report.presentationConfig) || {};
+  // Charts toggle
+  const chartsOn = savedCfg.showCharts !== false; // default true
+  document.getElementById('pres-opt-charts').checked = chartsOn;
+
+  // Build row sets from report data (matches report.html's renderer shape)
+  const srcFallback = report.sourceTable || report.sourceFile || '—';
+  const tgtTableName = report.targetTable || (report.tables?.[0]?.name) || '—';
+
+  const resultsRows = (report.tables || []).map(t => ({
+    source:     t.sourceName || srcFallback,
+    table:      t.name,
+    sourceRows: t.sourceRows || 0,
+    inserted:   t.insertedRows || 0,
+    errors:     t.errors || 0,
+    batches:    t.batches || 0,
+    status:     t.status || (t.errors > 0 ? 'partial' : 'success'),
+  }));
+
+  const reconRows = (report.reconciliation || []).map(e => ({
+    step: e.stepName || '', srcTable: e.srcTable || '', tgtTable: e.tgtTable || '',
+    metric: e.metric || '', column: e.sourceColumn || e.targetColumn || '',
+    groupBy: e.groupByColumn || '',
+    groupValue: e.groupByColumn ? (e.groupKey == null ? '' : String(e.groupKey)) : '',
+    sourceValue: e.sourceValue != null ? Number(e.sourceValue) : null,
+    targetValue: e.targetValue != null ? Number(e.targetValue) : null,
+    delta: e.delta != null ? Number(e.delta) : null,
+    tolerance: e.tolerance != null ? Number(e.tolerance) : null,
+    result: e.passed === true ? 'Pass' : e.passed === false ? 'Warn' : 'Skipped',
+  }));
+
+  const mappingRows = (report.columnMapping || []).map(m => ({
+    srcTable: m.srcTable || srcFallback, srcCol: m.srcCol || '',
+    tgtTable: m.tgtTable || tgtTableName, tgtCol: m.tgtCol || '',
+    tgtType: m.tgtType || '', transform: m.transform || 'NONE',
+    mapped: m.tgtCol ? 1 : 0,
+  }));
+
+  const rCfg = (savedCfg.grids && savedCfg.grids.results) || {};
+  const xCfg = (savedCfg.grids && savedCfg.grids.recon)   || {};
+  const mCfg = (savedCfg.grids && savedCfg.grids.mapping) || {};
+
+  window._presGrids.results = new DG({
+    mount: document.getElementById('pres-grid-results'), title: 'migration_results',
+    columns: [
+      { key: 'source',     label: 'Source',      type: 'text',   mono: true, size: 10, muted: true },
+      { key: 'table',      label: 'Table',       type: 'text',   mono: true, bold: true },
+      { key: 'sourceRows', label: 'Source rows', type: 'number', align: 'right' },
+      { key: 'inserted',   label: 'Inserted',    type: 'number', align: 'right', color: 'green', bold: true },
+      { key: 'errors',     label: 'Errors',      type: 'number', align: 'right',
+        dynamicColor: v => v > 0 ? '#f04646' : 'var(--text3)' },
+      { key: 'batches',    label: 'Batches',     type: 'number', align: 'right' },
+      { key: 'status',     label: 'Status',      type: 'status' },
+    ],
+    rows: resultsRows, emptyMsg: 'No migration results in this report.',
+    initialSort: rCfg.sort, initialGroupBy: rCfg.groupBy, initialShowTotals: rCfg.showTotals,
+    initialPivotRow: rCfg.pivotRow, initialPivotCol: rCfg.pivotCol, initialPivotVal: rCfg.pivotVal, initialPivotAgg: rCfg.pivotAgg,
+    calcColumns: rCfg.calcColumns,
+    onChange: () => { presMarkDirty(); presRefreshSummaries(); },
+  });
+
+  window._presGrids.recon = new DG({
+    mount: document.getElementById('pres-grid-recon'), title: 'reconciliation',
+    columns: [
+      { key: 'step',        label: 'Step',         type: 'text',   mono: true, size: 10 },
+      { key: 'metric',      label: 'Metric',       type: 'text',   mono: true, size: 10 },
+      { key: 'column',      label: 'Column',       type: 'text',   mono: true, size: 10 },
+      { key: 'groupBy',     label: 'Group by',     type: 'text',   mono: true, size: 10, muted: true, render: v => v || '—' },
+      { key: 'groupValue',  label: 'Group value',  type: 'text',   mono: true, size: 10, render: v => v || '—' },
+      { key: 'sourceValue', label: 'Source',       type: 'number', align: 'right' },
+      { key: 'targetValue', label: 'Target',       type: 'number', align: 'right' },
+      { key: 'delta',       label: 'Delta',        type: 'number', align: 'right' },
+      { key: 'tolerance',   label: 'Tolerance',    type: 'number', align: 'right', muted: true },
+      { key: 'result',      label: 'Result',       type: 'status' },
+    ],
+    rows: reconRows, emptyMsg: 'No reconciliation entries in this report.',
+    initialSort: xCfg.sort, initialGroupBy: xCfg.groupBy, initialShowTotals: xCfg.showTotals,
+    initialPivotRow: xCfg.pivotRow, initialPivotCol: xCfg.pivotCol, initialPivotVal: xCfg.pivotVal, initialPivotAgg: xCfg.pivotAgg,
+    calcColumns: xCfg.calcColumns,
+    onChange: () => { presMarkDirty(); presRefreshSummaries(); },
+  });
+
+  window._presGrids.mapping = new DG({
+    mount: document.getElementById('pres-grid-mapping'), title: 'column_mapping',
+    columns: [
+      { key: 'srcTable',  label: 'Source table',  type: 'text', mono: true, size: 10, muted: true },
+      { key: 'srcCol',    label: 'Source column', type: 'text', mono: true },
+      { key: 'tgtTable',  label: 'Target table',  type: 'text', mono: true, size: 10, muted: true },
+      { key: 'tgtCol',    label: 'Target column', type: 'text', mono: true, color: 'accent',
+        render: v => v || '<em style="opacity:0.4">skipped</em>' },
+      { key: 'tgtType',   label: 'Type',          type: 'text', mono: true, size: 10, muted: true },
+      { key: 'transform', label: 'Transform',     type: 'text', mono: true, size: 10 },
+      { key: 'mapped',    label: 'Mapped',        type: 'number', align: 'right', hidden: true },
+    ],
+    rows: mappingRows, emptyMsg: 'No column mapping data in this report.',
+    initialSort: mCfg.sort, initialGroupBy: mCfg.groupBy, initialShowTotals: mCfg.showTotals,
+    calcColumns: mCfg.calcColumns,
+    onChange: () => { presMarkDirty(); presRefreshSummaries(); },
+  });
+
+  // Snapshot initial config so we can detect real diffs (optional dirty refinement)
+  window._presInitialSnapshot = JSON.stringify(presBuildConfig());
+  presRefreshSummaries();
+}
+
+// ── Reset and save ────────────────────────────────────────────────────────────
+function presResetConfig() {
+  if (!confirm('Reset all presentation settings for this report?')) return;
+  Object.values(window._presGrids).forEach(g => { if (g) { g.resetSelf(); g.render(); } });
+  document.getElementById('pres-opt-charts').checked = true;
+  presMarkDirty();
+  presRefreshSummaries();
+}
+
+async function presSaveConfig() {
+  const btn = document.getElementById('pres-save-btn');
+  if (!btn) return;
+  const report = window._presCurrentReport;
+  if (!report || !report.id) { alert('No report loaded.'); return; }
+  const email = (typeof currentCygenixEmail === 'function') ? currentCygenixEmail() : null;
+  if (!email) { alert('Please sign in first.'); return; }
+
+  const prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Saving…';
+  try {
+    const cfg = presBuildConfig();
+    const r = await fetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save-presentation',
+        userEmail: email,
+        id: report.id,
+        presentationConfig: cfg,
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    // Update the in-memory report so a subsequent open reflects the new config
+    // without a round-trip, and so the stashed copy used by report.html is current.
+    report.presentationConfig = cfg;
+    window._presDirty = false;
+    const panel = document.getElementById('pres-panel');
+    if (panel) panel.setAttribute('data-dirty', 'false');
+    btn.textContent = '✓ Saved';
+    setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 1500);
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+    btn.textContent = prev;
+    btn.disabled = false;
+  }
+}
 </script>
 <!-- ── First-run onboarding modal ── -->
 <div id="onboarding-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)">
