@@ -1036,49 +1036,23 @@ function deleteScript(id) {
 }
 
 // ── Move a saved script to Migration Jobs ─────────────────────────────────────
-// Promotes the script into a job (same schema as addToJobs()) and, if the user
-// confirms, removes the script from the saved-scripts list so it's a true
-// "move" rather than a copy.
+// Promotes the script into a job via promoteSQLToJob (which writes to both
+// cygenix_jobs and the project's group.steps) and then removes the script
+// from the saved-scripts list so it's a true "move" rather than a copy.
 function moveScriptToJob(id) {
   const s = scripts.find(s => s.id === id);
   if (!s) return;
   if (!s.sql || !s.sql.trim()) { alert('This script has no SQL to move.'); return; }
 
-  const msg = 'Move "' + s.name + '" to Migration Jobs?\n\n'
-            + 'OK — move (script will be removed from Saved scripts)\n'
-            + 'Cancel — keep the script here';
-  if (!confirm(msg)) return;
+  if (!confirm('Move "' + s.name + '" into Migration Jobs?\n\nYou will be asked to pick a group.\nThe script will be removed from Saved scripts.')) return;
 
-  const conn = s.conn || 'source';
-  const job = {
-    id:        'job_' + Date.now(),
-    name:      s.name,
-    projectId: localStorage.getItem('cygenix_active_project_id') || '',
-    source:    conn === 'source' ? (CygenixConnections.get().srcConnString || '').slice(0,50) : '',
-    target:    conn === 'target' ? CygenixConnections.tgtConn().slice(0,50) : '',
-    jobType:   'sql',
-    type:      'sql',
-    sql:       s.sql,
-    connOn:    conn,
-    status:    'ready',
-    created:   new Date().toISOString(),
-    tables:    [],
-    files:     [],
-    totalRows: 0,
-    columnMapping: [],
-    wasisRules:    [],
-    warnings:  ['SQL script moved from SQL Editor saved scripts'],
-    description: s.desc || '',
-  };
-
-  try {
-    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
-    jobs.unshift(job);
-    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,50)));
-  } catch(e) {
-    alert('Could not create job: ' + e.message);
-    return;
-  }
+  const result = promoteSQLToJob({
+    sql:  s.sql,
+    name: s.name,
+    conn: s.conn || 'source',
+    desc: s.desc || ''
+  });
+  if (!result.ok) return;  // user cancelled a prompt, or an error alerted
 
   // Remove the script from saved scripts (this is a move, not a copy)
   scripts = scripts.filter(x => x.id !== id);
@@ -1092,11 +1066,10 @@ function moveScriptToJob(id) {
     clearResults();
   }
   renderScriptList();
-  // If the Jobs pane is visible, refresh it so the new job appears immediately
   if (typeof renderJobsList === 'function') renderJobsList();
 
-  setExecStatus('✓ Moved to Migration Jobs: ' + s.name, 'var(--purple)');
-  setTimeout(()=>setExecStatus('',''), 3000);
+  setExecStatus('✓ Moved to ' + result.projectName + ' › ' + result.groupName + ': ' + s.name, 'var(--purple)');
+  setTimeout(() => setExecStatus('',''), 4000);
 }
 
 // ── Load SQL from file ────────────────────────────────────────────────────────
@@ -2235,39 +2208,153 @@ function saveBackToJob() {
   }
 }
 
+// ── Promote SQL into a project group as a job ────────────────────────────────
+// Jobs live in TWO places:
+//   1. `cygenix_jobs` (flat array, used by dashboards and cross-project views)
+//   2. As a step inside `project.groups[].steps[]` (source of truth —
+//      projects live in `cygenix_projects`)
+// Both must be written for the job to appear correctly in the Migration
+// Jobs list. Returns {ok, jobId, groupName, projectName} on success.
+function promoteSQLToJob(opts) {
+  const { sql, name, conn, desc } = opts;
+  if (!sql || !sql.trim()) { alert('No SQL to promote.'); return { ok:false, reason:'no-sql' }; }
+
+  const activeId = localStorage.getItem('cygenix_active_project_id');
+  if (!activeId) { alert('No active project. Set an active project first.'); return { ok:false, reason:'no-project' }; }
+
+  // Load projects and find the active one
+  let projects;
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch { projects = []; }
+  const projIdx = projects.findIndex(p => p && p.id === activeId);
+  if (projIdx === -1) { alert('Active project not found in projects list.'); return { ok:false, reason:'project-missing' }; }
+
+  const proj = projects[projIdx];
+  proj.groups = Array.isArray(proj.groups) ? proj.groups : [];
+
+  // Ask which group to add to. Show existing groups + an option to create new.
+  let targetGroupName;
+  if (proj.groups.length === 0) {
+    targetGroupName = prompt('Create a new group for this job in "' + (proj.name||'project') + '":', 'SQL Scripts');
+    if (targetGroupName === null) return { ok:false, reason:'cancelled' };
+    targetGroupName = targetGroupName.trim() || 'SQL Scripts';
+  } else {
+    const list = proj.groups.map((g,i) => (i+1) + '. ' + (g.name||'(unnamed)')).join('\n');
+    const answer = prompt(
+      'Add to which group in "' + (proj.name||'project') + '"?\n\n' +
+      list + '\n' + (proj.groups.length + 1) + '. + New group…\n\n' +
+      'Enter a number:',
+      '1'
+    );
+    if (answer === null) return { ok:false, reason:'cancelled' };
+    const n = parseInt(answer, 10);
+    if (!isFinite(n) || n < 1 || n > proj.groups.length + 1) { alert('Invalid choice.'); return { ok:false, reason:'invalid-choice' }; }
+    if (n === proj.groups.length + 1) {
+      const newName = prompt('New group name:', 'SQL Scripts');
+      if (newName === null) return { ok:false, reason:'cancelled' };
+      targetGroupName = newName.trim() || 'SQL Scripts';
+    } else {
+      targetGroupName = proj.groups[n - 1].name;
+    }
+  }
+
+  // Resolve or create the group
+  let group = proj.groups.find(g => g && g.name === targetGroupName);
+  if (!group) {
+    group = {
+      id:            'grp_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      name:          targetGroupName,
+      executionMode: 'sequential',
+      collapsed:     false,
+      steps:         []
+    };
+    proj.groups.push(group);
+  }
+  group.steps = Array.isArray(group.steps) ? group.steps : [];
+
+  // Build the job — shared jobId links the flat-array entry to the group step
+  const jobId   = 'job_' + Date.now();
+  const jobName = (name || 'SQL Script').trim() || 'SQL Script';
+  const srcConn = conn === 'source'
+    ? (window.CygenixConnections?.get?.().srcConnString || '').slice(0,50) : '';
+  const tgtConn = conn === 'target'
+    ? (window.CygenixConnections?.tgtConn?.() || '').slice(0,50) : '';
+
+  const jobRecord = {
+    id:            jobId,
+    name:          jobName,
+    jobType:       'sql',
+    type:          'sql',
+    projectId:     proj.id,
+    groupId:       group.id,
+    source:        srcConn,
+    target:        tgtConn,
+    sql:           sql,
+    insertSQL:     sql,              // aliased — loadJobSQL accepts either field
+    connOn:        conn || 'source',
+    status:        'ready',
+    created:       new Date().toISOString(),
+    tables:        [],
+    files:         [],
+    totalRows:     0,
+    columnMapping: [],
+    wasisRules:    [],
+    warnings:      [desc ? desc : 'SQL script from SQL Editor'],
+  };
+
+  // Write flat index
+  try {
+    const flat = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    flat.unshift(jobRecord);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(flat.slice(0, 200)));
+  } catch(e) { alert('Could not update jobs index: ' + e.message); return { ok:false, reason:'flat-write-failed' }; }
+
+  // Write step into the group inside the project
+  const step = {
+    jobId:     jobId,
+    name:      jobName,
+    type:      'sql',
+    jobType:   'sql',
+    sql:       sql,
+    insertSQL: sql,
+    connOn:    conn || 'source',
+    srcTable:  '',
+    tgtTable:  '',
+    status:    'ready',
+    totalRows: 0,
+    columnMapping: [],
+    warnings:  [desc ? desc : 'SQL script from SQL Editor']
+  };
+  group.steps.push(step);
+
+  try {
+    projects[projIdx] = proj;
+    localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+  } catch(e) {
+    // Roll back the flat index write so the two stay consistent
+    try {
+      const flat = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+      localStorage.setItem('cygenix_jobs', JSON.stringify(flat.filter(j => j.id !== jobId)));
+    } catch {}
+    alert('Could not update project groups: ' + e.message);
+    return { ok:false, reason:'project-write-failed' };
+  }
+
+  return { ok:true, jobId, groupName: group.name, projectName: proj.name || 'project' };
+}
+
 function addToJobs() {
   const sql  = document.getElementById('sql-editor').value.trim();
   const name = document.getElementById('script-name').value.trim() || 'SQL Script';
   const conn = document.getElementById('conn-select').value;
+  const desc = document.getElementById('script-desc')?.value.trim() || '';
   if (!sql) { alert('Write some SQL first.'); return; }
 
-  const job = {
-    id:      'job_'+Date.now(),
-    name,
-    projectId: localStorage.getItem('cygenix_active_project_id') || '',
-    source:  conn==='source' ? (CygenixConnections.get().srcConnString||'').slice(0,50) : '',
-    target:  conn==='target' ? CygenixConnections.tgtConn().slice(0,50) : '',
-    jobType: 'sql',
-    type:    'sql',
-    sql,
-    connOn:  conn,
-    status:  'ready',
-    created: new Date().toISOString(),
-    tables:  [],
-    files:   [],
-    totalRows: 0,
-    columnMapping: [],
-    wasisRules: [],
-    warnings: ['SQL script from SQL Editor'],
-  };
+  const result = promoteSQLToJob({ sql, name, conn, desc });
+  if (!result.ok) return;
 
-  try {
-    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
-    jobs.unshift(job);
-    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,50)));
-    setExecStatus('✓ Added to All Jobs', 'var(--green)');
-    setTimeout(()=>setExecStatus('',''), 3000);
-  } catch(e) { alert('Could not save: '+e.message); }
+  setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
+  setTimeout(() => setExecStatus('',''), 4000);
+  if (typeof renderJobsList === 'function') renderJobsList();
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
