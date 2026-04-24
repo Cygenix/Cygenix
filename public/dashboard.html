@@ -844,6 +844,70 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-sidebar.js"></script>
+  <script>
+    // Rename the "Inventory" sidebar item to "Project Artifacts" without
+    // forking the shared /cygenix-sidebar.js file. The sidebar renders
+    // synchronously on script load; we run immediately after its <script>
+    // tag has parsed so its DOM is already in #cyg-sidebar-mount. A
+    // MutationObserver catches any later re-renders (the shared component
+    // sometimes re-mounts on nav changes).
+    //
+    // Match strategy: look for any element whose onclick or data-view
+    // routes to 'inventory', or whose text content is exactly "Inventory".
+    // Don't touch the icon — just the visible label text node.
+    (function renameInventoryMenuItem() {
+      const NEW_LABEL = 'Project Artifacts';
+      // Match "Inventory" as a whole word — not "InventoryFoo" or "ReInventory".
+      // Case-sensitive because the existing label is capitalised; picks up
+      // "Inventory", "Inventory items", "📦 Inventory", but not partial words.
+      const RX = /\bInventory\b/g;
+
+      function rename(root) {
+        if (!root) return;
+        const candidates = root.querySelectorAll(
+          '[data-view="inventory"], [onclick*="inventory"], a[href*="inventory"]'
+        );
+        candidates.forEach(el => {
+          // Walk all text nodes inside the element and rewrite any containing
+          // the word "Inventory". Using a word-boundary regex means we catch
+          // "📦 Inventory" (icon + label in same text node) without touching
+          // unrelated words.
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+          let n;
+          while ((n = walker.nextNode())) {
+            if (RX.test(n.nodeValue || '')) {
+              n.nodeValue = n.nodeValue.replace(RX, NEW_LABEL);
+              RX.lastIndex = 0; // reset — /g keeps state across test()/replace()
+            }
+          }
+          // Attribute-based labels (aria, title) also get rewritten
+          const aria = el.getAttribute && el.getAttribute('aria-label');
+          if (aria && RX.test(aria)) {
+            el.setAttribute('aria-label', aria.replace(RX, NEW_LABEL));
+            RX.lastIndex = 0;
+          }
+          if (el.title && RX.test(el.title)) {
+            el.title = el.title.replace(RX, NEW_LABEL);
+            RX.lastIndex = 0;
+          }
+        });
+      }
+
+      const mount = document.getElementById('cyg-sidebar-mount');
+      rename(mount);
+      // Observer catches re-renders. Debounce by one tick so several DOM
+      // mutations from a single re-mount only trigger one pass.
+      if (mount && typeof MutationObserver === 'function') {
+        let pending = false;
+        const obs = new MutationObserver(() => {
+          if (pending) return;
+          pending = true;
+          setTimeout(() => { pending = false; rename(mount); }, 0);
+        });
+        obs.observe(mount, { childList: true, subtree: true, characterData: true });
+      }
+    })();
+  </script>
 
 
   <!-- MAIN -->
@@ -1881,8 +1945,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <!-- LEFT CONTROLS PANEL -->
       <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;position:sticky;top:0">
 
-        <div style="font-size:15px;font-weight:600;margin-bottom:0.2rem">Project Artifacts</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:1.5rem">Reference documents organised by project</div>
+        <div style="font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:1rem">Upload &amp; filter</div>
 
         <!-- Upload zone -->
         <div class="inv-upload-zone" id="inv-upload-zone"

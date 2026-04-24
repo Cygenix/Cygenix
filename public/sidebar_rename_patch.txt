@@ -1,0 +1,36 @@
+SIDEBAR RENAME — /cygenix-sidebar.js
+====================================
+
+The dashboard.html now includes a small post-load script that rewrites
+"Inventory" to "Project Artifacts" in the rendered sidebar. That's a
+runtime workaround. For a clean fix, edit /cygenix-sidebar.js directly:
+
+1. Find the navigation-items array (usually a const near the top of the
+   file). Look for an entry with `id: 'inventory'`, `view: 'inventory'`,
+   or `label: 'Inventory'`.
+
+2. Change the label — typically the `label` or `text` field:
+
+     { id: 'inventory', icon: '📦', label: 'Inventory' }
+   →
+     { id: 'inventory', icon: '📦', label: 'Project Artifacts' }
+
+3. If the icon is still the box emoji 📦, consider swapping it to 📁 to
+   match the "organised by project folder" framing on the main view.
+   Purely cosmetic — both work.
+
+4. Leave the `id` / `view` / routing keys alone. Those drive showView()
+   and have to stay 'inventory' to keep working with the existing DOM
+   ids (`#view-inventory`), localStorage keys (`cygenix_inventory`), and
+   search filter values.
+
+Once /cygenix-sidebar.js has been updated, the runtime rename script in
+dashboard.html becomes redundant — safe to leave in place (it's a no-op
+once the source label is already "Project Artifacts") or delete for
+cleanliness. The block to remove is the self-invoking
+`renameInventoryMenuItem` IIFE immediately after the sidebar <script>
+tag.
+
+Other pages that load /cygenix-sidebar.js (e.g. Projects, Execute, etc.)
+will automatically pick up the new label once you edit the source — no
+per-page change required.
