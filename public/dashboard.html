@@ -755,6 +755,35 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dg-modal-body .err{font-size:10px;color:var(--red);background:rgba(239,68,68,0.1);padding:0.4rem 0.6rem;border-radius:var(--r);display:none;border:0.5px solid rgba(239,68,68,0.25)}
 .dg-modal-foot{padding:0.7rem 1.1rem;background:var(--bg3);display:flex;gap:0.4rem;justify-content:flex-end;border-top:0.5px solid var(--border)}
 .dg-modal-foot .dg-btn{padding:5px 12px;font-size:11px}
+
+/* ── Recon multi-check table (inside each job card) ───────────────────────── */
+.rc-table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;margin-top:0.75rem}
+.rc-table th{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.4rem 0.5rem;text-align:left;border-bottom:0.5px solid var(--border2);font-weight:500;background:transparent}
+.rc-table td{padding:0.35rem 0.35rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.rc-table tr:last-child td{border-bottom:none}
+.rc-table select,.rc-table input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.35rem 0.4rem;border-radius:6px;font-size:12px;font-family:var(--serif);outline:none}
+.rc-table input[type="number"]{font-family:var(--mono);width:90px}
+.rc-table select:focus,.rc-table input:focus{border-color:var(--accent)}
+.rc-row-del{background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;transition:all 0.15s;line-height:1}
+.rc-row-del:hover{background:rgba(239,68,68,0.15);color:#f04646}
+.rc-add-row{margin-top:0.75rem;background:var(--accent-glow);color:var(--accent);border:0.5px dashed rgba(61,126,255,0.4);border-radius:var(--r);padding:0.5rem 0.9rem;font-size:12px;cursor:pointer;font-family:var(--serif);width:100%;transition:all 0.15s}
+.rc-add-row:hover{background:var(--accent);color:#fff;border-style:solid;border-color:var(--accent)}
+.rc-empty{padding:1rem;text-align:center;color:var(--text3);font-size:12px;border:0.5px dashed var(--border2);border-radius:var(--r);background:var(--bg3)}
+
+/* Chip multi-select (used for group-by columns) */
+.rc-chips-field{display:flex;flex-wrap:wrap;gap:3px;align-items:center;min-height:28px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:2px 6px;cursor:pointer;font-size:11px;color:var(--text);transition:border-color 0.15s;position:relative}
+.rc-chips-field:hover{border-color:var(--border2)}
+.rc-chips-field.open{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+.rc-chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-glow);color:var(--accent);border-radius:100px;padding:1px 6px 1px 8px;font-family:var(--mono);font-size:10px;border:0.5px solid rgba(61,126,255,0.25)}
+.rc-chip-x{cursor:pointer;opacity:0.6;font-weight:500;padding:0 2px;margin-left:1px}
+.rc-chip-x:hover{opacity:1;color:var(--text)}
+.rc-chips-placeholder{color:var(--text3);font-size:11px;padding:2px 2px}
+.rc-chips-menu{position:absolute;top:100%;left:0;right:0;margin-top:3px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 24px rgba(0,0,0,0.35);z-index:500;max-height:180px;overflow-y:auto;display:none}
+.rc-chips-field.open .rc-chips-menu{display:block}
+.rc-chips-menu-item{padding:6px 10px;font-size:11px;color:var(--text);cursor:pointer;display:flex;align-items:center;gap:6px;transition:background 0.1s;font-family:var(--serif)}
+.rc-chips-menu-item:hover{background:var(--bg3)}
+.rc-chips-menu-item input{pointer-events:none;margin:0}
+.rc-chips-menu-empty{padding:10px;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
@@ -4475,6 +4504,7 @@ async function openReportSettings(reportId) {
   // form fields, same save handler (reconSaveOne). This keeps behaviour
   // identical; all we've changed is the scope (which jobs appear).
   list.innerHTML = matched.map(job => reconRenderJobCard(job)).join('');
+  reconBindChipsFields(list);
 
   // Mount the presentation panel with this report's data + saved config.
   // Lives beneath the recon cards in the same modal.
@@ -4887,41 +4917,100 @@ function renderReportSettings() {
     return;
   }
   el.innerHTML = migrationJobs.map(job => reconRenderJobCard(job)).join('');
+  reconBindChipsFields(el);
+}
+
+// Normalise a reconciliation object to the new multi-check shape. Older jobs
+// have a flat `{ enabled, metric, sourceColumn, targetColumn, groupByColumn,
+// tolerance }` that we turn into a single-element `checks[]` array without
+// losing the old flat fields (kept for any downstream code that still reads
+// them — the runner always prefers `checks` when present).
+//
+// New shape:
+//   reconciliation = {
+//     enabled: boolean,           // master toggle (job-level)
+//     checks: [
+//       {
+//         id: 'chk_xxx',
+//         metric: 'SUM' | 'COUNT_DISTINCT',
+//         sourceColumn, targetColumn,
+//         groupByColumns: [ 'col1', 'col2', ... ],   // array, not single string
+//         tolerance: number,
+//       },
+//       ...
+//     ],
+//   }
+//
+// Pass/fail semantics:
+//   Each check has ONE tolerance. The check passes if the OVERALL aggregate
+//   (ungrouped) is within tolerance. Grouped rows are informational — they
+//   appear in the report for analysis but do not influence the check's pass
+//   state. This is an explicit design choice; see the conversation notes.
+function reconMigrateShape(r) {
+  if (!r) return { enabled: false, checks: [] };
+  // Already new shape
+  if (Array.isArray(r.checks)) {
+    return {
+      enabled: !!r.enabled,
+      checks: r.checks.map(reconNormaliseCheck),
+    };
+  }
+  // Old flat shape → synthesise a single check
+  if (r.metric || r.sourceColumn || r.targetColumn || r.groupByColumn) {
+    return {
+      enabled: !!r.enabled,
+      checks: [reconNormaliseCheck({
+        metric:         r.metric || 'SUM',
+        sourceColumn:   r.sourceColumn || '',
+        targetColumn:   r.targetColumn || '',
+        groupByColumns: r.groupByColumn ? [r.groupByColumn] : [],
+        tolerance:      r.tolerance != null ? r.tolerance : 0.01,
+      })],
+    };
+  }
+  return { enabled: !!r.enabled, checks: [] };
+}
+
+function reconNormaliseCheck(c) {
+  return {
+    id:             c.id || ('chk_' + Math.random().toString(36).slice(2, 9)),
+    metric:         c.metric || 'SUM',
+    sourceColumn:   c.sourceColumn || '',
+    targetColumn:   c.targetColumn || '',
+    groupByColumns: Array.isArray(c.groupByColumns)
+      ? c.groupByColumns.filter(Boolean)
+      : (c.groupByColumn ? [c.groupByColumn] : []),
+    tolerance:      c.tolerance != null ? c.tolerance : 0.01,
+  };
 }
 
 function reconRenderJobCard(job) {
-  const r = job.reconciliation || { enabled: false, metric: 'SUM', sourceColumn: '', targetColumn: '', groupByColumn: '', tolerance: 0.01 };
+  const config = reconMigrateShape(job.reconciliation);
   const { srcCols, tgtCols } = reconColumnsForJob(job);
-  const jobIdEsc = escapeHtml(job.id);
-  const srcTable = escapeHtml(job.sourceTable || job.source || '—');
-  const tgtTable = escapeHtml(job.targetTable || job.target || '—');
-  const srcOpts  = srcCols.map(c => `<option value="${escapeHtml(c)}"${r.sourceColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
-  const tgtOpts  = tgtCols.map(c => `<option value="${escapeHtml(c)}"${r.targetColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
-  // Group-by options use SOURCE columns (we GROUP BY the same column on both sides,
-  // matching by column name — if source has 'currency' and target has 'Currency',
-  // future work will let user map separately). For pilot, identical names assumed.
-  const groupOpts = srcCols.map(c => `<option value="${escapeHtml(c)}"${r.groupByColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
-  const metricSum = r.metric === 'SUM'              ? 'selected' : '';
-  const metricCnt = r.metric === 'COUNT_DISTINCT'   ? 'selected' : '';
-  const enabled   = r.enabled ? 'checked' : '';
-  const tolerance = r.tolerance != null ? r.tolerance : 0.01;
-  const statusLabel = r.enabled
+  const jobIdEsc  = escapeHtml(job.id);
+  const jobIdAttr = job.id.replace(/"/g, '&quot;');
+  const srcTable  = escapeHtml(job.sourceTable || job.source || '—');
+  const tgtTable  = escapeHtml(job.targetTable || job.target || '—');
+  const enabled   = config.enabled ? 'checked' : '';
+
+  const statusLabel = config.enabled
     ? '<span class="badge badge-green" style="font-size:10px">Active</span>'
     : '<span class="badge" style="font-size:10px;background:var(--bg3);color:var(--text3)">Off</span>';
 
-  // Collapsed summary line — shows current config at a glance when card is closed.
-  // For enabled jobs shows metric + column + group-by; for disabled shows "not configured".
+  // Collapsed summary: count of configured checks, or "Not configured"
   let summary;
-  if (r.enabled) {
-    const col = r.sourceColumn || r.targetColumn || '?';
-    const grp = r.groupByColumn ? ` grouped by ${escapeHtml(r.groupByColumn)}` : '';
-    summary = `${r.metric}(${escapeHtml(col)})${grp}, tolerance ${tolerance}`;
+  if (config.enabled && config.checks.length) {
+    const n = config.checks.length;
+    summary = `${n} check${n === 1 ? '' : 's'} configured`;
   } else {
     summary = 'Not configured';
   }
 
+  const checksHtml = config.checks.length
+    ? reconRenderChecksTable(job.id, config.checks, srcCols, tgtCols)
+    : '<div class="rc-empty">No checks yet. Add one below.</div>';
+
   return `<div class="recon-card" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.5rem" data-recon-job="${jobIdEsc}" data-recon-open="false">
-    <!-- Header (always visible, click to toggle) -->
     <div class="recon-card-head" onclick="reconToggleCard('${jobIdEsc}')" style="padding:0.9rem 1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;cursor:pointer;user-select:none">
       <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
         <span class="recon-chevron" style="color:var(--text3);font-size:10px;transition:transform 0.15s;display:inline-block;flex-shrink:0">▶</span>
@@ -4933,53 +5022,271 @@ function reconRenderJobCard(job) {
       </div>
       <div style="flex-shrink:0">${statusLabel}</div>
     </div>
-    <!-- Body (collapsed by default, shown when data-recon-open="true") -->
     <div class="recon-card-body" style="display:none;padding:0 1.25rem 1.1rem;border-top:0.5px solid var(--border)">
-      <div style="padding-top:0.9rem;margin-bottom:0.75rem">
+      <div style="padding-top:0.9rem;margin-bottom:0.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
         <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer">
-          <input type="checkbox" data-recon-field="enabled" ${enabled} style="cursor:pointer">
-          Enable check
+          <input type="checkbox" data-recon-enabled ${enabled} style="cursor:pointer">
+          Enable reconciliation
         </label>
+        <div style="font-size:10px;color:var(--text3)">Each check passes if the overall aggregate is within tolerance. Group-by columns give a per-group breakdown in the report.</div>
       </div>
-      <div style="display:grid;grid-template-columns:130px 1fr 1fr 1fr 120px;gap:0.6rem;align-items:end">
-        <div>
-          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Metric</label>
-          <select data-recon-field="metric" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
-            <option value="SUM" ${metricSum}>SUM</option>
-            <option value="COUNT_DISTINCT" ${metricCnt}>COUNT DISTINCT</option>
-          </select>
-        </div>
-        <div>
-          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Source column</label>
-          <select data-recon-field="sourceColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
-            <option value="">— pick —</option>
-            ${srcOpts}
-          </select>
-        </div>
-        <div>
-          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Target column</label>
-          <select data-recon-field="targetColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
-            <option value="">— pick —</option>
-            ${tgtOpts}
-          </select>
-        </div>
-        <div>
-          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px" title="Optional — if set, metric is calculated per distinct value of this column">Group by <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:normal">(optional)</span></label>
-          <select data-recon-field="groupByColumn" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px">
-            <option value="">— no grouping —</option>
-            ${groupOpts}
-          </select>
-        </div>
-        <div>
-          <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Tolerance</label>
-          <input type="number" step="0.01" min="0" data-recon-field="tolerance" value="${tolerance}" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.4rem;border-radius:6px;font-size:12px;font-family:var(--mono)">
-        </div>
-      </div>
+      <div data-recon-checks-mount>${checksHtml}</div>
+      <button type="button" class="rc-add-row" onclick="reconAddCheck('${jobIdEsc}')">+ Add check</button>
       <div style="margin-top:0.8rem;display:flex;justify-content:flex-end;gap:0.5rem">
         <button class="btn btn-sm btn-ghost" onclick="event.stopPropagation();reconSaveOne('${jobIdEsc}')" style="font-size:12px">Save</button>
       </div>
     </div>
   </div>`;
+}
+
+// Render the checks table (one row per check). Extracted so reconAddCheck and
+// the remove-row handler can rebuild just this block without re-rendering the
+// whole card (which would reset the enable-toggle and the rest of the body).
+function reconRenderChecksTable(jobId, checks, srcCols, tgtCols) {
+  const rows = checks.map((c, idx) => reconRenderCheckRow(jobId, c, idx, srcCols, tgtCols)).join('');
+  return `<table class="rc-table" data-recon-checks-table>
+    <thead><tr>
+      <th style="width:120px">Metric</th>
+      <th>Source col</th>
+      <th>Target col</th>
+      <th>Group by</th>
+      <th style="width:100px">Tolerance</th>
+      <th style="width:28px"></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function reconRenderCheckRow(jobId, check, idx, srcCols, tgtCols) {
+  const metricSum = check.metric === 'SUM'            ? 'selected' : '';
+  const metricCnt = check.metric === 'COUNT_DISTINCT' ? 'selected' : '';
+  const srcOpts = srcCols.map(c => `<option value="${escapeHtml(c)}"${check.sourceColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  const tgtOpts = tgtCols.map(c => `<option value="${escapeHtml(c)}"${check.targetColumn === c ? ' selected' : ''}>${escapeHtml(c)}</option>`).join('');
+  const chipsField = reconRenderChipsField(check.groupByColumns || [], srcCols);
+  const tol = check.tolerance != null ? check.tolerance : 0.01;
+  const chkIdEsc = escapeHtml(check.id);
+  return `<tr data-recon-check="${chkIdEsc}">
+    <td><select data-recon-check-field="metric">
+      <option value="SUM" ${metricSum}>SUM</option>
+      <option value="COUNT_DISTINCT" ${metricCnt}>COUNT DISTINCT</option>
+    </select></td>
+    <td><select data-recon-check-field="sourceColumn">
+      <option value="">— pick —</option>${srcOpts}
+    </select></td>
+    <td><select data-recon-check-field="targetColumn">
+      <option value="">— pick —</option>${tgtOpts}
+    </select></td>
+    <td>${chipsField}</td>
+    <td><input type="number" step="0.01" min="0" data-recon-check-field="tolerance" value="${tol}"></td>
+    <td style="text-align:center">
+      <button type="button" class="rc-row-del" onclick="reconRemoveCheck('${escapeHtml(jobId)}','${chkIdEsc}')" title="Remove this check">✕</button>
+    </td>
+  </tr>`;
+}
+
+// Chip-style multi-select: visible chips for selected columns inside a field
+// that opens a checkbox menu on click. Falls back to a disabled-looking empty
+// state when the job has no mapping columns.
+function reconRenderChipsField(selected, allCols) {
+  const sel = Array.isArray(selected) ? selected.filter(Boolean) : [];
+  const serialisedSel = escapeHtml(JSON.stringify(sel));
+  const chips = sel.length
+    ? sel.map(c => `<span class="rc-chip">${escapeHtml(c)}<span class="rc-chip-x" data-recon-chip-remove="${escapeHtml(c)}">×</span></span>`).join('')
+    : '<span class="rc-chips-placeholder">— no grouping —</span>';
+  const menuItems = allCols.length
+    ? allCols.map(c => {
+        const checked = sel.includes(c) ? 'checked' : '';
+        return `<label class="rc-chips-menu-item" data-recon-chip-toggle="${escapeHtml(c)}">
+          <input type="checkbox" ${checked}>${escapeHtml(c)}
+        </label>`;
+      }).join('')
+    : '<div class="rc-chips-menu-empty">No columns available</div>';
+  return `<div class="rc-chips-field" data-recon-chips data-recon-chips-value="${serialisedSel}" tabindex="0">
+    <div class="rc-chips-body" style="display:flex;flex-wrap:wrap;gap:3px;align-items:center;flex:1;min-width:0">${chips}</div>
+    <div class="rc-chips-menu">${menuItems}</div>
+  </div>`;
+}
+
+// Delegated handler: wire up chip-field clicks within a recon card body. Runs
+// after the card body content is (re)rendered so a freshly-mounted table
+// becomes interactive immediately.
+function reconBindChipsFields(scope) {
+  const root = scope || document;
+  // Outside-click closer — install once, idempotent
+  if (!window._reconChipsCloserInstalled) {
+    document.addEventListener('click', ev => {
+      document.querySelectorAll('.rc-chips-field.open').forEach(f => {
+        if (!f.contains(ev.target)) f.classList.remove('open');
+      });
+    });
+    window._reconChipsCloserInstalled = true;
+  }
+  root.querySelectorAll('[data-recon-chips]').forEach(field => {
+    if (field._reconBound) return;
+    field._reconBound = true;
+    field.addEventListener('click', ev => {
+      const removeChip = ev.target.getAttribute && ev.target.getAttribute('data-recon-chip-remove');
+      if (removeChip != null) {
+        // Remove this column
+        ev.stopPropagation();
+        const sel = reconChipsGetSelected(field);
+        const next = sel.filter(c => c !== removeChip);
+        reconChipsSetSelected(field, next);
+        return;
+      }
+      const toggleItem = ev.target.closest('[data-recon-chip-toggle]');
+      if (toggleItem) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        const col = toggleItem.getAttribute('data-recon-chip-toggle');
+        const sel = reconChipsGetSelected(field);
+        const next = sel.includes(col) ? sel.filter(c => c !== col) : sel.concat([col]);
+        reconChipsSetSelected(field, next);
+        return;
+      }
+      // Click anywhere else in the field toggles the menu. Close any others first.
+      document.querySelectorAll('.rc-chips-field.open').forEach(f => { if (f !== field) f.classList.remove('open'); });
+      field.classList.toggle('open');
+    });
+  });
+}
+
+function reconChipsGetSelected(field) {
+  try { return JSON.parse(field.getAttribute('data-recon-chips-value') || '[]'); }
+  catch { return []; }
+}
+
+function reconChipsSetSelected(field, arr) {
+  field.setAttribute('data-recon-chips-value', JSON.stringify(arr));
+  // Re-render chips body + checkbox states without closing the menu
+  const body = field.querySelector('.rc-chips-body');
+  if (body) {
+    body.innerHTML = arr.length
+      ? arr.map(c => `<span class="rc-chip">${escapeHtml(c)}<span class="rc-chip-x" data-recon-chip-remove="${escapeHtml(c)}">×</span></span>`).join('')
+      : '<span class="rc-chips-placeholder">— no grouping —</span>';
+  }
+  field.querySelectorAll('[data-recon-chip-toggle]').forEach(item => {
+    const col = item.getAttribute('data-recon-chip-toggle');
+    const cb  = item.querySelector('input[type="checkbox"]');
+    if (cb) cb.checked = arr.includes(col);
+  });
+}
+
+// Add a fresh empty check to a job's card. Mutates the in-DOM state only;
+// nothing hits localStorage until the user hits Save.
+function reconAddCheck(jobId) {
+  const card = document.querySelector(`[data-recon-job="${CSS.escape(jobId)}"]`);
+  if (!card) return;
+  const mount = card.querySelector('[data-recon-checks-mount]');
+  if (!mount) return;
+  // Collect current check state from the DOM so we don't lose in-flight edits
+  const job = reconLoadJobs().find(j => j.id === jobId);
+  if (!job) return;
+  const { srcCols, tgtCols } = reconColumnsForJob(job);
+  const currentChecks = reconReadChecksFromDom(card);
+  currentChecks.push(reconNormaliseCheck({
+    metric: 'SUM', sourceColumn: '', targetColumn: '', groupByColumns: [], tolerance: 0.01,
+  }));
+  mount.innerHTML = reconRenderChecksTable(jobId, currentChecks, srcCols, tgtCols);
+  reconBindChipsFields(mount);
+}
+
+function reconRemoveCheck(jobId, checkId) {
+  const card = document.querySelector(`[data-recon-job="${CSS.escape(jobId)}"]`);
+  if (!card) return;
+  const row = card.querySelector(`[data-recon-check="${CSS.escape(checkId)}"]`);
+  if (row) row.remove();
+  // If last row removed, show the empty state card
+  const tbody = card.querySelector('[data-recon-checks-table] tbody');
+  if (tbody && tbody.children.length === 0) {
+    const mount = card.querySelector('[data-recon-checks-mount]');
+    if (mount) mount.innerHTML = '<div class="rc-empty">No checks yet. Add one below.</div>';
+  }
+}
+
+// Read every check row currently in the DOM and build an array of objects.
+// Used by reconSaveOne, reconAddCheck, etc.
+function reconReadChecksFromDom(card) {
+  const rows = card.querySelectorAll('[data-recon-check]');
+  return Array.from(rows).map(tr => {
+    const chk = { id: tr.getAttribute('data-recon-check') };
+    tr.querySelectorAll('[data-recon-check-field]').forEach(inp => {
+      const f = inp.getAttribute('data-recon-check-field');
+      if (inp.type === 'number') chk[f] = parseFloat(inp.value);
+      else                       chk[f] = (inp.value || '').trim();
+    });
+    const chips = tr.querySelector('[data-recon-chips]');
+    chk.groupByColumns = chips ? reconChipsGetSelected(chips) : [];
+    return reconNormaliseCheck(chk);
+  });
+}
+
+function reconSaveOne(jobId) {
+  const card = document.querySelector(`[data-recon-job="${CSS.escape(jobId)}"]`);
+  if (!card) return;
+  const jobs = reconLoadJobs();
+  const job  = jobs.find(j => j.id === jobId);
+  if (!job) { alert('Job not found'); return; }
+
+  const enabledInput = card.querySelector('[data-recon-enabled]');
+  const enabled = !!(enabledInput && enabledInput.checked);
+  const checks = reconReadChecksFromDom(card);
+
+  // Validation: if enabled, must have at least one check and every check
+  // must have metric + at least one column. Empty (all-default) rows are OK
+  // if master toggle is off — user may be mid-edit.
+  if (enabled) {
+    if (!checks.length) { alert('Add at least one check before enabling, or switch the master toggle off.'); return; }
+    for (let i = 0; i < checks.length; i++) {
+      const c = checks[i];
+      if (!c.metric) { alert(`Check ${i + 1}: pick a metric.`); return; }
+      if (!c.sourceColumn && !c.targetColumn) {
+        alert(`Check ${i + 1}: pick at least one column.`); return;
+      }
+    }
+  }
+
+  job.reconciliation = {
+    enabled,
+    checks: checks.map(c => ({
+      id:             c.id,
+      metric:         c.metric || 'SUM',
+      sourceColumn:   c.sourceColumn || '',
+      targetColumn:   c.targetColumn || '',
+      groupByColumns: Array.isArray(c.groupByColumns) ? c.groupByColumns : [],
+      tolerance:      c.tolerance >= 0 ? c.tolerance : 0.01,
+    })),
+  };
+  reconSaveJobs(jobs);
+
+  // Visual confirm: Save → ✓ Saved for 1.5s, then re-render the card list to
+  // refresh the collapsed summary + Active/Off badge. Same container-detection
+  // logic as before (works whether the card is in the old global Settings
+  // view or the per-report modal).
+  const btn = card.querySelector('.recon-card-body button');
+  const containerId = card.closest('#report-recon-list') ? 'report-recon-list' : 'recon-settings-list';
+  if (btn) {
+    const prev = btn.textContent;
+    btn.textContent = '✓ Saved';
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.textContent = prev;
+      btn.disabled = false;
+      if (containerId === 'report-recon-list') {
+        const host = document.getElementById('report-recon-list');
+        if (host) {
+          const visibleIds = [...host.querySelectorAll('[data-recon-job]')].map(n => n.getAttribute('data-recon-job'));
+          const refreshed = reconLoadJobs().filter(j => visibleIds.includes(j.id));
+          host.innerHTML = refreshed.map(j => reconRenderJobCard(j)).join('');
+          reconBindChipsFields(host);
+        }
+      } else {
+        renderReportSettings();
+        reconBindChipsFields(document.getElementById('recon-settings-list'));
+      }
+      setTimeout(() => reconToggleCard(jobId), 50);
+    }, 1500);
+  }
 }
 
 // Toggle card open/closed. Ensures only ONE card is open at a time — clicking
@@ -5007,71 +5314,6 @@ function reconToggleCard(jobId) {
     if (chev) chev.style.transform = 'rotate(90deg)';
   }
 }
-
-// Save one job's recon config from its card. Reads every data-recon-field
-// input inside the card and builds the new reconciliation object.
-function reconSaveOne(jobId) {
-  const card = document.querySelector(`[data-recon-job="${CSS.escape(jobId)}"]`);
-  if (!card) return;
-  const jobs = reconLoadJobs();
-  const job = jobs.find(j => j.id === jobId);
-  if (!job) { alert('Job not found'); return; }
-  const fields = {};
-  card.querySelectorAll('[data-recon-field]').forEach(inp => {
-    const f = inp.getAttribute('data-recon-field');
-    if (inp.type === 'checkbox') fields[f] = inp.checked;
-    else if (inp.type === 'number') fields[f] = parseFloat(inp.value) || 0;
-    else                            fields[f] = (inp.value || '').trim();
-  });
-  // Validation: if enabled, must have metric + at least one column
-  if (fields.enabled) {
-    if (!fields.metric) { alert('Pick a metric before enabling.'); return; }
-    if (!fields.sourceColumn && !fields.targetColumn) { alert('Pick at least one column before enabling.'); return; }
-  }
-  job.reconciliation = {
-    enabled:       !!fields.enabled,
-    metric:        fields.metric || 'SUM',
-    sourceColumn:  fields.sourceColumn || '',
-    targetColumn:  fields.targetColumn || '',
-    groupByColumn: fields.groupByColumn || '',
-    tolerance:     fields.tolerance >= 0 ? fields.tolerance : 0.01,
-  };
-  reconSaveJobs(jobs);
-  // Brief visual confirm — swap Save → ✓ Saved for 2s, then re-render keeping
-  // this card open so the user sees the updated "Active" badge and summary line.
-  // The card may live in the old global Settings view (#recon-settings-list)
-  // OR in the per-report modal (#report-recon-list) — figure out which and
-  // refresh the right container so the badge/summary actually update.
-  const btn = card.querySelector('button');
-  const containerId = card.closest('#report-recon-list')
-    ? 'report-recon-list'
-    : 'recon-settings-list';
-  if (btn) {
-    const prev = btn.textContent;
-    btn.textContent = '✓ Saved';
-    btn.disabled = true;
-    setTimeout(() => {
-      btn.textContent = prev;
-      btn.disabled = false;
-      if (containerId === 'report-recon-list') {
-        // In the modal: re-render only the cards currently in the modal so
-        // we don't disturb the (closed) global view. We keep the same set
-        // of jobs since reconSaveJobs() just updated one job's .reconciliation.
-        const host = document.getElementById('report-recon-list');
-        if (host) {
-          const visibleIds = [...host.querySelectorAll('[data-recon-job]')].map(n => n.getAttribute('data-recon-job'));
-          const refreshed = reconLoadJobs().filter(j => visibleIds.includes(j.id));
-          host.innerHTML = refreshed.map(j => reconRenderJobCard(j)).join('');
-        }
-      } else {
-        renderReportSettings();
-      }
-      // Re-open the card we just saved so user can verify
-      setTimeout(() => reconToggleCard(jobId), 50);
-    }, 1500);
-  }
-}
-
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── INVENTORY ─────────────────────────────────────────────────────────────────

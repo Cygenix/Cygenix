@@ -207,7 +207,6 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   <div class="toolbar-logo">Cyge<span>nix</span> <span style="font-size:11px;color:#555a6a;margin-left:4px;font-family:var(--mono)">Migration Report</span></div>
   <div class="toolbar-actions">
     <a href="/dashboard.html" class="btn btn-ghost">← Dashboard</a>
-    <a href="/report_settings.html" class="btn btn-ghost">⚙ Edit settings</a>
     <button class="btn btn-ghost" onclick="window.print()">🖨 Print</button>
     <button class="btn btn-primary" onclick="exportToExcel()" id="excel-btn">📊 Export to Excel</button>
     <button class="btn btn-ghost" onclick="saveToCygenix()" id="save-btn">💾 Save Report</button>
@@ -423,18 +422,23 @@ function fmt(n){ return n != null ? Number(n).toLocaleString() : '—'; }
 function fmtDate(iso){ return iso ? new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
 function fmtSize(b){ if(!b)return'—'; if(b<1024)return b+'B'; if(b<1048576)return(b/1024).toFixed(1)+'KB'; return(b/1048576).toFixed(1)+'MB'; }
 
-// Load report configuration from localStorage. Set by report_settings.html
-// before opening the report. Structure:
-//   {
-//     grids: {
-//       results: { sort, groupBy, showTotals, pivotRow, pivotCol, pivotVal, pivotAgg, calcColumns: [{label, formula}] },
-//       mapping: { ...same... },
-//       recon:   { ...same... },
-//     },
-//     showCharts: boolean
-//   }
-// Missing keys fall back to defaults (no sort/grouping, charts on).
+// Load report configuration. Source of truth is now `presentationConfig` on
+// the report record itself (set via the dashboard's report settings modal
+// and persisted to Cosmos with the report). For backwards compatibility we
+// still fall back to the older `cygenix_report_config` localStorage key.
 function loadReportConfig() {
+  // 1. Preferred: presentationConfig on the current report object
+  try {
+    const raw = localStorage.getItem('cygenix_report') || sessionStorage.getItem('cygenix_report');
+    if (raw) {
+      const r = JSON.parse(raw);
+      if (r && r.presentationConfig && typeof r.presentationConfig === 'object') {
+        return r.presentationConfig;
+      }
+    }
+  } catch {}
+  // 2. Legacy fallback: separate config key (for reports that pre-date the
+  //    dashboard presentation panel).
   try {
     const raw = localStorage.getItem('cygenix_report_config')
              || sessionStorage.getItem('cygenix_report_config');

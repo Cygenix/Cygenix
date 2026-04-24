@@ -1,0 +1,146 @@
+// ─── Runner update for multi-check reconciliation ──────────────────────────
+//
+// The reconciliation data model on a job changed from a single flat check to
+// an array of checks, each with zero-or-more group-by columns. The runner
+// that executes reconciliation queries (wherever that lives — likely inside
+// project-builder.html's run-migration code path) needs to iterate the new
+// `checks` array instead of reading the old flat fields.
+//
+// OLD shape (still read as a fallback on first upgrade):
+//   job.reconciliation = {
+//     enabled, metric, sourceColumn, targetColumn, groupByColumn, tolerance
+//   }
+//
+// NEW shape (written by the dashboard from now on):
+//   job.reconciliation = {
+//     enabled: boolean,
+//     checks: [
+//       {
+//         id,
+//         metric: 'SUM' | 'COUNT_DISTINCT',
+//         sourceColumn, targetColumn,
+//         groupByColumns: [col1, col2, ...],
+//         tolerance: number,
+//       },
+//       ...
+//     ],
+//   }
+//
+// Pass/fail semantics (decided during design):
+//   Each check has ONE tolerance. A check passes iff the OVERALL (ungrouped)
+//   aggregate is within tolerance. Grouped rows are INFORMATIONAL ONLY and
+//   do not influence the check's pass state. So for a check with groupByColumns
+//   set, the runner must execute TWO queries per side:
+//     1. Ungrouped query (for pass/fail)
+//     2. Grouped query (for the report breakdown)
+//
+// Runner algorithm:
+//
+//   function runReconciliation(job, srcConn, tgtConn) {
+//     const r = normaliseReconShape(job.reconciliation);   // migrate if legacy
+//     if (!r.enabled || !r.checks.length) return [];
+//     const entries = [];
+//     for (const check of r.checks) {
+//       // 1. ALWAYS run the ungrouped aggregate — this determines pass/fail
+//       const scalarSrc = await queryScalar(srcConn, job.sourceTable, check.metric, check.sourceColumn);
+//       const scalarTgt = await queryScalar(tgtConn, job.targetTable, check.metric, check.targetColumn);
+//       const delta = Math.abs((scalarSrc ?? 0) - (scalarTgt ?? 0));
+//       const passed = scalarSrc != null && scalarTgt != null && delta <= check.tolerance;
+//
+//       // Push the "headline" scalar entry — this is what drives pass/fail
+//       entries.push({
+//         stepName: job.name, srcTable: job.sourceTable, tgtTable: job.targetTable,
+//         metric: check.metric, sourceColumn: check.sourceColumn, targetColumn: check.targetColumn,
+//         sourceValue: scalarSrc, targetValue: scalarTgt,
+//         delta, tolerance: check.tolerance, passed,
+//       });
+//
+//       // 2. If grouped, ALSO run per-group breakdown. These are informational.
+//       //    Set passed: null so the report renders them as "Skipped" (or use a
+//       //    new "info" state if you want a distinct badge — I chose null to
+//       //    reuse existing badge styling).
+//       if (Array.isArray(check.groupByColumns) && check.groupByColumns.length > 0) {
+//         const srcGroups = await queryGrouped(srcConn, job.sourceTable, check.metric, check.sourceColumn, check.groupByColumns);
+//         const tgtGroups = await queryGrouped(tgtConn, job.targetTable, check.metric, check.targetColumn, check.groupByColumns);
+//         const combined = joinGroupsByKey(srcGroups, tgtGroups, check.groupByColumns);
+//         for (const g of combined) {
+//           entries.push({
+//             stepName: job.name,
+//             srcTable: job.sourceTable, tgtTable: job.targetTable,
+//             metric: check.metric,
+//             sourceColumn: check.sourceColumn, targetColumn: check.targetColumn,
+//             // Report renderer shows groupByColumn + groupKey in its table.
+//             // With multiple groupByColumns, concatenate with " / " so the
+//             // report row key reads like "North / active".
+//             groupByColumn: check.groupByColumns.join(' / '),
+//             groupKey: check.groupByColumns.map(c => g.key[c]).join(' / '),
+//             sourceValue: g.src, targetValue: g.tgt,
+//             delta: g.src != null && g.tgt != null ? Math.abs(g.src - g.tgt) : null,
+//             tolerance: check.tolerance,
+//             // Informational only — does not influence overall pass/fail
+//             passed: null,
+//           });
+//         }
+//       }
+//     }
+//     return entries;
+//   }
+//
+// Helpers (SQL skeletons):
+//
+//   function buildScalarSQL(table, metric, col) {
+//     if (metric === 'SUM')            return `SELECT SUM(${col}) AS v FROM ${table}`;
+//     if (metric === 'COUNT_DISTINCT') return `SELECT COUNT(DISTINCT ${col}) AS v FROM ${table}`;
+//     throw new Error('Unknown metric: ' + metric);
+//   }
+//
+//   function buildGroupedSQL(table, metric, col, groupCols) {
+//     const groupList = groupCols.map(quoteIdent).join(', ');
+//     const aggExpr = metric === 'SUM'
+//       ? `SUM(${quoteIdent(col)})`
+//       : `COUNT(DISTINCT ${quoteIdent(col)})`;
+//     return `SELECT ${groupList}, ${aggExpr} AS v
+//             FROM ${table}
+//             GROUP BY ${groupList}
+//             ORDER BY ${groupList}`;
+//   }
+//
+// Safety notes:
+//   - quoteIdent() must whitelist column names (alphanumeric + underscore)
+//     or use the driver's parameter binding for identifiers. The column
+//     names come from the user's columnMapping, which they can edit freely,
+//     so treat them as untrusted.
+//   - Ungrouped query is CHEAP; grouped query can be EXPENSIVE if a column
+//     has high cardinality. No cap was requested, but the runner should at
+//     minimum log the row count returned and warn above (e.g.) 1000 groups.
+//   - If either side's query fails (connection error, invalid column), push
+//     the entry with passed: null and a `_error` field so the report can
+//     explain why it's Skipped rather than silently dropping the check.
+//
+// Shape migration helper (runner can share with dashboard):
+//
+//   function normaliseReconShape(r) {
+//     if (!r) return { enabled: false, checks: [] };
+//     if (Array.isArray(r.checks)) return { enabled: !!r.enabled, checks: r.checks };
+//     if (r.metric || r.sourceColumn || r.targetColumn || r.groupByColumn) {
+//       return {
+//         enabled: !!r.enabled,
+//         checks: [{
+//           id: 'chk_' + Math.random().toString(36).slice(2,9),
+//           metric: r.metric || 'SUM',
+//           sourceColumn: r.sourceColumn || '',
+//           targetColumn: r.targetColumn || '',
+//           groupByColumns: r.groupByColumn ? [r.groupByColumn] : [],
+//           tolerance: r.tolerance != null ? r.tolerance : 0.01,
+//         }],
+//       };
+//     }
+//     return { enabled: !!r.enabled, checks: [] };
+//   }
+//
+// Report rendering: no change needed to report.html. The reconciliation
+// array it receives has the same per-entry shape (stepName, metric,
+// sourceColumn, targetColumn, groupByColumn, groupKey, sourceValue,
+// targetValue, delta, tolerance, passed). With multiple checks per job,
+// the runner just produces MORE entries — one scalar per check plus N
+// grouped entries per check that has group-by columns.

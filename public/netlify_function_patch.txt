@@ -1,88 +1,143 @@
-// ─── Add this handler to /.netlify/functions/reports.js ─────────────────────
-// Handles the new `save-config` action sent by report_settings.html. The
-// client calls it with { action, userEmail, migrationId, config }.
+// ─── Add to /.netlify/functions/reports.js ──────────────────────────────────
+// Handles the new `save-presentation` action sent by the dashboard's report
+// settings modal. Writes a `presentationConfig` field onto the existing
+// report record in Cosmos so it travels with the report itself.
 //
-// Design notes:
-// - Config is stored in the existing `users` container, not a new one, under
-//   a `reportConfigs` map keyed by migrationId. Avoids a new Cosmos container
-//   and keeps per-user lookups fast (single-doc read on subsequent loads).
-// - Global fallback: when migrationId is null (unsaved report), config is
-//   stored under `__default__`. Last-write-wins.
-// - No auth beyond email match to existing records, matching the pattern
-//   used by the `save` action. Consider adding an Entra token check when
-//   you harden this.
-
-// Place this block inside the existing switch/if chain that dispatches on
-// `action`. Example skeleton (adapt to your real handler layout):
+// Request shape:
+//   { action: 'save-presentation', userEmail, id, presentationConfig }
 //
-//   if (action === 'save')         return handleSaveReport(...)
-//   if (action === 'list')         return handleListReports(...)
-//   if (action === 'save-config')  return handleSaveConfig(...)
-//   if (action === 'load-config')  return handleLoadConfig(...)
+// Response shape:
+//   { ok: true, savedAt }
+//
+// No new Cosmos container needed — config rides on the existing report doc.
+// The config object has the shape:
+//   {
+//     showCharts: boolean,
+//     grids: {
+//       results: { sort, groupBy, showTotals, pivotRow, pivotCol, pivotVal, pivotAgg, calcColumns: [{ key, label, formula }] },
+//       recon:   { …same shape… },
+//       mapping: { …same shape… }
+//     },
+//     updatedAt: ISO string
+//   }
+//
+// Security note: the user can only patch presentationConfig on reports they
+// own. Ownership is established by (userEmail, id) — the same tuple used by
+// the existing `get` and `save` actions.
 
-async function handleSaveConfig({ userEmail, migrationId, config }, usersContainer) {
-  if (!userEmail) return { statusCode: 400, body: JSON.stringify({ error: 'userEmail required' }) };
-  if (!config || typeof config !== 'object') {
-    return { statusCode: 400, body: JSON.stringify({ error: 'config object required' }) };
+// Place this branch inside the existing action dispatcher in reports.js:
+//
+//   if (action === 'save')               return handleSaveReport(...)
+//   if (action === 'list')               return handleListReports(...)
+//   if (action === 'get')                return handleGetReport(...)
+//   if (action === 'delete')             return handleDeleteReport(...)
+//   if (action === 'save-presentation')  return handleSavePresentation(...)   // ← new
+
+async function handleSavePresentation({ userEmail, id, presentationConfig }, reportsContainer) {
+  // ── Validation ──────────────────────────────────────────────────────────────
+  if (!userEmail)                       return httpError(400, 'userEmail required');
+  if (!id)                              return httpError(400, 'id required');
+  if (!presentationConfig || typeof presentationConfig !== 'object') {
+    return httpError(400, 'presentationConfig object required');
   }
 
   const email = String(userEmail).toLowerCase().trim();
-  const key   = migrationId ? String(migrationId) : '__default__';
 
-  // Fetch existing user record — fall through to create if absent
-  let userDoc;
+  // ── Load existing report (ownership check) ──────────────────────────────────
+  // Reports are partitioned by userEmail in the existing schema. If the
+  // (id, email) tuple doesn't resolve to a record, we 404 — a user can't
+  // write a presentationConfig onto someone else's report.
+  let reportDoc;
   try {
-    const { resource } = await usersContainer.item(email, email).read();
-    userDoc = resource;
+    const { resource } = await reportsContainer.item(id, email).read();
+    reportDoc = resource;
   } catch (e) {
-    if (e.code === 404) userDoc = { id: email, email };
-    else throw e;
-  }
-  if (!userDoc) userDoc = { id: email, email };
-
-  // Merge the new config into the map
-  userDoc.reportConfigs = userDoc.reportConfigs || {};
-  userDoc.reportConfigs[key] = {
-    ...config,
-    savedAt: new Date().toISOString(),
-  };
-
-  // Upsert
-  await usersContainer.items.upsert(userDoc);
-
-  return {
-    statusCode: 200,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ok: true, savedAt: userDoc.reportConfigs[key].savedAt }),
-  };
-}
-
-async function handleLoadConfig({ userEmail, migrationId }, usersContainer) {
-  if (!userEmail) return { statusCode: 400, body: JSON.stringify({ error: 'userEmail required' }) };
-
-  const email = String(userEmail).toLowerCase().trim();
-  const key   = migrationId ? String(migrationId) : '__default__';
-
-  let userDoc;
-  try {
-    const { resource } = await usersContainer.item(email, email).read();
-    userDoc = resource;
-  } catch (e) {
-    if (e.code === 404) return { statusCode: 200, body: JSON.stringify({ config: null }) };
+    if (e.code === 404) return httpError(404, 'Report not found');
     throw e;
   }
+  if (!reportDoc) return httpError(404, 'Report not found');
 
-  const config = userDoc?.reportConfigs?.[key] || null;
+  // ── Sanitise the config ─────────────────────────────────────────────────────
+  // Don't trust the client — the config is rendered back out and its formulas
+  // are re-evaluated when the report is opened. At save time we just clamp
+  // shape and drop anything unexpected.
+  const clean = sanitisePresentationConfig(presentationConfig);
+  clean.updatedAt = new Date().toISOString();
+
+  // ── Patch and persist ───────────────────────────────────────────────────────
+  reportDoc.presentationConfig = clean;
+  await reportsContainer.items.upsert(reportDoc);
+
   return {
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config }),
+    body: JSON.stringify({ ok: true, savedAt: clean.updatedAt }),
   };
 }
 
-// ─── Optional: also surface load-config from report.html ────────────────────
-// Currently report.html only reads from localStorage. If you want it to fall
-// back to Cosmos when localStorage is empty (e.g. user configured on desktop,
-// opened the report on mobile), wire loadReportConfig() to fetch from the
-// backend when local storage returns null. The settings page already writes
-// to both, so this is a read-path enhancement only.
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function httpError(statusCode, error) {
+  return {
+    statusCode,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ error }),
+  };
+}
+
+// Clamp the config to a known shape before persisting. We drop:
+//   - unknown top-level keys
+//   - unknown grid keys (we only know results/recon/mapping)
+//   - formulas longer than 500 chars (abuse guard)
+//   - any field where the type doesn't match expectations
+// The client re-validates formulas at render time, so a malformed expression
+// here degrades gracefully to "#ERR" in the rendered cell rather than throwing.
+function sanitisePresentationConfig(raw) {
+  const out = { grids: {} };
+  out.showCharts = raw.showCharts !== false; // default true
+
+  const allowedGrids = ['results', 'recon', 'mapping'];
+  const srcGrids = (raw.grids && typeof raw.grids === 'object') ? raw.grids : {};
+  for (const g of allowedGrids) {
+    const src = srcGrids[g];
+    if (!src || typeof src !== 'object') { out.grids[g] = {}; continue; }
+
+    const clean = {};
+    // Sort: { key: string, dir: 'asc'|'desc' } | null
+    if (src.sort && typeof src.sort === 'object'
+        && typeof src.sort.key === 'string'
+        && (src.sort.dir === 'asc' || src.sort.dir === 'desc')) {
+      clean.sort = { key: String(src.sort.key).slice(0, 80), dir: src.sort.dir };
+    }
+    // GroupBy: string | null
+    if (typeof src.groupBy === 'string' && src.groupBy) {
+      clean.groupBy = String(src.groupBy).slice(0, 80);
+    }
+    // Booleans
+    if (typeof src.showTotals === 'boolean') clean.showTotals = src.showTotals;
+
+    // Pivot: all three strings or nothing
+    if (typeof src.pivotRow === 'string' && src.pivotRow) clean.pivotRow = String(src.pivotRow).slice(0, 80);
+    if (typeof src.pivotCol === 'string' && src.pivotCol) clean.pivotCol = String(src.pivotCol).slice(0, 80);
+    if (typeof src.pivotVal === 'string' && src.pivotVal) clean.pivotVal = String(src.pivotVal).slice(0, 80);
+    if (['sum','avg','count','min','max'].includes(src.pivotAgg)) clean.pivotAgg = src.pivotAgg;
+
+    // Calculated columns — array of { key, label, formula } each bounded
+    if (Array.isArray(src.calcColumns)) {
+      clean.calcColumns = src.calcColumns
+        .filter(c => c && typeof c === 'object'
+          && typeof c.label === 'string' && c.label.length > 0 && c.label.length <= 80
+          && typeof c.formula === 'string' && c.formula.length > 0 && c.formula.length <= 500)
+        .slice(0, 20)   // cap to prevent runaway lists
+        .map(c => ({
+          key: (typeof c.key === 'string' && c.key) ? String(c.key).slice(0, 80) : '_calc_' + Math.random().toString(36).slice(2, 10),
+          label: c.label,
+          formula: c.formula,
+        }));
+    }
+
+    out.grids[g] = clean;
+  }
+
+  return out;
+}
