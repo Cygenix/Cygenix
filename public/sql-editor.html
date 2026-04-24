@@ -192,6 +192,19 @@ body.fullscreen .script-panel { display:none }
 .results-toolbar-btn{background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;padding:2px 7px;font-size:10px;font-family:var(--serif);transition:all 0.12s;display:flex;align-items:center;gap:3px}
 .results-toolbar-btn:hover{color:var(--text);border-color:var(--text3)}
 .results-toolbar-btn.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3)}
+
+/* ── MODAL (matches Cygenix dashboard pattern) ─────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:1000;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.open{display:flex}
+.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:1.5rem;width:460px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5)}
+.modal-title{font-size:16px;font-weight:600;color:var(--text);margin-bottom:0.3rem}
+.modal-sub{font-size:12px;color:var(--text3);margin-bottom:1.25rem}
+.modal-field{margin-bottom:1rem}
+.modal-label{display:block;font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.4rem}
+.modal-select{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.55rem 0.7rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;cursor:pointer;transition:border-color 0.15s}
+.modal-select:focus{border-color:var(--accent)}
+.modal-select option{background:var(--bg2);color:var(--text)}
+.modal-actions{display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem}
 </style>
 </head>
 <body>
@@ -1036,25 +1049,22 @@ function deleteScript(id) {
 }
 
 // ── Move a saved script to Migration Jobs ─────────────────────────────────────
-// Promotes the script into a job via promoteSQLToJob (which writes to both
-// cygenix_jobs and the project's group.steps) and then removes the script
-// from the saved-scripts list so it's a true "move" rather than a copy.
-function moveScriptToJob(id) {
+// Opens the group picker modal; if the user confirms the move, the script is
+// removed from the saved-scripts list (true move, not a copy).
+async function moveScriptToJob(id) {
   const s = scripts.find(s => s.id === id);
   if (!s) return;
   if (!s.sql || !s.sql.trim()) { alert('This script has no SQL to move.'); return; }
 
-  if (!confirm('Move "' + s.name + '" into Migration Jobs?\n\nYou will be asked to pick a group.\nThe script will be removed from Saved scripts.')) return;
-
-  const result = promoteSQLToJob({
+  const result = await promoteSQLToJob({
     sql:  s.sql,
     name: s.name,
     conn: s.conn || 'source',
     desc: s.desc || ''
   });
-  if (!result.ok) return;  // user cancelled a prompt, or an error alerted
+  if (!result.ok) return;  // user cancelled or an error alerted
 
-  // Remove the script from saved scripts (this is a move, not a copy)
+  // Remove the script from saved scripts
   scripts = scripts.filter(x => x.id !== id);
   saveScripts();
   if (currentScript === id) {
@@ -2215,7 +2225,7 @@ function saveBackToJob() {
 //      projects live in `cygenix_projects`)
 // Both must be written for the job to appear correctly in the Migration
 // Jobs list. Returns {ok, jobId, groupName, projectName} on success.
-function promoteSQLToJob(opts) {
+async function promoteSQLToJob(opts) {
   const { sql, name, conn, desc } = opts;
   if (!sql || !sql.trim()) { alert('No SQL to promote.'); return { ok:false, reason:'no-sql' }; }
 
@@ -2231,31 +2241,10 @@ function promoteSQLToJob(opts) {
   const proj = projects[projIdx];
   proj.groups = Array.isArray(proj.groups) ? proj.groups : [];
 
-  // Ask which group to add to. Show existing groups + an option to create new.
-  let targetGroupName;
-  if (proj.groups.length === 0) {
-    targetGroupName = prompt('Create a new group for this job in "' + (proj.name||'project') + '":', 'SQL Scripts');
-    if (targetGroupName === null) return { ok:false, reason:'cancelled' };
-    targetGroupName = targetGroupName.trim() || 'SQL Scripts';
-  } else {
-    const list = proj.groups.map((g,i) => (i+1) + '. ' + (g.name||'(unnamed)')).join('\n');
-    const answer = prompt(
-      'Add to which group in "' + (proj.name||'project') + '"?\n\n' +
-      list + '\n' + (proj.groups.length + 1) + '. + New group…\n\n' +
-      'Enter a number:',
-      '1'
-    );
-    if (answer === null) return { ok:false, reason:'cancelled' };
-    const n = parseInt(answer, 10);
-    if (!isFinite(n) || n < 1 || n > proj.groups.length + 1) { alert('Invalid choice.'); return { ok:false, reason:'invalid-choice' }; }
-    if (n === proj.groups.length + 1) {
-      const newName = prompt('New group name:', 'SQL Scripts');
-      if (newName === null) return { ok:false, reason:'cancelled' };
-      targetGroupName = newName.trim() || 'SQL Scripts';
-    } else {
-      targetGroupName = proj.groups[n - 1].name;
-    }
-  }
+  // Ask which group to add to via a proper modal dialog
+  const pickResult = await pickGroupDialog(proj, name);
+  if (!pickResult) return { ok:false, reason:'cancelled' };
+  const { groupName: targetGroupName, jobName: chosenJobName } = pickResult;
 
   // Resolve or create the group
   let group = proj.groups.find(g => g && g.name === targetGroupName);
@@ -2273,7 +2262,7 @@ function promoteSQLToJob(opts) {
 
   // Build the job — shared jobId links the flat-array entry to the group step
   const jobId   = 'job_' + Date.now();
-  const jobName = (name || 'SQL Script').trim() || 'SQL Script';
+  const jobName = (chosenJobName || name || 'SQL Script').trim() || 'SQL Script';
   const srcConn = conn === 'source'
     ? (window.CygenixConnections?.get?.().srcConnString || '').slice(0,50) : '';
   const tgtConn = conn === 'target'
@@ -2342,6 +2331,116 @@ function promoteSQLToJob(opts) {
   return { ok:true, jobId, groupName: group.name, projectName: proj.name || 'project' };
 }
 
+// ── Group picker dialog ───────────────────────────────────────────────────────
+// Returns a promise resolving to { groupName, jobName } or null if cancelled.
+// Builds a minimal modal inline so we don't pollute the HTML body with unused
+// markup. Matches the existing .modal-overlay / .modal styling conventions
+// used by the dashboard.
+function pickGroupDialog(proj, defaultJobName) {
+  return new Promise(resolve => {
+    const existingGroups = Array.isArray(proj.groups) ? proj.groups : [];
+    const NEW_GROUP_VALUE = '__new__';
+
+    // Build markup
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+
+    const groupOptions = existingGroups.map(g => {
+      const esc = (g.name || '(unnamed)').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const count = Array.isArray(g.steps) ? g.steps.length : 0;
+      return `<option value="${esc}">${esc} · ${count} step${count===1?'':'s'}</option>`;
+    }).join('');
+
+    const projName = (proj.name || 'project').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const jobNameEsc = (defaultJobName || 'SQL Script').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-labelledby="mjg-title">
+        <div class="modal-title" id="mjg-title">Move to Migration Jobs</div>
+        <div class="modal-sub">Project: <span style="color:var(--text2)">${projName}</span></div>
+
+        <div class="modal-field">
+          <label class="modal-label" for="mjg-job-name">Job name</label>
+          <input id="mjg-job-name" class="form-input" type="text" value="${jobNameEsc}" autocomplete="off">
+        </div>
+
+        <div class="modal-field">
+          <label class="modal-label" for="mjg-group">Group</label>
+          <select id="mjg-group" class="modal-select">
+            ${groupOptions}
+            <option value="${NEW_GROUP_VALUE}">+ New group…</option>
+          </select>
+        </div>
+
+        <div class="modal-field" id="mjg-newgroup-wrap" style="display:${existingGroups.length ? 'none' : 'block'}">
+          <label class="modal-label" for="mjg-newgroup">New group name</label>
+          <input id="mjg-newgroup" class="form-input" type="text" value="SQL Scripts" autocomplete="off">
+        </div>
+
+        <div class="modal-actions">
+          <button id="mjg-cancel" class="btn btn-ghost btn-sm" type="button">Cancel</button>
+          <button id="mjg-confirm" class="btn btn-primary btn-sm" type="button">Move to Job</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const groupSel     = overlay.querySelector('#mjg-group');
+    const newGroupWrap = overlay.querySelector('#mjg-newgroup-wrap');
+    const newGroupIn   = overlay.querySelector('#mjg-newgroup');
+    const jobNameIn    = overlay.querySelector('#mjg-job-name');
+    const confirmBtn   = overlay.querySelector('#mjg-confirm');
+    const cancelBtn    = overlay.querySelector('#mjg-cancel');
+
+    // Default selection: first group if any exist, otherwise the +New option
+    if (existingGroups.length) groupSel.value = existingGroups[0].name;
+    else groupSel.value = NEW_GROUP_VALUE;
+
+    // Toggle "new group" text input based on selection
+    function syncNewGroupVisibility() {
+      const showNew = groupSel.value === NEW_GROUP_VALUE;
+      newGroupWrap.style.display = showNew ? 'block' : 'none';
+      if (showNew) setTimeout(() => newGroupIn.focus(), 0);
+    }
+    groupSel.addEventListener('change', syncNewGroupVisibility);
+    syncNewGroupVisibility();
+
+    // Dismiss helpers
+    function cleanup(){ overlay.remove(); document.removeEventListener('keydown', onKey); }
+    function close(result){ cleanup(); resolve(result); }
+    function onKey(e){
+      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+      if (e.key === 'Enter' && document.activeElement !== newGroupIn && document.activeElement !== jobNameIn) {
+        e.preventDefault(); submit();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+
+    // Confirm/Cancel behaviour
+    function submit() {
+      let groupName = groupSel.value;
+      if (groupName === NEW_GROUP_VALUE) {
+        groupName = newGroupIn.value.trim();
+        if (!groupName) { newGroupIn.focus(); newGroupIn.style.borderColor = 'var(--red)'; return; }
+      }
+      const jobName = jobNameIn.value.trim() || (defaultJobName || 'SQL Script');
+      close({ groupName, jobName });
+    }
+    confirmBtn.addEventListener('click', submit);
+    cancelBtn.addEventListener('click', () => close(null));
+    // Click outside the modal closes it
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+    // Pressing Enter in the text inputs also submits
+    [jobNameIn, newGroupIn].forEach(el => el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    }));
+
+    // Focus the job-name field by default for quick confirm
+    setTimeout(() => jobNameIn.focus(), 0);
+    setTimeout(() => jobNameIn.select(), 0);
+  });
+}
+
 function addToJobs() {
   const sql  = document.getElementById('sql-editor').value.trim();
   const name = document.getElementById('script-name').value.trim() || 'SQL Script';
@@ -2349,12 +2448,12 @@ function addToJobs() {
   const desc = document.getElementById('script-desc')?.value.trim() || '';
   if (!sql) { alert('Write some SQL first.'); return; }
 
-  const result = promoteSQLToJob({ sql, name, conn, desc });
-  if (!result.ok) return;
-
-  setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
-  setTimeout(() => setExecStatus('',''), 4000);
-  if (typeof renderJobsList === 'function') renderJobsList();
+  promoteSQLToJob({ sql, name, conn, desc }).then(result => {
+    if (!result.ok) return;
+    setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
+    setTimeout(() => setExecStatus('',''), 4000);
+    if (typeof renderJobsList === 'function') renderJobsList();
+  });
 }
 
 // ── Tab switching ──────────────────────────────────────────────────────────────
