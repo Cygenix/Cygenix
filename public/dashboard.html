@@ -167,6 +167,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .inv-doc-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:0.75rem}
 .inv-doc-actions{display:flex;gap:0.5rem}
 .inv-type-pill{font-size:10px;padding:2px 8px;border-radius:100px;font-weight:500;margin-bottom:0.5rem;display:inline-block}
+.doc-type-artifact{background:rgba(236,72,153,0.15);color:#ec4899}
 .doc-type-wasis{background:rgba(245,158,11,0.15);color:var(--amber)}
 .doc-type-dictionary{background:rgba(61,126,255,0.15);color:var(--accent)}
 .doc-type-schema{background:rgba(45,212,191,0.15);color:var(--teal)}
@@ -174,6 +175,22 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .doc-type-signoff{background:rgba(34,201,122,0.15);color:var(--green)}
 .doc-type-notes{background:rgba(255,255,255,0.08);color:var(--text2)}
 .doc-type-other{background:rgba(255,255,255,0.05);color:var(--text3)}
+
+/* Inventory project folders (grouping containers) */
+.inv-folder{margin-bottom:1rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.inv-folder-head{padding:0.75rem 1rem;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;gap:1rem;transition:background 0.15s}
+.inv-folder-head:hover{background:var(--bg3)}
+.inv-folder-head .chev{color:var(--text3);font-size:10px;transition:transform 0.15s;display:inline-block;width:10px}
+.inv-folder[data-open="true"] .inv-folder-head .chev{transform:rotate(90deg)}
+.inv-folder-title{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:0.5rem}
+.inv-folder-title .icon{font-size:15px}
+.inv-folder-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.inv-folder-body{display:none;padding:1rem;border-top:0.5px solid var(--border);background:var(--bg)}
+.inv-folder[data-open="true"] .inv-folder-body{display:block}
+.inv-folder[data-unassigned="true"] .inv-folder-title{color:var(--text3);font-style:italic}
+.inv-folder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0.75rem}
+/* Move-to-project popover shown off the 'Move' action button on each doc card */
+.inv-doc-project-chip{display:inline-block;font-size:10px;color:var(--accent);background:var(--accent-glow);padding:1px 7px;border-radius:100px;margin-left:6px;font-family:var(--mono);border:0.5px solid rgba(61,126,255,0.25)}
 
 /* PREVIEW MODAL */
 .preview-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;align-items:center;justify-content:center}
@@ -1936,7 +1953,23 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div id="inv-type-modal" style="display:none;background:var(--bg2);border:0.5px solid var(--accent);border-radius:var(--r-lg);padding:1.5rem;margin-bottom:1.5rem">
           <div style="font-size:14px;font-weight:600;margin-bottom:0.25rem">Classify this document</div>
           <div style="font-size:12px;color:var(--text3);font-family:var(--mono);margin-bottom:1.25rem" id="inv-pending-name"></div>
+
+          <!-- Project scope — determines which project's AI narrative can use this document as context -->
+          <div style="margin-bottom:1.25rem">
+            <label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:4px">Project scope <span style="color:var(--text3);text-transform:none;letter-spacing:0">(used by report AI narratives)</span></label>
+            <select id="inv-pending-project" style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text);padding:0.5rem;border-radius:6px;font-size:12px">
+              <option value="">— Unassigned (not linked to any project) —</option>
+            </select>
+            <div style="font-size:10px;color:var(--text3);margin-top:4px">Documents in a project's folder become AI context for that project's conversion reports.</div>
+          </div>
+
           <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:0.75rem;margin-bottom:1.25rem">
+            <div class="inv-type-btn" onclick="invSelectType('artifact')" data-type="artifact"
+              style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
+              <div style="font-size:24px;margin-bottom:0.4rem">✉️</div>
+              <div style="font-size:12px;font-weight:600;color:var(--text);margin-bottom:0.2rem">Project Artifact</div>
+              <div style="font-size:11px;color:var(--text3)">Emails, briefs, attachments</div>
+            </div>
             <div class="inv-type-btn" onclick="invSelectType('wasis')" data-type="wasis"
               style="border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:all 0.15s;background:var(--bg3)">
               <div style="font-size:24px;margin-bottom:0.4rem">🔄</div>
@@ -2048,159 +2081,31 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div>
     <!-- END SEARCH VIEW ───────────────────────────────────────────────────-->
 
-    <!-- TASK AGENT ─────────────────────────────────────────────────────────
-         Full scheduler. Two sub-tabs:
-           • Schedules    — CRUD + Run now + on/off toggle
-           • Run history  — past executions with success/fail + error detail
-         Backend: /api/schedules/{action} on the cygenix-db-api Function App.
-         SQL execution uses the Function App's managed identity — no
-         connection strings or secrets stored in the scheduler. The timer
-         trigger (schedulerTick) fires every minute to pick up due schedules. -->
+    <!-- TASK AGENT (placeholder — feature not yet built) -->
     <div id="view-task-agent" class="view">
       <div class="panel-header">
         <div>
           <div class="panel-title">⏱ Task Agent</div>
-          <div class="panel-sub">Schedule migration jobs on cron, run on demand, chain jobs on success</div>
-        </div>
-        <div style="display:flex;gap:0.5rem">
-          <button class="btn btn-ghost btn-sm" onclick="ta_refresh()" title="Refresh">↻ Refresh</button>
-          <button class="btn btn-primary btn-sm" onclick="ta_openScheduleModal()">+ New schedule</button>
+          <div class="panel-sub">Schedule and run migration jobs automatically</div>
         </div>
       </div>
 
-      <div class="tabs" style="margin-bottom:1.25rem">
-        <div class="tab active" id="ta-tab-schedules" onclick="ta_switchTab('schedules')">Schedules</div>
-        <div class="tab" id="ta-tab-runs" onclick="ta_switchTab('runs')">Run history</div>
-      </div>
-
-      <div id="ta-pane-schedules">
-        <div id="ta-schedules-list"></div>
-      </div>
-
-      <div id="ta-pane-runs" style="display:none">
-        <div style="display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center;font-size:12px;color:var(--text3)">
-          <span>Filter:</span>
-          <select id="ta-run-filter" class="form-input" style="width:auto;padding:0.3rem 0.6rem;font-size:12px" onchange="ta_loadRuns()">
-            <option value="">All schedules</option>
-          </select>
-          <span style="margin-left:auto;font-family:var(--mono)">Showing last 50</span>
+      <div class="panel" style="padding:3rem 2rem;text-align:center;max-width:640px;margin:2rem auto">
+        <div style="font-size:40px;margin-bottom:1rem;opacity:0.5">🛠️</div>
+        <div style="font-size:16px;font-weight:600;margin-bottom:0.5rem">Coming soon</div>
+        <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:1.5rem">
+          The Task Agent will let you schedule jobs on a cron or run them on demand, chain jobs together, and get notified on failure.
+          This feature depends on server-side state, which is in the Phase&nbsp;1 roadmap.
         </div>
-        <div id="ta-runs-list"></div>
-      </div>
-    </div>
-
-<!-- NEW SCHEDULE / EDIT SCHEDULE MODAL ─────────────────────────────────────
-     Same modal for create and edit; ta_openScheduleModal(existing) populates
-     fields when editing. -->
-<div class="modal-overlay" id="ta-schedule-modal">
-  <div class="modal" style="width:620px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem">
-      <div style="min-width:0;flex:1">
-        <div class="modal-title" id="ta-sched-modal-title">New schedule</div>
-        <div class="modal-sub">Pick a job, a pinned version, and how often it should run.</div>
-      </div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="ta_closeScheduleModal()">✕</button>
-    </div>
-
-    <div style="display:grid;gap:0.9rem">
-      <label style="display:block">
-        <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Schedule name</span>
-        <input id="ta-sched-name" class="form-input" style="margin-top:0.35rem" placeholder="e.g. Nightly timekeeper sync" maxlength="80">
-      </label>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-        <label style="display:block">
-          <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Job</span>
-          <select id="ta-sched-job" class="form-input" style="margin-top:0.35rem" onchange="ta_onJobPicked()"></select>
-        </label>
-        <label style="display:block">
-          <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Pinned version</span>
-          <select id="ta-sched-version" class="form-input" style="margin-top:0.35rem"></select>
-        </label>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:-0.5rem">
-        Snapshots freeze the SQL at a point in time. Use <button type="button" class="btn btn-ghost btn-sm" style="padding:0.2rem 0.5rem;font-size:10px" onclick="ta_createVersionFromSelected()">📸 Snapshot current SQL</button> to make a new one from the selected job.
-      </div>
-
-      <div style="border-top:0.5px solid var(--border);padding-top:0.9rem">
-        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.6rem">
-          <span style="font-size:12px;color:var(--text2);font-weight:500">Trigger</span>
-          <label style="font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:4px;margin-left:1rem">
-            <input type="radio" name="ta-trigger-mode" value="cron" checked onchange="ta_toggleTriggerMode()"> Cron
-          </label>
-          <label style="font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:4px">
-            <input type="radio" name="ta-trigger-mode" value="chain" onchange="ta_toggleTriggerMode()"> After another schedule
-          </label>
-        </div>
-
-        <div id="ta-cron-block">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
-            <label style="display:block">
-              <span style="font-size:11px;color:var(--text3)">Cron expression</span>
-              <input id="ta-sched-cron" class="form-input" style="margin-top:0.35rem;font-family:var(--mono)" placeholder="0 2 * * *" oninput="ta_updateCronPreview()">
-            </label>
-            <label style="display:block">
-              <span style="font-size:11px;color:var(--text3)">Timezone</span>
-              <select id="ta-sched-tz" class="form-input" style="margin-top:0.35rem" onchange="ta_updateCronPreview()">
-                <option value="UTC">UTC</option>
-                <option value="Europe/London" selected>Europe/London</option>
-                <option value="America/New_York">America/New_York</option>
-                <option value="America/Los_Angeles">America/Los_Angeles</option>
-                <option value="Asia/Singapore">Asia/Singapore</option>
-                <option value="Australia/Sydney">Australia/Sydney</option>
-              </select>
-            </label>
-          </div>
-          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('*/15 * * * *')">Every 15 min</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 * * * *')">Hourly</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 2 * * *')">Daily 02:00</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 2 * * 1-5')">Weekdays 02:00</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 0 1 * *')">1st of month</button>
-          </div>
-          <div id="ta-cron-preview" style="font-size:11px;color:var(--text3);margin-top:0.5rem;font-family:var(--mono);min-height:1.2em"></div>
-        </div>
-
-        <div id="ta-chain-block" style="display:none">
-          <label style="display:block">
-            <span style="font-size:11px;color:var(--text3)">Run after this schedule succeeds</span>
-            <select id="ta-sched-chain" class="form-input" style="margin-top:0.35rem"></select>
-          </label>
-          <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">
-            Chained schedules fire immediately after their parent finishes with success. If the parent fails, the chain is skipped.
-          </div>
+        <div style="display:inline-flex;gap:0.5rem;padding:0.5rem 1rem;background:var(--bg3);border-radius:100px;font-family:var(--mono);font-size:11px;color:var(--text3)">
+          <span>Planned features:</span>
+          <span style="color:var(--text)">cron schedules</span>·
+          <span style="color:var(--text)">job chaining</span>·
+          <span style="color:var(--text)">retry on failure</span>·
+          <span style="color:var(--text)">failure notifications</span>
         </div>
       </div>
-
-      <label style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2);padding:0.5rem;background:var(--bg3);border-radius:var(--r)">
-        <input type="checkbox" id="ta-sched-enabled" checked>
-        Enabled — schedule will run automatically at its trigger times
-      </label>
     </div>
-
-    <div class="modal-actions" style="margin-top:1.25rem">
-      <button class="btn btn-ghost" onclick="ta_closeScheduleModal()">Cancel</button>
-      <button class="btn btn-primary" id="ta-sched-save-btn" onclick="ta_saveSchedule()">Save schedule</button>
-    </div>
-  </div>
-</div>
-
-<!-- RUN DETAIL MODAL -->
-<div class="modal-overlay" id="ta-run-modal">
-  <div class="modal" style="width:720px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem">
-      <div style="min-width:0;flex:1">
-        <div class="modal-title" id="ta-run-title">Run detail</div>
-        <div class="modal-sub" id="ta-run-sub"></div>
-      </div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="ta_closeRunModal()">✕</button>
-    </div>
-    <div id="ta-run-body" style="font-size:12px;color:var(--text2);line-height:1.6"></div>
-    <div class="modal-actions" style="margin-top:1rem">
-      <button class="btn btn-ghost" onclick="ta_closeRunModal()">Close</button>
-    </div>
-  </div>
-</div>
 
         <div id="view-reports" class="view">
       <div class="panel-header">
@@ -2468,7 +2373,6 @@ function showView(v) {
   if (v === 'integrations')      initIntegrationsView();
   if (v === 'system-parameters') initSystemParametersView();
   if (v === 'report-settings')   renderReportSettings();
-  if (v === 'task-agent')        ta_init();
 }
 
 function selectTarget(el, name) {
@@ -4373,6 +4277,7 @@ function openReport(jobId) {
 
   const reportData = {
     id:             job.id,
+    projectId:      job.projectId || '',   // used by report.html to scope AI artifacts to this project's inventory folder
     projectName,
     userName,
     userEmail,
@@ -5468,6 +5373,7 @@ function updateInvCount() {
 
 // ── Type config ───────────────────────────────────────────────────────────────
 const DOC_TYPES = {
+  artifact:   { label: 'Project Artifact',  icon: '✉️', cls: 'doc-type-artifact'   },
   wasis:      { label: 'Was/Is Mapping',   icon: '🔄', cls: 'doc-type-wasis'      },
   dictionary: { label: 'Data Dictionary',  icon: '📖', cls: 'doc-type-dictionary' },
   schema:     { label: 'Schema Mapping',   icon: '🗂️', cls: 'doc-type-schema'     },
@@ -5492,7 +5398,21 @@ function invHandleFiles(fileList) {
 function showInvTypeModal(file) {
   document.getElementById('inv-pending-name').textContent = file.name;
   document.getElementById('inv-type-modal').style.display = 'block';
-  // Highlight type cards on hover
+  // Populate the project scope dropdown fresh every time — projects may have
+  // been added since the last upload.
+  const sel = document.getElementById('inv-pending-project');
+  if (sel) {
+    let projects = [];
+    try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch {}
+    const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+    const optsHtml = ['<option value="">— Unassigned (not linked to any project) —</option>']
+      .concat(projects.map(p => {
+        const selected = p.id === activeId ? ' selected' : '';
+        return `<option value="${escapeHtml(p.id)}"${selected}>${escapeHtml(p.name || p.id)}</option>`;
+      }))
+      .join('');
+    sel.innerHTML = optsHtml;
+  }
   document.querySelectorAll('.inv-type-btn').forEach(btn => {
     btn.onmouseenter = () => btn.style.borderColor = 'var(--accent)';
     btn.onmouseleave = () => btn.style.borderColor = 'var(--border2)';
@@ -5502,6 +5422,9 @@ function showInvTypeModal(file) {
 function invSelectType(type) {
   const file = invPendingFiles[0];
   if (!file) return;
+  // Capture project scope BEFORE hiding the modal (that clears the dropdown selection)
+  const projSel = document.getElementById('inv-pending-project');
+  const projectId = projSel ? (projSel.value || '') : '';
   document.getElementById('inv-type-modal').style.display = 'none';
 
   const reader = new FileReader();
@@ -5510,6 +5433,7 @@ function invSelectType(type) {
       id:        'inv_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
       name:      file.name,
       type,
+      projectId, // '' when unassigned; otherwise matches a cygenix_projects entry
       ext:       file.name.split('.').pop().toLowerCase(),
       size:      file.size,
       mimeType:  file.type || '',
@@ -5615,23 +5539,109 @@ function renderInventory() {
   }
   if (empty) empty.style.display = 'none';
 
-  grid.innerHTML = filtered.map(doc => {
-    const cfg  = DOC_TYPES[doc.type] || DOC_TYPES.other;
-    const date = new Date(doc.addedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
-    const size = doc.isNote ? doc.content?.length + ' chars' : formatInvSize(doc.size);
-    return `<div class="inv-doc-card">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.5rem">
-        <div class="inv-type-pill ${cfg.cls}">${cfg.icon} ${cfg.label}</div>
-        <button onclick="invDelete('${doc.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px" title="Delete">✕</button>
+  // ── Group docs by projectId ─────────────────────────────────────────────────
+  // Each project gets its own folder. Unassigned docs (projectId='' or missing)
+  // land in a special "Unassigned" folder at the bottom. Projects that exist
+  // but have no docs are NOT rendered here — we only show folders that have
+  // content (keeps the view uncluttered when projects are young).
+  let projects = [];
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch {}
+  const projectById = new Map(projects.map(p => [p.id, p]));
+  const activeProjectId = localStorage.getItem('cygenix_active_project_id') || '';
+
+  // Bucket docs by projectId. Unknown projectId values (e.g. a project was
+  // deleted but docs linger) fall into Unassigned — better than hiding them.
+  const buckets = new Map();   // projectId → docs[]
+  filtered.forEach(doc => {
+    const pid = doc.projectId && projectById.has(doc.projectId) ? doc.projectId : '';
+    if (!buckets.has(pid)) buckets.set(pid, []);
+    buckets.get(pid).push(doc);
+  });
+
+  // Order: active project first (if it has docs), then other projects A→Z,
+  // then Unassigned at the bottom.
+  const keys = Array.from(buckets.keys());
+  const sorted = [];
+  if (activeProjectId && buckets.has(activeProjectId)) sorted.push(activeProjectId);
+  keys
+    .filter(k => k && k !== activeProjectId)
+    .sort((a, b) => (projectById.get(a)?.name || '').localeCompare(projectById.get(b)?.name || ''))
+    .forEach(k => sorted.push(k));
+  if (buckets.has('')) sorted.push(''); // Unassigned last
+
+  grid.innerHTML = sorted.map(pid => {
+    const docs = buckets.get(pid);
+    const proj = pid ? projectById.get(pid) : null;
+    const title = proj ? escHtml(proj.name || proj.id) : 'Unassigned';
+    const icon  = proj ? '📁' : '📂';
+    const meta  = docs.length + ' doc' + (docs.length === 1 ? '' : 's');
+    const activeBadge = pid && pid === activeProjectId
+      ? '<span class="badge badge-blue" style="font-size:10px;margin-left:8px">Active</span>'
+      : '';
+    // Default-open the active project and the unassigned bucket; other folders
+    // start collapsed so the view stays scannable when there are many projects.
+    const defaultOpen = pid === activeProjectId || pid === '' ? 'true' : 'false';
+    const unassigned  = pid === '' ? 'true' : 'false';
+    const docCards = docs.map(doc => invRenderDocCard(doc, projectById)).join('');
+    return `<div class="inv-folder" data-open="${defaultOpen}" data-unassigned="${unassigned}" data-project-id="${escHtml(pid)}">
+      <div class="inv-folder-head" onclick="invToggleFolder(this)">
+        <div class="inv-folder-title"><span class="chev">▶</span><span class="icon">${icon}</span>${title}${activeBadge}</div>
+        <div class="inv-folder-meta">${meta}</div>
       </div>
-      <div class="inv-doc-name" title="${escHtml(doc.name)}">${escHtml(doc.name)}</div>
-      <div class="inv-doc-meta">${doc.ext.toUpperCase()} · ${size} · ${date}</div>
-      <div class="inv-doc-actions">
-        <button class="btn btn-ghost btn-sm" onclick="invPreview('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">👁 Preview</button>
-        <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">⬇ Download</button>
+      <div class="inv-folder-body">
+        <div class="inv-folder-grid">${docCards}</div>
       </div>
     </div>`;
   }).join('');
+}
+
+// Click handler for the folder header row. Simple toggle — no "only one at a
+// time" behaviour; users can keep multiple folders open.
+function invToggleFolder(headEl) {
+  const folder = headEl.closest('.inv-folder');
+  if (!folder) return;
+  folder.setAttribute('data-open', folder.getAttribute('data-open') === 'true' ? 'false' : 'true');
+}
+
+// Render a single doc card. Extracted from renderInventory so folder bodies
+// can call it directly. Includes the new "Move to project" action.
+function invRenderDocCard(doc, projectById) {
+  const cfg  = DOC_TYPES[doc.type] || DOC_TYPES.other;
+  const date = new Date(doc.addedAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  const size = doc.isNote ? (doc.content || '').length + ' chars' : formatInvSize(doc.size);
+  return `<div class="inv-doc-card">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.5rem">
+      <div class="inv-type-pill ${cfg.cls}">${cfg.icon} ${cfg.label}</div>
+      <button onclick="invDelete('${doc.id}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;line-height:1;padding:2px 4px" title="Delete">✕</button>
+    </div>
+    <div class="inv-doc-name" title="${escHtml(doc.name)}">${escHtml(doc.name)}</div>
+    <div class="inv-doc-meta">${doc.ext.toUpperCase()} · ${size} · ${date}</div>
+    <div class="inv-doc-actions">
+      <button class="btn btn-ghost btn-sm" onclick="invPreview('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">👁 Preview</button>
+      <button class="btn btn-ghost btn-sm" onclick="invMoveDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center" title="Move to a project folder">📁 Move</button>
+      <button class="btn btn-ghost btn-sm" onclick="invDownloadDoc('${doc.id}')" style="font-size:11px;flex:1;justify-content:center">⬇</button>
+    </div>
+  </div>`;
+}
+
+// Move a doc to a different project folder (or unassign). Uses a minimal
+// prompt-style dropdown to keep the footprint small — if we need richer UX
+// later we can switch this to a modal.
+function invMoveDoc(id) {
+  const doc = invItems.find(d => d.id === id);
+  if (!doc) return;
+  let projects = [];
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch {}
+  const choices = [{ id: '', name: '— Unassigned —' }].concat(projects.map(p => ({ id: p.id, name: p.name || p.id })));
+  const current = doc.projectId || '';
+  const list = choices.map((c, i) => `${i}. ${c.name}${c.id === current ? '  (current)' : ''}`).join('\n');
+  const ans = prompt(`Move "${doc.name}" to which project?\n\n${list}\n\nEnter number:`);
+  if (ans == null) return;
+  const idx = parseInt(ans, 10);
+  if (isNaN(idx) || idx < 0 || idx >= choices.length) return;
+  doc.projectId = choices[idx].id;
+  saveInventory();
+  renderInventory();
 }
 
 function formatInvSize(b) {
@@ -9630,464 +9640,6 @@ function wiParseRows(rows){
       desc:     iDesc  >= 0 ? r[iDesc]  : ''
     }))
     .filter(r => r.oldVal !== '' || r.newVal !== '' || r.srcField !== '' || r.srcTable !== '');
-}
-
-// ═══ TASK AGENT ══════════════════════════════════════════════════════════
-// Scheduler UI. Talks directly to the Azure Function cygenix-db-api at two
-// endpoints:
-//   • /api/schedules/{action}   — scheduler CRUD + run-now + history
-//   • /api/data/version-*       — pinned SQL snapshots (existing)
-// SQL execution happens server-side via the Function App's managed identity,
-// so there are no connection strings to manage here.
-//
-// Config source: `cygenix_fn_url` + `cygenix_fn_key` localStorage keys —
-// the same values set on the Connections page for the Target database.
-// (This means the scheduler needs the target DB to be wired up first.)
-// ─────────────────────────────────────────────────────────────────────────
-
-const TA = {
-  schedules: [],
-  runs: [],
-  versionsByJob: {},
-  editingScheduleId: null,
-  activeTab: 'schedules',
-};
-
-// Resolve the /api/* base URL (strips /db suffix if present) and function key.
-// Returns { base, key } or throws.
-function ta_resolveApi() {
-  const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
-  let fnUrl = ss('cygenix_fn_url');
-  const key = ss('cygenix_fn_key');
-  if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
-  if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
-
-  // fnUrl is typically https://…azurewebsites.net/api/db — strip the last segment
-  // to get the /api base. Be forgiving of trailing slashes or extra paths.
-  fnUrl = fnUrl.replace(/\/+$/, '');
-  const apiIdx = fnUrl.toLowerCase().lastIndexOf('/api');
-  if (apiIdx < 0) throw new Error('Azure Function URL does not contain /api path');
-  const base = fnUrl.slice(0, apiIdx) + '/api';
-  return { base, key };
-}
-
-async function ta_apiCall(path, body, method) {
-  const email = currentCygenixEmail();
-  if (!email) throw new Error('Please sign in first.');
-  const { base, key } = ta_resolveApi();
-  // Use & if the path already has a ? (e.g. 'data/version-list?jobId=X'),
-  // otherwise use ? to introduce the query string. Without this, a GET
-  // with query params produces a malformed URL like '?jobId=X?code=Y'
-  // and Azure rejects it with 401 because the function key isn't parsed.
-  const sep = path.includes('?') ? '&' : '?';
-  const url = `${base}/${path}${sep}code=${encodeURIComponent(key)}`;
-
-  const opts = {
-    method: method || 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-user-id':    email,
-    },
-  };
-  if (body && opts.method !== 'GET') opts.body = JSON.stringify(body);
-
-  const r = await fetch(url, opts);
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
-  return data;
-}
-
-function ta_sched(action, body)  { return ta_apiCall('schedules/' + action, body, 'POST'); }
-function ta_data(action, body, method) { return ta_apiCall('data/' + action, body, method || 'POST'); }
-
-function ta_init() {
-  ta_switchTab(TA.activeTab);
-}
-
-function ta_refresh() {
-  if (TA.activeTab === 'schedules') ta_loadSchedules();
-  else if (TA.activeTab === 'runs') ta_loadRuns();
-}
-
-function ta_switchTab(tab) {
-  TA.activeTab = tab;
-  ['schedules','runs'].forEach(t => {
-    const tabEl = document.getElementById('ta-tab-' + t);
-    const paneEl = document.getElementById('ta-pane-' + t);
-    if (tabEl)  tabEl.classList.toggle('active', t === tab);
-    if (paneEl) paneEl.style.display = (t === tab) ? '' : 'none';
-  });
-  if (tab === 'schedules') ta_loadSchedules();
-  if (tab === 'runs')      ta_loadRuns();
-}
-
-// ── Schedules list ─────────────────────────────────────────────────────
-async function ta_loadSchedules() {
-  const el = document.getElementById('ta-schedules-list');
-  el.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Loading…</p></div>';
-  try {
-    const data = await ta_sched('list-schedules', {});
-    TA.schedules = data.schedules || [];
-    ta_renderSchedules();
-  } catch (e) {
-    el.innerHTML = '<div class="empty-state"><h3>Could not load schedules</h3><p style="color:var(--red)">' + escapeHtml(e.message) + '</p><p style="font-size:12px;color:var(--text3);margin-top:0.5rem">Check that the <code>schedules</code> and <code>schedule_runs</code> containers exist in Cosmos, and that the Azure Function URL + key are saved in Connections → Target.</p></div>';
-  }
-}
-
-function ta_renderSchedules() {
-  const el = document.getElementById('ta-schedules-list');
-  if (!TA.schedules.length) {
-    el.innerHTML = '<div class="empty-state" style="padding:2.5rem 2rem"><h3>No schedules yet</h3><p>Click <strong>+ New schedule</strong> to run a job on a cron or chain it after another.</p></div>';
-    return;
-  }
-  const rows = TA.schedules.map(s => {
-    const trigger = s.chainAfter
-      ? '<span class="badge badge-purple" title="Fires after parent succeeds">⛓ Chained</span>'
-      : '<span class="badge badge-blue" style="font-family:var(--mono)">' + escapeHtml(s.humanReadable || s.cron || '—') + '</span>';
-    const next = s.nextRunAt
-      ? '<span style="font-family:var(--mono);font-size:11px;color:var(--text2)">' + ta_fmtDateTime(s.nextRunAt) + '</span>'
-      : '<span style="font-size:10px;color:var(--text3)">—</span>';
-    const last = s.lastRunAt
-      ? ta_runStatusChip(s.lastRunStatus) + ' <span style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:0.4rem">' + ta_fmtDateTime(s.lastRunAt) + '</span>'
-      : '<span style="font-size:10px;color:var(--text3)">Never run</span>';
-    const jobName = ta_jobNameFor(s.jobId);
-    const verLabel = s.jobVersionNumber ? 'v' + s.jobVersionNumber : 'version missing';
-    return `<tr>
-      <td><strong style="color:var(--text)">${escapeHtml(s.name)}</strong><div style="font-size:11px;color:var(--text3);margin-top:2px">${escapeHtml(jobName)} · ${verLabel}</div></td>
-      <td>${trigger}</td>
-      <td>${next}</td>
-      <td>${last}</td>
-      <td>
-        <label style="display:inline-flex;align-items:center;gap:0.4rem;cursor:pointer" title="${s.enabled ? 'Disable' : 'Enable'}">
-          <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="ta_toggleEnabled('${s.id}', this.checked)">
-          <span style="font-size:11px;color:${s.enabled ? 'var(--green)' : 'var(--text3)'}">${s.enabled ? 'On' : 'Off'}</span>
-        </label>
-      </td>
-      <td>
-        <div class="jobs-actions">
-          <button class="btn btn-primary btn-sm" onclick="ta_runNow('${s.id}', this)" title="Trigger now">▶ Run</button>
-          <button class="btn btn-ghost btn-sm" onclick="ta_openScheduleModal('${s.id}')" title="Edit">✎</button>
-          <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="ta_deleteSchedule('${s.id}')" title="Delete">✕</button>
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-  el.innerHTML = '<table class="jobs-table"><thead><tr>' +
-    '<th>Name / Job</th><th>Trigger</th><th>Next run</th><th>Last run</th><th>Status</th><th>Actions</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table>';
-}
-
-function ta_runStatusChip(status) {
-  if (status === 'success') return '<span class="badge badge-green" style="font-size:10px">✓ ok</span>';
-  if (status === 'failed')  return '<span class="badge badge-red" style="font-size:10px">✕ failed</span>';
-  if (status === 'running') return '<span class="badge badge-amber" style="font-size:10px">● running</span>';
-  return '<span class="badge" style="font-size:10px">' + escapeHtml(status || '?') + '</span>';
-}
-
-function ta_fmtDateTime(iso) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
-  } catch { return iso; }
-}
-
-function ta_jobNameFor(jobId) {
-  try {
-    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
-    const j = jobs.find(j => j.id === jobId);
-    return j ? j.name : '(job not on this browser)';
-  } catch { return '—'; }
-}
-
-async function ta_toggleEnabled(id, enabled) {
-  try {
-    await ta_sched('toggle-enabled', { id, enabled });
-    ta_loadSchedules();
-    if (typeof showToast === 'function') showToast(enabled ? 'Schedule enabled' : 'Schedule disabled');
-  } catch (e) { alert('Could not toggle: ' + e.message); }
-}
-
-async function ta_deleteSchedule(id) {
-  const s = TA.schedules.find(x => x.id === id);
-  if (!confirm('Delete schedule "' + (s && s.name || id) + '"? Run history is kept.')) return;
-  try {
-    await ta_sched('delete-schedule', { id });
-    ta_loadSchedules();
-    if (typeof showToast === 'function') showToast('Schedule deleted');
-  } catch (e) { alert('Delete failed: ' + e.message); }
-}
-
-async function ta_runNow(id, btn) {
-  if (!confirm('Run this schedule now?')) return;
-  const orig = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '… running';
-  try {
-    const r = await ta_sched('run-now', { id });
-    if (r.status === 'success') {
-      if (typeof showToast === 'function') showToast('Run succeeded — ' + (r.rowsAffected || 0) + ' rows affected');
-    } else {
-      alert('Run failed:\n\n' + (r.errorMessage || 'unknown error'));
-    }
-    ta_loadSchedules();
-  } catch (e) {
-    alert('Run failed: ' + e.message);
-  } finally {
-    btn.disabled = false; btn.innerHTML = orig;
-  }
-}
-
-// ── Schedule modal (create + edit) ──────────────────────────────────────
-async function ta_openScheduleModal(existingId) {
-  TA.editingScheduleId = existingId || null;
-  document.getElementById('ta-sched-modal-title').textContent = existingId ? 'Edit schedule' : 'New schedule';
-
-  // Jobs dropdown from localStorage
-  const jobsSel = document.getElementById('ta-sched-job');
-  const jobs = safeArr('cygenix_jobs');
-  jobsSel.innerHTML = jobs.length
-    ? jobs.map(j => '<option value="' + escapeAttr(j.id) + '">' + escapeHtml(j.name) + '</option>').join('')
-    : '<option value="">No jobs saved on this browser</option>';
-
-  // Schedules for chain picker
-  let schedResp = { schedules: [] };
-  try { schedResp = await ta_sched('list-schedules', {}); } catch {}
-  TA.schedules = schedResp.schedules || [];
-
-  const chainSel = document.getElementById('ta-sched-chain');
-  chainSel.innerHTML = '<option value="">— pick a parent schedule —</option>' +
-    TA.schedules.filter(s => s.id !== existingId).map(s =>
-      '<option value="' + escapeAttr(s.id) + '">' + escapeHtml(s.name) + '</option>'
-    ).join('');
-
-  if (existingId) {
-    const s = TA.schedules.find(x => x.id === existingId);
-    if (s) {
-      document.getElementById('ta-sched-name').value    = s.name || '';
-      jobsSel.value = s.jobId || '';
-      document.getElementById('ta-sched-enabled').checked = !!s.enabled;
-      if (s.chainAfter) {
-        document.querySelector('input[name="ta-trigger-mode"][value="chain"]').checked = true;
-        chainSel.value = s.chainAfter;
-      } else {
-        document.querySelector('input[name="ta-trigger-mode"][value="cron"]').checked = true;
-        document.getElementById('ta-sched-cron').value = s.cron || '';
-        document.getElementById('ta-sched-tz').value   = s.timezone || 'Europe/London';
-      }
-      ta_toggleTriggerMode();
-      await ta_onJobPicked(s.jobVersionId);
-    }
-  } else {
-    document.getElementById('ta-sched-name').value = '';
-    document.getElementById('ta-sched-cron').value = '';
-    document.getElementById('ta-sched-enabled').checked = true;
-    document.querySelector('input[name="ta-trigger-mode"][value="cron"]').checked = true;
-    ta_toggleTriggerMode();
-    if (jobs.length) await ta_onJobPicked();
-  }
-  ta_updateCronPreview();
-  document.getElementById('ta-schedule-modal').classList.add('open');
-}
-
-function ta_closeScheduleModal() {
-  document.getElementById('ta-schedule-modal').classList.remove('open');
-  TA.editingScheduleId = null;
-}
-
-function ta_toggleTriggerMode() {
-  const mode = document.querySelector('input[name="ta-trigger-mode"]:checked').value;
-  document.getElementById('ta-cron-block').style.display  = (mode === 'cron')  ? '' : 'none';
-  document.getElementById('ta-chain-block').style.display = (mode === 'chain') ? '' : 'none';
-}
-
-function ta_setCron(expr) {
-  document.getElementById('ta-sched-cron').value = expr;
-  ta_updateCronPreview();
-}
-
-function ta_updateCronPreview() {
-  const expr = document.getElementById('ta-sched-cron').value.trim();
-  const preview = document.getElementById('ta-cron-preview');
-  if (!expr) { preview.textContent = ''; return; }
-  const parts = expr.split(/\s+/);
-  if (parts.length !== 5) { preview.textContent = '⚠ cron must have 5 fields'; preview.style.color='var(--amber)'; return; }
-  preview.style.color = 'var(--text3)';
-  const [mi, h, dom, mo, dow] = parts;
-  if (mi==='*' && h==='*') preview.textContent = '→ every minute';
-  else if (h==='*' && dom==='*' && mo==='*' && dow==='*' && /^\d+$/.test(mi)) preview.textContent = '→ every hour at :' + mi.padStart(2,'0');
-  else if (dom==='*' && mo==='*' && dow==='*' && /^\d+$/.test(mi) && /^\d+$/.test(h)) preview.textContent = '→ daily at ' + h.padStart(2,'0') + ':' + mi.padStart(2,'0');
-  else preview.textContent = '→ ' + expr;
-}
-
-async function ta_onJobPicked(preselectVersionId) {
-  const jobId = document.getElementById('ta-sched-job').value;
-  const verSel = document.getElementById('ta-sched-version');
-  if (!jobId) { verSel.innerHTML = '<option value="">—</option>'; return; }
-  verSel.innerHTML = '<option value="">loading…</option>';
-  try {
-    // Uses existing /api/data/version-list endpoint
-    const data = await ta_data('version-list?jobId=' + encodeURIComponent(jobId), null, 'GET');
-    const vers = data.versions || [];
-    TA.versionsByJob[jobId] = vers;
-    if (!vers.length) {
-      verSel.innerHTML = '<option value="">No snapshots — use the button below</option>';
-      return;
-    }
-    verSel.innerHTML = vers.map(v =>
-      '<option value="' + escapeAttr(v.id) + '">v' + v.version + ' · ' + ta_fmtDateTime(v.createdAt) + (v.label && v.label !== 'auto' ? ' · ' + escapeHtml(v.label) : '') + '</option>'
-    ).join('');
-    if (preselectVersionId) verSel.value = preselectVersionId;
-  } catch (e) {
-    verSel.innerHTML = '<option value="">error: ' + escapeHtml(e.message) + '</option>';
-  }
-}
-
-async function ta_createVersionFromSelected() {
-  const jobId = document.getElementById('ta-sched-job').value;
-  if (!jobId) return alert('Pick a job first.');
-  const jobs = safeArr('cygenix_jobs');
-  const job = jobs.find(j => j.id === jobId);
-  if (!job) return alert('Job not on this browser.');
-  const label = prompt('Label for this snapshot (optional):', 'manual');
-  if (label === null) return;
-  try {
-    // Uses existing /api/data/version-create — body signature per index.js route
-    const r = await ta_data('version-create', {
-      jobId,
-      snapshot: job,
-      label: label || 'manual',
-      note: ''
-    });
-    if (r.created) {
-      if (typeof showToast === 'function') showToast('Snapshot v' + r.version + ' created');
-    } else {
-      if (typeof showToast === 'function') showToast('No change — matches existing v' + r.version);
-    }
-    await ta_onJobPicked(r.id || undefined);
-  } catch (e) { alert('Snapshot failed: ' + e.message); }
-}
-
-async function ta_saveSchedule() {
-  const name = document.getElementById('ta-sched-name').value.trim();
-  const jobId = document.getElementById('ta-sched-job').value;
-  const jobVersionId = document.getElementById('ta-sched-version').value;
-  const enabled = document.getElementById('ta-sched-enabled').checked;
-  const mode = document.querySelector('input[name="ta-trigger-mode"]:checked').value;
-  const cron = mode === 'cron' ? document.getElementById('ta-sched-cron').value.trim() : null;
-  const timezone = mode === 'cron' ? document.getElementById('ta-sched-tz').value : null;
-  const chainAfter = mode === 'chain' ? document.getElementById('ta-sched-chain').value : null;
-
-  if (!name) return alert('Name is required');
-  if (!jobId) return alert('Pick a job');
-  if (!jobVersionId) return alert('Pick a pinned version (or create one)');
-  if (mode === 'cron' && !cron) return alert('Cron expression required');
-  if (mode === 'chain' && !chainAfter) return alert('Pick a parent schedule');
-
-  const btn = document.getElementById('ta-sched-save-btn');
-  btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = 'Saving…';
-  try {
-    if (TA.editingScheduleId) {
-      await ta_sched('update-schedule', {
-        id: TA.editingScheduleId,
-        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled },
-      });
-    } else {
-      await ta_sched('create-schedule', {
-        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled,
-      });
-    }
-    ta_closeScheduleModal();
-    ta_loadSchedules();
-    if (typeof showToast === 'function') showToast('Schedule saved');
-  } catch (e) {
-    alert('Save failed: ' + e.message);
-  } finally {
-    btn.disabled = false; btn.innerHTML = orig;
-  }
-}
-
-// ── Run history ─────────────────────────────────────────────────────────
-async function ta_loadRuns() {
-  const el = document.getElementById('ta-runs-list');
-  el.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Loading…</p></div>';
-
-  try {
-    const s = await ta_sched('list-schedules', {});
-    TA.schedules = s.schedules || [];
-  } catch {}
-  const filt = document.getElementById('ta-run-filter');
-  const prev = filt.value;
-  filt.innerHTML = '<option value="">All schedules</option>' +
-    TA.schedules.map(s => '<option value="' + escapeAttr(s.id) + '">' + escapeHtml(s.name) + '</option>').join('');
-  if (prev) filt.value = prev;
-
-  try {
-    const scheduleId = filt.value || null;
-    const data = await ta_sched('list-runs', { scheduleId, limit: 50 });
-    TA.runs = data.runs || [];
-    ta_renderRuns();
-  } catch (e) {
-    el.innerHTML = '<div class="empty-state"><h3>Could not load runs</h3><p style="color:var(--red)">' + escapeHtml(e.message) + '</p></div>';
-  }
-}
-
-function ta_renderRuns() {
-  const el = document.getElementById('ta-runs-list');
-  if (!TA.runs.length) {
-    el.innerHTML = '<div class="empty-state" style="padding:2.5rem 2rem"><h3>No runs yet</h3><p>Run history appears after the first scheduled or manual execution.</p></div>';
-    return;
-  }
-  const nameOf = id => (TA.schedules.find(s => s.id === id) || {}).name || '(deleted)';
-  const rows = TA.runs.map(r => {
-    const duration = r.startedAt && r.finishedAt
-      ? Math.round((new Date(r.finishedAt) - new Date(r.startedAt)) / 1000) + 's'
-      : '—';
-    const trigChip = r.triggeredBy === 'manual'
-      ? '<span class="badge badge-teal" style="font-size:10px">manual</span>'
-      : r.triggeredBy === 'chain'
-      ? '<span class="badge badge-purple" style="font-size:10px">chain</span>'
-      : '<span class="badge badge-blue" style="font-size:10px">cron</span>';
-    return `<tr onclick="ta_openRunDetail('${r.id}','${r.scheduleId}')" style="cursor:pointer" title="View run detail">
-      <td>${ta_runStatusChip(r.status)}</td>
-      <td><strong>${escapeHtml(nameOf(r.scheduleId))}</strong></td>
-      <td>${trigChip}</td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${ta_fmtDateTime(r.startedAt)}</td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">${duration}</td>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${r.rowsAffected != null ? r.rowsAffected.toLocaleString() : '—'}</td>
-    </tr>`;
-  }).join('');
-  el.innerHTML = '<table class="jobs-table"><thead><tr>' +
-    '<th>Status</th><th>Schedule</th><th>Trigger</th><th>Started</th><th>Duration</th><th>Rows</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table>';
-}
-
-async function ta_openRunDetail(runId, scheduleId) {
-  try {
-    const data = await ta_sched('get-run', { id: runId, scheduleId });
-    const r = data.run;
-    document.getElementById('ta-run-title').textContent = 'Run · ' + ta_fmtDateTime(r.startedAt);
-    document.getElementById('ta-run-sub').textContent   = 'Status: ' + r.status + ' · trigger: ' + r.triggeredBy;
-    const body = document.getElementById('ta-run-body');
-    const rows = [
-      ['Schedule',    (TA.schedules.find(s => s.id === r.scheduleId) || {}).name || r.scheduleId],
-      ['Job',         ta_jobNameFor(r.jobId) + ' (version ' + r.jobVersionId + ')'],
-      ['Started',     ta_fmtDateTime(r.startedAt)],
-      ['Finished',    r.finishedAt ? ta_fmtDateTime(r.finishedAt) : '—'],
-      ['Rows affected', r.rowsAffected != null ? r.rowsAffected.toLocaleString() : '—'],
-    ];
-    let html = '<table style="width:100%;border-collapse:collapse">' + rows.map(([k,v]) =>
-      '<tr><td style="padding:0.4rem 0.6rem;color:var(--text3);width:140px">' + escapeHtml(k) + '</td><td style="padding:0.4rem 0.6rem;color:var(--text)">' + escapeHtml(String(v)) + '</td></tr>'
-    ).join('') + '</table>';
-    if (r.errorMessage) {
-      html += '<div style="margin-top:1rem"><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem">Error</div>'
-           + '<div class="code-block" style="color:var(--red);max-height:30vh;white-space:pre-wrap">' + escapeHtml(r.errorMessage) + '</div></div>';
-    }
-    body.innerHTML = html;
-    document.getElementById('ta-run-modal').classList.add('open');
-  } catch (e) { alert('Could not load run: ' + e.message); }
-}
-
-function ta_closeRunModal() {
-  document.getElementById('ta-run-modal').classList.remove('open');
 }
 
 </script>
