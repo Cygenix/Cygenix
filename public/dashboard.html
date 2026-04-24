@@ -9675,7 +9675,12 @@ async function ta_apiCall(path, body, method) {
   const email = currentCygenixEmail();
   if (!email) throw new Error('Please sign in first.');
   const { base, key } = ta_resolveApi();
-  const url = `${base}/${path}?code=${encodeURIComponent(key)}`;
+  // Use & if the path already has a ? (e.g. 'data/version-list?jobId=X'),
+  // otherwise use ? to introduce the query string. Without this, a GET
+  // with query params produces a malformed URL like '?jobId=X?code=Y'
+  // and Azure rejects it with 401 because the function key isn't parsed.
+  const sep = path.includes('?') ? '&' : '?';
+  const url = `${base}/${path}${sep}code=${encodeURIComponent(key)}`;
 
   const opts = {
     method: method || 'POST',
