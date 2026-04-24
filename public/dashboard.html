@@ -2049,14 +2049,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <!-- END SEARCH VIEW ───────────────────────────────────────────────────-->
 
     <!-- TASK AGENT ─────────────────────────────────────────────────────────
-         Scheduler for migration jobs. Three sub-tabs:
+         Full scheduler. Two sub-tabs:
            • Schedules    — CRUD + Run now + on/off toggle
            • Run history  — past executions with success/fail + error detail
-           • Secrets      — encrypted connection strings (label-only readback)
-         Backend: /.netlify/functions/schedules (multi-action POST).
-         Server-side execution runs via Azure Function timer trigger
-         (schedulerTick) against the same Cosmos containers. See
-         README-scheduler.md. -->
+         Backend: /api/schedules/{action} on the cygenix-db-api Function App.
+         SQL execution uses the Function App's managed identity — no
+         connection strings or secrets stored in the scheduler. The timer
+         trigger (schedulerTick) fires every minute to pick up due schedules. -->
     <div id="view-task-agent" class="view">
       <div class="panel-header">
         <div>
@@ -2072,7 +2071,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="tabs" style="margin-bottom:1.25rem">
         <div class="tab active" id="ta-tab-schedules" onclick="ta_switchTab('schedules')">Schedules</div>
         <div class="tab" id="ta-tab-runs" onclick="ta_switchTab('runs')">Run history</div>
-        <div class="tab" id="ta-tab-secrets" onclick="ta_switchTab('secrets')">Connection secrets</div>
       </div>
 
       <div id="ta-pane-schedules">
@@ -2089,21 +2087,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
         <div id="ta-runs-list"></div>
       </div>
-
-      <div id="ta-pane-secrets" style="display:none">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-          <div style="font-size:12px;color:var(--text3);max-width:540px;line-height:1.5">
-            Connection strings are <strong style="color:var(--text2)">encrypted at rest</strong> (AES-256-GCM) before they leave your browser. The server decrypts them only when a scheduled run executes. You can never read one back — only replace it.
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="ta_openSecretModal()">+ Add secret</button>
-        </div>
-        <div id="ta-secrets-list"></div>
-      </div>
     </div>
 
 <!-- NEW SCHEDULE / EDIT SCHEDULE MODAL ─────────────────────────────────────
      Same modal for create and edit; ta_openScheduleModal(existing) populates
-     fields when editing. Save calls create-schedule or update-schedule. -->
+     fields when editing. -->
 <div class="modal-overlay" id="ta-schedule-modal">
   <div class="modal" style="width:620px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem">
@@ -2131,13 +2119,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </label>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-top:-0.5rem">
-        Snapshots freeze the SQL at a point in time. Use <button type="button" class="btn btn-ghost btn-sm" style="padding:0.2rem 0.5rem;font-size:10px" onclick="ta_createSnapshotFromSelected()">📸 Snapshot current SQL</button> to make a new one from the selected job.
+        Snapshots freeze the SQL at a point in time. Use <button type="button" class="btn btn-ghost btn-sm" style="padding:0.2rem 0.5rem;font-size:10px" onclick="ta_createVersionFromSelected()">📸 Snapshot current SQL</button> to make a new one from the selected job.
       </div>
-
-      <label style="display:block">
-        <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Connection secret</span>
-        <select id="ta-sched-secret" class="form-input" style="margin-top:0.35rem"></select>
-      </label>
 
       <div style="border-top:0.5px solid var(--border);padding-top:0.9rem">
         <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.6rem">
@@ -2202,37 +2185,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   </div>
 </div>
 
-<!-- ADD SECRET MODAL -->
-<div class="modal-overlay" id="ta-secret-modal">
-  <div class="modal" style="width:520px">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem">
-      <div style="min-width:0;flex:1">
-        <div class="modal-title">Add connection secret</div>
-        <div class="modal-sub">Stored encrypted. Only decrypted on the server during scheduled runs.</div>
-      </div>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="ta_closeSecretModal()">✕</button>
-    </div>
-    <div style="display:grid;gap:0.9rem">
-      <label style="display:block">
-        <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Label</span>
-        <input id="ta-secret-label" class="form-input" style="margin-top:0.35rem" placeholder="e.g. Prod Elite — primary" maxlength="60">
-      </label>
-      <label style="display:block">
-        <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Connection string</span>
-        <textarea id="ta-secret-conn" class="form-input" style="margin-top:0.35rem;font-family:var(--mono);font-size:11px;min-height:90px" placeholder="Server=tcp:host,1433;Database=db;User Id=user;Password=****;Encrypt=true"></textarea>
-      </label>
-      <div style="font-size:11px;color:var(--text3);background:var(--bg3);padding:0.6rem 0.75rem;border-radius:var(--r);border:0.5px solid var(--border)">
-        Both ADO.NET (<code style="color:var(--text2)">Server=…;Database=…</code>) and URL (<code style="color:var(--text2)">mssql://user:pass@host/db</code>) forms are accepted. The string is encrypted in your browser-to-server journey with TLS and at rest with AES-256-GCM.
-      </div>
-    </div>
-    <div class="modal-actions" style="margin-top:1.25rem">
-      <button class="btn btn-ghost" onclick="ta_closeSecretModal()">Cancel</button>
-      <button class="btn btn-primary" id="ta-secret-save-btn" onclick="ta_saveSecret()">Save secret</button>
-    </div>
-  </div>
-</div>
-
-<!-- RUN DETAIL DRAWER (simple modal) -->
+<!-- RUN DETAIL MODAL -->
 <div class="modal-overlay" id="ta-run-modal">
   <div class="modal" style="width:720px">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem">
@@ -9680,51 +9633,80 @@ function wiParseRows(rows){
 }
 
 // ═══ TASK AGENT ══════════════════════════════════════════════════════════
-// Scheduler UI. Backed by /.netlify/functions/schedules (multi-action POST).
-// All actions require currentCygenixEmail() — uses it as Cosmos partition key.
+// Scheduler UI. Talks directly to the Azure Function cygenix-db-api at two
+// endpoints:
+//   • /api/schedules/{action}   — scheduler CRUD + run-now + history
+//   • /api/data/version-*       — pinned SQL snapshots (existing)
+// SQL execution happens server-side via the Function App's managed identity,
+// so there are no connection strings to manage here.
 //
-// State is deliberately lightweight: the three tabs re-fetch on switch, so
-// no subscriptions/polling. Run history refreshes on tab click only.
+// Config source: `cygenix_fn_url` + `cygenix_fn_key` localStorage keys —
+// the same values set on the Connections page for the Target database.
+// (This means the scheduler needs the target DB to be wired up first.)
 // ─────────────────────────────────────────────────────────────────────────
 
 const TA = {
   schedules: [],
-  secrets: [],
   runs: [],
-  snapshotsByJob: {},         // jobId -> [{id,version,createdAt,label,note}]
-  editingScheduleId: null,    // set when opening modal in edit mode
+  versionsByJob: {},
+  editingScheduleId: null,
   activeTab: 'schedules',
 };
 
-function ta_api(action, payload) {
-  const email = currentCygenixEmail();
-  if (!email) return Promise.reject(new Error('Please sign in first.'));
-  return fetch('/.netlify/functions/schedules', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, userEmail: email, ...(payload || {}) }),
-  }).then(async r => {
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
-    return data;
-  });
+// Resolve the /api/* base URL (strips /db suffix if present) and function key.
+// Returns { base, key } or throws.
+function ta_resolveApi() {
+  const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
+  let fnUrl = ss('cygenix_fn_url');
+  const key = ss('cygenix_fn_key');
+  if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
+  if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
+
+  // fnUrl is typically https://…azurewebsites.net/api/db — strip the last segment
+  // to get the /api base. Be forgiving of trailing slashes or extra paths.
+  fnUrl = fnUrl.replace(/\/+$/, '');
+  const apiIdx = fnUrl.toLowerCase().lastIndexOf('/api');
+  if (apiIdx < 0) throw new Error('Azure Function URL does not contain /api path');
+  const base = fnUrl.slice(0, apiIdx) + '/api';
+  return { base, key };
 }
+
+async function ta_apiCall(path, body, method) {
+  const email = currentCygenixEmail();
+  if (!email) throw new Error('Please sign in first.');
+  const { base, key } = ta_resolveApi();
+  const url = `${base}/${path}?code=${encodeURIComponent(key)}`;
+
+  const opts = {
+    method: method || 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-id':    email,
+    },
+  };
+  if (body && opts.method !== 'GET') opts.body = JSON.stringify(body);
+
+  const r = await fetch(url, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+
+function ta_sched(action, body)  { return ta_apiCall('schedules/' + action, body, 'POST'); }
+function ta_data(action, body, method) { return ta_apiCall('data/' + action, body, method || 'POST'); }
 
 function ta_init() {
   ta_switchTab(TA.activeTab);
 }
 
 function ta_refresh() {
-  // Re-pull everything for the current tab
   if (TA.activeTab === 'schedules') ta_loadSchedules();
   else if (TA.activeTab === 'runs') ta_loadRuns();
-  else if (TA.activeTab === 'secrets') ta_loadSecrets();
 }
 
 function ta_switchTab(tab) {
   TA.activeTab = tab;
-  const tabs = ['schedules','runs','secrets'];
-  tabs.forEach(t => {
+  ['schedules','runs'].forEach(t => {
     const tabEl = document.getElementById('ta-tab-' + t);
     const paneEl = document.getElementById('ta-pane-' + t);
     if (tabEl)  tabEl.classList.toggle('active', t === tab);
@@ -9732,19 +9714,18 @@ function ta_switchTab(tab) {
   });
   if (tab === 'schedules') ta_loadSchedules();
   if (tab === 'runs')      ta_loadRuns();
-  if (tab === 'secrets')   ta_loadSecrets();
 }
 
-// ── Schedules list ───────────────────────────────────────────────────────
+// ── Schedules list ─────────────────────────────────────────────────────
 async function ta_loadSchedules() {
   const el = document.getElementById('ta-schedules-list');
   el.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Loading…</p></div>';
   try {
-    const data = await ta_api('list-schedules');
+    const data = await ta_sched('list-schedules', {});
     TA.schedules = data.schedules || [];
     ta_renderSchedules();
   } catch (e) {
-    el.innerHTML = '<div class="empty-state"><h3>Could not load schedules</h3><p style="color:var(--red)">' + escapeHtml(e.message) + '</p><p style="font-size:12px;color:var(--text3);margin-top:0.5rem">Check that the <code>schedules</code> container exists in Cosmos and Netlify env vars are set.</p></div>';
+    el.innerHTML = '<div class="empty-state"><h3>Could not load schedules</h3><p style="color:var(--red)">' + escapeHtml(e.message) + '</p><p style="font-size:12px;color:var(--text3);margin-top:0.5rem">Check that the <code>schedules</code> and <code>schedule_runs</code> containers exist in Cosmos, and that the Azure Function URL + key are saved in Connections → Target.</p></div>';
   }
 }
 
@@ -9772,7 +9753,7 @@ function ta_renderSchedules() {
       <td>${next}</td>
       <td>${last}</td>
       <td>
-        <label class="pres-toggle" style="display:inline-flex;align-items:center;gap:0.4rem;cursor:pointer" title="${s.enabled ? 'Disable' : 'Enable'}">
+        <label style="display:inline-flex;align-items:center;gap:0.4rem;cursor:pointer" title="${s.enabled ? 'Disable' : 'Enable'}">
           <input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="ta_toggleEnabled('${s.id}', this.checked)">
           <span style="font-size:11px;color:${s.enabled ? 'var(--green)' : 'var(--text3)'}">${s.enabled ? 'On' : 'Off'}</span>
         </label>
@@ -9795,7 +9776,7 @@ function ta_runStatusChip(status) {
   if (status === 'success') return '<span class="badge badge-green" style="font-size:10px">✓ ok</span>';
   if (status === 'failed')  return '<span class="badge badge-red" style="font-size:10px">✕ failed</span>';
   if (status === 'running') return '<span class="badge badge-amber" style="font-size:10px">● running</span>';
-  return '<span class="badge badge-gray" style="font-size:10px">' + escapeHtml(status || '?') + '</span>';
+  return '<span class="badge" style="font-size:10px">' + escapeHtml(status || '?') + '</span>';
 }
 
 function ta_fmtDateTime(iso) {
@@ -9815,7 +9796,7 @@ function ta_jobNameFor(jobId) {
 
 async function ta_toggleEnabled(id, enabled) {
   try {
-    await ta_api('toggle-enabled', { id, enabled });
+    await ta_sched('toggle-enabled', { id, enabled });
     ta_loadSchedules();
     if (typeof showToast === 'function') showToast(enabled ? 'Schedule enabled' : 'Schedule disabled');
   } catch (e) { alert('Could not toggle: ' + e.message); }
@@ -9825,7 +9806,7 @@ async function ta_deleteSchedule(id) {
   const s = TA.schedules.find(x => x.id === id);
   if (!confirm('Delete schedule "' + (s && s.name || id) + '"? Run history is kept.')) return;
   try {
-    await ta_api('delete-schedule', { id });
+    await ta_sched('delete-schedule', { id });
     ta_loadSchedules();
     if (typeof showToast === 'function') showToast('Schedule deleted');
   } catch (e) { alert('Delete failed: ' + e.message); }
@@ -9836,7 +9817,7 @@ async function ta_runNow(id, btn) {
   const orig = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '… running';
   try {
-    const r = await ta_api('run-now', { id });
+    const r = await ta_sched('run-now', { id });
     if (r.status === 'success') {
       if (typeof showToast === 'function') showToast('Run succeeded — ' + (r.rowsAffected || 0) + ' rows affected');
     } else {
@@ -9855,25 +9836,17 @@ async function ta_openScheduleModal(existingId) {
   TA.editingScheduleId = existingId || null;
   document.getElementById('ta-sched-modal-title').textContent = existingId ? 'Edit schedule' : 'New schedule';
 
-  // Populate jobs dropdown from localStorage
+  // Jobs dropdown from localStorage
   const jobsSel = document.getElementById('ta-sched-job');
   const jobs = safeArr('cygenix_jobs');
   jobsSel.innerHTML = jobs.length
     ? jobs.map(j => '<option value="' + escapeAttr(j.id) + '">' + escapeHtml(j.name) + '</option>').join('')
     : '<option value="">No jobs saved on this browser</option>';
 
-  // Populate secrets + schedules dropdowns (for chain picker) in parallel
-  const [secResp, schedResp] = await Promise.all([
-    ta_api('list-secrets').catch(() => ({ secrets: [] })),
-    ta_api('list-schedules').catch(() => ({ schedules: [] })),
-  ]);
-  TA.secrets   = secResp.secrets   || [];
+  // Schedules for chain picker
+  let schedResp = { schedules: [] };
+  try { schedResp = await ta_sched('list-schedules', {}); } catch {}
   TA.schedules = schedResp.schedules || [];
-
-  const secretsSel = document.getElementById('ta-sched-secret');
-  secretsSel.innerHTML = TA.secrets.length
-    ? TA.secrets.map(s => '<option value="' + escapeAttr(s.id) + '">' + escapeHtml(s.label) + '</option>').join('')
-    : '<option value="">No secrets yet — add one in the Secrets tab</option>';
 
   const chainSel = document.getElementById('ta-sched-chain');
   chainSel.innerHTML = '<option value="">— pick a parent schedule —</option>' +
@@ -9886,7 +9859,6 @@ async function ta_openScheduleModal(existingId) {
     if (s) {
       document.getElementById('ta-sched-name').value    = s.name || '';
       jobsSel.value = s.jobId || '';
-      document.getElementById('ta-sched-secret').value  = s.secretId || '';
       document.getElementById('ta-sched-enabled').checked = !!s.enabled;
       if (s.chainAfter) {
         document.querySelector('input[name="ta-trigger-mode"][value="chain"]').checked = true;
@@ -9931,7 +9903,6 @@ function ta_updateCronPreview() {
   const expr = document.getElementById('ta-sched-cron').value.trim();
   const preview = document.getElementById('ta-cron-preview');
   if (!expr) { preview.textContent = ''; return; }
-  // Client-side best-effort humanisation (mirrors backend `humanize`)
   const parts = expr.split(/\s+/);
   if (parts.length !== 5) { preview.textContent = '⚠ cron must have 5 fields'; preview.style.color='var(--amber)'; return; }
   preview.style.color = 'var(--text3)';
@@ -9948,15 +9919,16 @@ async function ta_onJobPicked(preselectVersionId) {
   if (!jobId) { verSel.innerHTML = '<option value="">—</option>'; return; }
   verSel.innerHTML = '<option value="">loading…</option>';
   try {
-    const data = await ta_api('list-snapshots', { jobId });
-    const snaps = data.snapshots || [];
-    TA.snapshotsByJob[jobId] = snaps;
-    if (!snaps.length) {
+    // Uses existing /api/data/version-list endpoint
+    const data = await ta_data('version-list?jobId=' + encodeURIComponent(jobId), null, 'GET');
+    const vers = data.versions || [];
+    TA.versionsByJob[jobId] = vers;
+    if (!vers.length) {
       verSel.innerHTML = '<option value="">No snapshots — use the button below</option>';
       return;
     }
-    verSel.innerHTML = snaps.map(s =>
-      '<option value="' + escapeAttr(s.id) + '">v' + s.version + ' · ' + ta_fmtDateTime(s.createdAt) + (s.label && s.label !== 'auto' ? ' · ' + escapeHtml(s.label) : '') + '</option>'
+    verSel.innerHTML = vers.map(v =>
+      '<option value="' + escapeAttr(v.id) + '">v' + v.version + ' · ' + ta_fmtDateTime(v.createdAt) + (v.label && v.label !== 'auto' ? ' · ' + escapeHtml(v.label) : '') + '</option>'
     ).join('');
     if (preselectVersionId) verSel.value = preselectVersionId;
   } catch (e) {
@@ -9964,7 +9936,7 @@ async function ta_onJobPicked(preselectVersionId) {
   }
 }
 
-async function ta_createSnapshotFromSelected() {
+async function ta_createVersionFromSelected() {
   const jobId = document.getElementById('ta-sched-job').value;
   if (!jobId) return alert('Pick a job first.');
   const jobs = safeArr('cygenix_jobs');
@@ -9973,9 +9945,19 @@ async function ta_createSnapshotFromSelected() {
   const label = prompt('Label for this snapshot (optional):', 'manual');
   if (label === null) return;
   try {
-    const r = await ta_api('create-snapshot', { jobId, job, label: label || 'manual' });
-    if (typeof showToast === 'function') showToast('Snapshot v' + r.version + ' created');
-    await ta_onJobPicked(r.id);
+    // Uses existing /api/data/version-create — body signature per index.js route
+    const r = await ta_data('version-create', {
+      jobId,
+      snapshot: job,
+      label: label || 'manual',
+      note: ''
+    });
+    if (r.created) {
+      if (typeof showToast === 'function') showToast('Snapshot v' + r.version + ' created');
+    } else {
+      if (typeof showToast === 'function') showToast('No change — matches existing v' + r.version);
+    }
+    await ta_onJobPicked(r.id || undefined);
   } catch (e) { alert('Snapshot failed: ' + e.message); }
 }
 
@@ -9983,7 +9965,6 @@ async function ta_saveSchedule() {
   const name = document.getElementById('ta-sched-name').value.trim();
   const jobId = document.getElementById('ta-sched-job').value;
   const jobVersionId = document.getElementById('ta-sched-version').value;
-  const secretId = document.getElementById('ta-sched-secret').value;
   const enabled = document.getElementById('ta-sched-enabled').checked;
   const mode = document.querySelector('input[name="ta-trigger-mode"]:checked').value;
   const cron = mode === 'cron' ? document.getElementById('ta-sched-cron').value.trim() : null;
@@ -9993,7 +9974,6 @@ async function ta_saveSchedule() {
   if (!name) return alert('Name is required');
   if (!jobId) return alert('Pick a job');
   if (!jobVersionId) return alert('Pick a pinned version (or create one)');
-  if (!secretId) return alert('Pick a connection secret (add one in the Secrets tab)');
   if (mode === 'cron' && !cron) return alert('Cron expression required');
   if (mode === 'chain' && !chainAfter) return alert('Pick a parent schedule');
 
@@ -10001,13 +9981,13 @@ async function ta_saveSchedule() {
   btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = 'Saving…';
   try {
     if (TA.editingScheduleId) {
-      await ta_api('update-schedule', {
+      await ta_sched('update-schedule', {
         id: TA.editingScheduleId,
-        patch: { name, jobVersionId, secretId, cron, timezone, chainAfter, enabled },
+        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled },
       });
     } else {
-      await ta_api('create-schedule', {
-        name, jobId, jobVersionId, secretId, cron, timezone, chainAfter, enabled,
+      await ta_sched('create-schedule', {
+        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled,
       });
     }
     ta_closeScheduleModal();
@@ -10025,9 +10005,8 @@ async function ta_loadRuns() {
   const el = document.getElementById('ta-runs-list');
   el.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Loading…</p></div>';
 
-  // Keep the filter dropdown in sync with schedules (in case user just added one)
   try {
-    const s = await ta_api('list-schedules');
+    const s = await ta_sched('list-schedules', {});
     TA.schedules = s.schedules || [];
   } catch {}
   const filt = document.getElementById('ta-run-filter');
@@ -10038,7 +10017,7 @@ async function ta_loadRuns() {
 
   try {
     const scheduleId = filt.value || null;
-    const data = await ta_api('list-runs', { scheduleId, limit: 50 });
+    const data = await ta_sched('list-runs', { scheduleId, limit: 50 });
     TA.runs = data.runs || [];
     ta_renderRuns();
   } catch (e) {
@@ -10078,7 +10057,7 @@ function ta_renderRuns() {
 
 async function ta_openRunDetail(runId, scheduleId) {
   try {
-    const data = await ta_api('get-run', { id: runId, scheduleId });
+    const data = await ta_sched('get-run', { id: runId, scheduleId });
     const r = data.run;
     document.getElementById('ta-run-title').textContent = 'Run · ' + ta_fmtDateTime(r.startedAt);
     document.getElementById('ta-run-sub').textContent   = 'Status: ' + r.status + ' · trigger: ' + r.triggeredBy;
@@ -10104,71 +10083,6 @@ async function ta_openRunDetail(runId, scheduleId) {
 
 function ta_closeRunModal() {
   document.getElementById('ta-run-modal').classList.remove('open');
-}
-
-// ── Secrets ─────────────────────────────────────────────────────────────
-async function ta_loadSecrets() {
-  const el = document.getElementById('ta-secrets-list');
-  el.innerHTML = '<div class="empty-state" style="padding:2rem"><p style="color:var(--text3)">Loading…</p></div>';
-  try {
-    const data = await ta_api('list-secrets');
-    TA.secrets = data.secrets || [];
-    if (!TA.secrets.length) {
-      el.innerHTML = '<div class="empty-state" style="padding:2.5rem 2rem"><h3>No secrets yet</h3><p>Add a connection string so scheduled runs know where to execute SQL.</p></div>';
-      return;
-    }
-    el.innerHTML = '<table class="jobs-table"><thead><tr>' +
-      '<th>Label</th><th>Added</th><th style="width:120px">Actions</th>' +
-      '</tr></thead><tbody>' +
-      TA.secrets.map(s =>
-        '<tr><td><strong>' + escapeHtml(s.label) + '</strong><div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px">' + escapeHtml(s.id) + '</div></td>' +
-        '<td style="font-family:var(--mono);font-size:11px;color:var(--text3)">' + ta_fmtDateTime(s.createdAt) + '</td>' +
-        '<td><button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="ta_deleteSecret(\'' + s.id + '\')">✕ Delete</button></td></tr>'
-      ).join('') +
-      '</tbody></table>';
-  } catch (e) {
-    el.innerHTML = '<div class="empty-state"><h3>Could not load secrets</h3><p style="color:var(--red)">' + escapeHtml(e.message) + '</p></div>';
-  }
-}
-
-function ta_openSecretModal() {
-  document.getElementById('ta-secret-label').value = '';
-  document.getElementById('ta-secret-conn').value  = '';
-  document.getElementById('ta-secret-modal').classList.add('open');
-}
-function ta_closeSecretModal() {
-  document.getElementById('ta-secret-modal').classList.remove('open');
-}
-
-async function ta_saveSecret() {
-  const label = document.getElementById('ta-secret-label').value.trim();
-  const conn  = document.getElementById('ta-secret-conn').value.trim();
-  if (!label) return alert('Label required');
-  if (!conn)  return alert('Connection string required');
-  const btn = document.getElementById('ta-secret-save-btn');
-  btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = 'Saving…';
-  try {
-    await ta_api('create-secret', { label, connectionString: conn });
-    ta_closeSecretModal();
-    ta_loadSecrets();
-    if (typeof showToast === 'function') showToast('Secret saved (encrypted)');
-  } catch (e) {
-    alert('Save failed: ' + e.message);
-  } finally {
-    btn.disabled = false; btn.innerHTML = orig;
-  }
-}
-
-async function ta_deleteSecret(id) {
-  if (!confirm('Delete this secret? Schedules using it will fail until you re-assign.')) return;
-  try {
-    await ta_api('delete-secret', { id });
-    ta_loadSecrets();
-    if (typeof showToast === 'function') showToast('Secret deleted');
-  } catch (e) {
-    // 409 = in use — surface the backend message
-    alert('Could not delete: ' + e.message);
-  }
 }
 
 </script>
