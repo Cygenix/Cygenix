@@ -67,7 +67,7 @@
     { section: null, items: [
       { key:'search',            label:'Search',            view:'search',              icon: iconSearch() },
       { key:'inventory',         label:'Inventory',         view:'inventory',           icon: iconGrid() },
-      { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--text3)', icon: iconClock() },
+      { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--yellow)', icon: iconClock() },
     ]},
     { section: 'Outputs', group:'reports', items: [
       { key:'reports',           label:'Conversion Report', view:'reports',             color:'var(--purple)', icon: iconReport() },
