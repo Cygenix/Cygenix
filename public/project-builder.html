@@ -224,6 +224,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
+        <button class="btn btn-ghost btn-sm" onclick="openCreateTaskModal()" title="Save selected jobs as a task for the agent to run later">📅 Create task</button>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
       </div>
@@ -376,6 +377,43 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeBulkImportModal()">Cancel</button>
       <button class="btn btn-primary" onclick="confirmBulkImport()">Import files</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Task modal — snapshots selected jobs + current connections into a
+     stand-alone task that the task agent can run later without touching the
+     live project. -->
+<div class="modal-overlay" id="create-task-modal" style="display:none" onclick="if(event.target===this)closeCreateTaskModal()">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div style="font-size:14px;font-weight:600">Create task from selected jobs</div>
+      <button onclick="closeCreateTaskModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:0.9rem;line-height:1.6">
+        This saves a snapshot of the currently selected jobs — in their current order — as a task that the task agent can execute as a single conversion job. Connections and SQL are captured at save time, so later edits to this project won't affect the task.
+      </div>
+      <div class="form-row">
+        <label class="form-label">Task name</label>
+        <input class="form-input" id="task-name" placeholder="e.g. Nightly Clients reload">
+      </div>
+      <div class="form-row">
+        <label class="form-label">Description <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(optional)</span></label>
+        <textarea class="form-input" id="task-desc" rows="2" placeholder="Short note so you'll remember what this task does" style="font-family:var(--serif);font-size:13px"></textarea>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Schedule <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400">(optional — leave blank to run on demand)</span></label>
+        <input class="form-input" id="task-scheduled" type="datetime-local" style="font-family:var(--mono);font-size:12px">
+      </div>
+      <div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.75rem 0.9rem;font-size:11.5px;color:var(--text2);font-family:var(--mono);line-height:1.7">
+        <div style="color:var(--text3);margin-bottom:0.4rem">Task summary</div>
+        <div id="task-summary-content">–</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCreateTaskModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmCreateTask()">Create task</button>
     </div>
   </div>
 </div>
@@ -2707,6 +2745,146 @@ function showToast(msg) {
   t.style.cssText='position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg2);border:0.5px solid var(--border2);color:var(--green);padding:0.6rem 1.1rem;border-radius:var(--r);font-size:13px;z-index:999;font-family:var(--serif)';
   document.body.appendChild(t);
   setTimeout(()=>t.remove(),2500);
+}
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+// A task is a self-contained snapshot of the currently selected jobs (in order,
+// grouped the same way) plus connections resolved at save time. The task agent
+// reads `cygenix_tasks` from localStorage and runs tasks whose `scheduledFor`
+// is due (or immediately, when status==='pending' and scheduledFor is empty).
+//
+// Task shape:
+//   {
+//     id, name, description, createdAt, scheduledFor (ISO string | ''),
+//     status: 'pending' | 'running' | 'passed' | 'failed',
+//     projectId, projectName,
+//     srcConn, tgtConn,                       // snapshot
+//     groups: [ { id, name, executionMode, steps: [ …selected steps… ] } ],
+//     stepCount, groupCount
+//   }
+const TASKS_KEY = 'cygenix_tasks';
+
+function loadTasksList(){
+  try {
+    const raw = localStorage.getItem(TASKS_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return arr;
+    }
+  } catch {}
+  return [];
+}
+function persistTasksList(tasks){
+  try { localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); } catch {}
+}
+function newTaskId(){ return 'task_' + Date.now() + '_' + Math.random().toString(36).slice(2,6); }
+
+// Build the set of groups + steps that will go into a task. Only includes
+// steps where enabled !== false, preserves their order, and drops groups that
+// end up empty (so the task agent doesn't waste a cycle on them).
+function buildTaskGroupsFromSelection(){
+  const out = [];
+  (project.groups || []).forEach(g => {
+    const selectedSteps = (g.steps || []).filter(isStepEnabled);
+    if (!selectedSteps.length) return;
+    // Deep-clone steps so later edits to the project don't mutate the task.
+    // Reset runtime state (status/log) — the agent will populate those on run.
+    const snapshotSteps = selectedSteps.map(s => {
+      const copy = JSON.parse(JSON.stringify(s));
+      copy.status = 'pending';
+      copy.log = '';
+      return copy;
+    });
+    out.push({
+      id: g.id,
+      name: g.name || '',
+      executionMode: g.executionMode || 'sequential',
+      steps: snapshotSteps
+    });
+  });
+  return out;
+}
+
+function openCreateTaskModal(){
+  ensureAtLeastOneGroup();
+  const flat = getAllStepsFlat();
+  if (!flat.length) { alert('Add at least one job first.'); return; }
+  const selectedFlat = flat.filter(x => isStepEnabled(x.step));
+  if (!selectedFlat.length) { alert('Nothing selected. Tick at least one job to save as a task.'); return; }
+
+  const tgtConn = effectiveTgtConn();
+  if (!tgtConn) {
+    if (!confirm('No target connection is configured. The task will be saved but the agent will not be able to run it until a target connection is set. Continue?')) return;
+  }
+
+  // Pre-fill name with a sensible default: "<project name> – N jobs"
+  const nameInput = document.getElementById('task-name');
+  const defaultName = (project.name || 'Untitled project') + ' – ' + selectedFlat.length + ' job' + (selectedFlat.length===1?'':'s');
+  nameInput.value = defaultName;
+  document.getElementById('task-desc').value = '';
+  document.getElementById('task-scheduled').value = '';
+
+  // Render a quick summary so the user can sanity-check what's about to be saved.
+  const selectedGroups = buildTaskGroupsFromSelection();
+  const srcConn = effectiveSrcConn() || '(not set)';
+  const summary =
+    'Project: ' + esc(project.name || 'Untitled') + '\n' +
+    'Groups:  ' + selectedGroups.length + '\n' +
+    'Jobs:    ' + selectedFlat.length + '\n' +
+    'Source:  ' + esc(srcConn.length > 60 ? srcConn.slice(0,60)+'…' : srcConn) + '\n' +
+    'Target:  ' + esc((tgtConn || '(not set)').length > 60 ? (tgtConn || '').slice(0,60)+'…' : (tgtConn || '(not set)'));
+  document.getElementById('task-summary-content').textContent = summary;
+
+  document.getElementById('create-task-modal').style.display = 'flex';
+  setTimeout(() => { nameInput.focus(); nameInput.select(); }, 50);
+}
+
+function closeCreateTaskModal(){
+  document.getElementById('create-task-modal').style.display = 'none';
+}
+
+function confirmCreateTask(){
+  const name = (document.getElementById('task-name').value || '').trim();
+  if (!name) { alert('Please give the task a name.'); return; }
+
+  const selectedGroups = buildTaskGroupsFromSelection();
+  if (!selectedGroups.length) { alert('Nothing selected to save.'); return; }
+
+  // Count steps across the built task so status text stays accurate even if
+  // selection changed between modal open and confirm.
+  const stepCount = selectedGroups.reduce((n, g) => n + g.steps.length, 0);
+
+  // datetime-local inputs return local-time strings without TZ. Convert to an
+  // ISO string so the task agent can parse unambiguously.
+  const schedRaw = (document.getElementById('task-scheduled').value || '').trim();
+  let scheduledFor = '';
+  if (schedRaw) {
+    const d = new Date(schedRaw);
+    if (!isNaN(d.getTime())) scheduledFor = d.toISOString();
+  }
+
+  const task = {
+    id: newTaskId(),
+    name,
+    description: (document.getElementById('task-desc').value || '').trim(),
+    createdAt: new Date().toISOString(),
+    scheduledFor,
+    status: 'pending',
+    projectId: project.id,
+    projectName: project.name || '',
+    srcConn: effectiveSrcConn() || '',
+    tgtConn: effectiveTgtConn() || '',
+    groups: selectedGroups,
+    stepCount,
+    groupCount: selectedGroups.length
+  };
+
+  const tasks = loadTasksList();
+  tasks.push(task);
+  persistTasksList(tasks);
+
+  closeCreateTaskModal();
+  showToast('Task created: ' + task.name);
 }
 </script>
 </body>
