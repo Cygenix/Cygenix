@@ -96,16 +96,106 @@ app.http('db', {
           break;
         }
         case 'schema': {
-          const [tablesR, colsR, pkR] = await Promise.all([
+          // Fetch tables, columns, primary keys, views, view-columns, procedures
+          // and functions in parallel. The response keeps the existing `tables`
+          // shape (for backward compatibility with AI prompts and other
+          // consumers) and adds `views`, `procedures`, `functions` alongside.
+          const [tablesR, colsR, pkR, viewsR, viewColsR, procsR, funcsR, paramsR] = await Promise.all([
+            // BASE TABLEs with row counts
             pool.request().query(`SELECT t.TABLE_SCHEMA, t.TABLE_NAME, COALESCE(p.rows,0) AS row_count FROM INFORMATION_SCHEMA.TABLES t LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN(0,1) WHERE t.TABLE_TYPE='BASE TABLE' ORDER BY t.TABLE_SCHEMA,t.TABLE_NAME`),
+            // Columns (covers tables AND views — INFORMATION_SCHEMA.COLUMNS includes both)
             pool.request().query(`SELECT c.TABLE_SCHEMA,c.TABLE_NAME,c.COLUMN_NAME,c.DATA_TYPE,c.CHARACTER_MAXIMUM_LENGTH,c.NUMERIC_PRECISION,c.NUMERIC_SCALE,c.IS_NULLABLE,c.ORDINAL_POSITION,COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsIdentity') AS is_identity FROM INFORMATION_SCHEMA.COLUMNS c ORDER BY c.TABLE_SCHEMA,c.TABLE_NAME,c.ORDINAL_POSITION`),
-            pool.request().query(`SELECT tc.TABLE_SCHEMA,tc.TABLE_NAME,kcu.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME=kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA=kcu.TABLE_SCHEMA WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY'`)
+            // Primary keys
+            pool.request().query(`SELECT tc.TABLE_SCHEMA,tc.TABLE_NAME,kcu.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME=kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA=kcu.TABLE_SCHEMA WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY'`),
+            // VIEWs (without bodies — keep payload small)
+            pool.request().query(`SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS ORDER BY TABLE_SCHEMA, TABLE_NAME`),
+            // Columns scoped to views only — separates view cols from table cols
+            pool.request().query(`SELECT c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE, c.ORDINAL_POSITION FROM INFORMATION_SCHEMA.COLUMNS c JOIN INFORMATION_SCHEMA.VIEWS v ON v.TABLE_SCHEMA = c.TABLE_SCHEMA AND v.TABLE_NAME = c.TABLE_NAME ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION`),
+            // PROCEDUREs
+            pool.request().query(`SELECT ROUTINE_SCHEMA, ROUTINE_NAME, CREATED, LAST_ALTERED FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE='PROCEDURE' ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME`),
+            // FUNCTIONs (scalar + table-valued); DATA_TYPE is the return type
+            pool.request().query(`SELECT ROUTINE_SCHEMA, ROUTINE_NAME, DATA_TYPE AS RETURN_TYPE, CREATED, LAST_ALTERED FROM INFORMATION_SCHEMA.ROUTINES WHERE ROUTINE_TYPE='FUNCTION' ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME`),
+            // PARAMETERS for both procedures and functions in one query
+            pool.request().query(`SELECT SPECIFIC_SCHEMA, SPECIFIC_NAME, PARAMETER_NAME, PARAMETER_MODE, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, IS_RESULT, ORDINAL_POSITION FROM INFORMATION_SCHEMA.PARAMETERS WHERE PARAMETER_NAME IS NOT NULL ORDER BY SPECIFIC_SCHEMA, SPECIFIC_NAME, ORDINAL_POSITION`)
           ]);
+
+          // ── Tables (existing shape, unchanged) ────────────────────────────
           const tables = {};
-          for (const t of tablesR.recordset) { const k=`${t.TABLE_SCHEMA}.${t.TABLE_NAME}`; tables[k]={schema:t.TABLE_SCHEMA,name:t.TABLE_NAME,rowCount:parseInt(t.row_count)||0,columns:[],primaryKeys:[],foreignKeys:[]}; }
-          for (const c of colsR.recordset) { const k=`${c.TABLE_SCHEMA}.${c.TABLE_NAME}`; if(!tables[k])continue; let type=c.DATA_TYPE.toUpperCase(); if(c.CHARACTER_MAXIMUM_LENGTH)type+=`(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`; else if(c.NUMERIC_PRECISION!=null&&c.NUMERIC_SCALE!=null)type+=`(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`; tables[k].columns.push({name:c.COLUMN_NAME,type,nullable:c.IS_NULLABLE==='YES',isIdentity:c.is_identity===1,ordinal:c.ORDINAL_POSITION}); }
-          for (const pk of pkR.recordset) { const k=`${pk.TABLE_SCHEMA}.${pk.TABLE_NAME}`; if(tables[k])tables[k].primaryKeys.push(pk.COLUMN_NAME); }
-          result = { success: true, tables: Object.values(tables) };
+          for (const t of tablesR.recordset) {
+            const k = `${t.TABLE_SCHEMA}.${t.TABLE_NAME}`;
+            tables[k] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, rowCount: parseInt(t.row_count) || 0, columns: [], primaryKeys: [], foreignKeys: [] };
+          }
+          for (const c of colsR.recordset) {
+            const k = `${c.TABLE_SCHEMA}.${c.TABLE_NAME}`;
+            if (!tables[k]) continue; // skip view columns here — they're in viewColsR
+            let type = c.DATA_TYPE.toUpperCase();
+            if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
+            else if (c.NUMERIC_PRECISION != null && c.NUMERIC_SCALE != null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+            tables[k].columns.push({ name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE === 'YES', isIdentity: c.is_identity === 1, ordinal: c.ORDINAL_POSITION });
+          }
+          for (const pk of pkR.recordset) {
+            const k = `${pk.TABLE_SCHEMA}.${pk.TABLE_NAME}`;
+            if (tables[k]) tables[k].primaryKeys.push(pk.COLUMN_NAME);
+          }
+
+          // ── Views ────────────────────────────────────────────────────────
+          const views = {};
+          for (const v of viewsR.recordset) {
+            const k = `${v.TABLE_SCHEMA}.${v.TABLE_NAME}`;
+            views[k] = { schema: v.TABLE_SCHEMA, name: v.TABLE_NAME, columns: [] };
+          }
+          for (const c of viewColsR.recordset) {
+            const k = `${c.TABLE_SCHEMA}.${c.TABLE_NAME}`;
+            if (!views[k]) continue;
+            let type = c.DATA_TYPE.toUpperCase();
+            if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
+            else if (c.NUMERIC_PRECISION != null && c.NUMERIC_SCALE != null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+            views[k].columns.push({ name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE === 'YES', ordinal: c.ORDINAL_POSITION });
+          }
+
+          // ── Parameters: pre-bucket by routine for fast attachment ────────
+          const paramsByRoutine = {};
+          for (const p of paramsR.recordset) {
+            const k = `${p.SPECIFIC_SCHEMA}.${p.SPECIFIC_NAME}`;
+            if (!paramsByRoutine[k]) paramsByRoutine[k] = [];
+            let type = (p.DATA_TYPE || '').toUpperCase();
+            if (p.CHARACTER_MAXIMUM_LENGTH) type += `(${p.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':p.CHARACTER_MAXIMUM_LENGTH})`;
+            else if (p.NUMERIC_PRECISION != null && p.NUMERIC_SCALE != null) type += `(${p.NUMERIC_PRECISION},${p.NUMERIC_SCALE})`;
+            paramsByRoutine[k].push({
+              name:    p.PARAMETER_NAME,
+              type,
+              mode:    p.PARAMETER_MODE,        // 'IN' | 'OUT' | 'INOUT'
+              isResult:p.IS_RESULT === 'YES',
+              ordinal: p.ORDINAL_POSITION
+            });
+          }
+
+          // ── Procedures ───────────────────────────────────────────────────
+          const procedures = procsR.recordset.map(p => ({
+            schema:      p.ROUTINE_SCHEMA,
+            name:        p.ROUTINE_NAME,
+            created:     p.CREATED,
+            lastAltered: p.LAST_ALTERED,
+            parameters:  paramsByRoutine[`${p.ROUTINE_SCHEMA}.${p.ROUTINE_NAME}`] || []
+          }));
+
+          // ── Functions ────────────────────────────────────────────────────
+          const functions = funcsR.recordset.map(f => ({
+            schema:      f.ROUTINE_SCHEMA,
+            name:        f.ROUTINE_NAME,
+            returnType:  (f.RETURN_TYPE || '').toUpperCase(),
+            created:     f.CREATED,
+            lastAltered: f.LAST_ALTERED,
+            parameters:  paramsByRoutine[`${f.ROUTINE_SCHEMA}.${f.ROUTINE_NAME}`] || []
+          }));
+
+          result = {
+            success:    true,
+            tables:     Object.values(tables),
+            views:      Object.values(views),
+            procedures,
+            functions
+          };
           break;
         }
         case 'execute': {
