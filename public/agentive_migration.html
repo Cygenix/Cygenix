@@ -7,6 +7,7 @@
 
   <!-- Cygenix shared assets (adjust paths if your project uses different ones) -->
   <link rel="stylesheet" href="/cygenix.css" />
+  <script src="/connections.js"></script>
   <script src="/cygenix-sidebar.js" defer></script>
   <script src="/cygenix-cosmos-sync.js" defer></script>
   <script src="/cookie-consent.js" defer></script>
@@ -158,6 +159,73 @@
     }
     .am-budget-row strong { color: var(--am-text); font-weight: 600; }
     .am-budget-row span { color: var(--am-text-dim); }
+
+    /* ---------- Source → Target preview ---------- */
+    .am-conn-flow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      align-items: stretch;
+    }
+    @media (max-width: 600px) {
+      .am-conn-flow { grid-template-columns: 1fr; }
+      .am-conn-flow .am-conn-arrow { transform: rotate(90deg); margin: 0 auto; }
+    }
+    .am-conn-card {
+      padding: 12px 14px;
+      background: var(--am-panel-2);
+      border: 1px solid var(--am-border);
+      border-radius: 6px;
+    }
+    .am-conn-card.am-conn-missing {
+      border-style: dashed;
+      border-color: color-mix(in srgb, var(--am-warning) 40%, var(--am-border));
+    }
+    .am-conn-role {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--am-text-dim);
+      margin-bottom: 4px;
+    }
+    .am-conn-label {
+      font-size: 13px;
+      color: var(--am-text);
+      font-weight: 500;
+      word-break: break-word;
+    }
+    .am-conn-card.am-conn-missing .am-conn-label {
+      color: var(--am-warning);
+      font-style: italic;
+      font-weight: 400;
+    }
+    .am-conn-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--am-text-dim);
+      font-size: 18px;
+      padding: 0 4px;
+    }
+
+    .am-notice {
+      padding: 12px 14px;
+      background: color-mix(in srgb, var(--am-warning) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--am-warning) 35%, transparent);
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--am-text);
+      line-height: 1.5;
+      margin-bottom: 18px;
+    }
+    .am-notice strong { color: var(--am-warning); }
+    .am-notice a {
+      color: var(--am-accent);
+      text-decoration: none;
+      margin-left: 6px;
+    }
+    .am-notice a:hover { text-decoration: underline; }
 
     .am-actions {
       display: flex;
@@ -524,7 +592,7 @@
       polling: null,
       lastSeq: 0,
       featureEnabled: null,    // null = unknown, true/false once checked
-      connections: [],
+      conns: { source: null, target: null },  // { source: {label, kind}, target: {...} }
       view: 'loading',
     };
 
@@ -591,13 +659,57 @@
       }
     }
 
-    async function loadConnections() {
+    // ============================================================
+    // Connections — read directly from CygenixConnections (same
+    // pattern as sql-editor.html). Cygenix projects have exactly two
+    // connections: source and target. There's no list to fetch.
+    // ============================================================
+    function readConnections() {
+      if (typeof window.CygenixConnections === 'undefined' ||
+          !window.CygenixConnections.get) {
+        return { source: null, target: null };
+      }
       try {
-        const data = await api('/connections');
-        state.connections = Array.isArray(data) ? data : (data.connections || []);
+        const c = window.CygenixConnections.get();
+
+        // Source: only ADO.NET connection string is supported
+        const source = c.srcConnString
+          ? { label: describeConnString(c.srcConnString), kind: 'direct' }
+          : null;
+
+        // Target: either a direct conn string or an Azure Function URL
+        let target = null;
+        if (c.tgtFnUrl) {
+          target = { label: describeFnUrl(c.tgtFnUrl), kind: 'azure' };
+        } else if (c.tgtConnString) {
+          target = { label: describeConnString(c.tgtConnString), kind: 'direct' };
+        }
+
+        return { source, target };
       } catch (e) {
-        console.warn('[AgentiveMigration] could not load connections:', e.message);
-        state.connections = [];
+        console.warn('[AgentiveMigration] could not read connections:', e.message);
+        return { source: null, target: null };
+      }
+    }
+
+    // Best-effort label from an ADO.NET connection string.
+    // Pulls Server= and Database= without exposing credentials.
+    function describeConnString(s) {
+      if (!s) return 'Configured connection';
+      const server = (s.match(/(?:Server|Data Source)\s*=\s*([^;]+)/i) || [])[1];
+      const database = (s.match(/(?:Database|Initial Catalog)\s*=\s*([^;]+)/i) || [])[1];
+      if (server && database) return `${database.trim()} on ${server.trim()}`;
+      if (server) return server.trim();
+      if (database) return database.trim();
+      return 'Configured connection';
+    }
+
+    function describeFnUrl(url) {
+      try {
+        const u = new URL(url);
+        return `Azure Function · ${u.hostname.split('.')[0]}`;
+      } catch {
+        return 'Azure Function endpoint';
       }
     }
 
@@ -692,35 +804,55 @@
     function renderSetup() {
       state.view = 'setup';
 
-      const connOptions = state.connections.length > 0
-        ? state.connections.map(c =>
-            `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name || c.id)}</option>`
-          ).join('')
-        : '<option value="">No connections found — create one in Connections first</option>';
+      const { source, target } = state.conns;
+      const bothConfigured = !!(source && target);
+
+      const sourceCard = source
+        ? `<div class="am-conn-card">
+             <div class="am-conn-role">Source</div>
+             <div class="am-conn-label">${escapeHtml(source.label)}</div>
+           </div>`
+        : `<div class="am-conn-card am-conn-missing">
+             <div class="am-conn-role">Source</div>
+             <div class="am-conn-label">Not configured</div>
+           </div>`;
+
+      const targetCard = target
+        ? `<div class="am-conn-card">
+             <div class="am-conn-role">Target</div>
+             <div class="am-conn-label">${escapeHtml(target.label)}</div>
+           </div>`
+        : `<div class="am-conn-card am-conn-missing">
+             <div class="am-conn-role">Target</div>
+             <div class="am-conn-label">Not configured</div>
+           </div>`;
+
+      const missingNotice = bothConfigured ? '' : `
+        <div class="am-notice">
+          <strong>Connections not fully configured.</strong>
+          The agent needs both a source and a target to work.
+          <a href="/dashboard.html#connections">Set them up in Connections →</a>
+        </div>
+      `;
 
       stage.innerHTML = `
         <div class="am-card">
-          <div class="am-field-grid">
-            <div class="am-field">
-              <label for="am-source">Source connection</label>
-              <select id="am-source" ${state.connections.length === 0 ? 'disabled' : ''}>
-                ${connOptions}
-              </select>
-              <div class="am-hint">The database to migrate from.</div>
+          <div class="am-field">
+            <label>Migration direction</label>
+            <div class="am-conn-flow">
+              ${sourceCard}
+              <div class="am-conn-arrow" aria-hidden="true">→</div>
+              ${targetCard}
             </div>
-            <div class="am-field">
-              <label for="am-target">Target connection</label>
-              <select id="am-target" ${state.connections.length === 0 ? 'disabled' : ''}>
-                ${connOptions}
-              </select>
-              <div class="am-hint">The database to migrate to.</div>
-            </div>
+            <div class="am-hint">Cygenix migrates from your project's source to its target. Configure these in the Connections page.</div>
           </div>
+
+          ${missingNotice}
 
           <div class="am-field">
             <label for="am-goal">What should the agent do?</label>
-            <textarea id="am-goal" placeholder="Example: Propose a mapping for the sales schema. Preserve foreign key relationships. Exclude any PII columns and ask me before including columns that look sensitive."></textarea>
-            <div class="am-hint">Be specific about scope, what to include/exclude, and any constraints. Plain English.</div>
+            <textarea id="am-goal" placeholder="Example: Propose a mapping for the sales schema. Preserve foreign key relationships. Exclude any PII columns and ask me before including columns that look sensitive." ${bothConfigured ? '' : 'disabled'}></textarea>
+            <div class="am-hint">Be specific about scope, what to include or exclude, and any constraints. Plain English.</div>
           </div>
 
           <div class="am-field">
@@ -733,8 +865,7 @@
           </div>
 
           <div class="am-actions">
-            <button class="am-btn am-btn-primary" id="am-start-btn"
-                    ${state.connections.length === 0 ? 'disabled' : ''}>
+            <button class="am-btn am-btn-primary" id="am-start-btn" ${bothConfigured ? '' : 'disabled'}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                    stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="6 3 20 12 6 21 6 3"/>
@@ -750,16 +881,10 @@
     }
 
     async function startRun() {
-      const sourceId = document.getElementById('am-source').value;
-      const targetId = document.getElementById('am-target').value;
       const goal = document.getElementById('am-goal').value.trim();
 
-      if (!sourceId || !targetId) {
-        alert('Please select both source and target connections.');
-        return;
-      }
-      if (sourceId === targetId) {
-        alert('Source and target must be different connections.');
+      if (!state.conns.source || !state.conns.target) {
+        alert('Both source and target connections must be configured first.');
         return;
       }
       if (goal.length < 10) {
@@ -773,8 +898,9 @@
         const result = await api('/agent/migrate', {
           method: 'POST',
           body: JSON.stringify({
-            sourceConnectionId: sourceId,
-            targetConnectionId: targetId,
+            // Cygenix projects have exactly two connections; the backend
+            // resolves them from the project context. We just send direction.
+            direction: 'source_to_target',
             goal,
           }),
         });
@@ -1179,13 +1305,26 @@
       }
     }
 
+    // Wait for window.CygenixConnections to be defined (loaded by /connections.js).
+    // Polls briefly then gives up — if it never loads we fall through and the
+    // setup view will show "Not configured" for both, which is the right UX.
+    async function waitForConnections(timeoutMs = 3000) {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        if (typeof window.CygenixConnections !== 'undefined' &&
+            window.CygenixConnections.get) return true;
+        await new Promise(r => setTimeout(r, 50));
+      }
+      return false;
+    }
+
     // ============================================================
     // Boot
     // ============================================================
     async function init() {
       renderLoading('Checking access…');
 
-      const flags = await checkFeatureEnabled();
+      await checkFeatureEnabled();
       if (!state.featureEnabled) {
         renderDisabled();
         return;
@@ -1201,7 +1340,8 @@
       }
 
       renderLoading('Loading connections…');
-      await loadConnections();
+      await waitForConnections();
+      state.conns = readConnections();
       renderSetup();
     }
 
