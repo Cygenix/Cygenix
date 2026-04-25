@@ -4532,6 +4532,51 @@ async function openSavedReport(id) {
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     if (!data.report) throw new Error('Report not returned');
+
+    // Backfill projectId if missing — older reports were saved before the
+    // projectId-on-report patch landed. Self-heal by looking up the owning
+    // job in local storage; if that doesn't resolve, fall back to matching
+    // the saved report's projectName against cygenix_projects. Either path
+    // succeeding lets report.html scope artifacts correctly without forcing
+    // the user to re-run the migration.
+    if (!data.report.projectId) {
+      let resolvedProjectId = '';
+      // 1. Try job lookup — the report's id usually matches a job id
+      try {
+        const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+        const owningJob = jobs.find(j => j.id === data.report.id);
+        if (owningJob && owningJob.projectId) resolvedProjectId = owningJob.projectId;
+      } catch {}
+      // 2. Fall back to matching projectName against the projects table
+      if (!resolvedProjectId && data.report.projectName) {
+        try {
+          const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+          const targetName = String(data.report.projectName).trim().toLowerCase();
+          const matchedProject = projects.find(p =>
+            String(p.name || '').trim().toLowerCase() === targetName);
+          if (matchedProject) resolvedProjectId = matchedProject.id;
+        } catch {}
+      }
+      if (resolvedProjectId) {
+        data.report.projectId = resolvedProjectId;
+        // Persist backfill to Cosmos so this self-heal is permanent — fire
+        // and forget; failure here doesn't block the user from viewing.
+        fetch('/.netlify/functions/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'save-presentation', // reuse existing patch endpoint to update fields
+            userEmail: email,
+            id: data.report.id,
+            projectId: resolvedProjectId,
+            // Send any existing presentationConfig so we don't accidentally
+            // wipe it (the endpoint upserts the whole field).
+            presentationConfig: data.report.presentationConfig || null,
+          }),
+        }).catch(e => console.warn('[Cygenix] projectId backfill to Cosmos failed:', e.message));
+      }
+    }
+
     // Same storage keys report.html reads
     sessionStorage.setItem('cygenix_report', JSON.stringify(data.report));
     try { localStorage.setItem('cygenix_report', JSON.stringify(data.report)); } catch {}

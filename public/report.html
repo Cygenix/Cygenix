@@ -71,6 +71,23 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 .narrative-skeleton div:nth-child(4){width:64%}
 @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .narrative-error{font-size:12px;color:var(--amber);background:var(--amber-light);padding:0.6rem 0.75rem;border-radius:8px}
+/* ── Artifact sources (inline citations + list beneath narrative) ─────────── */
+.narrative-sources{margin-top:1.25rem;padding-top:1rem;border-top:0.5px dashed var(--border)}
+.sources-title{font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:0.5rem;display:inline-flex;align-items:center;gap:6px}
+.sources-title::before{content:'📎';font-size:12px}
+.sources-sub{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem;margin-top:0.35rem;font-weight:500}
+.sources-list{list-style:none;padding:0;margin:0;font-size:12px;line-height:1.7;color:var(--text2)}
+.sources-list li{padding:3px 0;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px}
+.sources-list .src-citation{font-family:var(--mono);font-size:10px;color:var(--accent);background:var(--accent-light);padding:1px 6px;border-radius:4px;border:0.5px solid rgba(26,86,232,0.2);white-space:nowrap}
+.sources-list .src-name{color:var(--text);font-weight:500}
+.sources-list .src-date{color:var(--text3);font-size:11px;font-family:var(--mono)}
+.sources-list .src-reason{color:var(--text3);font-size:11px;font-style:italic}
+.sources-list-skipped .src-name{color:var(--text3);font-weight:400}
+.sources-list-skipped .src-skipped{text-decoration:line-through;text-decoration-color:var(--text3);text-decoration-thickness:0.5px}
+@media print{
+  .narrative-sources{break-inside:avoid;page-break-inside:avoid}
+  .sources-list li{break-inside:avoid}
+}
 @media print{
   .narrative-regen{display:none}
   .narrative-section{background:#fff !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -267,6 +284,11 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
         <div></div><div></div><div></div><div></div>
       </div>
     </div>
+    <!-- Sources consulted — populated by renderArtifactSources when the
+         report's project folder in Inventory has any artifacts. Hidden by
+         default; shows "Included" and "Not included (reason)" groups when
+         populated. -->
+    <div class="narrative-sources" id="narrative-sources" style="display:none"></div>
   </div>
   <!-- PROJECT DETAILS -->
   <div class="section">
@@ -735,6 +757,7 @@ function loadNarrative(d, forceRegenerate) {
   // Use cached narrative if we have one and not forcing regeneration
   if (!forceRegenerate && d.aiNarrative && typeof d.aiNarrative === 'string') {
     body.innerHTML = formatNarrative(d.aiNarrative);
+    renderArtifactSources(d);   // still render the sources list from cached refs
     return;
   }
 
@@ -745,6 +768,20 @@ function loadNarrative(d, forceRegenerate) {
   // Build a slim payload — we don't send column mapping, PII, or connection
   // strings to the LLM. Just the shape of the migration and its outcome.
   const payload = buildNarrativePayload(d);
+
+  // ── Discover project artifacts from Inventory ─────────────────────────────
+  // When the report has a projectId, we scope the inventory scan to that
+  // project's folder. Documents whose content can be extracted as text get
+  // included as context for the narrative model. Binaries and unsupported
+  // formats get listed too (so the model sees "you have 3 PDFs that couldn't
+  // be parsed") — the user-facing sources list surfaces these as "not read".
+  const artifactResult = collectProjectArtifacts(d);
+  payload.artifacts = artifactResult.readable;
+  payload.artifactSummary = artifactResult.summary;
+  // Stash refs back on the report so the Sources section can be rendered
+  // later without re-reading localStorage. Just metadata — the raw content
+  // is NOT persisted (that would bloat the report record).
+  d.artifactRefs = artifactResult.refs;
 
   fetch(NARRATIVE_API_BASE + '/api/narrative?code=' + encodeURIComponent(NARRATIVE_FUNCTION_KEY), {
     method: 'POST',
@@ -766,11 +803,204 @@ function loadNarrative(d, forceRegenerate) {
       if (key) localStorage.setItem(key, JSON.stringify(d));
       else sessionStorage.setItem('cygenix_report', JSON.stringify(d));
     } catch (e) { /* storage full / disabled — narrative will regenerate next load */ }
+    // Render the Sources section from the refs we captured before the fetch
+    renderArtifactSources(d);
   })
   .catch(err => {
     body.innerHTML = '<div class="narrative-error">Unable to generate summary at this time. You can try again using the regenerate button. (' + (err.message || 'network error') + ')</div>';
   })
   .finally(() => { if (btn) btn.disabled = false; });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROJECT ARTIFACT DISCOVERY — reads the local Inventory, filters to the
+// report's project, extracts readable text, and returns structured context
+// for the narrative model.
+//
+// Returns: {
+//   readable:  [{ id, name, type, addedAt, text, citation }],   // sent to LLM
+//   refs:      [{ id, name, type, addedAt, read: boolean, reason?, citation }], // all discovered docs (read or skipped)
+//   summary:   { projectId, totalDocs, readDocs, skippedDocs, skipReasons: {...} }
+// }
+//
+// Text extraction today: plain-text-ish formats only (txt, md, csv, json, html,
+// xml, sql, log, eml). Base64/binary formats (PDF, DOCX, images) are flagged
+// as skipped with a reason — no browser-side extractors are bundled to keep
+// page weight down. The model is told what was skipped so it can say so.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Formats whose .content is already stored as plain text (no data-URL prefix).
+const READABLE_EXTS = new Set([
+  'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'html', 'htm', 'xml',
+  'sql', 'log', 'eml', 'yaml', 'yml', 'ini', 'conf', 'rtf',
+]);
+
+// Per-artifact text cap (characters). Prevents a single huge file from hogging
+// the context window. Chosen empirically — ~8k chars ≈ ~2k tokens.
+const PER_DOC_CHAR_CAP = 8000;
+// Total context cap across all artifacts. ~40k chars ≈ ~10k tokens. Trims
+// oldest-first until we fit. The model still runs fine above this, but the
+// budget keeps token costs predictable.
+const TOTAL_CHAR_CAP = 40000;
+
+function collectProjectArtifacts(report) {
+  const result = { readable: [], refs: [], summary: null };
+  // Resolve projectId — either directly from the report (preferred), or by
+  // matching the report's projectName against the local projects table. The
+  // fallback handles older saved reports that pre-date the projectId-on-
+  // report patch, so the artifact pipeline still works for them without
+  // forcing a re-run.
+  let projectId = report.projectId || '';
+  if (!projectId && report.projectName) {
+    try {
+      const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+      const target = String(report.projectName).trim().toLowerCase();
+      const match = projects.find(p =>
+        String(p.name || '').trim().toLowerCase() === target);
+      if (match) projectId = match.id;
+    } catch {}
+  }
+  // No project resolvable → no project-scoped artifacts. Explicit is kinder
+  // than silently scanning the whole inventory.
+  if (!projectId) {
+    result.summary = { projectId: null, totalDocs: 0, readDocs: 0, skippedDocs: 0, skipReasons: {} };
+    return result;
+  }
+
+  let allDocs = [];
+  try {
+    const raw = localStorage.getItem('cygenix_inventory');
+    if (raw) allDocs = JSON.parse(raw) || [];
+  } catch { /* bad JSON or disabled — empty context is fine */ }
+
+  const scoped = allDocs.filter(d => (d.projectId || '') === projectId);
+  const skipReasons = {};
+  const refs = [];
+  const readableRaw = [];
+
+  for (const doc of scoped) {
+    const ref = {
+      id:       doc.id,
+      name:     doc.name,
+      type:     doc.type,
+      addedAt:  doc.addedAt,
+      read:     false,
+    };
+    // Add a citation tag the model can use inline: [Type, dd MMM]
+    const dt = doc.addedAt ? new Date(doc.addedAt) : null;
+    const dateStr = dt ? dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+    const typeLabel = ARTIFACT_TYPE_LABEL[doc.type] || 'Doc';
+    ref.citation = `[${typeLabel}${dateStr ? ', ' + dateStr : ''}]`;
+
+    const ext = (doc.ext || '').toLowerCase();
+    if (doc.isNote && typeof doc.content === 'string') {
+      // Free-text notes — read as-is
+      ref.read = true;
+      readableRaw.push({ ...ref, text: doc.content });
+    } else if (doc.isText && typeof doc.content === 'string' && !doc.content.startsWith('data:')) {
+      // Plain-text file stored raw
+      ref.read = true;
+      readableRaw.push({ ...ref, text: doc.content });
+    } else if (READABLE_EXTS.has(ext) && typeof doc.content === 'string') {
+      // Sometimes text files were stored as data URLs — decode and take as text
+      let text = doc.content;
+      if (text.startsWith('data:')) {
+        const comma = text.indexOf(',');
+        if (comma > -1) {
+          try {
+            // atob handles base64; for "charset" variants we just take the tail
+            text = text.slice(comma + 1);
+            if (text.match(/^[A-Za-z0-9+/=]+$/)) text = atob(text);
+          } catch { text = ''; }
+        }
+      }
+      if (text) { ref.read = true; readableRaw.push({ ...ref, text }); }
+      else     { ref.reason = 'unreadable'; bump(skipReasons, 'unreadable'); }
+    } else {
+      // Binary format we can't extract in-browser: PDF, DOCX, images, etc.
+      ref.reason = 'binary_format';
+      bump(skipReasons, 'binary_format');
+    }
+    refs.push(ref);
+  }
+
+  // Budget: sort readable docs by recency (newest first is usually most
+  // relevant to a recent migration report), apply per-doc cap, then trim the
+  // tail until we're under the total cap.
+  readableRaw.sort((a, b) => new Date(b.addedAt || 0) - new Date(a.addedAt || 0));
+  let total = 0;
+  const readable = [];
+  for (const item of readableRaw) {
+    let text = (item.text || '').slice(0, PER_DOC_CHAR_CAP);
+    if (total + text.length > TOTAL_CHAR_CAP) {
+      const remaining = Math.max(0, TOTAL_CHAR_CAP - total);
+      if (remaining < 200) break;   // tiny remainder — skip rather than send ragged cuts
+      text = text.slice(0, remaining);
+    }
+    total += text.length;
+    readable.push({
+      id: item.id, name: item.name, type: item.type, addedAt: item.addedAt,
+      citation: item.citation, text,
+    });
+  }
+
+  result.readable = readable;
+  result.refs     = refs;
+  result.summary  = {
+    projectId, totalDocs: scoped.length,
+    readDocs: readable.length, skippedDocs: scoped.length - readable.length,
+    skipReasons,
+  };
+  return result;
+}
+
+// Friendly labels used for inline citations the model is prompted to produce.
+// Keeping the strings short keeps citations unobtrusive in the narrative.
+const ARTIFACT_TYPE_LABEL = {
+  artifact:   'Email',
+  signoff:    'Sign-off',
+  notes:      'Note',
+  rules:      'Rule',
+  wasis:      'Mapping',
+  dictionary: 'Dictionary',
+  schema:     'Schema',
+  other:      'Doc',
+};
+
+function bump(obj, key) { obj[key] = (obj[key] || 0) + 1; }
+
+// Render a "Sources" block beneath the narrative listing each artifact that
+// was consulted (read or skipped, with reason). Only shown when at least one
+// artifact was discovered — silent otherwise.
+function renderArtifactSources(d) {
+  const host = document.getElementById('narrative-sources');
+  if (!host) return;
+  const refs = Array.isArray(d.artifactRefs) ? d.artifactRefs : [];
+  if (!refs.length) { host.style.display = 'none'; host.innerHTML = ''; return; }
+
+  const read    = refs.filter(r => r.read);
+  const skipped = refs.filter(r => !r.read);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  const readRows = read.map(r => {
+    const dt = r.addedAt ? new Date(r.addedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    return `<li><span class="src-citation">${esc(r.citation)}</span> <span class="src-name">${esc(r.name)}</span> <span class="src-date">${esc(dt)}</span></li>`;
+  }).join('');
+
+  const skipRows = skipped.map(r => {
+    const dt = r.addedAt ? new Date(r.addedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const reasonText = r.reason === 'binary_format' ? 'not readable in browser'
+                    :  r.reason === 'unreadable'    ? 'content unavailable'
+                    :  'skipped';
+    return `<li><span class="src-name src-skipped">${esc(r.name)}</span> <span class="src-date">${esc(dt)}</span> <span class="src-reason">(${esc(reasonText)})</span></li>`;
+  }).join('');
+
+  let html = '<div class="sources-title">Sources consulted</div>';
+  if (readRows) html += `<div class="sources-sub">Included in narrative context</div><ul class="sources-list">${readRows}</ul>`;
+  if (skipRows) html += `<div class="sources-sub" style="margin-top:0.6rem">Not included</div><ul class="sources-list sources-list-skipped">${skipRows}</ul>`;
+
+  host.innerHTML = html;
+  host.style.display = 'block';
 }
 
 function buildNarrativePayload(d) {
