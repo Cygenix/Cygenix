@@ -1071,13 +1071,64 @@ function renderSteps() {
         const isMigration = step.type === 'migration';
         const icon  = isMigration ? '🔗' : '📝';
         const color = isMigration ? 'var(--teal-bg)' : 'var(--accent-glow)';
-        const meta  = isMigration
+        const baseMeta = isMigration
           ? esc(step.srcTable||'?') + ' → ' + esc(step.tgtTable||'?') + ' · ' + (step.columnMapping?.filter(m=>m.tgtCol).length||0) + ' cols'
           : (step.connOn==='source'?'[source] ':'[target] ') + (step.sql||'').slice(0,55) + '…';
+
+        // Pull last-run stats. step.rowsInserted is written by the runner for both
+        // migration and SQL steps. For the timestamp we look up the source job,
+        // since runs stamp `lastRun` there (the step itself doesn't carry one).
+        let lastRunISO = '';
+        if (step.jobId) {
+          try {
+            const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+            const srcJob = jobs.find(j => j.id === step.jobId);
+            if (srcJob && srcJob.lastRun) lastRunISO = srcJob.lastRun;
+          } catch {}
+        }
+        const runStatsParts = [];
+        if (typeof step.rowsInserted === 'number') {
+          runStatsParts.push(step.rowsInserted.toLocaleString() + ' row' + (step.rowsInserted===1?'':'s'));
+        }
+        if (lastRunISO) {
+          try {
+            const d = new Date(lastRunISO);
+            // Compact format: "23 Apr 14:32" (current year omitted to save space)
+            runStatsParts.push(d.toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }));
+          } catch {}
+        }
+        // Tooltip on the meta line: spell out the row count details (before/after
+        // for SQL jobs that captured them) and the full timestamp.
+        let metaTooltip = '';
+        if (typeof step.rowsBefore === 'number' && typeof step.rowsAfter === 'number') {
+          metaTooltip = 'Rows before: ' + step.rowsBefore.toLocaleString()
+                      + ' · Rows after: ' + step.rowsAfter.toLocaleString();
+          if (typeof step.rowsInserted === 'number') {
+            metaTooltip += ' · Affected: ' + step.rowsInserted.toLocaleString();
+          }
+        } else if (typeof step.rowsInserted === 'number') {
+          metaTooltip = step.rowsInserted.toLocaleString() + ' row' + (step.rowsInserted===1?'':'s') + ' affected on last run';
+        }
+        if (lastRunISO) {
+          try { metaTooltip += (metaTooltip?' · ':'') + 'Last run: ' + new Date(lastRunISO).toLocaleString('en-GB'); } catch {}
+        }
+        const runStatsHtml = runStatsParts.length
+          ? ` <span style="color:var(--text3);opacity:0.85"${metaTooltip?' title="'+esc(metaTooltip).replace(/"/g,'&quot;')+'"':''}>· ${esc(runStatsParts.join(' · '))}</span>`
+          : '';
+
+        const meta = baseMeta + runStatsHtml;
         const statusCls = 'status-' + (step.status||'pending');
         const statusEmoji = {pending:'⚪',running:'🟡',passed:'🟢',failed:'🔴',skipped:'🟠'}[step.status||'pending'] || '⚪';
         const runBtnId = `run-step-${gi}-${si}`;
         const logId    = `log-${gi}-${si}`;
+
+        // Edit button — routes to the right editor by jobType. Mirrors the
+        // editJob() helper on dashboard.html so behaviour stays consistent.
+        // Disabled when there's no jobId (very old / hand-built steps).
+        const editDisabled = !step.jobId;
+        const editTitle = editDisabled
+          ? 'No source job to edit (legacy step)'
+          : 'Edit this job in the appropriate editor';
 
         card.innerHTML = `
           <div class="step-card-header">
@@ -1086,14 +1137,15 @@ function renderSteps() {
             <div style="font-size:11px;font-weight:700;color:var(--text3);font-family:var(--mono);min-width:20px;text-align:center;flex-shrink:0">${stepCounter}</div>
             <div class="step-icon" style="background:${color}">${icon}</div>
             <div class="step-info">
-              <div class="step-name">${esc(step.name)}</div>
-              <div class="step-meta">${meta}</div>
+              <div class="step-name" title="${esc(step.name).replace(/"/g,'&quot;')}">${esc(step.name)}</div>
+              <div class="step-meta"${metaTooltip?' title="'+esc(metaTooltip).replace(/"/g,'&quot;')+'"':''}>${meta}</div>
             </div>
             <div class="step-right">
               <span style="font-size:16px;line-height:1" title="${step.status||'pending'}">${statusEmoji}</span>
               <span class="step-status ${statusCls}">${step.status||'pending'}</span>
               <button class="btn btn-sm" onclick="runSingleStep(${gi},${si})" id="${runBtnId}"
                 style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.25);padding:3px 8px">▶ Run</button>
+              <button class="btn btn-ghost btn-sm" onclick="editStepJob(${gi},${si})" title="${editTitle}" style="padding:3px 8px;color:var(--purple);border-color:rgba(167,139,250,0.25)" ${editDisabled?'disabled':''}>✏ Edit</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteStep(${gi},${si})" style="color:var(--red);padding:3px 8px">✕</button>
               ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${gi},${si})" style="padding:3px 8px">Log</button>` : ''}
             </div>
@@ -1301,6 +1353,30 @@ function deleteGroup(gi){
 function toggleLog(gi, si) {
   const el = document.getElementById('log-'+gi+'-'+si);
   if (el) el.classList.toggle('open');
+}
+
+// Edit the source job behind a step. Routes to the correct editor based on
+// the step's jobType — same routing as dashboard.html's editJob() so the
+// behaviour is consistent across the app.
+//   sql / sql-script  → /sql-editor.html?edit=<jobId>
+//   everything else   → /object_mapping.html?edit=<jobId>
+// We warn about unsaved project changes before navigating, since the edit
+// happens in a different page and any dirty in-memory project state would
+// be lost on navigation.
+function editStepJob(gi, si) {
+  const step = project.groups[gi] && project.groups[gi].steps[si];
+  if (!step) return;
+  if (!step.jobId) {
+    alert('This step has no source job to edit. It looks like a legacy or hand-built entry — delete it and re-add from the jobs sidebar.');
+    return;
+  }
+  if (isDirty) {
+    if (!confirm('You have unsaved changes in this project. Save before editing the job, or your project changes will be lost when you navigate away.\n\nClick OK to save and continue, or Cancel to stay here.')) return;
+    saveProject();
+  }
+  const isSql = step.jobType === 'sql' || step.jobType === 'sql-script' || step.type === 'sql';
+  const url = (isSql ? '/sql-editor.html?edit=' : '/object_mapping.html?edit=') + encodeURIComponent(step.jobId);
+  window.location.href = url;
 }
 
 function deleteStep(gi, si) {
@@ -1828,14 +1904,20 @@ async function runProject() {
         }
         return [{ name:s.tgtTable||'', rows:s.rowsInserted||0, cols:(s.columnMapping||[]).filter(m=>m.tgtCol).length }];
       }),
-      totalRows: steps.reduce((sum,s)=>sum+(s.rowsInserted||0),0),
+      totalRows: flatSteps.reduce((sum,s)=>sum+(s.rowsInserted||0),0),
       status: failed===0?'complete':'partial', created: reportData.completedAt,
       columnMapping: [], warnings: []
     };
-    // Update lastRun and executionStatus on all jobs used in this run
+    // Update lastRun and executionStatus on all jobs used in this run.
+    // Previously this filtered to s.type==='migration' AND used an undefined
+    // `steps` variable, which threw a ReferenceError swallowed by the outer
+    // try/catch — so multi-step runs weren't actually stamping lastRun on any
+    // job, and the Conversion Project record below wasn't being added either.
+    // Now uses flatSteps (correct scope) and stamps SQL jobs too so their
+    // step cards show an accurate "last run" date.
     try {
       const storedJobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
-      steps.filter(s=>s.type==='migration'&&s.jobId).forEach(s=>{
+      flatSteps.filter(s => s.jobId).forEach(s => {
         const j = storedJobs.find(j=>j.id===s.jobId);
         if (j) {
           j.lastRun = new Date().toISOString();
