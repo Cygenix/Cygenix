@@ -1,4 +1,5 @@
 // Cosmos DB integration v2 - audit + admin-users + invite
+// CM
 const { app } = require('@azure/functions');
 
 // Register the Task Agent scheduler module (HTTP route /api/schedules/{action}
@@ -739,13 +740,17 @@ app.http('data', {
 // Response:     { narrative: string } on 200; { error: string } otherwise.
 // ─────────────────────────────────────────────────────────────────────────────
 const NARRATIVE_SYSTEM_PROMPT = `You are writing an executive summary paragraph for a database migration report.
-You will receive a JSON object describing the migration outcome. Write 2-3 short paragraphs of plain prose
+You will receive a JSON object describing the migration outcome, optionally with an "artifacts" array containing
+project documents (emails, briefs, notes, sign-offs) that may add context. Write 2-3 short paragraphs of plain prose
 (no headings, no bullet points, no markdown beyond **bold** for emphasis of key numbers).
 
 Structure:
 1. Opening: state the outcome (complete success, partial success, or failure) and the scale (rows, tables, duration).
 2. Middle: contextualize and quantify — compute throughput (rows/sec) if duration is given, mention Was/Is
    transformation rules applied if any, note reconciliation pass rate if present, flag warnings or errors.
+   When an anomaly (warning, partial result, reconciliation breach) is plausibly explained by a project artifact,
+   reference that artifact inline using its citation tag. Example: "Addresses came in 16 rows short — this matches
+   the client's note that inactive entries would be pruned before migration [Note, 14 Apr]."
 3. Closing: one line on data integrity / verification status.
 
 Rules:
@@ -754,7 +759,48 @@ Rules:
 - British English spelling. No emoji. No "the user" or "the client" — use passive voice or "this migration".
 - If errors > 0, be honest about that. If reconciliation warned, mention it.
 - Output only the prose. No preamble like "Here is the summary:".
-- Maximum 180 words.`;
+- Maximum 180 words.
+
+Artifact rules (only when "artifacts" is present and non-empty):
+- Use citation tags EXACTLY as provided in each artifact's "citation" field. Never invent tags.
+- Do not quote artifact content verbatim — paraphrase or refer.
+- Do not list artifacts at the end; the report has a separate Sources section that does this.
+- Prefer citations for explaining anomalies, not perfect outcomes. A successful migration rarely needs one.
+- If an artifact contradicts the migration outcome (e.g. client expected something different), flag it honestly.
+- If "artifactSummary.skippedDocs" > 0 AND the migration had warnings or partial results, you may add a single
+  closing sentence: "A further N document(s) in the project folder were not readable in the browser and were
+  not considered." Otherwise, say nothing about skipped artifacts.`;
+
+// Build the user-message content for the narrative call. The artifacts array
+// is rendered as a labelled section so the model treats it as evidence rather
+// than additional migration data. When no artifacts are present, the message
+// shape is identical to the pre-artifact version — backwards compatible with
+// older clients that don't send artifacts/artifactSummary.
+function buildNarrativeUserMessage(report) {
+  const { artifacts, artifactSummary, ...migrationCore } = report;
+
+  let msg = 'Migration report data:\n\n```json\n'
+          + JSON.stringify(migrationCore, null, 2)
+          + '\n```';
+
+  if (Array.isArray(artifacts) && artifacts.length > 0) {
+    msg += '\n\nProject artifacts (use citation tags inline when relevant; do not quote verbatim):\n\n';
+    msg += artifacts.map(a => {
+      const cite = String(a.citation || '[Doc]').slice(0, 64);
+      const name = String(a.name || 'document').slice(0, 200);
+      const date = a.addedAt ? new Date(a.addedAt).toISOString().slice(0, 10) : '';
+      const text = String(a.text || '').slice(0, 8000);   // belt-and-braces server cap
+      return `──── ${cite} · ${name}${date ? ' · ' + date : ''} ────\n${text}`;
+    }).join('\n\n');
+  }
+
+  if (artifactSummary && artifactSummary.skippedDocs > 0) {
+    msg += `\n\n(Note: ${artifactSummary.skippedDocs} document(s) in the project folder were not readable in the browser and are not included above.)`;
+  }
+
+  msg += '\n\nWrite the executive summary.';
+  return msg;
+}
 
 app.http('narrative', {
   methods: ['POST', 'OPTIONS'],
@@ -794,7 +840,7 @@ app.http('narrative', {
           system:     NARRATIVE_SYSTEM_PROMPT,
           messages: [{
             role: 'user',
-            content: 'Migration report data:\n\n```json\n' + JSON.stringify(report, null, 2) + '\n```\n\nWrite the executive summary.'
+            content: buildNarrativeUserMessage(report)
           }]
         })
       });
