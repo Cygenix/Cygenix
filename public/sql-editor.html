@@ -205,6 +205,59 @@ body.fullscreen .script-panel { display:none }
 .modal-select:focus{border-color:var(--accent)}
 .modal-select option{background:var(--bg2);color:var(--text)}
 .modal-actions{display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.5rem}
+
+/* ── CONTEXT BADGE (what's loaded in the editor) ───────────────────────────── */
+.ctx-badge{display:flex;align-items:center;gap:0.4rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:2px 4px 2px 8px;height:30px}
+.ctx-badge.ctx-badge-script{border-color:rgba(34,201,122,0.35)}
+.ctx-badge.ctx-badge-job   {border-color:rgba(167,139,250,0.40)}
+.ctx-badge.ctx-badge-draft {border-color:var(--border2)}
+.ctx-pill{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;padding:2px 7px;border-radius:4px;flex-shrink:0;font-family:var(--serif)}
+.ctx-badge-draft  .ctx-pill{background:var(--bg4);color:var(--text3)}
+.ctx-badge-script .ctx-pill{background:rgba(34,201,122,0.15);color:var(--green)}
+.ctx-badge-job    .ctx-pill{background:rgba(167,139,250,0.15);color:var(--purple)}
+.ctx-name{background:transparent;border:none;outline:none;color:var(--text);font-family:var(--serif);font-size:12px;width:180px;padding:0 4px}
+.ctx-name::placeholder{color:var(--text3)}
+
+/* ── FILE ▾ DROPDOWN MENU ─────────────────────────────────────────────────── */
+.file-menu-wrap{position:relative}
+.file-menu{position:absolute;top:calc(100% + 4px);right:0;min-width:240px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:4px 0;z-index:300;box-shadow:0 8px 24px rgba(0,0,0,0.45)}
+.file-menu button{display:flex;align-items:center;gap:8px;width:100%;background:none;border:none;color:var(--text2);text-align:left;padding:7px 14px;font-size:12px;font-family:var(--serif);cursor:pointer;transition:background 0.12s,color 0.12s}
+.file-menu button:hover{background:var(--bg3);color:var(--text)}
+.file-menu button span{display:inline-flex;width:16px;justify-content:center;flex-shrink:0;color:var(--text3);font-size:12px}
+.file-menu button:hover span{color:var(--text2)}
+.file-menu-sep{height:0.5px;background:var(--border);margin:4px 0}
+
+/* ── UNIFIED LIBRARY PANEL ────────────────────────────────────────────────── */
+.lib-filter{display:flex;gap:4px;padding:0.5rem 0.5rem 0;flex-shrink:0}
+.lib-pill{flex:1;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);padding:4px 8px;border-radius:4px;font-size:11px;font-weight:500;font-family:var(--serif);cursor:pointer;transition:all 0.12s}
+.lib-pill:hover{color:var(--text2);border-color:var(--text3)}
+.lib-pill.active{background:var(--accent-glow);border-color:rgba(61,126,255,0.35);color:var(--accent)}
+
+.lib-search{font-size:11px;padding:5px 8px;margin:0.5rem 0.5rem 0.4rem;width:calc(100% - 1rem)}
+.lib-list{flex:1;overflow-y:auto;padding:0 0.5rem 0.5rem}
+.lib-empty{padding:1.5rem 1rem;text-align:center;font-size:12px;color:var(--text3);line-height:1.5}
+
+.lib-section{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);padding:0.6rem 0.25rem 0.3rem}
+.lib-item{position:relative;background:var(--bg3);border:0.5px solid var(--border2);border-radius:5px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all 0.12s}
+.lib-item:hover{border-color:var(--text3)}
+.lib-item.active{border-color:var(--accent);background:var(--accent-glow)}
+.lib-item-row1{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.lib-item-pill{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;padding:1px 5px;border-radius:3px;flex-shrink:0;font-family:var(--serif)}
+.lib-item-pill.t-script{background:rgba(34,201,122,0.15);color:var(--green)}
+.lib-item-pill.t-job   {background:rgba(167,139,250,0.15);color:var(--purple)}
+.lib-item-name{font-size:12px;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.lib-item-meta{display:flex;gap:6px;align-items:center;font-size:10px;color:var(--text3);font-family:var(--mono)}
+.lib-item-conn{font-size:9px;padding:0 4px;border-radius:2px;font-weight:500}
+.lib-item-conn.conn-src{background:rgba(34,201,122,0.12);color:var(--green)}
+.lib-item-conn.conn-tgt{background:rgba(245,158,11,0.12);color:var(--amber)}
+
+.lib-item-actions{display:flex;gap:2px;margin-top:6px;opacity:0;max-height:0;overflow:hidden;transition:opacity 0.12s,max-height 0.15s}
+.lib-item:hover .lib-item-actions,
+.lib-item.active .lib-item-actions{opacity:1;max-height:30px}
+.lib-action-btn{background:var(--bg4);border:0.5px solid transparent;border-radius:3px;color:var(--text2);font-size:10px;padding:3px 7px;cursor:pointer;font-family:var(--serif);transition:all 0.12s}
+.lib-action-btn:hover{background:var(--bg2);color:var(--text);border-color:var(--text3)}
+.lib-action-btn.danger:hover{color:var(--red);border-color:rgba(245,68,90,0.4)}
+.lib-action-btn.primary:hover{color:var(--purple);border-color:rgba(167,139,250,0.4)}
 </style>
 </head>
 <body>
@@ -268,22 +321,47 @@ body.fullscreen .script-panel { display:none }
 <div class="topbar">
   <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
     <span style="font-size:13px;color:var(--teal);font-weight:500;flex-shrink:0">SQL Editor</span>
-    <input id="script-name" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Script name…" value="New script">
-    <input id="script-desc" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px;color:var(--text3)" placeholder="Description (optional)">
-    <span id="job-indicator" style="display:none;font-size:11px;font-family:var(--mono);color:var(--teal);background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 8px;white-space:nowrap"></span>
+
+    <!-- Context badge: shows what's currently loaded (script / job / draft) -->
+    <div id="ctx-badge" class="ctx-badge ctx-badge-draft" style="flex-shrink:0">
+      <span class="ctx-pill" id="ctx-pill">Draft</span>
+      <input id="script-name" class="ctx-name" placeholder="Untitled" value="New script">
+    </div>
+
+    <input id="script-desc" class="form-input" style="width:180px;font-family:var(--serif);font-size:12px;color:var(--text3)" placeholder="Description (optional)">
   </div>
+
   <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
     <select id="conn-select" class="form-input" style="width:140px;font-size:12px" onchange="updateConnLabel()">
       <option value="source">Source DB</option>
       <option value="target">Target DB</option>
     </select>
+
     <button class="btn btn-primary btn-sm" onclick="runSQL()" id="run-btn">▶ Run</button>
     <button class="btn btn-ghost btn-sm" onclick="formatSQL()">⌨ Format</button>
-    <button class="btn btn-green btn-sm" onclick="saveScript()">💾 Save</button>
-    <button id="save-to-job-btn" class="btn btn-teal btn-sm" onclick="saveBackToJob()" style="display:none" title="Save SQL changes back to the loaded job">💾 Save to Job</button>
-    <button class="btn btn-purple btn-sm" onclick="addToJobs()">➕ New Job</button>
-    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('load-sql-file').click()" title="Load SQL from a .sql or .txt file">📂 Load File</button>
+
+    <!-- Smart Save: behaviour depends on what's loaded (see saveCurrent()) -->
+    <button id="save-btn" class="btn btn-green btn-sm" onclick="saveCurrent()">💾 Save</button>
+
+    <!-- Contextual action: changes based on loaded type. Hidden in Draft mode. -->
+    <button id="ctx-action-btn" class="btn btn-ghost btn-sm" onclick="contextualAction()" style="display:none"></button>
+
+    <!-- File ▾ menu: New / Open File / Save to File / Export Results -->
+    <div class="file-menu-wrap">
+      <button id="file-menu-btn" class="btn btn-ghost btn-sm" onclick="toggleFileMenu(event)">📁 File ▾</button>
+      <div id="file-menu" class="file-menu" role="menu" style="display:none">
+        <button onclick="fileMenuAction('new')"      role="menuitem"><span>➕</span> New script</button>
+        <button onclick="fileMenuAction('open')"     role="menuitem"><span>📂</span> Open from file…</button>
+        <button onclick="fileMenuAction('save')"     role="menuitem"><span>💾</span> Save to file…</button>
+        <div class="file-menu-sep"></div>
+        <button onclick="fileMenuAction('promote')"  role="menuitem"><span>➕</span> Promote to new job…</button>
+        <div class="file-menu-sep"></div>
+        <button onclick="fileMenuAction('export-csv')"  role="menuitem"><span>⬇</span> Export results as CSV</button>
+        <button onclick="fileMenuAction('export-xlsx')" role="menuitem"><span>⬇</span> Export results as Excel</button>
+      </div>
+    </div>
     <input type="file" id="load-sql-file" accept=".sql,.txt,.ddl" style="display:none" onchange="loadSQLFromFile(this)">
+
     <input type="password" id="api-key" class="form-input" style="width:140px;font-size:11px" placeholder="Anthropic API key">
     <button class="btn btn-ghost btn-sm" onclick="toggleFullscreen()" id="fs-btn" title="Toggle fullscreen (F11)">⛶</button>
   </div>
@@ -293,29 +371,19 @@ body.fullscreen .script-panel { display:none }
 
   <!-- Script library + Jobs panel -->
   <div class="script-panel">
-    <!-- Tabs -->
-    <div style="display:flex;border-bottom:0.5px solid var(--border);margin-bottom:0.5rem">
-      <button id="lib-tab-scripts" onclick="switchLibTab('scripts')" style="flex:1;background:none;border:none;padding:6px 4px;font-size:11px;font-weight:600;color:var(--accent);border-bottom:2px solid var(--accent);cursor:pointer;font-family:var(--serif)">Scripts</button>
-      <button id="lib-tab-jobs" onclick="switchLibTab('jobs')" style="flex:1;background:none;border:none;padding:6px 4px;font-size:11px;font-weight:500;color:var(--text3);border-bottom:2px solid transparent;cursor:pointer;font-family:var(--serif)">Migration Jobs</button>
+    <!-- Filter pills -->
+    <div class="lib-filter">
+      <button class="lib-pill active" data-filter="all"     onclick="setLibFilter('all')">All</button>
+      <button class="lib-pill"        data-filter="scripts" onclick="setLibFilter('scripts')">Scripts</button>
+      <button class="lib-pill"        data-filter="jobs"    onclick="setLibFilter('jobs')">Jobs</button>
     </div>
 
-    <!-- Scripts pane -->
-    <div id="lib-pane-scripts">
-      <div style="display:flex;align-items:center;justify-content:flex-end;margin-bottom:0.5rem;padding:0 0.5rem">
-        <button class="btn btn-ghost btn-sm" onclick="newScript()" style="padding:2px 8px">+ New</button>
-      </div>
-      <input id="script-search" class="form-input" placeholder="Search scripts…" style="font-size:11px;padding:4px 8px;margin:0 0.5rem;width:calc(100% - 1rem)" oninput="renderScriptList()">
-      <div class="script-list" id="script-list" style="margin-top:0.4rem">
-        <div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">No scripts yet — write one and save it</div>
-      </div>
-    </div>
+    <!-- Search -->
+    <input id="lib-search" class="form-input lib-search" placeholder="Search…" oninput="renderLibrary()">
 
-    <!-- Jobs pane -->
-    <div id="lib-pane-jobs" style="display:none">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem;padding:0 0.5rem">Load a job's SQL to edit</div>
-      <div class="script-list" id="jobs-list">
-        <div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">Loading…</div>
-      </div>
+    <!-- Unified list — Scripts and Jobs render together with type pills -->
+    <div class="lib-list" id="lib-list">
+      <div class="lib-empty">Loading…</div>
     </div>
   </div>
 
@@ -695,9 +763,11 @@ function initMonaco(){
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
     if (typeof runSQL === 'function') runSQL();
   });
-  // Ctrl+S saves the script (prevent browser save)
+  // Ctrl+S saves the script (prevent browser save) — uses smart-save so jobs
+  // save back to the job and scripts save back to the script.
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-    if (typeof saveScript === 'function') saveScript();
+    if (typeof saveCurrent === 'function') saveCurrent();
+    else if (typeof saveScript === 'function') saveScript();
   });
   // Ctrl+/ toggles line comment — use Monaco's built-in action, it handles
   // selection & uncomment natively and works better than our textarea version
@@ -960,35 +1030,18 @@ function saveScripts() {
   try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(scripts)); } catch {}
 }
 
-function renderScriptList() {
-  const list = document.getElementById('script-list');
-  const q = document.getElementById('script-search').value.toLowerCase();
-  const filtered = scripts.filter(s=>!q||s.name.toLowerCase().includes(q)||s.sql.toLowerCase().includes(q));
-  if (!filtered.length) { list.innerHTML='<div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">'+(scripts.length?'No matches':'No scripts yet — write one and save it')+'</div>'; return; }
-  list.innerHTML = filtered.map((s,i)=>`
-    <div class="script-item ${currentScript===s.id?'active':''}" style="position:relative" onclick="loadScript('${s.id}')">
-      <div class="script-name" style="padding-right:52px">${esc(s.name)}</div>
-      <div class="script-meta" style="display:flex;align-items:center;gap:0.4rem;margin-top:2px">
-        <span class="script-conn ${s.conn==='source'?'conn-src':'conn-tgt'}">${s.conn}</span>
-        <span>${new Date(s.updated||s.created).toLocaleDateString('en-GB')}</span>
-      </div>
-      <button onclick="event.stopPropagation();moveScriptToJob('${s.id}')"
-        style="position:absolute;top:6px;right:26px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;line-height:1;padding:2px 4px;border-radius:3px;opacity:0.7"
-        title="Move to Migration Jobs" onmouseover="this.style.opacity='1';this.style.color='var(--purple)'" onmouseout="this.style.opacity='0.7';this.style.color='var(--text3)'">→ Job</button>
-      <button onclick="event.stopPropagation();deleteScript('${s.id}')"
-        style="position:absolute;top:6px;right:6px;background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 3px;border-radius:3px;opacity:0.6"
-        title="Delete script" onmouseover="this.style.opacity='1';this.style.color='var(--red)'" onmouseout="this.style.opacity='0.6';this.style.color='var(--text3)'">✕</button>
-    </div>`).join('');
-}
+function renderScriptList() { renderLibrary(); }
 
 function newScript() {
   const id = 'script_'+Date.now();
-  currentScript = id;
-  document.getElementById('script-name').value = 'New script';
+  currentScript = null;     // not yet saved — saveScript() will assign on first save
+  currentJobId  = null;
   document.getElementById('sql-editor').value = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+  document.getElementById('script-desc').value = '';
   updateLineNumbers();
   clearResults();
-  renderScriptList();
+  setEditorContext('draft', null, 'New script');
+  renderLibrary();
   document.getElementById('sql-editor').focus();
 }
 
@@ -996,7 +1049,7 @@ function loadScript(id) {
   const s = scripts.find(s=>s.id===id);
   if (!s) return;
   currentScript = id;
-  document.getElementById('script-name').value = s.name;
+  currentJobId  = null;
   document.getElementById('sql-editor').value = s.sql;
   updateLineNumbers();
   document.getElementById('conn-select').value = s.conn||'source';
@@ -1004,7 +1057,8 @@ function loadScript(id) {
   if (descEl) descEl.value = s.desc || '';
   updateConnLabel();
   updateStatus();
-  renderScriptList();
+  setEditorContext('script', s.id, s.name);
+  renderLibrary();
   clearResults();
 }
 
@@ -1019,31 +1073,38 @@ function saveScript() {
   if (existing) {
     existing.name=name; existing.sql=sql; existing.conn=conn; existing.desc=desc; existing.updated=new Date().toISOString();
   } else {
-    const s = {id:'script_'+Date.now(), name, sql, conn, created:new Date().toISOString(), updated:new Date().toISOString()};
+    const s = {id:'script_'+Date.now(), name, sql, conn, desc, created:new Date().toISOString(), updated:new Date().toISOString()};
     currentScript = s.id;
     scripts.unshift(s);
   }
   saveScripts();
-  renderScriptList();
+  setEditorContext('script', currentScript, name);
+  renderLibrary();
   setExecStatus('✓ Saved', 'var(--green)');
   const savedEl = document.getElementById('status-saved');
   if (savedEl) { savedEl.textContent='Saved'; savedEl.style.color='var(--green)'; }
 }
 
-function deleteScript(id) {
+async function deleteScript(id) {
   const s = scripts.find(s=>s.id===id);
   if (!s) return;
-  if (!confirm('Delete script "' + s.name + '"? This cannot be undone.')) return;
+  const ok = await confirmDialog({
+    title: 'Delete script?',
+    body:  'Permanently delete <b>"'+esc(s.name)+'"</b>? This cannot be undone.',
+    confirmLabel: 'Delete',
+    danger: true
+  });
+  if (!ok) return;
   scripts = scripts.filter(s=>s.id!==id);
   saveScripts();
   if (currentScript === id) {
     currentScript = null;
     document.getElementById('sql-editor').value = '';
     updateLineNumbers();
-    document.getElementById('script-name').value = 'New script';
+    setEditorContext('draft', null, 'New script');
     clearResults();
   }
-  renderScriptList();
+  renderLibrary();
   setExecStatus('Script deleted', 'var(--red)');
   setTimeout(()=>setExecStatus('',''), 2000);
 }
@@ -1093,19 +1154,14 @@ function loadSQLFromFile(input) {
     updateLineNumbers();
     // Use filename (without extension) as script name
     const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g,' ');
-    document.getElementById('script-name').value = name;
     document.getElementById('script-desc').value = 'Loaded from file: ' + file.name;
     currentScript = null;
     currentJobId  = null;
-    // Clear job indicator
-    const ind = document.getElementById('job-indicator');
-    if (ind) ind.style.display = 'none';
-    const btn = document.getElementById('save-to-job-btn');
-    if (btn) btn.style.display = 'none';
+    setEditorContext('draft', null, name);
     updateStatus();
     updateLineNumbers();
     clearResults();
-    renderScriptList();
+    renderLibrary();
     setExecStatus('✓ Loaded: ' + file.name + ' (' + Math.ceil(sql.length/1024) + 'KB)', 'var(--green)');
     setTimeout(()=>setExecStatus('',''), 3000);
   };
@@ -2079,7 +2135,7 @@ document.addEventListener('keydown', e => {
   // Ctrl+/ comment
   if ((e.ctrlKey||e.metaKey) && e.key==='/') { e.preventDefault(); commentSelection(); return; }
   // Ctrl+S save
-  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); saveScript(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); saveCurrent(); return; }
 });
 
 function setExecStatus(msg, color) {
@@ -2117,47 +2173,384 @@ function saveToInventory() {
   } catch(e) { alert('Could not save to inventory: ' + e.message); }
 }
 
-// ── Add to Jobs ────────────────────────────────────────────────────────────────
-// ── Library tab switching ──────────────────────────────────────────────────────
-function switchLibTab(tab) {
-  ['scripts','jobs'].forEach(function(t) {
-    document.getElementById('lib-tab-'+t).style.color = t===tab ? 'var(--accent)' : 'var(--text3)';
-    document.getElementById('lib-tab-'+t).style.borderBottomColor = t===tab ? 'var(--accent)' : 'transparent';
-    document.getElementById('lib-tab-'+t).style.fontWeight = t===tab ? '600' : '500';
-    document.getElementById('lib-pane-'+t).style.display = t===tab ? 'block' : 'none';
+// ══════════════════════════════════════════════════════════════════════════════
+// UNIFIED LIBRARY (Scripts + Jobs)
+// ══════════════════════════════════════════════════════════════════════════════
+// State: 'all' | 'scripts' | 'jobs'
+let libFilter = 'all';
+
+function setLibFilter(f) {
+  libFilter = f;
+  document.querySelectorAll('.lib-pill').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === f);
   });
-  if (tab === 'jobs') renderJobsList();
+  renderLibrary();
 }
 
-// ── Render jobs in sidebar ─────────────────────────────────────────────────────
-function renderJobsList() {
-  const list = document.getElementById('jobs-list');
-  const jobs = getJobsWithSQL();
-  if (!jobs.length) {
-    list.innerHTML = '<div style="padding:1rem;text-align:center;font-size:12px;color:var(--text3)">No migration jobs with SQL yet — generate SQL in Simple Map or One-to-Many first</div>';
+// Compatibility shim: old code paths call switchLibTab('jobs') after creating
+// a job, so keep the name working but redirect to the new filter.
+function switchLibTab(tab) {
+  setLibFilter(tab === 'jobs' ? 'jobs' : (tab === 'scripts' ? 'scripts' : 'all'));
+}
+
+// Replaces the old separate renderScriptList() + renderJobsList()
+function renderLibrary() {
+  const list = document.getElementById('lib-list');
+  if (!list) return;
+
+  const search = (document.getElementById('lib-search')?.value || '').trim().toLowerCase();
+  const allScripts = (typeof scripts !== 'undefined' && Array.isArray(scripts)) ? scripts.slice() : [];
+  const allJobs    = getJobsWithSQL();
+
+  const matchScript = s => !search || (s.name||'').toLowerCase().includes(search) || (s.sql||'').toLowerCase().includes(search);
+  const matchJob    = j => !search || (j.name||'').toLowerCase().includes(search) || (j.target||'').toLowerCase().includes(search);
+
+  const showScripts = libFilter === 'all' || libFilter === 'scripts';
+  const showJobs    = libFilter === 'all' || libFilter === 'jobs';
+
+  const filteredScripts = showScripts ? allScripts.filter(matchScript) : [];
+  const filteredJobs    = showJobs    ? allJobs   .filter(matchJob)    : [];
+
+  if (filteredScripts.length === 0 && filteredJobs.length === 0) {
+    if (search) {
+      list.innerHTML = '<div class="lib-empty">No matches for <em>"'+esc(search)+'"</em></div>';
+    } else if (libFilter === 'scripts') {
+      list.innerHTML = '<div class="lib-empty">No scripts yet.<br>Write some SQL and hit Save.</div>';
+    } else if (libFilter === 'jobs') {
+      list.innerHTML = '<div class="lib-empty">No migration jobs with SQL yet.<br>Generate SQL in Simple Map first or promote a script.</div>';
+    } else {
+      list.innerHTML = '<div class="lib-empty">Library is empty.<br>Write some SQL and hit Save.</div>';
+    }
     return;
   }
-  list.innerHTML = jobs.map(function(j) {
-    const isCurrent = j.id === currentJobId;
-    const date = new Date(j.created).toLocaleDateString('en-GB');
-    const sqlLen = Math.ceil((j.insertSQL||j.migrationSQL||'').length/1024);
-    return '<div class="script-item ' + (isCurrent?'active':'') + '" onclick="loadJobSQL(this.dataset.jid)" data-jid="' + j.id + '" style="cursor:pointer">' +
-      '<div class="script-name">' + esc(j.name||'Unnamed job') + '</div>' +
-      '<div class="script-meta" style="display:flex;align-items:center;gap:0.4rem;margin-top:2px;flex-wrap:wrap">' +
-        '<span class="script-conn conn-tgt">' + esc(j.target||'') + '</span>' +
-        '<span>' + date + '</span>' +
-        '<span style="color:var(--text3)">' + sqlLen + 'KB</span>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+
+  let html = '';
+
+  if (filteredScripts.length && libFilter === 'all') html += '<div class="lib-section">Scripts</div>';
+  filteredScripts.forEach(s => { html += renderLibItem('script', s); });
+
+  if (filteredJobs.length && libFilter === 'all') html += '<div class="lib-section">Migration Jobs</div>';
+  filteredJobs.forEach(j => { html += renderLibItem('job', j); });
+
+  list.innerHTML = html;
 }
+
+function renderLibItem(kind, item) {
+  const isActive = (kind === 'script' && currentScript === item.id)
+                || (kind === 'job'    && typeof currentJobId !== 'undefined' && currentJobId === item.id);
+  const date = new Date(item.updated || item.created || Date.now()).toLocaleDateString('en-GB');
+  const conn = kind === 'script' ? (item.conn || 'source') : 'target';
+  const connLabel = kind === 'script' ? conn : (item.target ? 'target' : '—');
+
+  let actions = '';
+  if (kind === 'script') {
+    actions = ''
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();loadScript(\''+item.id+'\')"          title="Open this script in the editor">Open</button>'
+      + '<button class="lib-action-btn primary"  onclick="event.stopPropagation();moveScriptToJob(\''+item.id+'\')"   title="Promote to a Migration Job">Move to Job</button>'
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();duplicateScript(\''+item.id+'\')"   title="Duplicate this script">Duplicate</button>'
+      + '<button class="lib-action-btn danger"   onclick="event.stopPropagation();deleteScript(\''+item.id+'\')"      title="Delete">Delete</button>';
+  } else {
+    actions = ''
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();loadJobSQL(\''+item.id+'\')"        title="Open this job in the editor">Open</button>'
+      + '<button class="lib-action-btn primary"  onclick="event.stopPropagation();ejectJobToScript(\''+item.id+'\')"  title="Copy SQL out as a fresh script">Eject to Script</button>'
+      + '<button class="lib-action-btn danger"   onclick="event.stopPropagation();deleteJobConfirm(\''+item.id+'\')"  title="Delete">Delete</button>';
+  }
+
+  const pill = kind === 'script'
+    ? '<span class="lib-item-pill t-script">Script</span>'
+    : '<span class="lib-item-pill t-job">Job</span>';
+
+  const onClick = kind === 'script' ? "loadScript('"+item.id+"')" : "loadJobSQL('"+item.id+"')";
+
+  return ''
+    + '<div class="lib-item '+(isActive?'active':'')+'" onclick="'+onClick+'">'
+    +   '<div class="lib-item-row1">'+pill+'<div class="lib-item-name">'+esc(item.name||'(unnamed)')+'</div></div>'
+    +   '<div class="lib-item-meta">'
+    +     '<span class="lib-item-conn '+(connLabel==='source'?'conn-src':'conn-tgt')+'">'+connLabel+'</span>'
+    +     '<span>'+date+'</span>'
+    +   '</div>'
+    +   '<div class="lib-item-actions">'+actions+'</div>'
+    + '</div>';
+}
+
+// Old renderScriptList() callers now flow through renderLibrary() (see stub near top)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// EDITOR CONTEXT (what's loaded — drives the topbar's badge + Save behaviour)
+// ──────────────────────────────────────────────────────────────────────────────
+// editorCtx: { type: 'draft' | 'script' | 'job', id?: string, name: string }
+let editorCtx = { type: 'draft', id: null, name: 'New script' };
+
+function setEditorContext(type, id, name) {
+  editorCtx = { type, id: id || null, name: name || (type === 'job' ? 'Job' : 'Untitled') };
+
+  const badge   = document.getElementById('ctx-badge');
+  const pill    = document.getElementById('ctx-pill');
+  const nameEl  = document.getElementById('script-name');
+  const ctxBtn  = document.getElementById('ctx-action-btn');
+  const saveBtn = document.getElementById('save-btn');
+
+  if (badge && pill) {
+    badge.classList.remove('ctx-badge-draft','ctx-badge-script','ctx-badge-job');
+    badge.classList.add('ctx-badge-' + type);
+    pill.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+  }
+  if (nameEl && nameEl.value !== editorCtx.name) nameEl.value = editorCtx.name;
+
+  // Configure Save button label/colour and the contextual action button
+  if (type === 'job') {
+    if (saveBtn) {
+      saveBtn.textContent  = '💾 Save to Job';
+      saveBtn.title        = 'Save SQL changes back to the loaded job';
+      saveBtn.className    = 'btn btn-teal btn-sm';
+    }
+    if (ctxBtn) {
+      ctxBtn.textContent   = '↗ Eject to Script';
+      ctxBtn.title         = 'Copy this SQL out as a new draft script (job stays untouched)';
+      ctxBtn.style.display = '';
+      ctxBtn.dataset.action = 'eject';
+    }
+  } else if (type === 'script') {
+    if (saveBtn) {
+      saveBtn.textContent  = '💾 Save Script';
+      saveBtn.title        = 'Save changes to this script';
+      saveBtn.className    = 'btn btn-green btn-sm';
+    }
+    if (ctxBtn) {
+      ctxBtn.textContent   = '➕ Promote to Job';
+      ctxBtn.title         = 'Move this script into a Migration Job';
+      ctxBtn.style.display = '';
+      ctxBtn.dataset.action = 'promote';
+    }
+  } else {
+    if (saveBtn) {
+      saveBtn.textContent  = '💾 Save as Script';
+      saveBtn.title        = 'Save the current SQL as a new draft script';
+      saveBtn.className    = 'btn btn-green btn-sm';
+    }
+    if (ctxBtn) {
+      ctxBtn.style.display = 'none';
+      ctxBtn.dataset.action = '';
+    }
+  }
+}
+
+// Smart Save — routes to script vs job vs new-script-from-draft based on context
+function saveCurrent() {
+  if (editorCtx.type === 'job') {
+    if (typeof saveBackToJob === 'function') saveBackToJob();
+    return;
+  }
+  // For drafts AND for editing an existing script, both go through saveScript()
+  // which already handles "create new script if currentScript is null" vs
+  // "update existing script if currentScript is set".
+  if (typeof saveScript === 'function') saveScript();
+}
+
+// Promote-to-Job / Eject-to-Script depending on what's loaded
+async function contextualAction() {
+  const action = document.getElementById('ctx-action-btn')?.dataset.action;
+  if (action === 'promote') {
+    // Use the current editor content rather than the saved script — the user
+    // may have made unsaved tweaks they want to carry into the job.
+    const sql  = document.getElementById('sql-editor').value.trim();
+    const name = document.getElementById('script-name').value.trim() || 'SQL Script';
+    const conn = document.getElementById('conn-select').value;
+    const desc = document.getElementById('script-desc')?.value.trim() || '';
+    if (!sql) { alert('Write some SQL first.'); return; }
+    const result = await promoteSQLToJob({ sql, name, conn, desc });
+    if (!result.ok) return;
+    setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
+    setTimeout(() => setExecStatus('',''), 4000);
+    renderLibrary();
+  } else if (action === 'eject') {
+    if (editorCtx.id) ejectJobToScript(editorCtx.id);
+  }
+}
+
+// Eject job → fresh draft script (does NOT modify the job itself)
+function ejectJobToScript(jobId) {
+  const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+  const j = jobs.find(x => x.id === jobId);
+  if (!j) return;
+  const sql = j.insertSQL || j.migrationSQL || j.sql || '';
+  document.getElementById('sql-editor').value = sql;
+  document.getElementById('script-desc').value = 'Ejected from job: ' + (j.name||'');
+  document.getElementById('conn-select').value = j.connOn || 'target';
+  if (typeof updateConnLabel === 'function') updateConnLabel();
+  if (typeof updateLineNumbers === 'function') updateLineNumbers();
+  if (typeof updateStatus === 'function') updateStatus();
+  if (typeof currentScript !== 'undefined') currentScript = null;
+  if (typeof currentJobId !== 'undefined') currentJobId = null;
+  setEditorContext('draft', null, (j.name || 'Job') + ' (copy)');
+  setExecStatus('✓ Ejected to a new draft — Save it to keep', 'var(--purple)');
+  setTimeout(() => setExecStatus('',''), 4000);
+}
+
+// Duplicate a script
+function duplicateScript(id) {
+  const s = scripts.find(x => x.id === id);
+  if (!s) return;
+  const copy = Object.assign({}, s, {
+    id: 'script_' + Date.now(),
+    name: s.name + ' (copy)',
+    created: new Date().toISOString(),
+    updated: new Date().toISOString()
+  });
+  scripts.unshift(copy);
+  saveScripts();
+  renderLibrary();
+  setExecStatus('✓ Duplicated: ' + copy.name, 'var(--green)');
+  setTimeout(() => setExecStatus('',''), 3000);
+}
+
+// Delete-job confirmation routed through new modal
+async function deleteJobConfirm(jobId) {
+  const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+  const j = jobs.find(x => x.id === jobId);
+  if (!j) return;
+  const ok = await confirmDialog({
+    title: 'Delete job?',
+    body:  'Permanently delete the job <b>"'+esc(j.name||'(unnamed)')+'"</b> from this project? This removes it from the Migration Jobs list and from its group. The action cannot be undone.',
+    confirmLabel: 'Delete job',
+    danger: true
+  });
+  if (!ok) return;
+
+  // Remove from flat index
+  try {
+    const flat = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    localStorage.setItem('cygenix_jobs', JSON.stringify(flat.filter(x => x.id !== jobId)));
+  } catch {}
+  // Remove the matching step from any project group it lives in
+  try {
+    const projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]');
+    projects.forEach(p => {
+      (p.groups||[]).forEach(g => {
+        g.steps = (g.steps||[]).filter(st => st.jobId !== jobId);
+      });
+    });
+    localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+  } catch {}
+
+  if (typeof currentJobId !== 'undefined' && currentJobId === jobId) {
+    currentJobId = null;
+    document.getElementById('sql-editor').value = '';
+    setEditorContext('draft', null, 'New script');
+  }
+  renderLibrary();
+  setExecStatus('Job deleted', 'var(--red)');
+  setTimeout(() => setExecStatus('',''), 2500);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CONFIRM DIALOG (modal-based, replaces window.confirm)
+// ──────────────────────────────────────────────────────────────────────────────
+function confirmDialog(opts) {
+  const { title = 'Confirm', body = '', confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false } = opts || {};
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.innerHTML = ''
+      + '<div class="modal" role="dialog">'
+      +   '<div class="modal-title">' + esc(title) + '</div>'
+      +   '<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1.25rem">' + body + '</div>'
+      +   '<div class="modal-actions">'
+      +     '<button class="btn btn-ghost btn-sm" id="cd-cancel">' + esc(cancelLabel) + '</button>'
+      +     '<button class="btn ' + (danger ? 'btn-red' : 'btn-primary') + ' btn-sm" id="cd-ok">' + esc(confirmLabel) + '</button>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    const cleanup = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = e => {
+      if (e.key === 'Escape') { cleanup(); resolve(false); }
+      if (e.key === 'Enter')  { cleanup(); resolve(true);  }
+    };
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('#cd-cancel').onclick = () => { cleanup(); resolve(false); };
+    overlay.querySelector('#cd-ok').onclick     = () => { cleanup(); resolve(true);  };
+    overlay.addEventListener('click', e => { if (e.target === overlay) { cleanup(); resolve(false); } });
+    setTimeout(() => overlay.querySelector('#cd-ok').focus(), 0);
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// FILE ▾ MENU
+// ──────────────────────────────────────────────────────────────────────────────
+function toggleFileMenu(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('file-menu');
+  if (!menu) return;
+  const open = menu.style.display !== 'none';
+  menu.style.display = open ? 'none' : 'block';
+  if (!open) {
+    // Close on next outside click
+    setTimeout(() => {
+      const closer = ev => {
+        if (!menu.contains(ev.target) && ev.target.id !== 'file-menu-btn') {
+          menu.style.display = 'none';
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 0);
+  }
+}
+
+function fileMenuAction(action) {
+  document.getElementById('file-menu').style.display = 'none';
+  switch (action) {
+    case 'new':         newScript(); break;
+    case 'open':        document.getElementById('load-sql-file').click(); break;
+    case 'save':        saveCurrentToFile(); break;
+    case 'promote':     contextualPromote(); break;
+    case 'export-csv':  if (typeof exportResults === 'function') exportResults('csv');  break;
+    case 'export-xlsx': if (typeof exportResults === 'function') exportResults('xlsx'); break;
+  }
+}
+
+// "Save to file…" — exports the current editor contents as a .sql file
+function saveCurrentToFile() {
+  const sql = document.getElementById('sql-editor').value;
+  if (!sql.trim()) { alert('Nothing to save — editor is empty.'); return; }
+  const name = (document.getElementById('script-name').value.trim() || 'script')
+                 .replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,60);
+  const blob = new Blob([sql], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = name + '.sql';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setExecStatus('✓ Saved file: ' + name + '.sql', 'var(--green)');
+  setTimeout(() => setExecStatus('',''), 3000);
+}
+
+// "Promote to new job…" from the File menu — same as the contextual button,
+// but available even when in Draft mode.
+async function contextualPromote() {
+  const sql  = document.getElementById('sql-editor').value.trim();
+  const name = document.getElementById('script-name').value.trim() || 'SQL Script';
+  const conn = document.getElementById('conn-select').value;
+  const desc = document.getElementById('script-desc')?.value.trim() || '';
+  if (!sql) { alert('Write some SQL first.'); return; }
+  const result = await promoteSQLToJob({ sql, name, conn, desc });
+  if (!result.ok) return;
+  setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
+  setTimeout(() => setExecStatus('',''), 4000);
+  renderLibrary();
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 function getJobsWithSQL() {
   try {
     var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
-    return jobs.filter(function(j){ return j.insertSQL || j.migrationSQL; });
+    return jobs.filter(function(j){ return j.insertSQL || j.migrationSQL || j.sql; });
   } catch(e) { return []; }
 }
+
+// Compatibility — legacy callers
+function renderJobsList() { renderLibrary(); }
 
 // ── Load a job's SQL into the editor ──────────────────────────────────────────
 function loadJobSQL(jobId) {
@@ -2165,54 +2558,76 @@ function loadJobSQL(jobId) {
   var job  = jobs.find(function(j){ return j.id === jobId; });
   if (!job) { alert('Job not found.'); return; }
 
-  var sql = job.insertSQL || job.migrationSQL || '';
+  var sql = job.insertSQL || job.migrationSQL || job.sql || '';
   if (!sql) { alert('This job has no generated SQL yet.'); return; }
 
   currentJobId  = jobId;
   currentScript = null; // decouple from saved scripts
 
   document.getElementById('sql-editor').value = sql;
-  document.getElementById('script-name').value = job.name || 'Job SQL';
   document.getElementById('script-desc').value = 'Loaded from job: ' + (job.name||jobId);
-  document.getElementById('conn-select').value = 'target';
+  document.getElementById('conn-select').value = job.connOn || 'target';
 
-  // Show job indicator and Save to Job button
-  var ind = document.getElementById('job-indicator');
-  if (ind) { ind.style.display='inline'; ind.textContent='📋 Job: ' + (job.name||jobId); }
-  var btn = document.getElementById('save-to-job-btn');
-  if (btn) btn.style.display = 'inline-flex';
+  setEditorContext('job', jobId, job.name || 'Job SQL');
 
   updateConnLabel();
   updateStatus();
   clearResults();
-  renderJobsList();
+  renderLibrary();
   setExecStatus('✓ Loaded: ' + (job.name||'job'), 'var(--teal)');
   setTimeout(function(){ setExecStatus('',''); }, 3000);
 }
 
 // ── Save edited SQL back to the job ───────────────────────────────────────────
+// Writes to BOTH the flat `cygenix_jobs` index AND the matching step inside
+// `cygenix_projects[].groups[].steps[]` so the two stores stay in sync.
 function saveBackToJob() {
-  if (!currentJobId) { alert('No job loaded — use the Migration Jobs panel to load a job first.'); return; }
+  if (!currentJobId) { alert('No job loaded.'); return; }
   var sql = document.getElementById('sql-editor').value.trim();
   if (!sql) { alert('Editor is empty.'); return; }
+  var name = document.getElementById('script-name').value.trim();
 
   try {
+    // 1. Update the flat index
     var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
     var job  = jobs.find(function(j){ return j.id === currentJobId; });
     if (!job) { alert('Job no longer found in storage.'); return; }
 
-    // Preserve which field was originally used
-    if (job.insertSQL !== undefined) job.insertSQL = sql;
-    else if (job.migrationSQL !== undefined) job.migrationSQL = sql;
-    else job.insertSQL = sql;
-
-    job.sqlEditedAt = new Date().toISOString();
+    if (job.insertSQL    !== undefined) job.insertSQL    = sql;
+    if (job.migrationSQL !== undefined) job.migrationSQL = sql;
+    if (job.sql          !== undefined) job.sql          = sql;
+    if (job.insertSQL === undefined && job.migrationSQL === undefined && job.sql === undefined) {
+      job.insertSQL = sql;
+    }
+    if (name) job.name = name;
+    job.sqlEditedAt   = new Date().toISOString();
     job.sqlEditedNote = 'Edited in SQL Editor';
     localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
 
+    // 2. Update the step inside whichever project group owns this job
+    try {
+      var projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]');
+      var changed  = false;
+      projects.forEach(function(p) {
+        (p.groups||[]).forEach(function(g) {
+          (g.steps||[]).forEach(function(st) {
+            if (st.jobId === currentJobId) {
+              if ('insertSQL' in st) st.insertSQL = sql;
+              if ('sql'       in st) st.sql       = sql;
+              if (!('insertSQL' in st) && !('sql' in st)) st.sql = sql;
+              if (name) st.name = name;
+              changed = true;
+            }
+          });
+        });
+      });
+      if (changed) localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+    } catch(_e) { /* non-fatal — the flat index was updated */ }
+
+    setEditorContext('job', currentJobId, job.name || 'Job SQL');
     setExecStatus('✓ Saved to job: ' + (job.name||currentJobId), 'var(--green)');
     setTimeout(function(){ setExecStatus('',''); }, 3000);
-    renderJobsList();
+    renderLibrary();
   } catch(e) {
     alert('Could not save: ' + e.message);
   }
@@ -2631,7 +3046,8 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 loadScripts();
-renderScriptList();
+setEditorContext('draft', null, 'New script');
+renderLibrary();
 updateConnLabel();
 updateLineNumbers();
 updateStatus();
