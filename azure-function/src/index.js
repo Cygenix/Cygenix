@@ -6,7 +6,7 @@ const { app } = require('@azure/functions');
 // + every-minute timer trigger). Side-effect import — the module's app.http()
 // and app.timer() calls run at load time.
 require('./schedules');
-require('./agent');
+// ── require('./agent'); temp disabled.
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
