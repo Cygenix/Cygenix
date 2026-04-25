@@ -296,14 +296,40 @@ body.cyg-collapsed .topbar{left:54px}
     return null;
   }
 
+  // Custom error type so callers can distinguish "endpoint doesn't exist yet"
+  // from real API errors. The Netlify 404 page returns text/html, not JSON,
+  // so trying to res.json() it would throw an unhelpful SyntaxError.
+  class ApiNotImplementedError extends Error {
+    constructor(path) {
+      super(`Backend endpoint ${path} is not deployed yet`);
+      this.name = 'ApiNotImplementedError';
+      this.path = path;
+    }
+  }
+
   async function api(path, options = {}) {
     const token = await getAuthToken();
     const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+
+    let res;
+    try {
+      res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    } catch (e) {
+      throw new Error(`Network error calling ${path}: ${e.message}`);
+    }
+
+    // Detect "endpoint doesn't exist" from either a 404 status or a
+    // non-JSON response (Netlify returns its own HTML 404 page).
+    const contentType = res.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+
+    if (res.status === 404 || !isJson) {
+      throw new ApiNotImplementedError(path);
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`${res.status} ${res.statusText}: ${text}`);
+      throw new Error(`${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
     }
     return res.json();
   }
@@ -567,8 +593,47 @@ body.cyg-collapsed .topbar{left:54px}
       saveActiveRun(result.runId);
       startPolling();
     } catch (e) {
-      renderError(e.message);
+      if (e instanceof ApiNotImplementedError) {
+        renderBackendPending();
+      } else {
+        renderError(e.message);
+      }
     }
+  }
+
+  // Shown when the agent backend isn't deployed yet — friendlier than a raw error
+  function renderBackendPending() {
+    state.view = 'pending';
+    setTopbarStatus('Backend pending');
+    stage.innerHTML = `
+      <div class="card">
+        <div style="display:flex;gap:0.85rem;align-items:flex-start">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+               style="color:var(--accent);flex-shrink:0;margin-top:2px">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <div style="flex:1">
+            <h3 style="margin:0 0 0.4rem;font-size:15px;font-weight:600;color:var(--text)">Agent backend not deployed yet</h3>
+            <p style="color:var(--text2);font-size:12.5px;line-height:1.55;margin:0 0 0.85rem">
+              The Agentive Migration UI is ready, but the Azure Function endpoints that run the agent
+              (<code style="font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);padding:1px 5px;border-radius:3px">/api/agent/migrate</code>,
+              <code style="font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);padding:1px 5px;border-radius:3px">/api/agent/run/:id</code>,
+              <code style="font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);padding:1px 5px;border-radius:3px">/api/agent/run/:id/respond</code>)
+              haven't been built yet. Once they're deployed, this page will start the agent.
+            </p>
+            <div style="display:flex;gap:0.5rem">
+              <button class="btn btn-sm" id="am-back-btn">← Back to setup</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('am-back-btn').addEventListener('click', () => {
+      state.conns = readConnections();
+      renderSetup();
+      startConnectionWatcher();
+    });
   }
 
   function renderRunning(run, messages) {
