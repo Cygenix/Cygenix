@@ -323,37 +323,43 @@ body.cyg-collapsed .topbar{left:54px}
   }
 
   // ── Connections ───────────────────────────────────────────────
-  async function waitForConnections(timeoutMs = 4000) {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      if (typeof window.CygenixConnections !== 'undefined' &&
-          typeof window.CygenixConnections.get === 'function') return true;
-      await new Promise(r => setTimeout(r, 50));
-    }
-    return false;
-  }
-
+  // Match insights.html's pattern exactly: call CygenixConnections.get()
+  // as a bare global, no window. prefix, no DOMContentLoaded gating.
+  // The script tag in <head> means it's already defined by the time any
+  // body script runs.
   function readConnections() {
-    if (typeof window.CygenixConnections === 'undefined' ||
-        typeof window.CygenixConnections.get !== 'function') {
+    // Diagnostic — surfaced in DevTools console so we can see the actual state
+    const hasGlobal = (typeof CygenixConnections !== 'undefined');
+    const hasGet = hasGlobal && typeof CygenixConnections.get === 'function';
+    if (!hasGlobal || !hasGet) {
+      console.warn('[AgentiveMigration] CygenixConnections not yet ready', { hasGlobal, hasGet });
       return { source: null, target: null };
     }
+    let c;
     try {
-      const c = window.CygenixConnections.get() || {};
-      const source = c.srcConnString
-        ? { label: describeConnString(c.srcConnString), kind: 'direct' }
-        : null;
-      let target = null;
-      if (c.tgtFnUrl) {
-        target = { label: describeFnUrl(c.tgtFnUrl), kind: 'azure' };
-      } else if (c.tgtConnString) {
-        target = { label: describeConnString(c.tgtConnString), kind: 'direct' };
-      }
-      return { source, target };
+      c = CygenixConnections.get() || {};
     } catch (e) {
-      console.warn('[AgentiveMigration] could not read connections:', e.message);
+      console.warn('[AgentiveMigration] CygenixConnections.get() threw:', e.message);
       return { source: null, target: null };
     }
+
+    console.log('[AgentiveMigration] CygenixConnections.get() returned:', {
+      hasSrcConnString: !!c.srcConnString,
+      hasTgtConnString: !!c.tgtConnString,
+      hasTgtFnUrl: !!c.tgtFnUrl,
+      keys: Object.keys(c),
+    });
+
+    const source = c.srcConnString
+      ? { label: describeConnString(c.srcConnString), kind: 'direct' }
+      : null;
+    let target = null;
+    if (c.tgtFnUrl) {
+      target = { label: describeFnUrl(c.tgtFnUrl), kind: 'azure' };
+    } else if (c.tgtConnString) {
+      target = { label: describeConnString(c.tgtConnString), kind: 'direct' };
+    }
+    return { source, target };
   }
 
   function describeConnString(s) {
@@ -891,6 +897,19 @@ body.cyg-collapsed .topbar{left:54px}
 
   // ── Boot ──────────────────────────────────────────────────────
   async function init() {
+    // Diagnostic snapshot — visible in DevTools console
+    console.log('[AgentiveMigration] boot diagnostics:', {
+      hasCygenixConnections: typeof CygenixConnections !== 'undefined',
+      activeProjectId: localStorage.getItem('cygenix_active_project_id'),
+      activeProjectSession: sessionStorage.getItem('cygenix_active_project'),
+      hasProjects: !!localStorage.getItem('cygenix_projects'),
+      projectsLength: (() => {
+        try { return JSON.parse(localStorage.getItem('cygenix_projects') || '[]').length; }
+        catch { return 'parse-error'; }
+      })(),
+      hasToken: !!sessionStorage.getItem('cygenix_token'),
+    });
+
     renderLoading('Checking access…');
     await checkFeatureEnabled();
     if (!state.featureEnabled) { renderDisabled(); return; }
@@ -904,7 +923,6 @@ body.cyg-collapsed .topbar{left:54px}
     }
 
     renderLoading('Loading connections…');
-    await waitForConnections();
     state.conns = readConnections();
     renderSetup();
     startConnectionWatcher();
