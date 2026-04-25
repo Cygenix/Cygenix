@@ -3044,7 +3044,50 @@ function exportResults(format) {
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// ── One-time reconciliation of legacy job SQL fields ─────────────────────────
+// Older versions of saveBackToJob only wrote to ONE of {insertSQL, sql,
+// migrationSQL}, leaving the others stale. The project builder uses
+// `job.sql || job.insertSQL` to snapshot SQL when adding a job to a group,
+// so divergent fields meant the wrong (old) SQL got copied in.
+// This pass picks a canonical value (preferring insertSQL — the field the
+// SQL Editor has historically written to) and replicates it across the
+// other present fields. Same fix is mirrored into project group steps.
+function reconcileJobSQLFields() {
+  let fixed = 0, stepFixed = 0;
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    let anyJobChanged = false;
+    jobs.forEach(j => {
+      const canonical = (j.insertSQL || j.sql || j.migrationSQL || '').trim();
+      if (!canonical) return;
+      if ('insertSQL'    in j && j.insertSQL    !== canonical) { j.insertSQL    = canonical; fixed++; anyJobChanged = true; }
+      if ('sql'          in j && j.sql          !== canonical) { j.sql          = canonical; fixed++; anyJobChanged = true; }
+      if ('migrationSQL' in j && j.migrationSQL && j.migrationSQL !== canonical) { j.migrationSQL = canonical; fixed++; anyJobChanged = true; }
+    });
+    if (anyJobChanged) localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+
+    // Reconcile any group steps whose snapshot is stale relative to its job
+    const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+    let anyProjChanged = false;
+    projects.forEach(p => {
+      (p.groups || []).forEach(g => {
+        (g.steps || []).forEach(st => {
+          const j = jobs.find(x => x.id === st.jobId);
+          if (!j) return;
+          const canonical = (j.insertSQL || j.sql || j.migrationSQL || '').trim();
+          if (!canonical) return;
+          if ('insertSQL' in st && st.insertSQL !== canonical) { st.insertSQL = canonical; stepFixed++; anyProjChanged = true; }
+          if ('sql'       in st && st.sql       !== canonical) { st.sql       = canonical; stepFixed++; anyProjChanged = true; }
+        });
+      });
+    });
+    if (anyProjChanged) localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+  } catch(e) { /* non-fatal — page still loads */ }
+  return { fixed, stepFixed };
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────────
+reconcileJobSQLFields();
 loadScripts();
 setEditorContext('draft', null, 'New script');
 renderLibrary();
