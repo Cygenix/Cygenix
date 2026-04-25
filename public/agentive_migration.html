@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agentive Migration — Cygenix</title>
+
+  <!-- Cygenix shared assets (adjust paths if your project uses different ones) -->
+  <link rel="stylesheet" href="/cygenix.css" />
+  <script src="/cygenix-sidebar.js" defer></script>
+  <script src="/cygenix-cosmos-sync.js" defer></script>
+  <script src="/cookie-consent.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
+
+  <style>
+    /* ---------- Page-scoped styles for Agentive Migration ----------
+       Uses CSS variables that should already exist in cygenix.css.
+       Falls back to sensible defaults if not. */
+    :root {
+      --am-bg: var(--cygenix-bg, #0f1115);
+      --am-panel: var(--cygenix-panel, #161922);
+      --am-panel-2: var(--cygenix-panel-2, #1d2130);
+      --am-border: var(--cygenix-border, #262a38);
+      --am-text: var(--cygenix-text, #e6e8ee);
+      --am-text-dim: var(--cygenix-text-dim, #8a90a2);
+      --am-accent: var(--cygenix-accent, #6c9eff);
+      --am-accent-soft: var(--cygenix-accent-soft, rgba(108, 158, 255, 0.12));
+      --am-success: var(--cygenix-success, #3ecf8e);
+      --am-warning: var(--cygenix-warning, #f5a524);
+      --am-danger: var(--cygenix-danger, #f25f5c);
+      --am-radius: 10px;
+    }
+
+    #view-agentive-migration {
+      padding: 24px 28px 96px;
+      max-width: 1100px;
+      margin: 0 auto;
+      color: var(--am-text);
+    }
+
+    .am-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 6px;
+    }
+    .am-header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+    .am-header .am-icon {
+      width: 28px;
+      height: 28px;
+      color: var(--am-accent);
+    }
+    .am-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      background: var(--am-accent-soft);
+      color: var(--am-accent);
+      border: 1px solid color-mix(in srgb, var(--am-accent) 30%, transparent);
+    }
+    .am-subtitle {
+      color: var(--am-text-dim);
+      font-size: 14px;
+      margin: 0 0 28px 0;
+      max-width: 720px;
+      line-height: 1.5;
+    }
+
+    /* ---------- Disabled state (feature flag off) ---------- */
+    .am-disabled {
+      padding: 32px;
+      background: var(--am-panel);
+      border: 1px solid var(--am-border);
+      border-radius: var(--am-radius);
+      text-align: center;
+    }
+    .am-disabled h3 { margin: 12px 0 8px; font-size: 16px; }
+    .am-disabled p { color: var(--am-text-dim); margin: 0 0 16px; font-size: 14px; }
+
+    /* ---------- Setup view ---------- */
+    .am-card {
+      background: var(--am-panel);
+      border: 1px solid var(--am-border);
+      border-radius: var(--am-radius);
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    .am-field {
+      margin-bottom: 18px;
+    }
+    .am-field:last-child { margin-bottom: 0; }
+    .am-field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--am-text);
+      margin-bottom: 6px;
+    }
+    .am-field .am-hint {
+      font-size: 12px;
+      color: var(--am-text-dim);
+      margin-top: 4px;
+    }
+    .am-field select,
+    .am-field textarea,
+    .am-field input[type="text"] {
+      width: 100%;
+      background: var(--am-panel-2);
+      border: 1px solid var(--am-border);
+      border-radius: 6px;
+      color: var(--am-text);
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    .am-field select:focus,
+    .am-field textarea:focus,
+    .am-field input[type="text"]:focus {
+      outline: none;
+      border-color: var(--am-accent);
+    }
+    .am-field textarea {
+      min-height: 90px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .am-field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 700px) {
+      .am-field-grid { grid-template-columns: 1fr; }
+    }
+
+    .am-budget-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 14px;
+      background: var(--am-panel-2);
+      border: 1px solid var(--am-border);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .am-budget-row strong { color: var(--am-text); font-weight: 600; }
+    .am-budget-row span { color: var(--am-text-dim); }
+
+    .am-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+
+    .am-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 6px;
+      border: 1px solid var(--am-border);
+      background: var(--am-panel-2);
+      color: var(--am-text);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, transform 0.05s;
+      font-family: inherit;
+    }
+    .am-btn:hover:not(:disabled) {
+      background: var(--am-border);
+    }
+    .am-btn:active:not(:disabled) { transform: translateY(1px); }
+    .am-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .am-btn.am-btn-primary {
+      background: var(--am-accent);
+      color: #0a0d14;
+      border-color: var(--am-accent);
+    }
+    .am-btn.am-btn-primary:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--am-accent) 90%, white);
+    }
+    .am-btn.am-btn-danger {
+      background: transparent;
+      border-color: color-mix(in srgb, var(--am-danger) 50%, transparent);
+      color: var(--am-danger);
+    }
+    .am-btn.am-btn-success {
+      background: var(--am-success);
+      color: #0a0d14;
+      border-color: var(--am-success);
+    }
+
+    /* ---------- Running view ---------- */
+    .am-status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 18px;
+      background: var(--am-panel);
+      border: 1px solid var(--am-border);
+      border-radius: var(--am-radius);
+      margin-bottom: 16px;
+    }
+    .am-status-left { display: flex; align-items: center; gap: 12px; }
+    .am-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--am-accent);
+      box-shadow: 0 0 0 0 var(--am-accent);
+      animation: am-pulse 1.6s ease-out infinite;
+    }
+    @keyframes am-pulse {
+      0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--am-accent) 60%, transparent); }
+      100% { box-shadow: 0 0 0 12px transparent; }
+    }
+    .am-status-text { font-size: 14px; font-weight: 500; }
+    .am-status-meta { font-size: 12px; color: var(--am-text-dim); }
+    .am-cost-meter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--am-text-dim);
+    }
+    .am-cost-meter strong { color: var(--am-text); font-weight: 600; }
+
+    .am-log {
+      background: var(--am-panel);
+      border: 1px solid var(--am-border);
+      border-radius: var(--am-radius);
+      padding: 8px;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    .am-log-entry {
+      display: flex;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      margin-bottom: 4px;
+      font-size: 13px;
+      line-height: 1.5;
+      animation: am-slide-in 0.25s ease-out;
+    }
+    @keyframes am-slide-in {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .am-log-entry .am-log-icon {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 5px;
+      margin-top: 1px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .am-log-entry .am-log-body { flex: 1; min-width: 0; }
+    .am-log-entry .am-log-title { color: var(--am-text); font-weight: 500; }
+    .am-log-entry .am-log-detail {
+      color: var(--am-text-dim);
+      font-size: 12px;
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .am-log-entry.am-log-thinking .am-log-icon {
+      background: color-mix(in srgb, var(--am-text-dim) 20%, transparent);
+      color: var(--am-text-dim);
+    }
+    .am-log-entry.am-log-tool .am-log-icon {
+      background: var(--am-accent-soft);
+      color: var(--am-accent);
+    }
+    .am-log-entry.am-log-result .am-log-icon {
+      background: color-mix(in srgb, var(--am-success) 20%, transparent);
+      color: var(--am-success);
+    }
+    .am-log-entry.am-log-error .am-log-icon {
+      background: color-mix(in srgb, var(--am-danger) 20%, transparent);
+      color: var(--am-danger);
+    }
+
+    .am-log-empty {
+      padding: 32px;
+      text-align: center;
+      color: var(--am-text-dim);
+      font-size: 13px;
+    }
+
+    /* ---------- Approval view ---------- */
+    .am-approval-banner {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 18px;
+      background: color-mix(in srgb, var(--am-warning) 12%, transparent);
+      border: 1px solid color-mix(in srgb, var(--am-warning) 40%, transparent);
+      border-radius: var(--am-radius);
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+    .am-approval-banner svg {
+      flex-shrink: 0;
+      color: var(--am-warning);
+    }
+
+    .am-proposal-summary {
+      padding: 18px 20px;
+      background: var(--am-panel-2);
+      border: 1px solid var(--am-border);
+      border-radius: 8px;
+      margin-bottom: 18px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .am-decisions {
+      margin-bottom: 18px;
+    }
+    .am-decisions h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--am-text);
+      margin: 0 0 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--am-text-dim);
+    }
+    .am-decision {
+      padding: 12px 14px;
+      background: var(--am-panel-2);
+      border: 1px solid var(--am-border);
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+    .am-decision-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 500;
+      color: var(--am-text);
+      margin-bottom: 4px;
+    }
+    .am-decision-confidence {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .am-decision-confidence.high { background: color-mix(in srgb, var(--am-success) 18%, transparent); color: var(--am-success); }
+    .am-decision-confidence.medium { background: color-mix(in srgb, var(--am-warning) 18%, transparent); color: var(--am-warning); }
+    .am-decision-confidence.low { background: color-mix(in srgb, var(--am-danger) 18%, transparent); color: var(--am-danger); }
+    .am-decision-reasoning {
+      color: var(--am-text-dim);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .am-mapping-preview {
+      background: var(--am-panel-2);
+      border: 1px solid var(--am-border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 18px;
+    }
+    .am-mapping-table-row {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--am-border);
+      font-size: 13px;
+    }
+    .am-mapping-table-row:last-child { border-bottom: none; }
+    .am-mapping-table-name {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+      color: var(--am-text);
+    }
+    .am-mapping-arrow { color: var(--am-text-dim); }
+    .am-mapping-table-meta {
+      font-size: 11px;
+      color: var(--am-text-dim);
+      margin-top: 2px;
+    }
+
+    /* ---------- Question (ask_user) view ---------- */
+    .am-question {
+      padding: 20px 22px;
+      background: var(--am-panel);
+      border: 1px solid var(--am-border);
+      border-radius: var(--am-radius);
+    }
+    .am-question h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      color: var(--am-text);
+    }
+    .am-question .am-context {
+      color: var(--am-text-dim);
+      font-size: 13px;
+      margin-bottom: 18px;
+      line-height: 1.5;
+    }
+    .am-question-options {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .am-question-option {
+      padding: 12px 14px;
+      background: var(--am-panel-2);
+      border: 1px solid var(--am-border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      text-align: left;
+      color: var(--am-text);
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .am-question-option:hover {
+      border-color: var(--am-accent);
+      background: var(--am-accent-soft);
+    }
+
+    /* ---------- Completed view ---------- */
+    .am-completed {
+      text-align: center;
+      padding: 40px 24px;
+    }
+    .am-completed .am-success-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: color-mix(in srgb, var(--am-success) 20%, transparent);
+      color: var(--am-success);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+    .am-completed h2 { margin: 0 0 8px; font-size: 18px; }
+    .am-completed p { color: var(--am-text-dim); font-size: 14px; margin: 0 0 20px; }
+
+    /* ---------- Spinner ---------- */
+    .am-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid color-mix(in srgb, var(--am-text) 20%, transparent);
+      border-top-color: var(--am-text);
+      border-radius: 50%;
+      animation: am-spin 0.8s linear infinite;
+    }
+    @keyframes am-spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <!-- Sidebar is rendered by cygenix-sidebar.js into #sidebar-root -->
+  <div id="sidebar-root"></div>
+
+  <main id="view-agentive-migration">
+    <!-- Header -->
+    <div class="am-header">
+      <!-- HandHelping icon (Lucide) -->
+      <svg class="am-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+           stroke-linejoin="round" aria-hidden="true">
+        <path d="M11 12h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 14"/>
+        <path d="m7 18 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9"/>
+        <path d="m2 13 6 6"/>
+      </svg>
+      <h1>Agentive Migration</h1>
+      <span class="am-badge">Beta</span>
+    </div>
+    <p class="am-subtitle">
+      Point Cygenix at a source and target. It will introspect both schemas, propose
+      a complete object mapping with reasoning for each decision, and pause for your
+      review before anything is committed.
+    </p>
+
+    <!-- Single mount point that swaps between views -->
+    <div id="am-stage"></div>
+  </main>
+
+  <script>
+  (function () {
+    'use strict';
+
+    // ============================================================
+    // Config
+    // ============================================================
+    const API_BASE = window.CYGENIX_API_BASE || '/api';
+    const POLL_INTERVAL_MS = 1500;
+    const STORAGE_KEY = 'cygenix_agentive_migration';
+
+    // ============================================================
+    // State
+    // ============================================================
+    const state = {
+      currentRunId: null,
+      polling: null,
+      lastSeq: 0,
+      featureEnabled: null,    // null = unknown, true/false once checked
+      connections: [],
+      view: 'loading',
+    };
+
+    const stage = document.getElementById('am-stage');
+
+    // ============================================================
+    // Auth helper — relies on MSAL instance set up by dashboard.html
+    // ============================================================
+    async function getAuthToken() {
+      try {
+        if (window.cygenixGetAccessToken) {
+          return await window.cygenixGetAccessToken();
+        }
+        // Fallback: read MSAL account directly
+        if (window.msalInstance) {
+          const accounts = window.msalInstance.getAllAccounts();
+          if (accounts.length > 0) {
+            const result = await window.msalInstance.acquireTokenSilent({
+              scopes: ['openid', 'profile'],
+              account: accounts[0],
+            });
+            return result.idToken;
+          }
+        }
+      } catch (e) {
+        console.warn('[AgentiveMigration] auth token unavailable', e);
+      }
+      return null;
+    }
+
+    async function api(path, options = {}) {
+      const token = await getAuthToken();
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`${res.status} ${res.statusText}: ${text}`);
+      }
+      return res.json();
+    }
+
+    // ============================================================
+    // Feature gate check
+    // ============================================================
+    async function checkFeatureEnabled() {
+      try {
+        const me = await api('/me');
+        // Tenant-level master switch AND per-user toggle must both be on
+        const tenantOn = me.tenant && me.tenant.agentiveMigrationEnabled === true;
+        const userOn = me.user && me.user.aiAgentiveEnabled === true;
+        state.featureEnabled = tenantOn && userOn;
+        return { tenantOn, userOn };
+      } catch (e) {
+        // If /me isn't implemented yet, default to enabled in dev
+        // so the page is usable while you build the backend.
+        console.warn('[AgentiveMigration] /me failed, assuming enabled for dev:', e.message);
+        state.featureEnabled = true;
+        return { tenantOn: true, userOn: true };
+      }
+    }
+
+    async function loadConnections() {
+      try {
+        const data = await api('/connections');
+        state.connections = Array.isArray(data) ? data : (data.connections || []);
+      } catch (e) {
+        console.warn('[AgentiveMigration] could not load connections:', e.message);
+        state.connections = [];
+      }
+    }
+
+    // ============================================================
+    // Persistence — remember active run across reloads
+    // ============================================================
+    function saveActiveRun(runId) {
+      try {
+        const userKey = (localStorage.getItem('cygenix_active_user') || 'anon');
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        data[userKey] = { runId, savedAt: Date.now() };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) { /* ignore */ }
+    }
+    function loadActiveRun() {
+      try {
+        const userKey = (localStorage.getItem('cygenix_active_user') || 'anon');
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        const entry = data[userKey];
+        // Drop stale entries after 24 hours
+        if (entry && Date.now() - entry.savedAt < 24 * 60 * 60 * 1000) {
+          return entry.runId;
+        }
+      } catch (e) { /* ignore */ }
+      return null;
+    }
+    function clearActiveRun() {
+      try {
+        const userKey = (localStorage.getItem('cygenix_active_user') || 'anon');
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        delete data[userKey];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      } catch (e) { /* ignore */ }
+    }
+
+    // ============================================================
+    // Rendering — all views render into #am-stage
+    // ============================================================
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function renderDisabled() {
+      stage.innerHTML = `
+        <div class="am-disabled">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+               style="color: var(--am-text-dim); margin-bottom: 8px;">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+          </svg>
+          <h3>Agentive Migration is not enabled</h3>
+          <p>An administrator needs to enable AI features for this tenant, and you'll need to opt in from your user settings.</p>
+        </div>
+      `;
+    }
+
+    function renderLoading(msg) {
+      stage.innerHTML = `
+        <div class="am-card" style="display:flex; align-items:center; gap:12px; justify-content:center;">
+          <div class="am-spinner"></div>
+          <span style="color: var(--am-text-dim); font-size: 13px;">${escapeHtml(msg || 'Loading…')}</span>
+        </div>
+      `;
+    }
+
+    function renderError(msg) {
+      stage.innerHTML = `
+        <div class="am-card" style="border-color: color-mix(in srgb, var(--am-danger) 40%, var(--am-border));">
+          <div style="display:flex; gap:12px; align-items:flex-start;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                 style="color: var(--am-danger); flex-shrink: 0; margin-top: 2px;">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <div>
+              <div style="font-weight: 500; margin-bottom: 4px;">Something went wrong</div>
+              <div style="color: var(--am-text-dim); font-size: 13px; word-break: break-word;">${escapeHtml(msg)}</div>
+              <button class="am-btn" style="margin-top: 12px;" onclick="window.location.reload()">Reload</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ---------- Setup view ----------
+    function renderSetup() {
+      state.view = 'setup';
+
+      const connOptions = state.connections.length > 0
+        ? state.connections.map(c =>
+            `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name || c.id)}</option>`
+          ).join('')
+        : '<option value="">No connections found — create one in Connections first</option>';
+
+      stage.innerHTML = `
+        <div class="am-card">
+          <div class="am-field-grid">
+            <div class="am-field">
+              <label for="am-source">Source connection</label>
+              <select id="am-source" ${state.connections.length === 0 ? 'disabled' : ''}>
+                ${connOptions}
+              </select>
+              <div class="am-hint">The database to migrate from.</div>
+            </div>
+            <div class="am-field">
+              <label for="am-target">Target connection</label>
+              <select id="am-target" ${state.connections.length === 0 ? 'disabled' : ''}>
+                ${connOptions}
+              </select>
+              <div class="am-hint">The database to migrate to.</div>
+            </div>
+          </div>
+
+          <div class="am-field">
+            <label for="am-goal">What should the agent do?</label>
+            <textarea id="am-goal" placeholder="Example: Propose a mapping for the sales schema. Preserve foreign key relationships. Exclude any PII columns and ask me before including columns that look sensitive."></textarea>
+            <div class="am-hint">Be specific about scope, what to include/exclude, and any constraints. Plain English.</div>
+          </div>
+
+          <div class="am-field">
+            <label>Budget cap</label>
+            <div class="am-budget-row">
+              <strong>$2.00</strong>
+              <span>maximum spend per run</span>
+              <span style="margin-left:auto; font-size:11px;">Hard ceiling — the agent stops if reached.</span>
+            </div>
+          </div>
+
+          <div class="am-actions">
+            <button class="am-btn am-btn-primary" id="am-start-btn"
+                    ${state.connections.length === 0 ? 'disabled' : ''}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                   stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="6 3 20 12 6 21 6 3"/>
+              </svg>
+              Start agent
+            </button>
+          </div>
+        </div>
+      `;
+
+      const startBtn = document.getElementById('am-start-btn');
+      if (startBtn) startBtn.addEventListener('click', startRun);
+    }
+
+    async function startRun() {
+      const sourceId = document.getElementById('am-source').value;
+      const targetId = document.getElementById('am-target').value;
+      const goal = document.getElementById('am-goal').value.trim();
+
+      if (!sourceId || !targetId) {
+        alert('Please select both source and target connections.');
+        return;
+      }
+      if (sourceId === targetId) {
+        alert('Source and target must be different connections.');
+        return;
+      }
+      if (goal.length < 10) {
+        alert('Please describe what the agent should do (at least a sentence).');
+        return;
+      }
+
+      renderLoading('Starting agent…');
+
+      try {
+        const result = await api('/agent/migrate', {
+          method: 'POST',
+          body: JSON.stringify({
+            sourceConnectionId: sourceId,
+            targetConnectionId: targetId,
+            goal,
+          }),
+        });
+
+        state.currentRunId = result.runId;
+        state.lastSeq = 0;
+        saveActiveRun(result.runId);
+        startPolling();
+      } catch (e) {
+        renderError(e.message);
+      }
+    }
+
+    // ---------- Running view ----------
+    function renderRunning(run, messages) {
+      state.view = 'running';
+
+      const tokenUsage = run.tokenUsage || { input: 0, output: 0, costUSD: 0 };
+      const cap = (run.budgetCap && run.budgetCap.maxCostUSD) || 2.0;
+      const pct = Math.min(100, Math.round((tokenUsage.costUSD / cap) * 100));
+
+      const entries = messagesToLogEntries(messages);
+
+      stage.innerHTML = `
+        <div class="am-status-bar">
+          <div class="am-status-left">
+            <div class="am-status-dot"></div>
+            <div>
+              <div class="am-status-text">Agent running</div>
+              <div class="am-status-meta">${escapeHtml(currentActivity(messages))}</div>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:14px;">
+            <div class="am-cost-meter">
+              <strong>$${tokenUsage.costUSD.toFixed(3)}</strong>
+              <span>/ $${cap.toFixed(2)}</span>
+              <span style="margin-left:6px;">(${pct}%)</span>
+            </div>
+            <button class="am-btn am-btn-danger" id="am-cancel-btn">Cancel</button>
+          </div>
+        </div>
+
+        <div class="am-log" id="am-log">
+          ${entries.length === 0
+            ? '<div class="am-log-empty">Waiting for the agent to start…</div>'
+            : entries.map(renderLogEntry).join('')}
+        </div>
+      `;
+
+      const cancelBtn = document.getElementById('am-cancel-btn');
+      if (cancelBtn) cancelBtn.addEventListener('click', cancelRun);
+
+      const logEl = document.getElementById('am-log');
+      if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function currentActivity(messages) {
+      if (!messages || messages.length === 0) return 'Initializing…';
+      const last = messages[messages.length - 1];
+      if (last.role === 'assistant' && last.content) {
+        for (const block of last.content) {
+          if (block.type === 'tool_use') {
+            return prettyToolName(block.name) + '…';
+          }
+        }
+      }
+      return 'Thinking…';
+    }
+
+    function prettyToolName(name) {
+      const map = {
+        introspect_source_schema: 'Reading source schema',
+        introspect_target_schema: 'Reading target schema',
+        propose_mapping: 'Preparing proposal',
+        ask_user: 'Awaiting your input',
+      };
+      return map[name] || name;
+    }
+
+    function messagesToLogEntries(messages) {
+      const entries = [];
+      for (const msg of messages || []) {
+        if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+          for (const block of msg.content) {
+            if (block.type === 'text' && block.text && block.text.trim()) {
+              entries.push({
+                kind: 'thinking',
+                title: 'Thinking',
+                detail: block.text.trim(),
+              });
+            } else if (block.type === 'tool_use') {
+              entries.push({
+                kind: 'tool',
+                title: prettyToolName(block.name),
+                detail: summarizeToolInput(block.name, block.input),
+              });
+            }
+          }
+        } else if (msg.role === 'user' && Array.isArray(msg.content)) {
+          for (const block of msg.content) {
+            if (block.type === 'tool_result') {
+              entries.push({
+                kind: block.is_error ? 'error' : 'result',
+                title: block.is_error ? 'Tool error' : 'Result received',
+                detail: summarizeToolResult(block.content),
+              });
+            }
+          }
+        }
+      }
+      return entries;
+    }
+
+    function summarizeToolInput(name, input) {
+      if (!input) return '';
+      if (name === 'introspect_source_schema' || name === 'introspect_target_schema') {
+        const parts = [];
+        if (input.schemaFilter) parts.push(`schema: ${input.schemaFilter}`);
+        if (input.tablePattern) parts.push(`pattern: ${input.tablePattern}`);
+        return parts.length ? parts.join(', ') : 'all tables';
+      }
+      return JSON.stringify(input).slice(0, 160);
+    }
+
+    function summarizeToolResult(content) {
+      const text = typeof content === 'string' ? content : JSON.stringify(content);
+      if (text.length <= 200) return text;
+      return text.slice(0, 200) + '…';
+    }
+
+    function renderLogEntry(entry) {
+      const icons = {
+        thinking: '·',
+        tool: '→',
+        result: '✓',
+        error: '!',
+      };
+      return `
+        <div class="am-log-entry am-log-${entry.kind}">
+          <div class="am-log-icon">${icons[entry.kind] || '·'}</div>
+          <div class="am-log-body">
+            <div class="am-log-title">${escapeHtml(entry.title)}</div>
+            ${entry.detail ? `<div class="am-log-detail">${escapeHtml(entry.detail)}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    async function cancelRun() {
+      if (!state.currentRunId) return;
+      if (!confirm('Cancel this agent run? You can start a new one afterwards.')) return;
+      try {
+        await api(`/agent/run/${state.currentRunId}/cancel`, { method: 'POST' });
+      } catch (e) {
+        console.warn('[AgentiveMigration] cancel failed:', e.message);
+      }
+      stopPolling();
+      clearActiveRun();
+      state.currentRunId = null;
+      renderSetup();
+    }
+
+    // ---------- Approval view (propose_mapping) ----------
+    function renderProposalApproval(run) {
+      state.view = 'approval';
+      const payload = run.pendingApproval && run.pendingApproval.payload || {};
+      const summary = payload.summary || 'No summary provided.';
+      const decisions = Array.isArray(payload.decisions) ? payload.decisions : [];
+      const tables = (payload.mapping && Array.isArray(payload.mapping.tables)) ? payload.mapping.tables : [];
+
+      stage.innerHTML = `
+        <div class="am-approval-banner">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 9v4"/><path d="M12 17h.01"/>
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          </svg>
+          <span>The agent has prepared a proposal. Review it before anything is committed.</span>
+        </div>
+
+        <div class="am-card">
+          <h3 style="margin:0 0 6px; font-size:15px;">Proposal summary</h3>
+          <div class="am-proposal-summary">${escapeHtml(summary)}</div>
+
+          ${decisions.length > 0 ? `
+            <div class="am-decisions">
+              <h4>Key decisions</h4>
+              ${decisions.map(d => `
+                <div class="am-decision">
+                  <div class="am-decision-label">
+                    ${escapeHtml(d.decision || '')}
+                    ${d.confidence ? `<span class="am-decision-confidence ${escapeHtml(d.confidence)}">${escapeHtml(d.confidence)}</span>` : ''}
+                  </div>
+                  <div class="am-decision-reasoning">${escapeHtml(d.reasoning || '')}</div>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+
+          ${tables.length > 0 ? `
+            <div>
+              <h4 style="font-size:13px; font-weight:600; margin:0 0 10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--am-text-dim);">
+                Mapped tables (${tables.length})
+              </h4>
+              <div class="am-mapping-preview">
+                ${tables.map(t => {
+                  const cols = Array.isArray(t.columns) ? t.columns : [];
+                  const excluded = cols.filter(c => c.excluded).length;
+                  return `
+                    <div class="am-mapping-table-row">
+                      <div class="am-mapping-table-name">
+                        <span>${escapeHtml(t.sourceTable || '?')}</span>
+                        <span class="am-mapping-arrow">→</span>
+                        <span>${escapeHtml(t.targetTable || '?')}</span>
+                      </div>
+                      <div class="am-mapping-table-meta">
+                        ${cols.length} column${cols.length === 1 ? '' : 's'}${excluded > 0 ? ` · ${excluded} excluded` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <div class="am-actions">
+            <button class="am-btn am-btn-danger" id="am-reject-btn">Reject &amp; revise</button>
+            <button class="am-btn" id="am-edit-btn">Open in Object Mapping to edit</button>
+            <button class="am-btn am-btn-success" id="am-approve-btn">Approve &amp; save</button>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('am-approve-btn').addEventListener('click', () => respondToApproval('approve'));
+      document.getElementById('am-edit-btn').addEventListener('click', () => respondToApproval('edit', payload.mapping));
+      document.getElementById('am-reject-btn').addEventListener('click', async () => {
+        const feedback = prompt('What should the agent change? Be specific.');
+        if (feedback && feedback.trim()) {
+          respondToApproval('reject', null, feedback.trim());
+        }
+      });
+    }
+
+    // ---------- Question view (ask_user) ----------
+    function renderQuestion(run) {
+      state.view = 'question';
+      const payload = run.pendingApproval && run.pendingApproval.payload || {};
+      const options = Array.isArray(payload.options) ? payload.options : [];
+
+      stage.innerHTML = `
+        <div class="am-question">
+          <h3>${escapeHtml(payload.question || 'The agent has a question.')}</h3>
+          ${payload.context ? `<div class="am-context">${escapeHtml(payload.context)}</div>` : ''}
+          <div class="am-question-options">
+            ${options.map((opt, i) => `
+              <button class="am-question-option" data-idx="${i}">
+                ${escapeHtml(opt.label || opt.value || '')}
+              </button>
+            `).join('')}
+          </div>
+          <div style="margin-top:16px; display:flex; justify-content:flex-end;">
+            <button class="am-btn am-btn-danger" id="am-cancel-q-btn">Cancel run</button>
+          </div>
+        </div>
+      `;
+
+      document.querySelectorAll('.am-question-option').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.idx, 10);
+          const chosen = options[idx];
+          if (chosen) respondToApproval('answer', null, null, chosen.value);
+        });
+      });
+
+      document.getElementById('am-cancel-q-btn').addEventListener('click', cancelRun);
+    }
+
+    async function respondToApproval(action, mapping, feedback, answer) {
+      if (!state.currentRunId) return;
+      renderLoading('Submitting your response…');
+      try {
+        const body = { action };
+        if (mapping) body.mapping = mapping;
+        if (feedback) body.feedback = feedback;
+        if (answer != null) body.answer = answer;
+
+        await api(`/agent/run/${state.currentRunId}/respond`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        // Resume polling — the run status will move back to "running" or to "completed"
+        startPolling();
+      } catch (e) {
+        renderError(e.message);
+      }
+    }
+
+    // ---------- Completed view ----------
+    function renderCompleted(run) {
+      state.view = 'completed';
+      const result = run.result || {};
+      stage.innerHTML = `
+        <div class="am-card am-completed">
+          <div class="am-success-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h2>Migration proposal saved</h2>
+          <p>${escapeHtml(result.summary || 'The agent finished and the mapping is ready in Object Mapping.')}</p>
+          <div style="display:flex; gap:10px; justify-content:center;">
+            ${result.mappingId ? `
+              <a class="am-btn am-btn-primary" href="/object_mapping.html?id=${encodeURIComponent(result.mappingId)}">
+                Open mapping
+              </a>` : ''}
+            <button class="am-btn" id="am-new-btn">Start a new run</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('am-new-btn').addEventListener('click', () => {
+        clearActiveRun();
+        state.currentRunId = null;
+        renderSetup();
+      });
+    }
+
+    // ---------- Failed view ----------
+    function renderFailed(run) {
+      state.view = 'failed';
+      stage.innerHTML = `
+        <div class="am-card" style="border-color: color-mix(in srgb, var(--am-danger) 40%, var(--am-border));">
+          <h3 style="margin:0 0 8px; color:var(--am-danger);">Run failed</h3>
+          <p style="color:var(--am-text-dim); font-size:13px; margin:0 0 16px;">
+            ${escapeHtml((run.result && run.result.error) || 'The agent encountered an error and could not complete.')}
+          </p>
+          <div style="display:flex; gap:10px;">
+            <button class="am-btn" id="am-retry-btn">Start a new run</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('am-retry-btn').addEventListener('click', () => {
+        clearActiveRun();
+        state.currentRunId = null;
+        renderSetup();
+      });
+    }
+
+    // ============================================================
+    // Polling — fetches run + messages, dispatches to view
+    // ============================================================
+    function startPolling() {
+      stopPolling();
+      poll(); // immediate
+      state.polling = setInterval(poll, POLL_INTERVAL_MS);
+    }
+
+    function stopPolling() {
+      if (state.polling) {
+        clearInterval(state.polling);
+        state.polling = null;
+      }
+    }
+
+    async function poll() {
+      if (!state.currentRunId) return;
+      try {
+        const data = await api(`/agent/run/${state.currentRunId}?sinceSeq=${state.lastSeq}`);
+        const run = data.run;
+        const messages = data.messages || [];
+        if (messages.length > 0) {
+          state.lastSeq = messages[messages.length - 1].seq || state.lastSeq;
+        }
+
+        switch (run.status) {
+          case 'running':
+            renderRunning(run, data.allMessages || messages);
+            break;
+          case 'awaiting_approval':
+            stopPolling();
+            if (run.pendingApproval && run.pendingApproval.type === 'ask_user') {
+              renderQuestion(run);
+            } else {
+              renderProposalApproval(run);
+            }
+            break;
+          case 'completed':
+            stopPolling();
+            clearActiveRun();
+            renderCompleted(run);
+            break;
+          case 'failed':
+          case 'cancelled':
+            stopPolling();
+            clearActiveRun();
+            renderFailed(run);
+            break;
+        }
+      } catch (e) {
+        // Network blips during long runs are common; log and keep polling
+        console.warn('[AgentiveMigration] poll error:', e.message);
+      }
+    }
+
+    // ============================================================
+    // Boot
+    // ============================================================
+    async function init() {
+      renderLoading('Checking access…');
+
+      const flags = await checkFeatureEnabled();
+      if (!state.featureEnabled) {
+        renderDisabled();
+        return;
+      }
+
+      // Resume active run if one is in flight
+      const existing = loadActiveRun();
+      if (existing) {
+        state.currentRunId = existing;
+        renderLoading('Resuming run…');
+        startPolling();
+        return;
+      }
+
+      renderLoading('Loading connections…');
+      await loadConnections();
+      renderSetup();
+    }
+
+    // Wait for MSAL/Cygenix bootstrap if it hasn't happened yet
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', init);
+    } else {
+      init();
+    }
+  })();
+  </script>
+</body>
+</html>
