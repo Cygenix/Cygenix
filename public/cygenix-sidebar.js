@@ -17,11 +17,17 @@
  *     picks this up and calls showView(name) on load.
  *   - If we're ON dashboard.html and the target is a view, calls
  *     window.showView(name) directly (no reload).
+ *
+ * Feature gating:
+ *   - Items with `requiresAiEnabled: true` are filtered out when the
+ *     localStorage flags `cygenix_feature_flags` indicate AI is off.
+ *     Defaults to visible if flags are unset (so dev work isn't blocked).
  */
 (function(){
   'use strict';
 
   const STORAGE_KEY   = 'cygenix_sidebar_collapsed';
+  const FLAGS_KEY     = 'cygenix_feature_flags';
   const MOUNT_ID      = 'cyg-sidebar-mount';
   const ICON_BY_KEY   = {}; // populated from NAV_ITEMS
   const WIDTH_OPEN    = 230;
@@ -36,6 +42,9 @@
   // `badgeId` (optional) renders a small status dot next to the label. Dashboard
   // code updates these dots by ID — same element IDs the legacy inline sidebar
   // used, so existing update code keeps working unchanged.
+  //
+  // `requiresAiEnabled` (optional) hides the item when AI features are disabled
+  // for this tenant or user.
   const NAV = [
     { section: 'Migrate', items: [
       { key:'dashboard', label:'Dashboard', view:'dashboard', icon: iconDashboard() }
@@ -52,8 +61,9 @@
       { key:'project-plan',      label:'Project Planner',   href:'/project-plan.html', color:'var(--green)',  icon: iconCalendar() },
     ]},
     { section: 'Develop', group:'develop', items: [
-      { key:'object-mapping',    label:'Object Mapping',    href:'/object_mapping.html', color:'var(--teal)',   icon: iconArrows() },
-      { key:'sql-editor',        label:'SQL Editor',        href:'/sql-editor.html',    color:'var(--teal)',   icon: iconCode() },
+      { key:'object-mapping',     label:'Object Mapping',     href:'/object_mapping.html',     color:'var(--teal)',   icon: iconArrows() },
+      { key:'sql-editor',         label:'SQL Editor',         href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
+      { key:'agentive-migration', label:'Agentive Migration', href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
     ]},
     { section: 'Analysis', group:'analysis', items: [
       { key:'insights',          label:'Data Insights',     href:'/insights.html',      color:'var(--purple)', icon: iconInsights() },
@@ -99,6 +109,7 @@
   function iconCalendar(){     return svg('<rect x="2" y="3" width="12" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M2 6h12M5 2v2M11 2v2" stroke="currentColor" stroke-width="1.2"/>'); }
   function iconArrows(){       return svg('<path d="M3 5h8l-2-2M13 11H5l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconCode(){         return svg('<rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M6 7l-2 1 2 1M10 7l2 1-2 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
+  function iconHand(){         return svg('<path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 8.5l4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconInsights(){     return svg('<circle cx="8" cy="6" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M4 14c0-2 2-3 4-3s4 1 4 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconClean(){        return svg('<path d="M4 2v4M4 10v4M2 6h4M2 12h4M10 3l3 3-6 6-3-3z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconCheck(){        return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8l2 2 3-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
@@ -122,6 +133,26 @@
   }
   function setCollapsed(on){
     try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0'); } catch {}
+  }
+
+  // Read AI feature flags from localStorage. Defaults to "enabled" when
+  // flags are unset so the feature is visible during development before
+  // the /api/me endpoint is wired up. dashboard.html should call
+  // refreshFeatureFlags() on login to populate these.
+  function isAiEnabled(){
+    try {
+      const flags = JSON.parse(localStorage.getItem(FLAGS_KEY) || '{}');
+      if (flags.tenantAgentiveMigrationEnabled === false) return false;
+      if (flags.aiAgentiveEnabled === false) return false;
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  function isItemVisible(item){
+    if (item.requiresAiEnabled && !isAiEnabled()) return false;
+    return true;
   }
 
   // ── Style injection (once) ──────────────────────────────────────────────
@@ -236,7 +267,12 @@
   // ── Markup ──────────────────────────────────────────────────────────────
   function buildHTML(activeKey){
     const sections = NAV.map(sec => {
-      const itemsHTML = sec.items.map(item => {
+      const visibleItems = sec.items.filter(isItemVisible);
+      // If a section has no visible items after filtering, drop the whole section
+      // (avoids leaving a stranded "Develop" header with nothing under it).
+      if (visibleItems.length === 0) return '';
+
+      const itemsHTML = visibleItems.map(item => {
         ICON_BY_KEY[item.key] = item.icon;
         const cls  = 'cyg-nav-item' + (item.key === activeKey ? ' active' : '');
         const styleAttr = item.color ? ` style="color:${item.color}"` : '';
@@ -401,6 +437,22 @@
       setCollapsed(on);
       const toggle = el && el.querySelector('#cyg-sidebar-toggle');
       if (toggle) toggle.textContent = on ? '❯' : '❮';
+    },
+    // Re-render after feature flags change (call this from dashboard.html
+    // after refreshFeatureFlags() updates localStorage).
+    refresh: () => {
+      const existing = document.querySelector('.cyg-sidebar');
+      if (!existing) return;
+      const activeKey = existing.querySelector('.cyg-nav-item.active');
+      const key = activeKey ? activeKey.dataset.key : '';
+      const collapsed = existing.classList.contains('collapsed');
+      const replacement = document.createElement('aside');
+      replacement.className = 'cyg-sidebar' + (collapsed ? ' collapsed' : '');
+      replacement.innerHTML = buildHTML(key);
+      existing.replaceWith(replacement);
+      const toggle = replacement.querySelector('#cyg-sidebar-toggle');
+      if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
+      wireItemClicks(replacement);
     }
   };
 
