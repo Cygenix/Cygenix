@@ -1664,43 +1664,49 @@ function renderObjectBrowser() {
   if (target) html += renderOBConnection('target', 'tgt', target, search);
   tree.innerHTML = html;
 
-  // Populate any expanded tables' column lists
-  _obState.expandedTables.forEach(key => {
-    const colsEl = tree.querySelector('[data-cols-for="'+CSS.escape(key)+'"]');
-    if (!colsEl) return;
-    const [conn, schemaName, tableName] = key.split('::');
-    const schemas = getOBSchemas();
-    const schema = schemas[conn];
-    const t = schema?.tables?.find(t => (t.schema||'dbo') === schemaName && t.name === tableName);
-    if (t) colsEl.innerHTML = renderOBColumns(t, conn);
-  });
+  // Note: expanded items are now rendered inline by renderOBObject — no
+  // separate populate pass needed.
 }
 
 function renderOBConnection(connKind, connTag, schema, search) {
   const collapsed = _obState.collapsedConns.has(connKind);
   const dbName = schema.database || connKind.toUpperCase();
+  const q = search.toLowerCase();
 
-  // Filter tables by search
-  const tables = (schema.tables || []).filter(t => {
-    const isView = (t.type || '').toUpperCase() === 'VIEW';
-    if (isView) return false;
-    if (!search) return true;
-    if ((t.name||'').toLowerCase().includes(search)) return true;
-    if ((t.schema||'').toLowerCase().includes(search)) return true;
-    return (t.columns||[]).some(c => (c.name||'').toLowerCase().includes(search));
-  });
-  const views = (schema.tables || []).filter(t => {
-    const isView = (t.type || '').toUpperCase() === 'VIEW';
-    if (!isView) return false;
-    if (!search) return true;
-    if ((t.name||'').toLowerCase().includes(search)) return true;
-    return (t.columns||[]).some(c => (c.name||'').toLowerCase().includes(search));
-  });
+  // Per-kind matchers — name OR (for tables/views) any column name OR
+  // (for procs/funcs) any parameter name
+  const matchTable = t => !q
+    || (t.name||'').toLowerCase().includes(q)
+    || (t.schema||'').toLowerCase().includes(q)
+    || (t.columns||[]).some(c => (c.name||'').toLowerCase().includes(q));
+  const matchView = matchTable;
+  const matchProc = p => !q
+    || (p.name||'').toLowerCase().includes(q)
+    || (p.schema||'').toLowerCase().includes(q)
+    || (p.parameters||[]).some(x => (x.name||'').toLowerCase().includes(q));
+  const matchFunc = matchProc;
 
-  const tablesHtml = renderOBSection(connKind, 'tables', 'Tables', tables);
-  const viewsHtml  = renderOBSection(connKind, 'views',  'Views',  views);
+  // Sources — newer backend returns separate arrays. Older backend stuffed
+  // everything into `tables`; if `views` is missing we fall back to splitting
+  // by `type` for backward compatibility.
+  let tables, views, procedures = [], functions = [];
+  if (Array.isArray(schema.views)) {
+    tables = (schema.tables || []).filter(matchTable);
+    views  = (schema.views  || []).filter(matchView);
+  } else {
+    tables = (schema.tables || []).filter(t => (t.type||'').toUpperCase() !== 'VIEW' && matchTable(t));
+    views  = (schema.tables || []).filter(t => (t.type||'').toUpperCase() === 'VIEW' && matchView(t));
+  }
+  if (Array.isArray(schema.procedures)) procedures = schema.procedures.filter(matchProc);
+  if (Array.isArray(schema.functions))  functions  = schema.functions.filter(matchFunc);
 
-  const total = tables.length + views.length;
+  const sectionsHtml = ''
+    + renderOBSection(connKind, 'tables',     'Tables',     tables,     'table')
+    + renderOBSection(connKind, 'views',      'Views',      views,      'view')
+    + renderOBSection(connKind, 'procedures', 'Procedures', procedures, 'procedure')
+    + renderOBSection(connKind, 'functions',  'Functions',  functions,  'function');
+
+  const total = tables.length + views.length + procedures.length + functions.length;
 
   return ''
     + '<div class="ob-conn">'
@@ -1710,18 +1716,18 @@ function renderOBConnection(connKind, connTag, schema, search) {
     +     '<span style="color:var(--text2);font-size:11px;text-transform:none;letter-spacing:0">'+esc(dbName)+'</span>'
     +     '<span class="ob-conn-count">'+total+'</span>'
     +   '</div>'
-    +   (collapsed ? '' : tablesHtml + viewsHtml)
+    +   (collapsed ? '' : sectionsHtml)
     + '</div>';
 }
 
-function renderOBSection(connKind, sectionId, label, items) {
+function renderOBSection(connKind, sectionId, label, items, kind) {
   if (!items.length) return '';
   const key = connKind + '-' + sectionId;
   const collapsed = _obState.collapsedSections.has(key);
 
   let body = '';
   if (!collapsed) {
-    body = items.map(t => renderOBTable(connKind, t)).join('');
+    body = items.map(item => renderOBObject(connKind, item, kind)).join('');
   }
 
   return ''
@@ -1735,36 +1741,81 @@ function renderOBSection(connKind, sectionId, label, items) {
     + '</div>';
 }
 
-function renderOBTable(connKind, table) {
-  const sch = table.schema || 'dbo';
-  const name = table.name || '(unnamed)';
-  const key = connKind + '::' + sch + '::' + name;
+// Unified row renderer for any object kind: table | view | procedure | function
+function renderOBObject(connKind, obj, kind) {
+  const sch = obj.schema || 'dbo';
+  const name = obj.name || '(unnamed)';
+  const key = connKind + '::' + kind + '::' + sch + '::' + name;
   const expanded = _obState.expandedTables.has(key);
-  const isView = (table.type || '').toUpperCase() === 'VIEW';
-  const icon = isView ? '⊙' : '⊞';
 
-  const colsBlock = expanded
-    ? '<div class="ob-cols" data-cols-for="'+esc(key)+'">'+renderOBColumns(table, connKind)+'</div>'
+  // Icon + click-action vary by kind
+  const icons = { table: '⊞', view: '⊙', procedure: '▶', 'function': 'ƒ' };
+  const icon = icons[kind] || '·';
+
+  // Tooltip showing what clicking the name will insert
+  let insertHint = '';
+  let nameClickHandler = '';
+  if (kind === 'table' || kind === 'view') {
+    insertHint = `[${sch}].[${name}]`;
+    nameClickHandler = `obInsertObject('${esc(connKind)}','${esc(sch)}','${esc(name)}','${kind}')`;
+  } else if (kind === 'procedure') {
+    insertHint = `EXEC [${sch}].[${name}]` + (obj.parameters && obj.parameters.length ? '  …' : '');
+    nameClickHandler = `obInsertObject('${esc(connKind)}','${esc(sch)}','${esc(name)}','${kind}')`;
+  } else if (kind === 'function') {
+    insertHint = `[${sch}].[${name}](`;
+    nameClickHandler = `obInsertObject('${esc(connKind)}','${esc(sch)}','${esc(name)}','${kind}')`;
+  }
+
+  // Title text — extra info per kind
+  const titleExtra = (kind === 'table' && obj.rowCount) ? '\n' + obj.rowCount.toLocaleString() + ' rows'
+                  : (kind === 'function' && obj.returnType) ? '\nReturns: ' + obj.returnType
+                  : (kind === 'procedure' && obj.parameters) ? '\n' + obj.parameters.length + ' parameter' + (obj.parameters.length === 1 ? '' : 's')
+                  : '';
+
+  const detailsBlock = expanded
+    ? '<div class="ob-cols" data-cols-for="' + esc(key) + '">' + renderOBDetails(obj, kind) + '</div>'
     : '';
 
+  // Subtitle for procs/funcs — show param count or return type inline
+  let subtitle = '';
+  if (kind === 'function' && obj.returnType) {
+    subtitle = '<span class="ob-col-type" style="margin-left:auto">→ ' + esc(obj.returnType) + '</span>';
+  } else if ((kind === 'procedure' || kind === 'function') && obj.parameters) {
+    const n = obj.parameters.length;
+    if (n > 0) subtitle = '<span class="ob-col-type" style="margin-left:auto">' + n + ' param' + (n===1?'':'s') + '</span>';
+  }
+
   return ''
-    + '<div class="ob-table '+(expanded?'expanded':'')+'" data-table-key="'+esc(key)+'">'
-    +   '<span class="ob-table-icon" title="'+(isView?'View':'Table')+'">'+icon+'</span>'
-    +   '<span class="ob-table-name" onclick="event.stopPropagation();obInsertTable(\''+esc(connKind)+'\',\''+esc(sch)+'\',\''+esc(name)+'\')" title="Click to insert &#10;[' + esc(sch) + '].[' + esc(name) + ']' + (table.rowCount?'\n' + table.rowCount.toLocaleString()+' rows':'') + '">'+esc(name)+'</span>'
-    +   '<span class="ob-table-chev" onclick="event.stopPropagation();obToggleTable(\''+esc(key)+'\')" title="Show columns">'+(expanded?'▾':'▸')+'</span>'
+    + '<div class="ob-table '+(expanded?'expanded':'')+'" data-key="'+esc(key)+'">'
+    +   '<span class="ob-table-icon" title="'+kind+'">'+icon+'</span>'
+    +   '<span class="ob-table-name" onclick="event.stopPropagation();'+nameClickHandler+'" title="Click to insert&#10;'+esc(insertHint)+esc(titleExtra)+'">'+esc(name)+'</span>'
+    +   subtitle
+    +   '<span class="ob-table-chev" onclick="event.stopPropagation();obToggleObject(\''+esc(key)+'\')" title="Show details">'+(expanded?'▾':'▸')+'</span>'
     + '</div>'
-    + colsBlock;
+    + detailsBlock;
 }
 
-function renderOBColumns(table, connKind) {
+// Detail panel — columns for tables/views, parameters for procs/functions
+function renderOBDetails(obj, kind) {
+  if (kind === 'table' || kind === 'view') {
+    return renderOBColumns(obj);
+  }
+  if (kind === 'procedure' || kind === 'function') {
+    return renderOBParameters(obj, kind);
+  }
+  return '<div style="color:var(--text3);font-size:10px;padding:4px">No details</div>';
+}
+
+function renderOBColumns(table) {
   const cols = table.columns || [];
   if (!cols.length) return '<div style="color:var(--text3);font-size:10px;padding:4px">No columns</div>';
+  const pkSet = new Set(table.primaryKeys || []);
   return cols.map(c => {
     const type = c.type || '';
     const len = c.length ? '('+c.length+')' : '';
     const fullType = type + len;
     const flags = [];
-    if (c.isPrimaryKey || c.isPK || c.primary) flags.push('<span class="ob-col-pk" title="Primary key">PK</span>');
+    if (pkSet.has(c.name) || c.isPrimaryKey || c.isPK || c.primary) flags.push('<span class="ob-col-pk" title="Primary key">PK</span>');
     if (c.nullable === false) flags.push('<span class="ob-col-nullable" title="NOT NULL">●</span>');
     return ''
       + '<div class="ob-col" onclick="obInsertColumn(\''+esc(c.name)+'\')" title="Click to insert column name&#10;'+esc(c.name)+' '+esc(fullType)+(c.nullable===false?' NOT NULL':'')+'">'
@@ -1773,6 +1824,30 @@ function renderOBColumns(table, connKind) {
       +   '<span class="ob-col-type">'+esc(fullType)+'</span>'
       + '</div>';
   }).join('');
+}
+
+function renderOBParameters(routine, kind) {
+  const params = (routine.parameters || []).filter(p => !p.isResult); // hide function return-row entries
+  const returnInfo = kind === 'function' && routine.returnType
+    ? '<div class="ob-col" style="cursor:default;color:var(--text3)" title="Return type">'
+        + '<span class="ob-col-name" style="font-style:italic">→ returns</span>'
+        + '<span class="ob-col-type">'+esc(routine.returnType)+'</span>'
+      + '</div>'
+    : '';
+  if (!params.length) return returnInfo + '<div style="color:var(--text3);font-size:10px;padding:4px">No parameters</div>';
+
+  const paramsHtml = params.map(p => {
+    const type = p.type || '';
+    const mode = p.mode && p.mode !== 'IN' ? '<span class="ob-col-pk" title="'+esc(p.mode)+'">'+esc(p.mode)+'</span>' : '';
+    const tooltip = (p.name||'') + ' ' + type + (p.mode && p.mode !== 'IN' ? ' ('+p.mode+')' : '');
+    return ''
+      + '<div class="ob-col" onclick="obInsertParameter(\''+esc(p.name)+'\')" title="Click to insert parameter name&#10;'+esc(tooltip)+'">'
+      +   '<span class="ob-col-name">'+esc(p.name||'')+'</span>'
+      +   mode
+      +   '<span class="ob-col-type">'+esc(type)+'</span>'
+      + '</div>';
+  }).join('');
+  return paramsHtml + returnInfo;
 }
 
 // ── Object Browser interaction handlers ──────────────────────────────────────
@@ -1789,21 +1864,44 @@ function toggleOBSection(connKind, sectionId) {
   renderObjectBrowser();
 }
 
-function obToggleTable(key) {
+function obToggleObject(key) {
   if (_obState.expandedTables.has(key)) _obState.expandedTables.delete(key);
   else _obState.expandedTables.add(key);
   renderObjectBrowser();
 }
+// Back-compat alias for any older callers
+function obToggleTable(key) { obToggleObject(key); }
 
-// Insert [schema].[table] at current cursor position in Monaco
-function obInsertTable(connKind, schema, table) {
-  const text = '[' + schema + '].[' + table + ']';
+// Unified insertion: kind controls what gets inserted
+function obInsertObject(connKind, schemaName, name, kind) {
+  let text;
+  if (kind === 'table' || kind === 'view') {
+    text = '[' + schemaName + '].[' + name + ']';
+  } else if (kind === 'procedure') {
+    text = 'EXEC [' + schemaName + '].[' + name + '] ';
+  } else if (kind === 'function') {
+    text = '[' + schemaName + '].[' + name + '](';
+  } else {
+    text = '[' + schemaName + '].[' + name + ']';
+  }
   obInsertAtCursor(text);
+}
+
+// Back-compat aliases
+function obInsertTable(connKind, schemaName, table) {
+  obInsertObject(connKind, schemaName, table, 'table');
 }
 
 // Insert just the column name at current cursor position
 function obInsertColumn(colName) {
   obInsertAtCursor('[' + colName + ']');
+}
+
+// Insert a parameter name (e.g. @MyParam) at the cursor
+function obInsertParameter(paramName) {
+  // INFORMATION_SCHEMA.PARAMETERS already includes the leading '@', but be defensive
+  const text = (paramName || '').startsWith('@') ? paramName : '@' + paramName;
+  obInsertAtCursor(text);
 }
 
 // Insertion utility — uses Monaco if available, falls back to textarea
@@ -1925,6 +2023,9 @@ async function fetchBothSchemas() {
 function buildSchemaContext(schema, which) {
   if (!schema || !schema.tables || !schema.tables.length) return '';
   const dbName = schema.database || (which === 'target' ? 'Target DB' : 'Source DB');
+  const header = which === 'target' ? 'TARGET' : 'SOURCE';
+
+  // Tables
   const tableList = schema.tables.slice(0, 80).map(t => {
     const cols = (t.columns || []).slice(0, 30).map(c => {
       const flags = [c.isIdentity?'IDENTITY':null, c.nullable===false?'NOT NULL':null].filter(Boolean).join(', ');
@@ -1932,16 +2033,59 @@ function buildSchemaContext(schema, which) {
     }).join('\n');
     return `  [${t.schema||'dbo'}].[${t.name}]${t.rowCount?' ('+t.rowCount.toLocaleString()+' rows)':''}\n${cols}`;
   }).join('\n\n');
-  const truncated = schema.tables.length > 80 ? `\n  ... and ${schema.tables.length - 80} more tables` : '';
-  return `\n\n${which === 'target' ? 'TARGET' : 'SOURCE'} DATABASE SCHEMA (${dbName}):\n${tableList}${truncated}`;
+  const tablesTrunc = schema.tables.length > 80 ? `\n  ... and ${schema.tables.length - 80} more tables` : '';
+
+  let context = `\n\n${header} DATABASE SCHEMA (${dbName}):\n${tableList}${tablesTrunc}`;
+
+  // Views — give the AI compact view summaries (name + columns only)
+  if (Array.isArray(schema.views) && schema.views.length) {
+    const viewList = schema.views.slice(0, 40).map(v => {
+      const cols = (v.columns || []).slice(0, 20).map(c => `    [${c.name}] ${c.type||''}`).join('\n');
+      return `  [${v.schema||'dbo'}].[${v.name}]\n${cols}`;
+    }).join('\n\n');
+    const viewsTrunc = schema.views.length > 40 ? `\n  ... and ${schema.views.length - 40} more views` : '';
+    context += `\n\n${header} VIEWS:\n${viewList}${viewsTrunc}`;
+  }
+
+  // Procedures — name + parameter signatures
+  if (Array.isArray(schema.procedures) && schema.procedures.length) {
+    const procList = schema.procedures.slice(0, 50).map(p => {
+      const params = (p.parameters || []).filter(x => !x.isResult)
+        .map(x => `${x.name||''} ${x.type||''}${x.mode && x.mode !== 'IN' ? ' '+x.mode : ''}`)
+        .join(', ');
+      return `  EXEC [${p.schema||'dbo'}].[${p.name}]${params ? ' (' + params + ')' : ''}`;
+    }).join('\n');
+    const procsTrunc = schema.procedures.length > 50 ? `\n  ... and ${schema.procedures.length - 50} more procedures` : '';
+    context += `\n\n${header} STORED PROCEDURES:\n${procList}${procsTrunc}`;
+  }
+
+  // Functions — name + params + return type
+  if (Array.isArray(schema.functions) && schema.functions.length) {
+    const funcList = schema.functions.slice(0, 50).map(f => {
+      const params = (f.parameters || []).filter(x => !x.isResult)
+        .map(x => `${x.name||''} ${x.type||''}`)
+        .join(', ');
+      return `  [${f.schema||'dbo'}].[${f.name}](${params}) RETURNS ${f.returnType||''}`;
+    }).join('\n');
+    const funcsTrunc = schema.functions.length > 50 ? `\n  ... and ${schema.functions.length - 50} more functions` : '';
+    context += `\n\n${header} FUNCTIONS:\n${funcList}${funcsTrunc}`;
+  }
+
+  return context;
 }
 
 function updateSchemaStatusBar(srcSchema, tgtSchema) {
   const bar = document.getElementById('schema-status-bar');
   if (!bar) return;
-  const parts = [];
-  if (srcSchema?.tables) parts.push('Source: ' + (srcSchema.database||'DB') + ' · ' + srcSchema.tables.length + ' tables');
-  if (tgtSchema?.tables) parts.push('Target: ' + (tgtSchema.database||'DB') + ' · ' + tgtSchema.tables.length + ' tables');
+  function summary(s, label) {
+    if (!s?.tables) return null;
+    const bits = [s.tables.length + ' tables'];
+    if (Array.isArray(s.views)      && s.views.length)      bits.push(s.views.length + ' views');
+    if (Array.isArray(s.procedures) && s.procedures.length) bits.push(s.procedures.length + ' procs');
+    if (Array.isArray(s.functions)  && s.functions.length)  bits.push(s.functions.length + ' funcs');
+    return label + ': ' + (s.database || 'DB') + ' · ' + bits.join(', ');
+  }
+  const parts = [summary(srcSchema, 'Source'), summary(tgtSchema, 'Target')].filter(Boolean);
   if (parts.length) {
     bar.textContent = '📋 ' + parts.join('   |   ');
     bar.style.display = 'block';
