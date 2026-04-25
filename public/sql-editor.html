@@ -407,7 +407,6 @@ body.fullscreen .script-panel { display:none }
     <button id="ctx-action-btn" class="btn btn-ghost btn-sm" onclick="contextualAction()" style="display:none"></button>
 
     <!-- Panel toggles -->
-    <button id="toggle-ob-btn" class="btn btn-ghost btn-sm panel-toggle" onclick="toggleObjectBrowser()" title="Toggle Object Browser (tables, views, columns)">🗂️ Schema</button>
     <button id="toggle-ai-btn" class="btn btn-ghost btn-sm panel-toggle" onclick="toggleAIPanel()" title="Toggle Claude AI assistant">🤖 AI</button>
 
     <!-- File ▾ menu: New / Open File / Save to File / Export Results -->
@@ -475,6 +474,9 @@ body.fullscreen .script-panel { display:none }
   <!-- Editor + Results (stacked vertically) -->
   <div class="editor-pane" id="editor-pane">
     <div class="editor-toolbar">
+      <!-- Object Explorer toggle: opens the schema browser panel -->
+      <button id="toggle-ob-btn" class="btn btn-ghost btn-sm panel-toggle" onclick="toggleObjectBrowser()" title="Toggle Object Explorer (browse tables, views, columns)">🔍 Object Explorer</button>
+      <span style="width:1px;height:20px;background:var(--border);margin:0 0.25rem"></span>
       <!-- SQL snippets -->
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('SELECT TOP 100 * FROM ')">SELECT</button>
       <button class="btn btn-ghost btn-sm" onclick="insertSnippet('WHERE ')">WHERE</button>
