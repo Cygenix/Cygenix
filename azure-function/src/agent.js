@@ -1,0 +1,20 @@
+{
+  "name": "cygenix-db-api",
+  "version": "1.0.4",
+  "description": "Cygenix Azure Function — SQL Server proxy with Managed Identity",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "func start",
+    "build": "echo No build step required"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@azure/cosmos": "^4.0.0",
+    "@azure/functions": "^4.5.0",
+    "@azure/identity": "^4.4.1",
+    "mssql": "^10.0.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
