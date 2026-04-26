@@ -264,9 +264,22 @@ body.cyg-collapsed .topbar{left:54px}
 (function () {
   'use strict';
 
-  const API_BASE = window.CYGENIX_API_BASE || '/api';
+  // Azure Function endpoint. We call it directly rather than via /api/* —
+  // matching the pattern used by cygenix-cosmos-sync.js, admin.html, etc.
+  // Netlify's redirects only cover /api/db and /api/health; /api/agent/* would
+  // 404 at the Netlify layer otherwise.
+  const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
+  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
   const POLL_INTERVAL_MS = 1500;
   const STORAGE_KEY = 'cygenix_agentive_migration';
+
+  // Build the full URL for a given API path, appending the function key as
+  // a query parameter. Handles paths that already have query params (e.g.
+  // '/agent/run/abc?sinceSeq=5' becomes '...?sinceSeq=5&code=KEY').
+  function buildApiUrl(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    return `${API_BASE}${path}${sep}code=${FUNC_CODE}`;
+  }
 
   const state = {
     currentRunId: null,
@@ -307,20 +320,55 @@ body.cyg-collapsed .topbar{left:54px}
     }
   }
 
+  // Get the active user's email for the x-user-id header. This matches the
+  // auth pattern used elsewhere on the site — Azure Function endpoints
+  // identify the user via the x-user-id header, not via JWT validation.
+  function getActiveUserId() {
+    try {
+      // Try Entra account stored by login.html (preferred)
+      const entraStr = localStorage.getItem('cygenix_entra_account')
+                    || sessionStorage.getItem('cygenix_entra_account');
+      if (entraStr) {
+        const a = JSON.parse(entraStr);
+        if (a && (a.email || a.username || a.preferred_username)) {
+          return a.email || a.username || a.preferred_username;
+        }
+      }
+      // Fallback: legacy cygenix_user
+      const userStr = sessionStorage.getItem('cygenix_user')
+                   || localStorage.getItem('cygenix_user');
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u && u.email) return u.email;
+      }
+      // Last resort: cygenix_active_user (set by cygenix-cosmos-sync.js)
+      const active = localStorage.getItem('cygenix_active_user');
+      if (active) return active;
+    } catch (e) {
+      console.warn('[AgentiveMigration] could not resolve user id:', e.message);
+    }
+    return null;
+  }
+
   async function api(path, options = {}) {
-    const token = await getAuthToken();
-    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const userId = getActiveUserId();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    };
+    if (userId) headers['x-user-id'] = userId;
+
+    const url = buildApiUrl(path);
 
     let res;
     try {
-      res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+      res = await fetch(url, { ...options, headers });
     } catch (e) {
       throw new Error(`Network error calling ${path}: ${e.message}`);
     }
 
     // Detect "endpoint doesn't exist" from either a 404 status or a
-    // non-JSON response (Netlify returns its own HTML 404 page).
+    // non-JSON response (e.g. an Azure or Netlify HTML error page).
     const contentType = res.headers.get('content-type') || '';
     const isJson = contentType.includes('application/json');
 
