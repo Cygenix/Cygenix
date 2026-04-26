@@ -8,6 +8,11 @@ const CygenixSync = (() => {
   const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
   const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
 
+  // Capture the unmonkey-patched setItem early. We override localStorage.setItem
+  // below to trigger auto-save, and several internal codepaths need to write
+  // localStorage WITHOUT re-triggering that — using _orig avoids the loop.
+  const _orig = localStorage.setItem.bind(localStorage);
+
   const SYNC_KEYS = [
     'cygenix_jobs','cygenix_project_settings','cygenix_project_plan',
     'cygenix_project_connections','cygenix_saved_connections',
@@ -118,15 +123,97 @@ const CygenixSync = (() => {
     } catch (e) { console.warn('[CygenixSync] error:', e.message); return null; }
   }
 
+  // Build the payload to push to Cosmos. CRITICAL: this used to read
+  // localStorage and push directly, which overwrote any cloud-only records
+  // (e.g. jobs created server-side by the agentive migration backend, or by
+  // other browsers since the last load). Now it fetches cloud first and
+  // merges array-of-{id} fields by ID, with localStorage winning on
+  // collision. Object fields are still local-wins (those are user-edited
+  // config like project_settings, not lists).
+  //
+  // Why this matters: the auto-save below fires 3s after ANY localStorage
+  // write to a sync key. Without merge logic, any backend-side write to
+  // jobs[] gets clobbered within seconds.
+  async function buildMergedPayload() {
+    // Read all local sync keys
+    const local = {};
+    SYNC_KEYS.forEach(key => {
+      try {
+        const v = localStorage.getItem(key);
+        if (v) local[key.replace('cygenix_','')] = JSON.parse(v);
+      } catch {}
+    });
+    if (!Object.keys(local).length) return null;
+
+    // Pull current cloud state so we can preserve anything cloud-only
+    const cloud = await callApi('load','GET');
+    if (!cloud) return local; // can't fetch cloud — fall back to old behaviour
+
+    // For each field, pick a merge strategy
+    const merged = {};
+    for (const [field, localVal] of Object.entries(local)) {
+      const cloudVal = cloud[field];
+      merged[field] = mergeField(field, localVal, cloudVal);
+    }
+    return merged;
+  }
+
+  // Decide how to merge cloud and local for a given field.
+  // - Both arrays of objects with `id` → union by id, local wins on collision
+  // - Otherwise → local wins entirely (preserves existing behaviour)
+  function mergeField(field, localVal, cloudVal) {
+    if (cloudVal === undefined || cloudVal === null) return localVal;
+    if (!Array.isArray(localVal) || !Array.isArray(cloudVal)) return localVal;
+
+    // Check both are arrays-of-objects-with-id. If not, local wins.
+    const isIdArray = arr => arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]);
+    if (!isIdArray(localVal) || !isIdArray(cloudVal)) return localVal;
+
+    // Union by id, local wins on collision
+    const byId = new Map();
+    for (const item of cloudVal) {
+      if (item && item.id != null) byId.set(item.id, item);
+    }
+    for (const item of localVal) {
+      if (item && item.id != null) byId.set(item.id, item);
+    }
+    const result = Array.from(byId.values());
+
+    // Preserve order: local items first (in their original order), then any
+    // cloud-only items not in local (in their original order). Maintains the
+    // existing newest-first convention since localStorage usually has them
+    // ordered that way.
+    const localIds = new Set(localVal.filter(i => i && i.id != null).map(i => i.id));
+    const ordered = [
+      ...localVal.filter(i => i && i.id != null),
+      ...cloudVal.filter(i => i && i.id != null && !localIds.has(i.id)),
+    ];
+    return ordered;
+  }
+
   async function save() {
     if (!getUserId()) return null;
-    const payload = {};
-    SYNC_KEYS.forEach(key => {
-      try { const v = localStorage.getItem(key); if (v) payload[key.replace('cygenix_','')] = JSON.parse(v); } catch {}
-    });
-    if (!Object.keys(payload).length) return null;
+    const payload = await buildMergedPayload();
+    if (!payload || !Object.keys(payload).length) return null;
     const r = await callApi('save','POST',payload);
     if (r?.saved) console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
+    // After saving the merged result, sync localStorage with what we just
+    // pushed so the user sees the cloud-only records too. Without this, the
+    // localStorage stays at its old value until next page load.
+    if (r?.saved) {
+      try {
+        for (const [field, val] of Object.entries(payload)) {
+          const key = FIELD_MAP[field];
+          if (key) {
+            // Use the underlying setItem to avoid re-triggering the auto-save
+            // that called us in the first place (would loop).
+            _orig(key, JSON.stringify(val));
+          }
+        }
+      } catch (e) {
+        console.warn('[CygenixSync] post-save localStorage update failed:', e.message);
+      }
+    }
     return r;
   }
 
@@ -206,8 +293,8 @@ const CygenixSync = (() => {
     }
   }
 
-  // Auto-save on localStorage writes
-  const _orig = localStorage.setItem.bind(localStorage);
+  // Auto-save on localStorage writes. _orig is hoisted to the top of the
+  // module so save() can use it too without re-triggering the auto-save.
   localStorage.setItem = function(k, v) {
     _orig(k, v);
     if (SYNC_KEYS.includes(k) && getUserId()) {
