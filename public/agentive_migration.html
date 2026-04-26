@@ -73,8 +73,12 @@ body.cyg-collapsed .topbar{left:54px}
 .btn-danger{background:transparent;border-color:rgba(240,70,70,.4);color:var(--red)}
 .btn-danger:hover:not(:disabled){background:var(--red-bg);border-color:var(--red)}
 
-/* Page content area — sits beneath fixed topbar */
-.page{padding:72px 1.5rem 4rem;max-width:1100px;margin:0 auto}
+/* Page content area — sits beneath fixed topbar. Spans the full available
+   width (sidebar already shrinks the body), matching how other pages render.
+   Cards inside cap at a comfortable reading width so they don't stretch on
+   ultrawide displays. */
+.page{padding:72px 2rem 4rem;width:100%}
+.page-inner{max-width:1400px;margin:0 auto}
 
 .hero{margin-bottom:1.5rem}
 .hero h1{font-family:var(--serif);font-weight:600;font-size:24px;letter-spacing:-0.01em;margin:0 0 0.4rem;display:flex;align-items:center;gap:0.65rem}
@@ -245,19 +249,21 @@ body.cyg-collapsed .topbar{left:54px}
 </div>
 
 <div class="page">
-  <div class="hero">
-    <h1>
-      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke-width="1.2"/>
-        <path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke-width="1.2"/>
-        <path d="M1.5 8.5l4 4" stroke-width="1.2"/>
-      </svg>
-      Agentive Migration
-    </h1>
-    <p>Point Cygenix at your project's source and target. It will introspect both schemas, propose a complete object mapping with reasoning for every decision, and pause for your review before anything is committed.</p>
-  </div>
+  <div class="page-inner">
+    <div class="hero">
+      <h1>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke-width="1.2"/>
+          <path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke-width="1.2"/>
+          <path d="M1.5 8.5l4 4" stroke-width="1.2"/>
+        </svg>
+        Agentive Migration
+      </h1>
+      <p>Point Cygenix at your project's source and target. It will introspect both schemas, propose a complete object mapping with reasoning for every decision, and pause for your review before anything is committed.</p>
+    </div>
 
-  <div id="am-stage" class="stage"></div>
+    <div id="am-stage" class="stage"></div>
+  </div>
 </div>
 
 <script>
@@ -269,7 +275,7 @@ body.cyg-collapsed .topbar{left:54px}
   // Netlify's redirects only cover /api/db and /api/health; /api/agent/* would
   // 404 at the Netlify layer otherwise.
   const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
-  const FUNC_CODE = 'UfQpm2qJuc0lWIbYwtGUm_k6ys_FDEquCma-KCPl_e8rAzFu5qfwbA==';
+  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
   const POLL_INTERVAL_MS = 1500;
   const STORAGE_KEY = 'cygenix_agentive_migration';
 
@@ -811,13 +817,36 @@ body.cyg-collapsed .topbar{left:54px}
     startConnectionWatcher();
   }
 
+  // Read the user's currently-active project ID from localStorage. Object
+  // Mapping uses this same key to filter jobs by project, so any new job we
+  // create needs the same projectId to appear in the right view.
+  function getActiveProjectId() {
+    try {
+      return localStorage.getItem('cygenix_active_project_id') || '';
+    } catch { return ''; }
+  }
+
   function renderProposalApproval(run) {
     state.view = 'approval';
     setTopbarStatus('Awaiting your review');
     const payload = (run.pendingApproval && run.pendingApproval.payload) || {};
     const summary = payload.summary || 'No summary provided.';
-    const decisions = Array.isArray(payload.decisions) ? payload.decisions : [];
-    const tables = (payload.mapping && Array.isArray(payload.mapping.tables)) ? payload.mapping.tables : [];
+    const proposedJobs = Array.isArray(payload.proposedJobs) ? payload.proposedJobs : [];
+    const decisionsForUser = Array.isArray(payload.decisionsForUser) ? payload.decisionsForUser : [];
+    const risks = Array.isArray(payload.risks) ? payload.risks : [];
+    const finalized = !!payload.finalized;
+
+    // Counts used in the banner
+    const totalCols = proposedJobs.reduce((acc, j) => acc + (Array.isArray(j.columnMapping) ? j.columnMapping.length : 0), 0);
+
+    const noJobsNotice = (proposedJobs.length === 0) ? `
+      <div class="notice">
+        <strong>No table mappings were proposed.</strong>
+        ${finalized
+          ? 'The agent finished but did not propose any mappings. Read the summary below for why.'
+          : 'The agent did not finalize properly (likely hit a limit). The summary below shows what it had time to figure out.'}
+      </div>
+    ` : '';
 
     stage.innerHTML = `
       <div class="approval-banner">
@@ -826,49 +855,77 @@ body.cyg-collapsed .topbar{left:54px}
           <path d="M12 9v4"/><path d="M12 17h.01"/>
           <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
         </svg>
-        <span>The agent has prepared a proposal. Review it before anything is committed.</span>
+        <span>The agent proposed <strong>${proposedJobs.length}</strong> mapping${proposedJobs.length === 1 ? '' : 's'} (${totalCols} column${totalCols === 1 ? '' : 's'} total). Review before saving.</span>
       </div>
+
       <div class="card">
-        <div class="section-label">Proposal summary</div>
+        <div class="section-label">Summary</div>
         <div class="proposal-summary">${escapeHtml(summary)}</div>
-        ${decisions.length > 0 ? `
+
+        ${noJobsNotice}
+
+        ${proposedJobs.length > 0 ? `
+          <div style="margin-bottom:1rem">
+            <div class="section-label">Proposed mapping jobs (${proposedJobs.length})</div>
+            <div class="mapping-preview">
+              ${proposedJobs.map(j => {
+                const cols = Array.isArray(j.columnMapping) ? j.columnMapping : [];
+                const high = cols.filter(c => c.match === 'HIGH').length;
+                const med  = cols.filter(c => c.match === 'MEDIUM').length;
+                const low  = cols.filter(c => c.match === 'LOW').length;
+                const conf = j.confidence || 'MEDIUM';
+                const warn = Array.isArray(j.warnings) && j.warnings.length > 0 ? j.warnings.length : 0;
+                return `
+                  <div class="mapping-row">
+                    <div class="mapping-name">
+                      <span>${escapeHtml(j.sourceTable || '?')}</span>
+                      <span class="mapping-arrow">→</span>
+                      <span>${escapeHtml(j.targetTable || '?')}</span>
+                      <span class="decision-confidence ${escapeHtml(conf.toLowerCase())}" style="margin-left:auto">${escapeHtml(conf)}</span>
+                    </div>
+                    <div class="mapping-meta">
+                      ${cols.length} column${cols.length === 1 ? '' : 's'}
+                      ${high > 0 ? ` · ${high} high` : ''}${med > 0 ? ` · ${med} medium` : ''}${low > 0 ? ` · ${low} low` : ''}
+                      ${warn > 0 ? ` · ⚠ ${warn} warning${warn === 1 ? '' : 's'}` : ''}
+                    </div>
+                    ${j.reasoning ? `<div class="decision-reasoning" style="margin-top:6px">${escapeHtml(j.reasoning)}</div>` : ''}
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${decisionsForUser.length > 0 ? `
           <div class="decisions">
-            <div class="section-label">Key decisions</div>
-            ${decisions.map(d => `
+            <div class="section-label">Decisions for you to weigh in on</div>
+            ${decisionsForUser.map(d => `
               <div class="decision">
-                <div class="decision-label">
-                  ${escapeHtml(d.decision || '')}
-                  ${d.confidence ? `<span class="decision-confidence ${escapeHtml(d.confidence)}">${escapeHtml(d.confidence)}</span>` : ''}
-                </div>
-                <div class="decision-reasoning">${escapeHtml(d.reasoning || '')}</div>
+                <div class="decision-label">${escapeHtml(d.question || '')}</div>
+                <div class="decision-reasoning">${escapeHtml(d.context || '')}</div>
               </div>`).join('')}
           </div>` : ''}
-        ${tables.length > 0 ? `
-          <div class="section-label">Mapped tables (${tables.length})</div>
-          <div class="mapping-preview">
-            ${tables.map(t => {
-              const cols = Array.isArray(t.columns) ? t.columns : [];
-              const excluded = cols.filter(c => c.excluded).length;
-              return `
-                <div class="mapping-row">
-                  <div class="mapping-name">
-                    <span>${escapeHtml(t.sourceTable || '?')}</span>
-                    <span class="mapping-arrow">→</span>
-                    <span>${escapeHtml(t.targetTable || '?')}</span>
-                  </div>
-                  <div class="mapping-meta">${cols.length} column${cols.length === 1 ? '' : 's'}${excluded > 0 ? ` · ${excluded} excluded` : ''}</div>
-                </div>`;
-            }).join('')}
+
+        ${risks.length > 0 ? `
+          <div class="decisions">
+            <div class="section-label">Risks</div>
+            ${risks.map(r => `
+              <div class="decision">
+                <div class="decision-reasoning">⚠ ${escapeHtml(r)}</div>
+              </div>`).join('')}
           </div>` : ''}
+
         <div class="actions">
           <button class="btn btn-danger btn-sm" id="am-reject-btn">Reject &amp; revise</button>
-          <button class="btn btn-sm" id="am-edit-btn">Open in Object Mapping</button>
-          <button class="btn btn-green btn-sm" id="am-approve-btn">✓ Approve &amp; save</button>
+          <button class="btn btn-green btn-sm" id="am-approve-btn"${proposedJobs.length === 0 ? ' disabled' : ''}>
+            ✓ Approve &amp; save ${proposedJobs.length} job${proposedJobs.length === 1 ? '' : 's'}
+          </button>
         </div>
       </div>`;
 
-    document.getElementById('am-approve-btn').addEventListener('click', () => respondToApproval('approve'));
-    document.getElementById('am-edit-btn').addEventListener('click', () => respondToApproval('edit', payload.mapping));
+    document.getElementById('am-approve-btn').addEventListener('click', () => {
+      const projectId = getActiveProjectId();
+      respondToApproval('approve', null, null, null, projectId);
+    });
     document.getElementById('am-reject-btn').addEventListener('click', async () => {
       const feedback = prompt('What should the agent change? Be specific.');
       if (feedback && feedback.trim()) respondToApproval('reject', null, feedback.trim());
@@ -903,7 +960,7 @@ body.cyg-collapsed .topbar{left:54px}
     document.getElementById('am-cancel-q-btn').addEventListener('click', cancelRun);
   }
 
-  async function respondToApproval(action, mapping, feedback, answer) {
+  async function respondToApproval(action, mapping, feedback, answer, projectId) {
     if (!state.currentRunId) return;
     renderLoading('Submitting your response…');
     try {
@@ -911,6 +968,7 @@ body.cyg-collapsed .topbar{left:54px}
       if (mapping) body.mapping = mapping;
       if (feedback) body.feedback = feedback;
       if (answer != null) body.answer = answer;
+      if (projectId) body.projectId = projectId;
       await api(`/agent/run/${state.currentRunId}/respond`, {
         method: 'POST', body: JSON.stringify(body),
       });
@@ -922,6 +980,9 @@ body.cyg-collapsed .topbar{left:54px}
     state.view = 'completed';
     setTopbarStatus('Completed');
     const result = run.result || {};
+    const firstJobId = result.firstJobId;
+    const jobCount = result.jobCount || 0;
+
     stage.innerHTML = `
       <div class="card completed">
         <div class="success-icon">
@@ -930,10 +991,11 @@ body.cyg-collapsed .topbar{left:54px}
             <polyline points="20 6 9 17 4 12"/>
           </svg>
         </div>
-        <h2>Migration proposal saved</h2>
-        <p>${escapeHtml(result.summary || 'The agent finished and the mapping is ready in Object Mapping.')}</p>
-        <div style="display:flex;gap:0.5rem;justify-content:center">
-          ${result.mappingId ? `<a class="btn btn-primary btn-sm" href="/object_mapping.html?id=${encodeURIComponent(result.mappingId)}">Open mapping</a>` : ''}
+        <h2>${jobCount > 0 ? `Saved ${jobCount} mapping job${jobCount === 1 ? '' : 's'}` : 'Run complete'}</h2>
+        <p>${escapeHtml(result.summary || 'The run is finished.')}</p>
+        <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap">
+          ${firstJobId ? `<a class="btn btn-primary btn-sm" href="/object_mapping.html?edit=${encodeURIComponent(firstJobId)}">Open first job in Object Mapping</a>` : ''}
+          ${jobCount > 1 ? `<a class="btn btn-sm" href="/dashboard.html#jobs">View all jobs</a>` : ''}
           <button class="btn btn-sm" id="am-new-btn">Start a new run</button>
         </div>
       </div>`;
