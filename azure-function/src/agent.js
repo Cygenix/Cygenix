@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// agent.js — Agentive Migration backend (Stage 1: plumbing only)
+// agent.js — Agentive Migration backend
 // ─────────────────────────────────────────────────────────────────────────────
 // Endpoints:
 //   POST /api/agent/migrate              — Create a new agent run
@@ -7,13 +7,13 @@
 //   POST /api/agent/run/{runId}/respond  — User responds to an approval gate
 //   POST /api/agent/run/{runId}/cancel   — Cancel a running agent
 //
-// Stage 1 limitations:
-//   - The "agent loop" is stubbed. /migrate creates a run and immediately
-//     marks it as awaiting_approval with a fake proposal so the frontend's
-//     full lifecycle (running → approval → completed) can be tested.
-//   - No Anthropic API calls yet. No SQL introspection yet.
-//   - The shape of every Cosmos write matches what stage 2 will use, so
-//     stage 2 only swaps the stub for the real loop without changing storage.
+// Modes (controlled by AGENT_STUB_MODE env var):
+//   AGENT_STUB_MODE=1  — Stage 1 stub: synthesize a fake proposal so the UI
+//                        flow can be exercised without an Anthropic call.
+//   AGENT_STUB_MODE=0  — Stage 2a: call Anthropic for a real response, no
+//                        tools yet. Returns the model's text reply as the
+//                        proposal summary so the existing approval UI works.
+//   (unset, default 0) — Same as 0.
 //
 // Cosmos containers required (create in Azure Portal):
 //   agent_runs      — partition key /userId
@@ -38,6 +38,19 @@ function getCosmosContainer(containerName) {
     .container(containerName);
 }
 
+// ── Anthropic client (lazy singleton) ────────────────────────────────────────
+let _anthropic = null;
+function getAnthropic() {
+  if (!_anthropic) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY is not configured in Function app settings');
+    }
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+}
+
 // ── Shared CORS headers (match index.js) ────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -56,11 +69,9 @@ function nowIso() { return new Date().toISOString(); }
 function shortId(prefix) {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 }
+function isStubMode() { return process.env.AGENT_STUB_MODE === '1'; }
 
 // ── Feature flag check ──────────────────────────────────────────────────────
-// Reads the user's projects doc and looks for an aiAgentiveEnabled flag.
-// Returns true by default in stage 1 so we don't need to set up the flag
-// before testing. Tighten this in stage 2.
 async function isAgentiveEnabledForUser(userId, ctx) {
   try {
     const { resource } = await getCosmosContainer('projects')
@@ -73,9 +84,6 @@ async function isAgentiveEnabledForUser(userId, ctx) {
 }
 
 // ── Project connection lookup ────────────────────────────────────────────────
-// Reads the user's stored connections from the `projects` container, same
-// shape `data/save` and `data/load` use. Returns { srcConnString, tgtConnString,
-// tgtFnUrl, tgtFnKey } or null if not configured.
 async function getUserConnections(userId, ctx) {
   try {
     const { resource } = await getCosmosContainer('projects')
@@ -100,12 +108,10 @@ async function getUserConnections(userId, ctx) {
 function newRunDoc({ userId, goal, conns }) {
   return {
     id: shortId('run'),
-    userId,                          // partition key
-    status: 'running',               // running | awaiting_approval | completed | failed | cancelled
+    userId,
+    status: 'running',
     goal,
     direction: 'source_to_target',
-    // Snapshot of resolved connections at run start. We store *fingerprints*,
-    // not the credentials themselves, so the run history doesn't leak secrets.
     connectionsFingerprint: {
       sourceFingerprint: fingerprint(conns.srcConnString),
       targetFingerprint: fingerprint(conns.tgtConnString || conns.tgtFnUrl),
@@ -116,11 +122,10 @@ function newRunDoc({ userId, goal, conns }) {
     result: null,
     tokenUsage: { input: 0, output: 0, costUSD: 0 },
     budgetCap:  { maxTokens: 200_000, maxCostUSD: 2.00 },
+    mode: isStubMode() ? 'stub' : 'live',
   };
 }
 
-// Hash the first ~80 chars of a connection string so we can identify which
-// connection a run used without storing the connection string itself.
 function fingerprint(s) {
   if (!s) return null;
   return crypto.createHash('sha256').update(String(s).slice(0, 80)).digest('hex').slice(0, 12);
@@ -146,9 +151,9 @@ async function writeRun(run) {
 async function appendMessage(runId, message) {
   const doc = {
     id: shortId('msg'),
-    runId,                           // partition key
+    runId,
     seq: message.seq != null ? message.seq : Date.now(),
-    role: message.role,              // 'user' | 'assistant' | 'tool_result'
+    role: message.role,
     content: message.content || null,
     toolName: message.toolName || null,
     toolInput: message.toolInput || null,
@@ -172,6 +177,14 @@ async function loadMessages(runId, sinceSeq) {
       };
   const { resources } = await container.items.query(query, { partitionKey: runId }).fetchAll();
   return resources;
+}
+
+// ── Token cost estimation (claude-sonnet-4-5 pricing) ───────────────────────
+// As of writing: $3/MTok input, $15/MTok output. Update if pricing changes.
+function estimateCostUSD(usage) {
+  const inputCost  = (usage.input_tokens  || 0) * (3.00 / 1_000_000);
+  const outputCost = (usage.output_tokens || 0) * (15.00 / 1_000_000);
+  return inputCost + outputCost;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,9 +215,6 @@ app.http('agent_migrate', {
     }
 
     const run = newRunDoc({ userId, goal, conns });
-
-    // Seed the conversation with an initial user message so the future agent
-    // loop has context to work from.
     await getCosmosContainer('agent_runs').items.create(run);
     await appendMessage(run.id, {
       seq: 1,
@@ -212,18 +222,22 @@ app.http('agent_migrate', {
       content: [{ type: 'text', text: buildInitialPrompt(goal, run) }],
     });
 
-    ctx.log(`[agent] run ${run.id} created for user ${userId}, goal: "${goal.slice(0, 80)}…"`);
+    ctx.log(`[agent] run ${run.id} created (mode=${run.mode}) for user ${userId}, goal: "${goal.slice(0, 80)}"`);
 
-    // Stage 1 stub: synthesize a fake proposal so the frontend's approval flow
-    // can be exercised end to end without an Anthropic API key being set up.
-    // Stage 2 will replace this with a real agent loop.
-    if (process.env.AGENT_STUB_MODE === '1') {
-      await stubProduceFakeProposal(run, ctx);
-    } else {
-      // Without stub mode, we mark the run as failed with a clear message
-      // because there's no real agent loop yet. Frontend will show this.
+    // Branch on mode. Both branches end with the run in awaiting_approval state
+    // so the frontend's approval UI handles both transparently.
+    try {
+      if (isStubMode()) {
+        await stubProduceFakeProposal(run, ctx);
+      } else {
+        await liveProduceFirstProposal(run, ctx);
+      }
+    } catch (e) {
+      // Catch-all: if the live agent throws (Anthropic outage, bad key, etc),
+      // mark the run failed with a clean error message rather than 500ing.
+      ctx.log(`[agent] run ${run.id} failed: ${e.message}`);
       run.status = 'failed';
-      run.result = { error: 'Agent loop not deployed yet. Set AGENT_STUB_MODE=1 in Function app settings to test the UI flow with a fake proposal.' };
+      run.result = { error: e.message };
       await writeRun(run);
     }
 
@@ -231,8 +245,10 @@ app.http('agent_migrate', {
   },
 });
 
-// Stage 1 stub: write a fake assistant turn that "proposes a mapping",
-// then mark the run awaiting_approval so the frontend renders the approval view.
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 1: Stub mode — synthesize a fake proposal without calling Anthropic.
+// Used when AGENT_STUB_MODE=1. Lets us test the full UI flow without API cost.
+// ─────────────────────────────────────────────────────────────────────────────
 async function stubProduceFakeProposal(run, ctx) {
   await appendMessage(run.id, {
     seq: 2,
@@ -306,6 +322,116 @@ function stubCols(n, excluded) {
   return cols;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STAGE 2a: Live mode — call Anthropic for a real response, no tools yet.
+//
+// What this DOES:
+//   - Calls Claude with the user's goal + a system prompt
+//   - Stores the model's text response as an assistant message
+//   - Logs token usage to the run doc
+//   - Sets status to awaiting_approval with the model's text in the summary
+//
+// What this DOES NOT do (yet):
+//   - Tool use (introspect_source_schema, propose_mapping, etc.) — Stage 2b
+//   - Multi-turn agent loop — Stage 2b
+//   - Real schema introspection — Stage 2b
+// ─────────────────────────────────────────────────────────────────────────────
+async function liveProduceFirstProposal(run, ctx) {
+  const anthropic = getAnthropic();
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+
+  const systemPrompt = STAGE_2A_SYSTEM_PROMPT;
+  const initialMsg = `User goal:\n\n${run.goal}\n\n` +
+    `Source database fingerprint: ${run.connectionsFingerprint.sourceFingerprint}\n` +
+    `Target database fingerprint: ${run.connectionsFingerprint.targetFingerprint}\n\n` +
+    `In Stage 2a you do not yet have schema introspection tools available. ` +
+    `Acknowledge the goal, describe the high-level approach you would take, and list ` +
+    `the kinds of decisions you expect to make once you can see the schemas. Keep your ` +
+    `response under 300 words.`;
+
+  ctx.log(`[agent] run ${run.id} calling Anthropic (model=${model})...`);
+
+  const t0 = Date.now();
+  let response;
+  try {
+    response = await anthropic.messages.create({
+      model,
+      max_tokens: 1024,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: initialMsg }],
+    });
+  } catch (e) {
+    // Anthropic errors carry useful structured info — surface the relevant bits
+    const detail = e.status ? `${e.status} ${e.message}` : e.message;
+    throw new Error(`Anthropic API call failed: ${detail}`);
+  }
+  const elapsed = Date.now() - t0;
+
+  // Extract text blocks from the response (response.content is an array of
+  // typed blocks; for a no-tool call there should just be one or more text blocks).
+  const textBlocks = (response.content || []).filter(b => b.type === 'text');
+  const fullText = textBlocks.map(b => b.text).join('\n').trim();
+  if (!fullText) {
+    throw new Error('Anthropic returned no text content');
+  }
+
+  // Update token usage and cost on the run doc
+  const usage = response.usage || {};
+  const cost  = estimateCostUSD(usage);
+  run.tokenUsage = {
+    input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
+    output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
+    costUSD: (run.tokenUsage.costUSD || 0) + cost,
+  };
+
+  ctx.log(`[agent] run ${run.id} Anthropic response in ${elapsed}ms, ` +
+    `${usage.input_tokens || 0} in + ${usage.output_tokens || 0} out tokens, ` +
+    `$${cost.toFixed(4)}`);
+
+  // Persist the assistant turn so the frontend activity log shows it
+  await appendMessage(run.id, {
+    seq: 2,
+    role: 'assistant',
+    content: response.content,
+  });
+
+  // Stage 2a returns the model's text as the proposal summary so the existing
+  // approval UI renders it. The "decisions" and "mapping" arrays are placeholders
+  // since we don't have real introspection yet — they get a single placeholder
+  // entry to make the UI show context, not blank space.
+  run.status = 'awaiting_approval';
+  run.pendingApproval = {
+    type: 'propose_mapping',
+    requestedAt: nowIso(),
+    payload: {
+      summary: fullText,
+      decisions: [
+        {
+          decision: 'Stage 2a — model is reachable and responding',
+          reasoning: 'This is the first end-to-end live call. Schema introspection and structured proposals come in Stage 2b/2c.',
+          confidence: 'high',
+        },
+      ],
+      mapping: { tables: [] },  // empty until Stage 2b adds introspection
+    },
+  };
+  await writeRun(run);
+  ctx.log(`[agent] run ${run.id} live proposal produced, awaiting approval`);
+}
+
+const STAGE_2A_SYSTEM_PROMPT = `You are the Cygenix Migration Agent, an AI assistant that helps users migrate SQL databases.
+
+Cygenix is a SaaS platform where users connect a source SQL Server database and a target SQL Server database, then ask the agent to propose a mapping for migrating data from source to target. The agent introspects both schemas, proposes column-level mappings with reasoning, asks the user for clarification on ambiguous decisions, and only acts after explicit approval.
+
+Principles you follow:
+- Prefer exact type matches. Coerce only when necessary.
+- Flag potential PII columns (ssn, email, dob, credit card, etc.) for user review.
+- Preserve foreign key relationships. Order operations to respect dependencies.
+- Be conservative: when uncertain, ask. The user prefers a slow correct migration to a fast wrong one.
+- Never fabricate column or table names — only reference what introspection actually returned.
+
+You are currently running in Stage 2a — you have no tools yet. Acknowledge the user's goal, describe the approach you would take, and list the kinds of decisions you expect to face once schema introspection is available. Be concise.`;
+
 function buildInitialPrompt(goal, run) {
   return `Migrate from source to target.
 
@@ -313,9 +439,7 @@ User goal: ${goal}
 
 Run id: ${run.id}
 Source fingerprint: ${run.connectionsFingerprint.sourceFingerprint}
-Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}
-
-Use the introspect tools to understand the schemas, then propose a mapping with reasoning for each non-trivial decision. Pause for the user via ask_user when you cannot make a confident decision on your own.`;
+Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -346,7 +470,7 @@ app.http('agent_run_read', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROUTE: POST /api/agent/run/{runId}/respond — Approve / edit / reject / answer
+// ROUTE: POST /api/agent/run/{runId}/respond
 // ─────────────────────────────────────────────────────────────────────────────
 app.http('agent_run_respond', {
   methods: ['POST', 'OPTIONS'],
@@ -371,9 +495,6 @@ app.http('agent_run_respond', {
 
     switch (action) {
       case 'approve': {
-        // Stage 1: persist the proposed mapping into the user's projects doc
-        // so it appears in Object Mapping. Stage 2 will replace this with a
-        // proper write to a dedicated mappings container.
         const mapping = run.pendingApproval && run.pendingApproval.payload && run.pendingApproval.payload.mapping;
         const mappingId = await saveProposedMapping(userId, mapping, run, ctx);
         run.status = 'completed';
@@ -395,18 +516,14 @@ app.http('agent_run_respond', {
         return ok({ ok: true, status: 'completed', mappingId });
       }
       case 'reject': {
-        // Stage 1 stub: reject just marks the run failed. Stage 2 will feed
-        // the feedback back into the agent loop as a tool_result so the
-        // agent can try again.
         run.status = 'failed';
         run.pendingApproval = null;
-        run.result = { error: `Rejected: ${body.feedback || 'no feedback given'}. (Stage 2 will let the agent retry with this feedback.)` };
+        run.result = { error: `Rejected: ${body.feedback || 'no feedback given'}.` };
         await writeRun(run);
         return ok({ ok: true, status: 'failed' });
       }
       case 'answer': {
-        // Stage 1 stub: ask_user answers don't lead anywhere yet because
-        // there's no real agent loop. Mark cancelled.
+        // Stage 2a: ask_user not used yet; mark cancelled if we ever hit this
         run.status = 'cancelled';
         run.pendingApproval = null;
         await writeRun(run);
@@ -418,8 +535,6 @@ app.http('agent_run_respond', {
   },
 });
 
-// Stage 1: write the approved mapping into the user's projects doc under a
-// new `agent_mappings` field. Returns a synthetic mappingId.
 async function saveProposedMapping(userId, mapping, run, ctx) {
   const mappingId = shortId('map');
   if (!mapping) return mappingId;
@@ -469,7 +584,7 @@ app.http('agent_run_cancel', {
     if (!run) return err(404, 'Run not found');
 
     if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
-      return ok({ ok: true, status: run.status });   // already terminal
+      return ok({ ok: true, status: run.status });
     }
 
     run.status = 'cancelled';
@@ -479,6 +594,3 @@ app.http('agent_run_cancel', {
     return ok({ ok: true, status: 'cancelled' });
   },
 });
-
-// Note: this module has no exports. It registers HTTP routes via app.http()
-// at load time, so simply requiring the file from index.js is enough.
