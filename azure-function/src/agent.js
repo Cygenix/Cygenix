@@ -87,7 +87,7 @@ const SAMPLE_ROWS_DEFAULT = 5;
 const SAMPLE_ROWS_MAX = 10;
 const SAMPLE_COLS_MAX = 12;
 const RUN_BUDGET_USD = 5.0;               // hard cost cap per run
-const MODEL_MAX_TOKENS = 1024;            // bound output size per turn
+const MODEL_MAX_TOKENS = 4096;            // bound output size per turn (large enough for a full propose_table_mapping on wide tables)
 const TOKEN_BUDGET_PER_CALL = 25_000;     // soft input cap (under 30K rate limit)
 
 // ── Feature flag check ──────────────────────────────────────────────────────
@@ -943,44 +943,16 @@ async function runAgentLoop(run, conns, ctx) {
     // Token estimate check before each model call (rate limit)
     const estimatedTokens = estimateTokens(messages, SYSTEM_PROMPT);
     if (estimatedTokens > TOKEN_BUDGET_PER_CALL) {
-      ctx.log(`[agent] run ${run.id} would exceed token budget (${estimatedTokens} > ${TOKEN_BUDGET_PER_CALL}), forcing finalize`);
-      messages.push({
-        role: 'user',
-        content: `Your context has grown large (${estimatedTokens} estimated tokens). Call finalize_proposal now with whatever proposals you have. Do not call any other tools.`,
-      });
-      // Force a finalize-only call (still allow tools but only finalize_proposal makes sense at this point)
-      let finalResp;
-      try {
-        finalResp = await anthropic.messages.create({
-          model,
-          max_tokens: MODEL_MAX_TOKENS,
-          system: SYSTEM_PROMPT,
-          tools: TOOLS.filter(t => t.name === 'finalize_proposal'),
-          messages,
-        });
-      } catch (e) {
-        const detail = e.status ? `${e.status} ${e.message}` : e.message;
-        throw new Error(`Anthropic API call failed: ${detail}`);
-      }
-      const usage = finalResp.usage || {};
-      run.tokenUsage = {
-        input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
-        output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
-        costUSD: (run.tokenUsage.costUSD || 0) + estimateCostUSD(usage),
-      };
-      await appendMessage(run.id, {
-        seq: nextSeq++,
-        role: 'assistant',
-        content: finalResp.content,
-      });
-      await writeRun(run);
-      // Try to execute the finalize call if the model produced one
-      const finalizeBlock = (finalResp.content || []).find(b => b.type === 'tool_use' && b.name === 'finalize_proposal');
-      if (finalizeBlock) {
-        try { tool_finalize_proposal(finalizeBlock.input, proposalState); } catch (_e) { /* fall through */ }
-      }
-      const fallbackText = (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-      return { finalText: proposalState.summary || fallbackText || '(context limit reached)', proposalState };
+      ctx.log(`[agent] run ${run.id} would exceed token budget (${estimatedTokens} > ${TOKEN_BUDGET_PER_CALL}), forcing wrap-up`);
+      const wrapUpText = proposalState.proposals.length > 0
+        ? `Your context has grown large (${estimatedTokens} estimated tokens). Stop introspecting. Call finalize_proposal now with the ${proposalState.proposals.length} proposal(s) you have already made. Do not call propose_table_mapping again unless you must, and do not call any other tools.`
+        : `Your context has grown large (${estimatedTokens} estimated tokens). Stop introspecting. Based on what you have already seen, call propose_table_mapping for the table pair(s) you can map, then call finalize_proposal. Do not call any other tools.`;
+      messages.push({ role: 'user', content: wrapUpText });
+      // Allow propose_table_mapping AND finalize_proposal — the model needs
+      // both to complete the run. Disallow introspection tools (those got us
+      // into the budget overrun in the first place).
+      const wrapUpTools = TOOLS.filter(t => t.name === 'propose_table_mapping' || t.name === 'finalize_proposal');
+      return await wrapUpAndReturn(anthropic, model, messages, wrapUpTools, run, proposalState, nextSeq, ctx);
     }
 
     ctx.log(`[agent] turn ${turn + 1}/${MAX_TURNS} (cost so far $${(run.tokenUsage.costUSD || 0).toFixed(4)}, est ${estimatedTokens} input tokens, ${proposalState.proposals.length} proposals so far)`);
@@ -1083,43 +1055,118 @@ async function runAgentLoop(run, conns, ctx) {
     }
   }
 
-  // Hit max turns — ask for a forced finalize
-  ctx.log(`[agent] run ${run.id} hit MAX_TURNS=${MAX_TURNS}, requesting forced finalize`);
-  messages.push({
-    role: 'user',
-    content: `You have hit the maximum number of turns (${MAX_TURNS}). Call finalize_proposal now with whatever proposals you have. Do not call any other tools.`,
-  });
+  // Hit max turns — wrap up with whatever the agent has
+  ctx.log(`[agent] run ${run.id} hit MAX_TURNS=${MAX_TURNS}, requesting wrap-up`);
+  const wrapUpText = proposalState.proposals.length > 0
+    ? `You have hit the maximum number of turns (${MAX_TURNS}). Call finalize_proposal now with the ${proposalState.proposals.length} proposal(s) you have already made. Do not call any other tools.`
+    : `You have hit the maximum number of turns (${MAX_TURNS}). Based on what you have already seen, call propose_table_mapping for the table pair(s) you can map, then call finalize_proposal. Do not call any other tools.`;
+  messages.push({ role: 'user', content: wrapUpText });
+  const wrapUpTools = TOOLS.filter(t => t.name === 'propose_table_mapping' || t.name === 'finalize_proposal');
+  return await wrapUpAndReturn(getAnthropic(), model, messages, wrapUpTools, run, proposalState, nextSeq, ctx);
+}
 
-  const finalResp = await getAnthropic().messages.create({
-    model,
-    max_tokens: MODEL_MAX_TOKENS,
-    system: SYSTEM_PROMPT,
-    tools: TOOLS.filter(t => t.name === 'finalize_proposal'),
-    messages,
-  });
+// Forced wrap-up helper. Called when the loop must exit (token budget hit or
+// max turns). Allows the model to make any pending propose_table_mapping
+// calls plus a final finalize_proposal. If proposals come back but finalize
+// doesn't, we make ONE more call asking only for finalize. This handles the
+// common case where the model uses a turn to emit proposals, then a second
+// turn to finalize.
+async function wrapUpAndReturn(anthropic, model, messages, tools, run, proposalState, nextSeq, ctx) {
+  let resp;
+  try {
+    resp = await anthropic.messages.create({
+      model,
+      max_tokens: MODEL_MAX_TOKENS,
+      system: SYSTEM_PROMPT,
+      tools,
+      messages,
+    });
+  } catch (e) {
+    const detail = e.status ? `${e.status} ${e.message}` : e.message;
+    throw new Error(`Anthropic API call failed: ${detail}`);
+  }
 
-  const usage = finalResp.usage || {};
+  // Update token usage
+  let usage = resp.usage || {};
   run.tokenUsage = {
     input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
     output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
     costUSD: (run.tokenUsage.costUSD || 0) + estimateCostUSD(usage),
   };
+
   await appendMessage(run.id, {
     seq: nextSeq++,
     role: 'assistant',
-    content: finalResp.content,
+    content: resp.content,
   });
   await writeRun(run);
 
-  // Execute the finalize call if the model produced one
-  const finalizeBlock = (finalResp.content || []).find(b => b.type === 'tool_use' && b.name === 'finalize_proposal');
-  if (finalizeBlock) {
-    try { tool_finalize_proposal(finalizeBlock.input, proposalState); } catch (_e) { /* ignore */ }
+  // Execute any tool calls in the response — propose_table_mapping (validated)
+  // and finalize_proposal (sets proposalState.finalized).
+  const toolUses = (resp.content || []).filter(b => b.type === 'tool_use');
+  for (const tu of toolUses) {
+    try {
+      if (tu.name === 'propose_table_mapping') {
+        tool_propose_table_mapping(tu.input, proposalState);
+      } else if (tu.name === 'finalize_proposal') {
+        tool_finalize_proposal(tu.input, proposalState);
+      }
+    } catch (e) {
+      ctx.log(`[agent] wrap-up tool ${tu.name} failed: ${e.message}`);
+    }
   }
 
-  const fallbackText = (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+  // If proposals came back but the agent didn't finalize, make ONE more
+  // call asking for finalize only. Common case: wide tables consume the
+  // turn's output budget on a single propose_table_mapping call.
+  if (!proposalState.finalized && proposalState.proposals.length > 0) {
+    ctx.log(`[agent] run ${run.id} got ${proposalState.proposals.length} proposals but no finalize, requesting one more turn`);
+    messages.push({ role: 'assistant', content: resp.content });
+    // Synthesize tool_results so the model's prior propose calls are acknowledged
+    const fakeResults = toolUses.map(tu => ({
+      type: 'tool_result',
+      tool_use_id: tu.id,
+      content: JSON.stringify({ accepted: true }),
+    }));
+    if (fakeResults.length > 0) {
+      messages.push({ role: 'user', content: fakeResults });
+    }
+    messages.push({
+      role: 'user',
+      content: `Now call finalize_proposal with a brief summary of the ${proposalState.proposals.length} proposal(s) you just made. Do not call any other tools.`,
+    });
+    try {
+      const finalizeOnly = await anthropic.messages.create({
+        model,
+        max_tokens: 1024,  // finalize is small
+        system: SYSTEM_PROMPT,
+        tools: TOOLS.filter(t => t.name === 'finalize_proposal'),
+        messages,
+      });
+      usage = finalizeOnly.usage || {};
+      run.tokenUsage = {
+        input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
+        output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
+        costUSD: (run.tokenUsage.costUSD || 0) + estimateCostUSD(usage),
+      };
+      await appendMessage(run.id, {
+        seq: nextSeq++,
+        role: 'assistant',
+        content: finalizeOnly.content,
+      });
+      await writeRun(run);
+      const finalizeBlock = (finalizeOnly.content || []).find(b => b.type === 'tool_use' && b.name === 'finalize_proposal');
+      if (finalizeBlock) {
+        try { tool_finalize_proposal(finalizeBlock.input, proposalState); } catch (e) { ctx.log(`[agent] follow-up finalize failed: ${e.message}`); }
+      }
+    } catch (e) {
+      ctx.log(`[agent] follow-up finalize call failed: ${e.message}`);
+    }
+  }
+
+  const fallbackText = (resp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
   return {
-    finalText: proposalState.summary || fallbackText || '(max turns reached without finalize)',
+    finalText: proposalState.summary || fallbackText || (proposalState.proposals.length > 0 ? `${proposalState.proposals.length} proposal(s) recorded but the agent did not finalize.` : '(no proposals produced)'),
     proposalState,
   };
 }
