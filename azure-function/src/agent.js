@@ -154,7 +154,21 @@ async function readRun(runId, userId) {
   try {
     const { resource } = await getCosmosContainer('agent_runs')
       .item(runId, userId).read();
-    return resource || null;
+    if (!resource) return null;
+
+    // Staleness reaper: a run stuck in 'running' for >6 minutes (longer than
+    // the Function timeout) means the worker died mid-loop. Flip to failed
+    // so the frontend doesn't poll forever.
+    if (resource.status === 'running') {
+      const ageMs = Date.now() - new Date(resource.updatedAt || resource.createdAt).getTime();
+      if (ageMs > 6 * 60 * 1000) {
+        resource.status = 'failed';
+        resource.result = { error: 'Run timed out (worker did not complete in time). The agent may have been killed by a restart or hit a deadlock.' };
+        resource.pendingApproval = null;
+        try { await writeRun(resource); } catch (_e) { /* best-effort */ }
+      }
+    }
+    return resource;
   } catch (e) {
     if (e.code === 404) return null;
     throw e;
@@ -1239,27 +1253,62 @@ app.http('agent_migrate', {
 
     ctx.log(`[agent] run ${run.id} created (mode=${run.mode}) for user ${userId}`);
 
-    // Note: synchronous execution. The frontend's POST hangs until we finish
-    // (could be 30-90 seconds for a real run). The 5-min Function timeout
-    // gives us plenty of headroom; if we ever need longer, this becomes a
-    // queue trigger.
-    try {
-      if (isStubMode()) {
-        await stubProduceFakeProposal(run, ctx);
-      } else {
-        await liveProduceProposal(run, conns, ctx);
-      }
-    } catch (e) {
-      ctx.log(`[agent] run ${run.id} failed: ${e.message}`);
-      await closeRunPools(run.id);
-      run.status = 'failed';
-      run.result = { error: e.message };
-      await writeRun(run);
-    }
+    // Return the runId IMMEDIATELY so the frontend can start polling and show
+    // progress as the agent works. The agent loop runs in the background.
+    //
+    // CAVEAT: Azure Functions v4 keeps the worker alive while there are
+    // outstanding promises, but a Flex Consumption restart could still kill
+    // the process mid-run. Runs left in `status: 'running'` for >6 minutes
+    // are reaped by readRun's staleness check below.
+    //
+    // If you need rock-solid durability, refactor this to a queue trigger:
+    //   1. POST migrate enqueues a message with run.id
+    //   2. queue-triggered function runs the loop
+    //   3. frontend polls run state same as today
+    runInBackground(run, conns, ctx).catch(e => {
+      ctx.log(`[agent] background run ${run.id} threw outside loop: ${e.message}`);
+    });
 
     return ok({ runId: run.id });
   },
 });
+
+// Run the agent loop without blocking the HTTP response. Errors are caught
+// and converted to a failed run state.
+async function runInBackground(run, conns, ctx) {
+  try {
+    if (isStubMode()) {
+      await stubProduceFakeProposal(run, ctx);
+    } else {
+      await liveProduceProposal(run, conns, ctx);
+    }
+  } catch (e) {
+    ctx.log(`[agent] run ${run.id} failed: ${e.message}`);
+    await closeRunPools(run.id);
+    try {
+      const fresh = await readRunRaw(run.id, run.userId);
+      if (fresh) {
+        fresh.status = 'failed';
+        fresh.result = { error: e.message };
+        await writeRun(fresh);
+      }
+    } catch (writeErr) {
+      ctx.log(`[agent] could not record failure for ${run.id}: ${writeErr.message}`);
+    }
+  }
+}
+
+// Like readRun, but does NOT apply the staleness reaper. Used by the
+// background runner where applying reaping would race the run itself.
+async function readRunRaw(runId, userId) {
+  try {
+    const { resource } = await getCosmosContainer('agent_runs').item(runId, userId).read();
+    return resource || null;
+  } catch (e) {
+    if (e.code === 404) return null;
+    throw e;
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE: GET /api/agent/run/{runId}
