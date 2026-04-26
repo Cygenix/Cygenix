@@ -275,7 +275,10 @@ body.cyg-collapsed .topbar{left:54px}
   // Netlify's redirects only cover /api/db and /api/health; /api/agent/* would
   // 404 at the Netlify layer otherwise.
   const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
-  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+  // HOST-LEVEL function key (Azure Portal → cygenix-db-api → App keys →
+  // "default" under Host keys). The per-function `data` key (WjSmoWxg…) does
+  // NOT work here because the agent endpoints are separate functions.
+  const FUNC_CODE = 'UfQpm2qJuc0lWlbYwt_REPLACE_ME_WITH_FULL_HOST_DEFAULT_KEY';
   const POLL_INTERVAL_MS = 1500;
   const STORAGE_KEY = 'cygenix_agentive_migration';
 
