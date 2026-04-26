@@ -374,6 +374,88 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'propose_table_mapping',
+    description: 'Propose a single source-table → target-table mapping with full column-level details. Call this once per table pair you want to migrate. You can call it multiple times in a single turn or across turns. Each call must include the complete column mapping for that pair.\n\nIMPORTANT: only use exact table and column names that introspection actually returned. Do not invent names. If you have not yet introspected a table, do not propose it.\n\nValidation rules (the call will fail if you violate these):\n- transform must be one of: NONE, TRIM, UPPER, LOWER, CAST\n- match must be one of: HIGH, MEDIUM, LOW\n- match guidance: HIGH = identical column name and clearly compatible type; MEDIUM = similar name or clear semantic match with type coercion needed; LOW = inferred match with significant uncertainty\n- sourceTable and targetTable must be in "schema.table" format',
+    input_schema: {
+      type: 'object',
+      required: ['name', 'sourceTable', 'targetTable', 'columnMapping', 'reasoning'],
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Short identifier for this mapping job, e.g. "customers_to_customers". Lowercase, underscores, no spaces.',
+        },
+        sourceTable: {
+          type: 'string',
+          description: 'Source table as "schema.table" (e.g. "dbo.Customers").',
+        },
+        targetTable: {
+          type: 'string',
+          description: 'Target table as "schema.table" (e.g. "dbo.Customer").',
+        },
+        columnMapping: {
+          type: 'array',
+          description: 'Array of column mappings. Include every target column that should be populated. For target columns that have no source equivalent, you may either omit them (target default/NULL applies) or include them with srcCol="" so the user sees the unmapped column.',
+          items: {
+            type: 'object',
+            required: ['srcCol', 'tgtCol', 'transform', 'match'],
+            properties: {
+              srcCol: { type: 'string', description: 'Source column name. Empty string if no source mapping (uses target default/NULL).' },
+              tgtCol: { type: 'string', description: 'Target column name.' },
+              transform: { type: 'string', enum: ['NONE', 'TRIM', 'UPPER', 'LOWER', 'CAST'], description: 'Transformation. NONE = direct copy. CAST = type conversion (auto-handled by SQL generation).' },
+              match: { type: 'string', enum: ['HIGH', 'MEDIUM', 'LOW'], description: 'Confidence in this mapping.' },
+              note: { type: 'string', description: 'Optional explanation, especially for non-NONE transforms or LOW confidence matches.' },
+            },
+          },
+        },
+        reasoning: {
+          type: 'string',
+          description: 'Brief reasoning for this whole table-pair mapping (1-2 sentences). What is being migrated and why these columns map this way.',
+        },
+        confidence: {
+          type: 'string',
+          enum: ['HIGH', 'MEDIUM', 'LOW'],
+          description: 'Overall confidence in this table-pair mapping. Optional; defaults to MEDIUM.',
+        },
+        warnings: {
+          type: 'array',
+          description: 'Optional warnings the user should review (PII columns, type narrowing risk, missing target columns, etc.).',
+          items: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
+    name: 'finalize_proposal',
+    description: 'Call this exactly once at the end of your run to wrap up. After this is called, the run pauses for user approval. You should already have called propose_table_mapping for every table pair you want to migrate before calling this. If you have no proposals to make (e.g. user goal cannot be satisfied), still call this and explain why in summary.',
+    input_schema: {
+      type: 'object',
+      required: ['summary'],
+      properties: {
+        summary: {
+          type: 'string',
+          description: '2-4 sentences explaining what was proposed and why. The user reads this first.',
+        },
+        decisionsForUser: {
+          type: 'array',
+          description: 'Optional list of decisions the user should weigh in on before approving (e.g. "Should historical orders before 2020 be migrated?").',
+          items: {
+            type: 'object',
+            required: ['question', 'context'],
+            properties: {
+              question: { type: 'string' },
+              context: { type: 'string', description: 'Why this question matters — what the user needs to know to decide.' },
+            },
+          },
+        },
+        risks: {
+          type: 'array',
+          description: 'Optional list of risks the user should be aware of (PII handling, data loss potential, migration order dependencies).',
+          items: { type: 'string' },
+        },
+      },
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -608,8 +690,11 @@ function splitFqName(fq) {
   return [fq.slice(0, idx).trim(), fq.slice(idx + 1).trim()];
 }
 
-// Dispatcher used by the agent loop
-async function executeTool(name, input, conns, runId, ctx) {
+// Dispatcher used by the agent loop. The first six tools are side-effect-free
+// SQL queries. The last two (propose_table_mapping, finalize_proposal) are
+// state-affecting — they record a proposal in proposalState. The loop checks
+// proposalState.finalized after each turn to know whether to exit.
+async function executeTool(name, input, conns, runId, ctx, proposalState) {
   ctx.log(`[agent] tool: ${name}(${JSON.stringify(input).slice(0, 120)})`);
   const t0 = Date.now();
   try {
@@ -621,6 +706,8 @@ async function executeTool(name, input, conns, runId, ctx) {
       case 'describe_tables':         result = await tool_describe_tables(input, conns, runId); break;
       case 'get_table_relationships': result = await tool_get_table_relationships(input, conns, runId); break;
       case 'sample_table':            result = await tool_sample_table(input, conns, runId); break;
+      case 'propose_table_mapping':   result = tool_propose_table_mapping(input, proposalState); break;
+      case 'finalize_proposal':       result = tool_finalize_proposal(input, proposalState); break;
       default: throw new Error(`unknown tool: ${name}`);
     }
     ctx.log(`[agent] tool ${name} ok in ${Date.now() - t0}ms`);
@@ -629,6 +716,87 @@ async function executeTool(name, input, conns, runId, ctx) {
     ctx.log(`[agent] tool ${name} failed: ${e.message}`);
     throw e;
   }
+}
+
+// ── Validators for the two terminal tools ──────────────────────────────────
+const ALLOWED_TRANSFORMS = ['NONE', 'TRIM', 'UPPER', 'LOWER', 'CAST'];
+const ALLOWED_MATCHES = ['HIGH', 'MEDIUM', 'LOW'];
+
+function tool_propose_table_mapping(input, proposalState) {
+  if (proposalState.finalized) {
+    throw new Error('Cannot propose more mappings after finalize_proposal has been called.');
+  }
+  const errs = [];
+  const { name, sourceTable, targetTable, columnMapping, reasoning, confidence, warnings } = input || {};
+  if (!name || typeof name !== 'string') errs.push('name is required');
+  if (!sourceTable || !sourceTable.includes('.')) errs.push('sourceTable must be "schema.table"');
+  if (!targetTable || !targetTable.includes('.')) errs.push('targetTable must be "schema.table"');
+  if (!Array.isArray(columnMapping) || columnMapping.length === 0) errs.push('columnMapping must be a non-empty array');
+  if (!reasoning || typeof reasoning !== 'string') errs.push('reasoning is required');
+
+  if (Array.isArray(columnMapping)) {
+    columnMapping.forEach((m, i) => {
+      if (typeof m.srcCol !== 'string') errs.push(`columnMapping[${i}].srcCol must be a string`);
+      if (!m.tgtCol || typeof m.tgtCol !== 'string') errs.push(`columnMapping[${i}].tgtCol must be a non-empty string`);
+      if (!ALLOWED_TRANSFORMS.includes(m.transform)) {
+        errs.push(`columnMapping[${i}].transform "${m.transform}" not allowed; must be one of ${ALLOWED_TRANSFORMS.join(', ')}`);
+      }
+      if (!ALLOWED_MATCHES.includes(m.match)) {
+        errs.push(`columnMapping[${i}].match "${m.match}" not allowed; must be one of ${ALLOWED_MATCHES.join(', ')}`);
+      }
+    });
+  }
+
+  if (errs.length > 0) {
+    throw new Error(`propose_table_mapping validation failed:\n - ${errs.join('\n - ')}`);
+  }
+
+  // Reject duplicate proposals (same source/target pair) — agent would have to revise via a fresh call
+  const dup = proposalState.proposals.find(p => p.sourceTable === sourceTable && p.targetTable === targetTable);
+  if (dup) {
+    throw new Error(`A proposal for ${sourceTable} → ${targetTable} already exists. To revise, call finalize_proposal then start a new run.`);
+  }
+
+  const proposal = {
+    name: name.replace(/[^a-zA-Z0-9_]/g, '_').slice(0, 80),
+    sourceTable,
+    targetTable,
+    columnMapping: columnMapping.map(m => ({
+      srcCol: m.srcCol || '',
+      tgtCol: m.tgtCol,
+      transform: m.transform,
+      match: m.match,
+      note: m.note || '',
+    })),
+    reasoning,
+    confidence: confidence || 'MEDIUM',
+    warnings: Array.isArray(warnings) ? warnings : [],
+  };
+  proposalState.proposals.push(proposal);
+  return {
+    accepted: true,
+    proposalCount: proposalState.proposals.length,
+    note: `Proposal recorded. ${proposalState.proposals.length} so far. Call finalize_proposal when done with all table pairs.`,
+  };
+}
+
+function tool_finalize_proposal(input, proposalState) {
+  if (proposalState.finalized) {
+    throw new Error('finalize_proposal already called for this run.');
+  }
+  const { summary, decisionsForUser, risks } = input || {};
+  if (!summary || typeof summary !== 'string') {
+    throw new Error('summary is required');
+  }
+  proposalState.finalized = true;
+  proposalState.summary = summary;
+  proposalState.decisionsForUser = Array.isArray(decisionsForUser) ? decisionsForUser : [];
+  proposalState.risks = Array.isArray(risks) ? risks : [];
+  return {
+    accepted: true,
+    finalized: true,
+    note: `Run finalized with ${proposalState.proposals.length} proposed mapping(s). Returning to user for approval.`,
+  };
 }
 
 // Truncate large tool results so they don't blow the context window.
@@ -644,43 +812,64 @@ function enforceSize(obj) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SYSTEM PROMPT
 // ─────────────────────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are the Cygenix Migration Agent, an AI assistant that analyses SQL Server databases to plan migrations.
+const SYSTEM_PROMPT = `You are the Cygenix Migration Agent, an AI assistant that analyses SQL Server databases and proposes structured migration mappings.
 
-You have a SOURCE database and a TARGET database. The user wants to migrate data from source to target. Your job in this stage is to explore both schemas using the introspection tools, understand what is relevant to the user's goal, and then write a clear analysis: what tables/columns are involved, what mappings are obvious, what decisions need user input, and what risks you see.
+You have a SOURCE database and a TARGET database. The user wants to migrate data from source to target. You explore both schemas using introspection tools, then propose specific source-table → target-table mappings using propose_table_mapping. When done, you call finalize_proposal once to wrap up.
 
-Important context:
+## Important context
+
 - Databases are LARGE (the source may have 2,500 tables, the target 9,000+). Tool results are tightly capped to keep within rate limits, so you MUST filter aggressively.
-- ALWAYS filter list_tables by schema or namePattern. Calling list_tables without filters on a large database wastes a turn — it returns 50 arbitrary results that are unlikely to be what you need.
-- Start by calling list_schemas to see schema names, then use search_tables with a substring from the user's goal (e.g. if the goal mentions "customer", search for "customer"). Only call describe_tables on the small set of tables you've identified as relevant.
-- Use sample_table sparingly — only when type or content is genuinely ambiguous and the answer would affect mapping decisions. Sampling reads real data into your context.
-- You have a hard limit of ${MAX_TURNS} turns and a $${RUN_BUDGET_USD} cost cap. Be efficient. Each turn that explores wide rather than deep wastes tokens.
-- If your context starts getting full (long history of large tool results), wrap up and produce your analysis with what you have rather than calling more tools.
-- For each non-trivial decision, state your reasoning and your confidence (high / medium / low).
-- Flag potential PII (email, ssn, dob, credit card, password) explicitly for user review.
-- You cannot yet propose a structured machine-readable mapping (that comes in a future stage). For now, write a clear human-readable analysis as your final response.
-- If the user's goal is unclear or you need a decision you cannot make confidently, say so explicitly in your final response.
+- ALWAYS filter list_tables by schema or namePattern. Calling it without filters wastes a turn.
+- Start by calling list_schemas to see schema names, then use search_tables with a substring from the user's goal. Only call describe_tables on the small set of tables you've identified as relevant.
+- Use sample_table sparingly — only when type or content is genuinely ambiguous.
+- You have a hard limit of ${MAX_TURNS} turns and a $${RUN_BUDGET_USD} cost cap.
+- If your context is getting full, wrap up and finalize rather than calling more introspection tools.
 
-Final output format:
-When you are done exploring, write a final response (no tool calls) structured like:
+## How to produce a proposal
 
-  ## Summary
-  (2-3 sentences: what you understood, what's in scope)
+Once you've explored enough to understand a source-table → target-table mapping:
 
-  ## Key tables identified
-  - schema.table (purpose, row count)
-  - ...
+1. Call describe_tables on BOTH the source table and the target table (you cannot propose without seeing both schemas).
+2. Call propose_table_mapping with:
+   - A short snake_case name like "customers_to_customer"
+   - Full sourceTable and targetTable as "schema.table"
+   - A complete columnMapping array — one entry per target column you intend to populate
+   - Each entry has srcCol (or empty string for unmapped), tgtCol, transform (NONE/TRIM/UPPER/LOWER/CAST), match (HIGH/MEDIUM/LOW), and an optional note
+   - Brief reasoning for the whole pair
+   - Optional warnings (PII, type narrowing risk, etc.)
+3. You can call propose_table_mapping multiple times — once per table pair.
+4. When you are done with ALL table pairs, call finalize_proposal once with:
+   - summary (2-4 sentences explaining the overall proposal)
+   - decisionsForUser (optional list of {question, context} for things the user should weigh in on)
+   - risks (optional list of strings)
 
-  ## Proposed mappings
-  - source.foo → target.bar (notes on type changes, transformations needed)
-  - ...
+After finalize_proposal is called, the run pauses and the user reviews. Do not call any more tools after finalize_proposal.
 
-  ## Decisions needed
-  - (anything you weren't confident about — phrase as questions)
+## Match value guidance
 
-  ## Risks
-  - (PII, data loss, performance, etc.)
+- HIGH: column names match exactly AND types are clearly compatible (e.g. id INT → id INT, email NVARCHAR(255) → email VARCHAR(255))
+- MEDIUM: similar names or clear semantic match needing minor coercion (e.g. createdAt DATETIME → created_at DATETIME2, name NVARCHAR → name VARCHAR with no length narrowing risk)
+- LOW: inferred match with significant uncertainty (e.g. status VARCHAR(50) → state INT — needs a transform you can't fully verify)
 
-Be concise. Aim for a response under 800 words.`;
+## Transform value guidance
+
+- NONE: direct copy (most cases)
+- TRIM: source has padding/whitespace that should be removed
+- UPPER / LOWER: case normalization
+- CAST: type conversion needed (the SQL generator will produce the appropriate CAST when Object Mapping renders this); use this when source and target types differ in a way that requires explicit casting
+
+## What to flag as risks
+
+- PII columns (email, ssn, dob, credit card, password, phone, address). Mention these explicitly.
+- Type narrowing (e.g. NVARCHAR(MAX) → VARCHAR(255) — could truncate)
+- Missing target columns (target has columns with no source — they need defaults)
+- Migration order dependencies (foreign keys constraining the order you must run jobs)
+
+## If the goal cannot be fulfilled
+
+If the user's goal is unclear, infeasible, or the source/target don't have what's needed: still call finalize_proposal with zero proposed mappings. Use summary to explain what's wrong and decisionsForUser to ask for clarification. Do not invent mappings just to produce something.
+
+Be concise. Each turn should advance the proposal — don't explore for the sake of exploring.`;
 
 // Rough token estimation: ~4 chars per token for English/JSON. Used to decide
 // whether the next Anthropic call would blow the per-minute rate limit.
@@ -703,9 +892,21 @@ function estimateTokens(messages, systemPrompt) {
 // ─────────────────────────────────────────────────────────────────────────────
 // THE AGENT LOOP
 // ─────────────────────────────────────────────────────────────────────────────
+// Returns { finalText, proposalState }. proposalState contains the structured
+// proposals if the model called finalize_proposal; otherwise it's empty (and
+// finalText is the model's free-form fallback message).
 async function runAgentLoop(run, conns, ctx) {
   const anthropic = getAnthropic();
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+
+  // State accumulated by propose_table_mapping / finalize_proposal calls
+  const proposalState = {
+    proposals: [],         // array of { name, sourceTable, targetTable, columnMapping, reasoning, confidence, warnings }
+    finalized: false,
+    summary: '',
+    decisionsForUser: [],
+    risks: [],
+  };
 
   // Conversation builds up across turns. Start with the user's initial message.
   const messages = [{
@@ -721,26 +922,26 @@ async function runAgentLoop(run, conns, ctx) {
       ctx.log(`[agent] run ${run.id} hit cost cap at turn ${turn}`);
       messages.push({
         role: 'user',
-        content: `You have hit the budget cap of $${RUN_BUDGET_USD}. Produce your final analysis now using the information you have already gathered. Do not call any more tools.`,
+        content: `You have hit the budget cap of $${RUN_BUDGET_USD}. Call finalize_proposal now with whatever proposals you have so far, even if you would have liked to do more. Do not call any other tools.`,
       });
     }
 
     // Token estimate check before each model call (rate limit)
     const estimatedTokens = estimateTokens(messages, SYSTEM_PROMPT);
     if (estimatedTokens > TOKEN_BUDGET_PER_CALL) {
-      ctx.log(`[agent] run ${run.id} would exceed token budget (${estimatedTokens} > ${TOKEN_BUDGET_PER_CALL}), forcing final response`);
-      // Replace the messages with a compacted version + final-response request
+      ctx.log(`[agent] run ${run.id} would exceed token budget (${estimatedTokens} > ${TOKEN_BUDGET_PER_CALL}), forcing finalize`);
       messages.push({
         role: 'user',
-        content: `Your context has grown large (${estimatedTokens} estimated tokens). Stop calling tools and produce your final analysis now using whatever you have gathered. Be concise.`,
+        content: `Your context has grown large (${estimatedTokens} estimated tokens). Call finalize_proposal now with whatever proposals you have. Do not call any other tools.`,
       });
-      // Force a no-tools call so the model has no choice but to write a response
+      // Force a finalize-only call (still allow tools but only finalize_proposal makes sense at this point)
       let finalResp;
       try {
         finalResp = await anthropic.messages.create({
           model,
           max_tokens: MODEL_MAX_TOKENS,
           system: SYSTEM_PROMPT,
+          tools: TOOLS.filter(t => t.name === 'finalize_proposal'),
           messages,
         });
       } catch (e) {
@@ -759,11 +960,16 @@ async function runAgentLoop(run, conns, ctx) {
         content: finalResp.content,
       });
       await writeRun(run);
-      return (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
-        || '(no final response)';
+      // Try to execute the finalize call if the model produced one
+      const finalizeBlock = (finalResp.content || []).find(b => b.type === 'tool_use' && b.name === 'finalize_proposal');
+      if (finalizeBlock) {
+        try { tool_finalize_proposal(finalizeBlock.input, proposalState); } catch (_e) { /* fall through */ }
+      }
+      const fallbackText = (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      return { finalText: proposalState.summary || fallbackText || '(context limit reached)', proposalState };
     }
 
-    ctx.log(`[agent] turn ${turn + 1}/${MAX_TURNS} (cost so far $${(run.tokenUsage.costUSD || 0).toFixed(4)}, est ${estimatedTokens} input tokens)`);
+    ctx.log(`[agent] turn ${turn + 1}/${MAX_TURNS} (cost so far $${(run.tokenUsage.costUSD || 0).toFixed(4)}, est ${estimatedTokens} input tokens, ${proposalState.proposals.length} proposals so far)`);
 
     let response;
     const t0 = Date.now();
@@ -802,26 +1008,23 @@ async function runAgentLoop(run, conns, ctx) {
 
     // If model is done (text response only, no tool_use), break.
     if (response.stop_reason === 'end_turn') {
-      // Add the assistant's full content to messages array (for completeness)
       messages.push({ role: 'assistant', content: response.content });
-      // Extract final text
       const finalText = (response.content || [])
         .filter(b => b.type === 'text')
         .map(b => b.text)
         .join('\n')
         .trim();
-      return finalText || '(no response text)';
+      return { finalText: proposalState.summary || finalText || '(no response text)', proposalState };
     }
 
     if (response.stop_reason !== 'tool_use') {
-      // max_tokens or other unexpected stop — bail with what we have
       ctx.log(`[agent] unexpected stop_reason=${response.stop_reason}, ending loop`);
       const fallback = (response.content || [])
         .filter(b => b.type === 'text')
         .map(b => b.text)
         .join('\n')
         .trim();
-      return fallback || `(model stopped with reason: ${response.stop_reason})`;
+      return { finalText: proposalState.summary || fallback || `(model stopped with reason: ${response.stop_reason})`, proposalState };
     }
 
     // Append assistant turn to messages so model sees its own tool calls next round
@@ -833,7 +1036,7 @@ async function runAgentLoop(run, conns, ctx) {
 
     for (const tu of toolUseBlocks) {
       try {
-        const result = await executeTool(tu.name, tu.input, conns, run.id, ctx);
+        const result = await executeTool(tu.name, tu.input, conns, run.id, ctx, proposalState);
         toolResults.push({
           type: 'tool_result',
           tool_use_id: tu.id,
@@ -858,20 +1061,27 @@ async function runAgentLoop(run, conns, ctx) {
     await writeRun(run);
 
     messages.push({ role: 'user', content: toolResults });
+
+    // If the agent called finalize_proposal successfully this turn, exit the loop.
+    if (proposalState.finalized) {
+      ctx.log(`[agent] run ${run.id} finalized with ${proposalState.proposals.length} proposals`);
+      return { finalText: proposalState.summary, proposalState };
+    }
   }
 
-  // Hit max turns — ask for a final response with what we have
-  ctx.log(`[agent] run ${run.id} hit MAX_TURNS=${MAX_TURNS}, requesting final response`);
+  // Hit max turns — ask for a forced finalize
+  ctx.log(`[agent] run ${run.id} hit MAX_TURNS=${MAX_TURNS}, requesting forced finalize`);
   messages.push({
     role: 'user',
-    content: `You have hit the maximum number of turns (${MAX_TURNS}). Produce your final analysis now using the information you have already gathered. Do not call any more tools.`,
+    content: `You have hit the maximum number of turns (${MAX_TURNS}). Call finalize_proposal now with whatever proposals you have. Do not call any other tools.`,
   });
 
   const finalResp = await getAnthropic().messages.create({
     model,
     max_tokens: MODEL_MAX_TOKENS,
     system: SYSTEM_PROMPT,
-    messages,  // no tools this time — force a text response
+    tools: TOOLS.filter(t => t.name === 'finalize_proposal'),
+    messages,
   });
 
   const usage = finalResp.usage || {};
@@ -887,36 +1097,46 @@ async function runAgentLoop(run, conns, ctx) {
   });
   await writeRun(run);
 
-  return (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
-    || '(no final response)';
+  // Execute the finalize call if the model produced one
+  const finalizeBlock = (finalResp.content || []).find(b => b.type === 'tool_use' && b.name === 'finalize_proposal');
+  if (finalizeBlock) {
+    try { tool_finalize_proposal(finalizeBlock.input, proposalState); } catch (_e) { /* ignore */ }
+  }
+
+  const fallbackText = (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+  return {
+    finalText: proposalState.summary || fallbackText || '(max turns reached without finalize)',
+    proposalState,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LIVE PROPOSAL — wraps the agent loop, sets pendingApproval at end
 // ─────────────────────────────────────────────────────────────────────────────
 async function liveProduceProposal(run, conns, ctx) {
-  let finalText;
+  let result;
   try {
-    finalText = await runAgentLoop(run, conns, ctx);
+    result = await runAgentLoop(run, conns, ctx);
   } finally {
     // Always close pools, even if the loop threw
     await closeRunPools(run.id);
   }
 
+  const { finalText, proposalState } = result;
+
+  // Build the approval payload. If the agent finalized properly, we have
+  // structured proposedJobs. Otherwise we have just a text summary and no
+  // structured data — the user can still approve (saving zero jobs) or reject.
   run.status = 'awaiting_approval';
   run.pendingApproval = {
     type: 'propose_mapping',
     requestedAt: nowIso(),
     payload: {
-      summary: finalText,
-      decisions: [
-        {
-          decision: 'Stage 2b — schema introspection complete',
-          reasoning: 'The agent explored both databases and produced an analysis. Structured machine-readable mappings come in Stage 2c.',
-          confidence: 'high',
-        },
-      ],
-      mapping: { tables: [] },  // empty until 2c
+      summary: finalText || 'No summary produced.',
+      decisionsForUser: proposalState.decisionsForUser || [],
+      risks: proposalState.risks || [],
+      finalized: proposalState.finalized,
+      proposedJobs: proposalState.proposals || [],
     },
   };
   await writeRun(run);
@@ -1094,25 +1314,42 @@ app.http('agent_run_respond', {
 
     switch (action) {
       case 'approve': {
-        const mapping = run.pendingApproval && run.pendingApproval.payload && run.pendingApproval.payload.mapping;
-        const mappingId = await saveProposedMapping(userId, mapping, run, ctx);
+        // Frontend should pass the user's active projectId so the new jobs
+        // appear in the right project view. Falls back to '' (the default
+        // "no project" filter still shows them).
+        const projectId = (body.projectId || '').trim();
+        const proposedJobs = run.pendingApproval?.payload?.proposedJobs || [];
+        const jobIds = await saveProposedJobs(userId, proposedJobs, run, projectId, ctx);
         run.status = 'completed';
         run.pendingApproval = null;
         run.result = {
-          mappingId,
-          summary: `Saved a mapping with ${mapping && mapping.tables ? mapping.tables.length : 0} tables.`,
+          jobIds,
+          firstJobId: jobIds[0] || null,
+          jobCount: jobIds.length,
+          summary: jobIds.length > 0
+            ? `Saved ${jobIds.length} mapping job${jobIds.length === 1 ? '' : 's'}.`
+            : 'No structured mappings to save (run did not produce any).',
         };
         await writeRun(run);
-        return ok({ ok: true, status: 'completed', mappingId });
+        return ok({ ok: true, status: 'completed', jobIds, firstJobId: jobIds[0] || null });
       }
       case 'edit': {
-        const mapping = body.mapping || (run.pendingApproval && run.pendingApproval.payload && run.pendingApproval.payload.mapping);
-        const mappingId = await saveProposedMapping(userId, mapping, run, ctx);
+        // 'edit' currently behaves the same as 'approve' — saves the proposed
+        // jobs as-is. The frontend's "Open in Object Mapping" link uses the
+        // first jobId for further editing.
+        const projectId = (body.projectId || '').trim();
+        const proposedJobs = body.proposedJobs || run.pendingApproval?.payload?.proposedJobs || [];
+        const jobIds = await saveProposedJobs(userId, proposedJobs, run, projectId, ctx);
         run.status = 'completed';
         run.pendingApproval = null;
-        run.result = { mappingId, summary: 'Mapping saved with your edits.' };
+        run.result = {
+          jobIds,
+          firstJobId: jobIds[0] || null,
+          jobCount: jobIds.length,
+          summary: 'Mapping saved with your edits.',
+        };
         await writeRun(run);
-        return ok({ ok: true, status: 'completed', mappingId });
+        return ok({ ok: true, status: 'completed', jobIds, firstJobId: jobIds[0] || null });
       }
       case 'reject': {
         run.status = 'failed';
@@ -1133,9 +1370,15 @@ app.http('agent_run_respond', {
   },
 });
 
-async function saveProposedMapping(userId, mapping, run, ctx) {
-  const mappingId = shortId('map');
-  if (!mapping) return mappingId;
+// Save proposed table mappings as jobs in the user's projects doc.
+// Each proposal becomes one job in jobs[] with the canonical shape Object
+// Mapping reads. SQL fields are left empty — Object Mapping's tryAutoGenSQL
+// will populate them when the user opens the job.
+async function saveProposedJobs(userId, proposedJobs, run, projectId, ctx) {
+  if (!Array.isArray(proposedJobs) || proposedJobs.length === 0) {
+    ctx.log(`[agent] saveProposedJobs: no jobs to save for run ${run.id}`);
+    return [];
+  }
 
   const container = getCosmosContainer('projects');
   let existing = {};
@@ -1146,22 +1389,58 @@ async function saveProposedMapping(userId, mapping, run, ctx) {
     if (e.code !== 404) throw e;
   }
 
-  const list = Array.isArray(existing.agent_mappings) ? existing.agent_mappings : [];
-  list.push({
-    id: mappingId,
-    runId: run.id,
-    createdAt: nowIso(),
-    summary: (run.pendingApproval && run.pendingApproval.payload && run.pendingApproval.payload.summary) || '',
-    mapping,
-  });
-  existing.agent_mappings = list;
+  const jobs = Array.isArray(existing.jobs) ? existing.jobs : [];
+  const newIds = [];
+
+  for (const proposal of proposedJobs) {
+    const jobId = `job_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    const job = {
+      id: jobId,
+      name: proposal.name || `agent_${run.id.slice(-6)}`,
+      jobType: 'simple-map',
+      type: 'migration',
+      projectId: projectId || '',
+      source: proposal.sourceTable,
+      sourceTable: proposal.sourceTable,
+      target: proposal.targetTable,
+      targetTable: proposal.targetTable,
+      // columnMapping shape mirrors what Object Mapping's auto-match produces.
+      columnMapping: (proposal.columnMapping || []).map(m => ({
+        srcCol: m.srcCol || '',
+        tgtCol: m.tgtCol,
+        transform: m.transform || 'NONE',
+        match: m.match || '',
+        note: m.note || '',
+      })),
+      joinState: [],
+      // SQL fields intentionally empty — Object Mapping generates them on open
+      insertSQL: '',
+      schemaSQL: '',
+      verifySQL: '',
+      wasisRules: [],
+      totalRows: 0,
+      status: 'ready',
+      created: nowIso(),
+      warnings: Array.isArray(proposal.warnings) ? proposal.warnings : [],
+      // Provenance — useful for audit and for the user to know this was AI-proposed
+      origin: 'agentive_migration',
+      runId: run.id,
+      reasoning: proposal.reasoning || '',
+      confidence: proposal.confidence || 'MEDIUM',
+    };
+    jobs.unshift(job);  // newest first, matches existing convention
+    newIds.push(jobId);
+  }
+
+  // Cap at 100 jobs (mirrors the localStorage slice in object_mapping.html line 2721)
+  existing.jobs = jobs.slice(0, 100);
   existing.id = userId;
   existing.userId = userId;
   existing.updatedAt = nowIso();
   await container.items.upsert(existing);
 
-  ctx.log(`[agent] saved mapping ${mappingId} for user ${userId} (run ${run.id})`);
-  return mappingId;
+  ctx.log(`[agent] saved ${newIds.length} job(s) for user ${userId} (run ${run.id})`);
+  return newIds;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
