@@ -80,13 +80,15 @@ function isStubMode() { return process.env.AGENT_STUB_MODE === '1'; }
 
 // ── Agent loop limits ───────────────────────────────────────────────────────
 const MAX_TURNS = 12;                     // hard ceiling on model round-trips
-const MAX_TOOL_RESULT_BYTES = 50_000;     // truncate if a tool returns more
-const MAX_TABLES_PER_LIST = 200;          // cap list_tables output
+const MAX_TOOL_RESULT_BYTES = 15_000;     // truncate if a tool returns more
+const MAX_TABLES_PER_LIST = 50;           // cap list_tables output
 const MAX_DESCRIBE_TABLES = 20;           // describe_tables takes at most N
 const SAMPLE_ROWS_DEFAULT = 5;
 const SAMPLE_ROWS_MAX = 10;
 const SAMPLE_COLS_MAX = 12;
 const RUN_BUDGET_USD = 5.0;               // hard cost cap per run
+const MODEL_MAX_TOKENS = 1024;            // bound output size per turn
+const TOKEN_BUDGET_PER_CALL = 25_000;     // soft input cap (under 30K rate limit)
 
 // ── Feature flag check ──────────────────────────────────────────────────────
 async function isAgentiveEnabledForUser(userId, ctx) {
@@ -303,14 +305,14 @@ const TOOLS = [
   },
   {
     name: 'list_tables',
-    description: 'List tables in a specific schema (or all schemas) of source or target. Returns just table names with row count estimates — cheap. Filter by schema name and/or a name pattern (SQL LIKE syntax) to keep output small. The full database may have thousands of tables; always filter when possible.',
+    description: 'List tables in a specific schema (or all schemas) of source or target. Returns just table names with row count estimates. CRITICAL: the database may have thousands of tables; this tool is capped at 50 results, so you MUST filter by schema or namePattern unless you know the database is small. Calling this without filters on a large database wastes a turn.',
     input_schema: {
       type: 'object',
       required: ['side'],
       properties: {
         side: { type: 'string', enum: ['source', 'target'] },
-        schema: { type: 'string', description: 'Optional schema name. If omitted, lists tables from all schemas.' },
-        namePattern: { type: 'string', description: 'Optional SQL LIKE pattern, e.g. "Customer%" or "%_log". Case-insensitive.' },
+        schema: { type: 'string', description: 'Optional schema name. Omit only if you know the database has fewer than 50 tables total.' },
+        namePattern: { type: 'string', description: 'Optional SQL LIKE pattern, e.g. "Customer%" or "%_log". Strongly recommended for unknown databases.' },
       },
     },
   },
@@ -647,13 +649,16 @@ const SYSTEM_PROMPT = `You are the Cygenix Migration Agent, an AI assistant that
 You have a SOURCE database and a TARGET database. The user wants to migrate data from source to target. Your job in this stage is to explore both schemas using the introspection tools, understand what is relevant to the user's goal, and then write a clear analysis: what tables/columns are involved, what mappings are obvious, what decisions need user input, and what risks you see.
 
 Important context:
-- Databases may be very large (thousands of tables). Always start broad (list_schemas, list_tables with filters) and only describe specific tables once you know which are relevant.
+- Databases are LARGE (the source may have 2,500 tables, the target 9,000+). Tool results are tightly capped to keep within rate limits, so you MUST filter aggressively.
+- ALWAYS filter list_tables by schema or namePattern. Calling list_tables without filters on a large database wastes a turn — it returns 50 arbitrary results that are unlikely to be what you need.
+- Start by calling list_schemas to see schema names, then use search_tables with a substring from the user's goal (e.g. if the goal mentions "customer", search for "customer"). Only call describe_tables on the small set of tables you've identified as relevant.
 - Use sample_table sparingly — only when type or content is genuinely ambiguous and the answer would affect mapping decisions. Sampling reads real data into your context.
-- You have a hard limit of ${MAX_TURNS} turns and a $${RUN_BUDGET_USD} cost cap. Be efficient. Do not introspect tables that aren't relevant to the user's goal.
+- You have a hard limit of ${MAX_TURNS} turns and a $${RUN_BUDGET_USD} cost cap. Be efficient. Each turn that explores wide rather than deep wastes tokens.
+- If your context starts getting full (long history of large tool results), wrap up and produce your analysis with what you have rather than calling more tools.
 - For each non-trivial decision, state your reasoning and your confidence (high / medium / low).
 - Flag potential PII (email, ssn, dob, credit card, password) explicitly for user review.
 - You cannot yet propose a structured machine-readable mapping (that comes in a future stage). For now, write a clear human-readable analysis as your final response.
-- If the user's goal is unclear or you need a decision you cannot make confidently, say so explicitly in your final response — the user will respond and the run can be retried.
+- If the user's goal is unclear or you need a decision you cannot make confidently, say so explicitly in your final response.
 
 Final output format:
 When you are done exploring, write a final response (no tool calls) structured like:
@@ -675,7 +680,25 @@ When you are done exploring, write a final response (no tool calls) structured l
   ## Risks
   - (PII, data loss, performance, etc.)
 
-Be concise. Aim for a response under 1000 words.`;
+Be concise. Aim for a response under 800 words.`;
+
+// Rough token estimation: ~4 chars per token for English/JSON. Used to decide
+// whether the next Anthropic call would blow the per-minute rate limit.
+function estimateTokens(messages, systemPrompt) {
+  let chars = (systemPrompt || '').length;
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') {
+      chars += msg.content.length;
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (block.text) chars += block.text.length;
+        if (block.content) chars += String(block.content).length;
+        if (block.input) chars += JSON.stringify(block.input).length;
+      }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // THE AGENT LOOP
@@ -693,24 +716,61 @@ async function runAgentLoop(run, conns, ctx) {
   let nextSeq = 2;  // seq=1 is the initial user message we wrote at run creation
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
-    // Budget check before each model call
+    // Budget check before each model call (cost)
     if ((run.tokenUsage.costUSD || 0) >= RUN_BUDGET_USD) {
-      ctx.log(`[agent] run ${run.id} hit budget cap at turn ${turn}`);
-      // Force a final analysis from the model with what we have
+      ctx.log(`[agent] run ${run.id} hit cost cap at turn ${turn}`);
       messages.push({
         role: 'user',
         content: `You have hit the budget cap of $${RUN_BUDGET_USD}. Produce your final analysis now using the information you have already gathered. Do not call any more tools.`,
       });
     }
 
-    ctx.log(`[agent] turn ${turn + 1}/${MAX_TURNS} (cost so far $${(run.tokenUsage.costUSD || 0).toFixed(4)})`);
+    // Token estimate check before each model call (rate limit)
+    const estimatedTokens = estimateTokens(messages, SYSTEM_PROMPT);
+    if (estimatedTokens > TOKEN_BUDGET_PER_CALL) {
+      ctx.log(`[agent] run ${run.id} would exceed token budget (${estimatedTokens} > ${TOKEN_BUDGET_PER_CALL}), forcing final response`);
+      // Replace the messages with a compacted version + final-response request
+      messages.push({
+        role: 'user',
+        content: `Your context has grown large (${estimatedTokens} estimated tokens). Stop calling tools and produce your final analysis now using whatever you have gathered. Be concise.`,
+      });
+      // Force a no-tools call so the model has no choice but to write a response
+      let finalResp;
+      try {
+        finalResp = await anthropic.messages.create({
+          model,
+          max_tokens: MODEL_MAX_TOKENS,
+          system: SYSTEM_PROMPT,
+          messages,
+        });
+      } catch (e) {
+        const detail = e.status ? `${e.status} ${e.message}` : e.message;
+        throw new Error(`Anthropic API call failed: ${detail}`);
+      }
+      const usage = finalResp.usage || {};
+      run.tokenUsage = {
+        input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
+        output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
+        costUSD: (run.tokenUsage.costUSD || 0) + estimateCostUSD(usage),
+      };
+      await appendMessage(run.id, {
+        seq: nextSeq++,
+        role: 'assistant',
+        content: finalResp.content,
+      });
+      await writeRun(run);
+      return (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+        || '(no final response)';
+    }
+
+    ctx.log(`[agent] turn ${turn + 1}/${MAX_TURNS} (cost so far $${(run.tokenUsage.costUSD || 0).toFixed(4)}, est ${estimatedTokens} input tokens)`);
 
     let response;
     const t0 = Date.now();
     try {
       response = await anthropic.messages.create({
         model,
-        max_tokens: 2048,
+        max_tokens: MODEL_MAX_TOKENS,
         system: SYSTEM_PROMPT,
         tools: TOOLS,
         messages,
@@ -809,7 +869,7 @@ async function runAgentLoop(run, conns, ctx) {
 
   const finalResp = await getAnthropic().messages.create({
     model,
-    max_tokens: 2048,
+    max_tokens: MODEL_MAX_TOKENS,
     system: SYSTEM_PROMPT,
     messages,  // no tools this time — force a text response
   });
