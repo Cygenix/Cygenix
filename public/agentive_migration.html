@@ -702,6 +702,22 @@ body.cyg-collapsed .topbar{left:54px}
     const pct = Math.min(100, Math.round((usage.costUSD / cap) * 100));
     const entries = messagesToLogEntries(messages);
 
+    // Progress signals: count assistant turns (proxy for model round-trips),
+    // count proposals so far (from propose_table_mapping calls), and show
+    // elapsed time since the run was created.
+    const turnCount = (messages || []).filter(m => m.role === 'assistant').length;
+    const proposalCount = (messages || []).reduce((acc, m) => {
+      if (m.role === 'assistant' && Array.isArray(m.content)) {
+        for (const b of m.content) {
+          if (b.type === 'tool_use' && b.name === 'propose_table_mapping') acc++;
+        }
+      }
+      return acc;
+    }, 0);
+    const startedAt = run.createdAt ? new Date(run.createdAt).getTime() : Date.now();
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const elapsedStr = elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+
     stage.innerHTML = `
       <div class="status-bar">
         <div class="status-left">
@@ -711,7 +727,14 @@ body.cyg-collapsed .topbar{left:54px}
             <div class="status-meta">${escapeHtml(currentActivity(messages))}</div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:0.85rem">
+        <div style="display:flex;align-items:center;gap:0.85rem;flex-wrap:wrap;justify-content:flex-end">
+          <div class="status-meta" title="Elapsed time since run started">
+            ⏱ ${elapsedStr}
+          </div>
+          <div class="status-meta" title="Model round-trips so far (cap: 12)">
+            Turn ${turnCount}/12
+          </div>
+          ${proposalCount > 0 ? `<div class="status-meta">${proposalCount} proposal${proposalCount === 1 ? '' : 's'}</div>` : ''}
           <div class="cost-meter">
             <strong>$${usage.costUSD.toFixed(3)}</strong>
             <span>/ $${cap.toFixed(2)}</span>
@@ -745,10 +768,21 @@ body.cyg-collapsed .topbar{left:54px}
 
   function prettyToolName(name) {
     return ({
+      // Stage 2b/2c introspection tools
+      list_schemas:            'Listing schemas',
+      list_tables:             'Listing tables',
+      search_tables:           'Searching tables',
+      describe_tables:         'Describing tables',
+      get_table_relationships: 'Reading relationships',
+      sample_table:            'Sampling rows',
+      // Stage 2c terminal tools
+      propose_table_mapping:   'Proposing mapping',
+      finalize_proposal:       'Finalizing proposal',
+      // Legacy stub names
       introspect_source_schema: 'Reading source schema',
       introspect_target_schema: 'Reading target schema',
-      propose_mapping: 'Preparing proposal',
-      ask_user: 'Awaiting your input',
+      propose_mapping:         'Preparing proposal',
+      ask_user:                'Awaiting your input',
     })[name] || name;
   }
 
@@ -780,13 +814,42 @@ body.cyg-collapsed .topbar{left:54px}
 
   function summarizeToolInput(name, input) {
     if (!input) return '';
-    if (name === 'introspect_source_schema' || name === 'introspect_target_schema') {
-      const parts = [];
-      if (input.schemaFilter) parts.push(`schema: ${input.schemaFilter}`);
-      if (input.tablePattern) parts.push(`pattern: ${input.tablePattern}`);
-      return parts.length ? parts.join(', ') : 'all tables';
+    switch (name) {
+      case 'list_schemas':
+        return input.side ? `${input.side}` : '';
+      case 'list_tables': {
+        const parts = [`${input.side || ''}`];
+        if (input.schema) parts.push(`schema: ${input.schema}`);
+        if (input.namePattern) parts.push(`pattern: ${input.namePattern}`);
+        return parts.filter(Boolean).join(' · ');
+      }
+      case 'search_tables':
+        return input.term ? `${input.side} · "${input.term}"` : input.side || '';
+      case 'describe_tables': {
+        const tables = Array.isArray(input.tables) ? input.tables : [];
+        const preview = tables.slice(0, 3).join(', ');
+        const more = tables.length > 3 ? ` +${tables.length - 3} more` : '';
+        return `${input.side} · ${preview}${more}`;
+      }
+      case 'get_table_relationships':
+        return `${input.side} · ${input.table || ''}`;
+      case 'sample_table':
+        return `${input.side} · ${input.table || ''} (${input.n || 5} rows)`;
+      case 'propose_table_mapping':
+        return `${input.sourceTable || '?'} → ${input.targetTable || '?'}`;
+      case 'finalize_proposal':
+        return input.summary ? input.summary.slice(0, 80) + (input.summary.length > 80 ? '…' : '') : '';
+      // Legacy fallback
+      case 'introspect_source_schema':
+      case 'introspect_target_schema': {
+        const parts = [];
+        if (input.schemaFilter) parts.push(`schema: ${input.schemaFilter}`);
+        if (input.tablePattern) parts.push(`pattern: ${input.tablePattern}`);
+        return parts.length ? parts.join(', ') : 'all tables';
+      }
+      default:
+        return JSON.stringify(input).slice(0, 160);
     }
-    return JSON.stringify(input).slice(0, 160);
   }
 
   function summarizeToolResult(content) {
