@@ -8,22 +8,29 @@
 //   POST /api/agent/run/{runId}/cancel   — Cancel a running agent
 //
 // Modes (controlled by AGENT_STUB_MODE env var):
-//   AGENT_STUB_MODE=1  — Stage 1 stub: synthesize a fake proposal so the UI
-//                        flow can be exercised without an Anthropic call.
-//   AGENT_STUB_MODE=0  — Stage 2a: call Anthropic for a real response, no
-//                        tools yet. Returns the model's text reply as the
-//                        proposal summary so the existing approval UI works.
-//   (unset, default 0) — Same as 0.
+//   AGENT_STUB_MODE=1  — Synthesize a fake proposal without calling Anthropic.
+//                        Useful for UI testing without API cost.
+//   AGENT_STUB_MODE=0  — Run the real agent loop (Stage 2b): Anthropic call
+//                        with introspection tools, multi-turn until the model
+//                        produces a final analysis.
 //
-// Cosmos containers required (create in Azure Portal):
+// Cosmos containers required:
 //   agent_runs      — partition key /userId
 //   agent_messages  — partition key /runId
+//
+// SQL introspection tools provided to the model:
+//   list_schemas(side)                          — schema names + counts
+//   list_tables(side, schema?, namePattern?)    — tables in a schema
+//   describe_tables(side, tables[])             — columns, keys, indexes
+//   get_table_relationships(side, table)        — FK graph
+//   sample_table(side, table, columns?, n?)     — N sample rows
+//   search_tables(side, term)                   — fuzzy search by name
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
 
-// ── Cosmos client (lazy singleton, matches index.js pattern) ────────────────
+// ── Cosmos client (lazy singleton) ──────────────────────────────────────────
 let _cosmos = null;
 function getCosmosContainer(containerName) {
   if (!_cosmos) {
@@ -38,7 +45,7 @@ function getCosmosContainer(containerName) {
     .container(containerName);
 }
 
-// ── Anthropic client (lazy singleton) ────────────────────────────────────────
+// ── Anthropic client (lazy singleton) ───────────────────────────────────────
 let _anthropic = null;
 function getAnthropic() {
   if (!_anthropic) {
@@ -71,6 +78,16 @@ function shortId(prefix) {
 }
 function isStubMode() { return process.env.AGENT_STUB_MODE === '1'; }
 
+// ── Agent loop limits ───────────────────────────────────────────────────────
+const MAX_TURNS = 12;                     // hard ceiling on model round-trips
+const MAX_TOOL_RESULT_BYTES = 50_000;     // truncate if a tool returns more
+const MAX_TABLES_PER_LIST = 200;          // cap list_tables output
+const MAX_DESCRIBE_TABLES = 20;           // describe_tables takes at most N
+const SAMPLE_ROWS_DEFAULT = 5;
+const SAMPLE_ROWS_MAX = 10;
+const SAMPLE_COLS_MAX = 12;
+const RUN_BUDGET_USD = 5.0;               // hard cost cap per run
+
 // ── Feature flag check ──────────────────────────────────────────────────────
 async function isAgentiveEnabledForUser(userId, ctx) {
   try {
@@ -83,7 +100,7 @@ async function isAgentiveEnabledForUser(userId, ctx) {
   return true;
 }
 
-// ── Project connection lookup ────────────────────────────────────────────────
+// ── Project connection lookup ───────────────────────────────────────────────
 async function getUserConnections(userId, ctx) {
   try {
     const { resource } = await getCosmosContainer('projects')
@@ -121,7 +138,7 @@ function newRunDoc({ userId, goal, conns }) {
     pendingApproval: null,
     result: null,
     tokenUsage: { input: 0, output: 0, costUSD: 0 },
-    budgetCap:  { maxTokens: 200_000, maxCostUSD: 2.00 },
+    budgetCap:  { maxTokens: 200_000, maxCostUSD: RUN_BUDGET_USD },
     mode: isStubMode() ? 'stub' : 'live',
   };
 }
@@ -179,8 +196,7 @@ async function loadMessages(runId, sinceSeq) {
   return resources;
 }
 
-// ── Token cost estimation (claude-sonnet-4-5 pricing) ───────────────────────
-// As of writing: $3/MTok input, $15/MTok output. Update if pricing changes.
+// ── Token cost (claude-sonnet-4-5: $3/MTok in, $15/MTok out) ────────────────
 function estimateCostUSD(usage) {
   const inputCost  = (usage.input_tokens  || 0) * (3.00 / 1_000_000);
   const outputCost = (usage.output_tokens || 0) * (15.00 / 1_000_000);
@@ -188,7 +204,726 @@ function estimateCostUSD(usage) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ROUTE: POST /api/agent/migrate — Start a new agent run
+// SQL CONNECTION PARSING + POOLING
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Stored connection strings look like:
+//   mssql://user:pass@host:port/db?encrypt=true&trustServerCertificate=true
+//
+// The `mssql` package wants a config object, so we parse the URL into one.
+// Pools are scoped per-side (source/target) per-run and closed at run end.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function parseMssqlUrl(connString) {
+  // URL parsing — use the WHATWG URL since the format is standard
+  let u;
+  try {
+    u = new URL(connString);
+  } catch (e) {
+    throw new Error(`Invalid connection string: ${e.message}`);
+  }
+  if (u.protocol !== 'mssql:') {
+    throw new Error(`Unsupported protocol: ${u.protocol} (expected mssql:)`);
+  }
+  const port = u.port ? Number(u.port) : 1433;
+  const params = u.searchParams;
+  const encrypt = params.get('encrypt') !== 'false';
+  const trust   = params.get('trustServerCertificate') === 'true';
+
+  return {
+    server: decodeURIComponent(u.hostname),
+    port,
+    database: decodeURIComponent((u.pathname || '/').slice(1)),
+    user: decodeURIComponent(u.username || ''),
+    password: decodeURIComponent(u.password || ''),
+    options: {
+      encrypt,
+      trustServerCertificate: trust,
+      enableArithAbort: true,
+    },
+    requestTimeout: 30000,
+    connectionTimeout: 15000,
+  };
+}
+
+// Per-run pool cache. Key is `${runId}:${side}`. We don't want pools to leak
+// across runs, so the cache is cleared via closeRunPools() at end of run.
+const _pools = new Map();
+
+async function getPool(side, conns, runId) {
+  const sql = require('mssql');
+  const cacheKey = `${runId}:${side}`;
+  if (_pools.has(cacheKey)) return _pools.get(cacheKey);
+
+  const connString = side === 'source' ? conns.srcConnString : conns.tgtConnString;
+  if (!connString) {
+    throw new Error(`No ${side} connection string configured`);
+  }
+  const config = parseMssqlUrl(connString);
+  const pool = await new sql.ConnectionPool(config).connect();
+  _pools.set(cacheKey, pool);
+  return pool;
+}
+
+async function closeRunPools(runId) {
+  const keys = [...(_pools.keys())].filter(k => k.startsWith(`${runId}:`));
+  for (const k of keys) {
+    const pool = _pools.get(k);
+    try { await pool.close(); } catch (_e) { /* ignore */ }
+    _pools.delete(k);
+  }
+}
+
+// Run a parameterized query and return rows. Wraps mssql's request API.
+async function runQuery(pool, sqlText, params) {
+  const req = pool.request();
+  if (params) {
+    for (const [name, value] of Object.entries(params)) {
+      req.input(name, value);
+    }
+  }
+  const result = await req.query(sqlText);
+  return result.recordset || [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL DEFINITIONS — what the model sees
+// ─────────────────────────────────────────────────────────────────────────────
+const TOOLS = [
+  {
+    name: 'list_schemas',
+    description: 'List all schemas in either the source or target database, with the number of tables in each. Use this first to understand the high-level structure of a large database. Cheap and fast.',
+    input_schema: {
+      type: 'object',
+      required: ['side'],
+      properties: {
+        side: { type: 'string', enum: ['source', 'target'], description: 'Which database to inspect.' },
+      },
+    },
+  },
+  {
+    name: 'list_tables',
+    description: 'List tables in a specific schema (or all schemas) of source or target. Returns just table names with row count estimates — cheap. Filter by schema name and/or a name pattern (SQL LIKE syntax) to keep output small. The full database may have thousands of tables; always filter when possible.',
+    input_schema: {
+      type: 'object',
+      required: ['side'],
+      properties: {
+        side: { type: 'string', enum: ['source', 'target'] },
+        schema: { type: 'string', description: 'Optional schema name. If omitted, lists tables from all schemas.' },
+        namePattern: { type: 'string', description: 'Optional SQL LIKE pattern, e.g. "Customer%" or "%_log". Case-insensitive.' },
+      },
+    },
+  },
+  {
+    name: 'search_tables',
+    description: 'Find tables across all schemas whose name contains the given term (case-insensitive substring match). Useful when you do not know what schema a table lives in.',
+    input_schema: {
+      type: 'object',
+      required: ['side', 'term'],
+      properties: {
+        side: { type: 'string', enum: ['source', 'target'] },
+        term: { type: 'string', description: 'Substring to search for. Minimum 2 characters.' },
+      },
+    },
+  },
+  {
+    name: 'describe_tables',
+    description: 'Get detailed schema info for a specific list of tables: columns, types, nullability, primary keys, identity columns. Pass at most 20 tables per call. Use list_tables or search_tables first to identify candidates, then describe just the relevant ones.',
+    input_schema: {
+      type: 'object',
+      required: ['side', 'tables'],
+      properties: {
+        side: { type: 'string', enum: ['source', 'target'] },
+        tables: {
+          type: 'array',
+          description: 'Array of table identifiers as "schema.table" (e.g. "dbo.Customers"). Maximum 20.',
+          items: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
+    name: 'get_table_relationships',
+    description: 'Get the foreign key relationships for a specific table — both incoming (other tables that reference this one) and outgoing (tables this one references). Useful for understanding migration order and dependencies.',
+    input_schema: {
+      type: 'object',
+      required: ['side', 'table'],
+      properties: {
+        side: { type: 'string', enum: ['source', 'target'] },
+        table: { type: 'string', description: 'Table identifier as "schema.table".' },
+      },
+    },
+  },
+  {
+    name: 'sample_table',
+    description: 'Read a small number of sample rows from a table. Use sparingly — sampling pulls actual data into context. Only use when type or content shape is genuinely ambiguous and would affect the migration mapping (e.g. is this column actually JSON? what does this status code look like?). Default 5 rows, max 10. You can specify which columns to read; default is all columns up to 12.',
+    input_schema: {
+      type: 'object',
+      required: ['side', 'table'],
+      properties: {
+        side: { type: 'string', enum: ['source', 'target'] },
+        table: { type: 'string', description: 'Table identifier as "schema.table".' },
+        columns: {
+          type: 'array',
+          description: 'Optional list of column names to read. If omitted, reads up to the first 12 columns.',
+          items: { type: 'string' },
+        },
+        n: { type: 'integer', description: 'Number of rows to sample. Default 5, max 10.' },
+      },
+    },
+  },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL EXECUTORS — the actual SQL queries
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function tool_list_schemas({ side }, conns, runId) {
+  const pool = await getPool(side, conns, runId);
+  const rows = await runQuery(pool, `
+    SELECT TABLE_SCHEMA AS schemaName, COUNT(*) AS tableCount
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_TYPE = 'BASE TABLE'
+    GROUP BY TABLE_SCHEMA
+    ORDER BY tableCount DESC
+  `);
+  return { schemas: rows, side };
+}
+
+async function tool_list_tables({ side, schema, namePattern }, conns, runId) {
+  const pool = await getPool(side, conns, runId);
+  const where = ["t.TABLE_TYPE = 'BASE TABLE'"];
+  const params = {};
+  if (schema)      { where.push('t.TABLE_SCHEMA = @schema'); params.schema = schema; }
+  if (namePattern) { where.push('t.TABLE_NAME LIKE @namePattern'); params.namePattern = namePattern; }
+
+  const rows = await runQuery(pool, `
+    SELECT TOP ${MAX_TABLES_PER_LIST + 1}
+      t.TABLE_SCHEMA AS schemaName,
+      t.TABLE_NAME AS tableName,
+      COALESCE(p.rows, 0) AS rowEstimate
+    FROM INFORMATION_SCHEMA.TABLES t
+    LEFT JOIN sys.objects o ON o.name = t.TABLE_NAME
+                             AND SCHEMA_NAME(o.schema_id) = t.TABLE_SCHEMA
+                             AND o.type = 'U'
+    LEFT JOIN sys.partitions p ON p.object_id = o.object_id AND p.index_id IN (0, 1)
+    WHERE ${where.join(' AND ')}
+    ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
+  `, params);
+
+  const truncated = rows.length > MAX_TABLES_PER_LIST;
+  const tables = rows.slice(0, MAX_TABLES_PER_LIST);
+  return {
+    tables,
+    truncated,
+    truncationNote: truncated ? `Output capped at ${MAX_TABLES_PER_LIST} tables. Use a more specific schema or namePattern to narrow.` : undefined,
+    side,
+  };
+}
+
+async function tool_search_tables({ side, term }, conns, runId) {
+  if (!term || term.length < 2) throw new Error('search term must be at least 2 chars');
+  const pool = await getPool(side, conns, runId);
+  const rows = await runQuery(pool, `
+    SELECT TOP ${MAX_TABLES_PER_LIST + 1}
+      TABLE_SCHEMA AS schemaName, TABLE_NAME AS tableName
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_TYPE = 'BASE TABLE'
+      AND TABLE_NAME LIKE @pattern
+    ORDER BY TABLE_SCHEMA, TABLE_NAME
+  `, { pattern: `%${term}%` });
+
+  const truncated = rows.length > MAX_TABLES_PER_LIST;
+  return {
+    matches: rows.slice(0, MAX_TABLES_PER_LIST),
+    truncated,
+    side,
+  };
+}
+
+async function tool_describe_tables({ side, tables }, conns, runId) {
+  if (!Array.isArray(tables) || tables.length === 0) {
+    throw new Error('tables must be a non-empty array');
+  }
+  if (tables.length > MAX_DESCRIBE_TABLES) {
+    throw new Error(`Pass at most ${MAX_DESCRIBE_TABLES} tables per call (got ${tables.length})`);
+  }
+  const pool = await getPool(side, conns, runId);
+  const out = [];
+  for (const fqName of tables) {
+    const [sch, tbl] = splitFqName(fqName);
+    if (!sch || !tbl) {
+      out.push({ table: fqName, error: 'Bad name; expected "schema.table"' });
+      continue;
+    }
+    try {
+      // Columns
+      const cols = await runQuery(pool, `
+        SELECT
+          c.COLUMN_NAME AS columnName,
+          c.DATA_TYPE AS dataType,
+          c.CHARACTER_MAXIMUM_LENGTH AS maxLength,
+          c.NUMERIC_PRECISION AS numericPrecision,
+          c.NUMERIC_SCALE AS numericScale,
+          c.IS_NULLABLE AS isNullable,
+          c.COLUMN_DEFAULT AS columnDefault,
+          c.ORDINAL_POSITION AS position,
+          COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)), c.COLUMN_NAME, 'IsIdentity') AS isIdentity
+        FROM INFORMATION_SCHEMA.COLUMNS c
+        WHERE c.TABLE_SCHEMA = @sch AND c.TABLE_NAME = @tbl
+        ORDER BY c.ORDINAL_POSITION
+      `, { sch, tbl });
+
+      // Primary key
+      const pk = await runQuery(pool, `
+        SELECT kcu.COLUMN_NAME AS columnName
+        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+        JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+          ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+          AND tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA
+        WHERE tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+          AND tc.TABLE_SCHEMA = @sch AND tc.TABLE_NAME = @tbl
+        ORDER BY kcu.ORDINAL_POSITION
+      `, { sch, tbl });
+
+      out.push({
+        table: `${sch}.${tbl}`,
+        columns: cols,
+        primaryKey: pk.map(r => r.columnName),
+      });
+    } catch (e) {
+      out.push({ table: fqName, error: e.message });
+    }
+  }
+  return { describedTables: out, side };
+}
+
+async function tool_get_table_relationships({ side, table }, conns, runId) {
+  const [sch, tbl] = splitFqName(table);
+  if (!sch || !tbl) throw new Error('table must be "schema.table"');
+  const pool = await getPool(side, conns, runId);
+
+  const outgoing = await runQuery(pool, `
+    SELECT
+      fk.name AS fkName,
+      OBJECT_SCHEMA_NAME(fkc.parent_object_id) AS sourceSchema,
+      OBJECT_NAME(fkc.parent_object_id) AS sourceTable,
+      cs.name AS sourceColumn,
+      OBJECT_SCHEMA_NAME(fkc.referenced_object_id) AS referencedSchema,
+      OBJECT_NAME(fkc.referenced_object_id) AS referencedTable,
+      cr.name AS referencedColumn
+    FROM sys.foreign_key_columns fkc
+    JOIN sys.foreign_keys fk ON fk.object_id = fkc.constraint_object_id
+    JOIN sys.columns cs ON cs.object_id = fkc.parent_object_id AND cs.column_id = fkc.parent_column_id
+    JOIN sys.columns cr ON cr.object_id = fkc.referenced_object_id AND cr.column_id = fkc.referenced_column_id
+    WHERE OBJECT_SCHEMA_NAME(fkc.parent_object_id) = @sch
+      AND OBJECT_NAME(fkc.parent_object_id) = @tbl
+  `, { sch, tbl });
+
+  const incoming = await runQuery(pool, `
+    SELECT
+      fk.name AS fkName,
+      OBJECT_SCHEMA_NAME(fkc.parent_object_id) AS sourceSchema,
+      OBJECT_NAME(fkc.parent_object_id) AS sourceTable,
+      cs.name AS sourceColumn,
+      OBJECT_SCHEMA_NAME(fkc.referenced_object_id) AS referencedSchema,
+      OBJECT_NAME(fkc.referenced_object_id) AS referencedTable,
+      cr.name AS referencedColumn
+    FROM sys.foreign_key_columns fkc
+    JOIN sys.foreign_keys fk ON fk.object_id = fkc.constraint_object_id
+    JOIN sys.columns cs ON cs.object_id = fkc.parent_object_id AND cs.column_id = fkc.parent_column_id
+    JOIN sys.columns cr ON cr.object_id = fkc.referenced_object_id AND cr.column_id = fkc.referenced_column_id
+    WHERE OBJECT_SCHEMA_NAME(fkc.referenced_object_id) = @sch
+      AND OBJECT_NAME(fkc.referenced_object_id) = @tbl
+  `, { sch, tbl });
+
+  return { table: `${sch}.${tbl}`, outgoing, incoming, side };
+}
+
+async function tool_sample_table({ side, table, columns, n }, conns, runId) {
+  const [sch, tbl] = splitFqName(table);
+  if (!sch || !tbl) throw new Error('table must be "schema.table"');
+  const numRows = Math.max(1, Math.min(SAMPLE_ROWS_MAX, n || SAMPLE_ROWS_DEFAULT));
+  const pool = await getPool(side, conns, runId);
+
+  // Resolve columns: either user-provided, or first SAMPLE_COLS_MAX from INFORMATION_SCHEMA
+  let colNames;
+  if (Array.isArray(columns) && columns.length > 0) {
+    colNames = columns.slice(0, SAMPLE_COLS_MAX);
+  } else {
+    const allCols = await runQuery(pool, `
+      SELECT TOP ${SAMPLE_COLS_MAX} COLUMN_NAME AS columnName
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = @sch AND TABLE_NAME = @tbl
+      ORDER BY ORDINAL_POSITION
+    `, { sch, tbl });
+    colNames = allCols.map(c => c.columnName);
+  }
+  if (colNames.length === 0) throw new Error(`no columns found for ${sch}.${tbl}`);
+
+  // Quote identifiers safely — we built them from prior introspection or user input,
+  // and we whitelist quoted identifiers. Reject any column name that contains ']'.
+  for (const c of colNames) {
+    if (c.includes(']')) throw new Error(`invalid column identifier: ${c}`);
+  }
+  const colList = colNames.map(c => `[${c}]`).join(', ');
+
+  // Use TABLESAMPLE for large tables; for safety just use TOP since TABLESAMPLE
+  // requires permission and isn't supported on views.
+  const rows = await runQuery(pool, `
+    SELECT TOP ${numRows} ${colList}
+    FROM [${sch}].[${tbl}]
+  `);
+
+  // Truncate any cell that's huge (binary, big text)
+  const truncatedRows = rows.map(r => {
+    const out = {};
+    for (const [k, v] of Object.entries(r)) {
+      if (typeof v === 'string' && v.length > 200) {
+        out[k] = v.slice(0, 200) + `…(truncated, original ${v.length} chars)`;
+      } else if (Buffer.isBuffer(v)) {
+        out[k] = `<binary ${v.length} bytes>`;
+      } else {
+        out[k] = v;
+      }
+    }
+    return out;
+  });
+
+  return {
+    table: `${sch}.${tbl}`,
+    columns: colNames,
+    rows: truncatedRows,
+    rowCount: rows.length,
+    side,
+  };
+}
+
+function splitFqName(fq) {
+  if (!fq || typeof fq !== 'string') return [null, null];
+  const idx = fq.indexOf('.');
+  if (idx < 0) return [null, null];
+  return [fq.slice(0, idx).trim(), fq.slice(idx + 1).trim()];
+}
+
+// Dispatcher used by the agent loop
+async function executeTool(name, input, conns, runId, ctx) {
+  ctx.log(`[agent] tool: ${name}(${JSON.stringify(input).slice(0, 120)})`);
+  const t0 = Date.now();
+  try {
+    let result;
+    switch (name) {
+      case 'list_schemas':            result = await tool_list_schemas(input, conns, runId); break;
+      case 'list_tables':             result = await tool_list_tables(input, conns, runId); break;
+      case 'search_tables':           result = await tool_search_tables(input, conns, runId); break;
+      case 'describe_tables':         result = await tool_describe_tables(input, conns, runId); break;
+      case 'get_table_relationships': result = await tool_get_table_relationships(input, conns, runId); break;
+      case 'sample_table':            result = await tool_sample_table(input, conns, runId); break;
+      default: throw new Error(`unknown tool: ${name}`);
+    }
+    ctx.log(`[agent] tool ${name} ok in ${Date.now() - t0}ms`);
+    return enforceSize(result);
+  } catch (e) {
+    ctx.log(`[agent] tool ${name} failed: ${e.message}`);
+    throw e;
+  }
+}
+
+// Truncate large tool results so they don't blow the context window.
+function enforceSize(obj) {
+  const json = JSON.stringify(obj);
+  if (json.length <= MAX_TOOL_RESULT_BYTES) return obj;
+  return {
+    truncatedResult: json.slice(0, MAX_TOOL_RESULT_BYTES) + '…',
+    note: `Tool result exceeded ${MAX_TOOL_RESULT_BYTES} bytes and was truncated. Refine the query (smaller schema, more specific pattern, fewer tables) to get useful detail.`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SYSTEM PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `You are the Cygenix Migration Agent, an AI assistant that analyses SQL Server databases to plan migrations.
+
+You have a SOURCE database and a TARGET database. The user wants to migrate data from source to target. Your job in this stage is to explore both schemas using the introspection tools, understand what is relevant to the user's goal, and then write a clear analysis: what tables/columns are involved, what mappings are obvious, what decisions need user input, and what risks you see.
+
+Important context:
+- Databases may be very large (thousands of tables). Always start broad (list_schemas, list_tables with filters) and only describe specific tables once you know which are relevant.
+- Use sample_table sparingly — only when type or content is genuinely ambiguous and the answer would affect mapping decisions. Sampling reads real data into your context.
+- You have a hard limit of ${MAX_TURNS} turns and a $${RUN_BUDGET_USD} cost cap. Be efficient. Do not introspect tables that aren't relevant to the user's goal.
+- For each non-trivial decision, state your reasoning and your confidence (high / medium / low).
+- Flag potential PII (email, ssn, dob, credit card, password) explicitly for user review.
+- You cannot yet propose a structured machine-readable mapping (that comes in a future stage). For now, write a clear human-readable analysis as your final response.
+- If the user's goal is unclear or you need a decision you cannot make confidently, say so explicitly in your final response — the user will respond and the run can be retried.
+
+Final output format:
+When you are done exploring, write a final response (no tool calls) structured like:
+
+  ## Summary
+  (2-3 sentences: what you understood, what's in scope)
+
+  ## Key tables identified
+  - schema.table (purpose, row count)
+  - ...
+
+  ## Proposed mappings
+  - source.foo → target.bar (notes on type changes, transformations needed)
+  - ...
+
+  ## Decisions needed
+  - (anything you weren't confident about — phrase as questions)
+
+  ## Risks
+  - (PII, data loss, performance, etc.)
+
+Be concise. Aim for a response under 1000 words.`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE AGENT LOOP
+// ─────────────────────────────────────────────────────────────────────────────
+async function runAgentLoop(run, conns, ctx) {
+  const anthropic = getAnthropic();
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+
+  // Conversation builds up across turns. Start with the user's initial message.
+  const messages = [{
+    role: 'user',
+    content: buildInitialPrompt(run.goal, run),
+  }];
+
+  let nextSeq = 2;  // seq=1 is the initial user message we wrote at run creation
+
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    // Budget check before each model call
+    if ((run.tokenUsage.costUSD || 0) >= RUN_BUDGET_USD) {
+      ctx.log(`[agent] run ${run.id} hit budget cap at turn ${turn}`);
+      // Force a final analysis from the model with what we have
+      messages.push({
+        role: 'user',
+        content: `You have hit the budget cap of $${RUN_BUDGET_USD}. Produce your final analysis now using the information you have already gathered. Do not call any more tools.`,
+      });
+    }
+
+    ctx.log(`[agent] turn ${turn + 1}/${MAX_TURNS} (cost so far $${(run.tokenUsage.costUSD || 0).toFixed(4)})`);
+
+    let response;
+    const t0 = Date.now();
+    try {
+      response = await anthropic.messages.create({
+        model,
+        max_tokens: 2048,
+        system: SYSTEM_PROMPT,
+        tools: TOOLS,
+        messages,
+      });
+    } catch (e) {
+      const detail = e.status ? `${e.status} ${e.message}` : e.message;
+      throw new Error(`Anthropic API call failed: ${detail}`);
+    }
+    const elapsed = Date.now() - t0;
+
+    // Update token usage
+    const usage = response.usage || {};
+    const cost  = estimateCostUSD(usage);
+    run.tokenUsage = {
+      input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
+      output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
+      costUSD: (run.tokenUsage.costUSD || 0) + cost,
+    };
+
+    ctx.log(`[agent] turn ${turn + 1} response in ${elapsed}ms, ${usage.input_tokens || 0}+${usage.output_tokens || 0} tokens, $${cost.toFixed(4)} (stop=${response.stop_reason})`);
+
+    // Persist the assistant turn so the frontend activity log updates
+    await appendMessage(run.id, {
+      seq: nextSeq++,
+      role: 'assistant',
+      content: response.content,
+    });
+    await writeRun(run);
+
+    // If model is done (text response only, no tool_use), break.
+    if (response.stop_reason === 'end_turn') {
+      // Add the assistant's full content to messages array (for completeness)
+      messages.push({ role: 'assistant', content: response.content });
+      // Extract final text
+      const finalText = (response.content || [])
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim();
+      return finalText || '(no response text)';
+    }
+
+    if (response.stop_reason !== 'tool_use') {
+      // max_tokens or other unexpected stop — bail with what we have
+      ctx.log(`[agent] unexpected stop_reason=${response.stop_reason}, ending loop`);
+      const fallback = (response.content || [])
+        .filter(b => b.type === 'text')
+        .map(b => b.text)
+        .join('\n')
+        .trim();
+      return fallback || `(model stopped with reason: ${response.stop_reason})`;
+    }
+
+    // Append assistant turn to messages so model sees its own tool calls next round
+    messages.push({ role: 'assistant', content: response.content });
+
+    // Run all tool calls in this turn and accumulate results
+    const toolUseBlocks = (response.content || []).filter(b => b.type === 'tool_use');
+    const toolResults = [];
+
+    for (const tu of toolUseBlocks) {
+      try {
+        const result = await executeTool(tu.name, tu.input, conns, run.id, ctx);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: tu.id,
+          content: JSON.stringify(result),
+        });
+      } catch (e) {
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: tu.id,
+          content: `Error: ${e.message}`,
+          is_error: true,
+        });
+      }
+    }
+
+    // Persist the tool results as a "user" turn so the frontend log shows them
+    await appendMessage(run.id, {
+      seq: nextSeq++,
+      role: 'user',
+      content: toolResults,
+    });
+    await writeRun(run);
+
+    messages.push({ role: 'user', content: toolResults });
+  }
+
+  // Hit max turns — ask for a final response with what we have
+  ctx.log(`[agent] run ${run.id} hit MAX_TURNS=${MAX_TURNS}, requesting final response`);
+  messages.push({
+    role: 'user',
+    content: `You have hit the maximum number of turns (${MAX_TURNS}). Produce your final analysis now using the information you have already gathered. Do not call any more tools.`,
+  });
+
+  const finalResp = await getAnthropic().messages.create({
+    model,
+    max_tokens: 2048,
+    system: SYSTEM_PROMPT,
+    messages,  // no tools this time — force a text response
+  });
+
+  const usage = finalResp.usage || {};
+  run.tokenUsage = {
+    input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
+    output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
+    costUSD: (run.tokenUsage.costUSD || 0) + estimateCostUSD(usage),
+  };
+  await appendMessage(run.id, {
+    seq: nextSeq++,
+    role: 'assistant',
+    content: finalResp.content,
+  });
+  await writeRun(run);
+
+  return (finalResp.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+    || '(no final response)';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE PROPOSAL — wraps the agent loop, sets pendingApproval at end
+// ─────────────────────────────────────────────────────────────────────────────
+async function liveProduceProposal(run, conns, ctx) {
+  let finalText;
+  try {
+    finalText = await runAgentLoop(run, conns, ctx);
+  } finally {
+    // Always close pools, even if the loop threw
+    await closeRunPools(run.id);
+  }
+
+  run.status = 'awaiting_approval';
+  run.pendingApproval = {
+    type: 'propose_mapping',
+    requestedAt: nowIso(),
+    payload: {
+      summary: finalText,
+      decisions: [
+        {
+          decision: 'Stage 2b — schema introspection complete',
+          reasoning: 'The agent explored both databases and produced an analysis. Structured machine-readable mappings come in Stage 2c.',
+          confidence: 'high',
+        },
+      ],
+      mapping: { tables: [] },  // empty until 2c
+    },
+  };
+  await writeRun(run);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STUB MODE (preserved as fallback for UI testing)
+// ─────────────────────────────────────────────────────────────────────────────
+async function stubProduceFakeProposal(run, ctx) {
+  await appendMessage(run.id, {
+    seq: 2,
+    role: 'assistant',
+    content: [
+      { type: 'text', text: 'Reading source schema (stub mode).' },
+      { type: 'tool_use', id: 'stub_t1', name: 'list_schemas', input: { side: 'source' } },
+    ],
+  });
+  await appendMessage(run.id, {
+    seq: 3,
+    role: 'user',
+    content: [{ type: 'tool_result', tool_use_id: 'stub_t1', content: '(stub) Found 4 tables: customers, orders, order_items, products' }],
+  });
+
+  run.status = 'awaiting_approval';
+  run.pendingApproval = {
+    type: 'propose_mapping',
+    requestedAt: nowIso(),
+    payload: {
+      summary: 'Stub proposal — plumbing test. This is fake data; set AGENT_STUB_MODE=0 to run the real agent.',
+      decisions: [
+        { decision: 'Map customers.email as VARCHAR(255)', reasoning: 'Source uses VARCHAR(MAX); target is VARCHAR(255).', confidence: 'high' },
+        { decision: 'Exclude customers.password_hash', reasoning: 'Target has its own auth.', confidence: 'high' },
+      ],
+      mapping: {
+        tables: [
+          { sourceTable: 'customers', targetTable: 'customers', columns: stubCols(8, 1) },
+          { sourceTable: 'orders',    targetTable: 'orders',    columns: stubCols(6, 0) },
+        ],
+      },
+    },
+  };
+  await writeRun(run);
+  ctx.log(`[agent] run ${run.id} produced stub proposal`);
+}
+
+function stubCols(n, excluded) {
+  const cols = [];
+  for (let i = 0; i < n; i++) {
+    cols.push({ sourceColumn: `col_${i}`, targetColumn: `col_${i}`, sourceType: 'VARCHAR', targetType: 'VARCHAR', excluded: i < excluded });
+  }
+  return cols;
+}
+
+function buildInitialPrompt(goal, run) {
+  return `Migrate from source to target.
+
+User goal: ${goal}
+
+Run id: ${run.id}
+Source fingerprint: ${run.connectionsFingerprint.sourceFingerprint}
+Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}
+
+Use the introspection tools to explore both databases and produce your analysis. Start by listing schemas to understand the structure.`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE: POST /api/agent/migrate
 // ─────────────────────────────────────────────────────────────────────────────
 app.http('agent_migrate', {
   methods: ['POST', 'OPTIONS'],
@@ -222,20 +957,21 @@ app.http('agent_migrate', {
       content: [{ type: 'text', text: buildInitialPrompt(goal, run) }],
     });
 
-    ctx.log(`[agent] run ${run.id} created (mode=${run.mode}) for user ${userId}, goal: "${goal.slice(0, 80)}"`);
+    ctx.log(`[agent] run ${run.id} created (mode=${run.mode}) for user ${userId}`);
 
-    // Branch on mode. Both branches end with the run in awaiting_approval state
-    // so the frontend's approval UI handles both transparently.
+    // Note: synchronous execution. The frontend's POST hangs until we finish
+    // (could be 30-90 seconds for a real run). The 5-min Function timeout
+    // gives us plenty of headroom; if we ever need longer, this becomes a
+    // queue trigger.
     try {
       if (isStubMode()) {
         await stubProduceFakeProposal(run, ctx);
       } else {
-        await liveProduceFirstProposal(run, ctx);
+        await liveProduceProposal(run, conns, ctx);
       }
     } catch (e) {
-      // Catch-all: if the live agent throws (Anthropic outage, bad key, etc),
-      // mark the run failed with a clean error message rather than 500ing.
       ctx.log(`[agent] run ${run.id} failed: ${e.message}`);
+      await closeRunPools(run.id);
       run.status = 'failed';
       run.result = { error: e.message };
       await writeRun(run);
@@ -246,204 +982,7 @@ app.http('agent_migrate', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STAGE 1: Stub mode — synthesize a fake proposal without calling Anthropic.
-// Used when AGENT_STUB_MODE=1. Lets us test the full UI flow without API cost.
-// ─────────────────────────────────────────────────────────────────────────────
-async function stubProduceFakeProposal(run, ctx) {
-  await appendMessage(run.id, {
-    seq: 2,
-    role: 'assistant',
-    content: [
-      { type: 'text', text: 'Reading source schema to understand what we are migrating from.' },
-      { type: 'tool_use', id: 'stub_t1', name: 'introspect_source_schema', input: {} },
-    ],
-  });
-  await appendMessage(run.id, {
-    seq: 3,
-    role: 'user',
-    content: [{ type: 'tool_result', tool_use_id: 'stub_t1', content: '(stub) Found 4 tables: customers, orders, order_items, products' }],
-  });
-  await appendMessage(run.id, {
-    seq: 4,
-    role: 'assistant',
-    content: [
-      { type: 'text', text: 'Now reading target schema to see what types are supported.' },
-      { type: 'tool_use', id: 'stub_t2', name: 'introspect_target_schema', input: {} },
-    ],
-  });
-  await appendMessage(run.id, {
-    seq: 5,
-    role: 'user',
-    content: [{ type: 'tool_result', tool_use_id: 'stub_t2', content: '(stub) Target has matching schema with minor type differences' }],
-  });
-
-  run.status = 'awaiting_approval';
-  run.pendingApproval = {
-    type: 'propose_mapping',
-    requestedAt: nowIso(),
-    payload: {
-      summary: 'Stub proposal — Stage 1 plumbing test. Maps 4 tables from source to target with no transformations. This is fake data to verify the approval UI works; the real agent loop is added in Stage 2.',
-      decisions: [
-        {
-          decision: 'Map customers.email as VARCHAR(255)',
-          reasoning: 'Source uses VARCHAR(MAX); target column is VARCHAR(255). No actual data exceeds 255 chars in current sample.',
-          confidence: 'high',
-        },
-        {
-          decision: 'Exclude customers.password_hash',
-          reasoning: 'Target has its own auth system. Migrating hashed passwords would be both insecure and pointless.',
-          confidence: 'high',
-        },
-        {
-          decision: 'Coerce orders.created_at from BIGINT epoch to DATETIME2',
-          reasoning: 'Source stores Unix timestamps as BIGINT. Target column is DATETIME2.',
-          confidence: 'medium',
-        },
-      ],
-      mapping: {
-        tables: [
-          { sourceTable: 'customers',  targetTable: 'customers',  columns: stubCols(8, 1) },
-          { sourceTable: 'orders',     targetTable: 'orders',     columns: stubCols(6, 0) },
-          { sourceTable: 'order_items',targetTable: 'order_items',columns: stubCols(5, 0) },
-          { sourceTable: 'products',   targetTable: 'products',   columns: stubCols(7, 0) },
-        ],
-      },
-    },
-  };
-  await writeRun(run);
-  ctx.log(`[agent] run ${run.id} produced stub proposal, awaiting approval`);
-}
-
-function stubCols(n, excluded) {
-  const cols = [];
-  for (let i = 0; i < n; i++) {
-    cols.push({ sourceColumn: `col_${i}`, targetColumn: `col_${i}`, sourceType: 'VARCHAR', targetType: 'VARCHAR', excluded: i < excluded });
-  }
-  return cols;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// STAGE 2a: Live mode — call Anthropic for a real response, no tools yet.
-//
-// What this DOES:
-//   - Calls Claude with the user's goal + a system prompt
-//   - Stores the model's text response as an assistant message
-//   - Logs token usage to the run doc
-//   - Sets status to awaiting_approval with the model's text in the summary
-//
-// What this DOES NOT do (yet):
-//   - Tool use (introspect_source_schema, propose_mapping, etc.) — Stage 2b
-//   - Multi-turn agent loop — Stage 2b
-//   - Real schema introspection — Stage 2b
-// ─────────────────────────────────────────────────────────────────────────────
-async function liveProduceFirstProposal(run, ctx) {
-  const anthropic = getAnthropic();
-  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
-
-  const systemPrompt = STAGE_2A_SYSTEM_PROMPT;
-  const initialMsg = `User goal:\n\n${run.goal}\n\n` +
-    `Source database fingerprint: ${run.connectionsFingerprint.sourceFingerprint}\n` +
-    `Target database fingerprint: ${run.connectionsFingerprint.targetFingerprint}\n\n` +
-    `In Stage 2a you do not yet have schema introspection tools available. ` +
-    `Acknowledge the goal, describe the high-level approach you would take, and list ` +
-    `the kinds of decisions you expect to make once you can see the schemas. Keep your ` +
-    `response under 300 words.`;
-
-  ctx.log(`[agent] run ${run.id} calling Anthropic (model=${model})...`);
-
-  const t0 = Date.now();
-  let response;
-  try {
-    response = await anthropic.messages.create({
-      model,
-      max_tokens: 1024,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: initialMsg }],
-    });
-  } catch (e) {
-    // Anthropic errors carry useful structured info — surface the relevant bits
-    const detail = e.status ? `${e.status} ${e.message}` : e.message;
-    throw new Error(`Anthropic API call failed: ${detail}`);
-  }
-  const elapsed = Date.now() - t0;
-
-  // Extract text blocks from the response (response.content is an array of
-  // typed blocks; for a no-tool call there should just be one or more text blocks).
-  const textBlocks = (response.content || []).filter(b => b.type === 'text');
-  const fullText = textBlocks.map(b => b.text).join('\n').trim();
-  if (!fullText) {
-    throw new Error('Anthropic returned no text content');
-  }
-
-  // Update token usage and cost on the run doc
-  const usage = response.usage || {};
-  const cost  = estimateCostUSD(usage);
-  run.tokenUsage = {
-    input:   (run.tokenUsage.input  || 0) + (usage.input_tokens  || 0),
-    output:  (run.tokenUsage.output || 0) + (usage.output_tokens || 0),
-    costUSD: (run.tokenUsage.costUSD || 0) + cost,
-  };
-
-  ctx.log(`[agent] run ${run.id} Anthropic response in ${elapsed}ms, ` +
-    `${usage.input_tokens || 0} in + ${usage.output_tokens || 0} out tokens, ` +
-    `$${cost.toFixed(4)}`);
-
-  // Persist the assistant turn so the frontend activity log shows it
-  await appendMessage(run.id, {
-    seq: 2,
-    role: 'assistant',
-    content: response.content,
-  });
-
-  // Stage 2a returns the model's text as the proposal summary so the existing
-  // approval UI renders it. The "decisions" and "mapping" arrays are placeholders
-  // since we don't have real introspection yet — they get a single placeholder
-  // entry to make the UI show context, not blank space.
-  run.status = 'awaiting_approval';
-  run.pendingApproval = {
-    type: 'propose_mapping',
-    requestedAt: nowIso(),
-    payload: {
-      summary: fullText,
-      decisions: [
-        {
-          decision: 'Stage 2a — model is reachable and responding',
-          reasoning: 'This is the first end-to-end live call. Schema introspection and structured proposals come in Stage 2b/2c.',
-          confidence: 'high',
-        },
-      ],
-      mapping: { tables: [] },  // empty until Stage 2b adds introspection
-    },
-  };
-  await writeRun(run);
-  ctx.log(`[agent] run ${run.id} live proposal produced, awaiting approval`);
-}
-
-const STAGE_2A_SYSTEM_PROMPT = `You are the Cygenix Migration Agent, an AI assistant that helps users migrate SQL databases.
-
-Cygenix is a SaaS platform where users connect a source SQL Server database and a target SQL Server database, then ask the agent to propose a mapping for migrating data from source to target. The agent introspects both schemas, proposes column-level mappings with reasoning, asks the user for clarification on ambiguous decisions, and only acts after explicit approval.
-
-Principles you follow:
-- Prefer exact type matches. Coerce only when necessary.
-- Flag potential PII columns (ssn, email, dob, credit card, etc.) for user review.
-- Preserve foreign key relationships. Order operations to respect dependencies.
-- Be conservative: when uncertain, ask. The user prefers a slow correct migration to a fast wrong one.
-- Never fabricate column or table names — only reference what introspection actually returned.
-
-You are currently running in Stage 2a — you have no tools yet. Acknowledge the user's goal, describe the approach you would take, and list the kinds of decisions you expect to face once schema introspection is available. Be concise.`;
-
-function buildInitialPrompt(goal, run) {
-  return `Migrate from source to target.
-
-User goal: ${goal}
-
-Run id: ${run.id}
-Source fingerprint: ${run.connectionsFingerprint.sourceFingerprint}
-Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ROUTE: GET /api/agent/run/{runId} — Read run state + messages
+// ROUTE: GET /api/agent/run/{runId}
 // ─────────────────────────────────────────────────────────────────────────────
 app.http('agent_run_read', {
   methods: ['GET', 'OPTIONS'],
@@ -523,7 +1062,6 @@ app.http('agent_run_respond', {
         return ok({ ok: true, status: 'failed' });
       }
       case 'answer': {
-        // Stage 2a: ask_user not used yet; mark cancelled if we ever hit this
         run.status = 'cancelled';
         run.pendingApproval = null;
         await writeRun(run);
@@ -590,6 +1128,7 @@ app.http('agent_run_cancel', {
     run.status = 'cancelled';
     run.pendingApproval = null;
     await writeRun(run);
+    await closeRunPools(runId);
     ctx.log(`[agent] run ${runId} cancelled by user ${userId}`);
     return ok({ ok: true, status: 'cancelled' });
   },
