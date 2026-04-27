@@ -945,6 +945,26 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
       </div>
 
+      <!-- ACTIVE PROJECT SUMMARY — read-only snapshot of the currently
+           active project so the user always knows which one they're working
+           on. Click "Edit details" to jump to /projects.html. Hidden when no
+           project is active. Rendered by renderActiveProjectSummary(). -->
+      <div class="panel" id="dashboard-active-summary" style="display:none;margin-bottom:1.75rem;border-color:rgba(61,126,255,0.4)">
+        <div class="panel-header" style="margin-bottom:0.85rem">
+          <div style="display:flex;align-items:center;gap:0.65rem">
+            <span style="font-size:9px;padding:2px 8px;border-radius:100px;background:var(--accent);color:#fff;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em">active</span>
+            <div>
+              <div class="panel-title" style="font-size:13px" id="das-name">—</div>
+              <div class="panel-sub" id="das-sub">—</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.5rem">
+            <a href="/projects.html" class="btn btn-ghost btn-sm" id="das-edit-btn">Edit details →</a>
+          </div>
+        </div>
+        <div id="das-meta-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:0.75rem"></div>
+      </div>
+
       <!-- PROJECTS CARD — overview of every project ("conversion") with
            status, jobs, artifacts and dates. Cards link to /projects.html for
            CRUD; the "+ New Project" button deep-links to /projects.html?new=1
@@ -1160,160 +1180,102 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div>
     <!-- END BACKUP & RESTORE -->
 
-    <!-- PROJECT SETTINGS VIEW -->
+    <!-- SETTINGS VIEW (app-level: backups, API key, preferences) -->
+    <!-- This view used to also hold project metadata (name, client, dates, etc.)
+         but those moved to /projects.html so the term "Settings" stops doing
+         double duty. Project metadata is now per-project. The id stays
+         `view-project-settings` because the sidebar key and any deep links
+         still use it; only the contents and the user-facing label changed. -->
     <div id="view-project-settings" class="view">
       <div class="panel-header">
         <div>
-          <div class="panel-title">📋 Project Settings</div>
-          <div class="panel-sub">Define project metadata used across reports, exports and the conversion record</div>
+          <div class="panel-title">⚙️ Settings</div>
+          <div class="panel-sub">App-level configuration — API credentials, backups, and general preferences. For project metadata (name, client, dates, source/target), open <a href="/projects.html" style="color:var(--accent)">Projects</a>.</div>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="saveProjectSettings()">💾 Save settings</button>
+        <button class="btn btn-primary btn-sm" onclick="saveAppPreferences()">💾 Save preferences</button>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
-        <div class="panel">
-          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1rem">Project identity</div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Project name</label>
-            <input id="ps-name" class="form-input" style="font-family:var(--serif)" placeholder="e.g. Legacy ERP → Azure SQL Migration">
-          </div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Project type</label>
-            <select id="ps-type" class="form-input" style="font-family:var(--serif)">
-              <option value="">Select type…</option>
-              <option value="full-migration">Full database migration</option>
-              <option value="partial">Partial / table subset migration</option>
-              <option value="etl">ETL / data transformation</option>
-              <option value="consolidation">Database consolidation</option>
-              <option value="upgrade">Version upgrade (same platform)</option>
-              <option value="cloud-lift">Cloud lift & shift</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Project reference / code</label>
-            <input id="ps-ref" class="form-input" placeholder="e.g. PROJ-2024-001">
-          </div>
+      <!-- ─── API KEY & CREDIT ─── -->
+      <div class="panel" style="margin-bottom:1.25rem">
+        <div class="panel-header" style="margin-bottom:0.85rem">
           <div>
-            <label class="form-label">Project description</label>
-            <textarea id="ps-desc" class="form-input" rows="3" style="font-family:var(--serif);resize:vertical" placeholder="Brief description of what is being migrated and why…"></textarea>
+            <div class="panel-title" style="font-size:13px">🔑 API key &amp; credit</div>
+            <div class="panel-sub">Anthropic API key used for all Claude calls. Stored in your browser session only — never sent to any Cygenix server.</div>
           </div>
         </div>
-
-        <div class="panel">
-          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1rem">Team & stakeholders</div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Conversion analyst</label>
-            <input id="ps-analyst" class="form-input" style="font-family:var(--serif)" placeholder="Name of the migration analyst">
-          </div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Project manager</label>
-            <input id="ps-pm" class="form-input" style="font-family:var(--serif)" placeholder="Name of the project manager">
-          </div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Client / organisation</label>
-            <input id="ps-client" class="form-input" style="font-family:var(--serif)" placeholder="Client or organisation name">
-          </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;align-items:start">
           <div>
-            <label class="form-label">Client contact</label>
-            <input id="ps-contact" class="form-input" style="font-family:var(--serif)" placeholder="Client contact name or email">
-          </div>
-        </div>
-      </div>
-
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
-        <div class="panel">
-          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1rem">Timeline</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.875rem;margin-bottom:0.875rem">
-            <div>
-              <label class="form-label">Start date</label>
-              <input id="ps-start" type="date" class="form-input">
+            <label class="form-label">Anthropic API key</label>
+            <div style="display:flex;gap:0.5rem;margin-top:5px">
+              <input id="settings-api-key" type="password" class="form-input" placeholder="sk-ant-api03-..." style="flex:1;font-family:var(--mono);font-size:12px" autocomplete="off">
+              <button class="btn btn-primary btn-sm" onclick="saveSettingsApiKey()">Save</button>
+              <button class="btn btn-ghost btn-sm" onclick="clearSettingsApiKey()" title="Remove the key from this browser session">Clear</button>
             </div>
-            <div>
-              <label class="form-label">Target completion</label>
-              <input id="ps-end" type="date" class="form-input">
+            <div id="settings-key-status" style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">No key set</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:8px">Get a key at <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a>. Each Claude call (analysis, schema generation, narrative) draws from your account credit there.</div>
+          </div>
+          <div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:8px;padding:0.85rem 1rem">
+            <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;font-family:var(--mono);margin-bottom:0.5rem">Credit status</div>
+            <div id="settings-credit-status" style="font-size:13px;color:var(--text2);line-height:1.5">
+              Live credit balance is shown via the gauge on the New Job page when an API key is set. Anthropic doesn't currently expose an API endpoint for client-side credit polling, so we can't surface the exact balance here without one.
             </div>
+            <a href="https://console.anthropic.com/settings/billing" target="_blank" class="btn btn-ghost btn-sm" style="margin-top:0.65rem">View billing on Anthropic →</a>
           </div>
+        </div>
+      </div>
+
+      <!-- ─── GENERAL PREFERENCES ─── -->
+      <div class="panel" style="margin-bottom:1.25rem">
+        <div class="panel-header" style="margin-bottom:0.85rem">
           <div>
-            <label class="form-label">Migration phase</label>
-            <select id="ps-phase" class="form-input" style="font-family:var(--serif)">
-              <option value="planning">Planning</option>
-              <option value="analysis">Analysis & discovery</option>
-              <option value="mapping">Data mapping</option>
-              <option value="development">Development & testing</option>
-              <option value="uat">UAT</option>
-              <option value="go-live">Go-live</option>
-              <option value="post-migration">Post-migration validation</option>
+            <div class="panel-title" style="font-size:13px">🎛️ General preferences</div>
+            <div class="panel-sub">Defaults applied across the app on every page load.</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+          <div>
+            <label class="form-label">Theme</label>
+            <select id="pref-theme" class="form-input" style="margin-top:5px">
+              <option value="dark">Dark (default)</option>
+              <option value="auto" disabled>Auto — follow system (coming soon)</option>
+              <option value="light" disabled>Light (coming soon)</option>
             </select>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1rem">Source & target systems</div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Source system</label>
-            <input id="ps-src-system" class="form-input" style="font-family:var(--serif)" placeholder="e.g. Legacy Elite, Oracle EBS, SQL Server 2012">
-          </div>
-          <div style="margin-bottom:0.875rem">
-            <label class="form-label">Target system</label>
-            <input id="ps-tgt-system" class="form-input" style="font-family:var(--serif)" placeholder="e.g. Azure SQL, SQL Server 2022">
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Cygenix is dark-mode-first. Light theme work is queued behind core migration features.</div>
           </div>
           <div>
-            <label class="form-label">Estimated row count</label>
-            <input id="ps-rows" class="form-input" type="number" placeholder="Approximate total rows to migrate">
+            <label class="form-label">Default landing view</label>
+            <select id="pref-landing" class="form-input" style="margin-top:5px">
+              <option value="dashboard">Dashboard</option>
+              <option value="jobs">All Jobs</option>
+              <option value="projects">Projects (/projects.html)</option>
+            </select>
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Where Cygenix sends you when you sign in or hit the bare domain.</div>
           </div>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1rem">Notes & special considerations</div>
-        <textarea id="ps-notes" class="form-input" rows="4" style="font-family:var(--serif);resize:vertical" placeholder="Data quality issues, known risks, special handling required, out-of-scope items…"></textarea>
-      </div>
-
-      <!-- Claude API Credit Gauge -->
-      <div class="panel" id="api-credit-panel" style="margin-top:1.25rem">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
           <div>
-            <div style="font-size:12px;font-weight:600;color:var(--text2)">🤖 Claude AI Credit</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">Monthly usage allowance from your Anthropic account</div>
+            <label class="form-label">Default report format</label>
+            <select id="pref-report-format" class="form-input" style="margin-top:5px">
+              <option value="docx">Word document (.docx)</option>
+              <option value="pdf">PDF</option>
+              <option value="html">HTML</option>
+              <option value="md">Markdown</option>
+            </select>
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Used when you click "Export report" without specifying a format.</div>
           </div>
-          <button onclick="refreshCreditGauge()" id="credit-refresh-btn"
-            style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:4px 10px;font-size:11px;color:var(--text3);cursor:pointer;font-family:var(--serif)">
-            ↻ Refresh
-          </button>
-        </div>
-
-        <!-- API key input row -->
-        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
-          <label style="font-size:11px;color:var(--text3);flex-shrink:0;width:70px">API Key</label>
-          <input id="ps-api-key" type="password" class="form-input"
-            style="flex:1;font-family:var(--mono);font-size:12px"
-            placeholder="sk-ant-api03-…"
-            autocomplete="off" spellcheck="false">
-          <button onclick="saveApiKeyFromSettings()"
-            style="background:var(--accent);border:none;border-radius:var(--r);padding:5px 14px;font-size:12px;color:white;cursor:pointer;font-family:var(--serif);white-space:nowrap">
-            💾 Save key
-          </button>
-          <button onclick="clearApiKeyFromSettings()"
-            style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:12px;color:var(--red);cursor:pointer;font-family:var(--serif)" title="Clear saved API key">
-            ✕
-          </button>
-        </div>
-        <div id="ps-api-key-msg" style="display:none;font-size:11px;margin-bottom:0.75rem;padding:4px 8px;border-radius:var(--r)"></div>
-
-        <!-- Gauge area -->
-        <div id="credit-gauge-wrap">
-          <div style="font-size:12px;color:var(--text3);text-align:center;padding:1rem 0">
-            Enter your API key above and click Refresh to check credit status
+          <div>
+            <label class="form-label">Auto-snapshot on save</label>
+            <select id="pref-auto-snapshot" class="form-input" style="margin-top:5px">
+              <option value="on">On — keep version history for every saved job</option>
+              <option value="off">Off — only snapshot when I press the version button</option>
+            </select>
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Auto-snapshots are deduplicated by content hash, so this is cheap.</div>
           </div>
+        </div>
+        <div id="pref-saved-msg" style="display:none;margin-top:1rem;padding:0.6rem 1rem;background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.3);border-radius:var(--r);font-size:12px;color:var(--green)">
+          ✓ Preferences saved
         </div>
       </div>
 
-      <div id="ps-saved-msg" style="display:none;padding:0.75rem 1rem;background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.3);border-radius:var(--r);font-size:13px;color:var(--green)">
-        ✓ Project settings saved — these appear in all Conversion Reports
-      </div>
-
-      <!-- ─── Backup & Restore — nested under Project Settings ─── -->
+      <!-- ─── Backup & Restore — nested under Settings ─── -->
       <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:0.5px solid var(--border)">
         <div class="panel-header">
           <div>
@@ -1328,7 +1290,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">📦 Export backup</div>
             <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Creates a single JSON file containing:</div>
             <div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:1.25rem">
-              <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Project settings</div>
+              <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>All projects (and active project)</div>
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Source &amp; target connections</div>
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>All migration jobs</div>
               <div style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2)"><span style="color:var(--green)">✓</span>Was/Is rules</div>
@@ -3719,6 +3681,56 @@ function renderDashboardProjects(){
     sub.textContent = projects.length + ' project' + (projects.length===1?'':'s') +
       (activeName ? ' · active: ' + activeName : '');
   }
+
+  // Render the read-only Active Project summary card above the projects list
+  renderActiveProjectSummary(projects, activeId, allJobs, inv);
+}
+
+// Read-only snapshot of the currently active project, shown directly above
+// the Projects card on the dashboard. Hidden when no active project. All
+// editing happens on /projects.html — there's an "Edit details" link in the
+// header that takes the user there.
+function renderActiveProjectSummary(projects, activeId, allJobs, inv){
+  const wrap = document.getElementById('dashboard-active-summary');
+  if (!wrap) return;
+  if (!activeId) { wrap.style.display = 'none'; return; }
+  const p = projects.find(x => x.id === activeId);
+  if (!p) { wrap.style.display = 'none'; return; }
+
+  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const fmt = ts => ts ? new Date(ts).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+  const jobCount      = allJobs.filter(j => j.projectId === p.id).length;
+  const artifactCount = inv.filter(a => a.projectId === p.id).length;
+  const status = dashProjStatus(p, allJobs);
+
+  setText('das-name', p.name || 'Untitled project');
+  // Sub line — client + ref + description (truncated)
+  const subBits = [];
+  if (p.client) subBits.push(p.client);
+  if (p.ref)    subBits.push(p.ref);
+  const desc = (p.description || '').trim();
+  if (desc) subBits.push(desc.length > 80 ? desc.slice(0, 80) + '…' : desc);
+  setText('das-sub', subBits.length ? subBits.join(' · ') : 'No description');
+
+  // Meta grid — six tiles with the most useful at-a-glance fields
+  const grid = document.getElementById('das-meta-grid');
+  if (grid) {
+    const cell = (label, val) => `<div style="background:var(--bg3);border:0.5px solid var(--border);border-radius:8px;padding:0.55rem 0.75rem">
+      <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-family:var(--mono);margin-bottom:2px">${label}</div>
+      <div style="font-size:12px;color:var(--text);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(val || '—')}</div>
+    </div>`;
+    grid.innerHTML = [
+      cell('Status',     status.value + (status.derived ? ' (auto)' : '')),
+      cell('Jobs',       String(jobCount)),
+      cell('Artifacts',  String(artifactCount)),
+      cell('Phase',      p.phase || '—'),
+      cell('Source',     p.srcSystem || '—'),
+      cell('Target',     p.tgtSystem || '—'),
+      cell('Start',      fmt(p.start)),
+      cell('Target end', fmt(p.end)),
+    ].join('');
+  }
+  wrap.style.display = '';
 }
 
 function dashProjStatus(p, jobs){
@@ -7122,20 +7134,116 @@ async function presSaveConfig() {
 <script>
 // ── Project Settings ──────────────────────────────────────────────────────────
 const PS_KEY = 'cygenix_project_settings';
+const APP_PREFS_KEY = 'cygenix_app_prefs';
 
+// Default app-level preferences. Used to seed the form on first load and
+// fallback for any missing fields when reading.
+const DEFAULT_APP_PREFS = {
+  theme:         'dark',
+  landing:       'dashboard',
+  reportFormat:  'docx',
+  autoSnapshot:  'on',
+};
+
+// initProjectSettingsView — runs when the user navigates to the Settings
+// view. Project metadata used to live here (name, client, dates, etc.) but
+// has moved to /projects.html. This view now holds app-level config only:
+// API key, credit gauge link, and general preferences.
 function initProjectSettingsView() {
-  try {
-    const s = JSON.parse(localStorage.getItem(PS_KEY) || '{}');
-    ['name','type','ref','desc','analyst','pm','client','contact','start','end','phase','src-system','tgt-system','rows','notes']
-      .forEach(k => { const el = document.getElementById('ps-'+k); if (el && s[k]) el.value = s[k]; });
-  } catch {}
-  // Populate API key field with masked current key
-  const currentKey = localStorage.getItem('cygenix_api_key') || '';
-  const psKeyEl = document.getElementById('ps-api-key');
-  if (psKeyEl) psKeyEl.value = currentKey ? currentKey : '';
-  if (psKeyEl && currentKey) psKeyEl.placeholder = currentKey.slice(0,12) + '…' + currentKey.slice(-4) + '  (saved)';
-  // Auto-load credit gauge if key is available
-  if (currentKey) refreshCreditGauge();
+  // Populate API key field with the saved key (if any). The legacy field id
+  // ps-api-key was on the old form; we now use settings-api-key but keep
+  // back-compat by reading from the same storage key.
+  const key = localStorage.getItem('cygenix_api_key') || sessionStorage.getItem('cygenix_api_key') || '';
+  const keyInput = document.getElementById('settings-api-key');
+  const status   = document.getElementById('settings-key-status');
+  if (keyInput) {
+    if (key) {
+      keyInput.value = key;
+      keyInput.placeholder = key.slice(0,12) + '…' + key.slice(-4);
+    } else {
+      keyInput.value = '';
+      keyInput.placeholder = 'sk-ant-api03-...';
+    }
+  }
+  if (status) {
+    status.textContent = key
+      ? '✓ Key saved (' + key.slice(0,12) + '…' + key.slice(-4) + ')'
+      : 'No key set';
+    status.style.color = key ? 'var(--green)' : 'var(--text3)';
+  }
+
+  // Populate preference selectors from saved prefs (or defaults)
+  let prefs = {};
+  try { prefs = JSON.parse(localStorage.getItem(APP_PREFS_KEY) || '{}'); } catch {}
+  prefs = { ...DEFAULT_APP_PREFS, ...prefs };
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  set('pref-theme',         prefs.theme);
+  set('pref-landing',       prefs.landing);
+  set('pref-report-format', prefs.reportFormat);
+  set('pref-auto-snapshot', prefs.autoSnapshot);
+}
+
+// saveProjectSettings is kept as a named export of sorts because other code
+// paths (the topbar Save button, deep links) used to call it. It now just
+// proxies to saveAppPreferences so any leftover wiring still works without
+// silently failing.
+function saveProjectSettings() { return saveAppPreferences(); }
+
+function saveAppPreferences() {
+  const get = id => document.getElementById(id)?.value;
+  const prefs = {
+    theme:         get('pref-theme')         || DEFAULT_APP_PREFS.theme,
+    landing:       get('pref-landing')       || DEFAULT_APP_PREFS.landing,
+    reportFormat:  get('pref-report-format') || DEFAULT_APP_PREFS.reportFormat,
+    autoSnapshot:  get('pref-auto-snapshot') || DEFAULT_APP_PREFS.autoSnapshot,
+  };
+  try { localStorage.setItem(APP_PREFS_KEY, JSON.stringify(prefs)); } catch {}
+  const msg = document.getElementById('pref-saved-msg');
+  if (msg) { msg.style.display = 'block'; setTimeout(() => msg.style.display = 'none', 2400); }
+}
+
+// API key handlers wired to the new Settings card. Same backing storage as
+// the legacy saveApiKeyFromSettings/clearApiKeyFromSettings so any code
+// reading `cygenix_api_key` keeps working.
+function saveSettingsApiKey() {
+  const input  = document.getElementById('settings-api-key');
+  const status = document.getElementById('settings-key-status');
+  const key = (input?.value || '').trim();
+  if (!key) {
+    if (status) { status.textContent = 'Enter a key first'; status.style.color = 'var(--amber)'; }
+    return;
+  }
+  if (!key.startsWith('sk-ant-')) {
+    if (status) { status.textContent = 'Invalid key — must start with sk-ant-'; status.style.color = 'var(--red)'; }
+    return;
+  }
+  // Save to both stores so all pages pick it up
+  localStorage.setItem('cygenix_api_key', key);
+  sessionStorage.setItem('cygenix_api_key', key);
+  const topbarInput = document.getElementById('api-key-input');
+  if (topbarInput) topbarInput.value = key;
+  setBadge('ok');
+  if (input) {
+    input.value = key;
+    input.placeholder = key.slice(0,12) + '…' + key.slice(-4);
+  }
+  if (status) {
+    status.textContent = '✓ Key saved (' + key.slice(0,12) + '…' + key.slice(-4) + ')';
+    status.style.color = 'var(--green)';
+  }
+}
+
+function clearSettingsApiKey() {
+  if (!confirm('Clear the saved API key? AI features will stop working until a new key is entered.')) return;
+  localStorage.removeItem('cygenix_api_key');
+  sessionStorage.removeItem('cygenix_api_key');
+  const input = document.getElementById('settings-api-key');
+  if (input) { input.value = ''; input.placeholder = 'sk-ant-api03-...'; }
+  const topbarInput = document.getElementById('api-key-input');
+  if (topbarInput) topbarInput.value = '';
+  setBadge('err');
+  const status = document.getElementById('settings-key-status');
+  if (status) { status.textContent = 'No key set'; status.style.color = 'var(--text3)'; }
 }
 
 function saveApiKeyFromSettings() {
@@ -7342,18 +7450,12 @@ function key_preview() {
   return k.length > 8 ? k.slice(0,8) + '…' + k.slice(-4) : '(not set)';
 }
 
-function saveProjectSettings() {
-  const s = {};
-  ['name','type','ref','desc','analyst','pm','client','contact','start','end','phase','src-system','tgt-system','rows','notes']
-    .forEach(k => { const el = document.getElementById('ps-'+k); if (el) s[k] = el.value; });
-  localStorage.setItem(PS_KEY, JSON.stringify(s));
-  // Also store key fields globally for reports
-  if (s.name)    localStorage.setItem('cygenix_project_name',    s.name);
-  if (s.analyst) localStorage.setItem('cygenix_analyst_name',    s.analyst);
-  if (s.client)  localStorage.setItem('cygenix_client_name',     s.client);
-  const msg = document.getElementById('ps-saved-msg');
-  if (msg) { msg.style.display='block'; setTimeout(()=>msg.style.display='none',3000); }
-}
+// LEGACY saveProjectSettings DELETED — the new proxy version is defined
+// earlier (alongside saveAppPreferences). The old version captured project
+// metadata fields (name, client, analyst, etc.) from a form that no longer
+// exists on this page (those moved to /projects.html), so calling it would
+// silently no-op anyway. Removed to avoid the JS hoisting double-define
+// where the second definition wins and shadows the proxy.
 
 // ── Project Connections ───────────────────────────────────────────────────────
 let srcMode = 'direct', tgtMode = 'azure';

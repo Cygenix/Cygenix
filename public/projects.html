@@ -96,7 +96,11 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 .modal-actions{display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.25rem;padding-top:1rem;border-top:0.5px solid var(--border)}
 
 /* ── Form ── */
+.form-section{margin-bottom:1.4rem;padding-bottom:1.1rem;border-bottom:0.5px solid var(--border)}
+.form-section:last-of-type{border-bottom:none;padding-bottom:0;margin-bottom:0.5rem}
+.form-section-title{font-size:11px;color:var(--text2);font-weight:600;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.85rem;font-family:var(--mono)}
 .form-row{display:flex;flex-direction:column;gap:5px;margin-bottom:0.85rem}
+.form-row:last-child{margin-bottom:0}
 .form-row.row-pair{display:grid;grid-template-columns:1fr 1fr;gap:0.85rem}
 .form-row.row-pair > div{display:flex;flex-direction:column;gap:5px}
 .form-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-family:var(--mono)}
@@ -152,33 +156,117 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 
 <!-- ── PROJECT MODAL ── -->
 <div class="modal-overlay" id="project-modal">
-  <div class="modal">
+  <div class="modal" style="max-width:720px">
     <div class="modal-title" id="project-modal-title">New project</div>
     <div class="modal-sub" id="project-modal-sub">A project groups jobs, artifacts, and reports for a single conversion engagement.</div>
 
-    <div class="form-row">
-      <label class="form-label">Project name *</label>
-      <input class="form-input" id="pm-name" placeholder="e.g. Acme Corp Q1 Migration" autocomplete="off">
-    </div>
-
-    <div class="form-row row-pair">
-      <div>
-        <label class="form-label">Client / owner</label>
-        <input class="form-input" id="pm-client" placeholder="e.g. Acme Corp" autocomplete="off">
+    <!-- Section: Identity -->
+    <div class="form-section">
+      <div class="form-section-title">Project identity</div>
+      <div class="form-row">
+        <label class="form-label">Project name *</label>
+        <input class="form-input" id="pm-name" placeholder="e.g. Acme Corp Q1 Migration" autocomplete="off">
       </div>
-      <div>
-        <label class="form-label">Reference</label>
-        <input class="form-input" id="pm-ref" placeholder="e.g. PRJ-2026-014" autocomplete="off">
+      <div class="form-row row-pair">
+        <div>
+          <label class="form-label">Project type</label>
+          <select class="form-select" id="pm-type">
+            <option value="">— Choose type —</option>
+            <option value="full">Full database migration</option>
+            <option value="partial">Partial / table subset migration</option>
+            <option value="schema">Schema-only conversion</option>
+            <option value="dialect">Dialect translation (SQL → SQL)</option>
+            <option value="cleanup">Data cleanup / consolidation</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Reference / code</label>
+          <input class="form-input" id="pm-ref" placeholder="e.g. PRJ-2026-014" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Description</label>
+        <textarea class="form-textarea" id="pm-desc" placeholder="Brief description of what is being migrated and why"></textarea>
       </div>
     </div>
 
-    <div class="form-row">
-      <label class="form-label">Description</label>
-      <textarea class="form-textarea" id="pm-desc" placeholder="What's being converted, why, and any key constraints"></textarea>
+    <!-- Section: Team -->
+    <div class="form-section">
+      <div class="form-section-title">Team &amp; stakeholders</div>
+      <div class="form-row row-pair">
+        <div>
+          <label class="form-label">Conversion analyst</label>
+          <input class="form-input" id="pm-analyst" placeholder="Name" autocomplete="off">
+        </div>
+        <div>
+          <label class="form-label">Project manager</label>
+          <input class="form-input" id="pm-pm" placeholder="Name" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-row row-pair">
+        <div>
+          <label class="form-label">Client / organisation</label>
+          <input class="form-input" id="pm-client" placeholder="Client or organisation name" autocomplete="off">
+        </div>
+        <div>
+          <label class="form-label">Client contact</label>
+          <input class="form-input" id="pm-contact" placeholder="Client contact name or email" autocomplete="off">
+        </div>
+      </div>
     </div>
 
-    <div class="form-row row-pair">
-      <div>
+    <!-- Section: Timeline -->
+    <div class="form-section">
+      <div class="form-section-title">Timeline</div>
+      <div class="form-row row-pair">
+        <div>
+          <label class="form-label">Start date</label>
+          <input class="form-input" id="pm-start" type="date">
+        </div>
+        <div>
+          <label class="form-label">Target completion</label>
+          <input class="form-input" id="pm-end" type="date">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Migration phase</label>
+        <select class="form-select" id="pm-phase">
+          <option value="">— Not set —</option>
+          <option value="planning">Planning</option>
+          <option value="discovery">Discovery</option>
+          <option value="analysis">Analysis</option>
+          <option value="build">Build</option>
+          <option value="testing">Testing</option>
+          <option value="cutover">Cutover</option>
+          <option value="post-cutover">Post-cutover</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Section: Source & target -->
+    <div class="form-section">
+      <div class="form-section-title">Source &amp; target systems</div>
+      <div class="form-row row-pair">
+        <div>
+          <label class="form-label">Source system</label>
+          <input class="form-input" id="pm-src-system" placeholder="e.g. SQL Server 2016, MySQL 5.7" autocomplete="off">
+        </div>
+        <div>
+          <label class="form-label">Target system</label>
+          <input class="form-input" id="pm-tgt-system" placeholder="e.g. PostgreSQL 16, Azure SQL" autocomplete="off">
+        </div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Estimated row count</label>
+        <input class="form-input" id="pm-rows" type="text" inputmode="numeric" placeholder="e.g. 10000" autocomplete="off">
+      </div>
+    </div>
+
+    <!-- Section: Status & notes -->
+    <div class="form-section">
+      <div class="form-section-title">Status &amp; notes</div>
+      <div class="form-row">
         <label class="form-label">Status</label>
         <select class="form-select" id="pm-status">
           <option value="">Auto (derived from jobs)</option>
@@ -189,9 +277,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         </select>
         <div class="form-helper derived-hint" id="pm-status-derived-hint"></div>
       </div>
-      <div>
-        <label class="form-label">Source → Target</label>
-        <input class="form-input" id="pm-systems" placeholder="e.g. SQL Server → Postgres" autocomplete="off">
+      <div class="form-row">
+        <label class="form-label">Notes &amp; special considerations</label>
+        <textarea class="form-textarea" id="pm-notes" placeholder="Data quality issues, known risks, special handling required, out-of-scope items"></textarea>
       </div>
     </div>
 
@@ -261,11 +349,11 @@ function saveProjects(){
 
 // ── One-time migration ────────────────────────────────────────────────────────
 // Old single-project users have their data under the legacy
-// `cygenix_project_settings` key, which the dashboard used to render as the
-// "active project" badge and which produced the "My first project" card you
-// saw on the homepage. Pull it forward into the multi-project array exactly
-// once so nothing is lost, then mark it migrated. We don't delete the legacy
-// key — other parts of the codebase still read it (e.g. report headers).
+// `cygenix_project_settings` key (the keys are the same `ps-*` names used in
+// the new modal). Pull it forward into the multi-project array exactly once
+// so nothing is lost, then mark it migrated. We don't delete the legacy key
+// — other parts of the codebase still read it (report headers, exports), so
+// saveProject() also mirrors the active project back into it for back-compat.
 function migrateLegacyProjectSettings(){
   if (_projects.length > 0) return;                             // nothing to migrate into
   if (localStorage.getItem('cygenix_projects_migrated') === '1') return;
@@ -279,13 +367,26 @@ function migrateLegacyProjectSettings(){
   const id  = 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
   const migrated = {
     id,
-    name:        legacy.name,
-    client:      legacy.client || '',
-    ref:         legacy.ref || '',
-    description: legacy.desc || legacy.notes || '',
-    systems:     [legacy['src-system'], legacy['tgt-system']].filter(Boolean).join(' → '),
-    status:      '',                  // empty = derive from jobs
+    // All legacy ps-* fields preserved verbatim
+    name:        legacy.name        || '',
+    type:        legacy.type        || '',
+    ref:         legacy.ref         || '',
+    description: legacy.desc        || '',
+    analyst:     legacy.analyst     || '',
+    pm:          legacy.pm          || '',
+    client:      legacy.client      || '',
+    contact:     legacy.contact     || '',
+    start:       legacy.start       || '',
+    end:         legacy.end         || '',
+    phase:       legacy.phase       || '',
+    srcSystem:   legacy['src-system'] || '',
+    tgtSystem:   legacy['tgt-system'] || '',
+    rows:        legacy.rows        || '',
+    notes:       legacy.notes       || '',
+    // Status defaults to derived
+    status:      '',
     statusManual:false,
+    // Best-effort timestamps from legacy data if present
     created:     legacy.start || now,
     modified:    now,
   };
@@ -425,6 +526,10 @@ function projectCardHtml(p, jobs, activeId){
         <div class="proj-meta-val">${artifactCount}</div>
       </div>
       <div class="proj-meta-cell">
+        <div class="proj-meta-label">Phase</div>
+        <div class="proj-meta-val" style="color:var(--text2)">${escHtml(p.phase || '—')}</div>
+      </div>
+      <div class="proj-meta-cell">
         <div class="proj-meta-label">Modified</div>
         <div class="proj-meta-val">${fmt(lastModified)}</div>
       </div>
@@ -432,9 +537,13 @@ function projectCardHtml(p, jobs, activeId){
         <div class="proj-meta-label">Created</div>
         <div class="proj-meta-val">${fmt(p.created)}</div>
       </div>
-      <div class="proj-meta-cell" style="grid-column:span 2">
+      <div class="proj-meta-cell">
+        <div class="proj-meta-label">Target end</div>
+        <div class="proj-meta-val">${p.end ? fmt(p.end) : '—'}</div>
+      </div>
+      <div class="proj-meta-cell" style="grid-column:span 3">
         <div class="proj-meta-label">Source → Target</div>
-        <div class="proj-meta-val" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.systems || '—')}</div>
+        <div class="proj-meta-val" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml((p.srcSystem || p.tgtSystem) ? ((p.srcSystem || '?') + ' → ' + (p.tgtSystem || '?')) : '—')}</div>
       </div>
     </div>
 
@@ -465,6 +574,9 @@ function setActive(id, silent){
   const p = _projects.find(x => x.id === id);
   if (p) {
     try { sessionStorage.setItem('cygenix_active_project', JSON.stringify(p)); } catch {}
+    // Mirror to legacy key so report headers, exports etc. see the new
+    // active project's metadata without us touching their code paths.
+    mirrorActiveProjectToLegacy(p);
   }
   if (!silent) {
     toast(`"${p?.name || 'Project'}" set as active.`, 'success');
@@ -477,8 +589,11 @@ function openProjectModal(){
   document.getElementById('project-modal-title').textContent = 'New project';
   document.getElementById('project-modal-sub').textContent = 'A project groups jobs, artifacts, and reports for a single conversion engagement.';
   document.getElementById('pm-delete-btn').style.display = 'none';
-  ['pm-name','pm-client','pm-ref','pm-desc','pm-systems'].forEach(id => { document.getElementById(id).value = ''; });
-  document.getElementById('pm-status').value = '';
+  // Clear every input — covers the full project metadata schema
+  ['pm-name','pm-ref','pm-desc','pm-analyst','pm-pm','pm-client','pm-contact',
+   'pm-start','pm-end','pm-src-system','pm-tgt-system','pm-rows','pm-notes']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['pm-type','pm-phase','pm-status'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('pm-status-derived-hint').textContent = 'Status will be derived from jobs.';
   document.getElementById('project-modal').classList.add('open');
   setTimeout(() => document.getElementById('pm-name').focus(), 50);
@@ -491,14 +606,29 @@ function editProject(id){
   document.getElementById('project-modal-title').textContent = 'Edit project';
   document.getElementById('project-modal-sub').textContent  = 'Updating "' + (p.name || 'project') + '"';
   document.getElementById('pm-delete-btn').style.display = 'inline-flex';
-  document.getElementById('pm-name').value    = p.name || '';
-  document.getElementById('pm-client').value  = p.client || '';
-  document.getElementById('pm-ref').value     = p.ref || '';
-  document.getElementById('pm-desc').value    = p.description || '';
-  document.getElementById('pm-systems').value = p.systems || '';
-  document.getElementById('pm-status').value  = p.statusManual ? (p.status || '') : '';
 
-  // Show the user what status would be derived if they leave it on Auto
+  // Populate every field. All names map 1:1 to the project schema, except
+  // src-system / tgt-system whose hyphenated DOM ids translate to camelCase
+  // properties (srcSystem / tgtSystem) for cleaner JS access.
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('pm-name',       p.name);
+  set('pm-type',       p.type);
+  set('pm-ref',        p.ref);
+  set('pm-desc',       p.description);
+  set('pm-analyst',    p.analyst);
+  set('pm-pm',         p.pm);
+  set('pm-client',     p.client);
+  set('pm-contact',    p.contact);
+  set('pm-start',      p.start);
+  set('pm-end',        p.end);
+  set('pm-phase',      p.phase);
+  set('pm-src-system', p.srcSystem);
+  set('pm-tgt-system', p.tgtSystem);
+  set('pm-rows',       p.rows);
+  set('pm-notes',      p.notes);
+  set('pm-status',     p.statusManual ? (p.status || '') : '');
+
+  // Show what status would be derived if they leave it on Auto
   const derived = statusFor({...p, statusManual:false, status:''}, getJobs());
   document.getElementById('pm-status-derived-hint').textContent =
     'On Auto, status would currently be "' + derived.value + '" based on this project\'s jobs.';
@@ -517,29 +647,46 @@ function saveProject(){
     document.getElementById('pm-name').focus();
     return;
   }
+  // Capture every field. Hyphenated DOM ids map to camelCase properties
+  // because the project schema is consumed in JS-land where camelCase reads
+  // better; the legacy mirror below converts them back to ps- keys for any
+  // code still reading the old shape.
+  const get = id => (document.getElementById(id)?.value || '').trim();
   const data = {
     name,
-    client:      document.getElementById('pm-client').value.trim(),
-    ref:         document.getElementById('pm-ref').value.trim(),
-    description: document.getElementById('pm-desc').value.trim(),
-    systems:     document.getElementById('pm-systems').value.trim(),
+    type:        get('pm-type'),
+    ref:         get('pm-ref'),
+    description: get('pm-desc'),
+    analyst:     get('pm-analyst'),
+    pm:          get('pm-pm'),
+    client:      get('pm-client'),
+    contact:     get('pm-contact'),
+    start:       get('pm-start'),
+    end:         get('pm-end'),
+    phase:       get('pm-phase'),
+    srcSystem:   get('pm-src-system'),
+    tgtSystem:   get('pm-tgt-system'),
+    rows:        get('pm-rows'),
+    notes:       get('pm-notes'),
   };
   const statusVal = document.getElementById('pm-status').value;
   data.statusManual = !!statusVal;
   data.status       = statusVal;     // empty string when on Auto
 
   const now = new Date().toISOString();
+  let savedId;
 
   if (_editingId) {
     const i = _projects.findIndex(x => x.id === _editingId);
     if (i >= 0) {
       _projects[i] = { ..._projects[i], ...data, modified: now };
+      savedId = _editingId;
     }
   } else {
     // New project — generate ID and creation timestamps
-    const id = 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
+    savedId = 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
     _projects.unshift({
-      id,
+      id: savedId,
       ...data,
       created:  now,
       modified: now,
@@ -547,13 +694,55 @@ function saveProject(){
     // First-ever project? Make it active. Otherwise leave the active project
     // unchanged so we don't surprise the user mid-task.
     if (_projects.length === 1) {
-      localStorage.setItem(ACTIVE_PROJ_KEY, id);
+      localStorage.setItem(ACTIVE_PROJ_KEY, savedId);
     }
   }
   saveProjects();
+
+  // ── Legacy mirror ──────────────────────────────────────────────────────
+  // Several parts of the codebase (report headers, exports, the Was/Is rule
+  // engine) still read project metadata from `cygenix_project_settings` with
+  // the original `ps-*` key names. When the saved project IS the active
+  // project, mirror its fields back into that legacy key so those readers
+  // keep working without us having to chase every consumer down. If the
+  // user's editing a non-active project, we leave the legacy key alone.
+  const activeId = localStorage.getItem(ACTIVE_PROJ_KEY);
+  if (savedId === activeId) {
+    mirrorActiveProjectToLegacy(_projects.find(x => x.id === savedId));
+  }
+
   closeProjectModal();
   renderProjects();
   toast(_editingId ? 'Project updated.' : 'Project created.', 'success');
+}
+
+// Mirror the active project's metadata into the legacy `cygenix_project_settings`
+// key using the same ps-* property names the old form used. Safe to call any
+// time the active project changes; idempotent.
+function mirrorActiveProjectToLegacy(p){
+  if (!p) return;
+  const legacy = {
+    name:         p.name        || '',
+    type:         p.type        || '',
+    ref:          p.ref         || '',
+    desc:         p.description || '',
+    analyst:      p.analyst     || '',
+    pm:           p.pm          || '',
+    client:       p.client      || '',
+    contact:      p.contact     || '',
+    start:        p.start       || '',
+    end:          p.end         || '',
+    phase:        p.phase       || '',
+    'src-system': p.srcSystem   || '',
+    'tgt-system': p.tgtSystem   || '',
+    rows:         p.rows        || '',
+    notes:        p.notes       || '',
+  };
+  try { localStorage.setItem(LEGACY_PS_KEY, JSON.stringify(legacy)); } catch {}
+  // Also update the convenience top-level keys the old saveProjectSettings used
+  if (legacy.name)    localStorage.setItem('cygenix_project_name', legacy.name);
+  if (legacy.analyst) localStorage.setItem('cygenix_analyst_name', legacy.analyst);
+  if (legacy.client)  localStorage.setItem('cygenix_client_name',  legacy.client);
 }
 
 function deleteFromModal(){
