@@ -699,16 +699,22 @@ function saveProject(){
   }
   saveProjects();
 
-  // ── Legacy mirror ──────────────────────────────────────────────────────
+  // ── Legacy mirror + sessionStorage refresh ─────────────────────────────
   // Several parts of the codebase (report headers, exports, the Was/Is rule
   // engine) still read project metadata from `cygenix_project_settings` with
-  // the original `ps-*` key names. When the saved project IS the active
-  // project, mirror its fields back into that legacy key so those readers
-  // keep working without us having to chase every consumer down. If the
-  // user's editing a non-active project, we leave the legacy key alone.
+  // the original `ps-*` key names, and the dashboard topbar pill reads the
+  // active project's name from `sessionStorage.cygenix_active_project`.
+  // When the saved project IS the active one, refresh both so the topbar
+  // pill and report headers immediately reflect renames/edits — without
+  // this, sessionStorage stays pinned to whatever was there at sign-in
+  // (commonly the migrated "My first project" from a fresh user) even
+  // after the user renames the project on this page. If the user's editing
+  // a non-active project, leave both alone.
   const activeId = localStorage.getItem(ACTIVE_PROJ_KEY);
   if (savedId === activeId) {
-    mirrorActiveProjectToLegacy(_projects.find(x => x.id === savedId));
+    const fresh = _projects.find(x => x.id === savedId);
+    mirrorActiveProjectToLegacy(fresh);
+    try { sessionStorage.setItem('cygenix_active_project', JSON.stringify(fresh)); } catch {}
   }
 
   closeProjectModal();

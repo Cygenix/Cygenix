@@ -4618,10 +4618,35 @@ function initUserAndProject() {
     }
   } catch(e) { console.warn('[Dashboard] initUserAndProject error:', e.message); }
 
-  // Load active project name
+  // ── Active project name in topbar pill ─────────────────────────────────
+  // sessionStorage.cygenix_active_project is a write-cache that other parts
+  // of the app populate when the user "sets active". It can drift out of
+  // sync with the canonical source — `cygenix_projects` array indexed by
+  // `cygenix_active_project_id` — when:
+  //   • the user renames the active project on /projects.html (the array
+  //     gets the new name; sessionStorage may not, if setActive wasn't called)
+  //   • the user signs in fresh and gets a migrated project, then renames
+  //     it later (sessionStorage was never written by the migration)
+  // Reconciliation: prefer the array entry when both exist. Update
+  // sessionStorage to match so other readers (report headers, exports)
+  // see the canonical name on next read.
   try {
-    const proj = JSON.parse(sessionStorage.getItem('cygenix_active_project') || '{}');
-    if (proj.name) {
+    let proj = null;
+    const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+    if (activeId) {
+      try {
+        const arr = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+        proj = (Array.isArray(arr) ? arr : []).find(p => p.id === activeId) || null;
+      } catch {}
+    }
+    if (!proj) {
+      try { proj = JSON.parse(sessionStorage.getItem('cygenix_active_project') || '{}'); } catch {}
+    } else {
+      // Refresh sessionStorage with the canonical entry so stale values
+      // (typically the post-migration "My first project") get replaced.
+      try { sessionStorage.setItem('cygenix_active_project', JSON.stringify(proj)); } catch {}
+    }
+    if (proj && proj.name) {
       $('project-name-badge').textContent = proj.name;
       $('project-name-badge').style.display = 'block';
     }
