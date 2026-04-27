@@ -46,6 +46,26 @@ function hashSnapshot(obj) {
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
 
+// ── Helper: confirm caller is an admin ───────────────────────────────────────
+// Reads the caller's record from the Cosmos users container and checks
+// `role === 'admin'`. Returns { ok: true } on success or { ok: false, code,
+// msg } on failure so callers can return the appropriate HTTP error. Used to
+// gate destructive admin-only endpoints (e.g. extend-membership) so a normal
+// user cannot self-promote or self-extend by hitting the endpoint directly.
+async function requireAdmin(callerUserId) {
+  if (!callerUserId) return { ok: false, code: 401, msg: 'x-user-id header is required' };
+  try {
+    const { resource } = await getCosmosContainer('users')
+      .item(callerUserId, callerUserId).read();
+    if (!resource) return { ok: false, code: 403, msg: 'Caller has no user record' };
+    if (resource.role !== 'admin') return { ok: false, code: 403, msg: 'Admin role required' };
+    return { ok: true, caller: resource };
+  } catch (e) {
+    if (e.code === 404) return { ok: false, code: 403, msg: 'Caller has no user record' };
+    return { ok: false, code: 500, msg: `Role check failed: ${e.message}` };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ROUTE 1: /api/db/{action} — existing SQL Server endpoint (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -811,8 +831,102 @@ app.http('data', {
           }
         }
 
+        // ── EXTEND MEMBERSHIP: admin updates a user's trialEndsAt ───────────
+        // POST /api/data/extend-membership
+        // Body: { targetEmail, trialEndsAt? (ISO string), addDays? (number),
+        //         neverExpires? (boolean) }
+        //
+        // Caller must be an admin (role === 'admin' in the users container).
+        // The caller is identified by x-user-id; the target is named in the
+        // body. Exactly one of trialEndsAt / addDays / neverExpires must be
+        // supplied. Audit-logged with the caller's id and the resulting
+        // trialEndsAt value so extensions are traceable.
+        case 'extend-membership': {
+          const gate = await requireAdmin(userId);
+          if (!gate.ok) return err(gate.code, gate.msg);
+
+          const body = await req.json().catch(() => ({}));
+          const targetEmail = (body.targetEmail || '').trim();
+          if (!targetEmail) return err(400, 'targetEmail is required');
+
+          // Resolve which option was chosen — exactly one
+          const opts = ['trialEndsAt', 'addDays', 'neverExpires']
+            .filter(k => Object.prototype.hasOwnProperty.call(body, k));
+          if (opts.length !== 1) {
+            return err(400, 'Provide exactly one of: trialEndsAt, addDays, neverExpires');
+          }
+
+          const container = getCosmosContainer('users');
+
+          // Look up target by email (id and userId are both the email in the
+          // current schema, but allow either case for resilience)
+          let target = null;
+          try {
+            const { resource } = await container.item(targetEmail, targetEmail).read();
+            target = resource || null;
+          } catch (e) {
+            if (e.code !== 404) throw e;
+          }
+          if (!target) {
+            // Fall back to a query in case id-as-email is mixed-case in storage
+            const { resources } = await container.items
+              .query({
+                query: 'SELECT * FROM c WHERE LOWER(c.email) = @e',
+                parameters: [{ name: '@e', value: targetEmail.toLowerCase() }]
+              })
+              .fetchAll();
+            target = resources && resources[0] ? resources[0] : null;
+          }
+          if (!target) return err(404, `User not found: ${targetEmail}`);
+
+          // Compute the new trialEndsAt
+          let newEndsAt;
+          if (body.neverExpires === true) {
+            newEndsAt = null;  // null = no expiry
+          } else if (typeof body.addDays === 'number' && Number.isFinite(body.addDays)) {
+            // Add to whichever is later: now or current trialEndsAt. This
+            // matches user expectation — clicking "+30d" on someone whose
+            // trial ends next week extends to "next week + 30 days", not
+            // "today + 30 days" (which would be a shortening).
+            const base = target.trialEndsAt
+              ? Math.max(Date.now(), new Date(target.trialEndsAt).getTime())
+              : Date.now();
+            newEndsAt = new Date(base + body.addDays * 86400000).toISOString();
+          } else if (typeof body.trialEndsAt === 'string') {
+            // Validate the ISO string before storing
+            const parsed = new Date(body.trialEndsAt);
+            if (Number.isNaN(parsed.getTime())) return err(400, 'Invalid trialEndsAt date');
+            newEndsAt = parsed.toISOString();
+          } else {
+            return err(400, 'Invalid options for extend-membership');
+          }
+
+          // Apply update — only touch trialEndsAt + updatedAt, leave plan,
+          // status, role, stripeId etc. untouched
+          const updated = {
+            ...target,
+            trialEndsAt: newEndsAt,
+            updatedAt:   new Date().toISOString()
+          };
+          await container.items.upsert(updated);
+
+          // Audit log so we can see who extended whom and to when
+          await getCosmosContainer('audit').items.create({
+            id:        `${userId}-extend-${Date.now()}`,
+            userId,             // partition key = caller's id
+            action:    'extend-membership',
+            timestamp: updated.updatedAt,
+            target:    targetEmail,
+            newTrialEndsAt: newEndsAt,
+            mode:      body.neverExpires ? 'never' : (body.addDays ? `+${body.addDays}d` : 'date')
+          }).catch(e => ctx.log('Audit write failed (non-fatal):', e.message));
+
+          ctx.log(`Admin ${userId} extended ${targetEmail} → ${newEndsAt || 'never'}`);
+          return ok({ updated: true, email: targetEmail, trialEndsAt: newEndsAt });
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership`);
       }
 
     } catch (e) {
