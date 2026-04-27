@@ -10211,15 +10211,66 @@ function wiCanFanOut(row){
 // reconnected source is picked up. Returns Map<lowercaseField, Set<tableName>>.
 async function wiFetchSourceSchema(){
   if (_wiSourceSchemaCache) return _wiSourceSchemaCache;
-  const conn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
-  if (!conn) throw new Error('No source database connection configured. Open Connections → Source and save a connection first.');
+
+  // Resolve the source connection. We do NOT depend on impGetConn here —
+  // earlier debugging showed it isn't reliably reachable from this script
+  // block in some load orders. Instead we mirror what testProjConn('src')
+  // and the rest of the connections subsystem do: read CygenixConnections
+  // first, then fall back to the same localStorage blob the Connections
+  // page persists to.
+  let conn = '';
+  try {
+    const c = (window.CygenixConnections && typeof window.CygenixConnections.get === 'function')
+      ? (window.CygenixConnections.get() || {})
+      : {};
+    conn = c.srcConnString || c.srcFnUrl || '';
+  } catch {}
+  if (!conn){
+    // Fallback — same blob CygenixConnections writes to on save.
+    try {
+      const pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {};
+      // Per-user wrapper: { <userTag>: { srcConnString: ... } }, OR a flat
+      // shape on older saves. Accept both.
+      const flat = pc && (pc.srcConnString || pc.srcFnUrl);
+      if (flat) {
+        conn = pc.srcConnString || pc.srcFnUrl;
+      } else if (pc && typeof pc === 'object') {
+        // Per-user — pick the first slice that has a source.
+        for (const k of Object.keys(pc)) {
+          const slice = pc[k];
+          if (slice && typeof slice === 'object' && (slice.srcConnString || slice.srcFnUrl)) {
+            conn = slice.srcConnString || slice.srcFnUrl;
+            break;
+          }
+        }
+      }
+    } catch {}
+  }
+  if (!conn){
+    try {
+      conn = sessionStorage.getItem('cygenix_src_conn_string') || '';
+    } catch {}
+  }
+  if (!conn){
+    throw new Error('No source database connection configured. Open Connections → Source and save a connection first.');
+  }
+
   // INFORMATION_SCHEMA.COLUMNS is supported by both SQL Server and PostgreSQL,
   // which are the two source dialects Cygenix targets. We deliberately do NOT
   // filter by schema here — a "currency" column in [dbo].[transactions] and
   // [audit].[transactions] should both surface.
   const sql = "SELECT TABLE_SCHEMA AS table_schema, TABLE_NAME AS table_name, COLUMN_NAME AS column_name FROM INFORMATION_SCHEMA.COLUMNS";
-  const res = await impDbCall(conn, { action:'execute', sql });
-  const rows = (res && res.rows) || [];
+  // Dispatch identically to testProjConn('src') / impDbCall: HTTP URL → call
+  // the Azure Function directly; otherwise route through the netlify proxy
+  // with connectionString in the body.
+  const isHttpUrl = /^https?:\/\//i.test(conn);
+  const res = isHttpUrl
+    ? await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'execute', sql }), signal: AbortSignal.timeout(60000) })
+    : await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'execute', sql, connectionString: conn }), signal: AbortSignal.timeout(60000) });
+  const data = await res.json().catch(() => ({ error: 'Non-JSON response' }));
+  if (!res.ok) throw new Error(data.error || res.statusText || ('HTTP ' + res.status));
+
+  const rows = (data && data.rows) || [];
   const byField = new Map();
   rows.forEach(r => {
     // Tolerate driver case differences (mssql lowercases by default; pg may not).
