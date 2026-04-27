@@ -227,6 +227,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .wasis-table tr:hover td{background:rgba(255,255,255,0.02)}
 .wasis-was{color:var(--red);font-family:var(--mono);font-size:12px}
 .wasis-is{color:var(--green);font-family:var(--mono);font-size:12px}
+/* Connection banner — same look as object_mapping.html so the user gets
+   consistent at-a-glance feedback about source/target reachability. */
+.conn-banner{display:flex;align-items:center;gap:0.75rem;padding:0.625rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:1rem;flex-wrap:wrap}
+.conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.conn-dot.ok{background:var(--green)}
+.conn-dot.err{background:var(--red)}
+.conn-dot.idle{background:var(--text3)}
+.conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
+.conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif)}
+.conn-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.3)}
 .notes-area{background:var(--bg3);border-radius:var(--r);padding:1rem;font-size:13px;color:var(--text2);line-height:1.8;white-space:pre-wrap;min-height:200px}
 .code-block .kw{color:#79b8ff}
 .code-block .cm{color:#555a6a;font-style:italic}
@@ -1540,6 +1550,17 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           Each rule rewrites <code>oldVal</code> → <code>newVal</code> for a matching column.
           Leave <strong>Table</strong> or <strong>Field</strong> blank to match any.
           Rules are applied during SQL generation as a <code>CASE WHEN</code> expression on the source column.
+        </div>
+        <!-- Connection banner — read-only mirror of Connections page state.
+             Lets the user see at a glance whether Source/Target are configured
+             before they try to use "copy to all tables" (which needs Source). -->
+        <div class="conn-banner" id="wi-conn-banner">
+          <div class="conn-dot idle" id="wi-src-dot"></div>
+          <span class="conn-label" id="wi-src-label">Source: not configured</span>
+          <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
+          <div class="conn-dot idle" id="wi-tgt-dot"></div>
+          <span class="conn-label" id="wi-tgt-label">Target: not configured</span>
+          <a href="#connections" onclick="showView('connections');return false" class="conn-btn" style="margin-left:auto;text-decoration:none">⚙ Manage connections</a>
         </div>
         <div class="sp-filter-bar" id="wi-filter-bar" style="display:none">
           <input type="text" id="wi-filter-input" class="sp-filter-input" placeholder="🔍 Filter by table, field, old value, new value, or description…" oninput="wiApplyFilter()">
@@ -10061,6 +10082,12 @@ function wiGetDisplayedRows(){
 }
 
 function wiRender(){
+  // Reflect the current connection state in the read-only banner. We do
+  // this on every render so the dots stay accurate after any background
+  // change (e.g. user re-saved a connection in another tab and the storage
+  // event fired). Keep this fast — it only reads CygenixConnections, no
+  // network calls.
+  wiUpdateConnBanner();
   const tbl         = document.getElementById('wi-rules-table');
   const empty       = document.getElementById('wi-empty-state');
   const emptyFilter = document.getElementById('wi-empty-filter-state');
@@ -10205,6 +10232,55 @@ function wiCanFanOut(row){
   return !!(row && (row.srcField || '').trim()
                 && (row.oldVal   != null && String(row.oldVal).length > 0)
                 && (row.newVal   != null && String(row.newVal).length > 0));
+}
+
+// Read-only connection banner refresher. Mirrors the green/red logic from
+// updateConnDots() (line ~7546) but writes to the Was/Is panel's own dots
+// and labels. Called from wiRender(), so the banner is always fresh when
+// the user opens the panel. Reads CygenixConnections only — no network —
+// so it's cheap enough to call on every render.
+function wiUpdateConnBanner(){
+  const c = (window.CygenixConnections && typeof window.CygenixConnections.get === 'function')
+    ? (window.CygenixConnections.get() || {}) : {};
+  const srcOk = !!(c.srcConnString);
+  // Target is "configured" if either an Azure Function URL or a direct
+  // connection string is set — same rule as updateConnDots().
+  const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
+
+  const setDot = (id, ok, configured) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'conn-dot ' + (configured ? (ok ? 'ok' : 'err') : 'idle');
+  };
+  const setLabel = (id, configured, label, detail) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = configured ? (label + ': ' + detail) : (label + ': not configured');
+  };
+
+  // Best-effort DB name parse so the banner reads e.g. "Source: pfmegrnargs"
+  // (matching object_mapping.html) rather than just "Source: configured".
+  const parseDbName = (conn) => {
+    if (!conn) return '';
+    try {
+      // Azure Function URLs: just show the host.
+      if (/^https?:\/\//i.test(conn)) {
+        return new URL(conn).hostname.split('.')[0];
+      }
+      // SQL Server connection strings: Database=foo; or Initial Catalog=foo;
+      const m = conn.match(/(?:Database|Initial Catalog)\s*=\s*([^;]+)/i);
+      if (m) return m[1].trim();
+      // mssql://user:pw@host:port/dbname
+      const m2 = conn.match(/^[a-z]+:\/\/[^/]+\/([^?#]+)/i);
+      if (m2) return decodeURIComponent(m2[1]);
+    } catch {}
+    return 'configured';
+  };
+
+  setDot('wi-src-dot', srcOk, srcOk);
+  setLabel('wi-src-label', srcOk, 'Source', parseDbName(c.srcConnString));
+  setDot('wi-tgt-dot', tgtOk, tgtOk);
+  setLabel('wi-tgt-label', tgtOk, 'Target', parseDbName(c.tgtFnUrl || c.tgtConnString));
 }
 
 // Cached source-schema lookup. Cleared on Was/Is panel reload so a freshly
