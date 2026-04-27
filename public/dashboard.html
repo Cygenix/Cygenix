@@ -10234,23 +10234,88 @@ function wiCanFanOut(row){
                 && (row.newVal   != null && String(row.newVal).length > 0));
 }
 
-// Read-only connection banner refresher. Mirrors the green/red logic from
-// updateConnDots() (line ~7546) but writes to the Was/Is panel's own dots
-// and labels. Called from wiRender(), so the banner is always fresh when
-// the user opens the panel. Reads CygenixConnections only — no network —
-// so it's cheap enough to call on every render.
+// Read connection settings directly from localStorage, bypassing
+// CygenixConnections.
+//
+// Why bypass? Diagnostic on a real session showed `window.CygenixConnections`
+// is undefined when the Was/Is panel renders — `connections.js` either
+// fails to load on this view or fails to set its global. The data itself
+// is fine: it sits in `cygenix_project_connections` in two possible shapes,
+// either of which we accept here:
+//
+//   A) Flat (legacy save):
+//      { srcConnString, srcConnMode, tgtConnString, tgtConnMode,
+//        tgtFnUrl, tgtFnKey }
+//
+//   B) Per-user (current save path, keyed by email):
+//      { "user@example.com": { srcConnString, ... }, ...flat keys also }
+//
+// In observed sessions both shapes coexist in the same blob (the per-user
+// slice is added on top of the flat keys). We prefer the per-user slice
+// matching the active account, fall back to flat, then to any per-user
+// slice that has data.
+//
+// Returns: { srcConnString, tgtConnString, tgtFnUrl, tgtFnKey } — all strings,
+// possibly empty. Never throws.
+function wiReadConns(){
+  let pc = {};
+  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
+
+  // 1) Per-user slice for the active user, if present.
+  let activeUser = '';
+  try { activeUser = localStorage.getItem('cygenix_active_user') || ''; } catch {}
+  if (activeUser && pc[activeUser] && typeof pc[activeUser] === 'object'){
+    const slice = pc[activeUser];
+    if (slice.srcConnString || slice.tgtConnString || slice.tgtFnUrl){
+      return {
+        srcConnString: slice.srcConnString || '',
+        tgtConnString: slice.tgtConnString || '',
+        tgtFnUrl:      slice.tgtFnUrl      || '',
+        tgtFnKey:      slice.tgtFnKey      || '',
+      };
+    }
+  }
+
+  // 2) Flat top-level keys.
+  if (pc.srcConnString || pc.tgtConnString || pc.tgtFnUrl){
+    return {
+      srcConnString: pc.srcConnString || '',
+      tgtConnString: pc.tgtConnString || '',
+      tgtFnUrl:      pc.tgtFnUrl      || '',
+      tgtFnKey:      pc.tgtFnKey      || '',
+    };
+  }
+
+  // 3) Any per-user slice that has data (last resort — handles the case
+  //    where active-user tag drifted but data exists under another tag).
+  for (const k of Object.keys(pc)){
+    const v = pc[k];
+    if (v && typeof v === 'object' && (v.srcConnString || v.tgtConnString || v.tgtFnUrl)){
+      return {
+        srcConnString: v.srcConnString || '',
+        tgtConnString: v.tgtConnString || '',
+        tgtFnUrl:      v.tgtFnUrl      || '',
+        tgtFnKey:      v.tgtFnKey      || '',
+      };
+    }
+  }
+
+  return { srcConnString:'', tgtConnString:'', tgtFnUrl:'', tgtFnKey:'' };
+}
+
+// Read-only connection banner refresher. Reads localStorage directly (see
+// wiReadConns above for why) and writes to the Was/Is panel's dots/labels.
+// Called from wiRender(), so the banner is always fresh when the user
+// opens the panel. No network calls.
 function wiUpdateConnBanner(){
-  const c = (window.CygenixConnections && typeof window.CygenixConnections.get === 'function')
-    ? (window.CygenixConnections.get() || {}) : {};
-  const srcOk = !!(c.srcConnString);
-  // Target is "configured" if either an Azure Function URL or a direct
-  // connection string is set — same rule as updateConnDots().
+  const c = wiReadConns();
+  const srcOk = !!c.srcConnString;
   const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
 
-  const setDot = (id, ok, configured) => {
+  const setDot = (id, configured) => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.className = 'conn-dot ' + (configured ? (ok ? 'ok' : 'err') : 'idle');
+    el.className = 'conn-dot ' + (configured ? 'ok' : 'idle');
   };
   const setLabel = (id, configured, label, detail) => {
     const el = document.getElementById(id);
@@ -10263,23 +10328,20 @@ function wiUpdateConnBanner(){
   const parseDbName = (conn) => {
     if (!conn) return '';
     try {
-      // Azure Function URLs: just show the host.
       if (/^https?:\/\//i.test(conn)) {
         return new URL(conn).hostname.split('.')[0];
       }
-      // SQL Server connection strings: Database=foo; or Initial Catalog=foo;
       const m = conn.match(/(?:Database|Initial Catalog)\s*=\s*([^;]+)/i);
       if (m) return m[1].trim();
-      // mssql://user:pw@host:port/dbname
       const m2 = conn.match(/^[a-z]+:\/\/[^/]+\/([^?#]+)/i);
       if (m2) return decodeURIComponent(m2[1]);
     } catch {}
     return 'configured';
   };
 
-  setDot('wi-src-dot', srcOk, srcOk);
+  setDot('wi-src-dot', srcOk);
   setLabel('wi-src-label', srcOk, 'Source', parseDbName(c.srcConnString));
-  setDot('wi-tgt-dot', tgtOk, tgtOk);
+  setDot('wi-tgt-dot', tgtOk);
   setLabel('wi-tgt-label', tgtOk, 'Target', parseDbName(c.tgtFnUrl || c.tgtConnString));
 }
 
@@ -10288,18 +10350,11 @@ function wiUpdateConnBanner(){
 async function wiFetchSourceSchema(){
   if (_wiSourceSchemaCache) return _wiSourceSchemaCache;
 
-  // Resolve the source connection the same way object_mapping.html's
-  // connectSrc() does — via CygenixConnections.get().srcConnString. That path
-  // is the one the user has already proven works (the green dot, the schema
-  // tree, etc.). We don't read from sessionStorage / project_connections blob
-  // directly, because those are implementation details of CygenixConnections.
-  let conn = '';
-  try {
-    const c = (window.CygenixConnections && typeof window.CygenixConnections.get === 'function')
-      ? (window.CygenixConnections.get() || {})
-      : {};
-    conn = c.srcConnString || '';
-  } catch {}
+  // Resolve the source connection. We bypass CygenixConnections (which is
+  // observed undefined on this view) and read localStorage directly via
+  // wiReadConns — see that helper for the storage-shape contract.
+  const conns = wiReadConns();
+  const conn = conns.srcConnString || '';
   if (!conn){
     throw new Error('Source connection not configured. Open Connections → Source and save a connection first.');
   }
