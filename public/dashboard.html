@@ -10151,7 +10151,7 @@ function wiRender(){
       <td><input class="sp-cell-input mono" value="${wiEsc(row.oldVal)}" oninput="wiUpdateField(${origIdx},'oldVal',this.value)" placeholder="old value"></td>
       <td><input class="sp-cell-input mono" value="${wiEsc(row.newVal)}" oninput="wiUpdateField(${origIdx},'newVal',this.value)" placeholder="new value"></td>
       <td><input class="sp-cell-input" value="${wiEsc(row.desc)}" oninput="wiUpdateField(${origIdx},'desc',this.value)" placeholder="optional note"></td>
-      <td style="text-align:right;white-space:nowrap"><button class="sp-icon-btn" onclick="wiCopyToAllTables(${origIdx})" title="${wiEsc(fanTitle)}" ${fanAttrs}>🪄 <span style="font-size:10px;color:var(--text3);margin-left:2px">copy to</span></button> <button class="sp-icon-btn danger" onclick="wiRemoveRow(${origIdx})" title="Delete">✕</button></td>
+      <td style="text-align:right;white-space:nowrap"><button id="wi-fan-${origIdx}" class="sp-icon-btn" onclick="wiCopyToAllTables(${origIdx})" title="${wiEsc(fanTitle)}" ${fanAttrs}>🪄 <span style="font-size:10px;color:var(--text3);margin-left:2px">copy to</span></button> <button class="sp-icon-btn danger" onclick="wiRemoveRow(${origIdx})" title="Delete">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -10190,6 +10190,36 @@ function wiUpdateField(i, field, value){
     wiRules[i][field] = value;
   }
   wiSave();
+  // The wand button's enabled/disabled state was baked into the row HTML at
+  // render time and won't update on its own. We can't full-re-render here —
+  // that would steal focus from the input the user is typing into. Instead
+  // we update just this row's wand button in place. Only the three fields
+  // that gate fan-out can flip the state, so skip the work otherwise.
+  if (field === 'srcField' || field === 'oldVal' || field === 'newVal'){
+    wiRefreshFanBtn(i);
+  }
+}
+
+// Update the enabled/disabled state of one row's wand button without re-
+// rendering the table. Mirrors the HTML produced in wiRender; keep the
+// styling/title strings in sync with that template.
+function wiRefreshFanBtn(i){
+  const row = wiRules[i];
+  if (!row) return;
+  const btn = document.getElementById('wi-fan-' + i);
+  if (!btn) return;
+  const canFan = wiCanFanOut(row);
+  if (canFan){
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.cursor = '';
+    btn.title = 'Copy to all source tables containing field "' + (row.srcField || '') + '"';
+  } else {
+    btn.disabled = true;
+    btn.style.opacity = '0.35';
+    btn.style.cursor = 'not-allowed';
+    btn.title = 'Field, Old value, and New value must all be filled in to copy to other tables';
+  }
 }
 
 function wiAddRow(){
