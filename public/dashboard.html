@@ -10212,75 +10212,71 @@ function wiCanFanOut(row){
 async function wiFetchSourceSchema(){
   if (_wiSourceSchemaCache) return _wiSourceSchemaCache;
 
-  // Resolve the source connection. We do NOT depend on impGetConn here —
-  // earlier debugging showed it isn't reliably reachable from this script
-  // block in some load orders. Instead we mirror what testProjConn('src')
-  // and the rest of the connections subsystem do: read CygenixConnections
-  // first, then fall back to the same localStorage blob the Connections
-  // page persists to.
+  // Resolve the source connection the same way object_mapping.html's
+  // connectSrc() does — via CygenixConnections.get().srcConnString. That path
+  // is the one the user has already proven works (the green dot, the schema
+  // tree, etc.). We don't read from sessionStorage / project_connections blob
+  // directly, because those are implementation details of CygenixConnections.
   let conn = '';
   try {
     const c = (window.CygenixConnections && typeof window.CygenixConnections.get === 'function')
       ? (window.CygenixConnections.get() || {})
       : {};
-    conn = c.srcConnString || c.srcFnUrl || '';
+    conn = c.srcConnString || '';
   } catch {}
   if (!conn){
-    // Fallback — same blob CygenixConnections writes to on save.
-    try {
-      const pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {};
-      // Per-user wrapper: { <userTag>: { srcConnString: ... } }, OR a flat
-      // shape on older saves. Accept both.
-      const flat = pc && (pc.srcConnString || pc.srcFnUrl);
-      if (flat) {
-        conn = pc.srcConnString || pc.srcFnUrl;
-      } else if (pc && typeof pc === 'object') {
-        // Per-user — pick the first slice that has a source.
-        for (const k of Object.keys(pc)) {
-          const slice = pc[k];
-          if (slice && typeof slice === 'object' && (slice.srcConnString || slice.srcFnUrl)) {
-            conn = slice.srcConnString || slice.srcFnUrl;
-            break;
-          }
-        }
-      }
-    } catch {}
-  }
-  if (!conn){
-    try {
-      conn = sessionStorage.getItem('cygenix_src_conn_string') || '';
-    } catch {}
-  }
-  if (!conn){
-    throw new Error('No source database connection configured. Open Connections → Source and save a connection first.');
+    throw new Error('Source connection not configured. Open Connections → Source and save a connection first.');
   }
 
-  // INFORMATION_SCHEMA.COLUMNS is supported by both SQL Server and PostgreSQL,
-  // which are the two source dialects Cygenix targets. We deliberately do NOT
-  // filter by schema here — a "currency" column in [dbo].[transactions] and
-  // [audit].[transactions] should both surface.
-  const sql = "SELECT TABLE_SCHEMA AS table_schema, TABLE_NAME AS table_name, COLUMN_NAME AS column_name FROM INFORMATION_SCHEMA.COLUMNS";
-  // Dispatch identically to testProjConn('src') / impDbCall: HTTP URL → call
-  // the Azure Function directly; otherwise route through the netlify proxy
+  // Inline copies of the dbCall/isFn helpers from object_mapping.html. We
+  // duplicate (rather than depend on) those because they're scoped to that
+  // page's script. Behaviour must stay identical: HTTP URL → POST directly
+  // to the Function App; otherwise → POST to /.netlify/functions/db-connect
   // with connectionString in the body.
-  const isHttpUrl = /^https?:\/\//i.test(conn);
-  const res = isHttpUrl
-    ? await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'execute', sql }), signal: AbortSignal.timeout(60000) })
-    : await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'execute', sql, connectionString: conn }), signal: AbortSignal.timeout(60000) });
-  const data = await res.json().catch(() => ({ error: 'Non-JSON response' }));
-  if (!res.ok) throw new Error(data.error || res.statusText || ('HTTP ' + res.status));
+  const _isFn = (c) => !!(c && (c.startsWith('https://') || c.startsWith('http://')));
+  const _dbCall = async (body) => {
+    const url = _isFn(conn) ? conn : '/.netlify/functions/db-connect';
+    const payload = _isFn(conn) ? body : { ...body, connectionString: conn };
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000),
+    });
+    const data = await res.json().catch(() => ({ error: 'Non-JSON (' + res.status + ')' }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  };
 
-  const rows = (data && data.rows) || [];
+  // Try paginated schema-tables first (the same smart-fetch object_mapping
+  // uses); fall back to legacy `schema` if the backend doesn't know it.
+  // For our purposes, schema-tables alone is enough — it returns
+  // tables[].columns for legacy backends, and tables[].name for paginated
+  // backends. We only need column NAMES, so for paginated backends we then
+  // need to fetch columns per table — which would be N round trips for a
+  // 9k-table DB. To avoid that, we go straight to legacy `schema` here:
+  // even on paginated-capable backends, `schema` still works and returns
+  // everything in one call. The Was/Is fan-out is a one-shot user action,
+  // not a hot path, so paying the bigger payload cost once is fine.
+  const res = await _dbCall({ action: 'schema' });
+  const tables = (res && res.tables) || [];
+
   const byField = new Map();
-  rows.forEach(r => {
-    // Tolerate driver case differences (mssql lowercases by default; pg may not).
-    const col = String(r.column_name || r.COLUMN_NAME || '').trim();
-    const tbl = String(r.table_name  || r.TABLE_NAME  || '').trim();
-    if (!col || !tbl) return;
-    const key = col.toLowerCase();
-    if (!byField.has(key)) byField.set(key, new Set());
-    byField.get(key).add(tbl);
+  tables.forEach(t => {
+    const tname = t.name || '';
+    const cols  = t.columns || [];
+    if (!tname || !Array.isArray(cols)) return;
+    cols.forEach(col => {
+      // Columns can be {name, type, ...} objects or plain strings depending on
+      // backend version — handle both.
+      const cname = (typeof col === 'string') ? col : (col && col.name) || '';
+      if (!cname) return;
+      const key = cname.toLowerCase();
+      if (!byField.has(key)) byField.set(key, new Set());
+      byField.get(key).add(tname);
+    });
   });
+
   _wiSourceSchemaCache = byField;
   return byField;
 }
