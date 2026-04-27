@@ -47,10 +47,11 @@
   // for this tenant or user.
   const NAV = [
     { section: 'Migrate', items: [
-      { key:'dashboard', label:'Dashboard', view:'dashboard', icon: iconDashboard() }
+      { key:'dashboard', label:'Dashboard', view:'dashboard', icon: iconDashboard() },
+      { key:'search',    label:'Search',    view:'search',    icon: iconSearch() },
     ]},
     { section: 'Configure', group:'configure', items: [
-      { key:'project-settings',  label:'Project Settings',  view:'project-settings',   color:'var(--amber)',  icon: iconSettings() },
+      { key:'project-settings',  label:'Settings',           view:'project-settings',   color:'var(--amber)',  icon: iconSettings() },
       { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug() },
       { key:'performance',       label:'Performance',       href:'/performance.html',  color:'var(--teal)',   icon: iconChart() },
       { key:'system-parameters', label:'System Parameters', view:'system-parameters',  color:'var(--accent)', icon: iconParams() },
@@ -75,7 +76,6 @@
       { key:'project-builder',   label:'Execute',           href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
     ]},
     { section: null, items: [
-      { key:'search',            label:'Search',            view:'search',              icon: iconSearch() },
       { key:'inventory',         label:'Project Artifacts',         view:'inventory',           icon: iconGrid() },
       { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--yellow)', icon: iconClock() },
     ]},
