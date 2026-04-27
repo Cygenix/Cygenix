@@ -9992,6 +9992,7 @@ let wiFilterQuery = '';
 let wiSortCol = null;  // 'srcTable' | 'srcField' | 'oldVal' | 'newVal' | 'desc' | null
 let wiSortDir = 1;     // 1 asc, -1 desc
 let wiInitialized = false;
+let _wiSourceSchemaCache = null; // Map<lowercaseField, Set<tableName>> — see wiFetchSourceSchema
 
 function wiEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -10006,6 +10007,9 @@ function wiNormaliseRule(r){
 }
 
 function wiLoad(){
+  // Clear the source-schema cache on (re)load so a freshly reconnected source
+  // DB is picked up by the "copy to all tables" wand button.
+  _wiSourceSchemaCache = null;
   // Prefer the shared helper when available so we benefit from inventory
   // fallback and stay consistent with object_mapping.html. Fall back to the
   // original localStorage read if the helper script didn't load for some
@@ -10109,13 +10113,18 @@ function wiRender(){
   tbl.style.display = '';
 
   tbody.innerHTML = displayed.map(({row, origIdx}) => {
+    const canFan = wiCanFanOut(row);
+    const fanTitle = canFan
+      ? 'Copy to all source tables containing field "' + row.srcField + '"'
+      : 'Field, Old value, and New value must all be filled in to copy to other tables';
+    const fanAttrs = canFan ? '' : 'disabled style="opacity:0.35;cursor:not-allowed"';
     return `<tr>
       <td><input class="sp-cell-input mono" value="${wiEsc(row.srcTable)}" oninput="wiUpdateField(${origIdx},'srcTable',this.value)" placeholder="any table"></td>
       <td><input class="sp-cell-input mono" value="${wiEsc(row.srcField)}" oninput="wiUpdateField(${origIdx},'srcField',this.value)" placeholder="any field"></td>
       <td><input class="sp-cell-input mono" value="${wiEsc(row.oldVal)}" oninput="wiUpdateField(${origIdx},'oldVal',this.value)" placeholder="old value"></td>
       <td><input class="sp-cell-input mono" value="${wiEsc(row.newVal)}" oninput="wiUpdateField(${origIdx},'newVal',this.value)" placeholder="new value"></td>
       <td><input class="sp-cell-input" value="${wiEsc(row.desc)}" oninput="wiUpdateField(${origIdx},'desc',this.value)" placeholder="optional note"></td>
-      <td style="text-align:right"><button class="sp-icon-btn danger" onclick="wiRemoveRow(${origIdx})" title="Delete">✕</button></td>
+      <td style="text-align:right;white-space:nowrap"><button class="sp-icon-btn" onclick="wiCopyToAllTables(${origIdx})" title="${wiEsc(fanTitle)}" ${fanAttrs}>🪄 <span style="font-size:10px;color:var(--text3);margin-left:2px">copy to</span></button> <button class="sp-icon-btn danger" onclick="wiRemoveRow(${origIdx})" title="Delete">✕</button></td>
     </tr>`;
   }).join('');
 }
@@ -10181,6 +10190,114 @@ function wiRemoveRow(i){
   wiRules.splice(i, 1);
   wiSave();
   wiRender();
+}
+
+// ── Copy-to-all-tables ─────────────────────────────────────────────────────
+// Lets the user fan out a single Was/Is rule to every table in the SOURCE
+// database that contains a column matching srcField. Saves typing the same
+// oldVal→newVal across N tables and avoids forgetting any. The user can review
+// and delete unwanted rows afterwards.
+
+// Gate: row needs srcField + oldVal + newVal. srcTable is optional — its only
+// purpose here is as the "originating" row, but the operation populates a
+// table per match regardless.
+function wiCanFanOut(row){
+  return !!(row && (row.srcField || '').trim()
+                && (row.oldVal   != null && String(row.oldVal).length > 0)
+                && (row.newVal   != null && String(row.newVal).length > 0));
+}
+
+// Cached source-schema lookup. Cleared on Was/Is panel reload so a freshly
+// reconnected source is picked up. Returns Map<lowercaseField, Set<tableName>>.
+async function wiFetchSourceSchema(){
+  if (_wiSourceSchemaCache) return _wiSourceSchemaCache;
+  const conn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
+  if (!conn) throw new Error('No source database connection configured. Open Connections → Source and save a connection first.');
+  // INFORMATION_SCHEMA.COLUMNS is supported by both SQL Server and PostgreSQL,
+  // which are the two source dialects Cygenix targets. We deliberately do NOT
+  // filter by schema here — a "currency" column in [dbo].[transactions] and
+  // [audit].[transactions] should both surface.
+  const sql = "SELECT TABLE_SCHEMA AS table_schema, TABLE_NAME AS table_name, COLUMN_NAME AS column_name FROM INFORMATION_SCHEMA.COLUMNS";
+  const res = await impDbCall(conn, { action:'execute', sql });
+  const rows = (res && res.rows) || [];
+  const byField = new Map();
+  rows.forEach(r => {
+    // Tolerate driver case differences (mssql lowercases by default; pg may not).
+    const col = String(r.column_name || r.COLUMN_NAME || '').trim();
+    const tbl = String(r.table_name  || r.TABLE_NAME  || '').trim();
+    if (!col || !tbl) return;
+    const key = col.toLowerCase();
+    if (!byField.has(key)) byField.set(key, new Set());
+    byField.get(key).add(tbl);
+  });
+  _wiSourceSchemaCache = byField;
+  return byField;
+}
+
+async function wiCopyToAllTables(i){
+  const src = wiRules[i];
+  if (!src) return;
+  if (!wiCanFanOut(src)){
+    alert('To copy this rule to other tables, fill in Field, Old value, and New value first.');
+    return;
+  }
+  const fieldKey = src.srcField.toLowerCase().trim();
+
+  let schema;
+  try {
+    schema = await wiFetchSourceSchema();
+  } catch (e) {
+    alert('Could not read source schema: ' + (e.message || e));
+    return;
+  }
+
+  const tableSet = schema.get(fieldKey);
+  if (!tableSet || tableSet.size === 0){
+    alert('No tables in the source database contain a column named "' + src.srcField + '".');
+    return;
+  }
+  const tables = Array.from(tableSet).sort();
+
+  // Dedupe: skip any (table|field|oldVal) that already exists. Match how
+  // wiNormaliseRule lowercases srcTable/srcField so comparisons are consistent.
+  const existingKeys = new Set(
+    wiRules.map(r => {
+      const n = wiNormaliseRule(r);
+      return n.srcTable + '|' + n.srcField + '|' + n.oldVal;
+    })
+  );
+
+  const toAdd = [];
+  let skipped = 0;
+  tables.forEach(t => {
+    const key = t.toLowerCase() + '|' + fieldKey + '|' + src.oldVal;
+    if (existingKeys.has(key)){ skipped++; return; }
+    toAdd.push({
+      srcTable: t.toLowerCase(),
+      srcField: fieldKey,
+      oldVal:   src.oldVal,
+      newVal:   src.newVal,
+      desc:     src.desc || ''
+    });
+  });
+
+  if (toAdd.length === 0){
+    alert('All ' + tables.length + ' matching tables already have this rule. Nothing to add.');
+    return;
+  }
+
+  const msg = 'Found ' + tables.length + ' source table' + (tables.length === 1 ? '' : 's')
+            + ' with field "' + src.srcField + '".\n\n'
+            + 'This will add ' + toAdd.length + ' new rule' + (toAdd.length === 1 ? '' : 's')
+            + (skipped ? ' (' + skipped + ' duplicate' + (skipped === 1 ? '' : 's') + ' skipped)' : '')
+            + ' for "' + src.oldVal + '" → "' + src.newVal + '".\n\n'
+            + 'You can delete any unwanted rows after review. Continue?';
+  if (!confirm(msg)) return;
+
+  wiRules.push(...toAdd);
+  wiSave();
+  wiRender();
+  if (typeof showToast === 'function') showToast('Added ' + toAdd.length + ' rule' + (toAdd.length === 1 ? '' : 's'));
 }
 
 // ── CSV/JSON export ──────────────────────────────────────────────────────
