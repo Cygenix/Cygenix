@@ -335,7 +335,8 @@ app.http('data', {
             'jobs', 'project_settings', 'project_plan', 'connections',
             'saved_connections',
             'performance', 'validation_sources', 'wasis_rules',
-            'sql_scripts', 'issues', 'inventory', 'sys_params'
+            'sql_scripts', 'issues', 'inventory', 'sys_params',
+            'projects'   // multi-project array (cygenix_projects)
           ];
 
           // Only overwrite fields explicitly present in the payload
