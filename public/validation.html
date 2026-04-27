@@ -301,13 +301,88 @@ function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
 
 // ── Persistence ────────────────────────────────────────────────────────────────
+// validation_sources lives in Cosmos DB (container 'projects', field
+// 'validation_sources') so it survives across browsers and isn't lost when
+// localStorage is cleared. localStorage is kept as a fast local cache and an
+// offline fallback. Save flow: write localStorage immediately, then debounce
+// a push to Cosmos. Load flow: read from Cosmos first; if that fails, fall
+// back to localStorage. The Azure Function whitelists 'validation_sources'
+// in its SYNCABLE list so the field round-trips cleanly.
+const VALIDATION_API  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+const VALIDATION_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+function _validationUserId(){
+  // Same source of truth every other Cygenix page uses
+  try {
+    if (typeof CygenixSync !== 'undefined' && CygenixSync.getUserId) {
+      const id = CygenixSync.getUserId();
+      if (id) return id;
+    }
+  } catch {}
+  // Fallbacks in case sync hasn't initialised yet
+  return localStorage.getItem('cygenix_active_user') ||
+         sessionStorage.getItem('cygenix_user_email') || null;
+}
+
+let _saveSourcesTimer = null;
 function saveSources(){
+  // Strip transient run state so we don't churn Cosmos with
+  // status/result/error fields that change every script execution.
   const toStore = validationSources.map(s=>({...s, scripts: s.scripts.map(sc=>({
     ...sc, status:'pending', result:null, error:null, rowsFound:0
   }))}));
+
+  // 1. Local cache — instant, used by offline fallback
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore)); }catch{}
+
+  // 2. Cloud — debounced 600ms so rapid edits don't fire one request each
+  clearTimeout(_saveSourcesTimer);
+  _saveSourcesTimer = setTimeout(() => _pushSourcesToCosmos(toStore), 600);
 }
-function loadSources(){
+
+async function _pushSourcesToCosmos(toStore){
+  const userId = _validationUserId();
+  if (!userId) {
+    // Not signed in or sync not ready — localStorage save above is enough
+    // for now; CygenixSync will pick it up when it initialises.
+    return;
+  }
+  try {
+    const res = await fetch(`${VALIDATION_API}/save?code=${VALIDATION_CODE}`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-user-id': userId },
+      body: JSON.stringify({ validation_sources: toStore })
+    });
+    if (!res.ok) {
+      console.warn('[Validation] Cosmos save failed:', res.status, await res.text().catch(()=>''));
+    }
+  } catch (e) {
+    console.warn('[Validation] Cosmos save error (kept in localStorage):', e.message);
+  }
+}
+
+async function loadSources(){
+  // Try Cosmos first so a fresh browser/device sees the user's data
+  const userId = _validationUserId();
+  if (userId) {
+    try {
+      const res = await fetch(`${VALIDATION_API}/load?code=${VALIDATION_CODE}`, {
+        headers: { 'x-user-id': userId }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.validation_sources)) {
+          validationSources = data.validation_sources;
+          // Mirror back into localStorage so the offline fallback stays warm
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(validationSources)); } catch {}
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('[Validation] Cosmos load failed, using localStorage:', e.message);
+    }
+  }
+  // Fallback — localStorage cache (or empty for first-time users)
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw) validationSources = JSON.parse(raw);
@@ -764,9 +839,24 @@ document.addEventListener('click',e=>{
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-loadSources();
-renderSources();
-rebuildScriptList();
+// loadSources is async — it tries Cosmos first, falls back to localStorage.
+// We render an interim view from whatever is in localStorage immediately so
+// the page isn't blank, then re-render once the cloud copy arrives.
+(async function init(){
+  // Show whatever localStorage has right now (instant)
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) validationSources = JSON.parse(raw);
+  } catch {}
+  renderSources();
+  rebuildScriptList();
+
+  // Then try Cosmos — if it returns something different (newer copy from
+  // another device, or this device had a cleared localStorage), re-render.
+  await loadSources();
+  renderSources();
+  rebuildScriptList();
+})();
 </script>
 </body>
 </html>

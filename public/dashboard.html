@@ -71,6 +71,14 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .stat-sub{font-size:11px;color:var(--text3)}
 .stat-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
 
+/* DASHBOARD PROJECTS LIST */
+.proj-chip{display:inline-flex;align-items:center;gap:0.5rem;padding:0.45rem 0.75rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:100px;font-size:12px;color:var(--text);cursor:pointer;transition:all 0.15s;font-family:var(--mono)}
+.proj-chip:hover{background:var(--bg4);border-color:var(--border2)}
+.proj-chip.active{background:var(--accent-glow);border-color:rgba(61,126,255,0.4);color:var(--accent)}
+.proj-chip-name{font-weight:500}
+.proj-chip-count{font-size:10px;color:var(--text3);background:var(--bg);padding:1px 7px;border-radius:100px;font-family:var(--mono)}
+.proj-chip.active .proj-chip-count{color:var(--accent);background:rgba(61,126,255,0.15)}
+
 /* PANELS */
 .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
 .panel-title{font-size:15px;font-weight:600;color:var(--text)}
@@ -924,6 +932,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="stat-card"><div class="stat-label">SQL Generated</div><div class="stat-val" id="stat-done" style="color:var(--green)">0</div><div class="stat-sub"><span class="stat-dot" style="background:var(--green)"></span>Ready to run</div></div>
         <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
       </div>
+
+      <!-- PROJECTS SUMMARY -->
+      <div class="panel" id="dashboard-projects-panel" style="margin-bottom:1.75rem">
+        <div class="panel-header" style="margin-bottom:0.85rem">
+          <div>
+            <div class="panel-title" style="font-size:13px">Projects</div>
+            <div class="panel-sub" id="dashboard-projects-sub">Loading…</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="showView('jobs')">View all jobs →</button>
+        </div>
+        <div id="dashboard-projects-list" style="display:flex;flex-wrap:wrap;gap:0.5rem">
+          <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">No projects yet</div>
+        </div>
+      </div>
+
       <div id="dashboard-ring-wrap"></div>
       <div class="panel-header" style="margin-top:1.5rem"><div class="panel-title">Migration Pipeline</div><div class="panel-sub">Click any stage to jump to that module</div></div>
       <div id="dashboard-pipeline" class="pipeline-wrap"></div>
@@ -2557,22 +2580,64 @@ function saveApiKey() {
   $('key-alert').classList.remove('visible');
 }
 
-function setBadge(s) {
+function setBadge(s, label) {
   const b = $('conn-badge');
-  if (s === 'ok')  { b.textContent = 'Claude AI · Connected'; b.className = 'conn-badge ok'; }
-  else if (s === 'err') { b.textContent = 'Enter API key ↓'; b.className = 'conn-badge err'; }
-  else { b.textContent = 'Checking…'; b.className = 'conn-badge checking'; }
+  if (!b) return;
+  // s ∈ 'ok' | 'err' | 'warn' | 'checking'
+  if (s === 'ok')       { b.textContent = label || 'Claude AI · Connected'; b.className = 'conn-badge ok'; }
+  else if (s === 'err') { b.textContent = label || 'Enter API key ↓';        b.className = 'conn-badge err'; }
+  else if (s === 'warn'){ b.textContent = label || 'API unreachable';        b.className = 'conn-badge err'; }
+  else                  { b.textContent = label || 'Checking…';              b.className = 'conn-badge checking'; }
 }
 
+// ── API liveness check ────────────────────────────────────────────────────────
+// The badge has historically been a pure config check (does an API key exist
+// somewhere?) which is misleading — a key being set client-side does not mean
+// Claude is actually reachable, and the previous implementation had both
+// branches of an if/else doing the same thing so the badge stayed red even
+// when the key was configured. This rewrite:
+//   1. Confirms a key is available (client-side OR via the health function)
+//   2. Pings the health endpoint with a short timeout to confirm reachability
+//   3. Reports a specific failure mode in the badge so the cause is obvious
 async function checkHealth() {
-  if (getApiKey()) { setBadge('ok'); $('key-alert').classList.remove('visible'); return; }
+  setBadge('checking');
+  const localKey = !!getApiKey();
+
+  // Hit the health endpoint regardless — it tells us whether the platform
+  // proxy is up AND whether a server-side key is configured. We tolerate
+  // failure: if the network call dies, fall back to the local key check.
+  let serverOk = false;
+  let serverKey = false;
   try {
     const r = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(6000) });
-    const d = await r.json();
-    if (d.apiKeyConfigured) { setBadge('err'); $('key-alert').classList.add('visible'); }
-    else { setBadge('err'); $('key-alert').classList.add('visible'); }
-  } catch { setBadge('err'); $('key-alert').classList.add('visible'); }
+    if (r.ok) {
+      serverOk = true;
+      const d = await r.json().catch(() => ({}));
+      serverKey = !!d.apiKeyConfigured;
+    }
+  } catch {
+    serverOk = false;
+  }
+
+  // Decision tree — pick the most informative state
+  if (localKey || serverKey) {
+    if (serverOk) {
+      setBadge('ok');
+      $('key-alert')?.classList.remove('visible');
+    } else {
+      // Key is set but the platform is unreachable — distinct from "no key"
+      setBadge('warn', 'Claude AI · API unreachable');
+      $('key-alert')?.classList.remove('visible');
+    }
+  } else {
+    setBadge('err', 'Enter API key ↓');
+    $('key-alert')?.classList.add('visible');
+  }
 }
+
+// Re-check periodically so a transient outage doesn't leave the dot stale.
+// 60s is frequent enough to feel live, infrequent enough to be free.
+setInterval(() => { try { checkHealth(); } catch {} }, 60000);
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showView(v) {
@@ -3552,6 +3617,71 @@ function updateStats() {
   set('stat-done',     state.jobs.filter(j=>j.status==='complete').length);
   set('stat-files',    state.totalFilesProcessed);
   set('jobs-count',    state.jobs.length);
+  renderDashboardProjects();
+}
+
+// ── Dashboard projects summary ────────────────────────────────────────────────
+// Renders the named-projects strip directly under the stats row so users can
+// see at a glance which projects exist and how many jobs each has. Clicking a
+// chip sets it as the active project and jumps to All Jobs filtered to it.
+function renderDashboardProjects(){
+  const list = document.getElementById('dashboard-projects-list');
+  const sub  = document.getElementById('dashboard-projects-sub');
+  if (!list) return;
+  let projects = [];
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch {}
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  // Count jobs per project (including unassigned)
+  const jobsByProject = {};
+  let unassigned = 0;
+  (state.jobs || []).forEach(j => {
+    if (j.projectId) {
+      jobsByProject[j.projectId] = (jobsByProject[j.projectId] || 0) + 1;
+    } else {
+      unassigned++;
+    }
+  });
+
+  if (!projects.length){
+    list.innerHTML = '<div style="font-size:12px;color:var(--text3);font-family:var(--mono)">No projects yet — create one in Project Settings to organise your jobs.</div>';
+    if (sub) sub.textContent = '0 projects';
+    return;
+  }
+
+  const parts = projects.map(p => {
+    const isActive = p.id === activeId;
+    const count = jobsByProject[p.id] || 0;
+    return `<div class="proj-chip${isActive?' active':''}" onclick="setActiveProjectAndJump('${escapeAttr(p.id)}')" title="Click to set as active and view jobs">
+      <span class="proj-chip-name">${escapeHtml(p.name || 'Untitled project')}</span>
+      <span class="proj-chip-count">${count} job${count===1?'':'s'}</span>
+    </div>`;
+  });
+  if (unassigned > 0){
+    parts.push(`<div class="proj-chip" onclick="showView('jobs')" title="Jobs not assigned to any project" style="color:var(--text2)">
+      <span class="proj-chip-name">Unassigned</span>
+      <span class="proj-chip-count">${unassigned} job${unassigned===1?'':'s'}</span>
+    </div>`);
+  }
+  list.innerHTML = parts.join('');
+  if (sub){
+    const activeName = (projects.find(p => p.id === activeId) || {}).name;
+    sub.textContent = projects.length + ' project' + (projects.length===1?'':'s') +
+      (activeName ? ' · active: ' + activeName : '');
+  }
+}
+
+function setActiveProjectAndJump(projectId){
+  if (!projectId) return;
+  try { localStorage.setItem('cygenix_active_project_id', projectId); } catch {}
+  // Update the session-level active project object too so the topbar badge picks it up
+  try {
+    const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+    const p = projects.find(x => x.id === projectId);
+    if (p) sessionStorage.setItem('cygenix_active_project', JSON.stringify(p));
+  } catch {}
+  // Re-render so the chip immediately reflects the new active state, then jump
+  renderDashboardProjects();
+  if (typeof showView === 'function') showView('jobs');
 }
 
 // ── Bulk-select + move jobs to project ─────────────────────────────────────

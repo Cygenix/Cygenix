@@ -427,6 +427,26 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
   <div class="modal" style="width:520px">
     <div class="modal-title" id="user-modal-title">User details</div>
     <div id="user-modal-body" style="margin-bottom:1rem"></div>
+
+    <!-- Extend membership panel — only shown to admin callers (rendered
+         conditionally by openUserModal based on _isAdmin). Lets the admin
+         pick a new trialEndsAt date or apply a quick preset. -->
+    <div id="extend-panel" style="display:none;margin:0 0 1rem;padding:0.85rem 1rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r-lg)">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:0.6rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em">Extend membership</div>
+      <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.7rem">
+        <button class="btn btn-ghost btn-sm" onclick="extendMembership('add', 30)">+30 days</button>
+        <button class="btn btn-ghost btn-sm" onclick="extendMembership('add', 90)">+90 days</button>
+        <button class="btn btn-ghost btn-sm" onclick="extendMembership('add', 365)">+1 year</button>
+        <button class="btn btn-ghost btn-sm" onclick="extendMembership('never')" title="Remove the trial expiry entirely (recommended for admin accounts)">Never expires</button>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <label style="font-size:12px;color:var(--text3);min-width:70px">Or pick:</label>
+        <input type="date" id="extend-date-input" style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--text);font-family:var(--mono);outline:none">
+        <button class="btn btn-primary btn-sm" onclick="extendMembership('date')">Apply</button>
+      </div>
+      <div id="extend-status" style="font-size:11px;color:var(--text3);margin-top:0.55rem;font-family:var(--mono);min-height:14px"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeUserModal()">Close</button>
       <button class="btn btn-danger btn-sm" id="user-modal-suspend" onclick="suspendUser()">Suspend access</button>
@@ -443,13 +463,26 @@ const NETLIFY_ID = window.location.origin + '/.netlify/identity';
 
 let _users = [];
 let _selectedUser = null;
+let _isAdmin = false;        // True if caller has role:'admin' in Cosmos users
+let _callerEmail = null;     // The signed-in admin's own email
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   // Set admin avatar
   const adminEmail = CygenixSync?.getUserId?.() || 'Admin';
+  _callerEmail = adminEmail;
   const initials = adminEmail.split('@')[0].substring(0,2).toUpperCase();
   document.getElementById('admin-avatar').textContent = initials;
+
+  // Determine whether the caller has admin role. The Cosmos `users` container
+  // stores role: 'admin' on entitled accounts; if the caller doesn't have one
+  // yet (e.g. mid-bootstrap), the extend-membership endpoint will return 403.
+  // We probe user-get for the caller themselves so we can hide the extend
+  // panel for non-admins rather than letting them click and fail.
+  try {
+    const me = await cosmosApi('user-get', 'GET', null, adminEmail);
+    _isAdmin = !!(me && me.role === 'admin');
+  } catch { _isAdmin = false; }
 
   await loadUsers();
 });
@@ -570,7 +603,9 @@ function renderUsers(users) {
       : '<span class="badge badge-trial">trial</span>';
 
     const signupDate = u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—';
-    const trialEnd = u.trialEndsAt ? new Date(u.trialEndsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}) : '—';
+    const trialEnd = u.trialEndsAt
+      ? new Date(u.trialEndsAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})
+      : (u.trialEndsAt === null ? '<span style="color:var(--green)">never</span>' : '—');
     const lastSync = u.updatedAt ? new Date(u.updatedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '—';
     const provider = u.provider === 'google' ? '🔵 ' : u.provider === 'azure' ? '🟦 ' : '✉️ ';
 
@@ -625,6 +660,30 @@ function openUserModal(email) {
   document.getElementById('user-modal-suspend').style.display = u.status !== 'suspended' ? 'inline-flex' : 'none';
   document.getElementById('user-modal-activate').style.display = u.status === 'suspended' ? 'inline-flex' : 'none';
 
+  // Show the Extend membership panel only when the caller is an admin. The
+  // endpoint role-gates regardless, but hiding the panel for non-admins keeps
+  // the UI honest. Pre-fill the date input with the current trialEndsAt (or
+  // today + 30 days if there isn't one) so admins can immediately see what
+  // they're changing from.
+  const panel = document.getElementById('extend-panel');
+  const dateInput = document.getElementById('extend-date-input');
+  const status = document.getElementById('extend-status');
+  if (panel) {
+    panel.style.display = _isAdmin ? 'block' : 'none';
+    if (status) status.textContent = '';
+    if (dateInput) {
+      let dt;
+      try {
+        dt = u.trialEndsAt ? new Date(u.trialEndsAt) : new Date(Date.now() + 30 * 86400000);
+      } catch { dt = new Date(Date.now() + 30 * 86400000); }
+      // <input type="date"> wants YYYY-MM-DD in local time
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      dateInput.value = `${yyyy}-${mm}-${dd}`;
+    }
+  }
+
   document.getElementById('user-modal-body').innerHTML = `
     <table style="width:100%;border-collapse:collapse">
       <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px;width:120px">Email</td><td style="font-family:var(--mono);font-size:12px">${u.email}</td></tr>
@@ -632,12 +691,90 @@ function openUserModal(email) {
       <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Plan</td><td>${u.plan === 'paid' ? '<span class="badge badge-paid">paid</span>' : '<span class="badge badge-trial">trial</span>'}</td></tr>
       <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Status</td><td>${u.status === 'suspended' ? '<span class="badge badge-suspended">suspended</span>' : u.status === 'pending' ? '<span class="badge badge-pending">pending</span>' : '<span class="badge badge-active">active</span>'}</td></tr>
       <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Sign-up</td><td style="font-family:var(--mono);font-size:11px">${u.createdAt ? new Date(u.createdAt).toLocaleString('en-GB') : '—'}</td></tr>
-      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Trial ends</td><td style="font-family:var(--mono);font-size:11px">${u.trialEndsAt ? new Date(u.trialEndsAt).toLocaleString('en-GB') : '—'}</td></tr>
+      <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Trial ends</td><td style="font-family:var(--mono);font-size:11px" id="user-modal-trial-ends">${u.trialEndsAt ? new Date(u.trialEndsAt).toLocaleString('en-GB') : '<span style="color:var(--green)">never</span>'}</td></tr>
       <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Auth provider</td><td style="font-size:12px">${u.provider || 'email'}</td></tr>
       <tr><td style="padding:0.5rem 0;color:var(--text3);font-size:12px">Last sync</td><td style="font-family:var(--mono);font-size:11px">${u.updatedAt ? new Date(u.updatedAt).toLocaleString('en-GB') : '—'}</td></tr>
     </table>`;
 
   document.getElementById('user-modal').classList.add('open');
+}
+
+// ── Extend membership ─────────────────────────────────────────────────────────
+// Three modes are exposed in the modal: a quick +N days button (mode='add'),
+// a date picker (mode='date'), and a "never expires" button (mode='never').
+// All three call the same backend endpoint with different body shapes; the
+// endpoint role-gates internally so a non-admin who somehow triggers this
+// will get a 403, which we surface in the status line.
+async function extendMembership(mode, days) {
+  if (!_selectedUser) return;
+  const status = document.getElementById('extend-status');
+  const setStatus = (msg, color) => {
+    if (!status) return;
+    status.textContent = msg;
+    status.style.color = color || 'var(--text3)';
+  };
+
+  // Build the request body for whichever mode was chosen
+  let body = { targetEmail: _selectedUser.email };
+  if (mode === 'add') {
+    if (!Number.isFinite(days)) { setStatus('Invalid duration', 'var(--red)'); return; }
+    body.addDays = days;
+  } else if (mode === 'never') {
+    if (!confirm(`Remove the trial expiry for ${_selectedUser.email}?\n\nThis user's account will never expire.`)) return;
+    body.neverExpires = true;
+  } else if (mode === 'date') {
+    const dateInput = document.getElementById('extend-date-input');
+    const dateStr = dateInput && dateInput.value;
+    if (!dateStr) { setStatus('Pick a date first', 'var(--red)'); return; }
+    // Treat the picker date as end-of-day local time so the user effectively
+    // gets the full day they chose
+    const parsed = new Date(dateStr + 'T23:59:59');
+    if (Number.isNaN(parsed.getTime())) { setStatus('Invalid date', 'var(--red)'); return; }
+    body.trialEndsAt = parsed.toISOString();
+  } else {
+    setStatus('Unknown extension mode', 'var(--red)'); return;
+  }
+
+  setStatus('Updating…', 'var(--text3)');
+  try {
+    const res = await fetch(`${API}/extend-membership?code=${CODE}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': _callerEmail || CygenixSync?.getUserId?.() || ''
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = (data && data.error) || `HTTP ${res.status}`;
+      setStatus('Failed: ' + msg, 'var(--red)');
+      // Common case: caller doesn't have role:'admin' in Cosmos yet
+      if (res.status === 403) {
+        setStatus(msg + ' — set role:"admin" on your user doc in Cosmos.', 'var(--red)');
+      }
+      return;
+    }
+    // Update local cache and redraw
+    _selectedUser.trialEndsAt = data.trialEndsAt;
+    const u = _users.find(x => x.email === _selectedUser.email);
+    if (u) u.trialEndsAt = data.trialEndsAt;
+
+    const cell = document.getElementById('user-modal-trial-ends');
+    if (cell) {
+      cell.innerHTML = data.trialEndsAt
+        ? new Date(data.trialEndsAt).toLocaleString('en-GB')
+        : '<span style="color:var(--green)">never</span>';
+    }
+    renderUsers(_users);
+
+    const niceWhen = data.trialEndsAt
+      ? new Date(data.trialEndsAt).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
+      : 'never';
+    setStatus('✓ Updated — trial ends ' + niceWhen, 'var(--green)');
+  } catch (e) {
+    setStatus('Network error: ' + e.message, 'var(--red)');
+  }
 }
 
 function closeUserModal() {
