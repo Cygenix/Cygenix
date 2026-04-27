@@ -19,6 +19,11 @@ const CygenixSync = (() => {
     'cygenix_performance','cygenix_validation_sources',
     'cygenix_wasis_rules','cygenix_sql_scripts','cygenix_issues','cygenix_inventory',
     'cygenix_sys_params',
+    // Multi-project model: array of { id, name, client, status, ... }. Until
+    // recently nothing wrote to this key so it was effectively unused; with
+    // projects.html and the dashboard Projects card it's now the source of
+    // truth for the user's project list, so include it in sync.
+    'cygenix_projects',
   ];
 
   const FIELD_MAP = {
@@ -29,6 +34,7 @@ const CygenixSync = (() => {
     wasis_rules:'cygenix_wasis_rules', sql_scripts:'cygenix_sql_scripts',
     issues:'cygenix_issues', inventory:'cygenix_inventory',
     sys_params:'cygenix_sys_params',
+    projects:'cygenix_projects',
   };
 
   // Extract userId — MSAL-first (authoritative post-migration), with legacy

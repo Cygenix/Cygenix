@@ -71,14 +71,25 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .stat-sub{font-size:11px;color:var(--text3)}
 .stat-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:5px}
 
-/* DASHBOARD PROJECTS LIST */
-.proj-row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:1rem;padding:0.7rem 0.85rem;border-radius:8px;border:0.5px solid var(--border);background:var(--bg3);margin-bottom:0.5rem;transition:all 0.15s}
-.proj-row:hover{border-color:var(--border2);background:var(--bg4)}
-.proj-row.active{border-color:rgba(61,126,255,0.4);background:var(--accent-glow)}
-.proj-row-name{font-size:13px;color:var(--text);font-weight:500;display:flex;align-items:center;gap:0.5rem;min-width:0}
-.proj-row-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.proj-row-active-pill{font-size:9px;padding:1px 7px;border-radius:100px;background:var(--accent);color:#fff;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;flex-shrink:0}
-.proj-row-meta{font-size:11px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
+/* DASHBOARD PROJECTS CARDS */
+.dash-proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:0.85rem}
+.dash-proj-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:10px;padding:1rem;display:flex;flex-direction:column;gap:0.65rem;cursor:pointer;transition:all 0.15s}
+.dash-proj-card:hover{border-color:var(--border2);background:var(--bg4);transform:translateY(-1px)}
+.dash-proj-card.active-project{border-color:rgba(61,126,255,0.4)}
+.dash-proj-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem}
+.dash-proj-name{font-size:13px;font-weight:600;line-height:1.3;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-proj-client{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:1px}
+.dash-proj-grid-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;padding-top:0.55rem;border-top:0.5px solid var(--border)}
+.dash-proj-meta-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-family:var(--mono)}
+.dash-proj-meta-val{font-size:11px;color:var(--text);font-family:var(--mono);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash-proj-active-pill{font-size:9px;padding:1px 7px;border-radius:100px;background:var(--accent);color:#fff;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;flex-shrink:0;align-self:flex-start}
+
+/* status badges (shared with projects.html visual language) */
+.dash-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:9px;font-weight:500;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border:0.5px solid;flex-shrink:0;align-self:flex-start}
+.dash-status-active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.35)}
+.dash-status-complete{background:rgba(34,201,122,0.08);color:var(--green);border-color:rgba(34,201,122,0.35)}
+.dash-status-draft{background:var(--bg4);color:var(--text2);border-color:var(--border2)}
+.dash-status-archived{background:var(--bg4);color:var(--text3);border-color:var(--border)}
 
 /* PANELS */
 .panel-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem}
@@ -934,10 +945,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="stat-card"><div class="stat-label">Files Processed</div><div class="stat-val" id="stat-files">0</div><div class="stat-sub">By Claude AI</div></div>
       </div>
 
-      <!-- PROJECTS CARD — lists every project (a "conversion") so the user
-           sees their work at a glance without leaving the dashboard. Each row
-           shows name, job count, and last-modified time, with an "Open"
-           action that sets the project active and jumps to its jobs. -->
+      <!-- PROJECTS CARD — overview of every project ("conversion") with
+           status, jobs, artifacts and dates. Cards link to /projects.html for
+           CRUD; the "+ New Project" button deep-links to /projects.html?new=1
+           which opens the new-project modal on arrival. -->
       <div class="panel" id="dashboard-projects-panel" style="margin-bottom:1.75rem">
         <div class="panel-header" style="margin-bottom:0.85rem">
           <div>
@@ -945,8 +956,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div class="panel-sub" id="dashboard-projects-sub">Loading…</div>
           </div>
           <div style="display:flex;gap:0.5rem">
-            <button class="btn btn-primary btn-sm" onclick="addProjectFromDashboard()">+ Add Project</button>
-            <button class="btn btn-ghost btn-sm" onclick="showView('jobs')">View all jobs →</button>
+            <a href="/projects.html?new=1" class="btn btn-primary btn-sm">+ New Project</a>
+            <a href="/projects.html" class="btn btn-ghost btn-sm">Manage projects →</a>
           </div>
         </div>
         <div id="dashboard-projects-list">
@@ -3628,77 +3639,142 @@ function updateStats() {
 }
 
 // ── Dashboard projects card ───────────────────────────────────────────────────
-// Lists every project (which the product surfaces as a "conversion") so the
-// user can see their work at a glance from the front page. Each row shows
-// name, job count, last-modified, and an Open button. Clicking a row sets it
-// active and jumps to All Jobs filtered to that project.
+// Lists every project ("conversion") with status, jobs, artifacts and dates.
+// Cards link to /projects.html for full CRUD; clicking a card sets it active
+// and jumps to All Jobs filtered to that project.
+//
+// Status is derived from the project's jobs (no jobs → draft, all complete →
+// complete, otherwise → active) unless the project has statusManual=true, in
+// which case the explicit `status` field is used. Same logic as projects.html
+// — keep them in sync if you change one.
 function renderDashboardProjects(){
   const list = document.getElementById('dashboard-projects-list');
   const sub  = document.getElementById('dashboard-projects-sub');
   if (!list) return;
+
+  // Read projects, then opportunistically migrate legacy single-project data
+  // forward so users with only `cygenix_project_settings` see something here
+  // instead of a "no projects yet" state. Mirror of the migration in
+  // projects.html — first one to run wins, the other becomes a no-op.
   let projects = [];
   try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch {}
-  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  if (!Array.isArray(projects)) projects = [];
 
-  // Per-project stats: job count and most recent activity timestamp
-  const stats = {};
-  let unassigned = 0;
-  (state.jobs || []).forEach(j => {
-    if (j.projectId) {
-      if (!stats[j.projectId]) stats[j.projectId] = { count: 0, latest: 0 };
-      stats[j.projectId].count++;
-      const ts = Date.parse(j.lastRun || j.modified || j.created || '') || 0;
-      if (ts > stats[j.projectId].latest) stats[j.projectId].latest = ts;
+  if (projects.length === 0 && localStorage.getItem('cygenix_projects_migrated') !== '1') {
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem('cygenix_project_settings') || 'null'); } catch {}
+    if (legacy && legacy.name) {
+      const id  = 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
+      const now = new Date().toISOString();
+      projects = [{
+        id,
+        name:        legacy.name,
+        client:      legacy.client || '',
+        ref:         legacy.ref || '',
+        description: legacy.desc || legacy.notes || '',
+        systems:     [legacy['src-system'], legacy['tgt-system']].filter(Boolean).join(' → '),
+        status:      '',
+        statusManual:false,
+        created:     legacy.start || now,
+        modified:    now,
+      }];
+      try {
+        localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+        localStorage.setItem('cygenix_projects_migrated', '1');
+        if (!localStorage.getItem('cygenix_active_project_id')) {
+          localStorage.setItem('cygenix_active_project_id', id);
+        }
+      } catch {}
     } else {
-      unassigned++;
+      try { localStorage.setItem('cygenix_projects_migrated', '1'); } catch {}
     }
-  });
+  }
 
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  const allJobs  = state.jobs || [];
+
+  // Inventory (artifacts) — best-effort, may not exist yet
+  let inv = [];
+  try { inv = JSON.parse(localStorage.getItem('cygenix_inventory') || '[]'); } catch {}
+
+  // Empty state
   if (!projects.length){
-    list.innerHTML = '<div style="font-size:12px;color:var(--text3);font-family:var(--mono);padding:0.5rem 0">No projects yet — click "+ Add Project" to create your first conversion.</div>';
+    list.innerHTML = '<div style="font-size:12px;color:var(--text3);font-family:var(--mono);padding:0.5rem 0">No projects yet — click "+ New Project" to create your first conversion.</div>';
     if (sub) sub.textContent = '0 projects';
     return;
   }
 
-  // Sort: active first, then by most recent activity
+  // Sort: active first, then most recently modified
   const sorted = projects.slice().sort((a,b) => {
     if (a.id === activeId) return -1;
     if (b.id === activeId) return  1;
-    return (stats[b.id]?.latest || 0) - (stats[a.id]?.latest || 0);
+    return Date.parse(b.modified || b.created || 0) - Date.parse(a.modified || a.created || 0);
   });
 
-  const rows = sorted.map(p => {
-    const isActive = p.id === activeId;
-    const s = stats[p.id] || { count: 0, latest: 0 };
-    const when = s.latest
-      ? new Date(s.latest).toLocaleDateString('en-GB', { day:'numeric', month:'short' })
-      : (p.created ? new Date(p.created).toLocaleDateString('en-GB', { day:'numeric', month:'short' }) : '—');
-    return `<div class="proj-row${isActive?' active':''}" onclick="setActiveProjectAndJump('${escapeAttr(p.id)}')" title="Open ${escapeAttr(p.name||'project')}">
-      <div class="proj-row-name">
-        <span class="proj-row-name-text">${escapeHtml(p.name || 'Untitled project')}</span>
-        ${isActive ? '<span class="proj-row-active-pill">active</span>' : ''}
-      </div>
-      <div class="proj-row-meta">${s.count} job${s.count===1?'':'s'}</div>
-      <div class="proj-row-meta">Updated ${when}</div>
-      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();setActiveProjectAndJump('${escapeAttr(p.id)}')">Open →</button>
-    </div>`;
-  });
+  const cards = sorted.map(p => dashProjCardHtml(p, allJobs, inv, activeId));
+  list.innerHTML = '<div class="dash-proj-grid">' + cards.join('') + '</div>';
 
-  if (unassigned > 0){
-    rows.push(`<div class="proj-row" onclick="showView('jobs')" title="Jobs not assigned to any project" style="opacity:0.7">
-      <div class="proj-row-name"><span class="proj-row-name-text" style="color:var(--text2)">Unassigned</span></div>
-      <div class="proj-row-meta">${unassigned} job${unassigned===1?'':'s'}</div>
-      <div class="proj-row-meta">—</div>
-      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();showView('jobs')">View →</button>
-    </div>`);
-  }
-
-  list.innerHTML = rows.join('');
   if (sub){
     const activeName = (projects.find(p => p.id === activeId) || {}).name;
     sub.textContent = projects.length + ' project' + (projects.length===1?'':'s') +
       (activeName ? ' · active: ' + activeName : '');
   }
+}
+
+function dashProjStatus(p, jobs){
+  if (p.statusManual && p.status) return { value: p.status, derived: false };
+  const projJobs = jobs.filter(j => j.projectId === p.id);
+  let v;
+  if (projJobs.length === 0) v = 'draft';
+  else if (projJobs.every(j => j.status === 'complete')) v = 'complete';
+  else v = 'active';
+  return { value: v, derived: true };
+}
+
+function dashProjCardHtml(p, allJobs, inv, activeId){
+  const jobCount      = allJobs.filter(j => j.projectId === p.id).length;
+  const artifactCount = inv.filter(a => a.projectId === p.id).length;
+  const isActive      = p.id === activeId;
+  const fmt = ts => ts ? new Date(ts).toLocaleDateString('en-GB', { day:'numeric', month:'short' }) : '—';
+  const status = dashProjStatus(p, allJobs);
+
+  return `<div class="dash-proj-card ${isActive ? 'active-project' : ''}" onclick="setActiveProjectAndJump('${escapeAttr(p.id)}')" title="Open ${escapeAttr(p.name||'project')}">
+    <div class="dash-proj-card-head">
+      <div style="min-width:0;flex:1">
+        <div class="dash-proj-name">${escapeHtml(p.name || 'Untitled project')}</div>
+        ${p.client ? `<div class="dash-proj-client">${escapeHtml(p.client)}</div>` : ''}
+      </div>
+      ${isActive
+        ? '<span class="dash-proj-active-pill">active</span>'
+        : `<span class="dash-status dash-status-${status.value}" title="${status.derived?'Derived from jobs':'Set manually'}">${status.value}</span>`}
+    </div>
+    <div class="dash-proj-grid-meta">
+      <div>
+        <div class="dash-proj-meta-label">Jobs</div>
+        <div class="dash-proj-meta-val">${jobCount}</div>
+      </div>
+      <div>
+        <div class="dash-proj-meta-label">Artifacts</div>
+        <div class="dash-proj-meta-val">${artifactCount}</div>
+      </div>
+      <div>
+        <div class="dash-proj-meta-label">Status</div>
+        <div class="dash-proj-meta-val" style="color:var(--text2)">${status.value}${status.derived?' (auto)':''}</div>
+      </div>
+      <div>
+        <div class="dash-proj-meta-label">Modified</div>
+        <div class="dash-proj-meta-val">${fmt(p.modified)}</div>
+      </div>
+      <div>
+        <div class="dash-proj-meta-label">Created</div>
+        <div class="dash-proj-meta-val">${fmt(p.created)}</div>
+      </div>
+      <div>
+        <div class="dash-proj-meta-label">Client</div>
+        <div class="dash-proj-meta-val" style="color:var(--text2)">${escapeHtml(p.client || '—')}</div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function setActiveProjectAndJump(projectId){
@@ -3711,18 +3787,6 @@ function setActiveProjectAndJump(projectId){
   } catch {}
   renderDashboardProjects();
   if (typeof showView === 'function') showView('jobs');
-}
-
-// "+ Add Project" button on the dashboard projects card. Routes the user to
-// Project Settings with the form cleared so they can fill in a new project.
-function addProjectFromDashboard(){
-  // Clear active project so Settings opens blank rather than editing whatever
-  // is currently active. The caller can save it as a new project from there.
-  try {
-    localStorage.removeItem('cygenix_active_project_id');
-    sessionStorage.removeItem('cygenix_active_project');
-  } catch {}
-  if (typeof showView === 'function') showView('project-settings');
 }
 
 // ── Bulk-select + move jobs to project ─────────────────────────────────────

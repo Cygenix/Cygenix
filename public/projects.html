@@ -2,261 +2,611 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cygenix – My Projects</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Cygenix – Projects</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
-<script src="/project-manager.js"></script>
+<script src="/cygenix-cosmos-sync.js"></script>
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
   --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
-  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
-  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.08);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.08);
+  --amber:#f5a623;--amber-bg:rgba(245,166,35,0.08);
+  --purple:#a86dff;--purple-bg:rgba(168,109,255,0.08);
+  --serif:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
-.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh}
+
+/* ── Layout ── */
+.app{display:grid;grid-template-rows:52px 1fr;grid-template-columns:230px 1fr;height:100vh;overflow:hidden}
+.topbar{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
 .logo span{color:var(--accent)}
-.topbar-right{display:flex;align-items:center;gap:1rem}
-.user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
-.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
-.user-name-pill{font-size:12px;color:var(--text2)}
-.btn{padding:0.45rem 1rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;display:inline-flex;align-items:center;gap:6px}
-.btn-primary{background:var(--accent);color:#fff}
-.btn-primary:hover{background:var(--accent2)}
-.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}
-.btn-ghost:hover{color:var(--text);background:rgba(255,255,255,0.04)}
-.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.2)}
-.main{max-width:1000px;margin:0 auto;padding:2.5rem 1.5rem}
-.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:2rem}
-.page-title{font-size:1.4rem;font-weight:600}
+.logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
+.sidebar{background:var(--bg2);border-right:0.5px solid var(--border);padding:1.25rem 0;overflow-y:auto}
+.main{padding:1.75rem;overflow-y:auto;background:var(--bg)}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--bg4);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--text2)}
+
+/* ── Page header ── */
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.75rem}
+.page-title{font-size:1.3rem;font-weight:600;letter-spacing:-0.02em}
 .page-sub{font-size:13px;color:var(--text3);margin-top:2px}
-.projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem}
-.project-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;transition:border-color 0.15s;cursor:pointer;position:relative}
-.project-card:hover{border-color:var(--border2)}
-.project-card.complete{border-color:rgba(34,201,122,0.2)}
-.project-name{font-size:15px;font-weight:600;color:var(--text);margin-bottom:0.3rem}
-.project-date{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:1rem}
-.project-stats{display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
-.pstat{font-size:11px;color:var(--text3);font-family:var(--mono)}
-.pstat strong{color:var(--text2);font-weight:500}
-.project-files{font-size:11px;color:var(--text3);margin-bottom:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.badge{display:inline-flex;align-items:center;font-size:10px;padding:2px 8px;border-radius:100px;font-weight:500;font-family:var(--mono)}
-.badge-green{background:var(--green-bg);color:var(--green)}
-.badge-amber{background:var(--amber-bg);color:var(--amber)}
-.badge-gray{background:rgba(255,255,255,0.05);color:var(--text2)}
-.project-actions{display:flex;gap:0.5rem;margin-top:1rem;padding-top:1rem;border-top:0.5px solid var(--border)}
-.empty-state{text-align:center;padding:5rem 1rem;color:var(--text3)}
-.empty-state h2{font-size:18px;color:var(--text2);margin-bottom:0.5rem;font-weight:500}
-.empty-state p{font-size:13px;margin-bottom:2rem;line-height:1.7}
-.loading{text-align:center;padding:4rem;color:var(--text3);font-size:13px}
-/* New project modal */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;font-size:12px;font-family:var(--serif);font-weight:500;border:0.5px solid;cursor:pointer;transition:all 0.15s;text-decoration:none}
+.btn-primary{background:var(--accent);border-color:var(--accent2);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-ghost{background:transparent;border-color:var(--border2);color:var(--text2)}
+.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-danger{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
+.btn-danger:hover{background:rgba(240,70,70,0.15)}
+.btn-sm{padding:3px 8px;font-size:11px}
+
+/* ── Filter bar ── */
+.filter-bar{display:flex;align-items:center;gap:0.75rem;margin-bottom:1.25rem}
+.search-input{flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:7px 11px;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+.search-input:focus{border-color:var(--accent)}
+.filter-select{background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:7px 11px;font-size:12px;color:var(--text2);font-family:var(--serif);outline:none;cursor:pointer}
+
+/* ── Project cards ── */
+.projects-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:1rem}
+.proj-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;display:flex;flex-direction:column;gap:0.85rem;transition:all 0.15s;cursor:pointer}
+.proj-card:hover{border-color:var(--border2);transform:translateY(-1px)}
+.proj-card.active-project{border-color:rgba(61,126,255,0.4)}
+.proj-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:0.75rem}
+.proj-card-name{font-size:15px;font-weight:600;letter-spacing:-0.01em;line-height:1.3}
+.proj-card-client{font-size:12px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+.proj-card-desc{font-size:12px;color:var(--text2);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.proj-card-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.6rem;padding-top:0.6rem;border-top:0.5px solid var(--border)}
+.proj-meta-cell{display:flex;flex-direction:column;gap:2px}
+.proj-meta-label{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;font-family:var(--mono)}
+.proj-meta-val{font-size:12px;color:var(--text);font-family:var(--mono)}
+.proj-card-foot{display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding-top:0.6rem;border-top:0.5px solid var(--border)}
+
+/* ── Status badges ── */
+.status-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:100px;font-size:10px;font-weight:500;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border:0.5px solid}
+.status-active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.35)}
+.status-complete{background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.35)}
+.status-draft{background:var(--bg4);color:var(--text2);border-color:var(--border2)}
+.status-archived{background:var(--bg4);color:var(--text3);border-color:var(--border)}
+.status-derived{opacity:0.85}
+.status-derived::after{content:'·';margin-left:4px;opacity:0.5}
+
+/* ── Empty state ── */
+.empty{padding:3rem 1.5rem;text-align:center;background:var(--bg2);border:0.5px dashed var(--border2);border-radius:var(--r-lg)}
+.empty-icon{font-size:2rem;margin-bottom:0.75rem;opacity:0.5}
+.empty-title{font-size:15px;font-weight:600;margin-bottom:0.4rem}
+.empty-text{font-size:13px;color:var(--text3);margin-bottom:1.25rem}
+
+/* ── Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-overlay.open{display:flex}
-.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.75rem;width:420px;max-width:95vw}
-.modal-title{font-size:16px;font-weight:600;margin-bottom:0.3rem}
-.modal-sub{font-size:12px;color:var(--text3);margin-bottom:1.25rem}
-.form-row{margin-bottom:1rem}
-.form-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.4rem;display:block}
-.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.6rem 0.75rem;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;transition:border-color 0.15s}
-.form-input:focus{border-color:var(--accent)}
-.modal-actions{display:flex;gap:0.75rem;justify-content:flex-end;margin-top:1.5rem}
+.modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.5rem;max-width:560px;width:90%;max-height:90vh;overflow-y:auto}
+.modal-title{font-size:15px;font-weight:600;margin-bottom:0.4rem}
+.modal-sub{font-size:12px;color:var(--text3);margin-bottom:1.1rem}
+.modal-actions{display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1.25rem;padding-top:1rem;border-top:0.5px solid var(--border)}
+
+/* ── Form ── */
+.form-row{display:flex;flex-direction:column;gap:5px;margin-bottom:0.85rem}
+.form-row.row-pair{display:grid;grid-template-columns:1fr 1fr;gap:0.85rem}
+.form-row.row-pair > div{display:flex;flex-direction:column;gap:5px}
+.form-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-family:var(--mono)}
+.form-input,.form-select,.form-textarea{background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:8px 11px;font-size:13px;color:var(--text);font-family:var(--serif);outline:none;width:100%}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--accent)}
+.form-textarea{font-family:var(--serif);resize:vertical;min-height:64px}
+.form-helper{font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+.form-helper.derived-hint{color:var(--accent)}
+
+/* ── Toast ── */
+.toast{position:fixed;bottom:1.5rem;right:1.5rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.7rem 1rem;font-size:13px;color:var(--text);box-shadow:0 6px 24px rgba(0,0,0,0.35);display:none;z-index:200}
+.toast.success{border-color:rgba(34,201,122,0.35);color:var(--green)}
+.toast.error{border-color:rgba(240,70,70,0.35);color:var(--red)}
+.toast.show{display:block;animation:slideUp 0.2s ease-out}
+@keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 </style>
 </head>
 <body>
-
-<div class="topbar">
-  <a href="/dashboard.html" class="logo">Cyge<span>nix</span></a>
-  <div class="topbar-right">
-    <a href="/dashboard.html" class="btn btn-ghost">Migration Console</a>
-    <div class="user-pill" onclick="window.CygenixAuth.logout()">
+<div class="app">
+  <div class="topbar">
+    <a href="/projects.html" style="text-decoration:none"><span class="logo">Cyge<span>nix</span><span class="logo-console">SQL Migration Console</span></span></a>
+    <div style="display:flex;align-items:center;gap:0.75rem">
+      <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
       <div class="avatar" id="user-avatar">?</div>
-      <span class="user-name-pill" id="user-name">Loading…</span>
     </div>
+  </div>
+
+  <div class="sidebar" id="sidebar"></div>
+
+  <div class="main">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Projects</div>
+        <div class="page-sub" id="projects-sub">Manage your conversion projects</div>
+      </div>
+      <button class="btn btn-primary" onclick="openProjectModal()">+ New Project</button>
+    </div>
+
+    <div class="filter-bar">
+      <input class="search-input" id="search-input" placeholder="Search by name, client, or description…" oninput="renderProjects()">
+      <select class="filter-select" id="status-filter" onchange="renderProjects()">
+        <option value="">All statuses</option>
+        <option value="active">Active only</option>
+        <option value="complete">Complete only</option>
+        <option value="draft">Draft only</option>
+        <option value="archived">Archived only</option>
+      </select>
+    </div>
+
+    <div id="projects-container"></div>
   </div>
 </div>
 
-<div class="main">
-  <div class="page-header">
-    <div>
-      <div class="page-title">My projects</div>
-      <div class="page-sub" id="page-sub">Loading…</div>
-    </div>
-    <button class="btn btn-primary" onclick="openNewProjectModal()">+ New project</button>
-  </div>
-
-  <div id="projects-container"><div class="loading">Loading your projects…</div></div>
-</div>
-
-<!-- New project modal -->
-<div class="modal-overlay" id="new-project-modal">
+<!-- ── PROJECT MODAL ── -->
+<div class="modal-overlay" id="project-modal">
   <div class="modal">
-    <div class="modal-title">New project</div>
-    <div class="modal-sub">Give your migration project a name to get started.</div>
+    <div class="modal-title" id="project-modal-title">New project</div>
+    <div class="modal-sub" id="project-modal-sub">A project groups jobs, artifacts, and reports for a single conversion engagement.</div>
+
     <div class="form-row">
-      <label class="form-label">Project name</label>
-      <input class="form-input" id="new-project-name" placeholder="e.g. CRM Legacy Migration Q1 2026"
-        onkeydown="if(event.key==='Enter') createProject()"/>
+      <label class="form-label">Project name *</label>
+      <input class="form-input" id="pm-name" placeholder="e.g. Acme Corp Q1 Migration" autocomplete="off">
     </div>
+
+    <div class="form-row row-pair">
+      <div>
+        <label class="form-label">Client / owner</label>
+        <input class="form-input" id="pm-client" placeholder="e.g. Acme Corp" autocomplete="off">
+      </div>
+      <div>
+        <label class="form-label">Reference</label>
+        <input class="form-input" id="pm-ref" placeholder="e.g. PRJ-2026-014" autocomplete="off">
+      </div>
+    </div>
+
     <div class="form-row">
-      <label class="form-label">Description (optional)</label>
-      <input class="form-input" id="new-project-desc" placeholder="Brief notes about this migration"/>
+      <label class="form-label">Description</label>
+      <textarea class="form-textarea" id="pm-desc" placeholder="What's being converted, why, and any key constraints"></textarea>
     </div>
+
+    <div class="form-row row-pair">
+      <div>
+        <label class="form-label">Status</label>
+        <select class="form-select" id="pm-status">
+          <option value="">Auto (derived from jobs)</option>
+          <option value="draft">Draft</option>
+          <option value="active">Active</option>
+          <option value="complete">Complete</option>
+          <option value="archived">Archived</option>
+        </select>
+        <div class="form-helper derived-hint" id="pm-status-derived-hint"></div>
+      </div>
+      <div>
+        <label class="form-label">Source → Target</label>
+        <input class="form-input" id="pm-systems" placeholder="e.g. SQL Server → Postgres" autocomplete="off">
+      </div>
+    </div>
+
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeNewProjectModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="createProject()">Create project</button>
+      <button class="btn btn-danger btn-sm" id="pm-delete-btn" onclick="deleteFromModal()" style="display:none;margin-right:auto">Delete project</button>
+      <button class="btn btn-ghost" onclick="closeProjectModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveProject()">Save</button>
     </div>
   </div>
 </div>
 
+<div class="toast" id="toast"></div>
+
+<script src="/cygenix-sidebar.js"></script>
 <script>
-function $(id){ return document.getElementById(id); }
-function fmtDate(iso){ if(!iso)return'—'; return new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}); }
-function fmt(n){ return n!=null ? Number(n).toLocaleString() : '0'; }
+// ── Config & state ────────────────────────────────────────────────────────────
+const PROJECTS_KEY    = 'cygenix_projects';
+const LEGACY_PS_KEY   = 'cygenix_project_settings';
+const ACTIVE_PROJ_KEY = 'cygenix_active_project_id';
+const JOBS_KEY        = 'cygenix_jobs';
 
-async function loadProjects() {
-  const container = $('projects-container');
-  try {
-    const { projects } = await window.CygenixAuth.listProjects();
-    $('page-sub').textContent = `${projects.length} project${projects.length !== 1 ? 's' : ''}`;
+let _projects = [];
+let _editingId = null;   // null when creating new, otherwise the project id
 
-    if (projects.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <h2>No projects yet</h2>
-          <p>Create a new project to start migrating data.<br>Your progress is saved automatically as you work.</p>
-          <button class="btn btn-primary" onclick="openNewProjectModal()">Create your first project</button>
-        </div>`;
-      return;
-    }
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  // Avatar
+  const email = (typeof CygenixSync !== 'undefined' && CygenixSync.getUserId)
+    ? (CygenixSync.getUserId() || '?')
+    : '?';
+  document.getElementById('user-avatar').textContent =
+    email !== '?' ? email.split('@')[0].slice(0,2).toUpperCase() : '?';
 
-    const sorted = projects.sort((a,b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-    container.innerHTML = '<div class="projects-grid">' + sorted.map(p => `
-      <div class="project-card ${p.status === 'complete' ? 'complete' : ''}">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:0.25rem">
-          <div class="project-name">${p.name}</div>
-          ${p.status === 'complete'
-            ? '<span class="badge badge-green">Complete</span>'
-            : '<span class="badge badge-amber">In progress</span>'}
-        </div>
-        <div class="project-date">Last updated ${fmtDate(p.updatedAt)}</div>
-        <div class="project-stats">
-          <span class="pstat"><strong>${fmt(p.totalRows)}</strong> rows</span>
-          ${p.sourceFile ? `<span class="pstat">src: <strong>${p.sourceFile}</strong></span>` : ''}
-          ${p.targetDb   ? `<span class="pstat">→ <strong>${p.targetDb}</strong></span>` : ''}
-        </div>
-        <div class="project-actions">
-          <button class="btn btn-primary" onclick="resumeProject('${p.id}')">Resume →</button>
-          ${p.status === 'complete'
-            ? `<button class="btn btn-ghost" onclick="viewReport('${p.id}')">View report</button>`
-            : ''}
-          <button class="btn btn-ghost" style="margin-left:auto" onclick="confirmDelete('${p.id}','${p.name.replace(/'/g,"\\'")}')">Delete</button>
-        </div>
-      </div>`).join('') + '</div>';
+  // Load + migrate + render
+  loadProjects();
+  migrateLegacyProjectSettings();
+  renderProjects();
 
-  } catch(e) {
-    container.innerHTML = `<div class="empty-state"><h2>Could not load projects</h2><p>${e.message}</p></div>`;
-    $('page-sub').textContent = 'Error loading';
+  // Deep-link: ?new=1 opens the new-project modal on arrival. Used by the
+  // dashboard's "+ New Project" button.
+  if (new URLSearchParams(location.search).get('new') === '1') {
+    openProjectModal();
   }
+
+  // If sync delivers cloud-side projects after init, re-render
+  window.addEventListener('cygenix-sync-loaded', () => {
+    loadProjects();
+    renderProjects();
+  });
+});
+
+// ── Persistence ───────────────────────────────────────────────────────────────
+function loadProjects(){
+  try {
+    _projects = JSON.parse(localStorage.getItem(PROJECTS_KEY) || '[]');
+    if (!Array.isArray(_projects)) _projects = [];
+  } catch { _projects = []; }
 }
 
-async function resumeProject(id) {
-  try {
-    const { project } = await window.CygenixAuth.loadProject(id);
-    sessionStorage.setItem('cygenix_active_project', JSON.stringify(project));
-    window.location.href = '/dashboard.html?project=' + id;
-  } catch(e) {
-    alert('Could not load project: ' + e.message);
-  }
+function saveProjects(){
+  // Writing through localStorage.setItem — cygenix-cosmos-sync.js patches
+  // setItem to schedule a debounced cloud save, and SYNC_KEYS now includes
+  // 'cygenix_projects', so this propagates automatically. No explicit API
+  // call needed here.
+  localStorage.setItem(PROJECTS_KEY, JSON.stringify(_projects));
 }
 
-async function viewReport(id) {
-  try {
-    const { project } = await window.CygenixAuth.loadProject(id);
-    if (project.reportData) {
-      sessionStorage.setItem('cygenix_report', JSON.stringify(project.reportData));
-    } else {
-      sessionStorage.setItem('cygenix_report', JSON.stringify(buildReportFromProject(project)));
-    }
-    window.open('/report.html', '_blank');
-  } catch(e) {
-    alert('Could not load report: ' + e.message);
+// ── One-time migration ────────────────────────────────────────────────────────
+// Old single-project users have their data under the legacy
+// `cygenix_project_settings` key, which the dashboard used to render as the
+// "active project" badge and which produced the "My first project" card you
+// saw on the homepage. Pull it forward into the multi-project array exactly
+// once so nothing is lost, then mark it migrated. We don't delete the legacy
+// key — other parts of the codebase still read it (e.g. report headers).
+function migrateLegacyProjectSettings(){
+  if (_projects.length > 0) return;                             // nothing to migrate into
+  if (localStorage.getItem('cygenix_projects_migrated') === '1') return;
+  let legacy = null;
+  try { legacy = JSON.parse(localStorage.getItem(LEGACY_PS_KEY) || 'null'); } catch {}
+  if (!legacy || !legacy.name) {
+    localStorage.setItem('cygenix_projects_migrated', '1');
+    return;
   }
-}
-
-function buildReportFromProject(p) {
-  return {
-    id: p.id,
-    projectName: p.name,
-    userName: p.userName || p.userEmail,
-    userEmail: p.userEmail,
-    sourceSystem: p.sourceSystem,
-    sourceFile: p.sourceFile,
-    targetServer: p.targetServer,
-    targetDatabase: p.targetDatabase,
-    targetTable: p.targetTable,
-    totalRows: p.totalRows,
-    insertedRows: p.insertedRows,
-    errors: p.errors,
-    rowsBefore: p.rowsBefore,
-    rowsAfter: p.rowsAfter,
-    columnMapping: p.columnMapping,
-    warnings: p.warnings,
-    startedAt: p.startedAt,
-    completedAt: p.completedAt,
-    tables: p.tables,
+  const now = new Date().toISOString();
+  const id  = 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
+  const migrated = {
+    id,
+    name:        legacy.name,
+    client:      legacy.client || '',
+    ref:         legacy.ref || '',
+    description: legacy.desc || legacy.notes || '',
+    systems:     [legacy['src-system'], legacy['tgt-system']].filter(Boolean).join(' → '),
+    status:      '',                  // empty = derive from jobs
+    statusManual:false,
+    created:     legacy.start || now,
+    modified:    now,
   };
+  _projects = [migrated];
+  saveProjects();
+  // Make the migrated project the active one — preserves the user's previous
+  // experience of having "their" project pinned.
+  localStorage.setItem(ACTIVE_PROJ_KEY, id);
+  localStorage.setItem('cygenix_projects_migrated', '1');
 }
 
-async function confirmDelete(id, name) {
-  if (!confirm(`Delete project "${name}"? This cannot be undone.`)) return;
+// ── Status derivation ─────────────────────────────────────────────────────────
+// When status is unset on the project (statusManual=false, status=''), derive
+// it from the jobs assigned to the project:
+//   • no jobs                → 'draft'
+//   • all jobs complete      → 'complete'
+//   • otherwise              → 'active'
+// Returns { value, derived } so the UI can mark derived statuses subtly.
+function statusFor(project, jobs){
+  if (project.statusManual && project.status) {
+    return { value: project.status, derived: false };
+  }
+  if (project.status && !project.statusManual) {
+    // Stored derived status — recompute anyway, it's cheap and keeps fresh
+  }
+  const projJobs = (jobs || []).filter(j => j.projectId === project.id);
+  let derived;
+  if (projJobs.length === 0) derived = 'draft';
+  else if (projJobs.every(j => j.status === 'complete')) derived = 'complete';
+  else derived = 'active';
+  return { value: derived, derived: true };
+}
+
+function getJobs(){
+  try { return JSON.parse(localStorage.getItem(JOBS_KEY) || '[]'); } catch { return []; }
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────────
+function renderProjects(){
+  const container = document.getElementById('projects-container');
+  const sub = document.getElementById('projects-sub');
+  const search = (document.getElementById('search-input').value || '').toLowerCase().trim();
+  const filter = document.getElementById('status-filter').value;
+  const jobs = getJobs();
+  const activeId = localStorage.getItem(ACTIVE_PROJ_KEY) || '';
+
+  // Annotate each project with its current status before filtering so the
+  // status filter operates on derived values too
+  const annotated = _projects.map(p => ({ ...p, _status: statusFor(p, jobs) }));
+
+  let visible = annotated;
+  if (search) {
+    visible = visible.filter(p =>
+      (p.name || '').toLowerCase().includes(search) ||
+      (p.client || '').toLowerCase().includes(search) ||
+      (p.description || '').toLowerCase().includes(search) ||
+      (p.ref || '').toLowerCase().includes(search)
+    );
+  }
+  if (filter) {
+    visible = visible.filter(p => p._status.value === filter);
+  }
+
+  // Sub-line: "N projects" or "N of M shown"
+  if (sub) {
+    if (visible.length === _projects.length) {
+      sub.textContent = `${_projects.length} project${_projects.length === 1 ? '' : 's'}`;
+    } else {
+      sub.textContent = `${visible.length} of ${_projects.length} shown`;
+    }
+  }
+
+  if (_projects.length === 0) {
+    container.innerHTML = `<div class="empty">
+      <div class="empty-icon">📁</div>
+      <div class="empty-title">No projects yet</div>
+      <div class="empty-text">Create your first project to start grouping jobs and artifacts.</div>
+      <button class="btn btn-primary" onclick="openProjectModal()">+ New Project</button>
+    </div>`;
+    return;
+  }
+  if (visible.length === 0) {
+    container.innerHTML = `<div class="empty">
+      <div class="empty-text" style="margin-bottom:0">No projects match the current filters.</div>
+    </div>`;
+    return;
+  }
+
+  // Sort: active first, then most recently modified
+  visible.sort((a,b) => {
+    if (a.id === activeId) return -1;
+    if (b.id === activeId) return  1;
+    return Date.parse(b.modified || b.created || 0) - Date.parse(a.modified || a.created || 0);
+  });
+
+  container.innerHTML = '<div class="projects-grid">' + visible.map(p => projectCardHtml(p, jobs, activeId)).join('') + '</div>';
+}
+
+function projectCardHtml(p, jobs, activeId){
+  const projJobs = jobs.filter(j => j.projectId === p.id);
+  const jobCount = projJobs.length;
+  const lastModified = p.modified || p.created;
+  const fmt = ts => ts ? new Date(ts).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+  const isActive = p.id === activeId;
+
+  const status = p._status;
+  const statusClass = `status-${status.value}`;
+  const derivedMark = status.derived ? ' status-derived' : '';
+  const statusTitle = status.derived ? 'Derived from job statuses (click Edit to set manually)' : 'Set manually';
+
+  // Artifacts count — placeholder until artifact storage is wired per project.
+  // Read cygenix_inventory and count entries with matching projectId.
+  let artifactCount = 0;
   try {
-    await window.CygenixAuth.deleteProject(id);
-    loadProjects();
-  } catch(e) {
-    alert('Could not delete: ' + e.message);
+    const inv = JSON.parse(localStorage.getItem('cygenix_inventory') || '[]');
+    artifactCount = inv.filter(a => a.projectId === p.id).length;
+  } catch {}
+
+  return `<div class="proj-card ${isActive ? 'active-project' : ''}" onclick="openProject('${escAttr(p.id)}')" title="Click to open this project">
+    <div class="proj-card-head">
+      <div style="min-width:0;flex:1">
+        <div class="proj-card-name">${escHtml(p.name || 'Untitled project')}</div>
+        ${p.client ? `<div class="proj-card-client">${escHtml(p.client)}${p.ref ? ' · ' + escHtml(p.ref) : ''}</div>` : (p.ref ? `<div class="proj-card-client">${escHtml(p.ref)}</div>` : '')}
+      </div>
+      <span class="status-badge ${statusClass}${derivedMark}" title="${statusTitle}">${status.value}</span>
+    </div>
+
+    ${p.description ? `<div class="proj-card-desc">${escHtml(p.description)}</div>` : ''}
+
+    <div class="proj-card-grid">
+      <div class="proj-meta-cell">
+        <div class="proj-meta-label">Jobs</div>
+        <div class="proj-meta-val">${jobCount}</div>
+      </div>
+      <div class="proj-meta-cell">
+        <div class="proj-meta-label">Artifacts</div>
+        <div class="proj-meta-val">${artifactCount}</div>
+      </div>
+      <div class="proj-meta-cell">
+        <div class="proj-meta-label">Modified</div>
+        <div class="proj-meta-val">${fmt(lastModified)}</div>
+      </div>
+      <div class="proj-meta-cell">
+        <div class="proj-meta-label">Created</div>
+        <div class="proj-meta-val">${fmt(p.created)}</div>
+      </div>
+      <div class="proj-meta-cell" style="grid-column:span 2">
+        <div class="proj-meta-label">Source → Target</div>
+        <div class="proj-meta-val" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.systems || '—')}</div>
+      </div>
+    </div>
+
+    <div class="proj-card-foot">
+      ${isActive
+        ? '<span style="font-size:10px;color:var(--accent);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em">● active</span>'
+        : `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();setActive('${escAttr(p.id)}')">Set as active</button>`}
+      <div style="display:flex;gap:0.4rem">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editProject('${escAttr(p.id)}')">Edit</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openProject('${escAttr(p.id)}')">Open →</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function openProject(id){
+  setActive(id, /*silent*/ true);
+  // Send the user to the dashboard, where the active project is now this one
+  // and the project filter on All Jobs will be set accordingly.
+  location.href = '/dashboard.html';
+}
+
+function setActive(id, silent){
+  localStorage.setItem(ACTIVE_PROJ_KEY, id);
+  // Mirror the full project object into sessionStorage for any code that
+  // reads `cygenix_active_project` (badges, report headers, etc.)
+  const p = _projects.find(x => x.id === id);
+  if (p) {
+    try { sessionStorage.setItem('cygenix_active_project', JSON.stringify(p)); } catch {}
+  }
+  if (!silent) {
+    toast(`"${p?.name || 'Project'}" set as active.`, 'success');
+    renderProjects();
   }
 }
 
-function openNewProjectModal(){ $('new-project-modal').classList.add('open'); setTimeout(()=>$('new-project-name').focus(),100); }
-function closeNewProjectModal(){ $('new-project-modal').classList.remove('open'); }
-
-async function createProject() {
-  const name = $('new-project-name').value.trim();
-  const desc = $('new-project-desc').value.trim();
-  if (!name) { alert('Please enter a project name.'); return; }
-
-  try {
-    const result = await window.CygenixAuth.saveProject({
-      name, description: desc, status: 'in-progress',
-      createdAt: new Date().toISOString(),
-    }, name);
-    closeNewProjectModal();
-    $('new-project-name').value = '';
-    $('new-project-desc').value = '';
-    // Navigate to dashboard with new project
-    sessionStorage.setItem('cygenix_active_project', JSON.stringify({ id: result.id, name, description: desc }));
-    window.location.href = '/dashboard.html?project=' + result.id;
-  } catch(e) {
-    alert('Could not create project: ' + e.message + '\n\nIf this says "Blobs", go to Netlify → your site → Storage tab → Enable Blobs, then redeploy.');
-  }
+function openProjectModal(){
+  _editingId = null;
+  document.getElementById('project-modal-title').textContent = 'New project';
+  document.getElementById('project-modal-sub').textContent = 'A project groups jobs, artifacts, and reports for a single conversion engagement.';
+  document.getElementById('pm-delete-btn').style.display = 'none';
+  ['pm-name','pm-client','pm-ref','pm-desc','pm-systems'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('pm-status').value = '';
+  document.getElementById('pm-status-derived-hint').textContent = 'Status will be derived from jobs.';
+  document.getElementById('project-modal').classList.add('open');
+  setTimeout(() => document.getElementById('pm-name').focus(), 50);
 }
 
-// Load projects once auth is ready
-const checkReady = setInterval(() => {
-  if (window.CygenixAuth?.getUser()) {
-    clearInterval(checkReady);
-    loadProjects();
+function editProject(id){
+  const p = _projects.find(x => x.id === id);
+  if (!p) return;
+  _editingId = id;
+  document.getElementById('project-modal-title').textContent = 'Edit project';
+  document.getElementById('project-modal-sub').textContent  = 'Updating "' + (p.name || 'project') + '"';
+  document.getElementById('pm-delete-btn').style.display = 'inline-flex';
+  document.getElementById('pm-name').value    = p.name || '';
+  document.getElementById('pm-client').value  = p.client || '';
+  document.getElementById('pm-ref').value     = p.ref || '';
+  document.getElementById('pm-desc').value    = p.description || '';
+  document.getElementById('pm-systems').value = p.systems || '';
+  document.getElementById('pm-status').value  = p.statusManual ? (p.status || '') : '';
+
+  // Show the user what status would be derived if they leave it on Auto
+  const derived = statusFor({...p, statusManual:false, status:''}, getJobs());
+  document.getElementById('pm-status-derived-hint').textContent =
+    'On Auto, status would currently be "' + derived.value + '" based on this project\'s jobs.';
+
+  document.getElementById('project-modal').classList.add('open');
+}
+
+function closeProjectModal(){
+  document.getElementById('project-modal').classList.remove('open');
+}
+
+function saveProject(){
+  const name = document.getElementById('pm-name').value.trim();
+  if (!name) {
+    toast('Name is required.', 'error');
+    document.getElementById('pm-name').focus();
+    return;
   }
-}, 200);
+  const data = {
+    name,
+    client:      document.getElementById('pm-client').value.trim(),
+    ref:         document.getElementById('pm-ref').value.trim(),
+    description: document.getElementById('pm-desc').value.trim(),
+    systems:     document.getElementById('pm-systems').value.trim(),
+  };
+  const statusVal = document.getElementById('pm-status').value;
+  data.statusManual = !!statusVal;
+  data.status       = statusVal;     // empty string when on Auto
+
+  const now = new Date().toISOString();
+
+  if (_editingId) {
+    const i = _projects.findIndex(x => x.id === _editingId);
+    if (i >= 0) {
+      _projects[i] = { ..._projects[i], ...data, modified: now };
+    }
+  } else {
+    // New project — generate ID and creation timestamps
+    const id = 'proj_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
+    _projects.unshift({
+      id,
+      ...data,
+      created:  now,
+      modified: now,
+    });
+    // First-ever project? Make it active. Otherwise leave the active project
+    // unchanged so we don't surprise the user mid-task.
+    if (_projects.length === 1) {
+      localStorage.setItem(ACTIVE_PROJ_KEY, id);
+    }
+  }
+  saveProjects();
+  closeProjectModal();
+  renderProjects();
+  toast(_editingId ? 'Project updated.' : 'Project created.', 'success');
+}
+
+function deleteFromModal(){
+  if (!_editingId) return;
+  const p = _projects.find(x => x.id === _editingId);
+  if (!p) return;
+  const projJobs = getJobs().filter(j => j.projectId === _editingId);
+  const warning = projJobs.length
+    ? `\n\nThis project has ${projJobs.length} job${projJobs.length===1?'':'s'} assigned to it. The jobs will become unassigned but won't be deleted.`
+    : '';
+  if (!confirm(`Delete project "${p.name}"?${warning}\n\nThis cannot be undone.`)) return;
+
+  // Unassign jobs rather than orphan them
+  if (projJobs.length) {
+    const allJobs = getJobs();
+    const updated = allJobs.map(j => j.projectId === _editingId ? { ...j, projectId: '' } : j);
+    localStorage.setItem(JOBS_KEY, JSON.stringify(updated));
+  }
+  _projects = _projects.filter(x => x.id !== _editingId);
+  // Clear active if we just deleted it
+  if (localStorage.getItem(ACTIVE_PROJ_KEY) === _editingId) {
+    localStorage.removeItem(ACTIVE_PROJ_KEY);
+    sessionStorage.removeItem('cygenix_active_project');
+  }
+  saveProjects();
+  closeProjectModal();
+  renderProjects();
+  toast('Project deleted.', 'success');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function escHtml(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function escAttr(s){ return String(s||'').replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
+
+function toast(msg, kind){
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.className = 'toast show ' + (kind || '');
+  t.textContent = msg;
+  setTimeout(() => { t.classList.remove('show'); }, 2400);
+}
+
+// Click outside modal to close
+document.getElementById('project-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeProjectModal();
+});
+// Escape key closes modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeProjectModal();
+});
 </script>
 </body>
 </html>
