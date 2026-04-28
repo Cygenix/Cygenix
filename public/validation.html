@@ -20,7 +20,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="/connections.js"></script>
-<script src="/nav.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -37,7 +36,8 @@
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
-body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
 .logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
 .page{max-width:1300px;margin:0 auto;padding:1.5rem}
@@ -103,6 +103,46 @@ select.form-input option{background:var(--bg3)}
 </style>
 </head>
 <body>
+
+<div id="cyg-sidebar-mount" data-active="validation"></div>
+<script src="/cygenix-sidebar.js"></script>
+<script>
+// Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
+// padding rule above adjusts when the user collapses the sidebar.
+// Watching offsetWidth via ResizeObserver works regardless of how
+// cygenix-sidebar.js manages its internal collapse state — same approach
+// sql-editor.html uses.
+(function mirrorSidebarWidth(){
+  function findSidebarEl(){
+    const candidates = [
+      document.getElementById('cyg-sidebar'),
+      document.querySelector('.cyg-sidebar'),
+      document.getElementById('cyg-sidebar-mount')
+    ].filter(Boolean);
+    return candidates.find(el => el.offsetWidth > 0) || candidates[0];
+  }
+  function sync(width){
+    // ~54 collapsed, ~230 expanded — pick a midpoint threshold
+    document.body.classList.toggle('cyg-collapsed', width < 120);
+  }
+  function start(){
+    const el = findSidebarEl();
+    if (!el) { setTimeout(start, 100); return; }
+    sync(el.offsetWidth);
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(entries => {
+        for (const entry of entries) sync(entry.contentRect.width);
+      }).observe(el);
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+</script>
+
 <div class="topbar">
   <a href="/dashboard.html" class="logo">Cyge<span>nix</span>
     <span style="font-size:11px;color:var(--amber);font-weight:500;font-family:var(--mono);margin-left:8px">Data Validation</span>
@@ -112,7 +152,6 @@ select.form-input option{background:var(--bg3)}
     <button class="btn btn-amber btn-sm" onclick="runAll()" id="run-all-btn" disabled>▶ Run all</button>
     <button class="btn btn-sm" id="stop-btn" onclick="stopRun()" style="display:none;background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)">⏹ Stop</button>
     <button class="btn btn-ghost btn-sm" onclick="exportExcel()" id="export-btn" style="display:none">📊 Export</button>
-    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
   </div>
 </div>
 
