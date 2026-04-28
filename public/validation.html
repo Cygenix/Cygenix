@@ -340,16 +340,16 @@ function saveSources(){
   catch (e) { console.warn('[Validation] localStorage save failed:', e.message); }
 }
 
-async function loadSources(){
-  // Try the sync module first — it has merge-aware load and uses the same
-  // userId resolution chain as every other page. If it succeeds, the data
-  // it loaded will already be in localStorage when we read below.
-  if (typeof CygenixSync !== 'undefined' && typeof CygenixSync.load === 'function') {
-    try { await CygenixSync.load(); }
-    catch (e) { console.warn('[Validation] CygenixSync.load failed, falling back to localStorage:', e.message); }
-  }
-  // Read from localStorage — by now it has either the cloud copy (sync
-  // succeeded) or whatever was already there (sync skipped or failed).
+function loadSources(){
+  // Read from localStorage. The sync module's init() runs a merge-aware
+  // gap-fill on every page load, so by the time we get here cygenix_
+  // validation_sources is either the cloud copy (gap-filled in) or
+  // whatever was already local (preserved). DO NOT call CygenixSync.load()
+  // here — that primitive is destructive: it overwrites every localStorage
+  // key with the cloud version regardless of local state, which clobbered
+  // cygenix_project_connections (the active source/target) every time
+  // validation.html opened. The sync module's init is the right surface;
+  // load()/forceLoad() are for explicit "reset to cloud" buttons only.
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw) validationSources = JSON.parse(raw);
@@ -806,23 +806,31 @@ document.addEventListener('click',e=>{
 });
 
 // ── Init ───────────────────────────────────────────────────────────────────────
-// loadSources is async — it tries Cosmos first, falls back to localStorage.
-// We render an interim view from whatever is in localStorage immediately so
-// the page isn't blank, then re-render once the cloud copy arrives.
-(async function init(){
-  // Show whatever localStorage has right now (instant)
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) validationSources = JSON.parse(raw);
-  } catch {}
+// Render once from whatever localStorage already has — the sync module's
+// init() gap-fills from cloud in the background on a separate debounced
+// timer, and dispatches a 'cygenix-sync-loaded' event when it's done. We
+// listen for that event and re-render so cloud-arriving data shows up
+// without the user having to refresh.
+//
+// NOTE: this used to await CygenixSync.load() here, but that call is
+// destructive (overwrites every localStorage key from cloud). It clobbered
+// cygenix_project_connections (the active source/target connection blob)
+// every time this page opened, which manifested as connections "vanishing
+// after visiting Validation". Using the gap-fill semantics via init+event
+// instead.
+(function init(){
+  loadSources();
   renderSources();
   rebuildScriptList();
 
-  // Then try Cosmos — if it returns something different (newer copy from
-  // another device, or this device had a cleared localStorage), re-render.
-  await loadSources();
-  renderSources();
-  rebuildScriptList();
+  // Re-render if the sync module fills new data after we've already
+  // rendered. The event detail tells us how many keys were filled but we
+  // don't care about specifics — just re-read our own key.
+  window.addEventListener('cygenix-sync-loaded', () => {
+    loadSources();
+    renderSources();
+    rebuildScriptList();
+  });
 })();
 </script>
 </body>
