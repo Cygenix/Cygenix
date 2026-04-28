@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0d0f14">
+<meta name="description" content="Run validation scripts against any database table.">
+<meta property="og:title" content="Cygenix – Data Validation">
+<meta property="og:description" content="Run validation scripts against any database table.">
+<meta property="og:url" content="https://cygenix.co.uk/validation.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – Data Validation">
+<meta name="twitter:description" content="Run validation scripts against any database table.">
+<title>Cygenix – Data Validation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/connections.js"></script>
+<script src="/nav.js"></script>
+<script src="/cygenix-cosmos-sync.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
+.page{max-width:1300px;margin:0 auto;padding:1.5rem}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.1rem;overflow:hidden}
+.panel-head{padding:0.75rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;background:var(--bg3)}
+.panel-title{font-size:13px;font-weight:600}
+.panel-body{padding:1rem 1.1rem}
+.form-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.35rem}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.45rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+select.form-input option{background:var(--bg3)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:0.4rem 0.875rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text)}
+.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
+.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3)}
+.btn-sm{padding:0.25rem 0.6rem;font-size:11px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+.badge{font-size:10px;padding:2px 7px;border-radius:100px;font-family:var(--mono);font-weight:500;white-space:nowrap}
+.badge-pass{background:var(--green-bg);color:var(--green)}
+.badge-fail{background:var(--red-bg);color:var(--red)}
+.badge-err{background:var(--amber-bg);color:var(--amber)}
+.badge-pend{background:rgba(255,255,255,0.05);color:var(--text3)}
+/* Validation source card */
+.vsrc-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;margin-bottom:0.75rem}
+.vsrc-head{display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap}
+.vsrc-name{font-size:13px;font-weight:600;color:var(--text);font-family:var(--mono)}
+.tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:4px;background:var(--bg4);color:var(--text3);font-family:var(--mono)}
+/* Scripts table */
+.val-table{width:100%;border-collapse:collapse;font-size:12px}
+.val-table th{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border);white-space:nowrap}
+.val-table td{padding:0.5rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
+.val-table tr:last-child td{border-bottom:none}
+.val-table tr:hover td{background:rgba(255,255,255,0.015)}
+.val-table tr.row-fail td{background:rgba(240,70,70,0.03)}
+.val-table tr.row-err td{background:rgba(245,158,11,0.03)}
+.val-table tr.row-pass td{background:rgba(34,201,122,0.02)}
+/* Stats bar */
+.stats-bar{display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;padding:0.75rem 1.1rem;background:var(--bg3);border-bottom:0.5px solid var(--border)}
+.stat-box{text-align:center;min-width:50px}
+.stat-num{font-size:1.3rem;font-weight:700;line-height:1}
+.stat-lbl{font-size:10px;color:var(--text3);margin-top:2px}
+/* Progress */
+.prog-outer{height:4px;background:var(--bg4);border-radius:2px;overflow:hidden;margin-top:4px}
+.prog-fill{height:100%;background:var(--amber);border-radius:2px;transition:width 0.3s}
+/* Log */
+.log-box{font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:0.75rem;max-height:220px;overflow-y:auto;line-height:1.8;white-space:pre-wrap}
+/* Column pills */
+.col-pill{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:100px;background:var(--bg4);border:0.5px solid var(--border2);color:var(--text2);cursor:pointer;transition:all 0.12s;white-space:nowrap}
+.col-pill.selected{background:var(--accent-glow);border-color:rgba(61,126,255,0.4);color:var(--accent)}
+.col-pill.sql-col{background:var(--teal-bg);border-color:rgba(45,212,191,0.4);color:var(--teal)}
+/* Search drop */
+.search-wrap{position:relative}
+.search-drop{position:absolute;z-index:200;left:0;right:0;top:calc(100%+2px);background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:240px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5)}
+.drop-item{padding:0.4rem 0.75rem;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;display:flex;justify-content:space-between;border-bottom:0.5px solid var(--border)}
+.drop-item:hover{background:var(--accent-glow);color:var(--accent)}
+.drop-empty{padding:0.75rem;font-size:11px;color:var(--text3);text-align:center}
+/* Col-filter */
+.col-filter{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:2px 6px;font-size:11px;color:var(--text);font-family:var(--serif);outline:none;width:100%}
+.col-filter:focus{border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <a href="/dashboard.html" class="logo">Cyge<span>nix</span>
+    <span style="font-size:11px;color:var(--amber);font-weight:500;font-family:var(--mono);margin-left:8px">Data Validation</span>
+  </a>
+  <div style="display:flex;align-items:center;gap:0.75rem">
+    <button class="btn btn-ghost btn-sm" onclick="runSelected()" id="run-sel-btn" style="display:none">▶ Run selected</button>
+    <button class="btn btn-amber btn-sm" onclick="runAll()" id="run-all-btn" disabled>▶ Run all</button>
+    <button class="btn btn-sm" id="stop-btn" onclick="stopRun()" style="display:none;background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)">⏹ Stop</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportExcel()" id="export-btn" style="display:none">📊 Export</button>
+    <a href="/dashboard.html" class="btn btn-ghost btn-sm">← Dashboard</a>
+  </div>
+</div>
+
+<div class="page">
+
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.25rem;flex-wrap:wrap;gap:0.5rem">
+    <div>
+      <div style="font-size:1.3rem;font-weight:600;margin-bottom:0.2rem">Data Validation</div>
+      <div style="font-size:12px;color:var(--text3)">Pick any table, choose which column holds the SQL, select report columns, then run.</div>
+    </div>
+    <button class="btn btn-primary" onclick="openAddSource()">+ Add validation table</button>
+  </div>
+
+  <!-- VALIDATION SOURCES LIST -->
+  <div id="sources-wrap">
+    <div id="sources-empty" style="text-align:center;padding:2.5rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);color:var(--text3)">
+      <div style="font-size:28px;opacity:0.3;margin-bottom:0.75rem">🔍</div>
+      <div style="font-size:14px;color:var(--text2);margin-bottom:0.25rem">No validation tables added yet</div>
+      <div style="font-size:12px">Click "+ Add validation table" to pick a table, choose which column runs as SQL and which columns appear in your report.</div>
+    </div>
+    <div id="sources-list"></div>
+  </div>
+
+  <!-- STATS -->
+  <div class="panel" id="stats-panel" style="display:none">
+    <div class="stats-bar">
+      <div class="stat-box"><div class="stat-num" id="st-total" style="color:var(--text)">0</div><div class="stat-lbl">Total</div></div>
+      <div class="stat-box"><div class="stat-num" id="st-pass" style="color:var(--green)">0</div><div class="stat-lbl">Pass</div></div>
+      <div class="stat-box"><div class="stat-num" id="st-fail" style="color:var(--red)">0</div><div class="stat-lbl">Fail</div></div>
+      <div class="stat-box"><div class="stat-num" id="st-err" style="color:var(--amber)">0</div><div class="stat-lbl">Error</div></div>
+      <div class="stat-box"><div class="stat-num" id="st-pend" style="color:var(--text3)">0</div><div class="stat-lbl">Pending</div></div>
+      <div style="margin-left:auto;min-width:180px" id="prog-wrap" style="display:none">
+        <div style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="prog-label"></div>
+        <div class="prog-outer"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ALL SCRIPTS TABLE -->
+  <div class="panel" id="scripts-panel" style="display:none">
+    <div class="panel-head">
+      <div class="panel-title">Scripts</div>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <input id="gbl-filter" class="form-input" style="width:180px;font-size:11px;padding:3px 8px" placeholder="🔍 Filter…" oninput="applyGlobalFilter()">
+        <select id="gbl-status" class="form-input" style="width:110px;font-size:11px;padding:3px 6px" onchange="applyGlobalFilter()">
+          <option value="">All status</option>
+          <option value="pending">Pending</option>
+          <option value="pass">Passed</option>
+          <option value="fail">Failed</option>
+          <option value="error">Error</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="clearGlobalFilter()">✕</button>
+        <span id="gbl-count" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+      </div>
+    </div>
+    <div style="overflow-x:auto">
+    <table class="val-table">
+      <thead>
+        <tr>
+          <th style="width:32px"><input type="checkbox" id="chk-all" onchange="toggleAll(this.checked)" style="accent-color:var(--accent)"></th>
+          <th style="width:32px">#</th>
+          <th>Source table</th>
+          <th>Script name / SQL column value</th>
+          <th>Report columns</th>
+          <th style="width:90px">Status</th>
+          <th>Result</th>
+          <th style="width:50px">Run</th>
+        </tr>
+      </thead>
+      <tbody id="scripts-tbody"></tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="panel" id="log-panel" style="display:none">
+    <div class="panel-head">
+      <div class="panel-title">Execution log</div>
+      <button class="btn btn-ghost btn-sm" onclick="$('log-panel').style.display='none'">✕</button>
+    </div>
+    <div class="panel-body"><div class="log-box" id="exec-log"></div></div>
+  </div>
+
+</div>
+
+<!-- ═══ ADD SOURCE MODAL ═══ -->
+<div id="add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:9999;display:none;align-items:center;justify-content:center;padding:1rem">
+  <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+    <div style="padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:14px;font-weight:600" id="modal-title">Add validation table</div>
+      <button onclick="closeModal()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
+
+      <!-- Step 1: Connection -->
+      <div id="modal-step-conn">
+        <label class="form-label">Database connection</label>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
+          <select id="modal-conn-pick" class="form-input" style="flex:1" onchange="onModalConnPick()">
+            <option value="src">Source DB (from project connections)</option>
+            <option value="tgt">Target DB (from project connections)</option>
+            <option value="custom">Custom connection string…</option>
+          </select>
+        </div>
+        <div id="modal-custom-conn" style="display:none;margin-bottom:0.5rem">
+          <input id="modal-conn-str" class="form-input" placeholder="Server=...;Database=...;User=...;Password=... or https://fn.url?code=...">
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="modalConnect()" id="modal-conn-btn">🔌 Connect &amp; load tables</button>
+        <span id="modal-conn-status" style="font-size:11px;color:var(--text3);margin-left:0.75rem;font-family:var(--mono)"></span>
+      </div>
+
+      <!-- Step 2: Table picker -->
+      <div id="modal-step-table" style="display:none">
+        <label class="form-label">Validation table</label>
+        <div class="search-wrap">
+          <input id="modal-table-inp" class="form-input" placeholder="🔍 Search tables…" oninput="filterModalTables()" onfocus="openModalDrop()" autocomplete="off">
+          <div class="search-drop" id="modal-table-drop" style="display:none"></div>
+        </div>
+        <div id="modal-table-info" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:0.4rem"></div>
+      </div>
+
+      <!-- Step 3: SQL column -->
+      <div id="modal-step-sqlcol" style="display:none">
+        <label class="form-label">SQL column <span style="color:var(--teal);font-weight:400">(the column that contains the SQL statement to run)</span></label>
+        <select id="modal-sql-col" class="form-input" onchange="onSQLColPick()">
+          <option value="">— pick a column —</option>
+        </select>
+        <div id="modal-sql-preview" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:0.4rem"></div>
+      </div>
+
+      <!-- Step 4: Name column (optional) -->
+      <div id="modal-step-namecol" style="display:none">
+        <label class="form-label">Script name column <span style="color:var(--text3);font-weight:400">(optional — shown as label in results)</span></label>
+        <select id="modal-name-col" class="form-input">
+          <option value="">— none —</option>
+        </select>
+      </div>
+
+      <!-- Step 5: Report columns -->
+      <div id="modal-step-reportcols" style="display:none">
+        <label class="form-label">Report columns <span style="color:var(--text3);font-weight:400">(shown in results when a script fails)</span></label>
+        <div id="modal-col-pills" style="display:flex;flex-wrap:wrap;gap:0.35rem;margin-bottom:0.5rem"></div>
+        <div style="font-size:11px;color:var(--text3)">Click columns to include/exclude. All columns selected by default.</div>
+      </div>
+
+      <!-- Step 6: Which DB to run on -->
+      <div id="modal-step-runon" style="display:none">
+        <label class="form-label">Run scripts on</label>
+        <select id="modal-run-on" class="form-input">
+          <option value="src">Source DB</option>
+          <option value="tgt">Target DB</option>
+          <option value="same">Same connection as this table</option>
+        </select>
+        <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">This is the DB the script SQL will execute against — it may differ from where the validation table lives.</div>
+      </div>
+
+      <!-- Step 7: Label -->
+      <div id="modal-step-label" style="display:none">
+        <label class="form-label">Label for this validation source</label>
+        <input id="modal-label" class="form-input" placeholder="e.g. Post-migration checks">
+      </div>
+
+    </div>
+    <div style="padding:0.875rem 1.25rem;border-top:0.5px solid var(--border);display:flex;justify-content:flex-end;gap:0.5rem">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modal-save-btn" onclick="saveSource()" disabled>Save validation table</button>
+    </div>
+  </div>
+</div>
+
+<script>
+if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+
+// ── State ──────────────────────────────────────────────────────────────────────
+// validationSources: [{id, label, conn, connLabel, tableName, sqlCol, nameCol, reportCols, runOn, scripts:[]}]
+let validationSources = [];
+let allScripts = [];   // flat list for the combined table
+let running = false, abortFlag = false;
+const STORAGE_KEY = 'cygenix_validation_sources';
+
+// Modal working state
+let _mConn='', _mSchema=null, _mTable=null, _mAllTables=[], _mEditId=null;
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
+
+// ── Persistence ────────────────────────────────────────────────────────────────
+// validation_sources lives in Cosmos DB (container 'projects', field
+// 'validation_sources') so it survives across browsers and isn't lost when
+// localStorage is cleared. This page used to do its own direct fetch() to
+// /api/data/save with just {validation_sources: ...} as the body — but that
+// path bypassed cygenix-cosmos-sync.js's buildMergedPayload(), which fetches
+// cloud state first and merges by field. Without that merge, every save here
+// risked wiping every other top-level field (jobs, project_settings, etc.)
+// if the Azure Function did a whole-doc replace rather than field-level
+// merge. The safe path — and consistent with every other Cygenix page — is
+// to write the localStorage key the sync module is already watching
+// (cygenix_validation_sources is in its SYNC_KEYS list) and let the
+// debounced auto-save handle Cosmos correctly.
+
+function _validationUserId(){
+  // Same source of truth every other Cygenix page uses
+  try {
+    if (typeof CygenixSync !== 'undefined' && CygenixSync.getUserId) {
+      const id = CygenixSync.getUserId();
+      if (id) return id;
+    }
+  } catch {}
+  // Fallbacks in case sync hasn't initialised yet
+  return localStorage.getItem('cygenix_active_user') ||
+         sessionStorage.getItem('cygenix_user_email') || null;
+}
+
+function saveSources(){
+  // Strip transient run state so we don't churn Cosmos with
+  // status/result/error fields that change every script execution.
+  const toStore = validationSources.map(s=>({...s, scripts: s.scripts.map(sc=>({
+    ...sc, status:'pending', result:null, error:null, rowsFound:0
+  }))}));
+
+  // localStorage write — the sync module's setItem intercept will pick this
+  // up and debounce a merge-aware push to Cosmos within 3 seconds.
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore)); }
+  catch (e) { console.warn('[Validation] localStorage save failed:', e.message); }
+}
+
+async function loadSources(){
+  // Try the sync module first — it has merge-aware load and uses the same
+  // userId resolution chain as every other page. If it succeeds, the data
+  // it loaded will already be in localStorage when we read below.
+  if (typeof CygenixSync !== 'undefined' && typeof CygenixSync.load === 'function') {
+    try { await CygenixSync.load(); }
+    catch (e) { console.warn('[Validation] CygenixSync.load failed, falling back to localStorage:', e.message); }
+  }
+  // Read from localStorage — by now it has either the cloud copy (sync
+  // succeeded) or whatever was already there (sync skipped or failed).
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw) validationSources = JSON.parse(raw);
+  }catch{}
+}
+
+// ── DB helper ──────────────────────────────────────────────────────────────────
+async function dbCall(conn, body){
+  const url = isFn(conn)?conn:'/.netlify/functions/db-connect';
+  const payload = isFn(conn)?body:{...body,connectionString:conn};
+  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(120000)});
+  const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+  if(!res.ok) throw new Error(data.error||res.statusText);
+  return data;
+}
+function getProjectConn(which){
+  const c = CygenixConnections.get();
+  if(which==='src') return c.srcConnString||'';
+  const fn = c.tgtFnUrl||'';
+  const key = c.tgtFnKey||'';
+  return fn?(key?fn+'?code='+encodeURIComponent(key):fn):(c.tgtConnString||'');
+}
+
+// ── Add source modal ───────────────────────────────────────────────────────────
+function openAddSource(editId){
+  _mConn=''; _mSchema=null; _mTable=null; _mAllTables=[]; _mEditId=editId||null;
+  $('modal-title').textContent = editId ? 'Edit validation table' : 'Add validation table';
+  $('modal-conn-pick').value='src';
+  $('modal-custom-conn').style.display='none';
+  $('modal-conn-str').value='';
+  $('modal-conn-status').textContent='';
+  ['table','sqlcol','namecol','reportcols','runon','label'].forEach(s=>$('modal-step-'+s).style.display='none');
+  $('modal-table-inp').value='';
+  $('modal-save-btn').disabled=true;
+
+  if(editId){
+    const src = validationSources.find(s=>s.id===editId);
+    if(src){
+      $('modal-label').value = src.label||'';
+      $('modal-run-on').value = src.runOn||'same';
+      // Pre-fill will happen after connect
+    }
+  }
+  $('add-modal').style.display='flex';
+}
+function closeModal(){ $('add-modal').style.display='none'; }
+
+function onModalConnPick(){
+  $('modal-custom-conn').style.display = $('modal-conn-pick').value==='custom'?'block':'none';
+}
+
+async function modalConnect(){
+  const pick = $('modal-conn-pick').value;
+  let conn = pick==='custom' ? ($('modal-conn-str').value||'').trim() : getProjectConn(pick);
+  if(!conn){ $('modal-conn-status').textContent='No connection string'; return; }
+  _mConn = conn;
+  $('modal-conn-btn').disabled=true; $('modal-conn-btn').textContent='Connecting…';
+  $('modal-conn-status').textContent='';
+  try{
+    const res = await dbCall(conn,{action:'schema'});
+    _mSchema = res;
+    _mAllTables = (res.tables||[]).map(t=>({value:t.schema+'.'+t.name,label:t.schema+'.'+t.name,schema:t.schema,name:t.name,columns:t.columns||[],rowCount:t.rowCount||0}));
+    const db = res.database||conn.match(/Database=([^;]+)/i)?.[1]||'DB';
+    $('modal-conn-status').textContent = '✓ '+db+' · '+_mAllTables.length+' tables';
+    $('modal-conn-status').style.color = 'var(--green)';
+    $('modal-step-table').style.display='block';
+    renderModalDrop('');
+  }catch(e){
+    $('modal-conn-status').textContent = '✕ '+e.message;
+    $('modal-conn-status').style.color = 'var(--red)';
+  }
+  $('modal-conn-btn').disabled=false; $('modal-conn-btn').textContent='🔌 Connect & load tables';
+}
+
+function openModalDrop(){ renderModalDrop($('modal-table-inp').value); $('modal-table-drop').style.display='block'; }
+function filterModalTables(){ renderModalDrop($('modal-table-inp').value); $('modal-table-drop').style.display='block'; }
+
+function renderModalDrop(q){
+  const drop = $('modal-table-drop');
+  const low = (q||'').toLowerCase();
+  const hits = low?_mAllTables.filter(t=>t.label.toLowerCase().includes(low)).slice(0,60):_mAllTables.slice(0,60);
+  if(!hits.length){ drop.innerHTML='<div class="drop-empty">No tables</div>'; return; }
+  drop.innerHTML = hits.map(t=>`<div class="drop-item" onclick="selectModalTable('${t.value}')"><span>${t.label}</span><span style="font-size:10px;color:var(--text3)">${t.rowCount.toLocaleString()}</span></div>`).join('');
+  if(_mAllTables.length>60) drop.innerHTML+=`<div class="drop-empty">${_mAllTables.length-60} more — type to filter</div>`;
+}
+
+async function selectModalTable(value){
+  const t = _mAllTables.find(x=>x.value===value);
+  if(!t) return;
+  _mTable = t;
+  $('modal-table-inp').value = t.label;
+  $('modal-table-drop').style.display='none';
+  $('modal-table-info').textContent = t.rowCount.toLocaleString()+' rows · '+t.columns.length+' columns';
+
+  // Fetch a sample row to help the user identify the SQL column
+  let sampleRow = null;
+  try{
+    const r = await dbCall(_mConn,{action:'execute',sql:'SELECT TOP 1 * FROM ['+t.schema+'].['+t.name+']'});
+    sampleRow = (r.recordset||[])[0]||null;
+  }catch{}
+
+  // Build column selector for SQL col
+  const colOpts = t.columns.map(c=>`<option value="${esc(c.name)}">${esc(c.name)} (${esc(c.type||'')})</option>`).join('');
+  $('modal-sql-col').innerHTML = '<option value="">— pick a column —</option>'+colOpts;
+  $('modal-name-col').innerHTML = '<option value="">— none —</option>'+colOpts;
+  $('modal-step-sqlcol').style.display='block';
+  $('modal-step-namecol').style.display='block';
+  $('modal-step-reportcols').style.display='block';
+  $('modal-step-runon').style.display='block';
+  $('modal-step-label').style.display='block';
+  $('modal-label').value = _mEditId ? (validationSources.find(s=>s.id===_mEditId)?.label||t.label) : t.label;
+
+  // Build report column pills — all selected by default
+  $('modal-col-pills').innerHTML = t.columns.map(c=>{
+    const sample = sampleRow ? String(sampleRow[c.name]||'').slice(0,30) : '';
+    return `<span class="col-pill selected" id="pill-${esc(c.name)}" onclick="togglePill('${esc(c.name)}')" title="${esc(sample)}">${esc(c.name)}</span>`;
+  }).join('');
+
+  // If editing, restore saved settings
+  if(_mEditId){
+    const src = validationSources.find(s=>s.id===_mEditId);
+    if(src){
+      $('modal-sql-col').value = src.sqlCol||'';
+      $('modal-name-col').value = src.nameCol||'';
+      $('modal-run-on').value = src.runOn||'same';
+      onSQLColPick();
+      // Restore selected report cols
+      t.columns.forEach(c=>{
+        const pill = $('pill-'+c.name);
+        if(pill){
+          const isSelected = src.reportCols.includes(c.name);
+          pill.classList.toggle('selected',isSelected);
+        }
+      });
+    }
+  }
+  $('modal-save-btn').disabled=false;
+}
+
+function onSQLColPick(){
+  const col = $('modal-sql-col').value;
+  if(!col||!_mTable){ $('modal-sql-preview').textContent=''; return; }
+  // Mark the SQL column pill distinctly
+  $('modal-col-pills').querySelectorAll('.col-pill').forEach(p=>{
+    p.classList.remove('sql-col');
+    if(p.id==='pill-'+col) p.classList.add('sql-col');
+  });
+  $('modal-sql-preview').textContent = 'Rows in this table = one script each. The value in ['+col+'] will be executed as SQL.';
+  $('modal-sql-preview').style.color='var(--teal)';
+}
+
+function togglePill(colName){
+  const pill = $('pill-'+colName);
+  if(!pill) return;
+  // Don't allow deselecting the SQL col
+  if(colName === $('modal-sql-col').value){ return; }
+  pill.classList.toggle('selected');
+}
+
+async function saveSource(){
+  const sqlCol = $('modal-sql-col').value;
+  if(!sqlCol){ alert('Please select the SQL column.'); return; }
+  if(!_mTable){ alert('Please select a table.'); return; }
+
+  const reportCols = Array.from($('modal-col-pills').querySelectorAll('.col-pill.selected')).map(p=>p.id.replace('pill-',''));
+  const nameCol = $('modal-name-col').value||'';
+  const runOn = $('modal-run-on').value||'same';
+  const label = ($('modal-label').value||'').trim() || _mTable.label;
+  const connLabel = $('modal-conn-pick').value==='custom' ? 'Custom' : ($('modal-conn-pick').value==='src'?'Source DB':'Target DB');
+
+  // Load all rows from the table to build the script list
+  $('modal-save-btn').disabled=true; $('modal-save-btn').textContent='Loading scripts…';
+  try{
+    const res = await dbCall(_mConn,{action:'execute',sql:'SELECT * FROM ['+_mTable.schema+'].['+_mTable.name+']'});
+    const rows = res.recordset||[];
+    if(!rows.length){ alert('Table is empty — no scripts to load.'); $('modal-save-btn').disabled=false; $('modal-save-btn').textContent='Save validation table'; return; }
+
+    const srcId = _mEditId || ('vsrc_'+Date.now());
+    const scripts = rows.map((r,i)=>({
+      id: srcId+'_'+i,
+      srcId,
+      sql: String(r[sqlCol]||''),
+      name: nameCol ? String(r[nameCol]||('Script '+(i+1))) : 'Script '+(i+1),
+      reportData: reportCols.reduce((o,c)=>{ o[c]=r[c]; return o; },{}),
+      status:'pending', result:null, error:null, rowsFound:0, checked:true
+    })).filter(s=>s.sql.trim());
+
+    const srcObj = {id:srcId, label, conn:_mConn, connLabel, tableName:_mTable.value, sqlCol, nameCol, reportCols, runOn, scripts};
+
+    if(_mEditId){
+      const idx = validationSources.findIndex(s=>s.id===_mEditId);
+      if(idx>=0) validationSources[idx]=srcObj; else validationSources.push(srcObj);
+    } else {
+      validationSources.push(srcObj);
+    }
+    saveSources();
+    renderSources();
+    rebuildScriptList();
+    closeModal();
+  }catch(e){
+    alert('Error loading table: '+e.message);
+  }
+  $('modal-save-btn').disabled=false; $('modal-save-btn').textContent='Save validation table';
+}
+
+// ── Render source cards ────────────────────────────────────────────────────────
+function renderSources(){
+  const empty = $('sources-empty');
+  const list  = $('sources-list');
+  if(!validationSources.length){ empty.style.display='block'; list.innerHTML=''; return; }
+  empty.style.display='none';
+  list.innerHTML = validationSources.map(src=>{
+    const pass  = src.scripts.filter(s=>s.status==='pass').length;
+    const fail  = src.scripts.filter(s=>s.status==='fail').length;
+    const err   = src.scripts.filter(s=>s.status==='error').length;
+    const pend  = src.scripts.filter(s=>s.status==='pending').length;
+    const total = src.scripts.length;
+    return `
+    <div class="vsrc-card">
+      <div class="vsrc-head">
+        <span class="vsrc-name">${esc(src.label)}</span>
+        <span class="tag">${esc(src.tableName)}</span>
+        <span class="tag">SQL: ${esc(src.sqlCol)}</span>
+        <span class="tag">${total} scripts</span>
+        ${pass?`<span class="badge badge-pass">${pass} pass</span>`:''}
+        ${fail?`<span class="badge badge-fail">${fail} fail</span>`:''}
+        ${err?`<span class="badge badge-err">${err} error</span>`:''}
+        ${pend&&pend<total?`<span class="badge badge-pend">${pend} pending</span>`:''}
+        <div style="margin-left:auto;display:flex;gap:0.4rem">
+          <button class="btn btn-ghost btn-sm" onclick="runSourceScripts('${src.id}')">▶ Run</button>
+          <button class="btn btn-ghost btn-sm" onclick="openAddSource('${src.id}')">✏ Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="removeSource('${src.id}')">✕</button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3)">
+        Report cols: <span style="color:var(--text2);font-family:var(--mono)">${src.reportCols.join(', ')||'none'}</span>
+        &nbsp;·&nbsp; Run on: <span style="color:var(--text2)">${src.runOn==='src'?'Source DB':src.runOn==='tgt'?'Target DB':'Same connection'}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function removeSource(id){
+  if(!confirm('Remove this validation table?')) return;
+  validationSources = validationSources.filter(s=>s.id!==id);
+  saveSources();
+  renderSources();
+  rebuildScriptList();
+}
+
+// ── Flat script list (combined table) ──────────────────────────────────────────
+function rebuildScriptList(){
+  allScripts = validationSources.flatMap(src=>src.scripts);
+  if(!allScripts.length){ $('scripts-panel').style.display='none'; $('run-all-btn').disabled=true; return; }
+  $('scripts-panel').style.display='block';
+  $('run-all-btn').disabled=false;
+  $('run-sel-btn').style.display='inline-flex';
+  $('stats-panel').style.display='block';
+  renderScriptsTable();
+  updateStats();
+}
+
+function renderScriptsTable(){
+  const tbody = $('scripts-tbody');
+  tbody.innerHTML = allScripts.map((s,i)=>{
+    const rowCls = s.status==='fail'?'row-fail':s.status==='error'?'row-err':s.status==='pass'?'row-pass':'';
+    const src = validationSources.find(vs=>vs.id===s.srcId)||{label:'?',reportCols:[]};
+    const statusHtml = {
+      pending:'<span style="color:var(--text3);font-size:11px">— pending —</span>',
+      running:'<span style="color:var(--accent);font-size:11px">⏳ Running…</span>',
+      pass:   '<span class="badge badge-pass">✓ Pass</span>',
+      fail:   '<span class="badge badge-fail">✕ Fail</span>',
+      error:  '<span class="badge badge-err">⚠ Error</span>'
+    }[s.status]||'';
+    const resultHtml = s.status==='pending'||s.status==='running' ? '—'
+      : s.status==='error' ? `<span style="font-family:var(--mono);font-size:10px;color:var(--amber)">${esc(s.error||'')}</span>`
+      : s.status==='pass' ? '<span style="color:var(--green);font-size:11px">✓ No issues found</span>'
+      : `<span style="color:var(--red);font-weight:600">${s.rowsFound.toLocaleString()} rows</span>`
+        + (s.result?.length ? `<button onclick="toggleResult('${s.id}')" class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:10px">👁 View</button>
+          <div id="res-${s.id}" style="display:none;margin-top:6px;overflow-x:auto">
+            <table class="val-table" style="font-size:10px;background:var(--bg3);border-radius:4px">
+              <thead><tr>${src.reportCols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+              <tbody>${s.result.slice(0,50).map(r=>`<tr>${src.reportCols.map(c=>`<td style="white-space:nowrap">${esc(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}
+              ${s.result.length>50?`<tr><td colspan="${src.reportCols.length}" style="color:var(--text3);text-align:center">…and ${s.result.length-50} more rows</td></tr>`:''}
+              </tbody>
+            </table>
+          </div>` : '');
+    return `<tr class="${rowCls}" id="srow-${s.id}" data-status="${s.status}">
+      <td><input type="checkbox" ${s.checked?'checked':''} onchange="allScripts[${i}].checked=this.checked" style="accent-color:var(--accent)"></td>
+      <td style="color:var(--text3);font-family:var(--mono);font-size:10px">${i+1}</td>
+      <td style="font-size:11px;color:var(--text3)">${esc(src.label)}</td>
+      <td>
+        <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(s.name)}</div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px;cursor:pointer" title="${esc(s.sql)}" onclick="toggleSQLExpand('${s.id}')">${esc((s.sql||'').slice(0,80))}${(s.sql||'').length>80?'…':''}</div>
+        <div id="sqlx-${s.id}" style="display:none;margin-top:3px;padding:0.4rem;background:var(--bg4);border-radius:4px;font-family:var(--mono);font-size:10px;color:var(--text2);white-space:pre-wrap;max-height:100px;overflow-y:auto">${esc(s.sql||'')}</div>
+      </td>
+      <td style="font-size:10px;color:var(--text3);font-family:var(--mono)">${src.reportCols.join(', ')||'—'}</td>
+      <td>${statusHtml}</td>
+      <td>${resultHtml}</td>
+      <td><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="runSingle('${s.id}')">▶</button></td>
+    </tr>`;
+  }).join('');
+  applyGlobalFilter();
+}
+
+function toggleResult(id){ const el=$('res-'+id); if(el) el.style.display=el.style.display==='none'?'block':'none'; }
+function toggleSQLExpand(id){ const el=$('sqlx-'+id); if(el) el.style.display=el.style.display==='none'?'block':'none'; }
+
+function updateStats(){
+  const s = allScripts;
+  $('st-total').textContent = s.length;
+  $('st-pass').textContent  = s.filter(x=>x.status==='pass').length;
+  $('st-fail').textContent  = s.filter(x=>x.status==='fail').length;
+  $('st-err').textContent   = s.filter(x=>x.status==='error').length;
+  $('st-pend').textContent  = s.filter(x=>x.status==='pending').length;
+  const ran = s.filter(x=>x.status!=='pending'&&x.status!=='running');
+  if($('export-btn')) $('export-btn').style.display = ran.length?'inline-flex':'none';
+}
+
+function toggleAll(checked){
+  allScripts.forEach(s=>s.checked=checked);
+  document.querySelectorAll('#scripts-tbody input[type="checkbox"]').forEach(cb=>cb.checked=checked);
+}
+
+// ── Filters ────────────────────────────────────────────────────────────────────
+function applyGlobalFilter(){
+  const q = ($('gbl-filter')?.value||'').toLowerCase();
+  const st = $('gbl-status')?.value||'';
+  let vis=0;
+  document.querySelectorAll('#scripts-tbody tr').forEach(tr=>{
+    const id = tr.id.replace('srow-','');
+    const s = allScripts.find(x=>x.id===id);
+    if(!s){ tr.style.display='none'; return; }
+    const src = validationSources.find(v=>v.id===s.srcId)||{label:''};
+    const textOk = !q||(s.name||'').toLowerCase().includes(q)||(s.sql||'').toLowerCase().includes(q)||src.label.toLowerCase().includes(q);
+    const statOk = !st || s.status===st;
+    tr.style.display = textOk&&statOk?'':'none';
+    if(textOk&&statOk) vis++;
+  });
+  const fc=$('gbl-count');
+  if(fc) fc.textContent = (q||st) ? vis+'/'+allScripts.length+' shown' : '';
+}
+function clearGlobalFilter(){ $('gbl-filter').value=''; $('gbl-status').value=''; applyGlobalFilter(); }
+
+// ── Execution ──────────────────────────────────────────────────────────────────
+async function runAll()     { await execScripts(allScripts); }
+async function runSelected(){ await execScripts(allScripts.filter(s=>s.checked)); }
+async function runSingle(id){ await execScripts(allScripts.filter(s=>s.id===id)); }
+async function runSourceScripts(srcId){ await execScripts(allScripts.filter(s=>s.srcId===srcId)); }
+
+function resolveConn(src){
+  if(src.runOn==='src')  return getProjectConn('src');
+  if(src.runOn==='tgt')  return getProjectConn('tgt');
+  return src.conn; // 'same' — the conn the table was loaded from
+}
+
+async function execScripts(toRun){
+  if(running) return;
+  if(!toRun.length){ alert('No scripts selected.'); return; }
+  running=true; abortFlag=false;
+  $('run-all-btn').disabled=true;
+  $('stop-btn').style.display='inline-flex';
+  $('log-panel').style.display='block';
+  $('prog-wrap').style.display='block';
+  clearLog(); addLog('Running '+toRun.length+' script(s)…\n');
+
+  for(let i=0;i<toRun.length;i++){
+    if(abortFlag){ addLog('\n⏹ Stopped.'); break; }
+    const s = toRun[i];
+    const src = validationSources.find(v=>v.id===s.srcId)||{conn:'',runOn:'same',label:'?'};
+    const conn = resolveConn(src);
+
+    const pct=Math.round(i/toRun.length*100);
+    $('prog-fill').style.width=pct+'%';
+    $('prog-label').textContent='Step '+(i+1)+' / '+toRun.length;
+
+    s.status='running'; s.error=null; s.result=null; s.rowsFound=0;
+    renderScriptsTable(); updateStats();
+
+    addLog('['+new Date().toLocaleTimeString()+'] '+src.label+' → '+s.name);
+    try{
+      if(!conn) throw new Error('No connection configured for "'+src.label+'"');
+      if(!s.sql.trim()) throw new Error('Empty SQL');
+      const res = await dbCall(conn,{action:'execute',sql:s.sql});
+      const rows = res.recordset||[];
+      s.rowsFound=rows.length;
+      s.result=rows;
+      s.status=rows.length>0?'fail':'pass';
+      // Sync result back into source's scripts array
+      const srcScript = src.scripts.find(x=>x.id===s.id);
+      if(srcScript){ srcScript.status=s.status; srcScript.result=s.result; srcScript.rowsFound=s.rowsFound; }
+      addLog(rows.length>0 ? '  🔴 FAILED — '+rows.length+' rows' : '  🟢 PASSED');
+    }catch(e){
+      s.status='error'; s.error=e.message;
+      const srcScript = src.scripts.find(x=>x.id===s.id);
+      if(srcScript){ srcScript.status='error'; srcScript.error=e.message; }
+      addLog('  🟠 ERROR — '+e.message);
+    }
+    renderScriptsTable(); updateStats(); renderSources();
+  }
+
+  $('prog-fill').style.width='100%';
+  $('prog-label').textContent='Complete';
+  addLog('\n─────────────────────────────────');
+  addLog('✓ Pass: '+allScripts.filter(s=>s.status==='pass').length);
+  addLog('✕ Fail: '+allScripts.filter(s=>s.status==='fail').length);
+  addLog('⚠ Error: '+allScripts.filter(s=>s.status==='error').length);
+  running=false; abortFlag=false;
+  $('run-all-btn').disabled=false;
+  $('stop-btn').style.display='none';
+}
+
+function stopRun(){ abortFlag=true; $('stop-btn').disabled=true; $('stop-btn').textContent='⏹ Stopping…'; }
+function addLog(m){ const el=$('exec-log'); if(el){ el.textContent+=m+'\n'; el.scrollTop=el.scrollHeight; } }
+function clearLog(){ const el=$('exec-log'); if(el) el.textContent=''; }
+
+// ── Export ─────────────────────────────────────────────────────────────────────
+function exportExcel(){
+  if(!window.XLSX){
+    const sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload=doExport; document.head.appendChild(sc);
+  } else doExport();
+}
+function doExport(){
+  const wb=XLSX.utils.book_new();
+  const now=new Date().toISOString().slice(0,10);
+  const summary=[['Cygenix — Data Validation Report'],['Date',now],[],
+    ['#','Source table','Script name','Status','Rows found','Error']
+  ].concat(allScripts.map((s,i)=>{
+    const src=validationSources.find(v=>v.id===s.srcId)||{label:'?'};
+    return [i+1,src.label,s.name,s.status,s.rowsFound||0,s.error||''];
+  }));
+  const ws=XLSX.utils.aoa_to_sheet(summary);
+  ws['!cols']=[{wch:5},{wch:30},{wch:40},{wch:10},{wch:12},{wch:60}];
+  XLSX.utils.book_append_sheet(wb,ws,'Summary');
+
+  // One sheet per failed script — use report cols
+  let n=1;
+  allScripts.filter(s=>s.status==='fail'&&s.result?.length).forEach(s=>{
+    const src=validationSources.find(v=>v.id===s.srcId)||{reportCols:[]};
+    const cols=src.reportCols.length?src.reportCols:Object.keys(s.result[0]||{});
+    const data=[cols].concat(s.result.map(r=>cols.map(c=>r[c])));
+    const ws2=XLSX.utils.aoa_to_sheet(data);
+    XLSX.utils.book_append_sheet(wb,ws2,(n+++'. '+s.name).slice(0,31));
+  });
+  XLSX.writeFile(wb,'cygenix_validation_'+now+'.xlsx');
+}
+
+// ── Close modal on outside click ───────────────────────────────────────────────
+$('add-modal').addEventListener('click',e=>{ if(e.target===$('add-modal')) closeModal(); });
+document.addEventListener('click',e=>{
+  const inp=$('modal-table-inp'), drop=$('modal-table-drop');
+  if(inp&&drop&&!inp.contains(e.target)&&!drop.contains(e.target)) drop.style.display='none';
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+// loadSources is async — it tries Cosmos first, falls back to localStorage.
+// We render an interim view from whatever is in localStorage immediately so
+// the page isn't blank, then re-render once the cloud copy arrives.
+(async function init(){
+  // Show whatever localStorage has right now (instant)
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) validationSources = JSON.parse(raw);
+  } catch {}
+  renderSources();
+  rebuildScriptList();
+
+  // Then try Cosmos — if it returns something different (newer copy from
+  // another device, or this device had a cleared localStorage), re-render.
+  await loadSources();
+  renderSources();
+  rebuildScriptList();
+})();
+</script>
+</body>
+</html>
