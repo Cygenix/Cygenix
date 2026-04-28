@@ -7686,15 +7686,17 @@ function sconnGetAll(){
 function sconnSetAll(list){
   const capped = list.slice(0, 50);
   try {
-    if (CygenixConnections && typeof CygenixConnections.savedGetAll === 'function') {
-      // Direct replacement — CygenixConnections.savedGetAll+savedAdd is the
-      // per-entry API, but we already have the full list. Use the flat
-      // writer directly here by scoping ourselves to preserve atomic replace.
-      const uid = (CygenixConnections.currentUserTag && CygenixConnections.currentUserTag()) || '';
-      if (!uid) return;  // not signed in — drop silently
-      localStorage.setItem(SCONN_KEY + '::' + uid, JSON.stringify(capped));
+    if (CygenixConnections && typeof CygenixConnections.savedSetAll === 'function') {
+      // savedSetAll writes the unnamespaced cygenix_saved_connections blob
+      // (per-user keyed inside the JSON), which is the same shape sconnGetAll
+      // reads, AND it's the key the Cosmos sync watches. Earlier this function
+      // bodged `cygenix_saved_connections::<email>` directly, which broke the
+      // round-trip (reads never saw the data) AND the cloud sync (intercept
+      // only fires for the unnamespaced key).
+      CygenixConnections.savedSetAll(capped);
       return;
     }
+    // Fallback only — shouldn't happen if connections.js loaded correctly.
     localStorage.setItem(SCONN_KEY, JSON.stringify(capped));
   } catch (e) { console.error('[sconn] localStorage write failed:', e); }
 }
@@ -10018,7 +10020,18 @@ let _wiSourceSchemaCache = null; // Map<lowercaseField, Set<tableName>> — see 
 function wiEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function wiNormaliseRule(r){
+  // Preserve the rule id when present so saveRules can route the rule
+  // through the union-by-id merge in cygenix-cosmos-sync.js. If id is
+  // missing, defer to CygenixWasis.genId() — that helper owns the id
+  // format so all callers stay in sync. Falls back to a local-shape id
+  // only if the helper isn't loaded (defensive; shouldn't happen in
+  // production where /cygenix-wasis.js is included before this file
+  // executes).
+  const existingId = r && r.id != null && String(r.id).trim() ? String(r.id) : '';
+  const newId = existingId
+    || (typeof CygenixWasis !== 'undefined' && CygenixWasis.genId ? CygenixWasis.genId() : 'wir_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
   return {
+    id:       newId,
     srcTable: (r && r.srcTable != null ? String(r.srcTable) : '').toLowerCase().trim(),
     srcField: (r && r.srcField != null ? String(r.srcField) : '').toLowerCase().trim(),
     oldVal:   r && r.oldVal   != null ? String(r.oldVal)   : '',
@@ -10223,7 +10236,13 @@ function wiRefreshFanBtn(i){
 }
 
 function wiAddRow(){
-  wiRules.push({ srcTable:'', srcField:'', oldVal:'', newVal:'', desc:'' });
+  // Assign id at creation. wiNormaliseRule would back-fill one on save, but
+  // doing it here means the row has a stable identity from the moment it
+  // exists — same pattern as job/project creation elsewhere.
+  const newId = (typeof CygenixWasis !== 'undefined' && CygenixWasis.genId)
+    ? CygenixWasis.genId()
+    : 'wir_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  wiRules.push({ id: newId, srcTable:'', srcField:'', oldVal:'', newVal:'', desc:'' });
   // Clear any active filter so the new blank row is visible
   if (wiFilterQuery.trim()){
     wiFilterQuery = '';
@@ -10477,10 +10496,14 @@ async function wiCopyToAllTables(i){
 
   const toAdd = [];
   let skipped = 0;
+  const _genId = (typeof CygenixWasis !== 'undefined' && CygenixWasis.genId)
+    ? CygenixWasis.genId
+    : () => 'wir_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
   tables.forEach(t => {
     const key = t.toLowerCase() + '|' + fieldKey + '|' + src.oldVal;
     if (existingKeys.has(key)){ skipped++; return; }
     toAdd.push({
+      id:       _genId(),
       srcTable: t.toLowerCase(),
       srcField: fieldKey,
       oldVal:   src.oldVal,

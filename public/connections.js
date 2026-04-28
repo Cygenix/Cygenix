@@ -340,7 +340,7 @@ let CygenixConnections = (function () {
   // ── Public API + back-compat nibs ────────────────────────────────────────
   const api = {
     get, setActive, save, load, clear,
-    savedGetAll, savedAdd, savedDelete, savedUpdate, savedGetById,
+    savedGetAll, savedSetAll, savedAdd, savedDelete, savedUpdate, savedGetById,
     on, off, onChange, pingAll,
     currentUserTag,
   };

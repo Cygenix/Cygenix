@@ -26,6 +26,14 @@
 
   var subscribers = [];
 
+  // Generate a stable rule id. Same shape as the existing sconn_ ids and
+  // job_ ids elsewhere in the app — collision-resistant enough for per-user
+  // data, no UUID dependency. Exposed via the public API so dashboard.html
+  // (the only place that creates rules) can use it directly.
+  function genId() {
+    return 'wir_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  }
+
   function safeParse(raw, fallback) {
     try {
       var v = JSON.parse(raw || 'null');
@@ -35,7 +43,12 @@
 
   function normaliseRule(r) {
     if (!r || typeof r !== 'object') return null;
+    // Preserve an existing id; generate one if missing. This is the migration
+    // path — the moment any old rule is read, it picks up an id that survives
+    // the next save. After init() pulls cloud data into localStorage and
+    // wiLoad() runs through this normaliser, every rule has one.
     return {
+      id:       (r.id != null && String(r.id).trim()) ? String(r.id) : genId(),
       srcTable: (r.srcTable != null ? String(r.srcTable) : '').toLowerCase().trim(),
       srcField: (r.srcField != null ? String(r.srcField) : '').toLowerCase().trim(),
       oldVal:   r.oldVal != null ? String(r.oldVal) : '',
@@ -116,7 +129,25 @@
   function getRules() {
     var primary = safeParse(localStorage.getItem(WASIS_KEY), []);
     if (!Array.isArray(primary)) primary = [];
+
+    // Migration: are any stored rules missing an id? If so, we'll persist
+    // the normalised (now-id'd) array back so subsequent reads are stable
+    // and the sync intercept propagates the new ids to Cosmos. Detect with
+    // a cheap pre-check rather than always writing — this function is on
+    // the hot path (called from object_mapping.html on every render) so
+    // the steady-state cost matters.
+    var needsMigration = primary.some(function (r) {
+      return r && typeof r === 'object' && (r.id == null || String(r.id).trim() === '');
+    });
+
     var rules = primary.map(normaliseRule).filter(Boolean);
+
+    if (needsMigration && rules.length) {
+      try {
+        localStorage.setItem(WASIS_KEY, JSON.stringify(rules));
+      } catch (e) { /* quota / privacy mode — non-fatal, ids re-assigned next read */ }
+    }
+
     // Only fall back to inventory when primary is genuinely empty.
     // This preserves dashboard edits as authoritative.
     if (!rules.length) rules = getInventoryFallback();
@@ -197,6 +228,7 @@
     rulesFor:   rulesFor,
     wrapExpr:   wrapExpr,
     subscribe:  subscribe,
+    genId:      genId,
     // Exposed for testing / debugging only.
     _normalise: normaliseRule,
     _key:       WASIS_KEY

@@ -303,13 +303,16 @@ function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://'));
 // ── Persistence ────────────────────────────────────────────────────────────────
 // validation_sources lives in Cosmos DB (container 'projects', field
 // 'validation_sources') so it survives across browsers and isn't lost when
-// localStorage is cleared. localStorage is kept as a fast local cache and an
-// offline fallback. Save flow: write localStorage immediately, then debounce
-// a push to Cosmos. Load flow: read from Cosmos first; if that fails, fall
-// back to localStorage. The Azure Function whitelists 'validation_sources'
-// in its SYNCABLE list so the field round-trips cleanly.
-const VALIDATION_API  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
-const VALIDATION_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+// localStorage is cleared. This page used to do its own direct fetch() to
+// /api/data/save with just {validation_sources: ...} as the body — but that
+// path bypassed cygenix-cosmos-sync.js's buildMergedPayload(), which fetches
+// cloud state first and merges by field. Without that merge, every save here
+// risked wiping every other top-level field (jobs, project_settings, etc.)
+// if the Azure Function did a whole-doc replace rather than field-level
+// merge. The safe path — and consistent with every other Cygenix page — is
+// to write the localStorage key the sync module is already watching
+// (cygenix_validation_sources is in its SYNC_KEYS list) and let the
+// debounced auto-save handle Cosmos correctly.
 
 function _validationUserId(){
   // Same source of truth every other Cygenix page uses
@@ -324,7 +327,6 @@ function _validationUserId(){
          sessionStorage.getItem('cygenix_user_email') || null;
 }
 
-let _saveSourcesTimer = null;
 function saveSources(){
   // Strip transient run state so we don't churn Cosmos with
   // status/result/error fields that change every script execution.
@@ -332,57 +334,22 @@ function saveSources(){
     ...sc, status:'pending', result:null, error:null, rowsFound:0
   }))}));
 
-  // 1. Local cache — instant, used by offline fallback
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore)); }catch{}
-
-  // 2. Cloud — debounced 600ms so rapid edits don't fire one request each
-  clearTimeout(_saveSourcesTimer);
-  _saveSourcesTimer = setTimeout(() => _pushSourcesToCosmos(toStore), 600);
-}
-
-async function _pushSourcesToCosmos(toStore){
-  const userId = _validationUserId();
-  if (!userId) {
-    // Not signed in or sync not ready — localStorage save above is enough
-    // for now; CygenixSync will pick it up when it initialises.
-    return;
-  }
-  try {
-    const res = await fetch(`${VALIDATION_API}/save?code=${VALIDATION_CODE}`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'x-user-id': userId },
-      body: JSON.stringify({ validation_sources: toStore })
-    });
-    if (!res.ok) {
-      console.warn('[Validation] Cosmos save failed:', res.status, await res.text().catch(()=>''));
-    }
-  } catch (e) {
-    console.warn('[Validation] Cosmos save error (kept in localStorage):', e.message);
-  }
+  // localStorage write — the sync module's setItem intercept will pick this
+  // up and debounce a merge-aware push to Cosmos within 3 seconds.
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore)); }
+  catch (e) { console.warn('[Validation] localStorage save failed:', e.message); }
 }
 
 async function loadSources(){
-  // Try Cosmos first so a fresh browser/device sees the user's data
-  const userId = _validationUserId();
-  if (userId) {
-    try {
-      const res = await fetch(`${VALIDATION_API}/load?code=${VALIDATION_CODE}`, {
-        headers: { 'x-user-id': userId }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data?.validation_sources)) {
-          validationSources = data.validation_sources;
-          // Mirror back into localStorage so the offline fallback stays warm
-          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(validationSources)); } catch {}
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('[Validation] Cosmos load failed, using localStorage:', e.message);
-    }
+  // Try the sync module first — it has merge-aware load and uses the same
+  // userId resolution chain as every other page. If it succeeds, the data
+  // it loaded will already be in localStorage when we read below.
+  if (typeof CygenixSync !== 'undefined' && typeof CygenixSync.load === 'function') {
+    try { await CygenixSync.load(); }
+    catch (e) { console.warn('[Validation] CygenixSync.load failed, falling back to localStorage:', e.message); }
   }
-  // Fallback — localStorage cache (or empty for first-time users)
+  // Read from localStorage — by now it has either the cloud copy (sync
+  // succeeded) or whatever was already there (sync skipped or failed).
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw) validationSources = JSON.parse(raw);

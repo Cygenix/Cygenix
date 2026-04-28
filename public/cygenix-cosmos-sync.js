@@ -173,7 +173,22 @@ const CygenixSync = (() => {
 
     // Check both are arrays-of-objects-with-id. If not, local wins.
     const isIdArray = arr => arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]);
-    if (!isIdArray(localVal) || !isIdArray(cloudVal)) return localVal;
+    if (!isIdArray(localVal) || !isIdArray(cloudVal)) {
+      // Safety net: if cloud has more items than local for an array field
+      // without ids, we're about to silently overwrite cloud-only data.
+      // That's the wasis_rules class of regression — rules added on one
+      // device disappearing on another. Warn so the next instance is
+      // caught by browser devtools rather than by a user. Empty-cloud is
+      // expected (first-time push) so we skip the warning then.
+      if (cloudVal.length > 0 && cloudVal.length > localVal.length) {
+        console.warn(
+          '[CygenixSync] mergeField: "' + field + '" — local (' + localVal.length +
+          ' items) overwriting cloud (' + cloudVal.length + ' items). ' +
+          'Field has no id-shape; consider adding stable ids so merge can union them.'
+        );
+      }
+      return localVal;
+    }
 
     // Union by id, local wins on collision
     const byId = new Map();
