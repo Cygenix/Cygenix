@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0d0f14">
+<meta name="description" content="Financial reconciliation and balance metrics for SQL database migrations.">
+<meta property="og:title" content="Cygenix – Balancing & Metrics">
+<meta property="og:description" content="Financial reconciliation and balance metrics for SQL database migrations.">
+<meta property="og:url" content="https://cygenix.co.uk/balancing.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – Balancing & Metrics">
+<meta name="twitter:description" content="Financial reconciliation and balance metrics for SQL database migrations.">
+<title>Cygenix – Balancing &amp; Metrics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+
+/* ── Layout ── */
+.page{padding:1.5rem 2rem;max-width:1400px}
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
+.page-title{font-size:22px;font-weight:600;letter-spacing:-0.01em;margin-bottom:0.25rem}
+.page-sub{font-size:12px;color:var(--text3);max-width:780px;line-height:1.55}
+.page-tags{margin-top:0.5rem;font-size:11px;color:var(--text3);display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
+.page-tag{padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500}
+
+/* ── Panels ── */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1rem}
+.panel-head{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.75rem}
+.panel-title{font-size:13px;font-weight:600;color:var(--text)}
+.panel-body{padding:1rem 1.25rem}
+
+/* ── Forms ── */
+.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+.form-select{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.4rem 0.875rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);background:var(--bg3)}
+.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3)}
+.btn-sm{padding:0.25rem 0.625rem;font-size:11px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+
+/* ── Connection banner — same component as object_mapping.html ── */
+.conn-banner{display:flex;align-items:center;gap:0.75rem;padding:0.625rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:1rem;flex-wrap:wrap}
+.conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.conn-dot.ok{background:var(--green)}
+.conn-dot.err{background:var(--red)}
+.conn-dot.idle{background:var(--text3)}
+.conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
+.conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif)}
+.conn-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.3)}
+
+/* ── Tab bar ── */
+.cx-tabs{display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border)}
+.cx-tab{background:transparent;border:none;color:var(--text3);font-family:var(--serif);font-size:12px;font-weight:500;padding:0.6rem 1.1rem;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;margin-bottom:-0.5px}
+.cx-tab:hover{color:var(--text2)}
+.cx-tab-active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ── Status bar ── */
+.status-bar{font-size:11px;font-family:var(--mono);padding:0.5rem 0.875rem;border-radius:var(--r);margin-bottom:1rem;display:none}
+.status-bar.show{display:block}
+.status-bar.info{background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)}
+.status-bar.ok{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.status-bar.err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+
+/* ── Check cards ── */
+.check-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.9rem 1rem;margin-bottom:0.75rem}
+.check-head{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap}
+.check-name{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.45rem 0.7rem;font-size:13px;font-weight:500;color:var(--text);outline:none;font-family:var(--serif)}
+.check-name:focus{border-color:var(--accent)}
+.field-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.55rem}
+.field-grid.tri{grid-template-columns:repeat(3,1fr)}
+.field-cell label{display:block;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem;font-weight:600}
+.field-cell input,.field-cell select{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+.field-cell input:focus,.field-cell select:focus{border-color:var(--accent)}
+
+.check-detail{margin-top:0.6rem;font-size:11px;color:var(--text2);font-family:var(--mono);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;max-height:120px;overflow:auto;white-space:pre-wrap}
+
+.empty-state{text-align:center;padding:2rem;color:var(--text3);font-size:12px}
+
+.run-status{font-size:11px;font-family:var(--mono)}
+.run-status.pass{color:var(--green)}
+.run-status.fail{color:var(--red)}
+.run-status.idle{color:var(--text3)}
+
+.results-row{padding:0.75rem 1rem;margin-bottom:0.5rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);border-left:3px solid var(--text3)}
+.results-row.pass{border-left-color:var(--green)}
+.results-row.fail{border-left-color:var(--red)}
+.results-row-head{display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap}
+
+@media(max-width:900px){
+  body{padding-left:0}
+  .page{padding:1rem}
+  .field-grid,.field-grid.tri{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<script src="/connections.js"></script>
+<script src="/cygenix-params.js"></script>
+<script src="/cygenix-cosmos-sync.js"></script>
+
+<!-- Sidebar — `data-active="balancing"` matches the NAV key in
+     /cygenix-sidebar.js so this item gets highlighted. -->
+<div id="cyg-sidebar-mount" data-active="balancing"></div>
+<script src="/cygenix-sidebar.js"></script>
+
+<div class="page">
+
+  <!-- Page header -->
+  <div class="page-header">
+    <div>
+      <div class="page-title">⚖️ Balancing &amp; Metrics</div>
+      <div class="page-sub">Define and run financial balance checks — debits = credits, control totals, and GL balancing — against the source and target connections set on the Dashboard.</div>
+      <div class="page-tags">
+        <span style="color:var(--text2);font-weight:500">Checks:</span>
+        <span class="page-tag" style="background:rgba(79,142,255,0.12);color:#6ea4ff">Debits = Credits</span>
+        <span class="page-tag" style="background:rgba(45,212,191,0.12);color:#2dd4bf">Control Totals</span>
+        <span class="page-tag" style="background:rgba(167,139,250,0.12);color:#a78bfa">GL Balancing</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <span id="bal-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</span>
+      <button class="btn btn-purple btn-sm" onclick="balAddCheck()">＋ Add check</button>
+      <button class="btn btn-primary btn-sm" onclick="balRunAll()">▶ Run all</button>
+    </div>
+  </div>
+
+  <!-- Connection banner — same pattern as object_mapping.html. Read-only;
+       connections live on Dashboard → Connections. The dots reflect the
+       state coming from CygenixConnections.get(); we don't probe the
+       databases here (that would slow page load), the run buttons handle
+       errors at execution time. -->
+  <div class="conn-banner" id="conn-banner">
+    <div class="conn-dot idle" id="src-dot"></div>
+    <span class="conn-label" id="src-label">Source: not configured</span>
+    <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
+    <div class="conn-dot idle" id="tgt-dot"></div>
+    <span class="conn-label" id="tgt-label">Target: not configured</span>
+    <a href="/dashboard.html#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none">⚙ Manage connections</a>
+  </div>
+
+  <!-- Status bar — used by run handlers for transient messages -->
+  <div class="status-bar" id="status-bar"></div>
+
+  <!-- Tab bar -->
+  <div class="cx-tabs">
+    <button class="cx-tab cx-tab-active" data-bal-tab="debits-credits" onclick="balSwitchTab('debits-credits')">⚖️ Debits = Credits</button>
+    <button class="cx-tab" data-bal-tab="control-totals" onclick="balSwitchTab('control-totals')">Σ Control totals</button>
+    <button class="cx-tab" data-bal-tab="gl-balancing" onclick="balSwitchTab('gl-balancing')">📒 GL balancing</button>
+    <button class="cx-tab" data-bal-tab="results" onclick="balSwitchTab('results')">📊 Results</button>
+  </div>
+
+  <!-- Tab: Debits = Credits ----------------------------------------------------
+       Each row asserts SUM(debit_col) == SUM(credit_col) for a given table,
+       optionally filtered (WHERE) and grouped (e.g. by batch_id). -->
+  <div id="bal-tab-debits-credits" class="bal-tab-pane">
+    <div class="panel">
+      <div class="panel-body">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+          Verifies that for every row group (or the whole table), the sum of debits equals the sum of credits.
+          Use this on journal-entry tables, sub-ledgers, and any double-entry source.
+        </div>
+        <div id="bal-list-debits-credits"></div>
+        <div id="bal-empty-debits-credits" class="empty-state">
+          No checks defined. Click <strong>＋ Add check</strong> above to create one.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Control totals ------------------------------------------------------
+       Compares an aggregate (SUM/COUNT/MIN/MAX) on a source column to the
+       same aggregate on a target column. Tolerance supported for FX/rounding. -->
+  <div id="bal-tab-control-totals" class="bal-tab-pane" style="display:none">
+    <div class="panel">
+      <div class="panel-body">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+          Compares an aggregate (SUM, COUNT, MIN, MAX) between source and target. Use a tolerance for currency rounding or FX drift.
+        </div>
+        <div id="bal-list-control-totals"></div>
+        <div id="bal-empty-control-totals" class="empty-state">
+          No checks defined. Click <strong>＋ Add check</strong> above to create one.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: GL balancing --------------------------------------------------------
+       Asserts that for each (period, account), source_balance == target_balance
+       — produced by joining a trial-balance view on both sides. -->
+  <div id="bal-tab-gl-balancing" class="bal-tab-pane" style="display:none">
+    <div class="panel">
+      <div class="panel-body">
+        <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+          Compares per-account balances between source and target across one or more periods. Mismatches are reported per (period, account).
+        </div>
+        <div id="bal-list-gl-balancing"></div>
+        <div id="bal-empty-gl-balancing" class="empty-state">
+          No checks defined. Click <strong>＋ Add check</strong> above to create one.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Results -------------------------------------------------------------
+       Most recent run for each check. Persisted under cygenix_balancing_runs. -->
+  <div id="bal-tab-results" class="bal-tab-pane" style="display:none">
+    <div class="panel">
+      <div class="panel-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+          <div style="font-size:12px;color:var(--text3);line-height:1.6">
+            Last result per check. Pass = balanced within tolerance. Fail = variance &gt; tolerance.
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="balClearResults()" style="color:var(--red)">✕ Clear results</button>
+        </div>
+        <div id="bal-results-list"></div>
+        <div id="bal-results-empty" class="empty-state">
+          No runs yet. Define checks on the other tabs and click <strong>▶ Run all</strong>, or use the run button on an individual check.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.page -->
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// Balancing & Metrics — financial reconciliation page
+//
+// Connection model mirrors object_mapping.html: read once from
+// CygenixConnections.get(), resolve the target via the function-URL pattern
+// (tgtFnUrl + tgtFnKey → query string) when present, otherwise fall back to
+// the direct connection string. Execution goes through dbCall(conn, body)
+// which routes to the Azure Function URL when the conn is an https URL,
+// and otherwise through Netlify's /.netlify/functions/db-connect with
+// connectionString in the body. This is the same routing object_mapping
+// uses, so we inherit the same auth/rate-limit behaviour and avoid having
+// a second copy of the routing rules to maintain.
+//
+// Storage:
+//   localStorage['cygenix_balancing_metrics']  — check definitions
+//   localStorage['cygenix_balancing_runs']     — last result per check id
+// ══════════════════════════════════════════════════════════════════════════════
+
+const $ = (id) => document.getElementById(id);
+const BAL_KEY_CFG  = 'cygenix_balancing_metrics';
+const BAL_KEY_RUNS = 'cygenix_balancing_runs';
+
+// ── Shared helpers (lifted from object_mapping.html) ─────────────────────────
+function isFn(c){ return c && (c.startsWith('https://') || c.startsWith('http://')); }
+function parseDbName(cs){
+  try {
+    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i)
+           || cs.match(/\/([^/?]+)(?:\?|$)/i);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+}
+function showStatus(msg, type){
+  const bar = $('status-bar');
+  if (!bar) return;
+  bar.className = 'status-bar show ' + (type || 'info');
+  bar.textContent = msg;
+  if (type === 'ok' || type === 'info') {
+    clearTimeout(window._statusTimer);
+    window._statusTimer = setTimeout(() => bar.classList.remove('show'), 4000);
+  }
+}
+function setBanner(side, state, text){
+  const dot = $(side + '-dot');
+  const lbl = $(side + '-label');
+  if (lbl) lbl.textContent = text;
+  if (dot) dot.className = 'conn-dot ' + (state === 'ok' ? 'ok' : state === 'connecting' ? 'idle' : 'err');
+}
+function escapeHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ── Connection state — populated on init from CygenixConnections ─────────────
+let srcConn = '';
+let tgtConn = '';
+
+// dbCall — same shape as object_mapping.html. The Azure Function expects
+// the body as-is when conn is an https URL; the Netlify proxy expects an
+// extra connectionString field with the conn string.
+async function dbCall(conn, body){
+  if (!conn) throw new Error('Connection not configured');
+  const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn(conn) ? body : { ...body, connectionString: conn };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(60000)
+  });
+  const data = await res.json().catch(() => ({ error: 'Non-JSON (' + res.status + ')' }));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+// ── Init — read connections, set banner, render existing checks ──────────────
+(function init(){
+  if (typeof CygenixConnections === 'undefined') {
+    setBanner('src', 'err', 'Source: connection helper not loaded');
+    setBanner('tgt', 'err', 'Target: connection helper not loaded');
+    balRender();
+    return;
+  }
+  const c = CygenixConnections.get() || {};
+  srcConn = c.srcConnString || '';
+  // Function URL pattern (same as object_mapping): if a tgtFnUrl is set we
+  // use it; the optional tgtFnKey gets appended as ?code=...
+  tgtConn = c.tgtFnUrl
+    ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
+    : (c.tgtConnString || '');
+
+  if (srcConn) {
+    setBanner('src', 'ok', 'Source: ' + (parseDbName(srcConn) || 'configured'));
+  } else {
+    setBanner('src', 'err', 'Source: not configured — set in Dashboard → Connections');
+  }
+  if (tgtConn) {
+    setBanner('tgt', 'ok', 'Target: ' + (parseDbName(tgtConn) || 'configured'));
+  } else {
+    setBanner('tgt', 'err', 'Target: not configured — set in Dashboard → Connections');
+  }
+
+  balRender();
+})();
+
+// ── Config persistence ───────────────────────────────────────────────────────
+function balLoadCfg(){
+  try {
+    const raw = localStorage.getItem(BAL_KEY_CFG);
+    const cfg = raw ? JSON.parse(raw) : {};
+    return {
+      'debits-credits': Array.isArray(cfg['debits-credits']) ? cfg['debits-credits'] : [],
+      'control-totals': Array.isArray(cfg['control-totals']) ? cfg['control-totals'] : [],
+      'gl-balancing':   Array.isArray(cfg['gl-balancing'])   ? cfg['gl-balancing']   : []
+    };
+  } catch { return { 'debits-credits':[], 'control-totals':[], 'gl-balancing':[] }; }
+}
+function balSaveCfg(cfg){
+  localStorage.setItem(BAL_KEY_CFG, JSON.stringify(cfg));
+  const ind = $('bal-save-indicator');
+  if (ind) {
+    ind.style.display = 'inline';
+    clearTimeout(window._balSaveTimer);
+    window._balSaveTimer = setTimeout(() => { ind.style.display = 'none'; }, 1500);
+  }
+}
+function balLoadRuns(){
+  try { return JSON.parse(localStorage.getItem(BAL_KEY_RUNS) || '{}'); }
+  catch { return {}; }
+}
+function balSaveRuns(r){ localStorage.setItem(BAL_KEY_RUNS, JSON.stringify(r)); }
+
+// ── Tab state ────────────────────────────────────────────────────────────────
+let balActiveTab = 'debits-credits';
+function balSwitchTab(tab){
+  balActiveTab = tab;
+  document.querySelectorAll('[data-bal-tab]').forEach(btn => {
+    btn.classList.toggle('cx-tab-active', btn.getAttribute('data-bal-tab') === tab);
+  });
+  document.querySelectorAll('.bal-tab-pane').forEach(p => { p.style.display = 'none'; });
+  const pane = $('bal-tab-' + tab);
+  if (pane) pane.style.display = 'block';
+  balRender();
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function balRender(){
+  const cfg  = balLoadCfg();
+  const runs = balLoadRuns();
+  ['debits-credits','control-totals','gl-balancing'].forEach(t => {
+    const list  = $('bal-list-' + t);
+    const empty = $('bal-empty-' + t);
+    if (!list || !empty) return;
+    const items = cfg[t] || [];
+    empty.style.display = items.length ? 'none' : 'block';
+    list.innerHTML = items.map((c, i) => balRenderCheckCard(t, c, i, runs[c.id])).join('');
+  });
+  balRenderResults(cfg, runs);
+}
+
+function balFormatTs(ts){
+  if (!ts) return '';
+  try { return new Date(ts).toLocaleString(); } catch { return ''; }
+}
+
+function balRenderCheckCard(type, c, idx, run){
+  const status = run
+    ? (run.pass
+        ? '<span class="run-status pass">✓ PASS · ' + escapeHtml(balFormatTs(run.ts)) + '</span>'
+        : '<span class="run-status fail">✕ FAIL · ' + escapeHtml(balFormatTs(run.ts)) + '</span>')
+    : '<span class="run-status idle">Not yet run</span>';
+
+  const head = ''
+    + '<div class="check-head">'
+    + '  <input type="text" class="check-name" value="' + escapeHtml(c.name || '') + '" placeholder="Check name" '
+    + '         oninput="balUpdate(\'' + type + '\',' + idx + ',\'name\',this.value)">'
+    + '  ' + status
+    + '  <button class="btn btn-ghost btn-sm" onclick="balRunOne(\'' + type + '\',' + idx + ')">▶ Run</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="balRemove(\'' + type + '\',' + idx + ')" style="color:var(--red)">✕</button>'
+    + '</div>';
+
+  let body = '';
+  if (type === 'debits-credits') {
+    body = balFieldGrid([
+      { label: 'Side',                key: 'side',      value: c.side      || 'source', as: 'select', opts: ['source','target'] },
+      { label: 'Table',               key: 'table',     value: c.table     || '', placeholder: 'dbo.GL_Journal' },
+      { label: 'Debit column',        key: 'debitCol',  value: c.debitCol  || '', placeholder: 'debit_amount' },
+      { label: 'Credit column',       key: 'creditCol', value: c.creditCol || '', placeholder: 'credit_amount' },
+      { label: 'Group by (optional)', key: 'groupBy',   value: c.groupBy   || '', placeholder: 'batch_id, journal_id' },
+      { label: 'Where (optional)',    key: 'where',     value: c.where     || '', placeholder: 'period_id = 202604' },
+      { label: 'Tolerance',           key: 'tolerance', value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' }
+    ], type, idx);
+  } else if (type === 'control-totals') {
+    body = balFieldGrid([
+      { label: 'Aggregate',               key: 'agg',       value: c.agg       || 'SUM', as: 'select', opts: ['SUM','COUNT','MIN','MAX'] },
+      { label: 'Source table',            key: 'srcTable',  value: c.srcTable  || '', placeholder: 'dbo.Invoices' },
+      { label: 'Source column',           key: 'srcCol',    value: c.srcCol    || '', placeholder: 'amount' },
+      { label: 'Target table',            key: 'tgtTable',  value: c.tgtTable  || '', placeholder: 'public.invoices' },
+      { label: 'Target column',           key: 'tgtCol',    value: c.tgtCol    || '', placeholder: 'amount' },
+      { label: 'Tolerance',               key: 'tolerance', value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' },
+      { label: 'Where source (optional)', key: 'srcWhere',  value: c.srcWhere  || '', placeholder: '' },
+      { label: 'Where target (optional)', key: 'tgtWhere',  value: c.tgtWhere  || '', placeholder: '' }
+    ], type, idx);
+  } else if (type === 'gl-balancing') {
+    body = balFieldGrid([
+      { label: 'Source TB view',     key: 'srcView',    value: c.srcView    || '',          placeholder: 'dbo.vw_TrialBalance' },
+      { label: 'Target TB view',     key: 'tgtView',    value: c.tgtView    || '',          placeholder: 'public.vw_trial_balance' },
+      { label: 'Period column',      key: 'periodCol',  value: c.periodCol  || 'period',    placeholder: 'period' },
+      { label: 'Account column',     key: 'accountCol', value: c.accountCol || 'account',   placeholder: 'account' },
+      { label: 'Balance column',     key: 'balanceCol', value: c.balanceCol || 'balance',   placeholder: 'balance' },
+      { label: 'Periods (optional)', key: 'periods',    value: c.periods    || '',          placeholder: '202601,202602,202603' },
+      { label: 'Tolerance',          key: 'tolerance',  value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' }
+    ], type, idx);
+  }
+
+  return '<div class="check-card">'
+       + head + body
+       + (run && run.detail ? '<div class="check-detail">' + escapeHtml(run.detail) + '</div>' : '')
+       + '</div>';
+}
+
+function balFieldGrid(fields, type, idx){
+  return '<div class="field-grid">'
+    + fields.map(f => {
+        const id = 'bal-' + type + '-' + idx + '-' + f.key;
+        let input;
+        if (f.as === 'select') {
+          input = '<select id="' + id + '" '
+                + 'onchange="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)">'
+                + (f.opts || []).map(o =>
+                    '<option value="' + escapeHtml(o) + '"' + (o === f.value ? ' selected' : '') + '>' + escapeHtml(o) + '</option>'
+                  ).join('')
+                + '</select>';
+        } else {
+          input = '<input id="' + id + '" type="' + (f.type || 'text') + '" '
+                + 'value="' + escapeHtml(String(f.value)) + '" '
+                + 'placeholder="' + escapeHtml(f.placeholder || '') + '" '
+                + 'oninput="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)">';
+        }
+        return '<div class="field-cell">'
+             + '<label>' + escapeHtml(f.label) + '</label>'
+             + input
+             + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+// ── CRUD ─────────────────────────────────────────────────────────────────────
+function balAddCheck(){
+  const cfg = balLoadCfg();
+  const t = balActiveTab === 'results' ? 'debits-credits' : balActiveTab;
+  const id = 'bal_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const blank = { id: id, name: 'New ' + t.replace('-', ' ') + ' check' };
+  cfg[t].push(blank);
+  balSaveCfg(cfg);
+  if (balActiveTab === 'results') balSwitchTab(t);
+  else balRender();
+}
+function balRemove(type, idx){
+  if (!confirm('Delete this check?')) return;
+  const cfg = balLoadCfg();
+  const removed = cfg[type].splice(idx, 1)[0];
+  balSaveCfg(cfg);
+  if (removed && removed.id) {
+    const runs = balLoadRuns();
+    delete runs[removed.id];
+    balSaveRuns(runs);
+  }
+  balRender();
+}
+function balUpdate(type, idx, key, value){
+  const cfg = balLoadCfg();
+  if (!cfg[type] || !cfg[type][idx]) return;
+  if (key === 'tolerance') {
+    const n = parseFloat(value);
+    cfg[type][idx][key] = isFinite(n) ? n : 0;
+  } else {
+    cfg[type][idx][key] = value;
+  }
+  balSaveCfg(cfg);
+}
+
+// ── SQL builders ─────────────────────────────────────────────────────────────
+// All produce a single SELECT. No DDL/DML. Identifiers are not sanitised
+// (the user controls their own connection strings and types these into
+// their own config), but values are never interpolated from untrusted
+// input. The /api/db backend should additionally block writes.
+function balSqlDebitsCredits(c){
+  if (!c.table || !c.debitCol || !c.creditCol) {
+    throw new Error('Table, debit column and credit column are required.');
+  }
+  const groupBy = (c.groupBy || '').trim();
+  const where   = (c.where   || '').trim();
+  const grpSel  = groupBy ? groupBy + ', ' : '';
+  const grpClause = groupBy ? ' GROUP BY ' + groupBy : '';
+  const wClause   = where ? ' WHERE ' + where : '';
+  return 'SELECT ' + grpSel
+       + 'SUM(' + c.debitCol + ') AS total_debit, '
+       + 'SUM(' + c.creditCol + ') AS total_credit, '
+       + 'SUM(' + c.debitCol + ') - SUM(' + c.creditCol + ') AS variance '
+       + 'FROM ' + c.table
+       + wClause + grpClause;
+}
+function balSqlControlTotal(c, side){
+  const isSrc = side === 'source';
+  const tbl = isSrc ? c.srcTable : c.tgtTable;
+  const col = isSrc ? c.srcCol   : c.tgtCol;
+  const w   = (isSrc ? c.srcWhere : c.tgtWhere) || '';
+  if (!tbl || !col) throw new Error((isSrc ? 'Source' : 'Target') + ' table and column are required.');
+  const agg = (c.agg || 'SUM').toUpperCase();
+  const expr = agg === 'COUNT' ? 'COUNT(*)' : agg + '(' + col + ')';
+  return 'SELECT ' + expr + ' AS metric FROM ' + tbl + (w ? ' WHERE ' + w : '');
+}
+function balSqlGlBalance(c, side){
+  const isSrc = side === 'source';
+  const view  = isSrc ? c.srcView : c.tgtView;
+  if (!view) throw new Error((isSrc ? 'Source' : 'Target') + ' trial-balance view is required.');
+  const period  = c.periodCol  || 'period';
+  const account = c.accountCol || 'account';
+  const balance = c.balanceCol || 'balance';
+  const periods = (c.periods || '').trim();
+  let where = '';
+  if (periods) {
+    const list = periods.split(',').map(s => "'" + s.trim().replace(/'/g, "''") + "'").join(',');
+    where = ' WHERE ' + period + ' IN (' + list + ')';
+  }
+  return 'SELECT ' + period + ' AS period, ' + account + ' AS account, '
+       + 'SUM(' + balance + ') AS balance '
+       + 'FROM ' + view + where + ' GROUP BY ' + period + ', ' + account;
+}
+
+// ── Execution ────────────────────────────────────────────────────────────────
+async function balExec(side, sql){
+  const conn = side === 'source' ? srcConn : tgtConn;
+  if (!conn) throw new Error(side + ' connection not configured');
+  // Use the same `query` action db-connect.js exposes elsewhere in the app.
+  const data = await dbCall(conn, { action: 'query', sql: sql });
+  // db-connect.js typically returns { rows: [...] } or just the array;
+  // be defensive for either.
+  if (Array.isArray(data)) return data;
+  return data.rows || data.data || [];
+}
+
+async function balRunOne(type, idx){
+  const cfg = balLoadCfg();
+  const c = cfg[type] && cfg[type][idx];
+  if (!c) return;
+  const runs = balLoadRuns();
+  showStatus('Running ' + (c.name || 'check') + '…', 'info');
+  try {
+    if (type === 'debits-credits') {
+      const sql = balSqlDebitsCredits(c);
+      const rs = await balExec(c.side || 'source', sql);
+      const tol = +(c.tolerance || 0);
+      const offenders = rs.filter(r => Math.abs(parseFloat(r.variance || 0)) > tol);
+      runs[c.id] = {
+        ts: Date.now(),
+        pass: offenders.length === 0,
+        detail: offenders.length === 0
+          ? 'Balanced. ' + rs.length + ' group(s) checked.'
+          : offenders.length + ' group(s) out of balance:\n'
+            + offenders.slice(0, 10).map(r => JSON.stringify(r)).join('\n')
+            + (offenders.length > 10 ? '\n…and ' + (offenders.length - 10) + ' more' : '')
+      };
+    } else if (type === 'control-totals') {
+      const srcRows = await balExec('source', balSqlControlTotal(c, 'source'));
+      const tgtRows = await balExec('target', balSqlControlTotal(c, 'target'));
+      const sv = parseFloat((srcRows[0] || {}).metric || 0);
+      const tv = parseFloat((tgtRows[0] || {}).metric || 0);
+      const tol = +(c.tolerance || 0);
+      const variance = sv - tv;
+      runs[c.id] = {
+        ts: Date.now(),
+        pass: Math.abs(variance) <= tol,
+        detail: 'Source: ' + sv + '\nTarget: ' + tv + '\nVariance: ' + variance + '\nTolerance: ±' + tol
+      };
+    } else if (type === 'gl-balancing') {
+      const sR = await balExec('source', balSqlGlBalance(c, 'source'));
+      const tR = await balExec('target', balSqlGlBalance(c, 'target'));
+      const tol = +(c.tolerance || 0);
+      const key = r => String(r.period) + '|' + String(r.account);
+      const tMap = new Map(tR.map(r => [key(r), parseFloat(r.balance || 0)]));
+      const offenders = [];
+      for (const r of sR) {
+        const sv = parseFloat(r.balance || 0);
+        const tv = tMap.has(key(r)) ? tMap.get(key(r)) : null;
+        if (tv === null || Math.abs(sv - tv) > tol) {
+          offenders.push({ period: r.period, account: r.account, source: sv, target: tv, variance: tv === null ? null : sv - tv });
+        }
+        tMap.delete(key(r));
+      }
+      // Anything still in tMap = exists in target but not source
+      for (const [k, tv] of tMap.entries()) {
+        const [period, account] = k.split('|');
+        offenders.push({ period: period, account: account, source: null, target: tv, variance: null });
+      }
+      runs[c.id] = {
+        ts: Date.now(),
+        pass: offenders.length === 0,
+        detail: offenders.length === 0
+          ? 'Balanced. ' + sR.length + ' (period, account) row(s) checked.'
+          : offenders.length + ' mismatch(es):\n'
+            + offenders.slice(0, 15).map(r => JSON.stringify(r)).join('\n')
+            + (offenders.length > 15 ? '\n…and ' + (offenders.length - 15) + ' more' : '')
+      };
+    }
+    showStatus(runs[c.id].pass ? 'Passed' : 'Failed', runs[c.id].pass ? 'ok' : 'err');
+  } catch (e) {
+    runs[c.id] = { ts: Date.now(), pass: false, detail: 'Error: ' + (e && e.message || String(e)) };
+    showStatus('Error: ' + (e && e.message || e), 'err');
+  }
+  balSaveRuns(runs);
+  balRender();
+}
+
+async function balRunAll(){
+  const cfg = balLoadCfg();
+  const types = ['debits-credits', 'control-totals', 'gl-balancing'];
+  let count = 0;
+  for (const t of types) {
+    for (let i = 0; i < cfg[t].length; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      await balRunOne(t, i);
+      count++;
+    }
+  }
+  if (count === 0) {
+    alert('No checks defined yet. Add one with the ＋ button.');
+  } else {
+    balSwitchTab('results');
+  }
+}
+
+function balRenderResults(cfg, runs){
+  const list  = $('bal-results-list');
+  const empty = $('bal-results-empty');
+  if (!list || !empty) return;
+  const all = [];
+  ['debits-credits','control-totals','gl-balancing'].forEach(t => {
+    (cfg[t] || []).forEach(c => {
+      if (runs[c.id]) all.push({ type: t, check: c, run: runs[c.id] });
+    });
+  });
+  all.sort((a, b) => (b.run.ts || 0) - (a.run.ts || 0));
+  empty.style.display = all.length ? 'none' : 'block';
+  list.innerHTML = all.map(item => {
+    const r = item.run;
+    const klass = r.pass ? 'pass' : 'fail';
+    const label = r.pass ? '✓ PASS' : '✕ FAIL';
+    return '<div class="results-row ' + klass + '">'
+         + '<div class="results-row-head">'
+         + '<span class="run-status ' + klass + '" style="font-weight:600;flex-shrink:0">' + label + '</span>'
+         + '<span style="font-size:13px;font-weight:500;flex:1;min-width:160px">' + escapeHtml(item.check.name || '(unnamed)') + '</span>'
+         + '<span style="font-size:11px;color:var(--text3);font-family:var(--mono)">' + escapeHtml(item.type) + '</span>'
+         + '<span style="font-size:11px;color:var(--text3)">' + escapeHtml(balFormatTs(r.ts)) + '</span>'
+         + '</div>'
+         + (r.detail
+             ? '<div style="margin-top:0.4rem;font-size:11px;color:var(--text2);font-family:var(--mono);white-space:pre-wrap;max-height:120px;overflow:auto">'
+               + escapeHtml(r.detail) + '</div>'
+             : '')
+         + '</div>';
+  }).join('');
+}
+
+function balClearResults(){
+  if (!confirm('Clear all run results? Check definitions stay.')) return;
+  balSaveRuns({});
+  balRender();
+}
+</script>
+</body>
+</html>
