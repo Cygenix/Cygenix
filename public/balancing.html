@@ -190,6 +190,81 @@ body.cyg-collapsed{padding-left:54px}
 .cb-side-toggle button{background:transparent;color:var(--text3);font-family:var(--serif);font-size:11px;padding:3px 10px;border:none;border-radius:4px;cursor:pointer}
 .cb-side-toggle button.active{background:var(--bg2);color:var(--accent)}
 
+/* ── Dark-theme defaults for raw inputs/selects inside the CB builder ──
+   Chips and section bodies render <input>/<select> directly (without
+   the .field-cell wrapper used elsewhere on the page), so they inherit
+   browser defaults — white background, dark text. Apply the same
+   styling rules as .field-cell input here so the visual builder matches
+   the rest of the dark theme. */
+.cb-section-body input[type="text"],
+.cb-section-body input[type="number"],
+.cb-section-body select,
+.cb-section-body textarea{
+  background:var(--bg3);
+  border:0.5px solid var(--border2);
+  border-radius:6px;
+  padding:0.4rem 0.55rem;
+  font-size:12px;
+  color:var(--text);
+  font-family:var(--mono);
+  outline:none;
+  transition:border-color 0.15s;
+}
+.cb-section-body input[type="text"]:focus,
+.cb-section-body input[type="number"]:focus,
+.cb-section-body select:focus,
+.cb-section-body textarea:focus{border-color:var(--accent)}
+.cb-section-body select{
+  /* Match Firefox/Chromium native select on dark backgrounds — the only
+     reliable cross-browser fix is to use appearance:none and supply our
+     own caret. */
+  appearance:none;
+  -webkit-appearance:none;
+  -moz-appearance:none;
+  padding-right:22px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--text3) 50%,var(--text3) 60%,transparent 60%),linear-gradient(135deg,transparent 40%,var(--text3) 40%,var(--text3) 50%,transparent 50%);
+  background-position:calc(100% - 13px) 14px,calc(100% - 8px) 14px;
+  background-size:5px 5px;
+  background-repeat:no-repeat;
+  cursor:pointer;
+}
+/* The <option>s inside a <select> still pop out with browser-native
+   styling when opened. We can colour the popup list a bit by setting
+   bg/color on option directly — supported in Chromium/Firefox on
+   Windows/Linux, ignored on macOS Safari which always uses the system
+   look. Worth doing for the majority case. */
+.cb-section-body select option{background:var(--bg2);color:var(--text)}
+
+/* Chip alias inputs — narrow, embedded in a chip pill. */
+.cb-chip input[type="text"]{
+  background:var(--bg3);
+  border:0.5px solid var(--border2);
+  border-radius:4px;
+  padding:1px 5px;
+  font-size:10px;
+  color:var(--text);
+  font-family:var(--mono);
+  outline:none;
+  width:auto;
+  min-width:60px;
+}
+.cb-chip input[type="text"]:focus{border-color:var(--accent)}
+
+/* Search-drop and picker-input live under .cb-section-body too — they
+   already have their own rules earlier in the stylesheet, but the
+   broad rule above could override them. Re-pin the picker styling so
+   it wins on specificity. */
+.cb-section-body .search-wrap input.picker-input{
+  background:var(--bg3);
+  border:0.5px solid var(--border2);
+  border-radius:6px;
+  padding:0.4rem 0.55rem;
+  padding-right:22px;
+  font-size:12px;
+  color:var(--text);
+  font-family:var(--mono);
+}
+
 /* ── Trial Balance preview table ──
    Used to show the merged TB rows (source/target/variance) inline once
    a report has been run. Excel/CSV exports use the same data array. */
