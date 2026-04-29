@@ -37,6 +37,40 @@ const CygenixSync = (() => {
     projects:'cygenix_projects',
   };
 
+  // Per-field merge strategy. Two options:
+  //
+  //   'union'   — union-by-id. Cloud-only items survive a local save (good
+  //               for fields where deletion is rare and accidentally losing
+  //               cloud data would be costly).
+  //   'replace' — local wins entirely. The user's current view IS the truth
+  //               at save time, so deletions propagate immediately.
+  //
+  // Default for unlisted array fields is 'replace'. This is deliberate:
+  // 'union' silently swallows deletes (the bug that prompted this map's
+  // creation), so making it opt-in means new fields can't regress that
+  // way without an explicit declaration here.
+  //
+  // Non-array fields (config blobs like project_settings) ignore strategy
+  // entirely — mergeField short-circuits on `!Array.isArray` and returns
+  // local. Their semantics are unchanged.
+  const MERGE_STRATEGY = {
+    // Long-running migration jobs. Never delete via the cross-device path —
+    // a tab that hasn't synced shouldn't wipe a job another tab created.
+    jobs: 'union',
+    // Everything else is replace by default. Listed explicitly so the
+    // intent is auditable; matches default behaviour but documents it.
+    validation_sources: 'replace',
+    wasis_rules:        'replace',
+    saved_connections:  'replace',
+    projects:           'replace',
+    sql_scripts:        'replace',
+    issues:             'replace',
+    inventory:          'replace',
+  };
+  function strategyFor(field) {
+    return MERGE_STRATEGY[field] || 'replace';
+  }
+
   // Extract userId — MSAL-first (authoritative post-migration), with legacy
   // fallbacks for back-compat. Critical that this returns a stable value: the
   // init() flow uses it to decide whether to wipe localStorage as part of the
@@ -185,45 +219,37 @@ const CygenixSync = (() => {
   }
 
   // Decide how to merge cloud and local for a given field.
-  // - Both arrays of objects with `id` → union by id, local wins on collision
-  // - Otherwise → local wins entirely (preserves existing behaviour)
+  //   'union'   strategy + id-shape arrays → union by id, local wins on collision
+  //   'replace' strategy or non-id arrays  → local wins entirely (deletions propagate)
+  //   Non-array values                     → local wins (existing behaviour for blobs)
   function mergeField(field, localVal, cloudVal) {
     if (cloudVal === undefined || cloudVal === null) return localVal;
     if (!Array.isArray(localVal) || !Array.isArray(cloudVal)) return localVal;
 
-    // Check both are arrays-of-objects-with-id. If not, local wins.
+    const strategy = strategyFor(field);
+
+    // Replace strategy: local is the truth. This makes deletions work.
+    // Note that this is also what we want for non-id-shape arrays — there's
+    // no useful way to "union" them.
+    if (strategy === 'replace') return localVal;
+
+    // Union strategy from here. Both sides need id-shape, otherwise we
+    // can't union — fall through to local-wins with a warning so the next
+    // such regression is visible in devtools.
     const isIdArray = arr => arr.length === 0 || (typeof arr[0] === 'object' && arr[0] !== null && 'id' in arr[0]);
     if (!isIdArray(localVal) || !isIdArray(cloudVal)) {
-      // Safety net: if cloud has more items than local for an array field
-      // without ids, we're about to silently overwrite cloud-only data.
-      // That's the wasis_rules class of regression — rules added on one
-      // device disappearing on another. Warn so the next instance is
-      // caught by browser devtools rather than by a user. Empty-cloud is
-      // expected (first-time push) so we skip the warning then.
       if (cloudVal.length > 0 && cloudVal.length > localVal.length) {
         console.warn(
           '[CygenixSync] mergeField: "' + field + '" — local (' + localVal.length +
           ' items) overwriting cloud (' + cloudVal.length + ' items). ' +
-          'Field has no id-shape; consider adding stable ids so merge can union them.'
+          'Field declared union-strategy but lacks id-shape; either add ids or switch to replace.'
         );
       }
       return localVal;
     }
 
-    // Union by id, local wins on collision
-    const byId = new Map();
-    for (const item of cloudVal) {
-      if (item && item.id != null) byId.set(item.id, item);
-    }
-    for (const item of localVal) {
-      if (item && item.id != null) byId.set(item.id, item);
-    }
-    const result = Array.from(byId.values());
-
-    // Preserve order: local items first (in their original order), then any
-    // cloud-only items not in local (in their original order). Maintains the
-    // existing newest-first convention since localStorage usually has them
-    // ordered that way.
+    // Union by id, local wins on collision. Order: local items in their
+    // original order, then any cloud-only items not in local.
     const localIds = new Set(localVal.filter(i => i && i.id != null).map(i => i.id));
     const ordered = [
       ...localVal.filter(i => i && i.id != null),
