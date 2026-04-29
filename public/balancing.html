@@ -47,7 +47,7 @@ body.cyg-collapsed{padding-left:54px}
 .page-tag{padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500}
 
 /* ── Panels ── */
-.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1rem}
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1rem}
 .panel-head{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.75rem}
 .panel-title{font-size:13px;font-weight:600;color:var(--text)}
 .panel-body{padding:1rem 1.25rem}
@@ -101,9 +101,22 @@ body.cyg-collapsed{padding-left:54px}
 .field-cell label{display:block;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem;font-weight:600}
 .field-cell input,.field-cell select{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
 .field-cell input:focus,.field-cell select:focus{border-color:var(--accent)}
-/* Subtle chevron hint on datalist-backed inputs to communicate they're pickers */
-.field-cell input[list]{background-image:linear-gradient(45deg,transparent 50%,var(--text3) 50%,var(--text3) 60%,transparent 60%),linear-gradient(135deg,transparent 40%,var(--text3) 40%,var(--text3) 50%,transparent 50%);background-position:calc(100% - 13px) 14px,calc(100% - 8px) 14px;background-size:5px 5px;background-repeat:no-repeat;padding-right:22px}
-.field-cell input[list]:disabled{opacity:0.5;cursor:not-allowed}
+/* Subtle chevron hint on picker inputs to communicate they're searchable */
+.field-cell input[data-pick]{background-image:linear-gradient(45deg,transparent 50%,var(--text3) 50%,var(--text3) 60%,transparent 60%),linear-gradient(135deg,transparent 40%,var(--text3) 40%,var(--text3) 50%,transparent 50%);background-position:calc(100% - 13px) 14px,calc(100% - 8px) 14px;background-size:5px 5px;background-repeat:no-repeat;padding-right:22px}
+.field-cell input[data-pick]:disabled{opacity:0.5;cursor:not-allowed}
+
+/* ── Inline search dropdown — same pattern as object_mapping.html ──
+   Each picker input is wrapped in .search-wrap (relative). The
+   .search-drop floats absolutely beneath, scoped to the wrap, and is
+   shown/hidden by the picker* JS below. */
+.search-wrap{position:relative}
+.search-drop{position:absolute;top:calc(100% + 2px);left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:220px;overflow-y:auto;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,0.4);display:none}
+.search-drop.open{display:block}
+.drop-item{padding:6px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;display:flex;justify-content:space-between;align-items:center;color:var(--text);gap:8px}
+.drop-item:hover,.drop-item.active{background:var(--accent-glow);color:var(--accent)}
+.drop-item .di-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.drop-item .di-meta{font-size:10px;color:var(--text3);flex-shrink:0;font-style:normal}
+.drop-empty{padding:8px 10px;font-size:11px;color:var(--text3);font-style:italic}
 
 .check-detail{margin-top:0.6rem;font-size:11px;color:var(--text2);font-family:var(--mono);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;max-height:120px;overflow:auto;white-space:pre-wrap}
 
@@ -224,10 +237,8 @@ body.cyg-collapsed{padding-left:54px}
     </div></div>
   </div>
 
-  <!-- Datalists for table dropdowns. Source-side and target-side are
-       separate because they're populated from different schemas. -->
-  <datalist id="dl-src-tables"></datalist>
-  <datalist id="dl-tgt-tables"></datalist>
+  <!-- Inline search-dropdowns are appended dynamically next to each
+       picker input by balFieldGrid; no global datalist elements needed. -->
 
 </div><!-- /.page -->
 
@@ -372,50 +383,199 @@ function findTable(side, fullName){
   return matches.length === 1 ? matches[0] : null;
 }
 
-// ── Datalist rendering ───────────────────────────────────────────────────────
-function rebuildTableDatalists(){
-  const srcDl = $('dl-src-tables');
-  const tgtDl = $('dl-tgt-tables');
-  if (srcDl) srcDl.innerHTML = srcSchema.tables.map(t => '<option value="' + escapeHtml(t.fullName) + '"></option>').join('');
-  if (tgtDl) tgtDl.innerHTML = tgtSchema.tables.map(t => '<option value="' + escapeHtml(t.fullName) + '"></option>').join('');
-}
+// ── Inline picker dropdown ───────────────────────────────────────────────────
+// Mirrors the search-and-pick pattern from object_mapping.html, generalised
+// so any number of fields on the page can use it without per-field IDs.
+//
+// Markup contract: each picker input has these data attrs (set by
+// balFieldGrid when emitting the input):
+//   data-pick-kind="tables" | "columns"
+//   data-pick-side="src" | "tgt"           (which schema to read from)
+//   data-pick-table="<id of table input>"  (columns-only — depends on a table)
+//   data-pick-update="<type>:<idx>:<key>"  (where to write the chosen value)
+//
+// Each input is inside a .search-wrap and followed by a .search-drop sibling.
+// pickerOpen/pickerFilter render the drop; pickerSelect commits the choice.
+//
+// We don't track a "selected" item in JS state — the input's value is the
+// source of truth, persisted via balUpdate.
 
-// Per-card column datalists. Built on demand and parked in a hidden host
-// div so they're addressable by ID without polluting the visible DOM.
-function ensureCardDatalist(id){
-  let dl = $(id);
-  if (!dl) {
-    let host = $('card-datalists');
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'card-datalists';
-      host.style.display = 'none';
-      document.body.appendChild(host);
-    }
-    dl = document.createElement('datalist');
-    dl.id = id;
-    host.appendChild(dl);
+function _pickerListFor(input){
+  // Returns the array of {value, label, meta} entries this picker should show.
+  const kind = input.getAttribute('data-pick-kind');
+  const side = input.getAttribute('data-pick-side');
+  if (kind === 'tables') {
+    const sch = side === 'tgt' ? tgtSchema : srcSchema;
+    return sch.tables.map(t => ({
+      value: t.fullName,
+      label: t.fullName,
+      meta:  t.rowCount ? Number(t.rowCount).toLocaleString() + ' rows' : ''
+    }));
   }
-  return dl;
+  if (kind === 'columns') {
+    // Columns are scoped to whichever table the sibling table-input has
+    // currently selected. If no table is set yet, return empty.
+    const tableInputId = input.getAttribute('data-pick-table');
+    const tableInput   = tableInputId ? document.getElementById(tableInputId) : null;
+    const tableName    = tableInput ? tableInput.value : '';
+    if (!tableName) return [];
+    const t = findTable(side, tableName);
+    if (!t) return [];
+    const cacheKey = side + '|' + t.fullName;
+    const cols = _columnCache.get(cacheKey);
+    if (!cols) return []; // not yet loaded — pickerOpen kicks off the load
+    return (cols || []).map(c => {
+      const name = typeof c === 'string' ? c : (c.name || c.column || '');
+      const type = typeof c === 'object' && c.dataType ? c.dataType : '';
+      return { value: name, label: name, meta: type };
+    });
+  }
+  return [];
 }
 
-async function refreshCardColumnList(side, tableName, dlId){
-  const dl = ensureCardDatalist(dlId);
-  if (!tableName) { dl.innerHTML = ''; return; }
+// Ensures the column cache for this picker's table is populated. Returns
+// true if we kicked off a load (caller should re-render after it resolves).
+async function _ensurePickerColumns(input){
+  if (input.getAttribute('data-pick-kind') !== 'columns') return false;
+  const side = input.getAttribute('data-pick-side');
+  const tableInputId = input.getAttribute('data-pick-table');
+  const tableInput   = tableInputId ? document.getElementById(tableInputId) : null;
+  const tableName    = tableInput ? tableInput.value : '';
+  if (!tableName) return false;
   const t = findTable(side, tableName);
-  if (!t) { dl.innerHTML = ''; return; }
+  if (!t) return false;
   const cacheKey = side + '|' + t.fullName;
-  let cols = _columnCache.get(cacheKey);
-  if (!cols) {
-    cols = await ensureColumns(side, t);
-    _columnCache.set(cacheKey, cols);
-  }
-  dl.innerHTML = (cols || []).map(c => {
-    const name = typeof c === 'string' ? c : (c.name || c.column || '');
-    const type = typeof c === 'object' && c.dataType ? c.dataType : '';
-    return '<option value="' + escapeHtml(name) + '"' + (type ? ' label="' + escapeHtml(type) + '"' : '') + '></option>';
-  }).join('');
+  if (_columnCache.has(cacheKey)) return false;
+  const cols = await ensureColumns(side, t);
+  _columnCache.set(cacheKey, cols || []);
+  return true;
 }
+
+function _pickerDrop(input){
+  // The .search-drop sibling immediately following the input.
+  let sib = input.nextElementSibling;
+  while (sib && !sib.classList.contains('search-drop')) sib = sib.nextElementSibling;
+  return sib;
+}
+
+function pickerOpen(input){
+  pickerFilter(input);
+  // Lazy-load columns for the chosen table (no-op for tables/already-cached).
+  // We re-render once the load completes so the user sees the now-populated
+  // list without having to reopen the drop.
+  _ensurePickerColumns(input).then(loaded => {
+    if (loaded) pickerFilter(input);
+  });
+}
+
+function pickerFilter(input){
+  const drop = _pickerDrop(input);
+  if (!drop) return;
+  const items = _pickerListFor(input);
+  const q = (input.value || '').toLowerCase();
+  const sch = (input.getAttribute('data-pick-side') === 'tgt') ? tgtSchema : srcSchema;
+
+  // Empty-states tailored to the situation: no connection, schema still
+  // loading, no items at all, or filter found nothing.
+  if (!items.length) {
+    let msg;
+    const kind = input.getAttribute('data-pick-kind');
+    if (kind === 'columns') {
+      const tInId = input.getAttribute('data-pick-table');
+      const tIn   = tInId ? document.getElementById(tInId) : null;
+      msg = !tIn || !tIn.value ? 'Pick a table first'
+          : 'Loading columns…';
+    } else if (!sch.loaded) {
+      msg = 'Loading schema…';
+    } else {
+      msg = 'No tables in schema';
+    }
+    drop.innerHTML = '<div class="drop-empty">' + escapeHtml(msg) + '</div>';
+    drop.classList.add('open');
+    return;
+  }
+
+  const hits = q
+    ? items.filter(it => it.label.toLowerCase().includes(q)).slice(0, 80)
+    : items.slice(0, 80);
+
+  if (!hits.length) {
+    drop.innerHTML = '<div class="drop-empty">No match for "' + escapeHtml(q) + '"</div>';
+  } else {
+    drop.innerHTML = hits.map(it =>
+      '<div class="drop-item" data-pick-value="' + escapeHtml(it.value) + '">'
+      + '<span class="di-name">' + escapeHtml(it.label) + '</span>'
+      + (it.meta ? '<span class="di-meta">' + escapeHtml(it.meta) + '</span>' : '')
+      + '</div>'
+    ).join('');
+    if (items.length > 80) {
+      drop.innerHTML += '<div class="drop-empty">' + (items.length - 80) + ' more — type to filter</div>';
+    }
+  }
+  drop.classList.add('open');
+}
+
+function pickerClose(input){
+  const drop = _pickerDrop(input);
+  if (drop) drop.classList.remove('open');
+}
+
+function pickerSelect(input, value){
+  input.value = value;
+  pickerClose(input);
+  // Persist via the update spec encoded on the input.
+  const upd = input.getAttribute('data-pick-update');
+  if (upd) {
+    const [type, idxStr, key] = upd.split(':');
+    balUpdate(type, parseInt(idxStr, 10), key, value);
+  }
+  // If this is a table input, the column pickers in the same card become
+  // valid (or change scope). Easiest correct behaviour: re-render the
+  // current tab so the column pickers refresh their data attributes
+  // and any dependent state. We lose focus but that's expected after
+  // committing a pick.
+  if (input.getAttribute('data-pick-kind') === 'tables') {
+    balRender();
+  }
+}
+
+// Document-level click closes any open drop when the click is outside
+// of both the input and its drop. Mirrors object_mapping.html's handler.
+document.addEventListener('click', function(e){
+  document.querySelectorAll('.search-drop.open').forEach(drop => {
+    const wrap = drop.parentElement;
+    if (wrap && !wrap.contains(e.target)) drop.classList.remove('open');
+  });
+});
+
+// Keyboard support: Escape closes the dropdown, Enter picks the first hit
+// if there's exactly one match (so users can tab through quickly).
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.search-drop.open').forEach(d => d.classList.remove('open'));
+    return;
+  }
+  if (e.key === 'Enter' && e.target && e.target.matches && e.target.matches('input[data-pick-kind]')) {
+    const drop = _pickerDrop(e.target);
+    if (drop && drop.classList.contains('open')) {
+      const first = drop.querySelector('.drop-item');
+      if (first) {
+        e.preventDefault();
+        pickerSelect(e.target, first.getAttribute('data-pick-value'));
+      }
+    }
+  }
+});
+
+// Click delegation for .drop-item picks.
+document.addEventListener('click', function(e){
+  const item = e.target.closest && e.target.closest('.drop-item');
+  if (!item) return;
+  const drop = item.closest('.search-drop');
+  const wrap = drop && drop.parentElement;
+  const input = wrap && wrap.querySelector('input[data-pick-kind]');
+  if (input) pickerSelect(input, item.getAttribute('data-pick-value'));
+});
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 (function init(){
@@ -459,7 +619,6 @@ async function loadSchema(side){
     else                tgtSchema = { tables, paginated, loaded: true };
     setBanner(side, 'ok', (side === 'src' ? 'Source' : 'Target') + ': '
       + (res.database || parseDbName(conn) || 'connected') + ' · ' + tables.length + ' tables');
-    rebuildTableDatalists();
     balRender();
   } catch (e) {
     setBanner(side, 'err', (side === 'src' ? 'Source' : 'Target') + ': ' + e.message);
@@ -470,7 +629,6 @@ async function balReloadSchemas(){
   _columnCache.clear();
   srcSchema = { tables: [], paginated: null, loaded: false };
   tgtSchema = { tables: [], paginated: null, loaded: false };
-  rebuildTableDatalists();
   await Promise.allSettled([loadSchema('src'), loadSchema('tgt')]);
   showStatus('Schemas reloaded', 'ok');
 }
@@ -526,7 +684,6 @@ function balRender(){
     const items = cfg[t] || [];
     empty.style.display = items.length ? 'none' : 'block';
     list.innerHTML = items.map((c, i) => balRenderCheckCard(t, c, i, runs[c.id])).join('');
-    items.forEach((c, i) => primeCardColumnLists(t, c, i));
   });
   balRenderResults(cfg, runs);
 }
@@ -534,18 +691,6 @@ function balRender(){
 function balFormatTs(ts){
   if (!ts) return '';
   try { return new Date(ts).toLocaleString(); } catch { return ''; }
-}
-
-// Build the column datalists for a card based on its current table picks.
-// Called after each render so saved configurations get their column
-// dropdowns re-populated.
-function primeCardColumnLists(type, c, idx){
-  if (type === 'debits-credits') {
-    if (c.table) refreshCardColumnList(c.side === 'target' ? 'tgt' : 'src', c.table, 'dl-cols-' + type + '-' + idx);
-  } else if (type === 'control-totals') {
-    if (c.srcTable) refreshCardColumnList('src', c.srcTable, 'dl-cols-' + type + '-' + idx + '-src');
-    if (c.tgtTable) refreshCardColumnList('tgt', c.tgtTable, 'dl-cols-' + type + '-' + idx + '-tgt');
-  }
 }
 
 function balRenderCheckCard(type, c, idx, run){
@@ -564,43 +709,53 @@ function balRenderCheckCard(type, c, idx, run){
     + '  <button class="btn btn-ghost btn-sm" onclick="balRemove(\'' + type + '\',' + idx + ')" style="color:var(--red)">✕</button>'
     + '</div>';
 
+  // Field specs. Picker-backed inputs carry a `pick` descriptor:
+  //   { kind: 'tables', side: 'src'|'tgt' }
+  //   { kind: 'columns', side: 'src'|'tgt', tableField: '<key of sibling table input>' }
   let body = '';
   if (type === 'debits-credits') {
     const side = c.side === 'target' ? 'tgt' : 'src';
-    const tableDl = side === 'tgt' ? 'dl-tgt-tables' : 'dl-src-tables';
-    const colDl   = 'dl-cols-' + type + '-' + idx;
-    const sch     = side === 'tgt' ? tgtSchema : srcSchema;
-    const ready   = sch.loaded;
+    const sch  = side === 'tgt' ? tgtSchema : srcSchema;
     body = balFieldGrid([
       { label: 'Side',                key: 'side',      value: c.side || 'source', as: 'select', opts: ['source','target'] },
-      { label: 'Table',               key: 'table',     value: c.table || '',      list: tableDl,
-                                       placeholder: ready ? 'Pick a table…' : 'Loading schema…',
-                                       disabled: !ready,
-                                       onchange: 'balOnTableChange' },
-      { label: 'Debit column',        key: 'debitCol',  value: c.debitCol || '',   list: colDl, placeholder: c.table ? 'Pick a column…' : 'Pick a table first' },
-      { label: 'Credit column',       key: 'creditCol', value: c.creditCol || '',  list: colDl, placeholder: c.table ? 'Pick a column…' : 'Pick a table first' },
-      { label: 'Group by (optional)', key: 'groupBy',   value: c.groupBy || '',    placeholder: 'batch_id, journal_id' },
-      { label: 'Where (optional)',    key: 'where',     value: c.where || '',      placeholder: 'period_id = 202604' },
+      { label: 'Table',               key: 'table',     value: c.table || '',
+                                       pick: { kind: 'tables', side: side },
+                                       placeholder: sch.loaded ? 'Search for a table…' : 'Loading schema…',
+                                       disabled: !sch.loaded },
+      { label: 'Debit column',        key: 'debitCol',  value: c.debitCol || '',
+                                       pick: { kind: 'columns', side: side, tableField: 'table' },
+                                       placeholder: c.table ? 'Search for a column…' : 'Pick a table first',
+                                       disabled: !c.table },
+      { label: 'Credit column',       key: 'creditCol', value: c.creditCol || '',
+                                       pick: { kind: 'columns', side: side, tableField: 'table' },
+                                       placeholder: c.table ? 'Search for a column…' : 'Pick a table first',
+                                       disabled: !c.table },
+      { label: 'Group by (optional)', key: 'groupBy',   value: c.groupBy || '', placeholder: 'batch_id, journal_id' },
+      { label: 'Where (optional)',    key: 'where',     value: c.where || '',   placeholder: 'period_id = 202604' },
       { label: 'Tolerance',           key: 'tolerance', value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' }
     ], type, idx);
   } else if (type === 'control-totals') {
     const srcReady = srcSchema.loaded;
     const tgtReady = tgtSchema.loaded;
-    const srcColDl = 'dl-cols-' + type + '-' + idx + '-src';
-    const tgtColDl = 'dl-cols-' + type + '-' + idx + '-tgt';
     body = balFieldGrid([
       { label: 'Aggregate',               key: 'agg',       value: c.agg || 'SUM', as: 'select', opts: ['SUM','COUNT','MIN','MAX'] },
       { label: 'Tolerance',               key: 'tolerance', value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' },
-      { label: 'Source table',            key: 'srcTable',  value: c.srcTable || '', list: 'dl-src-tables',
-                                           placeholder: srcReady ? 'Pick a source table…' : 'Loading schema…',
-                                           disabled: !srcReady,
-                                           onchange: 'balOnTableChange' },
-      { label: 'Source column',           key: 'srcCol',    value: c.srcCol || '',   list: srcColDl, placeholder: c.srcTable ? 'Pick a column…' : 'Pick a table first' },
-      { label: 'Target table',            key: 'tgtTable',  value: c.tgtTable || '', list: 'dl-tgt-tables',
-                                           placeholder: tgtReady ? 'Pick a target table…' : 'Loading schema…',
-                                           disabled: !tgtReady,
-                                           onchange: 'balOnTableChange' },
-      { label: 'Target column',           key: 'tgtCol',    value: c.tgtCol || '',   list: tgtColDl, placeholder: c.tgtTable ? 'Pick a column…' : 'Pick a table first' },
+      { label: 'Source table',            key: 'srcTable',  value: c.srcTable || '',
+                                           pick: { kind: 'tables', side: 'src' },
+                                           placeholder: srcReady ? 'Search for a source table…' : 'Loading schema…',
+                                           disabled: !srcReady },
+      { label: 'Source column',           key: 'srcCol',    value: c.srcCol || '',
+                                           pick: { kind: 'columns', side: 'src', tableField: 'srcTable' },
+                                           placeholder: c.srcTable ? 'Search for a column…' : 'Pick a table first',
+                                           disabled: !c.srcTable },
+      { label: 'Target table',            key: 'tgtTable',  value: c.tgtTable || '',
+                                           pick: { kind: 'tables', side: 'tgt' },
+                                           placeholder: tgtReady ? 'Search for a target table…' : 'Loading schema…',
+                                           disabled: !tgtReady },
+      { label: 'Target column',           key: 'tgtCol',    value: c.tgtCol || '',
+                                           pick: { kind: 'columns', side: 'tgt', tableField: 'tgtTable' },
+                                           placeholder: c.tgtTable ? 'Search for a column…' : 'Pick a table first',
+                                           disabled: !c.tgtTable },
       { label: 'Where source (optional)', key: 'srcWhere',  value: c.srcWhere || '', placeholder: '' },
       { label: 'Where target (optional)', key: 'tgtWhere',  value: c.tgtWhere || '', placeholder: '' }
     ], type, idx);
@@ -608,11 +763,13 @@ function balRenderCheckCard(type, c, idx, run){
     const srcReady = srcSchema.loaded;
     const tgtReady = tgtSchema.loaded;
     body = balFieldGrid([
-      { label: 'Source TB view',     key: 'srcView',    value: c.srcView    || '', list: 'dl-src-tables',
-                                      placeholder: srcReady ? 'Pick a source view/table…' : 'Loading schema…',
+      { label: 'Source TB view',     key: 'srcView',    value: c.srcView    || '',
+                                      pick: { kind: 'tables', side: 'src' },
+                                      placeholder: srcReady ? 'Search for a source view/table…' : 'Loading schema…',
                                       disabled: !srcReady },
-      { label: 'Target TB view',     key: 'tgtView',    value: c.tgtView    || '', list: 'dl-tgt-tables',
-                                      placeholder: tgtReady ? 'Pick a target view/table…' : 'Loading schema…',
+      { label: 'Target TB view',     key: 'tgtView',    value: c.tgtView    || '',
+                                      pick: { kind: 'tables', side: 'tgt' },
+                                      placeholder: tgtReady ? 'Search for a target view/table…' : 'Loading schema…',
                                       disabled: !tgtReady },
       { label: 'Period column',      key: 'periodCol',  value: c.periodCol  || 'period',  placeholder: 'period' },
       { label: 'Account column',     key: 'accountCol', value: c.accountCol || 'account', placeholder: 'account' },
@@ -632,54 +789,57 @@ function balFieldGrid(fields, type, idx){
   return '<div class="field-grid">'
     + fields.map(f => {
         const id = 'bal-' + type + '-' + idx + '-' + f.key;
-        let input;
+        let cellInner;
         if (f.as === 'select') {
           // Side toggle (Debits=Credits) needs a re-render so the table
-          // datalist switches between src/tgt; agg dropdown doesn't, but
-          // re-rendering is cheap and keeps logic uniform.
-          input = '<select id="' + id + '" '
+          // picker switches between src/tgt schemas; agg dropdown doesn't,
+          // but re-rendering is cheap and keeps logic uniform.
+          cellInner = '<select id="' + id + '" '
                 + 'onchange="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value); balRender()">'
                 + (f.opts || []).map(o =>
                     '<option value="' + escapeHtml(o) + '"' + (o === f.value ? ' selected' : '') + '>' + escapeHtml(o) + '</option>'
                   ).join('')
                 + '</select>';
+        } else if (f.pick) {
+          // Picker input — wrapped in .search-wrap with a sibling .search-drop.
+          // For columns, data-pick-table points to the sibling table input
+          // by ID (we know the IDs because they follow the same naming
+          // convention: bal-<type>-<idx>-<key>).
+          const disAttr = f.disabled ? ' disabled' : '';
+          const tableInputId = f.pick.tableField
+            ? ('bal-' + type + '-' + idx + '-' + f.pick.tableField)
+            : '';
+          const updateSpec = type + ':' + idx + ':' + f.key;
+          cellInner = ''
+            + '<div class="search-wrap">'
+            +   '<input id="' + id + '" type="text"'
+            +     ' class="picker-input"'
+            +     ' data-pick-kind="' + escapeHtml(f.pick.kind) + '"'
+            +     ' data-pick-side="' + escapeHtml(f.pick.side) + '"'
+            +     (tableInputId ? ' data-pick-table="' + tableInputId + '"' : '')
+            +     ' data-pick-update="' + escapeHtml(updateSpec) + '"'
+            +     ' value="' + escapeHtml(String(f.value)) + '"'
+            +     ' placeholder="' + escapeHtml(f.placeholder || '') + '"'
+            +     ' autocomplete="off"'
+            +     disAttr
+            +     ' onfocus="pickerOpen(this)"'
+            +     ' oninput="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value); pickerFilter(this)"'
+            +     '>'
+            +   '<div class="search-drop"></div>'
+            + '</div>';
         } else {
-          const listAttr = f.list ? ' list="' + f.list + '"' : '';
-          const disAttr  = f.disabled ? ' disabled' : '';
-          // For datalist-backed pickers, fire the dedicated handler so
-          // table picks refresh column lists. Plain inputs just persist.
-          const handler  = f.onchange
-            ? 'balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value); ' + f.onchange + '(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)'
-            : 'balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)';
-          input = '<input id="' + id + '" type="' + (f.type || 'text') + '"'
-                + listAttr + disAttr
+          // Plain text/number input — persists on every keystroke.
+          cellInner = '<input id="' + id + '" type="' + (f.type || 'text') + '"'
                 + ' value="' + escapeHtml(String(f.value)) + '"'
                 + ' placeholder="' + escapeHtml(f.placeholder || '') + '"'
-                + ' oninput="' + handler + '"'
-                + ' onchange="' + handler + '">';
+                + ' oninput="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)">';
         }
         return '<div class="field-cell">'
              + '<label>' + escapeHtml(f.label) + '</label>'
-             + input
+             + cellInner
              + '</div>';
       }).join('')
     + '</div>';
-}
-
-// Refresh the matching column datalist for a card when the user picks a
-// new table. Doesn't full-re-render to preserve focus on the input the
-// user just changed.
-async function balOnTableChange(type, idx, key, value){
-  if (type === 'debits-credits' && key === 'table') {
-    const cfg = balLoadCfg();
-    const c = cfg[type] && cfg[type][idx];
-    const side = c && c.side === 'target' ? 'tgt' : 'src';
-    await refreshCardColumnList(side, value, 'dl-cols-' + type + '-' + idx);
-  } else if (type === 'control-totals' && key === 'srcTable') {
-    await refreshCardColumnList('src', value, 'dl-cols-' + type + '-' + idx + '-src');
-  } else if (type === 'control-totals' && key === 'tgtTable') {
-    await refreshCardColumnList('tgt', value, 'dl-cols-' + type + '-' + idx + '-tgt');
-  }
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────
