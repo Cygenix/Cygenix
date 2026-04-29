@@ -137,6 +137,24 @@ body.cyg-collapsed{padding-left:54px}
   .page{padding:1rem}
   .field-grid{grid-template-columns:1fr}
 }
+
+/* ── Trial Balance preview table ──
+   Used to show the merged TB rows (source/target/variance) inline once
+   a report has been run. Excel/CSV exports use the same data array. */
+.tb-preview{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono);margin-top:0.75rem}
+.tb-preview th{text-align:left;padding:6px 8px;color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:0.06em;border-bottom:0.5px solid var(--border);background:var(--bg3);font-weight:600;position:sticky;top:0}
+.tb-preview td{padding:5px 8px;border-bottom:0.5px solid var(--border);color:var(--text2)}
+.tb-preview tr:hover td{background:rgba(255,255,255,0.015)}
+.tb-preview td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tb-preview tr.mismatch td{color:var(--text)}
+.tb-preview tr.mismatch td.num.var{color:var(--red);font-weight:500}
+.tb-preview-wrap{max-height:340px;overflow:auto;border:0.5px solid var(--border);border-radius:6px;background:var(--bg3)}
+.tb-summary{display:flex;gap:1rem;flex-wrap:wrap;margin:0.75rem 0;font-size:11px;font-family:var(--mono)}
+.tb-summary-item{padding:6px 10px;border:0.5px solid var(--border);border-radius:6px;background:var(--bg3)}
+.tb-summary-item strong{color:var(--text);font-weight:500}
+.tb-summary-item.warn strong{color:var(--amber)}
+.tb-summary-item.bad strong{color:var(--red)}
+.tb-summary-item.ok strong{color:var(--green)}
 </style>
 </head>
 <body>
@@ -191,6 +209,7 @@ body.cyg-collapsed{padding-left:54px}
     <button class="cx-tab cx-tab-active" data-bal-tab="debits-credits" onclick="balSwitchTab('debits-credits')">⚖️ Debits = Credits</button>
     <button class="cx-tab" data-bal-tab="control-totals" onclick="balSwitchTab('control-totals')">Σ Control totals</button>
     <button class="cx-tab" data-bal-tab="gl-balancing" onclick="balSwitchTab('gl-balancing')">📒 GL balancing</button>
+    <button class="cx-tab" data-bal-tab="trial-balance" onclick="balSwitchTab('trial-balance')">📋 Trial Balance</button>
     <button class="cx-tab" data-bal-tab="results" onclick="balSwitchTab('results')">📊 Results</button>
   </div>
 
@@ -223,6 +242,28 @@ body.cyg-collapsed{padding-left:54px}
       </div>
       <div id="bal-list-gl-balancing"></div>
       <div id="bal-empty-gl-balancing" class="empty-state">No checks defined. Click <strong>＋ Add check</strong> above to create one.</div>
+    </div></div>
+  </div>
+
+  <!-- Tab: Trial Balance ──────────────────────────────────────────────────────
+       Produces a per-account trial balance with side-by-side source vs
+       target and a variance column. Supports two source modes per side:
+         - 'view'    : SELECT directly from a TB view/table (period, account, balance)
+         - 'journal' : derive balance per account from a journal table, either
+                       SUM(debit) - SUM(credit) or SUM(amount)
+       Period filtering is per-report: single value, range, or all periods.
+       Output is downloadable CSV/XLSX after a run; inline preview uses the
+       same data array so the user verifies before exporting. -->
+  <div id="bal-tab-trial-balance" class="bal-tab-pane" style="display:none">
+    <div class="panel"><div class="panel-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+        <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
+          Generate a side-by-side trial balance from source and target. Each report can pull from a TB view directly, or derive balances from a journal table. Run the report, preview, and export CSV/XLSX.
+        </div>
+        <button class="btn btn-purple btn-sm" onclick="tbAddReport()">＋ Add report</button>
+      </div>
+      <div id="tb-list"></div>
+      <div id="tb-empty" class="empty-state">No reports defined. Click <strong>＋ Add report</strong> above to create one.</div>
     </div></div>
   </div>
 
@@ -686,6 +727,7 @@ function balRender(){
     list.innerHTML = items.map((c, i) => balRenderCheckCard(t, c, i, runs[c.id])).join('');
   });
   balRenderResults(cfg, runs);
+  tbRender();
 }
 
 function balFormatTs(ts){
@@ -844,6 +886,11 @@ function balFieldGrid(fields, type, idx){
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────
 function balAddCheck(){
+  // The header button is shared across all tabs. On the Trial Balance tab
+  // it adds a TB report (different storage key and shape) rather than a
+  // check; on Results we don't know which check tab the user wants, so
+  // default to debits-credits.
+  if (balActiveTab === 'trial-balance') { tbAddReport(); return; }
   const cfg = balLoadCfg();
   const t = balActiveTab === 'results' ? 'debits-credits' : balActiveTab;
   const id = 'bal_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1003,6 +1050,9 @@ async function balRunOne(type, idx){
 }
 
 async function balRunAll(){
+  // TB tab has its own runner — TB reports produce downloadable artifacts
+  // rather than pass/fail flags, so they don't belong in the Results tab.
+  if (balActiveTab === 'trial-balance') { await tbRunAll(); return; }
   const cfg = balLoadCfg();
   const types = ['debits-credits', 'control-totals', 'gl-balancing'];
   let count = 0;
@@ -1055,6 +1105,613 @@ function balClearResults(){
   if (!confirm('Clear all run results? Check definitions stay.')) return;
   balSaveRuns({});
   balRender();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TRIAL BALANCE
+//
+// Per-account trial balance with side-by-side source vs target and a
+// variance column. Each report's config + last run are persisted under
+// dedicated keys so they don't bleed into the check-tab data shapes.
+//
+// Per-side source modes:
+//   'view'    — SELECT period, account, SUM(balance) FROM <view> [WHERE...]
+//   'journal' — derive from a journal table:
+//                  balance method 'debit-credit' → SUM(debit)-SUM(credit)
+//                  balance method 'signed'       → SUM(amount)
+//
+// Period filter modes (applies to both sides identically):
+//   'all'    — no period predicate
+//   'single' — period_col = '<value>'
+//   'range'  — period_col BETWEEN '<from>' AND '<to>'
+//
+// Results merging: outer-join on (period, account) so accounts present
+// only on one side still appear with NULLs on the other. Variance is
+// (source - target) with NULL preserved when either side missing.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const TB_KEY_REPORTS = 'cygenix_balancing_tb_reports';
+const TB_KEY_RUNS    = 'cygenix_balancing_tb_runs';
+
+function tbLoadReports(){
+  try {
+    const raw = localStorage.getItem(TB_KEY_REPORTS);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+function tbSaveReports(arr){
+  localStorage.setItem(TB_KEY_REPORTS, JSON.stringify(arr));
+  const ind = $('bal-save-indicator');
+  if (ind) {
+    ind.style.display = 'inline';
+    clearTimeout(window._balSaveTimer);
+    window._balSaveTimer = setTimeout(() => { ind.style.display = 'none'; }, 1500);
+  }
+}
+function tbLoadRuns(){
+  try { return JSON.parse(localStorage.getItem(TB_KEY_RUNS) || '{}'); }
+  catch { return {}; }
+}
+function tbSaveRuns(r){ localStorage.setItem(TB_KEY_RUNS, JSON.stringify(r)); }
+
+// ── CRUD ─────────────────────────────────────────────────────────────────────
+function tbAddReport(){
+  const reports = tbLoadReports();
+  const id = 'tb_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  // Sensible defaults: view mode both sides, no period filter, debit/credit
+  // balance derivation if the user switches to journal mode later.
+  reports.push({
+    id: id,
+    name: 'New trial balance',
+    src: { mode: 'view', view: '', table: '', periodCol: 'period', accountCol: 'account', balanceCol: 'balance', debitCol: 'debit', creditCol: 'credit', amountCol: 'amount', balanceMethod: 'debit-credit', where: '' },
+    tgt: { mode: 'view', view: '', table: '', periodCol: 'period', accountCol: 'account', balanceCol: 'balance', debitCol: 'debit', creditCol: 'credit', amountCol: 'amount', balanceMethod: 'debit-credit', where: '' },
+    period: { mode: 'all', single: '', from: '', to: '' }
+  });
+  tbSaveReports(reports);
+  tbRender();
+}
+function tbRemove(idx){
+  if (!confirm('Delete this trial balance report?')) return;
+  const reports = tbLoadReports();
+  const removed = reports.splice(idx, 1)[0];
+  tbSaveReports(reports);
+  if (removed && removed.id) {
+    const runs = tbLoadRuns();
+    delete runs[removed.id];
+    tbSaveRuns(runs);
+  }
+  tbRender();
+}
+function tbUpdate(idx, path, value){
+  // path is a dotted reference like 'src.mode' or 'period.from'.
+  const reports = tbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  const parts = path.split('.');
+  let target = r;
+  for (let i = 0; i < parts.length - 1; i++) {
+    target = target[parts[i]] = target[parts[i]] || {};
+  }
+  target[parts[parts.length - 1]] = value;
+  tbSaveReports(reports);
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function tbRender(){
+  const list  = $('tb-list');
+  const empty = $('tb-empty');
+  if (!list || !empty) return;
+  const reports = tbLoadReports();
+  const runs    = tbLoadRuns();
+  empty.style.display = reports.length ? 'none' : 'block';
+  list.innerHTML = reports.map((r, i) => tbRenderReportCard(r, i, runs[r.id])).join('');
+}
+
+// One card per report. Re-uses the picker system from balFieldGrid by
+// hand-emitting the same data-pick-* attribute pattern.
+function tbRenderReportCard(r, idx, run){
+  const lastRunStr = run && run.ts
+    ? '<span class="run-status idle">Last run · ' + escapeHtml(balFormatTs(run.ts)) + '</span>'
+    : '<span class="run-status idle">Not yet run</span>';
+
+  const downloadAvailable = run && Array.isArray(run.rows) && run.rows.length > 0;
+
+  // Header — name, last run timestamp, action buttons. Download buttons
+  // are disabled until a run exists.
+  const head = ''
+    + '<div class="check-head">'
+    + '  <input type="text" class="check-name" value="' + escapeHtml(r.name || '') + '" placeholder="Report name" '
+    + '         oninput="tbUpdate(' + idx + ',\'name\',this.value)">'
+    + '  ' + lastRunStr
+    + '  <button class="btn btn-ghost btn-sm" onclick="tbRun(' + idx + ')">▶ Run</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="tbDownload(' + idx + ',\'csv\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ CSV</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="tbDownload(' + idx + ',\'xlsx\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ Excel</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="tbRemove(' + idx + ')" style="color:var(--red)">✕</button>'
+    + '</div>';
+
+  // Period filter — single row before the per-side configs.
+  const periodFields = tbRenderPeriodFields(r, idx);
+
+  // Per-side configs — side-by-side. Each side has its own mode toggle
+  // (view vs journal) and a different field set.
+  const sourceFields = tbRenderSideFields('src', r.src || {}, idx, srcSchema);
+  const targetFields = tbRenderSideFields('tgt', r.tgt || {}, idx, tgtSchema);
+
+  const body = ''
+    + '<div style="margin-bottom:0.75rem">' + periodFields + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:0.75rem">'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem">Source side</div>'
+    +     sourceFields
+    +   '</div>'
+    +   '<div>'
+    +     '<div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem">Target side</div>'
+    +     targetFields
+    +   '</div>'
+    + '</div>';
+
+  // Inline preview if a run exists.
+  let preview = '';
+  if (run && run.rows) {
+    preview = tbRenderPreview(run);
+  } else if (run && run.error) {
+    preview = '<div class="check-detail" style="color:var(--red)">' + escapeHtml(run.error) + '</div>';
+  }
+
+  return '<div class="check-card">' + head + body + preview + '</div>';
+}
+
+function tbRenderPeriodFields(r, idx){
+  const p = r.period || { mode: 'all' };
+  const modeSelect = '<select onchange="tbUpdate(' + idx + ',\'period.mode\',this.value); tbRender()">'
+    + ['all','single','range'].map(m =>
+        '<option value="' + m + '"' + (p.mode === m ? ' selected' : '') + '>' + (m === 'all' ? 'All periods' : m === 'single' ? 'Single period' : 'Period range') + '</option>'
+      ).join('')
+    + '</select>';
+
+  // Field shape changes by mode. Single shows one input, range shows from/to,
+  // 'all' shows nothing (just the mode selector).
+  let extra = '';
+  if (p.mode === 'single') {
+    extra = '<div class="field-cell">'
+      + '<label>Period</label>'
+      + '<input type="text" value="' + escapeHtml(p.single || '') + '" placeholder="e.g. 202604" '
+      + 'oninput="tbUpdate(' + idx + ',\'period.single\',this.value)">'
+      + '</div>';
+  } else if (p.mode === 'range') {
+    extra = ''
+      + '<div class="field-cell">'
+      +   '<label>From</label>'
+      +   '<input type="text" value="' + escapeHtml(p.from || '') + '" placeholder="202601" '
+      +   'oninput="tbUpdate(' + idx + ',\'period.from\',this.value)">'
+      + '</div>'
+      + '<div class="field-cell">'
+      +   '<label>To</label>'
+      +   '<input type="text" value="' + escapeHtml(p.to || '') + '" placeholder="202612" '
+      +   'oninput="tbUpdate(' + idx + ',\'period.to\',this.value)">'
+      + '</div>';
+  }
+
+  return '<div class="field-grid" style="grid-template-columns:repeat(3, 1fr)">'
+    + '<div class="field-cell">'
+    +   '<label>Period filter</label>'
+    +   modeSelect
+    + '</div>'
+    + extra
+    + '</div>';
+}
+
+function tbRenderSideFields(side, s, idx, sch){
+  const sideShort = side; // 'src' | 'tgt'
+  const ready = sch.loaded;
+  const mode = s.mode || 'view';
+
+  // Mode selector — 'view' or 'journal'. Switches the field set rendered below.
+  const modeSelect = '<select onchange="tbUpdate(' + idx + ',\'' + side + '.mode\',this.value); tbRender()">'
+    + [['view','Trial-balance view/table'],['journal','Journal table']].map(([v,l]) =>
+        '<option value="' + v + '"' + (mode === v ? ' selected' : '') + '>' + l + '</option>'
+      ).join('')
+    + '</select>';
+
+  // The picker input markup — same data-pick-* attributes as balFieldGrid uses,
+  // so the global pickerOpen/Filter/Select handlers Just Work.
+  function pickerInput(key, value, kind, depTableInputId){
+    const inputId = 'tb-' + idx + '-' + side + '-' + key;
+    const updatePath = side + '.' + key;
+    const disAttr = !ready ? ' disabled' : '';
+    return '<div class="search-wrap">'
+      + '<input id="' + inputId + '" type="text" class="picker-input"'
+      +   ' data-pick-kind="' + kind + '"'
+      +   ' data-pick-side="' + sideShort + '"'
+      +   (depTableInputId ? ' data-pick-table="' + depTableInputId + '"' : '')
+      +   ' data-pick-update="tb:' + idx + ':' + updatePath + '"'
+      +   ' value="' + escapeHtml(String(value || '')) + '"'
+      +   ' placeholder="' + (ready ? 'Search…' : 'Loading schema…') + '"'
+      +   ' autocomplete="off"' + disAttr
+      +   ' onfocus="pickerOpen(this)"'
+      +   ' oninput="tbUpdate(' + idx + ',\'' + updatePath + '\',this.value); pickerFilter(this)">'
+      + '<div class="search-drop"></div>'
+      + '</div>';
+  }
+
+  function plainInput(key, value, placeholder){
+    const updatePath = side + '.' + key;
+    return '<input type="text" value="' + escapeHtml(String(value || '')) + '"'
+      + ' placeholder="' + escapeHtml(placeholder) + '"'
+      + ' oninput="tbUpdate(' + idx + ',\'' + updatePath + '\',this.value)">';
+  }
+
+  function methodSelect(key, value){
+    const updatePath = side + '.' + key;
+    return '<select onchange="tbUpdate(' + idx + ',\'' + updatePath + '\',this.value); tbRender()">'
+      + [['debit-credit','SUM(debit) − SUM(credit)'],['signed','SUM(amount) (signed)']].map(([v,l]) =>
+          '<option value="' + v + '"' + (value === v ? ' selected' : '') + '>' + l + '</option>'
+        ).join('')
+      + '</select>';
+  }
+
+  let fields = '';
+  if (mode === 'view') {
+    // View mode: pick a view/table that already has period+account+balance shape.
+    const tableInputId = 'tb-' + idx + '-' + side + '-view';
+    fields = ''
+      + '<div class="field-cell"><label>Source mode</label>' + modeSelect + '</div>'
+      + '<div class="field-cell"><label>TB view/table</label>' + pickerInput('view', s.view, 'tables') + '</div>'
+      + '<div class="field-cell"><label>Period column</label>' + pickerInput('periodCol', s.periodCol || 'period', 'columns', tableInputId) + '</div>'
+      + '<div class="field-cell"><label>Account column</label>' + pickerInput('accountCol', s.accountCol || 'account', 'columns', tableInputId) + '</div>'
+      + '<div class="field-cell"><label>Balance column</label>' + pickerInput('balanceCol', s.balanceCol || 'balance', 'columns', tableInputId) + '</div>'
+      + '<div class="field-cell"><label>Where (optional)</label>' + plainInput('where', s.where, 'company_code = \'GB\'') + '</div>';
+  } else {
+    // Journal mode: pick a journal table, choose how to derive the balance
+    // (debit/credit pair vs single signed amount column). Either way the
+    // user picks period+account columns; the method controls which other
+    // column(s) to sum.
+    const tableInputId = 'tb-' + idx + '-' + side + '-table';
+    fields = ''
+      + '<div class="field-cell"><label>Source mode</label>' + modeSelect + '</div>'
+      + '<div class="field-cell"><label>Journal table</label>' + pickerInput('table', s.table, 'tables') + '</div>'
+      + '<div class="field-cell"><label>Period column</label>' + pickerInput('periodCol', s.periodCol || 'period', 'columns', tableInputId) + '</div>'
+      + '<div class="field-cell"><label>Account column</label>' + pickerInput('accountCol', s.accountCol || 'account', 'columns', tableInputId) + '</div>'
+      + '<div class="field-cell" style="grid-column:1/-1"><label>Balance method</label>' + methodSelect('balanceMethod', s.balanceMethod || 'debit-credit') + '</div>';
+    if ((s.balanceMethod || 'debit-credit') === 'debit-credit') {
+      fields += ''
+        + '<div class="field-cell"><label>Debit column</label>' + pickerInput('debitCol', s.debitCol || 'debit', 'columns', tableInputId) + '</div>'
+        + '<div class="field-cell"><label>Credit column</label>' + pickerInput('creditCol', s.creditCol || 'credit', 'columns', tableInputId) + '</div>';
+    } else {
+      fields += '<div class="field-cell"><label>Amount column (signed)</label>' + pickerInput('amountCol', s.amountCol || 'amount', 'columns', tableInputId) + '</div>';
+    }
+    fields += '<div class="field-cell" style="grid-column:1/-1"><label>Where (optional)</label>' + plainInput('where', s.where, 'company_code = \'GB\'') + '</div>';
+  }
+
+  return '<div class="field-grid">' + fields + '</div>';
+}
+
+// Render the inline preview (capped) and a row of summary stats.
+function tbRenderPreview(run){
+  const rows = run.rows || [];
+  const PREVIEW_LIMIT = 200;
+  const shown = rows.slice(0, PREVIEW_LIMIT);
+  const totals = run.totals || tbComputeTotals(rows);
+
+  const summary = ''
+    + '<div class="tb-summary">'
+    +   '<div class="tb-summary-item"><strong>' + rows.length.toLocaleString() + '</strong> account-rows</div>'
+    +   '<div class="tb-summary-item"><strong>' + (totals.srcTotal || 0).toLocaleString(undefined,{maximumFractionDigits:2}) + '</strong> source total</div>'
+    +   '<div class="tb-summary-item"><strong>' + (totals.tgtTotal || 0).toLocaleString(undefined,{maximumFractionDigits:2}) + '</strong> target total</div>'
+    +   '<div class="tb-summary-item ' + (Math.abs(totals.varianceTotal || 0) < 0.01 ? 'ok' : 'bad') + '"><strong>'
+    +     (totals.varianceTotal || 0).toLocaleString(undefined,{maximumFractionDigits:2}) + '</strong> variance</div>'
+    +   (totals.mismatches > 0
+        ? '<div class="tb-summary-item warn"><strong>' + totals.mismatches.toLocaleString() + '</strong> mismatching account-rows</div>'
+        : '<div class="tb-summary-item ok"><strong>0</strong> mismatching account-rows</div>')
+    + '</div>';
+
+  const tableHtml = ''
+    + '<div class="tb-preview-wrap">'
+    +   '<table class="tb-preview"><thead><tr>'
+    +     '<th>Period</th><th>Account</th>'
+    +     '<th style="text-align:right">Source</th>'
+    +     '<th style="text-align:right">Target</th>'
+    +     '<th style="text-align:right">Variance</th>'
+    +   '</tr></thead><tbody>'
+    +   shown.map(r => {
+        const mismatch = r.variance == null || Math.abs(parseFloat(r.variance)) >= 0.01;
+        return '<tr' + (mismatch ? ' class="mismatch"' : '') + '>'
+          + '<td>' + escapeHtml(r.period == null ? '' : r.period) + '</td>'
+          + '<td>' + escapeHtml(r.account == null ? '' : r.account) + '</td>'
+          + '<td class="num">' + tbFmtNum(r.source) + '</td>'
+          + '<td class="num">' + tbFmtNum(r.target) + '</td>'
+          + '<td class="num var">' + tbFmtNum(r.variance) + '</td>'
+          + '</tr>';
+      }).join('')
+    +   '</tbody></table>'
+    + '</div>';
+
+  const overflow = rows.length > PREVIEW_LIMIT
+    ? '<div style="font-size:11px;color:var(--text3);margin-top:6px">Showing first ' + PREVIEW_LIMIT + ' of ' + rows.length.toLocaleString() + ' rows. Use the export buttons for the full set.</div>'
+    : '';
+
+  return summary + tableHtml + overflow;
+}
+
+function tbFmtNum(v){
+  if (v == null || v === '') return '';
+  const n = parseFloat(v);
+  if (!isFinite(n)) return escapeHtml(String(v));
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function tbComputeTotals(rows){
+  let srcTotal = 0, tgtTotal = 0, mismatches = 0;
+  for (const r of rows) {
+    const s = parseFloat(r.source);
+    const t = parseFloat(r.target);
+    if (isFinite(s)) srcTotal += s;
+    if (isFinite(t)) tgtTotal += t;
+    const v = r.variance == null ? null : parseFloat(r.variance);
+    if (v == null || Math.abs(v) >= 0.01) mismatches++;
+  }
+  return { srcTotal: srcTotal, tgtTotal: tgtTotal, varianceTotal: srcTotal - tgtTotal, mismatches: mismatches };
+}
+
+// ── SQL builders ─────────────────────────────────────────────────────────────
+// Both sides produce a result set with columns: period, account, balance.
+// The runner merges by (period, account).
+function tbSqlForSide(side, s, period){
+  const where = tbBuildWhereClause(s, period);
+  if ((s.mode || 'view') === 'view') {
+    if (!s.view) throw new Error((side === 'src' ? 'Source' : 'Target') + ' view/table is required.');
+    const periodCol  = s.periodCol  || 'period';
+    const accountCol = s.accountCol || 'account';
+    const balanceCol = s.balanceCol || 'balance';
+    return 'SELECT ' + periodCol + ' AS period, ' + accountCol + ' AS account, '
+         + 'SUM(' + balanceCol + ') AS balance '
+         + 'FROM ' + s.view + where
+         + ' GROUP BY ' + periodCol + ', ' + accountCol;
+  }
+  // journal mode
+  if (!s.table) throw new Error((side === 'src' ? 'Source' : 'Target') + ' journal table is required.');
+  const periodCol  = s.periodCol  || 'period';
+  const accountCol = s.accountCol || 'account';
+  let expr;
+  if ((s.balanceMethod || 'debit-credit') === 'debit-credit') {
+    const debitCol  = s.debitCol  || 'debit';
+    const creditCol = s.creditCol || 'credit';
+    expr = 'SUM(' + debitCol + ') - SUM(' + creditCol + ')';
+  } else {
+    const amountCol = s.amountCol || 'amount';
+    expr = 'SUM(' + amountCol + ')';
+  }
+  return 'SELECT ' + periodCol + ' AS period, ' + accountCol + ' AS account, '
+       + expr + ' AS balance '
+       + 'FROM ' + s.table + where
+       + ' GROUP BY ' + periodCol + ', ' + accountCol;
+}
+
+function tbBuildWhereClause(s, period){
+  const periodCol = s.periodCol || 'period';
+  const userWhere = (s.where || '').trim();
+  const periodPredicate = (() => {
+    if (!period || period.mode === 'all') return '';
+    if (period.mode === 'single') {
+      const v = (period.single || '').trim();
+      if (!v) return '';
+      return periodCol + " = '" + v.replace(/'/g, "''") + "'";
+    }
+    if (period.mode === 'range') {
+      const from = (period.from || '').trim();
+      const to   = (period.to   || '').trim();
+      if (!from && !to) return '';
+      if (from && to) return periodCol + " BETWEEN '" + from.replace(/'/g, "''") + "' AND '" + to.replace(/'/g, "''") + "'";
+      if (from)       return periodCol + " >= '" + from.replace(/'/g, "''") + "'";
+      return periodCol + " <= '" + to.replace(/'/g, "''") + "'";
+    }
+    return '';
+  })();
+  const parts = [periodPredicate, userWhere].filter(Boolean);
+  return parts.length ? ' WHERE ' + parts.map(p => '(' + p + ')').join(' AND ') : '';
+}
+
+// ── Run ──────────────────────────────────────────────────────────────────────
+async function tbRun(idx){
+  const reports = tbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  const runs = tbLoadRuns();
+  showStatus('Running ' + (r.name || 'trial balance') + '…', 'info');
+
+  // Build SQL + run both sides. We don't run them in parallel because the
+  // shared status bar would alternate; sequential keeps UX legible. If
+  // performance becomes a concern, switching to Promise.all is one line.
+  try {
+    const srcSql = tbSqlForSide('src', r.src || {}, r.period);
+    const tgtSql = tbSqlForSide('tgt', r.tgt || {}, r.period);
+    const srcRows = await balExec('source', srcSql);
+    const tgtRows = await balExec('target', tgtSql);
+
+    // Merge by (period, account). Outer-style: include accounts present
+    // on either side, with NULL on the missing side and NULL variance.
+    const key = (row) => String(row.period == null ? '' : row.period) + '|' + String(row.account == null ? '' : row.account);
+    const tMap = new Map(tgtRows.map(row => [key(row), parseFloat(row.balance == null ? 0 : row.balance) || 0]));
+    const merged = [];
+
+    for (const row of srcRows) {
+      const sBal = parseFloat(row.balance == null ? 0 : row.balance) || 0;
+      const k = key(row);
+      const tBal = tMap.has(k) ? tMap.get(k) : null;
+      merged.push({
+        period: row.period == null ? '' : row.period,
+        account: row.account == null ? '' : row.account,
+        source: sBal,
+        target: tBal,
+        variance: tBal == null ? null : sBal - tBal
+      });
+      tMap.delete(k);
+    }
+    // Anything left in tMap exists in target only
+    for (const [k, tBal] of tMap.entries()) {
+      const [period, account] = k.split('|');
+      merged.push({
+        period: period,
+        account: account,
+        source: null,
+        target: tBal,
+        variance: null
+      });
+    }
+
+    // Sort for stable presentation: by period, then account.
+    merged.sort((a, b) => {
+      const pa = String(a.period), pb = String(b.period);
+      if (pa !== pb) return pa.localeCompare(pb);
+      return String(a.account).localeCompare(String(b.account));
+    });
+
+    runs[r.id] = {
+      ts: Date.now(),
+      rows: merged,
+      totals: tbComputeTotals(merged),
+      srcSql: srcSql,
+      tgtSql: tgtSql
+    };
+    tbSaveRuns(runs);
+    showStatus('Trial balance complete · ' + merged.length.toLocaleString() + ' rows', 'ok');
+  } catch (e) {
+    runs[r.id] = { ts: Date.now(), rows: null, error: 'Error: ' + (e && e.message || String(e)) };
+    tbSaveRuns(runs);
+    showStatus('Error: ' + (e && e.message || e), 'err');
+  }
+  tbRender();
+}
+
+async function tbRunAll(){
+  const reports = tbLoadReports();
+  if (reports.length === 0) {
+    alert('No trial balance reports defined yet. Add one with the ＋ button.');
+    return;
+  }
+  for (let i = 0; i < reports.length; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    await tbRun(i);
+  }
+}
+
+// ── Download ─────────────────────────────────────────────────────────────────
+async function tbDownload(idx, fmt){
+  const reports = tbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  const runs = tbLoadRuns();
+  const run = runs[r.id];
+  if (!run || !Array.isArray(run.rows) || run.rows.length === 0) {
+    alert('Run the report first to generate downloadable data.');
+    return;
+  }
+  const safeName = (r.name || 'trial-balance').replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '') || 'trial-balance';
+  const ts = new Date(run.ts || Date.now()).toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const filename = safeName + '_' + ts;
+
+  if (fmt === 'csv') {
+    tbDownloadCsv(run.rows, filename);
+  } else if (fmt === 'xlsx') {
+    await tbDownloadXlsx(run.rows, filename, r);
+  }
+}
+
+function tbDownloadCsv(rows, filename){
+  const headers = ['period','account','source','target','variance'];
+  const csvEscape = (v) => {
+    if (v == null) return '';
+    const s = String(v);
+    // Wrap if it contains comma, quote, newline; double internal quotes.
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [headers.join(',')];
+  for (const r of rows) {
+    lines.push([r.period, r.account, r.source, r.target, r.variance].map(csvEscape).join(','));
+  }
+  // BOM so Excel detects UTF-8 if the user opens the CSV directly.
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  tbTriggerDownload(blob, filename + '.csv');
+}
+
+// SheetJS lazy loader. Same pattern as dashboard.html's import flow.
+function _loadSheetJS(){
+  return new Promise((resolve, reject) => {
+    if (window.XLSX) { resolve(window.XLSX); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error('XLSX did not initialise'));
+    s.onerror = () => reject(new Error('Failed to load XLSX library'));
+    document.head.appendChild(s);
+  });
+}
+
+async function tbDownloadXlsx(rows, filename, report){
+  let XLSX;
+  try {
+    showStatus('Preparing Excel export…', 'info');
+    XLSX = await _loadSheetJS();
+  } catch (e) {
+    showStatus('Could not load Excel library: ' + e.message + '. Falling back to CSV.', 'err');
+    tbDownloadCsv(rows, filename);
+    return;
+  }
+
+  // Build a worksheet from the rows array. Numeric columns stay numeric so
+  // Excel formats/sums them correctly.
+  const aoa = [['Period','Account','Source','Target','Variance']];
+  for (const r of rows) {
+    aoa.push([
+      r.period == null ? '' : r.period,
+      r.account == null ? '' : r.account,
+      r.source == null ? null : Number(r.source),
+      r.target == null ? null : Number(r.target),
+      r.variance == null ? null : Number(r.variance)
+    ]);
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // Column widths — tune for readability.
+  ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Trial Balance');
+
+  // Add a metadata sheet with the report config so the export is
+  // self-documenting (auditors love this).
+  if (report) {
+    const meta = [
+      ['Report name', report.name || ''],
+      ['Generated',   new Date().toISOString()],
+      ['Period mode', (report.period && report.period.mode) || 'all'],
+      ['Period value', report.period && report.period.mode === 'single' ? report.period.single : ''],
+      ['Period range', report.period && report.period.mode === 'range' ? ((report.period.from || '') + ' to ' + (report.period.to || '')) : ''],
+      [],
+      ['Source mode', (report.src && report.src.mode) || ''],
+      ['Source view/table', (report.src && (report.src.view || report.src.table)) || ''],
+      [],
+      ['Target mode', (report.tgt && report.tgt.mode) || ''],
+      ['Target view/table', (report.tgt && (report.tgt.view || report.tgt.table)) || '']
+    ];
+    const metaWs = XLSX.utils.aoa_to_sheet(meta);
+    metaWs['!cols'] = [{ wch: 22 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, metaWs, 'Report info');
+  }
+
+  XLSX.writeFile(wb, filename + '.xlsx');
+  showStatus('Excel export downloaded', 'ok');
+}
+
+function tbTriggerDownload(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revoke after a tick — some browsers race the click otherwise.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 </script>
 </body>
