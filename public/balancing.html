@@ -1140,8 +1140,14 @@ async function balExec(side, sql){
   // (matches object_mapping.html's DDL flow and dashboard.html's import probes).
   // Earlier this was 'query' which produced an "Unknown action" error.
   const data = await dbCall(conn, { action: 'execute', sql: sql });
+  // Result-shape resilience: db-connect.js returns SELECT rows under
+  // different field names depending on driver. The mssql node driver
+  // produces { recordset: [...] } natively; some wrappers normalise to
+  // { rows: [...] } or { data: [...] }; the response can also be a
+  // bare array. Trying all four covers everything dashboard.html and
+  // object_mapping.html access.
   if (Array.isArray(data)) return data;
-  return data.rows || data.data || [];
+  return data.recordset || data.rows || data.data || [];
 }
 
 async function balRunOne(type, idx){
@@ -2626,7 +2632,13 @@ function cbBuildSql(r){
     } else {
       expr = qualified;
     }
-    return s.alias ? expr + ' AS ' + s.alias : expr;
+    // Auto-alias aggregates without a user-supplied alias. SQL Server
+    // would otherwise return them as "(No column name)" — and if there
+    // are two unaliased aggregates, both keys collide in the result
+    // object, dropping one column from the inline preview and exports.
+    let alias = s.alias && s.alias.trim();
+    if (!alias && s.agg) alias = s.agg.toLowerCase() + '_' + s.col;
+    return alias ? expr + ' AS ' + alias : expr;
   });
 
   // FROM + JOINs
