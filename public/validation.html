@@ -187,9 +187,18 @@ select.form-input option{background:var(--bg3)}
       <div class="stat-box"><div class="stat-num" id="st-fail" style="color:var(--red)">0</div><div class="stat-lbl">Fail</div></div>
       <div class="stat-box"><div class="stat-num" id="st-err" style="color:var(--amber)">0</div><div class="stat-lbl">Error</div></div>
       <div class="stat-box"><div class="stat-num" id="st-pend" style="color:var(--text3)">0</div><div class="stat-lbl">Pending</div></div>
-      <div style="margin-left:auto;min-width:180px" id="prog-wrap" style="display:none">
-        <div style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="prog-label"></div>
-        <div class="prog-outer"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+
+      <!-- Right side — progress during a run, export buttons at rest -->
+      <div style="margin-left:auto;display:flex;gap:0.5rem;align-items:center">
+        <div id="prog-wrap" style="display:none;min-width:180px">
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="prog-label"></div>
+          <div class="prog-outer"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+        </div>
+        <div id="export-actions" style="display:none;gap:0.4rem">
+          <span style="font-size:11px;color:var(--text3);align-self:center;margin-right:0.25rem">Export:</span>
+          <button class="btn btn-ghost btn-sm" onclick="exportCsv()" title="Download a CSV summary of every script's pass/fail status">📄 CSV</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportExcel()" title="Download an Excel workbook with summary + one sheet per failed script">📊 Excel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -929,7 +938,12 @@ function updateStats(){
   $('st-err').textContent   = s.filter(x=>x.status==='error').length;
   $('st-pend').textContent  = s.filter(x=>x.status==='pending').length;
   const ran = s.filter(x=>x.status!=='pending'&&x.status!=='running');
-  if($('export-btn')) $('export-btn').style.display = ran.length?'inline-flex':'none';
+  // Show/hide BOTH export entry points: the topbar one (legacy, harder to
+  // notice) and the new pair on the stats bar (CSV + Excel). The stats-bar
+  // pair is the recommended path — it sits right next to the pass/fail
+  // counts the user just read after a run.
+  if($('export-btn'))     $('export-btn').style.display     = ran.length ? 'inline-flex' : 'none';
+  if($('export-actions')) $('export-actions').style.display = ran.length ? 'flex'        : 'none';
 }
 
 function toggleAll(checked){
@@ -1030,6 +1044,52 @@ function addLog(m){ const el=$('exec-log'); if(el){ el.textContent+=m+'\n'; el.s
 function clearLog(){ const el=$('exec-log'); if(el) el.textContent=''; }
 
 // ── Export ─────────────────────────────────────────────────────────────────────
+// ── Export ─────────────────────────────────────────────────────────────────────
+// Two formats:
+//   exportCsv   — single-file summary, one row per script. No library.
+//   exportExcel — workbook with summary sheet + one sheet per failed script
+//                 showing the failed result rows. Loads SheetJS lazily.
+// Both trigger only after at least one script has been run (gated by
+// updateStats which toggles #export-actions visibility).
+function exportCsv(){
+  if(!allScripts.length){ alert('No scripts to export.'); return; }
+  const now = new Date().toISOString().slice(0,10);
+  const src = getActiveSource();
+  const sourceLabel = src ? src.label : '?';
+
+  // RFC 4180-ish escaping: wrap any cell containing a comma, quote, or
+  // newline in double-quotes, and double up any internal quotes.
+  const esc = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const row = arr => arr.map(esc).join(',');
+
+  const lines = [];
+  lines.push('Cygenix — Data Validation Report');
+  lines.push('Source,' + esc(sourceLabel));
+  lines.push('Date,' + now);
+  lines.push('');  // blank separator
+  lines.push(row(['#','Script name','Status','Rows found','Error']));
+  allScripts.forEach((s,i) => {
+    lines.push(row([i+1, s.name, s.status, s.rowsFound||0, s.error||'']));
+  });
+
+  // Prefix BOM so Excel auto-detects UTF-8 (otherwise non-ASCII chars in
+  // names/errors show up as mojibake when opened in Excel).
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  // Filename includes the source label so Source/Staging/Production CSVs
+  // don't collide in Downloads. Sanitise to keep it filesystem-safe.
+  const safeLabel = String(sourceLabel).replace(/[^a-z0-9_\-]+/gi,'_').slice(0,40) || 'validation';
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cygenix_validation_'+safeLabel+'_'+now+'.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 function exportExcel(){
   if(!window.XLSX){
     const sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
@@ -1039,7 +1099,9 @@ function exportExcel(){
 function doExport(){
   const wb=XLSX.utils.book_new();
   const now=new Date().toISOString().slice(0,10);
-  const summary=[['Cygenix — Data Validation Report'],['Date',now],[],
+  const src = getActiveSource();
+  const sourceLabel = src ? src.label : '?';
+  const summary=[['Cygenix — Data Validation Report'],['Source',sourceLabel],['Date',now],[],
     ['#','Source table','Script name','Status','Rows found','Error']
   ].concat(allScripts.map((s,i)=>{
     const src=validationSources.find(v=>v.id===s.srcId)||{label:'?'};
@@ -1058,7 +1120,10 @@ function doExport(){
     const ws2=XLSX.utils.aoa_to_sheet(data);
     XLSX.utils.book_append_sheet(wb,ws2,(n+++'. '+s.name).slice(0,31));
   });
-  XLSX.writeFile(wb,'cygenix_validation_'+now+'.xlsx');
+  // Filename includes the source label so exports from different sources
+  // don't collide. Sanitise to keep it filesystem-safe across OS.
+  const safeLabel = String(sourceLabel).replace(/[^a-z0-9_\-]+/gi,'_').slice(0,40) || 'validation';
+  XLSX.writeFile(wb,'cygenix_validation_'+safeLabel+'_'+now+'.xlsx');
 }
 
 // ── Close modal on outside click ───────────────────────────────────────────────
