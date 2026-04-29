@@ -356,6 +356,9 @@ function getActiveSource(){
 
 // Load scripts for a source by running SELECT * on its underlying table.
 // Pure on-demand — never automatic. Result lives in memory only.
+// Enforces "one source loaded at a time": loading this source drops scripts
+// from any other source. Keeps memory bounded and means the Scripts panel
+// below the cards always corresponds to one specific source unambiguously.
 async function loadSourceScripts(srcId){
   const src = validationSources.find(s => s.id === srcId);
   if(!src){ alert('Source not found'); return; }
@@ -384,6 +387,20 @@ async function loadSourceScripts(srcId){
     })).filter(s => s.sql.trim());
 
     src.loaded = true;
+
+    // Drop scripts from every OTHER source so memory stays bounded and
+    // the Scripts panel below corresponds to exactly one source.
+    validationSources.forEach(s => {
+      if (s.id !== srcId && s.loaded) {
+        s.scripts = [];
+        s.loaded  = false;
+      }
+    });
+
+    // This source is now the active one
+    activeSourceId = srcId;
+    saveActiveSource();
+
     renderSources();
     rebuildScriptList();
   }catch(e){
@@ -759,7 +776,7 @@ async function saveSource(){
   closeModal();
 }
 
-// ── Render sources (dropdown selector + active card) ──────────────────────────
+// ── Render sources (stacked cards, one loaded at a time) ──────────────────────
 function renderSources(){
   const empty = $('sources-empty');
   const list  = $('sources-list');
@@ -771,61 +788,47 @@ function renderSources(){
   }
   empty.style.display='none';
 
-  // Make sure activeSourceId points to something that exists. If not (e.g.
-  // it was deleted on another device, or we just imported a single source),
-  // fall back to the first source.
-  if (!validationSources.some(s => s.id === activeSourceId)) {
-    activeSourceId = validationSources[0].id;
-    saveActiveSource();
-  }
+  list.innerHTML = validationSources.map(src => {
+    const isActive = src.id === activeSourceId && src.loaded;
+    const total = src.scripts.length;
+    const pass  = src.scripts.filter(s=>s.status==='pass').length;
+    const fail  = src.scripts.filter(s=>s.status==='fail').length;
+    const err   = src.scripts.filter(s=>s.status==='error').length;
+    const pend  = src.scripts.filter(s=>s.status==='pending').length;
 
-  const src = getActiveSource();
-  if(!src){ list.innerHTML=''; return; }
+    // Status pills shown only after Load. The "Active" pill is the visual
+    // anchor for the Scripts panel below — the user always knows which
+    // source's results they're seeing because only one is "Active" at a time.
+    const statusPills = src.loaded ? `
+      <span class="badge" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.3)">● Active</span>
+      <span class="tag">${total} scripts</span>
+      ${pass?`<span class="badge badge-pass">${pass} pass</span>`:''}
+      ${fail?`<span class="badge badge-fail">${fail} fail</span>`:''}
+      ${err?`<span class="badge badge-err">${err} error</span>`:''}
+      ${pend&&pend<total?`<span class="badge badge-pend">${pend} pending</span>`:''}
+    ` : `<span class="tag" style="color:var(--text3)">Not loaded</span>`;
 
-  const total = src.scripts.length;
-  const pass  = src.scripts.filter(s=>s.status==='pass').length;
-  const fail  = src.scripts.filter(s=>s.status==='fail').length;
-  const err   = src.scripts.filter(s=>s.status==='error').length;
-  const pend  = src.scripts.filter(s=>s.status==='pending').length;
+    const loadLabel = src.loaded ? '⟲ Reload' : '⟲ Load scripts';
+    // Run is only enabled on the active (loaded) card. Loading any other
+    // card drops this one's scripts, so a non-active card can't be run.
+    const runDisabled = !src.loaded || total === 0;
+    const runHint = !src.loaded ? 'title="Click Load scripts first"' : '';
 
-  // Dropdown options — show "Display name — schema.table" so users can
-  // distinguish multiple sources when their friendly labels are short.
-  const dropOpts = validationSources.map(s => {
-    const subtitle = s.tableName ? ' — ' + s.tableName : '';
-    return `<option value="${esc(s.id)}"${s.id===activeSourceId?' selected':''}>${esc(s.label + subtitle)}</option>`;
-  }).join('');
+    // Subtle border/background change when active so the user can see at
+    // a glance which card the Scripts panel below corresponds to.
+    const cardStyle = isActive
+      ? 'border:0.5px solid var(--accent);box-shadow:0 0 0 1px var(--accent-glow)'
+      : '';
 
-  // Status pills shown on the card — only after Load
-  const statusPills = src.loaded ? `
-    <span class="tag">${total} scripts</span>
-    ${pass?`<span class="badge badge-pass">${pass} pass</span>`:''}
-    ${fail?`<span class="badge badge-fail">${fail} fail</span>`:''}
-    ${err?`<span class="badge badge-err">${err} error</span>`:''}
-    ${pend&&pend<total?`<span class="badge badge-pend">${pend} pending</span>`:''}
-  ` : `<span class="tag" style="color:var(--text3)">Not loaded</span>`;
-
-  // Action buttons: Load is always visible (acts as Reload when already
-  // loaded). Run is only enabled when scripts are in memory.
-  const loadLabel = src.loaded ? '⟲ Reload' : '⟲ Load scripts';
-  const runDisabled = !src.loaded || total === 0;
-  const runHint = !src.loaded ? 'title="Click Load scripts first"' : '';
-
-  list.innerHTML = `
-    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap">
-      <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Active source</label>
-      <select id="src-picker" class="form-input" style="min-width:240px;max-width:420px;font-size:12px" onchange="selectSource(this.value)">
-        ${dropOpts}
-      </select>
-      <span style="font-size:11px;color:var(--text3)">${validationSources.length} saved</span>
-    </div>
-    <div class="vsrc-card">
+    return `
+    <div class="vsrc-card" style="${cardStyle}">
       <div class="vsrc-head">
         <span class="vsrc-name">${esc(src.label)}</span>
         <span class="tag">${esc(src.tableName)}</span>
         <span class="tag">SQL: ${esc(src.sqlCol)}</span>
         ${statusPills}
         <div style="margin-left:auto;display:flex;gap:0.4rem">
-          <button class="btn btn-primary btn-sm" data-load-source="${esc(src.id)}" onclick="loadSourceScripts('${esc(src.id)}')">${loadLabel}</button>
+          <button class="btn ${isActive?'btn-ghost':'btn-primary'} btn-sm" data-load-source="${esc(src.id)}" onclick="loadSourceScripts('${esc(src.id)}')">${loadLabel}</button>
           <button class="btn btn-amber btn-sm" onclick="runSourceScripts('${esc(src.id)}')" ${runDisabled?'disabled':''} ${runHint}>▶ Run</button>
           <button class="btn btn-ghost btn-sm" onclick="openAddSource('${esc(src.id)}')">✏ Edit</button>
           <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="removeSource('${esc(src.id)}')">✕</button>
@@ -837,14 +840,16 @@ function renderSources(){
         &nbsp;·&nbsp; Run on: <span style="color:var(--text2)">${src.runOn==='src'?'Source DB':src.runOn==='tgt'?'Target DB':'Same connection'}</span>
       </div>
     </div>`;
+  }).join('');
 }
 
 function removeSource(id){
   if(!confirm('Remove this validation table?')) return;
   validationSources = validationSources.filter(s=>s.id!==id);
-  // If we just deleted the active one, pick a new one
+  // If we just deleted the active one, clear the pointer (the Scripts
+  // panel will hide because rebuildScriptList finds no loaded source).
   if (activeSourceId === id) {
-    activeSourceId = validationSources[0]?.id || null;
+    activeSourceId = null;
     saveActiveSource();
   }
   saveSources();
