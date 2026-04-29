@@ -1136,7 +1136,10 @@ function balSqlGlBalance(c, side){
 async function balExec(side, sql){
   const conn = side === 'source' ? srcConn : tgtConn;
   if (!conn) throw new Error(side + ' connection not configured');
-  const data = await dbCall(conn, { action: 'query', sql: sql });
+  // 'execute' is the action name db-connect.js exposes for arbitrary SQL
+  // (matches object_mapping.html's DDL flow and dashboard.html's import probes).
+  // Earlier this was 'query' which produced an "Unknown action" error.
+  const data = await dbCall(conn, { action: 'execute', sql: sql });
   if (Array.isArray(data)) return data;
   return data.rows || data.data || [];
 }
@@ -1932,8 +1935,13 @@ function cbLoadRuns(){
 function cbSaveRuns(r){ localStorage.setItem(CB_KEY_RUNS, JSON.stringify(r)); }
 
 // Get Anthropic API key. Mirrors dashboard.html's resolution order.
+// Defensive: storage access can throw in some sandboxed/incognito contexts,
+// and saved keys sometimes have trailing whitespace from copy-paste.
 function cbGetApiKey(){
-  return localStorage.getItem('cygenix_api_key') || sessionStorage.getItem('cygenix_api_key') || '';
+  let k = '';
+  try { k = localStorage.getItem('cygenix_api_key') || ''; } catch {}
+  if (!k) { try { k = sessionStorage.getItem('cygenix_api_key') || ''; } catch {} }
+  return (k || '').trim();
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -1951,6 +1959,7 @@ function cbAddReport(){
     where: '',
     orderBy: '',
     limit: 1000,
+    limitSyntax: 'none',
     useRaw: false,
     rawSql: '',
     aiHistory: [],
@@ -2498,6 +2507,27 @@ function cbToggleAgg(idx, groupIdx, agg){
 
 // ── Filter / order / limit section ───────────────────────────────────────────
 function cbRenderFilterSection(r, idx){
+  // Limit syntax: 'none' (no clause) | 'limit' (Postgres/MySQL/SQLite) | 'top' (SQL Server)
+  // Default for new reports is 'none' so the auto-built SQL doesn't fail
+  // on SQL Server. Existing reports without the field default to 'limit'
+  // for backwards-compat with my earlier build.
+  const limitSyntax = r.limitSyntax || (r.limit && r.limit > 0 ? 'limit' : 'none');
+  const syntaxOpts = [
+    ['none','None — no row cap'],
+    ['limit','LIMIT n  (Postgres / MySQL / SQLite)'],
+    ['top','TOP n  (SQL Server)']
+  ];
+  const syntaxSelect = '<select onchange="cbUpdate(' + idx + ',\'limitSyntax\',this.value); cbRender()">'
+    + syntaxOpts.map(([v,l]) =>
+        '<option value="' + v + '"' + (limitSyntax === v ? ' selected' : '') + '>' + escapeHtml(l) + '</option>'
+      ).join('')
+    + '</select>';
+
+  // The number input is only meaningful when a syntax is selected. We
+  // still render it (disabled when 'none') so toggling syntax doesn't
+  // shift layout.
+  const numDisabled = limitSyntax === 'none';
+
   return ''
     + '<div style="display:grid;grid-template-columns:1fr;gap:0.5rem">'
     +   '<div>'
@@ -2506,18 +2536,24 @@ function cbRenderFilterSection(r, idx){
     +       ' placeholder="period_id BETWEEN ' + "'" + '202601' + "'" + ' AND ' + "'" + '202612' + "'" + ' AND amount > 0"'
     +       ' oninput="cbUpdate(' + idx + ',\'where\',this.value)">' + escapeHtml(r.where || '') + '</textarea>'
     +   '</div>'
-    +   '<div style="display:grid;grid-template-columns:1fr 100px;gap:0.5rem">'
+    +   '<div style="display:grid;grid-template-columns:1fr;gap:0.5rem">'
     +     '<div>'
     +       '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Order by (optional)</label>'
     +       '<input type="text" value="' + escapeHtml(r.orderBy || '') + '" placeholder="period_id ASC, total DESC"'
-    +         ' style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-family:var(--mono);font-size:11px;color:var(--text);outline:none"'
+    +         ' style="width:100%"'
     +         ' oninput="cbUpdate(' + idx + ',\'orderBy\',this.value)">'
     +     '</div>'
-    +     '<div>'
-    +       '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Limit</label>'
-    +       '<input type="number" min="1" max="100000" value="' + escapeHtml(String(r.limit || 1000)) + '"'
-    +         ' style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-family:var(--mono);font-size:11px;color:var(--text);outline:none"'
-    +         ' oninput="cbUpdate(' + idx + ',\'limit\',parseInt(this.value,10) || 1000)">'
+    +     '<div style="display:grid;grid-template-columns:1fr 110px;gap:0.5rem;align-items:end">'
+    +       '<div>'
+    +         '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Row limit syntax</label>'
+    +         syntaxSelect
+    +       '</div>'
+    +       '<div>'
+    +         '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Limit n</label>'
+    +         '<input type="number" min="1" max="1000000" value="' + escapeHtml(String(r.limit || 1000)) + '"'
+    +           (numDisabled ? ' disabled' : '')
+    +           ' oninput="cbUpdate(' + idx + ',\'limit\',parseInt(this.value,10) || 1000)">'
+    +       '</div>'
     +     '</div>'
     +   '</div>'
     + '</div>';
@@ -2628,19 +2664,27 @@ function cbBuildSql(r){
     });
   }
 
+  // Limit syntax — the engine matters here. SQL Server uses TOP n placed
+  // right after SELECT; Postgres/MySQL/SQLite use LIMIT n at the end.
+  // We default to 'none' (let the user choose) so the auto-built SQL
+  // doesn't fail on SQL Server. Backwards-compat: legacy reports without
+  // a limitSyntax field default to 'limit' so users who relied on the
+  // old behaviour aren't surprised.
+  const limitSyntax = r.limitSyntax || (r.limit && r.limit > 0 ? 'limit' : 'none');
+  const limitN = (r.limit != null && r.limit > 0) ? r.limit : null;
+
   // Assemble
   const lines = [];
-  lines.push('SELECT ' + selectExprs.join(', '));
+  // TOP goes inside the SELECT clause itself, not as a trailing line.
+  const selectKeyword = (limitSyntax === 'top' && limitN) ? ('SELECT TOP ' + limitN) : 'SELECT';
+  lines.push(selectKeyword + ' ' + selectExprs.join(', '));
   lines.push('FROM ' + fromClause);
   joinClauses.forEach(jc => lines.push(jc));
   if ((r.where || '').trim()) lines.push('WHERE ' + r.where.trim());
   if (groupExprs.length) lines.push('GROUP BY ' + groupExprs.join(', '));
   if ((r.orderBy || '').trim()) lines.push('ORDER BY ' + r.orderBy.trim());
-  // Limit — dialect-aware would be nice but TOP/LIMIT/OFFSET differ across engines.
-  // Since /api/db is engine-agnostic at the wire level, we use a portable wrapper:
-  // most engines accept LIMIT; SQL Server doesn't. To keep things simple, append
-  // LIMIT and let the user override via raw SQL for SQL Server-only deployments.
-  if (r.limit && r.limit > 0) lines.push('LIMIT ' + r.limit);
+  if (limitSyntax === 'limit' && limitN) lines.push('LIMIT ' + limitN);
+  // 'none' means no clause at all — user opts in via raw-SQL escape hatch
   return lines.join('\n');
 }
 
@@ -2812,9 +2856,14 @@ function cbRenderAiSection(r, idx){
   const hasKey = !!cbGetApiKey();
   const history = r.aiHistory || [];
 
+  // Hint message — softer when the key isn't detected. We don't disable
+  // the textarea/Send button anymore, because the key sometimes hydrates
+  // late (cosmos-sync races the first render); the actual API call in
+  // cbAiSend re-checks at the moment of use and surfaces a clear error
+  // if it's genuinely missing.
   const keyHint = hasKey
     ? '<div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Using your Anthropic API key from Settings.</div>'
-    : '<div style="font-size:11px;color:var(--amber);margin-bottom:0.5rem">No Anthropic API key configured. Set one in Dashboard → Settings to enable AI Assist.</div>';
+    : '<div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">If AI Assist doesn\'t respond, set your Anthropic API key in <a href="/dashboard.html#project-settings" style="color:var(--accent);text-decoration:none">Dashboard → Settings</a>.</div>';
 
   const messages = history.length
     ? history.map(m => cbRenderAiMessage(m, idx)).join('')
@@ -2822,8 +2871,8 @@ function cbRenderAiSection(r, idx){
 
   const inputRow = ''
     + '<div class="cb-ai-input-row">'
-    +   '<textarea class="cb-ai-textarea" id="cb-ai-input-' + idx + '" placeholder="Ask for a report or refinement…"' + (hasKey ? '' : ' disabled') + '></textarea>'
-    +   '<button class="btn btn-purple btn-sm" onclick="cbAiSend(' + idx + ')"' + (hasKey ? '' : ' disabled') + '>Send</button>'
+    +   '<textarea class="cb-ai-textarea" id="cb-ai-input-' + idx + '" placeholder="Ask for a report or refinement…"></textarea>'
+    +   '<button class="btn btn-purple btn-sm" onclick="cbAiSend(' + idx + ')">Send</button>'
     +   (history.length ? '<button class="btn btn-ghost btn-sm" onclick="cbAiClear(' + idx + ')" title="Clear conversation">↺</button>' : '')
     + '</div>';
 
