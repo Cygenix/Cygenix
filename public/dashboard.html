@@ -937,6 +937,102 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         obs.observe(mount, { childList: true, subtree: true, characterData: true });
       }
     })();
+
+    // Inject "Balancing & Metrics" as a child item under the "Analysis"
+    // sub-menu in the shared sidebar without forking /cygenix-sidebar.js.
+    // Strategy mirrors renameInventoryMenuItem above:
+    //   1) wait for the sidebar to render synchronously (we're already
+    //      after its <script> tag, so DOM exists)
+    //   2) find the Analysis sub-menu container — we look for a known
+    //      sibling Analysis child (Data Insights or Validation, both
+    //      route via href to insights.html / validation.html) and walk up
+    //      to its parent .cyg-sub container
+    //   3) append a new <a> styled identically, with onclick that invokes
+    //      showView('balancing') and sets data-key so the sidebar's
+    //      active-state tracker can highlight it
+    //   4) MutationObserver re-injects on re-render (idempotent guard via
+    //      data-bal-injected attr so we don't add duplicates)
+    (function injectBalancingMetricsMenuItem() {
+      const KEY      = 'balancing';
+      const LABEL    = 'Balancing & Metrics';
+      const MARKER   = 'data-bal-injected';
+
+      // Inline icon — matches the stroke-based style used elsewhere in
+      // the sidebar. Scales icon (chart with a check) keeps the
+      // financial-balance metaphor without needing an emoji.
+      const ICON_SVG = '<svg viewBox="0 0 16 16" fill="none" style="width:14px;height:14px;flex-shrink:0">'
+        + '<path d="M8 2v12M3 5h10M4.5 5l-2 4a2.5 2.5 0 0 0 5 0l-2-4M11.5 5l-2 4a2.5 2.5 0 0 0 5 0l-2-4" '
+        + 'stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
+        + '</svg>';
+
+      function inject(root) {
+        if (!root) return;
+        // Already injected on this render? bail.
+        if (root.querySelector('[' + MARKER + ']')) return;
+
+        // Find any Analysis-group child to anchor on. Data Insights and
+        // Validation are the canonical children. Fallback: any element
+        // whose label text contains "Analysis" with a sibling .cyg-sub.
+        let anchor = root.querySelector('a[href*="insights.html"], a[href*="validation.html"]');
+        let subContainer = anchor ? anchor.parentElement : null;
+
+        // Fallback: locate the Analysis label and use its next .cyg-sub
+        if (!subContainer) {
+          const labels = root.querySelectorAll('.cyg-sub-label, [id^="cyg-lbl-"]');
+          for (const lbl of labels) {
+            if (/\bAnalysis\b/i.test(lbl.textContent || '')) {
+              const next = lbl.nextElementSibling;
+              if (next && next.classList.contains('cyg-sub')) {
+                subContainer = next;
+                break;
+              }
+            }
+          }
+        }
+        if (!subContainer) return; // sidebar not ready / structure changed
+
+        // Don't double-inject if a previous pass already added our item
+        // (works across MutationObserver re-fires).
+        if (subContainer.querySelector('[' + MARKER + ']')) return;
+        if (subContainer.querySelector('[data-key="' + KEY + '"]')) return;
+
+        // Build the new item to match how cygenix-sidebar.js renders
+        // children: <a class="cyg-nav-item" data-key="..." onclick="...">
+        const a = document.createElement('a');
+        a.className   = 'cyg-nav-item';
+        a.href        = 'javascript:void(0)';
+        a.setAttribute('data-key', KEY);
+        a.setAttribute(MARKER, '1');
+        a.style.color = '#a78bfa'; // matches Analysis-group accent
+        a.innerHTML   = ICON_SVG + ' ' + LABEL;
+        a.addEventListener('click', function (e) {
+          e.preventDefault();
+          if (typeof showView === 'function') showView(KEY);
+        });
+
+        subContainer.appendChild(a);
+
+        // Sync active highlight on initial render — if the URL is asking
+        // us to land on the balancing view, the sidebar's setActive
+        // hasn't fired yet, so flag this item directly.
+        if (window.location.hash === '#balancing' ||
+            sessionStorage.getItem('cyg_goto') === KEY) {
+          a.classList.add('active');
+        }
+      }
+
+      const mount = document.getElementById('cyg-sidebar-mount');
+      inject(mount);
+      if (mount && typeof MutationObserver === 'function') {
+        let pending = false;
+        const obs = new MutationObserver(() => {
+          if (pending) return;
+          pending = true;
+          setTimeout(() => { pending = false; inject(mount); }, 0);
+        });
+        obs.observe(mount, { childList: true, subtree: true });
+      }
+    })();
   </script>
 
 
@@ -2369,6 +2465,126 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div id="recon-settings-list"></div>
     </div>
 
+    <!-- BALANCING AND METRICS — financial reconciliation
+         Sits under Analysis in the sidebar (injected by IIFE below the
+         sidebar mount). Lets users define and run balance checks like
+         debits=credits, control totals, and GL balancing against the
+         source/target connections defined on the Connections page.
+         Configurations are persisted to localStorage under
+         `cygenix_balancing_metrics` and run via the existing /api/db
+         passthrough Azure Function. -->
+    <div id="view-balancing" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">⚖️ Balancing &amp; Metrics</div>
+          <div class="panel-sub">Define and run financial balance checks — debits = credits, control totals, and GL balancing — against source and target connections.</div>
+          <div style="margin-top:0.5rem;font-size:11px;color:var(--text3);display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <span style="color:var(--text2);font-weight:500">Checks:</span>
+            <span style="background:rgba(79,142,255,0.12);color:#6ea4ff;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">Debits&nbsp;=&nbsp;Credits</span>
+            <span style="background:rgba(45,212,191,0.12);color:#2dd4bf;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">Control&nbsp;Totals</span>
+            <span style="background:rgba(167,139,250,0.12);color:#a78bfa;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">GL&nbsp;Balancing</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.75rem;align-items:center">
+          <div id="bal-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</div>
+          <button class="btn btn-primary btn-sm" onclick="balAddCheck()">＋ Add check</button>
+          <button class="btn btn-ghost btn-sm" onclick="balRunAll()">▶ Run all</button>
+        </div>
+      </div>
+
+      <!-- Connection summary strip — read-only echo of what's set on the
+           Connections page. If nothing's configured we surface a CTA to go
+           there rather than silently 500 when the user hits Run. -->
+      <div id="bal-conn-strip" style="background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.75rem 1rem;margin-bottom:1.25rem;font-size:11.5px;color:var(--text2);display:flex;gap:1.25rem;flex-wrap:wrap;align-items:center">
+        <span style="color:var(--text3)">Loading connection state…</span>
+      </div>
+
+      <!-- Tab bar — three check types, plus a Results tab -->
+      <div class="cx-tabs" style="display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border)">
+        <button class="cx-tab cx-tab-active" data-bal-tab="debits-credits" onclick="balSwitchTab('debits-credits')">
+          ⚖️ Debits = Credits
+        </button>
+        <button class="cx-tab" data-bal-tab="control-totals" onclick="balSwitchTab('control-totals')">
+          Σ Control totals
+        </button>
+        <button class="cx-tab" data-bal-tab="gl-balancing" onclick="balSwitchTab('gl-balancing')">
+          📒 GL balancing
+        </button>
+        <button class="cx-tab" data-bal-tab="results" onclick="balSwitchTab('results')">
+          📊 Results
+        </button>
+      </div>
+
+      <!-- Tab: Debits = Credits ------------------------------------------------
+           Each row asserts SUM(debit_col) == SUM(credit_col) for a given
+           table, optionally filtered (WHERE clause) and grouped (e.g. by
+           batch_id, journal_id) so users can spot the offending posting
+           rather than just "the whole ledger is off". -->
+      <div id="bal-tab-debits-credits" class="bal-tab-pane">
+        <div class="panel" style="padding:1rem">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+            Verifies that for every row group (or the whole table), the sum of debits equals the sum of credits.
+            Use this on journal-entry tables, sub-ledgers, and any double-entry source.
+          </div>
+          <div id="bal-list-debits-credits"></div>
+          <div id="bal-empty-debits-credits" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
+            No checks defined. Click <strong>＋ Add check</strong> above to create one.
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Control totals --------------------------------------------------
+           Compares an aggregate (SUM/COUNT/MIN/MAX) on a source column to
+           the same aggregate on a target column. Tolerance is supported
+           because FX/rounding deltas are normal across systems. -->
+      <div id="bal-tab-control-totals" class="bal-tab-pane" style="display:none">
+        <div class="panel" style="padding:1rem">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+            Compares an aggregate (SUM, COUNT, MIN, MAX) between source and target. Use a tolerance for currency rounding or FX drift.
+          </div>
+          <div id="bal-list-control-totals"></div>
+          <div id="bal-empty-control-totals" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
+            No checks defined. Click <strong>＋ Add check</strong> above to create one.
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: GL balancing ----------------------------------------------------
+           Asserts that account balances roll up correctly. The query model
+           is "for each (period, account), source_balance == target_balance"
+           — produced by joining a trial-balance view on both sides. -->
+      <div id="bal-tab-gl-balancing" class="bal-tab-pane" style="display:none">
+        <div class="panel" style="padding:1rem">
+          <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+            Compares per-account balances between source and target across one or more periods. Mismatches are reported per (period, account).
+          </div>
+          <div id="bal-list-gl-balancing"></div>
+          <div id="bal-empty-gl-balancing" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
+            No checks defined. Click <strong>＋ Add check</strong> above to create one.
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Results ---------------------------------------------------------
+           Renders the most recent run for each check. Persisted under
+           `cygenix_balancing_runs` so the user gets context on next load
+           without re-running. -->
+      <div id="bal-tab-results" class="bal-tab-pane" style="display:none">
+        <div class="panel" style="padding:1rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+            <div style="font-size:12px;color:var(--text3);line-height:1.6">
+              Last result per check. Pass = balanced within tolerance. Fail = variance &gt; tolerance.
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="balClearResults()" style="color:var(--red)">✕ Clear results</button>
+          </div>
+          <div id="bal-results-list"></div>
+          <div id="bal-results-empty" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
+            No runs yet. Define checks on the other tabs and click <strong>▶ Run all</strong>, or use the run button on an individual check.
+          </div>
+        </div>
+      </div>
+    </div>
+
 
 
 
@@ -2667,6 +2883,7 @@ function showView(v) {
   if (v === 'system-parameters') initSystemParametersView();
   if (v === 'report-settings')   renderReportSettings();
   if (v === 'task-agent')        ta_init();
+  if (v === 'balancing')         balInit();
 }
 
 function selectTarget(el, name) {
@@ -11115,6 +11332,446 @@ async function ta_openRunDetail(runId, scheduleId) {
 
 function ta_closeRunModal() {
   document.getElementById('ta-run-modal').classList.remove('open');
+}
+
+// ── BALANCING & METRICS ───────────────────────────────────────────────────────
+// Financial reconciliation module. Three check types:
+//   - debits-credits : SUM(debit) == SUM(credit) per row group
+//   - control-totals : aggregate(source) ≈ aggregate(target) within tolerance
+//   - gl-balancing   : per-(period, account) source vs target balance match
+// Persisted under cygenix_balancing_metrics; runs cached in cygenix_balancing_runs.
+// All SQL execution goes through the existing /api/db passthrough so the
+// Azure Function rules from CygenixConnections (source=direct, target=fn URL)
+// are inherited automatically.
+const BAL_KEY_CFG  = 'cygenix_balancing_metrics';
+const BAL_KEY_RUNS = 'cygenix_balancing_runs';
+
+function balLoadCfg() {
+  try {
+    const raw = localStorage.getItem(BAL_KEY_CFG);
+    const cfg = raw ? JSON.parse(raw) : {};
+    return {
+      'debits-credits': Array.isArray(cfg['debits-credits']) ? cfg['debits-credits'] : [],
+      'control-totals': Array.isArray(cfg['control-totals']) ? cfg['control-totals'] : [],
+      'gl-balancing':   Array.isArray(cfg['gl-balancing'])   ? cfg['gl-balancing']   : []
+    };
+  } catch { return { 'debits-credits':[], 'control-totals':[], 'gl-balancing':[] }; }
+}
+function balSaveCfg(cfg) {
+  localStorage.setItem(BAL_KEY_CFG, JSON.stringify(cfg));
+  const ind = document.getElementById('bal-save-indicator');
+  if (ind) {
+    ind.style.display = 'inline';
+    clearTimeout(window._balSaveTimer);
+    window._balSaveTimer = setTimeout(() => { ind.style.display = 'none'; }, 1500);
+  }
+}
+function balLoadRuns() {
+  try { return JSON.parse(localStorage.getItem(BAL_KEY_RUNS) || '{}'); }
+  catch { return {}; }
+}
+function balSaveRuns(runs) {
+  localStorage.setItem(BAL_KEY_RUNS, JSON.stringify(runs));
+}
+
+// Active tab state — kept in module scope so re-renders preserve which
+// pane the user was on without a full re-init.
+let balActiveTab = 'debits-credits';
+
+function balInit() {
+  // Refresh connection strip — surfaces whether source/target are wired,
+  // so a Run click doesn't fail with an opaque "no connection" error.
+  balRefreshConnStrip();
+  balRender();
+}
+
+function balRefreshConnStrip() {
+  const strip = document.getElementById('bal-conn-strip');
+  if (!strip) return;
+  let src = false, tgt = false;
+  try {
+    if (window.CygenixConnections && typeof CygenixConnections.get === 'function') {
+      const c = CygenixConnections.get() || {};
+      src = !!c.srcConnString;
+      tgt = !!(c.tgtFnUrl || c.tgtConnString);
+    }
+  } catch (e) { /* ignore */ }
+
+  const dot = (ok) => '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'
+                   + (ok ? 'var(--green)' : 'var(--red)') + ';margin-right:6px;vertical-align:middle"></span>';
+
+  strip.innerHTML =
+      '<span>' + dot(src) + '<strong>Source</strong> ' + (src ? 'connected' : 'not configured') + '</span>'
+    + '<span>' + dot(tgt) + '<strong>Target</strong> ' + (tgt ? 'connected' : 'not configured') + '</span>'
+    + (src && tgt
+        ? '<span style="margin-left:auto;color:var(--text3);font-size:11px">Checks will run against these connections.</span>'
+        : '<span style="margin-left:auto"><a href="javascript:void(0)" onclick="showView(\'connections\')" '
+          + 'style="color:var(--accent);font-size:11px;text-decoration:none">→ Configure connections</a></span>');
+}
+
+function balSwitchTab(tab) {
+  balActiveTab = tab;
+  document.querySelectorAll('[data-bal-tab]').forEach(btn => {
+    btn.classList.toggle('cx-tab-active', btn.getAttribute('data-bal-tab') === tab);
+  });
+  document.querySelectorAll('.bal-tab-pane').forEach(p => { p.style.display = 'none'; });
+  const pane = document.getElementById('bal-tab-' + tab);
+  if (pane) pane.style.display = 'block';
+  balRender();
+}
+
+function balRender() {
+  const cfg  = balLoadCfg();
+  const runs = balLoadRuns();
+  ['debits-credits', 'control-totals', 'gl-balancing'].forEach(t => {
+    const list  = document.getElementById('bal-list-' + t);
+    const empty = document.getElementById('bal-empty-' + t);
+    if (!list || !empty) return;
+    const items = cfg[t] || [];
+    empty.style.display = items.length ? 'none' : 'block';
+    list.innerHTML = items.map((c, i) => balRenderCheckCard(t, c, i, runs[c.id])).join('');
+  });
+  balRenderResults(cfg, runs);
+}
+
+function balRenderCheckCard(type, c, idx, run) {
+  // Common card wrapper. Each type renders its own field set inline so
+  // configuration is editable in place — no modal indirection.
+  const status = run
+    ? (run.pass
+        ? '<span style="color:var(--green);font-size:11px;font-family:var(--mono)">✓ PASS · ' + balFormatTs(run.ts) + '</span>'
+        : '<span style="color:var(--red);font-size:11px;font-family:var(--mono)">✕ FAIL · ' + balFormatTs(run.ts) + '</span>')
+    : '<span style="color:var(--text3);font-size:11px">Not yet run</span>';
+
+  const head = ''
+    + '<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">'
+    + '  <input type="text" value="' + escapeHtml(c.name || '') + '" placeholder="Check name" '
+    + '         oninput="balUpdate(\'' + type + '\',' + idx + ',\'name\',this.value)" '
+    + '         style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;'
+    + '                padding:0.45rem 0.7rem;font-size:13px;font-weight:500;color:var(--text);outline:none">'
+    + '  ' + status
+    + '  <button class="btn btn-ghost btn-sm" onclick="balRunOne(\'' + type + '\',' + idx + ')">▶ Run</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="balRemove(\'' + type + '\',' + idx + ')" '
+    + '          style="color:var(--red)">✕</button>'
+    + '</div>';
+
+  let body = '';
+  if (type === 'debits-credits') {
+    body = balFieldGrid([
+      { label: 'Side',         key: 'side',       value: c.side       || 'source', as: 'select', opts: ['source','target'] },
+      { label: 'Table',        key: 'table',      value: c.table      || '', placeholder: 'dbo.GL_Journal' },
+      { label: 'Debit column', key: 'debitCol',   value: c.debitCol   || '', placeholder: 'debit_amount' },
+      { label: 'Credit column',key: 'creditCol',  value: c.creditCol  || '', placeholder: 'credit_amount' },
+      { label: 'Group by (optional)', key: 'groupBy', value: c.groupBy || '', placeholder: 'batch_id, journal_id' },
+      { label: 'Where (optional)',    key: 'where',   value: c.where   || '', placeholder: 'period_id = 202604' }
+    ], type, idx);
+  } else if (type === 'control-totals') {
+    body = balFieldGrid([
+      { label: 'Aggregate',    key: 'agg',        value: c.agg        || 'SUM', as: 'select', opts: ['SUM','COUNT','MIN','MAX'] },
+      { label: 'Source table', key: 'srcTable',   value: c.srcTable   || '', placeholder: 'dbo.Invoices' },
+      { label: 'Source column',key: 'srcCol',     value: c.srcCol     || '', placeholder: 'amount' },
+      { label: 'Target table', key: 'tgtTable',   value: c.tgtTable   || '', placeholder: 'public.invoices' },
+      { label: 'Target column',key: 'tgtCol',     value: c.tgtCol     || '', placeholder: 'amount' },
+      { label: 'Tolerance',    key: 'tolerance',  value: c.tolerance != null ? c.tolerance : 0.01, placeholder: '0.01', type: 'number' },
+      { label: 'Where source (optional)', key: 'srcWhere', value: c.srcWhere || '', placeholder: '' },
+      { label: 'Where target (optional)', key: 'tgtWhere', value: c.tgtWhere || '', placeholder: '' }
+    ], type, idx);
+  } else if (type === 'gl-balancing') {
+    body = balFieldGrid([
+      { label: 'Source TB view', key: 'srcView', value: c.srcView || '', placeholder: 'dbo.vw_TrialBalance' },
+      { label: 'Target TB view', key: 'tgtView', value: c.tgtView || '', placeholder: 'public.vw_trial_balance' },
+      { label: 'Period column',  key: 'periodCol', value: c.periodCol || 'period', placeholder: 'period' },
+      { label: 'Account column', key: 'accountCol', value: c.accountCol || 'account', placeholder: 'account' },
+      { label: 'Balance column', key: 'balanceCol', value: c.balanceCol || 'balance', placeholder: 'balance' },
+      { label: 'Periods (optional)', key: 'periods', value: c.periods || '', placeholder: '202601,202602,202603' },
+      { label: 'Tolerance', key: 'tolerance', value: c.tolerance != null ? c.tolerance : 0.01, placeholder: '0.01', type: 'number' }
+    ], type, idx);
+  }
+
+  return '<div class="panel" style="padding:0.9rem 1rem;margin-bottom:0.75rem;background:var(--bg2)">'
+       + head + body
+       + (run && run.detail
+           ? '<div style="margin-top:0.6rem;font-size:11px;color:var(--text2);font-family:var(--mono);'
+             + 'background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;'
+             + 'max-height:120px;overflow:auto;white-space:pre-wrap">'
+             + escapeHtml(run.detail) + '</div>'
+           : '')
+       + '</div>';
+}
+
+function balFieldGrid(fields, type, idx) {
+  return '<div style="display:grid;grid-template-columns:repeat(2, 1fr);gap:0.55rem">'
+    + fields.map(f => {
+        const id = 'bal-' + type + '-' + idx + '-' + f.key;
+        let input;
+        if (f.as === 'select') {
+          input = '<select id="' + id + '" '
+                + 'onchange="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)" '
+                + 'style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;'
+                + 'padding:0.4rem 0.55rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none">'
+                + (f.opts || []).map(o =>
+                    '<option value="' + escapeHtml(o) + '"' + (o === f.value ? ' selected' : '') + '>' + escapeHtml(o) + '</option>'
+                  ).join('')
+                + '</select>';
+        } else {
+          input = '<input id="' + id + '" type="' + (f.type || 'text') + '" '
+                + 'value="' + escapeHtml(String(f.value)) + '" '
+                + 'placeholder="' + escapeHtml(f.placeholder || '') + '" '
+                + 'oninput="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)" '
+                + 'style="width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;'
+                + 'padding:0.4rem 0.55rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none">';
+        }
+        return '<div>'
+             + '<label style="display:block;font-size:10px;color:var(--text3);text-transform:uppercase;'
+             + 'letter-spacing:0.05em;margin-bottom:0.2rem">' + escapeHtml(f.label) + '</label>'
+             + input
+             + '</div>';
+      }).join('')
+    + '</div>';
+}
+
+function balAddCheck() {
+  const cfg = balLoadCfg();
+  const t = balActiveTab === 'results' ? 'debits-credits' : balActiveTab;
+  const id = 'bal_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+  const blank = { id: id, name: 'New ' + t.replace('-', ' ') + ' check' };
+  cfg[t].push(blank);
+  balSaveCfg(cfg);
+  // Switch to that tab so the user sees what they just created
+  if (balActiveTab === 'results') balSwitchTab(t);
+  else balRender();
+}
+function balRemove(type, idx) {
+  if (!confirm('Delete this check?')) return;
+  const cfg = balLoadCfg();
+  const removed = cfg[type].splice(idx, 1)[0];
+  balSaveCfg(cfg);
+  // Also drop its run record
+  if (removed && removed.id) {
+    const runs = balLoadRuns();
+    delete runs[removed.id];
+    balSaveRuns(runs);
+  }
+  balRender();
+}
+function balUpdate(type, idx, key, value) {
+  const cfg = balLoadCfg();
+  if (!cfg[type] || !cfg[type][idx]) return;
+  // Coerce numerics
+  if (key === 'tolerance') {
+    const n = parseFloat(value);
+    cfg[type][idx][key] = isFinite(n) ? n : 0;
+  } else {
+    cfg[type][idx][key] = value;
+  }
+  balSaveCfg(cfg);
+}
+
+// ── SQL builders ──────────────────────────────────────────────────────────────
+// These produce a single SELECT each. Kept conservative — no DDL, no DML —
+// because the /api/db Azure Function should already block writes but we
+// don't rely on that. Identifiers are NOT sanitised here (the user controls
+// their own connection strings, and these are config strings they typed),
+// but values are never interpolated from untrusted input.
+function balSqlDebitsCredits(c) {
+  if (!c.table || !c.debitCol || !c.creditCol) {
+    throw new Error('Table, debit column and credit column are required.');
+  }
+  const groupBy = (c.groupBy || '').trim();
+  const where   = (c.where   || '').trim();
+  const grpSel  = groupBy ? groupBy + ', ' : '';
+  const grpClause = groupBy ? ' GROUP BY ' + groupBy : '';
+  const wClause   = where ? ' WHERE ' + where : '';
+  return 'SELECT ' + grpSel
+       + 'SUM(' + c.debitCol + ') AS total_debit, '
+       + 'SUM(' + c.creditCol + ') AS total_credit, '
+       + 'SUM(' + c.debitCol + ') - SUM(' + c.creditCol + ') AS variance '
+       + 'FROM ' + c.table
+       + wClause + grpClause;
+}
+function balSqlControlTotal(c, side) {
+  const isSrc = side === 'source';
+  const tbl = isSrc ? c.srcTable : c.tgtTable;
+  const col = isSrc ? c.srcCol   : c.tgtCol;
+  const w   = (isSrc ? c.srcWhere : c.tgtWhere) || '';
+  if (!tbl || !col) throw new Error((isSrc ? 'Source' : 'Target') + ' table and column are required.');
+  const agg = (c.agg || 'SUM').toUpperCase();
+  const expr = agg === 'COUNT' ? 'COUNT(*)' : agg + '(' + col + ')';
+  return 'SELECT ' + expr + ' AS metric FROM ' + tbl + (w ? ' WHERE ' + w : '');
+}
+function balSqlGlBalance(c, side) {
+  const isSrc = side === 'source';
+  const view  = isSrc ? c.srcView : c.tgtView;
+  if (!view) throw new Error((isSrc ? 'Source' : 'Target') + ' trial-balance view is required.');
+  const period  = c.periodCol  || 'period';
+  const account = c.accountCol || 'account';
+  const balance = c.balanceCol || 'balance';
+  const periods = (c.periods || '').trim();
+  let where = '';
+  if (periods) {
+    // Comma-separated list; quote as strings (works for both numeric and
+    // YYYYMM string period IDs because most engines coerce). If users want
+    // strict integer matching they can omit the quotes by leaving periods
+    // blank and adding it to a custom view instead.
+    const list = periods.split(',').map(s => "'" + s.trim().replace(/'/g, "''") + "'").join(',');
+    where = ' WHERE ' + period + ' IN (' + list + ')';
+  }
+  return 'SELECT ' + period + ' AS period, ' + account + ' AS account, '
+       + 'SUM(' + balance + ') AS balance '
+       + 'FROM ' + view + where + ' GROUP BY ' + period + ', ' + account;
+}
+
+// ── Execution — uses /api/db passthrough ─────────────────────────────────────
+async function balExecSql(side, sql) {
+  // Mirrors the auth/connection routing used elsewhere in dashboard.html:
+  // /api/db reads CygenixConnections under the hood. We just hand it the
+  // side ('source' | 'target') and the SQL.
+  const res = await fetch('/api/db', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ side: side, sql: sql, action: 'query' })
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error('HTTP ' + res.status + (txt ? ': ' + txt.slice(0, 400) : ''));
+  }
+  return res.json();
+}
+
+async function balRunOne(type, idx) {
+  const cfg = balLoadCfg();
+  const c = cfg[type] && cfg[type][idx];
+  if (!c) return;
+  const runs = balLoadRuns();
+  try {
+    if (type === 'debits-credits') {
+      const sql = balSqlDebitsCredits(c);
+      const rows = await balExecSql(c.side || 'source', sql);
+      const rs = Array.isArray(rows) ? rows : (rows.rows || rows.data || []);
+      const tol = +(c.tolerance || 0);
+      const offenders = rs.filter(r => Math.abs(parseFloat(r.variance || 0)) > tol);
+      runs[c.id] = {
+        ts: Date.now(),
+        pass: offenders.length === 0,
+        detail: offenders.length === 0
+          ? 'Balanced. ' + rs.length + ' group(s) checked.'
+          : offenders.length + ' group(s) out of balance:\n'
+            + offenders.slice(0, 10).map(r => JSON.stringify(r)).join('\n')
+            + (offenders.length > 10 ? '\n…and ' + (offenders.length - 10) + ' more' : '')
+      };
+    } else if (type === 'control-totals') {
+      const srcRows = await balExecSql('source', balSqlControlTotal(c, 'source'));
+      const tgtRows = await balExecSql('target', balSqlControlTotal(c, 'target'));
+      const sv = parseFloat(((srcRows[0] || (srcRows.rows||[])[0] || {}).metric) || 0);
+      const tv = parseFloat(((tgtRows[0] || (tgtRows.rows||[])[0] || {}).metric) || 0);
+      const tol = +(c.tolerance || 0);
+      const variance = sv - tv;
+      runs[c.id] = {
+        ts: Date.now(),
+        pass: Math.abs(variance) <= tol,
+        detail: 'Source: ' + sv + '\nTarget: ' + tv + '\nVariance: ' + variance + '\nTolerance: ±' + tol
+      };
+    } else if (type === 'gl-balancing') {
+      const srcRows = await balExecSql('source', balSqlGlBalance(c, 'source'));
+      const tgtRows = await balExecSql('target', balSqlGlBalance(c, 'target'));
+      const sR = Array.isArray(srcRows) ? srcRows : (srcRows.rows || []);
+      const tR = Array.isArray(tgtRows) ? tgtRows : (tgtRows.rows || []);
+      const key = r => String(r.period) + '|' + String(r.account);
+      const tMap = new Map(tR.map(r => [key(r), parseFloat(r.balance || 0)]));
+      const tol = +(c.tolerance || 0);
+      const offenders = [];
+      for (const r of sR) {
+        const sv = parseFloat(r.balance || 0);
+        const tv = tMap.has(key(r)) ? tMap.get(key(r)) : null;
+        if (tv === null || Math.abs(sv - tv) > tol) {
+          offenders.push({ period: r.period, account: r.account, source: sv, target: tv, variance: tv === null ? null : sv - tv });
+        }
+        tMap.delete(key(r));
+      }
+      // Anything left in tMap = exists in target but not source
+      for (const [k, tv] of tMap.entries()) {
+        const [period, account] = k.split('|');
+        offenders.push({ period: period, account: account, source: null, target: tv, variance: null });
+      }
+      runs[c.id] = {
+        ts: Date.now(),
+        pass: offenders.length === 0,
+        detail: offenders.length === 0
+          ? 'Balanced. ' + sR.length + ' (period, account) row(s) checked.'
+          : offenders.length + ' mismatch(es):\n'
+            + offenders.slice(0, 15).map(r => JSON.stringify(r)).join('\n')
+            + (offenders.length > 15 ? '\n…and ' + (offenders.length - 15) + ' more' : '')
+      };
+    }
+  } catch (e) {
+    runs[c.id] = { ts: Date.now(), pass: false, detail: 'Error: ' + (e && e.message || String(e)) };
+  }
+  balSaveRuns(runs);
+  balRender();
+}
+
+async function balRunAll() {
+  const cfg = balLoadCfg();
+  const types = ['debits-credits', 'control-totals', 'gl-balancing'];
+  let count = 0;
+  for (const t of types) {
+    for (let i = 0; i < cfg[t].length; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      await balRunOne(t, i);
+      count++;
+    }
+  }
+  if (count === 0) {
+    alert('No checks defined yet. Add one with the ＋ button.');
+  } else {
+    balSwitchTab('results');
+  }
+}
+
+function balRenderResults(cfg, runs) {
+  const list  = document.getElementById('bal-results-list');
+  const empty = document.getElementById('bal-results-empty');
+  if (!list || !empty) return;
+  const all = [];
+  ['debits-credits','control-totals','gl-balancing'].forEach(t => {
+    (cfg[t] || []).forEach(c => {
+      if (runs[c.id]) all.push({ type: t, check: c, run: runs[c.id] });
+    });
+  });
+  all.sort((a, b) => (b.run.ts || 0) - (a.run.ts || 0));
+  empty.style.display = all.length ? 'none' : 'block';
+  list.innerHTML = all.map(item => {
+    const r = item.run;
+    const colour = r.pass ? 'var(--green)' : 'var(--red)';
+    const label  = r.pass ? '✓ PASS' : '✕ FAIL';
+    return '<div class="panel" style="padding:0.75rem 1rem;margin-bottom:0.5rem;background:var(--bg2);'
+         + 'border-left:3px solid ' + colour + '">'
+         + '<div style="display:flex;align-items:center;gap:0.75rem">'
+         + '<span style="font-family:var(--mono);font-size:11px;color:' + colour + ';font-weight:600;flex-shrink:0">' + label + '</span>'
+         + '<span style="font-size:13px;font-weight:500;flex:1">' + escapeHtml(item.check.name || '(unnamed)') + '</span>'
+         + '<span style="font-size:11px;color:var(--text3);font-family:var(--mono)">' + escapeHtml(item.type) + '</span>'
+         + '<span style="font-size:11px;color:var(--text3)">' + balFormatTs(r.ts) + '</span>'
+         + '</div>'
+         + (r.detail
+             ? '<div style="margin-top:0.4rem;font-size:11px;color:var(--text2);font-family:var(--mono);'
+               + 'white-space:pre-wrap;max-height:120px;overflow:auto">' + escapeHtml(r.detail) + '</div>'
+             : '')
+         + '</div>';
+  }).join('');
+}
+
+function balClearResults() {
+  if (!confirm('Clear all run results? Check definitions stay.')) return;
+  balSaveRuns({});
+  balRender();
+}
+
+function balFormatTs(ts) {
+  if (!ts) return '';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString();
+  } catch { return ''; }
 }
 
 </script>
