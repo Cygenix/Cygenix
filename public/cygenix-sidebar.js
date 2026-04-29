@@ -70,7 +70,6 @@
       { key:'insights',          label:'Data Insights',       href:'/insights.html',      color:'var(--purple)', icon: iconInsights() },
       { key:'data-cleansing',    label:'Data Cleansing',      href:'/data-cleansing.html',color:'var(--teal)',   icon: iconClean() },
       { key:'validation',        label:'Validation',          href:'/validation.html',    color:'var(--amber)',  icon: iconCheck() },
-      { key:'balancing',         label:'Balancing & Metrics', href:'/balancing.html',     color:'var(--purple)', icon: iconBalance() },
     ]},
     { section: 'Projects', group:'projects', items: [
       { key:'jobs',              label:'All Jobs',          view:'jobs',                icon: iconList() },
@@ -79,6 +78,9 @@
     { section: null, items: [
       { key:'inventory',         label:'Project Artifacts',         view:'inventory',           icon: iconGrid() },
       { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--yellow)', icon: iconClock() },
+    ]},
+    { section: 'Balancing', group:'balancing', items: [
+      { key:'balancing',         label:'Balancing & Metrics', href:'/balancing.html',     color:'var(--purple)', icon: iconBalance() },
     ]},
     { section: 'Outputs', group:'reports', items: [
       { key:'reports',           label:'Conversion Report', view:'reports',             color:'var(--purple)', icon: iconReport() },

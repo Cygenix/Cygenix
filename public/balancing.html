@@ -56,7 +56,6 @@ body.cyg-collapsed{padding-left:54px}
 .form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
 .form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
 .form-input:focus{border-color:var(--accent)}
-.form-select{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
 
 /* ── Buttons ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:0.4rem 0.875rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
@@ -68,14 +67,16 @@ body.cyg-collapsed{padding-left:54px}
 .btn-sm{padding:0.25rem 0.625rem;font-size:11px}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
 
-/* ── Connection banner — same component as object_mapping.html ── */
+/* ── Connection banner ── */
 .conn-banner{display:flex;align-items:center;gap:0.75rem;padding:0.625rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:1rem;flex-wrap:wrap}
 .conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 .conn-dot.ok{background:var(--green)}
 .conn-dot.err{background:var(--red)}
 .conn-dot.idle{background:var(--text3)}
+.conn-dot.busy{background:var(--amber);animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
-.conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif)}
+.conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif);text-decoration:none}
 .conn-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.3)}
 
 /* ── Tab bar ── */
@@ -97,10 +98,12 @@ body.cyg-collapsed{padding-left:54px}
 .check-name{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.45rem 0.7rem;font-size:13px;font-weight:500;color:var(--text);outline:none;font-family:var(--serif)}
 .check-name:focus{border-color:var(--accent)}
 .field-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:0.55rem}
-.field-grid.tri{grid-template-columns:repeat(3,1fr)}
 .field-cell label{display:block;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem;font-weight:600}
 .field-cell input,.field-cell select{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
 .field-cell input:focus,.field-cell select:focus{border-color:var(--accent)}
+/* Subtle chevron hint on datalist-backed inputs to communicate they're pickers */
+.field-cell input[list]{background-image:linear-gradient(45deg,transparent 50%,var(--text3) 50%,var(--text3) 60%,transparent 60%),linear-gradient(135deg,transparent 40%,var(--text3) 40%,var(--text3) 50%,transparent 50%);background-position:calc(100% - 13px) 14px,calc(100% - 8px) 14px;background-size:5px 5px;background-repeat:no-repeat;padding-right:22px}
+.field-cell input[list]:disabled{opacity:0.5;cursor:not-allowed}
 
 .check-detail{margin-top:0.6rem;font-size:11px;color:var(--text2);font-family:var(--mono);background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;max-height:120px;overflow:auto;white-space:pre-wrap}
 
@@ -119,7 +122,7 @@ body.cyg-collapsed{padding-left:54px}
 @media(max-width:900px){
   body{padding-left:0}
   .page{padding:1rem}
-  .field-grid,.field-grid.tri{grid-template-columns:1fr}
+  .field-grid{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -154,21 +157,20 @@ body.cyg-collapsed{padding-left:54px}
     </div>
   </div>
 
-  <!-- Connection banner — same pattern as object_mapping.html. Read-only;
-       connections live on Dashboard → Connections. The dots reflect the
-       state coming from CygenixConnections.get(); we don't probe the
-       databases here (that would slow page load), the run buttons handle
-       errors at execution time. -->
+  <!-- Connection banner. Same pattern as object_mapping.html, plus a
+       "Reload schema" button so the user can refresh table/column lists
+       after structural DB changes without reloading the page. -->
   <div class="conn-banner" id="conn-banner">
     <div class="conn-dot idle" id="src-dot"></div>
     <span class="conn-label" id="src-label">Source: not configured</span>
     <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
-    <a href="/dashboard.html#connections" class="conn-btn" id="conn-manage-link" style="margin-left:auto;text-decoration:none">⚙ Manage connections</a>
+    <button class="conn-btn" id="reload-schema-btn" onclick="balReloadSchemas()" style="margin-left:auto">↻ Reload schema</button>
+    <a href="/dashboard.html#connections" class="conn-btn">⚙ Manage connections</a>
   </div>
 
-  <!-- Status bar — used by run handlers for transient messages -->
+  <!-- Status bar -->
   <div class="status-bar" id="status-bar"></div>
 
   <!-- Tab bar -->
@@ -179,76 +181,53 @@ body.cyg-collapsed{padding-left:54px}
     <button class="cx-tab" data-bal-tab="results" onclick="balSwitchTab('results')">📊 Results</button>
   </div>
 
-  <!-- Tab: Debits = Credits ----------------------------------------------------
-       Each row asserts SUM(debit_col) == SUM(credit_col) for a given table,
-       optionally filtered (WHERE) and grouped (e.g. by batch_id). -->
+  <!-- Tabs -->
   <div id="bal-tab-debits-credits" class="bal-tab-pane">
-    <div class="panel">
-      <div class="panel-body">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
-          Verifies that for every row group (or the whole table), the sum of debits equals the sum of credits.
-          Use this on journal-entry tables, sub-ledgers, and any double-entry source.
-        </div>
-        <div id="bal-list-debits-credits"></div>
-        <div id="bal-empty-debits-credits" class="empty-state">
-          No checks defined. Click <strong>＋ Add check</strong> above to create one.
-        </div>
+    <div class="panel"><div class="panel-body">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+        Verifies that for every row group (or the whole table), the sum of debits equals the sum of credits.
+        Use this on journal-entry tables, sub-ledgers, and any double-entry source.
       </div>
-    </div>
+      <div id="bal-list-debits-credits"></div>
+      <div id="bal-empty-debits-credits" class="empty-state">No checks defined. Click <strong>＋ Add check</strong> above to create one.</div>
+    </div></div>
   </div>
 
-  <!-- Tab: Control totals ------------------------------------------------------
-       Compares an aggregate (SUM/COUNT/MIN/MAX) on a source column to the
-       same aggregate on a target column. Tolerance supported for FX/rounding. -->
   <div id="bal-tab-control-totals" class="bal-tab-pane" style="display:none">
-    <div class="panel">
-      <div class="panel-body">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
-          Compares an aggregate (SUM, COUNT, MIN, MAX) between source and target. Use a tolerance for currency rounding or FX drift.
-        </div>
-        <div id="bal-list-control-totals"></div>
-        <div id="bal-empty-control-totals" class="empty-state">
-          No checks defined. Click <strong>＋ Add check</strong> above to create one.
-        </div>
+    <div class="panel"><div class="panel-body">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+        Compares an aggregate (SUM, COUNT, MIN, MAX) between source and target. Use a tolerance for currency rounding or FX drift.
       </div>
-    </div>
+      <div id="bal-list-control-totals"></div>
+      <div id="bal-empty-control-totals" class="empty-state">No checks defined. Click <strong>＋ Add check</strong> above to create one.</div>
+    </div></div>
   </div>
 
-  <!-- Tab: GL balancing --------------------------------------------------------
-       Asserts that for each (period, account), source_balance == target_balance
-       — produced by joining a trial-balance view on both sides. -->
   <div id="bal-tab-gl-balancing" class="bal-tab-pane" style="display:none">
-    <div class="panel">
-      <div class="panel-body">
-        <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
-          Compares per-account balances between source and target across one or more periods. Mismatches are reported per (period, account).
-        </div>
-        <div id="bal-list-gl-balancing"></div>
-        <div id="bal-empty-gl-balancing" class="empty-state">
-          No checks defined. Click <strong>＋ Add check</strong> above to create one.
-        </div>
+    <div class="panel"><div class="panel-body">
+      <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.6">
+        Compares per-account balances between source and target across one or more periods. Mismatches are reported per (period, account).
       </div>
-    </div>
+      <div id="bal-list-gl-balancing"></div>
+      <div id="bal-empty-gl-balancing" class="empty-state">No checks defined. Click <strong>＋ Add check</strong> above to create one.</div>
+    </div></div>
   </div>
 
-  <!-- Tab: Results -------------------------------------------------------------
-       Most recent run for each check. Persisted under cygenix_balancing_runs. -->
   <div id="bal-tab-results" class="bal-tab-pane" style="display:none">
-    <div class="panel">
-      <div class="panel-body">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
-          <div style="font-size:12px;color:var(--text3);line-height:1.6">
-            Last result per check. Pass = balanced within tolerance. Fail = variance &gt; tolerance.
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="balClearResults()" style="color:var(--red)">✕ Clear results</button>
-        </div>
-        <div id="bal-results-list"></div>
-        <div id="bal-results-empty" class="empty-state">
-          No runs yet. Define checks on the other tabs and click <strong>▶ Run all</strong>, or use the run button on an individual check.
-        </div>
+    <div class="panel"><div class="panel-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+        <div style="font-size:12px;color:var(--text3);line-height:1.6">Last result per check. Pass = balanced within tolerance. Fail = variance &gt; tolerance.</div>
+        <button class="btn btn-ghost btn-sm" onclick="balClearResults()" style="color:var(--red)">✕ Clear results</button>
       </div>
-    </div>
+      <div id="bal-results-list"></div>
+      <div id="bal-results-empty" class="empty-state">No runs yet. Define checks on the other tabs and click <strong>▶ Run all</strong>, or use the run button on an individual check.</div>
+    </div></div>
   </div>
+
+  <!-- Datalists for table dropdowns. Source-side and target-side are
+       separate because they're populated from different schemas. -->
+  <datalist id="dl-src-tables"></datalist>
+  <datalist id="dl-tgt-tables"></datalist>
 
 </div><!-- /.page -->
 
@@ -257,14 +236,17 @@ body.cyg-collapsed{padding-left:54px}
 // Balancing & Metrics — financial reconciliation page
 //
 // Connection model mirrors object_mapping.html: read once from
-// CygenixConnections.get(), resolve the target via the function-URL pattern
-// (tgtFnUrl + tgtFnKey → query string) when present, otherwise fall back to
-// the direct connection string. Execution goes through dbCall(conn, body)
-// which routes to the Azure Function URL when the conn is an https URL,
-// and otherwise through Netlify's /.netlify/functions/db-connect with
-// connectionString in the body. This is the same routing object_mapping
-// uses, so we inherit the same auth/rate-limit behaviour and avoid having
-// a second copy of the routing rules to maintain.
+// CygenixConnections.get(), resolve target via the function-URL pattern
+// (tgtFnUrl + tgtFnKey → query string) when present, otherwise the direct
+// connection string. SQL execution goes through dbCall(conn, body) which
+// routes to the Azure Function URL when the conn is an https URL, and
+// otherwise through Netlify's /.netlify/functions/db-connect with
+// connectionString in the body.
+//
+// Schema fetching mirrors object_mapping's _fetchSchemaSmart pattern:
+// try the paginated 'schema-tables' action first, fall back to the
+// legacy 'schema' action if the backend doesn't recognise it. Columns
+// in paginated mode are loaded lazily via 'schema-columns' on first use.
 //
 // Storage:
 //   localStorage['cygenix_balancing_metrics']  — check definitions
@@ -298,7 +280,7 @@ function setBanner(side, state, text){
   const dot = $(side + '-dot');
   const lbl = $(side + '-label');
   if (lbl) lbl.textContent = text;
-  if (dot) dot.className = 'conn-dot ' + (state === 'ok' ? 'ok' : state === 'connecting' ? 'idle' : 'err');
+  if (dot) dot.className = 'conn-dot ' + (state === 'ok' ? 'ok' : state === 'busy' ? 'busy' : state === 'idle' ? 'idle' : 'err');
 }
 function escapeHtml(s){
   return String(s == null ? '' : s)
@@ -310,9 +292,17 @@ function escapeHtml(s){
 let srcConn = '';
 let tgtConn = '';
 
-// dbCall — same shape as object_mapping.html. The Azure Function expects
-// the body as-is when conn is an https URL; the Netlify proxy expects an
-// extra connectionString field with the conn string.
+// Schema state — set after loadSchema(side). Each side has:
+//   tables: [{ schema, name, fullName, columns?, rowCount? }, ...]
+//   paginated: bool — true means columns load lazily via ensureColumns()
+//   loaded: bool   — true once the initial schema fetch has succeeded
+let srcSchema = { tables: [], paginated: null, loaded: false };
+let tgtSchema = { tables: [], paginated: null, loaded: false };
+
+// Cache of column lists per (side, fullName) so the column datalists
+// don't refetch on every render.
+const _columnCache = new Map();
+
 async function dbCall(conn, body){
   if (!conn) throw new Error('Connection not configured');
   const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
@@ -328,7 +318,106 @@ async function dbCall(conn, body){
   return data;
 }
 
-// ── Init — read connections, set banner, render existing checks ──────────────
+// ── Smart schema fetcher (same pattern as object_mapping.html) ───────────────
+async function _fetchSchemaSmart(conn){
+  try {
+    const res = await dbCall(conn, { action: 'schema-tables' });
+    return { res, paginated: true };
+  } catch (e) {
+    if (/Unknown action/i.test(e.message) || /schema-tables/i.test(e.message)) {
+      const res = await dbCall(conn, { action: 'schema' });
+      return { res, paginated: false };
+    }
+    throw e;
+  }
+}
+
+// Lazy column loader. In paginated mode we fetch columns for one table
+// on demand; in legacy mode the columns came back with the initial
+// schema fetch and live on the table object already.
+async function ensureColumns(side, table){
+  if (!table) return [];
+  if (Array.isArray(table.columns) && table.columns.length > 0) return table.columns;
+
+  const sch = side === 'src' ? srcSchema : tgtSchema;
+  if (!sch.paginated) {
+    table.columns = table.columns || [];
+    return table.columns;
+  }
+  const conn = side === 'src' ? srcConn : tgtConn;
+  if (!conn) return [];
+  try {
+    const res = await dbCall(conn, { action: 'schema-columns', schemaName: table.schema, tableName: table.name });
+    if (!res || !res.table) return [];
+    table.columns = res.table.columns || [];
+    return table.columns;
+  } catch (e) {
+    showStatus('Could not load columns for ' + table.fullName + ': ' + e.message, 'err');
+    return [];
+  }
+}
+
+// Find a table on a given side by fullName (e.g. "dbo.Customers"),
+// case-insensitive, falling back to bare-name match if unambiguous.
+function findTable(side, fullName){
+  if (!fullName) return null;
+  const sch = side === 'src' ? srcSchema : tgtSchema;
+  const fn = String(fullName).trim();
+  if (!fn) return null;
+  const lower = fn.toLowerCase();
+  let t = sch.tables.find(x => x.fullName.toLowerCase() === lower);
+  if (t) return t;
+  const bare = lower.includes('.') ? lower.split('.').pop() : lower;
+  const matches = sch.tables.filter(x => x.name.toLowerCase() === bare);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+// ── Datalist rendering ───────────────────────────────────────────────────────
+function rebuildTableDatalists(){
+  const srcDl = $('dl-src-tables');
+  const tgtDl = $('dl-tgt-tables');
+  if (srcDl) srcDl.innerHTML = srcSchema.tables.map(t => '<option value="' + escapeHtml(t.fullName) + '"></option>').join('');
+  if (tgtDl) tgtDl.innerHTML = tgtSchema.tables.map(t => '<option value="' + escapeHtml(t.fullName) + '"></option>').join('');
+}
+
+// Per-card column datalists. Built on demand and parked in a hidden host
+// div so they're addressable by ID without polluting the visible DOM.
+function ensureCardDatalist(id){
+  let dl = $(id);
+  if (!dl) {
+    let host = $('card-datalists');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'card-datalists';
+      host.style.display = 'none';
+      document.body.appendChild(host);
+    }
+    dl = document.createElement('datalist');
+    dl.id = id;
+    host.appendChild(dl);
+  }
+  return dl;
+}
+
+async function refreshCardColumnList(side, tableName, dlId){
+  const dl = ensureCardDatalist(dlId);
+  if (!tableName) { dl.innerHTML = ''; return; }
+  const t = findTable(side, tableName);
+  if (!t) { dl.innerHTML = ''; return; }
+  const cacheKey = side + '|' + t.fullName;
+  let cols = _columnCache.get(cacheKey);
+  if (!cols) {
+    cols = await ensureColumns(side, t);
+    _columnCache.set(cacheKey, cols);
+  }
+  dl.innerHTML = (cols || []).map(c => {
+    const name = typeof c === 'string' ? c : (c.name || c.column || '');
+    const type = typeof c === 'object' && c.dataType ? c.dataType : '';
+    return '<option value="' + escapeHtml(name) + '"' + (type ? ' label="' + escapeHtml(type) + '"' : '') + '></option>';
+  }).join('');
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
 (function init(){
   if (typeof CygenixConnections === 'undefined') {
     setBanner('src', 'err', 'Source: connection helper not loaded');
@@ -338,25 +427,53 @@ async function dbCall(conn, body){
   }
   const c = CygenixConnections.get() || {};
   srcConn = c.srcConnString || '';
-  // Function URL pattern (same as object_mapping): if a tgtFnUrl is set we
-  // use it; the optional tgtFnKey gets appended as ?code=...
   tgtConn = c.tgtFnUrl
     ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
     : (c.tgtConnString || '');
 
-  if (srcConn) {
-    setBanner('src', 'ok', 'Source: ' + (parseDbName(srcConn) || 'configured'));
-  } else {
-    setBanner('src', 'err', 'Source: not configured — set in Dashboard → Connections');
-  }
-  if (tgtConn) {
-    setBanner('tgt', 'ok', 'Target: ' + (parseDbName(tgtConn) || 'configured'));
-  } else {
-    setBanner('tgt', 'err', 'Target: not configured — set in Dashboard → Connections');
-  }
-
+  // Render the UI immediately. Schemas load asynchronously and trigger
+  // re-renders as they complete.
   balRender();
+  loadSchema('src');
+  loadSchema('tgt');
 })();
+
+async function loadSchema(side){
+  const conn = side === 'src' ? srcConn : tgtConn;
+  if (!conn) {
+    setBanner(side, 'err', (side === 'src' ? 'Source' : 'Target') + ': not configured — set in Dashboard → Connections');
+    return;
+  }
+  setBanner(side, 'busy', (side === 'src' ? 'Source' : 'Target') + ': loading schema…');
+  try {
+    const { res, paginated } = await _fetchSchemaSmart(conn);
+    const tables = (res.tables || []).map(t => ({
+      schema: t.schema,
+      name: t.name,
+      fullName: t.schema + '.' + t.name,
+      rowCount: t.rowCount || 0,
+      columns: paginated ? null : (t.columns || []),
+    }));
+    tables.sort((a, b) => a.fullName.localeCompare(b.fullName));
+    if (side === 'src') srcSchema = { tables, paginated, loaded: true };
+    else                tgtSchema = { tables, paginated, loaded: true };
+    setBanner(side, 'ok', (side === 'src' ? 'Source' : 'Target') + ': '
+      + (res.database || parseDbName(conn) || 'connected') + ' · ' + tables.length + ' tables');
+    rebuildTableDatalists();
+    balRender();
+  } catch (e) {
+    setBanner(side, 'err', (side === 'src' ? 'Source' : 'Target') + ': ' + e.message);
+  }
+}
+
+async function balReloadSchemas(){
+  _columnCache.clear();
+  srcSchema = { tables: [], paginated: null, loaded: false };
+  tgtSchema = { tables: [], paginated: null, loaded: false };
+  rebuildTableDatalists();
+  await Promise.allSettled([loadSchema('src'), loadSchema('tgt')]);
+  showStatus('Schemas reloaded', 'ok');
+}
 
 // ── Config persistence ───────────────────────────────────────────────────────
 function balLoadCfg(){
@@ -409,6 +526,7 @@ function balRender(){
     const items = cfg[t] || [];
     empty.style.display = items.length ? 'none' : 'block';
     list.innerHTML = items.map((c, i) => balRenderCheckCard(t, c, i, runs[c.id])).join('');
+    items.forEach((c, i) => primeCardColumnLists(t, c, i));
   });
   balRenderResults(cfg, runs);
 }
@@ -416,6 +534,18 @@ function balRender(){
 function balFormatTs(ts){
   if (!ts) return '';
   try { return new Date(ts).toLocaleString(); } catch { return ''; }
+}
+
+// Build the column datalists for a card based on its current table picks.
+// Called after each render so saved configurations get their column
+// dropdowns re-populated.
+function primeCardColumnLists(type, c, idx){
+  if (type === 'debits-credits') {
+    if (c.table) refreshCardColumnList(c.side === 'target' ? 'tgt' : 'src', c.table, 'dl-cols-' + type + '-' + idx);
+  } else if (type === 'control-totals') {
+    if (c.srcTable) refreshCardColumnList('src', c.srcTable, 'dl-cols-' + type + '-' + idx + '-src');
+    if (c.tgtTable) refreshCardColumnList('tgt', c.tgtTable, 'dl-cols-' + type + '-' + idx + '-tgt');
+  }
 }
 
 function balRenderCheckCard(type, c, idx, run){
@@ -436,34 +566,58 @@ function balRenderCheckCard(type, c, idx, run){
 
   let body = '';
   if (type === 'debits-credits') {
+    const side = c.side === 'target' ? 'tgt' : 'src';
+    const tableDl = side === 'tgt' ? 'dl-tgt-tables' : 'dl-src-tables';
+    const colDl   = 'dl-cols-' + type + '-' + idx;
+    const sch     = side === 'tgt' ? tgtSchema : srcSchema;
+    const ready   = sch.loaded;
     body = balFieldGrid([
-      { label: 'Side',                key: 'side',      value: c.side      || 'source', as: 'select', opts: ['source','target'] },
-      { label: 'Table',               key: 'table',     value: c.table     || '', placeholder: 'dbo.GL_Journal' },
-      { label: 'Debit column',        key: 'debitCol',  value: c.debitCol  || '', placeholder: 'debit_amount' },
-      { label: 'Credit column',       key: 'creditCol', value: c.creditCol || '', placeholder: 'credit_amount' },
-      { label: 'Group by (optional)', key: 'groupBy',   value: c.groupBy   || '', placeholder: 'batch_id, journal_id' },
-      { label: 'Where (optional)',    key: 'where',     value: c.where     || '', placeholder: 'period_id = 202604' },
+      { label: 'Side',                key: 'side',      value: c.side || 'source', as: 'select', opts: ['source','target'] },
+      { label: 'Table',               key: 'table',     value: c.table || '',      list: tableDl,
+                                       placeholder: ready ? 'Pick a table…' : 'Loading schema…',
+                                       disabled: !ready,
+                                       onchange: 'balOnTableChange' },
+      { label: 'Debit column',        key: 'debitCol',  value: c.debitCol || '',   list: colDl, placeholder: c.table ? 'Pick a column…' : 'Pick a table first' },
+      { label: 'Credit column',       key: 'creditCol', value: c.creditCol || '',  list: colDl, placeholder: c.table ? 'Pick a column…' : 'Pick a table first' },
+      { label: 'Group by (optional)', key: 'groupBy',   value: c.groupBy || '',    placeholder: 'batch_id, journal_id' },
+      { label: 'Where (optional)',    key: 'where',     value: c.where || '',      placeholder: 'period_id = 202604' },
       { label: 'Tolerance',           key: 'tolerance', value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' }
     ], type, idx);
   } else if (type === 'control-totals') {
+    const srcReady = srcSchema.loaded;
+    const tgtReady = tgtSchema.loaded;
+    const srcColDl = 'dl-cols-' + type + '-' + idx + '-src';
+    const tgtColDl = 'dl-cols-' + type + '-' + idx + '-tgt';
     body = balFieldGrid([
-      { label: 'Aggregate',               key: 'agg',       value: c.agg       || 'SUM', as: 'select', opts: ['SUM','COUNT','MIN','MAX'] },
-      { label: 'Source table',            key: 'srcTable',  value: c.srcTable  || '', placeholder: 'dbo.Invoices' },
-      { label: 'Source column',           key: 'srcCol',    value: c.srcCol    || '', placeholder: 'amount' },
-      { label: 'Target table',            key: 'tgtTable',  value: c.tgtTable  || '', placeholder: 'public.invoices' },
-      { label: 'Target column',           key: 'tgtCol',    value: c.tgtCol    || '', placeholder: 'amount' },
+      { label: 'Aggregate',               key: 'agg',       value: c.agg || 'SUM', as: 'select', opts: ['SUM','COUNT','MIN','MAX'] },
       { label: 'Tolerance',               key: 'tolerance', value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' },
-      { label: 'Where source (optional)', key: 'srcWhere',  value: c.srcWhere  || '', placeholder: '' },
-      { label: 'Where target (optional)', key: 'tgtWhere',  value: c.tgtWhere  || '', placeholder: '' }
+      { label: 'Source table',            key: 'srcTable',  value: c.srcTable || '', list: 'dl-src-tables',
+                                           placeholder: srcReady ? 'Pick a source table…' : 'Loading schema…',
+                                           disabled: !srcReady,
+                                           onchange: 'balOnTableChange' },
+      { label: 'Source column',           key: 'srcCol',    value: c.srcCol || '',   list: srcColDl, placeholder: c.srcTable ? 'Pick a column…' : 'Pick a table first' },
+      { label: 'Target table',            key: 'tgtTable',  value: c.tgtTable || '', list: 'dl-tgt-tables',
+                                           placeholder: tgtReady ? 'Pick a target table…' : 'Loading schema…',
+                                           disabled: !tgtReady,
+                                           onchange: 'balOnTableChange' },
+      { label: 'Target column',           key: 'tgtCol',    value: c.tgtCol || '',   list: tgtColDl, placeholder: c.tgtTable ? 'Pick a column…' : 'Pick a table first' },
+      { label: 'Where source (optional)', key: 'srcWhere',  value: c.srcWhere || '', placeholder: '' },
+      { label: 'Where target (optional)', key: 'tgtWhere',  value: c.tgtWhere || '', placeholder: '' }
     ], type, idx);
   } else if (type === 'gl-balancing') {
+    const srcReady = srcSchema.loaded;
+    const tgtReady = tgtSchema.loaded;
     body = balFieldGrid([
-      { label: 'Source TB view',     key: 'srcView',    value: c.srcView    || '',          placeholder: 'dbo.vw_TrialBalance' },
-      { label: 'Target TB view',     key: 'tgtView',    value: c.tgtView    || '',          placeholder: 'public.vw_trial_balance' },
-      { label: 'Period column',      key: 'periodCol',  value: c.periodCol  || 'period',    placeholder: 'period' },
-      { label: 'Account column',     key: 'accountCol', value: c.accountCol || 'account',   placeholder: 'account' },
-      { label: 'Balance column',     key: 'balanceCol', value: c.balanceCol || 'balance',   placeholder: 'balance' },
-      { label: 'Periods (optional)', key: 'periods',    value: c.periods    || '',          placeholder: '202601,202602,202603' },
+      { label: 'Source TB view',     key: 'srcView',    value: c.srcView    || '', list: 'dl-src-tables',
+                                      placeholder: srcReady ? 'Pick a source view/table…' : 'Loading schema…',
+                                      disabled: !srcReady },
+      { label: 'Target TB view',     key: 'tgtView',    value: c.tgtView    || '', list: 'dl-tgt-tables',
+                                      placeholder: tgtReady ? 'Pick a target view/table…' : 'Loading schema…',
+                                      disabled: !tgtReady },
+      { label: 'Period column',      key: 'periodCol',  value: c.periodCol  || 'period',  placeholder: 'period' },
+      { label: 'Account column',     key: 'accountCol', value: c.accountCol || 'account', placeholder: 'account' },
+      { label: 'Balance column',     key: 'balanceCol', value: c.balanceCol || 'balance', placeholder: 'balance' },
+      { label: 'Periods (optional)', key: 'periods',    value: c.periods    || '',        placeholder: '202601,202602,202603' },
       { label: 'Tolerance',          key: 'tolerance',  value: c.tolerance != null ? c.tolerance : 0.01, type: 'number' }
     ], type, idx);
   }
@@ -480,17 +634,29 @@ function balFieldGrid(fields, type, idx){
         const id = 'bal-' + type + '-' + idx + '-' + f.key;
         let input;
         if (f.as === 'select') {
+          // Side toggle (Debits=Credits) needs a re-render so the table
+          // datalist switches between src/tgt; agg dropdown doesn't, but
+          // re-rendering is cheap and keeps logic uniform.
           input = '<select id="' + id + '" '
-                + 'onchange="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)">'
+                + 'onchange="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value); balRender()">'
                 + (f.opts || []).map(o =>
                     '<option value="' + escapeHtml(o) + '"' + (o === f.value ? ' selected' : '') + '>' + escapeHtml(o) + '</option>'
                   ).join('')
                 + '</select>';
         } else {
-          input = '<input id="' + id + '" type="' + (f.type || 'text') + '" '
-                + 'value="' + escapeHtml(String(f.value)) + '" '
-                + 'placeholder="' + escapeHtml(f.placeholder || '') + '" '
-                + 'oninput="balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)">';
+          const listAttr = f.list ? ' list="' + f.list + '"' : '';
+          const disAttr  = f.disabled ? ' disabled' : '';
+          // For datalist-backed pickers, fire the dedicated handler so
+          // table picks refresh column lists. Plain inputs just persist.
+          const handler  = f.onchange
+            ? 'balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value); ' + f.onchange + '(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)'
+            : 'balUpdate(\'' + type + '\',' + idx + ',\'' + f.key + '\',this.value)';
+          input = '<input id="' + id + '" type="' + (f.type || 'text') + '"'
+                + listAttr + disAttr
+                + ' value="' + escapeHtml(String(f.value)) + '"'
+                + ' placeholder="' + escapeHtml(f.placeholder || '') + '"'
+                + ' oninput="' + handler + '"'
+                + ' onchange="' + handler + '">';
         }
         return '<div class="field-cell">'
              + '<label>' + escapeHtml(f.label) + '</label>'
@@ -498,6 +664,22 @@ function balFieldGrid(fields, type, idx){
              + '</div>';
       }).join('')
     + '</div>';
+}
+
+// Refresh the matching column datalist for a card when the user picks a
+// new table. Doesn't full-re-render to preserve focus on the input the
+// user just changed.
+async function balOnTableChange(type, idx, key, value){
+  if (type === 'debits-credits' && key === 'table') {
+    const cfg = balLoadCfg();
+    const c = cfg[type] && cfg[type][idx];
+    const side = c && c.side === 'target' ? 'tgt' : 'src';
+    await refreshCardColumnList(side, value, 'dl-cols-' + type + '-' + idx);
+  } else if (type === 'control-totals' && key === 'srcTable') {
+    await refreshCardColumnList('src', value, 'dl-cols-' + type + '-' + idx + '-src');
+  } else if (type === 'control-totals' && key === 'tgtTable') {
+    await refreshCardColumnList('tgt', value, 'dl-cols-' + type + '-' + idx + '-tgt');
+  }
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -536,10 +718,6 @@ function balUpdate(type, idx, key, value){
 }
 
 // ── SQL builders ─────────────────────────────────────────────────────────────
-// All produce a single SELECT. No DDL/DML. Identifiers are not sanitised
-// (the user controls their own connection strings and types these into
-// their own config), but values are never interpolated from untrusted
-// input. The /api/db backend should additionally block writes.
 function balSqlDebitsCredits(c){
   if (!c.table || !c.debitCol || !c.creditCol) {
     throw new Error('Table, debit column and credit column are required.');
@@ -588,10 +766,7 @@ function balSqlGlBalance(c, side){
 async function balExec(side, sql){
   const conn = side === 'source' ? srcConn : tgtConn;
   if (!conn) throw new Error(side + ' connection not configured');
-  // Use the same `query` action db-connect.js exposes elsewhere in the app.
   const data = await dbCall(conn, { action: 'query', sql: sql });
-  // db-connect.js typically returns { rows: [...] } or just the array;
-  // be defensive for either.
   if (Array.isArray(data)) return data;
   return data.rows || data.data || [];
 }
@@ -644,7 +819,6 @@ async function balRunOne(type, idx){
         }
         tMap.delete(key(r));
       }
-      // Anything still in tMap = exists in target but not source
       for (const [k, tv] of tMap.entries()) {
         const [period, account] = k.split('|');
         offenders.push({ period: period, account: account, source: null, target: tv, variance: null });
