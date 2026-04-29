@@ -330,11 +330,14 @@ select.form-input option{background:var(--bg3)}
 if(!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
 
 // ── State ──────────────────────────────────────────────────────────────────────
-// validationSources: [{id, label, conn, connLabel, tableName, sqlCol, nameCol, reportCols, runOn, scripts:[]}]
+// On disk: [{id, label, conn, connLabel, tableName, sqlCol, nameCol, reportCols, runOn}]
+// In memory: above + scripts:[] + loaded:bool (scripts are NEVER persisted)
 let validationSources = [];
 let allScripts = [];   // flat list for the combined table
 let running = false, abortFlag = false;
+let activeSourceId = null;  // which source the dropdown currently shows
 const STORAGE_KEY = 'cygenix_validation_sources';
+const ACTIVE_KEY  = 'cygenix_validation_active';  // tiny — just the active source id
 
 // Modal working state
 let _mConn='', _mSchema=null, _mTable=null, _mAllTables=[], _mEditId=null;
@@ -342,6 +345,68 @@ let _mConn='', _mSchema=null, _mTable=null, _mAllTables=[], _mEditId=null;
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
+
+// Pick the currently active source, or null if none / unknown id.
+function getActiveSource(){
+  if (!validationSources.length) return null;
+  let src = validationSources.find(s => s.id === activeSourceId);
+  if (!src) src = validationSources[0];  // fallback to first
+  return src;
+}
+
+// Load scripts for a source by running SELECT * on its underlying table.
+// Pure on-demand — never automatic. Result lives in memory only.
+async function loadSourceScripts(srcId){
+  const src = validationSources.find(s => s.id === srcId);
+  if(!src){ alert('Source not found'); return; }
+  if(!src.conn){ alert('No connection configured for this source. Edit it to set a connection.'); return; }
+  if(!src.tableName){ alert('No table configured for this source.'); return; }
+
+  // Disable the Load button briefly to prevent double-clicks; surface
+  // the row count after success.
+  const loadBtns = document.querySelectorAll('[data-load-source="'+srcId+'"]');
+  loadBtns.forEach(b => { b.disabled = true; b.textContent = 'Loading…'; });
+
+  try{
+    // Same query the modal used to run inline. tableName is "schema.name".
+    const [schema, name] = src.tableName.split('.');
+    const sql = 'SELECT * FROM ['+schema+'].['+name+']';
+    const res = await dbCall(src.conn, {action:'execute', sql});
+    const rows = res.recordset || [];
+
+    src.scripts = rows.map((r,i)=>({
+      id: src.id+'_'+i,
+      srcId: src.id,
+      sql: String(r[src.sqlCol]||''),
+      name: src.nameCol ? String(r[src.nameCol]||('Script '+(i+1))) : 'Script '+(i+1),
+      reportData: (src.reportCols||[]).reduce((o,c)=>{ o[c]=r[c]; return o; },{}),
+      status:'pending', result:null, error:null, rowsFound:0, checked:true
+    })).filter(s => s.sql.trim());
+
+    src.loaded = true;
+    renderSources();
+    rebuildScriptList();
+  }catch(e){
+    alert('Error loading scripts: '+e.message);
+  }
+  loadBtns.forEach(b => { b.disabled = false; b.textContent = '⟲ Load scripts'; });
+}
+
+// Persist the active-source-id pointer (tiny — single string).
+function saveActiveSource(){
+  try{
+    if(activeSourceId) localStorage.setItem(ACTIVE_KEY, activeSourceId);
+    else localStorage.removeItem(ACTIVE_KEY);
+  }catch{}
+}
+
+// Switch active source — called from the dropdown
+function selectSource(id){
+  activeSourceId = id;
+  saveActiveSource();
+  renderSources();
+  rebuildScriptList();
+}
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 // validation_sources lives in Cosmos DB (container 'projects', field
@@ -371,14 +436,23 @@ function _validationUserId(){
 }
 
 function saveSources(){
-  // Strip transient run state so we don't churn Cosmos with
-  // status/result/error fields that change every script execution.
-  const toStore = validationSources.map(s=>({...s, scripts: s.scripts.map(sc=>({
-    ...sc, status:'pending', result:null, error:null, rowsFound:0
-  }))}));
-
-  // localStorage write — the sync module's setItem intercept will pick this
-  // up and debounce a merge-aware push to Cosmos within 3 seconds.
+  // Persist DEFINITIONS ONLY — never the scripts[] array. Scripts are
+  // loaded into memory on demand (button click) and dropped on page
+  // navigation. This keeps the Cosmos document tiny and avoids the 2MB
+  // item-size limit a 2,000-row source would otherwise blow.
+  // The auto-save intercept on localStorage.setItem will pick this up
+  // and debounce a merge-aware push to Cosmos within 3 seconds.
+  const toStore = validationSources.map(s => ({
+    id:         s.id,
+    label:      s.label,
+    conn:       s.conn,
+    connLabel:  s.connLabel,
+    tableName:  s.tableName,
+    sqlCol:     s.sqlCol,
+    nameCol:    s.nameCol,
+    reportCols: s.reportCols || [],
+    runOn:      s.runOn || 'same'
+  }));
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(toStore)); }
   catch (e) { console.warn('[Validation] localStorage save failed:', e.message); }
 }
@@ -393,10 +467,44 @@ function loadSources(){
   // cygenix_project_connections (the active source/target) every time
   // validation.html opened. The sync module's init is the right surface;
   // load()/forceLoad() are for explicit "reset to cloud" buttons only.
+  let needsMigration = false;
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw) validationSources = JSON.parse(raw);
-  }catch{}
+    if(raw){
+      const arr = JSON.parse(raw);
+      if(Array.isArray(arr)){
+        validationSources = arr.map(s => {
+          // If this source still has a scripts[] array on disk, it's a
+          // pre-refactor shape — flag for migration write-back below.
+          if (s && Array.isArray(s.scripts) && s.scripts.length) needsMigration = true;
+          return {
+            id:         s.id,
+            label:      s.label || s.tableName || 'Untitled',
+            conn:       s.conn || '',
+            connLabel:  s.connLabel || '',
+            tableName:  s.tableName || '',
+            sqlCol:     s.sqlCol || '',
+            nameCol:    s.nameCol || '',
+            reportCols: Array.isArray(s.reportCols) ? s.reportCols : [],
+            runOn:      s.runOn || 'same',
+            // Always start with empty scripts array — populated only by
+            // an explicit Load click, never persisted.
+            scripts:    [],
+            loaded:     false
+          };
+        });
+      }
+    }
+  }catch(e){
+    console.warn('[Validation] load failed:', e.message);
+  }
+  // One-shot migration: if anything had old fat scripts on disk, rewrite
+  // the slim version straight back. Triggers cosmos-sync intercept too,
+  // so the bloated cloud copy gets replaced with the slim shape.
+  if (needsMigration) {
+    console.log('[Validation] Migrating ' + validationSources.length + ' source(s) to slim shape');
+    saveSources();
+  }
 }
 
 // ── Manual cloud save ─────────────────────────────────────────────────────────
@@ -605,81 +713,125 @@ async function saveSource(){
   const label = ($('modal-label').value||'').trim() || _mTable.label;
   const connLabel = $('modal-conn-pick').value==='custom' ? 'Custom' : ($('modal-conn-pick').value==='src'?'Source DB':'Target DB');
 
-  // Load all rows from the table to build the script list
-  $('modal-save-btn').disabled=true; $('modal-save-btn').textContent='Loading scripts…';
-  try{
-    const res = await dbCall(_mConn,{action:'execute',sql:'SELECT * FROM ['+_mTable.schema+'].['+_mTable.name+']'});
-    const rows = res.recordset||[];
-    if(!rows.length){ alert('Table is empty — no scripts to load.'); $('modal-save-btn').disabled=false; $('modal-save-btn').textContent='Save validation table'; return; }
+  // Save the DEFINITION only — no SELECT * here. The user explicitly
+  // clicks Load on the card when they want the rows fetched into memory.
+  // This keeps the persisted shape tiny (~500 bytes per source) and
+  // makes save instant rather than waiting on a 2,000-row query.
+  const srcId = _mEditId || ('vsrc_'+Date.now());
+  const srcObj = {
+    id:srcId, label, conn:_mConn, connLabel, tableName:_mTable.value,
+    sqlCol, nameCol, reportCols, runOn,
+    // In-memory only; never persisted.
+    scripts:[], loaded:false
+  };
 
-    const srcId = _mEditId || ('vsrc_'+Date.now());
-    const scripts = rows.map((r,i)=>({
-      id: srcId+'_'+i,
-      srcId,
-      sql: String(r[sqlCol]||''),
-      name: nameCol ? String(r[nameCol]||('Script '+(i+1))) : 'Script '+(i+1),
-      reportData: reportCols.reduce((o,c)=>{ o[c]=r[c]; return o; },{}),
-      status:'pending', result:null, error:null, rowsFound:0, checked:true
-    })).filter(s=>s.sql.trim());
-
-    const srcObj = {id:srcId, label, conn:_mConn, connLabel, tableName:_mTable.value, sqlCol, nameCol, reportCols, runOn, scripts};
-
-    if(_mEditId){
-      const idx = validationSources.findIndex(s=>s.id===_mEditId);
-      if(idx>=0) validationSources[idx]=srcObj; else validationSources.push(srcObj);
+  if(_mEditId){
+    const idx = validationSources.findIndex(s=>s.id===_mEditId);
+    if(idx>=0){
+      // Preserve any in-memory scripts/loaded state from before the edit
+      const existing = validationSources[idx];
+      srcObj.scripts = existing.scripts || [];
+      srcObj.loaded  = existing.loaded || false;
+      validationSources[idx] = srcObj;
     } else {
       validationSources.push(srcObj);
     }
-    saveSources();
-    renderSources();
-    rebuildScriptList();
-    closeModal();
-  }catch(e){
-    alert('Error loading table: '+e.message);
+  } else {
+    validationSources.push(srcObj);
   }
-  $('modal-save-btn').disabled=false; $('modal-save-btn').textContent='Save validation table';
+  activeSourceId = srcId;
+  saveSources();
+  renderSources();
+  rebuildScriptList();
+  closeModal();
 }
 
-// ── Render source cards ────────────────────────────────────────────────────────
+// ── Render sources (dropdown selector + active card) ──────────────────────────
 function renderSources(){
   const empty = $('sources-empty');
   const list  = $('sources-list');
-  if(!validationSources.length){ empty.style.display='block'; list.innerHTML=''; return; }
+
+  if(!validationSources.length){
+    empty.style.display='block';
+    list.innerHTML='';
+    return;
+  }
   empty.style.display='none';
-  list.innerHTML = validationSources.map(src=>{
-    const pass  = src.scripts.filter(s=>s.status==='pass').length;
-    const fail  = src.scripts.filter(s=>s.status==='fail').length;
-    const err   = src.scripts.filter(s=>s.status==='error').length;
-    const pend  = src.scripts.filter(s=>s.status==='pending').length;
-    const total = src.scripts.length;
-    return `
+
+  // Make sure activeSourceId points to something that exists. If not (e.g.
+  // it was deleted on another device, or we just imported a single source),
+  // fall back to the first source.
+  if (!validationSources.some(s => s.id === activeSourceId)) {
+    activeSourceId = validationSources[0].id;
+    saveActiveSource();
+  }
+
+  const src = getActiveSource();
+  if(!src){ list.innerHTML=''; return; }
+
+  const total = src.scripts.length;
+  const pass  = src.scripts.filter(s=>s.status==='pass').length;
+  const fail  = src.scripts.filter(s=>s.status==='fail').length;
+  const err   = src.scripts.filter(s=>s.status==='error').length;
+  const pend  = src.scripts.filter(s=>s.status==='pending').length;
+
+  // Dropdown options — show every saved source by label
+  const dropOpts = validationSources.map(s =>
+    `<option value="${esc(s.id)}"${s.id===activeSourceId?' selected':''}>${esc(s.label)}</option>`
+  ).join('');
+
+  // Status pills shown on the card — only after Load
+  const statusPills = src.loaded ? `
+    <span class="tag">${total} scripts</span>
+    ${pass?`<span class="badge badge-pass">${pass} pass</span>`:''}
+    ${fail?`<span class="badge badge-fail">${fail} fail</span>`:''}
+    ${err?`<span class="badge badge-err">${err} error</span>`:''}
+    ${pend&&pend<total?`<span class="badge badge-pend">${pend} pending</span>`:''}
+  ` : `<span class="tag" style="color:var(--text3)">Not loaded</span>`;
+
+  // Action buttons: Load is always visible (acts as Reload when already
+  // loaded). Run is only enabled when scripts are in memory.
+  const loadLabel = src.loaded ? '⟲ Reload' : '⟲ Load scripts';
+  const runDisabled = !src.loaded || total === 0;
+  const runHint = !src.loaded ? 'title="Click Load scripts first"' : '';
+
+  list.innerHTML = `
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap">
+      <label style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Active source</label>
+      <select id="src-picker" class="form-input" style="min-width:240px;max-width:420px;font-size:12px" onchange="selectSource(this.value)">
+        ${dropOpts}
+      </select>
+      <span style="font-size:11px;color:var(--text3)">${validationSources.length} saved</span>
+    </div>
     <div class="vsrc-card">
       <div class="vsrc-head">
         <span class="vsrc-name">${esc(src.label)}</span>
         <span class="tag">${esc(src.tableName)}</span>
         <span class="tag">SQL: ${esc(src.sqlCol)}</span>
-        <span class="tag">${total} scripts</span>
-        ${pass?`<span class="badge badge-pass">${pass} pass</span>`:''}
-        ${fail?`<span class="badge badge-fail">${fail} fail</span>`:''}
-        ${err?`<span class="badge badge-err">${err} error</span>`:''}
-        ${pend&&pend<total?`<span class="badge badge-pend">${pend} pending</span>`:''}
+        ${statusPills}
         <div style="margin-left:auto;display:flex;gap:0.4rem">
-          <button class="btn btn-ghost btn-sm" onclick="runSourceScripts('${src.id}')">▶ Run</button>
-          <button class="btn btn-ghost btn-sm" onclick="openAddSource('${src.id}')">✏ Edit</button>
-          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="removeSource('${src.id}')">✕</button>
+          <button class="btn btn-primary btn-sm" data-load-source="${esc(src.id)}" onclick="loadSourceScripts('${esc(src.id)}')">${loadLabel}</button>
+          <button class="btn btn-amber btn-sm" onclick="runSourceScripts('${esc(src.id)}')" ${runDisabled?'disabled':''} ${runHint}>▶ Run</button>
+          <button class="btn btn-ghost btn-sm" onclick="openAddSource('${esc(src.id)}')">✏ Edit</button>
+          <button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="removeSource('${esc(src.id)}')">✕</button>
         </div>
       </div>
       <div style="font-size:11px;color:var(--text3)">
-        Report cols: <span style="color:var(--text2);font-family:var(--mono)">${src.reportCols.join(', ')||'none'}</span>
+        Connection: <span style="color:var(--text2)">${esc(src.connLabel||'?')}</span>
+        &nbsp;·&nbsp; Report cols: <span style="color:var(--text2);font-family:var(--mono)">${(src.reportCols||[]).join(', ')||'none'}</span>
         &nbsp;·&nbsp; Run on: <span style="color:var(--text2)">${src.runOn==='src'?'Source DB':src.runOn==='tgt'?'Target DB':'Same connection'}</span>
       </div>
     </div>`;
-  }).join('');
 }
 
 function removeSource(id){
   if(!confirm('Remove this validation table?')) return;
   validationSources = validationSources.filter(s=>s.id!==id);
+  // If we just deleted the active one, pick a new one
+  if (activeSourceId === id) {
+    activeSourceId = validationSources[0]?.id || null;
+    saveActiveSource();
+  }
   saveSources();
   renderSources();
   rebuildScriptList();
@@ -687,7 +839,13 @@ function removeSource(id){
 
 // ── Flat script list (combined table) ──────────────────────────────────────────
 function rebuildScriptList(){
-  allScripts = validationSources.flatMap(src=>src.scripts);
+  // Scope to the active source only — the dropdown UX is "one source at a
+  // time", so combining scripts from all sources in the flat table would
+  // be confusing (you'd see scripts from sources you're not working on).
+  // If no active source or active source has no loaded scripts, hide the
+  // panel entirely.
+  const src = getActiveSource();
+  allScripts = src && src.loaded ? src.scripts : [];
   if(!allScripts.length){ $('scripts-panel').style.display='none'; $('run-all-btn').disabled=true; return; }
   $('scripts-panel').style.display='block';
   $('run-all-btn').disabled=false;
@@ -904,6 +1062,10 @@ document.addEventListener('click',e=>{
 // after visiting Validation". Using the gap-fill semantics via init+event
 // instead.
 (function init(){
+  // Restore the active source id from its own tiny localStorage key. If
+  // the id no longer exists in validationSources (e.g. deleted on another
+  // device), renderSources falls back to the first source.
+  try { activeSourceId = localStorage.getItem(ACTIVE_KEY) || null; } catch {}
   loadSources();
   renderSources();
   rebuildScriptList();
