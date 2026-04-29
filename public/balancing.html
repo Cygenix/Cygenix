@@ -170,6 +170,17 @@ body.cyg-collapsed{padding-left:54px}
 .cb-add-btn{font-size:11px;padding:3px 9px;border-radius:6px;background:transparent;color:var(--accent);border:0.5px dashed rgba(61,126,255,0.4);cursor:pointer;font-family:var(--serif)}
 .cb-add-btn:hover{background:rgba(61,126,255,0.06);border-style:solid}
 
+/* Aggregate toggle buttons — one per measure type (SUM, COUNT, MIN, MAX, AVG)
+   on each Group by row. Clicking adds a corresponding aggregated row to
+   Output columns; clicking an active button removes it. Active state is
+   derived from whether a matching select exists, not from local state. */
+.cb-agg-row{display:inline-flex;gap:3px;margin-left:0.4rem;flex-wrap:wrap}
+.cb-agg-btn{font-size:10px;padding:2px 7px;border-radius:4px;background:transparent;color:var(--text3);border:0.5px solid var(--border2);cursor:pointer;font-family:var(--mono);font-weight:500;letter-spacing:0.02em;line-height:1.4}
+.cb-agg-btn:hover{color:var(--text2);border-color:var(--text3)}
+.cb-agg-btn.active{background:rgba(34,201,122,0.12);color:var(--green);border-color:rgba(34,201,122,0.4)}
+.cb-agg-btn.active:hover{background:rgba(34,201,122,0.18)}
+.cb-agg-btn:disabled{opacity:0.35;cursor:not-allowed}
+
 .cb-sql-box{font-family:var(--mono);font-size:11px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:0.65rem 0.85rem;color:var(--text2);white-space:pre-wrap;line-height:1.55;max-height:240px;overflow:auto}
 .cb-sql-textarea{font-family:var(--mono);font-size:11px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.65rem 0.85rem;color:var(--text);width:100%;min-height:120px;line-height:1.55;resize:vertical;outline:none}
 .cb-sql-textarea:focus{border-color:var(--accent)}
@@ -2406,15 +2417,39 @@ function cbRenderGroupSection(r, idx, sideShort, ready){
       ready: ready
     });
 
+    // Aggregate quick-add buttons. Each one checks whether a matching
+    // {tableIdx, col, agg} already exists in selects; if so it shows as
+    // active (and clicking removes it). Buttons are disabled until the
+    // user has actually picked a column — without one, we can't form
+    // a meaningful SUM(<col>) etc.
+    const hasCol = !!(g.col && g.col.trim());
+    const aggButtons = ['SUM','COUNT','MIN','MAX','AVG'].map(agg => {
+      const isActive = hasCol && (r.selects || []).some(s =>
+        s && s.tableIdx === (g.tableIdx || 0) && s.col === g.col && s.agg === agg
+      );
+      return '<button class="cb-agg-btn' + (isActive ? ' active' : '') + '"'
+           + ' onclick="cbToggleAgg(' + idx + ',' + i + ',\'' + agg + '\')"'
+           + (hasCol ? '' : ' disabled title="Pick a column first"')
+           + (isActive ? ' title="Remove ' + agg + '(' + escapeHtml(g.col) + ') from output columns"' : '')
+           + '>' + agg + '</button>';
+    }).join('');
+
     return '<div class="cb-row" style="grid-template-columns:1fr">'
          + '<div class="cb-row-controls">'
          +   tableAnchor + tableSelect + colPicker
+         +   '<div class="cb-agg-row" title="Toggle aggregate \u2014 adds/removes a corresponding row in Output columns">'
+         +     aggButtons
+         +   '</div>'
          +   '<button class="cb-row-x" onclick="cbRemoveGroup(' + idx + ',' + i + ')">✕</button>'
          + '</div>'
          + '</div>';
   }).join('');
 
-  return rows + '<button class="cb-add-btn" style="margin-top:0.4rem" onclick="cbAddGroup(' + idx + ')">＋ Add group field</button>';
+  const help = '<div style="font-size:10.5px;color:var(--text3);margin-top:0.5rem;line-height:1.5">'
+             + 'Group by columns are grouping keys. Click an aggregate button (SUM/COUNT/MIN/MAX/AVG) to add a corresponding measure to Output columns automatically.'
+             + '</div>';
+
+  return rows + '<button class="cb-add-btn" style="margin-top:0.4rem" onclick="cbAddGroup(' + idx + ')">＋ Add group field</button>' + help;
 }
 
 function cbAddGroup(idx){
@@ -2427,10 +2462,37 @@ function cbUpdateGroup(idx, i, key, value){
     if (key === 'tableIdx') r.groupBy[i][key] = parseInt(value, 10);
     else r.groupBy[i][key] = value;
   });
+  // Re-render on table changes (the column picker's table scope changes).
+  // Column commits via the picker dropdown trigger their own re-render
+  // through the cb-custom wrapper; typing in the column input doesn't
+  // re-render so the user keeps focus and cursor position.
   if (key === 'tableIdx') cbRender();
 }
 function cbRemoveGroup(idx, i){
   cbWith(idx, r => { r.groupBy.splice(i, 1); });
+  cbRender();
+}
+
+// Toggle an aggregate measure for a Group by row. If a matching select
+// exists, remove it; otherwise append one with a sensible default alias
+// like "sum_amount" so multiple aggs on the same column don't collide
+// in the result set. The alias defaults are editable in the Output
+// columns row afterward.
+function cbToggleAgg(idx, groupIdx, agg){
+  cbWith(idx, r => {
+    const g = r.groupBy && r.groupBy[groupIdx];
+    if (!g || !g.col) return;
+    const tableIdx = g.tableIdx || 0;
+    const matchIdx = (r.selects || []).findIndex(s =>
+      s && s.tableIdx === tableIdx && s.col === g.col && s.agg === agg
+    );
+    if (matchIdx >= 0) {
+      r.selects.splice(matchIdx, 1);
+    } else {
+      const alias = agg.toLowerCase() + '_' + g.col;
+      r.selects.push({ tableIdx: tableIdx, col: g.col, agg: agg, alias: alias });
+    }
+  });
   cbRender();
 }
 
@@ -3040,6 +3102,11 @@ function cbAiApplySql(idx, mid){
           new Function('return ' + expr).call(input);
         } catch (e) { /* ignore — invalid expressions silently no-op */ }
       }
+      // Re-render after a commit so any UI that depends on the new value
+      // (e.g. the aggregate toggle buttons in Group by, which key off the
+      // group row's column name) reflects the change. We don't re-render
+      // on every keystroke (would lose focus); only on commit.
+      cbRender();
       return;
     }
     return orig(input, value);
