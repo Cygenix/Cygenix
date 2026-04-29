@@ -124,7 +124,16 @@ const CygenixSync = (() => {
         headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
         body: body ? JSON.stringify(body) : undefined
       });
-      if (!res.ok) { console.warn('[CygenixSync]', action, res.status); return null; }
+      if (!res.ok) {
+        // Capture the response body — without Application Insights or Live
+        // Log Stream available on this Azure plan, the browser console is
+        // the only diagnostic surface for server errors. The Azure Function
+        // is wrapped to return err.message + err.stack in 500 bodies.
+        let detail = '';
+        try { detail = (await res.text()).slice(0, 500); } catch {}
+        console.warn('[CygenixSync]', action, res.status, detail);
+        return null;
+      }
       return await res.json();
     } catch (e) { console.warn('[CygenixSync] error:', e.message); return null; }
   }
@@ -141,14 +150,25 @@ const CygenixSync = (() => {
   // write to a sync key. Without merge logic, any backend-side write to
   // jobs[] gets clobbered within seconds.
   async function buildMergedPayload() {
-    // Read all local sync keys
+    // Read all local sync keys into `local`, keyed by the CLOUD field name
+    // (not the prefix-stripped localStorage name). Iterating FIELD_MAP
+    // rather than SYNC_KEYS means save and load agree on field names —
+    // previously this used `key.replace('cygenix_','')` which produced
+    // 'project_connections' from 'cygenix_project_connections', but the
+    // gap-fill loop in init() reads `cloud['connections']`. Result: every
+    // save pushed connections under the wrong field name and every load
+    // looked under the right one and found nothing. Same applied to any
+    // FIELD_MAP entry where the cloud field name differed from the
+    // prefix-stripped localStorage key (currently just `connections`,
+    // but worth keeping the loop FIELD_MAP-driven so future entries
+    // can't hit this).
     const local = {};
-    SYNC_KEYS.forEach(key => {
+    for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
       try {
-        const v = localStorage.getItem(key);
-        if (v) local[key.replace('cygenix_','')] = JSON.parse(v);
+        const v = localStorage.getItem(localKey);
+        if (v) local[cloudField] = JSON.parse(v);
       } catch {}
-    });
+    }
     if (!Object.keys(local).length) return null;
 
     // Pull current cloud state so we can preserve anything cloud-only
@@ -210,6 +230,48 @@ const CygenixSync = (() => {
       ...cloudVal.filter(i => i && i.id != null && !localIds.has(i.id)),
     ];
     return ordered;
+  }
+
+  // Same lifecycle as save() but returns a structured result so saveNow
+  // callers can distinguish failure modes. save() returns null for several
+  // unrelated reasons (not signed in, empty payload, network error,
+  // server-rejected) which made debugging "no-response" errors impossible.
+  // This wraps each branch with a specific failure tag.
+  async function saveDetailed() {
+    if (!getUserId()) return { ok: false, error: 'not-signed-in' };
+    const payload = await buildMergedPayload();
+    if (!payload || !Object.keys(payload).length) {
+      return { ok: false, error: 'no-local-data' };
+    }
+    let r;
+    try {
+      r = await callApi('save', 'POST', payload);
+    } catch (e) {
+      return { ok: false, error: 'call-threw: ' + (e.message || e) };
+    }
+    if (!r) {
+      // callApi returned null — already logged the HTTP status or network
+      // error to console with the [CygenixSync] prefix. Surface that to UI
+      // with enough detail that the user can search the console.
+      return { ok: false, error: 'call-failed (check console for [CygenixSync])' };
+    }
+    if (!r.saved) {
+      // Server responded but explicitly didn't save. Surface its reason
+      // verbatim if it gave one, so we don't lose the diagnostic detail.
+      return { ok: false, error: 'server-rejected: ' + JSON.stringify(r) };
+    }
+    // Success — mirror cloud back to localStorage so the UI sees any
+    // cloud-only records that the merge brought in. Same writeback as save().
+    try {
+      for (const [field, val] of Object.entries(payload)) {
+        const key = FIELD_MAP[field];
+        if (key) _orig(key, JSON.stringify(val));
+      }
+    } catch (e) {
+      console.warn('[CygenixSync] post-save localStorage update failed:', e.message);
+    }
+    console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
+    return { ok: true, updatedAt: r.updatedAt };
   }
 
   async function save() {
@@ -304,13 +366,10 @@ const CygenixSync = (() => {
   // should feel immediate and surface errors.
   async function saveNow() {
     if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
-    if (!getUserId()) return { ok: false, error: 'not-signed-in' };
     try {
-      const r = await save();
-      if (r?.saved) return { ok: true, updatedAt: r.updatedAt };
-      return { ok: false, error: 'no-response' };
+      return await saveDetailed();
     } catch (e) {
-      return { ok: false, error: e.message || String(e) };
+      return { ok: false, error: 'saveNow-threw: ' + (e.message || String(e)) };
     }
   }
 
