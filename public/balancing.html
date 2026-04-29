@@ -276,6 +276,59 @@ body.cyg-collapsed{padding-left:54px}
   font-family:var(--mono);
 }
 
+/* ── Auto-build (Scan & Propose) modal ──
+   Multi-step flow: configure → progress → review proposals → done.
+   Reused step-pane pattern keeps the markup small. */
+.ab-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;padding:1rem}
+.ab-overlay.open{display:flex}
+.ab-modal{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);width:880px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.ab-head{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);flex-shrink:0;gap:1rem}
+.ab-title{font-size:15px;font-weight:600;color:var(--text)}
+.ab-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.ab-body{flex:1;overflow-y:auto;padding:1.25rem}
+.ab-foot{padding:0.85rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;justify-content:flex-end;flex-shrink:0;flex-wrap:wrap}
+
+.ab-step{display:none}
+.ab-step.active{display:block}
+
+.ab-option-grid{display:grid;grid-template-columns:1fr 1fr;gap:0.65rem;margin-bottom:1rem}
+.ab-option-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.85rem 1rem;cursor:pointer;transition:all 0.15s;position:relative}
+.ab-option-card:hover{border-color:var(--accent)}
+.ab-option-card.active{border-color:var(--accent);background:rgba(61,126,255,0.08);box-shadow:0 0 0 2px rgba(61,126,255,0.2)}
+.ab-option-card.active::after{content:"✓";position:absolute;top:8px;right:10px;color:var(--accent);font-weight:600}
+.ab-option-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:0.3rem}
+.ab-option-body{font-size:11.5px;color:var(--text2);line-height:1.5}
+
+.ab-progress{padding:1rem 0;text-align:center}
+.ab-progress-msg{font-size:13px;color:var(--text);margin-bottom:0.5rem}
+.ab-progress-detail{font-size:11.5px;color:var(--text3);font-family:var(--mono);min-height:1.2em}
+.ab-progress-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin:1rem 0;border:0.5px solid var(--border)}
+.ab-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--purple));transition:width 0.25s}
+
+.ab-prop-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.85rem 1rem;margin-bottom:0.75rem}
+.ab-prop-card.skipped{opacity:0.5}
+.ab-prop-card.accepted{border-color:rgba(34,201,122,0.4);background:rgba(34,201,122,0.05)}
+.ab-prop-card.duplicate{opacity:0.4}
+.ab-prop-head{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.5rem;flex-wrap:wrap}
+.ab-type-badge{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:100px;font-weight:500;letter-spacing:0.03em;flex-shrink:0}
+.ab-type-debits-credits{background:rgba(79,142,255,0.12);color:#6ea4ff}
+.ab-type-control-totals{background:rgba(45,212,191,0.12);color:#2dd4bf}
+.ab-type-gl-balancing{background:rgba(167,139,250,0.12);color:#a78bfa}
+.ab-type-trial-balance{background:rgba(245,158,11,0.12);color:var(--amber)}
+.ab-type-custom{background:rgba(34,201,122,0.12);color:var(--green)}
+.ab-prop-name{font-size:13px;font-weight:500;flex:1;min-width:160px}
+.ab-conf{font-size:10px;font-family:var(--mono);color:var(--text3);padding:1px 6px;border-radius:4px;border:0.5px solid var(--border2)}
+.ab-conf.high{color:var(--green);border-color:rgba(34,201,122,0.3)}
+.ab-conf.med{color:var(--amber);border-color:rgba(245,158,11,0.3)}
+.ab-conf.low{color:var(--text3)}
+.ab-prop-config{font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.7rem;margin:0.4rem 0;white-space:pre-wrap;line-height:1.5}
+.ab-prop-reason{font-size:11.5px;color:var(--text3);line-height:1.5;font-style:italic;padding:0.3rem 0}
+.ab-prop-actions{display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem}
+.ab-prop-status{font-size:11px;font-family:var(--mono);color:var(--text3);margin-left:auto}
+.ab-prop-status.accepted{color:var(--green)}
+.ab-prop-status.skipped{color:var(--text3)}
+.ab-prop-status.duplicate{color:var(--amber)}
+
 /* ── Trial Balance preview table ──
    Used to show the merged TB rows (source/target/variance) inline once
    a report has been run. Excel/CSV exports use the same data array. */
@@ -321,6 +374,7 @@ body.cyg-collapsed{padding-left:54px}
     </div>
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
       <span id="bal-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</span>
+      <button class="btn btn-purple btn-sm" onclick="abOpenScanModal()" title="Let Claude scan your data and propose balance checks automatically">✨ Auto-build</button>
       <button class="btn btn-purple btn-sm" onclick="balAddCheck()">＋ Add check</button>
       <button class="btn btn-primary btn-sm" onclick="balRunAll()">▶ Run all</button>
     </div>
@@ -441,6 +495,92 @@ body.cyg-collapsed{padding-left:54px}
 
   <!-- Inline search-dropdowns are appended dynamically next to each
        picker input by balFieldGrid; no global datalist elements needed. -->
+
+  <!-- Auto-build (Scan & Propose) modal — opened from the ✨ Auto-build
+       button on the page header. Walks through configure → progress →
+       review proposals. Layered absolutely so it overlays all tabs. -->
+  <div class="ab-overlay" id="ab-overlay" onclick="if(event.target===this)abCloseScanModal()">
+    <div class="ab-modal">
+      <div class="ab-head">
+        <div>
+          <div class="ab-title">✨ Auto-build balance checks</div>
+          <div class="ab-sub" id="ab-step-sub">Let Claude scan your data and propose balance checks for review.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="abCloseScanModal()">✕ Close</button>
+      </div>
+
+      <!-- Step 1: Configure -->
+      <div class="ab-body">
+        <div class="ab-step active" id="ab-step-configure">
+          <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem">Which side(s) to scan</div>
+          <div class="ab-option-grid">
+            <div class="ab-option-card" data-ab-side="source" onclick="abPickSide('source')">
+              <div class="ab-option-title">Source only</div>
+              <div class="ab-option-body">Scan the source database for journal/GL/sub-ledger tables and propose source-side checks.</div>
+            </div>
+            <div class="ab-option-card" data-ab-side="target" onclick="abPickSide('target')">
+              <div class="ab-option-title">Target only</div>
+              <div class="ab-option-body">Scan the target database. Useful after a migration to verify the target balances.</div>
+            </div>
+            <div class="ab-option-card active" data-ab-side="both" onclick="abPickSide('both')" style="grid-column:1/-1">
+              <div class="ab-option-title">Both — including cross-side checks</div>
+              <div class="ab-option-body">Scan both. Claude will additionally propose Control Totals and Trial Balance reports comparing source vs target where it can find matching tables on each side.</div>
+            </div>
+          </div>
+
+          <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin:1rem 0 0.5rem">What Claude can see</div>
+          <div class="ab-option-grid">
+            <div class="ab-option-card" data-ab-context="schema-only" onclick="abPickContext('schema-only')">
+              <div class="ab-option-title">Schemas only — zero PII</div>
+              <div class="ab-option-body">Send Claude column names and types. No sample values leave your network. Lower-quality proposals but no data exposure.</div>
+            </div>
+            <div class="ab-option-card active" data-ab-context="schema-samples" onclick="abPickContext('schema-samples')">
+              <div class="ab-option-title">Schemas + 5 sample rows per table</div>
+              <div class="ab-option-body">Adds a few rows per candidate table (TOP 5). Higher-quality proposals; sample values do leave your browser. Same posture as your existing AI features.</div>
+            </div>
+          </div>
+
+          <div style="font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;margin:1rem 0 0.5rem">Extra context (optional)</div>
+          <textarea id="ab-extra-context" placeholder="e.g. &quot;This is an Oracle ERP migration to Dynamics. Period codes are YYYYMM. Skip linked-server tables.&quot;" style="width:100%;min-height:60px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.7rem;font-family:var(--serif);font-size:12px;color:var(--text);resize:vertical;outline:none"></textarea>
+          <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">Anything you tell Claude here is included in every batch. Useful for clarifying domain-specific terminology or excluding tables.</div>
+        </div>
+
+        <!-- Step 2: Progress -->
+        <div class="ab-step" id="ab-step-progress">
+          <div class="ab-progress">
+            <div class="ab-progress-msg" id="ab-progress-msg">Starting…</div>
+            <div class="ab-progress-bar"><div class="ab-progress-fill" id="ab-progress-fill" style="width:0%"></div></div>
+            <div class="ab-progress-detail" id="ab-progress-detail"></div>
+          </div>
+        </div>
+
+        <!-- Step 3: Review proposals -->
+        <div class="ab-step" id="ab-step-review">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem">
+            <div style="font-size:12px;color:var(--text3);line-height:1.5;flex:1;min-width:240px" id="ab-review-summary">Reviewing proposals…</div>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" onclick="abAcceptAllHigh()" title="Accept all proposals Claude marked as high confidence">Accept all high-confidence</button>
+              <button class="btn btn-ghost btn-sm" onclick="abSkipAll()" style="color:var(--red)" title="Skip every proposal">Skip all</button>
+            </div>
+          </div>
+          <div id="ab-prop-list"></div>
+        </div>
+
+        <!-- Step 4: Done -->
+        <div class="ab-step" id="ab-step-done">
+          <div style="text-align:center;padding:1.5rem 0">
+            <div style="font-size:32px;margin-bottom:0.5rem">✓</div>
+            <div id="ab-done-msg" style="font-size:14px;color:var(--text);margin-bottom:0.5rem">Done.</div>
+            <div id="ab-done-detail" style="font-size:11.5px;color:var(--text3);line-height:1.6"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ab-foot" id="ab-footer">
+        <!-- Buttons populated per step by abShowStep() -->
+      </div>
+    </div>
+  </div>
 
 </div><!-- /.page -->
 
@@ -3173,6 +3313,601 @@ function cbAiApplySql(idx, mid){
     return orig(input, value);
   };
 })();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// AUTO-BUILD (Scan & Propose)
+//
+// Flow:
+//   1. User opens modal, picks side(s), context level (schema-only / + samples),
+//      and optional extra prompt context.
+//   2. Click Scan → we score candidate tables by financial keyword density,
+//      cap at ~50 per side, fetch samples (if asked), then send to Claude in
+//      batches of ~8 tables per call.
+//   3. Claude returns proposals as a JSON array per batch. We aggregate, run
+//      de-duplication against existing checks, and render a review list.
+//   4. User Accept/Edit/Skip per proposal. Accepts materialise into the
+//      relevant tab's storage and re-render fires.
+//
+// Design constraints:
+//   - All API calls go through cbGetApiKey() (same key as the CB tab's AI Assist)
+//   - SQL execution reuses balExec — same routing, same connection rules
+//   - Materialisation reuses each tab's existing storage helpers, so a
+//     proposal accepted as a Debits=Credits check is indistinguishable from
+//     one the user typed in by hand.
+//   - Modal state is module-scoped (abState); when the modal closes everything
+//     is forgotten unless the user accepted proposals (those are persisted).
+// ══════════════════════════════════════════════════════════════════════════════
+
+const AB_FINANCIAL_KEYWORDS = [
+  // Direct financial-data signals
+  'debit','credit','amount','balance','total','sum',
+  'account','acct','gl_','ledger','journal','posting','entry','trans',
+  'period','fiscal','year','month','quarter',
+  'currency','curr','fx','rate',
+  'opening','closing','open_bal','close_bal',
+  'invoice','payment','receipt','voucher',
+  'cost','price','tax','vat','net','gross'
+];
+
+const AB_BATCH_SIZE = 8;        // tables per Claude call
+const AB_MAX_CANDIDATES = 50;   // per side; trimmed by score if more
+const AB_SAMPLE_ROWS = 5;       // rows per table when context = schema-samples
+
+let abState = {
+  open: false,
+  step: 'configure',         // 'configure' | 'progress' | 'review' | 'done'
+  side: 'both',
+  context: 'schema-samples',
+  extraContext: '',
+  candidates: { src: [], tgt: [] },
+  proposals: [],             // [{ id, type, name, side, config, reasoning, confidence, status }]
+  cancelled: false
+};
+
+function abOpenScanModal(){
+  abState = {
+    open: true,
+    step: 'configure',
+    side: 'both',
+    context: 'schema-samples',
+    extraContext: '',
+    candidates: { src: [], tgt: [] },
+    proposals: [],
+    cancelled: false
+  };
+  $('ab-overlay').classList.add('open');
+  abShowStep('configure');
+}
+function abCloseScanModal(){
+  abState.open = false;
+  abState.cancelled = true;       // signal any in-flight scan to stop
+  $('ab-overlay').classList.remove('open');
+}
+function abShowStep(step){
+  abState.step = step;
+  document.querySelectorAll('.ab-step').forEach(el => {
+    el.classList.toggle('active', el.id === 'ab-step-' + step);
+  });
+  // Sub-title and footer change per step.
+  const sub = $('ab-step-sub');
+  const foot = $('ab-footer');
+  if (step === 'configure') {
+    sub.textContent = 'Let Claude scan your data and propose balance checks for review.';
+    foot.innerHTML = '<button class="btn btn-ghost btn-sm" onclick="abCloseScanModal()">Cancel</button>'
+                   + '<button class="btn btn-primary btn-sm" onclick="abStartScan()">Scan →</button>';
+  } else if (step === 'progress') {
+    sub.textContent = 'Scanning… this may take a minute on large schemas.';
+    foot.innerHTML = '<button class="btn btn-ghost btn-sm" onclick="abCloseScanModal()" style="color:var(--red)">Cancel scan</button>';
+  } else if (step === 'review') {
+    sub.textContent = 'Review and accept proposals. Nothing is added until you click Accept.';
+    foot.innerHTML = '<button class="btn btn-ghost btn-sm" onclick="abShowStep(\'configure\')">← Back</button>'
+                   + '<button class="btn btn-primary btn-sm" onclick="abFinishReview()">Done</button>';
+  } else if (step === 'done') {
+    sub.textContent = '';
+    foot.innerHTML = '<button class="btn btn-primary btn-sm" onclick="abCloseScanModal()">Close</button>';
+  }
+}
+function abPickSide(side){
+  abState.side = side;
+  document.querySelectorAll('[data-ab-side]').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('data-ab-side') === side);
+  });
+}
+function abPickContext(ctx){
+  abState.context = ctx;
+  document.querySelectorAll('[data-ab-context]').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('data-ab-context') === ctx);
+  });
+}
+
+// ── Progress UI ──────────────────────────────────────────────────────────────
+function abProgress(msg, detail, pct){
+  const m = $('ab-progress-msg');
+  const d = $('ab-progress-detail');
+  const f = $('ab-progress-fill');
+  if (m) m.textContent = msg || '';
+  if (d) d.textContent = detail || '';
+  if (f && typeof pct === 'number') f.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+// ── Candidate discovery ──────────────────────────────────────────────────────
+// Score a table by counting columns whose names match financial keywords.
+// Tables score on table-name match too, so a table called 'GL_Journal' starts
+// with a head start even before column scoring.
+function abScoreTable(t){
+  let score = 0;
+  const tableNameLower = (t.fullName || '').toLowerCase();
+  for (const kw of AB_FINANCIAL_KEYWORDS) {
+    if (tableNameLower.includes(kw)) score += 2;
+  }
+  const cols = t.columns || [];
+  for (const c of cols) {
+    const cname = (typeof c === 'string' ? c : (c.name || c.column || '')).toLowerCase();
+    if (!cname) continue;
+    for (const kw of AB_FINANCIAL_KEYWORDS) {
+      if (cname.includes(kw)) { score += 1; break; }   // count each column once
+    }
+  }
+  return score;
+}
+
+// Find candidate tables on a side. We need columns to score; if the side is
+// in paginated-schema mode, columns may not be loaded yet — so we kick off
+// lazy column loads for the highest-scoring tables (by name) up to the cap,
+// then re-score with full column data.
+async function abFindCandidates(side, onProgress){
+  const sch = side === 'src' ? srcSchema : tgtSchema;
+  if (!sch.loaded) return [];
+
+  // First pass: name-only score. Even without columns, a table called
+  // "GL_Journal" or "trial_balance" scores high enough to qualify.
+  const namedScored = sch.tables.map(t => ({ t, score: abScoreTable({ fullName: t.fullName, columns: t.columns || [] }) }));
+  namedScored.sort((a, b) => b.score - a.score);
+
+  // Take a generous initial set — anything with score>0 plus the next 30 by
+  // name regardless of score, so we don't miss tables whose columns matter
+  // but whose name doesn't say "GL". Cap at AB_MAX_CANDIDATES * 2 so the
+  // column-load step doesn't take forever.
+  const initial = namedScored.filter(x => x.score > 0).map(x => x.t);
+  const padded = initial.length < AB_MAX_CANDIDATES
+    ? initial.concat(namedScored.slice(initial.length, initial.length + AB_MAX_CANDIDATES).map(x => x.t))
+    : initial;
+  const pool = padded.slice(0, AB_MAX_CANDIDATES * 2);
+
+  // Lazy-load columns for any pool members in paginated mode that don't have them.
+  // This is the slow step on huge schemas. Run with progress.
+  let loaded = 0;
+  for (const t of pool) {
+    if (abState.cancelled) return [];
+    if (!Array.isArray(t.columns) || t.columns.length === 0) {
+      // eslint-disable-next-line no-await-in-loop
+      try { await ensureColumns(side, t); } catch { /* tolerate per-table failures */ }
+    }
+    loaded++;
+    if (onProgress) onProgress(loaded, pool.length);
+  }
+
+  // Second pass: re-score with column info, take top AB_MAX_CANDIDATES.
+  const rescored = pool.map(t => ({ t, score: abScoreTable(t) }));
+  rescored.sort((a, b) => b.score - a.score);
+  return rescored.filter(x => x.score >= 1).slice(0, AB_MAX_CANDIDATES).map(x => x.t);
+}
+
+// ── Sample fetch ─────────────────────────────────────────────────────────────
+// Pull TOP 5 from each candidate. Sequential to keep load manageable. Errors
+// are swallowed at table level — an empty table or permissions issue
+// shouldn't abort the whole scan.
+async function abFetchSamples(side, candidates, onProgress){
+  const out = new Map(); // fullName → array of row objects
+  if (abState.context !== 'schema-samples') return out;
+  const sideKey = side === 'src' ? 'source' : 'target';
+  for (let i = 0; i < candidates.length; i++) {
+    if (abState.cancelled) return out;
+    const t = candidates[i];
+    // Use SELECT TOP for SQL Server compatibility — same reasoning as the CB
+    // limit-syntax fix. If this is Postgres/MySQL, TOP is invalid, so we
+    // fall back to LIMIT on error.
+    let sql = 'SELECT TOP ' + AB_SAMPLE_ROWS + ' * FROM ' + t.fullName;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const rows = await balExec(sideKey, sql);
+      out.set(t.fullName, (rows || []).slice(0, AB_SAMPLE_ROWS));
+    } catch (e) {
+      // Retry once with LIMIT in case the engine isn't SQL Server.
+      sql = 'SELECT * FROM ' + t.fullName + ' LIMIT ' + AB_SAMPLE_ROWS;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const rows = await balExec(sideKey, sql);
+        out.set(t.fullName, (rows || []).slice(0, AB_SAMPLE_ROWS));
+      } catch (e2) {
+        out.set(t.fullName, null);   // signals "couldn't sample"
+      }
+    }
+    if (onProgress) onProgress(i + 1, candidates.length);
+  }
+  return out;
+}
+
+// ── Claude analysis (chunked) ────────────────────────────────────────────────
+async function abAnalyseWithClaude(side, candidates, samples, otherSideCandidates, onProgress){
+  const apiKey = cbGetApiKey();
+  if (!apiKey) throw new Error('No Anthropic API key — set one in Dashboard → Settings.');
+
+  const proposals = [];
+  const batches = [];
+  for (let i = 0; i < candidates.length; i += AB_BATCH_SIZE) {
+    batches.push(candidates.slice(i, i + AB_BATCH_SIZE));
+  }
+
+  for (let bi = 0; bi < batches.length; bi++) {
+    if (abState.cancelled) return proposals;
+    const batch = batches[bi];
+    if (onProgress) onProgress(bi, batches.length, side, batch.length);
+
+    const tableBlocks = batch.map(t => {
+      const cols = (t.columns || []).map(c => {
+        const name = typeof c === 'string' ? c : (c.name || c.column || '');
+        const type = typeof c === 'object' && c.dataType ? c.dataType : '';
+        return '  ' + name + (type ? ' [' + type + ']' : '');
+      }).join('\n');
+      let sampleStr = '';
+      if (abState.context === 'schema-samples' && samples.has(t.fullName)) {
+        const sample = samples.get(t.fullName);
+        if (sample === null) sampleStr = '\n  (sample fetch failed — empty or restricted)';
+        else if (sample.length === 0) sampleStr = '\n  (table is empty)';
+        else sampleStr = '\n  Sample rows:\n' + sample.map(row => '  ' + JSON.stringify(row).slice(0, 400)).join('\n');
+      }
+      return '## ' + t.fullName + '\nColumns:\n' + cols + sampleStr;
+    }).join('\n\n');
+
+    const otherSideHint = otherSideCandidates && otherSideCandidates.length
+      ? '\n\nFor cross-side checks (Control Totals, Trial Balance), the OTHER side ('
+        + (side === 'src' ? 'target' : 'source') + ') has these tables available:\n'
+        + otherSideCandidates.slice(0, 30).map(t => '- ' + t.fullName).join('\n')
+      : '';
+
+    const extra = (abState.extraContext || '').trim();
+    const userContextLine = extra ? '\n\nAdditional user-supplied context:\n' + extra : '';
+
+    const systemPrompt = ''
+      + 'You are an expert financial data analyst helping a user set up balance checks for a database migration tool. '
+      + 'Given the following tables (schema and optionally sample data), propose balance checks the user should run. '
+      + 'Be conservative and only propose checks where the table\'s purpose is clearly financial.\n\n'
+      + 'Available proposal types:\n'
+      + '- "debits-credits": SUM(debit) == SUM(credit) per row group. Requires a journal table with debit and credit columns.\n'
+      + '- "control-totals": cross-side aggregate match (SUM/COUNT) between source and target tables. Only propose if the OTHER side has a corresponding table.\n'
+      + '- "gl-balancing": per-(period, account) source vs target balance match. Only propose if both sides have a trial-balance shape.\n'
+      + '- "trial-balance": full per-account TB report with side-by-side source vs target.\n\n'
+      + 'For each proposal include:\n'
+      + '  type:        one of the four above\n'
+      + '  name:        short human-readable name (e.g. "GL journal — debits = credits")\n'
+      + '  side:        "source" or "target" or "both" (for cross-side types)\n'
+      + '  config:      object whose fields match the type (see below)\n'
+      + '  reasoning:   1-2 sentences explaining why this check makes sense for this table\n'
+      + '  confidence:  "high" | "medium" | "low"\n\n'
+      + 'Config field shapes by type:\n'
+      + '  debits-credits: { table, debitCol, creditCol, groupBy?, where?, tolerance? }\n'
+      + '  control-totals: { agg ("SUM"|"COUNT"), srcTable, srcCol, tgtTable, tgtCol, tolerance? }\n'
+      + '  gl-balancing:   { srcView, tgtView, periodCol, accountCol, balanceCol, tolerance? }\n'
+      + '  trial-balance:  { src: {mode:"view"|"journal", view?, table?, periodCol, accountCol, balanceCol?, debitCol?, creditCol?, balanceMethod?}, tgt: {same}, period: {mode:"all"} }\n\n'
+      + 'Respond with ONLY a JSON array of proposal objects. No prose. No code fences. If no useful proposals can be made for this batch, return an empty array [].';
+
+    const userMsg = '# Tables to analyse (' + (side === 'src' ? 'SOURCE' : 'TARGET') + ' side)\n\n' + tableBlocks + otherSideHint + userContextLine;
+
+    let raw;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      raw = await cbAiCall(apiKey, [{ role: 'user', content: userMsg }], systemPrompt);
+    } catch (e) {
+      // Per-batch failure shouldn't kill the whole scan. Log and continue.
+      console.error('Auto-build batch failed:', e);
+      continue;
+    }
+    const arr = abExtractJsonArray(raw);
+    if (!Array.isArray(arr)) continue;
+    for (const p of arr) {
+      if (!p || !p.type || !p.config) continue;
+      proposals.push({
+        id: 'ab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+        type: p.type,
+        name: p.name || ('Proposed ' + p.type),
+        side: p.side || (side === 'src' ? 'source' : 'target'),
+        config: p.config,
+        reasoning: p.reasoning || '',
+        confidence: (p.confidence || 'medium').toLowerCase(),
+        status: 'pending'    // 'pending' | 'accepted' | 'skipped' | 'duplicate'
+      });
+    }
+  }
+  return proposals;
+}
+
+// Extract a JSON array from a string. Tolerates markdown fences if Claude
+// added them despite the "no fences" instruction.
+function abExtractJsonArray(text){
+  if (!text) return null;
+  // Try whole-string JSON first
+  try { const v = JSON.parse(text); if (Array.isArray(v)) return v; } catch {}
+  // Try to find the first [ ... ] block
+  const cleaned = text.replace(/^[\s\S]*?(\[[\s\S]*\])[\s\S]*$/m, '$1');
+  try { const v = JSON.parse(cleaned); if (Array.isArray(v)) return v; } catch {}
+  return null;
+}
+
+// ── Orchestration ────────────────────────────────────────────────────────────
+async function abStartScan(){
+  abState.cancelled = false;
+  abState.proposals = [];
+  abState.extraContext = ($('ab-extra-context')?.value || '').trim();
+
+  // Sanity: AI key required
+  if (!cbGetApiKey()) {
+    alert('Set your Anthropic API key in Dashboard → Settings before scanning.');
+    return;
+  }
+  // Sanity: at least one selected side must have a loaded schema
+  const wantSrc = abState.side === 'source' || abState.side === 'both';
+  const wantTgt = abState.side === 'target' || abState.side === 'both';
+  if (wantSrc && !srcSchema.loaded) { alert('Source schema not loaded yet. Wait for the connection banner to go green.'); return; }
+  if (wantTgt && !tgtSchema.loaded) { alert('Target schema not loaded yet. Wait for the connection banner to go green.'); return; }
+
+  abShowStep('progress');
+  try {
+    abProgress('Finding candidate tables…', '', 5);
+    const candidatesSrc = wantSrc ? await abFindCandidates('src', (n, total) =>
+      abProgress('Loading source columns…', n + ' / ' + total + ' tables', 5 + (n / total) * 15)
+    ) : [];
+    if (abState.cancelled) return;
+    const candidatesTgt = wantTgt ? await abFindCandidates('tgt', (n, total) =>
+      abProgress('Loading target columns…', n + ' / ' + total + ' tables', 20 + (n / total) * 15)
+    ) : [];
+    if (abState.cancelled) return;
+    abState.candidates = { src: candidatesSrc, tgt: candidatesTgt };
+
+    const totalCandidates = candidatesSrc.length + candidatesTgt.length;
+    if (totalCandidates === 0) {
+      abShowStep('done');
+      $('ab-done-msg').textContent = 'No candidate tables found.';
+      $('ab-done-detail').innerHTML = 'Claude couldn\'t identify financial-shaped tables in the selected schema(s). Try the Custom Balancing tab and use AI Assist with a more specific prompt.';
+      return;
+    }
+    abProgress('Found ' + totalCandidates + ' candidate tables.', '', 35);
+
+    let samplesSrc = new Map(), samplesTgt = new Map();
+    if (abState.context === 'schema-samples') {
+      samplesSrc = await abFetchSamples('src', candidatesSrc, (n, total) =>
+        abProgress('Sampling source data…', n + ' / ' + total + ' tables', 35 + (n / total) * 15)
+      );
+      if (abState.cancelled) return;
+      samplesTgt = await abFetchSamples('tgt', candidatesTgt, (n, total) =>
+        abProgress('Sampling target data…', n + ' / ' + total + ' tables', 50 + (n / total) * 15)
+      );
+      if (abState.cancelled) return;
+    }
+
+    // Claude analysis — source then target. Each side gets the other's
+    // candidate list as a hint so cross-side proposals (control totals,
+    // GL balancing) can reference both.
+    const srcProposals = candidatesSrc.length
+      ? await abAnalyseWithClaude('src', candidatesSrc, samplesSrc, candidatesTgt, (bi, total) =>
+          abProgress('Asking Claude (source)…', 'Batch ' + (bi + 1) + ' / ' + total, 65 + (bi / total) * 15)
+        )
+      : [];
+    if (abState.cancelled) return;
+    const tgtProposals = candidatesTgt.length
+      ? await abAnalyseWithClaude('tgt', candidatesTgt, samplesTgt, candidatesSrc, (bi, total) =>
+          abProgress('Asking Claude (target)…', 'Batch ' + (bi + 1) + ' / ' + total, 80 + (bi / total) * 15)
+        )
+      : [];
+    if (abState.cancelled) return;
+
+    let all = srcProposals.concat(tgtProposals);
+    // De-dup against existing checks/reports stored in localStorage
+    all = abMarkDuplicates(all);
+    abState.proposals = all;
+    abProgress('Done.', '', 100);
+
+    abShowStep('review');
+    abRenderProposals();
+  } catch (e) {
+    abShowStep('done');
+    $('ab-done-msg').textContent = 'Scan failed.';
+    $('ab-done-detail').innerHTML = '<span style="color:var(--red)">' + escapeHtml(e.message || String(e)) + '</span>';
+  }
+}
+
+// ── De-duplication ───────────────────────────────────────────────────────────
+function abMarkDuplicates(proposals){
+  const cfg  = balLoadCfg();
+  const tbReports = tbLoadReports();
+  return proposals.map(p => {
+    if (p.type === 'debits-credits') {
+      const existing = (cfg['debits-credits'] || []).some(x =>
+        x && x.table === p.config.table && x.debitCol === p.config.debitCol && x.creditCol === p.config.creditCol
+      );
+      if (existing) return { ...p, status: 'duplicate' };
+    } else if (p.type === 'control-totals') {
+      const existing = (cfg['control-totals'] || []).some(x =>
+        x && x.srcTable === p.config.srcTable && x.tgtTable === p.config.tgtTable
+            && x.srcCol === p.config.srcCol && x.tgtCol === p.config.tgtCol
+      );
+      if (existing) return { ...p, status: 'duplicate' };
+    } else if (p.type === 'gl-balancing') {
+      const existing = (cfg['gl-balancing'] || []).some(x =>
+        x && x.srcView === p.config.srcView && x.tgtView === p.config.tgtView
+      );
+      if (existing) return { ...p, status: 'duplicate' };
+    } else if (p.type === 'trial-balance') {
+      const existing = (tbReports || []).some(x => {
+        const xv = (x.src && (x.src.view || x.src.table)) || '';
+        const pv = (p.config.src && (p.config.src.view || p.config.src.table)) || '';
+        return xv && pv && xv === pv;
+      });
+      if (existing) return { ...p, status: 'duplicate' };
+    }
+    return p;
+  });
+}
+
+// ── Proposal review render ───────────────────────────────────────────────────
+function abRenderProposals(){
+  const list = $('ab-prop-list');
+  if (!list) return;
+  const props = abState.proposals || [];
+  const summary = $('ab-review-summary');
+  const counts = props.reduce((acc, p) => {
+    acc[p.status] = (acc[p.status] || 0) + 1;
+    return acc;
+  }, {});
+  if (summary) {
+    summary.innerHTML = props.length
+      ? props.length + ' proposals · '
+        + (counts.pending || 0) + ' pending'
+        + (counts.accepted ? ' · ' + counts.accepted + ' accepted' : '')
+        + (counts.skipped ? ' · ' + counts.skipped + ' skipped' : '')
+        + (counts.duplicate ? ' · ' + counts.duplicate + ' already exist' : '')
+      : 'Claude returned no proposals.';
+  }
+  list.innerHTML = props.map((p, i) => abRenderProposalCard(p, i)).join('');
+}
+
+function abRenderProposalCard(p, idx){
+  const typeBadge = '<span class="ab-type-badge ab-type-' + escapeHtml(p.type) + '">'
+    + (p.type === 'debits-credits' ? '⚖️ Debits = Credits'
+       : p.type === 'control-totals' ? 'Σ Control total'
+       : p.type === 'gl-balancing' ? '📒 GL balancing'
+       : p.type === 'trial-balance' ? '📋 Trial balance'
+       : escapeHtml(p.type))
+    + '</span>';
+
+  const conf = (p.confidence || 'medium').toLowerCase();
+  const confBadge = '<span class="ab-conf ' + conf + '">' + escapeHtml(conf) + '</span>';
+
+  // Compact config display — pretty-printed JSON, capped.
+  const cfgStr = JSON.stringify(p.config, null, 2);
+
+  let actions = '';
+  if (p.status === 'pending') {
+    actions = '<button class="btn btn-green btn-sm" onclick="abAcceptProposal(' + idx + ')">✓ Accept</button>'
+            + '<button class="btn btn-ghost btn-sm" onclick="abAcceptAndOpen(' + idx + ')" title="Accept and switch to that tab so you can edit before running">✎ Accept &amp; edit</button>'
+            + '<button class="btn btn-ghost btn-sm" onclick="abSkipProposal(' + idx + ')" style="color:var(--red)">Skip</button>';
+  }
+
+  const statusLabel = p.status === 'accepted' ? '<span class="ab-prop-status accepted">✓ accepted</span>'
+                    : p.status === 'skipped'  ? '<span class="ab-prop-status skipped">skipped</span>'
+                    : p.status === 'duplicate' ? '<span class="ab-prop-status duplicate">already exists</span>'
+                    : '';
+
+  return '<div class="ab-prop-card ' + p.status + '">'
+       + '<div class="ab-prop-head">' + typeBadge
+       + '  <span class="ab-prop-name">' + escapeHtml(p.name || '') + '</span>'
+       + '  ' + confBadge + statusLabel
+       + '</div>'
+       + (p.reasoning ? '<div class="ab-prop-reason">' + escapeHtml(p.reasoning) + '</div>' : '')
+       + '<div class="ab-prop-config">' + escapeHtml(cfgStr) + '</div>'
+       + (actions ? '<div class="ab-prop-actions">' + actions + '</div>' : '')
+       + '</div>';
+}
+
+// ── Bulk actions ─────────────────────────────────────────────────────────────
+function abAcceptAllHigh(){
+  const props = abState.proposals || [];
+  let n = 0;
+  props.forEach((p, i) => {
+    if (p.status === 'pending' && p.confidence === 'high') {
+      _abMaterialise(i);
+      n++;
+    }
+  });
+  abRenderProposals();
+  showStatus('Accepted ' + n + ' high-confidence proposal' + (n === 1 ? '' : 's'), 'ok');
+}
+function abSkipAll(){
+  (abState.proposals || []).forEach(p => { if (p.status === 'pending') p.status = 'skipped'; });
+  abRenderProposals();
+}
+
+// ── Single-proposal actions ──────────────────────────────────────────────────
+function abAcceptProposal(idx){
+  if (!_abMaterialise(idx)) return;
+  abRenderProposals();
+}
+function abAcceptAndOpen(idx){
+  const p = abState.proposals[idx];
+  if (!_abMaterialise(idx)) return;
+  abRenderProposals();
+  // Switch to the relevant tab so the user can edit before running.
+  const tabFor = {
+    'debits-credits': 'debits-credits',
+    'control-totals': 'control-totals',
+    'gl-balancing':   'gl-balancing',
+    'trial-balance':  'trial-balance'
+  }[p.type];
+  if (tabFor) {
+    abCloseScanModal();
+    balSwitchTab(tabFor);
+  }
+}
+function abSkipProposal(idx){
+  const p = abState.proposals[idx];
+  if (p && p.status === 'pending') p.status = 'skipped';
+  abRenderProposals();
+}
+
+function abFinishReview(){
+  const acc = (abState.proposals || []).filter(p => p.status === 'accepted').length;
+  const skip = (abState.proposals || []).filter(p => p.status === 'skipped').length;
+  const pend = (abState.proposals || []).filter(p => p.status === 'pending').length;
+  abShowStep('done');
+  $('ab-done-msg').textContent = acc + ' proposal' + (acc === 1 ? '' : 's') + ' added.';
+  let detail = '';
+  if (skip) detail += skip + ' skipped. ';
+  if (pend) detail += pend + ' left pending (treated as skipped). ';
+  detail += 'They\'re available in the relevant tabs alongside any checks you defined manually.';
+  $('ab-done-detail').textContent = detail;
+}
+
+// ── Materialisation ──────────────────────────────────────────────────────────
+// Take a proposal and write it into the right tab's storage. Each branch
+// uses that tab's own load/save helpers so the new entry is identical to
+// one the user added by hand. Returns true on success.
+function _abMaterialise(idx){
+  const p = abState.proposals[idx];
+  if (!p || p.status !== 'pending') return false;
+
+  try {
+    if (p.type === 'debits-credits' || p.type === 'control-totals' || p.type === 'gl-balancing') {
+      const cfg = balLoadCfg();
+      const id = 'bal_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const blank = Object.assign({ id: id, name: p.name || 'Auto-built check' }, p.config);
+      cfg[p.type].push(blank);
+      balSaveCfg(cfg);
+      balRender();
+    } else if (p.type === 'trial-balance') {
+      const reports = tbLoadReports();
+      const id = 'tb_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      // Default period filter to "all" if Claude didn't specify one
+      const cfg = p.config || {};
+      const tbReport = {
+        id: id,
+        name: p.name || 'Auto-built trial balance',
+        src: cfg.src || { mode: 'view', view: '', periodCol: 'period', accountCol: 'account', balanceCol: 'balance' },
+        tgt: cfg.tgt || { mode: 'view', view: '', periodCol: 'period', accountCol: 'account', balanceCol: 'balance' },
+        period: cfg.period || { mode: 'all', single: '', from: '', to: '' }
+      };
+      reports.push(tbReport);
+      tbSaveReports(reports);
+      tbRender();
+    } else {
+      return false;
+    }
+    p.status = 'accepted';
+    return true;
+  } catch (e) {
+    alert('Could not add proposal: ' + (e.message || e));
+    return false;
+  }
+}
 </script>
 </body>
 </html>
