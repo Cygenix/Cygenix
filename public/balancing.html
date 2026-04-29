@@ -138,6 +138,58 @@ body.cyg-collapsed{padding-left:54px}
   .field-grid{grid-template-columns:1fr}
 }
 
+/* ── Custom Balancing builder ──
+   The visual SQL composer. Tables show as chips, joins/group/select are
+   list-of-rows panels with add buttons, AI assist sits in a collapsible
+   side panel within each report card. */
+.cb-section{border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg3);margin-bottom:0.75rem;overflow:hidden}
+.cb-section-head{display:flex;align-items:center;gap:0.5rem;padding:0.55rem 0.85rem;cursor:pointer;user-select:none;background:rgba(255,255,255,0.02)}
+.cb-section-head:hover{background:rgba(255,255,255,0.04)}
+.cb-section-head .cb-chev{font-size:9px;color:var(--text3);transition:transform 0.15s;flex-shrink:0}
+.cb-section.open .cb-section-head .cb-chev{transform:rotate(90deg)}
+.cb-section-title{font-size:11.5px;font-weight:600;color:var(--text);flex:1}
+.cb-section-meta{font-size:10.5px;color:var(--text3);font-family:var(--mono)}
+.cb-section-body{padding:0.75rem 0.85rem;border-top:0.5px solid var(--border);display:none}
+.cb-section.open .cb-section-body{display:block}
+
+.cb-chip-row{display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.5rem}
+.cb-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 4px 3px 9px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:100px;font-family:var(--mono);font-size:11px}
+.cb-chip.alias{cursor:text}
+.cb-chip-alias{font-size:10px;color:var(--text3);margin-left:4px}
+.cb-chip-x{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:transparent;color:var(--text3);font-size:11px;cursor:pointer;border:none}
+.cb-chip-x:hover{background:var(--red-bg);color:var(--red)}
+
+.cb-row{display:grid;grid-template-columns:1fr;gap:0.4rem;align-items:start;padding:0.55rem 0;border-bottom:0.5px solid var(--border)}
+.cb-row:last-child{border-bottom:none}
+.cb-row .cb-row-controls{display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap}
+.cb-row .cb-cond-list{display:flex;flex-direction:column;gap:0.35rem}
+.cb-row .cb-cond{display:grid;grid-template-columns:1fr auto 1fr auto;gap:0.4rem;align-items:center}
+.cb-row .cb-row-x{background:transparent;border:0.5px solid var(--border2);color:var(--text3);font-size:11px;padding:2px 7px;border-radius:6px;cursor:pointer;height:28px;align-self:flex-start}
+.cb-row .cb-row-x:hover{color:var(--red);border-color:rgba(240,70,70,0.3)}
+
+.cb-add-btn{font-size:11px;padding:3px 9px;border-radius:6px;background:transparent;color:var(--accent);border:0.5px dashed rgba(61,126,255,0.4);cursor:pointer;font-family:var(--serif)}
+.cb-add-btn:hover{background:rgba(61,126,255,0.06);border-style:solid}
+
+.cb-sql-box{font-family:var(--mono);font-size:11px;background:var(--bg2);border:0.5px solid var(--border);border-radius:6px;padding:0.65rem 0.85rem;color:var(--text2);white-space:pre-wrap;line-height:1.55;max-height:240px;overflow:auto}
+.cb-sql-textarea{font-family:var(--mono);font-size:11px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.65rem 0.85rem;color:var(--text);width:100%;min-height:120px;line-height:1.55;resize:vertical;outline:none}
+.cb-sql-textarea:focus{border-color:var(--accent)}
+
+.cb-ai-panel{background:var(--bg2);border:0.5px solid rgba(167,139,250,0.25);border-radius:8px;padding:0.75rem 0.85rem}
+.cb-ai-msg{padding:0.5rem 0.75rem;border-radius:6px;margin-bottom:0.45rem;font-size:11.5px;line-height:1.55}
+.cb-ai-msg.user{background:rgba(61,126,255,0.08);border:0.5px solid rgba(61,126,255,0.2);color:var(--text)}
+.cb-ai-msg.assistant{background:rgba(167,139,250,0.06);border:0.5px solid rgba(167,139,250,0.18);color:var(--text2)}
+.cb-ai-msg.system{background:var(--bg3);border:0.5px solid var(--border);color:var(--text3);font-style:italic}
+.cb-ai-msg pre{font-family:var(--mono);font-size:11px;background:var(--bg);border:0.5px solid var(--border);border-radius:4px;padding:6px 8px;margin-top:6px;white-space:pre-wrap;color:var(--text2)}
+.cb-ai-input-row{display:flex;gap:0.4rem;align-items:flex-start}
+.cb-ai-textarea{flex:1;font-family:var(--serif);font-size:12px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.7rem;color:var(--text);min-height:48px;line-height:1.5;resize:vertical;outline:none}
+.cb-ai-textarea:focus{border-color:var(--accent)}
+.cb-apply-btn{font-size:11px;padding:3px 8px;border-radius:6px;background:rgba(34,201,122,0.1);color:var(--green);border:0.5px solid rgba(34,201,122,0.3);cursor:pointer;font-family:var(--serif);margin-top:6px}
+.cb-apply-btn:hover{background:rgba(34,201,122,0.18)}
+
+.cb-side-toggle{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:2px;gap:2px}
+.cb-side-toggle button{background:transparent;color:var(--text3);font-family:var(--serif);font-size:11px;padding:3px 10px;border:none;border-radius:4px;cursor:pointer}
+.cb-side-toggle button.active{background:var(--bg2);color:var(--accent)}
+
 /* ── Trial Balance preview table ──
    Used to show the merged TB rows (source/target/variance) inline once
    a report has been run. Excel/CSV exports use the same data array. */
@@ -210,6 +262,7 @@ body.cyg-collapsed{padding-left:54px}
     <button class="cx-tab" data-bal-tab="control-totals" onclick="balSwitchTab('control-totals')">Σ Control totals</button>
     <button class="cx-tab" data-bal-tab="gl-balancing" onclick="balSwitchTab('gl-balancing')">📒 GL balancing</button>
     <button class="cx-tab" data-bal-tab="trial-balance" onclick="balSwitchTab('trial-balance')">📋 Trial Balance</button>
+    <button class="cx-tab" data-bal-tab="custom" onclick="balSwitchTab('custom')">🛠️ Custom</button>
     <button class="cx-tab" data-bal-tab="results" onclick="balSwitchTab('results')">📊 Results</button>
   </div>
 
@@ -264,6 +317,28 @@ body.cyg-collapsed{padding-left:54px}
       </div>
       <div id="tb-list"></div>
       <div id="tb-empty" class="empty-state">No reports defined. Click <strong>＋ Add report</strong> above to create one.</div>
+    </div></div>
+  </div>
+
+  <!-- Tab: Custom ─────────────────────────────────────────────────────────────
+       Visual SQL builder for custom financial reports. Users pick multiple
+       tables, define joins (INNER or LEFT, with multi-column conditions),
+       choose SELECT columns with optional aggregations, GROUP BY, WHERE,
+       ORDER BY, plus a raw-SQL escape hatch for everything the visual
+       builder doesn't cover. AI Assist panel offers a two-step prompt
+       (suggest tables → write SQL) and a chat refinement loop. Reports
+       are saved by name and re-runnable; runs produce inline preview
+       and downloadable CSV/XLSX (same plumbing as Trial Balance). -->
+  <div id="bal-tab-custom" class="bal-tab-pane" style="display:none">
+    <div class="panel"><div class="panel-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+        <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
+          Build custom financial reports across multiple tables. Pick tables, define joins, group/filter/aggregate, and run against source or target. Use AI Assist (📜 panel inside each report) to start from a natural-language prompt or refine the SQL.
+        </div>
+        <button class="btn btn-purple btn-sm" onclick="cbAddReport()">＋ Add report</button>
+      </div>
+      <div id="cb-list"></div>
+      <div id="cb-empty" class="empty-state">No custom reports defined. Click <strong>＋ Add report</strong> above to create one.</div>
     </div></div>
   </div>
 
@@ -728,6 +803,7 @@ function balRender(){
   });
   balRenderResults(cfg, runs);
   tbRender();
+  cbRender();
 }
 
 function balFormatTs(ts){
@@ -891,6 +967,7 @@ function balAddCheck(){
   // check; on Results we don't know which check tab the user wants, so
   // default to debits-credits.
   if (balActiveTab === 'trial-balance') { tbAddReport(); return; }
+  if (balActiveTab === 'custom')        { cbAddReport(); return; }
   const cfg = balLoadCfg();
   const t = balActiveTab === 'results' ? 'debits-credits' : balActiveTab;
   const id = 'bal_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -1053,6 +1130,7 @@ async function balRunAll(){
   // TB tab has its own runner — TB reports produce downloadable artifacts
   // rather than pass/fail flags, so they don't belong in the Results tab.
   if (balActiveTab === 'trial-balance') { await tbRunAll(); return; }
+  if (balActiveTab === 'custom')        { await cbRunAll(); return; }
   const cfg = balLoadCfg();
   const types = ['debits-credits', 'control-totals', 'gl-balancing'];
   let count = 0;
@@ -1713,6 +1791,1185 @@ function tbTriggerDownload(blob, filename){
   // Revoke after a tick — some browsers race the click otherwise.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CUSTOM BALANCING — visual SQL builder for ad-hoc financial reports
+//
+// Data shape per report:
+//   {
+//     id, name, side ('source'|'target'),
+//     tables:   [{ fullName, alias }, ...]            (first is FROM, rest are joined)
+//     joins:    [{ type, rightTableIdx, conditions:[{ leftTableIdx, leftCol, op, rightCol }] }]
+//     selects:  [{ tableIdx, col, alias?, agg? }]     (agg = null | 'SUM' | 'COUNT' | 'MIN' | 'MAX' | 'AVG')
+//     groupBy:  [{ tableIdx, col }]
+//     where:    string                                (free-text predicate)
+//     orderBy:  string                                (free-text)
+//     limit:    number                                (safety cap, defaults 1000)
+//     useRaw:   bool                                  (true → use rawSql instead of built)
+//     rawSql:   string
+//     aiHistory: [{ role, content }, ...]             (Claude conversation)
+//     openSections: { ... }                            (UI collapsible state)
+//   }
+//
+// Storage:
+//   localStorage['cygenix_balancing_cb_reports']  — array of reports
+//   localStorage['cygenix_balancing_cb_runs']     — { [reportId]: { ts, rows, sql } }
+//
+// AI assist uses the user's Anthropic API key from
+// localStorage['cygenix_api_key'] || sessionStorage['cygenix_api_key'],
+// posting directly to api.anthropic.com (same pattern as dashboard.html).
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CB_KEY_REPORTS = 'cygenix_balancing_cb_reports';
+const CB_KEY_RUNS    = 'cygenix_balancing_cb_runs';
+
+function cbLoadReports(){
+  try {
+    const raw = localStorage.getItem(CB_KEY_REPORTS);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+function cbSaveReports(arr){
+  localStorage.setItem(CB_KEY_REPORTS, JSON.stringify(arr));
+  const ind = $('bal-save-indicator');
+  if (ind) {
+    ind.style.display = 'inline';
+    clearTimeout(window._balSaveTimer);
+    window._balSaveTimer = setTimeout(() => { ind.style.display = 'none'; }, 1500);
+  }
+}
+function cbLoadRuns(){
+  try { return JSON.parse(localStorage.getItem(CB_KEY_RUNS) || '{}'); }
+  catch { return {}; }
+}
+function cbSaveRuns(r){ localStorage.setItem(CB_KEY_RUNS, JSON.stringify(r)); }
+
+// Get Anthropic API key. Mirrors dashboard.html's resolution order.
+function cbGetApiKey(){
+  return localStorage.getItem('cygenix_api_key') || sessionStorage.getItem('cygenix_api_key') || '';
+}
+
+// ── CRUD ─────────────────────────────────────────────────────────────────────
+function cbAddReport(){
+  const reports = cbLoadReports();
+  const id = 'cb_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  reports.push({
+    id: id,
+    name: 'New custom report',
+    side: 'source',
+    tables: [],
+    joins: [],
+    selects: [],
+    groupBy: [],
+    where: '',
+    orderBy: '',
+    limit: 1000,
+    useRaw: false,
+    rawSql: '',
+    aiHistory: [],
+    openSections: { tables: true, joins: true, selects: true, group: false, filter: false, sql: true, ai: false }
+  });
+  cbSaveReports(reports);
+  cbRender();
+}
+function cbRemove(idx){
+  if (!confirm('Delete this custom report?')) return;
+  const reports = cbLoadReports();
+  const removed = reports.splice(idx, 1)[0];
+  cbSaveReports(reports);
+  if (removed && removed.id) {
+    const runs = cbLoadRuns();
+    delete runs[removed.id];
+    cbSaveRuns(runs);
+  }
+  cbRender();
+}
+// Generic dotted-path setter, identical to tbUpdate's logic.
+function cbUpdate(idx, path, value){
+  const reports = cbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  const parts = path.split('.');
+  let target = r;
+  for (let i = 0; i < parts.length - 1; i++) {
+    target = target[parts[i]] = target[parts[i]] || {};
+  }
+  target[parts[parts.length - 1]] = value;
+  cbSaveReports(reports);
+}
+
+// Reports state-mutation helpers — these directly modify and save without
+// requiring a path string, which gets unwieldy for array operations.
+function cbWith(idx, fn){
+  const reports = cbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  fn(r);
+  cbSaveReports(reports);
+}
+
+// ── Schema lookup helpers ────────────────────────────────────────────────────
+function cbSchemaFor(side){ return side === 'target' ? tgtSchema : srcSchema; }
+
+// Find a table object on the report's chosen side. Used when emitting SQL
+// and when populating column dropdowns. Returns null if the schema isn't
+// loaded or the table isn't in it (could happen if the user typed a name
+// freehand that doesn't exist on this side).
+function cbFindTable(side, fullName){
+  if (!fullName) return null;
+  return findTable(side === 'target' ? 'tgt' : 'src', fullName);
+}
+
+// Quote an identifier alias if it contains characters that need escaping.
+// Conservative — only quote when needed, since both SQL Server and Postgres
+// dialects treat quoted identifiers differently.
+function cbAliasOrName(t){
+  if (t.alias && t.alias.trim()) return t.alias.trim();
+  // Fallback: bare table name (no schema prefix), since the schema prefix
+  // doesn't make a valid alias.
+  const bare = (t.fullName || '').split('.').pop() || '';
+  return bare;
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function cbRender(){
+  const list  = $('cb-list');
+  const empty = $('cb-empty');
+  if (!list || !empty) return;
+  const reports = cbLoadReports();
+  const runs    = cbLoadRuns();
+  empty.style.display = reports.length ? 'none' : 'block';
+  list.innerHTML = reports.map((r, i) => cbRenderReportCard(r, i, runs[r.id])).join('');
+}
+
+function cbRenderReportCard(r, idx, run){
+  const side = r.side || 'source';
+  const sideShort = side === 'target' ? 'tgt' : 'src';
+  const sch = cbSchemaFor(side);
+  const ready = sch.loaded;
+
+  // Header — name, run-status, run + download + delete
+  const lastRunStr = run && run.ts
+    ? '<span class="run-status idle">Last run · ' + escapeHtml(balFormatTs(run.ts)) + '</span>'
+    : '<span class="run-status idle">Not yet run</span>';
+  const downloadAvailable = run && Array.isArray(run.rows) && run.rows.length > 0;
+
+  const head = ''
+    + '<div class="check-head">'
+    + '  <input type="text" class="check-name" value="' + escapeHtml(r.name || '') + '" placeholder="Report name" '
+    + '         oninput="cbUpdate(' + idx + ',\'name\',this.value)">'
+    + '  ' + lastRunStr
+    + '  <div class="cb-side-toggle">'
+    +     '<button class="' + (side === 'source' ? 'active' : '') + '" onclick="cbSetSide(' + idx + ',\'source\')">Source</button>'
+    +     '<button class="' + (side === 'target' ? 'active' : '') + '" onclick="cbSetSide(' + idx + ',\'target\')">Target</button>'
+    +   '</div>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="cbRun(' + idx + ')">▶ Run</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="cbDownload(' + idx + ',\'csv\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ CSV</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="cbDownload(' + idx + ',\'xlsx\')"' + (downloadAvailable ? '' : ' disabled') + '>⬇ Excel</button>'
+    + '  <button class="btn btn-ghost btn-sm" onclick="cbRemove(' + idx + ')" style="color:var(--red)">✕</button>'
+    + '</div>';
+
+  // Sections — collapsible. Each section has a head + body; clicks toggle.
+  const sections = ''
+    + cbSection(idx, 'tables',  '📋 Tables',  r.tables.length + ' picked', cbRenderTablesSection(r, idx, sideShort, ready), r.openSections && r.openSections.tables !== false)
+    + cbSection(idx, 'joins',   '🔗 Joins',   r.joins.length + ' join' + (r.joins.length === 1 ? '' : 's'), cbRenderJoinsSection(r, idx, sideShort, ready), r.openSections && r.openSections.joins !== false)
+    + cbSection(idx, 'selects', '🔢 Output columns', r.selects.length + ' field' + (r.selects.length === 1 ? '' : 's'), cbRenderSelectsSection(r, idx, sideShort, ready), r.openSections && r.openSections.selects !== false)
+    + cbSection(idx, 'group',   'Σ Group by', r.groupBy.length + ' field' + (r.groupBy.length === 1 ? '' : 's'), cbRenderGroupSection(r, idx, sideShort, ready), r.openSections && r.openSections.group === true)
+    + cbSection(idx, 'filter',  '🔍 Where / Order by / Limit', '', cbRenderFilterSection(r, idx), r.openSections && r.openSections.filter === true)
+    + cbSection(idx, 'ai',      '✨ AI Assist', (r.aiHistory && r.aiHistory.length ? r.aiHistory.length + ' messages' : 'idle'), cbRenderAiSection(r, idx), r.openSections && r.openSections.ai === true)
+    + cbSection(idx, 'sql',     '📜 Generated SQL', r.useRaw ? 'using raw' : 'auto', cbRenderSqlSection(r, idx), r.openSections && r.openSections.sql !== false);
+
+  // Inline preview + summary if a run exists
+  let preview = '';
+  if (run && Array.isArray(run.rows)) {
+    preview = cbRenderPreview(run);
+  } else if (run && run.error) {
+    preview = '<div class="check-detail" style="color:var(--red)">' + escapeHtml(run.error) + '</div>';
+  }
+
+  return '<div class="check-card">' + head + sections + preview + '</div>';
+}
+
+// Generic collapsible section wrapper.
+function cbSection(idx, key, title, meta, body, isOpen){
+  return '<div class="cb-section' + (isOpen ? ' open' : '') + '" data-cb-section="' + key + '">'
+       + '  <div class="cb-section-head" onclick="cbToggleSection(' + idx + ',\'' + key + '\')">'
+       + '    <span class="cb-chev">▶</span>'
+       + '    <span class="cb-section-title">' + escapeHtml(title) + '</span>'
+       + (meta ? '    <span class="cb-section-meta">' + escapeHtml(meta) + '</span>' : '')
+       + '  </div>'
+       + '  <div class="cb-section-body">' + body + '</div>'
+       + '</div>';
+}
+
+function cbToggleSection(idx, key){
+  const reports = cbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  if (!r.openSections) r.openSections = {};
+  r.openSections[key] = !r.openSections[key];
+  cbSaveReports(reports);
+  cbRender();
+}
+
+function cbSetSide(idx, side){
+  // Switching sides may invalidate table picks (they were from the other
+  // schema). We don't auto-clear — let the user notice and adjust — but
+  // we re-render so the picker dropdowns now read from the new schema.
+  cbUpdate(idx, 'side', side);
+  cbRender();
+}
+
+// ── Tables section ───────────────────────────────────────────────────────────
+function cbRenderTablesSection(r, idx, sideShort, ready){
+  // Existing tables show as chips with editable alias and a delete button.
+  // A picker input at the end appends a new table.
+  const chips = (r.tables || []).map((t, i) => {
+    return '<span class="cb-chip">'
+         + escapeHtml(t.fullName)
+         + ' <input class="cb-chip-alias" type="text" value="' + escapeHtml(t.alias || '') + '"'
+         +   ' placeholder="alias" size="6"'
+         +   ' oninput="cbUpdate(' + idx + ',\'tables.' + i + '.alias\',this.value)">'
+         + ' <button class="cb-chip-x" onclick="cbRemoveTable(' + idx + ',' + i + ')" title="Remove">✕</button>'
+         + '</span>';
+  }).join('');
+
+  // Picker input — uses the same data-pick-* contract as elsewhere on the
+  // page, but its data-pick-update routes to a custom handler so we can
+  // append to the array instead of overwriting a scalar.
+  const picker = ''
+    + '<div class="search-wrap" style="max-width:340px">'
+    +   '<input type="text" class="picker-input"'
+    +     ' data-pick-kind="tables"'
+    +     ' data-pick-side="' + sideShort + '"'
+    +     ' data-pick-update="cb-add-table:' + idx + '"'
+    +     ' value=""'
+    +     ' placeholder="' + (ready ? 'Search and pick a table to add…' : 'Loading schema…') + '"'
+    +     ' autocomplete="off"' + (ready ? '' : ' disabled')
+    +     ' onfocus="pickerOpen(this)"'
+    +     ' oninput="pickerFilter(this)">'
+    +   '<div class="search-drop"></div>'
+    + '</div>';
+
+  return '<div class="cb-chip-row">' + chips + '</div>' + picker
+       + '<div style="font-size:10.5px;color:var(--text3);margin-top:0.4rem">First table is the FROM. Subsequent tables are joined — define joins in the next section.</div>';
+}
+
+// Custom pick-update handler intercepted in pickerSelect (see _cbHandlePickerUpdate).
+function cbRemoveTable(idx, tableIdx){
+  cbWith(idx, r => {
+    r.tables.splice(tableIdx, 1);
+    // Fix join references — drop any join targeting/coming-from this table
+    // and shift remaining indexes down.
+    r.joins = (r.joins || []).filter(j => j.rightTableIdx !== tableIdx)
+      .map(j => ({
+        ...j,
+        rightTableIdx: j.rightTableIdx > tableIdx ? j.rightTableIdx - 1 : j.rightTableIdx,
+        conditions: (j.conditions || [])
+          .filter(c => c.leftTableIdx !== tableIdx)
+          .map(c => ({ ...c, leftTableIdx: c.leftTableIdx > tableIdx ? c.leftTableIdx - 1 : c.leftTableIdx }))
+      }));
+    // Same for selects + groupBy
+    r.selects = (r.selects || []).filter(s => s.tableIdx !== tableIdx)
+      .map(s => ({ ...s, tableIdx: s.tableIdx > tableIdx ? s.tableIdx - 1 : s.tableIdx }));
+    r.groupBy = (r.groupBy || []).filter(g => g.tableIdx !== tableIdx)
+      .map(g => ({ ...g, tableIdx: g.tableIdx > tableIdx ? g.tableIdx - 1 : g.tableIdx }));
+  });
+  cbRender();
+}
+
+function cbAddTable(idx, fullName){
+  if (!fullName) return;
+  cbWith(idx, r => {
+    // Suggest a default alias from the bare table name lowercase, ensuring uniqueness
+    const bare = fullName.split('.').pop().toLowerCase();
+    const existing = new Set((r.tables || []).map(t => (t.alias || '').toLowerCase()));
+    let alias = bare, n = 2;
+    while (existing.has(alias)) { alias = bare + '_' + n; n++; }
+    r.tables.push({ fullName: fullName, alias: alias });
+  });
+  cbRender();
+}
+
+// ── Joins section ────────────────────────────────────────────────────────────
+function cbRenderJoinsSection(r, idx, sideShort, ready){
+  if (!r.tables || r.tables.length < 2) {
+    return '<div style="font-size:11px;color:var(--text3)">Add at least two tables to define joins.</div>';
+  }
+
+  // For each table beyond the first, render a join row.
+  const rows = (r.tables || []).slice(1).map((rightT, i) => {
+    const rightTableIdx = i + 1;
+    const join = (r.joins || []).find(j => j.rightTableIdx === rightTableIdx)
+              || { type: 'INNER', rightTableIdx: rightTableIdx, conditions: [] };
+
+    // Conditions — at least one
+    const conds = (join.conditions || []).map((c, ci) => {
+      const leftT = r.tables[c.leftTableIdx];
+      const leftTableInputId = 'cb-' + idx + '-join-' + i + '-cond-' + ci + '-leftcol-anchor';
+      // Each condition has: left table picker (from already-listed tables),
+      // left column picker, op selector, right column picker.
+      const leftTableSelect = '<select onchange="cbUpdateJoinCond(' + idx + ',' + rightTableIdx + ',' + ci + ',\'leftTableIdx\',this.value)">'
+        + r.tables.slice(0, rightTableIdx).map((t, ti) =>
+            '<option value="' + ti + '"' + (ti === c.leftTableIdx ? ' selected' : '') + '>' + escapeHtml(cbAliasOrName(t)) + '</option>'
+          ).join('')
+        + '</select>';
+
+      // Use a hidden anchor element holding the leftT table fullName so the
+      // column picker (which keys off a sibling input's value) can find it.
+      const leftTableAnchor = '<input type="hidden" id="' + leftTableInputId + '" value="' + escapeHtml(leftT ? leftT.fullName : '') + '">';
+
+      const leftColPicker = cbColumnPickerInput({
+        idStem: 'cb-' + idx + '-join-' + i + '-cond-' + ci + '-leftcol',
+        sideShort: sideShort,
+        tableInputId: leftTableInputId,
+        value: c.leftCol || '',
+        updateExpr: 'cbUpdateJoinCond(' + idx + ',' + rightTableIdx + ',' + ci + ',\'leftCol\',this.value)',
+        ready: ready
+      });
+
+      const opSelect = '<select style="width:48px;text-align:center" onchange="cbUpdateJoinCond(' + idx + ',' + rightTableIdx + ',' + ci + ',\'op\',this.value)">'
+        + ['=','<','<=','>','>=','<>'].map(o =>
+            '<option value="' + o + '"' + ((c.op || '=') === o ? ' selected' : '') + '>' + o + '</option>'
+          ).join('')
+        + '</select>';
+
+      const rightTableInputId = 'cb-' + idx + '-join-' + i + '-rightcol-anchor';
+      const rightTableAnchor = '<input type="hidden" id="' + rightTableInputId + '" value="' + escapeHtml(rightT.fullName) + '">';
+      const rightColPicker = cbColumnPickerInput({
+        idStem: 'cb-' + idx + '-join-' + i + '-cond-' + ci + '-rightcol',
+        sideShort: sideShort,
+        tableInputId: rightTableInputId,
+        value: c.rightCol || '',
+        updateExpr: 'cbUpdateJoinCond(' + idx + ',' + rightTableIdx + ',' + ci + ',\'rightCol\',this.value)',
+        ready: ready
+      });
+
+      return '<div class="cb-cond">'
+           + leftTableAnchor + rightTableAnchor
+           + '<div style="display:flex;gap:0.3rem;align-items:center">' + leftTableSelect + leftColPicker + '</div>'
+           + opSelect
+           + '<div>' + rightColPicker + '</div>'
+           + '<button class="cb-row-x" onclick="cbRemoveJoinCond(' + idx + ',' + rightTableIdx + ',' + ci + ')">✕</button>'
+           + '</div>';
+    }).join('');
+
+    const typeSelect = '<select onchange="cbUpdateJoinType(' + idx + ',' + rightTableIdx + ',this.value)">'
+      + [['INNER','INNER JOIN'],['LEFT','LEFT JOIN']].map(([v,l]) =>
+          '<option value="' + v + '"' + ((join.type || 'INNER') === v ? ' selected' : '') + '>' + l + '</option>'
+        ).join('')
+      + '</select>';
+
+    return '<div class="cb-row">'
+         + '<div class="cb-row-controls">'
+         +   '<span style="font-size:11.5px;color:var(--text2);font-weight:500">'
+         +   typeSelect
+         +   ' <code style="font-family:var(--mono);background:var(--bg2);padding:1px 6px;border-radius:4px">' + escapeHtml(cbAliasOrName(rightT)) + '</code>'
+         +   ' ON</span>'
+         + '</div>'
+         + '<div class="cb-cond-list">' + (conds || '<div style="font-size:11px;color:var(--text3);font-style:italic">No condition yet — add one to make this join valid.</div>') + '</div>'
+         + '<div><button class="cb-add-btn" onclick="cbAddJoinCond(' + idx + ',' + rightTableIdx + ')">＋ Add condition</button></div>'
+         + '</div>';
+  }).join('');
+
+  return rows;
+}
+
+// Common column-picker emitter so joins/selects/groupby all use the same markup.
+function cbColumnPickerInput(opts){
+  const disAttr = !opts.ready ? ' disabled' : '';
+  return '<div class="search-wrap" style="display:inline-block;width:140px;vertical-align:middle">'
+    + '<input id="' + opts.idStem + '" type="text" class="picker-input"'
+    +   ' data-pick-kind="columns"'
+    +   ' data-pick-side="' + opts.sideShort + '"'
+    +   ' data-pick-table="' + opts.tableInputId + '"'
+    +   ' data-pick-update="cb-custom"'
+    +   ' data-cb-update="' + escapeHtml(opts.updateExpr) + '"'
+    +   ' value="' + escapeHtml(String(opts.value || '')) + '"'
+    +   ' placeholder="' + (opts.ready ? 'col' : 'loading') + '"'
+    +   ' autocomplete="off"' + disAttr
+    +   ' onfocus="pickerOpen(this)"'
+    +   ' oninput="pickerFilter(this); ' + opts.updateExpr + '">'
+    + '<div class="search-drop"></div>'
+    + '</div>';
+}
+
+function cbUpdateJoinType(idx, rightTableIdx, type){
+  cbWith(idx, r => {
+    let j = (r.joins || []).find(x => x.rightTableIdx === rightTableIdx);
+    if (!j) {
+      j = { type: type, rightTableIdx: rightTableIdx, conditions: [] };
+      r.joins.push(j);
+    } else {
+      j.type = type;
+    }
+  });
+  cbRender();
+}
+function cbAddJoinCond(idx, rightTableIdx){
+  cbWith(idx, r => {
+    let j = (r.joins || []).find(x => x.rightTableIdx === rightTableIdx);
+    if (!j) {
+      j = { type: 'INNER', rightTableIdx: rightTableIdx, conditions: [] };
+      r.joins.push(j);
+    }
+    // Default the left side to the first table (FROM table) for a sensible start.
+    j.conditions.push({ leftTableIdx: 0, leftCol: '', op: '=', rightCol: '' });
+  });
+  cbRender();
+}
+function cbUpdateJoinCond(idx, rightTableIdx, condIdx, key, value){
+  cbWith(idx, r => {
+    const j = (r.joins || []).find(x => x.rightTableIdx === rightTableIdx);
+    if (!j || !j.conditions[condIdx]) return;
+    if (key === 'leftTableIdx') j.conditions[condIdx][key] = parseInt(value, 10);
+    else j.conditions[condIdx][key] = value;
+  });
+  // Don't full-render on column edits (would lose focus); only re-render when the
+  // table-side selector changes since that affects the column picker's table scope.
+  if (key === 'leftTableIdx') cbRender();
+}
+function cbRemoveJoinCond(idx, rightTableIdx, condIdx){
+  cbWith(idx, r => {
+    const j = (r.joins || []).find(x => x.rightTableIdx === rightTableIdx);
+    if (!j) return;
+    j.conditions.splice(condIdx, 1);
+  });
+  cbRender();
+}
+
+// ── Selects (output columns) section ─────────────────────────────────────────
+function cbRenderSelectsSection(r, idx, sideShort, ready){
+  if (!r.tables || r.tables.length === 0) {
+    return '<div style="font-size:11px;color:var(--text3)">Add at least one table first.</div>';
+  }
+
+  const rows = (r.selects || []).map((s, i) => {
+    const tableT = r.tables[s.tableIdx] || r.tables[0];
+    const tableAnchorId = 'cb-' + idx + '-sel-' + i + '-tbl-anchor';
+    const tableAnchor = '<input type="hidden" id="' + tableAnchorId + '" value="' + escapeHtml(tableT ? tableT.fullName : '') + '">';
+
+    const tableSelect = '<select onchange="cbUpdateSelect(' + idx + ',' + i + ',\'tableIdx\',this.value)">'
+      + r.tables.map((t, ti) =>
+          '<option value="' + ti + '"' + (ti === (s.tableIdx || 0) ? ' selected' : '') + '>' + escapeHtml(cbAliasOrName(t)) + '</option>'
+        ).join('')
+      + '</select>';
+
+    const colPicker = cbColumnPickerInput({
+      idStem: 'cb-' + idx + '-sel-' + i + '-col',
+      sideShort: sideShort,
+      tableInputId: tableAnchorId,
+      value: s.col || '',
+      updateExpr: 'cbUpdateSelect(' + idx + ',' + i + ',\'col\',this.value)',
+      ready: ready
+    });
+
+    const aggSelect = '<select style="width:80px" onchange="cbUpdateSelect(' + idx + ',' + i + ',\'agg\',this.value)">'
+      + [['','—'],['SUM','SUM'],['COUNT','COUNT'],['MIN','MIN'],['MAX','MAX'],['AVG','AVG']].map(([v,l]) =>
+          '<option value="' + v + '"' + ((s.agg || '') === v ? ' selected' : '') + '>' + l + '</option>'
+        ).join('')
+      + '</select>';
+
+    const aliasInput = '<input type="text" placeholder="alias" value="' + escapeHtml(s.alias || '') + '"'
+      + ' style="width:120px"'
+      + ' oninput="cbUpdateSelect(' + idx + ',' + i + ',\'alias\',this.value)">';
+
+    return '<div class="cb-row" style="grid-template-columns:1fr">'
+         + '<div class="cb-row-controls">'
+         +   tableAnchor + tableSelect + colPicker + aggSelect + aliasInput
+         +   '<button class="cb-row-x" onclick="cbRemoveSelect(' + idx + ',' + i + ')">✕</button>'
+         + '</div>'
+         + '</div>';
+  }).join('');
+
+  return rows + '<button class="cb-add-btn" style="margin-top:0.4rem" onclick="cbAddSelect(' + idx + ')">＋ Add output column</button>';
+}
+
+function cbAddSelect(idx){
+  cbWith(idx, r => {
+    r.selects.push({ tableIdx: 0, col: '', alias: '', agg: '' });
+  });
+  cbRender();
+}
+function cbUpdateSelect(idx, i, key, value){
+  cbWith(idx, r => {
+    if (!r.selects[i]) return;
+    if (key === 'tableIdx') r.selects[i][key] = parseInt(value, 10);
+    else r.selects[i][key] = value;
+  });
+  if (key === 'tableIdx') cbRender();
+}
+function cbRemoveSelect(idx, i){
+  cbWith(idx, r => { r.selects.splice(i, 1); });
+  cbRender();
+}
+
+// ── Group by section ─────────────────────────────────────────────────────────
+function cbRenderGroupSection(r, idx, sideShort, ready){
+  if (!r.tables || r.tables.length === 0) {
+    return '<div style="font-size:11px;color:var(--text3)">Add at least one table first.</div>';
+  }
+
+  const rows = (r.groupBy || []).map((g, i) => {
+    const tableT = r.tables[g.tableIdx] || r.tables[0];
+    const tableAnchorId = 'cb-' + idx + '-grp-' + i + '-tbl-anchor';
+    const tableAnchor = '<input type="hidden" id="' + tableAnchorId + '" value="' + escapeHtml(tableT ? tableT.fullName : '') + '">';
+
+    const tableSelect = '<select onchange="cbUpdateGroup(' + idx + ',' + i + ',\'tableIdx\',this.value)">'
+      + r.tables.map((t, ti) =>
+          '<option value="' + ti + '"' + (ti === (g.tableIdx || 0) ? ' selected' : '') + '>' + escapeHtml(cbAliasOrName(t)) + '</option>'
+        ).join('')
+      + '</select>';
+
+    const colPicker = cbColumnPickerInput({
+      idStem: 'cb-' + idx + '-grp-' + i + '-col',
+      sideShort: sideShort,
+      tableInputId: tableAnchorId,
+      value: g.col || '',
+      updateExpr: 'cbUpdateGroup(' + idx + ',' + i + ',\'col\',this.value)',
+      ready: ready
+    });
+
+    return '<div class="cb-row" style="grid-template-columns:1fr">'
+         + '<div class="cb-row-controls">'
+         +   tableAnchor + tableSelect + colPicker
+         +   '<button class="cb-row-x" onclick="cbRemoveGroup(' + idx + ',' + i + ')">✕</button>'
+         + '</div>'
+         + '</div>';
+  }).join('');
+
+  return rows + '<button class="cb-add-btn" style="margin-top:0.4rem" onclick="cbAddGroup(' + idx + ')">＋ Add group field</button>';
+}
+
+function cbAddGroup(idx){
+  cbWith(idx, r => { r.groupBy.push({ tableIdx: 0, col: '' }); });
+  cbRender();
+}
+function cbUpdateGroup(idx, i, key, value){
+  cbWith(idx, r => {
+    if (!r.groupBy[i]) return;
+    if (key === 'tableIdx') r.groupBy[i][key] = parseInt(value, 10);
+    else r.groupBy[i][key] = value;
+  });
+  if (key === 'tableIdx') cbRender();
+}
+function cbRemoveGroup(idx, i){
+  cbWith(idx, r => { r.groupBy.splice(i, 1); });
+  cbRender();
+}
+
+// ── Filter / order / limit section ───────────────────────────────────────────
+function cbRenderFilterSection(r, idx){
+  return ''
+    + '<div style="display:grid;grid-template-columns:1fr;gap:0.5rem">'
+    +   '<div>'
+    +     '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Where (optional)</label>'
+    +     '<textarea style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.7rem;font-family:var(--mono);font-size:11px;color:var(--text);min-height:60px;resize:vertical;outline:none"'
+    +       ' placeholder="period_id BETWEEN ' + "'" + '202601' + "'" + ' AND ' + "'" + '202612' + "'" + ' AND amount > 0"'
+    +       ' oninput="cbUpdate(' + idx + ',\'where\',this.value)">' + escapeHtml(r.where || '') + '</textarea>'
+    +   '</div>'
+    +   '<div style="display:grid;grid-template-columns:1fr 100px;gap:0.5rem">'
+    +     '<div>'
+    +       '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Order by (optional)</label>'
+    +       '<input type="text" value="' + escapeHtml(r.orderBy || '') + '" placeholder="period_id ASC, total DESC"'
+    +         ' style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-family:var(--mono);font-size:11px;color:var(--text);outline:none"'
+    +         ' oninput="cbUpdate(' + idx + ',\'orderBy\',this.value)">'
+    +     '</div>'
+    +     '<div>'
+    +       '<label style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;display:block;margin-bottom:0.2rem">Limit</label>'
+    +       '<input type="number" min="1" max="100000" value="' + escapeHtml(String(r.limit || 1000)) + '"'
+    +         ' style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.55rem;font-family:var(--mono);font-size:11px;color:var(--text);outline:none"'
+    +         ' oninput="cbUpdate(' + idx + ',\'limit\',parseInt(this.value,10) || 1000)">'
+    +     '</div>'
+    +   '</div>'
+    + '</div>';
+}
+
+// ── Generated SQL section + raw escape hatch ─────────────────────────────────
+function cbRenderSqlSection(r, idx){
+  let built = '';
+  let buildErr = '';
+  try {
+    built = cbBuildSql(r);
+  } catch (e) {
+    buildErr = e.message || String(e);
+  }
+
+  const useRaw = !!r.useRaw;
+  const display = useRaw
+    ? ('<textarea class="cb-sql-textarea" oninput="cbUpdate(' + idx + ',\'rawSql\',this.value)" placeholder="-- write your SQL here">' + escapeHtml(r.rawSql || '') + '</textarea>')
+    : (buildErr
+        ? '<div class="cb-sql-box" style="color:var(--amber)">-- Cannot build SQL yet:\n-- ' + escapeHtml(buildErr) + '</div>'
+        : '<div class="cb-sql-box">' + escapeHtml(built) + '</div>');
+
+  const toggleLabel = useRaw ? 'Switch back to visual builder' : 'Override with raw SQL';
+
+  return ''
+    + '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;flex-wrap:wrap">'
+    +   '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer">'
+    +     '<input type="checkbox"' + (useRaw ? ' checked' : '') + ' onchange="cbToggleRaw(' + idx + ',this.checked)">'
+    +     toggleLabel
+    +   '</label>'
+    +   (!useRaw && !buildErr ? '<button class="cb-add-btn" onclick="cbCopyToRaw(' + idx + ')">📋 Copy to raw editor</button>' : '')
+    + '</div>'
+    + display;
+}
+
+function cbToggleRaw(idx, checked){
+  cbUpdate(idx, 'useRaw', checked);
+  cbRender();
+}
+function cbCopyToRaw(idx){
+  // Convenience: copy the currently-built SQL into the raw textarea AND
+  // switch to raw mode. Lets the user start from auto-built and tweak.
+  cbWith(idx, r => {
+    try { r.rawSql = cbBuildSql(r); r.useRaw = true; }
+    catch { /* ignore — button only shows when build succeeds */ }
+  });
+  cbRender();
+}
+
+// ── SQL builder ──────────────────────────────────────────────────────────────
+function cbBuildSql(r){
+  if (r.useRaw) return r.rawSql || '';
+
+  const tables = r.tables || [];
+  if (tables.length === 0) throw new Error('Pick at least one table.');
+
+  // SELECT
+  const selects = (r.selects || []);
+  if (selects.length === 0) throw new Error('Pick at least one output column.');
+  const selectExprs = selects.map(s => {
+    const t = tables[s.tableIdx];
+    if (!t) throw new Error('A select references a removed table.');
+    if (!s.col) throw new Error('A select column is empty.');
+    const qualified = cbAliasOrName(t) + '.' + s.col;
+    let expr;
+    if (s.agg === 'COUNT') {
+      expr = 'COUNT(' + qualified + ')';
+    } else if (s.agg) {
+      expr = s.agg + '(' + qualified + ')';
+    } else {
+      expr = qualified;
+    }
+    return s.alias ? expr + ' AS ' + s.alias : expr;
+  });
+
+  // FROM + JOINs
+  const fromTbl = tables[0];
+  const fromClause = fromTbl.fullName + (fromTbl.alias ? ' AS ' + fromTbl.alias : '');
+  const joinClauses = [];
+  for (let i = 1; i < tables.length; i++) {
+    const rightT = tables[i];
+    const join = (r.joins || []).find(j => j.rightTableIdx === i);
+    if (!join || !join.conditions || join.conditions.length === 0) {
+      throw new Error('Table "' + cbAliasOrName(rightT) + '" has no join condition.');
+    }
+    const condStrs = join.conditions.map(c => {
+      const leftT = tables[c.leftTableIdx];
+      if (!leftT) throw new Error('Join references a removed table.');
+      if (!c.leftCol || !c.rightCol) throw new Error('A join condition has an empty column.');
+      return cbAliasOrName(leftT) + '.' + c.leftCol + ' ' + (c.op || '=') + ' ' + cbAliasOrName(rightT) + '.' + c.rightCol;
+    });
+    joinClauses.push((join.type || 'INNER') + ' JOIN ' + rightT.fullName + (rightT.alias ? ' AS ' + rightT.alias : '')
+      + ' ON ' + condStrs.join(' AND '));
+  }
+
+  // GROUP BY (auto-derived if any select has an aggregate but the user didn't add one)
+  let groupExprs = (r.groupBy || []).map(g => {
+    const t = tables[g.tableIdx];
+    if (!t || !g.col) throw new Error('A GROUP BY field is incomplete.');
+    return cbAliasOrName(t) + '.' + g.col;
+  });
+  const hasAgg = selects.some(s => s.agg);
+  if (hasAgg && groupExprs.length === 0) {
+    // Auto-group by all non-aggregated select fields. Common SQL behaviour.
+    groupExprs = selects.filter(s => !s.agg).map(s => {
+      const t = tables[s.tableIdx];
+      return cbAliasOrName(t) + '.' + s.col;
+    });
+  }
+
+  // Assemble
+  const lines = [];
+  lines.push('SELECT ' + selectExprs.join(', '));
+  lines.push('FROM ' + fromClause);
+  joinClauses.forEach(jc => lines.push(jc));
+  if ((r.where || '').trim()) lines.push('WHERE ' + r.where.trim());
+  if (groupExprs.length) lines.push('GROUP BY ' + groupExprs.join(', '));
+  if ((r.orderBy || '').trim()) lines.push('ORDER BY ' + r.orderBy.trim());
+  // Limit — dialect-aware would be nice but TOP/LIMIT/OFFSET differ across engines.
+  // Since /api/db is engine-agnostic at the wire level, we use a portable wrapper:
+  // most engines accept LIMIT; SQL Server doesn't. To keep things simple, append
+  // LIMIT and let the user override via raw SQL for SQL Server-only deployments.
+  if (r.limit && r.limit > 0) lines.push('LIMIT ' + r.limit);
+  return lines.join('\n');
+}
+
+// ── Run / preview / download ─────────────────────────────────────────────────
+async function cbRun(idx){
+  const reports = cbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  const runs = cbLoadRuns();
+  showStatus('Running ' + (r.name || 'custom report') + '…', 'info');
+  try {
+    const sql = cbBuildSql(r);
+    if (!sql.trim()) throw new Error('SQL is empty.');
+    const rows = await balExec(r.side === 'target' ? 'target' : 'source', sql);
+    runs[r.id] = { ts: Date.now(), rows: rows, sql: sql };
+    cbSaveRuns(runs);
+    showStatus('Custom report complete · ' + rows.length.toLocaleString() + ' rows', 'ok');
+  } catch (e) {
+    runs[r.id] = { ts: Date.now(), rows: null, error: 'Error: ' + (e && e.message || String(e)) };
+    cbSaveRuns(runs);
+    showStatus('Error: ' + (e && e.message || e), 'err');
+  }
+  cbRender();
+}
+
+async function cbRunAll(){
+  const reports = cbLoadReports();
+  if (reports.length === 0) {
+    alert('No custom reports defined yet. Add one with the ＋ button.');
+    return;
+  }
+  for (let i = 0; i < reports.length; i++) {
+    // eslint-disable-next-line no-await-in-loop
+    await cbRun(i);
+  }
+}
+
+function cbRenderPreview(run){
+  const rows = run.rows || [];
+  if (rows.length === 0) {
+    return '<div class="check-detail" style="color:var(--text3)">Query returned 0 rows.</div>';
+  }
+  // Headers from the first row's keys.
+  const headers = Object.keys(rows[0]);
+  const PREVIEW_LIMIT = 200;
+  const shown = rows.slice(0, PREVIEW_LIMIT);
+
+  const summary = '<div class="tb-summary">'
+    + '<div class="tb-summary-item"><strong>' + rows.length.toLocaleString() + '</strong> rows</div>'
+    + '<div class="tb-summary-item"><strong>' + headers.length + '</strong> columns</div>'
+    + '</div>';
+
+  const tableHtml = ''
+    + '<div class="tb-preview-wrap">'
+    +   '<table class="tb-preview"><thead><tr>'
+    +   headers.map(h => '<th>' + escapeHtml(h) + '</th>').join('')
+    +   '</tr></thead><tbody>'
+    +   shown.map(row => '<tr>' + headers.map(h => {
+        const v = row[h];
+        const isNum = v != null && v !== '' && isFinite(parseFloat(v));
+        return '<td' + (isNum ? ' class="num"' : '') + '>' + escapeHtml(v == null ? '' : v) + '</td>';
+      }).join('') + '</tr>').join('')
+    +   '</tbody></table>'
+    + '</div>';
+
+  const overflow = rows.length > PREVIEW_LIMIT
+    ? '<div style="font-size:11px;color:var(--text3);margin-top:6px">Showing first ' + PREVIEW_LIMIT + ' of ' + rows.length.toLocaleString() + ' rows. Use the export buttons for the full set.</div>'
+    : '';
+
+  return summary + tableHtml + overflow;
+}
+
+async function cbDownload(idx, fmt){
+  const reports = cbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  const runs = cbLoadRuns();
+  const run = runs[r.id];
+  if (!run || !Array.isArray(run.rows) || run.rows.length === 0) {
+    alert('Run the report first to generate downloadable data.');
+    return;
+  }
+  const safeName = (r.name || 'custom-report').replace(/[^a-z0-9_-]+/gi, '_').replace(/^_+|_+$/g, '') || 'custom-report';
+  const ts = new Date(run.ts || Date.now()).toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const filename = safeName + '_' + ts;
+
+  if (fmt === 'csv') cbDownloadCsv(run.rows, filename);
+  else if (fmt === 'xlsx') await cbDownloadXlsx(run.rows, filename, r);
+}
+
+function cbDownloadCsv(rows, filename){
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csvEscape = v => {
+    if (v == null) return '';
+    const s = String(v);
+    return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [headers.map(csvEscape).join(',')];
+  for (const r of rows) {
+    lines.push(headers.map(h => csvEscape(r[h])).join(','));
+  }
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  tbTriggerDownload(blob, filename + '.csv');
+}
+
+async function cbDownloadXlsx(rows, filename, report){
+  if (!rows.length) return;
+  let XLSX;
+  try {
+    showStatus('Preparing Excel export…', 'info');
+    XLSX = await _loadSheetJS();
+  } catch (e) {
+    showStatus('Could not load Excel library: ' + e.message + '. Falling back to CSV.', 'err');
+    cbDownloadCsv(rows, filename);
+    return;
+  }
+  const headers = Object.keys(rows[0]);
+  const aoa = [headers];
+  for (const r of rows) {
+    aoa.push(headers.map(h => {
+      const v = r[h];
+      if (v == null) return '';
+      const n = parseFloat(v);
+      return isFinite(n) && String(n) === String(v).trim() ? n : v;
+    }));
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = headers.map(h => ({ wch: Math.min(Math.max(h.length + 2, 12), 30) }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Report');
+
+  // Audit metadata sheet
+  if (report) {
+    const meta = [
+      ['Report name', report.name || ''],
+      ['Generated', new Date().toISOString()],
+      ['Connection side', report.side || 'source'],
+      ['Tables', (report.tables || []).map(t => t.fullName).join(', ')],
+      [],
+      ['SQL'],
+      [cbBuildSafe(report)]
+    ];
+    const metaWs = XLSX.utils.aoa_to_sheet(meta);
+    metaWs['!cols'] = [{ wch: 22 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, metaWs, 'Report info');
+  }
+  XLSX.writeFile(wb, filename + '.xlsx');
+  showStatus('Excel export downloaded', 'ok');
+}
+
+function cbBuildSafe(r){
+  try { return cbBuildSql(r); } catch (e) { return '-- (SQL not buildable: ' + (e.message || e) + ')'; }
+}
+
+// ── AI Assist ────────────────────────────────────────────────────────────────
+//
+// Two-step flow when the user submits a prompt with no prior history:
+//   1. Send prompt + top-level table list (names only, no columns) and
+//      ask Claude which tables it wants to look at.
+//   2. Fetch columns for those tables, then re-prompt with the focused
+//      schema and ask for the report spec (or raw SQL).
+//
+// Subsequent messages reuse the conversation in r.aiHistory; the system
+// prompt (with the focused schema) is sent every time so Claude doesn't
+// lose context.
+
+function cbRenderAiSection(r, idx){
+  const hasKey = !!cbGetApiKey();
+  const history = r.aiHistory || [];
+
+  const keyHint = hasKey
+    ? '<div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Using your Anthropic API key from Settings.</div>'
+    : '<div style="font-size:11px;color:var(--amber);margin-bottom:0.5rem">No Anthropic API key configured. Set one in Dashboard → Settings to enable AI Assist.</div>';
+
+  const messages = history.length
+    ? history.map(m => cbRenderAiMessage(m, idx)).join('')
+    : '<div class="cb-ai-msg system">Describe the report you want — for example: <em>"Total revenue by region by month for Q1 2026, filtered to active accounts"</em>. I\'ll suggest a SQL query you can apply.</div>';
+
+  const inputRow = ''
+    + '<div class="cb-ai-input-row">'
+    +   '<textarea class="cb-ai-textarea" id="cb-ai-input-' + idx + '" placeholder="Ask for a report or refinement…"' + (hasKey ? '' : ' disabled') + '></textarea>'
+    +   '<button class="btn btn-purple btn-sm" onclick="cbAiSend(' + idx + ')"' + (hasKey ? '' : ' disabled') + '>Send</button>'
+    +   (history.length ? '<button class="btn btn-ghost btn-sm" onclick="cbAiClear(' + idx + ')" title="Clear conversation">↺</button>' : '')
+    + '</div>';
+
+  return '<div class="cb-ai-panel">'
+       + keyHint
+       + '<div style="max-height:260px;overflow-y:auto;margin-bottom:0.5rem">' + messages + '</div>'
+       + inputRow
+       + '</div>';
+}
+
+function cbRenderAiMessage(m, idx){
+  const role = m.role || 'assistant';
+  const cls = role === 'user' ? 'user' : role === 'system' ? 'system' : 'assistant';
+  const bodyHtml = escapeHtml(m.content || '').replace(/\n/g, '<br>');
+  // If the assistant message has an extracted SQL block, render it inline
+  // with an Apply button.
+  let extractedHtml = '';
+  if (role === 'assistant' && m.extractedSql) {
+    extractedHtml = '<pre>' + escapeHtml(m.extractedSql) + '</pre>'
+      + '<button class="cb-apply-btn" onclick="cbAiApplySql(' + idx + ',' + (m._mid || 0) + ')">↳ Apply this SQL</button>';
+  }
+  return '<div class="cb-ai-msg ' + cls + '">' + bodyHtml + extractedHtml + '</div>';
+}
+
+function cbAiClear(idx){
+  if (!confirm('Clear AI conversation history for this report?')) return;
+  cbWith(idx, r => { r.aiHistory = []; });
+  cbRender();
+}
+
+async function cbAiSend(idx){
+  const inputEl = $('cb-ai-input-' + idx);
+  if (!inputEl) return;
+  const userText = inputEl.value.trim();
+  if (!userText) return;
+  const apiKey = cbGetApiKey();
+  if (!apiKey) {
+    alert('Set your Anthropic API key in Dashboard → Settings first.');
+    return;
+  }
+
+  const reports = cbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+
+  // Append user message and immediately re-render so the user sees their input
+  r.aiHistory = r.aiHistory || [];
+  r.aiHistory.push({ role: 'user', content: userText });
+  cbSaveReports(reports);
+  inputEl.value = '';
+  cbRender();
+
+  showStatus('Asking Claude…', 'info');
+
+  try {
+    // Two-step: if no tables picked yet (or history short), do table-suggestion
+    // first. Otherwise go straight to report-writing with focused schema.
+    const sch = cbSchemaFor(r.side || 'source');
+    if (!sch.loaded) throw new Error('Schema not loaded yet for ' + (r.side || 'source') + '. Wait for the connection banner to go green.');
+
+    let focusedTables = [];
+    if (r.tables && r.tables.length > 0) {
+      // User has already picked tables — focus on those.
+      focusedTables = r.tables.map(t => cbFindTable(r.side || 'source', t.fullName)).filter(Boolean);
+    } else {
+      // Step 1: ask Claude which tables to use.
+      focusedTables = await cbAiSuggestTables(apiKey, userText, sch.tables);
+      if (focusedTables.length === 0) {
+        throw new Error('Claude could not identify relevant tables. Try a more specific prompt or add some tables manually first.');
+      }
+      // Add suggested tables to the report so the user sees what was chosen
+      // and column-pickers in other sections become populated.
+      cbWith(idx, rep => {
+        const existing = new Set((rep.tables || []).map(t => t.fullName));
+        for (const t of focusedTables) {
+          if (!existing.has(t.fullName)) {
+            rep.tables.push({ fullName: t.fullName, alias: t.fullName.split('.').pop().toLowerCase() });
+          }
+        }
+      });
+    }
+
+    // Step 2: ensure column data is loaded for focused tables, then ask
+    // Claude to write the SQL.
+    for (const t of focusedTables) {
+      // eslint-disable-next-line no-await-in-loop
+      await ensureColumns(r.side === 'target' ? 'tgt' : 'src', t);
+    }
+
+    const sql = await cbAiWriteReport(apiKey, r, focusedTables);
+
+    // Append assistant message + extracted SQL
+    const updated = cbLoadReports();
+    const u = updated[idx];
+    if (u) {
+      u.aiHistory = u.aiHistory || [];
+      const mid = Date.now();
+      u.aiHistory.push({
+        role: 'assistant',
+        _mid: mid,
+        content: 'Here\'s a SQL query for that. Click "Apply this SQL" to drop it into the raw editor.',
+        extractedSql: sql
+      });
+      cbSaveReports(updated);
+    }
+    showStatus('Claude responded', 'ok');
+  } catch (e) {
+    const updated = cbLoadReports();
+    const u = updated[idx];
+    if (u) {
+      u.aiHistory = u.aiHistory || [];
+      u.aiHistory.push({ role: 'system', content: 'Error: ' + (e.message || e) });
+      cbSaveReports(updated);
+    }
+    showStatus('AI error: ' + (e.message || e), 'err');
+  }
+  cbRender();
+}
+
+// Prompt Claude to pick tables. Sends just the table-name list (no columns)
+// so we don't blow the context window on 9k-table schemas.
+async function cbAiSuggestTables(apiKey, userPrompt, allTables){
+  const tableList = allTables.map(t => '- ' + t.fullName + (t.rowCount ? ' (' + t.rowCount.toLocaleString() + ' rows)' : '')).join('\n');
+  const prompt = 'You are helping write a SQL report against a database. The user wants:\n\n'
+    + '"' + userPrompt + '"\n\n'
+    + 'Below is the list of available tables (with row counts where known). '
+    + 'Pick the 1-5 tables most relevant to the user\'s request. '
+    + 'Respond with ONLY a JSON array of full table names, e.g. ["dbo.GL", "dbo.GLAccount"]. '
+    + 'No prose, no code fences.\n\n'
+    + 'Available tables:\n' + tableList;
+
+  const text = await cbAiCall(apiKey, [{ role: 'user', content: prompt }]);
+  const arr = cbExtractJsonArray(text);
+  if (!Array.isArray(arr)) throw new Error('Claude did not return a table list. Response: ' + text.slice(0, 200));
+
+  const lower = new Map(allTables.map(t => [t.fullName.toLowerCase(), t]));
+  const picked = [];
+  for (const name of arr) {
+    const t = lower.get(String(name).toLowerCase());
+    if (t) picked.push(t);
+  }
+  return picked;
+}
+
+// Ask Claude for the SQL given the focused schema + history.
+async function cbAiWriteReport(apiKey, report, focusedTables){
+  const schemaBlock = focusedTables.map(t => {
+    const cols = (t.columns || []).map(c => {
+      const name = typeof c === 'string' ? c : (c.name || c.column || '');
+      const type = typeof c === 'object' && c.dataType ? c.dataType : '';
+      return '  ' + name + (type ? ' ' + type : '');
+    }).join('\n');
+    return t.fullName + '\n' + cols;
+  }).join('\n\n');
+
+  // Build the message history. The last message is the latest user prompt
+  // already in r.aiHistory. We prepend a system-like instruction with the
+  // schema as the first user message, then re-send the user's history.
+  const systemContext =
+    'You write SQL for a database with these tables:\n\n' + schemaBlock + '\n\n'
+    + 'Rules:\n'
+    + '- Output ONLY a SQL SELECT query — no prose, no code fences.\n'
+    + '- Use schema-qualified table names exactly as shown.\n'
+    + '- Add a LIMIT clause (default 1000) unless the user asks otherwise.\n'
+    + '- Prefer explicit JOINs with ON conditions; never CROSS JOIN.\n'
+    + '- Do not modify data (no INSERT, UPDATE, DELETE, DDL).\n';
+
+  // Convert our internal history into Anthropic's messages array.
+  // System prompts go in `system` field; we filter out system messages from
+  // history (they're our error markers, not Claude's).
+  const messages = (report.aiHistory || [])
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(m => ({
+      role: m.role,
+      content: m.role === 'assistant' && m.extractedSql
+        ? m.extractedSql           // send the SQL alone, not the wrapper text
+        : m.content
+    }));
+
+  const text = await cbAiCall(apiKey, messages, systemContext);
+
+  // Strip any code fences if Claude added them despite instructions.
+  const cleaned = text.replace(/^\s*```(?:sql)?\s*/i, '').replace(/```\s*$/, '').trim();
+  if (!/^select\b/i.test(cleaned)) {
+    throw new Error('Claude did not return a SELECT query. Response: ' + text.slice(0, 200));
+  }
+  return cleaned;
+}
+
+async function cbAiCall(apiKey, messages, systemPrompt){
+  const body = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 4096,
+    messages: messages
+  };
+  if (systemPrompt) body.system = systemPrompt;
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000)
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error('Claude API error (' + res.status + '): ' + err.slice(0, 200));
+  }
+  const data = await res.json();
+  const text = (data.content || []).map(b => b.text || '').join('');
+  return text;
+}
+
+function cbExtractJsonArray(text){
+  // Permissive extraction: match the first [ ... ] block.
+  const m = text.match(/\[[\s\S]*?\]/);
+  if (!m) return null;
+  try { return JSON.parse(m[0]); } catch { return null; }
+}
+
+// Apply an extracted SQL block to the raw editor + switch into raw mode.
+function cbAiApplySql(idx, mid){
+  const reports = cbLoadReports();
+  const r = reports[idx];
+  if (!r) return;
+  const msg = (r.aiHistory || []).find(m => m._mid === mid);
+  if (!msg || !msg.extractedSql) return;
+  r.useRaw = true;
+  r.rawSql = msg.extractedSql;
+  if (!r.openSections) r.openSections = {};
+  r.openSections.sql = true;
+  cbSaveReports(reports);
+  cbRender();
+  showStatus('SQL applied to raw editor', 'ok');
+}
+
+// ── Picker integration: handle the 'cb-add-table' and 'cb-custom' update specs ──
+// pickerSelect (defined earlier) reads data-pick-update and routes there.
+// The standard format is "type:idx:key". We add two custom update kinds:
+//   "cb-add-table:<idx>"  → append the picked value as a new table on report idx
+//   "cb-custom"           → run the JS in the input's data-cb-update attribute
+// We patch pickerSelect via a wrapper — but pickerSelect lives elsewhere, so
+// instead we monkey-patch cbHandlePickUpdate which pickerSelect already calls
+// via balUpdate. Simpler: extend pickerSelect's parser. Since we already have
+// pickerSelect and don't want to reach into it, we override the dispatcher
+// by hooking the data-pick-update attribute reader. Approach: detect the
+// "cb-add-table:" prefix in pickerSelect via a small helper that runs from
+// our side. But that's invasive.
+//
+// Cleanest path: add a global hook function the existing pickerSelect calls
+// when it doesn't recognise the update spec. We do that by wrapping
+// pickerSelect now that it's been defined.
+
+(function _wrapPickerSelectForCb(){
+  if (typeof pickerSelect !== 'function') return; // page still loading; init runs first elsewhere
+  const orig = pickerSelect;
+  window.pickerSelect = function(input, value){
+    const spec = input.getAttribute('data-pick-update') || '';
+    if (spec.startsWith('cb-add-table:')) {
+      const idx = parseInt(spec.split(':')[1], 10);
+      input.value = '';                    // clear the input — chip is the persistent state
+      pickerClose(input);
+      cbAddTable(idx, value);
+      return;
+    }
+    if (spec === 'cb-custom') {
+      input.value = value;
+      pickerClose(input);
+      const expr = input.getAttribute('data-cb-update') || '';
+      if (expr) {
+        try {
+          // Evaluate the expression with `this` bound to the input.
+          new Function('return ' + expr).call(input);
+        } catch (e) { /* ignore — invalid expressions silently no-op */ }
+      }
+      return;
+    }
+    return orig(input, value);
+  };
+})();
 </script>
 </body>
 </html>
