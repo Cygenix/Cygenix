@@ -250,7 +250,13 @@ select.form-input option{background:var(--bg3)}
     </div>
     <div style="padding:1.25rem;display:flex;flex-direction:column;gap:1rem">
 
-      <!-- Step 1: Connection -->
+      <!-- Step 1: Display name -->
+      <div id="modal-step-label">
+        <label class="form-label">Display name <span style="color:var(--accent);font-weight:400">(shown in the dropdown — give it a friendly name)</span></label>
+        <input id="modal-label" class="form-input" placeholder="e.g. Staging Validation, Production Validation, Pre-cutover checks">
+      </div>
+
+      <!-- Step 2: Connection -->
       <div id="modal-step-conn">
         <label class="form-label">Database connection</label>
         <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
@@ -310,12 +316,6 @@ select.form-input option{background:var(--bg3)}
           <option value="same">Same connection as this table</option>
         </select>
         <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">This is the DB the script SQL will execute against — it may differ from where the validation table lives.</div>
-      </div>
-
-      <!-- Step 7: Label -->
-      <div id="modal-step-label" style="display:none">
-        <label class="form-label">Label for this validation source</label>
-        <input id="modal-label" class="form-input" placeholder="e.g. Post-migration checks">
       </div>
 
     </div>
@@ -574,7 +574,9 @@ function openAddSource(editId){
   $('modal-custom-conn').style.display='none';
   $('modal-conn-str').value='';
   $('modal-conn-status').textContent='';
-  ['table','sqlcol','namecol','reportcols','runon','label'].forEach(s=>$('modal-step-'+s).style.display='none');
+  // Hide only the steps that need a database connection first.
+  // modal-step-label and modal-step-conn are always visible.
+  ['table','sqlcol','namecol','reportcols','runon'].forEach(s=>$('modal-step-'+s).style.display='none');
   $('modal-table-inp').value='';
   $('modal-save-btn').disabled=true;
 
@@ -585,8 +587,13 @@ function openAddSource(editId){
       $('modal-run-on').value = src.runOn||'same';
       // Pre-fill will happen after connect
     }
+  } else {
+    // Fresh add — clear any text left from a previous session
+    $('modal-label').value = '';
   }
   $('add-modal').style.display='flex';
+  // Focus the display name field so the user starts there
+  setTimeout(() => { try { $('modal-label').focus(); } catch {} }, 50);
 }
 function closeModal(){ $('add-modal').style.display='none'; }
 
@@ -652,8 +659,14 @@ async function selectModalTable(value){
   $('modal-step-namecol').style.display='block';
   $('modal-step-reportcols').style.display='block';
   $('modal-step-runon').style.display='block';
-  $('modal-step-label').style.display='block';
-  $('modal-label').value = _mEditId ? (validationSources.find(s=>s.id===_mEditId)?.label||t.label) : t.label;
+  // Display name is now always visible (Step 1). Only auto-fill if the user
+  // hasn't typed anything yet — never clobber an explicit name like
+  // "Staging Validation". If editing, the existing label was already set
+  // by openAddSource. If creating fresh and the box is still empty, suggest
+  // the table name as a sensible default the user can override.
+  if (!_mEditId && !($('modal-label').value||'').trim()) {
+    $('modal-label').value = t.label;
+  }
 
   // Build report column pills — all selected by default
   $('modal-col-pills').innerHTML = t.columns.map(c=>{
@@ -775,10 +788,12 @@ function renderSources(){
   const err   = src.scripts.filter(s=>s.status==='error').length;
   const pend  = src.scripts.filter(s=>s.status==='pending').length;
 
-  // Dropdown options — show every saved source by label
-  const dropOpts = validationSources.map(s =>
-    `<option value="${esc(s.id)}"${s.id===activeSourceId?' selected':''}>${esc(s.label)}</option>`
-  ).join('');
+  // Dropdown options — show "Display name — schema.table" so users can
+  // distinguish multiple sources when their friendly labels are short.
+  const dropOpts = validationSources.map(s => {
+    const subtitle = s.tableName ? ' — ' + s.tableName : '';
+    return `<option value="${esc(s.id)}"${s.id===activeSourceId?' selected':''}>${esc(s.label + subtitle)}</option>`;
+  }).join('');
 
   // Status pills shown on the card — only after Load
   const statusPills = src.loaded ? `
