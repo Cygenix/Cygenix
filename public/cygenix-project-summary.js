@@ -246,22 +246,41 @@
   }
 
   function getUserId() {
-    // Match the keys used elsewhere in Cygenix. cygenix_active_user is set by
-    // cygenix-cosmos-sync.js when the current Netlify Identity user is known.
+    // The Cygenix dashboard stores the signed-in user under `cygenix_user`.
+    // Some legacy keys (cygenix_active_user, cygenix_user_email) are checked
+    // as fallbacks in case the schema differs across deployments.
+    //
+    // The value may be a plain email string OR a JSON object like
+    // { email: '...', name: '...' }. We support both.
     const candidates = [
+      'cygenix_user',
       'cygenix_active_user',
       'cygenix_user_email',
       'cyg_user_id',
     ];
     for (const k of candidates) {
-      const v = readLocalString(k);
-      if (v) return v;
+      const raw = readLocalString(k);
+      if (!raw) continue;
+      // Try to parse as JSON; fall back to using the string verbatim
+      try {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object') {
+          if (obj.email) return String(obj.email).trim();
+          if (obj.userId) return String(obj.userId).trim();
+          if (obj.id) return String(obj.id).trim();
+        }
+      } catch {
+        // Not JSON — assume it's already the email/userId
+      }
+      return raw;
     }
     return '';
   }
 
   function getFunctionKey() {
-    return readLocalString('cygenix_fn_key');
+    // The dashboard stores the Azure Function key under `cygenix_api_key`.
+    // (Not cygenix_fn_key — that name was a guess and is wrong.)
+    return readLocalString('cygenix_api_key') || readLocalString('cygenix_fn_key');
   }
 
   function getFunctionBase() {
