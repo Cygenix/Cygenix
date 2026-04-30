@@ -536,3 +536,8 @@ const CygenixSync = (() => {
     funcCode: FUNC_CODE,
   };
 })();
+
+// Expose to window so other modules can read CygenixSync without depending
+// on script-tag ordering. `const` at module scope does NOT auto-attach to
+// window, so we do it explicitly here.
+if (typeof window !== 'undefined') window.CygenixSync = CygenixSync;

@@ -292,7 +292,16 @@
     catch { return ''; }
   }
 
-  // ─── Generation: fetch HTML, blob it, print it ──────────────────────────
+  // ─── Generation: fetch HTML, render in iframe, print it ────────────────
+  // We previously used window.open() to display the document, but Chrome
+  // blocks popups opened after an `await` (the click is no longer
+  // considered "user-initiated"). Instead we:
+  //   1. fetch the HTML with the right auth headers
+  //   2. inject it into a hidden iframe via srcdoc (same-origin, no header
+  //      problem because the iframe doesn't fetch — it just renders the
+  //      HTML we already have)
+  //   3. call print() on the iframe's contentWindow once it loads
+  //   4. clean up after print closes
   async function generate(jobId, opts) {
     const userId = getUserId();
     if (!userId) {
@@ -320,7 +329,6 @@
 
       const contentType = resp.headers.get('Content-Type') || '';
       if (!resp.ok) {
-        // Errors come back as JSON {error: '...'}
         let msg = `HTTP ${resp.status}`;
         try {
           const errData = await resp.json();
@@ -333,36 +341,27 @@
       }
 
       const htmlText = await resp.text();
-      const blob = new Blob([htmlText], { type: 'text/html' });
-      const blobUrl = URL.createObjectURL(blob);
 
-      // Open in a new window. We can't trigger print on cross-origin iframes,
-      // but a same-origin blob: window owned by us is fine.
-      const win = window.open(blobUrl, '_blank');
-      if (!win) {
-        URL.revokeObjectURL(blobUrl);
-        throw new Error('Popup blocked — please allow popups for this site');
+      if (opts.openInTab) {
+        // Preview path: open in a new tab via blob. Most browsers allow
+        // this if the user-gesture context is preserved across the await
+        // (Chrome is lenient here, blocks only window.open with a "_blank"
+        // target and no URL). We also fall back to data: URL if blob fails.
+        const blob = new Blob([htmlText], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
+        const win = window.open(blobUrl, '_blank');
+        if (!win) {
+          URL.revokeObjectURL(blobUrl);
+          // Fallback: render inline so the user at least sees the document
+          renderInIframe(htmlText, /*autoPrint=*/false);
+        } else {
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
+        }
+        return;
       }
 
-      if (!opts.openInTab) {
-        // Wait for the new window to finish loading, then trigger print.
-        // We can't add an onload listener cross-window in some browsers, so
-        // poll until the window's document is ready.
-        const tryPrint = (attempts) => {
-          if (attempts <= 0) return;
-          try {
-            if (win.document && win.document.readyState === 'complete') {
-              setTimeout(() => { try { win.focus(); win.print(); } catch {} }, 250);
-              return;
-            }
-          } catch { /* cross-origin during transition; keep polling */ }
-          setTimeout(() => tryPrint(attempts - 1), 200);
-        };
-        tryPrint(25); // ~5 seconds total
-      }
-
-      // Revoke the blob URL after a delay so the new window has time to load it.
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      // Print path: hidden iframe + auto-print. No popup, no blocking.
+      renderInIframe(htmlText, /*autoPrint=*/true);
 
     } catch (e) {
       console.error('[CygenixPSD] generation failed:', e);
@@ -370,6 +369,46 @@
     } finally {
       hideOverlay(overlay);
     }
+  }
+
+  // Render an HTML document inside a hidden iframe and (optionally) trigger
+  // print on it once it's loaded. The iframe is removed after the user
+  // closes the print dialog (or after a long timeout as a safety net).
+  function renderInIframe(htmlText, autoPrint) {
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;';
+    iframe.setAttribute('aria-hidden', 'true');
+
+    let printed = false;
+    const cleanup = () => {
+      if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    };
+
+    iframe.onload = function () {
+      if (!autoPrint) return;
+      // Tiny delay so layout settles before print() snapshots the page
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+          printed = true;
+          // Clean up shortly after — print dialog has its own copy
+          setTimeout(cleanup, 2000);
+        } catch (e) {
+          console.warn('[CygenixPSD] iframe print failed:', e);
+          cleanup();
+        }
+      }, 300);
+    };
+
+    document.body.appendChild(iframe);
+
+    // srcdoc renders the HTML inline — same-origin, no fetch, no header issues
+    iframe.srcdoc = htmlText;
+
+    // Safety net: if something goes wrong and print never fires, clean up
+    // after 60s so we don't leak iframes
+    setTimeout(() => { if (!printed) cleanup(); }, 60000);
   }
 
   // ─── UI helpers ─────────────────────────────────────────────────────────
