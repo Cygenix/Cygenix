@@ -246,49 +246,45 @@
   }
 
   function getUserId() {
-    // The Cygenix dashboard stores the signed-in user under `cygenix_user`.
-    // Some legacy keys (cygenix_active_user, cygenix_user_email) are checked
-    // as fallbacks in case the schema differs across deployments.
-    //
-    // The value may be a plain email string OR a JSON object like
-    // { email: '...', name: '...' }. We support both.
-    const candidates = [
-      'cygenix_user',
-      'cygenix_active_user',
-      'cygenix_user_email',
-      'cyg_user_id',
-    ];
-    for (const k of candidates) {
-      const raw = readLocalString(k);
-      if (!raw) continue;
-      // Try to parse as JSON; fall back to using the string verbatim
-      try {
-        const obj = JSON.parse(raw);
-        if (obj && typeof obj === 'object') {
-          if (obj.email) return String(obj.email).trim();
-          if (obj.userId) return String(obj.userId).trim();
-          if (obj.id) return String(obj.id).trim();
-        }
-      } catch {
-        // Not JSON — assume it's already the email/userId
+    // Prefer CygenixSync — it's the single source of truth for who's signed
+    // in (it does the JSON-parsing and email-extraction we'd otherwise have
+    // to repeat here). Fall back to localStorage only if CygenixSync hasn't
+    // loaded yet (which can happen if this module runs first).
+    if (window.CygenixSync && typeof window.CygenixSync.getUserId === 'function') {
+      const v = window.CygenixSync.getUserId();
+      if (v) return v;
+    }
+
+    // Fallback path — read directly from cygenix_user
+    const raw = readLocalString('cygenix_user');
+    if (!raw) return '';
+    try {
+      const obj = JSON.parse(raw);
+      if (obj && typeof obj === 'object') {
+        return String(obj.email || obj.userId || obj.id || '').trim();
       }
-      return raw;
+    } catch { /* not JSON — assume plain string */ }
+    return raw;
+  }
+
+  function getFunctionKey() {
+    // CygenixSync.funcCode is the canonical source. Never hardcode the key
+    // here — if it ever rotates, both files would need editing. By going
+    // through CygenixSync, the rotation only happens once.
+    if (window.CygenixSync && window.CygenixSync.funcCode) {
+      return window.CygenixSync.funcCode;
     }
     return '';
   }
 
-  function getFunctionKey() {
-    // The dashboard stores the Azure Function key under `cygenix_api_key`.
-    // (Not cygenix_fn_key — that name was a guess and is wrong.)
-    return readLocalString('cygenix_api_key') || readLocalString('cygenix_fn_key');
-  }
-
   function getFunctionBase() {
-    return (
-      readLocalString('cygenix_fn_url') ||
-      readLocalString('cyg_fn_url') ||
-      'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net'
-    ).replace(/\/$/, '');
+    // Prefer CygenixSync.apiBase. It's the canonical Function host (with
+    // /api/data already appended). Strip /api/data because our ENDPOINT
+    // constant already starts with /api/data/...
+    if (window.CygenixSync && window.CygenixSync.apiBase) {
+      return window.CygenixSync.apiBase.replace(/\/api\/data\/?$/, '').replace(/\/$/, '');
+    }
+    return 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
   }
 
   function readLocalString(key) {

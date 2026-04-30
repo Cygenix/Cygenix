@@ -525,5 +525,14 @@ const CygenixSync = (() => {
   // Start after a short delay to let auth complete
   setTimeout(init, 800);
 
-  return { init, save, saveNow, load, forceLoad, ensureUser, ping, getSubscription, getUserId };
+  return {
+    init, save, saveNow, load, forceLoad, ensureUser, ping, getSubscription, getUserId,
+    // Exposed for other modules (e.g. cygenix-project-summary.js) that need to
+    // call the Function with the same auth as the rest of the dashboard.
+    // Keep this the SINGLE source of truth — never duplicate the function key
+    // into another file or into localStorage. If it ever needs rotating, the
+    // change happens here and propagates to every consumer automatically.
+    apiBase:  API_BASE,
+    funcCode: FUNC_CODE,
+  };
 })();
