@@ -1,26 +1,16 @@
-/* cygenix-project-summary.js — Project Summary Document feature.
+/* cygenix-project-summary.js — v2 (fetch + blob, x-user-id auth)
  *
  * Drop-in module. Add to dashboard.html with:
  *   <script src="/cygenix-project-summary.js"></script>
  *
- * SAFE INTEGRATION with the existing dashboard:
- *   • Injects a <div id="view-project-summary-document" class="view"> directly
- *     into the .main container — same convention as every other view.
- *   • Hooks window.showView so when v === 'project-summary-document' we render
- *     our list. For everything else we delegate to the original showView, which
- *     already does the right "remove .active from all .view elements" dance.
- *     This means navigating AWAY from our view automatically hides it because
- *     showView strips .active from every .view element.
- *   • Uses the dashboard's existing CSS variables and class names so it looks
- *     native (no theme drift).
+ * Why v2:
+ *   v1 used a hidden iframe to load the document. That can't add headers,
+ *   which breaks for Cygenix because the API requires x-user-id. v2 uses
+ *   fetch() (which CAN add headers), gets the HTML as a string, turns it
+ *   into a blob URL, opens it in a new window, and triggers print there.
  *
- * Data:
- *   - localStorage: cygenix_jobs / cygenix_active_project / cygenix_fn_url / cygenix_fn_key
- *   - Function endpoint: /api/project-summary-document?jobId=<id>
- *
- * Errors:
- *   - In-band debugging — Function returns JSON {error,stack} on 500 so it's
- *     readable in the browser Network tab. We don't need Application Insights.
+ * Endpoint: /api/data/project-summary-document?jobId=<id>
+ * Auth:     x-user-id header (matches the other /api/data/* endpoints)
  */
 
 (function () {
@@ -28,18 +18,14 @@
 
   const VIEW_ID   = 'view-project-summary-document';
   const VIEW_NAME = 'project-summary-document';
-  const ENDPOINT  = '/api/project-summary-document';
-  const PRINT_TIMEOUT_MS = 20000;
+  const ENDPOINT  = '/api/data/project-summary-document';
 
   // ─── Public API ─────────────────────────────────────────────────────────
   window.CygenixPSD = {
     generate: function (jobId, opts) {
       opts = opts || {};
       if (!jobId) { toast('No job selected', 'error'); return; }
-      const url = buildUrl(jobId);
-      if (!url) { toast('Azure Function URL not configured', 'error'); return; }
-      if (opts.openInTab) { window.open(url, '_blank', 'noopener'); return; }
-      generateInIframe(url);
+      generate(jobId, opts);
     },
     refresh: renderJobList,
   };
@@ -56,8 +42,6 @@
     injectView();
     patchShowView();
 
-    // If page loaded with #goto=project-summary-document (sidebar from another page),
-    // open the view shortly after dashboard finishes its own startup.
     if (location.hash.indexOf('goto=' + VIEW_NAME) !== -1) {
       setTimeout(() => {
         if (typeof window.showView === 'function') window.showView(VIEW_NAME);
@@ -67,7 +51,7 @@
 
   // ─── Inject the view's markup ───────────────────────────────────────────
   function injectView() {
-    if (document.getElementById(VIEW_ID)) return; // idempotent
+    if (document.getElementById(VIEW_ID)) return;
 
     const main = document.querySelector('.main');
     if (!main) {
@@ -77,11 +61,10 @@
 
     const view = document.createElement('div');
     view.id = VIEW_ID;
-    view.className = 'view'; // matches the dashboard convention; .active controls visibility
+    view.className = 'view';
     view.innerHTML = renderShell();
     main.appendChild(view);
 
-    // Wire static controls
     const refreshBtn = view.querySelector('#cyg-psd-refresh');
     if (refreshBtn) refreshBtn.addEventListener('click', renderJobList);
 
@@ -116,11 +99,6 @@
   }
 
   // ─── Hook showView ──────────────────────────────────────────────────────
-  // We wrap (don't replace) the dashboard's showView. The original handles
-  // every existing view; ours handles project-summary-document. Crucially,
-  // the original's first line — querySelectorAll('.view').forEach(remove
-  // 'active') — runs BEFORE we add our active class, so navigation away
-  // from our view also works correctly without us touching it.
   function patchShowView() {
     const original = window.showView;
     window.showView = function (v) {
@@ -128,12 +106,9 @@
         original.apply(this, arguments);
       }
       if (v === VIEW_NAME) {
-        // The original showView (or a stub) has already cleared .active from
-        // every .view. We just need to add it to ours and render.
         const view = document.getElementById(VIEW_ID);
         if (view) {
           view.classList.add('active');
-          // Mirror what showView does for known views
           const mainEl = document.querySelector('.main');
           if (mainEl) mainEl.scrollTop = 0;
           if (window.CygenixSidebar && window.CygenixSidebar.setActive) {
@@ -157,7 +132,6 @@
     const jobs = readJobs();
     const projects = readProjects();
 
-    // Populate project filter (preserve current selection)
     const current = filter.value;
     filter.innerHTML = '<option value="">All projects</option>' +
       projects.map(p => `<option value="${attr(p.id)}">${esc(p.name || p.id)}</option>`).join('');
@@ -217,8 +191,9 @@
     const tableCount = (job.tables && job.tables.length) || 0;
     const rowCount = (job.tables || []).reduce((s, t) => s + (t.targetRows || t.sourceRows || 0), 0);
 
-    const isComplete = ['success','complete','completed'].includes(status);
-
+    // Allow generation for any job — the document still produces a useful
+    // overview even for in-progress or partial jobs. The status badge tells
+    // the truth about what's inside.
     return `
       <div class="cyg-psd-row" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem 1.25rem;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:0.5rem;transition:border-color 0.15s">
         <div style="flex:1;min-width:0">
@@ -235,12 +210,8 @@
           </div>
         </div>
         <div style="display:flex;gap:0.5rem;flex-shrink:0">
-          ${isComplete ? `
-            <button class="btn btn-ghost btn-sm" data-preview="${attr(job.id)}" title="Preview in a new tab">👁 Preview</button>
-            <button class="btn btn-primary btn-sm" data-generate="${attr(job.id)}" title="Generate and download as PDF">📄 Generate</button>
-          ` : `
-            <span style="font-size:12px;color:var(--text3);font-style:italic">Available once job completes</span>
-          `}
+          <button class="btn btn-ghost btn-sm" data-preview="${attr(job.id)}" title="Preview in a new tab">👁 Preview</button>
+          <button class="btn btn-primary btn-sm" data-generate="${attr(job.id)}" title="Generate and download as PDF">📄 Generate</button>
         </div>
       </div>`;
   }
@@ -274,18 +245,31 @@
     return [];
   }
 
-  function buildUrl(jobId) {
-    const fnUrl =
+  function getUserId() {
+    // Match the keys used elsewhere in Cygenix. cygenix_active_user is set by
+    // cygenix-cosmos-sync.js when the current Netlify Identity user is known.
+    const candidates = [
+      'cygenix_active_user',
+      'cygenix_user_email',
+      'cyg_user_id',
+    ];
+    for (const k of candidates) {
+      const v = readLocalString(k);
+      if (v) return v;
+    }
+    return '';
+  }
+
+  function getFunctionKey() {
+    return readLocalString('cygenix_fn_key');
+  }
+
+  function getFunctionBase() {
+    return (
       readLocalString('cygenix_fn_url') ||
       readLocalString('cyg_fn_url') ||
-      'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
-    if (!fnUrl) return null;
-
-    const fnKey = readLocalString('cygenix_fn_key') || '';
-    const params = new URLSearchParams({ jobId });
-    if (fnKey) params.set('code', fnKey);
-
-    return `${fnUrl.replace(/\/$/, '')}${ENDPOINT}?${params.toString()}`;
+      'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net'
+    ).replace(/\/$/, '');
   }
 
   function readLocalString(key) {
@@ -293,59 +277,84 @@
     catch { return ''; }
   }
 
-  // ─── Iframe-based PDF generation ────────────────────────────────────────
-  function generateInIframe(url) {
+  // ─── Generation: fetch HTML, blob it, print it ──────────────────────────
+  async function generate(jobId, opts) {
+    const userId = getUserId();
+    if (!userId) {
+      toast('Not signed in — please log in first', 'error');
+      return;
+    }
+
     const overlay = showOverlay();
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden;';
-    iframe.src = url;
+    const base = getFunctionBase();
+    const fnKey = getFunctionKey();
 
-    let printed = false;
-    const cleanup = () => {
-      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-      if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    };
+    // Build URL with optional ?code= for function key
+    const params = new URLSearchParams({ jobId });
+    if (fnKey) params.set('code', fnKey);
+    const url = `${base}${ENDPOINT}?${params.toString()}`;
 
-    iframe.onload = function () {
-      try {
-        const doc = iframe.contentDocument;
-        const looksLikeError = doc && doc.body &&
-          doc.body.innerText && doc.body.innerText.indexOf('"error"') === 0;
-        if (looksLikeError) throw new Error(doc.body.innerText.slice(0, 300));
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'x-user-id': userId,
+          'Accept': 'text/html, application/json',
+        },
+      });
 
-        setTimeout(() => {
+      const contentType = resp.headers.get('Content-Type') || '';
+      if (!resp.ok) {
+        // Errors come back as JSON {error: '...'}
+        let msg = `HTTP ${resp.status}`;
+        try {
+          const errData = await resp.json();
+          if (errData && errData.error) msg = errData.error;
+        } catch { /* response wasn't JSON */ }
+        throw new Error(msg);
+      }
+      if (!contentType.includes('text/html')) {
+        throw new Error('Server did not return HTML');
+      }
+
+      const htmlText = await resp.text();
+      const blob = new Blob([htmlText], { type: 'text/html' });
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Open in a new window. We can't trigger print on cross-origin iframes,
+      // but a same-origin blob: window owned by us is fine.
+      const win = window.open(blobUrl, '_blank');
+      if (!win) {
+        URL.revokeObjectURL(blobUrl);
+        throw new Error('Popup blocked — please allow popups for this site');
+      }
+
+      if (!opts.openInTab) {
+        // Wait for the new window to finish loading, then trigger print.
+        // We can't add an onload listener cross-window in some browsers, so
+        // poll until the window's document is ready.
+        const tryPrint = (attempts) => {
+          if (attempts <= 0) return;
           try {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-            printed = true;
-          } catch (e) {
-            console.warn('[CygenixPSD] iframe print blocked, opening in tab', e);
-            window.open(iframe.src, '_blank', 'noopener');
-          } finally {
-            setTimeout(cleanup, 1000);
-          }
-        }, 250);
-      } catch (err) {
-        console.warn('[CygenixPSD] falling back to new tab:', err);
-        toast('Opening document in new tab\u2026', 'info');
-        window.open(url, '_blank', 'noopener');
-        cleanup();
+            if (win.document && win.document.readyState === 'complete') {
+              setTimeout(() => { try { win.focus(); win.print(); } catch {} }, 250);
+              return;
+            }
+          } catch { /* cross-origin during transition; keep polling */ }
+          setTimeout(() => tryPrint(attempts - 1), 200);
+        };
+        tryPrint(25); // ~5 seconds total
       }
-    };
 
-    iframe.onerror = function () {
-      toast('Couldn\u2019t generate document. Check Function is running.', 'error');
-      cleanup();
-    };
+      // Revoke the blob URL after a delay so the new window has time to load it.
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
 
-    document.body.appendChild(iframe);
-
-    setTimeout(() => {
-      if (!printed && iframe.parentNode) {
-        window.open(url, '_blank', 'noopener');
-        cleanup();
-      }
-    }, PRINT_TIMEOUT_MS);
+    } catch (e) {
+      console.error('[CygenixPSD] generation failed:', e);
+      toast('Couldn\u2019t generate document: ' + (e.message || 'unknown error'), 'error');
+    } finally {
+      hideOverlay(overlay);
+    }
   }
 
   // ─── UI helpers ─────────────────────────────────────────────────────────
@@ -366,6 +375,10 @@
     return el;
   }
 
+  function hideOverlay(el) {
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+
   function toast(msg, kind) {
     if (window.CygenixToast && window.CygenixToast.show) {
       window.CygenixToast.show(msg, kind || 'info'); return;
@@ -379,7 +392,7 @@
     `;
     el.textContent = msg;
     document.body.appendChild(el);
-    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+    setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 4000);
   }
 
   // ─── Formatting ─────────────────────────────────────────────────────────
