@@ -250,8 +250,9 @@
       }
       .cyg-nav-item:hover{ color:var(--text); background:rgba(255,255,255,0.03); }
       .cyg-nav-item.active{ color:var(--accent); background:var(--accent-glow); border-left-color:var(--accent); }
-      .cyg-nav-icon{ width:16px;height:16px;opacity:0.7;flex-shrink:0; }
-      .cyg-nav-item.active .cyg-nav-icon{ opacity:1; }
+      .cyg-nav-icon{ width:16px;height:16px;opacity:0.85;flex-shrink:0;color:var(--item-color,var(--text2)); }
+      .cyg-nav-item:hover .cyg-nav-icon{ opacity:1; }
+      .cyg-nav-item.active .cyg-nav-icon{ opacity:1;color:var(--accent); }
 
       .cyg-sidebar.collapsed .cyg-nav-label,
       .cyg-sidebar.collapsed .cyg-nav-sub-label,
@@ -283,7 +284,7 @@
 
   function buildItem(item, activeKey){
     const isActive = item.key === activeKey ? ' active' : '';
-    const styleAttr = item.color ? ` style="--accent:${item.color};"` : '';
+    const styleAttr = item.color ? ` style="--item-color:${item.color}; --accent:${item.color};"` : '';
     return `
       <div class="cyg-nav-item${isActive}"
            data-key="${item.key}"
