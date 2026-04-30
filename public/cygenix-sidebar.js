@@ -241,7 +241,7 @@
       .cyg-nav-item{
         display:flex;align-items:center;gap:10px;
         padding:0.5rem 1.25rem;
-        font-size:13px;color:var(--text2);
+        font-size:13px;color:var(--item-color,var(--text2));
         cursor:pointer;
         transition:color 0.15s,background 0.15s;
         border-left:2px solid transparent;
@@ -251,7 +251,7 @@
       .cyg-nav-item:hover{ color:var(--text); background:rgba(255,255,255,0.03); }
       .cyg-nav-item.active{ color:var(--accent); background:var(--accent-glow); border-left-color:var(--accent); }
       .cyg-nav-icon{ width:16px;height:16px;opacity:0.85;flex-shrink:0;color:var(--item-color,var(--text2)); }
-      .cyg-nav-item:hover .cyg-nav-icon{ opacity:1; }
+      .cyg-nav-item:hover .cyg-nav-icon{ opacity:1;color:var(--item-color,var(--text2)); }
       .cyg-nav-item.active .cyg-nav-icon{ opacity:1;color:var(--accent); }
 
       .cyg-sidebar.collapsed .cyg-nav-label,
