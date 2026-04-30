@@ -83,7 +83,8 @@
       { key:'balancing',         label:'Balancing & Metrics', href:'/balancing.html',     color:'var(--purple)', icon: iconBalance() },
     ]},
     { section: 'Outputs', group:'reports', items: [
-      { key:'reports',           label:'Conversion Report', view:'reports',             color:'var(--purple)', icon: iconReport() },
+      { key:'reports',                    label:'Conversion Report',         view:'reports',                    color:'var(--purple)', icon: iconReport() },
+      { key:'project-summary-document',   label:'Project Summary Document',  view:'project-summary-document',   color:'var(--purple)', icon: iconDocument() },
     ]},
     { section: 'Service', items: [
       { key:'ask',               label:'Ask',               href:'/ask.html',           color:'var(--purple)', icon: iconAsk() },
@@ -124,6 +125,10 @@
   function iconGrid(){         return svg('<rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>'); }
   function iconClock(){        return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 4v4l2.5 1.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconReport(){       return svg('<path d="M4 2h6l3 3v9H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v3h3M6 8h4M6 11h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }
+  // Document with signature line — used for the Project Summary Document, the
+  // "deliverable" output (signed off, sent to clients) vs iconReport which is
+  // the day-to-day Conversion Report.
+  function iconDocument(){     return svg('<path d="M4 1.5h5.5L13 5v9.5H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9.5 1.5V5H13" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 7.5h5M6 9.5h5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M6 12h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconAlert(){        return svg('<path d="M8 2l6 11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3M8 11v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconAsk(){          return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6 6c0-1 1-2 2-2s2 1 2 2-1 2-2 2v1M8 11v0.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconCookie(){       return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/>'); }
@@ -248,101 +253,63 @@
       .cyg-nav-icon{ width:16px;height:16px;opacity:0.7;flex-shrink:0; }
       .cyg-nav-item.active .cyg-nav-icon{ opacity:1; }
 
-      /* Collapsed state: hide labels + section headers, center icons */
       .cyg-sidebar.collapsed .cyg-nav-label,
       .cyg-sidebar.collapsed .cyg-nav-sub-label,
       .cyg-sidebar.collapsed .cyg-nav-item-label{ display:none; }
-      .cyg-sidebar.collapsed .cyg-nav-item{ padding:0.55rem 0;justify-content:center; }
-      .cyg-sidebar.collapsed .cyg-nav-sub{ max-height:none !important; }
-      .cyg-sidebar.collapsed .cyg-nav-sub .cyg-nav-item{ padding-left:0; }
-      .cyg-sidebar.collapsed .cyg-nav-section{ margin-bottom:0.4rem; }
+      .cyg-sidebar.collapsed .cyg-nav-item{ justify-content:center;padding:0.5rem 0; }
 
-      /* Live status dot (e.g. connection status) rendered next to a nav label */
-      .cyg-nav-badge{
-        margin-left:auto;
-        width:7px;height:7px;border-radius:50%;
-        background:var(--red);
-        flex-shrink:0;
-        transition:background 0.15s;
-      }
-      .cyg-sidebar.collapsed .cyg-nav-badge{ display:none; }
+      body.cyg-collapsed{ --cyg-sidebar-w:${WIDTH_CLOSED}px; }
+      body:not(.cyg-collapsed){ --cyg-sidebar-w:${WIDTH_OPEN}px; }
     `;
     document.head.appendChild(style);
   }
 
-  // ── Markup ──────────────────────────────────────────────────────────────
+  // ── HTML build ──────────────────────────────────────────────────────────
   function buildHTML(activeKey){
-    const sections = NAV.map(sec => {
-      const visibleItems = sec.items.filter(isItemVisible);
-      // If a section has no visible items after filtering, drop the whole section
-      // (avoids leaving a stranded "Develop" header with nothing under it).
-      if (visibleItems.length === 0) return '';
-
-      const itemsHTML = visibleItems.map(item => {
-        ICON_BY_KEY[item.key] = item.icon;
-        const cls  = 'cyg-nav-item' + (item.key === activeKey ? ' active' : '');
-        const styleAttr = item.color ? ` style="color:${item.color}"` : '';
-        const badge = item.badgeId
-          ? '<span class="cyg-nav-badge" id="'+esc(item.badgeId)+'"></span>'
-          : '';
-        return (
-          '<div class="'+cls+'" data-key="'+item.key+'"'+styleAttr+' title="'+esc(item.label)+'">' +
-            item.icon +
-            '<span class="cyg-nav-item-label">'+esc(item.label)+'</span>' +
-            badge +
-          '</div>'
-        );
-      }).join('');
-      if (sec.group){
-        // Sub-menu section with label + collapsible body
-        return (
-          '<div class="cyg-nav-section">' +
-            (sec.section ? '<div class="cyg-nav-sub-label open" data-group="'+sec.group+'"><span class="cyg-chevron">▸</span>'+esc(sec.section)+'</div>' : '') +
-            '<div class="cyg-nav-sub" data-sub="'+sec.group+'">' + itemsHTML + '</div>' +
-          '</div>'
-        );
-      }
-      // Plain section without a group
-      return (
-        '<div class="cyg-nav-section">' +
-          (sec.section ? '<div class="cyg-nav-label">'+esc(sec.section)+'</div>' : '') +
-          itemsHTML +
-        '</div>'
-      );
-    }).join('');
-
-    return (
-      '<div class="cyg-sidebar-head">' +
-        '<button class="cyg-sidebar-toggle" id="cyg-sidebar-toggle" title="Collapse / expand sidebar">❮</button>' +
-      '</div>' +
-      '<div class="cyg-sidebar-scroll">' + sections + '</div>'
-    );
+    const head = `<div class="cyg-sidebar-head"><button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Toggle sidebar">❮</button></div>`;
+    const body = NAV.map(sec => buildSection(sec, activeKey)).join('');
+    return head + `<div class="cyg-sidebar-scroll">${body}</div>`;
   }
 
-  function esc(s){
-    return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function buildSection(sec, activeKey){
+    const visibleItems = (sec.items || []).filter(isItemVisible);
+    if (!visibleItems.length) return '';
+    const labelHtml = sec.section
+      ? `<div class="cyg-nav-label">${sec.section}</div>`
+      : '';
+    const itemsHtml = visibleItems.map(it => buildItem(it, activeKey)).join('');
+    return `<div class="cyg-nav-section">${labelHtml}${itemsHtml}</div>`;
   }
 
-  // ── Behaviour ───────────────────────────────────────────────────────────
+  function buildItem(item, activeKey){
+    const isActive = item.key === activeKey ? ' active' : '';
+    const styleAttr = item.color ? ` style="--accent:${item.color};"` : '';
+    return `
+      <div class="cyg-nav-item${isActive}"
+           data-key="${item.key}"
+           tabindex="0"${styleAttr}>
+        ${item.icon || ''}
+        <span class="cyg-nav-item-label">${escapeHtml(item.label)}</span>
+      </div>`;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // ── Wiring ──────────────────────────────────────────────────────────────
   function wireItemClicks(sidebarEl){
     sidebarEl.querySelectorAll('.cyg-nav-item').forEach(el => {
-      el.addEventListener('click', (ev) => {
-        ev.stopPropagation();
+      el.addEventListener('click', () => {
         const key = el.dataset.key;
         const item = findItem(key);
-        if (!item) return;
-        handleClick(item);
+        if (item) handleClick(item);
       });
-    });
-
-    sidebarEl.querySelectorAll('.cyg-nav-sub-label').forEach(el => {
-      el.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const group = el.dataset.group;
-        const sub = sidebarEl.querySelector('.cyg-nav-sub[data-sub="'+group+'"]');
-        if (!sub) return;
-        sub.classList.toggle('collapsed');
-        el.classList.toggle('open');
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' '){
+          e.preventDefault();
+          el.click();
+        }
       });
     });
 
