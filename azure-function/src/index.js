@@ -34,6 +34,19 @@ const CORS = {
 const ok  = (body)       => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
 const err = (code, msg)  => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
 
+// HTML response helper for endpoints that return a rendered document
+// (e.g. project-summary-document). Bypasses the JSON Content-Type that
+// `ok` sets so the browser renders the body as a page rather than text.
+const html = (body) => ({
+  status: 200,
+  headers: {
+    ...CORS,
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'private, no-cache'
+  },
+  body
+});
+
 // ── Helper: get userId from request header ────────────────────────────────────
 function getUserId(req) {
   return req.headers.get('x-user-id') || req.query.get('userId') || null;
@@ -926,8 +939,78 @@ app.http('data', {
           return ok({ updated: true, email: targetEmail, trialEndsAt: newEndsAt });
         }
 
+        // ── PROJECT SUMMARY DOCUMENT — server-rendered HTML for client print ──
+        // GET /api/data/project-summary-document?jobId=XYZ
+        //
+        // Returns a fully styled HTML document for the named job. The browser
+        // module loads this and triggers print() to produce a PDF. We render
+        // server-side so all data fetching happens once and the page is
+        // self-contained (inlined CSS, no asset roundtrips during print).
+        //
+        // Data sourcing (matches the rest of this file):
+        //   - Jobs live embedded in the user's `projects` doc (jobs[] array)
+        //   - Audit entries are filtered by jobId across the audit container
+        //
+        // Auth: same x-user-id model as the other actions. Only the owner
+        // can render their own jobs. No cross-user reads.
+        case 'project-summary-document': {
+          const jobId = req.query.get('jobId');
+          if (!jobId) return err(400, 'jobId query param is required');
+
+          // Read the user's project doc and find the job
+          let projectsDoc = null;
+          try {
+            const { resource } = await getCosmosContainer('projects')
+              .item(userId, userId).read();
+            projectsDoc = resource || {};
+          } catch (e) {
+            if (e.code !== 404) throw e;
+            projectsDoc = {};
+          }
+
+          const allJobs = Array.isArray(projectsDoc.jobs) ? projectsDoc.jobs : [];
+          const job = allJobs.find(j => j && (j.id === jobId || j.jobId === jobId));
+          if (!job) return err(404, `Job not found: ${jobId}`);
+
+          // Audit entries for this job. Audit is partitioned by userId so we
+          // scope to the caller; cross-user audit reads aren't possible by
+          // design.
+          let auditEntries = [];
+          try {
+            const { resources } = await getCosmosContainer('audit').items
+              .query({
+                query: 'SELECT * FROM c WHERE c.userId = @uid AND (c.jobId = @jid OR c.action = @act) ORDER BY c.timestamp ASC',
+                parameters: [
+                  { name: '@uid', value: userId },
+                  { name: '@jid', value: jobId },
+                  { name: '@act', value: 'job-run' }   // wide net; renderer filters again
+                ]
+              }, { partitionKey: userId })
+              .fetchAll();
+            auditEntries = (resources || []).filter(a =>
+              a.jobId === jobId || (a.payload && a.payload.jobId === jobId)
+            );
+          } catch (e) {
+            ctx.log('Audit query for project summary doc failed (non-fatal):', e.message);
+          }
+
+          // Project context (best-effort — projects[] is an array on the user doc)
+          const projectsArr = Array.isArray(projectsDoc.projects) ? projectsDoc.projects : [];
+          const project = projectsArr.find(p => p && p.id === job.projectId) || {
+            id:   job.projectId || '',
+            name: job.projectName || projectsDoc.project_settings?.name || 'Untitled project',
+            client:       projectsDoc.project_settings?.client       || '',
+            sourceSystem: projectsDoc.project_settings?.sourceSystem || job.source || '',
+            targetSystem: projectsDoc.project_settings?.targetSystem || job.target || ''
+          };
+
+          ctx.log(`Rendering Project Summary Document for ${userId}, job ${jobId}`);
+          const body = renderProjectSummaryDocument(project, job, auditEntries);
+          return html(body);
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document`);
       }
 
     } catch (e) {
@@ -1077,3 +1160,429 @@ app.http('narrative', {
     }
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECT SUMMARY DOCUMENT — server-side renderer
+// ─────────────────────────────────────────────────────────────────────────────
+// Builds a fully styled HTML document for a completed migration job. Output is
+// designed to be loaded in the browser and printed to PDF via window.print().
+//
+// v1 sections (live):
+//   ✓ Cover + KPI summary
+//   ✓ Scope & environment + Was/Is rules
+//   ✓ Transformations applied
+//   ✓ Reconciliation tables
+//   ✓ Run timeline
+//   ✓ Sign-off page
+//
+// v1 sections (stubbed — show "Available in next release" callout):
+//   ⊘ Decisions with citations  (needs a `decisions[]` array on the job record)
+//   ⊘ Rollback plan             (needs `job_versions` UI complete)
+//
+// All renderers are defensive — missing fields render as em-dashes or empty
+// states, never crashes.
+
+function renderProjectSummaryDocument(project, job, audit) {
+  const generatedAt = new Date().toISOString();
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Project Summary Document — ${psd_esc(project.name)}</title>
+${psd_stylesheet()}
+</head>
+<body>
+${psd_section_cover(project, job, generatedAt)}
+${psd_section_executiveSummary(job)}
+${psd_section_scope(project, job)}
+${psd_section_decisionsStub()}
+${psd_section_transformations(job)}
+${psd_section_reconciliation(job)}
+${psd_section_timeline(audit)}
+${psd_section_rollbackStub()}
+${psd_section_signoff(job)}
+${psd_printControls()}
+</body>
+</html>`;
+}
+
+function psd_section_cover(project, job, generatedAt) {
+  const runDate = job.runCompletedAt ? psd_formatDate(job.runCompletedAt) : psd_formatDate(generatedAt);
+  return `
+<div class="cover">
+  <div class="cover-logo">
+    <span class="cover-logo-mark">C</span>
+    <span>Cygenix</span>
+  </div>
+  <div>
+    <div class="cover-eyebrow">Project Summary Document</div>
+    <div class="cover-title">${psd_esc(project.name)}</div>
+    <div class="cover-subtitle">${psd_esc(project.sourceSystem || 'Source')} → ${psd_esc(project.targetSystem || 'Target')}</div>
+  </div>
+  <div class="cover-meta">
+    <div class="cover-meta-item"><div class="cover-meta-label">Project</div><div class="cover-meta-value">${psd_esc(project.name)}</div></div>
+    <div class="cover-meta-item"><div class="cover-meta-label">Job ID</div><div class="cover-meta-value">${psd_esc(job.id || job.jobId || '')}</div></div>
+    <div class="cover-meta-item"><div class="cover-meta-label">Run Date</div><div class="cover-meta-value">${psd_esc(runDate)}</div></div>
+    <div class="cover-meta-item"><div class="cover-meta-label">Version</div><div class="cover-meta-value">${psd_esc(job.version || 'v1')}</div></div>
+    <div class="cover-meta-item"><div class="cover-meta-label">Operator</div><div class="cover-meta-value">${psd_esc(job.operator || job.lastRunBy || '—')}</div></div>
+    <div class="cover-meta-item"><div class="cover-meta-label">Client</div><div class="cover-meta-value">${psd_esc(project.client || '—')}</div></div>
+  </div>
+  <div class="cover-footer">
+    <span>CONFIDENTIAL — ${psd_esc(project.client || project.name)} &amp; Cygenix</span>
+    <span>cygenix.co.uk</span>
+  </div>
+</div>`;
+}
+
+function psd_section_executiveSummary(job) {
+  const tables = Array.isArray(job.tables) ? job.tables : [];
+  const totalRows = tables.reduce((s, t) => s + (Number(t.targetRows) || 0), 0);
+  const recon = psd_computeReconStatus(job);
+  const warnings = Array.isArray(job.warnings) ? job.warnings.length : 0;
+  const runtime = psd_formatRuntime(job.runtimeSeconds);
+
+  const tableRows = tables.map(t => `
+    <tr>
+      <td><code>${psd_esc(t.name)}</code></td>
+      <td style="text-align:right">${psd_formatNumber(t.sourceRows)}</td>
+      <td style="text-align:right">${psd_formatNumber(t.targetRows)}</td>
+      <td>${t.sourceRows === t.targetRows
+        ? '<span class="badge badge-success">Match</span>'
+        : '<span class="badge badge-warn">Δ ' + psd_formatNumber(Math.abs((t.sourceRows||0)-(t.targetRows||0))) + '</span>'}</td>
+    </tr>`).join('');
+
+  return `
+<div class="page">
+  <div class="section-eyebrow">01 · Executive Summary</div>
+  <h1 class="section">At a glance</h1>
+  <div class="kpi-grid">
+    <div class="kpi success">
+      <div class="kpi-label">Rows migrated</div>
+      <div class="kpi-value">${psd_formatCompact(totalRows)}</div>
+      <div class="kpi-sub">Across ${tables.length} tables</div>
+    </div>
+    <div class="kpi ${recon.className}">
+      <div class="kpi-label">Reconciliation</div>
+      <div class="kpi-value">${recon.value}</div>
+      <div class="kpi-sub">${recon.sub}</div>
+    </div>
+    <div class="kpi ${warnings === 0 ? 'success' : 'warn'}">
+      <div class="kpi-label">Warnings</div>
+      <div class="kpi-value">${warnings}</div>
+      <div class="kpi-sub">${warnings === 0 ? 'Clean run' : 'See decisions'}</div>
+    </div>
+    <div class="kpi info">
+      <div class="kpi-label">Runtime</div>
+      <div class="kpi-value">${runtime}</div>
+      <div class="kpi-sub">Job ${psd_esc(job.id || job.jobId || '')}</div>
+    </div>
+  </div>
+  <h2>What was migrated</h2>
+  <table>
+    <thead><tr><th>Table</th><th style="text-align:right">Source rows</th><th style="text-align:right">Target rows</th><th>Status</th></tr></thead>
+    <tbody>${tableRows || '<tr><td colspan="4" style="text-align:center;color:#94a3b8">No table data captured for this job.</td></tr>'}</tbody>
+  </table>
+</div>`;
+}
+
+function psd_section_scope(project, job) {
+  const wasIs = (Array.isArray(job.wasIsRules) ? job.wasIsRules : []).map(r => `
+    <tr>
+      <td><code>${psd_esc(r.table || '*')}</code></td>
+      <td><code>${psd_esc(r.field || '*')}</code></td>
+      <td>${psd_esc(r.oldVal)}</td>
+      <td>${psd_esc(r.newVal)}</td>
+      <td style="text-align:right">${psd_formatNumber(r.rowsAffected || 0)}</td>
+    </tr>`).join('');
+
+  return `
+<div class="page">
+  <div class="section-eyebrow">02 · Scope &amp; Environment</div>
+  <h1 class="section">Source &amp; target</h1>
+  <div class="two-col">
+    <div class="panel"><div class="panel-title">Source</div><p style="margin:0"><strong>${psd_esc(project.sourceSystem || '—')}</strong></p></div>
+    <div class="panel"><div class="panel-title">Target</div><p style="margin:0"><strong>${psd_esc(project.targetSystem || '—')}</strong></p></div>
+  </div>
+  <h2>Was/Is rules applied</h2>
+  ${wasIs
+    ? `<table>
+         <thead><tr><th>Table</th><th>Field</th><th>Old</th><th>New</th><th style="text-align:right">Rows rewritten</th></tr></thead>
+         <tbody>${wasIs}</tbody>
+       </table>`
+    : '<p style="color:#64748b">No Was/Is rules active for this job.</p>'}
+</div>`;
+}
+
+function psd_section_decisionsStub() {
+  return `
+<div class="page">
+  <div class="section-eyebrow">03 · Decisions</div>
+  <h1 class="section">Decisions made by Claude</h1>
+  <div class="callout callout-info">
+    <div class="callout-title">ⓘ Available in the next release</div>
+    Structured decision tracking — every type promotion, stored proc translation,
+    and schema choice Claude made during analysis, with confidence scores and
+    citations back to the project's artifacts — will appear here in v1.1. The
+    data is generated today during analysis but not yet persisted.
+  </div>
+</div>`;
+}
+
+function psd_section_transformations(job) {
+  const rows = (Array.isArray(job.transformations) ? job.transformations : []).map(t => `
+    <tr>
+      <td><code>${psd_esc(t.target)}</code></td>
+      <td>${psd_esc(t.fromType || '—')}</td>
+      <td>${psd_esc(t.toType || '—')}</td>
+      <td>${psd_esc(t.reason || '')}</td>
+    </tr>`).join('');
+
+  return `
+<div class="page">
+  <div class="section-eyebrow">04 · Transformations Applied</div>
+  <h1 class="section">What changed in the data</h1>
+  ${rows
+    ? `<table>
+         <thead><tr><th>Table.Column</th><th>Source type</th><th>Target type</th><th>Reason</th></tr></thead>
+         <tbody>${rows}</tbody>
+       </table>`
+    : '<p style="color:#64748b">No type transformations recorded for this job.</p>'}
+</div>`;
+}
+
+function psd_section_reconciliation(job) {
+  const r = job.reconciliation || {};
+  const sumRows = (Array.isArray(r.sums) ? r.sums : []).map(s => `
+    <tr>
+      <td><code>${psd_esc(s.table)}</code></td>
+      <td>${psd_esc(s.expression)}</td>
+      <td style="text-align:right">${psd_esc(s.sourceTotal)}</td>
+      <td style="text-align:right">${psd_esc(s.targetTotal)}</td>
+      <td>${s.delta == 0
+        ? '<span class="badge badge-success">0.00</span>'
+        : '<span class="badge badge-warn">' + psd_esc(String(s.delta)) + '</span>'}</td>
+    </tr>`).join('');
+
+  const fkRows = (Array.isArray(r.fks) ? r.fks : []).map(f => `
+    <tr>
+      <td><code>${psd_esc(f.name)}</code></td>
+      <td>${psd_esc(f.from)} → ${psd_esc(f.to)}</td>
+      <td>${f.orphans === 0
+        ? '<span class="badge badge-success">Valid · 0 orphans</span>'
+        : '<span class="badge badge-danger">' + Number(f.orphans) + ' orphans</span>'}</td>
+    </tr>`).join('');
+
+  return `
+<div class="page">
+  <div class="section-eyebrow">05 · Validation &amp; Reconciliation</div>
+  <h1 class="section">Proof the data matches</h1>
+  ${sumRows ? `<h2>Reconciliation by sum</h2>
+    <table>
+      <thead><tr><th>Table</th><th>Expression</th><th style="text-align:right">Source</th><th style="text-align:right">Target</th><th>Δ</th></tr></thead>
+      <tbody>${sumRows}</tbody>
+    </table>` : ''}
+  ${fkRows ? `<h2>FK validation post-load</h2>
+    <table>
+      <thead><tr><th>Constraint</th><th>From → To</th><th>Status</th></tr></thead>
+      <tbody>${fkRows}</tbody>
+    </table>` : ''}
+  ${!sumRows && !fkRows ? '<p style="color:#64748b">No reconciliation data captured for this job.</p>' : ''}
+</div>`;
+}
+
+function psd_section_timeline(audit) {
+  if (!Array.isArray(audit) || !audit.length) {
+    return `
+<div class="page">
+  <div class="section-eyebrow">06 · Run Timeline</div>
+  <h1 class="section">What happened, minute by minute</h1>
+  <p style="color:#64748b">No audit entries recorded for this job.</p>
+</div>`;
+  }
+
+  const start = new Date(audit[0].timestamp).getTime();
+  const items = audit.map(a => {
+    const t = new Date(a.timestamp);
+    const elapsed = Math.round((t.getTime() - start) / 1000);
+    const event = a.event || a.action || a.message || '—';
+    const detail = a.detail || (a.label ? `Label: ${a.label}` : '');
+    return `
+      <div class="timeline-item">
+        <div class="timeline-time">${t.toISOString().slice(11,19)}Z · T+${psd_formatElapsed(elapsed)}</div>
+        <div class="timeline-event">${psd_esc(event)}</div>
+        ${detail ? `<div class="timeline-detail">${psd_esc(detail)}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  return `
+<div class="page">
+  <div class="section-eyebrow">06 · Run Timeline</div>
+  <h1 class="section">What happened, minute by minute</h1>
+  <div class="timeline">${items}</div>
+</div>`;
+}
+
+function psd_section_rollbackStub() {
+  return `
+<div class="page">
+  <div class="section-eyebrow">07 · Rollback Plan</div>
+  <h1 class="section">If something goes wrong post-cutover</h1>
+  <div class="callout callout-info">
+    <div class="callout-title">ⓘ Available once job versioning ships</div>
+    Rollback plans require the per-job version history (currently in development).
+    Once <code>job_versions</code> is live, this section will list snapshots
+    available for revert and a decision tree for common failure modes.
+  </div>
+</div>`;
+}
+
+function psd_section_signoff(job) {
+  return `
+<div class="page">
+  <div class="section-eyebrow">08 · Sign-off</div>
+  <h1 class="section">Acceptance</h1>
+  <p>The undersigned confirm that the migration described in this document
+    (Job <code>${psd_esc(job.id || job.jobId || '')}</code>, version ${psd_esc(job.version || 'v1')})
+    has been completed to the agreed scope and that reconciliation evidence has
+    been reviewed.</p>
+  <div class="signoff">
+    <div class="signature-label" style="margin-bottom:1mm">Migration delivered by</div>
+    <div class="signature-name" style="margin-bottom:6mm">Cygenix · cygenix.co.uk · ${psd_esc(job.id || job.jobId || '')} ${psd_esc(job.version || 'v1')}</div>
+    <div class="signoff-row">
+      <div><div class="signature-line"></div><div class="signature-label">Client — Technical lead</div></div>
+      <div><div class="signature-line"></div><div class="signature-label">Client — Data owner</div></div>
+    </div>
+    <div class="signoff-row" style="margin-top: 12mm">
+      <div><div class="signature-line"></div><div class="signature-label">Cygenix operator</div><div class="signature-name">${psd_esc(job.operator || job.lastRunBy || '')}</div></div>
+      <div></div>
+    </div>
+  </div>
+</div>`;
+}
+
+// ── PSD helpers ──────────────────────────────────────────────────────────────
+function psd_esc(v) {
+  if (v == null) return '';
+  return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function psd_formatNumber(n) {
+  if (n == null) return '—';
+  return Number(n).toLocaleString('en-GB');
+}
+
+function psd_formatCompact(n) {
+  if (n == null) return '—';
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+function psd_formatRuntime(seconds) {
+  if (!seconds) return '—';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m + 'm ' + s + 's';
+}
+
+function psd_formatElapsed(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function psd_formatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })
+    + ', ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function psd_computeReconStatus(job) {
+  const tables = Array.isArray(job.tables) ? job.tables : [];
+  if (!tables.length) return { value: '—', sub: 'No table data', className: 'info' };
+  const matches = tables.filter(t => t.sourceRows === t.targetRows).length;
+  if (matches === tables.length) {
+    return { value: '100%', sub: 'All totals match', className: 'success' };
+  }
+  return {
+    value: Math.round((matches / tables.length) * 100) + '%',
+    sub: (tables.length - matches) + ' mismatch' + (tables.length - matches > 1 ? 'es' : ''),
+    className: 'warn'
+  };
+}
+
+function psd_stylesheet() {
+  return `<style>
+@page { size: A4; margin: 18mm 16mm 20mm 16mm;
+  @bottom-left { content: "Cygenix Project Summary Document"; font-family: Inter, sans-serif; font-size: 8pt; color: #6b7280; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family: Inter, sans-serif; font-size: 8pt; color: #6b7280; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; color: #1a1d24; font-size: 10pt; line-height: 1.5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.cover { height: 257mm; background: linear-gradient(160deg, #0a0e1a 0%, #1a2240 55%, #2d1b4e 100%); color: #fff; padding: 30mm 18mm 22mm 18mm; position: relative; page-break-after: always; display: flex; flex-direction: column; }
+.cover::before { content: ""; position: absolute; top:0;left:0;right:0;bottom:0; background: radial-gradient(circle at 85% 15%, rgba(99, 102, 241, 0.25), transparent 40%), radial-gradient(circle at 15% 85%, rgba(168, 85, 247, 0.18), transparent 45%); pointer-events: none; }
+.cover-logo { font-size: 14pt; font-weight: 800; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
+.cover-logo-mark { width: 28px; height: 28px; background: linear-gradient(135deg, #6366f1, #a855f7); border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; color: white; font-size: 14pt; font-weight: 900; }
+.cover-eyebrow { margin-top: auto; text-transform: uppercase; letter-spacing: 0.18em; font-size: 9pt; color: #a5b4fc; font-weight: 600; position: relative; z-index: 1; }
+.cover-title { font-size: 38pt; font-weight: 800; line-height: 1.05; letter-spacing: -0.025em; margin: 8mm 0 4mm 0; position: relative; z-index: 1; }
+.cover-subtitle { font-size: 14pt; font-weight: 400; color: #cbd5e1; max-width: 140mm; line-height: 1.4; position: relative; z-index: 1; }
+.cover-meta { margin-top: 18mm; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6mm 10mm; position: relative; z-index: 1; }
+.cover-meta-item { border-left: 2px solid #6366f1; padding-left: 4mm; }
+.cover-meta-label { text-transform: uppercase; font-size: 7.5pt; letter-spacing: 0.15em; color: #94a3b8; margin-bottom: 1mm; }
+.cover-meta-value { font-size: 11pt; font-weight: 500; color: #f1f5f9; }
+.cover-footer { margin-top: 14mm; padding-top: 6mm; border-top: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; font-size: 8.5pt; color: #94a3b8; position: relative; z-index: 1; }
+.page { page-break-after: always; padding: 6mm 0; }
+.page:last-child { page-break-after: auto; }
+h1.section { font-size: 22pt; font-weight: 800; letter-spacing: -0.02em; color: #0a0e1a; margin: 0 0 2mm 0; padding-bottom: 3mm; border-bottom: 3px solid #6366f1; }
+.section-eyebrow { text-transform: uppercase; letter-spacing: 0.15em; font-size: 8pt; color: #6366f1; font-weight: 700; margin-bottom: 2mm; }
+h2 { font-size: 13pt; font-weight: 700; margin: 8mm 0 3mm 0; letter-spacing: -0.01em; }
+.kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; margin: 6mm 0; }
+.kpi { background: linear-gradient(135deg, #f8fafc, #fff); border: 1px solid #e2e8f0; border-radius: 6px; padding: 5mm; position: relative; overflow: hidden; }
+.kpi::before { content: ""; position: absolute; top: 0; left: 0; width: 3px; height: 100%; background: var(--accent, #6366f1); }
+.kpi-label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.12em; color: #64748b; font-weight: 600; margin-bottom: 2mm; }
+.kpi-value { font-size: 20pt; font-weight: 800; letter-spacing: -0.02em; color: #0a0e1a; line-height: 1; }
+.kpi-sub { font-size: 8pt; color: #64748b; margin-top: 1.5mm; }
+.kpi.success { --accent: #10b981; } .kpi.warn { --accent: #f59e0b; } .kpi.danger { --accent: #ef4444; } .kpi.info { --accent: #6366f1; }
+.callout { border-radius: 6px; padding: 4mm 5mm; margin: 4mm 0; border-left: 3px solid; font-size: 9.5pt; }
+.callout-success { background: #ecfdf5; border-color: #10b981; color: #064e3b; }
+.callout-warn { background: #fffbeb; border-color: #f59e0b; color: #78350f; }
+.callout-danger { background: #fef2f2; border-color: #ef4444; color: #7f1d1d; }
+.callout-info { background: #eef2ff; border-color: #6366f1; color: #312e81; }
+.callout-title { font-weight: 700; margin-bottom: 1mm; }
+table { width: 100%; border-collapse: collapse; margin: 3mm 0; font-size: 9pt; }
+thead th { background: #f1f5f9; color: #475569; text-align: left; padding: 2.5mm 3mm; font-weight: 600; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #cbd5e1; }
+tbody td { padding: 2.5mm 3mm; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:nth-child(even) td { background: #fafbfc; }
+.badge { display: inline-block; padding: 1mm 2.5mm; border-radius: 3px; font-size: 7.5pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+.badge-success { background: #d1fae5; color: #065f46; }
+.badge-warn { background: #fef3c7; color: #92400e; }
+.badge-danger { background: #fee2e2; color: #991b1b; }
+.timeline { position: relative; padding-left: 8mm; }
+.timeline::before { content: ""; position: absolute; left: 2mm; top: 2mm; bottom: 2mm; width: 2px; background: linear-gradient(180deg, #6366f1, #a855f7); }
+.timeline-item { position: relative; padding-bottom: 5mm; }
+.timeline-item::before { content: ""; position: absolute; left: -7.5mm; top: 1.5mm; width: 4mm; height: 4mm; border-radius: 50%; background: #6366f1; border: 2px solid white; box-shadow: 0 0 0 2px #6366f1; }
+.timeline-time { font-family: 'JetBrains Mono', monospace; font-size: 8pt; color: #6366f1; font-weight: 600; }
+.timeline-event { font-size: 9.5pt; }
+.timeline-detail { font-size: 8.5pt; color: #64748b; margin-top: 0.5mm; }
+code { font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace; font-size: 8.5pt; background: #f1f5f9; padding: 0.5mm 1.5mm; border-radius: 3px; color: #6366f1; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin: 4mm 0; }
+.panel { background: #fafbfc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4mm; }
+.panel-title { font-size: 9pt; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2mm; }
+.signoff { margin-top: 8mm; border: 2px solid #0a0e1a; border-radius: 8px; padding: 8mm; }
+.signoff-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; margin-top: 8mm; }
+.signature-line { border-bottom: 1.5px solid #1a1d24; height: 14mm; margin-bottom: 1.5mm; }
+.signature-label { font-size: 8pt; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.signature-name { font-size: 10pt; font-weight: 600; margin-top: 1mm; }
+@media print { .no-print { display: none !important; } }
+</style>`;
+}
+
+function psd_printControls() {
+  return `
+<div class="no-print" style="position:fixed;top:12px;right:12px;z-index:999;display:flex;gap:8px;font-family:Inter,sans-serif;">
+  <button onclick="window.print()" style="background:#6366f1;color:#fff;border:0;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;">⬇ Save as PDF</button>
+</div>`;
+}
