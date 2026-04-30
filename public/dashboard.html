@@ -87,6 +87,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 /* status badges (shared with projects.html visual language) */
 .dash-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:9px;font-weight:500;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border:0.5px solid;flex-shrink:0;align-self:flex-start}
 .dash-status-active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.35)}
+.dash-status-inactive{background:var(--bg4);color:var(--text3);border-color:var(--border2)}
 .dash-status-complete{background:rgba(34,201,122,0.08);color:var(--green);border-color:rgba(34,201,122,0.35)}
 .dash-status-draft{background:var(--bg4);color:var(--text2);border-color:var(--border2)}
 .dash-status-archived{background:var(--bg4);color:var(--text3);border-color:var(--border)}
@@ -1487,6 +1488,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn" onclick="spExportCSV()" title="Download as CSV">⬇ Export CSV</button>
           <button class="btn" onclick="spExportJSON()" title="Download as JSON">⬇ Export JSON</button>
           <button class="btn btn-primary" onclick="spAddRow()">+ Add parameter</button>
+          <button class="btn" onclick="spConfirmSave()" title="Confirm and flush all parameters to storage">💾 Save</button>
+          <span id="sp-save-status" style="font-size:11px;color:var(--text3);font-family:var(--mono);align-self:center;margin-left:0.25rem;opacity:0;transition:opacity 0.2s"></span>
         </div>
         <div class="sp-toolbar" id="sp-toolbar-wasis" style="display:none">
           <input type="file" id="wi-import-file" accept=".csv,.tsv,.xlsx,.xls,.txt,.json" style="display:none" onchange="wiImportFile(this)">
@@ -1494,6 +1497,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn" onclick="wiExportCSV()" title="Download as CSV">⬇ Export CSV</button>
           <button class="btn" onclick="wiExportJSON()" title="Download as JSON">⬇ Export JSON</button>
           <button class="btn btn-primary" onclick="wiAddRow()">+ Add rule</button>
+          <button class="btn" onclick="wiConfirmSave()" title="Confirm and flush all rules to storage">💾 Save</button>
+          <span id="wi-save-status" style="font-size:11px;color:var(--text3);font-family:var(--mono);align-self:center;margin-left:0.25rem;opacity:0;transition:opacity 0.2s"></span>
         </div>
       </div>
 
@@ -3755,12 +3760,17 @@ function renderActiveProjectSummary(projects, activeId, allJobs, inv){
 }
 
 function dashProjStatus(p, jobs){
-  if (p.statusManual && p.status) return { value: p.status, derived: false };
+  // 'active' is reserved for the project whose id matches
+  // cygenix_active_project_id. Mirrors statusFor() in projects.html — keep
+  // these in sync if you change one.
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  if (p.id === activeId) return { value: 'active', derived: false };
+  if (p.statusManual && p.status && p.status !== 'active') return { value: p.status, derived: false };
   const projJobs = jobs.filter(j => j.projectId === p.id);
   let v;
   if (projJobs.length === 0) v = 'draft';
   else if (projJobs.every(j => j.status === 'complete')) v = 'complete';
-  else v = 'active';
+  else v = 'inactive';
   return { value: v, derived: true };
 }
 
@@ -3824,10 +3834,18 @@ function dashProjCardHtml(p, allJobs, inv, activeId){
 function setActiveProject(projectId){
   if (!projectId) return;
   try { localStorage.setItem('cygenix_active_project_id', projectId); } catch {}
+  // Persist 'active' on the project record so the status field matches the
+  // active-id source of truth. The previously-active project's status is
+  // re-derived via dashProjStatus() — no explicit demotion write needed
+  // since activeId is the source of truth for the "active" label.
   try {
     const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
-    const p = projects.find(x => x.id === projectId);
-    if (p) sessionStorage.setItem('cygenix_active_project', JSON.stringify(p));
+    const i = projects.findIndex(x => x.id === projectId);
+    if (i >= 0) {
+      projects[i] = { ...projects[i], status: 'active', statusManual: true, modified: new Date().toISOString() };
+      localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+      sessionStorage.setItem('cygenix_active_project', JSON.stringify(projects[i]));
+    }
   } catch {}
   // Re-render the dashboard pieces that depend on the active project so the
   // pill, summary card, and jobs table all update immediately.
@@ -3838,13 +3856,7 @@ function setActiveProject(projectId){
 
 function setActiveProjectAndJump(projectId){
   if (!projectId) return;
-  try { localStorage.setItem('cygenix_active_project_id', projectId); } catch {}
-  try {
-    const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
-    const p = projects.find(x => x.id === projectId);
-    if (p) sessionStorage.setItem('cygenix_active_project', JSON.stringify(p));
-  } catch {}
-  renderDashboardProjects();
+  setActiveProject(projectId);
   if (typeof showView === 'function') showView('jobs');
 }
 
@@ -9709,6 +9721,19 @@ function spSave(){
   localStorage.setItem('cygenix_sys_params', JSON.stringify(toSave));
 }
 
+// Defensive flush + visible confirmation. Auto-save still runs on every edit
+// via spSave(); this button is a "yes I'm done" affordance that re-runs the
+// save and surfaces a transient status so the user has explicit feedback.
+function spConfirmSave(){
+  try {
+    spSave();
+    flashSaveStatus('sp-save-status', '✓ Saved ' + spParams.length + ' parameter' + (spParams.length === 1 ? '' : 's'), 'var(--green)');
+  } catch (e) {
+    console.error('[sp] confirm save failed', e);
+    flashSaveStatus('sp-save-status', '✗ Save failed: ' + (e.message || 'unknown'), 'var(--red)');
+  }
+}
+
 function spGetDisplayedRows(){
   const q = spFilterQuery.trim().toLowerCase();
   let indexed = spParams.map((p, origIdx) => ({
@@ -10094,6 +10119,32 @@ function wiSave(){
     try { localStorage.setItem(WI_STORAGE_KEY, JSON.stringify(toSave)); }
     catch(e){ console.warn('wiSave failed', e); }
   }
+}
+
+// Defensive flush + visible confirmation. Auto-save still runs on every edit
+// via wiSave(); this button is a "yes I'm done" affordance that re-runs the
+// save and surfaces a transient status so the user has explicit feedback.
+function wiConfirmSave(){
+  try {
+    wiSave();
+    flashSaveStatus('wi-save-status', '✓ Saved ' + wiRules.length + ' rule' + (wiRules.length === 1 ? '' : 's'), 'var(--green)');
+  } catch (e) {
+    console.error('[wi] confirm save failed', e);
+    flashSaveStatus('wi-save-status', '✗ Save failed: ' + (e.message || 'unknown'), 'var(--red)');
+  }
+}
+
+// Shared helper for both Save buttons. Shows a status pill next to the
+// button for a couple of seconds, then fades out. Idempotent if called
+// repeatedly — clears any prior fade-out timer first.
+function flashSaveStatus(elId, text, color){
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = color || 'var(--text2)';
+  el.style.opacity = '1';
+  if (el._fadeTimer) clearTimeout(el._fadeTimer);
+  el._fadeTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
 }
 
 function wiGetDisplayedRows(){

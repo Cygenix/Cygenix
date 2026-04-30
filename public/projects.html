@@ -75,6 +75,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
 /* ── Status badges ── */
 .status-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:100px;font-size:10px;font-weight:500;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border:0.5px solid}
 .status-active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.35)}
+.status-inactive{background:var(--bg4);color:var(--text3);border-color:var(--border2)}
 .status-complete{background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.35)}
 .status-draft{background:var(--bg4);color:var(--text2);border-color:var(--border2)}
 .status-archived{background:var(--bg4);color:var(--text3);border-color:var(--border)}
@@ -144,6 +145,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
       <select class="filter-select" id="status-filter" onchange="renderProjects()">
         <option value="">All statuses</option>
         <option value="active">Active only</option>
+        <option value="inactive">Inactive only</option>
         <option value="complete">Complete only</option>
         <option value="draft">Draft only</option>
         <option value="archived">Archived only</option>
@@ -271,11 +273,12 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:1
         <select class="form-select" id="pm-status">
           <option value="">Auto (derived from jobs)</option>
           <option value="draft">Draft</option>
-          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
           <option value="complete">Complete</option>
           <option value="archived">Archived</option>
         </select>
         <div class="form-helper derived-hint" id="pm-status-derived-hint"></div>
+        <div class="form-helper" style="font-size:11px;color:var(--text3);margin-top:4px">"Active" is set via the <strong>Set as active</strong> button on each card — only one project can be active at a time.</div>
       </div>
       <div class="form-row">
         <label class="form-label">Notes &amp; special considerations</label>
@@ -383,9 +386,9 @@ function migrateLegacyProjectSettings(){
     tgtSystem:   legacy['tgt-system'] || '',
     rows:        legacy.rows        || '',
     notes:       legacy.notes       || '',
-    // Status defaults to derived
-    status:      '',
-    statusManual:false,
+    // Status — migrated project becomes active, so persist accordingly
+    status:      'active',
+    statusManual:true,
     // Best-effort timestamps from legacy data if present
     created:     legacy.start || now,
     modified:    now,
@@ -399,24 +402,31 @@ function migrateLegacyProjectSettings(){
 }
 
 // ── Status derivation ─────────────────────────────────────────────────────────
-// When status is unset on the project (statusManual=false, status=''), derive
-// it from the jobs assigned to the project:
+// "active" is now reserved for the project whose id matches
+// cygenix_active_project_id — only one project can be active at a time.
+// All other projects derive a non-active status from their jobs:
 //   • no jobs                → 'draft'
 //   • all jobs complete      → 'complete'
-//   • otherwise              → 'active'
+//   • otherwise              → 'inactive'
+// A manual status (statusManual=true) always wins over derivation, except
+// that "active" is enforced via setActive() / promoteActive() rather than
+// the edit modal — the modal's Active option was removed.
 // Returns { value, derived } so the UI can mark derived statuses subtly.
 function statusFor(project, jobs){
-  if (project.statusManual && project.status) {
-    return { value: project.status, derived: false };
+  const activeId = (typeof localStorage !== 'undefined')
+    ? (localStorage.getItem(ACTIVE_PROJ_KEY) || '')
+    : '';
+  if (project.id === activeId) {
+    return { value: 'active', derived: false };
   }
-  if (project.status && !project.statusManual) {
-    // Stored derived status — recompute anyway, it's cheap and keeps fresh
+  if (project.statusManual && project.status && project.status !== 'active') {
+    return { value: project.status, derived: false };
   }
   const projJobs = (jobs || []).filter(j => j.projectId === project.id);
   let derived;
   if (projJobs.length === 0) derived = 'draft';
   else if (projJobs.every(j => j.status === 'complete')) derived = 'complete';
-  else derived = 'active';
+  else derived = 'inactive';
   return { value: derived, derived: true };
 }
 
@@ -569,6 +579,17 @@ function openProject(id){
 
 function setActive(id, silent){
   localStorage.setItem(ACTIVE_PROJ_KEY, id);
+  // Persist 'active' status on the newly-active project so anything reading
+  // the status field directly (exports, reports, future code) sees it without
+  // having to consult cygenix_active_project_id. The previously-active
+  // project's status falls back to its derived value via statusFor() — no
+  // explicit demotion write is needed because activeId is the source of truth
+  // for the "active" label.
+  const i = _projects.findIndex(x => x.id === id);
+  if (i >= 0) {
+    _projects[i] = { ..._projects[i], status: 'active', statusManual: true, modified: new Date().toISOString() };
+    saveProjects();
+  }
   // Mirror the full project object into sessionStorage for any code that
   // reads `cygenix_active_project` (badges, report headers, etc.)
   const p = _projects.find(x => x.id === id);
@@ -626,12 +647,18 @@ function editProject(id){
   set('pm-tgt-system', p.tgtSystem);
   set('pm-rows',       p.rows);
   set('pm-notes',      p.notes);
-  set('pm-status',     p.statusManual ? (p.status || '') : '');
+  // Manual 'active' is no longer a dropdown option (set via the button on
+  // the card) — coerce it to '' so the select shows "Auto" rather than
+  // silently failing to select a missing option.
+  const storedStatus = p.statusManual && p.status && p.status !== 'active' ? p.status : '';
+  set('pm-status', storedStatus);
 
   // Show what status would be derived if they leave it on Auto
   const derived = statusFor({...p, statusManual:false, status:''}, getJobs());
-  document.getElementById('pm-status-derived-hint').textContent =
-    'On Auto, status would currently be "' + derived.value + '" based on this project\'s jobs.';
+  const isActive = p.id === (localStorage.getItem(ACTIVE_PROJ_KEY) || '');
+  document.getElementById('pm-status-derived-hint').textContent = isActive
+    ? 'This is the currently-active project — status is "active" until another project is set as active.'
+    : 'On Auto, status would currently be "' + derived.value + '" based on this project\'s jobs.';
 
   document.getElementById('project-modal').classList.add('open');
 }
@@ -670,8 +697,12 @@ function saveProject(){
     notes:       get('pm-notes'),
   };
   const statusVal = document.getElementById('pm-status').value;
-  data.statusManual = !!statusVal;
-  data.status       = statusVal;     // empty string when on Auto
+  // Defensive: 'active' is not a manual option (set via button on the card),
+  // so coerce any leftover/manual 'active' selection to '' (Auto). The
+  // active project is identified solely by cygenix_active_project_id.
+  const safeStatus = statusVal === 'active' ? '' : statusVal;
+  data.statusManual = !!safeStatus;
+  data.status       = safeStatus;     // empty string when on Auto
 
   const now = new Date().toISOString();
   let savedId;
@@ -681,6 +712,15 @@ function saveProject(){
     if (i >= 0) {
       _projects[i] = { ..._projects[i], ...data, modified: now };
       savedId = _editingId;
+    }
+    // If the user explicitly set a non-active manual status on the
+    // currently-active project, treat that as "deactivate this project."
+    // Clear the active id so no project is active until they pick one
+    // via the "Set as active" button. (Auto/'' leaves activeness alone.)
+    const currentActiveId = localStorage.getItem(ACTIVE_PROJ_KEY) || '';
+    if (savedId === currentActiveId && safeStatus && safeStatus !== 'active') {
+      localStorage.removeItem(ACTIVE_PROJ_KEY);
+      try { sessionStorage.removeItem('cygenix_active_project'); } catch {}
     }
   } else {
     // New project — generate ID and creation timestamps
@@ -695,6 +735,10 @@ function saveProject(){
     // unchanged so we don't surprise the user mid-task.
     if (_projects.length === 1) {
       localStorage.setItem(ACTIVE_PROJ_KEY, savedId);
+      // Persist 'active' on the record to match the active-id source of
+      // truth — see comment in setActive().
+      const i = _projects.findIndex(x => x.id === savedId);
+      if (i >= 0) _projects[i] = { ..._projects[i], status: 'active', statusManual: true };
     }
   }
   saveProjects();
