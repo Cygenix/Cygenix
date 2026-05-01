@@ -79,16 +79,11 @@
       { key:'inventory',         label:'Project Artifacts',         view:'inventory',           icon: iconGrid() },
       { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--yellow)', icon: iconClock() },
     ]},
-    { section: 'Balancing', group:'balancing', items: [
-      { key:'balancing',         label:'Balancing & Metrics', href:'/balancing.html',     color:'var(--purple)', icon: iconBalance() },
-    ]},
-    { section: 'Outputs', group:'reports', items: [
+    { section: 'Reporting', group:'reports', items: [
+      { key:'balancing',                  label:'Reporting',                 href:'/balancing.html',            color:'var(--purple)', icon: iconBalance() },
       { key:'reports',                    label:'Conversion Report',         view:'reports',                    color:'var(--purple)', icon: iconReport() },
       { key:'report-builder',             label:'Report Builder',            href:'/reports.html',              color:'var(--purple)', icon: iconReportBuilder() },
       { key:'project-summary-document',   label:'Project Summary Document',  view:'project-summary-document',   color:'var(--purple)', icon: iconDocument() },
-    ]},
-    { section: 'Service', items: [
-      { key:'ask',               label:'Ask',               href:'/ask.html',           color:'var(--purple)', icon: iconAsk() },
     ]},
     { section: 'More', group:'more', items: [
       { key:'audit',             label:'Audit Log',         view:'audit',               color:'var(--text2)', icon: iconAuditLog() },
@@ -135,7 +130,6 @@
   // the day-to-day Conversion Report.
   function iconDocument(){     return svg('<path d="M4 1.5h5.5L13 5v9.5H4z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M9.5 1.5V5H13" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 7.5h5M6 9.5h5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M6 12h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconAlert(){        return svg('<path d="M8 2l6 11H2z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 6v3M8 11v0.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
-  function iconAsk(){          return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6 6c0-1 1-2 2-2s2 1 2 2-1 2-2 2v1M8 11v0.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconCookie(){       return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><circle cx="5.5" cy="6" r="0.8" fill="currentColor"/><circle cx="9.5" cy="5.5" r="0.6" fill="currentColor"/><circle cx="10.5" cy="9" r="0.7" fill="currentColor"/><circle cx="6" cy="10" r="0.5" fill="currentColor"/><circle cx="8.5" cy="11.5" r="0.6" fill="currentColor"/>'); }
   function iconSearch(){       return svg('<circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconAuditLog(){     return svg('<rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
