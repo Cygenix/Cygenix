@@ -39,7 +39,7 @@
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
-.page{max-width:1200px;margin:0 auto;padding:1.5rem}
+.page{max-width:1800px;margin:0 auto;padding:1.5rem 2rem}
 /* ── panels ── */
 .panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.1rem;overflow:hidden}
 .panel-head{padding:0.75rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;background:var(--bg3)}
@@ -246,8 +246,8 @@ select.form-input option{background:var(--bg3)}
       <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
         <!-- View toggle -->
         <div style="display:flex;gap:3px">
-          <button class="view-btn active" id="vbtn-year"  onclick="setCalView('year')">Year</button>
-          <button class="view-btn"        id="vbtn-month" onclick="setCalView('month')">Month</button>
+          <button class="view-btn"        id="vbtn-year"  onclick="setCalView('year')">Year</button>
+          <button class="view-btn active" id="vbtn-month" onclick="setCalView('month')">Month</button>
           <button class="view-btn"        id="vbtn-week"  onclick="setCalView('week')">Week</button>
           <button class="view-btn"        id="vbtn-day"   onclick="setCalView('day')">Day</button>
         </div>
