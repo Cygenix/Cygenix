@@ -2698,23 +2698,60 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
   });
 
   // ── Aggregate Was/Is rules across all migration steps ──────────────────────
-  // Each column-mapping `m` carries `m.wasisRules` as an array of formatted
-  // strings like "GBP → USD" (one per rule applied to that column). To populate
-  // the report's Was-Is sheet we need them back as { srcField, srcTable,
-  // oldVal, newVal } records, deduped across the whole project.
+  // Three sources of truth, in order of preference:
+  //
+  // 1. Per-column attribution on `step.columnMapping[].wasisRules` — the
+  //    Object Mapping editor *should* attach this when it generates SQL with
+  //    substitutions. As of now it doesn't reliably do so (the wasisRules
+  //    attribute is missing from the persisted mapping objects), so this
+  //    path mostly returns nothing — but we still try it first because it's
+  //    the cheapest and most precise.
+  //
+  // 2. Parse CASE WHEN blocks out of `step.insertSQL`. This is the actual
+  //    SQL executed against the target, so if a substitution ran, it is
+  //    in there. We extract `CASE WHEN [col] = 'old' THEN 'new' ... END
+  //    AS [tgtCol]` and pull out (column, oldVal, newVal) tuples.
+  //
+  // 3. Cross-reference against the global `cygenix_wasis_rules` store to
+  //    fill in missing srcField when the SQL alone doesn't tell us.
+  //
+  // Results are deduped across the whole project by table|field|old|new.
+
+  // Load the global rule store once for cross-referencing
+  let globalWasisRules = [];
+  try {
+    globalWasisRules = JSON.parse(localStorage.getItem('cygenix_wasis_rules') || '[]') || [];
+  } catch { /* ignore — fall back to empty list */ }
+
+  // Strip schema prefix from a table name ("dbo.foo" → "foo") to match
+  // however the global rule store stores its srcTable values (typically
+  // unqualified — see the `cygenix_wasis_rules` shape).
+  const stripSchema = (t) => String(t||'').split('.').pop().toLowerCase();
+
   const wasisAggRules = [];
-  const wasisSeen = new Set();   // for deduping by table|field|old|new
-  let wasisColCount = 0;
+  const wasisSeen = new Set();   // dedup key: table|field|old|new
+  const wasisColSet = new Set(); // dedup key: table|field — for column count
+
+  const addRule = (srcTable, srcField, oldVal, newVal) => {
+    const key = (srcTable||'') + '|' + (srcField||'') + '|' + (oldVal||'') + '|' + (newVal||'');
+    if (wasisSeen.has(key)) return;
+    wasisSeen.add(key);
+    wasisColSet.add((srcTable||'') + '|' + (srcField||''));
+    wasisAggRules.push({
+      srcField: srcField || '',
+      srcTable: srcTable || '',
+      oldVal:   oldVal   || '',
+      newVal:   newVal   || ''
+    });
+  };
+
   migrationSteps.forEach(s => {
+    // Path 1 — per-column attribution on columnMapping
     (s.columnMapping||[]).forEach(m => {
       if (!m || !m.wasisRules || !Array.isArray(m.wasisRules) || m.wasisRules.length === 0) return;
-      wasisColCount++;
       m.wasisRules.forEach(r => {
-        // r is typically a string "old → new"; tolerate object form too
         let oldVal = '', newVal = '';
         if (typeof r === 'string') {
-          // Split on the arrow used by the upstream formatter ("→") with
-          // tolerance for "->" or " => " variants in case the format changes.
           const parts = r.split(/\s*(?:→|->|=>)\s*/);
           oldVal = (parts[0] || '').trim();
           newVal = (parts[1] || '').trim();
@@ -2722,19 +2759,57 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
           oldVal = r.oldVal != null ? String(r.oldVal) : '';
           newVal = r.newVal != null ? String(r.newVal) : '';
         }
-        const key = (s.srcTable||'') + '|' + (m.srcCol||'') + '|' + oldVal + '|' + newVal;
-        if (wasisSeen.has(key)) return;
-        wasisSeen.add(key);
-        wasisAggRules.push({
-          srcField: m.srcCol || '',
-          srcTable: s.srcTable || '',
-          oldVal,
-          newVal
-        });
+        addRule(s.srcTable, m.srcCol, oldVal, newVal);
       });
     });
+
+    // Path 2 — parse CASE WHEN blocks out of step.insertSQL. This catches
+    // wasis applied via SQL even when columnMapping has no attribution.
+    if (s.insertSQL && typeof s.insertSQL === 'string') {
+      // Match the full CASE…END block with a trailing AS [colname] (the
+      // alias the generator emits identifies the target column). If the
+      // generator format changes the alias clause, the inner WHEN/THEN
+      // matcher still works on its own.
+      const caseBlocks = s.insertSQL.match(/CASE\s+WHEN[\s\S]+?END(?:\s+AS\s+\[[^\]]+\])?/gi) || [];
+      caseBlocks.forEach(block => {
+        // Identify the source column from the first WHEN comparison.
+        // Tolerates [col] or col, single or double quotes around literal.
+        const srcMatch = block.match(/WHEN\s+\[?(\w+)\]?\s*=/i);
+        if (!srcMatch) return;
+        const srcCol = srcMatch[1];
+        // Pull every (old, new) pair from this block.
+        const pairRe = /WHEN\s+\[?\w+\]?\s*=\s*N?'([^']*)'\s+THEN\s+N?'([^']*)'/gi;
+        let pm;
+        while ((pm = pairRe.exec(block)) !== null) {
+          addRule(s.srcTable, srcCol, pm[1], pm[2]);
+        }
+      });
+    }
   });
+
+  // Path 3 — cross-reference against the global rule store. For any rule in
+  // the store whose srcTable matches one of this project's source tables,
+  // include it. This catches rules that were configured but might not have
+  // been wired into a CASE WHEN yet (rare but possible if the user added
+  // rules but didn't regenerate SQL). Disabled by default because it would
+  // overcount in a normal run — only enabled when the other two paths
+  // produced nothing, as a last-resort surface.
+  if (wasisAggRules.length === 0 && globalWasisRules.length > 0) {
+    const projectTables = new Set(migrationSteps.map(s => stripSchema(s.srcTable)).filter(Boolean));
+    globalWasisRules.forEach(r => {
+      if (!r) return;
+      const t = stripSchema(r.srcTable);
+      if (!t || projectTables.has(t)) {
+        // Prefix with original schema if present on any project step
+        const matchedStep = migrationSteps.find(s => stripSchema(s.srcTable) === t);
+        const fullTable = matchedStep ? matchedStep.srcTable : (r.srcTable || '');
+        addRule(fullTable, r.srcField || '', r.oldVal || '', r.newVal || '');
+      }
+    });
+  }
+
   const wasisRuleCount = wasisAggRules.length;
+  const wasisColCount  = wasisColSet.size;
 
   // Get source/target table names from first migration step
   const firstMigStep = migrationSteps[0];
