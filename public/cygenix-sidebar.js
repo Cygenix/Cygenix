@@ -80,8 +80,8 @@
       { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--yellow)', icon: iconClock() },
     ]},
     { section: 'Reporting', group:'reports', items: [
+      { key:'report-builder',             label:'Report Builder',            href:'/reports.html',              color:'var(--accent)', icon: iconReportBuilder() },
       { key:'reports',                    label:'Conversion Report',         view:'reports',                    color:'var(--purple)', icon: iconReport() },
-      { key:'report-builder',             label:'Report Builder',            href:'/reports.html',              color:'var(--purple)', icon: iconReportBuilder() },
       { key:'project-summary-document',   label:'Project Summary Document',  view:'project-summary-document',   color:'var(--purple)', icon: iconDocument() },
     ]},
     { section: 'More', group:'more', items: [
