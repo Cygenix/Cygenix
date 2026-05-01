@@ -20,6 +20,7 @@
  *   ✓ Sign-off page
  *   ⊘ Decisions with citations  — STUBBED (needs `decisions[]` on job record)
  *   ⊘ Rollback plan             — STUBBED (needs `job_versions` container)
+ * CM Comment to force update
  */
 
 const { CosmosClient } = require('@azure/cosmos');
