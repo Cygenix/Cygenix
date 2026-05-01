@@ -3412,21 +3412,41 @@ function addToJobs() {
 // switchRightTab replaced by switchBottomTab above
 
 // ── Copy results for Excel ────────────────────────────────────────────────────
+
+// Build export shape matching the current results view.
+// Row view  → headers = column names, rows = data rows (standard).
+// Pivot view → headers = ['Column','Row 1','Row 2',...], one row per source column.
+// Returns {headers:string[], rows:Array<Array<any>>} — array-of-arrays so
+// orientation is preserved exactly when written to TSV / CSV / XLSX.
+function getExportShape() {
+  const {rows, cols} = lastResults;
+  if (resultsView === 'column') {
+    const headers = ['Column', ...rows.map((_, i) => 'Row ' + (i + 1))];
+    const outRows = cols.map(c => [c, ...rows.map(r => r[c] ?? '')]);
+    return { headers, rows: outRows, pivoted: true };
+  }
+  const outRows = rows.map(r => cols.map(c => r[c] ?? ''));
+  return { headers: cols.slice(), rows: outRows, pivoted: false };
+}
+
 function copyResultsForExcel() {
   const {rows, cols} = lastResults;
   if (!rows.length) { alert('No results to copy — run a query first.'); return; }
+  const {headers, rows: outRows, pivoted} = getExportShape();
   // Tab-separated with headers — pastes perfectly into Excel
-  const header = cols.join('	');
-  const body   = rows.map(r => cols.map(c => {
-    const v = r[c];
+  const escCell = v => {
     if (v === null || v === undefined) return '';
     const s = String(v);
-    // If value contains tabs or newlines, wrap in quotes
     return (s.indexOf('\t') > -1 || s.indexOf('\n') > -1) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  }).join('\t')).join('\n');
-  const tsv = header + '\n' + body;
+  };
+  const headerLine = headers.map(escCell).join('\t');
+  const body       = outRows.map(r => r.map(escCell).join('\t')).join('\n');
+  const tsv        = headerLine + '\n' + body;
+  const successMsg = pivoted
+    ? '✓ Copied pivoted view (' + cols.length.toLocaleString() + ' rows × ' + rows.length.toLocaleString() + ' cols) — paste into Excel'
+    : '✓ Copied ' + rows.length.toLocaleString() + ' rows — paste into Excel';
   navigator.clipboard.writeText(tsv).then(function() {
-    setExecStatus('✓ Copied ' + rows.length.toLocaleString() + ' rows — paste into Excel', 'var(--green)');
+    setExecStatus(successMsg, 'var(--green)');
     setTimeout(function(){ setExecStatus('',''); }, 3000);
   }).catch(function(e) {
     // Fallback for browsers that block clipboard
@@ -3437,7 +3457,7 @@ function copyResultsForExcel() {
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-    setExecStatus('✓ Copied — paste into Excel', 'var(--green)');
+    setExecStatus(successMsg, 'var(--green)');
     setTimeout(function(){ setExecStatus('',''); }, 3000);
   });
 }
@@ -3543,11 +3563,13 @@ function exportResults(format) {
   let content2, mime, ext;
 
   if (format === 'json') {
+    // JSON ignores pivot view — structural data is meaningless when transposed
     content2 = JSON.stringify(rows, null, 2);
     mime = 'application/json'; ext = 'json';
 
   } else if (format === 'tsv') {
-    const lines = [cols.join('\t')].concat(rows.map(r=>cols.map(c=>String(r[c]??'')).join('\t')));
+    const {headers, rows: outRows} = getExportShape();
+    const lines = [headers.join('\t')].concat(outRows.map(r => r.map(v => String(v??'')).join('\t')));
     content2 = lines.join('\n');
     mime = 'text/tab-separated-values'; ext = 'tsv';
 
@@ -3558,15 +3580,18 @@ function exportResults(format) {
       s.onload = () => exportResults('xlsx');
       document.head.appendChild(s); return;
     }
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Results');
-    XLSX.writeFile(wb, filename + '.xlsx'); return;
+    const {headers, rows: outRows, pivoted} = getExportShape();
+    const aoa = [headers, ...outRows];
+    const wb  = XLSX.utils.book_new();
+    const ws  = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, pivoted ? 'Results (Pivoted)' : 'Results');
+    XLSX.writeFile(wb, filename + (pivoted ? '_pivoted' : '') + '.xlsx'); return;
 
   } else {
     // CSV — handle commas and quotes in values
+    const {headers, rows: outRows} = getExportShape();
     const escape = v => { const s=String(v??''); return s.includes(',')||s.includes('"')||s.includes('\n') ? '"'+s.replace(/"/g,'""')+'"' : s; };
-    const lines  = [cols.map(escape).join(',')].concat(rows.map(r=>cols.map(c=>escape(r[c])).join(',')));
+    const lines  = [headers.map(escape).join(',')].concat(outRows.map(r => r.map(escape).join(',')));
     content2 = lines.join('\n');
     mime = 'text/csv'; ext = 'csv';
   }
@@ -3576,7 +3601,8 @@ function exportResults(format) {
   a.href     = URL.createObjectURL(blob);
   a.download = filename + '.' + ext;
   a.click(); URL.revokeObjectURL(a.href);
-  setExecStatus('✓ Exported as ' + ext.toUpperCase(), 'var(--green)');
+  const pivotSuffix = (resultsView === 'column' && format !== 'json') ? ' (pivoted)' : '';
+  setExecStatus('✓ Exported as ' + ext.toUpperCase() + pivotSuffix, 'var(--green)');
   setTimeout(()=>setExecStatus('',''), 3000);
 }
 
