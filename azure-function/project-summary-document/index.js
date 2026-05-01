@@ -81,50 +81,220 @@ module.exports = async function (context, req) {
 // ────────────────────────────────────────────────────────────────────────
 // Data collection
 // ────────────────────────────────────────────────────────────────────────
+//
+// IMPORTANT — Cygenix data model on Cosmos:
+//
+// The 'projects' container holds ONE document PER USER, not per project.
+// Each user-doc has top-level arrays:
+//   - jobs[]      — every migration / SQL job the user has created
+//   - projects[]  — every Cygenix project (a project groups jobs into
+//                   ordered execution groups)
+//   - wasis_rules[] — global Was/Is rule store (a rule applies to a job
+//                   when its srcTable matches the job's source table)
+//
+// The earlier query `FROM p JOIN j IN p.jobs WHERE j.id = @jobId` worked
+// (because `p.jobs` is the user-doc's top-level jobs array), but then the
+// handler treated `p` as if it were a "project record". It isn't — it's the
+// whole user doc. So fields like project.name / project.client / project.
+// sourceSystem were all undefined and the document rendered as a skeleton.
+//
+// What this function now does:
+//   1. Find the user-doc that contains a job with the given id
+//   2. Pull the matching job out of user.jobs
+//   3. Find the matching project record in user.projects via job.projectId
+//   4. Filter user.wasis_rules down to rules that apply to this job's
+//      source table
+//   5. Derive everything else (tables list, transformations, runtime, etc.)
+//      from the actual fields the runtime persists, not the fields the
+//      original handler hoped for.
 async function collectData(jobId) {
   const c = getContainers();
 
-  // Jobs are typically embedded in projects in Cygenix's data model.
-  // If you've moved jobs to their own container, change this query.
-  const jobQuery = {
-    query: 'SELECT * FROM p JOIN j IN p.jobs WHERE j.id = @jobId',
+  const userQuery = {
+    query: 'SELECT * FROM u JOIN j IN u.jobs WHERE j.id = @jobId',
     parameters: [{ name: '@jobId', value: jobId }],
   };
-  const { resources: matches } = await c.projects.items.query(jobQuery).fetchAll();
+  const { resources: matches } = await c.projects.items.query(userQuery).fetchAll();
   if (!matches.length) throw new Error(`Job not found: ${jobId}`);
 
-  const project = matches[0];
-  const job = (project.jobs || []).find(j => j.id === jobId);
-  if (!job) throw new Error(`Job ${jobId} not present in project payload`);
+  // The JOIN flattens — `matches[0]` may either be the user doc itself, or
+  // a {u, j} pair depending on how Cosmos serialises the JOIN result. Walk
+  // both shapes safely.
+  const userDoc = matches[0].u || matches[0];
 
-  const auditQuery = {
-    query: 'SELECT * FROM a WHERE a.jobId = @jobId ORDER BY a.timestamp ASC',
-    parameters: [{ name: '@jobId', value: jobId }],
+  const allJobs = Array.isArray(userDoc.jobs) ? userDoc.jobs : [];
+  const allProjects = Array.isArray(userDoc.projects) ? userDoc.projects : [];
+  const allWasis = Array.isArray(userDoc.wasis_rules) ? userDoc.wasis_rules : [];
+
+  const job = allJobs.find(j => j && j.id === jobId);
+  if (!job) throw new Error(`Job ${jobId} not present in user payload`);
+
+  const projectRecord = job.projectId
+    ? allProjects.find(p => p && p.id === job.projectId)
+    : null;
+
+  // Source / target table names — the runtime stores these under several
+  // possible keys depending on which save path produced the job. Try them
+  // in priority order so we always find what's there.
+  const srcTable = job.sourceTable || job.srcTable || job.source || '';
+  const tgtTable = job.targetTable || job.tgtTable || job.target || '';
+
+  // Tables list — if job.tables is populated by the runtime, prefer it.
+  // Otherwise synthesise a single-row "tables" list from the job's
+  // own metadata so the doc has something to show.
+  let tables = Array.isArray(job.tables) && job.tables.length
+    ? job.tables.map(t => ({
+        name:        t.name || t.tgtTable || tgtTable || '—',
+        sourceRows:  t.sourceRows != null ? t.sourceRows : (t.rows != null ? t.rows : (job.totalRows || 0)),
+        targetRows:  t.targetRows != null ? t.targetRows : (t.insertedRows != null ? t.insertedRows : (job.totalRows || 0)),
+      }))
+    : [];
+  if (!tables.length && (srcTable || tgtTable || job.totalRows)) {
+    const total = Number(job.totalRows || 0);
+    tables = [{
+      name:        tgtTable || srcTable || job.name || '—',
+      sourceRows:  total,
+      targetRows:  total,
+    }];
+  }
+
+  // Transformations — the saved column mapping records the transform per
+  // column. Surface only the rows where something non-trivial happened
+  // (transform != NONE, literal columns, type changes).
+  const transformations = (job.columnMapping || [])
+    .filter(m => m && m.tgtCol && (
+      (m.transform && m.transform !== 'NONE') ||
+      m.literalValue != null ||
+      (m.tgtType && m.srcType && m.tgtType !== m.srcType)
+    ))
+    .map(m => ({
+      target:   `${tgtTable || ''}${tgtTable ? '.' : ''}${m.tgtCol}`,
+      fromType: m.srcType || '—',
+      toType:   m.tgtType || '—',
+      reason:   m.transform && m.transform !== 'NONE'
+                  ? `Transform: ${m.transform}${m.transformExpr ? ' (' + m.transformExpr + ')' : ''}`
+                  : (m.literalValue != null ? `Literal: ${m.literalValue}` : 'Type change'),
+    }));
+
+  // Was/Is rules — there are two possible sources:
+  //   1. job.wasisRules — the runtime sometimes copies the global rule
+  //      store onto the job. This is unfiltered (every rule for every
+  //      table).
+  //   2. user.wasis_rules — the global rule store.
+  //
+  // Either way we filter down to rules whose srcTable matches the job's
+  // source table (case-insensitive, schema-tolerant), so the document
+  // only lists rules that were actually applicable to this job.
+  const stripSchema = (s) => String(s || '').split('.').pop().toLowerCase();
+  const jobSrcTableNorm = stripSchema(srcTable);
+
+  const wasisCandidates = Array.isArray(job.wasisRules) && job.wasisRules.length
+    ? job.wasisRules
+    : allWasis;
+
+  // Also parse CASE WHEN substitutions out of insertSQL — that's the
+  // ground truth (it's the SQL that ran). Each block looks like:
+  //   CASE WHEN [col] = 'old' THEN 'new' ... END AS [tgtCol]
+  const sqlSubstitutions = [];
+  if (typeof job.insertSQL === 'string' && job.insertSQL.length) {
+    const blocks = job.insertSQL.match(/CASE\s+WHEN[\s\S]+?END(?:\s+AS\s+\[[^\]]+\])?/gi) || [];
+    blocks.forEach(b => {
+      const colMatch = b.match(/WHEN\s+\[?(\w+)\]?\s*=/i);
+      if (!colMatch) return;
+      const colName = colMatch[1];
+      const pairRe = /WHEN\s+\[?\w+\]?\s*=\s*N?'([^']*)'\s+THEN\s+N?'([^']*)'/gi;
+      let m;
+      while ((m = pairRe.exec(b)) !== null) {
+        sqlSubstitutions.push({ field: colName, oldVal: m[1], newVal: m[2] });
+      }
+    });
+  }
+
+  // Dedup helper for wasIs output: table|field|old|new
+  const wasIsSeen = new Set();
+  const wasIsRules = [];
+  const pushWasIs = (table, field, oldVal, newVal) => {
+    const key = `${(table||'').toLowerCase()}|${(field||'').toLowerCase()}|${oldVal}|${newVal}`;
+    if (wasIsSeen.has(key)) return;
+    wasIsSeen.add(key);
+    wasIsRules.push({ table: table || srcTable || '*', field: field || '*', oldVal, newVal, rowsAffected: 0 });
   };
-  const { resources: audit } = await c.audit.items.query(auditQuery).fetchAll();
+
+  // Path A — rules from the wasis store, filtered to this job's source
+  wasisCandidates.forEach(r => {
+    if (!r) return;
+    const ruleTableNorm = stripSchema(r.srcTable);
+    // No table on the rule = applies to all sources; otherwise must match.
+    if (ruleTableNorm && ruleTableNorm !== jobSrcTableNorm) return;
+    pushWasIs(r.srcTable || srcTable, r.srcField, r.oldVal, r.newVal);
+  });
+  // Path B — substitutions parsed straight out of the insertSQL. These
+  // override / supplement Path A and are guaranteed to be what actually
+  // ran.
+  sqlSubstitutions.forEach(s => {
+    pushWasIs(srcTable, s.field, s.oldVal, s.newVal);
+  });
+
+  // Runtime — the runtime persists `created` (ISO) and `lastRun` (ISO).
+  // Treat them as start and completion if we have nothing better.
+  const runStartedAt   = job.runStartedAt   || job.created || null;
+  const runCompletedAt = job.runCompletedAt || job.lastRun || null;
+  let runtimeSeconds = null;
+  if (job.runtimeSeconds != null) {
+    runtimeSeconds = Number(job.runtimeSeconds);
+  } else if (runStartedAt && runCompletedAt) {
+    const ms = new Date(runCompletedAt).getTime() - new Date(runStartedAt).getTime();
+    if (Number.isFinite(ms) && ms >= 0) runtimeSeconds = Math.round(ms / 1000);
+  }
+
+  // Status — `executionStatus` is the runtime's verdict; fall back to the
+  // editorial `status` only if executionStatus is missing.
+  const status = job.executionStatus || job.status || 'unknown';
+
+  // Audit — same pattern as before. The audit container is queried by
+  // jobId; if the user doesn't have audit set up, this just returns []
+  // and the timeline section will say so honestly.
+  let audit = [];
+  try {
+    const auditQuery = {
+      query: 'SELECT * FROM a WHERE a.jobId = @jobId ORDER BY a.timestamp ASC',
+      parameters: [{ name: '@jobId', value: jobId }],
+    };
+    const r = await c.audit.items.query(auditQuery).fetchAll();
+    audit = r.resources || [];
+  } catch (e) {
+    // Audit container may not exist — don't fail the whole document
+    audit = [];
+  }
 
   return {
     project: {
-      id: project.id,
-      name: project.name || 'Untitled project',
-      client: project.client || '',
-      sourceSystem: project.source || '',
-      targetSystem: project.target || '',
+      id:            (projectRecord && projectRecord.id)   || job.projectId || '',
+      name:          (projectRecord && projectRecord.name) || job.name      || 'Untitled project',
+      client:        (projectRecord && projectRecord.client) || '',
+      sourceSystem:  (projectRecord && (projectRecord.srcSystem || projectRecord.sourceSystem)) || srcTable || '',
+      targetSystem:  (projectRecord && (projectRecord.tgtSystem || projectRecord.targetSystem)) || tgtTable || '',
+      description:   (projectRecord && projectRecord.description) || '',
+      analyst:       (projectRecord && projectRecord.analyst)     || '',
+      pm:            (projectRecord && projectRecord.pm)          || '',
+      ref:           (projectRecord && projectRecord.ref)         || '',
     },
     job: {
-      id: job.id,
-      name: job.name || 'Untitled job',
-      version: job.version || 'v1',
-      status: job.status || 'unknown',
-      operator: job.operator || 'unknown',
-      runStartedAt: job.runStartedAt || null,
-      runCompletedAt: job.runCompletedAt || null,
-      runtimeSeconds: job.runtimeSeconds || null,
-      tables: job.tables || [],
-      transformations: job.transformations || [],
-      wasIsRules: job.wasIsRules || [],
+      id:             job.id,
+      name:           job.name || 'Untitled job',
+      version:        job.version || 'v1',
+      status:         status,
+      operator:       job.operator || userDoc.userId || userDoc.email || 'unknown',
+      runStartedAt:   runStartedAt,
+      runCompletedAt: runCompletedAt,
+      runtimeSeconds: runtimeSeconds,
+      srcTable:       srcTable,
+      tgtTable:       tgtTable,
+      tables:         tables,
+      transformations: transformations,
+      wasIsRules:     wasIsRules,
       reconciliation: job.reconciliation || { sums: [], fks: [] },
-      warnings: job.warnings || [],
+      warnings:       Array.isArray(job.warnings) ? job.warnings : [],
     },
     audit,
     generatedAt: new Date().toISOString(),
