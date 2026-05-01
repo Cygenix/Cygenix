@@ -372,21 +372,48 @@
         return;
       }
 
-      // Push to server. CygenixSync.saveNow() is the synchronous-ish path
-      // that flushes immediately (saveNow vs save). If it's not available
-      // we fall back to save(); if neither exists we still get the local
-      // delete and warn the user the server is out of sync.
+      // Push to server. We deliberately do NOT use CygenixSync.save() or
+      // saveNow() here because both run a load-merge-save cycle that uses
+      // *union* semantics for arrays — they fetch the server's current
+      // jobs[] and merge it with the local jobs[] before writing back.
+      // Union of "list with X" and "list without X" always equals "list
+      // with X", so deletes are impossible to express through that path:
+      // the deleted job comes back on every save.
+      //
+      // Instead we POST directly to /api/data/save with only the `jobs`
+      // field. The server's save action whitelists fields and replaces
+      // the value of any field present in the body — no merge, no union,
+      // the server ends up with exactly the array we just sent. This is
+      // the same endpoint and field name that CygenixSync uses, just
+      // skipping the client-side merge step that breaks deletes.
       let synced = false;
       try {
-        if (window.CygenixSync && typeof window.CygenixSync.saveNow === 'function') {
-          await window.CygenixSync.saveNow();
-          synced = true;
-        } else if (window.CygenixSync && typeof window.CygenixSync.save === 'function') {
-          await window.CygenixSync.save();
-          synced = true;
+        if (window.CygenixSync && typeof window.CygenixSync.getUserId === 'function') {
+          const userId = window.CygenixSync.getUserId();
+          const apiBase = (window.CygenixSync.apiBase || '').replace(/\/$/, '');
+          const fnKey = window.CygenixSync.funcCode || '';
+          if (userId && apiBase) {
+            const params = new URLSearchParams();
+            if (fnKey) params.set('code', fnKey);
+            const url = apiBase + '/save' + (params.toString() ? '?' + params.toString() : '');
+            const r = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-user-id': userId
+              },
+              body: JSON.stringify({ jobs: remaining })
+            });
+            if (r.ok) {
+              synced = true;
+            } else {
+              const errText = await r.text().catch(() => '');
+              console.error('[CygenixPSD] direct save returned ' + r.status + ':', errText.substring(0, 200));
+            }
+          }
         }
       } catch (e) {
-        console.error('[CygenixPSD] sync after delete failed:', e);
+        console.error('[CygenixPSD] direct save after delete failed:', e);
       }
 
       // Clear from selection set so the count resets cleanly
