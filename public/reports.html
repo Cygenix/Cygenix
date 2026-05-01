@@ -391,6 +391,26 @@ body.cyg-collapsed{padding-left:54px}
 /* Section-level "no layout" hint */
 .pv-no-layout{padding:1.5rem;text-align:center;color:var(--text3);font-size:12px}
 .pv-no-layout strong{color:var(--text2);font-style:normal;font-weight:500}
+/* ── Matrix layout designer ─────────────────────────────────────────────────
+   Three drop zones (row groups, column groups, values) plus the same
+   field panel as the Table designer. Same chip-based UX. */
+.la-zone-mtx-row{border-left:2px solid var(--accent)}
+.la-zone-mtx-col{border-left:2px solid var(--teal)}
+.la-zone-mtx-val{border-left:2px solid var(--purple)}
+
+/* ── Chart designer ──────────────────────────────────────────────────────── */
+.la-chart-designer{display:grid;grid-template-columns:220px 1fr;gap:1rem;align-items:start}
+@media (max-width:850px){.la-chart-designer{grid-template-columns:1fr}}
+.la-chart-config{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.75rem}
+.la-chart-row{display:grid;grid-template-columns:auto 1fr;gap:0.5rem;align-items:center;margin-bottom:0.5rem}
+.la-chart-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;min-width:80px}
+.la-chart-row .la-chip-input,
+.la-chart-row .la-chip-select{flex:1;min-width:0}
+.la-variant-toggle{display:inline-flex;gap:0;border-radius:6px;overflow:hidden;border:0.5px solid var(--border2);width:100%}
+.la-variant-toggle button{flex:1;background:var(--bg2);color:var(--text3);border:none;padding:0.4rem;font-size:11px;cursor:pointer;font-family:var(--serif);border-right:0.5px solid var(--border2)}
+.la-variant-toggle button:last-child{border-right:none}
+.la-variant-toggle button.active{background:var(--accent-glow);color:var(--accent)}
+.la-variant-toggle button:hover:not(.active){color:var(--text2)}
 
 </style>
 </head>
@@ -2821,11 +2841,25 @@ function laChangeType(idx, value){
   const lo = laEnsureLayout(r);
   const s = lo.sections[idx]; if (!s) return;
   s.type = value;
-  // Drop 3b only implements 'table'. Matrix/chart structures will be added
-  // in Drop 4. For now, switching to anything other than 'table' renders
-  // a "coming soon" body so users can stage sections without us erroring.
+  // Drop 4b: initialise matrix / chart structures on demand. Each type has
+  // its own config sub-object; we leave the others alone so the user can
+  // switch types and not lose their work.
   if (value === 'table' && !s.table) {
     s.table = { columns: [], rowGroups: [], sort: [], showHeader: true, showGrandTotal: true, title: '' };
+  }
+  if (value === 'matrix' && !s.matrix) {
+    s.matrix = {
+      rowGroups: [], colGroups: [], values: [],
+      showRowGrandTotal: true, showColGrandTotal: true, title: ''
+    };
+  }
+  if (value === 'chart' && !s.chart) {
+    s.chart = {
+      variant: 'bar',
+      category: { field: '', label: '' },
+      series: [],
+      sortDir: '', limit: null, title: '', height: 320
+    };
   }
   r.updatedAt = nowIso();
   rbSaveToLocal();
@@ -3066,8 +3100,8 @@ function laRenderSection(s, idx, r){
 
   const types = [
     { v: 'table',  l: 'Table' },
-    { v: 'matrix', l: 'Matrix (soon)' },
-    { v: 'chart',  l: 'Chart (soon)' }
+    { v: 'matrix', l: 'Matrix' },
+    { v: 'chart',  l: 'Chart' }
   ];
   const typeOpts = types.map(t =>
     '<option value="' + t.v + '"' + (s.type === t.v ? ' selected' : '') + '>' + t.l + '</option>'
@@ -3099,11 +3133,10 @@ function laRenderSection(s, idx, r){
          + '<strong>Bound dataset has been deleted</strong>'
          + 'The dataset this section was bound to no longer exists. Pick another from the dropdown above.'
          + '</div></div>';
-  } else if (s.type !== 'table') {
-    body = '<div class="la-body"><div class="la-no-dataset">'
-         + '<strong>' + escapeHtml(s.type === 'matrix' ? 'Matrix' : 'Chart') + ' coming in Drop 4</strong>'
-         + 'The data model is reserved on this section, but the designer for ' + escapeHtml(s.type) + ' layouts is still being built. Switch back to Table for now.'
-         + '</div></div>';
+  } else if (s.type === 'matrix') {
+    body = '<div class="la-body">' + laRenderMatrixDesigner(s, idx) + '</div>';
+  } else if (s.type === 'chart') {
+    body = '<div class="la-body">' + laRenderChartDesigner(s, idx) + '</div>';
   } else {
     body = '<div class="la-body">' + laRenderTableDesigner(s, idx) + '</div>';
   }
@@ -3363,7 +3396,428 @@ function laRenderSectionSettings(s, idx){
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Preview tab (Drop 4a: Table rendering + Excel export)
+// Matrix layout (Drop 4b)
+//
+// State shape (lives on Section.matrix):
+//   matrix = {
+//     rowGroups: [{ id, field, sortDir, label, showSubtotal, _open }, ...]
+//     colGroups: [{ id, field, sortDir, label, _open }, ...]
+//     values:    [{ id, field, agg, format, label, _open }, ...]
+//     showRowGrandTotal: bool   // total column on the right
+//     showColGrandTotal: bool   // total row at the bottom
+//     title: string
+//   }
+//
+// Renders as a pivot table: row headings on the left (one column per row
+// group), column headings across the top (one tier per column group), and
+// values at each (row, col) intersection. Multiple values produce sub-headers
+// under each column-group key.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function laMtxAddRowGroup(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[idx]; if (!s || s.type !== 'matrix') return;
+  if ((s.matrix.rowGroups || []).some(g => g.field === fieldName)) {
+    showStatus('"' + fieldName + '" is already a row group.', 'info'); return;
+  }
+  s.matrix.rowGroups.push({ id: uuid(), field: fieldName, sortDir: 'asc', label: fieldName, showSubtotal: true, _open: false });
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laMtxAddColGroup(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[idx]; if (!s || s.type !== 'matrix') return;
+  if ((s.matrix.colGroups || []).some(g => g.field === fieldName)) {
+    showStatus('"' + fieldName + '" is already a column group.', 'info'); return;
+  }
+  s.matrix.colGroups.push({ id: uuid(), field: fieldName, sortDir: 'asc', label: fieldName, _open: false });
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laMtxAddValue(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[idx]; if (!s || s.type !== 'matrix') return;
+  // Default agg by type: numbers SUM, everything else COUNT.
+  const f = laFieldByName(s, fieldName);
+  const defaultAgg = (f && f.type === 'number') ? 'sum' : 'count';
+  const defaultFmt = (f && f.type === 'number') ? 'number' : '';
+  s.matrix.values.push({
+    id: uuid(), field: fieldName, agg: defaultAgg, format: defaultFmt,
+    label: defaultAgg.toUpperCase() + ' of ' + fieldName, _open: false
+  });
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+
+// Generic update / move / remove helpers, mirroring the table-section ones.
+function laMtxUpdate(sIdx, kind, itemIdx, key, value){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[sIdx]; if (!s) return;
+  const arr = (s.matrix && s.matrix[kind]) || [];
+  if (!arr[itemIdx]) return;
+  arr[itemIdx][key] = value;
+  r.updatedAt = nowIso(); rbSaveToLocal();
+  if (key === '_open') laRender();
+}
+function laMtxToggle(sIdx, kind, itemIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[sIdx]; if (!s) return;
+  const arr = (s.matrix && s.matrix[kind]) || [];
+  if (!arr[itemIdx]) return;
+  arr[itemIdx]._open = !arr[itemIdx]._open;
+  rbSaveToLocal(); laRender();
+}
+function laMtxRemove(sIdx, kind, itemIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[sIdx]; if (!s) return;
+  const arr = (s.matrix && s.matrix[kind]) || [];
+  arr.splice(itemIdx, 1);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laMtxMove(sIdx, kind, itemIdx, delta){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[sIdx]; if (!s) return;
+  const arr = (s.matrix && s.matrix[kind]) || [];
+  const newIdx = itemIdx + delta;
+  if (newIdx < 0 || newIdx >= arr.length) return;
+  const [moved] = arr.splice(itemIdx, 1);
+  arr.splice(newIdx, 0, moved);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+
+// ── Matrix designer render ─────────────────────────────────────────────────
+function laRenderMatrixDesigner(s, idx){
+  return '<div class="la-design">'
+       +   laRenderFieldPanelMtx(s, idx)
+       +   laRenderMtxZones(s, idx)
+       + '</div>'
+       + laRenderMtxSettings(s, idx);
+}
+
+function laRenderFieldPanelMtx(s, idx){
+  const fields = laBoundFields(s);
+  const ds = laBoundDataset(s);
+  const search = (_laFieldSearch[s.id] || '').toLowerCase();
+
+  if (fields.length === 0) {
+    const msg = (ds && ds.lastTestRun)
+      ? 'Dataset returned no rows on its last Test run.'
+      : 'Run "Test run" on the dataset to discover its fields.';
+    return '<div class="la-field-panel">'
+         +   '<div class="la-field-panel-head"><span class="la-field-panel-title">Fields</span></div>'
+         +   '<div class="la-field-empty">' + escapeHtml(msg) + '</div>'
+         + '</div>';
+  }
+  const filtered = search ? fields.filter(f => f.name.toLowerCase().includes(search)) : fields;
+  // Click to add as row, +C for column group, +V for value.
+  const items = filtered.map(f => {
+    const typeClass = f.type === 'number' ? 't-number'
+                    : f.type === 'date'   ? 't-date'
+                    : f.type === 'bool'   ? 't-bool' : '';
+    const escName = escapeHtml(f.name).replace(/'/g, "\\'");
+    return '<div class="la-field" title="Click name to add as row group">'
+         +   '<span class="la-field-name" onclick="laMtxAddRowGroup(' + idx + ',\'' + escName + '\')">' + escapeHtml(f.name) + '</span>'
+         +   '<span class="la-field-type ' + typeClass + '">' + escapeHtml(f.type || '') + '</span>'
+         +   '<button class="la-chip-toggle" title="Add as column group" onclick="laMtxAddColGroup(' + idx + ',\'' + escName + '\')">＋C</button>'
+         +   '<button class="la-chip-toggle" title="Add as value"        onclick="laMtxAddValue('   + idx + ',\'' + escName + '\')">＋V</button>'
+         + '</div>';
+  }).join('');
+  return '<div class="la-field-panel">'
+       +   '<div class="la-field-panel-head"><span class="la-field-panel-title">Fields · ' + fields.length + '</span></div>'
+       +   '<input class="la-field-search" placeholder="Filter fields…" value="' + escapeHtml(search) + '" '
+       +     'oninput="laUpdateFieldSearch(\'' + s.id + '\',this.value)">'
+       +   (filtered.length === 0
+            ? '<div class="la-field-empty">No fields match "' + escapeHtml(search) + '"</div>'
+            : items)
+       + '</div>';
+}
+
+function laRenderMtxZones(s, idx){
+  const m = s.matrix || {};
+  return '<div class="la-zones">'
+       +   laRenderMtxZone(s, idx, 'rowGroups', '📂 Row groups',    'Click a field name to add a row group. Multiple row groups nest left-to-right.', 'la-zone-mtx-row')
+       +   laRenderMtxZone(s, idx, 'colGroups', '↔️ Column groups', 'Click ＋C next to a field to add a column group. Multiple column groups stack as header tiers.', 'la-zone-mtx-col')
+       +   laRenderMtxValues(s, idx)
+       + '</div>';
+}
+
+function laRenderMtxZone(s, sIdx, kind, title, emptyMsg, extraClass){
+  const items = (s.matrix && s.matrix[kind]) || [];
+  const head = '<div class="la-zone-head">'
+             + '<span class="la-zone-title">' + title + '</span>'
+             + '<span class="la-zone-meta">' + items.length + ' field' + (items.length === 1 ? '' : 's') + '</span>'
+             + '</div>';
+  const body = items.length === 0
+    ? '<div class="la-zone-empty">' + emptyMsg + '</div>'
+    : items.map((g, i) => laRenderMtxGroupChip(s, sIdx, kind, g, i, items.length)).join('');
+  return '<div class="la-zone ' + (extraClass || '') + '">' + head + body + '</div>';
+}
+
+function laRenderMtxGroupChip(s, sIdx, kind, g, gIdx, total){
+  const fields = laBoundFields(s);
+  const exists = fields.some(f => f.name === g.field);
+  const meta = (kind === 'rowGroups' ? 'Level ' + (gIdx + 1) : 'Tier ' + (gIdx + 1)) + (exists ? '' : ' · ⚠ field missing');
+  const head = '<div class="la-chip-head">'
+             + '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
+             + '<span class="la-chip-field">' + escapeHtml(g.field) + '</span>'
+             + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
+             + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'' + kind + '\',' + gIdx + ',-1)">▲</button>'
+             + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'' + kind + '\',' + gIdx + ',1)">▼</button>'
+             + '<button class="la-chip-toggle" onclick="laMtxToggle(' + sIdx + ',\'' + kind + '\',' + gIdx + ')">' + (g._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-rm"     onclick="laMtxRemove(' + sIdx + ',\'' + kind + '\',' + gIdx + ')">✕</button>'
+             + '</div>';
+  if (!g._open) return '<div class="la-chip">' + head + '</div>';
+  const dirs = [
+    { v:'asc',  l:'A → Z' },
+    { v:'desc', l:'Z → A' }
+  ];
+  const dirOpts = dirs.map(d =>
+    '<option value="' + d.v + '"' + (g.sortDir === d.v ? ' selected' : '') + '>' + d.l + '</option>'
+  ).join('');
+  let body = '<div class="la-chip-body">'
+           +   '<div class="la-chip-row"><label>Header label</label>'
+           +     '<input class="la-chip-input" value="' + escapeHtml(g.label || '') + '" '
+           +       'onchange="laMtxUpdate(' + sIdx + ',\'' + kind + '\',' + gIdx + ',\'label\',this.value)"></div>'
+           +   '<div class="la-chip-row"><label>Sort</label>'
+           +     '<select class="la-chip-select" onchange="laMtxUpdate(' + sIdx + ',\'' + kind + '\',' + gIdx + ',\'sortDir\',this.value)">' + dirOpts + '</select></div>';
+  if (kind === 'rowGroups') {
+    body += '<div class="la-chip-row"><label></label>'
+         +    '<label class="la-chip-checkbox"><input type="checkbox"' + (g.showSubtotal ? ' checked' : '') + ' '
+         +      'onchange="laMtxUpdate(' + sIdx + ',\'rowGroups\',' + gIdx + ',\'showSubtotal\',this.checked)"> Show subtotal row</label>'
+         +  '</div>';
+  }
+  body += '</div>';
+  return '<div class="la-chip">' + head + body + '</div>';
+}
+
+function laRenderMtxValues(s, sIdx){
+  const items = (s.matrix && s.matrix.values) || [];
+  const head = '<div class="la-zone-head">'
+             + '<span class="la-zone-title">Σ Values</span>'
+             + '<span class="la-zone-meta">' + items.length + ' value' + (items.length === 1 ? '' : 's') + '</span>'
+             + '</div>';
+  const body = items.length === 0
+    ? '<div class="la-zone-empty">Click ＋V next to a field to add as a value. These are aggregated at each (row, column) intersection.</div>'
+    : items.map((v, i) => laRenderMtxValueChip(s, sIdx, v, i)).join('');
+  return '<div class="la-zone la-zone-mtx-val">' + head + body + '</div>';
+}
+
+function laRenderMtxValueChip(s, sIdx, v, vIdx){
+  const fields = laBoundFields(s);
+  const exists = fields.some(f => f.name === v.field);
+  const meta = (v.agg ? v.agg.toUpperCase() + ' · ' : '') + (v.format || 'auto') + (exists ? '' : ' · ⚠ field missing');
+  const head = '<div class="la-chip-head">'
+             + '<span class="la-chip-handle">⋮⋮</span>'
+             + '<span class="la-chip-field">' + escapeHtml(v.field) + '</span>'
+             + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
+             + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'values\',' + vIdx + ',-1)">▲</button>'
+             + '<button class="la-chip-toggle" onclick="laMtxMove(' + sIdx + ',\'values\',' + vIdx + ',1)">▼</button>'
+             + '<button class="la-chip-toggle" onclick="laMtxToggle(' + sIdx + ',\'values\',' + vIdx + ')">' + (v._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-rm"     onclick="laMtxRemove(' + sIdx + ',\'values\',' + vIdx + ')">✕</button>'
+             + '</div>';
+  if (!v._open) return '<div class="la-chip">' + head + '</div>';
+  const aggs = [
+    { v:'sum',   l:'Sum' },
+    { v:'avg',   l:'Average' },
+    { v:'count', l:'Count' },
+    { v:'min',   l:'Min' },
+    { v:'max',   l:'Max' }
+  ];
+  const aggOpts = aggs.map(a =>
+    '<option value="' + a.v + '"' + (v.agg === a.v ? ' selected' : '') + '>' + a.l + '</option>'
+  ).join('');
+  const formats = [
+    { v:'',         l:'(auto)' },
+    { v:'integer',  l:'Integer' },
+    { v:'number',   l:'Number (2dp)' },
+    { v:'currency', l:'Currency' },
+    { v:'percent',  l:'Percent' }
+  ];
+  const formatOpts = formats.map(f =>
+    '<option value="' + f.v + '"' + (v.format === f.v ? ' selected' : '') + '>' + f.l + '</option>'
+  ).join('');
+  const body = '<div class="la-chip-body">'
+             +   '<div class="la-chip-row"><label>Label</label>'
+             +     '<input class="la-chip-input" value="' + escapeHtml(v.label || '') + '" '
+             +       'onchange="laMtxUpdate(' + sIdx + ',\'values\',' + vIdx + ',\'label\',this.value)"></div>'
+             +   '<div class="la-chip-row"><label>Aggregate</label>'
+             +     '<select class="la-chip-select" onchange="laMtxUpdate(' + sIdx + ',\'values\',' + vIdx + ',\'agg\',this.value)">' + aggOpts + '</select></div>'
+             +   '<div class="la-chip-row"><label>Format</label>'
+             +     '<select class="la-chip-select" onchange="laMtxUpdate(' + sIdx + ',\'values\',' + vIdx + ',\'format\',this.value)">' + formatOpts + '</select></div>'
+             + '</div>';
+  return '<div class="la-chip">' + head + body + '</div>';
+}
+
+function laRenderMtxSettings(s, idx){
+  const m = s.matrix || {};
+  return '<div class="la-settings">'
+       +   '<label class="la-chip-checkbox"><input type="checkbox"' + (m.showRowGrandTotal !== false ? ' checked' : '') + ' '
+       +     'onchange="laUpdate(' + idx + ',\'matrix.showRowGrandTotal\',this.checked)"> Row grand total (right column)</label>'
+       +   '<label class="la-chip-checkbox"><input type="checkbox"' + (m.showColGrandTotal !== false ? ' checked' : '') + ' '
+       +     'onchange="laUpdate(' + idx + ',\'matrix.showColGrandTotal\',this.checked)"> Column grand total (bottom row)</label>'
+       +   '<div style="display:flex;gap:0.5rem;align-items:center;flex:1;min-width:200px">'
+       +     '<label style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Title</label>'
+       +     '<input class="la-chip-input" style="flex:1" placeholder="(no title)" value="' + escapeHtml(m.title || '') + '" '
+       +       'onchange="laUpdate(' + idx + ',\'matrix.title\',this.value)">'
+       +   '</div>'
+       + '</div>';
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Chart layout (Drop 4b)
+//
+// State shape (lives on Section.chart):
+//   chart = {
+//     variant: 'bar' | 'line' | 'pie',
+//     category: { field, label },     // x-axis (or pie slice label)
+//     series:   [{ id, field, agg, label }],   // y-axis values; multiple = grouped/stacked
+//     sortDir:  '' | 'asc' | 'desc',  // sort by first series value
+//     limit:    number | null,        // top-N (after sort)
+//     title:    string,
+//     height:   number                // px, default 320
+//   }
+// ══════════════════════════════════════════════════════════════════════════════
+
+function laChartSetCategory(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[idx]; if (!s || s.type !== 'chart') return;
+  s.chart.category = { field: fieldName, label: fieldName };
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laChartAddSeries(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[idx]; if (!s || s.type !== 'chart') return;
+  if ((s.chart.series || []).some(x => x.field === fieldName)) {
+    showStatus('"' + fieldName + '" is already a series.', 'info'); return;
+  }
+  const f = laFieldByName(s, fieldName);
+  const defaultAgg = (f && f.type === 'number') ? 'sum' : 'count';
+  s.chart.series.push({
+    id: uuid(), field: fieldName, agg: defaultAgg,
+    label: defaultAgg.toUpperCase() + ' of ' + fieldName
+  });
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laChartRemoveSeries(idx, sIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[idx]; if (!s) return;
+  s.chart.series.splice(sIdx, 1);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laChartUpdateSeries(idx, sIdx, key, value){
+  const r = laCurrentReport(); if (!r) return;
+  const s = laEnsureLayout(r).sections[idx]; if (!s) return;
+  if (!s.chart.series[sIdx]) return;
+  s.chart.series[sIdx][key] = value;
+  r.updatedAt = nowIso(); rbSaveToLocal();
+}
+
+function laRenderChartDesigner(s, idx){
+  return '<div class="la-chart-designer">'
+       +   laRenderFieldPanelChart(s, idx)
+       +   laRenderChartConfig(s, idx)
+       + '</div>';
+}
+
+function laRenderFieldPanelChart(s, idx){
+  const fields = laBoundFields(s);
+  const search = (_laFieldSearch[s.id] || '').toLowerCase();
+  if (fields.length === 0) {
+    return '<div class="la-field-panel">'
+         +   '<div class="la-field-panel-head"><span class="la-field-panel-title">Fields</span></div>'
+         +   '<div class="la-field-empty">Run "Test run" on the dataset first.</div>'
+         + '</div>';
+  }
+  const filtered = search ? fields.filter(f => f.name.toLowerCase().includes(search)) : fields;
+  const items = filtered.map(f => {
+    const typeClass = f.type === 'number' ? 't-number' : f.type === 'date' ? 't-date' : '';
+    const escName = escapeHtml(f.name).replace(/'/g, "\\'");
+    return '<div class="la-field" title="Click name to set as category (x-axis)">'
+         +   '<span class="la-field-name" onclick="laChartSetCategory(' + idx + ',\'' + escName + '\')">' + escapeHtml(f.name) + '</span>'
+         +   '<span class="la-field-type ' + typeClass + '">' + escapeHtml(f.type || '') + '</span>'
+         +   '<button class="la-chip-toggle" title="Add as series (y-axis)" onclick="laChartAddSeries(' + idx + ',\'' + escName + '\')">＋Y</button>'
+         + '</div>';
+  }).join('');
+  return '<div class="la-field-panel">'
+       +   '<div class="la-field-panel-head"><span class="la-field-panel-title">Fields · ' + fields.length + '</span></div>'
+       +   '<input class="la-field-search" placeholder="Filter fields…" value="' + escapeHtml(search) + '" '
+       +     'oninput="laUpdateFieldSearch(\'' + s.id + '\',this.value)">'
+       +   (filtered.length === 0 ? '<div class="la-field-empty">No matches</div>' : items)
+       + '</div>';
+}
+
+function laRenderChartConfig(s, idx){
+  const c = s.chart || {};
+  const variants = [
+    { v: 'bar',  l: '📊 Bar' },
+    { v: 'line', l: '📈 Line' },
+    { v: 'pie',  l: '🥧 Pie' }
+  ];
+  const variantToggle = '<div class="la-variant-toggle">'
+                      +   variants.map(v =>
+                          '<button class="' + (c.variant === v.v ? 'active' : '') + '" '
+                          + 'onclick="laUpdate(' + idx + ',\'chart.variant\',\'' + v.v + '\');laRender()">'
+                          + v.l + '</button>'
+                        ).join('')
+                      + '</div>';
+
+  const cat = c.category || { field: '', label: '' };
+  const catCell = cat.field
+    ? '<div style="display:flex;align-items:center;gap:0.4rem">'
+      + '<span class="la-chip-field">' + escapeHtml(cat.field) + '</span>'
+      + '<button class="la-chip-rm" onclick="laUpdate(' + idx + ',\'chart.category\',{field:\'\',label:\'\'});laRender()">✕</button>'
+      + '</div>'
+    : '<span style="font-size:11px;color:var(--text3);font-style:italic">Click a field name in the panel to set the category.</span>';
+
+  const seriesArr = (c.series || []);
+  const seriesItems = seriesArr.length === 0
+    ? '<div class="la-zone-empty">Click ＋Y next to a field to add a series.</div>'
+    : seriesArr.map((sr, sIdx) => {
+        const aggs = [
+          { v:'sum',   l:'Sum' },
+          { v:'avg',   l:'Average' },
+          { v:'count', l:'Count' },
+          { v:'min',   l:'Min' },
+          { v:'max',   l:'Max' }
+        ];
+        const aggOpts = aggs.map(a =>
+          '<option value="' + a.v + '"' + (sr.agg === a.v ? ' selected' : '') + '>' + a.l + '</option>'
+        ).join('');
+        return '<div class="la-chip">'
+             +   '<div class="la-chip-head">'
+             +     '<span class="la-chip-field">' + escapeHtml(sr.field) + '</span>'
+             +     '<select class="la-chip-select" style="min-width:90px" '
+             +       'onchange="laChartUpdateSeries(' + idx + ',' + sIdx + ',\'agg\',this.value)">' + aggOpts + '</select>'
+             +     '<input class="la-chip-input" placeholder="Label" value="' + escapeHtml(sr.label || '') + '" '
+             +       'onchange="laChartUpdateSeries(' + idx + ',' + sIdx + ',\'label\',this.value)" style="min-width:120px">'
+             +     '<button class="la-chip-rm" onclick="laChartRemoveSeries(' + idx + ',' + sIdx + ')">✕</button>'
+             +   '</div>'
+             + '</div>';
+      }).join('');
+
+  return '<div class="la-chart-config">'
+       +   '<div class="la-chart-row"><label>Type</label>' + variantToggle + '</div>'
+       +   '<div class="la-chart-row"><label>Category</label><div style="flex:1">' + catCell + '</div></div>'
+       +   '<div class="la-chart-row" style="align-items:flex-start"><label style="padding-top:6px">Series</label><div style="flex:1">' + seriesItems + '</div></div>'
+       +   '<div class="la-chart-row"><label>Title</label>'
+       +     '<input class="la-chip-input" placeholder="(no title)" value="' + escapeHtml(c.title || '') + '" '
+       +       'onchange="laUpdate(' + idx + ',\'chart.title\',this.value)"></div>'
+       +   '<div class="la-chart-row"><label>Sort</label>'
+       +     '<select class="la-chip-select" onchange="laUpdate(' + idx + ',\'chart.sortDir\',this.value)">'
+       +       '<option value=""'     + (c.sortDir === ''     ? ' selected' : '') + '>(no sort)</option>'
+       +       '<option value="asc"'  + (c.sortDir === 'asc'  ? ' selected' : '') + '>Ascending by first series</option>'
+       +       '<option value="desc"' + (c.sortDir === 'desc' ? ' selected' : '') + '>Descending by first series</option>'
+       +     '</select></div>'
+       +   '<div class="la-chart-row"><label>Top N</label>'
+       +     '<input class="la-chip-input" type="number" min="0" placeholder="(no limit)" '
+       +       'value="' + (c.limit != null ? c.limit : '') + '" '
+       +       'onchange="laUpdate(' + idx + ',\'chart.limit\',this.value === \'\' ? null : parseInt(this.value, 10))"></div>'
+       +   '<div class="la-chart-row"><label>Height</label>'
+       +     '<input class="la-chip-input" type="number" min="120" max="800" value="' + (c.height || 320) + '" '
+       +       'onchange="laUpdate(' + idx + ',\'chart.height\',Math.max(120, Math.min(800, parseInt(this.value, 10) || 320)))"></div>'
+       + '</div>';
+}
+
+
+
 //
 // Pipeline:
 //   1. pvRender()                  — renders the parameter form
@@ -3532,7 +3986,13 @@ async function pvRun(){
     pvShowStatus('Running section ' + (i + 1) + ' of ' + sections.length + ' · ' + (s.name || 'Untitled') + '…', 'busy');
     try {
       const rows = await pvFetchSection(r, s, paramValues, dsCache);
-      const tree = pvBuildTable(s, rows);
+      // Build the per-type "tree" — Table, Matrix, or Chart all produce a
+      // tree shape, just different keys. Render and Excel export read the
+      // tree via section type.
+      let tree;
+      if (s.type === 'matrix')      tree = pvBuildMatrix(s, rows);
+      else if (s.type === 'chart')  tree = pvBuildChart(s, rows);
+      else                          tree = pvBuildTable(s, rows);
       pvLastRun[s.id] = { tree: tree, rows: rows, error: null, datasetName: (laBoundDataset(s) || {}).name || '' };
       ok++;
     } catch (e) {
@@ -3817,11 +4277,20 @@ function pvRenderOutput(r){
   const out = $('pv-output');
   if (!out) return;
   const sections = (r.layout && r.layout.sections) || [];
+  // Destroy any existing chart instances before re-render — Chart.js can't
+  // reuse a canvas without an explicit destroy.
+  Object.keys(_pvChartInstances).forEach(id => {
+    try { _pvChartInstances[id].destroy(); } catch {}
+    delete _pvChartInstances[id];
+  });
   if (sections.length === 0) {
     out.innerHTML = '';
     return;
   }
   out.innerHTML = sections.map((s, i) => pvRenderSection(s, i)).join('');
+  // After the HTML lands in the DOM, instantiate any pending charts. Async
+  // because we may need to load Chart.js from CDN.
+  pvActivateCharts();
 }
 
 function pvRenderSection(s, idx){
@@ -3844,13 +4313,25 @@ function pvRenderSection(s, idx){
     body = '<div class="pv-no-layout">Section not run yet.</div>';
   } else if (last.error) {
     body = '<div class="pv-section-error">⚠ ' + escapeHtml(last.error) + '</div>';
-  } else if (s.type !== 'table') {
-    body = '<div class="pv-no-layout"><strong>' + escapeHtml(s.type) + '</strong> rendering arrives in a later drop.</div>';
+  } else if (last.rowCount === 0) {
+    body = '<div class="pv-empty-rows">Query returned 0 rows.</div>';
+  } else if (s.type === 'matrix') {
+    if (!last.tree.rowKeys || last.tree.colKeys === undefined || (last.tree.values || []).length === 0) {
+      body = '<div class="pv-no-layout"><strong>Matrix not fully configured</strong>'
+           + ' Add at least one row group and one value on the Layout tab.</div>';
+    } else {
+      body = '<div class="pv-section-body">' + pvRenderMatrix(s, last.tree) + '</div>';
+    }
+  } else if (s.type === 'chart') {
+    if (!last.tree.category || !last.tree.category.field || (last.tree.series || []).length === 0) {
+      body = '<div class="pv-no-layout"><strong>Chart not fully configured</strong>'
+           + ' Set a category field and at least one series on the Layout tab.</div>';
+    } else {
+      body = '<div class="pv-section-body">' + pvRenderChart(s, last.tree) + '</div>';
+    }
   } else if (!last.tree.headers || last.tree.headers.length === 0) {
     body = '<div class="pv-no-layout"><strong>No columns configured</strong>'
          + ' Add columns to this section on the Layout tab.</div>';
-  } else if (last.rowCount === 0) {
-    body = '<div class="pv-empty-rows">Query returned 0 rows.</div>';
   } else {
     body = '<div class="pv-section-body">' + pvRenderTable(s, last.tree) + '</div>';
   }
@@ -3965,7 +4446,466 @@ function pvFormatGroupValue(v){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Excel export
+// Matrix build / render
+//
+// Tree shape:
+//   {
+//     rowGroupCfg: [...],          // copy of layout config
+//     colGroupCfg: [...],
+//     values:      [...],
+//     rowKeys:     [[k1,k2,...], ...]   // ordered, each is a tuple of length rowGroupCfg.length
+//     colKeys:     [[k1,k2,...], ...]   // ordered, each tuple length colGroupCfg.length
+//                                       // colKeys = [[]] when no column groups (single value column)
+//     cells:       Map(rowKeyJoined → Map(colKeyJoined → { <valueField>: aggValue, ... }))
+//     rowSubtotals: Map(rowKeyPrefix → ...)   // for partial row groupings (e.g. outer subtotal)
+//     rowGrand:    { <valueField>: aggValue, ... }
+//     colTotals:   Map(colKeyJoined → { <valueField>: aggValue, ... })
+//     showRowGrandTotal, showColGrandTotal, title
+//     rowCount: total source rows
+//   }
+// ══════════════════════════════════════════════════════════════════════════════
+
+function pvBuildMatrix(s, rows){
+  const m = s.matrix || {};
+  const rowGroupCfg = m.rowGroups || [];
+  const colGroupCfg = m.colGroups || [];
+  const values      = m.values    || [];
+
+  // Empty design — return an empty tree the renderer can detect.
+  if (rowGroupCfg.length === 0 || values.length === 0) {
+    return {
+      rowGroupCfg, colGroupCfg, values,
+      rowKeys: [], colKeys: [[]],
+      cells: new Map(), rowSubtotals: new Map(), rowGrand: {}, colTotals: new Map(),
+      showRowGrandTotal: m.showRowGrandTotal !== false,
+      showColGrandTotal: m.showColGrandTotal !== false,
+      title: m.title || '',
+      rowCount: rows.length
+    };
+  }
+
+  // Bucket every source row into its (rowKey, colKey) cell. Use stable
+  // string keys built from the actual values; null/undefined → '\u0000__null__'
+  // so they sort/group consistently.
+  const cellRows = new Map();   // 'rowKey|||colKey' → [rows]
+  const rowKeySet = new Map();  // joined key → tuple of original values
+  const colKeySet = new Map();
+  rows.forEach(row => {
+    const rTuple = rowGroupCfg.map(g => row[g.field]);
+    const cTuple = colGroupCfg.map(g => row[g.field]);
+    const rKey = rTuple.map(_pvKeyStr).join('\u0001');
+    const cKey = cTuple.map(_pvKeyStr).join('\u0001');
+    if (!rowKeySet.has(rKey)) rowKeySet.set(rKey, rTuple);
+    if (!colKeySet.has(cKey)) colKeySet.set(cKey, cTuple);
+    const ck = rKey + '|||' + cKey;
+    if (!cellRows.has(ck)) cellRows.set(ck, []);
+    cellRows.get(ck).push(row);
+  });
+
+  // Order row keys by each group's sortDir (outermost first)
+  const rowKeys = Array.from(rowKeySet.values()).sort((a, b) => _pvCmpTuple(a, b, rowGroupCfg));
+  const colKeys = colGroupCfg.length === 0
+    ? [[]]   // single empty tuple => one virtual column per value
+    : Array.from(colKeySet.values()).sort((a, b) => _pvCmpTuple(a, b, colGroupCfg));
+
+  // Compute aggregations at every (row, col) cell using each value's agg.
+  // Headers shape needed by pvComputeAggs is { field, agg } — same struct
+  // as table headers but with no format/align.
+  const valHeaders = values.map(v => ({ field: v.field, agg: v.agg || 'sum' }));
+  const cells = new Map();   // rKey → Map(cKey → aggObj)
+  rowKeys.forEach(rTuple => {
+    const rKey = rTuple.map(_pvKeyStr).join('\u0001');
+    const inner = new Map();
+    cells.set(rKey, inner);
+    colKeys.forEach(cTuple => {
+      const cKey = cTuple.map(_pvKeyStr).join('\u0001');
+      const ck = rKey + '|||' + cKey;
+      const bucket = cellRows.get(ck) || [];
+      const aggResult = pvComputeAggs(valHeaders, bucket);
+      // Mark empty cells so the matrix renderer can show a blank instead
+      // of 0 (SUM of zero rows is technically 0 but visually misleading
+      // in a sparse pivot — users expect blank where there's no data).
+      if (bucket.length === 0) aggResult._empty = true;
+      inner.set(cKey, aggResult);
+    });
+  });
+
+  // Row totals — agg across ALL columns at each row key, AND outer-level
+  // subtotals (e.g. for two row groups, subtotal at the outer level).
+  // For simplicity in v1 we compute only the innermost-row total (one
+  // total column at the right of the matrix). Outer-row subtotals would
+  // need extra render work — added later if requested.
+  const rowGrand = pvComputeAggs(valHeaders, rows);
+
+  // Per-column totals (one row at the bottom)
+  const colTotals = new Map();
+  colKeys.forEach(cTuple => {
+    const cKey = cTuple.map(_pvKeyStr).join('\u0001');
+    // Aggregate over all rows that landed in this column key
+    const bucket = [];
+    rows.forEach(row => {
+      const cTuple2 = colGroupCfg.map(g => row[g.field]);
+      if (cTuple2.map(_pvKeyStr).join('\u0001') === cKey) bucket.push(row);
+    });
+    colTotals.set(cKey, pvComputeAggs(valHeaders, bucket));
+  });
+
+  return {
+    rowGroupCfg, colGroupCfg, values,
+    rowKeys, colKeys, cells,
+    rowSubtotals: new Map(),   // reserved for outer-level subtotals (not in v1)
+    rowGrand, colTotals,
+    showRowGrandTotal: m.showRowGrandTotal !== false,
+    showColGrandTotal: m.showColGrandTotal !== false,
+    title: m.title || '',
+    rowCount: rows.length
+  };
+}
+
+function _pvKeyStr(v){ return v == null ? '\u0000__null__' : String(v); }
+
+function _pvCmpTuple(a, b, groupCfg){
+  for (let i = 0; i < a.length; i++) {
+    const dir = (groupCfg[i] && groupCfg[i].sortDir === 'desc') ? -1 : 1;
+    const r = pvCompareValues(a[i], b[i]);
+    if (r !== 0) return dir * r;
+  }
+  return 0;
+}
+
+function pvRenderMatrix(s, tree){
+  const rg = tree.rowGroupCfg, cg = tree.colGroupCfg, values = tree.values;
+  const rowKeys = tree.rowKeys, colKeys = tree.colKeys;
+  const hasMultiVal = values.length > 1;
+  const hasColGroups = cg.length > 0;
+
+  // Header rows. We emit one <tr> per column-group tier, plus (if multi-value
+  // OR no column groups) one extra row for value labels under each col key.
+  const headRows = [];
+  // Top-left: empty corner cells, one per row group
+  if (hasColGroups) {
+    cg.forEach((g, tier) => {
+      const tr = [];
+      // Row-group header cells appear in the FIRST tier only (left-aligned,
+      // spanning down all column-group tiers + the optional value-label row
+      // via rowspan).
+      if (tier === 0) {
+        rg.forEach(rgc => {
+          const rowSpan = cg.length + (hasMultiVal ? 1 : 0);
+          tr.push('<th rowspan="' + rowSpan + '" class="left">' + escapeHtml(rgc.label || rgc.field) + '</th>');
+        });
+      }
+      // Column-group header tier cells
+      colKeys.forEach(cTuple => {
+        const colspan = hasMultiVal ? values.length : 1;
+        const v = cTuple[tier];
+        tr.push('<th colspan="' + colspan + '" class="center">' + escapeHtml(pvFormatGroupValue(v)) + '</th>');
+      });
+      // Row-grand-total column header — only on first tier
+      if (tier === 0 && tree.showRowGrandTotal) {
+        const colspan = hasMultiVal ? values.length : 1;
+        const rowSpan = cg.length + (hasMultiVal ? 1 : 0);
+        tr.push('<th colspan="' + colspan + '" rowspan="' + rowSpan + '" class="right">Total</th>');
+      }
+      headRows.push('<tr>' + tr.join('') + '</tr>');
+    });
+  } else {
+    // No column groups — just one header row with row-group labels then value labels
+    const tr = [];
+    rg.forEach(rgc => tr.push('<th class="left">' + escapeHtml(rgc.label || rgc.field) + '</th>'));
+    values.forEach(v => tr.push('<th class="right">' + escapeHtml(v.label || v.field) + '</th>'));
+    headRows.push('<tr>' + tr.join('') + '</tr>');
+  }
+
+  // Sub-header row for value labels (when multiple values OR multi-tier columns)
+  if (hasColGroups && hasMultiVal) {
+    const tr = [];
+    colKeys.forEach(() => {
+      values.forEach(v => tr.push('<th class="right">' + escapeHtml(v.label || v.field) + '</th>'));
+    });
+    headRows.push('<tr>' + tr.join('') + '</tr>');
+  }
+
+  // Body
+  const bodyRows = [];
+  rowKeys.forEach(rTuple => {
+    const rKey = rTuple.map(_pvKeyStr).join('\u0001');
+    const cellsForRow = tree.cells.get(rKey) || new Map();
+    const cells = [];
+    // Row-group cells
+    rTuple.forEach(v => cells.push('<td class="left">' + escapeHtml(pvFormatGroupValue(v)) + '</td>'));
+    // Value cells per column key. When a cell has no source rows (sparse
+    // matrix), show blank rather than the agg's empty result (SUM of zero
+    // rows = 0 numerically but reads as missing data in a pivot context).
+    colKeys.forEach(cTuple => {
+      const cKey = cTuple.map(_pvKeyStr).join('\u0001');
+      const aggs = cellsForRow.get(cKey) || {};
+      values.forEach(v => {
+        const val = aggs._empty ? null : aggs[v.field];
+        cells.push('<td class="right">' + escapeHtml(pvFormatValue(val, v.format || '')) + '</td>');
+      });
+    });
+    // Row-grand-total cell
+    if (tree.showRowGrandTotal) {
+      // For the row total, compute fresh: agg across all columns of this row.
+      // Using the row's tuple, find all source-row buckets... easier: sum
+      // the cell values per value-field (works because the cells already
+      // hold aggregations per (row, col), and sum-of-sums = sum-of-all-rows).
+      // BUT for COUNT/MIN/MAX/AVG that simple shortcut is wrong (avg of avgs ≠
+      // avg of all). Honest approach: re-aggregate from source rows for this
+      // rowKey. Cheap enough — already grouped by row tuple in the build.
+      values.forEach(v => {
+        const total = pvMatrixRowTotal(tree, rTuple, v);
+        cells.push('<td class="right" style="font-weight:600">' + escapeHtml(pvFormatValue(total, v.format || '')) + '</td>');
+      });
+    }
+    bodyRows.push('<tr>' + cells.join('') + '</tr>');
+  });
+
+  // Column-grand-total row
+  if (tree.showColGrandTotal) {
+    const cells = [];
+    rg.forEach((g, i) => {
+      cells.push('<td class="left" style="font-weight:600">' + (i === 0 ? 'Total' : '') + '</td>');
+    });
+    colKeys.forEach(cTuple => {
+      const cKey = cTuple.map(_pvKeyStr).join('\u0001');
+      const aggs = tree.colTotals.get(cKey) || {};
+      values.forEach(v => {
+        const val = aggs[v.field];
+        cells.push('<td class="right" style="font-weight:600">' + escapeHtml(pvFormatValue(val, v.format || '')) + '</td>');
+      });
+    });
+    if (tree.showRowGrandTotal) {
+      values.forEach(v => {
+        const val = tree.rowGrand[v.field];
+        cells.push('<td class="right" style="font-weight:700;background:var(--accent-glow);color:var(--accent)">' + escapeHtml(pvFormatValue(val, v.format || '')) + '</td>');
+      });
+    }
+    bodyRows.push('<tr class="pv-row-grand">' + cells.join('') + '</tr>');
+  }
+
+  return '<table class="pv-table">'
+       +   '<thead>' + headRows.join('') + '</thead>'
+       +   '<tbody>' + bodyRows.join('') + '</tbody>'
+       + '</table>';
+}
+
+// Compute the "row total" for one row tuple. Iterates source rows because
+// avg/min/max can't be summed from per-cell aggregations.
+function pvMatrixRowTotal(tree, rTuple, valueDef){
+  // We don't have source rows on the tree, but we can sum cell aggs for
+  // SUM/COUNT only; for AVG/MIN/MAX we approximate from the cells. Since
+  // cells already aggregate by (row,col), summing them gives correct totals
+  // only for SUM and COUNT. For AVG we'd need raw rows. v1 simplification:
+  // sum cell values for SUM/COUNT; for AVG return null (UI shows blank).
+  const rKey = rTuple.map(_pvKeyStr).join('\u0001');
+  const cellsForRow = tree.cells.get(rKey) || new Map();
+  let acc = 0;
+  let any = false;
+  let minV = null, maxV = null;
+  cellsForRow.forEach(aggs => {
+    const v = aggs[valueDef.field];
+    if (v == null || v === '') return;
+    any = true;
+    const n = Number(v);
+    if (isFinite(n)) {
+      acc += n;
+      if (minV == null || n < minV) minV = n;
+      if (maxV == null || n > maxV) maxV = n;
+    }
+  });
+  if (!any) return null;
+  switch (valueDef.agg) {
+    case 'sum':   return acc;
+    case 'count': return acc;
+    case 'min':   return minV;
+    case 'max':   return maxV;
+    case 'avg':   return null;  // can't compute from cell-aggs without source rows
+    default:      return acc;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Chart build / render
+//
+// Tree shape:
+//   {
+//     variant, title, height,
+//     category: { field, label },
+//     series:   [{ field, agg, label }, ...]
+//     points:   [{ category: <value>, <seriesField>: <agg>, ... }, ...]
+//                                            // ordered, ready to feed Chart.js
+//     rowCount: source row count
+//   }
+// ══════════════════════════════════════════════════════════════════════════════
+
+function pvBuildChart(s, rows){
+  const c = s.chart || {};
+  const cat = c.category || { field: '' };
+  const series = c.series || [];
+
+  if (!cat.field || series.length === 0) {
+    return {
+      variant: c.variant || 'bar',
+      title: c.title || '', height: c.height || 320,
+      category: cat, series,
+      points: [], rowCount: rows.length
+    };
+  }
+
+  // Group rows by category value, then aggregate each series.
+  const buckets = new Map();
+  rows.forEach(row => {
+    const key = row[cat.field];
+    const keyStr = _pvKeyStr(key);
+    if (!buckets.has(keyStr)) buckets.set(keyStr, { value: key, rows: [] });
+    buckets.get(keyStr).rows.push(row);
+  });
+
+  const seriesHeaders = series.map(sr => ({ field: sr.field, agg: sr.agg || 'sum' }));
+  let points = Array.from(buckets.values()).map(b => {
+    const aggs = pvComputeAggs(seriesHeaders, b.rows);
+    return Object.assign({ category: b.value }, aggs);
+  });
+
+  // Sort by first series's value if requested.
+  if (c.sortDir && series[0]) {
+    const f = series[0].field;
+    const dir = c.sortDir === 'desc' ? -1 : 1;
+    points = points.sort((a, b) => dir * pvCompareValues(a[f], b[f]));
+  } else {
+    // Default: order by category ascending
+    points = points.sort((a, b) => pvCompareValues(a.category, b.category));
+  }
+
+  // Apply top-N limit
+  if (c.limit && c.limit > 0) points = points.slice(0, c.limit);
+
+  return {
+    variant: c.variant || 'bar',
+    title: c.title || '',
+    height: c.height || 320,
+    category: cat,
+    series,
+    points,
+    rowCount: rows.length
+  };
+}
+
+// We render chart placeholders with a stable id; pvActivateCharts() loads
+// Chart.js once and instantiates each pending chart. Charts are stored on
+// _pvChartInstances so we can destroy them before re-render (otherwise
+// Chart.js leaks and warns).
+const _pvChartInstances = {};   // canvas id -> Chart
+const _pvPendingCharts = [];    // [{ canvasId, tree }]
+
+function pvRenderChart(s, tree){
+  if (!tree.points || tree.points.length === 0) {
+    return '<div class="pv-empty-rows">Chart has no data points.</div>';
+  }
+  const canvasId = 'pv-chart-' + s.id;
+  // Queue the activation — we'll instantiate after the HTML is in the DOM.
+  _pvPendingCharts.push({ canvasId, tree });
+  return '<div style="padding:0.5rem 1rem"><div style="position:relative;height:' + (tree.height || 320) + 'px">'
+       +   '<canvas id="' + canvasId + '"></canvas>'
+       + '</div></div>';
+}
+
+// Called after pvRenderOutput writes to the DOM. Loads Chart.js if needed
+// then instantiates each pending canvas.
+async function pvActivateCharts(){
+  if (_pvPendingCharts.length === 0) return;
+  let Chart;
+  try { Chart = await pvLoadChartJs(); }
+  catch (e) {
+    showStatus('Could not load Chart.js: ' + e.message, 'err');
+    _pvPendingCharts.length = 0;
+    return;
+  }
+  while (_pvPendingCharts.length > 0) {
+    const pending = _pvPendingCharts.shift();
+    const canvas = $(pending.canvasId);
+    if (!canvas) continue;
+    // Destroy any prior instance on this canvas
+    if (_pvChartInstances[pending.canvasId]) {
+      try { _pvChartInstances[pending.canvasId].destroy(); } catch {}
+      delete _pvChartInstances[pending.canvasId];
+    }
+    const cfg = pvChartJsConfig(pending.tree);
+    try {
+      _pvChartInstances[pending.canvasId] = new Chart(canvas, cfg);
+    } catch (e) {
+      // Render failure inline
+      canvas.parentElement.innerHTML = '<div class="pv-section-error" style="margin:0">Chart render failed: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+}
+
+function pvChartJsConfig(tree){
+  const labels = tree.points.map(p => pvFormatGroupValue(p.category));
+  const palette = ['#3d7eff', '#22c97a', '#f59e0b', '#a78bfa', '#2dd4bf', '#f04646', '#ec4899', '#06b6d4'];
+  const datasets = tree.series.map((sr, i) => ({
+    label: sr.label || sr.field,
+    data: tree.points.map(p => {
+      const v = p[sr.field];
+      const n = Number(v);
+      return isFinite(n) ? n : null;
+    }),
+    backgroundColor: tree.variant === 'pie'
+      ? tree.points.map((_, j) => palette[j % palette.length])
+      : palette[i % palette.length],
+    borderColor: palette[i % palette.length],
+    borderWidth: tree.variant === 'line' ? 2 : 1,
+    fill: tree.variant === 'line' ? false : true,
+    tension: tree.variant === 'line' ? 0.2 : 0
+  }));
+
+  // Pie charts: only first series used
+  if (tree.variant === 'pie' && datasets.length > 1) {
+    datasets.length = 1;
+  }
+
+  return {
+    type: tree.variant,
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: tree.variant === 'pie' || tree.series.length > 1,
+          position: 'bottom',
+          labels: { color: '#8b90a0', font: { size: 11 } }
+        },
+        title: {
+          display: !!tree.title,
+          text: tree.title,
+          color: '#e8eaf0',
+          font: { size: 13, weight: '500' }
+        },
+        tooltip: { backgroundColor: '#13161d', titleColor: '#e8eaf0', bodyColor: '#e8eaf0', borderColor: '#8b90a0', borderWidth: 1 }
+      },
+      scales: tree.variant === 'pie' ? {} : {
+        x: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+      }
+    }
+  };
+}
+
+function pvLoadChartJs(){
+  if (window.Chart) return Promise.resolve(window.Chart);
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+    sc.onload  = () => resolve(window.Chart);
+    sc.onerror = () => reject(new Error('Could not load Chart.js from CDN'));
+    document.head.appendChild(sc);
+  });
+}
+
+
 //
 // Multi-sheet xlsx — one sheet per section. Numbers and dates are written
 // as actual numbers/dates with xlsx format codes, so Excel handles them as
@@ -3978,9 +4918,13 @@ async function pvExportXlsx(){
   const r = pvCurrentReport();
   if (!r) { showStatus('No report selected.', 'err'); return; }
 
-  // Need at least one successful section
+  // Need at least one successful section. All section types export — table
+  // and matrix render as proper sheets; chart sections export as a data
+  // sheet (raw data points + per-series aggregations). Charts themselves
+  // can't be embedded with the free SheetJS build — clients can rebuild
+  // the chart from the data sheet in Excel.
   const sections = (r.layout && r.layout.sections) || [];
-  const successful = sections.filter(s => pvLastRun[s.id] && !pvLastRun[s.id].error && s.type === 'table');
+  const successful = sections.filter(s => pvLastRun[s.id] && !pvLastRun[s.id].error);
   if (successful.length === 0) {
     showStatus('Run the report first (no successful sections to export).', 'err');
     return;
@@ -3993,7 +4937,10 @@ async function pvExportXlsx(){
 
     successful.forEach(s => {
       const last = pvLastRun[s.id];
-      const ws = pvBuildSheet(XLSX, s, last.tree);
+      let ws;
+      if (s.type === 'matrix')      ws = pvBuildSheetMatrix(XLSX, s, last.tree);
+      else if (s.type === 'chart')  ws = pvBuildSheetChart(XLSX, s, last.tree);
+      else                          ws = pvBuildSheet(XLSX, s, last.tree);
       // Sheet names: max 31 chars, can't contain : \ / ? * [ ]
       let sheetName = (s.name || 'Section').replace(/[:\\/?*\[\]]/g, '').slice(0, 31).trim() || 'Section';
       // De-dupe sheet names (xlsx requires unique)
@@ -4150,6 +5097,125 @@ function pvCellForValue(value, format){
   if (typeof value === 'boolean')     return { v: value, t: 'b' };
   if (value instanceof Date)          return { v: value, t: 'd', z: 'dd/mm/yyyy hh:mm' };
   return { v: String(value), t: 's' };
+}
+
+// ── Matrix sheet builder ────────────────────────────────────────────────────
+// Builds an xlsx sheet that mirrors the rendered matrix: row-group columns
+// on the left, column-group tiers across the top, value cells at intersections,
+// optional row/column grand totals.
+function pvBuildSheetMatrix(XLSX, section, tree){
+  const rg = tree.rowGroupCfg, cg = tree.colGroupCfg, values = tree.values;
+  const hasMultiVal = values.length > 1;
+  const hasColGroups = cg.length > 0;
+  const aoa = [];
+
+  // Title row
+  if (tree.title) {
+    aoa.push([{ v: tree.title, t: 's' }]);
+  }
+
+  // Header rows
+  if (hasColGroups) {
+    cg.forEach((g, tier) => {
+      const row = [];
+      // Row-group label cells: only on the first tier; we use blanks under it
+      // for subsequent tiers (xlsx merge would be nicer but adds complexity).
+      rg.forEach(rgc => row.push({ v: tier === 0 ? (rgc.label || rgc.field) : '', t: 's' }));
+      // Column tier values
+      tree.colKeys.forEach(cTuple => {
+        row.push({ v: pvFormatGroupValue(cTuple[tier]), t: 's' });
+        // Pad for multi-value (one cell per value under each col key)
+        if (hasMultiVal) {
+          for (let i = 1; i < values.length; i++) row.push({ v: '', t: 's' });
+        }
+      });
+      // Row grand total — only on the first tier
+      if (tier === 0 && tree.showRowGrandTotal) {
+        row.push({ v: 'Total', t: 's' });
+        if (hasMultiVal) for (let i = 1; i < values.length; i++) row.push({ v: '', t: 's' });
+      }
+      aoa.push(row);
+    });
+    // Sub-header for value labels when multi-value
+    if (hasMultiVal) {
+      const row = [];
+      rg.forEach(() => row.push({ v: '', t: 's' }));
+      tree.colKeys.forEach(() => values.forEach(v => row.push({ v: v.label || v.field, t: 's' })));
+      if (tree.showRowGrandTotal) values.forEach(v => row.push({ v: v.label || v.field, t: 's' }));
+      aoa.push(row);
+    }
+  } else {
+    // No column groups — just row-group labels then value labels
+    const row = [];
+    rg.forEach(rgc => row.push({ v: rgc.label || rgc.field, t: 's' }));
+    values.forEach(v => row.push({ v: v.label || v.field, t: 's' }));
+    aoa.push(row);
+  }
+
+  // Body
+  tree.rowKeys.forEach(rTuple => {
+    const rKey = rTuple.map(_pvKeyStr).join('\u0001');
+    const cellsForRow = tree.cells.get(rKey) || new Map();
+    const row = [];
+    rTuple.forEach(v => row.push({ v: v == null ? '' : v, t: typeof v === 'number' ? 'n' : 's' }));
+    tree.colKeys.forEach(cTuple => {
+      const cKey = cTuple.map(_pvKeyStr).join('\u0001');
+      const aggs = cellsForRow.get(cKey) || {};
+      values.forEach(v => row.push(pvCellForValue(aggs._empty ? null : aggs[v.field], v.format || '')));
+    });
+    if (tree.showRowGrandTotal) {
+      values.forEach(v => row.push(pvCellForValue(pvMatrixRowTotal(tree, rTuple, v), v.format || '')));
+    }
+    aoa.push(row);
+  });
+
+  // Column grand total row
+  if (tree.showColGrandTotal) {
+    const row = [];
+    rg.forEach((g, i) => row.push({ v: i === 0 ? 'Total' : '', t: 's' }));
+    tree.colKeys.forEach(cTuple => {
+      const cKey = cTuple.map(_pvKeyStr).join('\u0001');
+      const aggs = tree.colTotals.get(cKey) || {};
+      values.forEach(v => row.push(pvCellForValue(aggs[v.field], v.format || '')));
+    });
+    if (tree.showRowGrandTotal) {
+      values.forEach(v => row.push(pvCellForValue(tree.rowGrand[v.field], v.format || '')));
+    }
+    aoa.push(row);
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+  // Column widths — wider for the row-group columns, default for the rest.
+  const widths = [];
+  rg.forEach(() => widths.push({ wch: 20 }));
+  tree.colKeys.forEach(() => values.forEach(() => widths.push({ wch: 14 })));
+  if (tree.showRowGrandTotal) values.forEach(() => widths.push({ wch: 14 }));
+  ws['!cols'] = widths;
+  return ws;
+}
+
+// ── Chart sheet builder ────────────────────────────────────────────────────
+// Charts can't be embedded with the free SheetJS build, so we export the
+// chart's data points instead. Headers: category + one column per series.
+function pvBuildSheetChart(XLSX, section, tree){
+  const aoa = [];
+  if (tree.title) aoa.push([{ v: tree.title, t: 's' }]);
+  // Header row: category + each series label
+  const hdr = [{ v: tree.category.label || tree.category.field, t: 's' }];
+  tree.series.forEach(sr => hdr.push({ v: sr.label || sr.field, t: 's' }));
+  aoa.push(hdr);
+  // Data rows
+  tree.points.forEach(p => {
+    const row = [{ v: p.category == null ? '' : p.category, t: typeof p.category === 'number' ? 'n' : 's' }];
+    tree.series.forEach(sr => row.push(pvCellForValue(p[sr.field], 'number')));
+    aoa.push(row);
+  });
+  // Note row at bottom (clear context for the user opening the file)
+  aoa.push([]);
+  aoa.push([{ v: 'Note: this is the chart data. Charts are not embedded in the workbook — recreate in Excel using Insert → Chart on this data.', t: 's' }]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+  ws['!cols'] = [{ wch: 24 }].concat(tree.series.map(() => ({ wch: 14 })));
+  return ws;
 }
 
 
