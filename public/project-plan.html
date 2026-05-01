@@ -1512,14 +1512,7 @@ function renderAll(){
   $(id)?.addEventListener('click',e=>{ if(e.target===$(id)) { if(id==='task-modal') closeTaskModal(); else if(id==='blocker-modal') closeBlockerModal(); else closeCalEventModal(); } });
 });
 
-// ── Init ───────────────────────────────────────────────────────────────────────
-loadPlan();
-loadProjectSettings();
-loadIntegrationConfig();
-renderAll();
-setCalView('month'); // force month as the default view on page load
-
-// ── Integration state ─────────────────────────────────────────────────────────
+// ── Integration state (declared early so init can use it) ────────────────────
 const INT_KEY = 'cygenix_integrations';
 let intConfig = {
   ss:   { token:'', sheetId:'', direction:'import', connected:false },
@@ -1529,6 +1522,15 @@ let intConfig = {
   syncLog: []
 };
 let intTab = 'smartsheet';
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+loadPlan();
+loadProjectSettings();
+loadIntegrationConfig();
+renderAll();
+setCalView('month'); // force month as the default view on page load
+
+// ── Integration state ─────────────────────────────────────────────────────────
 
 function saveIntegrationConfig(){
   try{ localStorage.setItem(INT_KEY, JSON.stringify(intConfig)); }catch{}
