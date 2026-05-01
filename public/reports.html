@@ -431,6 +431,33 @@ body.cyg-collapsed{padding-left:54px}
 .cyg-sync-pill.ok  {background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
 .cyg-sync-pill.err {background:var(--red-bg);  color:var(--red);  border:0.5px solid rgba(240,70,70,0.3)}
 .cyg-sync-pill.local{background:var(--bg3);color:var(--text3);border:0.5px solid var(--border2)}
+/* ── PDF capture mode ───────────────────────────────────────────────────────
+   When html2canvas captures the preview output for the PDF export, we
+   add a `.pv-pdf-capture` class to #pv-output via the onclone callback.
+   These rules force a light, print-friendly palette so the captured
+   image looks like a board document, not a dark-mode app screenshot. */
+.pv-pdf-capture, .pv-pdf-capture *{
+  background-color:#ffffff !important;
+  color:#1f2937 !important;
+  border-color:#d1d5db !important;
+  box-shadow:none !important;
+}
+.pv-pdf-capture .pv-section{border:0.5px solid #e5e7eb !important}
+.pv-pdf-capture .pv-section-head{background:#f9fafb !important;border-bottom:0.5px solid #e5e7eb !important}
+.pv-pdf-capture .pv-section-name{color:#111827 !important;font-weight:600 !important}
+.pv-pdf-capture .pv-section-meta{color:#6b7280 !important}
+.pv-pdf-capture .pv-section-title{color:#111827 !important;background:#fff !important;border-bottom:0.5px solid #e5e7eb !important}
+.pv-pdf-capture .pv-table th{background:#374151 !important;color:#ffffff !important;border-bottom:0.5px solid #1f2937 !important}
+.pv-pdf-capture .pv-table td{border-bottom:0.5px solid #f3f4f6 !important;color:#1f2937 !important}
+.pv-pdf-capture .pv-row-group-head td{background:#e5e7eb !important;color:#1f2937 !important;font-weight:600 !important}
+.pv-pdf-capture .pv-row-subtotal td{background:#f3f4f6 !important;color:#374151 !important;font-weight:600 !important}
+.pv-pdf-capture .pv-row-grand td{background:#3d7eff !important;color:#ffffff !important;font-weight:600 !important;border-color:#1e40af !important}
+.pv-pdf-capture .pv-row-grand .pv-grand-label{color:#ffffff !important}
+.pv-pdf-capture .pv-empty-rows{color:#6b7280 !important}
+.pv-pdf-capture .pv-section-error{background:#fef2f2 !important;color:#991b1b !important;border-color:#fecaca !important}
+/* Charts: html2canvas can capture canvas content, but we keep the canvas
+   background white so the rendered PNG doesn't have a black void around it. */
+.pv-pdf-capture canvas{background:#ffffff !important}
 
 </style>
 </head>
@@ -576,7 +603,8 @@ body.cyg-collapsed{padding-left:54px}
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
                 <button class="btn btn-green btn-sm" onclick="pvSaveRun()" id="pv-save-btn" disabled>💾 Save run</button>
-                <button class="btn btn-ghost btn-sm" onclick="pvExportXlsx()" id="pv-export-btn" disabled>📥 Export Excel</button>
+                <button class="btn btn-ghost btn-sm" onclick="pvExportXlsx()" id="pv-export-btn" disabled title="Export Excel with embedded chart images, bold totals, and frozen headers">📥 Export Excel</button>
+                <button class="btn btn-ghost btn-sm" onclick="pvExportPdf()"  id="pv-pdf-btn"    disabled title="Export PDF (A4 landscape, one section per page block)">📄 Export PDF</button>
                 <button class="btn btn-primary btn-sm" onclick="pvRun()">▶ Run</button>
               </div>
             </div>
@@ -4218,6 +4246,8 @@ function pvSetExportEnabled(enabled){
   if (exp) exp.disabled = !enabled;
   const sav = $('pv-save-btn');
   if (sav) sav.disabled = !enabled;
+  const pdf = $('pv-pdf-btn');
+  if (pdf) pdf.disabled = !enabled;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -5190,23 +5220,25 @@ function pvLoadChartJs(){
 }
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Excel export (Drop 6 — ExcelJS pipeline)
 //
-// Multi-sheet xlsx — one sheet per section. Numbers and dates are written
-// as actual numbers/dates with xlsx format codes, so Excel handles them as
-// real values. Group headers and subtotals come through as styled-ish rows
-// (we can't easily set fill colour cross-platform without bundling more of
-// SheetJS; we settle for bold + italic via cell properties where supported).
+// Produces a polished xlsx file fit for board circulation:
+//   - Multi-sheet, one sheet per section
+//   - Real number/date types preserved (with format codes like £#,##0.00)
+//   - Bold totals + group headers, subtle fill colours, frozen header rows
+//   - Chart sections embed the chart as a PNG image alongside the data
+//     (Chart.js's toBase64Image() captures the live rendered chart)
+//
+// Architecture: ExcelJS is lazy-loaded from CDN. ~600KB compressed, only
+// fetched on first export. We keep pvCellForValue (still useful for resolving
+// format codes) but reach into ExcelJS APIs directly for everything else.
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function pvExportXlsx(){
   const r = pvCurrentReport();
   if (!r) { showStatus('No report selected.', 'err'); return; }
 
-  // Need at least one successful section. All section types export — table
-  // and matrix render as proper sheets; chart sections export as a data
-  // sheet (raw data points + per-series aggregations). Charts themselves
-  // can't be embedded with the free SheetJS build — clients can rebuild
-  // the chart from the data sheet in Excel.
   const sections = (r.layout && r.layout.sections) || [];
   const successful = sections.filter(s => pvLastRun[s.id] && !pvLastRun[s.id].error);
   if (successful.length === 0) {
@@ -5216,295 +5248,794 @@ async function pvExportXlsx(){
 
   showStatus('Building Excel file…', 'info');
   try {
-    const XLSX = await pvLoadSheetJs();
-    const wb = XLSX.utils.book_new();
+    const ExcelJS = await pvLoadExcelJs();
+    const wb = new ExcelJS.Workbook();
+    wb.creator  = 'Cygenix Report Builder';
+    wb.created  = new Date();
+    wb.modified = new Date();
 
-    successful.forEach(s => {
+    const usedSheetNames = new Set();
+    for (const s of successful) {
       const last = pvLastRun[s.id];
-      let ws;
-      if (s.type === 'matrix')      ws = pvBuildSheetMatrix(XLSX, s, last.tree);
-      else if (s.type === 'chart')  ws = pvBuildSheetChart(XLSX, s, last.tree);
-      else                          ws = pvBuildSheet(XLSX, s, last.tree);
-      // Sheet names: max 31 chars, can't contain : \ / ? * [ ]
-      let sheetName = (s.name || 'Section').replace(/[:\\/?*\[\]]/g, '').slice(0, 31).trim() || 'Section';
-      // De-dupe sheet names (xlsx requires unique)
-      let candidate = sheetName, n = 2;
-      while (wb.SheetNames.includes(candidate)) {
+      // Sheet names: 31-char limit, no `: \ / ? * [ ]`, must be unique.
+      let baseName = (s.name || 'Section').replace(/[:\\/?*\[\]]/g, '').slice(0, 31).trim() || 'Section';
+      let candidate = baseName, n = 2;
+      while (usedSheetNames.has(candidate)) {
         const suffix = ' ' + n;
-        candidate = sheetName.slice(0, 31 - suffix.length) + suffix;
+        candidate = baseName.slice(0, 31 - suffix.length) + suffix;
         n++;
       }
-      XLSX.utils.book_append_sheet(wb, ws, candidate);
-    });
+      usedSheetNames.add(candidate);
 
-    // Filename: report name + timestamp
+      const sheet = wb.addWorksheet(candidate, {
+        views: [{ state: 'frozen', ySplit: 1 }]   // freeze the first row by default
+      });
+
+      if (s.type === 'matrix')      pvWriteSheetMatrix(sheet, s, last.tree);
+      else if (s.type === 'chart')  await pvWriteSheetChart(sheet, s, last.tree);
+      else                          pvWriteSheetTable(sheet, s, last.tree);
+    }
+
+    // Write to buffer + download via Blob (ExcelJS doesn't have a writeFile in
+    // the browser bundle — produces a Buffer/ArrayBuffer that we wrap in Blob)
+    const buf = await wb.xlsx.writeBuffer();
     const reportName = (r.name || 'report').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60) || 'report';
     const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const filename = reportName + '_' + ts + '.xlsx';
-
-    XLSX.writeFile(wb, filename);
+    pvDownloadBlob(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), filename);
     showStatus('Exported · ' + filename, 'ok');
   } catch (e) {
     showStatus('Export failed: ' + (e.message || e), 'err');
+    console.error(e);
   }
 }
 
-// Lazy-load SheetJS from CDN. Same CDN used by balancing.html.
-function pvLoadSheetJs(){
-  if (window.XLSX) return Promise.resolve(window.XLSX);
+// Lazy-load ExcelJS from CDN.
+function pvLoadExcelJs(){
+  if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
   return new Promise((resolve, reject) => {
     const sc = document.createElement('script');
-    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-    sc.onload  = () => resolve(window.XLSX);
-    sc.onerror = () => reject(new Error('Could not load SheetJS from CDN'));
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+    sc.onload  = () => resolve(window.ExcelJS);
+    sc.onerror = () => reject(new Error('Could not load ExcelJS from CDN'));
     document.head.appendChild(sc);
   });
 }
 
-// Build a worksheet for a single section. Walks the tree the same way
-// the HTML renderer does, but emits AOA (array-of-arrays) rows with
-// per-cell type/format hints SheetJS understands.
-function pvBuildSheet(XLSX, section, tree){
-  const headers = tree.headers;
-  const rows = [];   // each entry: { cells: [{v, t, z, s}], style: 'group'|'subtotal'|'grand'|'detail' }
+// Generic blob download helper.
+function pvDownloadBlob(blob, filename){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 0);
+}
 
-  // Title row (optional)
+// ── Format code lookup (used by all three writers) ──────────────────────────
+// Returns the xlsx number format string for a given column format setting.
+// Same codes as before, just centralised.
+function pvFormatCode(format){
+  switch (format) {
+    case 'integer':  return '#,##0';
+    case 'number':   return '#,##0.00';
+    case 'currency': return '£#,##0.00';
+    case 'percent':  return '0.00%';
+    case 'date':     return 'dd/mm/yyyy';
+    case 'datetime': return 'dd/mm/yyyy hh:mm';
+    default:         return undefined;
+  }
+}
+
+// Convert a value to the right type for ExcelJS. Returns { value, numFmt }.
+// Numbers/dates stay as native types; strings stay as strings; null/empty
+// becomes empty string.
+function pvCellExcel(value, format){
+  if (value == null || value === '') return { value: '', numFmt: undefined };
+  const fmt = pvFormatCode(format);
+  if (format === 'integer' || format === 'number' || format === 'currency' || format === 'percent') {
+    const n = Number(value);
+    return isFinite(n) ? { value: n, numFmt: fmt } : { value: String(value), numFmt: undefined };
+  }
+  if (format === 'date' || format === 'datetime') {
+    const d = pvToDate(value);
+    return d ? { value: d, numFmt: fmt } : { value: String(value), numFmt: undefined };
+  }
+  // Auto / text
+  if (typeof value === 'number')      return { value: value, numFmt: undefined };
+  if (typeof value === 'boolean')     return { value: value, numFmt: undefined };
+  if (value instanceof Date)          return { value: value, numFmt: 'dd/mm/yyyy hh:mm' };
+  return { value: String(value), numFmt: undefined };
+}
+
+// ── Style atoms ─────────────────────────────────────────────────────────────
+// Reused by all writers. Defined as functions returning fresh objects so
+// ExcelJS doesn't accidentally share refs across cells.
+function pvStyleHeader(){
+  return {
+    font: { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF374151' } },   // slate-700
+    alignment: { vertical: 'middle' },
+    border: { bottom: { style: 'thin', color: { argb: 'FF1F2937' } } }
+  };
+}
+function pvStyleGroupHeader(){
+  return {
+    font: { bold: true, size: 10, color: { argb: 'FF1F2937' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } },   // gray-200
+    alignment: { vertical: 'middle' }
+  };
+}
+function pvStyleSubtotal(){
+  return {
+    font: { bold: true, italic: true, size: 10, color: { argb: 'FF374151' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } },   // gray-100
+    border: { top: { style: 'thin', color: { argb: 'FFD1D5DB' } } }
+  };
+}
+function pvStyleGrand(){
+  return {
+    font: { bold: true, size: 11, color: { argb: 'FFFFFFFF' } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3D7EFF' } },   // accent blue
+    border: {
+      top:    { style: 'medium', color: { argb: 'FF1E40AF' } },
+      bottom: { style: 'medium', color: { argb: 'FF1E40AF' } }
+    }
+  };
+}
+function pvStyleTitle(){
+  return {
+    font: { bold: true, size: 13, color: { argb: 'FF111827' } },
+    alignment: { vertical: 'middle' }
+  };
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Table writer (ExcelJS)
+// Mirrors pvRenderTable's structure: optional title row, header, body with
+// group headers/subtotals/grand total. Style applied per row class.
+// ══════════════════════════════════════════════════════════════════════════════
+function pvWriteSheetTable(sheet, section, tree){
+  const headers = tree.headers;
+  let rowIdx = 1;
+
+  // Title row
   if (tree.title) {
-    const titleRow = [{ v: tree.title, t: 's' }];
-    // Pad to width
-    while (titleRow.length < headers.length) titleRow.push({ v: '', t: 's' });
-    rows.push({ cells: titleRow, style: 'title' });
+    sheet.getRow(rowIdx).getCell(1).value = tree.title;
+    sheet.getRow(rowIdx).getCell(1).style = pvStyleTitle();
+    if (headers.length > 1) {
+      sheet.mergeCells(rowIdx, 1, rowIdx, headers.length);
+    }
+    sheet.getRow(rowIdx).height = 22;
+    rowIdx++;
   }
 
-  // Header row
+  // Header row — frozen pane is set via worksheet view; here we just style.
   if (tree.showHeader) {
-    const hdr = headers.map(h => ({ v: h.label, t: 's' }));
-    rows.push({ cells: hdr, style: 'header' });
+    const headerRow = sheet.getRow(rowIdx);
+    headers.forEach((h, i) => {
+      const cell = headerRow.getCell(i + 1);
+      cell.value = h.label;
+      cell.style = pvStyleHeader();
+      cell.alignment = Object.assign({}, cell.alignment, {
+        horizontal: h.align === 'right' ? 'right' : (h.align === 'center' ? 'center' : 'left'),
+        vertical: 'middle'
+      });
+    });
+    headerRow.height = 18;
+    // Freeze the row containing the headers
+    sheet.views = [{ state: 'frozen', ySplit: rowIdx }];
+    rowIdx++;
   }
 
   // Body
   if (tree.groups) {
-    tree.groups.forEach(node => pvAppendGroupRowsXlsx(rows, node, headers, 0, tree.groupCfg.length));
+    for (const node of tree.groups) {
+      rowIdx = pvWriteGroupNode(sheet, node, headers, 0, tree.groupCfg.length, rowIdx);
+    }
   } else if (tree.rows) {
-    tree.rows.forEach(row => rows.push({ cells: pvRowCells(headers, row), style: 'detail' }));
+    for (const row of tree.rows) {
+      pvWriteDetailRow(sheet, headers, row, rowIdx, 0);
+      rowIdx++;
+    }
   }
+
   // Grand total
   if (tree.showGrandTotal && headers.some(h => h.agg)) {
-    rows.push({ cells: pvAggCells(headers, tree.grand, 'Grand total'), style: 'grand' });
+    const r = sheet.getRow(rowIdx);
+    headers.forEach((h, i) => {
+      const cell = r.getCell(i + 1);
+      if (i === 0) {
+        cell.value = 'Grand total';
+      } else if (h.agg) {
+        const cellSpec = pvCellExcel(tree.grand[h.field], h.format);
+        cell.value = cellSpec.value;
+        if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+      }
+      cell.style = pvStyleGrand();
+      cell.alignment = Object.assign({}, cell.alignment, {
+        horizontal: i === 0 ? 'left' : (h.align === 'right' ? 'right' : (h.align === 'center' ? 'center' : 'left'))
+      });
+    });
+    rowIdx++;
   }
 
-  // Convert to AOA
-  const aoa = rows.map(r => r.cells);
-  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
-
-  // Column widths from layout config (best-effort: convert px to char width)
-  ws['!cols'] = headers.map(h => {
-    if (!h.width) return { wch: 14 };
-    const m = String(h.width).match(/^(\d+)\s*(px|%)?$/);
-    if (m && m[2] === 'px') return { wch: Math.max(8, Math.round(parseInt(m[1], 10) / 7)) };
-    return { wch: 14 };
-  });
-
-  return ws;
-}
-
-function pvAppendGroupRowsXlsx(rows, node, headers, level, totalLevels){
-  if (node.showHeader) {
-    // Group header — first cell has "Field: value" label, others blank
-    const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value);
-    const cells = [{ v: labelText, t: 's' }];
-    while (cells.length < headers.length) cells.push({ v: '', t: 's' });
-    rows.push({ cells: cells, style: 'group' });
-  }
-  if (node.children) {
-    node.children.forEach(child => pvAppendGroupRowsXlsx(rows, child, headers, level + 1, totalLevels));
-  } else if (node.rows) {
-    node.rows.forEach(row => rows.push({ cells: pvRowCells(headers, row), style: 'detail' }));
-  }
-  if (node.showSubtotal && headers.some(h => h.agg)) {
-    const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value) + ' total';
-    rows.push({ cells: pvAggCells(headers, node.subtotal, labelText), style: 'subtotal' });
-  }
-}
-
-function pvRowCells(headers, row){
-  return headers.map(h => pvCellForValue(row[h.field], h.format));
-}
-
-function pvAggCells(headers, agg, label){
-  return headers.map((h, i) => {
-    if (i === 0) return { v: label, t: 's' };
-    if (h.agg) {
-      const v = agg[h.field];
-      return pvCellForValue(v, h.format);
+  // Column widths
+  headers.forEach((h, i) => {
+    let wch = 14;
+    if (h.width) {
+      const m = String(h.width).match(/^(\d+)\s*(px|%)?$/);
+      if (m && m[2] === 'px') wch = Math.max(8, Math.round(parseInt(m[1], 10) / 7));
+    } else {
+      // Pick wider for label-like columns; tighter for numeric.
+      if (h.format === 'currency' || h.format === 'number') wch = 16;
+      else if (h.format === 'date') wch = 12;
+      else wch = 18;
     }
-    return { v: '', t: 's' };
+    sheet.getColumn(i + 1).width = wch;
   });
 }
 
-// Convert one value into a SheetJS cell with proper type and format code.
-function pvCellForValue(value, format){
-  if (value == null || value === '') return { v: '', t: 's' };
-
-  if (format === 'integer') {
-    const n = Number(value);
-    if (isFinite(n)) return { v: Math.round(n), t: 'n', z: '#,##0' };
-    return { v: String(value), t: 's' };
+function pvWriteGroupNode(sheet, node, headers, level, totalLevels, rowIdx){
+  // Group header row (optional)
+  if (node.showHeader) {
+    const r = sheet.getRow(rowIdx);
+    const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value);
+    const indent = level;
+    headers.forEach((h, i) => {
+      const cell = r.getCell(i + 1);
+      if (i === 0) {
+        cell.value = labelText;
+        if (indent > 0) cell.alignment = { indent: Math.min(indent, 4), vertical: 'middle' };
+      }
+      cell.style = pvStyleGroupHeader();
+    });
+    rowIdx++;
   }
-  if (format === 'number') {
-    const n = Number(value);
-    if (isFinite(n)) return { v: n, t: 'n', z: '#,##0.00' };
-    return { v: String(value), t: 's' };
+  // Children or detail rows
+  if (node.children) {
+    for (const child of node.children) {
+      rowIdx = pvWriteGroupNode(sheet, child, headers, level + 1, totalLevels, rowIdx);
+    }
+  } else if (node.rows) {
+    for (const row of node.rows) {
+      pvWriteDetailRow(sheet, headers, row, rowIdx, totalLevels);
+      rowIdx++;
+    }
   }
-  if (format === 'currency') {
-    const n = Number(value);
-    if (isFinite(n)) return { v: n, t: 'n', z: '£#,##0.00' };
-    return { v: String(value), t: 's' };
+  // Subtotal row
+  if (node.showSubtotal && headers.some(h => h.agg)) {
+    const r = sheet.getRow(rowIdx);
+    const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value) + ' total';
+    headers.forEach((h, i) => {
+      const cell = r.getCell(i + 1);
+      if (i === 0) {
+        cell.value = labelText;
+        if (level > 0) cell.alignment = { indent: Math.min(level, 4), vertical: 'middle' };
+      } else if (h.agg) {
+        const cellSpec = pvCellExcel(node.subtotal[h.field], h.format);
+        cell.value = cellSpec.value;
+        if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+      }
+      cell.style = pvStyleSubtotal();
+      cell.alignment = Object.assign({}, cell.alignment, {
+        horizontal: i === 0 ? 'left' : (h.align === 'right' ? 'right' : (h.align === 'center' ? 'center' : 'left'))
+      });
+    });
+    rowIdx++;
   }
-  if (format === 'percent') {
-    const n = Number(value);
-    if (isFinite(n)) return { v: n, t: 'n', z: '0.00%' };
-    return { v: String(value), t: 's' };
-  }
-  if (format === 'date') {
-    const d = pvToDate(value);
-    if (d) return { v: d, t: 'd', z: 'dd/mm/yyyy' };
-    return { v: String(value), t: 's' };
-  }
-  if (format === 'datetime') {
-    const d = pvToDate(value);
-    if (d) return { v: d, t: 'd', z: 'dd/mm/yyyy hh:mm' };
-    return { v: String(value), t: 's' };
-  }
-  // Auto / text: emit as native type if possible
-  if (typeof value === 'number')      return { v: value, t: 'n' };
-  if (typeof value === 'boolean')     return { v: value, t: 'b' };
-  if (value instanceof Date)          return { v: value, t: 'd', z: 'dd/mm/yyyy hh:mm' };
-  return { v: String(value), t: 's' };
+  return rowIdx;
 }
 
-// ── Matrix sheet builder ────────────────────────────────────────────────────
-// Builds an xlsx sheet that mirrors the rendered matrix: row-group columns
-// on the left, column-group tiers across the top, value cells at intersections,
-// optional row/column grand totals.
-function pvBuildSheetMatrix(XLSX, section, tree){
+function pvWriteDetailRow(sheet, headers, row, rowIdx, indentLevel){
+  const r = sheet.getRow(rowIdx);
+  headers.forEach((h, i) => {
+    const cell = r.getCell(i + 1);
+    const cellSpec = pvCellExcel(row[h.field], h.format);
+    cell.value = cellSpec.value;
+    if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+    cell.alignment = {
+      horizontal: h.align === 'right' ? 'right' : (h.align === 'center' ? 'center' : 'left'),
+      vertical: 'middle',
+      indent: (i === 0 && indentLevel > 0) ? Math.min(indentLevel, 4) : 0
+    };
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Matrix writer (ExcelJS)
+// Same shape as pvBuildSheetMatrix but with styling and proper number types.
+// ══════════════════════════════════════════════════════════════════════════════
+function pvWriteSheetMatrix(sheet, section, tree){
   const rg = tree.rowGroupCfg, cg = tree.colGroupCfg, values = tree.values;
   const hasMultiVal = values.length > 1;
   const hasColGroups = cg.length > 0;
-  const aoa = [];
+  let rowIdx = 1;
 
-  // Title row
+  // Title
   if (tree.title) {
-    aoa.push([{ v: tree.title, t: 's' }]);
+    const totalCols = rg.length
+      + (tree.colKeys.length || 1) * values.length
+      + (tree.showRowGrandTotal ? values.length : 0);
+    sheet.getRow(rowIdx).getCell(1).value = tree.title;
+    sheet.getRow(rowIdx).getCell(1).style = pvStyleTitle();
+    if (totalCols > 1) sheet.mergeCells(rowIdx, 1, rowIdx, totalCols);
+    sheet.getRow(rowIdx).height = 22;
+    rowIdx++;
   }
+
+  const headerStartRow = rowIdx;
 
   // Header rows
   if (hasColGroups) {
     cg.forEach((g, tier) => {
-      const row = [];
-      // Row-group label cells: only on the first tier; we use blanks under it
-      // for subsequent tiers (xlsx merge would be nicer but adds complexity).
-      rg.forEach(rgc => row.push({ v: tier === 0 ? (rgc.label || rgc.field) : '', t: 's' }));
-      // Column tier values
+      const r = sheet.getRow(rowIdx);
+      let col = 1;
+      // Row-group label cells: only on the first tier; blanks below.
+      rg.forEach(rgc => {
+        r.getCell(col).value = tier === 0 ? (rgc.label || rgc.field) : '';
+        r.getCell(col).style = pvStyleHeader();
+        col++;
+      });
+      // Column-group tier values
       tree.colKeys.forEach(cTuple => {
-        row.push({ v: pvFormatGroupValue(cTuple[tier]), t: 's' });
-        // Pad for multi-value (one cell per value under each col key)
+        const v = cTuple[tier];
+        r.getCell(col).value = pvFormatGroupValue(v);
+        r.getCell(col).style = pvStyleHeader();
+        r.getCell(col).alignment = { horizontal: 'center', vertical: 'middle' };
+        col++;
         if (hasMultiVal) {
-          for (let i = 1; i < values.length; i++) row.push({ v: '', t: 's' });
+          for (let i = 1; i < values.length; i++) {
+            r.getCell(col).style = pvStyleHeader();
+            col++;
+          }
         }
       });
-      // Row grand total — only on the first tier
+      // Row grand total
       if (tier === 0 && tree.showRowGrandTotal) {
-        row.push({ v: 'Total', t: 's' });
-        if (hasMultiVal) for (let i = 1; i < values.length; i++) row.push({ v: '', t: 's' });
+        r.getCell(col).value = 'Total';
+        r.getCell(col).style = pvStyleHeader();
+        r.getCell(col).alignment = { horizontal: 'right', vertical: 'middle' };
+        col++;
+        if (hasMultiVal) {
+          for (let i = 1; i < values.length; i++) {
+            r.getCell(col).style = pvStyleHeader();
+            col++;
+          }
+        }
       }
-      aoa.push(row);
+      r.height = 18;
+      rowIdx++;
     });
+
     // Sub-header for value labels when multi-value
     if (hasMultiVal) {
-      const row = [];
-      rg.forEach(() => row.push({ v: '', t: 's' }));
-      tree.colKeys.forEach(() => values.forEach(v => row.push({ v: v.label || v.field, t: 's' })));
-      if (tree.showRowGrandTotal) values.forEach(v => row.push({ v: v.label || v.field, t: 's' }));
-      aoa.push(row);
+      const r = sheet.getRow(rowIdx);
+      let col = 1;
+      rg.forEach(() => {
+        r.getCell(col).style = pvStyleHeader();
+        col++;
+      });
+      tree.colKeys.forEach(() => {
+        values.forEach(v => {
+          r.getCell(col).value = v.label || v.field;
+          r.getCell(col).style = pvStyleHeader();
+          r.getCell(col).alignment = { horizontal: 'right', vertical: 'middle' };
+          col++;
+        });
+      });
+      if (tree.showRowGrandTotal) {
+        values.forEach(v => {
+          r.getCell(col).value = v.label || v.field;
+          r.getCell(col).style = pvStyleHeader();
+          r.getCell(col).alignment = { horizontal: 'right', vertical: 'middle' };
+          col++;
+        });
+      }
+      r.height = 18;
+      rowIdx++;
     }
   } else {
-    // No column groups — just row-group labels then value labels
-    const row = [];
-    rg.forEach(rgc => row.push({ v: rgc.label || rgc.field, t: 's' }));
-    values.forEach(v => row.push({ v: v.label || v.field, t: 's' }));
-    aoa.push(row);
+    // No column groups
+    const r = sheet.getRow(rowIdx);
+    let col = 1;
+    rg.forEach(rgc => {
+      r.getCell(col).value = rgc.label || rgc.field;
+      r.getCell(col).style = pvStyleHeader();
+      col++;
+    });
+    values.forEach(v => {
+      r.getCell(col).value = v.label || v.field;
+      r.getCell(col).style = pvStyleHeader();
+      r.getCell(col).alignment = { horizontal: 'right', vertical: 'middle' };
+      col++;
+    });
+    r.height = 18;
+    rowIdx++;
   }
+
+  // Freeze panes after the header rows
+  sheet.views = [{ state: 'frozen', ySplit: rowIdx - 1 }];
 
   // Body
   tree.rowKeys.forEach(rTuple => {
     const rKey = rTuple.map(_pvKeyStr).join('\u0001');
     const cellsForRow = tree.cells.get(rKey) || new Map();
-    const row = [];
-    rTuple.forEach(v => row.push({ v: v == null ? '' : v, t: typeof v === 'number' ? 'n' : 's' }));
+    const r = sheet.getRow(rowIdx);
+    let col = 1;
+    rTuple.forEach(v => {
+      r.getCell(col).value = v == null ? '' : v;
+      r.getCell(col).alignment = { horizontal: 'left', vertical: 'middle' };
+      col++;
+    });
     tree.colKeys.forEach(cTuple => {
       const cKey = cTuple.map(_pvKeyStr).join('\u0001');
       const aggs = cellsForRow.get(cKey) || {};
-      values.forEach(v => row.push(pvCellForValue(aggs._empty ? null : aggs[v.field], v.format || '')));
+      values.forEach(v => {
+        const cell = r.getCell(col);
+        const value = aggs._empty ? null : aggs[v.field];
+        const cellSpec = pvCellExcel(value, v.format || '');
+        cell.value = cellSpec.value;
+        if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        col++;
+      });
     });
     if (tree.showRowGrandTotal) {
-      values.forEach(v => row.push(pvCellForValue(pvMatrixRowTotal(tree, rTuple, v), v.format || '')));
+      values.forEach(v => {
+        const cell = r.getCell(col);
+        const cellSpec = pvCellExcel(pvMatrixRowTotal(tree, rTuple, v), v.format || '');
+        cell.value = cellSpec.value;
+        if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        col++;
+      });
     }
-    aoa.push(row);
+    rowIdx++;
   });
 
   // Column grand total row
   if (tree.showColGrandTotal) {
-    const row = [];
-    rg.forEach((g, i) => row.push({ v: i === 0 ? 'Total' : '', t: 's' }));
+    const r = sheet.getRow(rowIdx);
+    let col = 1;
+    rg.forEach((g, i) => {
+      r.getCell(col).value = i === 0 ? 'Total' : '';
+      r.getCell(col).style = pvStyleSubtotal();
+      col++;
+    });
     tree.colKeys.forEach(cTuple => {
       const cKey = cTuple.map(_pvKeyStr).join('\u0001');
       const aggs = tree.colTotals.get(cKey) || {};
-      values.forEach(v => row.push(pvCellForValue(aggs[v.field], v.format || '')));
+      values.forEach(v => {
+        const cell = r.getCell(col);
+        const cellSpec = pvCellExcel(aggs[v.field], v.format || '');
+        cell.value = cellSpec.value;
+        if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+        cell.style = pvStyleSubtotal();
+        cell.alignment = Object.assign({}, cell.alignment, { horizontal: 'right', vertical: 'middle' });
+        col++;
+      });
     });
     if (tree.showRowGrandTotal) {
-      values.forEach(v => row.push(pvCellForValue(tree.rowGrand[v.field], v.format || '')));
+      values.forEach(v => {
+        const cell = r.getCell(col);
+        const cellSpec = pvCellExcel(tree.rowGrand[v.field], v.format || '');
+        cell.value = cellSpec.value;
+        if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+        cell.style = pvStyleGrand();
+        cell.alignment = Object.assign({}, cell.alignment, { horizontal: 'right', vertical: 'middle' });
+        col++;
+      });
     }
-    aoa.push(row);
+    rowIdx++;
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
-  // Column widths — wider for the row-group columns, default for the rest.
-  const widths = [];
-  rg.forEach(() => widths.push({ wch: 20 }));
-  tree.colKeys.forEach(() => values.forEach(() => widths.push({ wch: 14 })));
-  if (tree.showRowGrandTotal) values.forEach(() => widths.push({ wch: 14 }));
-  ws['!cols'] = widths;
-  return ws;
+  // Column widths
+  let col = 1;
+  rg.forEach(() => { sheet.getColumn(col).width = 20; col++; });
+  tree.colKeys.forEach(() => {
+    values.forEach(() => { sheet.getColumn(col).width = 14; col++; });
+  });
+  if (tree.showRowGrandTotal) {
+    values.forEach(() => { sheet.getColumn(col).width = 14; col++; });
+  }
 }
 
-// ── Chart sheet builder ────────────────────────────────────────────────────
-// Charts can't be embedded with the free SheetJS build, so we export the
-// chart's data points instead. Headers: category + one column per series.
-function pvBuildSheetChart(XLSX, section, tree){
-  const aoa = [];
-  if (tree.title) aoa.push([{ v: tree.title, t: 's' }]);
-  // Header row: category + each series label
-  const hdr = [{ v: tree.category.label || tree.category.field, t: 's' }];
-  tree.series.forEach(sr => hdr.push({ v: sr.label || sr.field, t: 's' }));
-  aoa.push(hdr);
-  // Data rows
-  tree.points.forEach(p => {
-    const row = [{ v: p.category == null ? '' : p.category, t: typeof p.category === 'number' ? 'n' : 's' }];
-    tree.series.forEach(sr => row.push(pvCellForValue(p[sr.field], 'number')));
-    aoa.push(row);
+// ══════════════════════════════════════════════════════════════════════════════
+// Chart writer (ExcelJS) — embeds a PNG image of the live chart, plus the
+// underlying data table beside/below it. This is what "chart visible to
+// board members" means in practice: an image of the chart that displays
+// directly when they open the workbook, no Insert→Chart needed.
+// ══════════════════════════════════════════════════════════════════════════════
+async function pvWriteSheetChart(sheet, section, tree){
+  let rowIdx = 1;
+
+  // Title
+  if (tree.title) {
+    const ncols = 1 + (tree.series || []).length;
+    sheet.getRow(rowIdx).getCell(1).value = tree.title;
+    sheet.getRow(rowIdx).getCell(1).style = pvStyleTitle();
+    if (ncols > 1) sheet.mergeCells(rowIdx, 1, rowIdx, Math.max(ncols, 8));
+    sheet.getRow(rowIdx).height = 22;
+    rowIdx++;
+  }
+
+  // Try to fetch the chart's PNG. The chart instance is keyed by its
+  // canvas id (set in pvRenderChart as 'pv-chart-' + section.id).
+  const canvasId = 'pv-chart-' + section.id;
+  const chartInstance = _pvChartInstances && _pvChartInstances[canvasId];
+  let imageInserted = false;
+  if (chartInstance && typeof chartInstance.toBase64Image === 'function') {
+    try {
+      // Capture at 2x scale for retina-sharp output. Chart.js takes options
+      // for resolution but toBase64Image uses the canvas's current size; we
+      // resize transiently via Chart options if needed. For now, use as-is —
+      // the rendered chart at typical preview height (~320px) gives a clean
+      // image in Excel.
+      const dataUrl = chartInstance.toBase64Image('image/png', 1.0);
+      // Strip the data-url prefix to get raw base64 for ExcelJS
+      const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+      const imageId = sheet.workbook.addImage({ base64, extension: 'png' });
+      // Place the image starting from row rowIdx, col 1. Sized to roughly
+      // 8 cols wide × 18 rows tall (~640×340 px). ExcelJS uses fractional
+      // cell coords in tl/br.
+      sheet.addImage(imageId, {
+        tl: { col: 0, row: rowIdx - 1 },
+        br: { col: 8, row: rowIdx - 1 + 18 }
+      });
+      imageInserted = true;
+      // Skip past where the image lives so the data table doesn't overlap
+      rowIdx += 19;
+    } catch (e) {
+      console.warn('Could not embed chart image:', e.message);
+    }
+  }
+
+  if (!imageInserted) {
+    // Fallback note (rare — only if the chart instance isn't available, e.g.
+    // restoring a saved run where the live chart was never rendered)
+    const r = sheet.getRow(rowIdx);
+    r.getCell(1).value = 'Chart image unavailable — open the report and click Run before exporting to embed the chart.';
+    r.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' }, size: 10 };
+    sheet.mergeCells(rowIdx, 1, rowIdx, 8);
+    rowIdx += 2;
+  }
+
+  // Data table beneath / beside the image
+  // Header row
+  const headerRow = sheet.getRow(rowIdx);
+  headerRow.getCell(1).value = tree.category.label || tree.category.field;
+  headerRow.getCell(1).style = pvStyleHeader();
+  (tree.series || []).forEach((sr, i) => {
+    headerRow.getCell(i + 2).value = sr.label || sr.field;
+    headerRow.getCell(i + 2).style = pvStyleHeader();
+    headerRow.getCell(i + 2).alignment = { horizontal: 'right', vertical: 'middle' };
   });
-  // Note row at bottom (clear context for the user opening the file)
-  aoa.push([]);
-  aoa.push([{ v: 'Note: this is the chart data. Charts are not embedded in the workbook — recreate in Excel using Insert → Chart on this data.', t: 's' }]);
-  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
-  ws['!cols'] = [{ wch: 24 }].concat(tree.series.map(() => ({ wch: 14 })));
-  return ws;
+  headerRow.height = 18;
+  rowIdx++;
+
+  // Data rows
+  (tree.points || []).forEach(p => {
+    const r = sheet.getRow(rowIdx);
+    // Category cell
+    const catSpec = pvCellExcel(p.category, '');
+    r.getCell(1).value = catSpec.value;
+    if (catSpec.numFmt) r.getCell(1).numFmt = catSpec.numFmt;
+    r.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+    // Series cells
+    (tree.series || []).forEach((sr, i) => {
+      const cell = r.getCell(i + 2);
+      const cellSpec = pvCellExcel(p[sr.field], 'number');
+      cell.value = cellSpec.value;
+      if (cellSpec.numFmt) cell.numFmt = cellSpec.numFmt;
+      cell.alignment = { horizontal: 'right', vertical: 'middle' };
+    });
+    rowIdx++;
+  });
+
+  // Column widths
+  sheet.getColumn(1).width = 24;
+  (tree.series || []).forEach((_, i) => { sheet.getColumn(i + 2).width = 14; });
 }
+
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Saved runs (Drop 5)
+// PDF export (Drop 6)
+//
+// Uses jsPDF + html2canvas, both lazy-loaded from CDN. Captures each
+// .pv-section element separately and lays them out on landscape A4 pages,
+// fitting each section to page width and inserting page breaks between
+// sections so things never split mid-section.
+//
+// Page strategy:
+//   - One PDF page per section (or more if a section is taller than one page)
+//   - Sections that are wider than the page get scaled down (content stays
+//     readable for typical reports; very wide matrices may end up small)
+//   - Cover page with report name + run timestamp + parameter values
+//
+// Trade-off: html2canvas captures the rendered DOM as a raster image. It's
+// not a vector PDF — text in the PDF is "burned in" as part of the image.
+// That keeps the visual fidelity exact (same fonts, same layout, same
+// charts) but means the PDF isn't text-searchable and the file size is
+// larger than a vector PDF would be. For board circulation this is fine.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// A4 landscape: 297 × 210 mm. We work in millimetres throughout (jsPDF default).
+const PDF_PAGE_W_MM = 297;
+const PDF_PAGE_H_MM = 210;
+const PDF_MARGIN_MM = 12;
+const PDF_CONTENT_W = PDF_PAGE_W_MM - 2 * PDF_MARGIN_MM;
+const PDF_CONTENT_H = PDF_PAGE_H_MM - 2 * PDF_MARGIN_MM;
+
+async function pvExportPdf(){
+  const r = pvCurrentReport();
+  if (!r) { showStatus('No report selected.', 'err'); return; }
+
+  // Need at least one rendered section in the DOM
+  const sectionEls = document.querySelectorAll('#pv-output .pv-section');
+  if (sectionEls.length === 0) {
+    showStatus('Run the report first (no rendered output to export).', 'err');
+    return;
+  }
+
+  showStatus('Building PDF…', 'info');
+  try {
+    const [{ jsPDF }, html2canvas] = await Promise.all([
+      pvLoadJsPdf(),
+      pvLoadHtml2Canvas()
+    ]);
+
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+    // Cover page: report name + timestamp + parameter values
+    pvWritePdfCover(pdf, r);
+
+    // Each section → one (or more) PDF pages
+    for (let i = 0; i < sectionEls.length; i++) {
+      showStatus('Capturing section ' + (i + 1) + ' of ' + sectionEls.length + '…', 'busy');
+      const el = sectionEls[i];
+      // eslint-disable-next-line no-await-in-loop
+      const canvas = await html2canvas(el, {
+        backgroundColor: '#ffffff',   // override the dark theme — printed pages are white
+        scale: 2,                     // 2x for sharp output
+        logging: false,
+        // Override colours per the print stylesheet (set in CSS) so the
+        // captured DOM uses readable colours. We do this by wrapping the
+        // capture: temporarily add a class that triggers print styles.
+        onclone: (clonedDoc) => {
+          const clonedEl = clonedDoc.querySelector('#pv-output');
+          if (clonedEl) clonedEl.classList.add('pv-pdf-capture');
+        }
+      });
+      pvAddCanvasToPdf(pdf, canvas);
+    }
+
+    const reportName = (r.name || 'report').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60) || 'report';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = reportName + '_' + ts + '.pdf';
+    pdf.save(filename);
+    showStatus('Exported · ' + filename, 'ok');
+  } catch (e) {
+    showStatus('PDF export failed: ' + (e.message || e), 'err');
+    console.error(e);
+  }
+}
+
+// Lazy-load jsPDF — UMD build exposes window.jspdf with a jsPDF property.
+function pvLoadJsPdf(){
+  if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf);
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+    sc.onload  = () => resolve(window.jspdf);
+    sc.onerror = () => reject(new Error('Could not load jsPDF from CDN'));
+    document.head.appendChild(sc);
+  });
+}
+
+// Lazy-load html2canvas (UMD attaches to window.html2canvas).
+function pvLoadHtml2Canvas(){
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    sc.onload  = () => resolve(window.html2canvas);
+    sc.onerror = () => reject(new Error('Could not load html2canvas from CDN'));
+    document.head.appendChild(sc);
+  });
+}
+
+// Cover page: report name as title, timestamp, parameter values used.
+function pvWritePdfCover(pdf, r){
+  let y = PDF_MARGIN_MM + 10;
+
+  // Title
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(22);
+  pdf.setTextColor(20, 20, 30);
+  pdf.text(r.name || 'Untitled report', PDF_MARGIN_MM, y);
+  y += 12;
+
+  // Timestamp
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(11);
+  pdf.setTextColor(80, 80, 90);
+  pdf.text('Generated: ' + new Date().toLocaleString('en-GB'), PDF_MARGIN_MM, y);
+  y += 10;
+
+  // Parameter values (if any were used)
+  const params = r.parameters || [];
+  if (params.length > 0) {
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.setTextColor(20, 20, 30);
+    pdf.text('Parameters', PDF_MARGIN_MM, y);
+    y += 6;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.setTextColor(60, 60, 70);
+    for (const p of params) {
+      const v = _pvParamValues[p.name];
+      const display = v == null || v === '' ? (p.default == null ? '(blank)' : '(default: ' + p.default + ')') : String(v);
+      pdf.text('@' + p.name + ': ' + display, PDF_MARGIN_MM + 4, y);
+      y += 5;
+      if (y > PDF_PAGE_H_MM - PDF_MARGIN_MM - 5) break;   // don't overrun
+    }
+  }
+
+  // Footer
+  pdf.setFont('helvetica', 'italic');
+  pdf.setFontSize(9);
+  pdf.setTextColor(140, 140, 150);
+  pdf.text('Cygenix Report Builder', PDF_MARGIN_MM, PDF_PAGE_H_MM - PDF_MARGIN_MM);
+}
+
+// Convert a captured canvas to one or more PDF pages. If the canvas is
+// taller than a single page (after scaling to fit width), we slice it
+// into page-sized chunks vertically.
+function pvAddCanvasToPdf(pdf, canvas){
+  const cw = canvas.width;
+  const ch = canvas.height;
+  // Convert canvas pixels to mm at the page's effective DPI.
+  // Strategy: scale canvas so its width matches PDF_CONTENT_W in mm.
+  const scale = PDF_CONTENT_W / cw;   // mm per canvas-px
+  const fullHmm = ch * scale;          // total height in mm at this scale
+
+  pdf.addPage();
+  if (fullHmm <= PDF_CONTENT_H) {
+    // Fits on one page
+    const dataUrl = canvas.toDataURL('image/png');
+    pdf.addImage(dataUrl, 'PNG', PDF_MARGIN_MM, PDF_MARGIN_MM, PDF_CONTENT_W, fullHmm);
+    return;
+  }
+  // Doesn't fit — slice. We render the same image multiple times,
+  // shifting it up so each page shows a different vertical band.
+  const pageHmm = PDF_CONTENT_H;
+  const dataUrl = canvas.toDataURL('image/png');
+  let renderedMm = 0;
+  let firstPage = true;
+  while (renderedMm < fullHmm) {
+    if (!firstPage) pdf.addPage();
+    firstPage = false;
+    // Place the image with negative Y offset so the visible band is the
+    // current section. PDF clipping isn't trivial in jsPDF, so we rely on
+    // the image extending past the page bottom and Acrobat clipping to
+    // the page. (jsPDF clips at page bounds for addImage automatically.)
+    pdf.addImage(dataUrl, 'PNG',
+      PDF_MARGIN_MM,
+      PDF_MARGIN_MM - renderedMm,
+      PDF_CONTENT_W,
+      fullHmm
+    );
+    renderedMm += pageHmm;
+  }
+}
+
+
+
 //
 // State shape (one document per saved run, partitioned on reportId):
 //   Run = {
