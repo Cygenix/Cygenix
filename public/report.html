@@ -483,14 +483,33 @@ function loadReport() {
 function renderReport(d) {
   const reportId = d.id || ('MIG-' + Date.now().toString(36).toUpperCase());
   const now = new Date().toISOString();
+
+  // Detect when sourceSystem has been miswritten as a table identifier (e.g.
+  // "dbo.clientload_src") instead of a real system name. Mirrors the logic
+  // used in the Excel export so the on-screen and exported reports agree.
+  const looksLikeTableName = (v) => {
+    if (!v || typeof v !== 'string') return false;
+    return /^[A-Za-z_][\w]*\.[A-Za-z_][\w]*$/.test(v.trim());
+  };
+  const sourceSystemDisplay = looksLikeTableName(d.sourceSystem)
+    ? (d.targetSystem || '—')
+    : (d.sourceSystem || '—');
+
+  // Multi-migration project? List every migration's source/target rather than
+  // showing only the first.
+  const migrationSteps = (d.isProjectReport && Array.isArray(d.steps))
+    ? d.steps.filter(s => s.type === 'migration')
+    : [];
+  const multiMigration = migrationSteps.length > 1;
+
   // Header
   set('rpt-title', `${d.projectName || 'Migration'} — Conversion Report`);
-  set('rpt-subtitle', `${d.sourceSystem || 'Source'} → ${d.targetSystem || 'Target'} · Cygenix AI Migration Platform`);
+  set('rpt-subtitle', `${sourceSystemDisplay} → ${d.targetSystem || 'Target'} · Cygenix AI Migration Platform`);
   set('rpt-project', d.projectName || '—');
   set('rpt-user', d.userName || d.userEmail || '—');
   set('rpt-date', fmtDate(d.completedAt || now));
   set('rpt-id', reportId);
-  set('rpt-source', d.sourceSystem || '—');
+  set('rpt-source', sourceSystemDisplay);
   set('rpt-target', d.targetSystem || '—');
   // Stats
   const totalRows = d.tables?.reduce((s,t) => s + (t.sourceRows||0), 0) || d.totalRows || 0;
@@ -502,7 +521,13 @@ function renderReport(d) {
   set('stat-success', fmt(inserted));
   set('stat-errors',  errors);
   $('stat-errors').style.color = errors > 0 ? 'var(--red)' : 'var(--text3)';
-  set('stat-wasis', d.wasisRuleCount || 0);
+  // Was/Is count: prefer the rules array length when available, fall back to
+  // the explicit count field. This matches the Excel summary's logic so the
+  // on-screen and exported reports agree even if only one of the two upstream
+  // fields was populated.
+  const wasisCount = (Array.isArray(d.wasisRules) ? d.wasisRules.length : 0)
+    || d.wasisRuleCount || 0;
+  set('stat-wasis', wasisCount);
   // Project details
   set('d-project-name', d.projectName || '—');
   set('d-user-name',    d.userName || '—');
@@ -516,20 +541,36 @@ function renderReport(d) {
     set('d-duration', secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`);
   }
   // Source
-  set('src-system', d.sourceSystem || '—');
+  set('src-system', sourceSystemDisplay);
   set('src-files',  d.sourceFiles?.join(', ') || d.sourceFile || '—');
   set('src-size',   fmtSize(d.sourceFileSize));
   set('src-tables', tableCount);
-  set('src-wasis',  d.wasisRuleCount ? d.wasisRuleCount + ' rules across ' + (d.wasisColCount||0) + ' columns' : 'None');
+  set('src-wasis',  wasisCount ? wasisCount + ' rule' + (wasisCount === 1 ? '' : 's')
+                                  + ' across ' + (d.wasisColCount||0) + ' column' + ((d.wasisColCount||0) === 1 ? '' : 's') : 'None');
   set('src-rows',   fmt(totalRows));
   set('src-cols',   fmt(d.columnMapping?.length || d.columnsMapped));
   // Target
   set('tgt-server',   d.targetServer || '—');
   set('tgt-database', d.targetDatabase || '—');
-  set('src-table', d.sourceTable || 
-        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
-        d.sourceFile || '—');
-  set('tgt-table',    d.targetTable || '—');
+  // Source / target table — show all migration mappings on multi-migration
+  // project reports, otherwise fall back to the legacy single-table logic.
+  if (multiMigration) {
+    const allKnown = migrationSteps.every(s => s.srcTable && s.tgtTable);
+    if (allKnown) {
+      set('src-table', migrationSteps.map(s => s.srcTable).join(', '));
+      set('tgt-table', migrationSteps.map(s => s.tgtTable).join(', '));
+    } else {
+      set('src-table', '(multiple — see Project Steps)');
+      set('tgt-table', '(multiple — see Project Steps)');
+    }
+  } else {
+    const sourceTableFallback = looksLikeTableName(d.sourceSystem) ? d.sourceSystem : null;
+    set('src-table', d.sourceTable ||
+          sourceTableFallback ||
+          (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
+          d.sourceFile || '—');
+    set('tgt-table', d.targetTable || '—');
+  }
   set('tgt-auth',     d.authMethod || 'Managed Identity');
   set('tgt-rows-before', fmt(d.rowsBefore));
   set('tgt-rows-after',  fmt(d.rowsAfter));
@@ -2016,6 +2057,66 @@ function doExport() {
     };
 
     // ── Sheet 1: Summary ──────────────────────────────────────────────────────
+    // Detect when sourceSystem has been miswritten as a table identifier (e.g.
+    // "dbo.clientload_src") instead of a real system name. In that case fall
+    // back to the targetSystem (SQL-to-SQL migrations have matching systems)
+    // or '—' rather than displaying a table name in the System row.
+    const looksLikeTableName = (v) => {
+      if (!v || typeof v !== 'string') return false;
+      const s = v.trim();
+      // schema.table pattern: word.word with no spaces
+      return /^[A-Za-z_][\w]*\.[A-Za-z_][\w]*$/.test(s);
+    };
+    const sourceSystemDisplay = looksLikeTableName(d.sourceSystem)
+      ? (d.targetSystem || '—')
+      : (d.sourceSystem || '—');
+
+    // For project reports with multiple migration steps, summarise across all
+    // of them rather than only showing the first. Single-migration projects
+    // and one-off migrations keep the original single source/target display.
+    const migrationSteps = (d.isProjectReport && Array.isArray(d.steps))
+      ? d.steps.filter(s => s.type === 'migration')
+      : [];
+    const multiMigration = migrationSteps.length > 1;
+
+    let srcTableCell, tgtTableCell;
+    if (multiMigration) {
+      // List every migration's source → target on separate lines inside the
+      // single cell. Excel will render \n as a hard line break when wrapText
+      // is on. Falls back to "(multiple — see Project Steps)" if any step is
+      // missing srcTable/tgtTable.
+      const allKnown = migrationSteps.every(s => s.srcTable && s.tgtTable);
+      if (allKnown) {
+        srcTableCell = migrationSteps.map(s => s.srcTable).join('\n');
+        tgtTableCell = migrationSteps.map(s => s.tgtTable).join('\n');
+      } else {
+        srcTableCell = '(multiple — see Project Steps)';
+        tgtTableCell = '(multiple — see Project Steps)';
+      }
+    } else {
+      // Single-migration / non-project: original logic, but skip the
+      // sourceSystem fallback when sourceSystem was actually a table name
+      // (already correctly handled via looksLikeTableName above).
+      const sourceTableFallback = looksLikeTableName(d.sourceSystem)
+        ? d.sourceSystem  // it IS a table name, so use it for the table row
+        : null;
+      srcTableCell = d.sourceTable ||
+        sourceTableFallback ||
+        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
+        d.sourceFile || '—';
+      tgtTableCell = d.targetTable || (d.tables?.[0]?.name) || '—';
+    }
+
+    // Was/Is rules — surface count in the summary block. Use the rules array
+    // length when available, fall back to wasisRuleCount, then 0.
+    const wasisCount = (Array.isArray(d.wasisRules) ? d.wasisRules.length : 0)
+      || d.wasisRuleCount || 0;
+    const wasisColCount = d.wasisColCount || 0;
+    const wasisCell = wasisCount > 0
+      ? (wasisCount + ' rule' + (wasisCount === 1 ? '' : 's')
+         + (wasisColCount ? ' across ' + wasisColCount + ' column' + (wasisColCount === 1 ? '' : 's') : ''))
+      : 'None';
+
     const summaryRows = [
       ['Cygenix — Conversion Report', '', '', ''],
       ['', '', '', ''],
@@ -2026,14 +2127,13 @@ function doExport() {
       ['Duration',        duration,                            '', ''],
       ['', '', '', ''],
       ['MIGRATION SUMMARY', '', '', ''],
-      ['Source system',   d.sourceSystem || '—',              'Tables migrated',  tableCount],
-      ['Source table', d.sourceTable || 
-        (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
-        d.sourceFile || '—', 'Target table', d.targetTable || (d.tables?.[0]?.name) || '—'],
+      ['Source system',   sourceSystemDisplay,                'Tables migrated',  tableCount],
+      ['Source table',    srcTableCell,                       'Target table',     tgtTableCell],
       ['Target system',   d.targetSystem || '—',              'Total rows',       totalRows],
       ['Auth method',     d.authMethod || 'Managed Identity', 'Rows inserted',    inserted],
       ['Target server',   d.targetServer || '—',              'Errors',           errors],
       ['Target database', d.targetDatabase || '—',            'Columns mapped',   d.columnMapping?.length || d.columnsMapped || 0],
+      ['Was/Is rules',    wasisCell,                          '',                 ''],
       ['', '', '', ''],
       ['STATUS', errors === 0 ? 'SUCCESS' : errors > 0 && inserted > 0 ? 'PARTIAL' : 'FAILED', '', ''],
     ];
@@ -2053,14 +2153,27 @@ function doExport() {
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
     // Column widths
     wsSummary['!cols'] = [{wch:24},{wch:38},{wch:24},{wch:20}];
-    // Row heights — title row taller, section headers medium
+    // Row heights — title row taller, section headers medium. Source/Target
+    // table rows expand when they hold multiple migrations (line breaks).
     wsSummary['!rows'] = summaryRows.map((r, i) => {
       if (i === 0) return { hpt: 30 };
       if (r[0] === 'MIGRATION SUMMARY' || r[0] === 'PROJECT STEPS') return { hpt: 22 };
+      // Multi-line table cell: count newlines in col B or col D, grow row.
+      const linesB = (typeof r[1] === 'string' ? r[1].split('\n').length : 1);
+      const linesD = (typeof r[3] === 'string' ? r[3].split('\n').length : 1);
+      const lines = Math.max(linesB, linesD);
+      if (lines > 1) return { hpt: Math.min(15 * lines + 4, 200) };
       return { hpt: 18 };
     });
     // Merge title row across all four columns
     wsSummary['!merges'] = [{ s:{r:0,c:0}, e:{r:0,c:3} }];
+
+    // Style helper: wrapText variant of a base style, used when a value cell
+    // contains embedded newlines (multi-migration table rows).
+    const wrapStyle = (base) => ({
+      ...base,
+      alignment: { ...(base.alignment || {}), wrapText: true, vertical: 'top' }
+    });
 
     // Apply styles — row by row so we can handle section headers specially
     summaryRows.forEach((row, r) => {
@@ -2087,11 +2200,16 @@ function doExport() {
         const addrB = XLSX.utils.encode_cell({r, c:1});
         const addrC = XLSX.utils.encode_cell({r, c:2});
         const addrD = XLSX.utils.encode_cell({r, c:3});
+        const hasNewlineB = typeof row[1] === 'string' && row[1].indexOf('\n') !== -1;
+        const hasNewlineD = typeof row[3] === 'string' && row[3].indexOf('\n') !== -1;
         if (wsSummary[addrA]) wsSummary[addrA].s = STYLE.label;
-        if (wsSummary[addrB]) wsSummary[addrB].s = STYLE.value;
+        if (wsSummary[addrB]) wsSummary[addrB].s = hasNewlineB ? wrapStyle(STYLE.value) : STYLE.value;
         if (row[2] && row[2] !== '') {
           if (wsSummary[addrC]) wsSummary[addrC].s = STYLE.label;
-          if (wsSummary[addrD]) wsSummary[addrD].s = (typeof row[3] === 'number') ? STYLE.numeric : STYLE.value;
+          if (wsSummary[addrD]) {
+            const baseD = (typeof row[3] === 'number') ? STYLE.numeric : STYLE.value;
+            wsSummary[addrD].s = hasNewlineD ? wrapStyle(baseD) : baseD;
+          }
         }
       }
     });
@@ -2324,14 +2442,29 @@ function doExport() {
       XLSX.utils.book_append_sheet(wb, wsLog, 'Execution Log');
     }
     // ── Sheet 5: Was/Is rules ────────────────────────────────────────────────
-    if (d.wasisRules && d.wasisRules.length > 0) {
-      const wasisData = [
-        ['Field', 'Source table', 'Old value (Was)', 'New value (Is)']
-      ].concat(d.wasisRules.map(r => [
-        r.srcField || '(all fields)', r.srcTable || '(all tables)', r.oldVal || '', r.newVal || ''
-      ]));
+    // Emit the sheet whenever Was/Is rules were applied, even if only the
+    // count (not the full rules array) made it into the report payload. In
+    // that case we write a single placeholder row explaining the situation
+    // rather than silently dropping the sheet.
+    const wasisRuleCount = (Array.isArray(d.wasisRules) ? d.wasisRules.length : 0)
+      || d.wasisRuleCount || 0;
+    if (wasisRuleCount > 0) {
+      let wasisData;
+      if (Array.isArray(d.wasisRules) && d.wasisRules.length > 0) {
+        wasisData = [
+          ['Field', 'Source table', 'Old value (Was)', 'New value (Is)']
+        ].concat(d.wasisRules.map(r => [
+          r.srcField || '(all fields)', r.srcTable || '(all tables)', r.oldVal || '', r.newVal || ''
+        ]));
+      } else {
+        // Count is known but the rules detail isn't available in this report.
+        wasisData = [
+          ['Field', 'Source table', 'Old value (Was)', 'New value (Is)'],
+          ['(' + wasisRuleCount + ' rule' + (wasisRuleCount === 1 ? '' : 's') + ' applied — detail not captured in report payload)', '', '', '']
+        ];
+      }
       const wsWasis = XLSX.utils.aoa_to_sheet(wasisData);
-      wsWasis['!cols'] = [{wch:25},{wch:30},{wch:30},{wch:30}];
+      wsWasis['!cols'] = [{wch:35},{wch:30},{wch:30},{wch:30}];
       wsWasis['!rows'] = wasisData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
       styleRange(wsWasis, 0, 0, 0, 3, STYLE.tableHeader);
       if (wasisData.length > 1) {
