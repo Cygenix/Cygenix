@@ -128,7 +128,74 @@ body.cyg-collapsed{padding-left:54px}
 .rb-conn-row{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem}
 .rb-conn-row > label{font-size:11px;color:var(--text3);font-family:var(--mono)}
 .rb-conn-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;min-width:200px}
-.rb-conn-select:focus{border-color:var(--accent)}
+/* ── Datasets tab ───────────────────────────────────────────────────────────
+   Each dataset is a card with: header (name, connection picker, action buttons),
+   builder body (visual or raw), test-run result strip. Cards collapse to just
+   the header when not the focus. */
+.ds-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.75rem;overflow:hidden}
+.ds-head{padding:0.75rem 1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;border-bottom:0.5px solid var(--border)}
+.ds-name{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.7rem;font-size:13px;font-weight:500;color:var(--text);outline:none;font-family:var(--serif)}
+.ds-name:focus{border-color:var(--accent)}
+.ds-conn{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;min-width:180px}
+.ds-conn:focus{border-color:var(--accent)}
+.ds-mode-toggle{display:inline-flex;gap:0;border-radius:6px;overflow:hidden;border:0.5px solid var(--border2)}
+.ds-mode-toggle button{background:var(--bg3);color:var(--text3);border:none;padding:0.35rem 0.7rem;font-size:11px;cursor:pointer;font-family:var(--serif);border-right:0.5px solid var(--border2)}
+.ds-mode-toggle button:last-child{border-right:none}
+.ds-mode-toggle button.active{background:var(--accent-glow);color:var(--accent)}
+.ds-mode-toggle button:hover:not(.active){color:var(--text2)}
+.ds-body{padding:1rem}
+.ds-section{margin-bottom:1rem;padding-bottom:1rem;border-bottom:0.5px dashed var(--border)}
+.ds-section:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+.ds-section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;cursor:pointer}
+.ds-section-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.07em;display:flex;align-items:center;gap:0.5rem}
+.ds-section-meta{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.ds-section-body{padding-top:0.25rem}
+.ds-section-body.collapsed{display:none}
+.ds-chev{display:inline-block;transition:transform 0.15s;font-size:9px;color:var(--text3)}
+.ds-chev.open{transform:rotate(90deg)}
+
+/* Visual-builder rows (tables / joins / selects / group / where) */
+.ds-row{display:grid;grid-template-columns:auto 1fr auto;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:0.5px dashed rgba(255,255,255,0.04)}
+.ds-row:last-child{border-bottom:none}
+.ds-row-label{font-size:10px;color:var(--text3);font-family:var(--mono);min-width:80px}
+.ds-row-fields{display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;flex:1;min-width:0}
+.ds-row-fields > *{flex-shrink:0}
+.ds-input,.ds-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.35rem 0.55rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;min-width:140px}
+.ds-input:focus,.ds-select:focus{border-color:var(--accent)}
+.ds-input.ds-input-wide{min-width:240px;flex:1}
+.ds-add-btn{background:transparent;color:var(--text3);border:0.5px dashed var(--border2);border-radius:6px;padding:0.3rem 0.7rem;font-size:11px;font-family:var(--serif);cursor:pointer;transition:all 0.12s}
+.ds-add-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.4)}
+.ds-rm-btn{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:14px;padding:0 0.4rem;line-height:1}
+.ds-rm-btn:hover{color:var(--red)}
+
+/* Raw-SQL textarea */
+.ds-sql-textarea{width:100%;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.6rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;min-height:140px;resize:vertical;line-height:1.5}
+.ds-sql-textarea:focus{border-color:var(--accent)}
+.ds-sql-box{background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.6rem 0.75rem;font-size:11px;color:var(--text2);font-family:var(--mono);white-space:pre-wrap;line-height:1.55;min-height:80px;max-height:260px;overflow-y:auto}
+
+/* Test-run result strip */
+.ds-result{margin-top:0.5rem;padding:0.55rem 0.75rem;border-radius:6px;font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.ds-result.ok{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.ds-result.err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+.ds-result.idle{background:var(--bg3);color:var(--text3);border:0.5px solid var(--border2)}
+.ds-fields-pills{display:flex;gap:4px;flex-wrap:wrap;margin-top:0.4rem}
+.ds-field-pill{background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:2px 8px;font-size:10px;color:var(--text2);font-family:var(--mono)}
+.ds-field-pill .ds-field-type{color:var(--text3);margin-left:4px}
+
+/* AI assist panel */
+.ds-ai{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;margin-top:0.5rem}
+.ds-ai-input{width:100%;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;resize:vertical;min-height:60px}
+.ds-ai-input:focus{border-color:var(--accent)}
+.ds-ai-row{display:flex;gap:0.5rem;align-items:center;margin-top:0.5rem;flex-wrap:wrap}
+.ds-ai-status{font-size:11px;color:var(--text3);font-family:var(--mono);flex:1}
+.ds-ai-status.thinking{color:var(--amber)}
+.ds-ai-status.ok{color:var(--green)}
+.ds-ai-status.err{color:var(--red)}
+
+/* Collapsed dataset view (when not the focus) */
+.ds-card.collapsed .ds-body{display:none}
+.ds-toggle-collapse{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:11px;font-family:var(--mono);padding:0 0.4rem}
+.ds-toggle-collapse:hover{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -226,10 +293,14 @@ body.cyg-collapsed{padding-left:54px}
         -->
         <div id="rb-tab-datasets" class="rb-tab-pane">
           <div class="panel"><div class="panel-body">
-            <div class="empty-state">
-              <strong>Datasets</strong> — coming in Drop 2.<br>
-              You'll define one or more SQL datasets here, each pointing at a connection (migration src/tgt or saved connection). Visual builder, raw SQL, and AI assist will all be available.
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+              <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
+                Define one or more SQL datasets. Each dataset runs against a connection and produces fields the Layout tab can display. Use the visual builder, raw SQL, or AI assist.
+              </div>
+              <button class="btn btn-purple btn-sm" onclick="dsAddDataset()">＋ Add dataset</button>
             </div>
+            <div id="ds-list"></div>
+            <div id="ds-empty" class="empty-state">No datasets yet. Click <strong>＋ Add dataset</strong> to create one.</div>
           </div></div>
         </div>
 
@@ -515,9 +586,902 @@ function rbRenderEditor(){
 
   // Tab visibility — keep whatever's persisted.
   rbSwitchTab(rbActiveTab);
+
+  // Render per-tab content. Each tab's render is cheap (just DOM) and is
+  // safe to call even when the tab is hidden — that way switching tabs is
+  // instant. Drops 3-5 add their own renderers (parameters, layout, runs).
+  if (typeof dsRender === 'function') dsRender();
 }
 
-// ── Init ────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// Datasets tab
+//
+// State shape (per dataset, lives on the parent Report):
+//   Dataset = {
+//     id, name,
+//     connection: { kind: 'src'|'tgt'|'saved', savedId },
+//     mode: 'visual' | 'raw',
+//     visual: {
+//       tables:    [{ fullName, alias }, ...],
+//       joins:     [{ rightTableIdx, type, conditions: [{ leftTableIdx, leftCol, op, rightCol }, ...] }, ...],
+//       selects:   [{ tableIdx, col, agg, alias }, ...],
+//       where:     string,
+//       groupBy:   [{ tableIdx, col }, ...],
+//       orderBy:   string,
+//       limit:     number | null,
+//       limitSyntax: 'top' | 'limit' | 'none'
+//     },
+//     rawSql:      string,
+//     fields:      [{ name, type, sample }, ...]   // populated by Test run
+//     lastTestRun: { ts, rowCount, error }
+//     openSections: { tables, joins, selects, group, where, sql, ai }  // UI collapse state
+//   }
+//
+// Builder code is adapted from balancing.html's Custom-tab pattern (same shape,
+// proven working). We don't load full schema at this stage (Drop 3 will, when
+// the user picks tables) — for now the user types/pastes table and column names.
+// This is a deliberate v1 simplification; Drop 3 layers in the schema picker.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Connection registry ─────────────────────────────────────────────────────
+// The dataset connection picker offers: project src, project tgt, or any
+// saved connection from the user's connections.js registry. We resolve the
+// actual connection string at run time, so swapping connections doesn't
+// require editing the dataset.
+function dsAvailableConnections(){
+  const out = [];
+  if (srcConn) out.push({ id: 'src', label: 'Project source' + (parseDbName(srcConn) ? ' · ' + parseDbName(srcConn) : ''), conn: srcConn });
+  if (tgtConn) out.push({ id: 'tgt', label: 'Project target' + (parseDbName(tgtConn) ? ' · ' + parseDbName(tgtConn) : ''), conn: tgtConn });
+  // Saved connections — best-effort. CygenixConnections.list() may not exist
+  // on older versions; if not, we just show src/tgt.
+  try {
+    if (typeof CygenixConnections !== 'undefined' && CygenixConnections && typeof CygenixConnections.list === 'function') {
+      const saved = CygenixConnections.list() || [];
+      saved.forEach(s => {
+        if (!s || !s.id) return;
+        out.push({ id: 'saved:' + s.id, label: 'Saved · ' + (s.label || s.id), conn: s.connectionString || s.url || '' });
+      });
+    }
+  } catch (e) { /* non-fatal — saved connections just won't show */ }
+  return out;
+}
+
+function dsResolveConnection(d){
+  // Returns the actual connection string to pass to dbCall().
+  // d.connection.kind: 'src' | 'tgt' | 'saved'
+  if (!d || !d.connection) return '';
+  if (d.connection.kind === 'src') return srcConn;
+  if (d.connection.kind === 'tgt') return tgtConn;
+  if (d.connection.kind === 'saved' && d.connection.savedId) {
+    const list = dsAvailableConnections();
+    const match = list.find(x => x.id === 'saved:' + d.connection.savedId);
+    return match ? match.conn : '';
+  }
+  return '';
+}
+
+// ── DB call wrapper (identical pattern to balancing.html) ──────────────────
+async function dsDbCall(conn, body){
+  if (!conn) throw new Error('No connection configured for this dataset');
+  const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn(conn) ? body : { ...body, connectionString: conn };
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(60000)
+  });
+  const data = await res.json().catch(() => ({ error: 'Non-JSON (' + res.status + ')' }));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+async function dsExec(conn, sql){
+  const data = await dsDbCall(conn, { action: 'execute', sql: sql });
+  if (Array.isArray(data)) return data;
+  return data.recordset || data.rows || data.data || [];
+}
+
+// ── Dataset CRUD on the current report ─────────────────────────────────────
+function dsCurrentReport(){
+  return rbReports.find(x => x.id === rbCurrentId) || null;
+}
+
+function dsAddDataset(){
+  const r = dsCurrentReport();
+  if (!r) { showStatus('Select or create a report first.', 'err'); return; }
+  if (!r.datasets) r.datasets = [];
+  // Default connection: 'src' if available, else 'tgt', else first saved.
+  let defaultKind = 'src', defaultSaved = '';
+  if (!srcConn && tgtConn) defaultKind = 'tgt';
+  if (!srcConn && !tgtConn) {
+    const list = dsAvailableConnections();
+    if (list.length > 0 && list[0].id.startsWith('saved:')) {
+      defaultKind = 'saved';
+      defaultSaved = list[0].id.slice('saved:'.length);
+    }
+  }
+  const d = {
+    id:   uuid(),
+    name: 'Dataset ' + (r.datasets.length + 1),
+    connection: { kind: defaultKind, savedId: defaultSaved },
+    mode:   'visual',
+    visual: {
+      tables: [], joins: [], selects: [], where: '',
+      groupBy: [], orderBy: '', limit: null, limitSyntax: 'none'
+    },
+    rawSql: '',
+    fields: [],
+    lastTestRun: null,
+    openSections: { tables: true, selects: true, joins: false, group: false, where: false, sql: true, ai: false }
+  };
+  r.datasets.push(d);
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  dsRender();
+}
+
+function dsRemove(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  if (!confirm('Delete dataset "' + (d.name || 'Untitled') + '"? This cannot be undone.')) return;
+  r.datasets.splice(idx, 1);
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  dsRender();
+}
+
+function dsUpdate(idx, path, value){
+  // path is a dotted string like 'name', 'connection.kind', 'visual.where'.
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  const parts = path.split('.');
+  let target = d;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (target[parts[i]] == null) target[parts[i]] = {};
+    target = target[parts[i]];
+  }
+  target[parts[parts.length - 1]] = value;
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  // Cheap re-render: only the dataset card body, not the whole list. But
+  // since we're streaming HTML, full dsRender() is fine and avoids subtle
+  // focus-loss bugs on text inputs because we re-bind values from state.
+  // To keep typing fluid we DON'T re-render on every keystroke for raw text
+  // fields; the inline oninput updates state but UI stays in sync because
+  // the input is the source of truth until a structural change happens.
+}
+
+function dsToggleSection(idx, key){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  if (!d.openSections) d.openSections = {};
+  d.openSections[key] = !d.openSections[key];
+  rbSaveToLocal();
+  dsRender();
+}
+
+function dsToggleMode(idx, mode){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.mode = mode;
+  // If switching to raw and rawSql is empty, seed it from the visual builder
+  // so the user has somewhere to start tweaking.
+  if (mode === 'raw' && !(d.rawSql || '').trim()) {
+    try { d.rawSql = dsBuildSql(d); } catch { /* leave blank */ }
+  }
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  dsRender();
+}
+
+// ── Visual builder mutators ────────────────────────────────────────────────
+function dsAddTable(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.tables.push({ fullName: '', alias: '' });
+  rbSaveToLocal(); dsRender();
+}
+function dsRemoveTable(idx, tIdx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.tables.splice(tIdx, 1);
+  // Cascade: remove any selects/joins/groupBy referencing this index, and
+  // shift indices > tIdx down by one. Without this, visual builder errors
+  // out with "select references a removed table" on every render.
+  d.visual.selects = (d.visual.selects || []).filter(s => s.tableIdx !== tIdx).map(s => ({
+    ...s, tableIdx: s.tableIdx > tIdx ? s.tableIdx - 1 : s.tableIdx
+  }));
+  d.visual.groupBy = (d.visual.groupBy || []).filter(g => g.tableIdx !== tIdx).map(g => ({
+    ...g, tableIdx: g.tableIdx > tIdx ? g.tableIdx - 1 : g.tableIdx
+  }));
+  d.visual.joins = (d.visual.joins || []).filter(j => j.rightTableIdx !== tIdx).map(j => ({
+    ...j,
+    rightTableIdx: j.rightTableIdx > tIdx ? j.rightTableIdx - 1 : j.rightTableIdx,
+    conditions: (j.conditions || []).filter(c => c.leftTableIdx !== tIdx).map(c => ({
+      ...c, leftTableIdx: c.leftTableIdx > tIdx ? c.leftTableIdx - 1 : c.leftTableIdx
+    }))
+  }));
+  rbSaveToLocal(); dsRender();
+}
+function dsUpdateTable(idx, tIdx, key, value){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.tables[tIdx][key] = value;
+  rbSaveToLocal();
+  // No re-render — input value is source of truth while typing.
+}
+function dsAddSelect(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.selects.push({ tableIdx: 0, col: '', agg: '', alias: '' });
+  rbSaveToLocal(); dsRender();
+}
+function dsRemoveSelect(idx, sIdx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.selects.splice(sIdx, 1);
+  rbSaveToLocal(); dsRender();
+}
+function dsUpdateSelect(idx, sIdx, key, value){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  // tableIdx is numeric; everything else is string. A select with no tableIdx
+  // would crash dsBuildSql, so guard the parse.
+  if (key === 'tableIdx') value = Math.max(0, parseInt(value, 10) || 0);
+  d.visual.selects[sIdx][key] = value;
+  rbSaveToLocal();
+  if (key === 'tableIdx' || key === 'agg') dsRender();  // structural: re-render
+}
+function dsAddJoin(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  // Default rightTableIdx = first table that doesn't yet have a join.
+  const taken = new Set((d.visual.joins || []).map(j => j.rightTableIdx));
+  let rightIdx = -1;
+  for (let i = 1; i < d.visual.tables.length; i++) { if (!taken.has(i)) { rightIdx = i; break; } }
+  if (rightIdx === -1) { showStatus('Every table after the first already has a join. Add another table first.', 'info'); return; }
+  d.visual.joins.push({
+    rightTableIdx: rightIdx,
+    type: 'INNER',
+    conditions: [{ leftTableIdx: 0, leftCol: '', op: '=', rightCol: '' }]
+  });
+  rbSaveToLocal(); dsRender();
+}
+function dsRemoveJoin(idx, jIdx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.joins.splice(jIdx, 1);
+  rbSaveToLocal(); dsRender();
+}
+function dsUpdateJoin(idx, jIdx, key, value){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  if (key === 'rightTableIdx') value = parseInt(value, 10) || 0;
+  d.visual.joins[jIdx][key] = value;
+  rbSaveToLocal();
+  if (key === 'rightTableIdx' || key === 'type') dsRender();
+}
+function dsAddJoinCond(idx, jIdx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.joins[jIdx].conditions.push({ leftTableIdx: 0, leftCol: '', op: '=', rightCol: '' });
+  rbSaveToLocal(); dsRender();
+}
+function dsRemoveJoinCond(idx, jIdx, cIdx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.joins[jIdx].conditions.splice(cIdx, 1);
+  rbSaveToLocal(); dsRender();
+}
+function dsUpdateJoinCond(idx, jIdx, cIdx, key, value){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  if (key === 'leftTableIdx') value = parseInt(value, 10) || 0;
+  d.visual.joins[jIdx].conditions[cIdx][key] = value;
+  rbSaveToLocal();
+  if (key === 'leftTableIdx' || key === 'op') dsRender();
+}
+function dsAddGroup(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.groupBy.push({ tableIdx: 0, col: '' });
+  rbSaveToLocal(); dsRender();
+}
+function dsRemoveGroup(idx, gIdx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.groupBy.splice(gIdx, 1);
+  rbSaveToLocal(); dsRender();
+}
+function dsUpdateGroup(idx, gIdx, key, value){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  if (key === 'tableIdx') value = parseInt(value, 10) || 0;
+  d.visual.groupBy[gIdx][key] = value;
+  rbSaveToLocal();
+  if (key === 'tableIdx') dsRender();
+}
+
+// ── SQL builder (lifted from balancing.html cbBuildSql, simplified) ────────
+function dsAliasOrName(t){
+  return (t.alias && t.alias.trim()) || t.fullName;
+}
+function dsBuildSql(d){
+  if (!d) throw new Error('No dataset.');
+  if (d.mode === 'raw') return d.rawSql || '';
+
+  const v = d.visual || {};
+  const tables = v.tables || [];
+  if (tables.length === 0) throw new Error('Add at least one table.');
+  if (tables.some(t => !t.fullName || !t.fullName.trim())) throw new Error('Every table needs a name.');
+
+  const selects = v.selects || [];
+  if (selects.length === 0) throw new Error('Add at least one output column.');
+
+  // SELECT list
+  const selectExprs = selects.map(s => {
+    const t = tables[s.tableIdx];
+    if (!t) throw new Error('A select references a removed table.');
+    if (!s.col) throw new Error('A select column is empty.');
+    const qualified = dsAliasOrName(t) + '.' + s.col;
+    let expr;
+    if (s.agg === 'COUNT')      expr = 'COUNT(' + qualified + ')';
+    else if (s.agg)             expr = s.agg + '(' + qualified + ')';
+    else                        expr = qualified;
+    let alias = s.alias && s.alias.trim();
+    // Auto-alias aggregates without a user alias — otherwise SQL Server
+    // returns "(No column name)" and key collisions drop columns.
+    if (!alias && s.agg) alias = s.agg.toLowerCase() + '_' + s.col;
+    return alias ? expr + ' AS ' + alias : expr;
+  });
+
+  // FROM + joins
+  const fromTbl = tables[0];
+  const fromClause = fromTbl.fullName + (fromTbl.alias ? ' AS ' + fromTbl.alias : '');
+  const joinClauses = [];
+  for (let i = 1; i < tables.length; i++) {
+    const rightT = tables[i];
+    const join = (v.joins || []).find(j => j.rightTableIdx === i);
+    if (!join || !join.conditions || join.conditions.length === 0) {
+      throw new Error('Table "' + dsAliasOrName(rightT) + '" needs a join condition.');
+    }
+    const condStrs = join.conditions.map(c => {
+      const leftT = tables[c.leftTableIdx];
+      if (!leftT) throw new Error('Join references a removed table.');
+      if (!c.leftCol || !c.rightCol) throw new Error('A join condition has an empty column.');
+      return dsAliasOrName(leftT) + '.' + c.leftCol + ' ' + (c.op || '=') + ' ' + dsAliasOrName(rightT) + '.' + c.rightCol;
+    });
+    joinClauses.push((join.type || 'INNER') + ' JOIN ' + rightT.fullName + (rightT.alias ? ' AS ' + rightT.alias : '')
+      + ' ON ' + condStrs.join(' AND '));
+  }
+
+  // GROUP BY (auto-derived if any select aggs but no explicit group)
+  let groupExprs = (v.groupBy || []).map(g => {
+    const t = tables[g.tableIdx];
+    if (!t || !g.col) throw new Error('A GROUP BY field is incomplete.');
+    return dsAliasOrName(t) + '.' + g.col;
+  });
+  const hasAgg = selects.some(s => s.agg);
+  if (hasAgg && groupExprs.length === 0) {
+    groupExprs = selects.filter(s => !s.agg).map(s => {
+      const t = tables[s.tableIdx];
+      return dsAliasOrName(t) + '.' + s.col;
+    });
+  }
+
+  const limitSyntax = v.limitSyntax || (v.limit && v.limit > 0 ? 'limit' : 'none');
+  const limitN = (v.limit != null && v.limit > 0) ? v.limit : null;
+
+  const lines = [];
+  const selectKw = (limitSyntax === 'top' && limitN) ? ('SELECT TOP ' + limitN) : 'SELECT';
+  lines.push(selectKw + ' ' + selectExprs.join(', '));
+  lines.push('FROM ' + fromClause);
+  joinClauses.forEach(jc => lines.push(jc));
+  if ((v.where || '').trim())   lines.push('WHERE ' + v.where.trim());
+  if (groupExprs.length)        lines.push('GROUP BY ' + groupExprs.join(', '));
+  if ((v.orderBy || '').trim()) lines.push('ORDER BY ' + v.orderBy.trim());
+  if (limitSyntax === 'limit' && limitN) lines.push('LIMIT ' + limitN);
+  return lines.join('\n');
+}
+
+// ── Test run ───────────────────────────────────────────────────────────────
+// Fetches a small sample (10 rows) and uses the row keys to populate
+// d.fields, the menu of available columns the Layout tab will read.
+async function dsTestRun(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  const conn = dsResolveConnection(d);
+  if (!conn) { showStatus('No connection set on this dataset.', 'err'); return; }
+
+  let sql;
+  try { sql = dsBuildSql(d); }
+  catch (e) {
+    d.lastTestRun = { ts: Date.now(), rowCount: 0, error: e.message };
+    rbSaveToLocal(); dsRender();
+    return;
+  }
+
+  // Cap the test-run to a small number of rows. We wrap the SQL in a
+  // subquery so user-written ORDER BY / LIMIT / TOP isn't fought with —
+  // but only if it's not already wrapped. A safer approach: just execute
+  // the SQL and slice client-side. Slightly more bandwidth but no SQL
+  // rewriting risk. Datasets in v1 are typically small for this preview.
+  showStatus('Running ' + (d.name || 'dataset') + '…', 'info');
+  try {
+    const rows = await dsExec(conn, sql);
+    const sample = rows.slice(0, 10);
+    const fields = sample.length > 0
+      ? Object.keys(sample[0]).map(k => ({
+          name: k,
+          type: dsInferType(sample, k),
+          sample: sample[0][k]
+        }))
+      : [];
+    d.fields = fields;
+    d.lastTestRun = { ts: Date.now(), rowCount: rows.length, error: null };
+    r.updatedAt = nowIso();
+    rbSaveToLocal();
+    showStatus('Test run OK · ' + rows.length.toLocaleString() + ' rows · ' + fields.length + ' fields', 'ok');
+  } catch (e) {
+    d.lastTestRun = { ts: Date.now(), rowCount: 0, error: e.message };
+    rbSaveToLocal();
+    showStatus('Test run failed: ' + e.message, 'err');
+  }
+  dsRender();
+}
+
+function dsInferType(rows, col){
+  // Look at first non-null value's JS type. SQL Server's mssql driver
+  // returns Date objects natively, numbers as numbers, etc. So this is
+  // a one-shot best-effort classification.
+  for (let i = 0; i < rows.length; i++) {
+    const v = rows[i][col];
+    if (v == null) continue;
+    if (v instanceof Date)              return 'date';
+    if (typeof v === 'number')          return 'number';
+    if (typeof v === 'boolean')         return 'bool';
+    if (typeof v === 'string') {
+      // Heuristic: if it parses cleanly as a date and looks like an ISO/SQL
+      // timestamp, treat as date. Avoids classifying short numeric strings
+      // ("123") as dates which Date.parse will accept.
+      if (/^\d{4}-\d{2}-\d{2}/.test(v) && !isNaN(Date.parse(v))) return 'date';
+      if (/^-?\d+(\.\d+)?$/.test(v)) return 'number';
+      return 'string';
+    }
+    return typeof v;
+  }
+  return 'unknown';
+}
+
+// ── AI Assist ──────────────────────────────────────────────────────────────
+// Adapted from balancing.html's Custom-tab AI assist. Two-step: user
+// describes the report in natural language, we ask Claude to write the SQL,
+// and the response replaces rawSql (and switches to raw mode).
+//
+// API key resolution: we check a few well-known places in this order:
+//   - localStorage 'cygenix_anthropic_key'
+//   - localStorage 'anthropic_api_key'
+//   - window.CygenixParams && CygenixParams.get('anthropicApiKey')
+// If none found, the AI button is disabled and shows a tooltip explaining.
+function dsGetApiKey(){
+  try {
+    const k1 = localStorage.getItem('cygenix_anthropic_key');
+    if (k1) return k1;
+    const k2 = localStorage.getItem('anthropic_api_key');
+    if (k2) return k2;
+    if (typeof CygenixParams !== 'undefined' && CygenixParams && typeof CygenixParams.get === 'function') {
+      const k3 = CygenixParams.get('anthropicApiKey');
+      if (k3) return k3;
+    }
+  } catch { /* fall through */ }
+  return '';
+}
+
+async function dsAiSuggest(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  const prompt = (d.aiPrompt || '').trim();
+  if (!prompt) { showStatus('Describe what you want the dataset to return first.', 'info'); return; }
+
+  const apiKey = dsGetApiKey();
+  if (!apiKey) {
+    d.aiStatus = { kind: 'err', text: 'No Anthropic API key configured. Set one in Settings.' };
+    dsRender();
+    return;
+  }
+
+  d.aiStatus = { kind: 'thinking', text: 'Asking Claude…' };
+  dsRender();
+
+  // We give Claude the existing SQL (if any) plus the prompt, and ask
+  // for SQL only — no commentary, no markdown fences.
+  const existing = (d.rawSql || '').trim() || (function(){ try { return dsBuildSql(d); } catch { return ''; }})();
+  const sysPrompt = 'You write SQL for Microsoft SQL Server. Reply with the SQL only — no markdown fences, no commentary, no prose. The SQL must be a single SELECT statement.';
+  const userPrompt = (existing ? 'Current SQL:\n' + existing + '\n\n' : '')
+                    + 'Task: ' + prompt;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        system: sysPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data.error && data.error.message) || res.statusText);
+    const text = ((data.content || []).find(b => b.type === 'text') || {}).text || '';
+    // Strip any markdown fences just in case.
+    const cleaned = text.replace(/^```(?:sql)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+    if (!cleaned) throw new Error('Empty response from Claude.');
+    d.rawSql = cleaned;
+    d.mode = 'raw';
+    d.aiStatus = { kind: 'ok', text: 'SQL updated. Switched to raw mode. Run "Test" to validate.' };
+    r.updatedAt = nowIso();
+    rbSaveToLocal();
+  } catch (e) {
+    d.aiStatus = { kind: 'err', text: 'Failed: ' + e.message };
+  }
+  dsRender();
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function dsRender(){
+  const list  = $('ds-list');
+  const empty = $('ds-empty');
+  if (!list || !empty) return;
+
+  const r = dsCurrentReport();
+  if (!r) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'Select or create a report to add datasets.';
+    return;
+  }
+  const datasets = r.datasets || [];
+  if (datasets.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'No datasets yet. Click <strong>＋ Add dataset</strong> to create one.';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = datasets.map((d, i) => dsRenderCard(d, i)).join('');
+}
+
+function dsRenderCard(d, idx){
+  const conns = dsAvailableConnections();
+  const connKey = d.connection.kind === 'saved'
+    ? 'saved:' + (d.connection.savedId || '')
+    : (d.connection.kind || 'src');
+  const connOptions = conns.map(c =>
+    '<option value="' + escapeHtml(c.id) + '"' + (c.id === connKey ? ' selected' : '') + '>'
+    + escapeHtml(c.label) + '</option>'
+  ).join('');
+  const noConn = conns.length === 0
+    ? '<option value="">⚠ No connections available</option>'
+    : '';
+
+  const isVisual = d.mode !== 'raw';
+  const open = d.openSections || {};
+
+  // Header
+  const head = ''
+    + '<div class="ds-head">'
+    +   '<input class="ds-name" value="' + escapeHtml(d.name || '') + '" placeholder="Dataset name" '
+    +     'onchange="dsUpdate(' + idx + ',\'name\',this.value);dsRender()">'
+    +   '<select class="ds-conn" onchange="dsConnChange(' + idx + ',this.value)">' + noConn + connOptions + '</select>'
+    +   '<div class="ds-mode-toggle">'
+    +     '<button class="' + (isVisual ? 'active' : '') + '" onclick="dsToggleMode(' + idx + ',\'visual\')">Visual</button>'
+    +     '<button class="' + (!isVisual ? 'active' : '') + '" onclick="dsToggleMode(' + idx + ',\'raw\')">Raw SQL</button>'
+    +   '</div>'
+    +   '<button class="btn btn-primary btn-sm" onclick="dsTestRun(' + idx + ')">▶ Test run</button>'
+    +   '<button class="btn btn-red btn-sm" onclick="dsRemove(' + idx + ')">🗑</button>'
+    + '</div>';
+
+  // Body — visual or raw
+  const body = isVisual ? dsRenderVisual(d, idx) : dsRenderRaw(d, idx);
+
+  // Result strip
+  const resultStrip = dsRenderResult(d);
+
+  return '<div class="ds-card">' + head + '<div class="ds-body">' + body + resultStrip + '</div></div>';
+}
+
+function dsConnChange(idx, value){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  if (value && value.startsWith('saved:')) {
+    d.connection = { kind: 'saved', savedId: value.slice('saved:'.length) };
+  } else {
+    d.connection = { kind: value || 'src', savedId: '' };
+  }
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  // No re-render needed — the select already shows the new value.
+}
+
+function dsRenderResult(d){
+  if (!d.lastTestRun) {
+    return '<div class="ds-result idle">▷ Not run yet. Click "Test run" to validate the SQL and discover fields.</div>';
+  }
+  if (d.lastTestRun.error) {
+    return '<div class="ds-result err">✕ ' + escapeHtml(d.lastTestRun.error) + '</div>';
+  }
+  const rowCount = d.lastTestRun.rowCount || 0;
+  const fields = d.fields || [];
+  const pills = fields.length === 0
+    ? '<span style="color:var(--text3);font-size:11px">no fields detected</span>'
+    : fields.map(f =>
+        '<span class="ds-field-pill">' + escapeHtml(f.name)
+        + '<span class="ds-field-type">' + escapeHtml(f.type) + '</span></span>'
+      ).join('');
+  return '<div class="ds-result ok">'
+       +   '✓ ' + rowCount.toLocaleString() + ' row' + (rowCount === 1 ? '' : 's') + ' · ' + fields.length + ' field' + (fields.length === 1 ? '' : 's')
+       +   '<div class="ds-fields-pills" style="width:100%">' + pills + '</div>'
+       + '</div>';
+}
+
+// ── Visual builder render ──────────────────────────────────────────────────
+function dsRenderVisual(d, idx){
+  const open = d.openSections || {};
+  const v = d.visual || {};
+
+  const tablesSection = dsSection(idx, 'tables', 'Tables', (v.tables || []).length + ' table' + ((v.tables || []).length === 1 ? '' : 's'),
+    dsRenderTablesBody(d, idx), open.tables !== false);
+
+  const joinsSection = (v.tables || []).length >= 2
+    ? dsSection(idx, 'joins', 'Joins', (v.joins || []).length + ' join' + ((v.joins || []).length === 1 ? '' : 's'),
+        dsRenderJoinsBody(d, idx), open.joins === true)
+    : '';
+
+  const selectsSection = dsSection(idx, 'selects', 'Output columns', (v.selects || []).length + ' col' + ((v.selects || []).length === 1 ? '' : 's'),
+    dsRenderSelectsBody(d, idx), open.selects !== false);
+
+  const groupSection = dsSection(idx, 'group', 'Group by', (v.groupBy || []).length + ' field' + ((v.groupBy || []).length === 1 ? '' : 's'),
+    dsRenderGroupBody(d, idx), open.group === true);
+
+  const whereSection = dsSection(idx, 'where', 'Filter (WHERE) & order', (v.where || '').trim() ? '✓' : '',
+    dsRenderWhereBody(d, idx), open.where === true);
+
+  const sqlSection = dsSection(idx, 'sql', 'SQL preview', '',
+    dsRenderSqlPreview(d, idx), open.sql !== false);
+
+  const aiSection = dsSection(idx, 'ai', 'AI assist', '',
+    dsRenderAiBody(d, idx), open.ai === true);
+
+  return tablesSection + joinsSection + selectsSection + groupSection + whereSection + sqlSection + aiSection;
+}
+
+function dsSection(idx, key, title, meta, body, isOpen){
+  return '<div class="ds-section">'
+       +   '<div class="ds-section-head" onclick="dsToggleSection(' + idx + ',\'' + key + '\')">'
+       +     '<div class="ds-section-title"><span class="ds-chev' + (isOpen ? ' open' : '') + '">▶</span>' + escapeHtml(title) + '</div>'
+       +     (meta ? '<div class="ds-section-meta">' + escapeHtml(meta) + '</div>' : '')
+       +   '</div>'
+       +   '<div class="ds-section-body' + (isOpen ? '' : ' collapsed') + '">' + body + '</div>'
+       + '</div>';
+}
+
+function dsRenderTablesBody(d, idx){
+  const v = d.visual || {};
+  const rows = (v.tables || []).map((t, tIdx) =>
+    '<div class="ds-row">'
+    +   '<span class="ds-row-label">' + (tIdx === 0 ? 'FROM' : 'TBL ' + (tIdx + 1)) + '</span>'
+    +   '<div class="ds-row-fields">'
+    +     '<input class="ds-input ds-input-wide" placeholder="schema.TableName" value="' + escapeHtml(t.fullName || '') + '" '
+    +       'onchange="dsUpdateTable(' + idx + ',' + tIdx + ',\'fullName\',this.value);dsRender()">'
+    +     '<input class="ds-input" placeholder="alias (optional)" value="' + escapeHtml(t.alias || '') + '" '
+    +       'onchange="dsUpdateTable(' + idx + ',' + tIdx + ',\'alias\',this.value)">'
+    +   '</div>'
+    +   '<button class="ds-rm-btn" title="Remove table" onclick="dsRemoveTable(' + idx + ',' + tIdx + ')">✕</button>'
+    + '</div>'
+  ).join('');
+  return rows
+    + '<div style="margin-top:0.5rem">'
+    +   '<button class="ds-add-btn" onclick="dsAddTable(' + idx + ')">＋ Add table</button>'
+    + '</div>';
+}
+
+function dsRenderSelectsBody(d, idx){
+  const v = d.visual || {};
+  const tableOpts = (v.tables || []).map((t, i) =>
+    '<option value="' + i + '">' + escapeHtml(dsAliasOrName(t) || '(table ' + (i + 1) + ')') + '</option>'
+  ).join('');
+  const aggs = ['', 'SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
+  const rows = (v.selects || []).map((s, sIdx) => {
+    const aggOpts = aggs.map(a =>
+      '<option value="' + a + '"' + (s.agg === a ? ' selected' : '') + '>' + (a || '(none)') + '</option>'
+    ).join('');
+    const tblOpts = (v.tables || []).map((t, i) =>
+      '<option value="' + i + '"' + (s.tableIdx === i ? ' selected' : '') + '>'
+      + escapeHtml(dsAliasOrName(t) || '(table ' + (i + 1) + ')') + '</option>'
+    ).join('');
+    return '<div class="ds-row">'
+      +   '<span class="ds-row-label">SELECT ' + (sIdx + 1) + '</span>'
+      +   '<div class="ds-row-fields">'
+      +     '<select class="ds-select" onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'tableIdx\',this.value)">' + tblOpts + '</select>'
+      +     '<input class="ds-input" placeholder="column" value="' + escapeHtml(s.col || '') + '" '
+      +       'onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'col\',this.value)">'
+      +     '<select class="ds-select" style="min-width:90px" onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'agg\',this.value)">' + aggOpts + '</select>'
+      +     '<input class="ds-input" placeholder="alias (optional)" value="' + escapeHtml(s.alias || '') + '" '
+      +       'onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'alias\',this.value)">'
+      +   '</div>'
+      +   '<button class="ds-rm-btn" title="Remove" onclick="dsRemoveSelect(' + idx + ',' + sIdx + ')">✕</button>'
+      + '</div>';
+  }).join('');
+  return rows
+    + '<div style="margin-top:0.5rem">'
+    +   '<button class="ds-add-btn" onclick="dsAddSelect(' + idx + ')">＋ Add column</button>'
+    + '</div>';
+}
+
+function dsRenderJoinsBody(d, idx){
+  const v = d.visual || {};
+  const rows = (v.joins || []).map((j, jIdx) => {
+    const rightTbl = v.tables[j.rightTableIdx];
+    const rightLabel = rightTbl ? dsAliasOrName(rightTbl) : '(removed)';
+    const rightOpts = (v.tables || []).map((t, i) =>
+      i === 0 ? '' : '<option value="' + i + '"' + (j.rightTableIdx === i ? ' selected' : '') + '>'
+                   + escapeHtml(dsAliasOrName(t)) + '</option>'
+    ).join('');
+    const typeOpts = ['INNER', 'LEFT'].map(tp =>
+      '<option value="' + tp + '"' + (j.type === tp ? ' selected' : '') + '>' + tp + '</option>'
+    ).join('');
+    const conds = (j.conditions || []).map((c, cIdx) => {
+      const leftTblOpts = (v.tables || []).map((t, i) =>
+        '<option value="' + i + '"' + (c.leftTableIdx === i ? ' selected' : '') + '>'
+        + escapeHtml(dsAliasOrName(t) || '(t' + (i + 1) + ')') + '</option>'
+      ).join('');
+      const opOpts = ['=', '<>', '<', '<=', '>', '>='].map(op =>
+        '<option value="' + op + '"' + (c.op === op ? ' selected' : '') + '>' + op + '</option>'
+      ).join('');
+      return '<div class="ds-row" style="grid-template-columns:auto 1fr auto;padding-left:1.5rem">'
+        +    '<span class="ds-row-label">ON</span>'
+        +    '<div class="ds-row-fields">'
+        +      '<select class="ds-select" onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'leftTableIdx\',this.value)">' + leftTblOpts + '</select>'
+        +      '<input class="ds-input" placeholder="column" value="' + escapeHtml(c.leftCol || '') + '" '
+        +        'onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'leftCol\',this.value)">'
+        +      '<select class="ds-select" style="min-width:60px" onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'op\',this.value)">' + opOpts + '</select>'
+        +      '<span style="font-size:10px;color:var(--text3);font-family:var(--mono)">' + escapeHtml(rightLabel) + '.</span>'
+        +      '<input class="ds-input" placeholder="column" value="' + escapeHtml(c.rightCol || '') + '" '
+        +        'onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'rightCol\',this.value)">'
+        +    '</div>'
+        +    '<button class="ds-rm-btn" title="Remove condition" onclick="dsRemoveJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ')">✕</button>'
+        + '</div>';
+    }).join('');
+    return '<div style="margin-bottom:0.6rem;padding:0.5rem;background:var(--bg3);border-radius:6px">'
+      +    '<div class="ds-row">'
+      +      '<span class="ds-row-label">JOIN</span>'
+      +      '<div class="ds-row-fields">'
+      +        '<select class="ds-select" style="min-width:80px" onchange="dsUpdateJoin(' + idx + ',' + jIdx + ',\'type\',this.value)">' + typeOpts + '</select>'
+      +        '<select class="ds-select" onchange="dsUpdateJoin(' + idx + ',' + jIdx + ',\'rightTableIdx\',this.value)">' + rightOpts + '</select>'
+      +      '</div>'
+      +      '<button class="ds-rm-btn" title="Remove join" onclick="dsRemoveJoin(' + idx + ',' + jIdx + ')">✕</button>'
+      +    '</div>'
+      +    conds
+      +    '<div style="margin-top:0.4rem;padding-left:1.5rem"><button class="ds-add-btn" onclick="dsAddJoinCond(' + idx + ',' + jIdx + ')">＋ Add condition</button></div>'
+      + '</div>';
+  }).join('');
+  return rows
+    + '<div style="margin-top:0.4rem">'
+    +   '<button class="ds-add-btn" onclick="dsAddJoin(' + idx + ')">＋ Add join</button>'
+    + '</div>';
+}
+
+function dsRenderGroupBody(d, idx){
+  const v = d.visual || {};
+  if ((v.tables || []).length === 0) {
+    return '<div style="font-size:11px;color:var(--text3)">Add tables first.</div>';
+  }
+  const rows = (v.groupBy || []).map((g, gIdx) => {
+    const tblOpts = (v.tables || []).map((t, i) =>
+      '<option value="' + i + '"' + (g.tableIdx === i ? ' selected' : '') + '>'
+      + escapeHtml(dsAliasOrName(t) || '(t' + (i + 1) + ')') + '</option>'
+    ).join('');
+    return '<div class="ds-row">'
+      +    '<span class="ds-row-label">GROUP</span>'
+      +    '<div class="ds-row-fields">'
+      +      '<select class="ds-select" onchange="dsUpdateGroup(' + idx + ',' + gIdx + ',\'tableIdx\',this.value)">' + tblOpts + '</select>'
+      +      '<input class="ds-input" placeholder="column" value="' + escapeHtml(g.col || '') + '" '
+      +        'onchange="dsUpdateGroup(' + idx + ',' + gIdx + ',\'col\',this.value)">'
+      +    '</div>'
+      +    '<button class="ds-rm-btn" title="Remove" onclick="dsRemoveGroup(' + idx + ',' + gIdx + ')">✕</button>'
+      + '</div>';
+  }).join('');
+  const note = '<div style="font-size:10px;color:var(--text3);margin-top:0.4rem;font-style:italic">'
+            + 'Tip: if any output column has an aggregation (SUM/AVG/COUNT/etc), Group By is auto-derived from the non-aggregated columns. Add explicit groups here only when you need a different grouping.'
+            + '</div>';
+  return rows
+    + '<div style="margin-top:0.4rem">'
+    +   '<button class="ds-add-btn" onclick="dsAddGroup(' + idx + ')">＋ Add group</button>'
+    + '</div>'
+    + note;
+}
+
+function dsRenderWhereBody(d, idx){
+  const v = d.visual || {};
+  return '<div style="display:flex;flex-direction:column;gap:0.5rem">'
+       +   '<div>'
+       +     '<label class="form-label">WHERE clause (raw SQL fragment, without the WHERE keyword)</label>'
+       +     '<input class="ds-input ds-input-wide" style="width:100%" placeholder="e.g. Status = \'Active\' AND Amount > 0" '
+       +       'value="' + escapeHtml(v.where || '') + '" onchange="dsUpdate(' + idx + ',\'visual.where\',this.value)">'
+       +   '</div>'
+       +   '<div>'
+       +     '<label class="form-label">ORDER BY (raw fragment, without the ORDER BY keyword)</label>'
+       +     '<input class="ds-input ds-input-wide" style="width:100%" placeholder="e.g. CreatedDate DESC" '
+       +       'value="' + escapeHtml(v.orderBy || '') + '" onchange="dsUpdate(' + idx + ',\'visual.orderBy\',this.value)">'
+       +   '</div>'
+       +   '<div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">'
+       +     '<label class="form-label" style="margin:0">Limit:</label>'
+       +     '<input class="ds-input" type="number" min="0" placeholder="(no limit)" style="min-width:100px" '
+       +       'value="' + (v.limit != null ? v.limit : '') + '" '
+       +       'onchange="dsUpdate(' + idx + ',\'visual.limit\',this.value === \'\' ? null : parseInt(this.value, 10))">'
+       +     '<select class="ds-select" onchange="dsUpdate(' + idx + ',\'visual.limitSyntax\',this.value)">'
+       +       '<option value="none"' + (v.limitSyntax === 'none' ? ' selected' : '') + '>No limit clause</option>'
+       +       '<option value="top"' +  (v.limitSyntax === 'top'  ? ' selected' : '') + '>SELECT TOP n (SQL Server)</option>'
+       +       '<option value="limit"' + (v.limitSyntax === 'limit' ? ' selected' : '') + '>LIMIT n (Postgres / MySQL)</option>'
+       +     '</select>'
+       +   '</div>'
+       + '</div>';
+}
+
+function dsRenderSqlPreview(d, idx){
+  let sql = '';
+  let err = '';
+  try { sql = dsBuildSql(d); } catch (e) { err = e.message; }
+  if (err) {
+    return '<div class="ds-sql-box" style="color:var(--amber)">-- Cannot build SQL yet:\n-- ' + escapeHtml(err) + '</div>';
+  }
+  return '<div class="ds-sql-box">' + escapeHtml(sql) + '</div>'
+       + '<div style="margin-top:0.4rem">'
+       +   '<button class="ds-add-btn" onclick="dsCopyToRaw(' + idx + ')">📋 Copy to raw editor</button>'
+       + '</div>';
+}
+
+function dsCopyToRaw(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  try {
+    d.rawSql = dsBuildSql(d);
+    d.mode = 'raw';
+    r.updatedAt = nowIso();
+    rbSaveToLocal();
+    dsRender();
+  } catch (e) { showStatus('Could not copy: ' + e.message, 'err'); }
+}
+
+function dsRenderRaw(d, idx){
+  return '<label class="form-label">Raw SQL (single SELECT statement)</label>'
+       + '<textarea class="ds-sql-textarea" placeholder="-- write your SQL here\n-- e.g. SELECT TOP 100 * FROM dbo.GLAccount" '
+       +   'oninput="dsUpdate(' + idx + ',\'rawSql\',this.value)">' + escapeHtml(d.rawSql || '') + '</textarea>'
+       + '<div style="margin-top:0.5rem">' + dsRenderAiBody(d, idx) + '</div>';
+}
+
+function dsRenderAiBody(d, idx){
+  const status = d.aiStatus || null;
+  const statusLine = status
+    ? '<div class="ds-ai-status ' + (status.kind || '') + '">' + escapeHtml(status.text || '') + '</div>'
+    : '<div class="ds-ai-status">Describe the dataset in plain English. Claude will write the SQL.</div>';
+  return '<div class="ds-ai">'
+       +   '<textarea class="ds-ai-input" placeholder="e.g. Total revenue per matter for the last 12 months, grouped by office" '
+       +     'oninput="dsUpdate(' + idx + ',\'aiPrompt\',this.value)">' + escapeHtml(d.aiPrompt || '') + '</textarea>'
+       +   '<div class="ds-ai-row">'
+       +     '<button class="btn btn-purple btn-sm" onclick="dsAiSuggest(' + idx + ')">✨ Generate SQL</button>'
+       +     statusLine
+       +   '</div>'
+       + '</div>';
+}
+
+
 async function rbInit(){
   // Restore state from localStorage. Drop 2 will replace this with a Cosmos
   // fetch via /api/reports, falling back to local on network failure.
