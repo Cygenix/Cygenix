@@ -947,12 +947,23 @@ app.http('data', {
         // server-side so all data fetching happens once and the page is
         // self-contained (inlined CSS, no asset roundtrips during print).
         //
-        // Data sourcing (matches the rest of this file):
-        //   - Jobs live embedded in the user's `projects` doc (jobs[] array)
-        //   - Audit entries are filtered by jobId across the audit container
-        //
         // Auth: same x-user-id model as the other actions. Only the owner
         // can render their own jobs. No cross-user reads.
+        //
+        // IMPORTANT — field name mapping:
+        //
+        // The renderer functions (psd_section_*) expect a "rich" job shape
+        // with fields like job.tables[], job.wasIsRules[], job.transformations[],
+        // job.runtimeSeconds, job.runCompletedAt — NONE of which the runtime
+        // actually persists on a job record. The runtime saves: job.source,
+        // job.target, job.totalRows, job.created, job.lastRun, job.columnMapping,
+        // job.wasisRules (lowercase), job.insertSQL, etc.
+        //
+        // Without translation the document renders as a skeleton ("No table
+        // data", "No Was/Is rules active", Rows: 0, Runtime: —) regardless
+        // of what the migration actually did. This block enriches the raw
+        // job into the shape the renderer expects, sourced from what the
+        // runtime really stores.
         case 'project-summary-document': {
           const jobId = req.query.get('jobId');
           if (!jobId) return err(400, 'jobId query param is required');
@@ -969,8 +980,8 @@ app.http('data', {
           }
 
           const allJobs = Array.isArray(projectsDoc.jobs) ? projectsDoc.jobs : [];
-          const job = allJobs.find(j => j && (j.id === jobId || j.jobId === jobId));
-          if (!job) return err(404, `Job not found: ${jobId}`);
+          const rawJob = allJobs.find(j => j && (j.id === jobId || j.jobId === jobId));
+          if (!rawJob) return err(404, `Job not found: ${jobId}`);
 
           // Audit entries for this job. Audit is partitioned by userId so we
           // scope to the caller; cross-user audit reads aren't possible by
@@ -994,17 +1005,168 @@ app.http('data', {
             ctx.log('Audit query for project summary doc failed (non-fatal):', e.message);
           }
 
-          // Project context (best-effort — projects[] is an array on the user doc)
+          // Project context — projects[] is an array on the user doc. If a
+          // matching project exists, its metadata is much richer than what
+          // we'd derive from the job alone (client, srcSystem, tgtSystem,
+          // analyst, pm, ref).
           const projectsArr = Array.isArray(projectsDoc.projects) ? projectsDoc.projects : [];
-          const project = projectsArr.find(p => p && p.id === job.projectId) || {
-            id:   job.projectId || '',
-            name: job.projectName || projectsDoc.project_settings?.name || 'Untitled project',
-            client:       projectsDoc.project_settings?.client       || '',
-            sourceSystem: projectsDoc.project_settings?.sourceSystem || job.source || '',
-            targetSystem: projectsDoc.project_settings?.targetSystem || job.target || ''
+          const projectRecord = projectsArr.find(p => p && p.id === rawJob.projectId) || null;
+
+          // ── Field-name normalisation ─────────────────────────────────
+          // Source / target table names — the runtime stores these under
+          // several possible keys depending on which save path produced
+          // the job. Try them in priority order so we always find what's
+          // there.
+          const srcTable = rawJob.sourceTable || rawJob.srcTable || rawJob.source || '';
+          const tgtTable = rawJob.targetTable || rawJob.tgtTable || rawJob.target || '';
+
+          // Tables list — runtime saves totalRows on the job, but rarely a
+          // tables[] array. Synthesise a single-row tables list from the
+          // job's metadata so the "What was migrated" section has data.
+          let tables = Array.isArray(rawJob.tables) && rawJob.tables.length
+            ? rawJob.tables.map(t => ({
+                name:        t.name || t.tgtTable || tgtTable || '—',
+                sourceRows:  t.sourceRows != null ? t.sourceRows : (t.rows != null ? t.rows : (rawJob.totalRows || 0)),
+                targetRows:  t.targetRows != null ? t.targetRows : (t.insertedRows != null ? t.insertedRows : (rawJob.totalRows || 0)),
+              }))
+            : [];
+          if (!tables.length && (srcTable || tgtTable || rawJob.totalRows)) {
+            const total = Number(rawJob.totalRows || 0);
+            tables = [{
+              name:        tgtTable || srcTable || rawJob.name || '—',
+              sourceRows:  total,
+              targetRows:  total,
+            }];
+          }
+
+          // Transformations — the saved column mapping records the transform
+          // per column. Surface only rows where something non-trivial
+          // happened (transform != NONE, literal columns, type changes).
+          const transformations = (rawJob.columnMapping || [])
+            .filter(m => m && m.tgtCol && (
+              (m.transform && m.transform !== 'NONE') ||
+              m.literalValue != null ||
+              (m.tgtType && m.srcType && m.tgtType !== m.srcType)
+            ))
+            .map(m => ({
+              target:   `${tgtTable || ''}${tgtTable ? '.' : ''}${m.tgtCol}`,
+              fromType: m.srcType || '—',
+              toType:   m.tgtType || '—',
+              reason:   m.transform && m.transform !== 'NONE'
+                          ? `Transform: ${m.transform}${m.transformExpr ? ' (' + m.transformExpr + ')' : ''}`
+                          : (m.literalValue != null ? `Literal: ${m.literalValue}` : 'Type change'),
+            }));
+
+          // Was/Is rules — combine three sources, dedup, filter to this
+          // job's source table only.
+          //
+          //   1. job.wasisRules (lowercase) — sometimes copied onto the
+          //      job by the runtime; unfiltered global list.
+          //   2. user-level wasis_rules array.
+          //   3. CASE WHEN substitutions parsed out of insertSQL — that's
+          //      the ground truth for what the SQL actually ran.
+          const stripSchema = (s) => String(s || '').split('.').pop().toLowerCase();
+          const jobSrcTableNorm = stripSchema(srcTable);
+          const allWasis = Array.isArray(projectsDoc.wasis_rules) ? projectsDoc.wasis_rules : [];
+          const wasisCandidates = (Array.isArray(rawJob.wasisRules) && rawJob.wasisRules.length)
+            ? rawJob.wasisRules
+            : allWasis;
+
+          const sqlSubstitutions = [];
+          if (typeof rawJob.insertSQL === 'string' && rawJob.insertSQL.length) {
+            const blocks = rawJob.insertSQL.match(/CASE\s+WHEN[\s\S]+?END(?:\s+AS\s+\[[^\]]+\])?/gi) || [];
+            blocks.forEach(b => {
+              const colMatch = b.match(/WHEN\s+\[?(\w+)\]?\s*=/i);
+              if (!colMatch) return;
+              const colName = colMatch[1];
+              const pairRe = /WHEN\s+\[?\w+\]?\s*=\s*N?'([^']*)'\s+THEN\s+N?'([^']*)'/gi;
+              let m;
+              while ((m = pairRe.exec(b)) !== null) {
+                sqlSubstitutions.push({ field: colName, oldVal: m[1], newVal: m[2] });
+              }
+            });
+          }
+
+          const wasIsSeen = new Set();
+          const wasIsRules = [];
+          const pushWasIs = (table, field, oldVal, newVal) => {
+            const key = `${(table||'').toLowerCase()}|${(field||'').toLowerCase()}|${oldVal}|${newVal}`;
+            if (wasIsSeen.has(key)) return;
+            wasIsSeen.add(key);
+            wasIsRules.push({
+              table: table || srcTable || '*',
+              field: field || '*',
+              oldVal, newVal,
+              rowsAffected: 0
+            });
+          };
+          wasisCandidates.forEach(r => {
+            if (!r) return;
+            const ruleTableNorm = stripSchema(r.srcTable);
+            // Empty rule table = applies anywhere; otherwise must match this job
+            if (ruleTableNorm && ruleTableNorm !== jobSrcTableNorm) return;
+            pushWasIs(r.srcTable || srcTable, r.srcField, r.oldVal, r.newVal);
+          });
+          sqlSubstitutions.forEach(s => {
+            pushWasIs(srcTable, s.field, s.oldVal, s.newVal);
+          });
+
+          // Runtime — use explicit fields if present, otherwise derive
+          // from created → lastRun timestamps.
+          const runStartedAt   = rawJob.runStartedAt   || rawJob.created || null;
+          const runCompletedAt = rawJob.runCompletedAt || rawJob.lastRun || null;
+          let runtimeSeconds = null;
+          if (rawJob.runtimeSeconds != null) {
+            runtimeSeconds = Number(rawJob.runtimeSeconds);
+          } else if (runStartedAt && runCompletedAt) {
+            const ms = new Date(runCompletedAt).getTime() - new Date(runStartedAt).getTime();
+            if (Number.isFinite(ms) && ms >= 0) runtimeSeconds = Math.round(ms / 1000);
+          }
+
+          const status = rawJob.executionStatus || rawJob.status || 'unknown';
+
+          // Build the enriched objects the renderer expects
+          const job = {
+            id:             rawJob.id || rawJob.jobId,
+            jobId:          rawJob.id || rawJob.jobId,
+            name:           rawJob.name || 'Untitled job',
+            version:        rawJob.version || 'v1',
+            status:         status,
+            operator:       rawJob.operator || rawJob.lastRunBy || userId || 'unknown',
+            runStartedAt,
+            runCompletedAt,
+            runtimeSeconds,
+            srcTable,
+            tgtTable,
+            tables,
+            transformations,
+            wasIsRules,
+            reconciliation: rawJob.reconciliation || { sums: [], fks: [] },
+            warnings:       Array.isArray(rawJob.warnings) ? rawJob.warnings : [],
           };
 
-          ctx.log(`Rendering Project Summary Document for ${userId}, job ${jobId}`);
+          const project = {
+            id:           (projectRecord && projectRecord.id) || rawJob.projectId || '',
+            name:         (projectRecord && projectRecord.name)
+                            || rawJob.projectName
+                            || projectsDoc.project_settings?.name
+                            || rawJob.name
+                            || 'Untitled project',
+            client:       (projectRecord && projectRecord.client)
+                            || projectsDoc.project_settings?.client
+                            || '',
+            sourceSystem: (projectRecord && (projectRecord.srcSystem || projectRecord.sourceSystem))
+                            || projectsDoc.project_settings?.sourceSystem
+                            || srcTable
+                            || '',
+            targetSystem: (projectRecord && (projectRecord.tgtSystem || projectRecord.targetSystem))
+                            || projectsDoc.project_settings?.targetSystem
+                            || tgtTable
+                            || '',
+          };
+
+          ctx.log(`Rendering Project Summary Document for ${userId}, job ${jobId} ` +
+                  `(tables=${tables.length}, wasIs=${wasIsRules.length}, transforms=${transformations.length})`);
           const body = renderProjectSummaryDocument(project, job, auditEntries);
           return html(body);
         }
