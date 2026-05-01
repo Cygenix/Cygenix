@@ -225,7 +225,44 @@ body.cyg-collapsed{padding-left:54px}
 /* Collapsed dataset view (when not the focus) */
 .ds-card.collapsed .ds-body{display:none}
 .ds-toggle-collapse{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:11px;font-family:var(--mono);padding:0 0.4rem}
-.ds-toggle-collapse:hover{color:var(--accent)}
+.ds-toggle-collapse:hover{color:var(--accent)}/* ── Parameters tab ─────────────────────────────────────────────────────────
+   Each parameter is a card with: header (name, label, type, required), then
+   a type-specific body (default value, dropdown options for dropdown type).
+   Layout mirrors the dataset card so the page feels consistent. */
+.pa-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.75rem}
+.pa-head{padding:0.75rem 1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;border-bottom:0.5px solid var(--border)}
+.pa-name-prefix{color:var(--text3);font-family:var(--mono);font-size:13px;flex-shrink:0}
+.pa-name{flex:1;min-width:140px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:13px;font-weight:500;color:var(--text);outline:none;font-family:var(--mono)}
+.pa-name:focus{border-color:var(--accent)}
+.pa-label{flex:1;min-width:140px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.7rem;font-size:13px;color:var(--text);outline:none;font-family:var(--serif)}
+.pa-label:focus{border-color:var(--accent)}
+.pa-type{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;min-width:100px}
+.pa-required{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:5px;cursor:pointer;font-family:var(--serif)}
+.pa-required input{cursor:pointer}
+.pa-body{padding:1rem}
+.pa-row{display:flex;gap:0.5rem;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap}
+.pa-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;min-width:90px}
+.pa-input{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+.pa-input:focus{border-color:var(--accent)}
+.pa-options-toggle{display:inline-flex;gap:0;border-radius:6px;overflow:hidden;border:0.5px solid var(--border2)}
+.pa-options-toggle button{background:var(--bg3);color:var(--text3);border:none;padding:0.35rem 0.7rem;font-size:11px;cursor:pointer;font-family:var(--serif);border-right:0.5px solid var(--border2)}
+.pa-options-toggle button:last-child{border-right:none}
+.pa-options-toggle button.active{background:var(--accent-glow);color:var(--accent)}
+.pa-options-toggle button:hover:not(.active){color:var(--text2)}
+.pa-static-option{display:flex;gap:0.4rem;align-items:center;margin-bottom:0.3rem}
+.pa-static-option input{flex:1}
+.pa-query-textarea{width:100%;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.6rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;min-height:80px;resize:vertical;line-height:1.5}
+.pa-query-textarea:focus{border-color:var(--accent)}
+.pa-query-result{margin-top:0.5rem;padding:0.5rem 0.7rem;border-radius:6px;font-size:11px;font-family:var(--mono);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.pa-query-result.ok{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.pa-query-result.err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+.pa-query-result.idle{background:var(--bg3);color:var(--text3);border:0.5px solid var(--border2)}
+.pa-options-preview{display:flex;gap:4px;flex-wrap:wrap;margin-top:0.4rem;width:100%}
+.pa-option-pill{background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:2px 8px;font-size:10px;color:var(--text2);font-family:var(--mono)}
+.pa-section-divider{margin:1rem 0;height:0.5px;background:var(--border)}
+.pa-hint{font-size:10px;color:var(--text3);margin-top:0.3rem;font-style:italic;line-height:1.5}
+.pa-hint code{background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-style:normal;color:var(--text2)}
+
 </style>
 </head>
 <body>
@@ -337,10 +374,14 @@ body.cyg-collapsed{padding-left:54px}
 
         <div id="rb-tab-parameters" class="rb-tab-pane" style="display:none">
           <div class="panel"><div class="panel-body">
-            <div class="empty-state">
-              <strong>Parameters</strong> — coming in Drop 3.<br>
-              Define run-time inputs (text / number / date / dropdown). Dropdown options can be static or come from a SQL query.
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+              <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
+                Define run-time inputs. Reference parameters in raw SQL as <code style="color:var(--accent);background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:11px">@paramName</code>. Dropdown options can be static or come from a SQL query. Strings are auto-escaped, dates passed as ISO literals.
+              </div>
+              <button class="btn btn-purple btn-sm" onclick="paAddParam()">＋ Add parameter</button>
             </div>
+            <div id="pa-list"></div>
+            <div id="pa-empty" class="empty-state">No parameters yet. Click <strong>＋ Add parameter</strong> to add one.</div>
           </div></div>
         </div>
 
@@ -622,6 +663,7 @@ function rbRenderEditor(){
   // safe to call even when the tab is hidden — that way switching tabs is
   // instant. Drops 3-5 add their own renderers (parameters, layout, runs).
   if (typeof dsRender === 'function') dsRender();
+  if (typeof paRender === 'function') paRender();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1445,11 +1487,26 @@ async function dsTestRun(idx){
     return;
   }
 
-  // Cap the test-run to a small number of rows. We wrap the SQL in a
-  // subquery so user-written ORDER BY / LIMIT / TOP isn't fought with —
-  // but only if it's not already wrapped. A safer approach: just execute
-  // the SQL and slice client-side. Slightly more bandwidth but no SQL
-  // rewriting risk. Datasets in v1 are typically small for this preview.
+  // Parameter substitution. For test runs we don't have a parameter-prompt
+  // UI yet (that's the Preview tab in Drop 4), so we use each parameter's
+  // default value. Parameters with no default and required=true throw.
+  // Parameters with no default and required=false get substituted as NULL.
+  // This lets the user iterate on a query containing @params without having
+  // to build the run UI first.
+  const params = r.parameters || [];
+  if (params.length > 0 && paFindReferences(sql).length > 0) {
+    try {
+      const values = {};
+      params.forEach(p => { values[p.name] = p.default; });
+      sql = paSubstitute(sql, values, params);
+    } catch (e) {
+      d.lastTestRun = { ts: Date.now(), rowCount: 0, error: 'Parameter substitution: ' + e.message };
+      rbSaveToLocal(); dsRender();
+      showStatus('Parameter substitution failed: ' + e.message, 'err');
+      return;
+    }
+  }
+
   showStatus('Running ' + (d.name || 'dataset') + '…', 'info');
   try {
     const rows = await dsExec(conn, sql);
@@ -1959,6 +2016,549 @@ function dsRenderAiBody(d, idx){
 }
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Parameters tab
+//
+// State shape (per parameter, lives on Report.parameters[]):
+//   Parameter = {
+//     id, name, label,
+//     type: 'text' | 'number' | 'date' | 'dropdown',
+//     required: bool,
+//     default: any,                   // used at run time if user leaves field blank
+//
+//     // Dropdown-only:
+//     optionsKind: 'static' | 'query',
+//     staticOptions: [{ value, label }, ...],
+//     queryConn: { kind, savedId },   // which connection to run the options query on
+//     query: string,                  // SELECT — first column = value, second = label (or just value)
+//     cachedOptions: [{ value, label }, ...],
+//     cachedAt: iso timestamp
+//   }
+//
+// Substitution rules (applied at run time, NOT at SQL preview time):
+//   - @paramName replaced with the parameter's value, escaped per type:
+//       string  → 'value' with single quotes doubled
+//       number  → as-is (validated before substitution)
+//       date    → 'YYYY-MM-DD' (SQL Server understands this date literal)
+//       boolean → 1 or 0
+//   - Word-boundary match: @startDate matches @startDate but not @startDates
+//   - Undefined params referenced in SQL throw an error at run time
+//   - Multi-select not supported in v1
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── CRUD on the current report's parameters ─────────────────────────────────
+function paCurrentReport(){
+  return rbReports.find(x => x.id === rbCurrentId) || null;
+}
+
+function paAddParam(){
+  const r = paCurrentReport();
+  if (!r) { showStatus('Select or create a report first.', 'err'); return; }
+  if (!r.parameters) r.parameters = [];
+  // Generate a unique parameter name. Reserved char-safe (no spaces, hyphens).
+  let n = 1;
+  let name = 'param1';
+  const taken = new Set(r.parameters.map(p => p.name));
+  while (taken.has(name)) { n++; name = 'param' + n; }
+  const p = {
+    id: uuid(),
+    name: name,
+    label: 'Parameter ' + n,
+    type: 'text',
+    required: false,
+    default: '',
+    // Dropdown defaults — harmless to keep on non-dropdown types, just unused
+    optionsKind: 'static',
+    staticOptions: [],
+    queryConn: { kind: 'src', savedId: '' },
+    query: '',
+    cachedOptions: [],
+    cachedAt: null
+  };
+  r.parameters.push(p);
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  paRender();
+}
+
+function paRemove(idx){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  if (!confirm('Delete parameter "@' + p.name + '"? Any datasets referencing it will break at run time.')) return;
+  r.parameters.splice(idx, 1);
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  paRender();
+}
+
+function paUpdate(idx, path, value){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  const parts = path.split('.');
+  let target = p;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (target[parts[i]] == null) target[parts[i]] = {};
+    target = target[parts[i]];
+  }
+  target[parts[parts.length - 1]] = value;
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+}
+
+function paUpdateName(idx, value){
+  // Special handling for the parameter name: must be a valid SQL identifier
+  // (letters, digits, underscore; not starting with a digit). Strip invalid
+  // chars rather than rejecting the keystroke — UX-friendlier than blocking.
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  let cleaned = String(value || '').replace(/[^A-Za-z0-9_]/g, '');
+  if (/^[0-9]/.test(cleaned)) cleaned = '_' + cleaned;
+  // Uniqueness check — append a suffix if the chosen name collides
+  const others = (r.parameters || []).filter((_, i) => i !== idx).map(x => x.name);
+  let final = cleaned;
+  let n = 2;
+  while (others.includes(final) && cleaned) { final = cleaned + '_' + n; n++; }
+  p.name = final;
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  paRender();  // re-render so the input shows the cleaned/uniqueified value
+}
+
+function paChangeType(idx, value){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  p.type = value;
+  // If switching to/from dropdown, reset cached options because they no
+  // longer apply.
+  if (value === 'dropdown') {
+    if (!p.optionsKind) p.optionsKind = 'static';
+    if (!Array.isArray(p.staticOptions)) p.staticOptions = [];
+  } else {
+    p.cachedOptions = [];
+    p.cachedAt = null;
+  }
+  // Reset default when switching types — the old default may not be valid
+  // for the new type (e.g. 'foo' as a number).
+  p.default = '';
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  paRender();
+}
+
+function paAddStaticOption(idx){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  if (!Array.isArray(p.staticOptions)) p.staticOptions = [];
+  p.staticOptions.push({ value: '', label: '' });
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  paRender();
+}
+
+function paRemoveStaticOption(idx, oIdx){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  p.staticOptions.splice(oIdx, 1);
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  paRender();
+}
+
+function paUpdateStaticOption(idx, oIdx, key, value){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  if (!p.staticOptions[oIdx]) return;
+  p.staticOptions[oIdx][key] = value;
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+}
+
+function paQueryConnChange(idx, value){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  if (value && value.startsWith('saved:')) {
+    p.queryConn = { kind: 'saved', savedId: value.slice('saved:'.length) };
+  } else {
+    p.queryConn = { kind: value || 'src', savedId: '' };
+  }
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+}
+
+// ── Test the dropdown options query ────────────────────────────────────────
+async function paTestQuery(idx){
+  const r = paCurrentReport(); if (!r) return;
+  const p = (r.parameters || [])[idx]; if (!p) return;
+  if (p.type !== 'dropdown' || p.optionsKind !== 'query') return;
+  if (!(p.query || '').trim()) {
+    p.cachedOptions = [];
+    p.cachedQueryError = 'Query is empty';
+    rbSaveToLocal(); paRender();
+    return;
+  }
+
+  // Resolve the query connection. Reuse the dataset machinery — it understands
+  // src/tgt/saved alike.
+  const queryConn = p.queryConn || { kind: 'src', savedId: '' };
+  const fakeDataset = { connection: queryConn };
+  const conn = dsResolveConnection(fakeDataset);
+  if (!conn) {
+    p.cachedQueryError = 'No connection set for the options query';
+    rbSaveToLocal(); paRender();
+    return;
+  }
+
+  showStatus('Testing dropdown query…', 'info');
+  try {
+    // Substitute any @paramName references in the options query. This lets
+    // users build cascading dropdowns (matter dropdown filtered by @clientId).
+    // Skip self — a parameter's own query can't reference itself, that'd
+    // be a chicken-and-egg.
+    let querySql = p.query;
+    const otherParams = (r.parameters || []).filter(x => x !== p);
+    if (otherParams.length > 0 && paFindReferences(querySql).length > 0) {
+      const values = {};
+      otherParams.forEach(x => { values[x.name] = x.default; });
+      querySql = paSubstitute(querySql, values, otherParams);
+    }
+    const rows = await dsExec(conn, querySql);
+    if (rows.length === 0) {
+      p.cachedOptions = [];
+      p.cachedQueryError = null;
+      p.cachedAt = nowIso();
+      showStatus('Query OK but returned 0 rows', 'info');
+    } else {
+      // First column = value; if there's a second column, it's the label.
+      // If only one column, value AND label are the same. This matches the
+      // Power BI Report Builder convention.
+      const headers = Object.keys(rows[0]);
+      const valueCol = headers[0];
+      const labelCol = headers.length > 1 ? headers[1] : valueCol;
+      p.cachedOptions = rows.map(row => ({
+        value: row[valueCol] == null ? '' : String(row[valueCol]),
+        label: row[labelCol] == null ? '' : String(row[labelCol])
+      }));
+      p.cachedQueryError = null;
+      p.cachedAt = nowIso();
+      showStatus('Query OK · ' + rows.length.toLocaleString() + ' option' + (rows.length === 1 ? '' : 's'), 'ok');
+    }
+    rbSaveToLocal();
+  } catch (e) {
+    p.cachedOptions = [];
+    p.cachedQueryError = e.message;
+    rbSaveToLocal();
+    showStatus('Query failed: ' + e.message, 'err');
+  }
+  paRender();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Parameter substitution into SQL — used at run time (NOT at preview time)
+//
+// Exposed for downstream use:
+//   paSubstitute(sql, paramValues)
+//     paramValues is an object: { startDate: '2025-01-01', maxAmount: 1000 }
+//     Returns SQL with @paramName replaced by escaped literals.
+//   paFindReferences(sql)
+//     Returns array of param names referenced in the SQL (e.g. ['startDate']).
+//   paEscapeForSql(value, type)
+//     Lower-level: produces a SQL literal for one value.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Word-boundary regex to find @paramName references. SQL Server's
+// own parameter syntax is also @, so we have to be careful — but in
+// practice if the user is using parameters, they're not also writing
+// raw @-prefixed SQL Server parameters in the same query.
+// Match: @ followed by an identifier-character run.
+const _paRefRe = /@([A-Za-z_][A-Za-z0-9_]*)\b/g;
+
+function paFindReferences(sql){
+  if (!sql) return [];
+  const out = new Set();
+  let m;
+  _paRefRe.lastIndex = 0;
+  while ((m = _paRefRe.exec(sql)) !== null) out.add(m[1]);
+  return Array.from(out);
+}
+
+function paEscapeForSql(value, type){
+  // Used to produce a SQL literal for a single value. Defensive: assumes
+  // nothing about the caller's downstream context. Returns a string.
+  if (value == null || value === '') {
+    // Empty/null → SQL NULL. The user's clause must handle that (e.g.
+    // `WHERE (@x IS NULL OR Status = @x)` for optional filters).
+    return 'NULL';
+  }
+  switch (type) {
+    case 'number': {
+      const n = Number(value);
+      if (!isFinite(n)) throw new Error('Parameter is not a valid number: ' + value);
+      return String(n);
+    }
+    case 'date': {
+      // Accept a Date, an ISO string, or a YYYY-MM-DD string. Always emit
+      // 'YYYY-MM-DD' which SQL Server reliably parses as a date literal.
+      let d;
+      if (value instanceof Date) d = value;
+      else if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return "'" + trimmed + "'";
+        d = new Date(trimmed);
+      } else {
+        d = new Date(value);
+      }
+      if (isNaN(d.getTime())) throw new Error('Parameter is not a valid date: ' + value);
+      const iso = d.toISOString().slice(0, 10);
+      return "'" + iso + "'";
+    }
+    case 'bool':
+    case 'boolean':
+      return value ? '1' : '0';
+    case 'text':
+    case 'dropdown':
+    default: {
+      // Strings: SQL Server escapes single quote by doubling.
+      const s = String(value).replace(/'/g, "''");
+      return "'" + s + "'";
+    }
+  }
+}
+
+function paSubstitute(sql, paramValues, paramDefs){
+  // paramDefs: array of Parameter objects (gives us each param's type).
+  // Replaces @name with the SQL literal of its value. Throws on unknown
+  // references that aren't satisfied by paramValues OR paramDefs.default.
+  if (!sql) return '';
+  const byName = {};
+  (paramDefs || []).forEach(p => { if (p && p.name) byName[p.name] = p; });
+
+  // Pre-validate: every referenced @name must have a matching parameter
+  // definition. Otherwise fail loudly at run time.
+  const refs = paFindReferences(sql);
+  refs.forEach(name => {
+    if (!byName[name]) {
+      throw new Error('SQL references @' + name + ' but no parameter is defined with that name.');
+    }
+  });
+
+  return sql.replace(_paRefRe, (whole, name) => {
+    const def = byName[name];
+    if (!def) return whole;  // unreachable due to pre-validation, but defensive
+    const provided = paramValues && Object.prototype.hasOwnProperty.call(paramValues, name)
+      ? paramValues[name]
+      : undefined;
+    let value = provided !== undefined ? provided : def.default;
+    if ((value == null || value === '') && def.required) {
+      throw new Error('Required parameter @' + name + ' has no value.');
+    }
+    return paEscapeForSql(value, def.type || 'text');
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Parameters render
+// ══════════════════════════════════════════════════════════════════════════════
+
+function paRender(){
+  const list  = $('pa-list');
+  const empty = $('pa-empty');
+  if (!list || !empty) return;
+
+  const r = paCurrentReport();
+  if (!r) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'Select or create a report to add parameters.';
+    return;
+  }
+  const params = r.parameters || [];
+  if (params.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'No parameters yet. Click <strong>＋ Add parameter</strong> to add one.';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = params.map((p, i) => paRenderCard(p, i)).join('');
+}
+
+function paRenderCard(p, idx){
+  const types = [
+    { v: 'text',     l: 'Text' },
+    { v: 'number',   l: 'Number' },
+    { v: 'date',     l: 'Date' },
+    { v: 'dropdown', l: 'Dropdown' },
+  ];
+  const typeOpts = types.map(t =>
+    '<option value="' + t.v + '"' + (p.type === t.v ? ' selected' : '') + '>' + t.l + '</option>'
+  ).join('');
+
+  const head = ''
+    + '<div class="pa-head">'
+    +   '<span class="pa-name-prefix">@</span>'
+    +   '<input class="pa-name" value="' + escapeHtml(p.name || '') + '" placeholder="paramName" '
+    +     'onchange="paUpdateName(' + idx + ',this.value)">'
+    +   '<input class="pa-label" value="' + escapeHtml(p.label || '') + '" placeholder="Display label" '
+    +     'onchange="paUpdate(' + idx + ',\'label\',this.value)">'
+    +   '<select class="pa-type" onchange="paChangeType(' + idx + ',this.value)">' + typeOpts + '</select>'
+    +   '<label class="pa-required">'
+    +     '<input type="checkbox"' + (p.required ? ' checked' : '') + ' '
+    +       'onchange="paUpdate(' + idx + ',\'required\',this.checked)"> Required'
+    +   '</label>'
+    +   '<button class="ds-rm-btn" title="Remove" onclick="paRemove(' + idx + ')">✕</button>'
+    + '</div>';
+
+  const body = ''
+    + '<div class="pa-body">'
+    +   paRenderDefault(p, idx)
+    +   (p.type === 'dropdown' ? paRenderDropdownOptions(p, idx) : '')
+    +   paRenderHint(p)
+    + '</div>';
+
+  return '<div class="pa-card">' + head + body + '</div>';
+}
+
+function paRenderDefault(p, idx){
+  // The default-value control varies by type. For text/number/date we just
+  // use the matching native input. For dropdown, we use a <select> populated
+  // from staticOptions or cachedOptions — same options the user will see
+  // when running the report.
+  let control;
+  if (p.type === 'number') {
+    control = '<input class="pa-input" type="number" placeholder="(no default)" '
+            + 'value="' + escapeHtml(p.default == null ? '' : p.default) + '" '
+            + 'onchange="paUpdate(' + idx + ',\'default\',this.value === \'\' ? \'\' : Number(this.value))">';
+  } else if (p.type === 'date') {
+    control = '<input class="pa-input" type="date" placeholder="(no default)" '
+            + 'value="' + escapeHtml(p.default || '') + '" '
+            + 'onchange="paUpdate(' + idx + ',\'default\',this.value)">';
+  } else if (p.type === 'dropdown') {
+    const options = p.optionsKind === 'static' ? (p.staticOptions || []) : (p.cachedOptions || []);
+    if (options.length === 0) {
+      control = '<input class="pa-input" placeholder="(set up options below first)" disabled>';
+    } else {
+      const opts = '<option value="">(no default)</option>' + options.map(o =>
+        '<option value="' + escapeHtml(o.value) + '"' + (p.default === o.value ? ' selected' : '') + '>'
+        + escapeHtml(o.label || o.value) + '</option>'
+      ).join('');
+      control = '<select class="pa-input" onchange="paUpdate(' + idx + ',\'default\',this.value)">' + opts + '</select>';
+    }
+  } else {
+    // text
+    control = '<input class="pa-input" placeholder="(no default)" '
+            + 'value="' + escapeHtml(p.default || '') + '" '
+            + 'onchange="paUpdate(' + idx + ',\'default\',this.value)">';
+  }
+  return '<div class="pa-row">'
+       +   '<label>Default value</label>'
+       +   control
+       + '</div>';
+}
+
+function paRenderDropdownOptions(p, idx){
+  const isStatic = p.optionsKind === 'static';
+  const isQuery  = p.optionsKind === 'query';
+
+  const toggle = ''
+    + '<div class="pa-row">'
+    +   '<label>Options from</label>'
+    +   '<div class="pa-options-toggle">'
+    +     '<button class="' + (isStatic ? 'active' : '') + '" onclick="paUpdate(' + idx + ',\'optionsKind\',\'static\');paRender()">Static list</button>'
+    +     '<button class="' + (isQuery  ? 'active' : '') + '" onclick="paUpdate(' + idx + ',\'optionsKind\',\'query\');paRender()">SQL query</button>'
+    +   '</div>'
+    + '</div>';
+
+  const body = isStatic ? paRenderStaticOptions(p, idx) : paRenderQueryOptions(p, idx);
+
+  return '<div class="pa-section-divider"></div>' + toggle + body;
+}
+
+function paRenderStaticOptions(p, idx){
+  const opts = (p.staticOptions || []).map((o, oIdx) =>
+    '<div class="pa-static-option">'
+    +   '<input class="pa-input" placeholder="Value" value="' + escapeHtml(o.value || '') + '" '
+    +     'onchange="paUpdateStaticOption(' + idx + ',' + oIdx + ',\'value\',this.value)">'
+    +   '<input class="pa-input" placeholder="Label (shown to user)" value="' + escapeHtml(o.label || '') + '" '
+    +     'onchange="paUpdateStaticOption(' + idx + ',' + oIdx + ',\'label\',this.value)">'
+    +   '<button class="ds-rm-btn" title="Remove" onclick="paRemoveStaticOption(' + idx + ',' + oIdx + ')">✕</button>'
+    + '</div>'
+  ).join('');
+  return '<div class="pa-row" style="align-items:flex-start"><label style="padding-top:8px">Options</label>'
+       +   '<div style="flex:1;min-width:300px">'
+       +     opts
+       +     '<button class="ds-add-btn" onclick="paAddStaticOption(' + idx + ')">＋ Add option</button>'
+       +   '</div>'
+       + '</div>';
+}
+
+function paRenderQueryOptions(p, idx){
+  // Connection picker for the options query.
+  const conns = dsAvailableConnections();
+  const qc = p.queryConn || { kind: 'src', savedId: '' };
+  const connKey = qc.kind === 'saved' ? 'saved:' + (qc.savedId || '') : (qc.kind || 'src');
+  const connOptions = conns.map(c =>
+    '<option value="' + escapeHtml(c.id) + '"' + (c.id === connKey ? ' selected' : '') + '>'
+    + escapeHtml(c.label) + '</option>'
+  ).join('');
+  const noConn = conns.length === 0 ? '<option value="">⚠ No connections available</option>' : '';
+
+  // Result strip
+  let resultStrip;
+  if (p.cachedQueryError) {
+    resultStrip = '<div class="pa-query-result err">✕ ' + escapeHtml(p.cachedQueryError) + '</div>';
+  } else if (Array.isArray(p.cachedOptions) && p.cachedOptions.length > 0) {
+    const preview = p.cachedOptions.slice(0, 12).map(o =>
+      '<span class="pa-option-pill">' + escapeHtml(o.label || o.value) + '</span>'
+    ).join('');
+    const more = p.cachedOptions.length > 12 ? '<span class="pa-option-pill">+' + (p.cachedOptions.length - 12) + ' more</span>' : '';
+    resultStrip = '<div class="pa-query-result ok" style="flex-direction:column;align-items:flex-start">'
+                + '<span>✓ ' + p.cachedOptions.length.toLocaleString() + ' option' + (p.cachedOptions.length === 1 ? '' : 's') + '</span>'
+                + '<div class="pa-options-preview">' + preview + more + '</div>'
+                + '</div>';
+  } else {
+    resultStrip = '<div class="pa-query-result idle">▷ Not run yet. Click "Test query" to populate options.</div>';
+  }
+
+  const hint = '<div class="pa-hint">'
+             + 'First column is the value; second column (if present) is the label shown to the user. '
+             + 'You can reference other parameters in this query as <code>@otherParam</code> — they\'ll be substituted at run time.'
+             + '</div>';
+
+  return '<div class="pa-row">'
+       +   '<label>Connection</label>'
+       +   '<select class="pa-input" onchange="paQueryConnChange(' + idx + ',this.value)">' + noConn + connOptions + '</select>'
+       + '</div>'
+       + '<div class="pa-row" style="align-items:flex-start">'
+       +   '<label style="padding-top:8px">Query</label>'
+       +   '<div style="flex:1;min-width:300px">'
+       +     '<textarea class="pa-query-textarea" placeholder="-- e.g. SELECT MatterID, MatterName FROM Matter ORDER BY MatterName" '
+       +       'oninput="paUpdate(' + idx + ',\'query\',this.value)">' + escapeHtml(p.query || '') + '</textarea>'
+       +     hint
+       +     '<div style="margin-top:0.5rem">'
+       +       '<button class="btn btn-primary btn-sm" onclick="paTestQuery(' + idx + ')">▶ Test query</button>'
+       +     '</div>'
+       +     resultStrip
+       +   '</div>'
+       + '</div>';
+}
+
+function paRenderHint(p){
+  // Shows how this parameter is referenced in raw SQL. Helpful next to the
+  // parameter card so users don't have to leave the page to remember syntax.
+  if (!p.name) return '';
+  const example = p.type === 'date'
+    ? "WHERE EntryDate >= @" + p.name
+    : p.type === 'number'
+    ? "WHERE Amount > @" + p.name
+    : "WHERE Status = @" + p.name;
+  return '<div class="pa-hint">'
+       + 'Reference in raw SQL as <code>@' + escapeHtml(p.name) + '</code>'
+       + '. Example: <code>' + escapeHtml(example) + '</code>'
+       + '</div>';
+}
+
+
+// ── Init ────────────────────────────────────────────────────────────────────
 async function rbInit(){
   // Restore state from localStorage. Drop 2 will replace this with a Cosmos
   // fetch via /api/reports, falling back to local on network failure.
