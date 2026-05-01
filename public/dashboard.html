@@ -6,6 +6,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#0d0f14">
+<!-- Theme pre-paint: read the user's saved theme and apply it to <html> BEFORE
+     any content renders, so we don't get a flash of the wrong theme on load.
+     Reads from cygenix_app_prefs (the same localStorage key the Settings page
+     writes to). Falls back to 'dark' if anything goes wrong. -->
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'dark';
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
 <meta name="description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
 <meta property="og:title" content="Cygenix – Migration Dashboard">
 <meta property="og:description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
@@ -34,7 +52,102 @@
   --serif:'Syne',system-ui,sans-serif;
   --mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
+  /* Topbar uses its own pair of vars so it stays dark in light mode (Boomi-style),
+     while the rest of the UI flips to light backgrounds. In dark mode they're the
+     same as --bg2 / --text. */
+  --topbar-bg:#13161d;
+  --topbar-text:#e8eaf0;
+  /* Subtle row-hover and inline-code tints. In dark mode these are white/black
+     overlays; in light mode they need to flip to dark/light overlays so they
+     stay visible on the new backgrounds. */
+  --hover-tint:rgba(255,255,255,0.02);
+  --code-tint:rgba(0,0,0,0.2);
+  --modal-scrim:rgba(0,0,0,0.8);
+  --shadow-strong:0 20px 60px rgba(0,0,0,0.4);
+  --shadow-soft:0 6px 24px rgba(0,0,0,0.35);
 }
+
+/* ── LIGHT THEME ──────────────────────────────────────────────────────────────
+   Activated by setting data-theme="light" on <html> (the pre-paint script in
+   <head> does this on page load based on the user's saved preference, and the
+   Theme dropdown in Settings updates it live).
+
+   Visual reference: the Boomi Integration UI — dark navy topbar over a light
+   workspace with white panels, soft grey borders, dark slate text. The accent
+   blue stays the same so brand colour is consistent across themes. */
+html[data-theme="light"]{
+  --bg:#f5f6f8;
+  --bg2:#ffffff;
+  --bg3:#fafbfc;
+  --bg4:#eef0f3;
+  --border:rgba(15,23,42,0.08);
+  --border2:rgba(15,23,42,0.14);
+  --text:#1a2332;
+  --text2:#4b5563;
+  --text3:#6b7280;
+  --accent-glow:rgba(61,126,255,0.10);
+  --green-bg:rgba(34,201,122,0.12);
+  --amber-bg:rgba(245,158,11,0.12);
+  --red-bg:rgba(240,70,70,0.10);
+  --purple-bg:rgba(167,139,250,0.14);
+  --teal-bg:rgba(45,212,191,0.14);
+  /* Topbar deliberately stays dark to match the Boomi reference. */
+  --topbar-bg:#13161d;
+  --topbar-text:#e8eaf0;
+  /* Flip overlay tints so hovers and inline code remain visible. */
+  --hover-tint:rgba(15,23,42,0.04);
+  --code-tint:rgba(15,23,42,0.06);
+  --modal-scrim:rgba(15,23,42,0.45);
+  --shadow-strong:0 20px 60px rgba(15,23,42,0.12);
+  --shadow-soft:0 6px 24px rgba(15,23,42,0.10);
+  color-scheme:light;
+}
+
+/* The styles below were originally written with hardcoded rgba(255,255,255,…)
+   or rgba(0,0,0,…) values, which can't be flipped by changing CSS vars alone.
+   These rules retarget them to the new tint vars so they adapt to the theme.
+   They override the originals because they appear later in the stylesheet. */
+html[data-theme="light"] .modal-overlay,
+html[data-theme="light"] .preview-modal-overlay,
+html[data-theme="light"] .dg-modal-backdrop,
+html[data-theme="light"] #view-integrations .in-modal-overlay,
+html[data-theme="light"] #imp-exists-modal,
+html[data-theme="light"] #imp-sheet-modal,
+html[data-theme="light"] #imp-validate-modal,
+html[data-theme="light"] #onboarding-modal{background:var(--modal-scrim)}
+html[data-theme="light"] .wasis-table tr:hover td,
+html[data-theme="light"] .jobs-table tr:hover td{background:var(--hover-tint)}
+html[data-theme="light"] .alert code{background:var(--code-tint);color:var(--text)}
+html[data-theme="light"] .badge-gray{background:var(--bg4);color:var(--text2)}
+html[data-theme="light"] .doc-type-notes{background:var(--bg4);color:var(--text2)}
+html[data-theme="light"] .doc-type-other{background:var(--bg4);color:var(--text3)}
+html[data-theme="light"] .btn-ghost:hover{background:var(--hover-tint);color:var(--text)}
+html[data-theme="light"] .modal,
+html[data-theme="light"] .dg-modal,
+html[data-theme="light"] #user-menu,
+html[data-theme="light"] .rc-chips-menu{box-shadow:var(--shadow-strong)}
+/* Tables get a top border in light mode so they don't float on the white panel. */
+html[data-theme="light"] .jobs-table th,
+html[data-theme="light"] .wasis-table th{background:var(--bg3);color:var(--text2)}
+
+/* Topbar wiring: use the dedicated topbar vars so it can stay dark in light
+   mode. Defined here (not on the .topbar rule below) so we don't have to
+   touch the existing rule and risk breaking dark mode. */
+html[data-theme="light"] .topbar{background:var(--topbar-bg);color:var(--topbar-text);border-bottom-color:rgba(255,255,255,0.08)}
+html[data-theme="light"] .topbar .logo{color:var(--topbar-text)}
+html[data-theme="light"] .topbar .logo-console{color:rgba(255,255,255,0.5)}
+html[data-theme="light"] .topbar .back-link{color:rgba(255,255,255,0.55)}
+html[data-theme="light"] .topbar .back-link:hover{color:rgba(255,255,255,0.85)}
+html[data-theme="light"] .topbar .avatar{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.85)}
+
+/* Form inputs get a subtle inner background in light mode so they read as
+   inputs rather than blending into the white panel. */
+html[data-theme="light"] .form-input{background:#ffffff;border-color:var(--border2)}
+html[data-theme="light"] .form-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+
+/* Upload zone + dashed borders read better with a slightly darker dashed line. */
+html[data-theme="light"] .upload-zone{background:var(--bg2);border-color:var(--border2)}
+
 html,body{height:100%;overflow:hidden}
 body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
@@ -1247,12 +1360,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
           <div>
             <label class="form-label">Theme</label>
-            <select id="pref-theme" class="form-input" style="margin-top:5px">
+            <select id="pref-theme" class="form-input" style="margin-top:5px" onchange="applyThemePreview(this.value)">
               <option value="dark">Dark (default)</option>
-              <option value="auto" disabled>Auto — follow system (coming soon)</option>
-              <option value="light" disabled>Light (coming soon)</option>
+              <option value="light">Light</option>
+              <option value="auto">Auto — follow system</option>
             </select>
-            <div style="font-size:11px;color:var(--text3);margin-top:5px">Cygenix is dark-mode-first. Light theme work is queued behind core migration features.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Light mode uses a Boomi-style palette: soft grey workspace, white panels, dark navy topbar. Click Save to persist.</div>
           </div>
           <div>
             <label class="form-label">Default landing view</label>
@@ -7282,8 +7395,30 @@ function saveAppPreferences() {
     autoSnapshot:  get('pref-auto-snapshot') || DEFAULT_APP_PREFS.autoSnapshot,
   };
   try { localStorage.setItem(APP_PREFS_KEY, JSON.stringify(prefs)); } catch {}
+  // Re-apply the theme on save. The dropdown's onchange already does live
+  // preview, so this mostly matters when the user edited the value but never
+  // triggered onchange (e.g. browser autofill) — and as a safety net.
+  applyThemePreview(prefs.theme);
   const msg = document.getElementById('pref-saved-msg');
   if (msg) { msg.style.display = 'block'; setTimeout(() => msg.style.display = 'none', 2400); }
+}
+
+// applyThemePreview — flips the data-theme attribute on <html> immediately
+// when the user picks a value in the Theme dropdown, so they see the change
+// without needing to save first. The pre-paint script in <head> handles the
+// equivalent on subsequent page loads. Resolves 'auto' against the OS at the
+// moment of the call (we don't subscribe to OS changes — that would be a
+// nice-to-have but isn't needed for v1).
+function applyThemePreview(theme) {
+  let resolved = theme || 'dark';
+  if (resolved === 'auto') {
+    resolved = (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
+      ? 'light' : 'dark';
+  }
+  document.documentElement.setAttribute('data-theme', resolved);
+  // Keep the browser chrome colour (mobile address bar, etc.) in sync.
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', resolved === 'light' ? '#13161d' : '#0d0f14');
 }
 
 // API key handlers wired to the new Settings card. Same backing storage as
