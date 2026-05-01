@@ -2691,10 +2691,50 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
         tgtType:   m.tgtType  || '',
         transform: m.transform || 'NONE',
         transformExpr: m.transformExpr || null,
-        wasisRules: m.wasisRules || null
+        wasisRules: m.wasisRules || null,
+        wasisCount: m.wasisCount || (Array.isArray(m.wasisRules) ? m.wasisRules.length : 0)
       });
     });
   });
+
+  // ── Aggregate Was/Is rules across all migration steps ──────────────────────
+  // Each column-mapping `m` carries `m.wasisRules` as an array of formatted
+  // strings like "GBP → USD" (one per rule applied to that column). To populate
+  // the report's Was-Is sheet we need them back as { srcField, srcTable,
+  // oldVal, newVal } records, deduped across the whole project.
+  const wasisAggRules = [];
+  const wasisSeen = new Set();   // for deduping by table|field|old|new
+  let wasisColCount = 0;
+  migrationSteps.forEach(s => {
+    (s.columnMapping||[]).forEach(m => {
+      if (!m || !m.wasisRules || !Array.isArray(m.wasisRules) || m.wasisRules.length === 0) return;
+      wasisColCount++;
+      m.wasisRules.forEach(r => {
+        // r is typically a string "old → new"; tolerate object form too
+        let oldVal = '', newVal = '';
+        if (typeof r === 'string') {
+          // Split on the arrow used by the upstream formatter ("→") with
+          // tolerance for "->" or " => " variants in case the format changes.
+          const parts = r.split(/\s*(?:→|->|=>)\s*/);
+          oldVal = (parts[0] || '').trim();
+          newVal = (parts[1] || '').trim();
+        } else if (r && typeof r === 'object') {
+          oldVal = r.oldVal != null ? String(r.oldVal) : '';
+          newVal = r.newVal != null ? String(r.newVal) : '';
+        }
+        const key = (s.srcTable||'') + '|' + (m.srcCol||'') + '|' + oldVal + '|' + newVal;
+        if (wasisSeen.has(key)) return;
+        wasisSeen.add(key);
+        wasisAggRules.push({
+          srcField: m.srcCol || '',
+          srcTable: s.srcTable || '',
+          oldVal,
+          newVal
+        });
+      });
+    });
+  });
+  const wasisRuleCount = wasisAggRules.length;
 
   // Get source/target table names from first migration step
   const firstMigStep = migrationSteps[0];
@@ -2707,7 +2747,11 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
     userName, userEmail,
     organisation: 'Cygenix',
     sourceTable:  srcTableName,
-    sourceSystem: srcTableName || 'Source',
+    // sourceSystem is the DBMS family, not the table name. Project runs are
+    // SQL-to-SQL between two SQL Server / Azure SQL instances, so mirror the
+    // target system here. (Previously this was set to srcTableName, which
+    // showed "dbo.something_src" in the report's Source system field.)
+    sourceSystem: 'Microsoft SQL Server / Azure SQL',
     targetTable:  tgtTableName,
     targetSystem: 'Microsoft SQL Server / Azure SQL',
     targetServer: tgtConn || '',
@@ -2720,6 +2764,11 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
     rowsAfter:    totalRows,
     columnMapping: allMappings,
     columnsMapped: allMappings.length,
+    // Was/Is summary — surfaced in the report's MIGRATION SUMMARY block, the
+    // stat cards, and the dedicated Was-Is Rules sheet.
+    wasisRules:     wasisAggRules,
+    wasisRuleCount,
+    wasisColCount,
     warnings:     [
       ...steps.filter(s=>s.status==='failed').map(s=>'Job failed: '+(s.name||s.type)),
       ...steps.flatMap(s=>(s.warnings||[]).filter(w=>typeof w==='string'&&w.startsWith('TRUNCATION:')))
