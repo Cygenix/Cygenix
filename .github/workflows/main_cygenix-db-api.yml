@@ -27,14 +27,21 @@ jobs:
         working-directory: azure-function
         run: zip -r ../function.zip . -x "*.md" -x "local.settings.json" -x ".git/*"
 
-      - name: Verify key files in zip
+      # Sanity check the zip BEFORE deploying. If project-summary-document/index.js
+      # is missing or has the wrong content, fail the workflow loudly here rather
+      # than letting the deploy succeed-but-not-update.
+      - name: Verify project-summary-document is in zip
         run: |
-          echo "=== Root level files ==="
-          unzip -l function.zip | grep -v "node_modules" | grep -v "/$" | head -20
-          echo "=== Checking src/index.js first 5 lines ==="
-          unzip -p function.zip src/index.js | head -5
-          echo "=== Confirming @azure/cosmos installed ==="
-          unzip -l function.zip | grep "@azure/cosmos" | head -3
+          echo "=== Zip root listing (first 25 entries, no node_modules) ==="
+          unzip -l function.zip | grep -v "node_modules" | grep -v "/$" | head -25
+          echo
+          echo "=== project-summary-document/index.js header ==="
+          unzip -p function.zip project-summary-document/index.js | head -3 \
+            || (echo "ERROR: project-summary-document/index.js missing from zip" && exit 1)
+          echo
+          echo "=== Confirming @azure/cosmos is bundled ==="
+          unzip -l function.zip | grep "@azure/cosmos/package.json" \
+            || (echo "ERROR: @azure/cosmos not in zip — npm install probably failed" && exit 1)
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -43,16 +50,21 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID }}
 
-      - name: Deploy via Azure CLI
-        run: |
-          az functionapp deployment source config-zip \
-            --resource-group Cygenix_UK \
-            --name cygenix-db-api \
-            --src function.zip \
-            --build-remote false
-
-      - name: Restart Function App
-        run: |
-          az functionapp restart \
-            --resource-group Cygenix_UK \
-            --name cygenix-db-api
+      # Deploy to Flex Consumption.
+      #
+      # Why NOT `az functionapp deployment source config-zip`:
+      #   That command targets the legacy Kudu /api/zipdeploy endpoint, which
+      #   doesn't exist on Flex Consumption. The CLI returns success because
+      #   the call queues, but the running app is never replaced. This is the
+      #   "green workflow, identical bytes in production" failure mode that
+      #   wasted a deploy cycle on this repo.
+      #
+      # Azure/functions-action@v1 detects Flex and uses the correct
+      # /api/publish OneDeploy endpoint, then waits for the worker to swap
+      # in. It also handles the post-deploy restart, so the explicit
+      # `az functionapp restart` step is no longer needed.
+      - name: Deploy to Azure Functions (Flex-aware)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: cygenix-db-api
+          package: function.zip
