@@ -128,11 +128,41 @@ body.cyg-collapsed{padding-left:54px}
 .rb-conn-row{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem}
 .rb-conn-row > label{font-size:11px;color:var(--text3);font-family:var(--mono)}
 .rb-conn-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;min-width:200px}
+/* ── Schema-aware picker dropdown ───────────────────────────────────────────
+   Lifted from balancing.html / object_mapping.html. Each picker input is
+   wrapped in .search-wrap (relative-positioned). The .search-drop floats
+   absolutely beneath the input. The dropdown becomes visible via .open.
+   Picker inputs carry data-pick-* attrs that tell the JS what to show and
+   where to write the chosen value back. */
+.search-wrap{position:relative;display:inline-block;flex:1;min-width:140px}
+.search-wrap.search-wrap-wide{min-width:240px}
+.search-drop{position:absolute;top:calc(100% + 2px);left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:220px;overflow-y:auto;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,0.4);display:none}
+.search-drop.open{display:block}
+.drop-item{padding:6px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;display:flex;justify-content:space-between;align-items:center;color:var(--text);gap:8px}
+.drop-item:hover,.drop-item.active{background:var(--accent-glow);color:var(--accent)}
+.drop-item .di-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.drop-item .di-meta{font-size:10px;color:var(--text3);flex-shrink:0;font-style:normal}
+.drop-empty{padding:8px 10px;font-size:11px;color:var(--text3);font-style:italic}
+/* Subtle chevron hint on picker inputs to communicate they're searchable.
+   Same gradient trick as balancing.html for consistency. */
+.ds-input[data-pick-kind]{
+  background-image:linear-gradient(45deg,transparent 50%,var(--text3) 50%,var(--text3) 60%,transparent 60%),
+                   linear-gradient(135deg,transparent 40%,var(--text3) 40%,var(--text3) 50%,transparent 50%);
+  background-position:calc(100% - 13px) 14px,calc(100% - 8px) 14px;
+  background-size:5px 5px;
+  background-repeat:no-repeat;
+  padding-right:22px
+}
+.ds-input[data-pick-kind]:disabled{opacity:0.5;cursor:not-allowed}
+/* The picker input takes full width of the wrap so it lays out cleanly
+   inside .ds-row-fields. */
+.search-wrap > .ds-input{width:100%}
+
 /* ── Datasets tab ───────────────────────────────────────────────────────────
    Each dataset is a card with: header (name, connection picker, action buttons),
    builder body (visual or raw), test-run result strip. Cards collapse to just
    the header when not the focus. */
-.ds-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.75rem;overflow:hidden}
+.ds-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.75rem}
 .ds-head{padding:0.75rem 1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;border-bottom:0.5px solid var(--border)}
 .ds-name{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.7rem;font-size:13px;font-weight:500;color:var(--text);outline:none;font-family:var(--serif)}
 .ds-name:focus{border-color:var(--accent)}
@@ -236,7 +266,8 @@ body.cyg-collapsed{padding-left:54px}
     <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
     <div class="conn-dot idle" id="tgt-dot"></div>
     <span class="conn-label" id="tgt-label">Target: not configured</span>
-    <a href="/dashboard.html#connections" class="conn-btn" style="margin-left:auto">⚙ Manage connections</a>
+    <button class="conn-btn" onclick="dsReloadAllSchemas()" style="margin-left:auto" title="Re-fetch schemas (use after structural DB changes)">↻ Reload schemas</button>
+    <a href="/dashboard.html#connections" class="conn-btn">⚙ Manage connections</a>
   </div>
 
   <!-- Status bar -->
@@ -591,6 +622,419 @@ function rbRenderEditor(){
   // safe to call even when the tab is hidden — that way switching tabs is
   // instant. Drops 3-5 add their own renderers (parameters, layout, runs).
   if (typeof dsRender === 'function') dsRender();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Schema-aware picker
+//
+// Each dataset has its own connection (src / tgt / saved), and pickers on
+// that dataset show tables and columns from THAT connection's schema. This is
+// different from balancing.html where there's a fixed src/tgt distinction —
+// here we keep a Map keyed by a stable scope id, and load schemas lazily
+// the first time a picker on a given scope opens.
+//
+// Scope id format:
+//   'src'              — project source connection
+//   'tgt'              — project target connection
+//   'saved:<savedId>'  — a saved connection from CygenixConnections.list()
+//
+// Each scope's state:
+//   { tables: [...], paginated: bool, loaded: bool, loading: Promise|null }
+// where each table = { schema, name, fullName, rowCount, columns?: [...] }
+//
+// Columns are loaded lazily per-table (paginated mode only — legacy mode
+// returns columns on the initial schema fetch). Cache key: scope|fullName.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const _schemas    = new Map();   // scopeId -> { tables, paginated, loaded, loading }
+const _columnCache = new Map();  // 'scope|fullName' -> [columns]
+
+function _scopeIdForDataset(d){
+  if (!d || !d.connection) return '';
+  if (d.connection.kind === 'src') return 'src';
+  if (d.connection.kind === 'tgt') return 'tgt';
+  if (d.connection.kind === 'saved' && d.connection.savedId) return 'saved:' + d.connection.savedId;
+  return '';
+}
+
+function _connForScope(scope){
+  if (scope === 'src') return srcConn;
+  if (scope === 'tgt') return tgtConn;
+  if (scope && scope.startsWith('saved:')) {
+    const list = dsAvailableConnections();
+    const m = list.find(x => x.id === scope);
+    return m ? m.conn : '';
+  }
+  return '';
+}
+
+// Smart schema fetch — try paginated 'schema-tables' first, fall back to
+// legacy 'schema'. Same pattern as balancing.html / object_mapping.html.
+async function _fetchSchemaSmart(conn){
+  try {
+    const res = await dsDbCall(conn, { action: 'schema-tables' });
+    return { res, paginated: true };
+  } catch (e) {
+    if (/Unknown action/i.test(e.message) || /schema-tables/i.test(e.message)) {
+      const res = await dsDbCall(conn, { action: 'schema' });
+      return { res, paginated: false };
+    }
+    throw e;
+  }
+}
+
+// Load (or return cached) schema for a scope. Returns the schema object.
+// If a load is already in flight, returns the in-flight promise so we
+// don't double-fetch.
+async function loadSchemaFor(scope){
+  if (!scope) return null;
+  let s = _schemas.get(scope);
+  if (s && s.loaded) return s;
+  if (s && s.loading) return s.loading;
+
+  const conn = _connForScope(scope);
+  if (!conn) return null;
+
+  s = { tables: [], paginated: null, loaded: false, loading: null };
+  _schemas.set(scope, s);
+
+  s.loading = (async () => {
+    try {
+      const { res, paginated } = await _fetchSchemaSmart(conn);
+      const tables = (res.tables || []).map(t => ({
+        schema:   t.schema,
+        name:     t.name,
+        fullName: (t.schema ? t.schema + '.' : '') + t.name,
+        rowCount: t.rowCount || 0,
+        columns:  paginated ? null : (t.columns || []),
+      }));
+      tables.sort((a, b) => a.fullName.localeCompare(b.fullName));
+      s.tables    = tables;
+      s.paginated = paginated;
+      s.loaded    = true;
+      // Re-render so any open dataset cards now show the populated picker.
+      dsRender();
+      return s;
+    } catch (e) {
+      // Mark scope as failed but keep the entry so we don't keep retrying
+      // on every keystroke. User can click "Reload schema" to retry.
+      s.loaded   = true;
+      s.tables   = [];
+      s.error    = e.message || String(e);
+      dsRender();
+      return s;
+    } finally {
+      s.loading = null;
+    }
+  })();
+
+  return s.loading;
+}
+
+// Find a table in a scope by fullName, case-insensitive, with bare-name
+// fallback when unambiguous (e.g. user types "Matter" and there's only one).
+function findTableInScope(scope, fullName){
+  const s = _schemas.get(scope);
+  if (!s || !fullName) return null;
+  const fn = String(fullName).trim().toLowerCase();
+  if (!fn) return null;
+  let t = s.tables.find(x => x.fullName.toLowerCase() === fn);
+  if (t) return t;
+  const bare = fn.includes('.') ? fn.split('.').pop() : fn;
+  const matches = s.tables.filter(x => x.name.toLowerCase() === bare);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+// Lazy column loader for paginated mode. In legacy mode the columns are
+// already on the table object. Cache key combines scope + fullName so the
+// same table on different connections doesn't collide.
+async function ensureColumnsForScope(scope, table){
+  if (!scope || !table) return [];
+  const key = scope + '|' + table.fullName;
+  if (_columnCache.has(key)) return _columnCache.get(key);
+
+  const s = _schemas.get(scope);
+  if (!s) return [];
+
+  // Legacy mode: columns came back with the schema fetch.
+  if (s.paginated === false) {
+    const cols = table.columns || [];
+    _columnCache.set(key, cols);
+    return cols;
+  }
+
+  // Paginated mode: fetch columns now.
+  const conn = _connForScope(scope);
+  if (!conn) return [];
+  try {
+    const res = await dsDbCall(conn, { action: 'schema-columns', schemaName: table.schema, tableName: table.name });
+    const cols = (res && res.table && res.table.columns) || [];
+    _columnCache.set(key, cols);
+    return cols;
+  } catch (e) {
+    showStatus('Could not load columns for ' + table.fullName + ': ' + e.message, 'err');
+    _columnCache.set(key, []);  // cache empty so we don't refetch on every keystroke
+    return [];
+  }
+}
+
+// ── Picker rendering ───────────────────────────────────────────────────────
+// Each picker input is rendered inside a .search-wrap div, with a sibling
+// .search-drop. Data attributes encode:
+//   data-pick-kind:    'tables' | 'columns'
+//   data-pick-scope:   scope id (e.g. 'src', 'tgt', 'saved:abc123')
+//   data-pick-table:   id of the sibling table-input (columns only — tells
+//                      the picker which table's columns to show)
+//   data-pick-update:  callback identifier to write the chosen value back.
+//                      Format: 'fn:arg1:arg2:...' — comma-encoded so the
+//                      onpick handler can call the right dsUpdate*() fn.
+// Rather than a free-form encoding, we expose a global registry:
+//   window._pickerCommitters[id] = (value) => { ... }
+// and store the registry id in data-pick-commit.
+
+window._pickerCommitters = window._pickerCommitters || {};
+let   _pickerCommitterSeq = 0;
+
+function _registerCommitter(fn){
+  const id = 'pc_' + (++_pickerCommitterSeq);
+  window._pickerCommitters[id] = fn;
+  return id;
+}
+
+// Render a picker input wrapped in .search-wrap with a .search-drop sibling.
+// `kind` = 'tables' | 'columns'
+// `scope` = scope id
+// `value` = current value
+// `commitId` = registry id for the commit callback
+// `extra` = extra opts: { tableInputId?, placeholder?, wide? }
+function dsPickerHtml(kind, scope, value, commitId, extra){
+  extra = extra || {};
+  const dataAttrs = [
+    'data-pick-kind="'   + kind + '"',
+    'data-pick-scope="'  + escapeHtml(scope || '') + '"',
+    'data-pick-commit="' + commitId + '"',
+  ];
+  if (extra.tableInputId) dataAttrs.push('data-pick-table="' + extra.tableInputId + '"');
+  const placeholder = extra.placeholder || (kind === 'tables' ? 'schema.TableName' : 'column');
+  const wrapClass   = extra.wide ? 'search-wrap search-wrap-wide' : 'search-wrap';
+  const inputId     = extra.id ? ' id="' + extra.id + '"' : '';
+  return '<span class="' + wrapClass + '">'
+       +   '<input class="ds-input"' + inputId + ' '
+       +     dataAttrs.join(' ') + ' '
+       +     'placeholder="' + escapeHtml(placeholder) + '" '
+       +     'value="' + escapeHtml(value || '') + '" '
+       +     'autocomplete="off" '
+       +     'oninput="dsPickerInput(this)" '
+       +     'onfocus="dsPickerOpen(this)" '
+       +     'onchange="dsPickerCommit(this)">'
+       +   '<div class="search-drop"></div>'
+       + '</span>';
+}
+
+function _pickerDrop(input){
+  let sib = input.nextElementSibling;
+  while (sib && !sib.classList.contains('search-drop')) sib = sib.nextElementSibling;
+  return sib;
+}
+
+function _pickerListFor(input){
+  const kind  = input.getAttribute('data-pick-kind');
+  const scope = input.getAttribute('data-pick-scope');
+  const s     = _schemas.get(scope);
+  if (kind === 'tables') {
+    if (!s) return [];
+    return s.tables.map(t => ({
+      value: t.fullName,
+      label: t.fullName,
+      meta:  t.rowCount ? Number(t.rowCount).toLocaleString() + ' rows' : ''
+    }));
+  }
+  if (kind === 'columns') {
+    const tableInputId = input.getAttribute('data-pick-table');
+    const tableInput   = tableInputId ? document.getElementById(tableInputId) : null;
+    const tableName    = tableInput ? tableInput.value : '';
+    if (!tableName || !s) return [];
+    const t = findTableInScope(scope, tableName);
+    if (!t) return [];
+    const cacheKey = scope + '|' + t.fullName;
+    const cols = _columnCache.get(cacheKey);
+    if (!cols) return [];  // not yet loaded — pickerOpen kicks off the load
+    return (cols || []).map(c => {
+      const name = typeof c === 'string' ? c : (c.name || c.column || '');
+      const type = typeof c === 'object' && c.dataType ? c.dataType : '';
+      return { value: name, label: name, meta: type };
+    });
+  }
+  return [];
+}
+
+async function _ensurePickerColumns(input){
+  if (input.getAttribute('data-pick-kind') !== 'columns') return false;
+  const scope = input.getAttribute('data-pick-scope');
+  const tableInputId = input.getAttribute('data-pick-table');
+  const tableInput   = tableInputId ? document.getElementById(tableInputId) : null;
+  const tableName    = tableInput ? tableInput.value : '';
+  if (!tableName) return false;
+  const t = findTableInScope(scope, tableName);
+  if (!t) return false;
+  const cacheKey = scope + '|' + t.fullName;
+  if (_columnCache.has(cacheKey)) return false;
+  await ensureColumnsForScope(scope, t);
+  return true;
+}
+
+function dsPickerOpen(input){
+  // Make sure schema is loaded for this scope (no-op if already done).
+  const scope = input.getAttribute('data-pick-scope');
+  loadSchemaFor(scope);  // fire and forget — render hooks will refresh
+  dsPickerFilter(input);
+  // Lazy-load columns if this is a column picker. Once done, refilter so
+  // the dropdown shows the now-available items.
+  _ensurePickerColumns(input).then(loaded => { if (loaded) dsPickerFilter(input); });
+}
+
+function dsPickerInput(input){
+  // Typing in the picker — refilter dropdown but don't commit. The user
+  // explicitly commits via Enter, click, or blur (onchange).
+  dsPickerFilter(input);
+}
+
+function dsPickerFilter(input){
+  const drop = _pickerDrop(input);
+  if (!drop) return;
+  const scope = input.getAttribute('data-pick-scope');
+  const kind  = input.getAttribute('data-pick-kind');
+  const items = _pickerListFor(input);
+  const q = (input.value || '').toLowerCase();
+  const s = _schemas.get(scope);
+
+  // Empty-states
+  if (!items.length) {
+    let msg;
+    if (kind === 'columns') {
+      const tInId = input.getAttribute('data-pick-table');
+      const tIn   = tInId ? document.getElementById(tInId) : null;
+      msg = !tIn || !tIn.value ? 'Pick a table first'
+          : 'Loading columns…';
+    } else if (!s)              msg = 'No connection set';
+    else if (s.error)            msg = 'Schema error: ' + s.error;
+    else if (!s.loaded)          msg = 'Loading schema…';
+    else                         msg = 'No tables in schema';
+    drop.innerHTML = '<div class="drop-empty">' + escapeHtml(msg) + '</div>';
+    drop.classList.add('open');
+    return;
+  }
+
+  const hits = q
+    ? items.filter(it => it.label.toLowerCase().includes(q)).slice(0, 80)
+    : items.slice(0, 80);
+
+  if (!hits.length) {
+    drop.innerHTML = '<div class="drop-empty">No match for "' + escapeHtml(q) + '"</div>';
+  } else {
+    drop.innerHTML = hits.map(it =>
+      '<div class="drop-item" data-pick-value="' + escapeHtml(it.value) + '">'
+      + '<span class="di-name">' + escapeHtml(it.label) + '</span>'
+      + (it.meta ? '<span class="di-meta">' + escapeHtml(it.meta) + '</span>' : '')
+      + '</div>'
+    ).join('');
+    if (items.length > 80) {
+      drop.innerHTML += '<div class="drop-empty">' + (items.length - 80) + ' more — type to filter</div>';
+    }
+  }
+  drop.classList.add('open');
+}
+
+function dsPickerClose(input){
+  const drop = _pickerDrop(input);
+  if (drop) drop.classList.remove('open');
+}
+
+// Commit the value via the registered committer. Called by:
+//   - explicit selection (click on a drop-item)
+//   - Enter key (when there's a clear hit)
+//   - blur (onchange) — commits whatever the user typed, even if it doesn't
+//     match a real table/column. We don't auto-correct because the user
+//     might be typing a name that's valid but our schema fetch missed it.
+function dsPickerCommit(input){
+  const id = input.getAttribute('data-pick-commit');
+  const fn = id && window._pickerCommitters[id];
+  if (typeof fn === 'function') fn(input.value);
+}
+
+function dsPickerSelect(input, value){
+  input.value = value;
+  dsPickerClose(input);
+  dsPickerCommit(input);
+  // Re-render: a table change invalidates dependent column pickers; a
+  // column change might trigger downstream UI tweaks. Easiest correct
+  // behaviour is full re-render of the dataset list.
+  dsRender();
+}
+
+// Document-level handlers — close on outside click, keyboard support,
+// click delegation for picking items. Using event delegation means we
+// don't need per-input listeners (cheaper, and survives re-renders).
+document.addEventListener('click', function(e){
+  // Click delegation for .drop-item picks.
+  const item = e.target && e.target.closest && e.target.closest('.drop-item');
+  if (item) {
+    const drop = item.closest('.search-drop');
+    const wrap = drop && drop.parentElement;
+    const input = wrap && wrap.querySelector('input[data-pick-kind]');
+    if (input) dsPickerSelect(input, item.getAttribute('data-pick-value'));
+    return;
+  }
+  // Close any open drop when clicking outside it.
+  document.querySelectorAll('.search-drop.open').forEach(drop => {
+    const wrap = drop.parentElement;
+    if (wrap && !wrap.contains(e.target)) drop.classList.remove('open');
+  });
+});
+
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.search-drop.open').forEach(d => d.classList.remove('open'));
+    return;
+  }
+  if (e.key === 'Enter' && e.target && e.target.matches && e.target.matches('input[data-pick-kind]')) {
+    const drop = _pickerDrop(e.target);
+    if (drop && drop.classList.contains('open')) {
+      const first = drop.querySelector('.drop-item');
+      if (first) {
+        e.preventDefault();
+        dsPickerSelect(e.target, first.getAttribute('data-pick-value'));
+      }
+    }
+  }
+});
+
+// Reset the committer registry on every dsRender() to prevent unbounded
+// memory growth — the registry is rebuilt fresh as each card renders.
+function _resetPickerCommitters(){
+  window._pickerCommitters = {};
+  _pickerCommitterSeq = 0;
+}
+
+// User-facing reload: nukes the schema and column cache for all scopes that
+// currently have entries, then refetches each one. Useful after the user
+// makes structural changes in the source DB and wants pickers to refresh.
+function dsReloadAllSchemas(){
+  const scopes = Array.from(_schemas.keys());
+  _schemas.clear();
+  _columnCache.clear();
+  showStatus('Reloading schemas…', 'info');
+  scopes.forEach(s => loadSchemaFor(s));
+  // Also reload anything referenced by current datasets (in case a scope
+  // was referenced but never opened, so it never made it into _schemas).
+  const r = dsCurrentReport();
+  if (r) {
+    (r.datasets || []).forEach(d => {
+      const s = _scopeIdForDataset(d);
+      if (s) loadSchemaFor(s);
+    });
+  }
+  dsRender();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1139,6 +1583,11 @@ function dsRender(){
   const empty = $('ds-empty');
   if (!list || !empty) return;
 
+  // Wipe the committer registry — it gets rebuilt as cards re-render.
+  // Without this, switching reports or removing datasets leaves a growing
+  // pile of stale committers. Cheap to reset.
+  if (typeof _resetPickerCommitters === 'function') _resetPickerCommitters();
+
   const r = dsCurrentReport();
   if (!r) {
     list.innerHTML = '';
@@ -1155,6 +1604,20 @@ function dsRender(){
   }
   empty.style.display = 'none';
   list.innerHTML = datasets.map((d, i) => dsRenderCard(d, i)).join('');
+
+  // Kick off schema loads in the background for any scopes referenced by
+  // datasets that don't have a loaded schema yet. This is what makes the
+  // pickers magically populated by the time the user clicks them.
+  const scopes = new Set();
+  datasets.forEach(d => {
+    const s = _scopeIdForDataset(d);
+    if (s) scopes.add(s);
+  });
+  scopes.forEach(s => {
+    if (!_schemas.get(s) || (!_schemas.get(s).loaded && !_schemas.get(s).loading)) {
+      loadSchemaFor(s);
+    }
+  });
 }
 
 function dsRenderCard(d, idx){
@@ -1206,7 +1669,9 @@ function dsConnChange(idx, value){
   }
   r.updatedAt = nowIso();
   rbSaveToLocal();
-  // No re-render needed — the select already shows the new value.
+  // Re-render so all pickers in this card retarget the new scope. This also
+  // kicks off the schema fetch for the new scope (via dsRender).
+  dsRender();
 }
 
 function dsRenderResult(d){
@@ -1273,18 +1738,23 @@ function dsSection(idx, key, title, meta, body, isOpen){
 
 function dsRenderTablesBody(d, idx){
   const v = d.visual || {};
-  const rows = (v.tables || []).map((t, tIdx) =>
-    '<div class="ds-row">'
-    +   '<span class="ds-row-label">' + (tIdx === 0 ? 'FROM' : 'TBL ' + (tIdx + 1)) + '</span>'
-    +   '<div class="ds-row-fields">'
-    +     '<input class="ds-input ds-input-wide" placeholder="schema.TableName" value="' + escapeHtml(t.fullName || '') + '" '
-    +       'onchange="dsUpdateTable(' + idx + ',' + tIdx + ',\'fullName\',this.value);dsRender()">'
-    +     '<input class="ds-input" placeholder="alias (optional)" value="' + escapeHtml(t.alias || '') + '" '
-    +       'onchange="dsUpdateTable(' + idx + ',' + tIdx + ',\'alias\',this.value)">'
-    +   '</div>'
-    +   '<button class="ds-rm-btn" title="Remove table" onclick="dsRemoveTable(' + idx + ',' + tIdx + ')">✕</button>'
-    + '</div>'
-  ).join('');
+  const scope = _scopeIdForDataset(d);
+  const rows = (v.tables || []).map((t, tIdx) => {
+    // Stable id per (dataset idx, table idx) so column pickers can reference it
+    const inputId = 'ds-tbl-' + idx + '-' + tIdx;
+    const commitId = _registerCommitter(value => {
+      dsUpdateTable(idx, tIdx, 'fullName', value);
+    });
+    return '<div class="ds-row">'
+      +   '<span class="ds-row-label">' + (tIdx === 0 ? 'FROM' : 'TBL ' + (tIdx + 1)) + '</span>'
+      +   '<div class="ds-row-fields">'
+      +     dsPickerHtml('tables', scope, t.fullName, commitId, { id: inputId, wide: true, placeholder: 'schema.TableName' })
+      +     '<input class="ds-input" placeholder="alias (optional)" value="' + escapeHtml(t.alias || '') + '" '
+      +       'onchange="dsUpdateTable(' + idx + ',' + tIdx + ',\'alias\',this.value)">'
+      +   '</div>'
+      +   '<button class="ds-rm-btn" title="Remove table" onclick="dsRemoveTable(' + idx + ',' + tIdx + ')">✕</button>'
+      + '</div>';
+  }).join('');
   return rows
     + '<div style="margin-top:0.5rem">'
     +   '<button class="ds-add-btn" onclick="dsAddTable(' + idx + ')">＋ Add table</button>'
@@ -1293,9 +1763,7 @@ function dsRenderTablesBody(d, idx){
 
 function dsRenderSelectsBody(d, idx){
   const v = d.visual || {};
-  const tableOpts = (v.tables || []).map((t, i) =>
-    '<option value="' + i + '">' + escapeHtml(dsAliasOrName(t) || '(table ' + (i + 1) + ')') + '</option>'
-  ).join('');
+  const scope = _scopeIdForDataset(d);
   const aggs = ['', 'SUM', 'AVG', 'COUNT', 'MIN', 'MAX'];
   const rows = (v.selects || []).map((s, sIdx) => {
     const aggOpts = aggs.map(a =>
@@ -1305,12 +1773,15 @@ function dsRenderSelectsBody(d, idx){
       '<option value="' + i + '"' + (s.tableIdx === i ? ' selected' : '') + '>'
       + escapeHtml(dsAliasOrName(t) || '(table ' + (i + 1) + ')') + '</option>'
     ).join('');
+    // Column picker scoped to the table this select references
+    const tIdx = s.tableIdx == null ? 0 : s.tableIdx;
+    const tableInputId = 'ds-tbl-' + idx + '-' + tIdx;
+    const commitId = _registerCommitter(value => dsUpdateSelect(idx, sIdx, 'col', value));
     return '<div class="ds-row">'
       +   '<span class="ds-row-label">SELECT ' + (sIdx + 1) + '</span>'
       +   '<div class="ds-row-fields">'
       +     '<select class="ds-select" onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'tableIdx\',this.value)">' + tblOpts + '</select>'
-      +     '<input class="ds-input" placeholder="column" value="' + escapeHtml(s.col || '') + '" '
-      +       'onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'col\',this.value)">'
+      +     dsPickerHtml('columns', scope, s.col, commitId, { tableInputId: tableInputId, placeholder: 'column' })
       +     '<select class="ds-select" style="min-width:90px" onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'agg\',this.value)">' + aggOpts + '</select>'
       +     '<input class="ds-input" placeholder="alias (optional)" value="' + escapeHtml(s.alias || '') + '" '
       +       'onchange="dsUpdateSelect(' + idx + ',' + sIdx + ',\'alias\',this.value)">'
@@ -1326,6 +1797,7 @@ function dsRenderSelectsBody(d, idx){
 
 function dsRenderJoinsBody(d, idx){
   const v = d.visual || {};
+  const scope = _scopeIdForDataset(d);
   const rows = (v.joins || []).map((j, jIdx) => {
     const rightTbl = v.tables[j.rightTableIdx];
     const rightLabel = rightTbl ? dsAliasOrName(rightTbl) : '(removed)';
@@ -1344,16 +1816,19 @@ function dsRenderJoinsBody(d, idx){
       const opOpts = ['=', '<>', '<', '<=', '>', '>='].map(op =>
         '<option value="' + op + '"' + (c.op === op ? ' selected' : '') + '>' + op + '</option>'
       ).join('');
+      // Column pickers scoped to left & right tables
+      const leftTableInputId  = 'ds-tbl-' + idx + '-' + (c.leftTableIdx == null ? 0 : c.leftTableIdx);
+      const rightTableInputId = 'ds-tbl-' + idx + '-' + j.rightTableIdx;
+      const leftCommitId  = _registerCommitter(value => dsUpdateJoinCond(idx, jIdx, cIdx, 'leftCol',  value));
+      const rightCommitId = _registerCommitter(value => dsUpdateJoinCond(idx, jIdx, cIdx, 'rightCol', value));
       return '<div class="ds-row" style="grid-template-columns:auto 1fr auto;padding-left:1.5rem">'
         +    '<span class="ds-row-label">ON</span>'
         +    '<div class="ds-row-fields">'
         +      '<select class="ds-select" onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'leftTableIdx\',this.value)">' + leftTblOpts + '</select>'
-        +      '<input class="ds-input" placeholder="column" value="' + escapeHtml(c.leftCol || '') + '" '
-        +        'onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'leftCol\',this.value)">'
+        +      dsPickerHtml('columns', scope, c.leftCol, leftCommitId, { tableInputId: leftTableInputId, placeholder: 'column' })
         +      '<select class="ds-select" style="min-width:60px" onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'op\',this.value)">' + opOpts + '</select>'
         +      '<span style="font-size:10px;color:var(--text3);font-family:var(--mono)">' + escapeHtml(rightLabel) + '.</span>'
-        +      '<input class="ds-input" placeholder="column" value="' + escapeHtml(c.rightCol || '') + '" '
-        +        'onchange="dsUpdateJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ',\'rightCol\',this.value)">'
+        +      dsPickerHtml('columns', scope, c.rightCol, rightCommitId, { tableInputId: rightTableInputId, placeholder: 'column' })
         +    '</div>'
         +    '<button class="ds-rm-btn" title="Remove condition" onclick="dsRemoveJoinCond(' + idx + ',' + jIdx + ',' + cIdx + ')">✕</button>'
         + '</div>';
@@ -1379,6 +1854,7 @@ function dsRenderJoinsBody(d, idx){
 
 function dsRenderGroupBody(d, idx){
   const v = d.visual || {};
+  const scope = _scopeIdForDataset(d);
   if ((v.tables || []).length === 0) {
     return '<div style="font-size:11px;color:var(--text3)">Add tables first.</div>';
   }
@@ -1387,12 +1863,13 @@ function dsRenderGroupBody(d, idx){
       '<option value="' + i + '"' + (g.tableIdx === i ? ' selected' : '') + '>'
       + escapeHtml(dsAliasOrName(t) || '(t' + (i + 1) + ')') + '</option>'
     ).join('');
+    const tableInputId = 'ds-tbl-' + idx + '-' + (g.tableIdx == null ? 0 : g.tableIdx);
+    const commitId = _registerCommitter(value => dsUpdateGroup(idx, gIdx, 'col', value));
     return '<div class="ds-row">'
       +    '<span class="ds-row-label">GROUP</span>'
       +    '<div class="ds-row-fields">'
       +      '<select class="ds-select" onchange="dsUpdateGroup(' + idx + ',' + gIdx + ',\'tableIdx\',this.value)">' + tblOpts + '</select>'
-      +      '<input class="ds-input" placeholder="column" value="' + escapeHtml(g.col || '') + '" '
-      +        'onchange="dsUpdateGroup(' + idx + ',' + gIdx + ',\'col\',this.value)">'
+      +      dsPickerHtml('columns', scope, g.col, commitId, { tableInputId: tableInputId, placeholder: 'column' })
       +    '</div>'
       +    '<button class="ds-rm-btn" title="Remove" onclick="dsRemoveGroup(' + idx + ',' + gIdx + ')">✕</button>'
       + '</div>';
