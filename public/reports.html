@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0d0f14">
+<meta name="description" content="Build paginated tabular and visual reports against migration jobs and saved connections.">
+<meta property="og:title" content="Cygenix – Report Builder">
+<meta property="og:description" content="Build paginated tabular and visual reports against migration jobs and saved connections.">
+<meta property="og:url" content="https://cygenix.co.uk/reports.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – Report Builder">
+<meta name="twitter:description" content="Build paginated tabular and visual reports against migration jobs and saved connections.">
+<title>Cygenix – Report Builder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+
+/* ── Layout ── */
+.page{padding:1.5rem 2rem;max-width:1400px}
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
+.page-title{font-size:22px;font-weight:600;letter-spacing:-0.01em;margin-bottom:0.25rem}
+.page-sub{font-size:12px;color:var(--text3);max-width:780px;line-height:1.55}
+.page-tags{margin-top:0.5rem;font-size:11px;color:var(--text3);display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
+.page-tag{padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500}
+
+/* ── Panels ── */
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1rem}
+.panel-head{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.75rem}
+.panel-title{font-size:13px;font-weight:600;color:var(--text)}
+.panel-body{padding:1rem 1.25rem}
+
+/* ── Forms ── */
+.form-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;display:block;margin-bottom:0.3rem}
+.form-input{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;transition:border-color 0.15s}
+.form-input:focus{border-color:var(--accent)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:0.4rem 0.875rem;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;white-space:nowrap}
+.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);background:var(--bg3)}
+.btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3)}
+.btn-sm{padding:0.25rem 0.625rem;font-size:11px}
+.btn:disabled{opacity:0.4;cursor:not-allowed}
+
+/* ── Connection banner ── */
+.conn-banner{display:flex;align-items:center;gap:0.75rem;padding:0.625rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:1rem;flex-wrap:wrap}
+.conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.conn-dot.ok{background:var(--green)}
+.conn-dot.err{background:var(--red)}
+.conn-dot.idle{background:var(--text3)}
+.conn-dot.busy{background:var(--amber);animation:pulse 1.2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+.conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
+.conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif);text-decoration:none}
+.conn-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.3)}
+
+/* ── Tab bar ── */
+.cx-tabs{display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.cx-tab{background:transparent;border:none;color:var(--text3);font-family:var(--serif);font-size:12px;font-weight:500;padding:0.6rem 1.1rem;cursor:pointer;border-bottom:2px solid transparent;transition:all 0.15s;margin-bottom:-0.5px}
+.cx-tab:hover{color:var(--text2)}
+.cx-tab-active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ── Status bar ── */
+.status-bar{font-size:11px;font-family:var(--mono);padding:0.5rem 0.875rem;border-radius:var(--r);margin-bottom:1rem;display:none}
+.status-bar.show{display:block}
+.status-bar.info{background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)}
+.status-bar.ok{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.status-bar.err{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+
+/* ── Empty state ── */
+.empty-state{padding:2rem 1rem;text-align:center;font-size:12px;color:var(--text3);font-style:italic}
+.empty-state strong{font-style:normal;color:var(--text2)}
+
+/* ── Report list (left rail) and editor (right) ──────────────────────────────
+   The Reports page uses a two-pane layout: a left rail listing the user's
+   saved reports, and a right pane with the 5 tabs (Datasets / Parameters /
+   Layout / Preview / Runs) for whichever report is selected. This is the
+   shell — Drops 2-5 fill in the tab bodies. */
+.rb-shell{display:grid;grid-template-columns:260px 1fr;gap:1rem;align-items:start}
+@media (max-width:900px){.rb-shell{grid-template-columns:1fr}}
+.rb-rail{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.75rem;position:sticky;top:1rem;max-height:calc(100vh - 2rem);overflow-y:auto}
+.rb-rail-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem;padding:0 0.25rem}
+.rb-rail-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em}
+.rb-rail-list{display:flex;flex-direction:column;gap:2px}
+.rb-rail-item{display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:0.5rem 0.625rem;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text2);border:0.5px solid transparent;transition:all 0.12s}
+.rb-rail-item:hover{background:var(--bg3);color:var(--text)}
+.rb-rail-item.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3)}
+.rb-rail-item-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rb-rail-item-meta{font-size:10px;color:var(--text3);font-family:var(--mono);flex-shrink:0}
+.rb-rail-empty{padding:1rem 0.5rem;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
+
+/* ── Editor pane ── */
+.rb-editor{min-width:0}
+.rb-editor-head{display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap}
+.rb-name-input{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.75rem;font-size:14px;font-weight:500;color:var(--text);outline:none;font-family:var(--serif)}
+.rb-name-input:focus{border-color:var(--accent)}
+.rb-no-report{padding:3rem 1rem;text-align:center;color:var(--text3);font-size:13px;background:var(--bg2);border:0.5px dashed var(--border2);border-radius:var(--r-lg)}
+.rb-no-report strong{display:block;font-size:15px;color:var(--text2);margin-bottom:0.5rem;font-weight:500}
+
+/* ── Tab pane (per-report tabs inside the editor) ── */
+.rb-tab-pane{min-height:200px}
+
+/* ── Connection picker ── */
+.rb-conn-row{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem}
+.rb-conn-row > label{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.rb-conn-select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;min-width:200px}
+.rb-conn-select:focus{border-color:var(--accent)}
+</style>
+</head>
+<body>
+<script src="/connections.js"></script>
+<script src="/cygenix-params.js"></script>
+<script src="/cygenix-cosmos-sync.js"></script>
+
+<!-- Sidebar: data-active matches the new 'report-builder' key in cygenix-sidebar.js -->
+<div id="cyg-sidebar-mount" data-active="report-builder"></div>
+<script src="/cygenix-sidebar.js"></script>
+
+<div class="page">
+
+  <!-- Page header -->
+  <div class="page-header">
+    <div>
+      <div class="page-title">📊 Report Builder</div>
+      <div class="page-sub">Build paginated tabular and visual reports against migration jobs or any saved connection. Define datasets, parameters, layouts, and export to Excel. Reports save to your account and can be re-run with different parameters.</div>
+      <div class="page-tags">
+        <span style="color:var(--text2);font-weight:500">Layouts:</span>
+        <span class="page-tag" style="background:rgba(79,142,255,0.12);color:#6ea4ff">Table</span>
+        <span class="page-tag" style="background:rgba(45,212,191,0.12);color:#2dd4bf">Matrix</span>
+        <span class="page-tag" style="background:rgba(167,139,250,0.12);color:#a78bfa">Charts</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <span id="rb-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</span>
+      <button class="btn btn-purple btn-sm" onclick="rbAddReport()">＋ New report</button>
+    </div>
+  </div>
+
+  <!-- Connection banner — shows the migration job's connections (src/tgt). Each
+       individual report can also pick a different saved connection on its
+       Datasets tab; this banner just summarises the project context. -->
+  <div class="conn-banner" id="conn-banner">
+    <div class="conn-dot idle" id="src-dot"></div>
+    <span class="conn-label" id="src-label">Source: not configured</span>
+    <div style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></div>
+    <div class="conn-dot idle" id="tgt-dot"></div>
+    <span class="conn-label" id="tgt-label">Target: not configured</span>
+    <a href="/dashboard.html#connections" class="conn-btn" style="margin-left:auto">⚙ Manage connections</a>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar" id="status-bar"></div>
+
+  <!-- Two-pane shell: report list on the left, editor on the right ──────────── -->
+  <div class="rb-shell">
+
+    <!-- Left rail: list of saved reports ─────────────────────────────────── -->
+    <div class="rb-rail">
+      <div class="rb-rail-head">
+        <span class="rb-rail-title">Reports</span>
+        <button class="btn btn-ghost btn-sm" onclick="rbAddReport()" title="New report" style="padding:2px 8px">＋</button>
+      </div>
+      <div class="rb-rail-list" id="rb-rail-list"></div>
+      <div class="rb-rail-empty" id="rb-rail-empty">No reports yet.<br>Click <strong style="color:var(--text2)">＋</strong> to create one.</div>
+    </div>
+
+    <!-- Right pane: per-report editor (5 tabs) ───────────────────────────── -->
+    <div class="rb-editor">
+
+      <!-- Shown when no report is selected -->
+      <div id="rb-no-report" class="rb-no-report">
+        <strong>No report selected</strong>
+        Pick a report from the left, or click <strong style="color:var(--purple)">＋ New report</strong> to create one.
+      </div>
+
+      <!-- Shown when a report is selected. Contains name input, tab bar, panes. -->
+      <div id="rb-editor-body" style="display:none">
+
+        <!-- Name + delete -->
+        <div class="rb-editor-head">
+          <input class="rb-name-input" id="rb-name" placeholder="Untitled report" oninput="rbRenameCurrent(this.value)">
+          <button class="btn btn-red btn-sm" onclick="rbDeleteCurrent()">🗑 Delete</button>
+          <button class="btn btn-primary btn-sm" onclick="rbRunCurrent()">▶ Run</button>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="cx-tabs">
+          <button class="cx-tab cx-tab-active" data-rb-tab="datasets"   onclick="rbSwitchTab('datasets')">📥 Datasets</button>
+          <button class="cx-tab"               data-rb-tab="parameters" onclick="rbSwitchTab('parameters')">⚙️ Parameters</button>
+          <button class="cx-tab"               data-rb-tab="layout"     onclick="rbSwitchTab('layout')">📐 Layout</button>
+          <button class="cx-tab"               data-rb-tab="preview"    onclick="rbSwitchTab('preview')">👁 Preview</button>
+          <button class="cx-tab"               data-rb-tab="runs"       onclick="rbSwitchTab('runs')">🕘 Runs</button>
+        </div>
+
+        <!-- Tab panes ──────────────────────────────────────────────────────
+             Drop 1 leaves these as placeholders. Subsequent drops replace each
+             one with the real UI:
+               Drop 2 → datasets
+               Drop 3 → parameters, layout (table → matrix)
+               Drop 4 → layout charts, preview + xlsx export
+               Drop 5 → runs (Cosmos history)
+        -->
+        <div id="rb-tab-datasets" class="rb-tab-pane">
+          <div class="panel"><div class="panel-body">
+            <div class="empty-state">
+              <strong>Datasets</strong> — coming in Drop 2.<br>
+              You'll define one or more SQL datasets here, each pointing at a connection (migration src/tgt or saved connection). Visual builder, raw SQL, and AI assist will all be available.
+            </div>
+          </div></div>
+        </div>
+
+        <div id="rb-tab-parameters" class="rb-tab-pane" style="display:none">
+          <div class="panel"><div class="panel-body">
+            <div class="empty-state">
+              <strong>Parameters</strong> — coming in Drop 3.<br>
+              Define run-time inputs (text / number / date / dropdown). Dropdown options can be static or come from a SQL query.
+            </div>
+          </div></div>
+        </div>
+
+        <div id="rb-tab-layout" class="rb-tab-pane" style="display:none">
+          <div class="panel"><div class="panel-body">
+            <div class="empty-state">
+              <strong>Layout</strong> — coming in Drops 3 &amp; 4.<br>
+              Pick Table or Matrix per section. Configure columns, multi-level row groupings, aggregations, sorting, and number/date formatting. Add chart blocks (bar / line / pie) bound to your datasets.
+            </div>
+          </div></div>
+        </div>
+
+        <div id="rb-tab-preview" class="rb-tab-pane" style="display:none">
+          <div class="panel"><div class="panel-body">
+            <div class="empty-state">
+              <strong>Preview</strong> — coming in Drop 4.<br>
+              Fill parameters → run all datasets → render the layout. Excel export from this tab.
+            </div>
+          </div></div>
+        </div>
+
+        <div id="rb-tab-runs" class="rb-tab-pane" style="display:none">
+          <div class="panel"><div class="panel-body">
+            <div class="empty-state">
+              <strong>Runs</strong> — coming in Drop 5.<br>
+              History of saved runs with their parameter values and timestamps. Click any run to re-render its data.
+            </div>
+          </div></div>
+        </div>
+
+      </div><!-- /#rb-editor-body -->
+
+    </div><!-- /.rb-editor -->
+  </div><!-- /.rb-shell -->
+
+</div><!-- /.page -->
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// Cygenix Report Builder — Drop 1 shell
+//
+// State model (locked in for all 5 drops so we don't refactor later):
+//
+//   Report = {
+//     id:         string (uuid)
+//     name:       string
+//     userId:     string  (Entra oid)
+//     projectId:  string  (the migration job this report belongs to, optional)
+//     datasets:   [Dataset, ...]      // filled in Drop 2
+//     parameters: [Parameter, ...]    // filled in Drop 3
+//     layout:     { sections: [...] } // filled in Drops 3 & 4
+//     createdAt:  iso string
+//     updatedAt:  iso string
+//   }
+//
+// Reports are persisted to Cosmos (container: 'reports', partition key: /userId)
+// via the new /api/reports Azure Function endpoint (added in Drop 2).
+//
+// Drop 1 keeps a localStorage fallback so the page is functional offline /
+// before the backend is wired up. The cache key is RB_KEY_LOCAL.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const $ = (id) => document.getElementById(id);
+
+const RB_KEY_LOCAL    = 'cygenix_reports_local';   // local cache of report list
+const RB_KEY_CURRENT  = 'cygenix_reports_current'; // currently-selected report id
+const RB_KEY_TAB      = 'cygenix_reports_tab';     // active tab on the editor
+
+// ── Connection state — populated on init from CygenixConnections ─────────────
+// The page banner shows the migration job's src/tgt at a glance. Per-dataset
+// connection selection (Drop 2) reads this plus all saved connections.
+let srcConn = '';
+let tgtConn = '';
+
+// ── In-memory state ─────────────────────────────────────────────────────────
+let rbReports   = [];          // [Report, ...]
+let rbCurrentId = null;        // string | null
+let rbActiveTab = 'datasets';  // 'datasets' | 'parameters' | 'layout' | 'preview' | 'runs'
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function isFn(c){ return c && (c.startsWith('https://') || c.startsWith('http://')); }
+function parseDbName(cs){
+  try {
+    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i)
+           || cs.match(/\/([^/?]+)(?:\?|$)/i);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+}
+function showStatus(msg, type){
+  const bar = $('status-bar');
+  if (!bar) return;
+  bar.className = 'status-bar show ' + (type || 'info');
+  bar.textContent = msg;
+  if (type === 'ok' || type === 'info') {
+    clearTimeout(window._statusTimer);
+    window._statusTimer = setTimeout(() => bar.classList.remove('show'), 4000);
+  }
+}
+function setBanner(side, state, text){
+  const dot = $(side + '-dot');
+  const lbl = $(side + '-label');
+  if (lbl) lbl.textContent = text;
+  if (dot) dot.className = 'conn-dot ' + (state === 'ok' ? 'ok' : state === 'busy' ? 'busy' : state === 'idle' ? 'idle' : 'err');
+}
+function escapeHtml(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function uuid(){
+  // crypto.randomUUID is supported everywhere we care about (modern Edge/Chrome/Safari/FF).
+  // Fallback for very old browsers in case the script ever runs in one.
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return crypto.randomUUID();
+  return 'r-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+function nowIso(){ return new Date().toISOString(); }
+function flashSaved(){
+  const el = $('rb-save-indicator');
+  if (!el) return;
+  el.style.display = '';
+  clearTimeout(window._saveTimer);
+  window._saveTimer = setTimeout(() => { el.style.display = 'none'; }, 1500);
+}
+
+// ── Local storage adapter ───────────────────────────────────────────────────
+// Drop 1 uses localStorage as the only persistence layer. Drop 2 adds the
+// Cosmos sync via /api/reports — at which point this function becomes a
+// fallback for offline / fast-render and Cosmos becomes the source of truth.
+function rbLoadFromLocal(){
+  try {
+    const raw = localStorage.getItem(RB_KEY_LOCAL);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+function rbSaveToLocal(){
+  try {
+    localStorage.setItem(RB_KEY_LOCAL, JSON.stringify(rbReports));
+    flashSaved();
+  } catch (e) {
+    // QuotaExceeded is the realistic failure here. Surface it; do not silently
+    // drop the user's work.
+    showStatus('Could not save reports locally: ' + (e.message || e), 'err');
+  }
+}
+
+// ── Report CRUD ─────────────────────────────────────────────────────────────
+function rbAddReport(){
+  const r = {
+    id:         uuid(),
+    name:       '',
+    userId:     '',  // populated by Cosmos sync in Drop 2
+    projectId:  '',  // ditto
+    datasets:   [],
+    parameters: [],
+    layout:     { sections: [] },
+    createdAt:  nowIso(),
+    updatedAt:  nowIso()
+  };
+  rbReports.unshift(r);
+  rbCurrentId = r.id;
+  rbActiveTab = 'datasets';
+  rbSaveToLocal();
+  rbPersistSelection();
+  rbRender();
+  // Focus the name input so the user can type a name immediately.
+  setTimeout(() => { const el = $('rb-name'); if (el) el.focus(); }, 0);
+}
+function rbDeleteCurrent(){
+  if (!rbCurrentId) return;
+  const r = rbReports.find(x => x.id === rbCurrentId);
+  if (!r) return;
+  const label = r.name || 'this report';
+  if (!confirm('Delete "' + label + '"? This cannot be undone.')) return;
+  rbReports = rbReports.filter(x => x.id !== rbCurrentId);
+  rbCurrentId = rbReports.length ? rbReports[0].id : null;
+  rbSaveToLocal();
+  rbPersistSelection();
+  rbRender();
+}
+function rbSelectReport(id){
+  rbCurrentId = id;
+  rbPersistSelection();
+  rbRender();
+}
+function rbRenameCurrent(name){
+  const r = rbReports.find(x => x.id === rbCurrentId);
+  if (!r) return;
+  r.name = name;
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  // Re-render the rail only (cheap) so the new name appears there.
+  rbRenderRail();
+}
+function rbPersistSelection(){
+  if (rbCurrentId) localStorage.setItem(RB_KEY_CURRENT, rbCurrentId);
+  else             localStorage.removeItem(RB_KEY_CURRENT);
+  localStorage.setItem(RB_KEY_TAB, rbActiveTab);
+}
+
+// ── Run (placeholder for Drop 4) ────────────────────────────────────────────
+function rbRunCurrent(){
+  // Drop 4 will wire this to the dataset+parameter+layout pipeline.
+  showStatus('Run will be wired up in Drop 4.', 'info');
+}
+
+// ── Tab switching ───────────────────────────────────────────────────────────
+function rbSwitchTab(tab){
+  rbActiveTab = tab;
+  rbPersistSelection();
+  document.querySelectorAll('[data-rb-tab]').forEach(btn => {
+    btn.classList.toggle('cx-tab-active', btn.getAttribute('data-rb-tab') === tab);
+  });
+  ['datasets','parameters','layout','preview','runs'].forEach(t => {
+    const el = $('rb-tab-' + t);
+    if (el) el.style.display = t === tab ? '' : 'none';
+  });
+}
+
+// ── Render ──────────────────────────────────────────────────────────────────
+function rbRender(){
+  rbRenderRail();
+  rbRenderEditor();
+}
+
+function rbRenderRail(){
+  const list  = $('rb-rail-list');
+  const empty = $('rb-rail-empty');
+  if (!list || !empty) return;
+
+  if (rbReports.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  // Sort: most recently updated first.
+  const sorted = [...rbReports].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+
+  list.innerHTML = sorted.map(r => {
+    const active = r.id === rbCurrentId ? ' active' : '';
+    const name = escapeHtml(r.name || 'Untitled report');
+    const meta = r.datasets && r.datasets.length
+      ? r.datasets.length + 'ds'
+      : '';
+    return '<div class="rb-rail-item' + active + '" onclick="rbSelectReport(\'' + r.id + '\')">'
+         +   '<span class="rb-rail-item-name">' + name + '</span>'
+         +   (meta ? '<span class="rb-rail-item-meta">' + meta + '</span>' : '')
+         + '</div>';
+  }).join('');
+}
+
+function rbRenderEditor(){
+  const noRpt = $('rb-no-report');
+  const body  = $('rb-editor-body');
+  if (!noRpt || !body) return;
+
+  const r = rbReports.find(x => x.id === rbCurrentId);
+  if (!r) {
+    noRpt.style.display = '';
+    body.style.display  = 'none';
+    return;
+  }
+  noRpt.style.display = 'none';
+  body.style.display  = '';
+
+  // Name
+  const nameInput = $('rb-name');
+  if (nameInput && nameInput.value !== (r.name || '')) {
+    nameInput.value = r.name || '';
+  }
+
+  // Tab visibility — keep whatever's persisted.
+  rbSwitchTab(rbActiveTab);
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+async function rbInit(){
+  // Restore state from localStorage. Drop 2 will replace this with a Cosmos
+  // fetch via /api/reports, falling back to local on network failure.
+  rbReports = rbLoadFromLocal();
+
+  const savedId  = localStorage.getItem(RB_KEY_CURRENT);
+  const savedTab = localStorage.getItem(RB_KEY_TAB);
+  if (savedId && rbReports.some(r => r.id === savedId)) rbCurrentId = savedId;
+  else                                                   rbCurrentId = rbReports.length ? rbReports[0].id : null;
+  if (savedTab && ['datasets','parameters','layout','preview','runs'].includes(savedTab)) rbActiveTab = savedTab;
+
+  rbRender();
+  rbInitConnectionBanner();
+}
+
+// Connection banner — same resolution pattern as balancing.html. Reads
+// CygenixConnections, displays src/tgt summaries, no automatic test-ping
+// here (the dataset tab will trigger test pings when the user actually
+// picks a connection in Drop 2).
+async function rbInitConnectionBanner(){
+  if (typeof CygenixConnections === 'undefined' || !CygenixConnections || typeof CygenixConnections.get !== 'function') {
+    setBanner('src', 'idle', 'Source: connections.js not loaded');
+    setBanner('tgt', 'idle', 'Target: connections.js not loaded');
+    return;
+  }
+  try {
+    const cx = await CygenixConnections.get();
+    if (!cx) {
+      setBanner('src', 'idle', 'Source: not configured');
+      setBanner('tgt', 'idle', 'Target: not configured');
+      return;
+    }
+    // Source — same fallback chain as balancing.html / object_mapping.html:
+    // direct connection string, or function URL with key.
+    srcConn = cx.srcConnString || '';
+    if (!srcConn && cx.srcFnUrl) {
+      const sep = cx.srcFnUrl.includes('?') ? '&' : '?';
+      srcConn = cx.srcFnUrl + (cx.srcFnKey ? sep + 'code=' + encodeURIComponent(cx.srcFnKey) : '');
+    }
+    if (srcConn) {
+      const dbName = parseDbName(srcConn);
+      setBanner('src', 'ok', 'Source' + (dbName ? ' · ' + dbName : '') + ' · ready');
+    } else {
+      setBanner('src', 'idle', 'Source: not configured');
+    }
+    // Target — same idea.
+    tgtConn = cx.tgtConnString || '';
+    if (!tgtConn && cx.tgtFnUrl) {
+      const sep = cx.tgtFnUrl.includes('?') ? '&' : '?';
+      tgtConn = cx.tgtFnUrl + (cx.tgtFnKey ? sep + 'code=' + encodeURIComponent(cx.tgtFnKey) : '');
+    }
+    if (tgtConn) {
+      const dbName = parseDbName(tgtConn);
+      setBanner('tgt', 'ok', 'Target' + (dbName ? ' · ' + dbName : '') + ' · ready');
+    } else {
+      setBanner('tgt', 'idle', 'Target: not configured');
+    }
+  } catch (e) {
+    setBanner('src', 'err', 'Source: ' + (e.message || 'load failed'));
+    setBanner('tgt', 'err', 'Target: ' + (e.message || 'load failed'));
+  }
+}
+
+document.addEventListener('DOMContentLoaded', rbInit);
+</script>
+</body>
+</html>
