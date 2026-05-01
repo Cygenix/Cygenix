@@ -262,6 +262,76 @@ body.cyg-collapsed{padding-left:54px}
 .pa-section-divider{margin:1rem 0;height:0.5px;background:var(--border)}
 .pa-hint{font-size:10px;color:var(--text3);margin-top:0.3rem;font-style:italic;line-height:1.5}
 .pa-hint code{background:var(--bg3);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-style:normal;color:var(--text2)}
+/* ── Layout tab ─────────────────────────────────────────────────────────────
+   A report has multiple sections (table / matrix / chart). Each section is
+   a card with: header (name, dataset binding, type, actions), and a body
+   with three drop zones (columns / row groups / sort) plus a field panel.
+   Mirrors Power BI Report Builder's mental model. */
+.la-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.75rem}
+.la-head{padding:0.75rem 1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;border-bottom:0.5px solid var(--border)}
+.la-name{flex:1;min-width:200px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.7rem;font-size:13px;font-weight:500;color:var(--text);outline:none;font-family:var(--serif)}
+.la-name:focus{border-color:var(--accent)}
+.la-dataset,.la-type{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;min-width:140px}
+.la-dataset:focus,.la-type:focus{border-color:var(--accent)}
+.la-body{padding:1rem}
+
+/* Two-column body: field panel on left, design zones on right.
+   Stacks on narrow viewports. */
+.la-design{display:grid;grid-template-columns:220px 1fr;gap:1rem;align-items:start}
+@media (max-width:850px){.la-design{grid-template-columns:1fr}}
+
+/* Field panel — list of available fields from the bound dataset */
+.la-field-panel{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.6rem;max-height:480px;overflow-y:auto;position:sticky;top:1rem}
+.la-field-panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
+.la-field-panel-title{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em}
+.la-field-search{width:100%;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.35rem 0.55rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;margin-bottom:0.5rem}
+.la-field-search:focus{border-color:var(--accent)}
+.la-field{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:5px 8px;border-radius:5px;font-size:11px;color:var(--text2);font-family:var(--mono);cursor:pointer;border:0.5px solid transparent;margin-bottom:2px;transition:all 0.1s}
+.la-field:hover{background:var(--bg);color:var(--text);border-color:var(--border2)}
+.la-field-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.la-field-type{font-size:9px;color:var(--text3);flex-shrink:0;text-transform:uppercase;letter-spacing:0.05em}
+.la-field-type.t-number{color:var(--teal)}
+.la-field-type.t-date{color:var(--amber)}
+.la-field-type.t-bool{color:var(--purple)}
+.la-field-empty{padding:1rem;text-align:center;font-size:11px;color:var(--text3);font-style:italic}
+
+/* Drop zones — stacked vertically */
+.la-zones{display:flex;flex-direction:column;gap:0.75rem;min-width:0}
+.la-zone{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.6rem 0.75rem}
+.la-zone-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem}
+.la-zone-title{font-size:10px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.07em;display:flex;align-items:center;gap:6px}
+.la-zone-meta{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.la-zone-empty{padding:0.5rem 0.75rem;font-size:11px;color:var(--text3);font-style:italic;border:0.5px dashed var(--border2);border-radius:6px;text-align:center}
+/* Each item in a zone is a chip with controls underneath when expanded */
+.la-chip{background:var(--bg2);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.7rem;margin-bottom:0.4rem;transition:border-color 0.12s}
+.la-chip:last-child{margin-bottom:0}
+.la-chip:hover{border-color:var(--border2)}
+.la-chip-head{display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.la-chip-handle{color:var(--text3);font-family:var(--mono);font-size:11px;cursor:grab;flex-shrink:0;padding:0 2px;user-select:none}
+.la-chip-handle:hover{color:var(--text2)}
+.la-chip-handle:active{cursor:grabbing}
+.la-chip-field{font-size:12px;font-family:var(--mono);color:var(--text);font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.la-chip-meta{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.la-chip-toggle{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:10px;padding:0 4px}
+.la-chip-toggle:hover{color:var(--accent)}
+.la-chip-rm{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:13px;padding:0 4px;line-height:1}
+.la-chip-rm:hover{color:var(--red)}
+.la-chip-body{margin-top:0.5rem;padding-top:0.5rem;border-top:0.5px dashed var(--border)}
+.la-chip-body.collapsed{display:none}
+.la-chip-row{display:grid;grid-template-columns:auto 1fr;gap:0.5rem;align-items:center;margin-bottom:0.35rem}
+.la-chip-row > label{font-size:10px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;min-width:80px}
+.la-chip-input,.la-chip-select{background:var(--bg);border:0.5px solid var(--border2);border-radius:5px;padding:0.3rem 0.5rem;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;min-width:0}
+.la-chip-input:focus,.la-chip-select:focus{border-color:var(--accent)}
+.la-chip-checkbox{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text2);cursor:pointer;font-family:var(--serif)}
+.la-chip-checkbox input{cursor:pointer}
+
+/* Section settings (header / grand total / title) */
+.la-settings{display:flex;gap:1rem;flex-wrap:wrap;padding:0.5rem 0.75rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;margin-top:0.75rem}
+.la-settings .la-chip-checkbox{font-size:11px}
+
+/* Empty-dataset state */
+.la-no-dataset{padding:2rem;text-align:center;color:var(--text3);font-size:12px}
+.la-no-dataset strong{display:block;color:var(--text2);font-size:13px;margin-bottom:0.5rem;font-weight:500}
 
 </style>
 </head>
@@ -387,10 +457,14 @@ body.cyg-collapsed{padding-left:54px}
 
         <div id="rb-tab-layout" class="rb-tab-pane" style="display:none">
           <div class="panel"><div class="panel-body">
-            <div class="empty-state">
-              <strong>Layout</strong> — coming in Drops 3 &amp; 4.<br>
-              Pick Table or Matrix per section. Configure columns, multi-level row groupings, aggregations, sorting, and number/date formatting. Add chart blocks (bar / line / pie) bound to your datasets.
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+              <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
+                Define one or more sections. Each section is bound to a dataset and has a layout type. Drop 3b ships <strong style="font-style:normal;color:var(--text2)">Table</strong>; <strong style="font-style:normal;color:var(--text2)">Matrix</strong> and <strong style="font-style:normal;color:var(--text2)">Chart</strong> arrive in Drop 4.
+              </div>
+              <button class="btn btn-purple btn-sm" onclick="laAddSection()">＋ Add section</button>
             </div>
+            <div id="la-list"></div>
+            <div id="la-empty" class="empty-state">No sections yet. Click <strong>＋ Add section</strong> to add one.</div>
           </div></div>
         </div>
 
@@ -664,6 +738,7 @@ function rbRenderEditor(){
   // instant. Drops 3-5 add their own renderers (parameters, layout, runs).
   if (typeof dsRender === 'function') dsRender();
   if (typeof paRender === 'function') paRender();
+  if (typeof laRender === 'function') laRender();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2558,7 +2633,660 @@ function paRenderHint(p){
 }
 
 
-// ── Init ────────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// Layout tab (Drop 3b: Table layout only; Matrix + Chart in Drop 4)
+//
+// State shape (per section, lives on Report.layout.sections[]):
+//   Section = {
+//     id, name,
+//     type: 'table' | 'matrix' | 'chart',   // only 'table' implemented in 3b
+//     datasetId: <FK to Report.datasets[].id>,
+//     uiOpen: true|false,                    // section card collapse state
+//
+//     // Table-specific
+//     table: {
+//       columns: [
+//         { id, field, label, format, agg, width, align, _open: bool }
+//         //  field   = key from dataset.fields[].name
+//         //  label   = column header (defaults to field)
+//         //  format  = '' | 'number' | 'integer' | 'currency' | 'percent' | 'date' | 'datetime' | 'text'
+//         //  agg     = '' | 'sum' | 'avg' | 'count' | 'min' | 'max'
+//         //  width   = '' | '<n>px' | '<n>%' | 'auto'
+//         //  align   = 'left' | 'right' | 'center' | ''  ('' = auto from format)
+//       ],
+//       rowGroups: [
+//         { id, field, sortDir: 'asc'|'desc', showHeader: bool, showSubtotal: bool, label, _open: bool }
+//       ],
+//       sort: [{ field, dir: 'asc'|'desc' }],   // detail-row sort within innermost group
+//       showHeader: true,
+//       showGrandTotal: true,
+//       title: ''
+//     }
+//   }
+//
+// The Layout tab is a pure DESIGNER. It does NOT fetch data or render rows.
+// Preview tab (Drop 4) reads this config + runs the dataset + renders.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── CRUD on the current report's layout sections ────────────────────────────
+function laCurrentReport(){
+  return rbReports.find(x => x.id === rbCurrentId) || null;
+}
+
+function laEnsureLayout(r){
+  if (!r.layout)                 r.layout = { sections: [] };
+  if (!Array.isArray(r.layout.sections)) r.layout.sections = [];
+  return r.layout;
+}
+
+function laAddSection(){
+  const r = laCurrentReport();
+  if (!r) { showStatus('Select or create a report first.', 'err'); return; }
+  const lo = laEnsureLayout(r);
+  // Default dataset binding: first dataset, if any.
+  const defaultDsId = (r.datasets && r.datasets[0] && r.datasets[0].id) || '';
+  const s = {
+    id: uuid(),
+    name: 'Section ' + (lo.sections.length + 1),
+    type: 'table',
+    datasetId: defaultDsId,
+    uiOpen: true,
+    table: {
+      columns: [],
+      rowGroups: [],
+      sort: [],
+      showHeader: true,
+      showGrandTotal: true,
+      title: ''
+    }
+  };
+  lo.sections.push(s);
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  laRender();
+}
+
+function laRemoveSection(idx){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s) return;
+  if (!confirm('Delete section "' + (s.name || 'Untitled') + '"?')) return;
+  lo.sections.splice(idx, 1);
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  laRender();
+}
+
+function laUpdate(idx, path, value){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s) return;
+  const parts = path.split('.');
+  let target = s;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (target[parts[i]] == null) target[parts[i]] = {};
+    target = target[parts[i]];
+  }
+  target[parts[parts.length - 1]] = value;
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+}
+
+function laToggleOpen(idx){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s) return;
+  s.uiOpen = !s.uiOpen;
+  rbSaveToLocal();
+  laRender();
+}
+
+function laChangeType(idx, value){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s) return;
+  s.type = value;
+  // Drop 3b only implements 'table'. Matrix/chart structures will be added
+  // in Drop 4. For now, switching to anything other than 'table' renders
+  // a "coming soon" body so users can stage sections without us erroring.
+  if (value === 'table' && !s.table) {
+    s.table = { columns: [], rowGroups: [], sort: [], showHeader: true, showGrandTotal: true, title: '' };
+  }
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  laRender();
+}
+
+function laChangeDataset(idx, value){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s) return;
+  // If the dataset changes, fields are no longer valid — but we don't
+  // auto-clear columns/groups. Instead, the field panel shows new fields
+  // and the user sees that existing chips reference fields that aren't
+  // in the new dataset. Trade-off: a dataset swap shouldn't silently nuke
+  // a section's design, so we keep the chips but flag invalid fields in
+  // the chip render.
+  s.datasetId = value;
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  laRender();
+}
+
+// ── Helpers to look up the bound dataset & its fields ──────────────────────
+function laBoundDataset(s){
+  const r = laCurrentReport(); if (!r || !s) return null;
+  return (r.datasets || []).find(d => d.id === s.datasetId) || null;
+}
+function laBoundFields(s){
+  const d = laBoundDataset(s);
+  return (d && Array.isArray(d.fields)) ? d.fields : [];
+}
+function laFieldByName(s, name){
+  return laBoundFields(s).find(f => f.name === name) || null;
+}
+
+// ── Add column / group / sort from the field panel ─────────────────────────
+// "Click to add" model. Future drag-and-drop slots in here without
+// changing the data-shape contract.
+function laAddColumn(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s || s.type !== 'table') return;
+  const f = laFieldByName(s, fieldName);
+  if (!f) return;
+  // Defaults derived from field type:
+  //  - numeric  → right-aligned, no aggregation (user can opt in)
+  //  - date     → format=date, left-aligned
+  //  - other    → format='', left-aligned
+  let format = '';
+  let align  = '';
+  if (f.type === 'number')  { format = 'number'; align = 'right'; }
+  else if (f.type === 'date') { format = 'date';   align = 'left'; }
+  s.table.columns.push({
+    id: uuid(),
+    field: fieldName,
+    label: fieldName,
+    format: format,
+    agg: '',
+    width: '',
+    align: align,
+    _open: false
+  });
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  laRender();
+}
+
+function laAddRowGroup(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s || s.type !== 'table') return;
+  // Don't add the same field as a group twice.
+  if ((s.table.rowGroups || []).some(g => g.field === fieldName)) {
+    showStatus('"' + fieldName + '" is already a row group.', 'info');
+    return;
+  }
+  s.table.rowGroups.push({
+    id: uuid(),
+    field: fieldName,
+    sortDir: 'asc',
+    showHeader: true,
+    showSubtotal: true,
+    label: fieldName,
+    _open: false
+  });
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  laRender();
+}
+
+function laAddSort(idx, fieldName){
+  const r = laCurrentReport(); if (!r) return;
+  const lo = laEnsureLayout(r);
+  const s = lo.sections[idx]; if (!s || s.type !== 'table') return;
+  if ((s.table.sort || []).some(x => x.field === fieldName)) {
+    showStatus('"' + fieldName + '" is already in the sort.', 'info');
+    return;
+  }
+  s.table.sort.push({ field: fieldName, dir: 'asc' });
+  r.updatedAt = nowIso();
+  rbSaveToLocal();
+  laRender();
+}
+
+// ── Chip CRUD ──────────────────────────────────────────────────────────────
+function laRemoveColumn(sIdx, cIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  s.table.columns.splice(cIdx, 1);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laUpdateColumn(sIdx, cIdx, key, value){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  if (!s.table.columns[cIdx]) return;
+  s.table.columns[cIdx][key] = value;
+  r.updatedAt = nowIso(); rbSaveToLocal();
+  if (key === '_open') laRender();
+}
+function laToggleColumn(sIdx, cIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  if (!s.table.columns[cIdx]) return;
+  s.table.columns[cIdx]._open = !s.table.columns[cIdx]._open;
+  rbSaveToLocal(); laRender();
+}
+function laMoveColumn(sIdx, cIdx, delta){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  const cols = s.table.columns;
+  const newIdx = cIdx + delta;
+  if (newIdx < 0 || newIdx >= cols.length) return;
+  const [moved] = cols.splice(cIdx, 1);
+  cols.splice(newIdx, 0, moved);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+
+function laRemoveGroup(sIdx, gIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  s.table.rowGroups.splice(gIdx, 1);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laUpdateGroup(sIdx, gIdx, key, value){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  if (!s.table.rowGroups[gIdx]) return;
+  s.table.rowGroups[gIdx][key] = value;
+  r.updatedAt = nowIso(); rbSaveToLocal();
+  if (key === '_open') laRender();
+}
+function laToggleGroup(sIdx, gIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  if (!s.table.rowGroups[gIdx]) return;
+  s.table.rowGroups[gIdx]._open = !s.table.rowGroups[gIdx]._open;
+  rbSaveToLocal(); laRender();
+}
+function laMoveGroup(sIdx, gIdx, delta){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  const groups = s.table.rowGroups;
+  const newIdx = gIdx + delta;
+  if (newIdx < 0 || newIdx >= groups.length) return;
+  const [moved] = groups.splice(gIdx, 1);
+  groups.splice(newIdx, 0, moved);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+
+function laRemoveSort(sIdx, sortIdx){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  s.table.sort.splice(sortIdx, 1);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+function laUpdateSort(sIdx, sortIdx, key, value){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  if (!s.table.sort[sortIdx]) return;
+  s.table.sort[sortIdx][key] = value;
+  r.updatedAt = nowIso(); rbSaveToLocal();
+}
+function laMoveSort(sIdx, sortIdx, delta){
+  const r = laCurrentReport(); if (!r) return;
+  const s = (r.layout && r.layout.sections || [])[sIdx]; if (!s) return;
+  const arr = s.table.sort;
+  const newIdx = sortIdx + delta;
+  if (newIdx < 0 || newIdx >= arr.length) return;
+  const [moved] = arr.splice(sortIdx, 1);
+  arr.splice(newIdx, 0, moved);
+  r.updatedAt = nowIso(); rbSaveToLocal(); laRender();
+}
+
+// ── Field-search: cheap per-section client-side filter on the panel ────────
+const _laFieldSearch = {};   // sectionId -> search string
+function laUpdateFieldSearch(sectionId, value){
+  _laFieldSearch[sectionId] = value;
+  // Re-render only the field panel for this section. To keep the impl
+  // simple we full-re-render — cards are cheap.
+  laRender();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Layout render
+// ══════════════════════════════════════════════════════════════════════════════
+
+function laRender(){
+  const list  = $('la-list');
+  const empty = $('la-empty');
+  if (!list || !empty) return;
+
+  const r = laCurrentReport();
+  if (!r) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'Select or create a report to add layout sections.';
+    return;
+  }
+  const sections = (r.layout && r.layout.sections) || [];
+  if (sections.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'No sections yet. Click <strong>＋ Add section</strong> to add one.';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = sections.map((s, i) => laRenderSection(s, i, r)).join('');
+}
+
+function laRenderSection(s, idx, r){
+  const datasets = r.datasets || [];
+  const dsOptions = datasets.length === 0
+    ? '<option value="">⚠ No datasets defined</option>'
+    : datasets.map(d =>
+        '<option value="' + escapeHtml(d.id) + '"' + (s.datasetId === d.id ? ' selected' : '') + '>'
+        + escapeHtml(d.name || 'Unnamed dataset') + '</option>'
+      ).join('');
+
+  const types = [
+    { v: 'table',  l: 'Table' },
+    { v: 'matrix', l: 'Matrix (soon)' },
+    { v: 'chart',  l: 'Chart (soon)' }
+  ];
+  const typeOpts = types.map(t =>
+    '<option value="' + t.v + '"' + (s.type === t.v ? ' selected' : '') + '>' + t.l + '</option>'
+  ).join('');
+
+  const head = ''
+    + '<div class="la-head">'
+    +   '<button class="ds-chev' + (s.uiOpen !== false ? ' open' : '') + '" '
+    +     'style="background:transparent;border:none;color:var(--text3);cursor:pointer;padding:0 4px;font-size:9px" '
+    +     'onclick="laToggleOpen(' + idx + ')">▶</button>'
+    +   '<input class="la-name" value="' + escapeHtml(s.name || '') + '" placeholder="Section name" '
+    +     'onchange="laUpdate(' + idx + ',\'name\',this.value)">'
+    +   '<select class="la-dataset" onchange="laChangeDataset(' + idx + ',this.value)">' + dsOptions + '</select>'
+    +   '<select class="la-type" onchange="laChangeType(' + idx + ',this.value)">' + typeOpts + '</select>'
+    +   '<button class="ds-rm-btn" title="Remove section" onclick="laRemoveSection(' + idx + ')">✕</button>'
+    + '</div>';
+
+  // Body
+  let body;
+  if (s.uiOpen === false) {
+    body = '';
+  } else if (!s.datasetId) {
+    body = '<div class="la-body"><div class="la-no-dataset">'
+         + '<strong>No dataset bound</strong>'
+         + 'Pick a dataset from the dropdown above. If you don\'t have any datasets yet, head to the Datasets tab and create one.'
+         + '</div></div>';
+  } else if (!laBoundDataset(s)) {
+    body = '<div class="la-body"><div class="la-no-dataset">'
+         + '<strong>Bound dataset has been deleted</strong>'
+         + 'The dataset this section was bound to no longer exists. Pick another from the dropdown above.'
+         + '</div></div>';
+  } else if (s.type !== 'table') {
+    body = '<div class="la-body"><div class="la-no-dataset">'
+         + '<strong>' + escapeHtml(s.type === 'matrix' ? 'Matrix' : 'Chart') + ' coming in Drop 4</strong>'
+         + 'The data model is reserved on this section, but the designer for ' + escapeHtml(s.type) + ' layouts is still being built. Switch back to Table for now.'
+         + '</div></div>';
+  } else {
+    body = '<div class="la-body">' + laRenderTableDesigner(s, idx) + '</div>';
+  }
+
+  return '<div class="la-card">' + head + body + '</div>';
+}
+
+function laRenderTableDesigner(s, idx){
+  const fieldPanel = laRenderFieldPanel(s, idx);
+  const zones      = laRenderZones(s, idx);
+  const settings   = laRenderSectionSettings(s, idx);
+  return '<div class="la-design">' + fieldPanel + zones + '</div>' + settings;
+}
+
+function laRenderFieldPanel(s, idx){
+  const fields = laBoundFields(s);
+  const ds = laBoundDataset(s);
+  const search = (_laFieldSearch[s.id] || '').toLowerCase();
+
+  // No fields? Could be: dataset never test-run, or query returned no rows.
+  if (fields.length === 0) {
+    const msg = (ds && ds.lastTestRun)
+      ? 'Dataset returned no rows on its last Test run, so no fields are known. Run it again with different filters.'
+      : 'Run "Test run" on the dataset (Datasets tab) to discover its fields.';
+    return '<div class="la-field-panel">'
+         +   '<div class="la-field-panel-head"><span class="la-field-panel-title">Fields</span></div>'
+         +   '<div class="la-field-empty">' + escapeHtml(msg) + '</div>'
+         + '</div>';
+  }
+
+  const filtered = search
+    ? fields.filter(f => f.name.toLowerCase().includes(search))
+    : fields;
+
+  // Each field row: click name to add as column; small buttons for "+G" (group)
+  // and "+S" (sort). Used a small icon strip rather than nesting a menu so the
+  // entire panel stays scannable.
+  const items = filtered.map(f => {
+    const typeClass = f.type === 'number' ? 't-number'
+                    : f.type === 'date'   ? 't-date'
+                    : f.type === 'bool'   ? 't-bool'
+                    : '';
+    return '<div class="la-field" title="Click name to add as column">'
+         +   '<span class="la-field-name" onclick="laAddColumn(' + idx + ',\'' + escapeHtml(f.name).replace(/'/g, "\\'") + '\')">' + escapeHtml(f.name) + '</span>'
+         +   '<span class="la-field-type ' + typeClass + '">' + escapeHtml(f.type || '') + '</span>'
+         +   '<button class="la-chip-toggle" title="Add as row group" onclick="laAddRowGroup(' + idx + ',\'' + escapeHtml(f.name).replace(/'/g, "\\'") + '\')">＋G</button>'
+         +   '<button class="la-chip-toggle" title="Add to sort"      onclick="laAddSort(' + idx + ',\'' + escapeHtml(f.name).replace(/'/g, "\\'") + '\')">＋S</button>'
+         + '</div>';
+  }).join('');
+
+  return '<div class="la-field-panel">'
+       +   '<div class="la-field-panel-head">'
+       +     '<span class="la-field-panel-title">Fields · ' + fields.length + '</span>'
+       +   '</div>'
+       +   '<input class="la-field-search" placeholder="Filter fields…" '
+       +     'value="' + escapeHtml(search) + '" '
+       +     'oninput="laUpdateFieldSearch(\'' + s.id + '\',this.value)">'
+       +   (filtered.length === 0
+            ? '<div class="la-field-empty">No fields match "' + escapeHtml(search) + '"</div>'
+            : items)
+       + '</div>';
+}
+
+function laRenderZones(s, idx){
+  const t = s.table || {};
+  return '<div class="la-zones">'
+       +   laRenderColumnsZone(s, idx, t)
+       +   laRenderRowGroupsZone(s, idx, t)
+       +   laRenderSortZone(s, idx, t)
+       + '</div>';
+}
+
+function laRenderColumnsZone(s, idx, t){
+  const cols = t.columns || [];
+  const head = '<div class="la-zone-head">'
+             + '<span class="la-zone-title">📋 Columns</span>'
+             + '<span class="la-zone-meta">' + cols.length + ' column' + (cols.length === 1 ? '' : 's') + '</span>'
+             + '</div>';
+  const body = cols.length === 0
+    ? '<div class="la-zone-empty">Click a field name in the panel to add it as a column.</div>'
+    : cols.map((c, cIdx) => laRenderColumnChip(s, idx, c, cIdx)).join('');
+  return '<div class="la-zone">' + head + body + '</div>';
+}
+
+function laRenderColumnChip(s, sIdx, c, cIdx){
+  const fields = laBoundFields(s);
+  const fieldExists = fields.some(f => f.name === c.field);
+  const meta = (c.agg ? c.agg.toUpperCase() + ' · ' : '')
+             + (c.format || 'auto')
+             + (fieldExists ? '' : ' · ⚠ field missing');
+
+  const head = '<div class="la-chip-head">'
+             + '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
+             + '<span class="la-chip-field">' + escapeHtml(c.field) + '</span>'
+             + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
+             + '<button class="la-chip-toggle" title="Move up"     onclick="laMoveColumn(' + sIdx + ',' + cIdx + ',-1)">▲</button>'
+             + '<button class="la-chip-toggle" title="Move down"   onclick="laMoveColumn(' + sIdx + ',' + cIdx + ',1)">▼</button>'
+             + '<button class="la-chip-toggle" title="Edit"        onclick="laToggleColumn(' + sIdx + ',' + cIdx + ')">' + (c._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-rm"     title="Remove"      onclick="laRemoveColumn(' + sIdx + ',' + cIdx + ')">✕</button>'
+             + '</div>';
+
+  if (!c._open) return '<div class="la-chip">' + head + '</div>';
+
+  const formats = [
+    { v: '',         l: '(auto)' },
+    { v: 'text',     l: 'Text' },
+    { v: 'integer',  l: 'Integer' },
+    { v: 'number',   l: 'Number (2dp)' },
+    { v: 'currency', l: 'Currency' },
+    { v: 'percent',  l: 'Percent' },
+    { v: 'date',     l: 'Date' },
+    { v: 'datetime', l: 'Date + time' },
+  ];
+  const formatOpts = formats.map(f =>
+    '<option value="' + f.v + '"' + (c.format === f.v ? ' selected' : '') + '>' + f.l + '</option>'
+  ).join('');
+
+  const aggs = [
+    { v: '',      l: '(none)' },
+    { v: 'sum',   l: 'Sum' },
+    { v: 'avg',   l: 'Average' },
+    { v: 'count', l: 'Count' },
+    { v: 'min',   l: 'Min' },
+    { v: 'max',   l: 'Max' }
+  ];
+  const aggOpts = aggs.map(a =>
+    '<option value="' + a.v + '"' + (c.agg === a.v ? ' selected' : '') + '>' + a.l + '</option>'
+  ).join('');
+
+  const aligns = [
+    { v: '',       l: '(auto)' },
+    { v: 'left',   l: 'Left' },
+    { v: 'right',  l: 'Right' },
+    { v: 'center', l: 'Center' }
+  ];
+  const alignOpts = aligns.map(a =>
+    '<option value="' + a.v + '"' + (c.align === a.v ? ' selected' : '') + '>' + a.l + '</option>'
+  ).join('');
+
+  const body = '<div class="la-chip-body">'
+             +   '<div class="la-chip-row"><label>Header</label>'
+             +     '<input class="la-chip-input" value="' + escapeHtml(c.label || '') + '" '
+             +       'onchange="laUpdateColumn(' + sIdx + ',' + cIdx + ',\'label\',this.value)"></div>'
+             +   '<div class="la-chip-row"><label>Format</label>'
+             +     '<select class="la-chip-select" onchange="laUpdateColumn(' + sIdx + ',' + cIdx + ',\'format\',this.value)">' + formatOpts + '</select></div>'
+             +   '<div class="la-chip-row"><label>Aggregate</label>'
+             +     '<select class="la-chip-select" onchange="laUpdateColumn(' + sIdx + ',' + cIdx + ',\'agg\',this.value)">' + aggOpts + '</select></div>'
+             +   '<div class="la-chip-row"><label>Align</label>'
+             +     '<select class="la-chip-select" onchange="laUpdateColumn(' + sIdx + ',' + cIdx + ',\'align\',this.value)">' + alignOpts + '</select></div>'
+             +   '<div class="la-chip-row"><label>Width</label>'
+             +     '<input class="la-chip-input" placeholder="auto" value="' + escapeHtml(c.width || '') + '" '
+             +       'onchange="laUpdateColumn(' + sIdx + ',' + cIdx + ',\'width\',this.value)"></div>'
+             + '</div>';
+
+  return '<div class="la-chip">' + head + body + '</div>';
+}
+
+function laRenderRowGroupsZone(s, idx, t){
+  const groups = t.rowGroups || [];
+  const head = '<div class="la-zone-head">'
+             + '<span class="la-zone-title">📂 Row groups</span>'
+             + '<span class="la-zone-meta">' + groups.length + ' level' + (groups.length === 1 ? '' : 's') + '</span>'
+             + '</div>';
+  const body = groups.length === 0
+    ? '<div class="la-zone-empty">Click <strong>＋G</strong> next to a field in the panel to add a row group. Groups are listed outermost-first.</div>'
+    : groups.map((g, gIdx) => laRenderGroupChip(s, idx, g, gIdx, groups.length)).join('');
+  return '<div class="la-zone">' + head + body + '</div>';
+}
+
+function laRenderGroupChip(s, sIdx, g, gIdx, total){
+  const fields = laBoundFields(s);
+  const fieldExists = fields.some(f => f.name === g.field);
+  const level = (gIdx + 1) + (gIdx === 0 ? ' · outermost' : (gIdx === total - 1 && total > 1 ? ' · innermost' : ''));
+  const meta = 'Level ' + level + (fieldExists ? '' : ' · ⚠ field missing');
+
+  const head = '<div class="la-chip-head">'
+             + '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
+             + '<span class="la-chip-field">' + escapeHtml(g.field) + '</span>'
+             + '<span class="la-chip-meta">' + escapeHtml(meta) + '</span>'
+             + '<button class="la-chip-toggle" title="Move up"     onclick="laMoveGroup(' + sIdx + ',' + gIdx + ',-1)">▲</button>'
+             + '<button class="la-chip-toggle" title="Move down"   onclick="laMoveGroup(' + sIdx + ',' + gIdx + ',1)">▼</button>'
+             + '<button class="la-chip-toggle" title="Edit"        onclick="laToggleGroup(' + sIdx + ',' + gIdx + ')">' + (g._open ? '▾' : '✎') + '</button>'
+             + '<button class="la-chip-rm"     title="Remove"      onclick="laRemoveGroup(' + sIdx + ',' + gIdx + ')">✕</button>'
+             + '</div>';
+
+  if (!g._open) return '<div class="la-chip">' + head + '</div>';
+
+  const dirs = [
+    { v: 'asc',  l: 'A → Z (ascending)' },
+    { v: 'desc', l: 'Z → A (descending)' }
+  ];
+  const dirOpts = dirs.map(d =>
+    '<option value="' + d.v + '"' + (g.sortDir === d.v ? ' selected' : '') + '>' + d.l + '</option>'
+  ).join('');
+
+  const body = '<div class="la-chip-body">'
+             +   '<div class="la-chip-row"><label>Header label</label>'
+             +     '<input class="la-chip-input" value="' + escapeHtml(g.label || '') + '" '
+             +       'onchange="laUpdateGroup(' + sIdx + ',' + gIdx + ',\'label\',this.value)"></div>'
+             +   '<div class="la-chip-row"><label>Sort direction</label>'
+             +     '<select class="la-chip-select" onchange="laUpdateGroup(' + sIdx + ',' + gIdx + ',\'sortDir\',this.value)">' + dirOpts + '</select></div>'
+             +   '<div class="la-chip-row"><label></label>'
+             +     '<div style="display:flex;gap:1rem;flex-wrap:wrap">'
+             +       '<label class="la-chip-checkbox"><input type="checkbox"' + (g.showHeader  ? ' checked' : '') + ' onchange="laUpdateGroup(' + sIdx + ',' + gIdx + ',\'showHeader\',this.checked)"> Show group header</label>'
+             +       '<label class="la-chip-checkbox"><input type="checkbox"' + (g.showSubtotal ? ' checked' : '') + ' onchange="laUpdateGroup(' + sIdx + ',' + gIdx + ',\'showSubtotal\',this.checked)"> Show subtotal</label>'
+             +     '</div>'
+             +   '</div>'
+             + '</div>';
+
+  return '<div class="la-chip">' + head + body + '</div>';
+}
+
+function laRenderSortZone(s, idx, t){
+  const sorts = t.sort || [];
+  const head = '<div class="la-zone-head">'
+             + '<span class="la-zone-title">↕ Sort (within innermost group)</span>'
+             + '<span class="la-zone-meta">' + sorts.length + ' field' + (sorts.length === 1 ? '' : 's') + '</span>'
+             + '</div>';
+  const body = sorts.length === 0
+    ? '<div class="la-zone-empty">Click <strong>＋S</strong> next to a field in the panel to add a sort field. Detail rows in the innermost group will be sorted by these fields in order.</div>'
+    : sorts.map((srt, sortIdx) => laRenderSortChip(s, idx, srt, sortIdx)).join('');
+  return '<div class="la-zone">' + head + body + '</div>';
+}
+
+function laRenderSortChip(s, sIdx, srt, sortIdx){
+  const fields = laBoundFields(s);
+  const fieldExists = fields.some(f => f.name === srt.field);
+  return '<div class="la-chip">'
+       +   '<div class="la-chip-head">'
+       +     '<span class="la-chip-handle" title="Reorder">⋮⋮</span>'
+       +     '<span class="la-chip-field">' + escapeHtml(srt.field) + '</span>'
+       +     '<span class="la-chip-meta">' + (fieldExists ? '' : '⚠ field missing') + '</span>'
+       +     '<select class="la-chip-select" style="min-width:90px" '
+       +       'onchange="laUpdateSort(' + sIdx + ',' + sortIdx + ',\'dir\',this.value)">'
+       +       '<option value="asc"'  + (srt.dir === 'asc'  ? ' selected' : '') + '>↑ asc</option>'
+       +       '<option value="desc"' + (srt.dir === 'desc' ? ' selected' : '') + '>↓ desc</option>'
+       +     '</select>'
+       +     '<button class="la-chip-toggle" title="Move up"   onclick="laMoveSort(' + sIdx + ',' + sortIdx + ',-1)">▲</button>'
+       +     '<button class="la-chip-toggle" title="Move down" onclick="laMoveSort(' + sIdx + ',' + sortIdx + ',1)">▼</button>'
+       +     '<button class="la-chip-rm"     title="Remove"    onclick="laRemoveSort(' + sIdx + ',' + sortIdx + ')">✕</button>'
+       +   '</div>'
+       + '</div>';
+}
+
+function laRenderSectionSettings(s, idx){
+  const t = s.table || {};
+  return '<div class="la-settings">'
+       +   '<label class="la-chip-checkbox"><input type="checkbox"' + (t.showHeader      !== false ? ' checked' : '') + ' onchange="laUpdate(' + idx + ',\'table.showHeader\',this.checked)"> Column headers</label>'
+       +   '<label class="la-chip-checkbox"><input type="checkbox"' + (t.showGrandTotal !== false  ? ' checked' : '') + ' onchange="laUpdate(' + idx + ',\'table.showGrandTotal\',this.checked)"> Grand total row</label>'
+       +   '<div style="display:flex;gap:0.5rem;align-items:center;flex:1;min-width:200px">'
+       +     '<label style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Title</label>'
+       +     '<input class="la-chip-input" style="flex:1" placeholder="(no title)" value="' + escapeHtml(t.title || '') + '" '
+       +       'onchange="laUpdate(' + idx + ',\'table.title\',this.value)">'
+       +   '</div>'
+       + '</div>';
+}
+
+
 async function rbInit(){
   // Restore state from localStorage. Drop 2 will replace this with a Cosmos
   // fetch via /api/reports, falling back to local on network failure.
