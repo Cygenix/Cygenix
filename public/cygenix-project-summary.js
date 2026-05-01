@@ -85,10 +85,18 @@
       </div>
 
       <div class="cyg-psd-controls" style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--text3)">
+        <label class="cyg-psd-master-wrap" style="display:inline-flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text2);cursor:pointer;user-select:none">
+          <input type="checkbox" id="cyg-psd-select-all" class="cyg-psd-checkbox" title="Select all visible">
+          <span>Select all</span>
+        </label>
+        <button id="cyg-psd-delete-selected" class="btn btn-danger btn-sm" disabled
+          style="opacity:0.5;cursor:not-allowed"
+          title="Delete the selected jobs">🗑 Delete selected</button>
+        <span id="cyg-psd-select-count" style="font-size:12px;color:var(--text3)"></span>
+        <span style="font-size:12px;color:var(--text3);margin-left:auto">
           Generated on demand — not stored. Click <strong>Generate</strong> on any job to download a fresh PDF.
         </span>
-        <select id="cyg-psd-project-filter" class="cyg-psd-select" style="margin-left:auto">
+        <select id="cyg-psd-project-filter" class="cyg-psd-select">
           <option value="">All projects</option>
         </select>
         <button id="cyg-psd-refresh" class="btn btn-ghost btn-sm" title="Reload job list">↻ Refresh</button>
@@ -120,6 +128,50 @@
     };
   }
 
+  // ─── Selection state ────────────────────────────────────────────────────
+  // Set of job IDs currently checked. Survives re-renders so the user can
+  // change the project filter without losing their selection. Selections
+  // for jobs that no longer exist (deleted, filtered out by project) are
+  // simply not rendered — they stay in the set harmlessly until the next
+  // delete call cleans them up.
+  const selectedIds = new Set();
+
+  function updateSelectionUI() {
+    const view = document.getElementById(VIEW_ID);
+    if (!view) return;
+
+    const deleteBtn = view.querySelector('#cyg-psd-delete-selected');
+    const countEl   = view.querySelector('#cyg-psd-select-count');
+    const masterCb  = view.querySelector('#cyg-psd-select-all');
+
+    // Count only selections that match a currently-visible row, so the
+    // "Selected: 3" label tracks what the user can actually see and act on.
+    const visibleIds = [...view.querySelectorAll('.cyg-psd-row[data-id]')].map(r => r.dataset.id);
+    const visibleSelected = visibleIds.filter(id => selectedIds.has(id));
+    const n = visibleSelected.length;
+
+    if (countEl) countEl.textContent = n > 0 ? `${n} selected` : '';
+    if (deleteBtn) {
+      deleteBtn.disabled = n === 0;
+      deleteBtn.style.opacity = n === 0 ? '0.5' : '1';
+      deleteBtn.style.cursor  = n === 0 ? 'not-allowed' : 'pointer';
+    }
+
+    // Master checkbox tri-state: checked when all visible rows are selected,
+    // indeterminate when some are, unchecked when none are.
+    if (masterCb) {
+      if (visibleIds.length === 0) {
+        masterCb.checked = false;
+        masterCb.indeterminate = false;
+        masterCb.disabled = true;
+      } else {
+        masterCb.disabled = false;
+        masterCb.indeterminate = n > 0 && n < visibleIds.length;
+        masterCb.checked = n === visibleIds.length;
+      }
+    }
+  }
+
   // ─── Render the job list ────────────────────────────────────────────────
   function renderJobList() {
     const view = document.getElementById(VIEW_ID);
@@ -142,6 +194,7 @@
 
     if (!filtered.length) {
       list.innerHTML = renderEmpty(jobs.length === 0);
+      updateSelectionUI();
       return;
     }
 
@@ -153,6 +206,47 @@
     list.querySelectorAll('[data-preview]').forEach(b =>
       b.addEventListener('click', () => window.CygenixPSD.generate(b.dataset.preview, { openInTab: true }))
     );
+    // Per-row checkbox: clicking toggles selection without triggering
+    // anything else on the row.
+    list.querySelectorAll('.cyg-psd-row-checkbox').forEach(cb => {
+      cb.addEventListener('click', e => e.stopPropagation());
+      cb.addEventListener('change', e => {
+        const id = e.target.dataset.id;
+        if (!id) return;
+        if (e.target.checked) selectedIds.add(id);
+        else selectedIds.delete(id);
+        updateSelectionUI();
+      });
+    });
+
+    // Master checkbox — wired here (not in init) because the controls live
+    // inside the same view shell as the list, but we also want them to
+    // re-bind cleanly if anything ever rebuilds the shell.
+    const masterCb = view.querySelector('#cyg-psd-select-all');
+    if (masterCb && !masterCb.dataset.bound) {
+      masterCb.dataset.bound = '1';
+      masterCb.addEventListener('change', () => {
+        const visibleIds = [...view.querySelectorAll('.cyg-psd-row[data-id]')].map(r => r.dataset.id);
+        if (masterCb.checked) {
+          visibleIds.forEach(id => selectedIds.add(id));
+        } else {
+          visibleIds.forEach(id => selectedIds.delete(id));
+        }
+        // Reflect in row checkboxes
+        view.querySelectorAll('.cyg-psd-row-checkbox').forEach(cb => {
+          cb.checked = selectedIds.has(cb.dataset.id);
+        });
+        updateSelectionUI();
+      });
+    }
+
+    const deleteBtn = view.querySelector('#cyg-psd-delete-selected');
+    if (deleteBtn && !deleteBtn.dataset.bound) {
+      deleteBtn.dataset.bound = '1';
+      deleteBtn.addEventListener('click', () => deleteSelectedJobs());
+    }
+
+    updateSelectionUI();
   }
 
   function renderEmpty(noJobsAtAll) {
@@ -191,11 +285,16 @@
     const tableCount = (job.tables && job.tables.length) || 0;
     const rowCount = (job.tables || []).reduce((s, t) => s + (t.targetRows || t.sourceRows || 0), 0);
 
+    const id = job.id || '';
+    const isChecked = selectedIds.has(id);
+
     // Allow generation for any job — the document still produces a useful
     // overview even for in-progress or partial jobs. The status badge tells
     // the truth about what's inside.
     return `
-      <div class="cyg-psd-row" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem 1.25rem;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:0.5rem;transition:border-color 0.15s">
+      <div class="cyg-psd-row" data-id="${attr(id)}" style="display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:1rem 1.25rem;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:0.5rem;transition:border-color 0.15s">
+        <input type="checkbox" class="cyg-psd-checkbox cyg-psd-row-checkbox" data-id="${attr(id)}" ${isChecked ? 'checked' : ''}
+          title="Select this job" style="flex-shrink:0;cursor:pointer">
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:0.35rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
             ${esc(job.name || job.id || 'Untitled job')}
@@ -214,6 +313,112 @@
           <button class="btn btn-primary btn-sm" data-generate="${attr(job.id)}" title="Generate and download as PDF">📄 Generate</button>
         </div>
       </div>`;
+  }
+
+  // ─── Delete handler ─────────────────────────────────────────────────────
+  // Removes the selected jobs from the local cygenix_jobs list, then asks
+  // CygenixSync to push the new (shorter) list up to Cosmos. The /api/data
+  // 'save' action accepts a top-level `jobs` array and replaces the stored
+  // value, so the deletion propagates server-side as part of the next sync.
+  //
+  // We don't try to do server-side deletes per-job — there's no /jobs DELETE
+  // endpoint in this app. The "save the new array" pattern matches how the
+  // rest of the app persists changes (project edits, mappings, wasis rules).
+  async function deleteSelectedJobs() {
+    const view = document.getElementById(VIEW_ID);
+    if (!view) return;
+
+    // Snapshot the IDs that exist in the current jobs list AND are selected.
+    // Stale selections (jobs already deleted, or filter-hidden jobs that
+    // were never visible) are ignored so a stray entry in selectedIds
+    // doesn't blow up the count or accidentally affect unrelated jobs.
+    const allJobs = readJobs();
+    const ids = allJobs.filter(j => j && selectedIds.has(j.id)).map(j => j.id);
+    if (!ids.length) {
+      toast('Nothing selected', 'info');
+      return;
+    }
+
+    const msg = ids.length === 1
+      ? `Delete this job? This removes it from the Project Summary list and from your synced data. The underlying migration audit trail is preserved separately and can't be recovered through this screen — but the job record itself is gone.`
+      : `Delete ${ids.length} jobs? This removes them from the Project Summary list and from your synced data. The underlying migration audit trail is preserved separately and can't be recovered through this screen — but the job records themselves are gone.`;
+
+    // Plain confirm() — keeps the change small and matches the rest of the
+    // app's pattern. If a custom modal dialog is added later, this is the
+    // single place that needs updating.
+    if (!window.confirm(msg)) return;
+
+    const deleteBtn = view.querySelector('#cyg-psd-delete-selected');
+    if (deleteBtn) {
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = '⏳ Deleting…';
+    }
+
+    try {
+      const idSet = new Set(ids);
+      const remaining = allJobs.filter(j => !idSet.has(j.id));
+
+      // Persist locally first so the UI reflects the change immediately,
+      // even if the network sync is slow or fails.
+      try {
+        localStorage.setItem('cygenix_jobs', JSON.stringify(remaining));
+      } catch (e) {
+        console.error('[CygenixPSD] failed to write cygenix_jobs:', e);
+        toast('Local save failed: ' + (e.message || 'unknown error'), 'error');
+        if (deleteBtn) {
+          deleteBtn.disabled = false;
+          deleteBtn.textContent = '🗑 Delete selected';
+        }
+        return;
+      }
+
+      // Push to server. CygenixSync.saveNow() is the synchronous-ish path
+      // that flushes immediately (saveNow vs save). If it's not available
+      // we fall back to save(); if neither exists we still get the local
+      // delete and warn the user the server is out of sync.
+      let synced = false;
+      try {
+        if (window.CygenixSync && typeof window.CygenixSync.saveNow === 'function') {
+          await window.CygenixSync.saveNow();
+          synced = true;
+        } else if (window.CygenixSync && typeof window.CygenixSync.save === 'function') {
+          await window.CygenixSync.save();
+          synced = true;
+        }
+      } catch (e) {
+        console.error('[CygenixPSD] sync after delete failed:', e);
+      }
+
+      // Clear from selection set so the count resets cleanly
+      ids.forEach(id => selectedIds.delete(id));
+
+      // Restore the button label before re-render — updateSelectionUI()
+      // handles the disabled/opacity, but the textContent is ours to
+      // manage. Without this the button gets stuck saying "Deleting…"
+      // even after the operation finished.
+      if (deleteBtn) deleteBtn.textContent = '🗑 Delete selected';
+
+      // Re-render to remove the rows. renderJobList() calls
+      // updateSelectionUI() at the end, so the master checkbox / count /
+      // delete-button states all reset together.
+      renderJobList();
+
+      if (synced) {
+        toast(ids.length === 1 ? 'Job deleted' : `${ids.length} jobs deleted`, 'success');
+      } else {
+        toast(
+          'Deleted locally — but the change couldn\u2019t reach the server. They\u2019ll re-sync next time you load the dashboard.',
+          'warn'
+        );
+      }
+    } catch (e) {
+      console.error('[CygenixPSD] delete failed:', e);
+      toast('Delete failed: ' + (e.message || 'unknown error'), 'error');
+      if (deleteBtn) {
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = '🗑 Delete selected';
+      }
+    }
   }
 
   // ─── Data access ────────────────────────────────────────────────────────
@@ -437,10 +642,19 @@
     if (window.CygenixToast && window.CygenixToast.show) {
       window.CygenixToast.show(msg, kind || 'info'); return;
     }
+    // Colour by kind. Default (info) stays the dark slate from the original
+    // implementation. Success and warn join error in actually changing the
+    // background — without this, a "Job deleted" success and a "delete
+    // failed" error look identical, which is a confusing UX after a
+    // destructive action.
+    const bg = kind === 'error'   ? '#ef4444'
+             : kind === 'warn'    ? '#d97706'
+             : kind === 'success' ? '#10b981'
+             : '#1a1d24';
     const el = document.createElement('div');
     el.style.cssText = `
       position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
-      background:${kind === 'error' ? '#ef4444' : '#1a1d24'};color:#fff;
+      background:${bg};color:#fff;
       padding:10px 18px;border-radius:6px;font-family:Inter,sans-serif;
       font-size:13px;z-index:10000;box-shadow:0 8px 24px rgba(0,0,0,0.3);transition:opacity 0.3s;
     `;
@@ -505,6 +719,31 @@
       .cyg-psd-badge-danger  { background: rgba(239,68,68,0.15);  color: #ef4444; }
       .cyg-psd-badge-info    { background: rgba(99,102,241,0.15); color: #6366f1; }
       .cyg-psd-badge-neutral { background: rgba(148,163,184,0.15); color: #94a3b8; }
+      /* Checkbox styling — sized to match the rest of the controls. We use
+         accent-color rather than custom backgrounds so the checkbox follows
+         the OS / browser theme (dark mode in Chrome, light in Safari, etc).
+         Saves us implementing focus/disabled/indeterminate states by hand. */
+      .cyg-psd-checkbox {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        accent-color: #6366f1;
+        cursor: pointer;
+      }
+      .cyg-psd-checkbox:disabled { cursor: not-allowed; opacity: 0.4; }
+      /* Danger button — used for "Delete selected". Falls back to a sensible
+         red palette so we don't depend on the host app having defined a
+         .btn-danger style for us. */
+      .btn.btn-danger {
+        background: rgba(239,68,68,0.12);
+        color: #ef4444;
+        border: 1px solid rgba(239,68,68,0.35);
+      }
+      .btn.btn-danger:hover:not(:disabled) {
+        background: rgba(239,68,68,0.2);
+        border-color: rgba(239,68,68,0.55);
+      }
+      .btn.btn-danger:disabled { background: rgba(148,163,184,0.08); color: #94a3b8; border-color: var(--border); }
     `;
     document.head.appendChild(s);
   }
