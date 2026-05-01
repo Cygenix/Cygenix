@@ -332,6 +332,65 @@ body.cyg-collapsed{padding-left:54px}
 /* Empty-dataset state */
 .la-no-dataset{padding:2rem;text-align:center;color:var(--text3);font-size:12px}
 .la-no-dataset strong{display:block;color:var(--text2);font-size:13px;margin-bottom:0.5rem;font-weight:500}
+/* ── Preview tab ────────────────────────────────────────────────────────────
+   Parameter form + rendered output. Tables match the visual style of
+   balancing.html's TB preview but with multi-level grouping and subtotals. */
+
+/* Parameter form */
+.pv-param-form{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem;margin-bottom:1rem}
+.pv-param-form-title{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.6rem}
+.pv-param-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.6rem 1rem}
+.pv-param-cell{display:flex;flex-direction:column;gap:4px}
+.pv-param-cell label{font-size:11px;color:var(--text2);font-family:var(--serif);display:flex;align-items:center;gap:4px}
+.pv-param-cell label .pv-param-name{color:var(--text3);font-family:var(--mono);font-size:10px}
+.pv-param-cell label .pv-param-required{color:var(--red);font-weight:600}
+.pv-param-cell input,.pv-param-cell select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.6rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+.pv-param-cell input:focus,.pv-param-cell select:focus{border-color:var(--accent)}
+.pv-param-empty{padding:0.5rem 0;font-size:11px;color:var(--text3);font-style:italic}
+
+/* Run status / errors */
+.pv-status{padding:0.55rem 0.875rem;border-radius:var(--r);font-size:11px;font-family:var(--mono);margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.pv-status.busy{background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)}
+.pv-status.ok  {background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.pv-status.err {background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
+
+/* Section card in the rendered output */
+.pv-section{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1rem;overflow:hidden}
+.pv-section-head{padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.pv-section-name{font-size:13px;font-weight:600;color:var(--text)}
+.pv-section-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto}
+.pv-section-title{padding:0.6rem 1rem;font-size:14px;font-weight:600;color:var(--text);border-bottom:0.5px solid var(--border)}
+.pv-section-body{padding:0.5rem 0;overflow-x:auto}
+.pv-section-error{padding:1rem;color:var(--red);font-size:12px;font-family:var(--mono);background:var(--red-bg);border:0.5px solid rgba(240,70,70,0.3);margin:0.5rem 1rem;border-radius:6px;white-space:pre-wrap}
+
+/* Table — matches balancing.html style */
+.pv-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
+.pv-table th,.pv-table td{padding:6px 10px;border-bottom:0.5px solid var(--border);text-align:left;white-space:nowrap;vertical-align:top}
+.pv-table th{background:var(--bg3);color:var(--text2);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;position:sticky;top:0;z-index:1}
+.pv-table td.num{text-align:right;font-variant-numeric:tabular-nums}
+.pv-table td.center{text-align:center}
+.pv-table td.right{text-align:right;font-variant-numeric:tabular-nums}
+.pv-table td.left{text-align:left}
+/* Group header row — spans all columns, indented by level */
+.pv-row-group-head td{background:var(--bg3);color:var(--text);font-weight:600;font-size:11px;border-top:0.5px solid var(--border);padding:6px 10px}
+.pv-row-group-head .pv-group-label{display:flex;align-items:center;gap:6px}
+.pv-row-group-head .pv-group-icon{color:var(--text3);font-size:10px}
+/* Subtotal row */
+.pv-row-subtotal td{background:var(--bg3);color:var(--text);font-weight:600;font-size:11px;border-top:0.5px solid var(--border)}
+.pv-row-subtotal .pv-subtotal-label{color:var(--text2);font-style:italic;font-weight:500}
+/* Grand total row */
+.pv-row-grand td{background:var(--accent-glow);color:var(--accent);font-weight:600;font-size:11px;border-top:0.5px solid rgba(61,126,255,0.3);border-bottom:0.5px solid rgba(61,126,255,0.3)}
+.pv-row-grand .pv-grand-label{font-weight:700}
+/* Indent for nested groups */
+.pv-indent-1{padding-left:18px !important}
+.pv-indent-2{padding-left:30px !important}
+.pv-indent-3{padding-left:42px !important}
+.pv-indent-4{padding-left:54px !important}
+/* Empty section */
+.pv-empty-rows{padding:1.5rem;text-align:center;color:var(--text3);font-size:12px;font-style:italic}
+/* Section-level "no layout" hint */
+.pv-no-layout{padding:1.5rem;text-align:center;color:var(--text3);font-size:12px}
+.pv-no-layout strong{color:var(--text2);font-style:normal;font-weight:500}
 
 </style>
 </head>
@@ -470,10 +529,19 @@ body.cyg-collapsed{padding-left:54px}
 
         <div id="rb-tab-preview" class="rb-tab-pane" style="display:none">
           <div class="panel"><div class="panel-body">
-            <div class="empty-state">
-              <strong>Preview</strong> — coming in Drop 4.<br>
-              Fill parameters → run all datasets → render the layout. Excel export from this tab.
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+              <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
+                Fill in any parameters, click <strong style="font-style:normal;color:var(--text2)">▶ Run</strong>, and the report renders below using your Layout config. Excel export becomes available after a successful run.
+              </div>
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm" onclick="pvExportXlsx()" id="pv-export-btn" disabled>📥 Export Excel</button>
+                <button class="btn btn-primary btn-sm" onclick="pvRun()">▶ Run</button>
+              </div>
             </div>
+            <div id="pv-param-form"></div>
+            <div id="pv-status" style="display:none"></div>
+            <div id="pv-output"></div>
+            <div id="pv-empty" class="empty-state">Click <strong>▶ Run</strong> to render the report.</div>
           </div></div>
         </div>
 
@@ -657,10 +725,16 @@ function rbPersistSelection(){
   localStorage.setItem(RB_KEY_TAB, rbActiveTab);
 }
 
-// ── Run (placeholder for Drop 4) ────────────────────────────────────────────
+// ── Run ─────────────────────────────────────────────────────────────────────
+// The "▶ Run" button in the editor header is a one-click shortcut: switch
+// to the Preview tab and run the report. The Preview tab also has its own
+// Run button for in-tab use.
 function rbRunCurrent(){
-  // Drop 4 will wire this to the dataset+parameter+layout pipeline.
-  showStatus('Run will be wired up in Drop 4.', 'info');
+  if (!rbCurrentId) { showStatus('No report selected.', 'err'); return; }
+  rbSwitchTab('preview');
+  // Defer one tick so the tab's DOM is visible before pvRun starts
+  // (gives the parameter form a chance to render so input values are read).
+  setTimeout(() => { if (typeof pvRun === 'function') pvRun(); }, 0);
 }
 
 // ── Tab switching ───────────────────────────────────────────────────────────
@@ -739,6 +813,7 @@ function rbRenderEditor(){
   if (typeof dsRender === 'function') dsRender();
   if (typeof paRender === 'function') paRender();
   if (typeof laRender === 'function') laRender();
+  if (typeof pvRender === 'function') pvRender();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3287,6 +3362,798 @@ function laRenderSectionSettings(s, idx){
 }
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Preview tab (Drop 4a: Table rendering + Excel export)
+//
+// Pipeline:
+//   1. pvRender()                  — renders the parameter form
+//   2. user clicks ▶ Run → pvRun() — for each section:
+//        a. fetch dataset rows with parameter substitution
+//        b. pvBuildTable(section, rows) → tree (groups → rows + subtotals)
+//        c. pvRenderTable(section, tree) → HTML
+//   3. user clicks 📥 Export Excel → pvExportXlsx() — produces multi-sheet
+//      xlsx, one sheet per section, with proper formatting (numbers as
+//      numbers, dates as dates) so follow-on Excel work just works.
+//
+// Per-section state stays in pvLastRun[sectionId] = { tree, rows, error }
+// so we can re-render and export without re-fetching.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const _pvParamValues = {};   // current run's parameter values, by parameter name
+const pvLastRun      = {};   // sectionId → { tree, rows, error, datasetName }
+
+function pvCurrentReport(){
+  return rbReports.find(x => x.id === rbCurrentId) || null;
+}
+
+// ── Parameter form ─────────────────────────────────────────────────────────
+function pvRender(){
+  const form = $('pv-param-form');
+  if (!form) return;
+  const r = pvCurrentReport();
+  if (!r) {
+    form.innerHTML = '';
+    pvShowEmpty('Select or create a report to preview.');
+    return;
+  }
+  form.innerHTML = pvRenderParamForm(r);
+}
+
+function pvRenderParamForm(r){
+  const params = r.parameters || [];
+  if (params.length === 0) {
+    return '<div class="pv-param-form">'
+         +   '<div class="pv-param-form-title">Parameters</div>'
+         +   '<div class="pv-param-empty">This report has no parameters. Click <strong>▶ Run</strong> to render.</div>'
+         + '</div>';
+  }
+
+  const cells = params.map(p => {
+    // Initialise the in-memory value if absent — use the parameter's default.
+    if (!Object.prototype.hasOwnProperty.call(_pvParamValues, p.name)) {
+      _pvParamValues[p.name] = p.default == null ? '' : p.default;
+    }
+    const value = _pvParamValues[p.name];
+    let control;
+    if (p.type === 'number') {
+      control = '<input type="number" id="pv-p-' + p.id + '" value="' + escapeHtml(value == null ? '' : value) + '" '
+              + 'oninput="pvSetParam(\'' + p.name + '\',this.value === \'\' ? \'\' : Number(this.value))">';
+    } else if (p.type === 'date') {
+      control = '<input type="date" id="pv-p-' + p.id + '" value="' + escapeHtml(value || '') + '" '
+              + 'oninput="pvSetParam(\'' + p.name + '\',this.value)">';
+    } else if (p.type === 'dropdown') {
+      const options = p.optionsKind === 'static' ? (p.staticOptions || []) : (p.cachedOptions || []);
+      const opts = '<option value="">' + (p.required ? '— select —' : '(none)') + '</option>'
+                 + options.map(o =>
+                     '<option value="' + escapeHtml(o.value) + '"' + (String(value) === String(o.value) ? ' selected' : '') + '>'
+                     + escapeHtml(o.label || o.value) + '</option>'
+                   ).join('');
+      control = '<select id="pv-p-' + p.id + '" onchange="pvSetParam(\'' + p.name + '\',this.value)">' + opts + '</select>';
+      // If this is a query-driven dropdown with no cached options, hint the user.
+      if (p.optionsKind === 'query' && options.length === 0) {
+        control = '<input disabled placeholder="(run Test query on Parameters tab first)">';
+      }
+    } else {
+      control = '<input type="text" id="pv-p-' + p.id + '" value="' + escapeHtml(value || '') + '" '
+              + 'oninput="pvSetParam(\'' + p.name + '\',this.value)">';
+    }
+    const reqMark = p.required ? ' <span class="pv-param-required">*</span>' : '';
+    const labelText = escapeHtml(p.label || p.name);
+    return '<div class="pv-param-cell">'
+         +   '<label>' + labelText + reqMark + ' <span class="pv-param-name">@' + escapeHtml(p.name) + '</span></label>'
+         +   control
+         + '</div>';
+  }).join('');
+
+  return '<div class="pv-param-form">'
+       +   '<div class="pv-param-form-title">Parameters</div>'
+       +   '<div class="pv-param-grid">' + cells + '</div>'
+       + '</div>';
+}
+
+function pvSetParam(name, value){
+  _pvParamValues[name] = value;
+}
+
+// ── Status / output helpers ────────────────────────────────────────────────
+function pvShowStatus(msg, type){
+  const el = $('pv-status');
+  if (!el) return;
+  el.style.display = '';
+  el.className = 'pv-status ' + (type || 'busy');
+  el.textContent = msg;
+}
+function pvHideStatus(){
+  const el = $('pv-status');
+  if (el) el.style.display = 'none';
+}
+function pvShowEmpty(msg){
+  const el = $('pv-empty');
+  if (!el) return;
+  el.style.display = '';
+  if (msg) el.innerHTML = msg;
+}
+function pvHideEmpty(){
+  const el = $('pv-empty');
+  if (el) el.style.display = 'none';
+}
+function pvSetExportEnabled(enabled){
+  const btn = $('pv-export-btn');
+  if (btn) btn.disabled = !enabled;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Run
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function pvRun(){
+  const r = pvCurrentReport();
+  if (!r) { pvShowStatus('Select or create a report first.', 'err'); return; }
+
+  // Validate required parameters
+  const params = r.parameters || [];
+  for (const p of params) {
+    const v = _pvParamValues[p.name];
+    if (p.required && (v == null || v === '')) {
+      pvShowStatus('Required parameter @' + p.name + ' has no value.', 'err');
+      return;
+    }
+  }
+
+  const sections = (r.layout && r.layout.sections) || [];
+  if (sections.length === 0) {
+    pvShowStatus('No layout sections defined. Add one on the Layout tab.', 'err');
+    return;
+  }
+
+  pvSetExportEnabled(false);
+  pvHideEmpty();
+  $('pv-output').innerHTML = '';
+  // Clear previous run results — partial leftovers across reports is confusing.
+  Object.keys(pvLastRun).forEach(k => delete pvLastRun[k]);
+
+  pvShowStatus('Running ' + sections.length + ' section' + (sections.length === 1 ? '' : 's') + '…', 'busy');
+
+  // Build parameter values map for substitution. Empty values fall back to
+  // the parameter's default (already wired into paSubstitute).
+  const paramValues = {};
+  params.forEach(p => {
+    paramValues[p.name] = (_pvParamValues[p.name] == null || _pvParamValues[p.name] === '') ? p.default : _pvParamValues[p.name];
+  });
+
+  // Datasets are per-section, but multiple sections can share a dataset.
+  // We cache the rows per dataset id within this run so we don't fetch the
+  // same data twice.
+  const dsCache = new Map();    // datasetId -> rows (or {error})
+
+  let ok = 0, errors = 0;
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i];
+    pvShowStatus('Running section ' + (i + 1) + ' of ' + sections.length + ' · ' + (s.name || 'Untitled') + '…', 'busy');
+    try {
+      const rows = await pvFetchSection(r, s, paramValues, dsCache);
+      const tree = pvBuildTable(s, rows);
+      pvLastRun[s.id] = { tree: tree, rows: rows, error: null, datasetName: (laBoundDataset(s) || {}).name || '' };
+      ok++;
+    } catch (e) {
+      pvLastRun[s.id] = { tree: null, rows: null, error: e.message || String(e), datasetName: (laBoundDataset(s) || {}).name || '' };
+      errors++;
+    }
+  }
+
+  // Render all sections (even ones that failed — failure shows inline)
+  pvRenderOutput(r);
+
+  if (errors === 0) {
+    pvShowStatus('Done · ' + ok + ' section' + (ok === 1 ? '' : 's') + ' rendered', 'ok');
+    pvSetExportEnabled(true);
+  } else if (ok === 0) {
+    pvShowStatus('Failed · ' + errors + ' error' + (errors === 1 ? '' : 's'), 'err');
+    // Still allow export — sections that did succeed are exportable.
+    pvSetExportEnabled(false);
+  } else {
+    pvShowStatus('Done with errors · ' + ok + ' OK, ' + errors + ' failed', 'err');
+    pvSetExportEnabled(true);  // partial success — let user export the OK ones
+  }
+}
+
+// Fetch a single section's data: resolves dataset → builds SQL → substitutes
+// parameters → executes against the right connection. Cached per datasetId.
+async function pvFetchSection(r, s, paramValues, dsCache){
+  if (!s.datasetId) throw new Error('Section "' + (s.name || 'Untitled') + '" has no dataset bound.');
+
+  const ds = (r.datasets || []).find(d => d.id === s.datasetId);
+  if (!ds) throw new Error('Section "' + (s.name || 'Untitled') + '" is bound to a deleted dataset.');
+
+  // Cache hit?
+  if (dsCache.has(ds.id)) {
+    const cached = dsCache.get(ds.id);
+    if (cached.error) throw new Error(cached.error);
+    return cached.rows;
+  }
+
+  const conn = dsResolveConnection(ds);
+  if (!conn) throw new Error('Dataset "' + (ds.name || 'Untitled') + '" has no connection set.');
+
+  let sql;
+  try { sql = dsBuildSql(ds); }
+  catch (e) { dsCache.set(ds.id, { error: e.message }); throw new Error('Build SQL: ' + e.message); }
+
+  // Substitute parameters at run time. Empty rawSql means the visual builder
+  // is empty — that's a config error, not a substitution one.
+  if (!(sql || '').trim()) {
+    const err = 'Dataset has no SQL.';
+    dsCache.set(ds.id, { error: err });
+    throw new Error(err);
+  }
+  if ((r.parameters || []).length > 0 && paFindReferences(sql).length > 0) {
+    try { sql = paSubstitute(sql, paramValues, r.parameters); }
+    catch (e) {
+      dsCache.set(ds.id, { error: 'Parameter: ' + e.message });
+      throw new Error('Parameter: ' + e.message);
+    }
+  }
+
+  try {
+    const rows = await dsExec(conn, sql);
+    dsCache.set(ds.id, { rows: rows });
+    return rows;
+  } catch (e) {
+    dsCache.set(ds.id, { error: e.message });
+    throw e;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Build table tree
+//
+// Output shape:
+//   tree = {
+//     headers: [{ field, label, format, align, width, agg }, ...]   // resolved column defs
+//     groups: [GroupNode, ...]    // outermost groups; or rows directly if no groups
+//     rows:   [Row, ...]          // detail rows, when no row groups
+//     grand:  { <field>: <aggValue>, ... }  // grand totals (only for fields with agg)
+//     rowCount: number             // total detail rows
+//   }
+//   GroupNode = {
+//     field, value, label,         // grouping field + the value of this node
+//     header: { showHeader, label } // settings copied from group config
+//     children: [GroupNode, ...]   // when more group levels remain
+//     rows:    [Row, ...]          // when this is the innermost group
+//     subtotal: { <field>: ..., showSubtotal: bool }
+//   }
+// ══════════════════════════════════════════════════════════════════════════════
+
+function pvBuildTable(s, rows){
+  const t = s.table || {};
+  const cols = t.columns || [];
+
+  // Apply detail-row sort (within innermost group)
+  const sortFields = t.sort || [];
+  const sortedRows = sortFields.length > 0 ? pvSortRows(rows, sortFields) : rows.slice();
+
+  // Resolve column defs (label fallback, default align by format)
+  const headers = cols.map(c => {
+    const def = {
+      field:  c.field,
+      label:  c.label || c.field,
+      format: c.format || '',
+      align:  c.align  || pvDefaultAlign(c.format),
+      width:  c.width  || '',
+      agg:    c.agg    || ''
+    };
+    return def;
+  });
+
+  // Build groups (outermost-first) recursively
+  const groupCfg = (t.rowGroups || []);
+  let groups = null;
+  let detailRows = null;
+  if (groupCfg.length > 0) {
+    groups = pvGroupRows(sortedRows, groupCfg, 0, headers);
+  } else {
+    detailRows = sortedRows;
+  }
+
+  // Grand total — aggregations across all detail rows (those with agg defined)
+  const grand = pvComputeAggs(headers, sortedRows);
+  const showGrandTotal = t.showGrandTotal !== false;
+
+  return {
+    headers: headers,
+    groups: groups,
+    rows: detailRows,
+    grand: grand,
+    showGrandTotal: showGrandTotal,
+    showHeader: t.showHeader !== false,
+    title: t.title || '',
+    rowCount: sortedRows.length,
+    groupCfg: groupCfg
+  };
+}
+
+function pvDefaultAlign(format){
+  if (!format) return 'left';
+  if (format === 'integer' || format === 'number' || format === 'currency' || format === 'percent') return 'right';
+  return 'left';
+}
+
+function pvSortRows(rows, sortFields){
+  // Stable sort by a chain of fields. Native Array.sort is stable in modern
+  // engines — relying on that for ties.
+  const cmp = (a, b) => {
+    for (const sf of sortFields) {
+      const va = a[sf.field];
+      const vb = b[sf.field];
+      const r = pvCompareValues(va, vb);
+      if (r !== 0) return sf.dir === 'desc' ? -r : r;
+    }
+    return 0;
+  };
+  return rows.slice().sort(cmp);
+}
+
+function pvCompareValues(a, b){
+  if (a == null && b == null) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+  if (a instanceof Date && b instanceof Date) return a.getTime() - b.getTime();
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
+}
+
+function pvGroupRows(rows, groupCfg, level, headers){
+  // Group by the field at `level`; recursively group within each bucket
+  // for deeper levels.
+  if (level >= groupCfg.length) return null;
+  const g  = groupCfg[level];
+  const dirMul = g.sortDir === 'desc' ? -1 : 1;
+
+  const buckets = new Map();
+  rows.forEach(row => {
+    const key = row[g.field];
+    const keyStr = key == null ? '\u0000__null__' : String(key);
+    if (!buckets.has(keyStr)) buckets.set(keyStr, { value: key, rows: [] });
+    buckets.get(keyStr).rows.push(row);
+  });
+
+  // Order buckets by the group's sortDir, comparing actual values not strings.
+  const ordered = Array.from(buckets.values()).sort((a, b) => dirMul * pvCompareValues(a.value, b.value));
+
+  return ordered.map(bucket => {
+    const node = {
+      field: g.field,
+      value: bucket.value,
+      label: g.label || g.field,
+      showHeader: g.showHeader !== false,
+      showSubtotal: g.showSubtotal !== false
+    };
+    // Innermost level: attach detail rows. Otherwise: recurse.
+    if (level === groupCfg.length - 1) {
+      node.rows = bucket.rows;
+    } else {
+      node.children = pvGroupRows(bucket.rows, groupCfg, level + 1, headers);
+    }
+    // Subtotal — agg across all rows in this bucket (regardless of nesting)
+    node.subtotal = pvComputeAggs(headers, bucket.rows);
+    return node;
+  });
+}
+
+function pvComputeAggs(headers, rows){
+  const out = {};
+  headers.forEach(h => {
+    if (!h.agg) return;
+    const vals = rows.map(r => r[h.field]).filter(v => v != null && v !== '');
+    let v;
+    switch (h.agg) {
+      case 'sum':   v = vals.reduce((s, x) => s + (Number(x) || 0), 0); break;
+      case 'avg':   v = vals.length ? vals.reduce((s, x) => s + (Number(x) || 0), 0) / vals.length : null; break;
+      case 'count': v = rows.length; break;   // count of all rows, not non-null vals
+      case 'min':   v = vals.length ? vals.reduce((m, x) => pvCompareValues(x, m) < 0 ? x : m) : null; break;
+      case 'max':   v = vals.length ? vals.reduce((m, x) => pvCompareValues(x, m) > 0 ? x : m) : null; break;
+      default:      v = null;
+    }
+    out[h.field] = v;
+  });
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Format helpers — display strings
+//
+// Excel export (below) uses raw numbers/dates with xlsx number format codes,
+// so the same column appears as a real number in Excel and a formatted string
+// in HTML.
+// ══════════════════════════════════════════════════════════════════════════════
+
+function pvFormatValue(value, format){
+  if (value == null || value === '') return '';
+  switch (format) {
+    case 'integer':  {
+      const n = Number(value);
+      return isFinite(n) ? Math.round(n).toLocaleString() : String(value);
+    }
+    case 'number':   {
+      const n = Number(value);
+      return isFinite(n) ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value);
+    }
+    case 'currency': {
+      const n = Number(value);
+      // Default to GBP (user's region: UK). Could be made configurable per
+      // column or per report later.
+      return isFinite(n) ? n.toLocaleString(undefined, { style: 'currency', currency: 'GBP' }) : String(value);
+    }
+    case 'percent':  {
+      const n = Number(value);
+      return isFinite(n) ? n.toLocaleString(undefined, { style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(value);
+    }
+    case 'date':     {
+      const d = pvToDate(value);
+      return d ? d.toLocaleDateString('en-GB') : String(value);
+    }
+    case 'datetime': {
+      const d = pvToDate(value);
+      return d ? d.toLocaleString('en-GB') : String(value);
+    }
+    case 'text':
+    default:
+      return String(value);
+  }
+}
+
+function pvToDate(v){
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Render output
+// ══════════════════════════════════════════════════════════════════════════════
+
+function pvRenderOutput(r){
+  const out = $('pv-output');
+  if (!out) return;
+  const sections = (r.layout && r.layout.sections) || [];
+  if (sections.length === 0) {
+    out.innerHTML = '';
+    return;
+  }
+  out.innerHTML = sections.map((s, i) => pvRenderSection(s, i)).join('');
+}
+
+function pvRenderSection(s, idx){
+  const last = pvLastRun[s.id];
+  const dsName = (last && last.datasetName) || ((laBoundDataset(s) || {}).name || '');
+  const head = '<div class="pv-section-head">'
+             + '<span class="pv-section-name">' + escapeHtml(s.name || 'Section ' + (idx + 1)) + '</span>'
+             + (dsName ? '<span class="pv-section-meta">· ' + escapeHtml(dsName) + '</span>' : '')
+             + (last && last.rows ? '<span class="pv-section-meta" style="margin-left:0">· ' + last.rows.length.toLocaleString() + ' rows</span>' : '')
+             + '</div>';
+
+  // Section title
+  const titleHtml = (last && last.tree && last.tree.title)
+    ? '<div class="pv-section-title">' + escapeHtml(last.tree.title) + '</div>'
+    : '';
+
+  // Body
+  let body;
+  if (!last) {
+    body = '<div class="pv-no-layout">Section not run yet.</div>';
+  } else if (last.error) {
+    body = '<div class="pv-section-error">⚠ ' + escapeHtml(last.error) + '</div>';
+  } else if (s.type !== 'table') {
+    body = '<div class="pv-no-layout"><strong>' + escapeHtml(s.type) + '</strong> rendering arrives in a later drop.</div>';
+  } else if (!last.tree.headers || last.tree.headers.length === 0) {
+    body = '<div class="pv-no-layout"><strong>No columns configured</strong>'
+         + ' Add columns to this section on the Layout tab.</div>';
+  } else if (last.rowCount === 0) {
+    body = '<div class="pv-empty-rows">Query returned 0 rows.</div>';
+  } else {
+    body = '<div class="pv-section-body">' + pvRenderTable(s, last.tree) + '</div>';
+  }
+
+  return '<div class="pv-section">' + head + titleHtml + body + '</div>';
+}
+
+function pvRenderTable(s, tree){
+  const headers = tree.headers;
+  const cols = headers.length;
+
+  // <colgroup> for any columns with explicit width
+  const colgroup = headers.some(h => h.width)
+    ? '<colgroup>' + headers.map(h => '<col' + (h.width ? ' style="width:' + escapeHtml(h.width) + '"' : '') + '>').join('') + '</colgroup>'
+    : '';
+
+  // Header row
+  let thead = '';
+  if (tree.showHeader) {
+    thead = '<thead><tr>'
+          + headers.map(h => '<th class="' + h.align + '">' + escapeHtml(h.label) + '</th>').join('')
+          + '</tr></thead>';
+  }
+
+  // Body
+  const bodyRows = [];
+  if (tree.groups) {
+    tree.groups.forEach(node => pvAppendGroupRows(bodyRows, node, headers, 0, tree.groupCfg.length));
+  } else if (tree.rows) {
+    tree.rows.forEach(row => bodyRows.push(pvRenderDetailRow(headers, row, 0)));
+  }
+  // Grand total
+  if (tree.showGrandTotal && headers.some(h => h.agg)) {
+    bodyRows.push(pvRenderGrandRow(headers, tree.grand));
+  }
+
+  return '<table class="pv-table">' + colgroup + thead + '<tbody>' + bodyRows.join('') + '</tbody></table>';
+}
+
+function pvAppendGroupRows(out, node, headers, level, totalLevels){
+  // Group header row (optional per group)
+  if (node.showHeader) {
+    const indentClass = level === 0 ? '' : (' pv-indent-' + Math.min(level, 4));
+    const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value);
+    out.push('<tr class="pv-row-group-head">'
+           + '<td colspan="' + headers.length + '" class="' + indentClass.trim() + '">'
+           +   '<span class="pv-group-label"><span class="pv-group-icon">▾</span>' + escapeHtml(labelText) + '</span>'
+           + '</td></tr>');
+  }
+
+  // Children or detail rows
+  if (node.children) {
+    node.children.forEach(child => pvAppendGroupRows(out, child, headers, level + 1, totalLevels));
+  } else if (node.rows) {
+    // Detail rows are indented by the deepest group level
+    node.rows.forEach(row => out.push(pvRenderDetailRow(headers, row, totalLevels)));
+  }
+
+  // Subtotal row (if enabled and any column has an agg)
+  if (node.showSubtotal && headers.some(h => h.agg)) {
+    out.push(pvRenderSubtotalRow(headers, node, level, totalLevels));
+  }
+}
+
+function pvRenderDetailRow(headers, row, indentLevel){
+  // The first column gets the indent class. Others render normally.
+  const cells = headers.map((h, i) => {
+    const v = row[h.field];
+    const formatted = pvFormatValue(v, h.format);
+    const indentCls = (i === 0 && indentLevel > 0) ? ' pv-indent-' + Math.min(indentLevel, 4) : '';
+    return '<td class="' + h.align + indentCls + '">' + escapeHtml(formatted) + '</td>';
+  }).join('');
+  return '<tr>' + cells + '</tr>';
+}
+
+function pvRenderSubtotalRow(headers, node, level, totalLevels){
+  // First column shows "<group label>: <value> total"
+  const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value) + ' total';
+  const indentCls = level > 0 ? ' pv-indent-' + Math.min(level, 4) : '';
+  const cells = headers.map((h, i) => {
+    if (i === 0) {
+      return '<td class="' + h.align + indentCls + '"><span class="pv-subtotal-label">' + escapeHtml(labelText) + '</span></td>';
+    }
+    if (h.agg) {
+      const v = node.subtotal[h.field];
+      return '<td class="' + h.align + '">' + escapeHtml(pvFormatValue(v, h.format)) + '</td>';
+    }
+    return '<td class="' + h.align + '"></td>';
+  }).join('');
+  return '<tr class="pv-row-subtotal">' + cells + '</tr>';
+}
+
+function pvRenderGrandRow(headers, grand){
+  const cells = headers.map((h, i) => {
+    if (i === 0) return '<td class="' + h.align + '"><span class="pv-grand-label">Grand total</span></td>';
+    if (h.agg) {
+      const v = grand[h.field];
+      return '<td class="' + h.align + '">' + escapeHtml(pvFormatValue(v, h.format)) + '</td>';
+    }
+    return '<td class="' + h.align + '"></td>';
+  }).join('');
+  return '<tr class="pv-row-grand">' + cells + '</tr>';
+}
+
+function pvFormatGroupValue(v){
+  // Conservative format for group label values: use ISO date format for Date,
+  // otherwise stringify. We don't apply column format here because the group
+  // field is the field itself, not necessarily a column.
+  if (v == null || v === '') return '(blank)';
+  if (v instanceof Date) return v.toLocaleDateString('en-GB');
+  return String(v);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Excel export
+//
+// Multi-sheet xlsx — one sheet per section. Numbers and dates are written
+// as actual numbers/dates with xlsx format codes, so Excel handles them as
+// real values. Group headers and subtotals come through as styled-ish rows
+// (we can't easily set fill colour cross-platform without bundling more of
+// SheetJS; we settle for bold + italic via cell properties where supported).
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function pvExportXlsx(){
+  const r = pvCurrentReport();
+  if (!r) { showStatus('No report selected.', 'err'); return; }
+
+  // Need at least one successful section
+  const sections = (r.layout && r.layout.sections) || [];
+  const successful = sections.filter(s => pvLastRun[s.id] && !pvLastRun[s.id].error && s.type === 'table');
+  if (successful.length === 0) {
+    showStatus('Run the report first (no successful sections to export).', 'err');
+    return;
+  }
+
+  showStatus('Building Excel file…', 'info');
+  try {
+    const XLSX = await pvLoadSheetJs();
+    const wb = XLSX.utils.book_new();
+
+    successful.forEach(s => {
+      const last = pvLastRun[s.id];
+      const ws = pvBuildSheet(XLSX, s, last.tree);
+      // Sheet names: max 31 chars, can't contain : \ / ? * [ ]
+      let sheetName = (s.name || 'Section').replace(/[:\\/?*\[\]]/g, '').slice(0, 31).trim() || 'Section';
+      // De-dupe sheet names (xlsx requires unique)
+      let candidate = sheetName, n = 2;
+      while (wb.SheetNames.includes(candidate)) {
+        const suffix = ' ' + n;
+        candidate = sheetName.slice(0, 31 - suffix.length) + suffix;
+        n++;
+      }
+      XLSX.utils.book_append_sheet(wb, ws, candidate);
+    });
+
+    // Filename: report name + timestamp
+    const reportName = (r.name || 'report').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 60) || 'report';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = reportName + '_' + ts + '.xlsx';
+
+    XLSX.writeFile(wb, filename);
+    showStatus('Exported · ' + filename, 'ok');
+  } catch (e) {
+    showStatus('Export failed: ' + (e.message || e), 'err');
+  }
+}
+
+// Lazy-load SheetJS from CDN. Same CDN used by balancing.html.
+function pvLoadSheetJs(){
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    sc.onload  = () => resolve(window.XLSX);
+    sc.onerror = () => reject(new Error('Could not load SheetJS from CDN'));
+    document.head.appendChild(sc);
+  });
+}
+
+// Build a worksheet for a single section. Walks the tree the same way
+// the HTML renderer does, but emits AOA (array-of-arrays) rows with
+// per-cell type/format hints SheetJS understands.
+function pvBuildSheet(XLSX, section, tree){
+  const headers = tree.headers;
+  const rows = [];   // each entry: { cells: [{v, t, z, s}], style: 'group'|'subtotal'|'grand'|'detail' }
+
+  // Title row (optional)
+  if (tree.title) {
+    const titleRow = [{ v: tree.title, t: 's' }];
+    // Pad to width
+    while (titleRow.length < headers.length) titleRow.push({ v: '', t: 's' });
+    rows.push({ cells: titleRow, style: 'title' });
+  }
+
+  // Header row
+  if (tree.showHeader) {
+    const hdr = headers.map(h => ({ v: h.label, t: 's' }));
+    rows.push({ cells: hdr, style: 'header' });
+  }
+
+  // Body
+  if (tree.groups) {
+    tree.groups.forEach(node => pvAppendGroupRowsXlsx(rows, node, headers, 0, tree.groupCfg.length));
+  } else if (tree.rows) {
+    tree.rows.forEach(row => rows.push({ cells: pvRowCells(headers, row), style: 'detail' }));
+  }
+  // Grand total
+  if (tree.showGrandTotal && headers.some(h => h.agg)) {
+    rows.push({ cells: pvAggCells(headers, tree.grand, 'Grand total'), style: 'grand' });
+  }
+
+  // Convert to AOA
+  const aoa = rows.map(r => r.cells);
+  const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+
+  // Column widths from layout config (best-effort: convert px to char width)
+  ws['!cols'] = headers.map(h => {
+    if (!h.width) return { wch: 14 };
+    const m = String(h.width).match(/^(\d+)\s*(px|%)?$/);
+    if (m && m[2] === 'px') return { wch: Math.max(8, Math.round(parseInt(m[1], 10) / 7)) };
+    return { wch: 14 };
+  });
+
+  return ws;
+}
+
+function pvAppendGroupRowsXlsx(rows, node, headers, level, totalLevels){
+  if (node.showHeader) {
+    // Group header — first cell has "Field: value" label, others blank
+    const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value);
+    const cells = [{ v: labelText, t: 's' }];
+    while (cells.length < headers.length) cells.push({ v: '', t: 's' });
+    rows.push({ cells: cells, style: 'group' });
+  }
+  if (node.children) {
+    node.children.forEach(child => pvAppendGroupRowsXlsx(rows, child, headers, level + 1, totalLevels));
+  } else if (node.rows) {
+    node.rows.forEach(row => rows.push({ cells: pvRowCells(headers, row), style: 'detail' }));
+  }
+  if (node.showSubtotal && headers.some(h => h.agg)) {
+    const labelText = (node.label || node.field) + ': ' + pvFormatGroupValue(node.value) + ' total';
+    rows.push({ cells: pvAggCells(headers, node.subtotal, labelText), style: 'subtotal' });
+  }
+}
+
+function pvRowCells(headers, row){
+  return headers.map(h => pvCellForValue(row[h.field], h.format));
+}
+
+function pvAggCells(headers, agg, label){
+  return headers.map((h, i) => {
+    if (i === 0) return { v: label, t: 's' };
+    if (h.agg) {
+      const v = agg[h.field];
+      return pvCellForValue(v, h.format);
+    }
+    return { v: '', t: 's' };
+  });
+}
+
+// Convert one value into a SheetJS cell with proper type and format code.
+function pvCellForValue(value, format){
+  if (value == null || value === '') return { v: '', t: 's' };
+
+  if (format === 'integer') {
+    const n = Number(value);
+    if (isFinite(n)) return { v: Math.round(n), t: 'n', z: '#,##0' };
+    return { v: String(value), t: 's' };
+  }
+  if (format === 'number') {
+    const n = Number(value);
+    if (isFinite(n)) return { v: n, t: 'n', z: '#,##0.00' };
+    return { v: String(value), t: 's' };
+  }
+  if (format === 'currency') {
+    const n = Number(value);
+    if (isFinite(n)) return { v: n, t: 'n', z: '£#,##0.00' };
+    return { v: String(value), t: 's' };
+  }
+  if (format === 'percent') {
+    const n = Number(value);
+    if (isFinite(n)) return { v: n, t: 'n', z: '0.00%' };
+    return { v: String(value), t: 's' };
+  }
+  if (format === 'date') {
+    const d = pvToDate(value);
+    if (d) return { v: d, t: 'd', z: 'dd/mm/yyyy' };
+    return { v: String(value), t: 's' };
+  }
+  if (format === 'datetime') {
+    const d = pvToDate(value);
+    if (d) return { v: d, t: 'd', z: 'dd/mm/yyyy hh:mm' };
+    return { v: String(value), t: 's' };
+  }
+  // Auto / text: emit as native type if possible
+  if (typeof value === 'number')      return { v: value, t: 'n' };
+  if (typeof value === 'boolean')     return { v: value, t: 'b' };
+  if (value instanceof Date)          return { v: value, t: 'd', z: 'dd/mm/yyyy hh:mm' };
+  return { v: String(value), t: 's' };
+}
+
+
+// ── Init ────────────────────────────────────────────────────────────────────
 async function rbInit(){
   // Restore state from localStorage. Drop 2 will replace this with a Cosmos
   // fetch via /api/reports, falling back to local on network failure.
