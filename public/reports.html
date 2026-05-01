@@ -411,6 +411,26 @@ body.cyg-collapsed{padding-left:54px}
 .la-variant-toggle button:last-child{border-right:none}
 .la-variant-toggle button.active{background:var(--accent-glow);color:var(--accent)}
 .la-variant-toggle button:hover:not(.active){color:var(--text2)}
+/* ── Runs tab ───────────────────────────────────────────────────────────────
+   List of saved runs for the current report. Each card shows: timestamp,
+   parameter values used, row count, plus actions (re-render, delete, export). */
+.rn-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.75rem 1rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap}
+.rn-card:hover{border-color:var(--border2)}
+.rn-time{font-size:13px;font-weight:500;color:var(--text);min-width:140px;font-family:var(--mono)}
+.rn-meta{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.rn-params{flex:1;min-width:200px;display:flex;flex-wrap:wrap;gap:4px}
+.rn-param-pill{background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:2px 8px;font-size:10px;font-family:var(--mono);color:var(--text2)}
+.rn-param-pill .rn-pn{color:var(--text3);margin-right:4px}
+.rn-actions{display:flex;gap:0.25rem;flex-shrink:0}
+.rn-card-busy{opacity:0.6;pointer-events:none}
+.rn-note{flex-basis:100%;font-size:11px;color:var(--text3);font-style:italic;margin-top:4px}
+
+/* ── Sync status pill (shown when a Cosmos sync is in progress / failed) ── */
+.cyg-sync-pill{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:100px;color:var(--text3)}
+.cyg-sync-pill.busy{background:rgba(245,158,11,0.1);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
+.cyg-sync-pill.ok  {background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
+.cyg-sync-pill.err {background:var(--red-bg);  color:var(--red);  border:0.5px solid rgba(240,70,70,0.3)}
+.cyg-sync-pill.local{background:var(--bg3);color:var(--text3);border:0.5px solid var(--border2)}
 
 </style>
 </head>
@@ -438,6 +458,7 @@ body.cyg-collapsed{padding-left:54px}
       </div>
     </div>
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <span id="rb-sync-pill" class="cyg-sync-pill local" title="Cosmos sync status">💾 local</span>
       <span id="rb-save-indicator" style="font-size:12px;color:var(--green);display:none">✓ Saved</span>
       <button class="btn btn-purple btn-sm" onclick="rbAddReport()">＋ New report</button>
     </div>
@@ -554,6 +575,7 @@ body.cyg-collapsed{padding-left:54px}
                 Fill in any parameters, click <strong style="font-style:normal;color:var(--text2)">▶ Run</strong>, and the report renders below using your Layout config. Excel export becomes available after a successful run.
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                <button class="btn btn-green btn-sm" onclick="pvSaveRun()" id="pv-save-btn" disabled>💾 Save run</button>
                 <button class="btn btn-ghost btn-sm" onclick="pvExportXlsx()" id="pv-export-btn" disabled>📥 Export Excel</button>
                 <button class="btn btn-primary btn-sm" onclick="pvRun()">▶ Run</button>
               </div>
@@ -567,10 +589,14 @@ body.cyg-collapsed{padding-left:54px}
 
         <div id="rb-tab-runs" class="rb-tab-pane" style="display:none">
           <div class="panel"><div class="panel-body">
-            <div class="empty-state">
-              <strong>Runs</strong> — coming in Drop 5.<br>
-              History of saved runs with their parameter values and timestamps. Click any run to re-render its data.
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;gap:0.75rem;flex-wrap:wrap">
+              <div style="font-size:12px;color:var(--text3);line-height:1.6;flex:1;min-width:280px">
+                Saved runs of this report. Each saved run captures the parameter values used and the rendered output, so you can revisit a snapshot months later without re-querying the source database.
+              </div>
+              <button class="btn btn-ghost btn-sm" onclick="rnRefresh()">↻ Refresh</button>
             </div>
+            <div id="rn-list"></div>
+            <div id="rn-empty" class="empty-state">No saved runs yet. Run the report on the Preview tab and click <strong>💾 Save run</strong> to capture a snapshot.</div>
           </div></div>
         </div>
 
@@ -668,6 +694,247 @@ function flashSaved(){
   window._saveTimer = setTimeout(() => { el.style.display = 'none'; }, 1500);
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Cosmos sync (Drop 5)
+//
+// Two layers of persistence:
+//   1. localStorage (always written immediately, used for offline / fast load)
+//   2. Cosmos via /api/<action>?code=<key> (eventual consistency, debounced)
+//
+// The frontend treats Cosmos as the source of truth WHEN AVAILABLE. On init:
+//   - Load from localStorage immediately (fast paint).
+//   - Kick off Cosmos fetch in the background.
+//   - When Cosmos returns, merge: server wins on a per-report basis using
+//     updatedAt. Reports present locally but not on the server are pushed up
+//     (they're either new or the server doesn't have them yet).
+//
+// The backend API is your existing single-index.js Azure Function with
+// new actions added. See the BACKEND SNIPPET delivered alongside this file.
+//
+// Endpoints (action names — matched by index.js dispatch):
+//   reports-list        GET    → returns user's reports
+//   reports-save        POST   → upserts one report; body: the report object
+//   reports-delete      POST   → body: { id }
+//   runs-list           GET    → ?reportId=...   → returns saved runs for that report
+//   runs-save           POST   → upserts one run
+//   runs-delete         POST   → body: { reportId, id }
+//
+// All require a valid function `code` (your Azure Function key) and an
+// `x-user-id` header (looked up via CygenixSync.getUserId()). The user id
+// becomes the partition key for the `reports` container. Runs partition on
+// reportId so a single report's runs all live in one logical partition.
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Backend URL config. Pulled from the same window globals balancing.html /
+// admin.html use. If those globals aren't defined, sync silently degrades
+// to localStorage-only mode.
+function _cosmosApiBase(){
+  // First-class config: explicit window.CYGENIX_API + window.CYGENIX_API_CODE
+  // Fallback: read from CygenixParams if present.
+  if (typeof window !== 'undefined') {
+    if (window.CYGENIX_API && window.CYGENIX_API_CODE) {
+      return { url: String(window.CYGENIX_API).replace(/\/$/, ''), code: String(window.CYGENIX_API_CODE) };
+    }
+    if (typeof CygenixParams !== 'undefined' && CygenixParams && typeof CygenixParams.get === 'function') {
+      const u = CygenixParams.get('apiUrl');
+      const k = CygenixParams.get('apiCode');
+      if (u && k) return { url: String(u).replace(/\/$/, ''), code: String(k) };
+    }
+  }
+  return null;
+}
+
+function _cosmosUserId(){
+  try {
+    if (typeof CygenixSync !== 'undefined' && CygenixSync && typeof CygenixSync.getUserId === 'function') {
+      return CygenixSync.getUserId() || '';
+    }
+  } catch { /* fall through */ }
+  return '';
+}
+
+function _cosmosAvailable(){
+  return !!_cosmosApiBase() && !!_cosmosUserId();
+}
+
+async function _cosmosCall(action, opts){
+  // GET: pass query params via opts.qs
+  // POST: opts.body becomes JSON body
+  const cfg = _cosmosApiBase();
+  if (!cfg) throw new Error('Cosmos sync not configured');
+  const userId = _cosmosUserId();
+  if (!userId) throw new Error('No user id available for Cosmos call');
+
+  const qs = new URLSearchParams({ action: action, code: cfg.code });
+  if (opts && opts.qs) Object.keys(opts.qs).forEach(k => qs.append(k, opts.qs[k]));
+  const url = cfg.url + '?' + qs.toString();
+  const method = opts && opts.body ? 'POST' : 'GET';
+  const headers = { 'Content-Type': 'application/json', 'x-user-id': userId };
+  const fetchOpts = { method, headers, signal: AbortSignal.timeout(30000) };
+  if (method === 'POST') fetchOpts.body = JSON.stringify(opts.body || {});
+
+  const res = await fetch(url, fetchOpts);
+  const data = await res.json().catch(() => ({ error: 'Non-JSON (' + res.status + ')' }));
+  if (!res.ok) throw new Error(data.error || res.statusText || ('HTTP ' + res.status));
+  return data;
+}
+
+// ── Sync status pill ────────────────────────────────────────────────────────
+function _setSyncPill(state, text){
+  const el = $('rb-sync-pill');
+  if (!el) return;
+  el.className = 'cyg-sync-pill ' + state;
+  el.textContent = text || (
+    state === 'busy'  ? '⟳ syncing'  :
+    state === 'ok'    ? '✓ cosmos'   :
+    state === 'err'   ? '⚠ sync error':
+    state === 'local' ? '💾 local'   : ''
+  );
+}
+
+// ── Reports: load / save / delete via Cosmos ────────────────────────────────
+async function _cosmosLoadReports(){
+  return await _cosmosCall('reports-list');
+}
+async function _cosmosSaveReport(report){
+  // Stamp userId on the way out so the backend doesn't have to infer it.
+  // If the user id isn't known, this throws — keep the report local-only.
+  const uid = _cosmosUserId();
+  if (!uid) throw new Error('No user id');
+  return await _cosmosCall('reports-save', { body: Object.assign({}, report, { userId: uid }) });
+}
+async function _cosmosDeleteReport(id){
+  return await _cosmosCall('reports-delete', { body: { id: id } });
+}
+
+// ── Runs: list / save / delete ──────────────────────────────────────────────
+async function _cosmosListRuns(reportId){
+  return await _cosmosCall('runs-list', { qs: { reportId: reportId } });
+}
+async function _cosmosSaveRun(run){
+  return await _cosmosCall('runs-save', { body: run });
+}
+async function _cosmosDeleteRun(reportId, id){
+  return await _cosmosCall('runs-delete', { body: { reportId: reportId, id: id } });
+}
+
+// ── Debounced background save of the full report list ───────────────────────
+// Triggered by rbSaveToLocal(). We push every modified report to Cosmos.
+// "Modified" = the report's updatedAt is newer than the last successful sync.
+// A single in-flight sync at a time; if a new save lands during a sync, we
+// queue another one to run after.
+let _syncInFlight = false;
+let _syncQueued   = false;
+let _syncDebounce = null;
+const _lastSyncedUpdatedAt = {};   // reportId → ISO of the version we successfully pushed
+
+function _scheduleSync(){
+  if (!_cosmosAvailable()) {
+    _setSyncPill('local');
+    return;
+  }
+  // 800ms debounce: the user typing in a name input fires many saves; we
+  // don't want to hammer the backend. 800ms feels fast enough that the
+  // pill flips to "ok" before the user moves on.
+  clearTimeout(_syncDebounce);
+  _syncDebounce = setTimeout(() => {
+    if (_syncInFlight) { _syncQueued = true; return; }
+    _runSync();
+  }, 800);
+}
+
+async function _runSync(){
+  if (!_cosmosAvailable()) return;
+  _syncInFlight = true;
+  _setSyncPill('busy');
+  try {
+    // Find reports whose updatedAt differs from the last synced version.
+    const dirty = rbReports.filter(r =>
+      _lastSyncedUpdatedAt[r.id] !== r.updatedAt
+    );
+    for (const r of dirty) {
+      // eslint-disable-next-line no-await-in-loop
+      try {
+        await _cosmosSaveReport(r);
+        _lastSyncedUpdatedAt[r.id] = r.updatedAt;
+      } catch (e) {
+        // Per-report failure shouldn't kill the whole sync.
+        console.warn('Cosmos save failed for report', r.id, e.message);
+      }
+    }
+    _setSyncPill('ok');
+  } catch (e) {
+    _setSyncPill('err', '⚠ ' + (e.message || 'sync error'));
+  } finally {
+    _syncInFlight = false;
+    if (_syncQueued) {
+      _syncQueued = false;
+      setTimeout(_runSync, 100);
+    }
+  }
+}
+
+// ── Initial Cosmos load (called from rbInit) ────────────────────────────────
+// Strategy: paint local immediately, then fetch Cosmos and merge. Server
+// wins on per-report basis using updatedAt. Local-only reports get pushed up.
+async function _cosmosInitialLoad(){
+  if (!_cosmosAvailable()) {
+    _setSyncPill('local');
+    return;
+  }
+  _setSyncPill('busy', '⟳ loading');
+  try {
+    const data = await _cosmosLoadReports();
+    const remoteReports = (data && Array.isArray(data.reports)) ? data.reports
+                        : (Array.isArray(data) ? data : []);
+
+    // Index local + remote by id
+    const localById  = new Map(rbReports.map(r => [r.id, r]));
+    const remoteById = new Map(remoteReports.map(r => [r.id, r]));
+
+    // Merge: every id from either side; pick the one with the later updatedAt
+    const merged = [];
+    const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
+    allIds.forEach(id => {
+      const l = localById.get(id);
+      const r = remoteById.get(id);
+      if (l && r) {
+        // Compare updatedAt — server wins on tie (slight preference for remote).
+        const la = l.updatedAt || '';
+        const ra = r.updatedAt || '';
+        merged.push(la > ra ? l : r);
+        // Mark synced when we keep the remote version (it's already on server).
+        if (la <= ra) _lastSyncedUpdatedAt[id] = r.updatedAt;
+      } else if (r) {
+        merged.push(r);
+        _lastSyncedUpdatedAt[id] = r.updatedAt;
+      } else {
+        merged.push(l);
+        // Local-only — leave _lastSyncedUpdatedAt unset so _scheduleSync pushes it.
+      }
+    });
+
+    // Replace state and re-render
+    rbReports = merged;
+    if (rbCurrentId && !rbReports.some(x => x.id === rbCurrentId)) {
+      // The currently-selected report no longer exists post-merge (rare); pick another.
+      rbCurrentId = rbReports.length ? rbReports[0].id : null;
+      rbPersistSelection();
+    }
+    rbSaveToLocal();   // persist merge result locally
+    rbRender();
+
+    _setSyncPill('ok');
+
+    // Push any local-only or stale-on-server reports.
+    _scheduleSync();
+  } catch (e) {
+    _setSyncPill('err', '⚠ ' + (e.message || 'load failed'));
+    // Stay on local-only; user can still work, sync will retry on next change.
+  }
+}
+
+
 // ── Local storage adapter ───────────────────────────────────────────────────
 // Drop 1 uses localStorage as the only persistence layer. Drop 2 adds the
 // Cosmos sync via /api/reports — at which point this function becomes a
@@ -689,6 +956,9 @@ function rbSaveToLocal(){
     // drop the user's work.
     showStatus('Could not save reports locally: ' + (e.message || e), 'err');
   }
+  // Background Cosmos sync — debounced so a flurry of edits coalesces into
+  // one POST. Returns immediately; user never blocks.
+  if (typeof _scheduleSync === 'function') _scheduleSync();
 }
 
 // ── Report CRUD ─────────────────────────────────────────────────────────────
@@ -696,8 +966,8 @@ function rbAddReport(){
   const r = {
     id:         uuid(),
     name:       '',
-    userId:     '',  // populated by Cosmos sync in Drop 2
-    projectId:  '',  // ditto
+    userId:     _cosmosUserId(),   // Drop 5: stamp at create time
+    projectId:  '',
     datasets:   [],
     parameters: [],
     layout:     { sections: [] },
@@ -719,11 +989,20 @@ function rbDeleteCurrent(){
   if (!r) return;
   const label = r.name || 'this report';
   if (!confirm('Delete "' + label + '"? This cannot be undone.')) return;
+  const deletedId = rbCurrentId;
   rbReports = rbReports.filter(x => x.id !== rbCurrentId);
   rbCurrentId = rbReports.length ? rbReports[0].id : null;
   rbSaveToLocal();
   rbPersistSelection();
   rbRender();
+  // Cosmos delete — fire and forget. If it fails, the local delete still
+  // sticks; next sync will reconcile.
+  if (_cosmosAvailable()) {
+    _cosmosDeleteReport(deletedId).catch(e => {
+      console.warn('Cosmos delete failed:', e.message);
+      _setSyncPill('err', '⚠ delete unsynced');
+    });
+  }
 }
 function rbSelectReport(id){
   rbCurrentId = id;
@@ -768,6 +1047,9 @@ function rbSwitchTab(tab){
     const el = $('rb-tab-' + t);
     if (el) el.style.display = t === tab ? '' : 'none';
   });
+  // Drop 5: auto-load saved runs the first time the Runs tab is opened
+  // for a given report. Subsequent visits use the cache.
+  if (tab === 'runs' && typeof _rnMaybeAutoLoad === 'function') _rnMaybeAutoLoad();
 }
 
 // ── Render ──────────────────────────────────────────────────────────────────
@@ -3932,8 +4214,10 @@ function pvHideEmpty(){
   if (el) el.style.display = 'none';
 }
 function pvSetExportEnabled(enabled){
-  const btn = $('pv-export-btn');
-  if (btn) btn.disabled = !enabled;
+  const exp = $('pv-export-btn');
+  if (exp) exp.disabled = !enabled;
+  const sav = $('pv-save-btn');
+  if (sav) sav.disabled = !enabled;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -5219,10 +5503,384 @@ function pvBuildSheetChart(XLSX, section, tree){
 }
 
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Saved runs (Drop 5)
+//
+// State shape (one document per saved run, partitioned on reportId):
+//   Run = {
+//     id:           string (uuid)
+//     reportId:     string  // partition key
+//     userId:       string
+//     reportName:   string  // denormalised so the Runs tab can show it
+//                            // even if the report is later renamed
+//     savedAt:      iso string
+//     paramValues:  { <name>: <value>, ... }
+//     sectionRuns:  [
+//       {
+//         sectionId, sectionName, type, datasetName,
+//         tree:    object (the built tree — usually 10-100x smaller than rows)
+//         rowCount: number,
+//         error:    string|null,
+//         truncated: bool   // true if the tree was too large to persist
+//       },
+//       ...
+//     ]
+//     note:         string  // optional user-supplied note ("Q1 board pack")
+//   }
+//
+// Runs are saved manually via the 💾 button on the Preview tab. They show
+// up in the Runs tab where the user can re-render or delete them.
+//
+// Size budget: per-document Cosmos limit is 2 MB. We persist *trees* not
+// raw rows, which fits the vast majority of reports. If a tree exceeds
+// ~1.5 MB serialised we mark the run truncated:true and skip persisting
+// that tree — the user can re-run with the same parameters to rebuild.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const _MAX_TREE_BYTES = 1500000;   // ~1.5MB to leave headroom under the 2MB Cosmos cap
+
+// Local cache of saved runs, by reportId. Loaded lazily when Runs tab opens.
+const _rnCache = new Map();   // reportId → [Run, ...]
+let   _rnLoading = false;     // simple guard against double-fetch
+
+function pvSaveRun(){
+  const r = pvCurrentReport();
+  if (!r) { showStatus('No report selected.', 'err'); return; }
+  // Need at least one successful section
+  const sections = (r.layout && r.layout.sections) || [];
+  const successful = sections.filter(s => pvLastRun[s.id] && !pvLastRun[s.id].error);
+  if (successful.length === 0) {
+    showStatus('Run the report first (no successful sections to save).', 'err');
+    return;
+  }
+
+  // Capture parameter values used for this run. Defaults filled in.
+  const params = r.parameters || [];
+  const paramValues = {};
+  params.forEach(p => {
+    paramValues[p.name] = (_pvParamValues[p.name] == null || _pvParamValues[p.name] === '') ? p.default : _pvParamValues[p.name];
+  });
+
+  // Optional note prompt
+  const note = window.prompt('Optional note for this saved run (e.g. "Q1 board pack"):', '') || '';
+
+  // Build sectionRuns. Trees are serialised but Maps need conversion —
+  // matrix trees use Map for cells/colTotals. We convert to a JSON-safe
+  // structure here so the saved doc round-trips cleanly.
+  const sectionRuns = sections.map(s => {
+    const last = pvLastRun[s.id];
+    if (!last) return null;
+    if (last.error) {
+      return {
+        sectionId: s.id, sectionName: s.name || '',
+        type: s.type, datasetName: last.datasetName || '',
+        tree: null, rowCount: 0, error: last.error, truncated: false
+      };
+    }
+    let serialised;
+    try { serialised = _serialiseTree(last.tree); }
+    catch (e) {
+      return {
+        sectionId: s.id, sectionName: s.name || '',
+        type: s.type, datasetName: last.datasetName || '',
+        tree: null, rowCount: last.rows ? last.rows.length : 0, error: 'Could not serialise: ' + e.message, truncated: false
+      };
+    }
+    // Size check
+    let truncated = false;
+    try {
+      const sz = JSON.stringify(serialised).length;
+      if (sz > _MAX_TREE_BYTES) { serialised = null; truncated = true; }
+    } catch { serialised = null; truncated = true; }
+    return {
+      sectionId: s.id, sectionName: s.name || '',
+      type: s.type, datasetName: last.datasetName || '',
+      tree: serialised, rowCount: last.rows ? last.rows.length : 0, error: null, truncated: truncated
+    };
+  }).filter(Boolean);
+
+  const run = {
+    id:          uuid(),
+    reportId:    r.id,
+    userId:      _cosmosUserId(),
+    reportName:  r.name || '',
+    savedAt:     nowIso(),
+    paramValues, sectionRuns,
+    note:        note
+  };
+
+  // Optimistic: add to local cache and re-render the Runs tab if it's open.
+  if (!_rnCache.has(r.id)) _rnCache.set(r.id, []);
+  _rnCache.get(r.id).unshift(run);
+  rnRender();
+
+  // Persist
+  if (_cosmosAvailable()) {
+    showStatus('Saving run…', 'info');
+    _cosmosSaveRun(run).then(() => {
+      showStatus('Run saved', 'ok');
+    }).catch(e => {
+      showStatus('Save failed: ' + e.message + ' (kept locally)', 'err');
+      // Cache it under a local-only fallback so it's not lost. Re-pushed
+      // on the next Runs-tab refresh that succeeds.
+      _saveRunLocal(run);
+    });
+  } else {
+    _saveRunLocal(run);
+    showStatus('Run saved locally (Cosmos sync not configured)', 'ok');
+  }
+}
+
+// ── Tree serialisation (Maps → arrays for JSON round-trip) ──────────────────
+// Matrix trees use Map for cells/colTotals; tables don't. We tag the
+// serialised form so deserialisation knows what to rehydrate.
+function _serialiseTree(tree){
+  if (!tree || typeof tree !== 'object') return tree;
+  // Detect matrix tree by presence of rowKeys + cells (Map)
+  if (Array.isArray(tree.rowKeys) && tree.cells instanceof Map) {
+    return Object.assign({}, tree, {
+      _kind: 'matrix',
+      cells: _mapToObj(tree.cells, v => v instanceof Map ? _mapToObj(v) : v),
+      colTotals: tree.colTotals instanceof Map ? _mapToObj(tree.colTotals) : tree.colTotals,
+      rowSubtotals: tree.rowSubtotals instanceof Map ? _mapToObj(tree.rowSubtotals) : tree.rowSubtotals
+    });
+  }
+  // Tables and charts have no Maps — JSON-safe as-is
+  return tree;
+}
+function _deserialiseTree(tree){
+  if (!tree || typeof tree !== 'object') return tree;
+  if (tree._kind === 'matrix') {
+    const cells = new Map();
+    Object.keys(tree.cells || {}).forEach(rk => {
+      const inner = new Map();
+      const innerObj = tree.cells[rk] || {};
+      Object.keys(innerObj).forEach(ck => inner.set(ck, innerObj[ck]));
+      cells.set(rk, inner);
+    });
+    const colTotals = new Map();
+    Object.keys(tree.colTotals || {}).forEach(ck => colTotals.set(ck, tree.colTotals[ck]));
+    return Object.assign({}, tree, { cells, colTotals, rowSubtotals: new Map() });
+  }
+  return tree;
+}
+function _mapToObj(m, valFn){
+  const out = {};
+  m.forEach((v, k) => { out[k] = valFn ? valFn(v) : v; });
+  return out;
+}
+
+// ── Local fallback for saved runs ───────────────────────────────────────────
+const RN_KEY_LOCAL_PREFIX = 'cygenix_runs_local_';
+function _saveRunLocal(run){
+  try {
+    const key = RN_KEY_LOCAL_PREFIX + run.reportId;
+    const existing = JSON.parse(localStorage.getItem(key) || '[]');
+    existing.unshift(run);
+    // Keep most recent 20 locally — beyond that, encourage Cosmos.
+    if (existing.length > 20) existing.length = 20;
+    localStorage.setItem(key, JSON.stringify(existing));
+  } catch (e) {
+    showStatus('Could not save run locally: ' + (e.message || e), 'err');
+  }
+}
+function _loadRunsLocal(reportId){
+  try {
+    const raw = localStorage.getItem(RN_KEY_LOCAL_PREFIX + reportId);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Runs tab
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function rnRefresh(){
+  const r = pvCurrentReport();
+  if (!r) { rnRender(); return; }
+  if (_rnLoading) return;
+  _rnLoading = true;
+  showStatus('Loading saved runs…', 'info');
+  try {
+    if (_cosmosAvailable()) {
+      const data = await _cosmosListRuns(r.id);
+      const runs = (data && Array.isArray(data.runs)) ? data.runs : (Array.isArray(data) ? data : []);
+      // Sort newest first
+      runs.sort((a, b) => (b.savedAt || '').localeCompare(a.savedAt || ''));
+      _rnCache.set(r.id, runs);
+      showStatus('Loaded ' + runs.length + ' saved run' + (runs.length === 1 ? '' : 's'), 'ok');
+    } else {
+      _rnCache.set(r.id, _loadRunsLocal(r.id));
+      showStatus('Cosmos sync not configured — showing local-only runs', 'info');
+    }
+  } catch (e) {
+    // Fall back to local cache on Cosmos failure
+    const local = _loadRunsLocal(r.id);
+    _rnCache.set(r.id, local);
+    showStatus('Could not load from Cosmos: ' + e.message + ' — showing local-only', 'err');
+  } finally {
+    _rnLoading = false;
+    rnRender();
+  }
+}
+
+function rnRender(){
+  const list  = $('rn-list');
+  const empty = $('rn-empty');
+  if (!list || !empty) return;
+
+  const r = pvCurrentReport();
+  if (!r) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'Select or create a report to view its saved runs.';
+    return;
+  }
+  const runs = _rnCache.get(r.id);
+  // Lazy-load on first view
+  if (runs === undefined) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'Click <strong>↻ Refresh</strong> to load saved runs.';
+    return;
+  }
+  if (runs.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.innerHTML = 'No saved runs yet. Run the report on the Preview tab and click <strong>💾 Save run</strong> to capture a snapshot.';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = runs.map((run, i) => rnRenderCard(run, i)).join('');
+}
+
+function rnRenderCard(run, idx){
+  const ts = run.savedAt ? new Date(run.savedAt).toLocaleString('en-GB') : '(unknown)';
+  const sectionCount = (run.sectionRuns || []).length;
+  const errorCount = (run.sectionRuns || []).filter(s => s.error).length;
+  const totalRows = (run.sectionRuns || []).reduce((sum, s) => sum + (s.rowCount || 0), 0);
+  const truncated = (run.sectionRuns || []).some(s => s.truncated);
+
+  const params = Object.keys(run.paramValues || {});
+  const pillsHtml = params.length === 0
+    ? '<span style="font-size:10px;color:var(--text3);font-style:italic">no parameters</span>'
+    : params.map(name => {
+        const v = run.paramValues[name];
+        const display = v == null || v === '' ? '(blank)' : String(v);
+        return '<span class="rn-param-pill"><span class="rn-pn">@' + escapeHtml(name) + '</span>'
+             + escapeHtml(display.length > 30 ? display.slice(0, 27) + '…' : display) + '</span>';
+      }).join('');
+
+  const meta = sectionCount + ' section' + (sectionCount === 1 ? '' : 's')
+             + ' · ' + totalRows.toLocaleString() + ' row' + (totalRows === 1 ? '' : 's')
+             + (errorCount > 0 ? ' · ' + errorCount + ' error' + (errorCount === 1 ? '' : 's') : '')
+             + (truncated ? ' · ⚠ truncated' : '');
+
+  const note = run.note
+    ? '<div class="rn-note">📝 ' + escapeHtml(run.note) + '</div>'
+    : '';
+
+  return '<div class="rn-card" id="rn-card-' + run.id + '">'
+       +   '<div style="display:flex;flex-direction:column;gap:2px;min-width:160px">'
+       +     '<span class="rn-time">' + escapeHtml(ts) + '</span>'
+       +     '<span class="rn-meta">' + escapeHtml(meta) + '</span>'
+       +   '</div>'
+       +   '<div class="rn-params">' + pillsHtml + '</div>'
+       +   '<div class="rn-actions">'
+       +     '<button class="btn btn-primary btn-sm" title="Re-render this saved snapshot in the Preview tab" onclick="rnRestore(\'' + run.id + '\')">👁 View</button>'
+       +     '<button class="btn btn-red btn-sm"     title="Delete this saved run"                              onclick="rnDelete(\'' + run.id + '\')">🗑</button>'
+       +   '</div>'
+       +   note
+       + '</div>';
+}
+
+async function rnRestore(runId){
+  const r = pvCurrentReport(); if (!r) return;
+  const runs = _rnCache.get(r.id) || [];
+  const run = runs.find(x => x.id === runId);
+  if (!run) { showStatus('Run not found in cache. Click ↻ Refresh.', 'err'); return; }
+
+  // Hydrate trees and seed pvLastRun. Then switch to Preview and render.
+  Object.keys(pvLastRun).forEach(k => delete pvLastRun[k]);
+  (run.sectionRuns || []).forEach(sr => {
+    if (sr.truncated) {
+      pvLastRun[sr.sectionId] = {
+        tree: null, rows: null,
+        error: 'Saved run was too large to persist — re-run with the same parameters to rebuild this section.',
+        datasetName: sr.datasetName || ''
+      };
+    } else if (sr.error) {
+      pvLastRun[sr.sectionId] = { tree: null, rows: null, error: sr.error, datasetName: sr.datasetName || '' };
+    } else {
+      pvLastRun[sr.sectionId] = {
+        tree: _deserialiseTree(sr.tree),
+        rows: null,   // raw rows aren't persisted — only the tree
+        rowCount: sr.rowCount || 0,
+        error: null,
+        datasetName: sr.datasetName || ''
+      };
+    }
+  });
+
+  // Fill the parameter form with the saved values so it's clear what was used
+  const paramValues = run.paramValues || {};
+  Object.keys(paramValues).forEach(k => { _pvParamValues[k] = paramValues[k]; });
+
+  // Switch to Preview and render
+  rbActiveTab = 'preview';
+  rbPersistSelection();
+  rbSwitchTab('preview');
+  pvRender();   // re-renders the parameter form with restored values
+  pvHideEmpty();
+  pvHideStatus();
+  pvRenderOutput(r);
+  pvSetExportEnabled(true);
+  showStatus('Restored saved run from ' + new Date(run.savedAt).toLocaleString('en-GB'), 'ok');
+}
+
+async function rnDelete(runId){
+  const r = pvCurrentReport(); if (!r) return;
+  const runs = _rnCache.get(r.id) || [];
+  const run = runs.find(x => x.id === runId);
+  if (!run) return;
+  if (!confirm('Delete saved run from ' + new Date(run.savedAt).toLocaleString('en-GB') + '? This cannot be undone.')) return;
+
+  // Optimistic local remove
+  _rnCache.set(r.id, runs.filter(x => x.id !== runId));
+  rnRender();
+
+  // Cosmos delete (and clean local fallback if it was there)
+  try {
+    if (_cosmosAvailable()) await _cosmosDeleteRun(r.id, runId);
+  } catch (e) {
+    showStatus('Cosmos delete failed: ' + e.message, 'err');
+  }
+  // Also remove from local fallback storage if present
+  try {
+    const key = RN_KEY_LOCAL_PREFIX + r.id;
+    const local = JSON.parse(localStorage.getItem(key) || '[]');
+    const filtered = local.filter(x => x.id !== runId);
+    if (filtered.length !== local.length) localStorage.setItem(key, JSON.stringify(filtered));
+  } catch { /* non-fatal */ }
+}
+
+// ── Auto-load runs when the Runs tab is opened ─────────────────────────────
+// Hooked into rbSwitchTab so the user doesn't have to click Refresh on
+// first view. Subsequent visits use the cache.
+const _rnAutoLoaded = new Set();   // reportIds we've already auto-loaded once
+function _rnMaybeAutoLoad(){
+  const r = pvCurrentReport();
+  if (!r) return;
+  if (_rnAutoLoaded.has(r.id)) return;
+  _rnAutoLoaded.add(r.id);
+  rnRefresh();
+}
+
+
 // ── Init ────────────────────────────────────────────────────────────────────
 async function rbInit(){
-  // Restore state from localStorage. Drop 2 will replace this with a Cosmos
-  // fetch via /api/reports, falling back to local on network failure.
+  // Drop 5: start with localStorage paint (instant), then merge Cosmos in
+  // the background. If Cosmos isn't configured/reachable, we stay on local.
   rbReports = rbLoadFromLocal();
 
   const savedId  = localStorage.getItem(RB_KEY_CURRENT);
@@ -5233,6 +5891,12 @@ async function rbInit(){
 
   rbRender();
   rbInitConnectionBanner();
+
+  // Background: try to merge with Cosmos. Failures are non-fatal — the user
+  // can keep using the app on local-only mode.
+  if (typeof _cosmosInitialLoad === 'function') {
+    _cosmosInitialLoad();   // intentionally not awaited
+  }
 }
 
 // Connection banner — same resolution pattern as balancing.html. Reads
