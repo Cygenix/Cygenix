@@ -80,7 +80,6 @@
       { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--yellow)', icon: iconClock() },
     ]},
     { section: 'Reporting', group:'reports', items: [
-      { key:'balancing',                  label:'Reporting',                 href:'/balancing.html',            color:'var(--purple)', icon: iconBalance() },
       { key:'reports',                    label:'Conversion Report',         view:'reports',                    color:'var(--purple)', icon: iconReport() },
       { key:'report-builder',             label:'Report Builder',            href:'/reports.html',              color:'var(--purple)', icon: iconReportBuilder() },
       { key:'project-summary-document',   label:'Project Summary Document',  view:'project-summary-document',   color:'var(--purple)', icon: iconDocument() },
@@ -113,9 +112,6 @@
   function iconInsights(){     return svg('<circle cx="8" cy="6" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M4 14c0-2 2-3 4-3s4 1 4 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconClean(){        return svg('<path d="M4 2v4M4 10v4M2 6h4M2 12h4M10 3l3 3-6 6-3-3z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconCheck(){        return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8l2 2 3-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
-  // Balance scales — for Balancing & Metrics. Vertical centre post with two
-  // hanging pans, matches the stroke-based style of the other icons.
-  function iconBalance(){      return svg('<path d="M8 2v12M3 14h10M5 5h6M5 5l-2 4a2 2 0 0 0 4 0L5 5zM11 5l-2 4a2 2 0 0 0 4 0L11 5z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconPlay(){         return svg('<rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M7 6l3 2-3 2z" fill="currentColor"/>'); }
   function iconList(){         return svg('<path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
   function iconGrid(){         return svg('<rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="2" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="5" height="5" rx="1" stroke="currentColor" stroke-width="1.2"/>'); }
