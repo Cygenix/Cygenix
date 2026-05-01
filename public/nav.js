@@ -91,8 +91,6 @@
     const configCollapsed = '';
     const planOpen = ['project-plan.html'].includes(page) ? 'open' : 'open';
     const planCollapsed = '';
-    const serviceOpen = ['ask.html'].includes(page) ? 'open' : 'open';
-    const serviceCollapsed = '';
     const moreOpen = ['demo.html','help.html'].includes(page) ? 'open' : 'open';
     const moreCollapsed = '';
     const mappingOpen = 'open';
@@ -222,23 +220,6 @@
     </a>
   </div>
 
-</div>
-
-<div class="cyg-nav-section">
-  <span class="cyg-nav-label">Service</span>
-
-  <!-- Service sub-menu -->
-  <div class="cyg-sub-label ${serviceOpen}" id="cyg-lbl-service" onclick="cygToggleSub('service')">
-    <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.1"/><path d="M4.5 4.5c0-1 .67-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.1-1.5 1.3V7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="6" cy="9" r="0.5" fill="currentColor"/></svg>
-    Service
-    <span class="cyg-chev">▶</span>
-  </div>
-  <div class="cyg-sub ${serviceCollapsed}" id="cyg-sub-service" style="max-height:${serviceOpen?'120px':'0'}">
-    <a class="${isActive('ask.html')}" href="/ask.html" style="color:#a78bfa">
-      <svg viewBox="0 0 16 16" fill="none"><path d="M2 3h12a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H9l-3 2v-2H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5 7h6M5 9.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-      Ask
-    </a>
-  </div>
 </div>
 
 </div>
