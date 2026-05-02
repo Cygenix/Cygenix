@@ -157,7 +157,25 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 .cal-cell.today{background:var(--accent);color:#fff;border-radius:50%}
 .cal-cell.has-ev{position:relative}.cal-cell.has-ev::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--teal)}
 .cal-ev{font-size:9px;padding:1px 5px;border-radius:3px;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}.dual-mode{grid-template-columns:1fr !important}.kpi-grid{grid-template-columns:repeat(2,1fr) !important}}
+@media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}.dual-mode{grid-template-columns:1fr !important}.kpi-grid{grid-template-columns:repeat(2,1fr) !important}#reporting > .container > div[style*="grid-template-columns"]{grid-template-columns:1fr !important;gap:2rem !important}#task-agent > .container > div[style*="grid-template-columns"]{grid-template-columns:1fr !important;gap:2rem !important}}
+/* Scheduler */
+.sched-row{display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;margin-bottom:0.35rem}
+.sched-row.next-up{border-color:rgba(79,142,255,0.3);background:rgba(79,142,255,0.04)}
+.sched-time{font-family:var(--mono);font-size:9px;color:var(--text);font-weight:600;background:var(--bg);border-radius:4px;padding:3px 7px;flex-shrink:0;text-align:center;min-width:64px;line-height:1.2}
+.sched-time .d{font-size:8px;color:var(--text3);font-weight:500}
+.sched-body{flex:1;min-width:0}
+.sched-name{font-size:10px;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sched-meta{font-size:9px;font-family:var(--mono);color:var(--text3);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sched-recur{font-size:8px;font-family:var(--mono);padding:2px 6px;border-radius:100px;flex-shrink:0;white-space:nowrap}
+.recur-once{background:var(--bg4);color:var(--text2)}
+.recur-daily{background:rgba(34,211,238,0.12);color:var(--teal)}
+.recur-weekly{background:rgba(167,139,250,0.12);color:var(--purple)}
+.recur-cron{background:rgba(245,166,35,0.12);color:var(--amber)}
+.sched-status{font-size:8px;font-family:var(--mono);padding:2px 6px;border-radius:100px;flex-shrink:0;white-space:nowrap}
+.status-scheduled{background:var(--bg4);color:var(--text2)}
+.status-running{background:var(--glow);color:var(--accent)}
+.status-success{background:var(--green-g);color:var(--green)}
+.status-failed{background:var(--red-g);color:var(--red)}
 /* Reporting tool charts */
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem;margin-bottom:0.6rem}
 .kpi-tile{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.6rem}
@@ -317,9 +335,9 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
     <div class="ticker-item">🤖 <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
-    <div class="ticker-item">📊 <span>Reporting</span> · Live dashboard · 6 charts</div>
+    <div class="ticker-item">📊 <span>Reporting</span> · Exec summary regenerated · 1 page</div>
     <div class="ticker-item">🔍 <span>Data insight</span> · "What does dbo.CkMaster do?" answered</div>
-    <div class="ticker-item">⚙ <span>Task agent</span> · Running validation suite · 24 / 32 done</div>
+    <div class="ticker-item">⏰ <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
     <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
     <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
@@ -329,9 +347,9 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
     <div class="ticker-item">🤖 <span>Agentive mode</span> · Plan generated · 18 steps queued</div>
-    <div class="ticker-item">📊 <span>Reporting</span> · Live dashboard · 6 charts</div>
+    <div class="ticker-item">📊 <span>Reporting</span> · Exec summary regenerated · 1 page</div>
     <div class="ticker-item">🔍 <span>Data insight</span> · "What does dbo.CkMaster do?" answered</div>
-    <div class="ticker-item">⚙ <span>Task agent</span> · Running validation suite · 24 / 32 done</div>
+    <div class="ticker-item">⏰ <span>Task agent</span> · Nightly conversion scheduled · 22:00</div>
     <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
     <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
@@ -350,9 +368,9 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     </div>
     <div class="features-grid animate-on-scroll">
       <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">Agentive Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Two ways to run a job. <strong style="color:var(--text2)">AI-Assisted</strong> — Cygenix recommends, you approve each step. <strong style="color:var(--text2)">Agentive</strong> — full autonomous execution end to end, with checkpoints and a human-in-the-loop kill switch.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Reporting Tool <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Live dashboard charts for every project — row counts, throughput, validation pass rate, error breakdown and run history. Drill in, filter, export to Excel or PDF for stakeholders.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Reporting <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Interactive BI dashboards over your source or target database, drag-and-drop chart builder, and the home for auto-generated executive project summaries and conversion reports — ready to email to stakeholders.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔍</div><div class="feature-card-title">Data Insights <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Understand any database in plain English. Ask "what does this table do?", "where is config held?", "which tables hold financial data?" — Cygenix reads the schema, samples the data and answers you naturally. Onboard a legacy database in hours, not weeks.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">⚙</div><div class="feature-card-title">Task Agent <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Hand the agent a goal — "run validation suite", "rebuild indexes after load", "regenerate mappings for these 12 tables" — and it plans, executes, retries and reports back. You stay in control with pause, approve and rollback.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">⏰</div><div class="feature-card-title">Task Agent <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Job scheduler for everything Cygenix does. Run conversions, validations, reindexes and reports on a schedule — once, daily, weekly or cron. Job chains, retry policies, email and Slack alerts. Set it and walk away.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Live Database Connection</div><div class="feature-card-body">Connect directly via standard connection strings to SQL Server (on-prem, Azure SQL, Azure Managed Instance, AWS RDS, Google Cloud SQL) and PostgreSQL (self-hosted, RDS, Aurora, Azure Database, Cloud SQL, Supabase, Neon). Azure Function with Managed Identity also supported.</div></div>
       <div class="feature-card"><div class="feature-card-icon">📁</div><div class="feature-card-title">File Import as a Source</div><div class="feature-card-body">Drop a <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.csv</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.xlsx</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.tsv</code> or <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.txt</code> file to use as a source for mapping and migration. Multi-sheet Excel workbooks handled; map columns to target schema like any other source.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔀</div><div class="feature-card-title">Cross-Engine Migration</div><div class="feature-card-body">Migrate between different database engines — Postgres to SQL Server, SQL Server to Postgres. Built-in DDL generator creates target tables from the source schema with opinionated type mappings and clear warnings for lossy conversions (jsonb, arrays, hierarchyid and similar).</div></div>
@@ -756,66 +774,78 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
   <div class="container">
     <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div>
-        <div class="section-tag">Reporting Tool · NEW</div>
-        <div class="section-title" style="font-size:2.2rem">Live dashboards for every migration</div>
-        <div class="section-sub">Watch your migration unfold in real time. Throughput per second, validation pass rates, error breakdowns, run history — every chart is interactive, filterable, and one click away from Excel or PDF.</div>
+        <div class="section-tag">Reporting · NEW</div>
+        <div class="section-title" style="font-size:2.2rem">The home for business intelligence,<br>not just migration logs</div>
+        <div class="section-sub">Reporting is where Cygenix turns raw migration data into something you can act on. Build interactive BI dashboards over your source or target database with drag-and-drop charts. Auto-generate executive project summary documents and conversion reports — written in plain English, ready to send to stakeholders.</div>
         <ul class="feature-points" style="margin-top:1.5rem">
-          <li>KPI tiles for rows migrated, throughput, pass rate, ETA</li>
-          <li>Bar charts by table, by phase, by hour</li>
-          <li>Line charts comparing planned vs actual progress</li>
-          <li>Donut charts breaking down errors by category</li>
-          <li>Run history with side-by-side comparison of any two runs</li>
-          <li>Export any chart to PNG, the full dashboard to PDF, raw data to Excel</li>
+          <li>Interactive BI dashboards — bar, line, pie, donut, heatmap, KPI tiles, pivot tables</li>
+          <li>Drag-and-drop chart builder — point at any table or query, drop dimensions and measures, done</li>
+          <li>Cross-filter — click any segment in any chart to filter every other chart on the page</li>
+          <li>Executive Project Summary — one-click AI-generated narrative document covering scope, progress, risks and next steps</li>
+          <li>Conversion Reports — every migration run produces a polished, branded report (Excel + PDF) with full lineage</li>
+          <li>Schedule any report to email itself to stakeholders weekly or on milestone completion</li>
+          <li>Drill-through from any chart straight into the SQL Editor for the underlying query</li>
         </ul>
       </div>
       <div class="mock">
         <div class="mock-topbar">
           <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · Migration dashboard · Run #1247</div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · BI Dashboard · Rimkus GL Conversion</div>
           <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">⬇ Export</div>
         </div>
         <div class="mock-body">
+          <!-- Tab strip -->
+          <div style="display:flex;gap:0.3rem;margin-bottom:0.6rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(79,142,255,0.3)">📊 BI Dashboard</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📄 Exec Summary</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📑 Conversion Report</div>
+            <div style="margin-left:auto;font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">+ Add chart</div>
+          </div>
+
           <!-- KPI tiles -->
           <div class="kpi-grid">
             <div class="kpi-tile">
-              <div class="kpi-label">Rows Migrated</div>
-              <div class="kpi-val">2.41<span style="font-size:11px;color:var(--text3);font-weight:500"> M</span></div>
-              <div class="kpi-trend kpi-up">▲ 18% vs run #1246</div>
+              <div class="kpi-label">Total Revenue</div>
+              <div class="kpi-val">£4.82<span style="font-size:11px;color:var(--text3);font-weight:500"> M</span></div>
+              <div class="kpi-trend kpi-up">▲ 12.4% YoY</div>
             </div>
             <div class="kpi-tile">
-              <div class="kpi-label">Throughput</div>
-              <div class="kpi-val">5,210<span style="font-size:10px;color:var(--text3);font-weight:500">/sec</span></div>
-              <div class="kpi-trend kpi-up">▲ 4.2%</div>
+              <div class="kpi-label">Active Matters</div>
+              <div class="kpi-val">1,847</div>
+              <div class="kpi-trend kpi-up">▲ 86</div>
             </div>
             <div class="kpi-tile">
-              <div class="kpi-label">Pass Rate</div>
-              <div class="kpi-val">98.7<span style="font-size:11px;color:var(--text3);font-weight:500">%</span></div>
+              <div class="kpi-label">Avg WIP Days</div>
+              <div class="kpi-val">42<span style="font-size:11px;color:var(--text3);font-weight:500"> d</span></div>
+              <div class="kpi-trend kpi-down">▼ 3.1 days</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Realisation</div>
+              <div class="kpi-val">87.2<span style="font-size:11px;color:var(--text3);font-weight:500">%</span></div>
               <div class="kpi-trend kpi-flat">— stable</div>
-            </div>
-            <div class="kpi-tile">
-              <div class="kpi-label">ETA</div>
-              <div class="kpi-val">06:42</div>
-              <div class="kpi-trend kpi-down">▼ 12 min ahead</div>
             </div>
           </div>
 
           <!-- Bar chart -->
-          <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Rows migrated by table (top 8)</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Revenue by practice area</div>
+            <div style="font-size:8px;font-family:var(--mono);color:var(--accent);background:var(--glow);padding:1px 6px;border-radius:100px">↗ drill through</div>
+          </div>
           <div class="bar-chart" style="margin-bottom:1.2rem">
-            <div class="bar" style="height:78%;animation-delay:0.05s"><span class="bar-label">CkMast</span></div>
-            <div class="bar bar-teal" style="height:62%;animation-delay:0.1s"><span class="bar-label">CkDet</span></div>
-            <div class="bar" style="height:88%;animation-delay:0.15s"><span class="bar-label">VchrDet</span></div>
-            <div class="bar bar-purple" style="height:45%;animation-delay:0.2s"><span class="bar-label">ARMast</span></div>
-            <div class="bar" style="height:55%;animation-delay:0.25s"><span class="bar-label">ARDet</span></div>
-            <div class="bar bar-teal" style="height:38%;animation-delay:0.3s"><span class="bar-label">TimeBill</span></div>
-            <div class="bar bar-green" style="height:72%;animation-delay:0.35s"><span class="bar-label">CostBill</span></div>
-            <div class="bar bar-purple" style="height:30%;animation-delay:0.4s"><span class="bar-label">ChrgCard</span></div>
+            <div class="bar" style="height:88%;animation-delay:0.05s"><span class="bar-label">Litig</span></div>
+            <div class="bar bar-teal" style="height:72%;animation-delay:0.1s"><span class="bar-label">Corp</span></div>
+            <div class="bar bar-purple" style="height:54%;animation-delay:0.15s"><span class="bar-label">RealEst</span></div>
+            <div class="bar bar-green" style="height:48%;animation-delay:0.2s"><span class="bar-label">Tax</span></div>
+            <div class="bar" style="height:38%;animation-delay:0.25s"><span class="bar-label">Empl</span></div>
+            <div class="bar bar-teal" style="height:30%;animation-delay:0.3s"><span class="bar-label">IP</span></div>
+            <div class="bar bar-purple" style="height:24%;animation-delay:0.35s"><span class="bar-label">Imm</span></div>
+            <div class="bar bar-green" style="height:18%;animation-delay:0.4s"><span class="bar-label">Other</span></div>
           </div>
 
-          <!-- Line chart + Donut row -->
+          <!-- Line + Donut -->
           <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:0.5rem">
             <div>
-              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Planned vs actual progress</div>
+              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Billings vs collections · last 12 months</div>
               <div class="line-chart-wrap">
                 <svg viewBox="0 0 200 90" preserveAspectRatio="none">
                   <defs>
@@ -824,47 +854,87 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
                       <stop offset="100%" stop-color="#4f8eff" stop-opacity="0"/>
                     </linearGradient>
                   </defs>
-                  <!-- gridlines -->
                   <line x1="0" y1="22" x2="200" y2="22" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
                   <line x1="0" y1="45" x2="200" y2="45" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
                   <line x1="0" y1="68" x2="200" y2="68" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
-                  <!-- area under actual -->
-                  <path class="lc-area" d="M 0 80 L 25 70 L 50 60 L 75 50 L 100 38 L 125 30 L 150 22 L 175 16 L 200 10 L 200 90 L 0 90 Z"/>
-                  <!-- planned (dashed teal) -->
-                  <path class="lc-line-2" d="M 0 78 L 25 68 L 50 58 L 75 48 L 100 38 L 125 28 L 150 20 L 175 14 L 200 8" stroke-dasharray="3,3"/>
-                  <!-- actual (solid blue) -->
-                  <path class="lc-line" d="M 0 80 L 25 70 L 50 60 L 75 50 L 100 38 L 125 30 L 150 22 L 175 16 L 200 10"/>
+                  <path class="lc-area" d="M 0 60 L 18 52 L 36 56 L 54 44 L 72 38 L 90 42 L 108 32 L 126 28 L 144 34 L 162 22 L 180 18 L 200 14 L 200 90 L 0 90 Z"/>
+                  <path class="lc-line-2" d="M 0 68 L 18 60 L 36 64 L 54 50 L 72 48 L 90 50 L 108 42 L 126 38 L 144 40 L 162 32 L 180 28 L 200 24" stroke-dasharray="3,3"/>
+                  <path class="lc-line" d="M 0 60 L 18 52 L 36 56 L 54 44 L 72 38 L 90 42 L 108 32 L 126 28 L 144 34 L 162 22 L 180 18 L 200 14"/>
                 </svg>
                 <div style="display:flex;gap:0.7rem;justify-content:flex-end;font-family:var(--mono);font-size:8px;color:var(--text3);margin-top:2px">
-                  <span><span style="display:inline-block;width:10px;height:2px;background:var(--accent);vertical-align:middle;margin-right:3px"></span>Actual</span>
-                  <span><span style="display:inline-block;width:10px;height:0;border-top:1.5px dashed var(--teal);vertical-align:middle;margin-right:3px"></span>Planned</span>
+                  <span><span style="display:inline-block;width:10px;height:2px;background:var(--accent);vertical-align:middle;margin-right:3px"></span>Billed</span>
+                  <span><span style="display:inline-block;width:10px;height:0;border-top:1.5px dashed var(--teal);vertical-align:middle;margin-right:3px"></span>Collected</span>
                 </div>
               </div>
             </div>
             <div>
-              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Errors by type</div>
+              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Client mix by region</div>
               <div class="donut-wrap">
                 <div class="donut">
                   <svg viewBox="0 0 36 36">
                     <circle cx="18" cy="18" r="14" fill="none" stroke="var(--bg4)" stroke-width="6"/>
-                    <!-- segments: 55%, 25%, 12%, 8% -->
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--accent)" stroke-width="6" stroke-dasharray="48.4 87.96" stroke-dashoffset="0"/>
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--teal)" stroke-width="6" stroke-dasharray="22 87.96" stroke-dashoffset="-48.4"/>
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--amber)" stroke-width="6" stroke-dasharray="10.6 87.96" stroke-dashoffset="-70.4"/>
-                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--purple)" stroke-width="6" stroke-dasharray="7 87.96" stroke-dashoffset="-81"/>
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--accent)" stroke-width="6" stroke-dasharray="40 87.96" stroke-dashoffset="0"/>
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--teal)" stroke-width="6" stroke-dasharray="22 87.96" stroke-dashoffset="-40"/>
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--purple)" stroke-width="6" stroke-dasharray="14 87.96" stroke-dashoffset="-62"/>
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--amber)" stroke-width="6" stroke-dasharray="12 87.96" stroke-dashoffset="-76"/>
                   </svg>
-                  <div class="donut-center"><div class="v">42</div><div class="l">total</div></div>
+                  <div class="donut-center"><div class="v">1.8K</div><div class="l">clients</div></div>
                 </div>
                 <div class="donut-legend">
-                  <div class="li"><span class="sw" style="background:var(--accent)"></span>FK gaps · 23</div>
-                  <div class="li"><span class="sw" style="background:var(--teal)"></span>Truncate · 11</div>
-                  <div class="li"><span class="sw" style="background:var(--amber)"></span>Type · 5</div>
-                  <div class="li"><span class="sw" style="background:var(--purple)"></span>Other · 3</div>
+                  <div class="li"><span class="sw" style="background:var(--accent)"></span>UK · 46%</div>
+                  <div class="li"><span class="sw" style="background:var(--teal)"></span>EU · 25%</div>
+                  <div class="li"><span class="sw" style="background:var(--purple)"></span>US · 16%</div>
+                  <div class="li"><span class="sw" style="background:var(--amber)"></span>APAC · 13%</div>
                 </div>
               </div>
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Second row: Executive Summary preview -->
+    <div class="animate-on-scroll" style="margin-top:5rem;display:grid;grid-template-columns:1.15fr 1fr;gap:5rem;align-items:center">
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · Executive Project Summary · auto-generated</div>
+          <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)">✨ Regenerate</div>
+        </div>
+        <div class="mock-body" style="padding:1.1rem 1.25rem;background:#fafafa;color:#1a1a1a;font-family:'Bricolage Grotesque',sans-serif">
+          <div style="font-size:8px;color:#6b7280;letter-spacing:0.1em;font-family:var(--mono);text-transform:uppercase;margin-bottom:4px">Project Status Report · 2 May 2026</div>
+          <div style="font-size:15px;font-weight:700;color:#0f172a;letter-spacing:-0.02em;margin-bottom:0.5rem">Rimkus 3E Migration — Phase 3 of 4</div>
+          <div style="display:flex;gap:0.4rem;margin-bottom:0.7rem">
+            <span style="font-size:8px;font-family:var(--mono);background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:100px">● ON TRACK</span>
+            <span style="font-size:8px;font-family:var(--mono);background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:100px">2 risks open</span>
+            <span style="font-size:8px;font-family:var(--mono);background:#e0e7ff;color:#3730a3;padding:2px 7px;border-radius:100px">Go-live: 11 Jun 2026</span>
+          </div>
+          <div style="font-size:9.5px;line-height:1.55;color:#374151;margin-bottom:0.6rem">
+            <strong style="color:#0f172a">Executive summary.</strong> The data conversion is progressing on schedule, with 14 of 19 financial tables fully migrated and reconciled. Validation pass rate is holding at <strong style="color:#15803d">98.7%</strong>, ahead of the 97% target. Two GL period-close issues remain open and are tracked under Case 01556961.
+          </div>
+          <div style="font-size:9.5px;line-height:1.55;color:#374151;margin-bottom:0.5rem">
+            <strong style="color:#0f172a">Progress this week.</strong> Completed CkMaster, CkDetail and VchrDetail loads (2.4M rows). Validation suite ran clean on all three. Cutover rehearsal scheduled for 28 May.
+          </div>
+          <div style="font-size:9.5px;line-height:1.55;color:#374151">
+            <strong style="color:#0f172a">Risks &amp; next steps.</strong> ARMaster requires a manual reconciliation pass before final load. Finance team availability for UAT remains the critical-path dependency.
+          </div>
+          <div style="margin-top:0.8rem;padding-top:0.5rem;border-top:1px solid #e5e7eb;font-size:8px;color:#6b7280;font-family:var(--mono);display:flex;justify-content:space-between">
+            <span>Generated by Cygenix · 2 May 2026 · 09:14</span>
+            <span>📄 Export PDF · 📧 Email stakeholders</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="feature-tag">Executive Summary &amp; Conversion Reports</div>
+        <div class="feature-title">From raw run logs to a board-ready document — automatically</div>
+        <div class="feature-body">Cygenix reads the full state of your project — completed phases, open risks, validation results, blockers, timeline — and writes a polished one-page status report for executives. Conversion reports give the technical team the full lineage, every mapping decision, every Was/Is rule applied, every row count.</div>
+        <ul class="feature-points">
+          <li>Executive Project Summary — narrative status report, regenerated on demand</li>
+          <li>Conversion Report — full audit trail of every migration run, signed off and timestamped</li>
+          <li>Branded templates — your logo, your colours, your headers</li>
+          <li>Schedule weekly delivery to your steering committee, in their inbox, no copy-paste</li>
+          <li>PDF, Word and Excel formats — no special viewer required</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -966,86 +1036,96 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
 <div class="divider"></div>
 
-<!-- TASK AGENT -->
+<!-- TASK AGENT (JOB SCHEDULER) -->
 <section class="section" id="task-agent">
   <div class="container">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
       <div class="mock">
         <div class="mock-topbar">
           <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
-          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Task Agent · Active goal · 3 of 6 steps complete</div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Task Agent · Schedule · 6 jobs queued</div>
+          <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)">+ New Job</div>
         </div>
         <div class="mock-body">
-          <div class="agent-prompt">Run the full validation suite, fix any auto-fixable failures, then export the conversion report.</div>
-
-          <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem">Plan</div>
-
-          <div class="agent-step done">
-            <div class="agent-step-dot">✓</div>
-            <div class="agent-step-body">
-              <div class="agent-step-name">Connect to target DB and load validation suite</div>
-              <div class="agent-step-meta">3 sources · 32 scripts · 412ms</div>
-            </div>
+          <!-- Tabs -->
+          <div style="display:flex;gap:0.3rem;margin-bottom:0.7rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(79,142,255,0.3)">⏰ Upcoming</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📜 Run history</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">⚙ All jobs</div>
           </div>
 
-          <div class="agent-step done">
-            <div class="agent-step-dot">✓</div>
-            <div class="agent-step-body">
-              <div class="agent-step-name">Run all validation scripts in parallel</div>
-              <div class="agent-step-meta">29 pass · 3 fail · 2.4s</div>
+          <!-- Upcoming jobs -->
+          <div class="sched-row next-up">
+            <div class="sched-time">02 May<div class="d">22:00</div></div>
+            <div class="sched-body">
+              <div class="sched-name">Nightly conversion · Rimkus 3E</div>
+              <div class="sched-meta">Full run · 19 tables · ~ 4h 20m</div>
             </div>
+            <span class="sched-recur recur-daily">Daily</span>
+            <span class="sched-status status-scheduled">in 6h 12m</span>
+          </div>
+          <div class="sched-row">
+            <div class="sched-time">03 May<div class="d">06:00</div></div>
+            <div class="sched-body">
+              <div class="sched-name">Validation suite · post-conversion</div>
+              <div class="sched-meta">32 scripts · email report on completion</div>
+            </div>
+            <span class="sched-recur recur-daily">Daily</span>
+            <span class="sched-status status-scheduled">scheduled</span>
+          </div>
+          <div class="sched-row">
+            <div class="sched-time">04 May<div class="d">02:00</div></div>
+            <div class="sched-body">
+              <div class="sched-name">Reindex CkMaster + ARMaster</div>
+              <div class="sched-meta">Maintenance · target DB only</div>
+            </div>
+            <span class="sched-recur recur-weekly">Sun weekly</span>
+            <span class="sched-status status-scheduled">scheduled</span>
+          </div>
+          <div class="sched-row">
+            <div class="sched-time">05 May<div class="d">09:00</div></div>
+            <div class="sched-body">
+              <div class="sched-name">Weekly executive summary email</div>
+              <div class="sched-meta">to: steering-committee@rimkus.com</div>
+            </div>
+            <span class="sched-recur recur-weekly">Mon weekly</span>
+            <span class="sched-status status-scheduled">scheduled</span>
+          </div>
+          <div class="sched-row">
+            <div class="sched-time">11 Jun<div class="d">23:00</div></div>
+            <div class="sched-body">
+              <div class="sched-name">Go-live cutover run</div>
+              <div class="sched-meta">Full migration · production target</div>
+            </div>
+            <span class="sched-recur recur-once">Once</span>
+            <span class="sched-status status-scheduled">scheduled</span>
           </div>
 
-          <div class="agent-step done">
-            <div class="agent-step-dot">✓</div>
-            <div class="agent-step-body">
-              <div class="agent-step-name">Classify failures · auto-fixable vs needs review</div>
-              <div class="agent-step-meta">2 auto-fixable · 1 needs human review</div>
+          <!-- Recent run -->
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin:0.8rem 0 0.3rem">Last run</div>
+          <div class="sched-row">
+            <div class="sched-time">01 May<div class="d">22:00</div></div>
+            <div class="sched-body">
+              <div class="sched-name">Nightly conversion · Rimkus 3E</div>
+              <div class="sched-meta">2.41M rows · 4h 06m · 0 errors</div>
             </div>
-          </div>
-
-          <div class="agent-step active">
-            <div class="agent-step-dot">⟳</div>
-            <div class="agent-step-body">
-              <div class="agent-step-name">Apply auto-fixes (trim whitespace, recase keys)</div>
-              <div class="agent-step-meta">working · 1 of 2 done</div>
-            </div>
-          </div>
-
-          <div class="agent-step">
-            <div class="agent-step-dot">4</div>
-            <div class="agent-step-body">
-              <div class="agent-step-name">Re-run failed validations to confirm fix</div>
-              <div class="agent-step-meta">queued</div>
-            </div>
-          </div>
-
-          <div class="agent-step">
-            <div class="agent-step-dot">5</div>
-            <div class="agent-step-body">
-              <div class="agent-step-name">Export conversion report to Excel</div>
-              <div class="agent-step-meta">queued</div>
-            </div>
-          </div>
-
-          <div style="display:flex;gap:0.4rem;margin-top:0.7rem;padding-top:0.6rem;border-top:0.5px solid var(--border)">
-            <button style="font-size:9px;font-family:var(--mono);padding:4px 10px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">⏸ Pause</button>
-            <button style="font-size:9px;font-family:var(--mono);padding:4px 10px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">↺ Replan</button>
-            <button style="font-size:9px;font-family:var(--mono);padding:4px 10px;border-radius:4px;background:var(--red-g);color:var(--red);border:0.5px solid rgba(240,64,112,0.3);margin-left:auto">⏹ Kill</button>
+            <span class="sched-recur recur-daily">Daily</span>
+            <span class="sched-status status-success">✓ success</span>
           </div>
         </div>
       </div>
       <div>
         <div class="section-tag">Task Agent · NEW</div>
-        <div class="section-title" style="font-size:2.2rem">Tell it the goal. It plans the rest.</div>
-        <div class="section-sub">Stop choreographing 30-step migration runbooks. Hand the agent a plain-language goal — it breaks it into steps, executes them, retries on failure, and reports back. You stay in command with pause, replan and rollback at any moment.</div>
+        <div class="section-title" style="font-size:2.2rem">Job scheduler — set it and walk away</div>
+        <div class="section-sub">Cygenix isn't just for live runs. Schedule any conversion, validation suite, reindex, report or custom SQL job to run at a specific time, on a recurring cadence, or after another job completes. The Task Agent picks it up, runs it, and emails you when it's done.</div>
         <ul class="feature-points" style="margin-top:1.5rem">
-          <li>Natural-language goals — "rebuild indexes after the load" or "regenerate mappings for these 12 tables"</li>
-          <li>Transparent plan — every step shown before execution, edit or remove any step</li>
-          <li>Smart retries with exponential back-off; classifies transient vs hard errors</li>
-          <li>Auto-fix loop — runs the fix, re-runs the check, only escalates if it really fails</li>
-          <li>⏸ Pause · ↺ Replan · ⏹ Kill — full human-in-the-loop control</li>
-          <li>Activity log captures every action for compliance and post-mortem</li>
+          <li>One-time, daily, weekly, monthly or custom cron schedules</li>
+          <li>Schedule any job type — full conversion, single table, validation, reindex, report, custom SQL</li>
+          <li>Job chains — "run B only when A succeeds" with up to 10 dependencies</li>
+          <li>Email or Slack notifications on success, failure or both</li>
+          <li>Built-in retry policy — pick attempts, back-off and timeout per job</li>
+          <li>Full run history with logs, row counts and timing — keep, replay or branch from any past run</li>
+          <li>Pause an entire schedule with one click for go-live freezes or maintenance windows</li>
         </ul>
       </div>
     </div>
@@ -1088,7 +1168,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <!-- CTA -->
 <section class="cta-section">
   <div class="cta-title">Ready to migrate<br>with confidence?</div>
-  <div class="cta-sub">Cygenix handles the complexity — AI mapping, AI-Assisted and fully Agentive migration modes, live reporting dashboards, data insights, autonomous task agent, cross-engine migration, file imports, validation, project planning with Jira and Smartsheet sync, and performance tuning — so your team can focus on the migration, not the tooling.</div>
+  <div class="cta-sub">Cygenix handles the complexity — AI mapping, AI-Assisted and fully Agentive migration modes, interactive BI reporting with auto-generated executive summaries, plain-English data insights, scheduled jobs, cross-engine migration, file imports, validation, project planning with Jira and Smartsheet sync, and performance tuning — so your team can focus on the migration, not the tooling.</div>
   <div class="cta-btns">
     <a href="/register.html" class="btn-hero btn-primary">Register interest →</a>
     <a href="/help.html" class="btn-hero btn-secondary" target="_blank">Read the docs</a>
