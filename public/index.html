@@ -157,7 +157,78 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 .cal-cell.today{background:var(--accent);color:#fff;border-radius:50%}
 .cal-cell.has-ev{position:relative}.cal-cell.has-ev::after{content:'';position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:3px;height:3px;border-radius:50%;background:var(--teal)}
 .cal-ev{font-size:9px;padding:1px 5px;border-radius:3px;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}}
+@media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}.dual-mode{grid-template-columns:1fr !important}.kpi-grid{grid-template-columns:repeat(2,1fr) !important}}
+/* Reporting tool charts */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem;margin-bottom:0.6rem}
+.kpi-tile{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem 0.6rem}
+.kpi-label{font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:2px}
+.kpi-val{font-size:16px;font-weight:700;letter-spacing:-0.02em;color:var(--text);line-height:1.1}
+.kpi-trend{font-size:9px;font-family:var(--mono);margin-top:2px}
+.kpi-up{color:var(--green)}.kpi-down{color:var(--red)}.kpi-flat{color:var(--text3)}
+.bar-chart{display:flex;align-items:flex-end;gap:4px;height:80px;padding:0.4rem 0.5rem;background:var(--bg3);border-radius:6px;border:0.5px solid var(--border)}
+.bar{flex:1;background:linear-gradient(180deg,var(--accent),var(--accent2));border-radius:3px 3px 0 0;position:relative;min-height:4px;animation:barGrow 0.7s cubic-bezier(0.2,0.8,0.2,1) both}
+.bar.bar-teal{background:linear-gradient(180deg,var(--teal),#0e93b8)}
+.bar.bar-purple{background:linear-gradient(180deg,var(--purple),#7e5cd6)}
+.bar.bar-green{background:linear-gradient(180deg,var(--green),#0a8f5d)}
+.bar-label{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:7px;font-family:var(--mono);color:var(--text3);white-space:nowrap}
+@keyframes barGrow{from{transform:scaleY(0);transform-origin:bottom}to{transform:scaleY(1);transform-origin:bottom}}
+.line-chart-wrap{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.4rem;position:relative}
+.line-chart-wrap svg{width:100%;height:90px;display:block}
+.line-chart-wrap .lc-area{fill:url(#lcGrad);opacity:0.4}
+.line-chart-wrap .lc-line{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:600;stroke-dashoffset:600;animation:lcDraw 1.4s ease-out forwards}
+.line-chart-wrap .lc-line-2{fill:none;stroke:var(--teal);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:600;stroke-dashoffset:600;animation:lcDraw 1.4s ease-out 0.3s forwards}
+@keyframes lcDraw{to{stroke-dashoffset:0}}
+.donut-wrap{display:flex;align-items:center;gap:0.6rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem}
+.donut{width:60px;height:60px;flex-shrink:0;position:relative}
+.donut svg{transform:rotate(-90deg);width:100%;height:100%}
+.donut-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--mono)}
+.donut-center .v{font-size:14px;font-weight:700;color:var(--text);line-height:1}
+.donut-center .l{font-size:7px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em}
+.donut-legend{flex:1;display:flex;flex-direction:column;gap:3px;font-family:var(--mono);font-size:9px}
+.donut-legend .li{display:flex;align-items:center;gap:5px;color:var(--text2)}
+.donut-legend .sw{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+/* Agentive dual-mode panels */
+.dual-mode{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem}
+.mode-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;padding:1.1rem;position:relative;transition:all 0.3s}
+.mode-card.driver-assist{border-color:rgba(34,211,238,0.3)}
+.mode-card.autopilot{border-color:rgba(167,139,250,0.3)}
+.mode-card-head{display:flex;align-items:center;gap:0.5rem;margin-bottom:0.6rem}
+.mode-icon{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.mode-icon-da{background:rgba(34,211,238,0.12);border:0.5px solid rgba(34,211,238,0.3)}
+.mode-icon-ap{background:rgba(167,139,250,0.12);border:0.5px solid rgba(167,139,250,0.3)}
+.mode-name{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-0.01em}
+.mode-tag{font-size:8px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-top:1px}
+.mode-analogy{font-size:11px;color:var(--text2);font-style:italic;line-height:1.5;padding:0.5rem 0.6rem;background:var(--bg);border-radius:5px;border-left:2px solid;margin-bottom:0.6rem}
+.mode-card.driver-assist .mode-analogy{border-color:var(--teal)}
+.mode-card.autopilot .mode-analogy{border-color:var(--purple)}
+.mode-list{list-style:none;display:flex;flex-direction:column;gap:0.35rem;font-size:11px;color:var(--text2);line-height:1.5}
+.mode-list li{display:flex;align-items:flex-start;gap:0.4rem}
+.mode-list li::before{content:'✓';flex-shrink:0;font-family:var(--mono);font-size:10px}
+.mode-card.driver-assist .mode-list li::before{color:var(--teal)}
+.mode-card.autopilot .mode-list li::before{color:var(--purple)}
+/* Insights cards */
+.insight-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.55rem 0.7rem;margin-bottom:0.4rem;display:flex;align-items:flex-start;gap:0.55rem}
+.insight-icon{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+.insight-icon.warn{background:var(--amber-g);color:var(--amber)}
+.insight-icon.crit{background:var(--red-g);color:var(--red)}
+.insight-icon.info{background:var(--glow);color:var(--accent)}
+.insight-body{flex:1;min-width:0}
+.insight-title{font-size:10px;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:1px}
+.insight-meta{font-size:8.5px;font-family:var(--mono);color:var(--text3);line-height:1.4}
+.insight-action{font-size:8px;font-family:var(--mono);color:var(--accent);background:var(--glow);padding:1px 6px;border-radius:100px;align-self:center;flex-shrink:0;white-space:nowrap}
+/* Task agent timeline */
+.agent-step{display:flex;align-items:flex-start;gap:0.5rem;padding:0.45rem 0;position:relative}
+.agent-step:not(:last-child)::after{content:'';position:absolute;left:9px;top:24px;bottom:-4px;width:1px;background:var(--border2)}
+.agent-step-dot{width:18px;height:18px;border-radius:50%;background:var(--bg3);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--text3);flex-shrink:0;z-index:1;position:relative}
+.agent-step.done .agent-step-dot{background:var(--green-g);border-color:var(--green);color:var(--green)}
+.agent-step.active .agent-step-dot{background:var(--glow);border-color:var(--accent);color:var(--accent);animation:pulse 2s infinite}
+.agent-step-body{flex:1;min-width:0;padding-top:1px}
+.agent-step-name{font-size:10px;font-weight:600;color:var(--text);margin-bottom:1px}
+.agent-step-meta{font-size:9px;font-family:var(--mono);color:var(--text3);line-height:1.4}
+.agent-step.active .agent-step-name{color:var(--accent)}
+.agent-step.done .agent-step-name{color:var(--text2)}
+.agent-prompt{background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.5rem 0.65rem;margin-bottom:0.5rem;font-family:var(--mono);font-size:10px;color:var(--text);line-height:1.5}
+.agent-prompt::before{content:'➤ Goal:';color:var(--accent);font-weight:600;margin-right:6px}
 </style>
 </head>
 <body>
@@ -168,10 +239,11 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
   <div class="nav-logo">Cyge<span>nix</span></div>
   <div class="nav-links">
     <a href="#features">Features</a>
-    <a href="#mapper">Object Mapping</a>
-    <a href="#validation">Validation</a>
-    <a href="#planner">Project Planner</a>
-    <a href="#sql-editor">SQL Editor</a>
+    <a href="#mapper">Mapping</a>
+    <a href="#agentive">Agentive</a>
+    <a href="#reporting">Reporting</a>
+    <a href="#insights">Insights</a>
+    <a href="#task-agent">Task Agent</a>
     <a href="#" onclick="openContactModal();return false">Contact us</a>
   </div>
   <a href="/login.html" class="nav-cta">Log in →</a>
@@ -233,8 +305,8 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
   </div>
   <div class="stats-row" style="margin-top:3rem">
     <div class="stat"><div class="stat-num"><span>AI</span></div><div class="stat-label">COLUMN MAPPING</div></div>
-    <div class="stat"><div class="stat-num"><span>Any</span></div><div class="stat-label">VALIDATION SOURCE</div></div>
-    <div class="stat"><div class="stat-num"><span>Azure</span></div><div class="stat-label">MANAGED IDENTITY</div></div>
+    <div class="stat"><div class="stat-num"><span>Agentive</span></div><div class="stat-label">AUTONOMOUS MIGRATION</div></div>
+    <div class="stat"><div class="stat-num"><span>Live</span></div><div class="stat-label">REPORTING &amp; INSIGHTS</div></div>
     <div class="stat"><div class="stat-num"><span>100%</span></div><div class="stat-label">BROWSER-BASED</div></div>
   </div>
 </section>
@@ -244,28 +316,28 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
   <div class="ticker">
     <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item">🎨 <span>Visual mapper</span> · 47 connections drawn</div>
-    <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">🤖 <span>Agentive mode</span> · Autopilot engaged · 18 steps planned</div>
+    <div class="ticker-item">📊 <span>Reporting</span> · Live dashboard · 6 charts</div>
+    <div class="ticker-item">🔍 <span>Data insight</span> · 3 anomalies detected in CkMaster</div>
+    <div class="ticker-item">⚙ <span>Task agent</span> · Running validation suite · 24 / 32 done</div>
     <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
     <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
-    <div class="ticker-item">🏷 <span>@@StartDate substituted</span> · 14 SQL files</div>
     <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
     <div class="ticker-item">🔗 <span>Jira sync</span> · 23 tasks imported</div>
     <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
-    <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
     <div class="ticker-item">🟢 <span>Connected</span> · Source DB · 342 tables loaded</div>
     <div class="ticker-item">✓ <span>AI mapped</span> 47 columns in 2.3s</div>
-    <div class="ticker-item">🎨 <span>Visual mapper</span> · 47 connections drawn</div>
-    <div class="ticker-item">📊 <span>Validation scripts loaded</span> · 3 sources</div>
+    <div class="ticker-item">🤖 <span>Agentive mode</span> · Autopilot engaged · 18 steps planned</div>
+    <div class="ticker-item">📊 <span>Reporting</span> · Live dashboard · 6 charts</div>
+    <div class="ticker-item">🔍 <span>Data insight</span> · 3 anomalies detected in CkMaster</div>
+    <div class="ticker-item">⚙ <span>Task agent</span> · Running validation suite · 24 / 32 done</div>
     <div class="ticker-item">📦 <span>Execution plan</span> · 4 groups · 27 jobs</div>
     <div class="ticker-item">🟢 <span>Migration complete</span> · 0 errors</div>
     <div class="ticker-item">🔄 <span>Was/Is rules applied</span> · 312 translations</div>
-    <div class="ticker-item">🏷 <span>@@StartDate substituted</span> · 14 SQL files</div>
     <div class="ticker-item">📅 <span>Project Plan updated</span> · 7 days to completion</div>
     <div class="ticker-item">🔗 <span>Jira sync</span> · 23 tasks imported</div>
     <div class="ticker-item">📄 <span>Conversion report exported</span> · Excel ready</div>
-    <div class="ticker-item">⚡ <span>Performance tuned</span> · 5,000 rows/page · 4 threads</div>
   </div>
 </div>
 
@@ -277,6 +349,10 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       <div class="section-title">Everything you need to<br>migrate with confidence</div>
     </div>
     <div class="features-grid animate-on-scroll">
+      <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">Agentive Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Two modes, your choice. <strong style="color:var(--text2)">Driver Assist</strong> — Cygenix recommends, you approve each step. <strong style="color:var(--text2)">Autopilot</strong> — full autonomous execution end to end, with checkpoints and a human-in-the-loop kill switch.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Reporting Tool <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Live dashboard charts for every project — row counts, throughput, validation pass rate, error breakdown and run history. Drill in, filter, export to Excel or PDF for stakeholders.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🔍</div><div class="feature-card-title">Data Insights <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">AI-driven anomaly detection across your source data — orphaned references, suspicious nulls, value drift, duplicate keys, distribution shifts — surfaced before they become migration failures.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">⚙</div><div class="feature-card-title">Task Agent <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Hand the agent a goal — "run validation suite", "rebuild indexes after load", "regenerate mappings for these 12 tables" — and it plans, executes, retries and reports back. You stay in control with pause, approve and rollback.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Live Database Connection</div><div class="feature-card-body">Connect directly via standard connection strings to SQL Server (on-prem, Azure SQL, Azure Managed Instance, AWS RDS, Google Cloud SQL) and PostgreSQL (self-hosted, RDS, Aurora, Azure Database, Cloud SQL, Supabase, Neon). Azure Function with Managed Identity also supported.</div></div>
       <div class="feature-card"><div class="feature-card-icon">📁</div><div class="feature-card-title">File Import as a Source</div><div class="feature-card-body">Drop a <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.csv</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.xlsx</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.tsv</code> or <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.txt</code> file to use as a source for mapping and migration. Multi-sheet Excel workbooks handled; map columns to target schema like any other source.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔀</div><div class="feature-card-title">Cross-Engine Migration</div><div class="feature-card-body">Migrate between different database engines — Postgres to SQL Server, SQL Server to Postgres. Built-in DDL generator creates target tables from the source schema with opinionated type mappings and clear warnings for lossy conversions (jsonb, arrays, hierarchyid and similar).</div></div>
@@ -585,6 +661,385 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
 <div class="divider"></div>
 
+<!-- AGENTIVE MIGRATION -->
+<section class="section" id="agentive">
+  <div class="container">
+    <div class="animate-on-scroll" style="text-align:center;margin-bottom:1rem">
+      <div class="section-tag">Agentive Migration · NEW</div>
+      <div class="section-title">Driver Assist or Autopilot —<br>you choose how much to hand over</div>
+      <div class="section-sub" style="margin:0 auto">Think of it like a modern car. Driver Assist keeps you behind the wheel with AI helping at every turn. Autopilot lets Cygenix handle the whole journey while you supervise. Both modes give you the kill switch.</div>
+    </div>
+
+    <div class="dual-mode animate-on-scroll" style="margin-top:3rem">
+      <div class="mode-card driver-assist">
+        <div class="mode-card-head">
+          <div class="mode-icon mode-icon-da">🚗</div>
+          <div>
+            <div class="mode-name">Driver Assist Mode</div>
+            <div class="mode-tag">YOU DRIVE · AI ASSISTS</div>
+          </div>
+        </div>
+        <div class="mode-analogy">Like adaptive cruise and lane-keep — you stay in the driver's seat, the AI keeps you on track and warns you before trouble.</div>
+        <ul class="mode-list">
+          <li>AI suggests every column mapping; you review and approve</li>
+          <li>You click Run on each phase — load, validate, reconcile</li>
+          <li>Cygenix flags risks ahead — truncation, FK gaps, slow queries</li>
+          <li>You decide when to retry, skip, or roll back</li>
+          <li>Best for first-time migrations, regulated workloads, demos</li>
+        </ul>
+      </div>
+
+      <div class="mode-card autopilot">
+        <div class="mode-card-head">
+          <div class="mode-icon mode-icon-ap">🤖</div>
+          <div>
+            <div class="mode-name">Autopilot Mode</div>
+            <div class="mode-tag">FULL AUTONOMOUS · YOU SUPERVISE</div>
+          </div>
+        </div>
+        <div class="mode-analogy">Like full self-driving — the agent plans the route, executes every step, handles obstacles, and pulls over only if it can't safely continue.</div>
+        <ul class="mode-list">
+          <li>Plans the entire migration — extract, map, load, validate</li>
+          <li>Executes phases end-to-end with retries and back-off</li>
+          <li>Self-heals on transient errors; pauses on data anomalies</li>
+          <li>Streams progress — you see every action in the activity log</li>
+          <li>Hit ⏹ Pause or Kill at any time — full rollback supported</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Mode toggle mock-up -->
+    <div class="mock animate-on-scroll" style="margin-top:3rem;max-width:760px;margin-left:auto;margin-right:auto">
+      <div class="mock-topbar">
+        <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+        <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Migration Run · Autopilot engaged · Phase 3 of 6</div>
+      </div>
+      <div class="mock-body">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.7rem;padding:0.4rem 0.5rem;background:var(--bg3);border-radius:6px">
+          <div style="font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Mode:</div>
+          <div style="display:flex;background:var(--bg);border-radius:5px;padding:2px;gap:2px">
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">🚗 Driver</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:rgba(167,139,250,0.18);color:var(--purple)">🤖 Autopilot</div>
+          </div>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:0.4rem">
+            <span style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite"></span>
+            <span style="font-size:9px;font-family:var(--mono);color:var(--green)">RUNNING</span>
+            <button style="font-size:9px;font-family:var(--mono);padding:3px 8px;border-radius:4px;background:var(--red-g);color:var(--red);border:0.5px solid rgba(240,64,112,0.3)">⏹ Kill</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:0.6rem">
+          <div style="background:var(--green-g);color:var(--green);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">✓ Connect</div>
+          <div style="background:var(--green-g);color:var(--green);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">✓ Map</div>
+          <div style="background:var(--glow);color:var(--accent);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center;border:0.5px solid rgba(79,142,255,0.4)">⟳ Load</div>
+          <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Validate</div>
+          <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Reconcile</div>
+          <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Report</div>
+        </div>
+        <div style="font-size:9px;font-family:var(--mono);color:var(--text3);line-height:1.7;background:var(--bg);border-radius:6px;padding:0.6rem 0.7rem">
+          <span style="color:var(--green)">[12:04:21]</span> ✓ Connected to source · 342 tables discovered<br>
+          <span style="color:var(--green)">[12:04:38]</span> ✓ AI mapping complete · 47 columns · 2 truncation warnings auto-resolved<br>
+          <span style="color:var(--accent)">[12:05:02]</span> ⟳ Loading dbo.CkMaster · batch 8/24 · 5,000 rows/sec<br>
+          <span style="color:var(--amber)">[12:05:14]</span> ⚠ Transient timeout on dbo.VchrDetail — retrying with back-off (1/3)<br>
+          <span style="color:var(--green)">[12:05:19]</span> ✓ Recovered · continuing
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- REPORTING TOOL -->
+<section class="section" id="reporting">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1.15fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div>
+        <div class="section-tag">Reporting Tool · NEW</div>
+        <div class="section-title" style="font-size:2.2rem">Live dashboards for every migration</div>
+        <div class="section-sub">Watch your migration unfold in real time. Throughput per second, validation pass rates, error breakdowns, run history — every chart is interactive, filterable, and one click away from Excel or PDF.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>KPI tiles for rows migrated, throughput, pass rate, ETA</li>
+          <li>Bar charts by table, by phase, by hour</li>
+          <li>Line charts comparing planned vs actual progress</li>
+          <li>Donut charts breaking down errors by category</li>
+          <li>Run history with side-by-side comparison of any two runs</li>
+          <li>Export any chart to PNG, the full dashboard to PDF, raw data to Excel</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · Migration dashboard · Run #1247</div>
+          <div style="font-size:9px;background:var(--green-g);color:var(--green);padding:2px 8px;border-radius:100px;font-family:var(--mono)">⬇ Export</div>
+        </div>
+        <div class="mock-body">
+          <!-- KPI tiles -->
+          <div class="kpi-grid">
+            <div class="kpi-tile">
+              <div class="kpi-label">Rows Migrated</div>
+              <div class="kpi-val">2.41<span style="font-size:11px;color:var(--text3);font-weight:500"> M</span></div>
+              <div class="kpi-trend kpi-up">▲ 18% vs run #1246</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Throughput</div>
+              <div class="kpi-val">5,210<span style="font-size:10px;color:var(--text3);font-weight:500">/sec</span></div>
+              <div class="kpi-trend kpi-up">▲ 4.2%</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">Pass Rate</div>
+              <div class="kpi-val">98.7<span style="font-size:11px;color:var(--text3);font-weight:500">%</span></div>
+              <div class="kpi-trend kpi-flat">— stable</div>
+            </div>
+            <div class="kpi-tile">
+              <div class="kpi-label">ETA</div>
+              <div class="kpi-val">06:42</div>
+              <div class="kpi-trend kpi-down">▼ 12 min ahead</div>
+            </div>
+          </div>
+
+          <!-- Bar chart -->
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Rows migrated by table (top 8)</div>
+          <div class="bar-chart" style="margin-bottom:1.2rem">
+            <div class="bar" style="height:78%;animation-delay:0.05s"><span class="bar-label">CkMast</span></div>
+            <div class="bar bar-teal" style="height:62%;animation-delay:0.1s"><span class="bar-label">CkDet</span></div>
+            <div class="bar" style="height:88%;animation-delay:0.15s"><span class="bar-label">VchrDet</span></div>
+            <div class="bar bar-purple" style="height:45%;animation-delay:0.2s"><span class="bar-label">ARMast</span></div>
+            <div class="bar" style="height:55%;animation-delay:0.25s"><span class="bar-label">ARDet</span></div>
+            <div class="bar bar-teal" style="height:38%;animation-delay:0.3s"><span class="bar-label">TimeBill</span></div>
+            <div class="bar bar-green" style="height:72%;animation-delay:0.35s"><span class="bar-label">CostBill</span></div>
+            <div class="bar bar-purple" style="height:30%;animation-delay:0.4s"><span class="bar-label">ChrgCard</span></div>
+          </div>
+
+          <!-- Line chart + Donut row -->
+          <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:0.5rem">
+            <div>
+              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Planned vs actual progress</div>
+              <div class="line-chart-wrap">
+                <svg viewBox="0 0 200 90" preserveAspectRatio="none">
+                  <defs>
+                    <linearGradient id="lcGrad" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stop-color="#4f8eff" stop-opacity="0.5"/>
+                      <stop offset="100%" stop-color="#4f8eff" stop-opacity="0"/>
+                    </linearGradient>
+                  </defs>
+                  <!-- gridlines -->
+                  <line x1="0" y1="22" x2="200" y2="22" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
+                  <line x1="0" y1="45" x2="200" y2="45" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
+                  <line x1="0" y1="68" x2="200" y2="68" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
+                  <!-- area under actual -->
+                  <path class="lc-area" d="M 0 80 L 25 70 L 50 60 L 75 50 L 100 38 L 125 30 L 150 22 L 175 16 L 200 10 L 200 90 L 0 90 Z"/>
+                  <!-- planned (dashed teal) -->
+                  <path class="lc-line-2" d="M 0 78 L 25 68 L 50 58 L 75 48 L 100 38 L 125 28 L 150 20 L 175 14 L 200 8" stroke-dasharray="3,3"/>
+                  <!-- actual (solid blue) -->
+                  <path class="lc-line" d="M 0 80 L 25 70 L 50 60 L 75 50 L 100 38 L 125 30 L 150 22 L 175 16 L 200 10"/>
+                </svg>
+                <div style="display:flex;gap:0.7rem;justify-content:flex-end;font-family:var(--mono);font-size:8px;color:var(--text3);margin-top:2px">
+                  <span><span style="display:inline-block;width:10px;height:2px;background:var(--accent);vertical-align:middle;margin-right:3px"></span>Actual</span>
+                  <span><span style="display:inline-block;width:10px;height:0;border-top:1.5px dashed var(--teal);vertical-align:middle;margin-right:3px"></span>Planned</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Errors by type</div>
+              <div class="donut-wrap">
+                <div class="donut">
+                  <svg viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--bg4)" stroke-width="6"/>
+                    <!-- segments: 55%, 25%, 12%, 8% -->
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--accent)" stroke-width="6" stroke-dasharray="48.4 87.96" stroke-dashoffset="0"/>
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--teal)" stroke-width="6" stroke-dasharray="22 87.96" stroke-dashoffset="-48.4"/>
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--amber)" stroke-width="6" stroke-dasharray="10.6 87.96" stroke-dashoffset="-70.4"/>
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="var(--purple)" stroke-width="6" stroke-dasharray="7 87.96" stroke-dashoffset="-81"/>
+                  </svg>
+                  <div class="donut-center"><div class="v">42</div><div class="l">total</div></div>
+                </div>
+                <div class="donut-legend">
+                  <div class="li"><span class="sw" style="background:var(--accent)"></span>FK gaps · 23</div>
+                  <div class="li"><span class="sw" style="background:var(--teal)"></span>Truncate · 11</div>
+                  <div class="li"><span class="sw" style="background:var(--amber)"></span>Type · 5</div>
+                  <div class="li"><span class="sw" style="background:var(--purple)"></span>Other · 3</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- DATA INSIGHTS -->
+<section class="section" id="insights">
+  <div class="container">
+    <div class="feature-block reverse animate-on-scroll">
+      <div>
+        <div class="feature-tag">Data Insights · NEW</div>
+        <div class="feature-title">Catch the surprises before they catch you</div>
+        <div class="feature-body">Cygenix scans your source data and surfaces what's hiding in it — orphan references, suspicious nulls, value drift, distribution shifts, duplicate keys, dates that don't make sense. The kind of issues that turn a clean migration into a 2 a.m. phone call.</div>
+        <ul class="feature-points">
+          <li>Automatic profiling of every source table — row counts, null %, cardinality, value ranges</li>
+          <li>Anomaly detection — outliers, format drift, encoding issues, trailing whitespace</li>
+          <li>Referential integrity checks — orphan FKs flagged with row-level evidence</li>
+          <li>Distribution comparison between source and target after each load</li>
+          <li>One-click "Investigate" jumps straight to the affected rows in the SQL Editor</li>
+          <li>Severity tagged: Critical, Warning, Info — filter and dismiss as you triage</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Data Insights · Source profiling · 7 findings</div>
+        </div>
+        <div class="mock-body">
+          <div style="display:flex;gap:0.4rem;margin-bottom:0.6rem;flex-wrap:wrap">
+            <div style="font-size:9px;background:var(--red-g);color:var(--red);padding:2px 8px;border-radius:100px;font-family:var(--mono)">2 critical</div>
+            <div style="font-size:9px;background:var(--amber-g);color:var(--amber);padding:2px 8px;border-radius:100px;font-family:var(--mono)">3 warnings</div>
+            <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)">2 info</div>
+            <div style="margin-left:auto;font-size:9px;background:var(--bg4);color:var(--text3);padding:2px 8px;border-radius:100px;font-family:var(--mono)">⚙ Filter</div>
+          </div>
+
+          <div class="insight-card">
+            <div class="insight-icon crit">⚠</div>
+            <div class="insight-body">
+              <div class="insight-title">Orphan FK references in CkDetail</div>
+              <div class="insight-meta">847 rows reference CkMaster.CkID values that don't exist · CRITICAL</div>
+            </div>
+            <div class="insight-action">Investigate →</div>
+          </div>
+
+          <div class="insight-card">
+            <div class="insight-icon crit">⚠</div>
+            <div class="insight-body">
+              <div class="insight-title">Duplicate primary keys in TimeBill</div>
+              <div class="insight-meta">12 rows share identical (TimeID, Period) pairs · CRITICAL</div>
+            </div>
+            <div class="insight-action">Investigate →</div>
+          </div>
+
+          <div class="insight-card">
+            <div class="insight-icon warn">!</div>
+            <div class="insight-body">
+              <div class="insight-title">Unexpected null spike in VchrDetail.Description</div>
+              <div class="insight-meta">31% nulls (was 4% last run) · trend started 2026-04-12 · WARN</div>
+            </div>
+            <div class="insight-action">Investigate →</div>
+          </div>
+
+          <div class="insight-card">
+            <div class="insight-icon warn">!</div>
+            <div class="insight-body">
+              <div class="insight-title">Value drift in ChrgCard.CardType</div>
+              <div class="insight-meta">3 new values not in lookup table: AMEX_C, VISA_DEB, REWARD · WARN</div>
+            </div>
+            <div class="insight-action">Investigate →</div>
+          </div>
+
+          <div class="insight-card">
+            <div class="insight-icon info">i</div>
+            <div class="insight-body">
+              <div class="insight-title">Trailing whitespace in 4 columns</div>
+              <div class="insight-meta">CkMaster.Notes, ARMaster.Memo, +2 more · auto-trim available · INFO</div>
+            </div>
+            <div class="insight-action">Auto-fix →</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- TASK AGENT -->
+<section class="section" id="task-agent">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Task Agent · Active goal · 3 of 6 steps complete</div>
+        </div>
+        <div class="mock-body">
+          <div class="agent-prompt">Run the full validation suite, fix any auto-fixable failures, then export the conversion report.</div>
+
+          <div style="font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.2rem">Plan</div>
+
+          <div class="agent-step done">
+            <div class="agent-step-dot">✓</div>
+            <div class="agent-step-body">
+              <div class="agent-step-name">Connect to target DB and load validation suite</div>
+              <div class="agent-step-meta">3 sources · 32 scripts · 412ms</div>
+            </div>
+          </div>
+
+          <div class="agent-step done">
+            <div class="agent-step-dot">✓</div>
+            <div class="agent-step-body">
+              <div class="agent-step-name">Run all validation scripts in parallel</div>
+              <div class="agent-step-meta">29 pass · 3 fail · 2.4s</div>
+            </div>
+          </div>
+
+          <div class="agent-step done">
+            <div class="agent-step-dot">✓</div>
+            <div class="agent-step-body">
+              <div class="agent-step-name">Classify failures · auto-fixable vs needs review</div>
+              <div class="agent-step-meta">2 auto-fixable · 1 needs human review</div>
+            </div>
+          </div>
+
+          <div class="agent-step active">
+            <div class="agent-step-dot">⟳</div>
+            <div class="agent-step-body">
+              <div class="agent-step-name">Apply auto-fixes (trim whitespace, recase keys)</div>
+              <div class="agent-step-meta">working · 1 of 2 done</div>
+            </div>
+          </div>
+
+          <div class="agent-step">
+            <div class="agent-step-dot">4</div>
+            <div class="agent-step-body">
+              <div class="agent-step-name">Re-run failed validations to confirm fix</div>
+              <div class="agent-step-meta">queued</div>
+            </div>
+          </div>
+
+          <div class="agent-step">
+            <div class="agent-step-dot">5</div>
+            <div class="agent-step-body">
+              <div class="agent-step-name">Export conversion report to Excel</div>
+              <div class="agent-step-meta">queued</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.4rem;margin-top:0.7rem;padding-top:0.6rem;border-top:0.5px solid var(--border)">
+            <button style="font-size:9px;font-family:var(--mono);padding:4px 10px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">⏸ Pause</button>
+            <button style="font-size:9px;font-family:var(--mono);padding:4px 10px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">↺ Replan</button>
+            <button style="font-size:9px;font-family:var(--mono);padding:4px 10px;border-radius:4px;background:var(--red-g);color:var(--red);border:0.5px solid rgba(240,64,112,0.3);margin-left:auto">⏹ Kill</button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="section-tag">Task Agent · NEW</div>
+        <div class="section-title" style="font-size:2.2rem">Tell it the goal. It plans the rest.</div>
+        <div class="section-sub">Stop choreographing 30-step migration runbooks. Hand the agent a plain-language goal — it breaks it into steps, executes them, retries on failure, and reports back. You stay in command with pause, replan and rollback at any moment.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li>Natural-language goals — "rebuild indexes after the load" or "regenerate mappings for these 12 tables"</li>
+          <li>Transparent plan — every step shown before execution, edit or remove any step</li>
+          <li>Smart retries with exponential back-off; classifies transient vs hard errors</li>
+          <li>Auto-fix loop — runs the fix, re-runs the check, only escalates if it really fails</li>
+          <li>⏸ Pause · ↺ Replan · ⏹ Kill — full human-in-the-loop control</li>
+          <li>Activity log captures every action for compliance and post-mortem</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
 <!-- PERFORMANCE -->
 <section class="section" id="performance">
   <div class="container-sm animate-on-scroll" style="text-align:center">
@@ -619,7 +1074,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 <!-- CTA -->
 <section class="cta-section">
   <div class="cta-title">Ready to migrate<br>with confidence?</div>
-  <div class="cta-sub">Cygenix handles the complexity — AI mapping, visual drag-and-drop, cross-engine migration (Postgres ↔ SQL Server), file imports (CSV, Excel, text), value translation, grouped execution plans, system parameters, flexible validation, project planning with Jira and Smartsheet sync, and performance tuning — so your team can focus on the migration, not the tooling.</div>
+  <div class="cta-sub">Cygenix handles the complexity — AI mapping, agentive migration with Driver Assist and Autopilot modes, live reporting dashboards, data insights, autonomous task agent, cross-engine migration, file imports, validation, project planning with Jira and Smartsheet sync, and performance tuning — so your team can focus on the migration, not the tooling.</div>
   <div class="cta-btns">
     <a href="/register.html" class="btn-hero btn-primary">Register interest →</a>
     <a href="/help.html" class="btn-hero btn-secondary" target="_blank">Read the docs</a>
