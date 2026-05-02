@@ -630,17 +630,59 @@ function toggleFaq(btn){
   }
 }
 
-// Stripe Checkout entry point — currently a placeholder that routes
-// to /register.html so we don't accept payments before the backend
-// is wired. Replace this with the real Stripe redirect once the
-// Azure Function webhook handler and Stripe products are configured.
-function startCheckout(tier){
-  // TODO: replace with stripe.redirectToCheckout({ sessionId }) once
-  // the /api/checkout endpoint exists. For now, send people to register
-  // so we capture the lead and don't drop them into a broken flow.
+// Stripe Checkout entry point. Calls our Azure Function which builds
+// a Stripe Checkout Session server-side and returns the hosted-checkout
+// URL. We never expose Stripe Price IDs in the browser — they live in
+// Function App Settings, looked up from the {tier, billing} pair.
+async function startCheckout(tier){
   const billing = window.cygenixBilling || 'monthly';
-  window.location.href = '/register.html?plan=' + encodeURIComponent(tier) +
-                        '&billing=' + encodeURIComponent(billing);
+
+  // Find the button that was clicked so we can show a loading state.
+  // event is set by the inline onclick — defensive in case it's not.
+  const btn = (typeof event !== 'undefined' && event && event.target)
+              ? event.target.closest('a, button')
+              : null;
+  const originalLabel = btn ? btn.textContent : null;
+  if (btn) {
+    btn.textContent = 'Redirecting…';
+    btn.style.pointerEvents = 'none';
+    btn.style.opacity = '0.7';
+  }
+
+  try {
+    const res = await fetch('/api/create-checkout-session', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ tier, billing })
+    });
+
+    if (!res.ok) {
+      // Try to surface a useful error from the Function — it returns
+      // { error: "..." } in the body for known failure modes.
+      let msg = 'Checkout could not be started. Please try again, or email sales@cygenix.co.uk.';
+      try {
+        const data = await res.json();
+        if (data && data.error) msg = data.error;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    const { url } = await res.json();
+    if (!url) throw new Error('Checkout response was missing a redirect URL.');
+
+    // Hand off to Stripe-hosted checkout. From here Stripe handles the
+    // card form, 3DS, validation — we just wait for the webhook.
+    window.location.href = url;
+
+  } catch (err) {
+    if (btn) {
+      btn.textContent = originalLabel;
+      btn.style.pointerEvents = '';
+      btn.style.opacity = '';
+    }
+    alert(err.message || 'Something went wrong starting checkout.');
+    console.error('Checkout error:', err);
+  }
 }
 
 // Contact modal — uses the same pattern as index.html for visual
