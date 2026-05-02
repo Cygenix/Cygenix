@@ -1324,6 +1324,144 @@ app.http('narrative', {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ROUTE 4: /api/create-checkout-session — Stripe-hosted subscription checkout
+// ─────────────────────────────────────────────────────────────────────────────
+// Builds a Stripe Checkout Session and returns the hosted-checkout URL. The
+// browser POSTs { tier, billing } and we map that pair to a Stripe Price ID
+// server-side, so Price IDs never appear in client code (and can't be tampered
+// with in DevTools to swap a Pro purchase for a Starter price).
+//
+// Required Function App Settings:
+//   STRIPE_SECRET_KEY              — sk_test_... or sk_live_...
+//   STRIPE_PRICE_STARTER_MONTHLY   — price_...
+//   STRIPE_PRICE_STARTER_ANNUAL    — price_...
+//   STRIPE_PRICE_PRO_MONTHLY       — price_...
+//   STRIPE_PRICE_PRO_ANNUAL        — price_...
+//
+// Optional:
+//   CYGENIX_SITE_URL  — defaults to https://cygenix.co.uk; override for
+//                        staging/preview deploys.
+//
+// 14-day trial, card required (Stripe enforces this when payment_method_collection
+// is "always", which is the default for subscription mode).
+
+// Lazy Stripe singleton — same pattern as the Cosmos client above, so we don't
+// reload the SDK on every cold start.
+let _stripe = null;
+function getStripe() {
+  if (!_stripe) {
+    const Stripe = require('stripe');
+    _stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+  }
+  return _stripe;
+}
+
+// Map (tier, billing) -> env var name. Centralised so the validation step
+// and the lookup step can't drift apart.
+const STRIPE_PRICE_ENV_MAP = {
+  'starter:monthly': 'STRIPE_PRICE_STARTER_MONTHLY',
+  'starter:annual':  'STRIPE_PRICE_STARTER_ANNUAL',
+  'pro:monthly':     'STRIPE_PRICE_PRO_MONTHLY',
+  'pro:annual':      'STRIPE_PRICE_PRO_ANNUAL'
+};
+
+app.http('create-checkout-session', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',   // public — Stripe Checkout has its own security
+  route: 'create-checkout-session',
+  handler: async (req, ctx) => {
+
+    if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    try {
+      // ── 1. Validate environment ──────────────────────────────────────────
+      if (!process.env.STRIPE_SECRET_KEY) {
+        ctx.log.error('STRIPE_SECRET_KEY not configured');
+        return err(500, 'Server is not configured: STRIPE_SECRET_KEY missing.');
+      }
+
+      // ── 2. Validate input ────────────────────────────────────────────────
+      const body = await req.json().catch(() => null);
+      if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
+
+      const tier    = String(body.tier    || '').toLowerCase().trim();
+      const billing = String(body.billing || '').toLowerCase().trim();
+
+      if (!tier || !billing) {
+        return err(400, 'Both "tier" and "billing" are required.');
+      }
+      if (!['starter', 'pro'].includes(tier)) {
+        return err(400,
+          `Unknown tier "${tier}". Business and Enterprise are sales-led — please contact sales@cygenix.co.uk.`);
+      }
+      if (!['monthly', 'annual'].includes(billing)) {
+        return err(400, `Unknown billing period "${billing}".`);
+      }
+
+      // ── 3. Look up the Stripe Price ID server-side ───────────────────────
+      const envVarName = STRIPE_PRICE_ENV_MAP[`${tier}:${billing}`];
+      const priceId    = process.env[envVarName];
+      if (!priceId) {
+        ctx.log.error(`${envVarName} not configured`);
+        return err(500, `Server is not configured: ${envVarName} missing.`);
+      }
+      // Sanity-check that whoever set the env var pasted a Price ID and not
+      // the Product ID. Stripe Price IDs always start "price_".
+      if (!priceId.startsWith('price_')) {
+        return err(500, `${envVarName} does not look like a Stripe Price ID (must start with "price_").`);
+      }
+
+      // ── 4. Build the Checkout Session ────────────────────────────────────
+      const stripe  = getStripe();
+      const siteUrl = (process.env.CYGENIX_SITE_URL || 'https://cygenix.co.uk').replace(/\/+$/, '');
+
+      const session = await stripe.checkout.sessions.create({
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        line_items: [{ price: priceId, quantity: 1 }],
+        // Allow promo codes so we can run targeted promos later without a
+        // code change.
+        allow_promotion_codes: true,
+        // 14-day trial, card required (Stripe enforces this when
+        // payment_method_collection is "always", which is the default
+        // for subscription mode).
+        subscription_data: {
+          trial_period_days: 14,
+          // Stash the tier on the subscription itself so the webhook handler
+          // can read it back without another lookup.
+          metadata: { cygenix_tier: tier, cygenix_billing: billing }
+        },
+        // Same metadata on the session for traceability.
+        metadata: { cygenix_tier: tier, cygenix_billing: billing },
+        // Where Stripe sends the user after they finish (or bail).
+        success_url: `${siteUrl}/welcome.html?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url:  `${siteUrl}/pricing.html`,
+        // Collect billing address (needed for VAT later).
+        billing_address_collection: 'required'
+      });
+
+      ctx.log(`Created Stripe Checkout Session ${session.id} for ${tier}:${billing}`);
+      return ok({ url: session.url, sessionId: session.id });
+
+    } catch (e) {
+      // In-band debugging: full stack in the response body. Curtis's Azure plan
+      // doesn't expose App Insights, Kudu or Live Log Stream, so this is the
+      // only practical way to see what went wrong from the browser Network tab.
+      ctx.log.error('create-checkout-session failed:', e.message, e.stack);
+      return {
+        status: 500,
+        headers: CORS,
+        body: JSON.stringify({
+          error: e.message || 'Unknown error',
+          stack: e.stack ? e.stack.split('\n').slice(0, 5).join(' | ') : null,
+          type:  e.type   || null    // Stripe errors include a "type" field
+        })
+      };
+    }
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PROJECT SUMMARY DOCUMENT — server-side renderer
 // ─────────────────────────────────────────────────────────────────────────────
 // Builds a fully styled HTML document for a completed migration job. Output is
