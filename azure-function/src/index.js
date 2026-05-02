@@ -1,5 +1,5 @@
 // Cosmos DB integration v2 - audit + admin-users + invite
-// CM
+// CM2
 const { app } = require('@azure/functions');
 
 // Register the Task Agent scheduler module (HTTP route /api/schedules/{action}
@@ -1444,18 +1444,48 @@ app.http('create-checkout-session', {
       return ok({ url: session.url, sessionId: session.id });
 
     } catch (e) {
-      // In-band debugging: full stack in the response body. Curtis's Azure plan
-      // doesn't expose App Insights, Kudu or Live Log Stream, so this is the
-      // only practical way to see what went wrong from the browser Network tab.
-      ctx.log.error('create-checkout-session failed:', e.message, e.stack);
+      // In-band debugging: the Azure plan has no App Insights / Kudu / Live
+      // Log Stream, so the only way for Curtis to see what went wrong is to
+      // put it in the response body. Stripe SDK errors have unusual shapes
+      // that have previously caused JSON.stringify to throw, which then
+      // killed the response with a blank 500. Defensive coercion fixes that.
+      try {
+        ctx.log('create-checkout-session caught error');
+        ctx.log('  message:', String(e && e.message || e));
+        ctx.log('  type:',    String(e && e.type    || ''));
+        ctx.log('  code:',    String(e && e.code    || ''));
+      } catch (_) { /* even logging can throw — ignore */ }
+
+      // Build a plain object with everything coerced to strings so
+      // JSON.stringify can never throw on a circular ref or weird getter.
+      const safe = {
+        error:      String(e && e.message    ? e.message    : 'Unknown error'),
+        type:       String(e && e.type       ? e.type       : ''),
+        code:       String(e && e.code       ? e.code       : ''),
+        statusCode: String(e && e.statusCode ? e.statusCode : ''),
+        param:      String(e && e.param      ? e.param      : ''),
+        stack:      String(e && e.stack      ? e.stack      : '').split('\n').slice(0, 6).join(' | ')
+      };
+
+      let bodyStr;
+      try {
+        bodyStr = JSON.stringify(safe);
+      } catch (jsonErr) {
+        // Last resort: even the coerced object failed to serialize. Return
+        // plain text so the user gets *something*.
+        bodyStr = 'create-checkout-session crashed and the error could not be serialized: ' +
+                  String(jsonErr && jsonErr.message || jsonErr);
+        return {
+          status: 500,
+          headers: { ...CORS, 'Content-Type': 'text/plain; charset=utf-8' },
+          body: bodyStr
+        };
+      }
+
       return {
         status: 500,
         headers: CORS,
-        body: JSON.stringify({
-          error: e.message || 'Unknown error',
-          stack: e.stack ? e.stack.split('\n').slice(0, 5).join(' | ') : null,
-          type:  e.type   || null    // Stripe errors include a "type" field
-        })
+        body: bodyStr
       };
     }
   }
