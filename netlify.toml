@@ -16,3 +16,10 @@
   from = "/api/db"
   to = "/.netlify/functions/db-connect"
   status = 200
+
+[[redirects]]
+  from = "/api/create-checkout-session"
+  to = "https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/create-checkout-session"
+  status = 200
+  force = true
+  
