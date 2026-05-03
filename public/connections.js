@@ -38,7 +38,7 @@
 // needs its own work in a later session.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let CygenixConnections = (function () {
+var CygenixConnections = (function () {
 
   // ── MSAL config (must match login.html and cygenix-cosmos-sync.js) ───────
   const MSAL_CLIENT_ID = 'f3478996-b2b5-4b21-9a23-a6b97a0e5b13';
@@ -192,6 +192,7 @@ let CygenixConnections = (function () {
     if (!uid) {
       return {
         srcConnString: '', srcConnMode: 'direct',
+        srcFnUrl: '', srcFnKey: '',
         tgtConnString: '', tgtConnMode: 'direct',
         tgtFnUrl: '', tgtFnKey: '',
       };
@@ -202,6 +203,8 @@ let CygenixConnections = (function () {
     return {
       srcConnString: mine.srcConnString || '',
       srcConnMode  : mine.srcConnMode   || 'direct',
+      srcFnUrl     : mine.srcFnUrl      || '',
+      srcFnKey     : mine.srcFnKey      || '',
       tgtConnString: mine.tgtConnString || '',
       tgtConnMode  : mine.tgtConnMode   || 'direct',
       tgtFnUrl     : mine.tgtFnUrl      || '',
@@ -220,6 +223,8 @@ let CygenixConnections = (function () {
     blob[uid] = {
       srcConnString: String(fields.srcConnString || ''),
       srcConnMode  : fields.srcConnMode === 'azure' ? 'azure' : 'direct',
+      srcFnUrl     : String(fields.srcFnUrl || ''),
+      srcFnKey     : String(fields.srcFnKey || ''),
       tgtConnString: String(fields.tgtConnString || ''),
       tgtConnMode  : fields.tgtConnMode   === 'azure' ? 'azure' : 'direct',
       tgtFnUrl     : String(fields.tgtFnUrl || ''),
@@ -244,6 +249,8 @@ let CygenixConnections = (function () {
     // are legacy aliases for target-direct.
     const srcString = pullFlat('cygenix_src_conn_string');
     const srcMode   = pullFlat('cygenix_src_conn_mode');
+    const srcFnUrl  = pullFlat('cygenix_src_fn_url');
+    const srcFnKey  = pullFlat('cygenix_src_fn_key');
     const tgtString = pullFlat('cygenix_tgt_conn_string') || pullFlat('cygenix_conn_string');
     const tgtMode   = pullFlat('cygenix_tgt_conn_mode')   || pullFlat('cygenix_conn_mode');
     const fnUrl     = pullFlat('cygenix_fn_url');
@@ -251,6 +258,8 @@ let CygenixConnections = (function () {
     const merged = {
       srcConnString: srcString || cur.srcConnString,
       srcConnMode  : srcMode   || cur.srcConnMode,
+      srcFnUrl     : srcFnUrl  || cur.srcFnUrl,
+      srcFnKey     : srcFnKey  || cur.srcFnKey,
       tgtConnString: tgtString || cur.tgtConnString,
       tgtConnMode  : tgtMode   || cur.tgtConnMode,
       tgtFnUrl     : fnUrl     || cur.tgtFnUrl,
@@ -259,8 +268,10 @@ let CygenixConnections = (function () {
     setActive(merged);
     // Now clear the flat sessionStorage keys we just absorbed — same
     // behaviour as the old code, so nothing downstream sees stale flats.
-    ['cygenix_src_conn_string','cygenix_src_conn_mode','cygenix_tgt_conn_string',
-     'cygenix_tgt_conn_mode','cygenix_fn_url','cygenix_fn_key',
+    ['cygenix_src_conn_string','cygenix_src_conn_mode',
+     'cygenix_src_fn_url','cygenix_src_fn_key',
+     'cygenix_tgt_conn_string','cygenix_tgt_conn_mode',
+     'cygenix_fn_url','cygenix_fn_key',
      'cygenix_conn_string','cygenix_conn_mode'].forEach(k => {
       try { sessionStorage.removeItem(k); } catch {}
     });
@@ -345,7 +356,15 @@ let CygenixConnections = (function () {
     currentUserTag,
   };
   Object.defineProperty(api, 'srcConn', {
-    get() { return get().srcConnString || ''; },
+    get() {
+      const c = get();
+      if (c.srcFnUrl) {
+        return c.srcFnKey
+          ? c.srcFnUrl + (c.srcFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(c.srcFnKey)
+          : c.srcFnUrl;
+      }
+      return c.srcConnString || '';
+    },
   });
   Object.defineProperty(api, 'tgtConn', {
     get() {
@@ -360,3 +379,12 @@ let CygenixConnections = (function () {
   });
   return api;
 })();
+
+// Belt-and-braces: explicitly attach to window so consumers in other scripts
+// can rely on `window.CygenixConnections` regardless of how this file's
+// top-level binding is scoped by the host's module system. Some bundlers
+// and strict-mode contexts make top-level `var` block-local; this ensures
+// the global is always reachable.
+if (typeof window !== 'undefined') {
+  window.CygenixConnections = CygenixConnections;
+}
