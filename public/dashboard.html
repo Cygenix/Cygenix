@@ -4352,7 +4352,7 @@ function renderPipeline(){
   const validated    = jobs.filter(j => j.verifySQL && String(j.verifySQL).trim().length > 20).length;
   const weekAgo      = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const recentRuns   = jobs.filter(j => j.lastRun && Date.parse(j.lastRun) > weekAgo).length;
-  const connsConfigured = (conns.srcConnString ? 1 : 0) + (conns.tgtConnString || conns.fnUrl ? 1 : 0);
+  const connsConfigured = (conns.srcConnString || conns.srcFnUrl ? 1 : 0) + (conns.tgtConnString || conns.tgtFnUrl || conns.fnUrl ? 1 : 0);
 
   // Governance mode mapped to visual status
   const govLabel = privacyMode === 'full' ? 'Full' : privacyMode === 'schema-only' ? 'Schema only' : 'No AI';
@@ -7723,6 +7723,8 @@ function initConnectionsView() {
   setTgtMode(tgtMode);
   const set = (id, val) => { const el=document.getElementById(id); if(el) el.value=val||''; };
   set('proj-src-cs',     c.srcConnString);
+  set('proj-src-fn-url', c.srcFnUrl);
+  set('proj-src-fn-key', c.srcFnKey);
   set('proj-tgt-cs',     c.tgtConnString);
   set('proj-tgt-fn-url', c.tgtFnUrl);
   set('proj-tgt-fn-key', c.tgtFnKey);
@@ -7737,7 +7739,7 @@ function updateConnDots() {
   // localStorage blob at cygenix_project_connections, which persists
   // across reloads and syncs to Cosmos. No fallback chain needed.
   const c = CygenixConnections.get();
-  const srcOk = !!(c.srcConnString);
+  const srcOk = !!(c.srcConnString || c.srcFnUrl);
   const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
   const setDot = (id, ok) => { const el=document.getElementById(id); if(el) el.style.background=ok?'var(--green)':'var(--red)'; };
   setDot('src-conn-dot', srcOk);
@@ -10575,9 +10577,11 @@ function wiReadConns(){
   try { activeUser = localStorage.getItem('cygenix_active_user') || ''; } catch {}
   if (activeUser && pc[activeUser] && typeof pc[activeUser] === 'object'){
     const slice = pc[activeUser];
-    if (slice.srcConnString || slice.tgtConnString || slice.tgtFnUrl){
+    if (slice.srcConnString || slice.srcFnUrl || slice.tgtConnString || slice.tgtFnUrl){
       return {
         srcConnString: slice.srcConnString || '',
+        srcFnUrl:      slice.srcFnUrl      || '',
+        srcFnKey:      slice.srcFnKey      || '',
         tgtConnString: slice.tgtConnString || '',
         tgtFnUrl:      slice.tgtFnUrl      || '',
         tgtFnKey:      slice.tgtFnKey      || '',
@@ -10586,9 +10590,11 @@ function wiReadConns(){
   }
 
   // 2) Flat top-level keys.
-  if (pc.srcConnString || pc.tgtConnString || pc.tgtFnUrl){
+  if (pc.srcConnString || pc.srcFnUrl || pc.tgtConnString || pc.tgtFnUrl){
     return {
       srcConnString: pc.srcConnString || '',
+      srcFnUrl:      pc.srcFnUrl      || '',
+      srcFnKey:      pc.srcFnKey      || '',
       tgtConnString: pc.tgtConnString || '',
       tgtFnUrl:      pc.tgtFnUrl      || '',
       tgtFnKey:      pc.tgtFnKey      || '',
@@ -10599,9 +10605,11 @@ function wiReadConns(){
   //    where active-user tag drifted but data exists under another tag).
   for (const k of Object.keys(pc)){
     const v = pc[k];
-    if (v && typeof v === 'object' && (v.srcConnString || v.tgtConnString || v.tgtFnUrl)){
+    if (v && typeof v === 'object' && (v.srcConnString || v.srcFnUrl || v.tgtConnString || v.tgtFnUrl)){
       return {
         srcConnString: v.srcConnString || '',
+        srcFnUrl:      v.srcFnUrl      || '',
+        srcFnKey:      v.srcFnKey      || '',
         tgtConnString: v.tgtConnString || '',
         tgtFnUrl:      v.tgtFnUrl      || '',
         tgtFnKey:      v.tgtFnKey      || '',
@@ -10609,7 +10617,7 @@ function wiReadConns(){
     }
   }
 
-  return { srcConnString:'', tgtConnString:'', tgtFnUrl:'', tgtFnKey:'' };
+  return { srcConnString:'', srcFnUrl:'', srcFnKey:'', tgtConnString:'', tgtFnUrl:'', tgtFnKey:'' };
 }
 
 // Read-only connection banner refresher. Reads localStorage directly (see
@@ -10618,7 +10626,7 @@ function wiReadConns(){
 // opens the panel. No network calls.
 function wiUpdateConnBanner(){
   const c = wiReadConns();
-  const srcOk = !!c.srcConnString;
+  const srcOk = !!(c.srcConnString || c.srcFnUrl);
   const tgtOk = !!(c.tgtFnUrl || c.tgtConnString);
 
   const setDot = (id, configured) => {
@@ -10649,7 +10657,7 @@ function wiUpdateConnBanner(){
   };
 
   setDot('wi-src-dot', srcOk);
-  setLabel('wi-src-label', srcOk, 'Source', parseDbName(c.srcConnString));
+  setLabel('wi-src-label', srcOk, 'Source', parseDbName(c.srcConnString || c.srcFnUrl));
   setDot('wi-tgt-dot', tgtOk);
   setLabel('wi-tgt-label', tgtOk, 'Target', parseDbName(c.tgtFnUrl || c.tgtConnString));
 }
@@ -10661,9 +10669,18 @@ async function wiFetchSourceSchema(){
 
   // Resolve the source connection. We bypass CygenixConnections (which is
   // observed undefined on this view) and read localStorage directly via
-  // wiReadConns — see that helper for the storage-shape contract.
+  // wiReadConns — see that helper for the storage-shape contract. If the
+  // source is an Azure Function, append the function key as ?code= so the
+  // request authenticates (matching the target-side behaviour).
   const conns = wiReadConns();
-  const conn = conns.srcConnString || '';
+  let conn = '';
+  if (conns.srcFnUrl){
+    conn = conns.srcFnUrl + (conns.srcFnKey
+      ? (conns.srcFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(conns.srcFnKey)
+      : '');
+  } else {
+    conn = conns.srcConnString || '';
+  }
   if (!conn){
     throw new Error('Source connection not configured. Open Connections → Source and save a connection first.');
   }
