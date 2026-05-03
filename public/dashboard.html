@@ -7765,13 +7765,43 @@ async function testProjConn(which) {
     if (tgtMode==='azure'&&key) conn += (conn.includes('?')?'&':'?')+'code='+encodeURIComponent(key);
   }
   if (!conn) { resultEl.textContent='Enter a connection string first.'; resultEl.style.color='var(--red)'; return; }
-  try {
+
+  // Helper — performs the actual fetch and returns either the parsed body
+  // or throws. Wrapped so we can retry once on cold-start / auto-pause
+  // failures without duplicating the request logic.
+  const attempt = async () => {
     const isFn = conn.startsWith('https://')||conn.startsWith('http://');
     const res  = isFn
       ? await fetch(conn,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'test'}),signal:AbortSignal.timeout(30000)})
       : await fetch('/.netlify/functions/db-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'test',connectionString:conn}),signal:AbortSignal.timeout(30000)});
     const data = await res.json().catch(()=>({error:'Non-JSON'}));
     if (!res.ok) throw new Error(data.error||res.statusText);
+    return data;
+  };
+
+  // Determine whether an error is worth retrying. Cold-starts on the Azure
+  // Function (503/timeout) and Azure SQL Free-tier auto-pause (40613/40197)
+  // both clear themselves on a second attempt a couple of seconds later.
+  // Auth errors (401/403) and bad-input errors are permanent — no retry.
+  const isTransient = (msg) => {
+    const m = String(msg || '').toLowerCase();
+    if (m.includes('401') || m.includes('unauthor')) return false;
+    if (m.includes('403') || m.includes('forbidden')) return false;
+    if (m.includes('bad request') || m.includes('400')) return false;
+    return /timeout|503|502|504|network|aborted|40613|40197|not currently available|resuming/.test(m);
+  };
+
+  try {
+    let data;
+    try {
+      data = await attempt();
+    } catch (e) {
+      if (!isTransient(e.message)) throw e;
+      // Cold start / auto-pause — wait and retry once
+      resultEl.textContent='Warming up the database…';
+      await new Promise(r => setTimeout(r, 2500));
+      data = await attempt();
+    }
     resultEl.textContent='🟢 Connected · '+data.database+' · '+(data.user||'').split('@')[0];
     resultEl.style.color='var(--green)';
     if (dotEl) dotEl.style.background='var(--green)';
@@ -9307,12 +9337,26 @@ function impGetConn(which){
   const isHttpUrl = (s) => /^https?:\/\//i.test(s || '');
 
   // ─── Source ─────────────────────────────────────────────────────────
+  // Mirrors the target logic: if the source is an Azure Function URL,
+  // append the function key as ?code=. Otherwise treat as a connection
+  // string. Without this, kicking off a conversion against an Azure
+  // Function source returns 401 even though Connect & Test went green.
   if (which === 'src'){
+    const srcRawFnUrl = c.srcFnUrl
+                     || pcGet('cygenix_src_fn_url')
+                     || ss('cygenix_src_fn_url');
+    const srcFnKey    = c.srcFnKey
+                     || pcGet('cygenix_src_fn_key')
+                     || ss('cygenix_src_fn_key');
+    if (isHttpUrl(srcRawFnUrl)){
+      return srcFnKey
+        ? srcRawFnUrl + (srcRawFnUrl.includes('?') ? '&' : '?') + 'code=' + encodeURIComponent(srcFnKey)
+        : srcRawFnUrl;
+    }
     return c.srcConnString
-        || c.srcFnUrl
         || ss('cygenix_src_conn_string')
         || pcGet('cygenix_src_conn_string')
-        || pcGet('cygenix_src_fn_url')
+        || srcRawFnUrl  // legacy: connection string mis-saved under fn_url field
         || '';
   }
 
