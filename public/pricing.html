@@ -64,10 +64,12 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 
 /* Pricing grid */
 .pricing-grid{max-width:1280px;margin:0 auto;padding:0 2rem 4rem;display:grid;grid-template-columns:repeat(4,1fr);gap:1.25rem;position:relative;z-index:1}
-.tier{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:1.75rem 1.5rem;display:flex;flex-direction:column;position:relative;transition:border-color 0.2s,transform 0.2s}
-.tier:hover{border-color:rgba(79,142,255,0.3)}
+.tier{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:1.75rem 1.5rem;display:flex;flex-direction:column;position:relative;transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s;cursor:pointer}
+.tier:hover{border-color:var(--accent);box-shadow:0 0 0 0.5px var(--accent),0 20px 60px rgba(79,142,255,0.12);transform:translateY(-2px)}
 .tier.featured{border-color:var(--accent);box-shadow:0 0 0 0.5px var(--accent),0 20px 60px rgba(79,142,255,0.12)}
+.tier.featured:hover{transform:translateY(-2px);box-shadow:0 0 0 0.5px var(--accent),0 24px 70px rgba(79,142,255,0.18)}
 .tier-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:10px;font-family:var(--mono);font-weight:600;letter-spacing:0.08em;padding:3px 10px;border-radius:100px}
+.tier-descriptor{font-size:10px;font-family:var(--mono);color:var(--text3);letter-spacing:0.12em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem;min-height:14px}
 .tier-name{font-size:13px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem}
 .tier-tagline{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1.5rem;min-height:40px}
 .tier-price{display:flex;align-items:baseline;gap:0.3rem;margin-bottom:0.4rem}
@@ -221,6 +223,7 @@ footer a:hover{text-decoration:underline}
 
   <!-- ====== STARTER ====== -->
   <div class="tier">
+    <div class="tier-descriptor">Smaller Projects</div>
     <div class="tier-name">Starter</div>
     <div class="tier-tagline">For consultants and small teams running occasional migrations.</div>
     <div class="tier-price">
@@ -254,6 +257,7 @@ footer a:hover{text-decoration:underline}
   <!-- ====== PRO (FEATURED) ====== -->
   <div class="tier featured">
     <div class="tier-badge">MOST POPULAR</div>
+    <div class="tier-descriptor" aria-hidden="true">&nbsp;</div>
     <div class="tier-name">Pro</div>
     <div class="tier-tagline">For growing teams running multiple migrations in parallel.</div>
     <div class="tier-price">
@@ -287,6 +291,7 @@ footer a:hover{text-decoration:underline}
 
   <!-- ====== BUSINESS ====== -->
   <div class="tier">
+    <div class="tier-descriptor">Heavier Users</div>
     <div class="tier-name">Business</div>
     <div class="tier-tagline">For teams running large-scale, mission-critical migrations.</div>
     <div class="tier-price">
@@ -320,6 +325,7 @@ footer a:hover{text-decoration:underline}
 
   <!-- ====== ENTERPRISE ====== -->
   <div class="tier">
+    <div class="tier-descriptor">Large Scalable Projects</div>
     <div class="tier-name">Enterprise</div>
     <div class="tier-tagline">For organisations with compliance, scale, or sovereignty requirements.</div>
     <div class="tier-price custom">
