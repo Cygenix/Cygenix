@@ -1243,6 +1243,11 @@ function getConn() {
   const c = CygenixConnections.get();
   const which = document.getElementById('conn-select').value;
   if (which === 'target') return c.tgtFnUrl ? c.tgtFnUrl+(c.tgtFnKey?'?code='+encodeURIComponent(c.tgtFnKey):'') : c.tgtConnString;
+  // Source: same shape as target — Azure Function URL takes priority over
+  // connection string. Without this branch, picking Source DB while in
+  // source-Azure mode silently fell through to an empty string and every
+  // query 401'd.
+  if (c.srcFnUrl) return c.srcFnUrl + (c.srcFnKey ? '?code=' + encodeURIComponent(c.srcFnKey) : '');
   return c.srcConnString;
 }
 
@@ -1620,7 +1625,13 @@ async function refreshObjectBrowser() {
 function getOBSchemas() {
   if (typeof CygenixConnections === 'undefined') return { source: null, target: null };
   const c = CygenixConnections.get();
-  const srcKey = (c.srcConnString || '').slice(0, 80);
+  // Source cache key — derive from whichever shape the source uses (direct
+  // string or Azure Function URL). Has to match the conn string assembled
+  // inside getConn() so cache hits actually land.
+  const srcConnRaw = c.srcFnUrl
+    ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl)
+    : (c.srcConnString || '');
+  const srcKey = srcConnRaw.slice(0, 80);
   const tgtConnRaw = c.tgtFnUrl
     ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
     : (c.tgtConnString || '');
@@ -1986,7 +1997,9 @@ async function fetchBothSchemas() {
   const c = CygenixConnections.get();
 
   // Source: may be direct ADO.NET string or Azure Function URL
-  const srcConn = c.srcConnString || '';
+  const srcConn = c.srcFnUrl
+    ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl)
+    : (c.srcConnString || '');
 
   // Target: prefer Azure Function URL (with key appended), fall back to direct
   const tgtConn = c.tgtFnUrl
@@ -3216,9 +3229,9 @@ async function promoteSQLToJob(opts) {
   const jobId   = 'job_' + Date.now();
   const jobName = (chosenJobName || name || 'SQL Script').trim() || 'SQL Script';
   const srcConn = conn === 'source'
-    ? (window.CygenixConnections?.get?.().srcConnString || '').slice(0,50) : '';
+    ? (window.CygenixConnections?.srcConn || '').slice(0,50) : '';
   const tgtConn = conn === 'target'
-    ? (window.CygenixConnections?.tgtConn?.() || '').slice(0,50) : '';
+    ? (window.CygenixConnections?.tgtConn || '').slice(0,50) : '';
 
   const jobRecord = {
     id:            jobId,
@@ -3667,6 +3680,142 @@ updateStatus();
     switchLibTab('jobs');
     setTimeout(function(){ loadJobSQL(jobId); }, 150);
   }
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SQL Editor draft persistence — keeps the user's in-progress SQL across page
+// navigations until they explicitly start a new script or load a saved one.
+//
+// Storage: localStorage['cygenix_sql_editor_draft'] — local-only, NOT synced
+// to Cosmos. Drafts may contain unfinished work, sensitive table names, or
+// pasted credentials, none of which belong in the cloud sync. The Cosmos
+// sync allowlist (cygenix-cosmos-sync.js → SYNC_KEYS) does not include this
+// key, so writes here stay on the device.
+//
+// Lifecycle:
+//   - On every input change, debounce-save current text to localStorage
+//   - On page load, if draft exists AND no script/job is being loaded by URL
+//     param, restore it into the editor
+//   - Cleared by newScript() / loadScript() / loadJobSQL() / save flows
+// ─────────────────────────────────────────────────────────────────────────────
+(function () {
+  const DRAFT_KEY = 'cygenix_sql_editor_draft';
+  const DEBOUNCE_MS = 600;
+  let _draftTimer = null;
+
+  function getEditorValue() {
+    // Prefer Monaco if mounted, fall back to the textarea proxy
+    try {
+      if (window.__cygMonaco?.ready && window.__cygMonaco.editor) {
+        return window.__cygMonaco.editor.getValue() || '';
+      }
+    } catch {}
+    const ta = document.getElementById('sql-editor');
+    return ta ? (ta.value || '') : '';
+  }
+
+  function setEditorValue(v) {
+    const ta = document.getElementById('sql-editor');
+    try {
+      if (window.__cygMonaco?.ready && window.__cygMonaco.editor) {
+        window.__cygMonaco.editor.setValue(v || '');
+      } else if (window.__cygMonaco) {
+        // Monaco not ready yet — leave a pending value for it to pick up
+        window.__cygMonaco.pendingValue = v || '';
+      }
+    } catch {}
+    if (ta) ta.value = v || '';
+    if (typeof updateLineNumbers === 'function') updateLineNumbers();
+    if (typeof updateStatus === 'function') updateStatus();
+  }
+
+  function saveDraft() {
+    try {
+      const v = getEditorValue();
+      // Don't save the placeholder "starter" template as a draft — only real
+      // user-edited content. The newScript() helper writes a known starter
+      // string; persisting that just creates noise.
+      const STARTER = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+      if (!v || v === STARTER) {
+        localStorage.removeItem(DRAFT_KEY);
+        return;
+      }
+      localStorage.setItem(DRAFT_KEY, v);
+    } catch {}
+  }
+
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+  }
+
+  function scheduleDraftSave() {
+    if (_draftTimer) clearTimeout(_draftTimer);
+    _draftTimer = setTimeout(saveDraft, DEBOUNCE_MS);
+  }
+
+  // Hook the existing textarea input event — Monaco fires a synthetic input
+  // event on the textarea on every content change, so this single listener
+  // catches both Monaco edits and direct textarea edits in the fallback case.
+  const ta = document.getElementById('sql-editor');
+  if (ta) {
+    ta.addEventListener('input', scheduleDraftSave);
+  }
+
+  // Restore a saved draft on load. Wait briefly for Monaco to be ready so
+  // setValue lands on the real editor rather than the proxy textarea (which
+  // would then get overwritten when Monaco initialises with its pendingValue).
+  // If Monaco never loads, the fallback path still works because we set
+  // ta.value too.
+  function restoreDraft() {
+    let draft = '';
+    try { draft = localStorage.getItem(DRAFT_KEY) || ''; } catch {}
+    if (!draft) return;
+
+    // Don't clobber content that's already being loaded by another flow —
+    // e.g. ?job=... URL param triggering loadJobSQL on init. If the editor
+    // already has non-starter content, leave it alone.
+    const current = getEditorValue();
+    const STARTER = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+    if (current && current !== STARTER && current.trim().length > 0) return;
+
+    setEditorValue(draft);
+  }
+
+  // Try restoring once Monaco is ready; if it never reports ready within
+  // 3 seconds, restore into the textarea anyway.
+  let _restoreAttempts = 0;
+  function tryRestore() {
+    if (window.__cygMonaco?.ready) {
+      restoreDraft();
+      return;
+    }
+    if (_restoreAttempts++ < 30) {
+      setTimeout(tryRestore, 100);
+    } else {
+      // Monaco didn't load — restore into the textarea fallback
+      restoreDraft();
+    }
+  }
+  // Defer slightly so any URL-param-driven loaders (loadJobSQL etc.) get a
+  // chance to populate the editor first.
+  setTimeout(tryRestore, 200);
+
+  // Clear the draft when the user explicitly starts fresh or loads a saved
+  // script/job. Wrap the existing functions rather than editing them, so the
+  // draft logic stays self-contained in this block.
+  ['newScript', 'loadScript', 'loadJobSQL'].forEach(fnName => {
+    const orig = window[fnName];
+    if (typeof orig === 'function') {
+      window[fnName] = function (...args) {
+        const r = orig.apply(this, args);
+        clearDraft();
+        return r;
+      };
+    }
+  });
+
+  // Expose a manual clear for any save flow that wants to use it
+  window.cygenixClearSqlDraft = clearDraft;
 })();
 </script>
 <script src="/cookie-consent.js"></script>
