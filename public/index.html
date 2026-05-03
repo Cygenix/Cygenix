@@ -239,6 +239,25 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .orb2{width:300px;height:300px;background:rgba(167,139,250,0.1);bottom:100px;left:-80px;animation:orbFloat 10s ease-in-out infinite reverse}
 @keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,30px)}}
 footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3);position:relative;z-index:1}
+.footer-link{color:var(--accent);text-decoration:none;cursor:pointer;background:none;border:none;font:inherit;padding:0}
+.footer-link:hover{text-decoration:underline}
+
+/* About modal — opens from footer link. Same visual language as the rest
+   of the page (border, glow, mono accents). Click outside or Esc closes. */
+.about-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem;background:rgba(8,11,18,0.85);backdrop-filter:blur(8px);animation:aboutFade 0.25s ease both}
+.about-modal.open{display:flex}
+.about-card{position:relative;max-width:600px;width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:2.5rem 2.25rem 2rem;box-shadow:0 40px 80px rgba(0,0,0,0.6),0 0 0 0.5px rgba(79,142,255,0.15);max-height:85vh;overflow-y:auto;animation:aboutRise 0.3s ease both}
+.about-card::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 400px 200px at 50% 0%,rgba(79,142,255,0.08) 0%,transparent 70%);pointer-events:none;border-radius:14px}
+.about-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:0.05em;color:var(--accent);margin-bottom:0.75rem;text-transform:uppercase;position:relative}
+.about-name{font-size:1.6rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:1.25rem;position:relative}
+.about-name span{background:linear-gradient(135deg,var(--accent),var(--teal));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.about-body{position:relative;color:var(--text2);font-size:14.5px;line-height:1.75;font-weight:400}
+.about-body p{margin-bottom:1.1rem}
+.about-body p:last-child{margin-bottom:0}
+.about-close{position:absolute;top:14px;right:14px;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:transparent;border:0.5px solid var(--border);border-radius:8px;color:var(--text2);cursor:pointer;transition:all 0.15s;font-size:18px;line-height:1}
+.about-close:hover{border-color:var(--accent);color:var(--accent)}
+@keyframes aboutFade{from{opacity:0}to{opacity:1}}
+@keyframes aboutRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 .ticker-wrap{overflow:hidden;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg2);padding:0.6rem 0}
 .ticker{display:flex;gap:4rem;white-space:nowrap;animation:tick 30s linear infinite}
 .ticker-item{display:flex;align-items:center;gap:0.5rem;font-size:11px;color:var(--text3);font-family:var(--mono)}
@@ -1271,8 +1290,22 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 </section>
 
 <footer>
-  Cygenix AI Migration Platform · Claude AI Column Mapping · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">Dashboard</a> · <a href="/help.html" style="color:var(--accent);text-decoration:none">Help</a>
+  Cygenix AI Migration Platform · Claude AI Column Mapping · <a href="/dashboard.html" style="color:var(--accent);text-decoration:none">Dashboard</a> · <a href="/help.html" style="color:var(--accent);text-decoration:none">Help</a> · <button type="button" class="footer-link" onclick="openAbout()">About</button>
 </footer>
+
+<!-- About modal -->
+<div class="about-modal" id="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-name" onclick="if(event.target===this)closeAbout()">
+  <div class="about-card">
+    <button type="button" class="about-close" onclick="closeAbout()" aria-label="Close">×</button>
+    <div class="about-eyebrow">About the founder</div>
+    <div class="about-name" id="about-name">Curtis Morris<br><span>— Founder</span></div>
+    <div class="about-body">
+      <p>Curtis has worked in technology since the mid-1990s, with the last twenty years spent specialising in data conversion for the media and legal industries — domains where accuracy, traceability, and proof of correctness aren't optional extras.</p>
+      <p>Born in the UK, his route into professional computing came via an unlikely turn: an exchange student programme in the 1980s that put him in front of Gateway PCs at a time when most of his classmates were still on paper. The interest stuck.</p>
+      <p>Cygenix is the platform Curtis wished existed across two decades of consulting work — built so the next data engineer dealing with a high-stakes migration has the tools to do it once, do it right, and prove it.</p>
+    </div>
+  </div>
+</div>
 
 <script>
 // Mapper rows animation
@@ -1538,6 +1571,26 @@ document.addEventListener('keydown', e => {
   // Also redraw on window resize
   window.addEventListener('resize', redrawLines);
 })();
+
+// ── About modal ────────────────────────────────────────────────────────────
+// Lightweight open/close. The dialog uses display:flex toggled via the
+// `.open` class so the entry animation fires every time. Esc to close,
+// click-outside-card handled inline on the backdrop.
+function openAbout(){
+  const m = document.getElementById('about-modal');
+  if (!m) return;
+  m.classList.add('open');
+  document.body.style.overflow = 'hidden'; // prevent background scroll
+}
+function closeAbout(){
+  const m = document.getElementById('about-modal');
+  if (!m) return;
+  m.classList.remove('open');
+  document.body.style.overflow = '';
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeAbout();
+});
 </script>
 <script src="/cookie-consent.js"></script>
 <script src="/cygenix-cookie-cleanup.js"></script>
