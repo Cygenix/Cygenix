@@ -586,7 +586,13 @@ async function dbCall(conn, body){
 }
 function getProjectConn(which){
   const c = CygenixConnections.get();
-  if(which==='src') return c.srcConnString||'';
+  if(which==='src'){
+    // Mirror target's shape — Azure Function URL with ?code=KEY appended,
+    // falling back to direct connection string. Without this, source-Azure
+    // mode silently returned '' and validation calls 401'd.
+    if (c.srcFnUrl) return c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl;
+    return c.srcConnString || '';
+  }
   const fn = c.tgtFnUrl||'';
   const key = c.tgtFnKey||'';
   return fn?(key?fn+'?code='+encodeURIComponent(key):fn):(c.tgtConnString||'');

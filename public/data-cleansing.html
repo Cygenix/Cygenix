@@ -385,14 +385,16 @@ let fkCache = null;             // incoming FK refs for the cleansed table (fetc
   try {
     const all = (typeof CygenixConnections?.getAll === 'function') ? CygenixConnections.getAll() : [];
     all.forEach(c => {
-      const label = c.name || c.srcConnString || c.tgtConnString || c.tgtFnUrl;
+      const label = c.name || c.srcConnString || c.srcFnUrl || c.tgtConnString || c.tgtFnUrl;
       if (label) opts.push({value:label, label:(c.name||'Connection') + ' · ' + String(label).slice(0,40)+'…', conn:c});
     });
   } catch {}
   // Always add the currently active src + tgt as quick picks
   try {
     const c = CygenixConnections?.get?.() || {};
-    if (c.srcConnString && !opts.find(o=>o.value===c.srcConnString)) opts.push({value:c.srcConnString,label:'Active source'});
+    // Active source — handle Azure Function URL (with key) or direct string.
+    const src = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
+    if (src && !opts.find(o=>o.value===src)) opts.push({value:src,label:'Active source'});
     const tgt = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : c.tgtConnString;
     if (tgt && !opts.find(o=>o.value===tgt)) opts.push({value:tgt,label:'Active target'});
   } catch {}

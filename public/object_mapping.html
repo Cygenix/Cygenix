@@ -1013,7 +1013,10 @@ function ddlShowResult(msg, kind) {
 // ── Connections (auto-load from CygenixConnections) ────────────────────────
 (function init(){
   const c = CygenixConnections.get();
-  srcConn = c.srcConnString || '';
+  // Source: same shape as target — Azure Function URL takes priority over
+  // direct connection string. Without this, source-Azure mode rendered as
+  // "not configured" even with a green Connections page.
+  srcConn = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
   tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
 
   const ak = localStorage.getItem('cygenix_api_key')||'';
@@ -1095,7 +1098,9 @@ async function _fetchSchemaSmart(conn) {
 
 async function connectSrc(){
   const c = CygenixConnections.get();
-  srcConn = c.srcConnString || '';
+  // Build source connection — Azure Function URL with ?code=KEY, or direct
+  // string. Same shape as the init() IIFE above.
+  srcConn = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
   if(!srcConn){ setBanner('src','err','Source: not configured — set in Dashboard → Connections'); return; }
   setBanner('src','connecting','Source: connecting…');
   try {

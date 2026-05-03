@@ -428,14 +428,21 @@ body.cyg-collapsed .topbar{left:54px}
 
     console.log('[AgentiveMigration] CygenixConnections.get() returned:', {
       hasSrcConnString: !!c.srcConnString,
+      hasSrcFnUrl: !!c.srcFnUrl,
       hasTgtConnString: !!c.tgtConnString,
       hasTgtFnUrl: !!c.tgtFnUrl,
       keys: Object.keys(c),
     });
 
-    const source = c.srcConnString
-      ? { label: describeConnString(c.srcConnString), kind: 'direct' }
-      : null;
+    // Source: prefer Azure Function URL (with key) over direct string —
+    // mirrors the target detection below. Without this, source-Azure-mode
+    // shows as "not configured" even when Connections page is green.
+    let source = null;
+    if (c.srcFnUrl) {
+      source = { label: describeFnUrl(c.srcFnUrl), kind: 'azure' };
+    } else if (c.srcConnString) {
+      source = { label: describeConnString(c.srcConnString), kind: 'direct' };
+    }
     let target = null;
     if (c.tgtFnUrl) {
       target = { label: describeFnUrl(c.tgtFnUrl), kind: 'azure' };

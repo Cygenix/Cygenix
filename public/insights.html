@@ -351,7 +351,12 @@ let migrationMap = null; // last migration map result
   // Load from central project connections
   const _conn = CygenixConnections.get();
   const srcEl = document.getElementById('src-conn');
-  if (srcEl) srcEl.value = _conn.srcConnString || '';
+  // Source: handle both shapes (Azure Function URL with key, or direct string)
+  if (srcEl) {
+    srcEl.value = _conn.srcFnUrl
+      ? (_conn.srcFnKey ? _conn.srcFnUrl + '?code=' + encodeURIComponent(_conn.srcFnKey) : _conn.srcFnUrl)
+      : (_conn.srcConnString || '');
+  }
   const tgtEl = document.getElementById('tgt-conn');
   if (tgtEl) tgtEl.value = _conn.tgtFnUrl ? _conn.tgtFnUrl+(_conn.tgtFnKey?'?code='+encodeURIComponent(_conn.tgtFnKey):'') : (_conn.tgtConnString||'');
   // Pre-fill API key
