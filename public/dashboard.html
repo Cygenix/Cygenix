@@ -947,6 +947,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .rc-chips-menu-empty{padding:10px;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
 </style>
 <script src="/connections.js"></script>
+<script src="/cygenix-auth-token.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 <script src="/cygenix-wasis.js"></script>
 <script src="/cygenix-privacy.js"></script>
@@ -5037,10 +5038,10 @@ async function renderReportsList() {
 
   let reports = [];
   try {
-    const r = await fetch('/.netlify/functions/reports', {
+    const r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'list', userEmail: email }),
+      body: JSON.stringify({ action: 'list' }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
@@ -5097,10 +5098,10 @@ async function openSavedReport(id) {
   const email = currentCygenixEmail();
   if (!email) { alert('Please sign in first.'); return; }
   try {
-    const r = await fetch('/.netlify/functions/reports', {
+    const r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'get', userEmail: email, id }),
+      body: JSON.stringify({ action: 'get', id }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
@@ -5134,12 +5135,11 @@ async function openSavedReport(id) {
         data.report.projectId = resolvedProjectId;
         // Persist backfill to Cosmos so this self-heal is permanent — fire
         // and forget; failure here doesn't block the user from viewing.
-        fetch('/.netlify/functions/reports', {
+        cygenixFetch('/.netlify/functions/reports', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             action: 'save-presentation', // reuse existing patch endpoint to update fields
-            userEmail: email,
             id: data.report.id,
             projectId: resolvedProjectId,
             // Send any existing presentationConfig so we don't accidentally
@@ -5185,10 +5185,10 @@ async function openReportSettings(reportId) {
 
   let report;
   try {
-    const r = await fetch('/.netlify/functions/reports', {
+    const r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'get', userEmail: email, id: reportId }),
+      body: JSON.stringify({ action: 'get', id: reportId }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
@@ -5317,10 +5317,10 @@ async function _prefetchReportsForSearch() {
   if (!email) return;
   _searchReportLoading = true;
   try {
-    const r = await fetch('/.netlify/functions/reports', {
+    const r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'list', userEmail: email }),
+      body: JSON.stringify({ action: 'list' }),
     });
     const data = await r.json().catch(() => ({}));
     if (r.ok && Array.isArray(data.reports)) {
@@ -5606,10 +5606,10 @@ async function deleteSavedReport(id, name) {
   const email = currentCygenixEmail();
   if (!email) { alert('Please sign in first.'); return; }
   try {
-    const r = await fetch('/.netlify/functions/reports', {
+    const r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', userEmail: email, id }),
+      body: JSON.stringify({ action: 'delete', id }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
@@ -7234,12 +7234,11 @@ async function presSaveConfig() {
   btn.textContent = '⏳ Saving…';
   try {
     const cfg = presBuildConfig();
-    const r = await fetch('/.netlify/functions/reports', {
+    const r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'save-presentation',
-        userEmail: email,
         id: report.id,
         presentationConfig: cfg,
       }),
