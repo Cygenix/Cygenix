@@ -989,6 +989,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
   <script src="/cygenix-sidebar.js"></script>
+  <script src="/server-migration.js" defer></script>
   <script>
     // Rename the "Inventory" sidebar item to "Project Artifacts" without
     // forking the shared /cygenix-sidebar.js file. The sidebar renders
@@ -1998,6 +1999,131 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div>
     <!-- END CONNECTIONS VIEW -->
 
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         SERVER MIGRATION VIEW — Phase 1: Logins
+         Sysadmin-grade tool to replicate server-level objects from one SQL
+         instance to another. Phase 1 covers logins; agent jobs (Phase 2) and
+         SSIS packages (Phase 3) follow the same shape (verify → discover →
+         preview → execute → audit) and will share the same view.
+         All logic lives in /server-migration.js (loaded near the top of this
+         file). It uses the same impDbCall + impGetConn primitives the
+         Linked Servers tab uses for executing arbitrary T-SQL against a
+         configured connection.
+         ═════════════════════════════════════════════════════════════════════ -->
+    <div id="view-server-migration" class="view">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">🛡 Server Migration</div>
+          <div class="panel-sub" style="font-size:11.5px;color:var(--text3);margin-top:3px">
+            Replicate server-level objects between SQL Server instances. Requires sysadmin on both source and target.
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="ServerMigration.startOver()">↻ Start over</button>
+      </div>
+
+      <!-- Phase notice — set expectations about what's in v1 vs what's coming -->
+      <div style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid rgba(79,142,255,0.25);background:rgba(79,142,255,0.05);border-radius:var(--r);font-size:11.5px;color:var(--text2);line-height:1.55">
+        <strong style="color:var(--accent)">Phase 1 — Logins.</strong>
+        SQL Agent jobs (Phase 2) and SSIS packages (Phase 3) will appear here once built. Logins migrate with their hashed passwords and SIDs preserved, so any users you've already migrated at the database level stay correctly mapped.
+      </div>
+
+      <!-- Step tabs — five-step flow: verify → discover → preview → execute → audit.
+           Tabs are clickable for navigation but the user is naturally led through
+           in order via Proceed / Preview / Execute buttons inside each panel. -->
+      <div class="steps-bar" style="display:flex;border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:1rem">
+        <div class="step-tab active" id="sm-tab-verify"   onclick="ServerMigration.showStep('verify')"><span class="step-num">1</span>Verify</div>
+        <div class="step-tab"        id="sm-tab-discover" onclick="ServerMigration.showStep('discover')"><span class="step-num">2</span>Discover &amp; Select</div>
+        <div class="step-tab"        id="sm-tab-preview"  onclick="ServerMigration.showStep('preview')"><span class="step-num">3</span>Preview SQL</div>
+        <div class="step-tab"        id="sm-tab-execute"  onclick="ServerMigration.showStep('execute')"><span class="step-num">4</span>Execute</div>
+        <div class="step-tab"        id="sm-tab-audit"    onclick="ServerMigration.showStep('audit')"><span class="step-num">5</span>Audit</div>
+      </div>
+
+      <!-- Step 1: Verify both connections are sysadmin -->
+      <div id="sm-step-verify" class="step-view">
+        <div id="sm-verify-banner" class="panel" style="margin-bottom:1rem">
+          <div style="font-size:13px;font-weight:600;margin-bottom:0.75rem">Verify sysadmin permissions</div>
+          <div style="font-size:11.5px;color:var(--text3);line-height:1.55;margin-bottom:1rem">
+            Server-level operations (creating logins, jobs, deploying SSIS) require sysadmin on both servers. We'll run <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:11px">SELECT IS_SRVROLEMEMBER('sysadmin')</code> against each connection.
+          </div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:0.5rem 1rem;align-items:center;margin-bottom:1rem">
+            <span style="display:flex;align-items:center;gap:0.5rem">
+              <span id="sm-src-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
+              <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Source</span>
+            </span>
+            <span id="sm-src-msg" style="font-size:12px;color:var(--text2);font-family:var(--mono)">Click Verify to test connection.</span>
+            <span style="display:flex;align-items:center;gap:0.5rem">
+              <span id="sm-tgt-dot" style="width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0"></span>
+              <span style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">Target</span>
+            </span>
+            <span id="sm-tgt-msg" style="font-size:12px;color:var(--text2);font-family:var(--mono)">Click Verify to test connection.</span>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="ServerMigration.verifyConnections()">🔍 Verify both</button>
+            <button class="btn btn-primary btn-sm" id="sm-proceed-btn" disabled onclick="ServerMigration.showStep('discover')">Proceed to discover →</button>
+            <span style="font-size:10.5px;color:var(--text3)">Connections come from the Connections tab. Change them there if needed.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Discover & select -->
+      <div id="sm-step-discover" class="step-view" style="display:none">
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">Logins on source</div>
+            <button class="btn btn-primary btn-sm" onclick="ServerMigration.discoverLogins()">↻ Discover</button>
+            <input id="sm-login-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="🔍 Filter by name…" oninput="ServerMigration._filterChanged()">
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:11px;color:var(--text3);cursor:pointer">
+              <input type="checkbox" id="sm-show-system" onchange="ServerMigration._filterChanged()" style="cursor:pointer">
+              Show system logins
+            </label>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="ServerMigration.showPreview()">Preview SQL →</button>
+          </div>
+          <div id="sm-logins-summary" style="font-size:11.5px;color:var(--text2);margin-bottom:0.75rem"></div>
+          <div id="sm-logins-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:600px">
+            <div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">Click Discover to load logins from the source server.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3: Preview SQL — read-only display of what will run on target -->
+      <div id="sm-step-preview" class="step-view" style="display:none">
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">Generated T-SQL</div>
+            <span style="font-size:10.5px;color:var(--text3)">Password hashes are redacted in this view but sent in full at execution time.</span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="ServerMigration.showStep('discover')">← Back to selection</button>
+            <button class="btn btn-primary btn-sm" onclick="ServerMigration.executeNow()">▶ Execute on target</button>
+          </div>
+          <pre id="sm-preview-pre" style="background:var(--bg3);color:var(--text2);padding:1rem;border-radius:var(--r);font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre-wrap;max-height:600px;overflow:auto;margin:0;border:0.5px solid var(--border)"></pre>
+        </div>
+      </div>
+
+      <!-- Step 4: Execute (live status feed) -->
+      <div id="sm-step-execute" class="step-view" style="display:none">
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">Executing</div>
+            <span id="sm-execute-progress" style="font-size:11px;color:var(--text2);font-family:var(--mono)">0 / 0</span>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Each login is created with an IF NOT EXISTS guard. Re-runs are safe.</span>
+          </div>
+          <div id="sm-execute-live" style="border:0.5px solid var(--border);border-radius:var(--r);max-height:500px;overflow:auto;background:var(--bg2)"></div>
+        </div>
+      </div>
+
+      <!-- Step 5: Audit summary + JSON download -->
+      <div id="sm-step-audit" class="step-view" style="display:none">
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">Migration complete</div>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="ServerMigration.downloadAudit()">⬇ Download audit (JSON)</button>
+            <button class="btn btn-primary btn-sm" onclick="ServerMigration.startOver()">↻ Run another migration</button>
+          </div>
+          <div id="sm-audit-summary"></div>
+        </div>
+      </div>
+    </div>
+    <!-- END SERVER MIGRATION VIEW -->
+
     <!-- Data import — sheet picker modal for multi-sheet Excel workbooks -->
     <div id="imp-sheet-modal" onclick="if(event.target===this) impCloseSheetModal()">
       <div class="imp-exists-dialog">
@@ -2786,6 +2912,7 @@ function showView(v) {
   if (v === 'system-parameters') initSystemParametersView();
   if (v === 'report-settings')   renderReportSettings();
   if (v === 'task-agent')        ta_init();
+  if (v === 'server-migration')  window.ServerMigration && window.ServerMigration.init();
 }
 
 function selectTarget(el, name) {
