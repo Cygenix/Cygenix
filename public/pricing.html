@@ -65,11 +65,10 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 /* Pricing grid */
 .pricing-grid{max-width:1280px;margin:0 auto;padding:0 2rem 4rem;display:grid;grid-template-columns:repeat(4,1fr);gap:1.25rem;position:relative;z-index:1}
 .tier{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:1.75rem 1.5rem;display:flex;flex-direction:column;position:relative;transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s;cursor:pointer}
-.tier:hover{border-color:var(--accent);box-shadow:0 0 0 0.5px var(--accent),0 20px 60px rgba(79,142,255,0.12);transform:translateY(-2px)}
+.tier:hover:not(.featured){border-color:rgba(79,142,255,0.45)}
 .tier.featured{border-color:var(--accent);box-shadow:0 0 0 0.5px var(--accent),0 20px 60px rgba(79,142,255,0.12)}
-.tier.featured:hover{transform:translateY(-2px);box-shadow:0 0 0 0.5px var(--accent),0 24px 70px rgba(79,142,255,0.18)}
-.tier-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:10px;font-family:var(--mono);font-weight:600;letter-spacing:0.08em;padding:3px 10px;border-radius:100px}
-.tier-descriptor{font-size:10px;font-family:var(--mono);color:var(--text3);letter-spacing:0.12em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem;min-height:14px}
+.tier-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:10px;font-family:var(--mono);font-weight:600;letter-spacing:0.08em;padding:3px 12px;border-radius:100px;white-space:nowrap;display:none}
+.tier.featured .tier-badge{display:block}
 .tier-name{font-size:13px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem}
 .tier-tagline{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1.5rem;min-height:40px}
 .tier-price{display:flex;align-items:baseline;gap:0.3rem;margin-bottom:0.4rem}
@@ -222,8 +221,8 @@ footer a:hover{text-decoration:underline}
 <div class="pricing-grid">
 
   <!-- ====== STARTER ====== -->
-  <div class="tier">
-    <div class="tier-descriptor">Smaller Projects</div>
+  <div class="tier" data-tier="starter" onclick="selectTier('starter')">
+    <div class="tier-badge">SMALLER PROJECTS</div>
     <div class="tier-name">Starter</div>
     <div class="tier-tagline">For consultants and small teams running occasional migrations.</div>
     <div class="tier-price">
@@ -255,9 +254,8 @@ footer a:hover{text-decoration:underline}
   </div>
 
   <!-- ====== PRO (FEATURED) ====== -->
-  <div class="tier featured">
+  <div class="tier featured" data-tier="pro" onclick="selectTier('pro')">
     <div class="tier-badge">MOST POPULAR</div>
-    <div class="tier-descriptor" aria-hidden="true">&nbsp;</div>
     <div class="tier-name">Pro</div>
     <div class="tier-tagline">For growing teams running multiple migrations in parallel.</div>
     <div class="tier-price">
@@ -290,8 +288,8 @@ footer a:hover{text-decoration:underline}
   </div>
 
   <!-- ====== BUSINESS ====== -->
-  <div class="tier">
-    <div class="tier-descriptor">Heavier Users</div>
+  <div class="tier" data-tier="business" onclick="selectTier('business')">
+    <div class="tier-badge">HEAVIER USERS</div>
     <div class="tier-name">Business</div>
     <div class="tier-tagline">For teams running large-scale, mission-critical migrations.</div>
     <div class="tier-price">
@@ -324,8 +322,8 @@ footer a:hover{text-decoration:underline}
   </div>
 
   <!-- ====== ENTERPRISE ====== -->
-  <div class="tier">
-    <div class="tier-descriptor">Large Scalable Projects</div>
+  <div class="tier" data-tier="enterprise" onclick="selectTier('enterprise')">
+    <div class="tier-badge">ENTERPRISE</div>
     <div class="tier-name">Enterprise</div>
     <div class="tier-tagline">For organisations with compliance, scale, or sovereignty requirements.</div>
     <div class="tier-price custom">
@@ -603,6 +601,17 @@ footer a:hover{text-decoration:underline}
    Pricing page interactivity — kept self-contained in the page so
    it ships as a single drop-in file with no external JS deps.
    -------------------------------------------------------------- */
+
+// Tier selection: clicking any tier card moves the .featured class
+// (and therefore the highlight border + visible badge) to that card.
+// CTA-button clicks bubble up to the card so picking a CTA also
+// updates the selected state. Page reload resets to Pro because the
+// HTML ships with .featured on Pro (no localStorage by design).
+function selectTier(name){
+  document.querySelectorAll('.tier').forEach(card => {
+    card.classList.toggle('featured', card.dataset.tier === name);
+  });
+}
 
 // Billing toggle: swap monthly / annual prices on every .amount and
 // .tier-price-sub element that has a data-monthly / data-annual attr.
