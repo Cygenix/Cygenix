@@ -46,7 +46,100 @@
 }
 html{scroll-behavior:smooth}
 body{font-family:var(--serif);background:var(--bg);color:var(--text);overflow-x:hidden;-webkit-font-smoothing:antialiased}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+/* Animated grid background — three layers, each handling different motion.
+   Layered design avoids the CSS limitation that multiple `transform`
+   animations on one element overwrite each other rather than composing.
+
+   Layer 1 (::before):     diagonal drift, no transform.
+   Layer 2 (::after):      transform-based breathing scale + perspective tilt.
+   Layer 3 (.grid-glow):   roaming accent-coloured radial glow that drifts
+                           independently across the viewport.
+
+   Combined effect: the grid drifts and gently warps while a soft blue/teal
+   light wanders across it. Loop periods (53s, 89s, 67s) are coprime so the
+   composite motion never visually repeats in a session. Amplitudes tuned to
+   sit between "subtle" and "obviously animated" — noticeable enough to
+   read as a feature, slow enough to never look tacky.
+
+   Performance: only background-position, transform, and translate animate;
+   all GPU-cheap. Each layer is a single composited surface.
+   prefers-reduced-motion suppresses all motion for accessibility. */
+body::before{
+  content:'';
+  position:fixed;
+  inset:-15%;                 /* extra overflow for larger transform amplitude */
+  background-image:linear-gradient(rgba(79,142,255,0.04) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(79,142,255,0.04) 1px,transparent 1px);
+  background-size:60px 60px;
+  pointer-events:none;
+  z-index:0;
+  will-change:background-position;
+  animation:gridDrift 53s linear infinite;
+}
+body::after{
+  content:'';
+  position:fixed;
+  inset:-15%;
+  background-image:linear-gradient(rgba(79,142,255,0.025) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(79,142,255,0.025) 1px,transparent 1px);
+  background-size:60px 60px;
+  pointer-events:none;
+  z-index:0;
+  will-change:transform;
+  animation:gridWarp 89s ease-in-out infinite;
+}
+/* Layer 3: roaming accent glow. A large, soft radial gradient that drifts
+   slowly in a wide figure-of-eight pattern across the viewport. The blur
+   is baked into the gradient itself (no filter:blur — that's a paint hog
+   on a fullscreen element) so this layer also stays GPU-composited.
+   Uses both accent and teal stops so it shifts colour as it moves. */
+.grid-glow{
+  position:fixed;
+  inset:-30%;                 /* large overflow — we translate up to ~25vw in any direction */
+  pointer-events:none;
+  z-index:0;
+  background:radial-gradient(ellipse 50vw 40vh at 50% 50%,
+              rgba(79,142,255,0.18) 0%,
+              rgba(79,142,255,0.10) 25%,
+              rgba(45,212,191,0.06) 45%,
+              transparent 70%);
+  will-change:transform;
+  animation:glowRoam 67s ease-in-out infinite;
+}
+@keyframes gridDrift{
+  /* Walks the grid 60px diagonally — exactly one cell — so the loop is
+     seamless. ~1.1px/sec, deliberate but unobtrusive. */
+  from{background-position:0 0,0 0}
+  to  {background-position:60px 60px,60px 60px}
+}
+@keyframes gridWarp{
+  /* Breathing scale + perspective sway. Amplitudes pushed to ~6% scale and
+     1.5° tilt — at 89s per loop this still reads as slow, but the warp is
+     now visible peripherally. Combined with the drift, the surface looks
+     like it's stretching and turning rather than just sliding. */
+  0%   {transform:perspective(1400px) rotateX(0deg)    rotateY(0deg)    scale(1)}
+  20%  {transform:perspective(1400px) rotateX(1.2deg)  rotateY(-1.4deg) scale(1.04)}
+  40%  {transform:perspective(1400px) rotateX(-0.6deg) rotateY(-1deg)   scale(1.06)}
+  60%  {transform:perspective(1400px) rotateX(-1.2deg) rotateY(1deg)    scale(1.05)}
+  80%  {transform:perspective(1400px) rotateX(0.6deg)  rotateY(1.4deg)  scale(1.03)}
+  100% {transform:perspective(1400px) rotateX(0deg)    rotateY(0deg)    scale(1)}
+}
+@keyframes glowRoam{
+  /* Figure-of-eight drift across the viewport. Each waypoint is offset in
+     both axes so the path traces an organic-looking curve rather than a
+     straight line. Scale on the glow itself adds a "breathing" intensity. */
+  0%   {transform:translate(0vw, 0vh)        scale(1)}
+  15%  {transform:translate(-15vw, -10vh)    scale(1.15)}
+  30%  {transform:translate(-20vw, 8vh)      scale(0.95)}
+  45%  {transform:translate(-5vw, 15vh)      scale(1.1)}
+  55%  {transform:translate(10vw, 12vh)      scale(1.2)}
+  70%  {transform:translate(20vw, -5vh)      scale(0.9)}
+  85%  {transform:translate(8vw, -15vh)      scale(1.05)}
+  100% {transform:translate(0vw, 0vh)        scale(1)}
+}
+@media (prefers-reduced-motion: reduce){
+  body::before,body::after,.grid-glow{animation:none}
+}
 nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:rgba(8,11,18,0.85);backdrop-filter:blur(20px);border-bottom:0.5px solid var(--border)}
 .nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text)}.nav-logo span{color:var(--accent)}
 .nav-links{display:flex;gap:2rem;align-items:center}
@@ -250,6 +343,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 </style>
 </head>
 <body>
+<div class="grid-glow" aria-hidden="true"></div>
 <div class="orb orb1"></div>
 <div class="orb orb2"></div>
 
