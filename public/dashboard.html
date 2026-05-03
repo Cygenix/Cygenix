@@ -7755,6 +7755,8 @@ async function testProjConn(which) {
     conn = srcMode==='direct'
       ? (document.getElementById('proj-src-cs')?.value.trim()||'')
       : (document.getElementById('proj-src-fn-url')?.value.trim()||'');
+    const key = document.getElementById('proj-src-fn-key')?.value.trim()||'';
+    if (srcMode==='azure'&&key) conn += (conn.includes('?')?'&':'?')+'code='+encodeURIComponent(key);
   } else {
     conn = tgtMode==='direct'
       ? (document.getElementById('proj-tgt-cs')?.value.trim()||'')
@@ -7791,13 +7793,16 @@ function saveProjectConnections() {
   // which the Cosmos sync picks up and propagates to Azure.
   const srcCs  = document.getElementById('proj-src-cs')?.value.trim()     || '';
   const srcUrl = document.getElementById('proj-src-fn-url')?.value.trim() || '';
+  const srcKey = document.getElementById('proj-src-fn-key')?.value.trim() || '';
   const tgtCs  = document.getElementById('proj-tgt-cs')?.value.trim()     || '';
   const tgtUrl = document.getElementById('proj-tgt-fn-url')?.value.trim() || '';
   const tgtKey = document.getElementById('proj-tgt-fn-key')?.value.trim() || '';
 
   const fields = {
-    srcConnString: srcMode === 'direct' ? srcCs : srcUrl,
+    srcConnString: srcMode === 'direct' ? srcCs : '',
     srcConnMode  : srcMode === 'direct' ? 'direct' : 'azure',
+    srcFnUrl     : srcMode === 'azure'  ? srcUrl : '',
+    srcFnKey     : srcMode === 'azure'  ? srcKey : '',
     tgtConnString: tgtMode === 'direct' ? tgtCs : '',
     tgtConnMode  : tgtMode === 'direct' ? 'direct' : 'azure',
     tgtFnUrl     : tgtMode === 'azure'  ? tgtUrl : '',
