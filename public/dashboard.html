@@ -2023,8 +2023,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
       <!-- Phase notice — set expectations about what's in v1 vs what's coming -->
       <div style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid rgba(79,142,255,0.25);background:rgba(79,142,255,0.05);border-radius:var(--r);font-size:11.5px;color:var(--text2);line-height:1.55">
-        <strong style="color:var(--accent)">Phase 1 — Logins.</strong>
-        SQL Agent jobs (Phase 2) and SSIS packages (Phase 3) will appear here once built. Logins migrate with their hashed passwords and SIDs preserved, so any users you've already migrated at the database level stay correctly mapped.
+        <strong style="color:var(--accent)">Phase 1 + 2 — Logins &amp; SQL Agent jobs.</strong>
+        Migrate either or both in a single session. Logins move with hashed passwords and SIDs preserved (so already-migrated database users stay mapped). Agent jobs migrate with their steps, schedules, categories, and notification operators — created disabled by default for safety. SSIS packages (Phase 3) and linked-server replication (Phase 4) coming next.
       </div>
 
       <!-- Step tabs — five-step flow: verify → discover → preview → execute → audit.
@@ -2065,24 +2065,62 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
       </div>
 
-      <!-- Step 2: Discover & select -->
+      <!-- Step 2: Discover & select. Two sub-panels (logins, jobs) gated by
+           the category checkboxes at the top. Discover button kicks off
+           whichever categories are ticked. -->
       <div id="sm-step-discover" class="step-view" style="display:none">
+
+        <!-- Category selector + global Discover/Preview controls -->
         <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">What to migrate</div>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text);cursor:pointer">
+              <input type="checkbox" id="sm-cat-logins" checked onchange="ServerMigration._categoryToggled()" style="cursor:pointer">
+              Logins
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text);cursor:pointer">
+              <input type="checkbox" id="sm-cat-jobs" checked onchange="ServerMigration._categoryToggled()" style="cursor:pointer">
+              SQL Agent jobs
+            </label>
+            <span style="height:18px;border-left:0.5px solid var(--border)"></span>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:11.5px;color:var(--text2);cursor:pointer" title="Recommended. Jobs are created in a disabled state on the target so they don't fire immediately. You can enable them after verification.">
+              <input type="checkbox" id="sm-jobs-disabled-on-create" checked style="cursor:pointer">
+              Create jobs disabled <span style="color:var(--text3)">(safer)</span>
+            </label>
+            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="ServerMigration.discoverAll()">↻ Discover</button>
+            <button class="btn btn-primary btn-sm" onclick="ServerMigration.showPreview()">Preview SQL →</button>
+          </div>
+        </div>
+
+        <!-- Logins sub-panel -->
+        <div id="sm-discover-logins-panel" class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
             <div style="font-size:13px;font-weight:600">Logins on source</div>
-            <button class="btn btn-primary btn-sm" onclick="ServerMigration.discoverLogins()">↻ Discover</button>
-            <input id="sm-login-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="🔍 Filter by name…" oninput="ServerMigration._filterChanged()">
+            <input id="sm-login-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="🔍 Filter by name…" oninput="ServerMigration._filterLoginsChanged()">
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:11px;color:var(--text3);cursor:pointer">
-              <input type="checkbox" id="sm-show-system" onchange="ServerMigration._filterChanged()" style="cursor:pointer">
+              <input type="checkbox" id="sm-show-system" onchange="ServerMigration._filterLoginsChanged()" style="cursor:pointer">
               Show system logins
             </label>
-            <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="ServerMigration.showPreview()">Preview SQL →</button>
           </div>
           <div id="sm-logins-summary" style="font-size:11.5px;color:var(--text2);margin-bottom:0.75rem"></div>
-          <div id="sm-logins-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:600px">
+          <div id="sm-logins-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:480px">
             <div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">Click Discover to load logins from the source server.</div>
           </div>
         </div>
+
+        <!-- Jobs sub-panel -->
+        <div id="sm-discover-jobs-panel" class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">SQL Agent jobs on source</div>
+            <input id="sm-job-filter" class="form-input" style="font-family:var(--mono);font-size:12px;flex:1;min-width:160px;max-width:280px" placeholder="🔍 Filter by name…" oninput="ServerMigration._filterJobsChanged()">
+            <span style="font-size:10.5px;color:var(--text3);font-style:italic">Operators are auto-included. Proxies, credentials &amp; alerts are out of scope for this phase.</span>
+          </div>
+          <div id="sm-jobs-summary" style="font-size:11.5px;color:var(--text2);margin-bottom:0.75rem"></div>
+          <div id="sm-jobs-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:480px">
+            <div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">Click Discover to load Agent jobs from the source server.</div>
+          </div>
+        </div>
+
       </div>
 
       <!-- Step 3: Preview SQL — read-only display of what will run on target -->
