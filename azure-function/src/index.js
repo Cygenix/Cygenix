@@ -388,15 +388,22 @@ app.http('data', {
               expand: ['subscription', 'customer']
             });
 
-            // Defensive: ensure the email on the session matches the caller
-            // (otherwise someone could pass another user's session_id and
-            // grant themselves a tier they didn't pay for).
+            // Defensive: ensure the session actually belongs to the caller
+            // so passing someone else's session_id can't grant a tier you
+            // didn't pay for. We accept the session if EITHER:
+            //   (a) the email Stripe collected matches userId, OR
+            //   (b) the cygenix_user_id we stamped on the session matches.
+            // (b) covers the case where the user typed a different email
+            // into Stripe Checkout's billing form than they signed in with.
             const sessionEmail = (
               session.customer_details?.email ||
               session.customer_email ||
               ''
             ).trim().toLowerCase();
-            if (sessionEmail && sessionEmail !== userId) {
+            const sessionMetaUser = String(session.metadata?.cygenix_user_id || '').trim().toLowerCase();
+            const matchesByEmail = sessionEmail && sessionEmail === userId;
+            const matchesByMeta  = sessionMetaUser && sessionMetaUser === userId;
+            if ((sessionEmail || sessionMetaUser) && !matchesByEmail && !matchesByMeta) {
               return err(403, 'session belongs to a different user');
             }
 
@@ -1589,6 +1596,16 @@ app.http('create-checkout-session', {
       const tier    = String(body.tier    || '').toLowerCase().trim();
       const billing = String(body.billing || '').toLowerCase().trim();
 
+      // Optional caller email — pre-fills the email field in Stripe Checkout
+      // so the user can't accidentally type a different one and trigger a
+      // mismatch on /api/data/checkout-status. Source of truth order:
+      //   1. body.userEmail (sent by pick-plan.html from the MSAL session)
+      //   2. x-user-id header (in case the picker page evolves later)
+      //   3. nothing — Stripe will ask the user for an email
+      const callerEmail = String(
+        body.userEmail || req.headers.get?.('x-user-id') || ''
+      ).trim().toLowerCase();
+
       if (!tier || !billing) {
         return err(400, 'Both "tier" and "billing" are required.');
       }
@@ -1621,6 +1638,11 @@ app.http('create-checkout-session', {
         mode: 'subscription',
         payment_method_types: ['card'],
         line_items: [{ price: priceId, quantity: 1 }],
+        // Pre-fill the email field with the signed-in MSAL email so
+        // checkout-status's email check (defending against session-id
+        // sharing across users) doesn't false-positive on a typo. If the
+        // caller didn't pass an email, Stripe falls back to asking for one.
+        ...(callerEmail ? { customer_email: callerEmail } : {}),
         // Allow promo codes so we can run targeted promos later without a
         // code change.
         allow_promotion_codes: true,
@@ -1633,8 +1655,15 @@ app.http('create-checkout-session', {
           // can read it back without another lookup.
           metadata: { cygenix_tier: tier, cygenix_billing: billing }
         },
-        // Same metadata on the session for traceability.
-        metadata: { cygenix_tier: tier, cygenix_billing: billing },
+        // Same metadata on the session for traceability. Includes
+        // cygenix_user_id (the signed-in MSAL email) so checkout-status
+        // can reliably match the session back to the user even if they
+        // typed a different billing email into Stripe Checkout.
+        metadata: {
+          cygenix_tier: tier,
+          cygenix_billing: billing,
+          ...(callerEmail ? { cygenix_user_id: callerEmail } : {})
+        },
         // Where Stripe sends the user after they finish (or bail).
         success_url: `${siteUrl}/welcome.html?session_id={CHECKOUT_SESSION_ID}`,
         cancel_url:  `${siteUrl}/pricing`,
