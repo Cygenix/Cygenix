@@ -312,6 +312,28 @@ app.http('data', {
     try {
       switch (action) {
 
+        // ── WHOAMI: return caller's role for frontend role-gating ──────────
+        // GET /api/data/whoami
+        // Used by admin.html to decide whether to render the page. Returns
+        // the email and role from the caller's user document. role may be
+        // 'admin', 'user', or null (no doc, or doc has no role field).
+        // Does NOT return any other user info — keep this endpoint narrow.
+        case 'whoami': {
+          try {
+            const { resource } = await getCosmosContainer('users')
+              .item(userId, userId).read();
+            return ok({
+              email: userId,
+              role:  resource?.role || null,
+              exists: !!resource
+            });
+          } catch (e) {
+            if (e.code === 404) return ok({ email: userId, role: null, exists: false });
+            ctx.log('whoami error:', e.message);
+            return err(500, `whoami failed: ${e.message}`);
+          }
+        }
+
         // ── SAVE all project data ───────────────────────────────────────────
         // POST /api/data/save
         // Body: { jobs?, project_settings?, project_plan?, connections?, ... }
@@ -623,6 +645,8 @@ app.http('data', {
         // NOTE: currently behind the same x-user-id trust model as admin-users.
         // Will be role-gated properly in Stage C of the security rollout.
         case 'waitlist-list': {
+          const gate = await requireAdmin(userId);
+          if (!gate.ok) return err(gate.code, gate.msg);
           try {
             const { resources } = await getCosmosContainer('waitlist').items
               .query('SELECT * FROM c ORDER BY c.createdAt DESC')
@@ -652,6 +676,9 @@ app.http('data', {
         // POST /api/data/invite
         // Body: { email, name }
         case 'invite': {
+          const gate = await requireAdmin(userId);
+          if (!gate.ok) return err(gate.code, gate.msg);
+
           const body = await req.json().catch(() => ({}));
           const email = body.email;
           if (!email) return err(400, 'email is required');
@@ -711,6 +738,8 @@ app.http('data', {
         // ── LIST all users from Cosmos DB ────────────────────────────────────
         // GET /api/data/admin-users
         case 'admin-users': {
+          const gate = await requireAdmin(userId);
+          if (!gate.ok) return err(gate.code, gate.msg);
           try {
             const { resources } = await getCosmosContainer('users').items
               .query('SELECT * FROM c ORDER BY c.createdAt DESC')
@@ -739,6 +768,8 @@ app.http('data', {
         // ── AUDIT log — recent activity from Cosmos DB ──────────────────────
         // GET /api/data/audit
         case 'audit': {
+          const gate = await requireAdmin(userId);
+          if (!gate.ok) return err(gate.code, gate.msg);
           try {
             const container = getCosmosContainer('audit');
             const { resources } = await container.items
@@ -1172,7 +1203,7 @@ app.http('data', {
         }
 
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami`);
       }
 
     } catch (e) {
