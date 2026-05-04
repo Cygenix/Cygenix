@@ -448,6 +448,50 @@ app.http('data', {
           }
         }
 
+        // ── BILLING-PORTAL: open Stripe-hosted customer portal ──────────────
+        // POST /api/data/billing-portal
+        // Body: { return_url?: string }
+        // Reads the caller's stripe_customer_id from Cosmos, asks Stripe to
+        // create a portal session, returns the short-lived hosted URL. The
+        // client redirects to that URL; Stripe handles the entire portal UI
+        // (cancel / switch plan / update card / view invoices). When the user
+        // is done, Stripe redirects back to return_url (or CYGENIX_SITE_URL/
+        // dashboard.html as fallback).
+        //
+        // 403 if the caller has no Stripe customer (admin/demo/no-tier users
+        // — the frontend should send those to /pick-plan or /pricing instead).
+        case 'billing-portal': {
+          if (!process.env.STRIPE_SECRET_KEY) {
+            return err(500, 'STRIPE_SECRET_KEY not configured');
+          }
+          try {
+            const body = await req.json().catch(() => ({}));
+            const siteUrl = (process.env.CYGENIX_SITE_URL || 'https://cygenix.co.uk').replace(/\/+$/, '');
+            const returnUrl = (body.return_url && typeof body.return_url === 'string')
+              ? body.return_url
+              : `${siteUrl}/dashboard.html`;
+
+            const { resource: user } = await getCosmosContainer('users')
+              .item(userId, userId).read().catch(() => ({ resource: null }));
+
+            if (!user) return err(404, 'User record not found');
+            if (!user.stripe_customer_id) {
+              return err(403, 'No Stripe customer on file. Pick a plan first.');
+            }
+
+            const stripe = getStripe();
+            const portal = await stripe.billingPortal.sessions.create({
+              customer:   user.stripe_customer_id,
+              return_url: returnUrl
+            });
+
+            return ok({ url: portal.url });
+          } catch (e) {
+            ctx.log('billing-portal error:', e.message);
+            return err(500, `billing-portal failed: ${e.message}`);
+          }
+        }
+
         // ── SAVE all project data ───────────────────────────────────────────
         // POST /api/data/save
         // Body: { jobs?, project_settings?, project_plan?, connections?, ... }
@@ -1317,7 +1361,7 @@ app.http('data', {
         }
 
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal`);
       }
 
     } catch (e) {
@@ -2061,3 +2105,332 @@ function psd_printControls() {
   <button onclick="window.print()" style="background:#6366f1;color:#fff;border:0;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px;">⬇ Save as PDF</button>
 </div>`;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE 5: /api/stripe-webhook — Stripe subscription lifecycle events
+// ─────────────────────────────────────────────────────────────────────────────
+// Receives webhook events from Stripe and reconciles the user's tier state in
+// Cosmos. The webhook is the AUTHORITATIVE source of subscription truth — what
+// checkout-status writes on initial sign-up is best-effort, but every change
+// after that (upgrades, downgrades, cancels, payment failures, trial conversions)
+// flows through here.
+//
+// ── Security ────────────────────────────────────────────────────────────────
+// Anyone can reach this endpoint (it's public — Stripe hits it from their
+// servers). Without signature verification, anyone could POST a fake
+// "subscription.created" event and grant themselves a Pro subscription.
+// We verify every request using stripe.webhooks.constructEvent which checks
+// the Stripe-Signature header against STRIPE_WEBHOOK_SECRET. Verification
+// requires the RAW request body (not parsed JSON), so we read the body as
+// text and pass that to constructEvent. Function v4 gives us req.text() for
+// this — using req.json() would re-serialize and the signature would fail.
+//
+// ── Required Function App Settings ─────────────────────────────────────────
+//   STRIPE_SECRET_KEY     — already required for create-checkout-session
+//   STRIPE_WEBHOOK_SECRET — whsec_... from Stripe Dashboard → Webhooks
+//
+// ── Events handled ─────────────────────────────────────────────────────────
+//   checkout.session.completed         — User finished checkout. Idempotent
+//                                        with what checkout-status wrote.
+//   customer.subscription.created      — Subscription record exists in Stripe.
+//   customer.subscription.updated      — Status, tier, or period changed.
+//                                        Covers upgrades, downgrades,
+//                                        cancellation requests, trial→active.
+//   customer.subscription.deleted      — Subscription fully terminated
+//                                        (after cancel, or on permanent failure).
+//   customer.subscription.trial_will_end — 3 days before trial ends. We log
+//                                        but currently don't email — Phase 6.
+//   invoice.paid                        — Payment succeeded. Reset monthly
+//                                        job counter for new period.
+//   invoice.payment_failed              — Card declined or similar. Stripe
+//                                        will retry; tier moves to past_due
+//                                        via subscription.updated.
+//   invoice.payment_succeeded           — Same as invoice.paid (fired in
+//                                        addition to it for non-subscription
+//                                        invoices). Treated identically.
+//
+// All other events are acknowledged with 200 but ignored — Stripe sends a
+// lot of events we don't care about (customer.created, etc.) and 200ing them
+// is the right thing to do (otherwise Stripe retries).
+
+app.http('stripe-webhook', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',          // public — Stripe-Signature is the auth
+  route: 'stripe-webhook',
+  handler: async (req, ctx) => {
+
+    if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    if (!process.env.STRIPE_SECRET_KEY) {
+      ctx.log.error('STRIPE_SECRET_KEY not configured');
+      return err(500, 'STRIPE_SECRET_KEY not configured');
+    }
+    if (!process.env.STRIPE_WEBHOOK_SECRET) {
+      ctx.log.error('STRIPE_WEBHOOK_SECRET not configured');
+      return err(500, 'STRIPE_WEBHOOK_SECRET not configured');
+    }
+
+    // ── Read the RAW body for signature verification ────────────────────────
+    // req.text() returns the body exactly as Stripe sent it. req.json() would
+    // re-serialize and the signature check would fail.
+    const rawBody = await req.text();
+    const sig     = req.headers.get('stripe-signature');
+    if (!sig) {
+      ctx.log.error('webhook: missing stripe-signature header');
+      return err(400, 'Missing stripe-signature header');
+    }
+
+    // ── Verify signature, get the parsed event ──────────────────────────────
+    const stripe = getStripe();
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    } catch (e) {
+      // Bad signature usually means: wrong webhook secret, or the request
+      // didn't actually come from Stripe. Either way, reject.
+      ctx.log.error('webhook signature verification failed:', e.message);
+      return err(400, `Webhook signature verification failed: ${e.message}`);
+    }
+
+    ctx.log(`stripe-webhook: event ${event.id} type=${event.type}`);
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+    const usersContainer = getCosmosContainer('users');
+
+    // Lookup user by Stripe customer id. We index by id=email, but the
+    // stripe_customer_id is just a property — so we query for it. This is a
+    // cross-partition query but only runs on webhook events (low volume),
+    // and the result is cached implicitly via the immediate write that
+    // follows.
+    async function findUserByStripeCustomerId(customerId) {
+      if (!customerId) return null;
+      const { resources } = await usersContainer.items
+        .query({
+          query: 'SELECT * FROM c WHERE c.stripe_customer_id = @cid',
+          parameters: [{ name: '@cid', value: customerId }]
+        })
+        .fetchAll();
+      return resources[0] || null;
+    }
+
+    // Fallback: if we can't find a user by customer id (e.g. the very first
+    // checkout.session.completed event arrives before any other write), look
+    // up by email from the Stripe customer record.
+    async function findUserByEmail(email) {
+      if (!email) return null;
+      const id = email.trim().toLowerCase();
+      try {
+        const { resource } = await usersContainer.item(id, id).read();
+        return resource || null;
+      } catch (e) {
+        if (e.code === 404) return null;
+        throw e;
+      }
+    }
+
+    // Apply tier+status updates to a user doc. Patch is merged on top of
+    // existing fields so we never silently wipe data.
+    async function patchUser(userDoc, patch, source) {
+      const merged = {
+        ...userDoc,
+        ...patch,
+        tier_updated_at: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        last_webhook_event: { id: event.id, type: event.type, source, at: new Date().toISOString() }
+      };
+      await usersContainer.items.upsert(merged);
+      ctx.log(`webhook: patched user ${userDoc.id} from ${source}: ${JSON.stringify(patch)}`);
+    }
+
+    // Map a Stripe subscription object → tier patch fields. Centralised so
+    // every event that touches subscription state produces consistent output.
+    function subscriptionToPatch(sub) {
+      const tier    = sub.metadata?.cygenix_tier    || null;
+      const billing = sub.metadata?.cygenix_billing || null;
+      return {
+        tier,
+        tier_status:           sub.status, // 'trialing'|'active'|'past_due'|'canceled'|'incomplete'|'incomplete_expired'|'unpaid'|'paused'
+        billing_period:        billing,
+        stripe_subscription_id: sub.id,
+        current_period_end:    sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
+        trial_ends_at:         sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+        cancel_at_period_end:  !!sub.cancel_at_period_end,
+        // Clear pending_tier_change once the change has applied (i.e. we're
+        // here because subscription.updated and the new tier IS the active tier).
+        pending_tier_change:   null
+      };
+    }
+
+    // ── Event dispatch ──────────────────────────────────────────────────────
+    try {
+      switch (event.type) {
+
+        case 'checkout.session.completed': {
+          // Trial has started, customer has card on file. Stripe will fire
+          // customer.subscription.created right after this, so much of the
+          // work happens there. Here we just make sure the user doc has the
+          // stripe_customer_id stamped so subsequent events can find them.
+          const session = event.data.object;
+          const customerId = typeof session.customer === 'string' ? session.customer : session.customer?.id;
+          const email = (session.customer_details?.email || session.customer_email || '').trim().toLowerCase();
+
+          let user = await findUserByEmail(email);
+          if (!user) {
+            ctx.log(`webhook: checkout.session.completed for ${email} but no Cosmos doc — creating skeleton`);
+            user = {
+              id: email, userId: email, email,
+              createdAt: new Date().toISOString()
+            };
+          }
+          await patchUser(user, {
+            stripe_customer_id: customerId
+          }, 'checkout.session.completed');
+          break;
+        }
+
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated': {
+          const sub = event.data.object;
+          const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
+
+          // Try by customer id first (fast path), fall back to email. The
+          // customer's email isn't on the subscription object — we'd have
+          // to fetch the customer separately. In practice, by the time we
+          // see subscription.created, checkout.session.completed has
+          // already stamped stripe_customer_id, so the customerId lookup
+          // works.
+          let user = await findUserByStripeCustomerId(customerId);
+          if (!user) {
+            // Defensive: fetch the customer from Stripe to get the email
+            try {
+              const customer = await stripe.customers.retrieve(customerId);
+              const email = (customer?.email || '').trim().toLowerCase();
+              user = await findUserByEmail(email);
+              if (user) {
+                // Stamp the customer id so future events take the fast path
+                user.stripe_customer_id = customerId;
+              }
+            } catch (custErr) {
+              ctx.log.error(`webhook: customer fetch failed for ${customerId}: ${custErr.message}`);
+            }
+          }
+
+          if (!user) {
+            ctx.log.error(`webhook: ${event.type} for customer ${customerId} but no matching Cosmos user — event ignored`);
+            // Still 200 to Stripe — retrying won't help. Will surface in logs.
+            break;
+          }
+
+          await patchUser(user, {
+            stripe_customer_id: customerId,
+            ...subscriptionToPatch(sub)
+          }, event.type);
+          break;
+        }
+
+        case 'customer.subscription.deleted': {
+          // Subscription fully terminated. Tier is revoked; we set tier_status
+          // to 'cancelled' and stamp cancelled_at so the future cleanup job
+          // (scheduled deletion 30 days post-cancel per the pricing page
+          // promise) has the timestamp it needs.
+          const sub = event.data.object;
+          const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
+
+          const user = await findUserByStripeCustomerId(customerId);
+          if (!user) {
+            ctx.log.error(`webhook: subscription.deleted for ${customerId} but no Cosmos user`);
+            break;
+          }
+
+          await patchUser(user, {
+            tier:                 null,
+            tier_status:          'cancelled',
+            cancel_at_period_end: false,
+            pending_tier_change:  null,
+            cancelled_at:         new Date().toISOString()
+            // Keep stripe_customer_id and stripe_subscription_id for audit;
+            // the cleanup job 30 days from now will null them.
+          }, 'customer.subscription.deleted');
+          break;
+        }
+
+        case 'customer.subscription.trial_will_end': {
+          // Fires 3 days before trial converts. Currently a no-op beyond
+          // logging — Phase 6 (mail agent) will hook in here to send the
+          // day-12 reminder email promised on the pricing page.
+          const sub = event.data.object;
+          const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
+          ctx.log(`webhook: trial_will_end for customer ${customerId} — TODO: send reminder email (Phase 6)`);
+          break;
+        }
+
+        case 'invoice.paid':
+        case 'invoice.payment_succeeded': {
+          // Payment landed for a subscription period. Reset the monthly
+          // submission counter. We use the invoice's period_end to know
+          // when the next reset is due — that's when the next invoice
+          // will fire and reset again.
+          const inv = event.data.object;
+          const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
+          if (!customerId) break;
+
+          const user = await findUserByStripeCustomerId(customerId);
+          if (!user) {
+            ctx.log(`webhook: ${event.type} for ${customerId} but no Cosmos user — ignored`);
+            break;
+          }
+
+          await patchUser(user, {
+            monthly_jobs_used:     0,
+            monthly_jobs_reset_at: inv.period_end ? new Date(inv.period_end * 1000).toISOString() : null,
+            tier_status:           'active'  // any pending past_due is now resolved
+          }, event.type);
+          break;
+        }
+
+        case 'invoice.payment_failed': {
+          // Stripe will retry several times per their dunning rules. We
+          // mirror the status (Stripe will also fire subscription.updated
+          // with status='past_due' so this is mostly informational).
+          const inv = event.data.object;
+          const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
+          if (!customerId) break;
+
+          const user = await findUserByStripeCustomerId(customerId);
+          if (!user) break;
+
+          await patchUser(user, {
+            tier_status:        'past_due',
+            last_payment_error: inv.last_finalization_error?.message || 'payment failed'
+          }, event.type);
+          break;
+        }
+
+        default: {
+          // Acknowledge every other event with 200. Stripe will otherwise
+          // retry indefinitely, which inflates our event volume.
+          ctx.log(`webhook: ignoring event type ${event.type}`);
+        }
+      }
+    } catch (handlerErr) {
+      // If a handler throws, return 500 so Stripe retries. This is the
+      // right behaviour for transient failures (Cosmos throttled, etc.).
+      // Make sure the error is loggable and stringified safely.
+      ctx.log.error(`webhook handler error for ${event.type}:`, handlerErr.message, handlerErr.stack);
+      return {
+        status: 500,
+        headers: CORS,
+        body: JSON.stringify({
+          error:    'webhook handler error',
+          event_id: event.id,
+          type:     event.type,
+          message:  String(handlerErr.message || handlerErr),
+          stack:    String(handlerErr.stack || '').split('\n').slice(0, 6).join(' | ')
+        })
+      };
+    }
+
+    // 200 to Stripe = "we got it, don't retry".
+    return { status: 200, headers: CORS, body: JSON.stringify({ received: true, type: event.type }) };
+  }
+});
