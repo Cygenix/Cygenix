@@ -297,6 +297,43 @@
     }
   }
 
+  // Inline SVG spinner used in the discovery status banner. Self-contained
+  // — keyframes live on the element so we don't have to ensure any global
+  // CSS exists. 14px to match the surrounding text line-height.
+  const SM_SPINNER_HTML =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+         'style="animation:sm-spin 0.9s linear infinite;flex-shrink:0">' +
+      '<style>@keyframes sm-spin{to{transform:rotate(360deg)}}</style>' +
+      '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.2"/>' +
+      '<path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>' +
+    '</svg>';
+
+  // Update the status banner shown at step 2 during discovery. Pass null
+  // (or no args) to hide it when discovery completes.
+  function setDiscoverStatus(message) {
+    const banner = $('sm-discover-status');
+    const btn = $('sm-discover-btn');
+    if (!banner) return;
+    if (!message) {
+      banner.style.display = 'none';
+      banner.innerHTML = '';
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '↻ Discover';
+      }
+      return;
+    }
+    banner.style.display = 'flex';
+    banner.innerHTML = SM_SPINNER_HTML +
+      '<span style="color:var(--accent);font-weight:600">' + escHtml(message) + '</span>';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = SM_SPINNER_HTML + '<span style="margin-left:0.4rem">Discovering…</span>';
+      btn.style.display = 'inline-flex';
+      btn.style.alignItems = 'center';
+    }
+  }
+
   // ── Step 2: Category-aware discovery ──────────────────────────────────────
   // Reads the "migrate logins" / "migrate jobs" / "migrate SSIS" checkboxes,
   // then runs only the discovery queries the user asked for. This is the
@@ -316,13 +353,28 @@
       return;
     }
 
-    // Pull target-side reference data we need for warnings/remapping.
-    // Done once up front so we have it when scoring the source inventory.
-    await loadTargetReferenceData();
+    // Wrap the whole flow so the spinner clears cleanly on success OR error.
+    // Without try/finally a thrown error in any phase would leave the
+    // button stuck in "Discovering…" state.
+    try {
+      setDiscoverStatus('Probing target server reference data…');
+      await loadTargetReferenceData();
 
-    if (SM.categories.logins) await discoverLogins();
-    if (SM.categories.jobs)   await discoverJobs();
-    if (SM.categories.ssis)   await discoverSsis();
+      if (SM.categories.logins) {
+        setDiscoverStatus('Discovering logins on source…');
+        await discoverLogins();
+      }
+      if (SM.categories.jobs) {
+        setDiscoverStatus('Discovering SQL Agent jobs on source…');
+        await discoverJobs();
+      }
+      if (SM.categories.ssis) {
+        setDiscoverStatus('Discovering SSIS catalog on source…');
+        await discoverSsis();
+      }
+    } finally {
+      setDiscoverStatus(null);
+    }
   }
 
   // Populate sets of logins / databases / proxies that exist on the target,
