@@ -53,7 +53,6 @@
     { section: 'Configure', group:'configure', items: [
       { key:'project-settings',  label:'Settings',           view:'project-settings',   color:'var(--amber)',  icon: iconSettings() },
       { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug() },
-      { key:'server-migration',  label:'Server Migration',  view:'server-migration',   color:'var(--accent)', icon: iconServerMigration() },
       { key:'performance',       label:'Performance',       href:'/performance.html',  color:'var(--teal)',   icon: iconChart() },
       { key:'system-parameters', label:'System Parameters', view:'system-parameters',  color:'var(--accent)', icon: iconParams() },
       { key:'privacy-security',  label:'Governance',        view:'privacy-security',   color:'var(--red)',    icon: iconShield() },
@@ -75,6 +74,9 @@
     { section: 'Projects', group:'projects', items: [
       { key:'jobs',              label:'All Jobs',          view:'jobs',                icon: iconList() },
       { key:'project-builder',   label:'Execute',           href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
+    ]},
+    { section: 'Advanced', group:'advanced', items: [
+      { key:'server-migration',  label:'Server Migration',  view:'server-migration',   color:'var(--accent)', icon: iconServerMigration() },
     ]},
     { section: null, items: [
       { key:'inventory',         label:'Project Artifacts',         view:'inventory',           icon: iconGrid() },
