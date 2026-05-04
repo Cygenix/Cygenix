@@ -138,9 +138,44 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
 .netlify-note{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);padding:0.875rem 1rem;font-size:12px;color:var(--text2);margin-bottom:1.5rem;line-height:1.6}
 .netlify-note a{color:var(--accent);text-decoration:none}
 .netlify-note a:hover{text-decoration:underline}
+
+/* ── Role gate: shown while we verify the caller has role:'admin' in Cosmos.
+   Hides the entire app shell so non-admins can't even briefly see the data
+   loading skeletons. Kept as inline CSS so this works even if other CSS
+   fails to load. ── */
+.role-gate{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;padding:2rem}
+.role-gate-inner{max-width:480px;text-align:center}
+.role-gate h1{font-family:var(--serif);font-size:1.5rem;font-weight:500;margin-bottom:0.75rem}
+.role-gate p{color:var(--text2);margin-bottom:1.25rem;line-height:1.6}
+.role-gate .btn{display:inline-block;padding:0.6rem 1.25rem;background:var(--accent);color:white;border:none;border-radius:var(--r);font-family:var(--serif);font-size:0.9rem;cursor:pointer;text-decoration:none}
+.role-gate .btn:hover{background:var(--accent2)}
+.role-gate .btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2);margin-left:0.5rem}
+.role-gate-icon{width:48px;height:48px;margin:0 auto 1rem;display:flex;align-items:center;justify-content:center;background:var(--red-bg);border-radius:50%;border:0.5px solid rgba(240,70,70,0.3)}
+.role-gate.is-checking .role-gate-inner{opacity:0.6}
+.role-gate.is-checking .role-gate-icon{background:var(--bg3);border-color:var(--border)}
+.role-gate-spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
+
+<!-- ROLE GATE — covers the page until verifyAdminRole() resolves. Default
+     state is "checking" so a flash of admin UI never leaks before the role
+     check completes. updated by verifyAdminRole() to one of:
+       checking → (passes) → removed entirely
+       checking → (fails)  → "denied" state with sign-in/back links     -->
+<div id="role-gate" class="role-gate is-checking">
+  <div class="role-gate-inner">
+    <div class="role-gate-icon"><div class="role-gate-spinner"></div></div>
+    <h1 id="role-gate-title">Verifying access…</h1>
+    <p id="role-gate-msg">Checking your administrator permissions.</p>
+    <div id="role-gate-actions" style="display:none">
+      <a href="/dashboard.html" class="btn">Back to dashboard</a>
+      <a href="/login" class="btn btn-ghost">Sign in as different user</a>
+    </div>
+  </div>
+</div>
+
 <div class="app">
 
   <!-- TOPBAR -->
@@ -468,6 +503,12 @@ let _callerEmail = null;     // The signed-in admin's own email — used for x-u
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  // Verify admin role BEFORE doing anything else. verifyAdminRole returns
+  // true on success (and removes the gate); on failure it switches the gate
+  // into the "denied" state and we just stop here. No user data is fetched.
+  const ok = await verifyAdminRole();
+  if (!ok) return;
+
   // Set admin avatar
   const adminEmail = CygenixSync?.getUserId?.() || 'Admin';
   _callerEmail = adminEmail;
@@ -476,6 +517,85 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   await loadUsers();
 });
+
+// ── Admin role gate ──────────────────────────────────────────────────────────
+// Frontend role-check. The Azure Function ALSO role-gates every admin endpoint
+// (any non-admin caller gets 403), so this is purely UX — we show a clean
+// "access denied" screen instead of letting the page load and fail in 12
+// different places. Source of truth is the user's `role` field in the Cosmos
+// `users` container.
+//
+// Why a dedicated /api/data/whoami endpoint and not just CygenixSync.load()?
+// load() returns sync data (jobs, projects etc.) but not the user's role.
+// We need a small endpoint that returns just the caller's role so this gate
+// can be fast and independent of the rest of the sync pipeline.
+async function verifyAdminRole() {
+  // We need MSAL to have settled before we can ask the server "who am I".
+  // CygenixSync uses a 20-retry × 1s loop for the same reason — mirror that
+  // here, but cap at 8s because if MSAL hasn't returned a user by then,
+  // they're not signed in and should be sent to /login.
+  let userId = null;
+  for (let i = 0; i < 8; i++) {
+    userId = CygenixSync?.getUserId?.();
+    if (userId) break;
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  if (!userId) {
+    // Not signed in — auth-gate.js should have already redirected, but if
+    // we got here anyway, show a clean message.
+    return showRoleGateDenied('Not signed in', 'Please sign in to access the admin console.');
+  }
+
+  // Hit the whoami endpoint to get the caller's role from Cosmos.
+  let role = null;
+  try {
+    const r = await fetch(`${API}/whoami?code=${CODE}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
+    });
+    if (r.ok) {
+      const d = await r.json();
+      role = d?.role || null;
+    } else if (r.status === 404) {
+      // whoami endpoint not deployed yet — fail safe (deny). Surfaces the
+      // missing deployment instead of silently letting everyone in.
+      return showRoleGateDenied(
+        'Admin endpoint not available',
+        'The whoami endpoint hasn\'t been deployed to the Azure Function yet. Once it is, sign-in will work normally.'
+      );
+    }
+  } catch (e) {
+    return showRoleGateDenied(
+      'Could not verify access',
+      'There was a network error checking your permissions. Try again in a moment.'
+    );
+  }
+
+  if (role !== 'admin') {
+    return showRoleGateDenied(
+      'Admin access required',
+      'Your account doesn\'t have administrator permissions. If you believe this is wrong, ask the platform owner to set role:\'admin\' on your user document in Cosmos.'
+    );
+  }
+
+  // Pass — remove the gate entirely so the underlying app is interactive.
+  const gate = document.getElementById('role-gate');
+  if (gate) gate.remove();
+  return true;
+}
+
+function showRoleGateDenied(title, msg) {
+  const gate = document.getElementById('role-gate');
+  if (!gate) return false;
+  gate.classList.remove('is-checking');
+  // Swap the spinner for a deny icon
+  const icon = gate.querySelector('.role-gate-icon');
+  if (icon) icon.innerHTML = '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 1.5L1 17h18L10 1.5z" stroke="#f04646" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 7v4" stroke="#f04646" stroke-width="1.5" stroke-linecap="round"/><circle cx="10" cy="13.5" r="0.7" fill="#f04646"/></svg>';
+  document.getElementById('role-gate-title').textContent = title;
+  document.getElementById('role-gate-msg').textContent = msg;
+  document.getElementById('role-gate-actions').style.display = 'block';
+  return false;
+}
 
 // ── Section navigation ────────────────────────────────────────────────────────
 function showSection(name) {
