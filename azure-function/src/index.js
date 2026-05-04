@@ -2174,6 +2174,19 @@ app.http('stripe-webhook', {
 
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
 
+    // ── Safe logger ─────────────────────────────────────────────────────────
+    // The Azure Functions v4 InvocationContext exposes ctx.log as a callable,
+    // but ctx.log.error / .warn / .info presence varies by host runtime
+    // version. Production crashed on `ctx.log.error is not a function` even
+    // though older routes use the same call pattern fine in their own context.
+    // This helper checks both shapes and falls back to plain ctx.log so a
+    // logging call can never throw and bring down the whole handler.
+    const log = {
+      info:  (...a) => { try { (ctx.log?.info  || ctx.log)?.(...a); } catch {} },
+      warn:  (...a) => { try { (ctx.log?.warn  || ctx.log)?.(...a); } catch {} },
+      error: (...a) => { try { (ctx.log?.error || ctx.error || ctx.log)?.(...a); } catch {} }
+    };
+
     // ── Top-level try/catch ─────────────────────────────────────────────────
     // Anything that throws — including the early body/signature reads, the
     // Stripe SDK, the Cosmos client, or our handler logic — is caught here
@@ -2184,11 +2197,11 @@ app.http('stripe-webhook', {
     try {
 
     if (!process.env.STRIPE_SECRET_KEY) {
-      ctx.log.error('STRIPE_SECRET_KEY not configured');
+      log.error('STRIPE_SECRET_KEY not configured');
       return err(500, 'STRIPE_SECRET_KEY not configured');
     }
     if (!process.env.STRIPE_WEBHOOK_SECRET) {
-      ctx.log.error('STRIPE_WEBHOOK_SECRET not configured');
+      log.error('STRIPE_WEBHOOK_SECRET not configured');
       return err(500, 'STRIPE_WEBHOOK_SECRET not configured');
     }
 
@@ -2198,7 +2211,7 @@ app.http('stripe-webhook', {
     const rawBody = await req.text();
     const sig     = req.headers.get('stripe-signature');
     if (!sig) {
-      ctx.log.error('webhook: missing stripe-signature header');
+      log.error('webhook: missing stripe-signature header');
       return err(400, 'Missing stripe-signature header');
     }
 
@@ -2208,7 +2221,7 @@ app.http('stripe-webhook', {
     try {
       event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } catch (e) {
-      ctx.log.error('webhook signature verification failed:', e.message);
+      log.error('webhook signature verification failed:', e.message);
       return err(400, `Webhook signature verification failed: ${e.message}`);
     }
 
@@ -2355,12 +2368,12 @@ app.http('stripe-webhook', {
                 user.stripe_customer_id = customerId;
               }
             } catch (custErr) {
-              ctx.log.error(`webhook: customer fetch failed for ${customerId}: ${custErr.message}`);
+              log.error(`webhook: customer fetch failed for ${customerId}: ${custErr.message}`);
             }
           }
 
           if (!user) {
-            ctx.log.error(`webhook: ${event.type} for customer ${customerId} but no matching Cosmos user — event ignored`);
+            log.error(`webhook: ${event.type} for customer ${customerId} but no matching Cosmos user — event ignored`);
             // Still 200 to Stripe — retrying won't help. Will surface in logs.
             break;
           }
@@ -2382,7 +2395,7 @@ app.http('stripe-webhook', {
 
           const user = await findUserByStripeCustomerId(customerId);
           if (!user) {
-            ctx.log.error(`webhook: subscription.deleted for ${customerId} but no Cosmos user`);
+            log.error(`webhook: subscription.deleted for ${customerId} but no Cosmos user`);
             break;
           }
 
@@ -2460,7 +2473,7 @@ app.http('stripe-webhook', {
       // If a handler throws, return 500 so Stripe retries. This is the
       // right behaviour for transient failures (Cosmos throttled, etc.).
       // Make sure the error is loggable and stringified safely.
-      ctx.log.error(`webhook handler error for ${event.type}:`, handlerErr.message, handlerErr.stack);
+      log.error(`webhook handler error for ${event.type}:`, handlerErr.message, handlerErr.stack);
       return {
         status: 500,
         headers: CORS,
@@ -2484,7 +2497,7 @@ app.http('stripe-webhook', {
       // verification crash, body read failure, runtime issue with the
       // Stripe SDK). Always returns a populated body — never an empty one —
       // so the failure mode is visible in the Stripe webhook log.
-      try { ctx.log.error('webhook top-level error:', topErr.message, topErr.stack); } catch {}
+      try { log.error('webhook top-level error:', topErr.message, topErr.stack); } catch {}
       return {
         status: 500,
         headers: CORS,
