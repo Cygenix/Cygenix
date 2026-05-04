@@ -64,7 +64,7 @@
     // Category selection — populated from the checkboxes at step 2.
     // Drives both Discover (which queries to run) and Preview/Execute
     // (which sections to emit).
-    categories: { logins: true, jobs: true },
+    categories: { logins: true, jobs: true, ssis: true },
 
     // ── Logins (Phase 1) ──
     logins: [],                  // login inventory rows
@@ -80,6 +80,32 @@
     targetLogins: new Set(),     // names of logins that exist on target — used for owner remapping
     targetDatabases: new Set(),  // names of DBs on target — used for cross-DB warnings
     targetProxies: new Set(),    // names of proxies on target — used for proxy warnings
+
+    // ── SSIS Packages (Phase 3) ──
+    // Project deployment model only. Legacy package model is deferred to
+    // a later phase if a customer ever needs it. Migration moves binary
+    // .ispac payloads server-side via catalog.get_project /
+    // catalog.deploy_project — bytes never leave the SQL tier.
+    //
+    // Folders → Projects → Environments → References → Parameter overrides
+    // is the dependency order on target.
+    ssisCatalogSource: { exists: false, masterKeyExists: false, clrEnabled: false },
+    ssisCatalogTarget: { exists: false, masterKeyExists: false, clrEnabled: false },
+    ssisFolders: [],             // folder rows from source catalog.folders
+    ssisProjects: [],            // project rows (folder_name, project_name) from source
+    ssisEnvironments: [],        // environment rows (folder_name, environment_name) from source
+    ssisVariables: [],           // environment_variables rows
+    ssisReferences: [],          // environment_references rows (project ↔ environment)
+    ssisParameterValues: [],     // object_parameters rows for project-level overrides
+    selectedProjectKeys: new Set(),     // "<folder>/<project>" strings chosen for migration
+    selectedEnvironmentKeys: new Set(), // "<folder>/<env>"      strings chosen for migration
+    ssisOptions: {
+      // Master key password. Only needed if SSISDB has to be created on
+      // target. We never store it; held in memory for the run only and
+      // cleared after.
+      masterKeyPassword: '',
+      includeSensitiveValues: false,    // catalog.environment_variables.sensitive — see comment in buildEnv
+    },
 
     // ── Run state ──
     previewSql: '',              // generated T-SQL before execution
@@ -272,17 +298,20 @@
   }
 
   // ── Step 2: Category-aware discovery ──────────────────────────────────────
-  // Reads the "migrate logins" / "migrate jobs" checkboxes, then runs only
-  // the discovery queries the user asked for. This is the entry point bound
-  // to the Discover button.
+  // Reads the "migrate logins" / "migrate jobs" / "migrate SSIS" checkboxes,
+  // then runs only the discovery queries the user asked for. This is the
+  // entry point bound to the Discover button.
   async function discoverAll() {
     if (!SM.verified) { alert('Verify both connections first.'); return; }
 
     SM.categories.logins = !!$('sm-cat-logins')?.checked;
     SM.categories.jobs   = !!$('sm-cat-jobs')?.checked;
+    SM.categories.ssis   = !!$('sm-cat-ssis')?.checked;
     SM.jobOptions.createDisabled = !!$('sm-jobs-disabled-on-create')?.checked;
+    SM.ssisOptions.masterKeyPassword = ($('sm-ssis-master-key-password')?.value || '').trim();
+    SM.ssisOptions.includeSensitiveValues = !!$('sm-ssis-include-sensitive')?.checked;
 
-    if (!SM.categories.logins && !SM.categories.jobs) {
+    if (!SM.categories.logins && !SM.categories.jobs && !SM.categories.ssis) {
       alert('Select at least one category to discover.');
       return;
     }
@@ -293,6 +322,7 @@
 
     if (SM.categories.logins) await discoverLogins();
     if (SM.categories.jobs)   await discoverJobs();
+    if (SM.categories.ssis)   await discoverSsis();
   }
 
   // Populate sets of logins / databases / proxies that exist on the target,
@@ -302,6 +332,8 @@
     SM.targetLogins    = new Set();
     SM.targetDatabases = new Set();
     SM.targetProxies   = new Set();
+    SM.ssisCatalogSource = { exists: false, masterKeyExists: false, clrEnabled: false };
+    SM.ssisCatalogTarget = { exists: false, masterKeyExists: false, clrEnabled: false };
     try {
       const tgt = getTgtConn();
       // Three independent queries; can happen in parallel, all small.
@@ -318,6 +350,51 @@
     } catch (e) {
       console.warn('[server-migration] Could not load target reference data:', e);
     }
+
+    // SSISDB probing on both sides — only matters if the user has the
+    // SSIS category checked, but cheap enough to do unconditionally.
+    if (SM.categories.ssis) {
+      try {
+        SM.ssisCatalogSource = await probeSsisCatalog(getSrcConn());
+      } catch (e) { console.warn('[server-migration] Source SSIS probe failed:', e); }
+      try {
+        SM.ssisCatalogTarget = await probeSsisCatalog(getTgtConn());
+      } catch (e) { console.warn('[server-migration] Target SSIS probe failed:', e); }
+    }
+  }
+
+  // Probe a server for SSISDB readiness:
+  //   - does the SSISDB database exist?
+  //   - does it have a database master key (required for the catalog)?
+  //   - is CLR enabled at server level (required for SSISDB to function)?
+  // Returns a flat object so the caller can decide whether to bootstrap.
+  async function probeSsisCatalog(conn) {
+    const result = { exists: false, masterKeyExists: false, clrEnabled: false };
+    // CLR config first — this is server-wide and lives in sys.configurations.
+    try {
+      const clrRes = await dbCall(conn, { action: 'execute',
+        sql: "SELECT TOP 1 CONVERT(int, value_in_use) AS v FROM sys.configurations WHERE name = 'clr enabled';"
+      });
+      result.clrEnabled = (clrRes?.recordset || [])[0]?.v === 1;
+    } catch {}
+    // SSISDB existence.
+    try {
+      const dbRes = await dbCall(conn, { action: 'execute',
+        sql: "SELECT COUNT(*) AS n FROM sys.databases WHERE name = 'SSISDB';"
+      });
+      result.exists = ((dbRes?.recordset || [])[0]?.n || 0) >= 1;
+    } catch {}
+    // Master key — only check if SSISDB exists. Querying its symmetric_keys
+    // when it doesn't exist throws.
+    if (result.exists) {
+      try {
+        const mkRes = await dbCall(conn, { action: 'execute',
+          sql: "SELECT COUNT(*) AS n FROM SSISDB.sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##';"
+        });
+        result.masterKeyExists = ((mkRes?.recordset || [])[0]?.n || 0) >= 1;
+      } catch {}
+    }
+    return result;
   }
 
   // ── Step 2a: Discover logins ──────────────────────────────────────────────
@@ -746,6 +823,609 @@
 
   function _filterJobsChanged() { renderJobsTable(); }
 
+  // ── Step 2c: Discover SSIS (Phase 3) ──────────────────────────────────────
+  // Project deployment model only. Pulls folders, projects, environments,
+  // environment variables, project ↔ environment references, and
+  // project-level parameter overrides from the source SSISDB catalog.
+  //
+  // If the source has no SSISDB at all, we just record empty inventory and
+  // surface a clear message in the UI rather than failing — many shops
+  // don't have SSIS deployed at all.
+  async function discoverSsis() {
+    const projTableEl = $('sm-ssis-projects-table');
+    const envTableEl  = $('sm-ssis-envs-table');
+    const summaryEl   = $('sm-ssis-summary');
+    if (projTableEl) projTableEl.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:1rem">Discovering SSIS catalog on source…</div>';
+    if (envTableEl)  envTableEl.innerHTML  = '';
+    if (summaryEl)   summaryEl.textContent = '';
+
+    if (!SM.ssisCatalogSource.exists) {
+      const html = '<div style="font-size:12px;color:var(--text2);padding:1rem;line-height:1.6">' +
+        '<strong>Source has no SSISDB.</strong><br>' +
+        'There is no SSIS catalog on the source server, so there are no projects to migrate. ' +
+        'If SSIS is deployed using the legacy package model (.dtsx files in MSDB or filesystem), ' +
+        'that is not supported in this phase.' +
+        '</div>';
+      if (projTableEl) projTableEl.innerHTML = html;
+      if (envTableEl)  envTableEl.innerHTML  = '';
+      SM.ssisFolders = [];
+      SM.ssisProjects = [];
+      SM.ssisEnvironments = [];
+      SM.ssisVariables = [];
+      SM.ssisReferences = [];
+      SM.ssisParameterValues = [];
+      SM.selectedProjectKeys = new Set();
+      SM.selectedEnvironmentKeys = new Set();
+      return;
+    }
+
+    // Five SSISDB queries in parallel. All read-only against the source
+    // catalog views. Fully-qualified names so we don't need USE SSISDB.
+    const sqlFolders     = "SELECT folder_id, name AS folder_name, description, created_by_name, created_time FROM SSISDB.catalog.folders ORDER BY name;";
+    const sqlProjects    = "SELECT p.project_id, p.name AS project_name, p.folder_id, f.name AS folder_name, p.description, p.deployed_by_name, p.last_deployed_time, p.object_version_lsn FROM SSISDB.catalog.projects p JOIN SSISDB.catalog.folders f ON f.folder_id = p.folder_id ORDER BY f.name, p.name;";
+    const sqlEnvs        = "SELECT e.environment_id, e.name AS environment_name, e.folder_id, f.name AS folder_name, e.description, e.created_by_name, e.created_time FROM SSISDB.catalog.environments e JOIN SSISDB.catalog.folders f ON f.folder_id = e.folder_id ORDER BY f.name, e.name;";
+    const sqlVars        = "SELECT v.environment_id, v.name AS variable_name, v.description, v.type, v.sensitive, v.value, v.sensitive_value FROM SSISDB.catalog.environment_variables v ORDER BY v.environment_id, v.name;";
+    const sqlRefs        = "SELECT r.reference_id, r.project_id, r.reference_type, r.environment_folder_name, r.environment_name FROM SSISDB.catalog.environment_references r ORDER BY r.project_id;";
+    // Project parameter overrides — values different from package defaults.
+    // value_set = 1 means an explicit override exists; defaults are skipped.
+    const sqlParamValues = "SELECT op.project_id, op.object_type, op.object_name, op.parameter_name, op.parameter_data_type, op.sensitive, op.value, op.value_set FROM SSISDB.catalog.object_parameters op WHERE op.value_set = 1 ORDER BY op.project_id, op.object_type, op.parameter_name;";
+
+    let foldersRes, projectsRes, envsRes, varsRes, refsRes, paramsRes;
+    try {
+      [foldersRes, projectsRes, envsRes, varsRes, refsRes, paramsRes] = await Promise.all([
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlFolders }),
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlProjects }),
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlEnvs }),
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlVars }),
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlRefs }),
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlParamValues }),
+      ]);
+    } catch (e) {
+      if (projTableEl) projTableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px">🔴 SSIS discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
+      return;
+    }
+
+    SM.ssisFolders         = foldersRes?.recordset  || [];
+    SM.ssisProjects        = projectsRes?.recordset || [];
+    SM.ssisEnvironments    = envsRes?.recordset     || [];
+    SM.ssisVariables       = varsRes?.recordset     || [];
+    SM.ssisReferences      = refsRes?.recordset     || [];
+    SM.ssisParameterValues = paramsRes?.recordset   || [];
+
+    // Default: select every project and every environment.
+    SM.selectedProjectKeys     = new Set(SM.ssisProjects.map(p => p.folder_name + '/' + p.project_name));
+    SM.selectedEnvironmentKeys = new Set(SM.ssisEnvironments.map(e => e.folder_name + '/' + e.environment_name));
+
+    renderSsisTables();
+  }
+
+  function renderSsisTables() {
+    const projTableEl = $('sm-ssis-projects-table');
+    const envTableEl  = $('sm-ssis-envs-table');
+    const summaryEl   = $('sm-ssis-summary');
+
+    // Index variables by environment_id for quick counts
+    const varsByEnv = {};
+    for (const v of SM.ssisVariables) {
+      const k = v.environment_id;
+      varsByEnv[k] = (varsByEnv[k] || 0) + 1;
+    }
+    // Index references by project_id for quick counts
+    const refsByProject = {};
+    for (const r of SM.ssisReferences) {
+      const k = r.project_id;
+      refsByProject[k] = (refsByProject[k] || 0) + 1;
+    }
+    // Index parameter overrides by project_id
+    const paramsByProject = {};
+    for (const p of SM.ssisParameterValues) {
+      const k = p.project_id;
+      paramsByProject[k] = (paramsByProject[k] || 0) + 1;
+    }
+
+    if (summaryEl) {
+      const sensVarCount = SM.ssisVariables.filter(v => v.sensitive).length;
+      summaryEl.innerHTML =
+        '<strong>' + SM.ssisFolders.length + '</strong> folder(s) &nbsp;·&nbsp; ' +
+        '<strong>' + SM.ssisProjects.length + '</strong> project(s) &nbsp;·&nbsp; ' +
+        '<strong>' + SM.ssisEnvironments.length + '</strong> environment(s) &nbsp;·&nbsp; ' +
+        '<span style="color:var(--text2)">' + SM.ssisVariables.length + ' variable(s)' +
+        (sensVarCount ? ' (' + sensVarCount + ' sensitive)' : '') + '</span> &nbsp;· ' +
+        '<span style="color:var(--text2)">' + SM.ssisReferences.length + ' reference(s)</span> &nbsp;· ' +
+        '<strong style="color:var(--accent)">' + SM.selectedProjectKeys.size + ' project(s) + ' + SM.selectedEnvironmentKeys.size + ' env(s) selected</strong>';
+    }
+
+    // Catalog status banner — surfaces what bootstrap actions will run
+    const banner = $('sm-ssis-catalog-status');
+    if (banner) {
+      const src = SM.ssisCatalogSource;
+      const tgt = SM.ssisCatalogTarget;
+      const bits = [];
+      bits.push('<div style="font-size:11.5px;color:var(--text2);line-height:1.7">');
+      bits.push('<strong>Source SSISDB:</strong> ' + (src.exists ? '<span style="color:var(--green)">present</span>' : '<span style="color:var(--text3)">not present</span>'));
+      bits.push(' &nbsp;·&nbsp; <strong>Target SSISDB:</strong> ' + (tgt.exists ? '<span style="color:var(--green)">present</span>' : '<span style="color:var(--amber)">missing — will be created by preview/execute</span>'));
+      if (!tgt.exists) {
+        bits.push('<br><span style="color:var(--amber);font-size:11px">⚠ Target SSISDB will be auto-created. CLR will be enabled and a master key created using the password supplied above. Provide a strong password.</span>');
+      } else if (!tgt.clrEnabled) {
+        bits.push('<br><span style="color:var(--amber);font-size:11px">⚠ Target has SSISDB but CLR is disabled. CLR will be enabled at server level (this is harmless and required for SSISDB to function).</span>');
+      }
+      bits.push('</div>');
+      banner.innerHTML = bits.join('');
+    }
+
+    // Projects table
+    if (projTableEl) {
+      if (SM.ssisProjects.length === 0) {
+        projTableEl.innerHTML = '<div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">No projects found in SSISDB.</div>';
+      } else {
+        let html = `
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--bg3);text-align:left">
+                <th style="padding:8px 10px;width:40px;border-bottom:0.5px solid var(--border)">
+                  <input type="checkbox" id="sm-select-all-projects" onchange="ServerMigration._toggleAllProjects(this.checked)" style="cursor:pointer">
+                </th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border)">Folder / Project</th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border);width:80px;text-align:center">Refs</th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border);width:100px;text-align:center">Param overrides</th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border);width:160px">Last deployed</th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border)">Description</th>
+              </tr>
+            </thead>
+            <tbody>`;
+        for (const p of SM.ssisProjects) {
+          const key = p.folder_name + '/' + p.project_name;
+          const checked = SM.selectedProjectKeys.has(key) ? 'checked' : '';
+          const refCount = refsByProject[p.project_id] || 0;
+          const paramCount = paramsByProject[p.project_id] || 0;
+          const deployed = p.last_deployed_time ? new Date(p.last_deployed_time).toISOString().slice(0, 16).replace('T', ' ') : '—';
+          html += `
+            <tr>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border)">
+                <input type="checkbox" ${checked} onchange="ServerMigration._toggleProject('${escHtml(key).replace(/'/g, '&#39;')}', this.checked)" style="cursor:pointer">
+              </td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-family:var(--mono)">
+                <span style="color:var(--text3)">${escHtml(p.folder_name)} /</span> <strong>${escHtml(p.project_name)}</strong>
+              </td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);text-align:center;font-family:var(--mono);color:var(--text2)">${refCount}</td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);text-align:center;font-family:var(--mono);color:var(--text2)">${paramCount}</td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-family:var(--mono);font-size:10.5px;color:var(--text2)">${escHtml(deployed)}</td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-size:11px;color:var(--text2)">${escHtml(p.description || '')}</td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        projTableEl.innerHTML = html;
+      }
+    }
+
+    // Environments table
+    if (envTableEl) {
+      if (SM.ssisEnvironments.length === 0) {
+        envTableEl.innerHTML = '<div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">No environments found in SSISDB.</div>';
+      } else {
+        let html = `
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--bg3);text-align:left">
+                <th style="padding:8px 10px;width:40px;border-bottom:0.5px solid var(--border)">
+                  <input type="checkbox" id="sm-select-all-envs" onchange="ServerMigration._toggleAllEnvironments(this.checked)" style="cursor:pointer">
+                </th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border)">Folder / Environment</th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border);width:90px;text-align:center">Variables</th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border);width:90px;text-align:center">Sensitive</th>
+                <th style="padding:8px 10px;border-bottom:0.5px solid var(--border)">Description</th>
+              </tr>
+            </thead>
+            <tbody>`;
+        for (const e of SM.ssisEnvironments) {
+          const key = e.folder_name + '/' + e.environment_name;
+          const checked = SM.selectedEnvironmentKeys.has(key) ? 'checked' : '';
+          const varCount = varsByEnv[e.environment_id] || 0;
+          const sensitiveCount = SM.ssisVariables.filter(v => v.environment_id === e.environment_id && v.sensitive).length;
+          html += `
+            <tr>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border)">
+                <input type="checkbox" ${checked} onchange="ServerMigration._toggleEnvironment('${escHtml(key).replace(/'/g, '&#39;')}', this.checked)" style="cursor:pointer">
+              </td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-family:var(--mono)">
+                <span style="color:var(--text3)">${escHtml(e.folder_name)} /</span> <strong>${escHtml(e.environment_name)}</strong>
+              </td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);text-align:center;font-family:var(--mono);color:var(--text2)">${varCount}</td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);text-align:center;font-family:var(--mono);color:${sensitiveCount ? 'var(--amber)' : 'var(--text2)'}">${sensitiveCount}</td>
+              <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-size:11px;color:var(--text2)">${escHtml(e.description || '')}</td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        envTableEl.innerHTML = html;
+      }
+    }
+
+    const allProjBox = $('sm-select-all-projects');
+    if (allProjBox) allProjBox.checked = SM.ssisProjects.length > 0 && SM.ssisProjects.every(p => SM.selectedProjectKeys.has(p.folder_name + '/' + p.project_name));
+    const allEnvBox = $('sm-select-all-envs');
+    if (allEnvBox)  allEnvBox.checked  = SM.ssisEnvironments.length > 0 && SM.ssisEnvironments.every(e => SM.selectedEnvironmentKeys.has(e.folder_name + '/' + e.environment_name));
+  }
+
+  function _toggleProject(key, checked) {
+    if (checked) SM.selectedProjectKeys.add(key);
+    else         SM.selectedProjectKeys.delete(key);
+    renderSsisTables();
+  }
+  function _toggleAllProjects(checked) {
+    for (const p of SM.ssisProjects) {
+      const key = p.folder_name + '/' + p.project_name;
+      if (checked) SM.selectedProjectKeys.add(key);
+      else         SM.selectedProjectKeys.delete(key);
+    }
+    renderSsisTables();
+  }
+  function _toggleEnvironment(key, checked) {
+    if (checked) SM.selectedEnvironmentKeys.add(key);
+    else         SM.selectedEnvironmentKeys.delete(key);
+    renderSsisTables();
+  }
+  function _toggleAllEnvironments(checked) {
+    for (const e of SM.ssisEnvironments) {
+      const key = e.folder_name + '/' + e.environment_name;
+      if (checked) SM.selectedEnvironmentKeys.add(key);
+      else         SM.selectedEnvironmentKeys.delete(key);
+    }
+    renderSsisTables();
+  }
+
+  // ── SSIS preview/script builders ──────────────────────────────────────────
+  // SSIS migration is fundamentally different from logins/jobs because the
+  // payload (the .ispac binary) doesn't fit cleanly into a generated SQL
+  // script — it's megabytes of binary per project. So the "preview" for
+  // SSIS shows the orchestration SQL (folder creation, env creation,
+  // variable seeding, references, parameter overrides) and DESCRIBES the
+  // project transfer steps without inlining the binary.
+  //
+  // The actual binary transfer happens at execute time via direct
+  // server-side calls: catalog.get_project on source, catalog.deploy_project
+  // on target. The bytes pass through the Cygenix Function tier as a
+  // varbinary column but never as a single SQL string.
+
+  // Bootstrap SQL for an SSISDB that doesn't exist yet on target. This
+  // enables CLR, runs the catalog creation proc, and creates a master key
+  // with the supplied password. Intended to run on TARGET only.
+  function buildSsisCatalogBootstrap() {
+    const pwd = SM.ssisOptions.masterKeyPassword || '';
+    const out = [];
+    out.push("-- ── Enable CLR (required for SSISDB) ──");
+    out.push("IF (SELECT CONVERT(int, value_in_use) FROM sys.configurations WHERE name = 'clr enabled') <> 1");
+    out.push("BEGIN");
+    out.push("  EXEC sp_configure 'show advanced options', 1; RECONFIGURE;");
+    out.push("  EXEC sp_configure 'clr enabled', 1; RECONFIGURE;");
+    out.push("END;");
+    out.push("GO");
+    out.push("");
+    out.push("-- ── Create SSISDB catalog if missing ──");
+    out.push("IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'SSISDB')");
+    out.push("BEGIN");
+    out.push("  -- Database master key for the SSIS catalog. Required.");
+    out.push("  EXEC SSISDB_BOOTSTRAP_PLACEHOLDER 'CATALOG_CREATE';");
+    out.push("END;");
+    out.push("GO");
+    out.push("");
+    return { sql: out.join('\n'), password: pwd };
+  }
+
+  function buildSsisFolder(folderName) {
+    return [
+      "IF NOT EXISTS (SELECT 1 FROM SSISDB.catalog.folders WHERE name = N'" + tsqlEsc(folderName) + "')",
+      "  EXEC SSISDB.catalog.create_folder @folder_name = N'" + tsqlEsc(folderName) + "';",
+    ].join('\n');
+  }
+
+  function buildSsisEnvironment(envRow) {
+    return [
+      "IF NOT EXISTS (",
+      "  SELECT 1 FROM SSISDB.catalog.environments e",
+      "  JOIN   SSISDB.catalog.folders f ON f.folder_id = e.folder_id",
+      "  WHERE  f.name = N'" + tsqlEsc(envRow.folder_name) + "'",
+      "    AND  e.name = N'" + tsqlEsc(envRow.environment_name) + "'",
+      ")",
+      "  EXEC SSISDB.catalog.create_environment",
+      "      @folder_name      = N'" + tsqlEsc(envRow.folder_name) + "'",
+      "    , @environment_name = N'" + tsqlEsc(envRow.environment_name) + "'",
+      "    , @environment_description = N'" + tsqlEsc(envRow.description || '') + "';",
+    ].join('\n');
+  }
+
+  // Variable creation. SSISDB stores values typed (Int32, String, etc.)
+  // and may flag a variable as `sensitive` — sensitive values come through
+  // the catalog view as nulls in `value` and binary in `sensitive_value`,
+  // and the binary is encrypted under the SOURCE master key so we can't
+  // decrypt and replay. Two sane behaviours:
+  //   - If includeSensitiveValues is false (default): emit the variable
+  //     with a placeholder value and leave it for the user to set.
+  //   - If true: try to use sensitive_value as-is — only works if both
+  //     servers happen to share a master key, which is rare. Default off.
+  function buildSsisVariable(envRow, varRow) {
+    const valueLiteral = varRow.sensitive
+      ? (SM.ssisOptions.includeSensitiveValues
+          ? "/* sensitive value — see comment above */ NULL"
+          : "NULL  /* sensitive — placeholder; set on target after migration */")
+      : sqlLiteralForVariableValue(varRow.value, varRow.type);
+    const sensitiveFlag = varRow.sensitive ? 1 : 0;
+    return [
+      "IF NOT EXISTS (",
+      "  SELECT 1 FROM SSISDB.catalog.environment_variables v",
+      "  JOIN   SSISDB.catalog.environments e ON e.environment_id = v.environment_id",
+      "  JOIN   SSISDB.catalog.folders      f ON f.folder_id      = e.folder_id",
+      "  WHERE  f.name = N'" + tsqlEsc(envRow.folder_name) + "'",
+      "    AND  e.name = N'" + tsqlEsc(envRow.environment_name) + "'",
+      "    AND  v.name = N'" + tsqlEsc(varRow.variable_name) + "'",
+      ")",
+      "  EXEC SSISDB.catalog.create_environment_variable",
+      "      @folder_name      = N'" + tsqlEsc(envRow.folder_name) + "'",
+      "    , @environment_name = N'" + tsqlEsc(envRow.environment_name) + "'",
+      "    , @variable_name    = N'" + tsqlEsc(varRow.variable_name) + "'",
+      "    , @data_type        = N'" + tsqlEsc(varRow.type || 'String') + "'",
+      "    , @sensitive        = " + sensitiveFlag,
+      "    , @description      = N'" + tsqlEsc(varRow.description || '') + "'",
+      "    , @value            = " + valueLiteral + ";",
+    ].join('\n');
+  }
+
+  // Approximate a SQL literal for an environment-variable value of various
+  // types. We only know the type as a string ("Int32", "String", "Boolean"
+  // etc.) so we type-pun cautiously. Anything we can't classify becomes a
+  // string literal which the catalog procedure will coerce.
+  function sqlLiteralForVariableValue(v, type) {
+    if (v === null || v === undefined) return 'NULL';
+    const t = String(type || '').toLowerCase();
+    if (t.includes('boolean')) return v ? '1' : '0';
+    if (t.includes('int')      || t.includes('byte')   || t.includes('decimal') ||
+        t.includes('double')   || t.includes('single') || t.includes('numeric')) {
+      const n = Number(v);
+      return Number.isFinite(n) ? String(n) : "N'" + tsqlEsc(String(v)) + "'";
+    }
+    return "N'" + tsqlEsc(String(v)) + "'";
+  }
+
+  function buildSsisReference(refRow, project) {
+    // reference_type 'A' = absolute (env in named folder); 'R' = relative (env in same folder as project)
+    const refType = refRow.reference_type === 'A' ? 'A' : 'R';
+    const folderArg = refType === 'A'
+      ? "    , @environment_folder_name = N'" + tsqlEsc(refRow.environment_folder_name || project.folder_name) + "'"
+      : '';
+    return [
+      "EXEC SSISDB.catalog.create_environment_reference",
+      "    @folder_name             = N'" + tsqlEsc(project.folder_name) + "'",
+      "  , @project_name            = N'" + tsqlEsc(project.project_name) + "'",
+      "  , @environment_name        = N'" + tsqlEsc(refRow.environment_name) + "'",
+      "  , @reference_type          = '" + refType + "'",
+      folderArg,
+      "  , @reference_id            = NULL;",
+    ].filter(Boolean).join('\n');
+  }
+
+  // Project parameter override. object_type 20 = project, 30 = package.
+  // Sensitive overrides have the same encryption-tied-to-master-key issue
+  // as sensitive variables; we surface as NULL placeholders.
+  function buildSsisParameterOverride(paramRow, project) {
+    const valueLiteral = paramRow.sensitive
+      ? (SM.ssisOptions.includeSensitiveValues
+          ? "NULL /* sensitive */"
+          : "NULL /* sensitive — set manually on target */")
+      : sqlLiteralForVariableValue(paramRow.value, paramRow.parameter_data_type);
+    const objTypeArg = paramRow.object_type === 30
+      ? "    , @object_type   = 30"
+      : "    , @object_type   = 20";
+    const objNameArg = paramRow.object_type === 30
+      ? "    , @object_name   = N'" + tsqlEsc(paramRow.object_name) + "'"
+      : "";
+    return [
+      "EXEC SSISDB.catalog.set_object_parameter_value",
+      objTypeArg,
+      "    , @folder_name   = N'" + tsqlEsc(project.folder_name) + "'",
+      "    , @project_name  = N'" + tsqlEsc(project.project_name) + "'",
+      objNameArg,
+      "    , @parameter_name= N'" + tsqlEsc(paramRow.parameter_name) + "'",
+      "    , @parameter_value = " + valueLiteral + ";",
+    ].filter(Boolean).join('\n');
+  }
+
+  // ── SSIS executors ────────────────────────────────────────────────────────
+
+  // Bootstrap SSISDB on target if needed. Returns a result row.
+  async function executeSsisCatalogBootstrap(tgtConn) {
+    const result = { category: 'ssis-bootstrap', name: 'SSISDB catalog', status: 'pending', message: '', timestamp: new Date().toISOString() };
+    if (SM.ssisCatalogTarget.exists && SM.ssisCatalogTarget.clrEnabled) {
+      result.status = 'skipped';
+      result.message = 'SSISDB already present and CLR enabled';
+      return result;
+    }
+    if (!SM.ssisOptions.masterKeyPassword || SM.ssisOptions.masterKeyPassword.length < 8) {
+      result.status = 'failed';
+      result.message = 'SSISDB needs to be created on target but no master key password was supplied (min 8 chars).';
+      return result;
+    }
+    try {
+      // Step 1: enable CLR if needed
+      if (!SM.ssisCatalogTarget.clrEnabled) {
+        await dbCall(tgtConn, { action: 'execute', sql:
+          "EXEC sp_configure 'show advanced options', 1; RECONFIGURE; " +
+          "EXEC sp_configure 'clr enabled', 1; RECONFIGURE;"
+        });
+      }
+      // Step 2: create the SSIS catalog if SSISDB doesn't exist.
+      // catalog.create_catalog is the supported API. It internally creates
+      // SSISDB, sets up the assemblies, and creates the master key.
+      if (!SM.ssisCatalogTarget.exists) {
+        const pwd = SM.ssisOptions.masterKeyPassword.replace(/'/g, "''");
+        await dbCall(tgtConn, { action: 'execute', sql:
+          "IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'SSISDB') " +
+          "EXEC SSISDB.catalog.create_catalog @password = N'" + pwd + "';"
+        });
+      }
+      // Verify
+      const verifyRes = await dbCall(tgtConn, { action: 'execute',
+        sql: "SELECT (CASE WHEN EXISTS (SELECT 1 FROM sys.databases WHERE name='SSISDB') THEN 1 ELSE 0 END) AS exists_flag;"
+      });
+      const ok = ((verifyRes?.recordset || [])[0]?.exists_flag || 0) === 1;
+      if (ok) {
+        SM.ssisCatalogTarget.exists = true;
+        SM.ssisCatalogTarget.clrEnabled = true;
+        result.status = 'created';
+        result.message = 'SSISDB created and CLR enabled';
+      } else {
+        result.status = 'failed';
+        result.message = 'SSISDB still not present after create_catalog';
+      }
+    } catch (e) {
+      result.status = 'failed';
+      result.message = e.message || String(e);
+    }
+    return result;
+  }
+
+  async function executeSsisFolder(tgtConn, folderName) {
+    const result = { category: 'ssis-folder', name: folderName, status: 'pending', message: '', timestamp: new Date().toISOString() };
+    try {
+      await dbCall(tgtConn, { action: 'execute', sql: buildSsisFolder(folderName) });
+      const v = await dbCall(tgtConn, { action: 'execute', sql: "SELECT COUNT(*) AS n FROM SSISDB.catalog.folders WHERE name = N'" + tsqlEsc(folderName) + "';" });
+      const ok = ((v?.recordset || [])[0]?.n || 0) >= 1;
+      result.status = ok ? 'created' : 'failed';
+      result.message = ok ? 'OK' : 'Folder not present after create_folder';
+    } catch (e) {
+      result.status = 'failed';
+      result.message = e.message || String(e);
+    }
+    return result;
+  }
+
+  // Project: this is the binary-transfer one. We:
+  //   1. Pull the project bytes from SOURCE via catalog.get_project (or via
+  //      a SELECT against catalog.object_versions — get_project is the
+  //      official API and returns the .ispac bytes for the current version).
+  //   2. Push the bytes to TARGET as a varbinary parameter, then call
+  //      catalog.deploy_project on target with those bytes.
+  //
+  // The trickiest bit is binary handling: we receive the bytes from
+  // impDbCall as either a Node Buffer object or a base64 string depending
+  // on the proxy. For deployment we need to send them back as a hex literal
+  // in T-SQL, which works because @project_stream is a varbinary(MAX)
+  // parameter and SQL Server happily accepts hex literals for that.
+  async function executeSsisProject(srcConn, tgtConn, project) {
+    const result = { category: 'ssis-project', name: project.folder_name + '/' + project.project_name, status: 'pending', message: '', timestamp: new Date().toISOString() };
+    try {
+      // 1. Get bytes from source. catalog.get_project returns a single row
+      // with the .ispac in column [package_data] (the actual column name
+      // is implementation-detail in the proc; we use the underlying view
+      // [internal].[get_project_internal] equivalent via the doc'd proc).
+      const fetchRes = await dbCall(srcConn, { action: 'execute', sql:
+        "DECLARE @bytes varbinary(max); " +
+        "EXEC SSISDB.catalog.get_project " +
+        "    @folder_name = N'" + tsqlEsc(project.folder_name) + "', " +
+        "    @project_name = N'" + tsqlEsc(project.project_name) + "', " +
+        "    @project_stream = @bytes OUTPUT; " +
+        "SELECT @bytes AS bytes;"
+      });
+      const row = (fetchRes?.recordset || [])[0];
+      if (!row || row.bytes == null) {
+        result.status = 'failed';
+        result.message = 'Could not retrieve project bytes from source';
+        return result;
+      }
+      const hex = toHexLiteral(row.bytes);
+      if (!hex) {
+        result.status = 'failed';
+        result.message = 'Project bytes returned in unrecognised binary form';
+        return result;
+      }
+
+      // 2. Deploy to target. The folder must already exist.
+      await dbCall(tgtConn, { action: 'execute', sql:
+        "DECLARE @op_id bigint; " +
+        "EXEC SSISDB.catalog.deploy_project " +
+        "    @folder_name = N'" + tsqlEsc(project.folder_name) + "', " +
+        "    @project_name = N'" + tsqlEsc(project.project_name) + "', " +
+        "    @project_stream = " + hex + ", " +
+        "    @operation_id = @op_id OUTPUT; " +
+        "SELECT @op_id AS op_id;"
+      });
+
+      // 3. Verify
+      const v = await dbCall(tgtConn, { action: 'execute', sql:
+        "SELECT COUNT(*) AS n FROM SSISDB.catalog.projects p " +
+        "JOIN SSISDB.catalog.folders f ON f.folder_id = p.folder_id " +
+        "WHERE f.name = N'" + tsqlEsc(project.folder_name) + "' AND p.name = N'" + tsqlEsc(project.project_name) + "';"
+      });
+      const ok = ((v?.recordset || [])[0]?.n || 0) >= 1;
+      result.status = ok ? 'created' : 'failed';
+      result.message = ok ? 'Deployed (.ispac bytes transferred server-to-server)' : 'Project not present after deploy_project';
+    } catch (e) {
+      result.status = 'failed';
+      result.message = e.message || String(e);
+    }
+    return result;
+  }
+
+  async function executeSsisEnvironment(tgtConn, envRow) {
+    const result = { category: 'ssis-env', name: envRow.folder_name + '/' + envRow.environment_name, status: 'pending', message: '', timestamp: new Date().toISOString() };
+    try {
+      await dbCall(tgtConn, { action: 'execute', sql: buildSsisEnvironment(envRow) });
+      // Now seed variables for this environment
+      const vars = SM.ssisVariables.filter(v => v.environment_id === envRow.environment_id);
+      for (const v of vars) {
+        try {
+          await dbCall(tgtConn, { action: 'execute', sql: buildSsisVariable(envRow, v) });
+        } catch (varErr) {
+          // Continue with other variables even if one fails
+          console.warn('[server-migration] Variable creation failed:', envRow.environment_name, v.variable_name, varErr);
+        }
+      }
+      const sensitiveCount = vars.filter(v => v.sensitive).length;
+      result.status = 'created';
+      result.message = vars.length + ' variable(s)' + (sensitiveCount ? ' (' + sensitiveCount + ' sensitive — set manually on target)' : '');
+    } catch (e) {
+      result.status = 'failed';
+      result.message = e.message || String(e);
+    }
+    return result;
+  }
+
+  async function executeSsisReferencesAndParams(tgtConn, project) {
+    const result = { category: 'ssis-config', name: project.folder_name + '/' + project.project_name, status: 'pending', message: '', timestamp: new Date().toISOString() };
+    try {
+      const refs = SM.ssisReferences.filter(r => r.project_id === project.project_id);
+      const params = SM.ssisParameterValues.filter(p => p.project_id === project.project_id);
+      // Apply environment references — but only those whose target environment was actually selected for migration
+      let refsApplied = 0;
+      for (const r of refs) {
+        const envFolder = r.environment_folder_name || project.folder_name;
+        const envKey = envFolder + '/' + r.environment_name;
+        if (!SM.selectedEnvironmentKeys.has(envKey)) continue; // env wasn't migrated; skip ref
+        try {
+          await dbCall(tgtConn, { action: 'execute', sql: buildSsisReference(r, project) });
+          refsApplied++;
+        } catch (refErr) {
+          // Don't fail the project for one bad ref
+          console.warn('[server-migration] Reference creation failed:', project.project_name, refErr);
+        }
+      }
+      // Apply parameter overrides
+      let paramsApplied = 0;
+      for (const p of params) {
+        try {
+          await dbCall(tgtConn, { action: 'execute', sql: buildSsisParameterOverride(p, project) });
+          paramsApplied++;
+        } catch (pErr) {
+          console.warn('[server-migration] Parameter override failed:', project.project_name, p.parameter_name, pErr);
+        }
+      }
+      result.status = (refsApplied + paramsApplied > 0 || refs.length + params.length === 0) ? 'created' : 'skipped';
+      result.message = refsApplied + ' ref(s) · ' + paramsApplied + ' override(s)';
+    } catch (e) {
+      result.status = 'failed';
+      result.message = e.message || String(e);
+    }
+    return result;
+  }
+
   // ── Step 3: Generate preview SQL ──────────────────────────────────────────
   // Combined script. Order matters because of FK and reference dependencies:
   //   1. Logins  — jobs may have these as owners
@@ -854,6 +1534,99 @@
         out.push(buildJobBlock(j));
         out.push('GO');
         out.push('');
+      }
+    }
+
+    // ── SSIS (Phase 3) ──────────────────────────────────────────────────────
+    // The SSIS section is mostly orchestration SQL — folder/env/var creation
+    // and references. Project deployment is the binary-transfer step that
+    // doesn't belong in preview text (it's megabytes of binary per project).
+    // We describe each project deployment as a comment so the preview is
+    // readable; actual deployment happens at execute time via direct
+    // server-side calls.
+    if (SM.categories.ssis && SM.ssisCatalogSource.exists) {
+      const selectedProjects = SM.ssisProjects.filter(p =>
+        SM.selectedProjectKeys.has(p.folder_name + '/' + p.project_name));
+      const selectedEnvs = SM.ssisEnvironments.filter(e =>
+        SM.selectedEnvironmentKeys.has(e.folder_name + '/' + e.environment_name));
+
+      if (selectedProjects.length || selectedEnvs.length) {
+        out.push('-- ════════════════════════════════════════════════');
+        out.push('-- SSIS (Project Deployment Model)');
+        out.push('-- ════════════════════════════════════════════════');
+        out.push('');
+
+        // Bootstrap section, only if target needs it
+        if (!SM.ssisCatalogTarget.exists || !SM.ssisCatalogTarget.clrEnabled) {
+          out.push('-- ── Target SSISDB bootstrap ──');
+          out.push('-- Target does not have a fully-functional SSIS catalog. The execute');
+          out.push('-- step will enable CLR and create SSISDB using the master key password');
+          out.push('-- supplied at discovery time. (Password is not echoed to this preview.)');
+          out.push("/*");
+          out.push("EXEC sp_configure 'show advanced options', 1; RECONFIGURE;");
+          out.push("EXEC sp_configure 'clr enabled', 1; RECONFIGURE;");
+          out.push("EXEC SSISDB.catalog.create_catalog @password = N'<MASTER KEY PASSWORD>';");
+          out.push("*/");
+          out.push('');
+        }
+
+        // Folders — union of folders referenced by selected projects + envs
+        const folderNames = new Set();
+        for (const p of selectedProjects) folderNames.add(p.folder_name);
+        for (const e of selectedEnvs)     folderNames.add(e.folder_name);
+        if (folderNames.size) {
+          out.push('-- ── Folders ──');
+          for (const fn of folderNames) {
+            out.push(buildSsisFolder(fn));
+          }
+          out.push('GO');
+          out.push('');
+        }
+
+        // Environments + variables (built before projects so refs work)
+        if (selectedEnvs.length) {
+          out.push('-- ── Environments + variables ──');
+          for (const env of selectedEnvs) {
+            out.push('-- ── env: ' + env.folder_name + '/' + env.environment_name + ' ──');
+            out.push(buildSsisEnvironment(env));
+            const vars = SM.ssisVariables.filter(v => v.environment_id === env.environment_id);
+            for (const v of vars) {
+              out.push(buildSsisVariable(env, v));
+            }
+            out.push('GO');
+            out.push('');
+          }
+        }
+
+        // Projects — placeholder for binary deploy, plus refs and overrides
+        if (selectedProjects.length) {
+          out.push('-- ── Projects (.ispac binary deployment) ──');
+          out.push('-- The .ispac payload for each project is transferred server-to-server');
+          out.push('-- at execute time via SSISDB.catalog.get_project (source) and');
+          out.push('-- SSISDB.catalog.deploy_project (target). Binary bytes do not appear');
+          out.push('-- in this preview; only the orchestration SQL is shown below.');
+          out.push('');
+          for (const p of selectedProjects) {
+            const refs   = SM.ssisReferences.filter(r => r.project_id === p.project_id);
+            const params = SM.ssisParameterValues.filter(pp => pp.project_id === p.project_id);
+            out.push('-- ── project: ' + p.folder_name + '/' + p.project_name + ' ──');
+            out.push('-- (deploy_project step runs at execute time — binary not shown)');
+            for (const r of refs) {
+              const envFolder = r.environment_folder_name || p.folder_name;
+              const envKey = envFolder + '/' + r.environment_name;
+              if (!SM.selectedEnvironmentKeys.has(envKey)) {
+                out.push('-- skipped reference to ' + envKey + ' (environment not selected for migration)');
+                continue;
+              }
+              out.push(buildSsisReference(r, p));
+            }
+            for (const pp of params) {
+              out.push(buildSsisParameterOverride(pp, p));
+            }
+            out.push('GO');
+            out.push('');
+          }
+        }
       }
     }
 
@@ -1056,9 +1829,19 @@
   function showPreview() {
     const anyLogin = SM.categories.logins && SM.selectedLoginIds.size > 0;
     const anyJob   = SM.categories.jobs   && SM.selectedJobIds.size > 0;
-    if (!anyLogin && !anyJob) {
-      alert('Select at least one login or job to preview.');
+    const anySsis  = SM.categories.ssis   && (SM.selectedProjectKeys.size > 0 || SM.selectedEnvironmentKeys.size > 0);
+    if (!anyLogin && !anyJob && !anySsis) {
+      alert('Select at least one login, job, or SSIS project/environment to preview.');
       return;
+    }
+    // Pre-flight: SSIS bootstrap requires a master key password if SSISDB
+    // is missing on target.
+    if (anySsis && (!SM.ssisCatalogTarget.exists || !SM.ssisCatalogTarget.clrEnabled)) {
+      const pwd = SM.ssisOptions.masterKeyPassword;
+      if (!pwd || pwd.length < 8) {
+        alert('Target SSISDB needs to be created. Enter a master key password (min 8 chars) in the SSIS panel at step 2 before proceeding.');
+        return;
+      }
     }
     buildPreviewSql();
     const previewEl = $('sm-preview-pre');
@@ -1093,19 +1876,42 @@
       }
     }
 
-    const totalUnits = selectedLogins.length + operators.length + categories.length + selectedJobs.length;
+    // SSIS work units. Bootstrap counts as 1 unit if needed; folders are
+    // de-duped from selected projects+envs; projects, envs, and per-project
+    // refs/overrides each count separately for progress.
+    const selectedSsisProjects = SM.categories.ssis ? SM.ssisProjects.filter(p => SM.selectedProjectKeys.has(p.folder_name + '/' + p.project_name)) : [];
+    const selectedSsisEnvs     = SM.categories.ssis ? SM.ssisEnvironments.filter(e => SM.selectedEnvironmentKeys.has(e.folder_name + '/' + e.environment_name)) : [];
+    const ssisFolderNames = new Set();
+    for (const p of selectedSsisProjects) ssisFolderNames.add(p.folder_name);
+    for (const e of selectedSsisEnvs)     ssisFolderNames.add(e.folder_name);
+    const needsSsisBootstrap = SM.categories.ssis && (selectedSsisProjects.length || selectedSsisEnvs.length) && (!SM.ssisCatalogTarget.exists || !SM.ssisCatalogTarget.clrEnabled);
+    const ssisUnits =
+      (needsSsisBootstrap ? 1 : 0) +
+      ssisFolderNames.size +
+      selectedSsisEnvs.length +
+      selectedSsisProjects.length +
+      selectedSsisProjects.length;  // one extra unit per project for refs+overrides
+
+    const totalUnits = selectedLogins.length + operators.length + categories.length + selectedJobs.length + ssisUnits;
     if (totalUnits === 0) return;
 
     const parts = [];
-    if (selectedLogins.length) parts.push(selectedLogins.length + ' login(s)');
-    if (operators.length)      parts.push(operators.length + ' operator(s)');
-    if (categories.length)     parts.push(categories.length + ' job categor' + (categories.length === 1 ? 'y' : 'ies'));
-    if (selectedJobs.length)   parts.push(selectedJobs.length + ' job(s)');
+    if (selectedLogins.length)        parts.push(selectedLogins.length + ' login(s)');
+    if (operators.length)             parts.push(operators.length + ' operator(s)');
+    if (categories.length)            parts.push(categories.length + ' job categor' + (categories.length === 1 ? 'y' : 'ies'));
+    if (selectedJobs.length)          parts.push(selectedJobs.length + ' job(s)');
+    if (needsSsisBootstrap)           parts.push('SSISDB bootstrap on target');
+    if (ssisFolderNames.size)         parts.push(ssisFolderNames.size + ' SSIS folder(s)');
+    if (selectedSsisEnvs.length)      parts.push(selectedSsisEnvs.length + ' SSIS environment(s)');
+    if (selectedSsisProjects.length)  parts.push(selectedSsisProjects.length + ' SSIS project(s)');
     const confirmMsg =
       'About to deploy to:\n\n  ' + SM.targetDesc + '\n\n' +
       '  • ' + parts.join('\n  • ') + '\n\n' +
       (selectedJobs.length && SM.jobOptions.createDisabled
         ? 'Jobs will be created DISABLED. You can enable them after verification.\n\n'
+        : '') +
+      (needsSsisBootstrap
+        ? 'SSISDB will be created on target with the master key password supplied.\n\n'
         : '') +
       'Already-existing items are skipped via IF NOT EXISTS guards.\n\n' +
       'Proceed?';
@@ -1121,6 +1927,7 @@
     if (progressEl) progressEl.textContent = '0 / ' + totalUnits;
 
     const tgtConn = getTgtConn();
+    const srcConn = getSrcConn();
     let done = 0;
 
     // 1. Logins
@@ -1146,6 +1953,55 @@
       const r = await executeJob(tgtConn, j);
       SM.runResults.push(r); appendLiveRow(liveEl, r);
       done++; if (progressEl) progressEl.textContent = done + ' / ' + totalUnits;
+    }
+
+    // 5. SSIS — order: bootstrap → folders → environments → projects → refs/overrides
+    if (SM.categories.ssis && (selectedSsisProjects.length || selectedSsisEnvs.length)) {
+      // 5a. Bootstrap
+      if (needsSsisBootstrap) {
+        const r = await executeSsisCatalogBootstrap(tgtConn);
+        SM.runResults.push(r); appendLiveRow(liveEl, r);
+        done++; if (progressEl) progressEl.textContent = done + ' / ' + totalUnits;
+        if (r.status === 'failed') {
+          // No point trying further SSIS work; clear master key from memory.
+          SM.ssisOptions.masterKeyPassword = '';
+          saveAuditEntry();
+          showStep('audit');
+          return;
+        }
+      }
+      // 5b. Folders
+      for (const folderName of ssisFolderNames) {
+        const r = await executeSsisFolder(tgtConn, folderName);
+        SM.runResults.push(r); appendLiveRow(liveEl, r);
+        done++; if (progressEl) progressEl.textContent = done + ' / ' + totalUnits;
+      }
+      // 5c. Environments (with their variables seeded)
+      for (const env of selectedSsisEnvs) {
+        const r = await executeSsisEnvironment(tgtConn, env);
+        SM.runResults.push(r); appendLiveRow(liveEl, r);
+        done++; if (progressEl) progressEl.textContent = done + ' / ' + totalUnits;
+      }
+      // 5d. Projects (binary deploy from source to target)
+      for (const proj of selectedSsisProjects) {
+        const r = await executeSsisProject(srcConn, tgtConn, proj);
+        SM.runResults.push(r); appendLiveRow(liveEl, r);
+        done++; if (progressEl) progressEl.textContent = done + ' / ' + totalUnits;
+      }
+      // 5e. References + parameter overrides per project — only after both
+      // projects and environments exist on target.
+      for (const proj of selectedSsisProjects) {
+        const r = await executeSsisReferencesAndParams(tgtConn, proj);
+        SM.runResults.push(r); appendLiveRow(liveEl, r);
+        done++; if (progressEl) progressEl.textContent = done + ' / ' + totalUnits;
+      }
+
+      // Belt-and-braces: clear the master key password from memory so it
+      // doesn't linger in SM after the run. The user can always re-enter
+      // it next session if needed.
+      SM.ssisOptions.masterKeyPassword = '';
+      const pwdInput = $('sm-ssis-master-key-password');
+      if (pwdInput) pwdInput.value = '';
     }
 
     saveAuditEntry();
@@ -1250,11 +2106,16 @@
                                             'var(--red)';
     const symbol = r.status === 'created' ? '✓' : r.status === 'skipped' ? '–' : '✕';
     const catBadge =
-      r.category === 'login'    ? '<span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">login</span>' :
-      r.category === 'operator' ? '<span style="background:rgba(45,212,191,0.15);color:#2dd4bf;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">op</span>' :
-      r.category === 'category' ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">cat</span>' :
-      r.category === 'job'      ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">job</span>' :
-                                  '';
+      r.category === 'login'          ? '<span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">login</span>' :
+      r.category === 'operator'       ? '<span style="background:rgba(45,212,191,0.15);color:#2dd4bf;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">op</span>' :
+      r.category === 'category'       ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">cat</span>' :
+      r.category === 'job'            ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">job</span>' :
+      r.category === 'ssis-bootstrap' ? '<span style="background:rgba(236,72,153,0.15);color:#ec4899;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">boot</span>' :
+      r.category === 'ssis-folder'    ? '<span style="background:rgba(94,234,212,0.15);color:#5eead4;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">fldr</span>' :
+      r.category === 'ssis-env'       ? '<span style="background:rgba(110,231,183,0.15);color:#6ee7b7;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">env</span>' :
+      r.category === 'ssis-project'   ? '<span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">proj</span>' :
+      r.category === 'ssis-config'    ? '<span style="background:rgba(196,181,253,0.15);color:#c4b5fd;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">cfg</span>' :
+                                        '';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:0.75rem;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:12px;font-family:var(--mono)';
     row.innerHTML =
@@ -1403,14 +2264,16 @@
       const tab = $('sm-tab-' + s);
       if (tab) tab.classList.toggle('active', s === name);
     }
-    // Show/hide the inner logins/jobs panels in the discover step based on
-    // currently-selected categories. Done here rather than in discoverAll so
-    // toggling the checkboxes after discovery still updates visibility.
+    // Show/hide the inner logins/jobs/ssis panels in the discover step based
+    // on currently-selected categories. Done here rather than in discoverAll
+    // so toggling the checkboxes after discovery still updates visibility.
     if (name === 'discover') {
       const loginsPanel = $('sm-discover-logins-panel');
       const jobsPanel   = $('sm-discover-jobs-panel');
+      const ssisPanel   = $('sm-discover-ssis-panel');
       if (loginsPanel) loginsPanel.style.display = ($('sm-cat-logins')?.checked) ? 'block' : 'none';
       if (jobsPanel)   jobsPanel.style.display   = ($('sm-cat-jobs')?.checked)   ? 'block' : 'none';
+      if (ssisPanel)   ssisPanel.style.display   = ($('sm-cat-ssis')?.checked)   ? 'block' : 'none';
     }
   }
 
@@ -1420,8 +2283,10 @@
   function _categoryToggled() {
     const loginsPanel = $('sm-discover-logins-panel');
     const jobsPanel   = $('sm-discover-jobs-panel');
+    const ssisPanel   = $('sm-discover-ssis-panel');
     if (loginsPanel) loginsPanel.style.display = ($('sm-cat-logins')?.checked) ? 'block' : 'none';
     if (jobsPanel)   jobsPanel.style.display   = ($('sm-cat-jobs')?.checked)   ? 'block' : 'none';
+    if (ssisPanel)   ssisPanel.style.display   = ($('sm-cat-ssis')?.checked)   ? 'block' : 'none';
   }
 
   function startOver() {
@@ -1431,6 +2296,15 @@
     SM.jobs = [];
     SM.selectedJobIds = new Set();
     SM.operators = [];
+    SM.ssisFolders = [];
+    SM.ssisProjects = [];
+    SM.ssisEnvironments = [];
+    SM.ssisVariables = [];
+    SM.ssisReferences = [];
+    SM.ssisParameterValues = [];
+    SM.selectedProjectKeys = new Set();
+    SM.selectedEnvironmentKeys = new Set();
+    SM.ssisOptions.masterKeyPassword = '';
     SM.previewSql = '';
     SM.runId = '';
     SM.runResults = [];
@@ -1475,6 +2349,10 @@
     _toggleJob,
     _toggleAllJobs,
     _filterJobsChanged,
+    _toggleProject,
+    _toggleAllProjects,
+    _toggleEnvironment,
+    _toggleAllEnvironments,
     _categoryToggled,
     // Back-compat aliases — earlier dashboard.html may still bind to these:
     discoverLogins : discoverAll,

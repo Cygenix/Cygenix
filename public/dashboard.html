@@ -2023,8 +2023,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
       <!-- Phase notice — set expectations about what's in v1 vs what's coming -->
       <div style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid rgba(79,142,255,0.25);background:rgba(79,142,255,0.05);border-radius:var(--r);font-size:11.5px;color:var(--text2);line-height:1.55">
-        <strong style="color:var(--accent)">Phase 1 + 2 — Logins &amp; SQL Agent jobs.</strong>
-        Migrate either or both in a single session. Logins move with hashed passwords and SIDs preserved (so already-migrated database users stay mapped). Agent jobs migrate with their steps, schedules, categories, and notification operators — created disabled by default for safety. SSIS packages (Phase 3) and linked-server replication (Phase 4) coming next.
+        <strong style="color:var(--accent)">Phase 1 + 2 + 3 — Logins, SQL Agent jobs &amp; SSIS packages.</strong>
+        Migrate any combination in a single session. Logins move with hashed passwords and SIDs preserved. Agent jobs migrate with their steps, schedules, categories, and notification operators. SSIS support covers the project deployment model: folders, projects (.ispac binary deployed server-to-server), environments, variables, references, and parameter overrides. Linked-server replication (Phase 4) coming next.
       </div>
 
       <!-- Step tabs — five-step flow: verify → discover → preview → execute → audit.
@@ -2082,6 +2082,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <input type="checkbox" id="sm-cat-jobs" checked onchange="ServerMigration._categoryToggled()" style="cursor:pointer">
               SQL Agent jobs
             </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text);cursor:pointer">
+              <input type="checkbox" id="sm-cat-ssis" checked onchange="ServerMigration._categoryToggled()" style="cursor:pointer">
+              SSIS packages
+            </label>
             <span style="height:18px;border-left:0.5px solid var(--border)"></span>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:11.5px;color:var(--text2);cursor:pointer" title="Recommended. Jobs are created in a disabled state on the target so they don't fire immediately. You can enable them after verification.">
               <input type="checkbox" id="sm-jobs-disabled-on-create" checked style="cursor:pointer">
@@ -2119,6 +2123,31 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div id="sm-jobs-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:480px">
             <div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">Click Discover to load Agent jobs from the source server.</div>
           </div>
+        </div>
+
+        <!-- SSIS sub-panel — projects + environments side by side. -->
+        <div id="sm-discover-ssis-panel" class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">SSIS catalog on source</div>
+            <span style="font-size:10.5px;color:var(--text3);font-style:italic">Project deployment model only. .ispac binaries transfer server-to-server at execute time.</span>
+          </div>
+          <!-- Master key password row — only used if target SSISDB needs creating. Hidden by browser autocomplete attribute. -->
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap;padding:8px 10px;background:var(--bg3);border-radius:var(--r);border:0.5px solid var(--border)">
+            <label for="sm-ssis-master-key-password" style="font-size:11.5px;color:var(--text2);font-weight:600">Master key password</label>
+            <input type="password" id="sm-ssis-master-key-password" class="form-input" autocomplete="new-password" style="font-family:var(--mono);font-size:12px;flex:1;min-width:200px;max-width:360px" placeholder="Used only if target SSISDB needs creating (min 8 chars)">
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:11px;color:var(--text3);cursor:pointer" title="Sensitive variables and parameters are encrypted with the source's master key, which the target doesn't share. Default behaviour leaves them as NULL placeholders for you to set manually after migration. Enable only if both servers are configured with the same master key.">
+              <input type="checkbox" id="sm-ssis-include-sensitive" style="cursor:pointer">
+              Try to migrate sensitive values <span style="color:var(--text3)">(rarely works)</span>
+            </label>
+          </div>
+          <div id="sm-ssis-catalog-status" style="margin-bottom:0.75rem"></div>
+          <div id="sm-ssis-summary" style="font-size:11.5px;color:var(--text2);margin-bottom:0.75rem"></div>
+          <div style="font-size:12px;font-weight:600;margin-bottom:0.4rem;color:var(--text2)">Projects</div>
+          <div id="sm-ssis-projects-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:280px;margin-bottom:0.75rem">
+            <div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">Click Discover to load SSIS projects from the source server.</div>
+          </div>
+          <div style="font-size:12px;font-weight:600;margin-bottom:0.4rem;color:var(--text2)">Environments</div>
+          <div id="sm-ssis-envs-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:280px"></div>
         </div>
 
       </div>
