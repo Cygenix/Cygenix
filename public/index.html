@@ -488,7 +488,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
     </div>
     <div class="features-grid animate-on-scroll">
       <div class="feature-card"><div class="feature-card-icon">🤖</div><div class="feature-card-title">Agentive Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Two ways to run a job. <strong style="color:var(--text2)">AI-Assisted</strong> — Cygenix recommends, you approve each step. <strong style="color:var(--text2)">Agentive</strong> — full autonomous execution end to end, with checkpoints and a human-in-the-loop kill switch.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Reporting</div><div class="feature-card-body">Interactive BI dashboards over your source or target database, drag-and-drop chart builder, and the home for auto-generated executive project summaries and conversion reports — ready to email to stakeholders.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">📊</div><div class="feature-card-title">Reporting</div><div class="feature-card-body">Interactive BI dashboards over your source or target database, drag-and-drop chart builder, and the home for auto-generated executive project summaries and conversion reports — ready to email to stakeholders. Upload context documents (emails, client briefs, sign-offs, Was/Is mappings, data dictionaries, schema docs) and Claude reads them when generating narratives, with inline citations back to the source (e.g. <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">[Email, 14 Apr]</code>).</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔍</div><div class="feature-card-title">Data Insights</div><div class="feature-card-body">Understand any database in plain English. Ask "what does this table do?", "where is config held?", "which tables hold financial data?" — Cygenix reads the schema, samples the data and answers you naturally. Onboard a legacy database in hours, not weeks.</div></div>
       <div class="feature-card"><div class="feature-card-icon">⏰</div><div class="feature-card-title">Task Agent</div><div class="feature-card-body">Job scheduler for everything Cygenix does. Run conversions, validations, reindexes and reports on a schedule — once, daily, weekly or cron. Job chains, retry policies, email alerts. Set it and walk away.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔌</div><div class="feature-card-title">Connect to Anything</div><div class="feature-card-body">Live database connections to SQL Server (on-prem, Azure SQL, Azure Managed Instance, AWS RDS, Google Cloud SQL) and PostgreSQL (self-hosted, RDS, Aurora, Azure Database, Cloud SQL, Supabase, Neon). File sources for <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.csv</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.xlsx</code>, <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.tsv</code> and <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">.txt</code> — multi-sheet workbooks handled. Cross-engine migration in any direction, with a built-in DDL generator that creates target tables from the source schema and flags lossy conversions (jsonb, arrays, hierarchyid). Azure Function with Managed Identity also supported.</div></div>
@@ -501,7 +501,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
       <div class="feature-card"><div class="feature-card-icon">💻</div><div class="feature-card-title">SQL Editor</div><div class="feature-card-body">Full-featured SQL editor with script library, connection selector, find & replace, results grid, history, AI assistant, and one-to-many mapper for complex transformations.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🧹</div><div class="feature-card-title">Data Cleansing</div><div class="feature-card-body">Find near-duplicate rows in a source table before migration. Pick the columns to match on and a strategy per column — <strong style="color:var(--text2)">exact</strong>, <strong style="color:var(--text2)">fuzzy</strong>, <strong style="color:var(--text2)">phonetic</strong> or <strong style="color:var(--text2)">numeric</strong>. Review candidate clusters, optionally have Claude review ambiguous ones for false positives, then export to CSV/JSON or generate merge SQL. Detection-only — your data stays untouched until you decide to act on it.</div></div>
       <div class="feature-card"><div class="feature-card-icon">🔐</div><div class="feature-card-title">Secure by Design</div><div class="feature-card-body">Authentication via Azure Entra External ID with SSO and Google sign-in. Azure Managed Identity supported, role-based access, full audit trail of every action. UK GDPR compliant. Database credentials live in your browser, not on our servers — sent only when running queries.</div></div>
-      <div class="feature-card"><div class="feature-card-icon">📂</div><div class="feature-card-title">Project Artifacts</div><div class="feature-card-body">Upload emails, client briefs, sign-offs and project documents to a per-project folder. Claude reads them as context when generating conversion report narratives, with inline citations back to the source (e.g. <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">[Email, 14 Apr]</code>). Filter by document type — Was/Is mappings, data dictionaries, schema docs.</div></div>
+      <div class="feature-card"><div class="feature-card-icon">🖧</div><div class="feature-card-title">Server Migration <span style="font-size:9px;background:var(--glow);color:var(--accent);padding:1px 6px;border-radius:100px;font-family:var(--mono);font-weight:500;letter-spacing:0.05em;margin-left:4px;vertical-align:middle">NEW</span></div><div class="feature-card-body">Move the server-level objects most tools leave behind. Logins migrate with hashed passwords and SIDs preserved (database users stay mapped). SQL Agent jobs travel with their steps, schedules, categories and operators. SSIS projects deploy server-to-server via the catalog — environments, variables and references included. Linked servers reproduce the exact provider and options from source. Verify, discover, preview, execute, audit — one flow.</div></div>
     </div>
   </div>
 </section>
@@ -635,6 +635,94 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
               <span style="font-size:9px;background:var(--purple-g,rgba(167,139,250,0.12));color:var(--purple);padding:1px 6px;border-radius:100px;font-family:var(--mono)">🤖 AI map</span>
             </div>
             <div style="font-size:9px;color:var(--text3);font-family:var(--mono)">PK: Identity · FK → @ClientID</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- SERVER MIGRATION -->
+<section class="section" id="server-migration">
+  <div class="container">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5rem;align-items:center" class="animate-on-scroll">
+      <div>
+        <div class="section-tag">Server Migration</div>
+        <div class="section-title" style="font-size:2.2rem">The objects most tools leave behind.</div>
+        <div class="section-sub">Schema and data are only half a migration. Logins, jobs, SSIS packages, linked servers — these live at the server level and almost every other tool either ignores them or makes you script them by hand. Cygenix moves them in a single, auditable flow.</div>
+        <ul class="feature-points" style="margin-top:1.5rem">
+          <li><strong style="color:var(--text2)">Logins</strong> — hashed passwords and SIDs preserved, so existing database users stay correctly mapped on the target. Server roles and Windows groups included.</li>
+          <li><strong style="color:var(--text2)">SQL Agent jobs</strong> — full dependency graph migrated: steps, schedules, categories, notification operators. Jobs created disabled by default so nothing fires unexpectedly on the target.</li>
+          <li><strong style="color:var(--text2)">SSIS packages</strong> — project deployment model. .ispac binaries transferred server-to-server via the catalog API; environments, variables and parameter overrides included; SSISDB auto-created on target if missing.</li>
+          <li><strong style="color:var(--text2)">Linked servers</strong> — provider, datasource and server options reproduced exactly, regardless of provider type. Remote passwords supplied per server (SQL Server cannot read them back from source).</li>
+          <li>Five-step shell: <strong style="color:var(--text2)">Verify → Discover → Preview → Execute → Audit</strong>. Sysadmin check on both sides, full SQL preview with redacted secrets, downloadable JSON audit trail of every action.</li>
+          <li>Already-existing items skipped via <code style="font-family:var(--mono);font-size:0.85em;background:var(--bg3);padding:1px 5px;border-radius:3px">IF NOT EXISTS</code> guards. Re-runs are safe.</li>
+        </ul>
+      </div>
+      <div class="mock">
+        <div class="mock-topbar">
+          <div class="mock-dot" style="background:#f04070"></div><div class="mock-dot" style="background:#f5a623"></div><div class="mock-dot" style="background:#10d48a"></div>
+          <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Server Migration · Step 4 of 5 · Execute</div>
+        </div>
+        <div class="mock-body">
+          <!-- Five-step bar -->
+          <div style="display:flex;border:0.5px solid var(--border2);border-radius:6px;overflow:hidden;margin-bottom:0.6rem;font-size:8px;font-family:var(--mono)">
+            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">1 Verify ✓</div>
+            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">2 Discover ✓</div>
+            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">3 Preview ✓</div>
+            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--accent);border-right:0.5px solid var(--border2);background:rgba(79,142,255,0.12);font-weight:700">4 Execute</div>
+            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3)">5 Audit</div>
+          </div>
+          <!-- Live execute feed mock — one row per category showing the badges that actually appear in the live UI -->
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green);width:10px">✓</span>
+            <span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
+            <span style="flex:1">app_service</span>
+            <span style="color:var(--green);font-size:8px">CREATED</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green);width:10px">✓</span>
+            <span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
+            <span style="flex:1">reporting_user</span>
+            <span style="color:var(--green);font-size:8px">CREATED</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green);width:10px">✓</span>
+            <span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
+            <span style="flex:1">Nightly_DataRefresh</span>
+            <span style="color:var(--green);font-size:8px">CREATED · 4 steps</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--amber);width:10px">–</span>
+            <span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 5px;border-radius:3px;font-size:8px">JOB</span>
+            <span style="flex:1">Old_BackupCheck</span>
+            <span style="color:var(--amber);font-size:8px">SKIPPED</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green);width:10px">✓</span>
+            <span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 5px;border-radius:3px;font-size:8px">PROJ</span>
+            <span style="flex:1">Finance/SalesETL</span>
+            <span style="color:var(--green);font-size:8px">DEPLOYED</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green);width:10px">✓</span>
+            <span style="background:rgba(110,231,183,0.15);color:#6ee7b7;padding:1px 5px;border-radius:3px;font-size:8px">ENV</span>
+            <span style="flex:1">Finance/Production</span>
+            <span style="color:var(--green);font-size:8px">12 vars</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--green);width:10px">✓</span>
+            <span style="background:rgba(251,146,60,0.15);color:#fb923c;padding:1px 5px;border-radius:3px;font-size:8px">LINK</span>
+            <span style="flex:1">LINK_REPORTING</span>
+            <span style="color:var(--green);font-size:8px">CREATED</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:9px;font-family:var(--mono)">
+            <span style="color:var(--accent)">Progress: 47 / 52</span>
+            <span style="color:var(--green)">✓ 41</span>
+            <span style="color:var(--amber)">– 5</span>
+            <span style="color:var(--red)">✕ 1</span>
           </div>
         </div>
       </div>
