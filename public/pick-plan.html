@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- NOTE: auth-gate.js is included so signed-out users get redirected to
+     /login.html. pick-plan.html itself is in TIER_EXEMPT inside auth-gate
+     so we don't redirect-loop. -->
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Cygenix – Choose your plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.08);
+  --red:#f04646;
+  --amber:#f5a623;
+  --serif:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+
+/* Top bar */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 1.5rem;border-bottom:0.5px solid var(--border);background:var(--bg2)}
+.logo{font-family:var(--serif);font-size:18px;font-weight:600;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
+.logo span{color:var(--accent)}
+.signout{font-family:var(--mono);font-size:11px;color:var(--text2);text-decoration:none;letter-spacing:0.05em;text-transform:uppercase;padding:6px 10px;border:0.5px solid var(--border2);border-radius:var(--r);transition:0.2s}
+.signout:hover{color:var(--text);border-color:var(--text2)}
+
+/* Main content */
+.main{flex:1;display:flex;flex-direction:column;align-items:center;padding:3rem 1.5rem 4rem}
+.intro{text-align:center;max-width:640px;margin-bottom:2rem}
+.intro .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:0.15em;color:var(--text2);text-transform:uppercase;margin-bottom:1rem}
+.intro h1{font-family:var(--serif);font-size:2rem;font-weight:500;letter-spacing:-0.02em;line-height:1.2;margin-bottom:0.75rem}
+.intro h1 em{color:var(--accent);font-style:normal}
+.intro p{color:var(--text2);font-size:15px;line-height:1.6}
+
+.banner{background:rgba(245,166,35,0.08);border:0.5px solid rgba(245,166,35,0.25);border-radius:var(--r);padding:0.75rem 1rem;margin-bottom:2rem;font-size:13px;color:var(--amber);max-width:640px;text-align:center}
+
+/* Billing toggle */
+.billing-toggle{display:inline-flex;align-items:center;background:var(--bg2);border:0.5px solid var(--border2);border-radius:100px;padding:4px;margin-bottom:2.5rem;font-family:var(--mono);font-size:12px;letter-spacing:0.05em}
+.billing-toggle button{background:transparent;border:none;padding:8px 18px;border-radius:100px;color:var(--text2);cursor:pointer;font-family:var(--mono);font-size:12px;letter-spacing:0.05em;text-transform:uppercase;transition:0.2s}
+.billing-toggle button.active{background:var(--accent);color:white}
+.billing-toggle .save-badge{display:inline-block;margin-left:6px;font-size:9px;background:var(--green-bg);color:var(--green);padding:2px 6px;border-radius:100px;letter-spacing:0.05em}
+
+/* Plans grid */
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.25rem;max-width:1100px;width:100%}
+.plan{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.5rem;display:flex;flex-direction:column;transition:0.2s;position:relative}
+.plan:hover{border-color:var(--text3)}
+.plan.featured{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),0 8px 32px var(--accent-glow)}
+.plan-tag{position:absolute;top:-9px;left:1.5rem;font-family:var(--mono);font-size:9px;letter-spacing:0.15em;background:var(--accent);color:white;padding:3px 8px;border-radius:100px;text-transform:uppercase}
+.plan-name{font-family:var(--serif);font-size:1.4rem;font-weight:500;margin-bottom:0.25rem}
+.plan-blurb{color:var(--text2);font-size:13px;line-height:1.5;margin-bottom:1.25rem;min-height:38px}
+.plan-price{font-family:var(--serif);font-size:2.25rem;font-weight:500;letter-spacing:-0.02em;margin-bottom:0.25rem}
+.plan-price .currency{font-size:1.25rem;vertical-align:top;color:var(--text2);margin-right:2px}
+.plan-price .period{font-size:13px;color:var(--text2);font-weight:400}
+.plan-price-sub{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:0.05em;margin-bottom:1.25rem;min-height:14px}
+.plan ul{list-style:none;margin-bottom:1.5rem;flex:1}
+.plan ul li{padding:0.4rem 0;font-size:13px;color:var(--text);display:flex;gap:0.5rem;align-items:flex-start}
+.plan ul li::before{content:'';flex-shrink:0;width:14px;height:14px;border-radius:50%;background:var(--green-bg);background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none'><path d='M2 5l2 2 4-4' stroke='%2322c97a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:center;margin-top:2px}
+.plan ul li.muted{color:var(--text2)}
+.plan-cta{display:block;width:100%;background:var(--accent);color:white;border:none;padding:0.75rem 1rem;border-radius:var(--r);font-family:var(--serif);font-size:0.95rem;font-weight:500;cursor:pointer;text-decoration:none;text-align:center;transition:0.2s}
+.plan-cta:hover:not(:disabled){background:var(--accent2)}
+.plan-cta:disabled{opacity:0.6;cursor:wait}
+.plan-cta.ghost{background:transparent;color:var(--text);border:0.5px solid var(--border2)}
+.plan-cta.ghost:hover{border-color:var(--text2);background:var(--bg3)}
+.plan-cta.loading::after{content:'';display:inline-block;width:11px;height:11px;border:1.5px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 0.6s linear infinite;margin-left:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.error{margin-top:1.5rem;padding:0.75rem 1rem;background:rgba(240,70,70,0.08);border:0.5px solid rgba(240,70,70,0.3);border-radius:var(--r);color:var(--red);font-size:13px;max-width:640px;text-align:center;display:none}
+.error.visible{display:block}
+
+.footer-note{margin-top:2rem;font-size:12px;color:var(--text3);text-align:center;font-family:var(--mono);letter-spacing:0.05em}
+.footer-note a{color:var(--text2);text-decoration:none;border-bottom:0.5px solid var(--border2)}
+.footer-note a:hover{color:var(--text)}
+
+@media(max-width:640px){
+  .intro h1{font-size:1.5rem}
+  .plans{grid-template-columns:1fr}
+  .main{padding:2rem 1rem 3rem}
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <a href="/" class="logo">Cyge<span>nix</span></a>
+  <a href="#" class="signout" id="signout-link">Sign out</a>
+</div>
+
+<div class="main">
+  <div class="intro">
+    <div class="eyebrow">One last step</div>
+    <h1>Choose a <em>plan</em> to get started</h1>
+    <p>Cygenix runs on a subscription. Pick a plan to start your 14-day free trial — no charge until day 15, cancel anytime.</p>
+  </div>
+
+  <div class="banner" id="reason-banner" style="display:none"></div>
+
+  <div class="billing-toggle">
+    <button id="bill-monthly" class="active" onclick="setBilling('monthly')">Monthly</button>
+    <button id="bill-annual"  onclick="setBilling('annual')">Annual <span class="save-badge">SAVE 20%</span></button>
+  </div>
+
+  <div class="plans">
+    <!-- STARTER -->
+    <div class="plan">
+      <div class="plan-name">Starter</div>
+      <div class="plan-blurb">For consultants and small teams running occasional migrations.</div>
+      <div class="plan-price">
+        <span class="currency">£</span><span data-price="starter-monthly">99</span>
+        <span class="period">/mo</span>
+      </div>
+      <div class="plan-price-sub" data-sub="starter-monthly">Billed monthly</div>
+      <ul>
+        <li>1 migration at a time</li>
+        <li>Up to 1M rows per job</li>
+        <li>30-day job history</li>
+        <li>SQL Server &amp; Azure SQL</li>
+        <li>AI column mapping</li>
+        <li class="muted">Email support</li>
+      </ul>
+      <button class="plan-cta" data-tier="starter" onclick="startCheckout('starter', this)">
+        Start 14-day free trial
+      </button>
+    </div>
+
+    <!-- PRO -->
+    <div class="plan featured">
+      <div class="plan-tag">Most popular</div>
+      <div class="plan-name">Pro</div>
+      <div class="plan-blurb">For growing teams running multiple migrations in parallel.</div>
+      <div class="plan-price">
+        <span class="currency">£</span><span data-price="pro-monthly">299</span>
+        <span class="period">/mo</span>
+      </div>
+      <div class="plan-price-sub" data-sub="pro-monthly">Billed monthly</div>
+      <ul>
+        <li>3 migrations in parallel</li>
+        <li>Up to 10M rows per job</li>
+        <li>Priority processing queue</li>
+        <li>90-day history + version control</li>
+        <li>Postgres + MySQL targets</li>
+        <li>Email notifications &amp; daily digest</li>
+      </ul>
+      <button class="plan-cta" data-tier="pro" onclick="startCheckout('pro', this)">
+        Start 14-day free trial
+      </button>
+    </div>
+
+    <!-- BUSINESS -->
+    <div class="plan">
+      <div class="plan-name">Business</div>
+      <div class="plan-blurb">For teams running large-scale, mission-critical migrations.</div>
+      <div class="plan-price">
+        <span class="currency">£</span>799
+        <span class="period">/mo</span>
+      </div>
+      <div class="plan-price-sub">Sales-led</div>
+      <ul>
+        <li>10 migrations in parallel</li>
+        <li>Up to 100M rows per job</li>
+        <li>Dedicated job queue</li>
+        <li>365-day retention</li>
+        <li>Slack &amp; webhook notifications</li>
+        <li>SLA-backed support</li>
+      </ul>
+      <a class="plan-cta ghost"
+         href="mailto:sales@cygenix.co.uk?subject=Cygenix%20Business%20enquiry">
+        Contact sales
+      </a>
+    </div>
+
+    <!-- ENTERPRISE -->
+    <div class="plan">
+      <div class="plan-name">Enterprise</div>
+      <div class="plan-blurb">For organisations with compliance, scale, or sovereignty needs.</div>
+      <div class="plan-price">Custom</div>
+      <div class="plan-price-sub">Annual contract</div>
+      <ul>
+        <li>Unlimited migrations &amp; rows</li>
+        <li>Dedicated infrastructure</li>
+        <li>BYO Azure subscription</li>
+        <li>Customer-managed keys</li>
+        <li>Named CSM</li>
+        <li>SLA-backed support</li>
+      </ul>
+      <a class="plan-cta ghost"
+         href="mailto:sales@cygenix.co.uk?subject=Cygenix%20Enterprise%20enquiry">
+        Contact sales
+      </a>
+    </div>
+  </div>
+
+  <div class="error" id="error-msg"></div>
+
+  <div class="footer-note">
+    By starting a trial you agree to our <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.
+  </div>
+</div>
+
+<script>
+// ── Pricing data — keep in sync with /pricing ──────────────────────────────
+// Monthly figures from the public pricing page; annual is the equivalent
+// monthly cost when you pay 20% less for the year.
+const PRICES = {
+  'starter-monthly': { display: '99',  sub: 'Billed monthly' },
+  'starter-annual':  { display: '79',  sub: '£948/yr — billed annually' },
+  'pro-monthly':     { display: '299', sub: 'Billed monthly' },
+  'pro-annual':      { display: '239', sub: '£2,868/yr — billed annually' }
+};
+
+let _billing = 'monthly';
+
+// ── Reason banner — explains why the user landed here ─────────────────────
+(function showReasonBanner() {
+  const params = new URLSearchParams(window.location.search);
+  const reason = params.get('reason');
+  if (!reason) return;
+  const banner = document.getElementById('reason-banner');
+  let msg = '';
+  if (reason === 'no-tier' || reason === 'none') {
+    msg = 'Welcome! Pick a plan to access the dashboard.';
+  } else if (reason === 'cancelled') {
+    msg = 'Your previous subscription has ended. Pick a plan to continue using Cygenix.';
+  } else if (reason === 'past_due') {
+    msg = 'There was an issue with your last payment. Pick a plan or contact support.';
+  } else if (reason === 'incomplete') {
+    msg = 'Your subscription wasn\'t completed. Pick a plan to try again.';
+  } else {
+    msg = 'Pick a plan to get started.';
+  }
+  banner.textContent = msg;
+  banner.style.display = 'block';
+})();
+
+// ── Billing toggle ────────────────────────────────────────────────────────
+function setBilling(period) {
+  _billing = period;
+  document.getElementById('bill-monthly').classList.toggle('active', period === 'monthly');
+  document.getElementById('bill-annual').classList.toggle('active', period === 'annual');
+  // Update prices on cards
+  ['starter', 'pro'].forEach(tier => {
+    const key = `${tier}-${period}`;
+    const priceEl = document.querySelector(`[data-price^="${tier}-"]`);
+    const subEl   = document.querySelector(`[data-sub^="${tier}-"]`);
+    if (priceEl) {
+      priceEl.textContent = PRICES[key].display;
+      priceEl.dataset.price = key;
+    }
+    if (subEl) {
+      subEl.textContent = PRICES[key].sub;
+      subEl.dataset.sub = key;
+    }
+  });
+}
+
+// ── Start checkout ────────────────────────────────────────────────────────
+async function startCheckout(tier, btn) {
+  const errorEl = document.getElementById('error-msg');
+  errorEl.classList.remove('visible');
+
+  // Disable all CTAs while we wait for Stripe so the user can't double-click
+  // or pick a different tier mid-flight.
+  document.querySelectorAll('.plan-cta[data-tier]').forEach(b => b.disabled = true);
+  btn.classList.add('loading');
+  btn.textContent = 'Connecting to Stripe…';
+
+  try {
+    const API = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/create-checkout-session';
+
+    const r = await fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tier, billing: _billing })
+    });
+
+    const data = await r.json().catch(() => null);
+
+    if (!r.ok || !data?.url) {
+      const msg = data?.error || `Couldn't start checkout (HTTP ${r.status}).`;
+      errorEl.textContent = msg;
+      errorEl.classList.add('visible');
+      // Re-enable CTAs
+      document.querySelectorAll('.plan-cta[data-tier]').forEach(b => b.disabled = false);
+      btn.classList.remove('loading');
+      btn.textContent = 'Start 14-day free trial';
+      return;
+    }
+
+    // Redirect to Stripe-hosted checkout
+    window.location.href = data.url;
+  } catch (e) {
+    errorEl.textContent = 'Network error: ' + (e.message || 'unknown');
+    errorEl.classList.add('visible');
+    document.querySelectorAll('.plan-cta[data-tier]').forEach(b => b.disabled = false);
+    btn.classList.remove('loading');
+    btn.textContent = 'Start 14-day free trial';
+  }
+}
+
+// ── Sign out ──────────────────────────────────────────────────────────────
+document.getElementById('signout-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  // Mirror the sign-out flow used elsewhere (full MSAL cache clear via
+  // logoutRedirect). If MSAL hasn't loaded for some reason, fall back to
+  // clearing localStorage and redirecting to /login.html.
+  try {
+    sessionStorage.setItem('cygenix_just_signed_out', '1');
+    if (typeof msal !== 'undefined') {
+      const msalApp = new msal.PublicClientApplication({
+        auth: {
+          clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+          authority: 'https://cygenix.ciamlogin.com/',
+          knownAuthorities: ['cygenix.ciamlogin.com']
+        },
+        cache: { cacheLocation: 'localStorage' }
+      });
+      msalApp.logoutRedirect({ postLogoutRedirectUri: window.location.origin + '/login.html' });
+      return;
+    }
+  } catch {}
+  // Fallback
+  Object.keys(localStorage).forEach(k => {
+    if (k.includes('login.windows.net') || k.includes('ciamlogin.com')) localStorage.removeItem(k);
+  });
+  window.location.replace('/login.html');
+});
+</script>
+
+</body>
+</html>

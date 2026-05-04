@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<!-- TIER_EXEMPT: signed-in users land here from Stripe even before their
+     tier is written to Cosmos. We poll checkout-status which writes the
+     tier server-side, then send them on. -->
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<title>Cygenix – Setting up your account</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent2:#2563eb;
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.08);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.08);
+  --amber:#f5a623;
+  --serif:'Syne',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
+
+.card{max-width:480px;width:100%;text-align:center}
+
+.icon{width:64px;height:64px;margin:0 auto 1.5rem;display:flex;align-items:center;justify-content:center;border-radius:50%;border:0.5px solid var(--border2);background:var(--bg2);transition:0.4s}
+.icon.checking{background:var(--bg3)}
+.icon.success{background:var(--green-bg);border-color:rgba(34,201,122,0.3)}
+.icon.error{background:var(--red-bg);border-color:rgba(240,70,70,0.3)}
+
+.spinner{width:24px;height:24px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+h1{font-family:var(--serif);font-size:1.6rem;font-weight:500;letter-spacing:-0.02em;margin-bottom:0.5rem}
+.lead{color:var(--text2);font-size:14px;line-height:1.6;margin-bottom:1.75rem}
+.lead em{color:var(--text);font-style:normal}
+
+.poll-status{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:0.05em;margin-bottom:2rem;min-height:14px}
+
+.btn{display:inline-block;padding:0.7rem 1.5rem;background:var(--accent);color:white;border:none;border-radius:var(--r);font-family:var(--serif);font-size:0.95rem;font-weight:500;cursor:pointer;text-decoration:none;transition:0.2s}
+.btn:hover{background:var(--accent2)}
+.btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2);margin-left:0.5rem}
+.btn-ghost:hover{color:var(--text);border-color:var(--text2)}
+
+.tier-badge{display:inline-block;padding:3px 10px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text2);margin-bottom:0.75rem}
+.tier-badge.success{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
+
+.detail-list{margin:1.5rem 0;padding:1rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);text-align:left;font-size:13px}
+.detail-list dt{color:var(--text2);font-family:var(--mono);font-size:11px;letter-spacing:0.05em;text-transform:uppercase;margin-bottom:2px}
+.detail-list dd{margin-bottom:0.6rem;font-family:var(--serif)}
+.detail-list dd:last-child{margin-bottom:0}
+</style>
+</head>
+<body>
+
+<div class="card">
+
+  <!-- CHECKING — shown while we poll -->
+  <div id="state-checking">
+    <div class="icon checking"><div class="spinner"></div></div>
+    <h1>Setting up your account</h1>
+    <p class="lead">We're confirming your subscription with Stripe. This usually takes <em>a few seconds</em>.</p>
+    <div class="poll-status" id="poll-status">Connecting…</div>
+  </div>
+
+  <!-- SUCCESS — subscription is live -->
+  <div id="state-success" style="display:none">
+    <div class="icon success">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <path d="M7 14l5 5 9-10" stroke="#22c97a" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="tier-badge success" id="success-tier">PLAN</div>
+    <h1>You're all set</h1>
+    <p class="lead">Your <em><span id="success-tier-text">plan</span></em> trial has started. You won't be charged until <em><span id="success-trial-end">day 15</span></em>.</p>
+    <a href="/dashboard.html" class="btn">Go to dashboard</a>
+  </div>
+
+  <!-- ERROR — something went wrong -->
+  <div id="state-error" style="display:none">
+    <div class="icon error">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+        <path d="M14 2L2 24h24L14 2z" stroke="#f04646" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M14 11v5" stroke="#f04646" stroke-width="1.7" stroke-linecap="round"/>
+        <circle cx="14" cy="19" r="0.9" fill="#f04646"/>
+      </svg>
+    </div>
+    <h1 id="error-title">Something went wrong</h1>
+    <p class="lead" id="error-msg">We couldn't confirm your subscription. If you completed payment, your account will activate shortly — try refreshing in a minute. Otherwise, please pick a plan again.</p>
+    <a href="/pick-plan.html" class="btn">Back to plans</a>
+    <a href="mailto:support@cygenix.co.uk?subject=Trial%20setup%20issue" class="btn btn-ghost">Email support</a>
+  </div>
+
+</div>
+
+<script>
+const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS  = 60000;   // 60s ceiling — webhooks usually settle in a few seconds
+
+// ── Get the userId from MSAL cache ────────────────────────────────────────
+function getUserId() {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (!k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw || raw[0] !== '{') continue;
+      let obj;
+      try { obj = JSON.parse(raw); } catch { continue; }
+      if (obj && obj.username && obj.authorityType && obj.homeAccountId) {
+        return String(obj.username || '').trim().toLowerCase();
+      }
+    }
+  } catch {}
+  return null;
+}
+
+// ── State helpers ─────────────────────────────────────────────────────────
+function showState(name) {
+  ['checking', 'success', 'error'].forEach(s => {
+    const el = document.getElementById('state-' + s);
+    if (el) el.style.display = (s === name) ? '' : 'none';
+  });
+}
+function setError(title, msg) {
+  document.getElementById('error-title').textContent = title;
+  document.getElementById('error-msg').textContent = msg;
+  showState('error');
+}
+function setSuccess(tier, trialEndIso) {
+  const tierLabel = (tier || 'plan').charAt(0).toUpperCase() + (tier || 'plan').slice(1);
+  document.getElementById('success-tier').textContent = tierLabel;
+  document.getElementById('success-tier-text').textContent = tierLabel;
+  // Format the trial end date nicely
+  let trialEndStr = 'day 15';
+  if (trialEndIso) {
+    try {
+      const d = new Date(trialEndIso);
+      trialEndStr = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    } catch {}
+  }
+  document.getElementById('success-trial-end').textContent = trialEndStr;
+  showState('success');
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
+(async function main() {
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session_id');
+
+  if (!sessionId) {
+    setError(
+      'No session ID',
+      'This page is reached after completing Stripe checkout. If you came here directly, please pick a plan first.'
+    );
+    return;
+  }
+
+  const userId = getUserId();
+  if (!userId) {
+    setError(
+      'Not signed in',
+      'You need to be signed in to confirm your subscription. Please sign in again, then return to this page.'
+    );
+    return;
+  }
+
+  const pollStatusEl = document.getElementById('poll-status');
+  const startedAt = Date.now();
+  let attempt = 0;
+
+  async function poll() {
+    attempt++;
+    pollStatusEl.textContent = `Checking… (attempt ${attempt})`;
+
+    let data = null;
+    try {
+      const r = await fetch(
+        `${API_BASE}/checkout-status?session_id=${encodeURIComponent(sessionId)}&code=${FUNC_CODE}`,
+        { headers: { 'x-user-id': userId } }
+      );
+      if (r.ok) data = await r.json();
+      else if (r.status === 403) {
+        setError('Session not yours', 'This checkout session belongs to a different user. If you have multiple accounts, sign in with the correct one.');
+        return;
+      }
+    } catch (e) {
+      // network blip — keep polling
+    }
+
+    if (data && (data.subscription_status === 'trialing' || data.subscription_status === 'active') && data.tier) {
+      // Done. Server has written the tier to Cosmos.
+      // Pull trial end from a fresh whoami call so we can show a date.
+      let trialEnd = null;
+      try {
+        const w = await fetch(`${API_BASE}/whoami?code=${FUNC_CODE}`, { headers: { 'x-user-id': userId } });
+        if (w.ok) {
+          const wd = await w.json();
+          trialEnd = wd.trial_ends_at || wd.current_period_end || null;
+        }
+      } catch {}
+      setSuccess(data.tier, trialEnd);
+      return;
+    }
+
+    if (data && data.session_status === 'expired') {
+      setError(
+        'Checkout expired',
+        'This checkout session has expired. Please pick a plan again to start a new trial.'
+      );
+      return;
+    }
+
+    if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+      setError(
+        'Taking longer than expected',
+        'Your subscription should activate shortly. Try refreshing in a minute, or contact support if the issue persists.'
+      );
+      return;
+    }
+
+    setTimeout(poll, POLL_INTERVAL_MS);
+  }
+
+  // Kick off the first poll immediately
+  poll();
+})();
+</script>
+
+</body>
+</html>
