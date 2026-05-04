@@ -414,6 +414,19 @@ app.http('data', {
                 const container = getCosmosContainer('users');
                 const existing = await container.item(userId, userId).read().catch(() => ({ resource: null }));
                 const base = existing.resource || { id: userId, userId, email: userId, createdAt: new Date().toISOString() };
+
+                // Safe timestamp helper — handles old/new API field locations
+                // and never throws on bad input. See webhook handler for why.
+                const item0 = sub.items?.data?.[0] || null;
+                const periodEnd = sub.current_period_end ?? item0?.current_period_end ?? null;
+                const safeTs = (ts) => {
+                  if (ts === null || ts === undefined || ts === '') return null;
+                  const n = typeof ts === 'number' ? ts : parseInt(ts, 10);
+                  if (!Number.isFinite(n) || n <= 0) return null;
+                  const d = new Date(n * 1000);
+                  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+                };
+
                 const merged = {
                   ...base,
                   tier,
@@ -421,8 +434,8 @@ app.http('data', {
                   billing_period: billing,
                   stripe_customer_id: typeof session.customer === 'string' ? session.customer : session.customer?.id || null,
                   stripe_subscription_id: typeof sub === 'string' ? sub : sub.id,
-                  current_period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
-                  trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+                  current_period_end: safeTs(periodEnd),
+                  trial_ends_at: safeTs(sub.trial_end),
                   cancel_at_period_end: !!sub.cancel_at_period_end,
                   tier_updated_at: new Date().toISOString(),
                   updatedAt: new Date().toISOString()
@@ -2161,6 +2174,15 @@ app.http('stripe-webhook', {
 
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
 
+    // ── Top-level try/catch ─────────────────────────────────────────────────
+    // Anything that throws — including the early body/signature reads, the
+    // Stripe SDK, the Cosmos client, or our handler logic — is caught here
+    // and returned as a non-empty 500 body so we can actually see what went
+    // wrong from the Stripe webhook log. Stripe was previously seeing empty
+    // 500 bodies because errors thrown before the inner try block leaked
+    // out as runtime errors, with no body attached.
+    try {
+
     if (!process.env.STRIPE_SECRET_KEY) {
       ctx.log.error('STRIPE_SECRET_KEY not configured');
       return err(500, 'STRIPE_SECRET_KEY not configured');
@@ -2186,8 +2208,6 @@ app.http('stripe-webhook', {
     try {
       event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } catch (e) {
-      // Bad signature usually means: wrong webhook secret, or the request
-      // didn't actually come from Stripe. Either way, reject.
       ctx.log.error('webhook signature verification failed:', e.message);
       return err(400, `Webhook signature verification failed: ${e.message}`);
     }
@@ -2242,18 +2262,42 @@ app.http('stripe-webhook', {
       ctx.log(`webhook: patched user ${userDoc.id} from ${source}: ${JSON.stringify(patch)}`);
     }
 
+    // Safely turn a Stripe Unix timestamp (seconds) into an ISO string.
+    // Returns null for any falsy or invalid value so .toISOString() can never
+    // throw. Some events carry timestamps as strings; coerce defensively.
+    function tsToIso(ts) {
+      if (ts === null || ts === undefined || ts === '') return null;
+      const n = typeof ts === 'number' ? ts : parseInt(ts, 10);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      const d = new Date(n * 1000);
+      return Number.isNaN(d.getTime()) ? null : d.toISOString();
+    }
+
     // Map a Stripe subscription object → tier patch fields. Centralised so
     // every event that touches subscription state produces consistent output.
+    //
+    // API VERSION HANDLING: in Stripe API 2025+, `current_period_start` and
+    // `current_period_end` moved off the subscription onto each subscription
+    // item. We try the subscription-level field first (older versions and
+    // backward-compat) then fall back to items[0]. Same for trial dates.
     function subscriptionToPatch(sub) {
       const tier    = sub.metadata?.cygenix_tier    || null;
       const billing = sub.metadata?.cygenix_billing || null;
+      const item0   = sub.items?.data?.[0] || null;
+
+      // current_period_end: prefer subscription-level, fall back to first item
+      const periodEnd = sub.current_period_end ?? item0?.current_period_end ?? null;
+      // trial_end can be on the subscription or, in some versions, derived
+      // from item-level trial settings. Subscription-level is canonical.
+      const trialEnd  = sub.trial_end ?? null;
+
       return {
         tier,
         tier_status:           sub.status, // 'trialing'|'active'|'past_due'|'canceled'|'incomplete'|'incomplete_expired'|'unpaid'|'paused'
         billing_period:        billing,
         stripe_subscription_id: sub.id,
-        current_period_end:    sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
-        trial_ends_at:         sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+        current_period_end:    tsToIso(periodEnd),
+        trial_ends_at:         tsToIso(trialEnd),
         cancel_at_period_end:  !!sub.cancel_at_period_end,
         // Clear pending_tier_change once the change has applied (i.e. we're
         // here because subscription.updated and the new tier IS the active tier).
@@ -2432,5 +2476,25 @@ app.http('stripe-webhook', {
 
     // 200 to Stripe = "we got it, don't retry".
     return { status: 200, headers: CORS, body: JSON.stringify({ received: true, type: event.type }) };
+
+    // ── End of top-level try block ──────────────────────────────────────────
+    } catch (topErr) {
+      // Catches any error that escaped the inner per-event try/catch, and
+      // any error thrown BEFORE the inner try/catch (e.g. signature
+      // verification crash, body read failure, runtime issue with the
+      // Stripe SDK). Always returns a populated body — never an empty one —
+      // so the failure mode is visible in the Stripe webhook log.
+      try { ctx.log.error('webhook top-level error:', topErr.message, topErr.stack); } catch {}
+      return {
+        status: 500,
+        headers: CORS,
+        body: JSON.stringify({
+          error:   'webhook top-level error',
+          message: String(topErr && topErr.message ? topErr.message : topErr),
+          name:    String(topErr && topErr.name    ? topErr.name    : ''),
+          stack:   String(topErr && topErr.stack   ? topErr.stack   : '').split('\n').slice(0, 8).join(' | ')
+        })
+      };
+    }
   }
 });
