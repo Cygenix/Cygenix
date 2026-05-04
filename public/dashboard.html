@@ -2033,8 +2033,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
       <!-- Phase notice — set expectations about what's in v1 vs what's coming -->
       <div style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid rgba(79,142,255,0.25);background:rgba(79,142,255,0.05);border-radius:var(--r);font-size:11.5px;color:var(--text2);line-height:1.55">
-        <strong style="color:var(--accent)">Phase 1 + 2 + 3 — Logins, SQL Agent jobs &amp; SSIS packages.</strong>
-        Migrate any combination in a single session. Logins move with hashed passwords and SIDs preserved. Agent jobs migrate with their steps, schedules, categories, and notification operators. SSIS support covers the project deployment model: folders, projects (.ispac binary deployed server-to-server), environments, variables, references, and parameter overrides. Linked-server replication (Phase 4) coming next.
+        <strong style="color:var(--accent)">Phase 1 + 2 + 3 + 4 — Logins, SQL Agent jobs, SSIS packages &amp; Linked servers.</strong>
+        Migrate any combination in a single session. Logins move with hashed passwords and SIDs preserved. Agent jobs migrate with their steps, schedules, categories, and notification operators. SSIS support covers the project deployment model. Linked servers reproduce the exact provider/datasource/options from source — supply the remote password at step 2 (it cannot be read from the source server).
       </div>
 
       <!-- Step tabs — five-step flow: verify → discover → preview → execute → audit.
@@ -2095,6 +2095,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text);cursor:pointer">
               <input type="checkbox" id="sm-cat-ssis" checked onchange="ServerMigration._categoryToggled()" style="cursor:pointer">
               SSIS packages
+            </label>
+            <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text);cursor:pointer">
+              <input type="checkbox" id="sm-cat-linked-servers" checked onchange="ServerMigration._categoryToggled()" style="cursor:pointer">
+              Linked servers
             </label>
             <span style="height:18px;border-left:0.5px solid var(--border)"></span>
             <label style="display:flex;align-items:center;gap:0.4rem;font-size:11.5px;color:var(--text2);cursor:pointer" title="Recommended. Jobs are created in a disabled state on the target so they don't fire immediately. You can enable them after verification.">
@@ -2161,6 +2165,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
           <div style="font-size:12px;font-weight:600;margin-bottom:0.4rem;color:var(--text2)">Environments</div>
           <div id="sm-ssis-envs-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:280px"></div>
+        </div>
+
+        <!-- Linked Servers sub-panel. Each row has its own password input (since
+             passwords cannot be read from the source) and a "skip login mapping"
+             toggle for cases where the user just wants to migrate the server
+             definition and configure auth manually later. -->
+        <div id="sm-discover-linked-servers-panel" class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">Linked servers on source</div>
+            <span style="font-size:10.5px;color:var(--text3);font-style:italic">SQL Server cannot read remote passwords back — supply them per server below. Per-user mappings are flagged but not migrated.</span>
+          </div>
+          <div id="sm-linked-servers-summary" style="font-size:11.5px;color:var(--text2);margin-bottom:0.75rem"></div>
+          <div id="sm-linked-servers-table" style="border:0.5px solid var(--border);border-radius:var(--r);overflow:auto;max-height:520px">
+            <div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">Click Discover to load linked servers from the source server.</div>
+          </div>
         </div>
 
       </div>

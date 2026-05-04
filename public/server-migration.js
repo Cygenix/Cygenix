@@ -64,7 +64,7 @@
     // Category selection — populated from the checkboxes at step 2.
     // Drives both Discover (which queries to run) and Preview/Execute
     // (which sections to emit).
-    categories: { logins: true, jobs: true, ssis: true },
+    categories: { logins: true, jobs: true, ssis: true, linkedServers: true },
 
     // ── Logins (Phase 1) ──
     logins: [],                  // login inventory rows
@@ -106,6 +106,25 @@
       masterKeyPassword: '',
       includeSensitiveValues: false,    // catalog.environment_variables.sensitive — see comment in buildEnv
     },
+
+    // ── Linked Servers (Phase 4) ──
+    // Linked server passwords cannot be read from the source (encrypted under
+    // the source's service master key, opaque on read). For each linked server
+    // that uses a stored remote login, the user supplies the password at step
+    // 2 — we hold them in memory only, never persist, and clear after the run.
+    //
+    // Schema we capture from sys.servers + sys.linked_logins:
+    //   server: name, product, provider, data_source, location, provider_string, catalog,
+    //           plus all the sp_serveroption-style boolean flags
+    //   logins (default-mapping row only): uses_self_credential, remote_name
+    //
+    // Per-user mappings (where local_principal_id != 0) are out of scope for
+    // this phase but flagged in warnings so the user knows what's missing.
+    linkedServers: [],                // array of discovered linked-server records
+    selectedLinkedServerNames: new Set(),
+    linkedServerPasswords: {},        // { [serverName]: 'password-typed-by-user' }
+    linkedServerSkipLogin: {},        // { [serverName]: true }  — skip the sp_addlinkedsrvlogin step entirely
+    targetLinkedServerNames: new Set(),// linked-server names that already exist on target — used for IF NOT EXISTS guard
 
     // ── Run state ──
     previewSql: '',              // generated T-SQL before execution
@@ -341,14 +360,15 @@
   async function discoverAll() {
     if (!SM.verified) { alert('Verify both connections first.'); return; }
 
-    SM.categories.logins = !!$('sm-cat-logins')?.checked;
-    SM.categories.jobs   = !!$('sm-cat-jobs')?.checked;
-    SM.categories.ssis   = !!$('sm-cat-ssis')?.checked;
+    SM.categories.logins        = !!$('sm-cat-logins')?.checked;
+    SM.categories.jobs          = !!$('sm-cat-jobs')?.checked;
+    SM.categories.ssis          = !!$('sm-cat-ssis')?.checked;
+    SM.categories.linkedServers = !!$('sm-cat-linked-servers')?.checked;
     SM.jobOptions.createDisabled = !!$('sm-jobs-disabled-on-create')?.checked;
     SM.ssisOptions.masterKeyPassword = ($('sm-ssis-master-key-password')?.value || '').trim();
     SM.ssisOptions.includeSensitiveValues = !!$('sm-ssis-include-sensitive')?.checked;
 
-    if (!SM.categories.logins && !SM.categories.jobs && !SM.categories.ssis) {
+    if (!SM.categories.logins && !SM.categories.jobs && !SM.categories.ssis && !SM.categories.linkedServers) {
       alert('Select at least one category to discover.');
       return;
     }
@@ -372,6 +392,10 @@
         setDiscoverStatus('Discovering SSIS catalog on source…');
         await discoverSsis();
       }
+      if (SM.categories.linkedServers) {
+        setDiscoverStatus('Discovering linked servers on source…');
+        await discoverLinkedServers();
+      }
     } finally {
       setDiscoverStatus(null);
     }
@@ -384,21 +408,25 @@
     SM.targetLogins    = new Set();
     SM.targetDatabases = new Set();
     SM.targetProxies   = new Set();
+    SM.targetLinkedServerNames = new Set();
     SM.ssisCatalogSource = { exists: false, masterKeyExists: false, clrEnabled: false };
     SM.ssisCatalogTarget = { exists: false, masterKeyExists: false, clrEnabled: false };
     try {
       const tgt = getTgtConn();
-      // Three independent queries; can happen in parallel, all small.
-      const [logins, dbs, proxies] = await Promise.all([
+      // Independent queries; can happen in parallel, all small.
+      const [logins, dbs, proxies, lsNames] = await Promise.all([
         dbCall(tgt, { action: 'execute', sql: 'SELECT name FROM sys.server_principals WHERE type IN (\'S\',\'U\',\'G\');' }),
         dbCall(tgt, { action: 'execute', sql: 'SELECT name FROM sys.databases;' }),
         // Proxies live in msdb. Wrap in catch in case the user has an unusual
         // setup where msdb isn't queryable; warning UX gracefully degrades.
         dbCall(tgt, { action: 'execute', sql: 'SELECT name FROM msdb.dbo.sysproxies;' }).catch(() => ({ recordset: [] })),
+        // Linked servers already on target — server_id > 0 excludes the local server itself.
+        dbCall(tgt, { action: 'execute', sql: 'SELECT name FROM sys.servers WHERE server_id > 0;' }).catch(() => ({ recordset: [] })),
       ]);
       for (const r of (logins?.recordset  || [])) SM.targetLogins.add(r.name);
       for (const r of (dbs?.recordset     || [])) SM.targetDatabases.add(r.name);
       for (const r of (proxies?.recordset || [])) SM.targetProxies.add(r.name);
+      for (const r of (lsNames?.recordset || [])) SM.targetLinkedServerNames.add(r.name);
     } catch (e) {
       console.warn('[server-migration] Could not load target reference data:', e);
     }
@@ -1478,6 +1506,401 @@
     return result;
   }
 
+  // ── Step 2d: Discover linked servers (Phase 4) ────────────────────────────
+  // Pulls sys.servers + sys.linked_logins for the source. We only capture the
+  // default-mapping row from sys.linked_logins (local_principal_id = 0); per-
+  // user mappings are flagged as warnings but not migrated.
+  //
+  // Passwords cannot be read from the source — sys.linked_logins.remote_password
+  // returns NULL (or encrypted bytes pre-2017, never decryptable on a different
+  // server). For each linked server using a stored remote login, the user
+  // supplies the password at step 2.
+  async function discoverLinkedServers() {
+    const tableEl = $('sm-linked-servers-table');
+    const summaryEl = $('sm-linked-servers-summary');
+    if (tableEl) tableEl.innerHTML = '<div style="font-size:11px;color:var(--text3);padding:1rem">Discovering linked servers on source…</div>';
+    if (summaryEl) summaryEl.textContent = '';
+
+    // Two queries. sys.servers has the server-level config; sys.linked_logins
+    // has the credential mapping rows.
+    const sqlServers = `
+      SELECT s.server_id, s.name, s.product, s.provider, s.data_source, s.location,
+             s.provider_string, s.catalog,
+             s.is_linked, s.is_remote_login_enabled, s.is_rpc_out_enabled,
+             s.is_data_access_enabled, s.is_collation_compatible,
+             s.uses_remote_collation, s.collation_name,
+             s.connect_timeout, s.query_timeout,
+             s.is_remote_proc_transaction_promotion_enabled,
+             s.is_system, s.lazy_schema_validation,
+             s.modify_date
+      FROM   sys.servers s
+      WHERE  s.server_id > 0
+      ORDER BY s.name;
+    `;
+    const sqlLogins = `
+      SELECT  ll.server_id,
+              ll.local_principal_id,
+              ll.uses_self_credential,
+              ll.remote_name,
+              sp.name AS local_principal_name
+      FROM    sys.linked_logins      ll
+      LEFT JOIN sys.server_principals sp ON sp.principal_id = ll.local_principal_id
+      ORDER BY ll.server_id, ll.local_principal_id;
+    `;
+
+    let serversRes, loginsRes;
+    try {
+      [serversRes, loginsRes] = await Promise.all([
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlServers }),
+        dbCall(getSrcConn(), { action: 'execute', sql: sqlLogins }),
+      ]);
+    } catch (e) {
+      if (tableEl) tableEl.innerHTML = '<div style="color:var(--red);padding:1rem;font-size:12px">🔴 Linked-server discovery failed: ' + escHtml(e.message || String(e)) + '</div>';
+      return;
+    }
+
+    // Index logins by server_id
+    const loginsByServer = {};
+    for (const ll of (loginsRes?.recordset || [])) {
+      const k = ll.server_id;
+      if (!loginsByServer[k]) loginsByServer[k] = [];
+      loginsByServer[k].push(ll);
+    }
+
+    // Build the merged records
+    SM.linkedServers = (serversRes?.recordset || []).map(s => {
+      const logins = loginsByServer[s.server_id] || [];
+      // The "default mapping" is the row with local_principal_id = 0 — what
+      // applies to logins that aren't explicitly mapped.
+      const defaultMapping = logins.find(l => l.local_principal_id === 0) || null;
+      const perUserMappings = logins.filter(l => l.local_principal_id !== 0);
+
+      const warnings = [];
+      // Per-user mappings are out of scope for this phase.
+      if (perUserMappings.length) {
+        warnings.push({
+          kind: 'per-user-mappings',
+          detail: perUserMappings.length + ' per-user mapping(s) on this server (' +
+                  perUserMappings.map(m => m.local_principal_name || ('id ' + m.local_principal_id)).slice(0, 3).join(', ') +
+                  (perUserMappings.length > 3 ? ', …' : '') +
+                  ') — not migrated by this phase. Configure manually on target.'
+        });
+      }
+      // Already on target?
+      if (SM.targetLinkedServerNames.has(s.name)) {
+        warnings.push({ kind: 'exists-on-target', detail: 'A linked server with this name already exists on target — will be skipped.' });
+      }
+
+      // Determine credential mode for the default mapping. Three sane states:
+      //   - useself=TRUE   → Windows pass-through, no password needed
+      //   - useself=FALSE, remote_name=NULL → unmapped logins not allowed
+      //   - useself=FALSE, remote_name=<name> → stored remote login, password needed
+      let credMode;
+      if (!defaultMapping) {
+        credMode = 'no-default';   // very unusual; can happen if all mappings are per-user
+      } else if (defaultMapping.uses_self_credential) {
+        credMode = 'self';
+      } else if (defaultMapping.remote_name) {
+        credMode = 'stored';
+      } else {
+        credMode = 'not-allowed';  // useself=FALSE with no remote_name = "Not be made" in SSMS UI
+      }
+
+      return {
+        server_id            : s.server_id,
+        name                 : s.name,
+        product              : s.product || '',
+        provider             : s.provider || '',
+        data_source          : s.data_source || '',
+        location             : s.location || '',
+        provider_string      : s.provider_string || '',
+        catalog              : s.catalog || '',
+        // sp_serveroption-driven flags
+        is_remote_login_enabled                : !!s.is_remote_login_enabled,
+        is_rpc_out_enabled                     : !!s.is_rpc_out_enabled,
+        is_data_access_enabled                 : !!s.is_data_access_enabled,
+        is_collation_compatible                : !!s.is_collation_compatible,
+        uses_remote_collation                  : !!s.uses_remote_collation,
+        collation_name                         : s.collation_name || '',
+        connect_timeout                        : s.connect_timeout != null ? s.connect_timeout : 0,
+        query_timeout                          : s.query_timeout   != null ? s.query_timeout   : 0,
+        is_remote_proc_transaction_promotion_enabled: !!s.is_remote_proc_transaction_promotion_enabled,
+        lazy_schema_validation                 : !!s.lazy_schema_validation,
+        // Mapping
+        defaultMapping       : defaultMapping,
+        perUserMappings      : perUserMappings,
+        credMode             : credMode,
+        warnings             : warnings,
+      };
+    });
+
+    // Default selection: every linked server that doesn't already exist on target.
+    SM.selectedLinkedServerNames = new Set(
+      SM.linkedServers
+        .filter(ls => !SM.targetLinkedServerNames.has(ls.name))
+        .map(ls => ls.name)
+    );
+
+    // Reset password / skip-login state — fresh discovery wipes previous run's
+    // entries so stale passwords from another session don't leak in.
+    SM.linkedServerPasswords = {};
+    SM.linkedServerSkipLogin = {};
+
+    renderLinkedServersTable();
+  }
+
+  function renderLinkedServersTable() {
+    const el = $('sm-linked-servers-table');
+    const summaryEl = $('sm-linked-servers-summary');
+    if (!el) return;
+
+    if (summaryEl) {
+      const counts = SM.linkedServers.reduce((a, ls) => { a[ls.credMode] = (a[ls.credMode] || 0) + 1; return a; }, {});
+      summaryEl.innerHTML =
+        '<strong>' + SM.linkedServers.length + '</strong> linked server(s) discovered &nbsp;·&nbsp; ' +
+        '<span style="color:var(--text2)">stored login: ' + (counts.stored   || 0) + '</span> &nbsp;· ' +
+        '<span style="color:var(--text2)">pass-through: ' + (counts.self     || 0) + '</span> &nbsp;· ' +
+        '<span style="color:var(--text2)">unmapped: '     + (counts['not-allowed'] || 0) + '</span> &nbsp;· ' +
+        '<strong style="color:var(--accent)">' + SM.selectedLinkedServerNames.size + ' selected</strong>';
+    }
+
+    if (SM.linkedServers.length === 0) {
+      el.innerHTML = '<div style="font-size:11px;color:var(--text3);font-style:italic;padding:1rem">No linked servers found on source.</div>';
+      return;
+    }
+
+    let html = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="background:var(--bg3);text-align:left">
+            <th style="padding:8px 10px;width:40px;border-bottom:0.5px solid var(--border)">
+              <input type="checkbox" id="sm-select-all-linked-servers" onchange="ServerMigration._toggleAllLinkedServers(this.checked)" style="cursor:pointer">
+            </th>
+            <th style="padding:8px 10px;border-bottom:0.5px solid var(--border)">Name / Provider</th>
+            <th style="padding:8px 10px;border-bottom:0.5px solid var(--border)">Data source</th>
+            <th style="padding:8px 10px;border-bottom:0.5px solid var(--border);width:140px">Auth</th>
+            <th style="padding:8px 10px;border-bottom:0.5px solid var(--border);width:240px">Credential</th>
+            <th style="padding:8px 10px;border-bottom:0.5px solid var(--border)">Notes</th>
+          </tr>
+        </thead>
+        <tbody>`;
+    for (const ls of SM.linkedServers) {
+      const checked = SM.selectedLinkedServerNames.has(ls.name) ? 'checked' : '';
+      const nameKey = escHtml(ls.name).replace(/'/g, '&#39;');
+      const authBadge =
+        ls.credMode === 'self'    ? '<span style="background:rgba(45,212,191,0.15);color:#2dd4bf;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">PASS-THROUGH</span>' :
+        ls.credMode === 'stored'  ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">STORED LOGIN</span>' :
+        ls.credMode === 'not-allowed' ? '<span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">UNMAPPED</span>' :
+                                    '<span style="color:var(--text3);font-size:11px">NO DEFAULT</span>';
+
+      // Credential cell — depends on credMode.
+      let credCell;
+      if (ls.credMode === 'stored') {
+        const pwd = SM.linkedServerPasswords[ls.name] || '';
+        const skipped = !!SM.linkedServerSkipLogin[ls.name];
+        const remoteName = escHtml(ls.defaultMapping?.remote_name || '');
+        credCell = `
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="font-family:var(--mono);font-size:10.5px;color:var(--text3)">remote: <span style="color:var(--text2)">${remoteName}</span></div>
+            ${skipped
+              ? '<span style="font-size:10.5px;color:var(--amber);font-style:italic">login mapping will NOT be migrated</span>'
+              : `<input type="password" autocomplete="new-password" value="${escHtml(pwd)}" placeholder="password for ${remoteName}…" oninput="ServerMigration._setLinkedServerPassword('${nameKey}', this.value)" class="form-input" style="font-family:var(--mono);font-size:11px;padding:4px 6px;height:auto;width:100%;box-sizing:border-box">`
+            }
+            <label style="display:flex;align-items:center;gap:0.3rem;font-size:10px;color:var(--text3);cursor:pointer">
+              <input type="checkbox" ${skipped ? 'checked' : ''} onchange="ServerMigration._toggleLinkedServerSkipLogin('${nameKey}', this.checked)" style="cursor:pointer;transform:scale(0.85)">
+              skip login mapping (server only)
+            </label>
+          </div>`;
+      } else if (ls.credMode === 'self') {
+        credCell = '<span style="font-size:11px;color:var(--text2)">Windows pass-through<br><span style="font-size:10.5px;color:var(--text3)">(local credentials used)</span></span>';
+      } else if (ls.credMode === 'not-allowed') {
+        credCell = '<span style="font-size:11px;color:var(--text2)">Unmapped logins refused<br><span style="font-size:10.5px;color:var(--text3)">(no remote name set)</span></span>';
+      } else {
+        credCell = '<span style="font-size:11px;color:var(--text3);font-style:italic">no default mapping</span>';
+      }
+
+      const warnHtml = ls.warnings.length
+        ? ls.warnings.map(w => '<span style="color:' + (w.kind === 'exists-on-target' ? 'var(--amber)' : 'var(--text2)') + ';font-size:10.5px;display:block;line-height:1.4">⚠ ' + escHtml(w.detail) + '</span>').join('')
+        : '<span style="color:var(--text3);font-style:italic;font-size:10.5px">none</span>';
+
+      html += `
+        <tr>
+          <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);vertical-align:top">
+            <input type="checkbox" ${checked} onchange="ServerMigration._toggleLinkedServer('${nameKey}', this.checked)" style="cursor:pointer">
+          </td>
+          <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);vertical-align:top">
+            <div style="font-family:var(--mono);font-weight:600">${escHtml(ls.name)}</div>
+            <div style="font-family:var(--mono);font-size:10.5px;color:var(--text3);margin-top:2px">${escHtml(ls.provider)}${ls.product ? ' · ' + escHtml(ls.product) : ''}</div>
+          </td>
+          <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-family:var(--mono);font-size:11px;color:var(--text2);vertical-align:top;word-break:break-all">${escHtml(ls.data_source) || '<span style="color:var(--text3)">—</span>'}${ls.catalog ? '<br><span style="color:var(--text3);font-size:10px">catalog: ' + escHtml(ls.catalog) + '</span>' : ''}</td>
+          <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);vertical-align:top">${authBadge}</td>
+          <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);vertical-align:top">${credCell}</td>
+          <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);vertical-align:top">${warnHtml}</td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+
+    const allBox = $('sm-select-all-linked-servers');
+    if (allBox) {
+      const visibleIds = SM.linkedServers.map(ls => ls.name);
+      allBox.checked = visibleIds.length > 0 && visibleIds.every(id => SM.selectedLinkedServerNames.has(id));
+    }
+  }
+
+  function _toggleLinkedServer(name, checked) {
+    if (checked) SM.selectedLinkedServerNames.add(name);
+    else         SM.selectedLinkedServerNames.delete(name);
+    renderLinkedServersTable();
+  }
+  function _toggleAllLinkedServers(checked) {
+    for (const ls of SM.linkedServers) {
+      if (checked) SM.selectedLinkedServerNames.add(ls.name);
+      else         SM.selectedLinkedServerNames.delete(ls.name);
+    }
+    renderLinkedServersTable();
+  }
+  function _setLinkedServerPassword(name, value) {
+    SM.linkedServerPasswords[name] = value;
+    // Don't re-render on every keystroke — that would steal focus.
+  }
+  function _toggleLinkedServerSkipLogin(name, checked) {
+    SM.linkedServerSkipLogin[name] = !!checked;
+    renderLinkedServersTable();
+  }
+
+  // ── Linked-server preview/script builders ─────────────────────────────────
+  // We build the full setup script generically, reading every relevant column
+  // from sys.servers and reproducing them. No provider-specific special cases:
+  // the source's recorded provider/data_source/provider_string is what gets
+  // re-emitted on target, regardless of whether it's SQLNCLI, MSDASQL, OraOLEDB,
+  // or anything else. Credentials get filled in at preview/execute time from
+  // the password field the user supplied.
+  function buildLinkedServerBlock(ls) {
+    const out = [];
+    const nameLit = "N'" + tsqlEsc(ls.name) + "'";
+    out.push("-- ── Linked server: " + ls.name + " (" + (ls.provider || '?') + ") ──");
+    if (ls.warnings.length) {
+      for (const w of ls.warnings) out.push("-- ⚠ " + w.detail);
+    }
+    out.push("IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE name = " + nameLit + " AND server_id > 0)");
+    out.push("BEGIN");
+    out.push("  EXEC master.dbo.sp_addlinkedserver");
+    out.push("      @server     = " + nameLit);
+    out.push("    , @srvproduct = N'" + tsqlEsc(ls.product || '') + "'");
+    out.push("    , @provider   = N'" + tsqlEsc(ls.provider || 'SQLNCLI') + "'");
+    if (ls.data_source)     out.push("    , @datasrc    = N'" + tsqlEsc(ls.data_source) + "'");
+    if (ls.location)        out.push("    , @location   = N'" + tsqlEsc(ls.location) + "'");
+    if (ls.provider_string) out.push("    , @provstr    = N'" + tsqlEsc(ls.provider_string) + "'");
+    if (ls.catalog)         out.push("    , @catalog    = N'" + tsqlEsc(ls.catalog) + "'");
+    out.push("  ;");
+    out.push("");
+
+    // Login mapping. Two main flavours:
+    //   - 'self' → Windows pass-through, easy
+    //   - 'stored' → use the user-supplied password
+    // Anything else gets explicit useself=FALSE with no remote name (matches
+    // SSMS "Not be made" mode), which is the source's actual config.
+    const skipLogin = !!SM.linkedServerSkipLogin[ls.name];
+    if (skipLogin) {
+      out.push("  -- ⚠ Login mapping intentionally skipped for this linked server.");
+      out.push("  --   The server definition is created but no sp_addlinkedsrvlogin call is issued,");
+      out.push("  --   which means SQL Server's default behaviour applies: pass-through using the");
+      out.push("  --   local login's identity. Add a login mapping manually if that's not desired.");
+    } else if (ls.credMode === 'self') {
+      out.push("  EXEC master.dbo.sp_addlinkedsrvlogin");
+      out.push("      @rmtsrvname  = " + nameLit);
+      out.push("    , @useself     = N'TRUE';");
+    } else if (ls.credMode === 'stored') {
+      const remoteName = ls.defaultMapping?.remote_name || '';
+      const pwd = SM.linkedServerPasswords[ls.name] || '';
+      out.push("  EXEC master.dbo.sp_addlinkedsrvlogin");
+      out.push("      @rmtsrvname  = " + nameLit);
+      out.push("    , @useself     = N'FALSE'");
+      out.push("    , @locallogin  = NULL");
+      out.push("    , @rmtuser     = N'" + tsqlEsc(remoteName) + "'");
+      out.push("    , @rmtpassword = N'" + tsqlEsc(pwd) + "';");
+    } else if (ls.credMode === 'not-allowed') {
+      out.push("  EXEC master.dbo.sp_addlinkedsrvlogin");
+      out.push("      @rmtsrvname  = " + nameLit);
+      out.push("    , @useself     = N'FALSE'");
+      out.push("    , @locallogin  = NULL");
+      out.push("    , @rmtuser     = NULL");
+      out.push("    , @rmtpassword = NULL;");
+    } else {
+      out.push("  -- Source has no default login mapping — skipping sp_addlinkedsrvlogin");
+    }
+    out.push("");
+
+    // Server options. We always set all the relevant flags (collation_name
+    // only when uses_remote_collation is on, since collation is meaningless
+    // otherwise). Treat sp_serveroption as cheap and non-failing.
+    out.push("  -- Server options");
+    out.push(buildServerOptionLine(ls.name, 'rpc out',                                ls.is_rpc_out_enabled));
+    out.push(buildServerOptionLine(ls.name, 'data access',                            ls.is_data_access_enabled));
+    out.push(buildServerOptionLine(ls.name, 'collation compatible',                   ls.is_collation_compatible));
+    out.push(buildServerOptionLine(ls.name, 'use remote collation',                   ls.uses_remote_collation));
+    out.push(buildServerOptionLine(ls.name, 'remote proc transaction promotion',     ls.is_remote_proc_transaction_promotion_enabled));
+    out.push(buildServerOptionLine(ls.name, 'lazy schema validation',                 ls.lazy_schema_validation));
+    if (ls.uses_remote_collation && ls.collation_name) {
+      out.push("  EXEC master.dbo.sp_serveroption @server = " + nameLit + ", @optname = N'collation name', @optvalue = N'" + tsqlEsc(ls.collation_name) + "';");
+    }
+    if (ls.connect_timeout && ls.connect_timeout > 0) {
+      out.push("  EXEC master.dbo.sp_serveroption @server = " + nameLit + ", @optname = N'connect timeout', @optvalue = N'" + ls.connect_timeout + "';");
+    }
+    if (ls.query_timeout && ls.query_timeout > 0) {
+      out.push("  EXEC master.dbo.sp_serveroption @server = " + nameLit + ", @optname = N'query timeout', @optvalue = N'" + ls.query_timeout + "';");
+    }
+
+    out.push("END;");
+    return out.join('\n');
+  }
+
+  function buildServerOptionLine(serverName, optName, boolValue) {
+    const nameLit = "N'" + tsqlEsc(serverName) + "'";
+    return "  EXEC master.dbo.sp_serveroption @server = " + nameLit + ", @optname = N'" + optName + "', @optvalue = N'" + (boolValue ? 'true' : 'false') + "';";
+  }
+
+  // ── Linked-server executor ────────────────────────────────────────────────
+  async function executeLinkedServer(tgtConn, ls) {
+    const result = { category: 'linked-server', name: ls.name, status: 'pending', message: '', timestamp: new Date().toISOString() };
+    // Already-on-target → skip cleanly. The IF NOT EXISTS guard would handle
+    // it too but we get a more accurate audit message this way.
+    if (SM.targetLinkedServerNames.has(ls.name)) {
+      result.status = 'skipped';
+      result.message = 'Already exists on target';
+      return result;
+    }
+    // For stored-credential servers, refuse to proceed without a password
+    // (unless the user explicitly checked "skip login mapping"). Otherwise
+    // we'd silently create a linked server with N'' as the password, which
+    // would let anyone with linked-server access log in as that remote user
+    // with an empty password. That's a security issue we won't ship.
+    if (ls.credMode === 'stored' && !SM.linkedServerSkipLogin[ls.name]) {
+      const pwd = SM.linkedServerPasswords[ls.name] || '';
+      if (!pwd) {
+        result.status = 'skipped';
+        result.message = 'No password supplied (and skip-login not selected) — refusing to create with empty password';
+        return result;
+      }
+    }
+    try {
+      await dbCall(tgtConn, { action: 'execute', sql: buildLinkedServerBlock(ls) });
+      const check = await dbCall(tgtConn, { action: 'execute', sql:
+        "SELECT COUNT(*) AS n FROM sys.servers WHERE name = N'" + tsqlEsc(ls.name) + "' AND server_id > 0;"
+      });
+      const exists = ((check?.recordset || [])[0]?.n || 0) >= 1;
+      result.status = exists ? 'created' : 'failed';
+      result.message = exists
+        ? (SM.linkedServerSkipLogin[ls.name] ? 'OK (server only — login mapping skipped)' : 'OK')
+        : 'Linked server not present after sp_addlinkedserver';
+    } catch (e) {
+      result.status = 'failed';
+      result.message = e.message || String(e);
+    }
+    return result;
+  }
+
   // ── Step 3: Generate preview SQL ──────────────────────────────────────────
   // Combined script. Order matters because of FK and reference dependencies:
   //   1. Logins  — jobs may have these as owners
@@ -1682,6 +2105,25 @@
       }
     }
 
+    // ── Linked Servers (Phase 4) ────────────────────────────────────────────
+    // Generic mode — reproduces sp_addlinkedserver exactly as recorded on
+    // source, regardless of provider. Credentials filled in from the
+    // user-supplied password fields per server.
+    if (SM.categories.linkedServers) {
+      const selectedLs = SM.linkedServers.filter(ls => SM.selectedLinkedServerNames.has(ls.name));
+      if (selectedLs.length) {
+        out.push('-- ════════════════════════════════════════════════');
+        out.push('-- LINKED SERVERS');
+        out.push('-- ════════════════════════════════════════════════');
+        out.push('');
+        for (const ls of selectedLs) {
+          out.push(buildLinkedServerBlock(ls));
+          out.push('GO');
+          out.push('');
+        }
+      }
+    }
+
     SM.previewSql = out.join('\n');
   }
 
@@ -1882,8 +2324,9 @@
     const anyLogin = SM.categories.logins && SM.selectedLoginIds.size > 0;
     const anyJob   = SM.categories.jobs   && SM.selectedJobIds.size > 0;
     const anySsis  = SM.categories.ssis   && (SM.selectedProjectKeys.size > 0 || SM.selectedEnvironmentKeys.size > 0);
-    if (!anyLogin && !anyJob && !anySsis) {
-      alert('Select at least one login, job, or SSIS project/environment to preview.');
+    const anyLs    = SM.categories.linkedServers && SM.selectedLinkedServerNames.size > 0;
+    if (!anyLogin && !anyJob && !anySsis && !anyLs) {
+      alert('Select at least one login, job, SSIS project/environment, or linked server to preview.');
       return;
     }
     // Pre-flight: SSIS bootstrap requires a master key password if SSISDB
@@ -1895,12 +2338,30 @@
         return;
       }
     }
+    // Pre-flight: linked servers using stored credentials need either a
+    // password or an explicit "skip login" flag. List any that are missing
+    // both so the user can fix the lot at once instead of one-by-one.
+    if (anyLs) {
+      const missingPasswords = SM.linkedServers
+        .filter(ls => SM.selectedLinkedServerNames.has(ls.name))
+        .filter(ls => ls.credMode === 'stored')
+        .filter(ls => !SM.linkedServerSkipLogin[ls.name])
+        .filter(ls => !(SM.linkedServerPasswords[ls.name] && SM.linkedServerPasswords[ls.name].length > 0));
+      if (missingPasswords.length) {
+        alert(
+          'The following linked server(s) need a password (or check "skip login mapping"):\n\n  ' +
+          missingPasswords.map(ls => '• ' + ls.name).join('\n  ')
+        );
+        return;
+      }
+    }
     buildPreviewSql();
     const previewEl = $('sm-preview-pre');
     if (previewEl) {
-      // Redact password hashes in the on-screen preview only. Real SQL sent
-      // at execution still has them.
-      const redacted = SM.previewSql.replace(/PASSWORD\s*=\s*0x[0-9a-fA-F]+/g, 'PASSWORD = 0x<REDACTED>');
+      // Redact password hashes AND linked-server remote passwords in the
+      // on-screen preview. Real SQL sent at execution still has them.
+      let redacted = SM.previewSql.replace(/PASSWORD\s*=\s*0x[0-9a-fA-F]+/g, 'PASSWORD = 0x<REDACTED>');
+      redacted = redacted.replace(/@rmtpassword\s*=\s*N'[^']*'/g, "@rmtpassword = N'<REDACTED>'");
       previewEl.textContent = redacted;
     }
     showStep('preview');
@@ -1944,7 +2405,10 @@
       selectedSsisProjects.length +
       selectedSsisProjects.length;  // one extra unit per project for refs+overrides
 
-    const totalUnits = selectedLogins.length + operators.length + categories.length + selectedJobs.length + ssisUnits;
+    // Linked-server work units — one per selected server.
+    const selectedLs = SM.categories.linkedServers ? SM.linkedServers.filter(ls => SM.selectedLinkedServerNames.has(ls.name)) : [];
+
+    const totalUnits = selectedLogins.length + operators.length + categories.length + selectedJobs.length + ssisUnits + selectedLs.length;
     if (totalUnits === 0) return;
 
     const parts = [];
@@ -1956,6 +2420,7 @@
     if (ssisFolderNames.size)         parts.push(ssisFolderNames.size + ' SSIS folder(s)');
     if (selectedSsisEnvs.length)      parts.push(selectedSsisEnvs.length + ' SSIS environment(s)');
     if (selectedSsisProjects.length)  parts.push(selectedSsisProjects.length + ' SSIS project(s)');
+    if (selectedLs.length)            parts.push(selectedLs.length + ' linked server(s)');
     const confirmMsg =
       'About to deploy to:\n\n  ' + SM.targetDesc + '\n\n' +
       '  • ' + parts.join('\n  • ') + '\n\n' +
@@ -2054,6 +2519,21 @@
       SM.ssisOptions.masterKeyPassword = '';
       const pwdInput = $('sm-ssis-master-key-password');
       if (pwdInput) pwdInput.value = '';
+    }
+
+    // 6. Linked servers — independent of everything else; runs last so any
+    // operator/login mappings the linked server might reference are already in
+    // place. (sp_addlinkedserver doesn't actually require those, but if the
+    // user ever adds explicit per-user mappings later, having logins on
+    // target first is helpful.)
+    for (const ls of selectedLs) {
+      const r = await executeLinkedServer(tgtConn, ls);
+      SM.runResults.push(r); appendLiveRow(liveEl, r);
+      done++; if (progressEl) progressEl.textContent = done + ' / ' + totalUnits;
+    }
+    if (selectedLs.length) {
+      // Clear any cached linked-server passwords after the run completes.
+      SM.linkedServerPasswords = {};
     }
 
     saveAuditEntry();
@@ -2167,6 +2647,7 @@
       r.category === 'ssis-env'       ? '<span style="background:rgba(110,231,183,0.15);color:#6ee7b7;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">env</span>' :
       r.category === 'ssis-project'   ? '<span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">proj</span>' :
       r.category === 'ssis-config'    ? '<span style="background:rgba(196,181,253,0.15);color:#c4b5fd;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">cfg</span>' :
+      r.category === 'linked-server'  ? '<span style="background:rgba(251,146,60,0.15);color:#fb923c;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">link</span>' :
                                         '';
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:0.75rem;padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:12px;font-family:var(--mono)';
@@ -2323,9 +2804,11 @@
       const loginsPanel = $('sm-discover-logins-panel');
       const jobsPanel   = $('sm-discover-jobs-panel');
       const ssisPanel   = $('sm-discover-ssis-panel');
+      const lsPanel     = $('sm-discover-linked-servers-panel');
       if (loginsPanel) loginsPanel.style.display = ($('sm-cat-logins')?.checked) ? 'block' : 'none';
       if (jobsPanel)   jobsPanel.style.display   = ($('sm-cat-jobs')?.checked)   ? 'block' : 'none';
       if (ssisPanel)   ssisPanel.style.display   = ($('sm-cat-ssis')?.checked)   ? 'block' : 'none';
+      if (lsPanel)     lsPanel.style.display     = ($('sm-cat-linked-servers')?.checked) ? 'block' : 'none';
     }
   }
 
@@ -2336,9 +2819,11 @@
     const loginsPanel = $('sm-discover-logins-panel');
     const jobsPanel   = $('sm-discover-jobs-panel');
     const ssisPanel   = $('sm-discover-ssis-panel');
+    const lsPanel     = $('sm-discover-linked-servers-panel');
     if (loginsPanel) loginsPanel.style.display = ($('sm-cat-logins')?.checked) ? 'block' : 'none';
     if (jobsPanel)   jobsPanel.style.display   = ($('sm-cat-jobs')?.checked)   ? 'block' : 'none';
     if (ssisPanel)   ssisPanel.style.display   = ($('sm-cat-ssis')?.checked)   ? 'block' : 'none';
+    if (lsPanel)     lsPanel.style.display     = ($('sm-cat-linked-servers')?.checked) ? 'block' : 'none';
   }
 
   function startOver() {
@@ -2357,6 +2842,11 @@
     SM.selectedProjectKeys = new Set();
     SM.selectedEnvironmentKeys = new Set();
     SM.ssisOptions.masterKeyPassword = '';
+    SM.linkedServers = [];
+    SM.selectedLinkedServerNames = new Set();
+    SM.linkedServerPasswords = {};
+    SM.linkedServerSkipLogin = {};
+    SM.targetLinkedServerNames = new Set();
     SM.previewSql = '';
     SM.runId = '';
     SM.runResults = [];
@@ -2405,6 +2895,10 @@
     _toggleAllProjects,
     _toggleEnvironment,
     _toggleAllEnvironments,
+    _toggleLinkedServer,
+    _toggleAllLinkedServers,
+    _setLinkedServerPassword,
+    _toggleLinkedServerSkipLogin,
     _categoryToggled,
     // Back-compat aliases — earlier dashboard.html may still bind to these:
     discoverLogins : discoverAll,
