@@ -986,7 +986,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem 0.25rem" id="user-email-menu"></div>
           <div style="height:0.5px;background:var(--border);margin:0.4rem 0"></div>
           <a href="/projects.html" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">My projects</a>
-          <a href="/admin.html" style="display:block;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">⚙ Admin panel</a>
+          <a href="#" id="user-menu-subscription" style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'" onclick="event.preventDefault(); openBillingPortal(this);">
+            <span>Subscription</span>
+            <span id="user-menu-tier-badge" style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:9px;letter-spacing:0.1em;text-transform:uppercase;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);padding:2px 7px;border-radius:100px"></span>
+          </a>
+          <a href="/admin.html" id="user-menu-admin-link" style="display:none;padding:0.5rem;font-size:13px;color:var(--text2);text-decoration:none;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">⚙ Admin panel</a>
           <div onclick="signOut()" style="padding:0.5rem;font-size:13px;color:var(--red);cursor:pointer;border-radius:6px" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='transparent'">Sign out</div>
         </div>
       </div>
@@ -5056,6 +5060,171 @@ function initUserAndProject() {
 function toggleUserMenu() {
   const menu = $('user-menu');
   menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── User pill enhancements ────────────────────────────────────────────────
+// Calls /api/data/whoami once on load to:
+//   1. Show the admin link if role === 'admin'
+//   2. Show a tier badge (Starter / Pro / Demo / etc.) in the Subscription
+//      menu entry so users can see their plan at a glance
+//   3. Stash tier metadata on window.__cygenixTier so other parts of the app
+//      can read it without a second whoami call
+//
+// Uses the same Function URL + code as cygenix-cosmos-sync.js. This call is
+// best-effort — if it fails, the pill stays in its default state (admin link
+// hidden, no tier badge), which is the safe failure mode.
+(function enhanceUserPill() {
+  const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+  function getUserIdFromMsal() {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (!k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || raw[0] !== '{') continue;
+        let obj; try { obj = JSON.parse(raw); } catch { continue; }
+        if (obj && obj.username && obj.authorityType && obj.homeAccountId) {
+          return String(obj.username || '').trim().toLowerCase();
+        }
+      }
+    } catch {}
+    return null;
+  }
+
+  function setTierBadge(label, isHighlight) {
+    const el = document.getElementById('user-menu-tier-badge');
+    if (!el) return;
+    el.textContent = label;
+    if (isHighlight) {
+      el.style.background = 'var(--accent-glow,rgba(61,126,255,0.15))';
+      el.style.borderColor = 'rgba(61,126,255,0.4)';
+      el.style.color = 'var(--accent,#3d7eff)';
+    }
+  }
+
+  // Wait briefly for MSAL — same retry pattern as elsewhere in the codebase.
+  let attempts = 0;
+  const maxAttempts = 8;
+  const interval = setInterval(async () => {
+    attempts++;
+    const userId = getUserIdFromMsal();
+    if (!userId && attempts < maxAttempts) return;
+    clearInterval(interval);
+    if (!userId) return;
+
+    try {
+      const r = await fetch(`${API_BASE}/whoami?code=${FUNC_CODE}`, {
+        headers: { 'x-user-id': userId }
+      });
+      if (!r.ok) return;
+      const data = await r.json();
+
+      // Stash for other readers
+      window.__cygenixTier = {
+        tier:                data.tier || null,
+        tier_status:         data.tier_status || 'none',
+        role:                data.role || null,
+        billing_period:      data.billing_period || null,
+        current_period_end:  data.current_period_end || null,
+        trial_ends_at:       data.trial_ends_at || null,
+        cancel_at_period_end: !!data.cancel_at_period_end
+      };
+
+      // 1. Reveal admin link only for admins
+      if (data.role === 'admin') {
+        const adm = document.getElementById('user-menu-admin-link');
+        if (adm) adm.style.display = 'block';
+      }
+
+      // 2. Tier badge in the Subscription row
+      if (data.role === 'admin') {
+        setTierBadge('Admin', true);
+      } else if (data.role === 'demo') {
+        setTierBadge('Demo', true);
+      } else if (data.tier) {
+        const label = data.tier_status === 'trialing'
+          ? `${data.tier} · trial`
+          : data.tier;
+        setTierBadge(label.charAt(0).toUpperCase() + label.slice(1), data.tier_status === 'trialing' || data.tier_status === 'active');
+      } else {
+        setTierBadge('No plan', false);
+      }
+    } catch (e) {
+      console.warn('[user-pill] whoami failed:', e);
+    }
+  }, 500);
+})();
+
+// ── Open Stripe-hosted billing portal ─────────────────────────────────────
+// Called from the "Subscription" entry in the user pill. Hits
+// /api/data/billing-portal which returns a short-lived Stripe portal URL,
+// then redirects there. Falls back to /pick-plan.html for users who don't
+// have a subscription yet (no Stripe customer to manage).
+async function openBillingPortal(linkEl) {
+  // Admin/demo users have no real subscription — there's nothing for them
+  // to manage in the Stripe portal. Send them to pricing/admin instead so
+  // they're not confused by an error.
+  const ctx = window.__cygenixTier || {};
+  if (ctx.role === 'admin' || ctx.role === 'demo') {
+    window.location.href = '/pricing';
+    return;
+  }
+  if (!ctx.tier) {
+    window.location.href = '/pick-plan.html';
+    return;
+  }
+
+  // Visual feedback while we wait for the portal URL
+  const original = linkEl ? linkEl.querySelector('span').textContent : null;
+  if (linkEl) linkEl.querySelector('span').textContent = 'Opening…';
+
+  try {
+    const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+    const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+    const userId = (function() {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (!k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || raw[0] !== '{') continue;
+        let obj; try { obj = JSON.parse(raw); } catch { continue; }
+        if (obj && obj.username && obj.authorityType && obj.homeAccountId) {
+          return String(obj.username || '').trim().toLowerCase();
+        }
+      }
+      return null;
+    })();
+    if (!userId) {
+      alert('Not signed in. Please refresh and try again.');
+      if (linkEl && original) linkEl.querySelector('span').textContent = original;
+      return;
+    }
+
+    const r = await fetch(`${API_BASE}/billing-portal?code=${FUNC_CODE}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify({
+        return_url: window.location.href
+      })
+    });
+    const data = await r.json().catch(() => null);
+
+    if (r.ok && data?.url) {
+      window.location.href = data.url;
+      return;
+    }
+
+    alert('Could not open billing portal: ' + (data?.error || `HTTP ${r.status}`));
+    if (linkEl && original) linkEl.querySelector('span').textContent = original;
+  } catch (e) {
+    alert('Network error opening billing portal: ' + (e.message || 'unknown'));
+    if (linkEl && original) linkEl.querySelector('span').textContent = original;
+  }
 }
 
 // Close user menu when clicking outside
