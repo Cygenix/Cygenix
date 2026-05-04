@@ -312,25 +312,139 @@ app.http('data', {
     try {
       switch (action) {
 
-        // ── WHOAMI: return caller's role for frontend role-gating ──────────
+        // ── WHOAMI: return caller's role + tier for auth-gate decisions ────
         // GET /api/data/whoami
-        // Used by admin.html to decide whether to render the page. Returns
-        // the email and role from the caller's user document. role may be
-        // 'admin', 'user', or null (no doc, or doc has no role field).
-        // Does NOT return any other user info — keep this endpoint narrow.
+        // Used by:
+        //   - admin.html        — checks role === 'admin'
+        //   - auth-gate.js      — checks tier+role to decide pick-plan redirect
+        //   - welcome.html      — polls until tier becomes set after checkout
+        //
+        // Returns the minimum needed for those decisions; never user data,
+        // never anything Stripe-secret. Keep this endpoint narrow.
         case 'whoami': {
           try {
             const { resource } = await getCosmosContainer('users')
               .item(userId, userId).read();
+
+            // No doc yet — first sign-in hasn't completed the user-create
+            // call. auth-gate.js handles this gracefully (treats it as
+            // "tier-less, force pick-plan").
+            if (!resource) {
+              return ok({
+                email:  userId,
+                role:   null,
+                tier:   null,
+                tier_status: 'none',
+                exists: false
+              });
+            }
+
             return ok({
-              email: userId,
-              role:  resource?.role || null,
-              exists: !!resource
+              email:        userId,
+              role:         resource.role        || null,
+              tier:         resource.tier        || null,
+              tier_status:  resource.tier_status || 'none',
+              billing_period: resource.billing_period || null,
+              current_period_end: resource.current_period_end || null,
+              cancel_at_period_end: !!resource.cancel_at_period_end,
+              trial_ends_at: resource.trial_ends_at || resource.trialEndsAt || null,
+              exists: true
             });
           } catch (e) {
-            if (e.code === 404) return ok({ email: userId, role: null, exists: false });
+            if (e.code === 404) {
+              return ok({
+                email: userId, role: null, tier: null,
+                tier_status: 'none', exists: false
+              });
+            }
             ctx.log('whoami error:', e.message);
             return err(500, `whoami failed: ${e.message}`);
+          }
+        }
+
+        // ── CHECKOUT-STATUS: poll Stripe for session completion ────────────
+        // GET /api/data/checkout-status?session_id=cs_test_...
+        // Called by welcome.html after Stripe redirects the user back. We
+        // ask Stripe directly whether the checkout finished and the
+        // subscription is now active/trialing — this is faster than waiting
+        // for the webhook to fire and lets welcome.html show definitive
+        // status to the user.
+        //
+        // If the session is complete AND we have the subscription details,
+        // we ALSO write the tier fields to the user's Cosmos doc here. The
+        // webhook (Phase 3) will be the eventual source of truth and will
+        // overwrite these on subscription updates, but doing the initial
+        // write here means the user can reach the dashboard immediately
+        // rather than waiting for webhook latency.
+        case 'checkout-status': {
+          const sessionId = req.query.get('session_id');
+          if (!sessionId) return err(400, 'session_id is required');
+          if (!process.env.STRIPE_SECRET_KEY) {
+            return err(500, 'STRIPE_SECRET_KEY not configured');
+          }
+          try {
+            const stripe = getStripe();
+            const session = await stripe.checkout.sessions.retrieve(sessionId, {
+              expand: ['subscription', 'customer']
+            });
+
+            // Defensive: ensure the email on the session matches the caller
+            // (otherwise someone could pass another user's session_id and
+            // grant themselves a tier they didn't pay for).
+            const sessionEmail = (
+              session.customer_details?.email ||
+              session.customer_email ||
+              ''
+            ).trim().toLowerCase();
+            if (sessionEmail && sessionEmail !== userId) {
+              return err(403, 'session belongs to a different user');
+            }
+
+            const sub = session.subscription;
+            const status = sub?.status || session.status;
+            const tier    = sub?.metadata?.cygenix_tier    || session.metadata?.cygenix_tier    || null;
+            const billing = sub?.metadata?.cygenix_billing || session.metadata?.cygenix_billing || null;
+
+            // If the subscription is live, write the tier into Cosmos so
+            // auth-gate.js sees it on the next call. This is best-effort —
+            // the webhook is the eventual source of truth.
+            let written = false;
+            if (sub && tier && (status === 'trialing' || status === 'active')) {
+              try {
+                const container = getCosmosContainer('users');
+                const existing = await container.item(userId, userId).read().catch(() => ({ resource: null }));
+                const base = existing.resource || { id: userId, userId, email: userId, createdAt: new Date().toISOString() };
+                const merged = {
+                  ...base,
+                  tier,
+                  tier_status: status,
+                  billing_period: billing,
+                  stripe_customer_id: typeof session.customer === 'string' ? session.customer : session.customer?.id || null,
+                  stripe_subscription_id: typeof sub === 'string' ? sub : sub.id,
+                  current_period_end: sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null,
+                  trial_ends_at: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
+                  cancel_at_period_end: !!sub.cancel_at_period_end,
+                  tier_updated_at: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
+                };
+                await container.items.upsert(merged);
+                written = true;
+              } catch (writeErr) {
+                ctx.log('checkout-status: cosmos write failed (webhook will retry):', writeErr.message);
+                // Non-fatal — webhook will reconcile.
+              }
+            }
+
+            return ok({
+              session_status: session.status,            // 'open' | 'complete' | 'expired'
+              subscription_status: status || null,       // 'trialing' | 'active' | ...
+              tier,
+              billing_period: billing,
+              cosmos_written: written
+            });
+          } catch (e) {
+            ctx.log('checkout-status error:', e.message);
+            return err(500, `checkout-status failed: ${e.message}`);
           }
         }
 
@@ -1203,7 +1317,7 @@ app.http('data', {
         }
 
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status`);
       }
 
     } catch (e) {
@@ -1466,7 +1580,7 @@ app.http('create-checkout-session', {
         metadata: { cygenix_tier: tier, cygenix_billing: billing },
         // Where Stripe sends the user after they finish (or bail).
         success_url: `${siteUrl}/welcome.html?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url:  `${siteUrl}/pricing.html`,
+        cancel_url:  `${siteUrl}/pricing`,
         // Collect billing address (needed for VAT later).
         billing_address_collection: 'required'
       });
