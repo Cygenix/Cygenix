@@ -329,6 +329,10 @@
 
     // STRING_AGG requires SQL Server 2017+. Switch to FOR XML PATH if a
     // client needs 2016 support.
+    // is_policy_checked / is_expiration_checked live on sys.sql_logins,
+    // NOT sys.server_principals. They only apply to SQL logins; Windows
+    // logins inherit their policy from AD. We LEFT JOIN so Windows
+    // logins still come back, just with NULLs for those flags.
     const sql = `
       SELECT
         sp.principal_id,
@@ -339,15 +343,16 @@
         sp.default_language_name,
         sp.sid,
         CONVERT(varbinary(256), LOGINPROPERTY(sp.name, 'PasswordHash'))  AS password_hash,
-        sp.is_policy_checked,
-        sp.is_expiration_checked,
+        sl.is_policy_checked,
+        sl.is_expiration_checked,
         ISNULL((
           SELECT STRING_AGG(rp.name, ',') WITHIN GROUP (ORDER BY rp.name)
           FROM   sys.server_role_members rm
           JOIN   sys.server_principals    rp ON rp.principal_id = rm.role_principal_id
           WHERE  rm.member_principal_id = sp.principal_id
         ), '') AS server_roles
-      FROM sys.server_principals sp
+      FROM      sys.server_principals sp
+      LEFT JOIN sys.sql_logins        sl ON sl.principal_id = sp.principal_id
       WHERE sp.type IN ('S','U','G')
         AND sp.principal_id > 0
       ORDER BY sp.name;
