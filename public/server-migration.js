@@ -1357,6 +1357,43 @@
     URL.revokeObjectURL(a.href);
   }
 
+  // Copy the FULL preview SQL (with real password hashes) to the clipboard.
+  // The on-screen preview redacts hashes for safety; this button copies
+  // the executable form so the user can paste into SSMS / azdata / etc.
+  // Brief button-flash gives confirmation feedback without an alert.
+  async function copyPreviewSql() {
+    if (!SM.previewSql) { alert('Generate the preview first.'); return; }
+    const btn = $('sm-copy-sql-btn');
+    const original = btn ? btn.innerHTML : '';
+    try {
+      // Modern API first; falls back to a temporary textarea if the page
+      // isn't in a secure context (rare for cygenix.co.uk over HTTPS, but
+      // belt-and-braces).
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(SM.previewSql);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = SM.previewSql;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      if (btn) {
+        btn.innerHTML = '✓ Copied (with real hashes)';
+        btn.style.color = 'var(--green)';
+        setTimeout(() => {
+          btn.innerHTML = original;
+          btn.style.color = '';
+        }, 2200);
+      }
+    } catch (e) {
+      alert('Copy failed: ' + (e.message || String(e)));
+    }
+  }
+
   // ── Step navigation ───────────────────────────────────────────────────────
   function showStep(name) {
     const steps = ['verify','discover','preview','execute','audit'];
@@ -1428,6 +1465,7 @@
     discoverAll,            // category-aware entry point
     showPreview,
     executeNow,
+    copyPreviewSql,
     downloadAudit,
     startOver,
     showStep,

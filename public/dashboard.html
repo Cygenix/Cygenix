@@ -2130,6 +2130,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div style="font-size:13px;font-weight:600">Generated T-SQL</div>
             <span style="font-size:10.5px;color:var(--text3)">Password hashes are redacted in this view but sent in full at execution time.</span>
             <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="ServerMigration.showStep('discover')">← Back to selection</button>
+            <button id="sm-copy-sql-btn" class="btn btn-ghost btn-sm" onclick="ServerMigration.copyPreviewSql()" title="Copies the full SQL with real password hashes — handle with care.">📋 Copy SQL</button>
             <button class="btn btn-primary btn-sm" onclick="ServerMigration.executeNow()">▶ Execute on target</button>
           </div>
           <pre id="sm-preview-pre" style="background:var(--bg3);color:var(--text2);padding:1rem;border-radius:var(--r);font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre-wrap;max-height:600px;overflow:auto;margin:0;border:0.5px solid var(--border)"></pre>
