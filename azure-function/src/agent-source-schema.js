@@ -208,41 +208,69 @@ function classifyIntoGroups(flatTables) {
       fullName:    t.fullName,
       rows:        t.rows,
       hasPii:      t.hasPii,
-      piiCount:    t.piiCount
+      piiCount:    t.piiCount,
+      // _cols is included transiently for the response trimming step below
+      _cols:       t.cols
     });
   }
 
   // Build the response, dropping empty groups except keeping "Other" only
   // if it has tables. Sort tables in each group by row count descending.
+  // Include column metadata for the top 30 tables per group only — keeps
+  // payload bounded for huge databases (8K+ tables) while giving the
+  // suggest-criteria call enough representative data.
+  const COL_SAMPLE_TABLES = 30;
+  const COL_SAMPLE_COLS_PER_TABLE = 25;
+
+  function trimTables(tables) {
+    tables.sort((a, b) => (b.rows || 0) - (a.rows || 0));
+    return tables.map((t, i) => {
+      const out = {
+        schema:   t.schema,
+        name:     t.name,
+        fullName: t.fullName,
+        rows:     t.rows,
+        hasPii:   t.hasPii,
+        piiCount: t.piiCount
+      };
+      if (i < COL_SAMPLE_TABLES) {
+        out.columns = (t._cols || []).slice(0, COL_SAMPLE_COLS_PER_TABLE).map(c => ({
+          name: c.name, dataType: c.dataType
+        }));
+      }
+      return out;
+    });
+  }
+
   const groups = [];
   for (const theme of THEMES) {
     const tables = buckets.get(theme.id);
     if (tables.length === 0) continue;
-    tables.sort((a, b) => (b.rows || 0) - (a.rows || 0));
+    const trimmed = trimTables(tables);
     groups.push({
       id:           theme.id,
       name:         theme.name,
       icon:         theme.icon,
       description:  theme.description,
-      tableCount:   tables.length,
-      totalRows:    tables.reduce((s, t) => s + (t.rows || 0), 0),
-      piiCount:     tables.reduce((s, t) => s + (t.piiCount || 0), 0),
-      tables
+      tableCount:   trimmed.length,
+      totalRows:    trimmed.reduce((s, t) => s + (t.rows || 0), 0),
+      piiCount:     trimmed.reduce((s, t) => s + (t.piiCount || 0), 0),
+      tables:       trimmed
     });
   }
   // Add "Other" at the end if non-empty
   const other = buckets.get('other');
   if (other.length > 0) {
-    other.sort((a, b) => (b.rows || 0) - (a.rows || 0));
+    const trimmed = trimTables(other);
     groups.push({
       id:           'other',
       name:         'Other',
       icon:         '❓',
       description:  'Tables that didn\'t match any specific theme',
-      tableCount:   other.length,
-      totalRows:    other.reduce((s, t) => s + (t.rows || 0), 0),
-      piiCount:     other.reduce((s, t) => s + (t.piiCount || 0), 0),
-      tables:       other
+      tableCount:   trimmed.length,
+      totalRows:    trimmed.reduce((s, t) => s + (t.rows || 0), 0),
+      piiCount:     trimmed.reduce((s, t) => s + (t.piiCount || 0), 0),
+      tables:       trimmed
     });
   }
   return groups;
@@ -311,7 +339,8 @@ async function introspect(pool, databaseLabel) {
       SELECT
         c.TABLE_SCHEMA AS schema_name,
         c.TABLE_NAME   AS table_name,
-        c.COLUMN_NAME  AS column_name
+        c.COLUMN_NAME  AS column_name,
+        c.DATA_TYPE    AS data_type
       FROM INFORMATION_SCHEMA.COLUMNS c
       WHERE c.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
     `),
@@ -325,14 +354,15 @@ async function introspect(pool, databaseLabel) {
     `)
   ]);
 
-  // Roll columns up by table — count + PII flag + names (used by classifier)
+  // Roll columns up by table — count + PII flag + names + types (used by classifier and suggest-criteria)
   const tableMap = new Map();
   for (const row of colsR.recordset) {
     const key = `${row.schema_name}.${row.table_name}`;
-    if (!tableMap.has(key)) tableMap.set(key, { count: 0, hasPii: false, piiCount: 0, colNames: [] });
+    if (!tableMap.has(key)) tableMap.set(key, { count: 0, hasPii: false, piiCount: 0, colNames: [], cols: [] });
     const e2 = tableMap.get(key);
     e2.count++;
     e2.colNames.push(row.column_name);
+    e2.cols.push({ name: row.column_name, dataType: row.data_type });
     if (looksLikePII(row.column_name)) {
       e2.hasPii = true;
       e2.piiCount++;
@@ -347,7 +377,7 @@ async function introspect(pool, databaseLabel) {
   const flatTables = [];
   for (const t of tablesR.recordset) {
     const key = `${t.schema_name}.${t.table_name}`;
-    const ce  = tableMap.get(key) || { count: 0, hasPii: false, piiCount: 0, colNames: [] };
+    const ce  = tableMap.get(key) || { count: 0, hasPii: false, piiCount: 0, colNames: [], cols: [] };
     totalCols += ce.count;
     totalPii  += ce.piiCount;
     const tableObj = {
@@ -365,7 +395,8 @@ async function introspect(pool, databaseLabel) {
       rows:   tableObj.rows,
       hasPii: ce.hasPii,
       piiCount: ce.piiCount,
-      colNames: ce.colNames
+      colNames: ce.colNames,
+      cols:    ce.cols
     });
   }
 
