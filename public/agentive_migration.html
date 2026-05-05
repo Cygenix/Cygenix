@@ -2050,7 +2050,7 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     try {
       const result = await api('/agent/migrate', {
         method: 'POST',
-        body: JSON.stringify({ direction: 'source_to_target', goal }),
+        body: JSON.stringify(buildAgentMigrateBody(goal)),
       });
       state.currentRunId = result.runId;
       state.lastSeq = 0;
@@ -2196,7 +2196,7 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
       try {
         const result = await api('/agent/migrate', {
           method: 'POST',
-          body: JSON.stringify({ direction: 'source_to_target', goal }),
+          body: JSON.stringify(buildAgentMigrateBody(goal)),
         });
         state.currentRunId = result.runId;
         state.lastSeq = 0;
@@ -2426,6 +2426,25 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     try {
       return localStorage.getItem('cygenix_active_project_id') || '';
     } catch { return ''; }
+  }
+
+  // Build the body for /api/agent/migrate, including the user's CURRENT
+  // source/target connections from localStorage. The agent backend prefers
+  // body-supplied connections over its Cosmos record, so this guarantees
+  // the agent operates on the same database the page is showing.
+  function buildAgentMigrateBody(goal) {
+    const out = { direction: 'source_to_target', goal };
+    try {
+      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
+        ? (CygenixConnections.get() || {}) : {};
+      if (c.srcConnString) out.srcConnString = c.srcConnString;
+      if (c.tgtConnString) out.tgtConnString = c.tgtConnString;
+      if (c.tgtFnUrl)      out.tgtFnUrl      = c.tgtFnUrl;
+      if (c.tgtFnKey)      out.tgtFnKey      = c.tgtFnKey;
+    } catch (e) {
+      console.warn('[AgentiveMigration] could not read connections for migrate body:', e.message);
+    }
+    return out;
   }
 
   function renderProposalApproval(run) {
