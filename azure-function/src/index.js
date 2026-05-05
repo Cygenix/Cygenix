@@ -9,6 +9,7 @@ require('./schedules');
 require('./agent'); 
 require('./agent-source-schema');
 require('./agent-suggest-criteria');
+require('./agent-check-dependencies');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
