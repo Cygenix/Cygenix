@@ -962,15 +962,23 @@ body.cyg-collapsed .topbar{left:54px}
 
   function buildPromptForGroup(group) {
     if (!group) return '';
+
+    // FULL list of fully-qualified table names — no truncation. The agent
+    // hallucinates table names when given vague hints like "and 37 more",
+    // so we list every single one. Cost: a few hundred bytes; benefit: no
+    // invented names like 'arcs_ext_matter' or 'cv_hbmmatter'.
     const tables = (group.tables || []).map(t => t.fullName || (t.schema + '.' + t.name));
-    const tableList = tables.length <= 6
-      ? tables.join(', ')
-      : tables.slice(0, 6).join(', ') + ` (and ${tables.length - 6} more in this group)`;
+    const tableListBlock = tables.length === 0
+      ? '(no tables — group is empty)'
+      : tables.map(n => `  - ${n}`).join('\n');
+
     const piiNote = group.piiCount > 0
       ? ` ${group.piiCount} PII column${group.piiCount === 1 ? '' : 's'} flagged in this group — flag each for my review before including in the mapping.`
       : '';
 
-    // Append any active criteria as bullet points the agent should respect
+    // Build active criteria as ground-truth lines that name the actual
+    // columns from the suggestion's evidence (the source of those names is
+    // the schema introspection, NOT Claude's loose predicate text).
     const criteriaLines = [];
     const sel = state.selectedCriteria[group.id] || {};
     const sugs = ((state.criteriaCache[group.id] || {}).suggestions) || [];
@@ -1003,34 +1011,60 @@ body.cyg-collapsed .topbar{left:54px}
         criteriaLines.map(l => `- ${l}`).join('\n');
     }
     if (tighten) {
-      extras += `\n\nAdditional WHERE-clause-style filter (apply to all tables where columns exist):\n${tighten}`;
+      extras += `\n\nAdditional WHERE-clause-style filter (apply to all tables where the named columns exist):\n${tighten}`;
     }
 
-    return `Migrate the "${group.name}" group of tables from source to target. Tables in scope: ${tableList}. Preserve any foreign-key relationships within the group.${piiNote} Pause for approval before writing anything to the target.${extras}`;
+    // Anti-hallucination guardrail. Without this, Claude tends to "regularise"
+    // unusual column names (e.g. mtstatus → mstatus) and invent plausible-but-
+    // wrong table names. The instruction is explicit: only use names from the
+    // list, and ASK rather than guess if anything is missing.
+    const groundingRule = `\n\nIMPORTANT — name fidelity:
+- The table list above is the COMPLETE and AUTHORITATIVE set of tables in scope. Do not introduce, infer, or assume any tables not in that list.
+- Use column names EXACTLY as they appear in the source schema. Do not normalise, abbreviate, or "correct" column names that look unusual (for example, "mtstatus" must stay as "mtstatus", not become "mstatus" or "status").
+- If a column or table you expect doesn't exist, STOP and ask me — do not substitute a similarly-named one.`;
+
+    return `Migrate the "${group.name}" group of tables from source to target.
+
+Tables in scope (${tables.length} total):
+${tableListBlock}
+
+Preserve any foreign-key relationships within the group.${piiNote} Pause for approval before writing anything to the target.${extras}${groundingRule}`;
   }
 
   function criterionToPromptLine(s, value) {
     const label = s.label;
-    const predicate = s.predicate || '';
+    // Pull authoritative column names out of the evidence array.
+    // Evidence entries look like "mtstatus in 412 tables" or "mtopendt: date".
+    // We extract the leading identifier-looking token from each.
+    const evidenceCols = (s.evidence || [])
+      .map(e => {
+        const m = String(e).match(/^[\s`"']*([A-Za-z_][A-Za-z0-9_]*)/);
+        return m ? m[1] : null;
+      })
+      .filter(Boolean);
+    const colsClause = evidenceCols.length > 0
+      ? ` Use these exact column names where they exist: ${evidenceCols.map(c => `\`${c}\``).join(', ')}.`
+      : '';
+
     if (s.type === 'date-range') {
       const v = value || s.default || {};
       const from = toIsoDate(v.from) || v.from || '';
       const to = toIsoDate(v.to) || v.to || '';
-      return `${label}: include only records between ${from} and ${to}` +
-        (predicate ? ` (predicate: ${predicate} with from=${from}, to=${to})` : '');
+      return `${label}: include only records between ${from} and ${to}.${colsClause}`;
     }
     if (s.type === 'boolean') {
-      return `${label}: ${value ? 'enabled' : 'disabled'}` + (predicate ? ` (predicate: ${predicate})` : '');
+      return `${label}: ${value ? 'enabled' : 'disabled'}.${colsClause}`;
     }
     if (s.type === 'enum') {
       const opts = (value && Array.isArray(value.selected)) ? value.selected : ((s.default || {}).selected || []);
-      return `${label}: include only records where value is one of [${opts.join(', ')}]` + (predicate ? ` (predicate: ${predicate})` : '');
+      const optsStr = opts.length > 0 ? opts.map(o => `'${o}'`).join(', ') : '(none selected)';
+      return `${label}: include only records where the column value is in [${optsStr}].${colsClause}`;
     }
     if (s.type === 'text') {
       const v = value === undefined ? (s.default || '') : value;
-      return `${label}: ${v}` + (predicate ? ` (predicate: ${predicate})` : '');
+      return `${label}: ${v}.${colsClause}`;
     }
-    return `${label}` + (predicate ? ` (predicate: ${predicate})` : '');
+    return `${label}.${colsClause}`;
   }
 
   function applyActionToPrompt() {
@@ -1409,14 +1443,25 @@ body.cyg-collapsed .topbar{left:54px}
     if (state.activeGroupId === groupId) renderSetup();
 
     try {
+      // Pull the source connection from the browser's Connections store so
+      // the function can sample real distinct values for status-style
+      // columns. Sampling is best-effort on the backend — falls back to
+      // type-only suggestions if sampling fails.
+      const reqBody = {
+        groupId:   group.id,
+        groupName: group.name,
+        groupDesc: group.description || '',
+        tables:    tablesWithCols.map(t => ({ name: t.name, columns: t.columns }))
+      };
+      try {
+        const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
+          ? (CygenixConnections.get() || {}) : {};
+        if (c.srcFnUrl)        reqBody.srcFnUrl     = c.srcFnUrl;
+        else if (c.srcConnString) reqBody.srcConnString = c.srcConnString;
+      } catch { /* sampling will be skipped */ }
       const data = await api('/agent/suggest-criteria', {
         method: 'POST',
-        body: JSON.stringify({
-          groupId:   group.id,
-          groupName: group.name,
-          groupDesc: group.description || '',
-          tables:    tablesWithCols.map(t => ({ name: t.name, columns: t.columns }))
-        })
+        body: JSON.stringify(reqBody)
       });
       state.criteriaCache[groupId] = { suggestions: Array.isArray(data.suggestions) ? data.suggestions : [] };
     } catch (e) {
@@ -1986,6 +2031,21 @@ body.cyg-collapsed .topbar{left:54px}
       return;
     }
     stopConnectionWatcher();
+
+    // ── Pre-flight verify ────────────────────────────────────────────
+    // Confirm the tables and columns we're about to instruct the agent
+    // about actually exist in source. Catches schema drift / hallucinated
+    // names before the agent burns any tokens.
+    if (state.activeAction === 'migrate-group' && state.activeGroupId) {
+      renderLoading('Verifying tables and columns…');
+      const verifyResult = await runPreflightVerify(state.activeGroupId);
+      if (verifyResult && !verifyResult.ok) {
+        renderVerifyMismatch(verifyResult);
+        startConnectionWatcher();
+        return;
+      }
+    }
+
     renderLoading('Starting agent…');
     try {
       const result = await api('/agent/migrate', {
@@ -2003,6 +2063,164 @@ body.cyg-collapsed .topbar{left:54px}
         renderError(e.message);
       }
     }
+  }
+
+  // ── Pre-flight verify (NEW) ────────────────────────────────────────
+  // Build the expected-tables/columns payload from the active group +
+  // selected criteria, then ask the source DB whether they all exist.
+  async function runPreflightVerify(groupId) {
+    const group = getAvailableGroups().find(g => g.id === groupId);
+    if (!group) return null;
+
+    // Build the list of tables to verify
+    const tables = (group.tables || []).map(t => ({
+      schema: t.schema || 'dbo',
+      name:   t.name
+    }));
+
+    // Build the list of columns to verify — from selected criteria's evidence
+    const columns = [];
+    const sel = state.selectedCriteria[group.id] || {};
+    const sugs = ((state.criteriaCache[group.id] || {}).suggestions) || [];
+    for (const s of sugs) {
+      const cur = sel[s.id];
+      if (!cur || !cur.enabled) continue;
+      const evidenceCols = (s.evidence || [])
+        .map(e => {
+          const m = String(e).match(/^[\s`"']*([A-Za-z_][A-Za-z0-9_]*)/);
+          return m ? m[1] : null;
+        })
+        .filter(Boolean);
+      // Each evidence column is checked against every table in the group —
+      // most tables won't have it, that's fine. The verify function tells
+      // us where it's missing on a per-table basis. To keep the call small,
+      // only check the top 30 tables (the same ones we have schema data for).
+      for (const t of tables.slice(0, 30)) {
+        for (const colName of evidenceCols) {
+          columns.push({ schema: t.schema, name: t.name, column: colName });
+        }
+      }
+    }
+
+    if (tables.length === 0 && columns.length === 0) return { ok: true };
+
+    // Pull source connection
+    const reqBody = { expected: { tables, columns } };
+    try {
+      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
+        ? (CygenixConnections.get() || {}) : {};
+      if (c.srcFnUrl)        reqBody.srcFnUrl     = c.srcFnUrl;
+      else if (c.srcConnString) reqBody.srcConnString = c.srcConnString;
+    } catch { /* fall through to error path */ }
+    if (!reqBody.srcFnUrl && !reqBody.srcConnString) {
+      // Can't verify without a source connection — let the run proceed and
+      // surface any errors via the agent's normal flow.
+      return { ok: true, skipped: true };
+    }
+
+    try {
+      const data = await api('/agent/verify-targets', {
+        method: 'POST',
+        body: JSON.stringify(reqBody)
+      });
+      return data;
+    } catch (e) {
+      // Verify endpoint failure isn't a hard block — log and proceed so
+      // the user isn't stuck if the verify function is down.
+      console.warn('[AgentiveMigration] verify failed, proceeding anyway:', e.message);
+      return { ok: true, skipped: true, verifyError: e.message };
+    }
+  }
+
+  // Render a friendly mismatch screen with did-you-mean suggestions
+  function renderVerifyMismatch(result) {
+    state.view = 'verify-mismatch';
+    setTopbarStatus('Pre-flight check failed');
+
+    const tablesMissing = result.tablesMissing || [];
+    const columnsMissing = (result.columnsMissing || []).slice(0, 50); // cap display
+    const suggestions = result.suggestions || [];
+
+    // Group columnsMissing by table to keep the list scannable
+    const colsByTable = {};
+    for (const c of columnsMissing) {
+      const parts = c.split('.');
+      const table = parts.slice(0, 2).join('.');
+      const col = parts.slice(2).join('.');
+      if (!colsByTable[table]) colsByTable[table] = [];
+      colsByTable[table].push(col);
+    }
+
+    // Build did-you-mean lookup
+    const dymByAsked = {};
+    for (const s of suggestions) {
+      dymByAsked[`${s.kind}:${s.table || ''}:${s.asked}`] = s.didYouMean;
+    }
+
+    let body = '';
+    if (tablesMissing.length > 0) {
+      body += `<div style="margin-bottom:1rem">
+        <div class="section-label">Tables not found in source (${tablesMissing.length})</div>
+        ${tablesMissing.slice(0, 30).map(t => {
+          const dym = dymByAsked[`table::${t}`];
+          return `<div class="decision">
+            <div class="decision-label"><code>${escapeHtml(t)}</code></div>
+            ${dym ? `<div class="decision-reasoning">Did you mean <code>${escapeHtml(dym)}</code>?</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+    const colTables = Object.keys(colsByTable);
+    if (colTables.length > 0) {
+      body += `<div style="margin-bottom:1rem">
+        <div class="section-label">Columns not found (${columnsMissing.length})</div>
+        ${colTables.slice(0, 15).map(table => {
+          const cols = colsByTable[table];
+          return `<div class="decision">
+            <div class="decision-label"><code>${escapeHtml(table)}</code> is missing: ${cols.slice(0, 8).map(c => `<code>${escapeHtml(c)}</code>`).join(', ')}${cols.length > 8 ? ` (+${cols.length - 8} more)` : ''}</div>
+            ${cols.map(c => {
+              const dym = dymByAsked[`column:${table}:${c}`];
+              return dym ? `<div class="decision-reasoning"><code>${escapeHtml(c)}</code> → did you mean <code>${escapeHtml(dym)}</code>?</div>` : '';
+            }).filter(Boolean).join('')}
+          </div>`;
+        }).join('')}
+      </div>`;
+    }
+
+    stage.innerHTML = `
+      <div class="error-card">
+        <h3>Some tables or columns don't exist in source</h3>
+        <p>The pre-flight check found mismatches between what we'd ask the agent to do and what's actually in the source database. Fixing these now saves the agent from running and failing.</p>
+        ${body}
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
+          <button class="btn btn-sm" id="am-verify-back-btn">← Back to setup</button>
+          <button class="btn btn-primary btn-sm" id="am-verify-runanyway-btn">Run anyway</button>
+        </div>
+      </div>`;
+
+    document.getElementById('am-verify-back-btn').addEventListener('click', () => {
+      state.conns = readConnections();
+      renderSetup();
+      startConnectionWatcher();
+    });
+    document.getElementById('am-verify-runanyway-btn').addEventListener('click', async () => {
+      // Bypass verify and go straight to /agent/migrate
+      const goal = document.getElementById('am-goal') ? document.getElementById('am-goal').value.trim() : '';
+      renderLoading('Starting agent…');
+      try {
+        const result = await api('/agent/migrate', {
+          method: 'POST',
+          body: JSON.stringify({ direction: 'source_to_target', goal }),
+        });
+        state.currentRunId = result.runId;
+        state.lastSeq = 0;
+        saveActiveRun(result.runId);
+        startPolling();
+      } catch (e) {
+        if (e instanceof ApiNotImplementedError) renderBackendPending();
+        else renderError(e.message);
+      }
+    });
   }
 
   function renderBackendPending() {
