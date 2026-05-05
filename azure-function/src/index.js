@@ -8,6 +8,7 @@ const { app } = require('@azure/functions');
 require('./schedules');
 require('./agent'); 
 require('./agent-source-schema');
+require('./agent-suggest-criteria');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
