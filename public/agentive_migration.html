@@ -2078,29 +2078,15 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
       name:   t.name
     }));
 
-    // Build the list of columns to verify — from selected criteria's evidence
+    // Column verification was removed: criteria columns (e.g. mtstatus,
+    // mtopendt) only exist on a subset of the group's tables — that's
+    // expected, not an error. The agent applies each criterion only to
+    // tables that actually have the column. Re-checking every column on
+    // every table produced 30+ false-positive "missing" entries, scaring
+    // the user with a mismatch screen for what is actually correct
+    // behaviour. The verify pre-flight now focuses on what it can usefully
+    // catch: table-name drift (the original "arcs_ext_matter" problem).
     const columns = [];
-    const sel = state.selectedCriteria[group.id] || {};
-    const sugs = ((state.criteriaCache[group.id] || {}).suggestions) || [];
-    for (const s of sugs) {
-      const cur = sel[s.id];
-      if (!cur || !cur.enabled) continue;
-      const evidenceCols = (s.evidence || [])
-        .map(e => {
-          const m = String(e).match(/^[\s`"']*([A-Za-z_][A-Za-z0-9_]*)/);
-          return m ? m[1] : null;
-        })
-        .filter(Boolean);
-      // Each evidence column is checked against every table in the group —
-      // most tables won't have it, that's fine. The verify function tells
-      // us where it's missing on a per-table basis. To keep the call small,
-      // only check the top 30 tables (the same ones we have schema data for).
-      for (const t of tables.slice(0, 30)) {
-        for (const colName of evidenceCols) {
-          columns.push({ schema: t.schema, name: t.name, column: colName });
-        }
-      }
-    }
 
     if (tables.length === 0 && columns.length === 0) return { ok: true };
 
