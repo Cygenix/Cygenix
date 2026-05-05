@@ -110,16 +110,17 @@ function describeConnString(s) {
 // the page's expected response shape.
 async function introspect(pool, databaseLabel) {
   const [tablesR, colsR, fksR] = await Promise.all([
-    // sys.dm_db_partition_stats gives approximate row counts in O(1) per
-    // table — avoids COUNT(*) which would lock & take seconds on big tables.
+    // sys.partitions.rows gives row counts in O(1) per table — same pattern
+    // the existing `db` function's "schema" action uses. Avoids COUNT(*)
+    // which would lock and take seconds on big tables.
     pool.request().query(`
       SELECT
         s.name  AS schema_name,
         t.name  AS table_name,
-        SUM(CASE WHEN p.index_id IN (0,1) THEN p.rows ELSE 0 END) AS row_count
+        COALESCE(SUM(CASE WHEN p.index_id IN (0,1) THEN p.rows ELSE 0 END), 0) AS row_count
       FROM sys.tables t
-      INNER JOIN sys.schemas s              ON s.schema_id = t.schema_id
-      LEFT  JOIN sys.dm_db_partition_stats p ON p.object_id = t.object_id
+      INNER JOIN sys.schemas s    ON s.schema_id = t.schema_id
+      LEFT  JOIN sys.partitions p ON p.object_id = t.object_id
       WHERE s.name NOT IN ('sys','INFORMATION_SCHEMA')
       GROUP BY s.name, t.name
       ORDER BY s.name, t.name
