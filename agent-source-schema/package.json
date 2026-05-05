@@ -1,9 +1,0 @@
-{
-  "name": "agent-source-schema",
-  "version": "1.0.0",
-  "description": "Cygenix Agentive Migration — source database introspection endpoint. Returns schemas, tables, foreign-key edges, and PII flags for a given source connection.",
-  "main": "index.js",
-  "dependencies": {
-    "mssql": "^10.0.4"
-  }
-}
