@@ -1,0 +1,1858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#0d0f14">
+<meta name="description" content="Let Cygenix introspect your databases and propose a complete migration mapping with reasoning for every decision.">
+<meta property="og:title" content="Cygenix – Agentive Migration">
+<meta property="og:description" content="Let Cygenix introspect your databases and propose a complete migration mapping with reasoning for every decision.">
+<meta property="og:url" content="https://cygenix.co.uk/agentive_migration.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – Agentive Migration">
+<meta name="twitter:description" content="Let Cygenix introspect your databases and propose a complete migration mapping with reasoning for every decision.">
+<title>Cygenix – Agentive Migration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="/connections.js"></script>
+<script src="/nav.js"></script>
+<script src="/cygenix-cosmos-sync.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
+  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:8px;--r-lg:12px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+
+body.cyg-nav-active{padding-left:230px}
+body.cyg-nav-active.cyg-collapsed{padding-left:54px}
+body.cyg-nav-active .topbar{left:230px;right:0}
+body.cyg-nav-active.cyg-collapsed .topbar{left:54px}
+@media(max-width:768px){
+  body.cyg-nav-active{padding-left:230px}
+  body.cyg-nav-active.cyg-collapsed{padding-left:54px}
+  body.cyg-nav-active .topbar{left:230px}
+  body.cyg-nav-active.cyg-collapsed .topbar{left:54px}
+}
+
+.topbar{position:fixed;top:0;right:0;left:230px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:0.5px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem;transition:left 0.2s ease}
+body.cyg-collapsed .topbar{left:54px}
+
+.topbar-title{font-size:13px;color:var(--accent);font-weight:500;flex-shrink:0;display:flex;align-items:center;gap:0.5rem}
+.topbar-title svg{width:16px;height:16px}
+.topbar-pill{font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--accent-glow);color:var(--accent);border:1px solid var(--border2)}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;transition:background .15s,border-color .15s,transform .05s;line-height:1}
+.btn:hover:not(:disabled){background:var(--bg4);border-color:var(--border2)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-sm{padding:5px 10px;font-size:11.5px}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover:not(:disabled){background:#5d97ff;border-color:#5d97ff}
+.btn-green{background:var(--green);border-color:var(--green);color:#082014}
+.btn-green:hover:not(:disabled){background:#3ed98a}
+.btn-ghost{background:transparent}
+.btn-danger{background:transparent;border-color:rgba(240,70,70,.4);color:var(--red)}
+.btn-danger:hover:not(:disabled){background:var(--red-bg);border-color:var(--red)}
+
+.page{padding:72px 2rem 4rem;width:100%}
+.page-inner{max-width:1400px;margin:0 auto}
+
+.hero{margin-bottom:1.5rem}
+.hero h1{font-family:var(--serif);font-weight:600;font-size:24px;letter-spacing:-0.01em;margin:0 0 0.4rem;display:flex;align-items:center;gap:0.65rem}
+.hero h1 svg{width:24px;height:24px;color:var(--accent)}
+.hero p{color:var(--text2);font-size:13.5px;line-height:1.55;max-width:720px;margin:0}
+
+.stage{margin-top:1.25rem}
+
+.card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.5rem 1.5rem 1.25rem;margin-bottom:1rem}
+
+.field{margin-bottom:1.1rem}
+.field:last-child{margin-bottom:0}
+.field label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em}
+.field .hint{font-size:11.5px;color:var(--text3);margin-top:0.35rem;line-height:1.5}
+.form-input,.form-textarea{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);color:var(--text);padding:9px 12px;font-family:inherit;font-size:13px;transition:border-color .15s,background .15s}
+.form-input:focus,.form-textarea:focus{outline:none;border-color:var(--accent);background:var(--bg4)}
+.form-textarea{min-height:96px;resize:vertical;line-height:1.55;font-family:var(--serif)}
+
+/* Source → Target preview */
+.conn-flow{display:grid;grid-template-columns:1fr auto 1fr;gap:0.75rem;align-items:stretch}
+@media(max-width:600px){.conn-flow{grid-template-columns:1fr}.conn-arrow{transform:rotate(90deg);margin:0 auto}}
+.conn-card{padding:0.85rem 1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);min-height:64px;display:flex;flex-direction:column;justify-content:center}
+.conn-card-missing{border-style:dashed;border-color:rgba(245,158,11,0.4)}
+.conn-role{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:0.3rem;display:flex;align-items:center;gap:6px}
+.conn-role .conn-dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+.conn-card-missing .conn-role .conn-dot{background:var(--amber)}
+.conn-label{font-size:13px;color:var(--text);font-weight:500;word-break:break-word;font-family:var(--mono)}
+.conn-card-missing .conn-label{color:var(--amber);font-style:italic;font-weight:400;font-family:var(--serif)}
+.conn-arrow{display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:18px;padding:0 0.4rem}
+
+.notice{padding:0.85rem 1rem;background:var(--amber-bg);border:1px solid rgba(245,158,11,0.3);border-radius:var(--r);font-size:12.5px;color:var(--text);line-height:1.55;margin:1rem 0}
+.notice strong{color:var(--amber)}
+.notice a{color:var(--accent);text-decoration:none;margin-left:6px}
+.notice a:hover{text-decoration:underline}
+
+.budget-row{display:flex;align-items:center;gap:0.85rem;padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);font-size:12.5px}
+.budget-row strong{color:var(--text);font-weight:600;font-family:var(--mono);font-size:14px}
+.budget-row span{color:var(--text2)}
+
+.actions{display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1.25rem}
+
+/* ── New: Source overview + action card layout ────────────── */
+.setup-grid{display:grid;grid-template-columns:1.45fr 1fr;gap:1rem;margin-bottom:1rem}
+@media(max-width:1100px){.setup-grid{grid-template-columns:1fr}}
+
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1.25rem;display:flex;flex-direction:column}
+.panel-title{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin:0 0 0.85rem}
+
+.map-frame{position:relative;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;height:340px}
+.map-frame svg{width:100%;height:100%;display:block}
+.map-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.6rem;padding:1.25rem;text-align:center;color:var(--text3);font-size:12px;line-height:1.5}
+.map-overlay .spinner{margin-bottom:0.3rem}
+
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem;margin-top:0.85rem}
+.stat-tile{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:0.6rem 0.75rem}
+.stat-num{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--text)}
+.stat-num.warn{color:var(--amber)}
+.stat-num.muted{color:var(--text3)}
+.stat-lbl{font-size:10.5px;color:var(--text2);margin-top:2px;letter-spacing:0.02em}
+
+.descriptor{margin-top:0.85rem;font-size:12.5px;color:var(--text2);line-height:1.55}
+.descriptor code{font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);padding:1px 5px;border-radius:3px}
+
+.action-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:0.95rem 1rem;cursor:pointer;text-align:left;color:inherit;font-family:inherit;display:flex;flex-direction:column;gap:0.35rem;transition:border-color .15s,background .15s;width:100%}
+.action-card:hover{border-color:var(--accent);background:var(--bg4)}
+.action-card.active{border-color:var(--accent);background:var(--accent-glow);box-shadow:inset 0 0 0 1px var(--accent)}
+.action-card-title{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:0.45rem}
+.action-card-title svg{width:14px;height:14px;color:var(--accent);flex-shrink:0}
+.action-card-desc{font-size:11.5px;color:var(--text2);line-height:1.5}
+.action-card-meta{font-size:10.5px;color:var(--text3);font-family:var(--mono);margin-top:0.15rem}
+
+.action-card-controls{display:none;margin-top:0.6rem}
+.action-card.active .action-card-controls{display:block}
+.action-card-controls label{display:block;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.3rem}
+.action-card-controls select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-family:inherit;font-size:12.5px}
+.action-card-controls select:focus{outline:none;border-color:var(--accent)}
+
+/* ── Group carousel (NEW) ───────────────────────────────────────── */
+.carousel-wrap{position:relative}
+.carousel-empty{padding:2.5rem 1rem;text-align:center;color:var(--text3);font-size:12.5px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r)}
+.carousel-track-wrap{position:relative;overflow:hidden;border-radius:var(--r)}
+.carousel-track{display:flex;gap:0.85rem;overflow-x:auto;scroll-behavior:smooth;scroll-snap-type:x mandatory;padding:0.4rem 0.4rem 0.85rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.carousel-track::-webkit-scrollbar{height:6px}
+.carousel-track::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.group-card{flex:0 0 280px;scroll-snap-align:start;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:1rem 1.05rem 0.9rem;cursor:pointer;text-align:left;color:inherit;font-family:inherit;display:flex;flex-direction:column;gap:0.5rem;transition:border-color .15s,background .15s,transform .12s;min-height:230px}
+.group-card:hover{border-color:var(--accent);background:var(--bg4);transform:translateY(-2px)}
+.group-card.active{border-color:var(--accent);background:var(--accent-glow);box-shadow:inset 0 0 0 1px var(--accent)}
+.group-card-head{display:flex;align-items:center;gap:0.5rem}
+.group-card-icon{font-size:18px;line-height:1;flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:6px;border:1px solid var(--border)}
+.group-card-name{font-size:13.5px;font-weight:600;color:var(--text)}
+.group-card-stats{display:flex;flex-wrap:wrap;gap:0.45rem;font-size:10.5px;color:var(--text2);font-family:var(--mono)}
+.group-card-stats .stat{background:var(--bg);border:1px solid var(--border);padding:2px 7px;border-radius:4px;white-space:nowrap}
+.group-card-stats .stat.warn{color:var(--amber);border-color:rgba(245,158,11,0.25)}
+.group-card-tables{flex:1;display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text2);font-family:var(--mono);overflow:hidden}
+.group-card-tables .row{display:flex;justify-content:space-between;gap:0.5rem;line-height:1.45}
+.group-card-tables .row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-card-tables .row .rows{color:var(--text3);flex-shrink:0}
+.group-card-tables .more{color:var(--text3);font-size:10.5px;margin-top:2px}
+.group-card-action{margin-top:auto;padding:7px 10px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s}
+.group-card-action:hover{background:#5d97ff}
+.group-card.active .group-card-action{background:#fff;color:var(--accent)}
+.carousel-fade{position:absolute;top:0;bottom:0;width:36px;pointer-events:none;z-index:2;transition:opacity .2s}
+.carousel-fade.left{left:0;background:linear-gradient(to right,var(--bg2),transparent)}
+.carousel-fade.right{right:0;background:linear-gradient(to left,var(--bg2),transparent)}
+.carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;transition:background .15s,transform .12s;font-family:inherit;font-size:14px;line-height:1}
+.carousel-arrow:hover:not(:disabled){background:var(--bg4);transform:translateY(-50%) scale(1.06)}
+.carousel-arrow:disabled{opacity:0.35;cursor:not-allowed}
+.carousel-arrow.prev{left:-4px}
+.carousel-arrow.next{right:-4px}
+
+.prompt-source{font-size:10.5px;color:var(--text3);margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center}
+.prompt-source .clear-btn{background:none;border:none;color:var(--accent);cursor:pointer;font-family:inherit;font-size:10.5px;padding:0}
+.prompt-source .clear-btn:hover{text-decoration:underline}
+
+/* ── Existing run/approval/etc. styles (unchanged) ────────── */
+.status-bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:0.85rem 1rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:0.85rem}
+.status-left{display:flex;align-items:center;gap:0.75rem;min-width:0}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 var(--accent);animation:pulse 1.6s ease-out infinite;flex-shrink:0}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(61,126,255,0.5)}100%{box-shadow:0 0 0 12px transparent}}
+.status-text{font-size:13px;font-weight:500;color:var(--text)}
+.status-meta{font-size:11.5px;color:var(--text2)}
+.cost-meter{display:flex;align-items:center;gap:0.4rem;font-size:11.5px;color:var(--text2);font-family:var(--mono)}
+.cost-meter strong{color:var(--text);font-weight:600}
+
+.log{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:0.4rem;max-height:60vh;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.log::-webkit-scrollbar{width:6px}
+.log::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.log-empty{padding:2rem;text-align:center;color:var(--text3);font-size:12.5px}
+.log-entry{display:flex;gap:0.7rem;padding:0.7rem 0.85rem;border-radius:var(--r);margin-bottom:0.2rem;font-size:12.5px;line-height:1.5;animation:slide-in 0.25s ease-out}
+@keyframes slide-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.log-icon{flex-shrink:0;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:5px;margin-top:1px;font-size:11px;font-weight:600;font-family:var(--mono)}
+.log-body{flex:1;min-width:0}
+.log-title{color:var(--text);font-weight:500}
+.log-detail{color:var(--text2);font-size:11.5px;margin-top:2px;word-break:break-word;font-family:var(--mono)}
+.log-thinking .log-icon{background:var(--bg4);color:var(--text2)}
+.log-tool .log-icon{background:var(--accent-glow);color:var(--accent)}
+.log-result .log-icon{background:var(--green-bg);color:var(--green)}
+.log-error .log-icon{background:var(--red-bg);color:var(--red)}
+
+.approval-banner{display:flex;align-items:center;gap:0.7rem;padding:0.85rem 1rem;background:var(--amber-bg);border:1px solid rgba(245,158,11,0.35);border-radius:var(--r-lg);margin-bottom:1rem;font-size:13px}
+.approval-banner svg{flex-shrink:0;color:var(--amber);width:18px;height:18px}
+
+.proposal-summary{padding:1rem 1.1rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:1rem;font-size:13px;line-height:1.6;color:var(--text)}
+
+.section-label{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin:0 0 0.55rem}
+
+.decisions{margin-bottom:1.1rem}
+.decision{padding:0.7rem 0.85rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);margin-bottom:0.45rem;font-size:12.5px}
+.decision-label{display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;font-weight:500;color:var(--text);margin-bottom:0.2rem}
+.decision-confidence{font-size:9.5px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;padding:1px 6px;border-radius:3px}
+.decision-confidence.high{background:var(--green-bg);color:var(--green)}
+.decision-confidence.medium{background:var(--amber-bg);color:var(--amber)}
+.decision-confidence.low{background:var(--red-bg);color:var(--red)}
+.decision-reasoning{color:var(--text2);font-size:11.5px;line-height:1.5}
+
+.mapping-preview{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:1.1rem}
+.mapping-row{padding:0.7rem 0.95rem;border-bottom:0.5px solid var(--border);font-size:12.5px}
+.mapping-row:last-child{border-bottom:none}
+.mapping-name{display:flex;align-items:center;gap:0.6rem;font-weight:500;color:var(--text);font-family:var(--mono)}
+.mapping-arrow{color:var(--text3)}
+.mapping-meta{font-size:11px;color:var(--text2);margin-top:2px;font-family:var(--mono)}
+
+.question h3{margin:0 0 0.4rem;font-size:15px;color:var(--text);font-weight:600}
+.question .context{color:var(--text2);font-size:12.5px;margin-bottom:1rem;line-height:1.5}
+.question-options{display:flex;flex-direction:column;gap:0.45rem}
+.question-option{padding:0.7rem 0.85rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;font-size:12.5px;text-align:left;color:var(--text);font-family:inherit;transition:border-color .15s,background .15s}
+.question-option:hover{border-color:var(--accent);background:var(--accent-glow)}
+
+.completed{text-align:center;padding:2.5rem 1.5rem}
+.success-icon{width:52px;height:52px;border-radius:50%;background:var(--green-bg);color:var(--green);display:inline-flex;align-items:center;justify-content:center;margin-bottom:1rem}
+.completed h2{margin:0 0 0.4rem;font-size:17px;font-weight:600}
+.completed p{color:var(--text2);font-size:13px;margin:0 0 1.1rem}
+
+.spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,0.15);border-top-color:var(--text);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.disabled-state{padding:2rem;text-align:center;background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg)}
+.disabled-state h3{margin:0.6rem 0 0.4rem;font-size:15px;font-weight:600}
+.disabled-state p{color:var(--text2);font-size:12.5px;margin:0 0 0.85rem;line-height:1.5}
+
+.error-card{padding:1.25rem;background:var(--bg2);border:0.5px solid rgba(240,70,70,0.35);border-radius:var(--r-lg)}
+.error-card h3{font-size:14px;color:var(--red);margin:0 0 0.4rem;font-weight:600}
+.error-card p{color:var(--text2);font-size:12.5px;margin:0 0 1rem;word-break:break-word;line-height:1.5}
+
+/* SVG node graph elements */
+.schema-rect{fill:var(--bg3);stroke:var(--accent);stroke-width:0.5;opacity:0.95}
+.schema-label{fill:var(--accent);font-family:var(--mono);font-size:11px;font-weight:500}
+.table-rect{fill:var(--bg2);stroke:var(--border2);stroke-width:0.5;transition:stroke 0.15s}
+.table-rect.pii{stroke:var(--amber);stroke-dasharray:3 2}
+.table-rect:hover{stroke:var(--accent);cursor:pointer}
+.table-name{fill:var(--text);font-family:var(--mono);font-size:10.5px}
+.table-meta{fill:var(--text3);font-family:var(--mono);font-size:9px}
+.edge{stroke:var(--border2);stroke-width:0.5;fill:none;opacity:0.7}
+</style>
+</head>
+<body>
+
+<div id="cyg-sidebar-mount" data-active="agentive-migration"></div>
+<script src="/cygenix-sidebar.js"></script>
+<script>
+// Sidebar width mirror — same pattern as sql-editor.html
+(function mirrorSidebarWidth(){
+  function findSidebarEl(){
+    const candidates = [
+      document.getElementById('cyg-sidebar'),
+      document.querySelector('.cyg-sidebar'),
+      document.getElementById('cyg-sidebar-mount')
+    ].filter(Boolean);
+    return candidates.find(el => el.offsetWidth > 0) || candidates[0];
+  }
+  function sync(width){
+    const shouldCollapse = width > 0 && width <= 80;
+    document.body.classList.toggle('cyg-collapsed', shouldCollapse);
+  }
+  function attach(){
+    const el = findSidebarEl();
+    if (!el) { setTimeout(attach, 50); return; }
+    requestAnimationFrame(() => sync(el.offsetWidth));
+    if (typeof ResizeObserver !== 'undefined'){
+      const ro = new ResizeObserver(entries => {
+        for (const entry of entries) sync(entry.contentRect.width);
+      });
+      ro.observe(el);
+    } else {
+      setInterval(() => sync(el.offsetWidth), 200);
+    }
+  }
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
+</script>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:0.75rem;flex:1;min-width:0">
+    <span class="topbar-title">
+      <svg viewBox="0 0 16 16" fill="none">
+        <path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M1.5 8.5l4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+      </svg>
+      Agentive Migration
+    </span>
+    <span class="topbar-pill">Beta</span>
+    <span id="topbar-status" style="font-size:11.5px;color:var(--text3);margin-left:0.5rem"></span>
+  </div>
+  <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
+    <button class="btn btn-ghost btn-sm" onclick="window.location.href='/dashboard.html#connections'" title="Manage source and target connections">⚡ Connections</button>
+  </div>
+</div>
+
+<div class="page">
+  <div class="page-inner">
+    <div class="hero">
+      <h1>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke-width="1.2"/>
+          <path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke-width="1.2"/>
+          <path d="M1.5 8.5l4 4" stroke-width="1.2"/>
+        </svg>
+        Agentive Migration
+      </h1>
+      <p>Cygenix introspects your source database, shows you what's there, then proposes a complete migration mapping with reasoning for every decision. Pauses for your review before anything is committed.</p>
+    </div>
+
+    <div id="am-stage" class="stage"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
+  const FUNC_CODE = 'UfQpm2qJuc0lWIbYwtGUm_k6ys_FDEquCma-KCPl_e8rAzFu5qfwbA==';
+  const POLL_INTERVAL_MS = 1500;
+  const STORAGE_KEY = 'cygenix_agentive_migration';
+
+  function buildApiUrl(path) {
+    const sep = path.includes('?') ? '&' : '?';
+    return `${API_BASE}${path}${sep}code=${FUNC_CODE}`;
+  }
+
+  const state = {
+    currentRunId: null,
+    polling: null,
+    lastSeq: 0,
+    featureEnabled: null,
+    conns: { source: null, target: null },
+    view: 'loading',
+    // New: source schema introspection
+    sourceSchema: null,        // null = not loaded, {} = loaded data, 'pending' = backend not built
+    sourceSchemaLoading: false,
+    sourceSchemaError: null,
+    // New: action card state
+    activeAction: null,        // null | 'map-schema' | 'migrate-group'
+    selectedSchema: null,      // schema name when 'map-schema' is active
+    activeGroupId: null,       // group id when 'migrate-group' is active
+    userEditedPrompt: false,
+  };
+
+  const stage = document.getElementById('am-stage');
+
+  // ── Auth ──────────────────────────────────────────────────────
+  async function getAuthToken() {
+    try {
+      if (window.cygenixGetAccessToken) return await window.cygenixGetAccessToken();
+      if (window.msalInstance) {
+        const accounts = window.msalInstance.getAllAccounts();
+        if (accounts.length > 0) {
+          const result = await window.msalInstance.acquireTokenSilent({
+            scopes: ['openid', 'profile'], account: accounts[0],
+          });
+          return result.idToken;
+        }
+      }
+    } catch (e) { console.warn('[AgentiveMigration] auth token unavailable', e); }
+    return null;
+  }
+
+  class ApiNotImplementedError extends Error {
+    constructor(path) {
+      super(`Backend endpoint ${path} is not deployed yet`);
+      this.name = 'ApiNotImplementedError';
+      this.path = path;
+    }
+  }
+
+  function getActiveUserId() {
+    try {
+      const entraStr = localStorage.getItem('cygenix_entra_account')
+                    || sessionStorage.getItem('cygenix_entra_account');
+      if (entraStr) {
+        const a = JSON.parse(entraStr);
+        if (a && (a.email || a.username || a.preferred_username)) {
+          return a.email || a.username || a.preferred_username;
+        }
+      }
+      const userStr = sessionStorage.getItem('cygenix_user')
+                   || localStorage.getItem('cygenix_user');
+      if (userStr) {
+        const u = JSON.parse(userStr);
+        if (u && u.email) return u.email;
+      }
+      const active = localStorage.getItem('cygenix_active_user');
+      if (active) return active;
+    } catch (e) {
+      console.warn('[AgentiveMigration] could not resolve user id:', e.message);
+    }
+    return null;
+  }
+
+  async function api(path, options = {}) {
+    const userId = getActiveUserId();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    };
+    if (userId) headers['x-user-id'] = userId;
+
+    const url = buildApiUrl(path);
+
+    let res;
+    try {
+      res = await fetch(url, { ...options, headers });
+    } catch (e) {
+      throw new Error(`Network error calling ${path}: ${e.message}`);
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+
+    if (res.status === 404 || !isJson) {
+      throw new ApiNotImplementedError(path);
+    }
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+    }
+    return res.json();
+  }
+
+  // ── Feature gate ──────────────────────────────────────────────
+  async function checkFeatureEnabled() {
+    try {
+      const me = await api('/me');
+      const tenantOn = me.tenant && me.tenant.agentiveMigrationEnabled === true;
+      const userOn = me.user && me.user.aiAgentiveEnabled === true;
+      state.featureEnabled = tenantOn && userOn;
+    } catch (e) {
+      console.warn('[AgentiveMigration] /me failed, assuming enabled for dev:', e.message);
+      state.featureEnabled = true;
+    }
+  }
+
+  // ── Connections ───────────────────────────────────────────────
+  function readConnections() {
+    const hasGlobal = (typeof CygenixConnections !== 'undefined');
+    const hasGet = hasGlobal && typeof CygenixConnections.get === 'function';
+    if (!hasGlobal || !hasGet) {
+      console.warn('[AgentiveMigration] CygenixConnections not yet ready', { hasGlobal, hasGet });
+      return { source: null, target: null };
+    }
+    let c;
+    try {
+      c = CygenixConnections.get() || {};
+    } catch (e) {
+      console.warn('[AgentiveMigration] CygenixConnections.get() threw:', e.message);
+      return { source: null, target: null };
+    }
+
+    let source = null;
+    if (c.srcFnUrl) {
+      source = { label: describeFnUrl(c.srcFnUrl), kind: 'azure' };
+    } else if (c.srcConnString) {
+      source = { label: describeConnString(c.srcConnString), kind: 'direct' };
+    }
+    let target = null;
+    if (c.tgtFnUrl) {
+      target = { label: describeFnUrl(c.tgtFnUrl), kind: 'azure' };
+    } else if (c.tgtConnString) {
+      target = { label: describeConnString(c.tgtConnString), kind: 'direct' };
+    }
+    return { source, target };
+  }
+
+  function describeConnString(s) {
+    if (!s) return 'Configured connection';
+    const server = (s.match(/(?:Server|Data Source)\s*=\s*([^;]+)/i) || [])[1];
+    const database = (s.match(/(?:Database|Initial Catalog)\s*=\s*([^;]+)/i) || [])[1];
+    if (server && database) return `${database.trim()} on ${server.trim()}`;
+    if (server) return server.trim();
+    if (database) return database.trim();
+    return 'Configured connection';
+  }
+
+  function describeFnUrl(url) {
+    try { const u = new URL(url); return `Azure Function · ${u.hostname.split('.')[0]}`; }
+    catch { return 'Azure Function endpoint'; }
+  }
+
+  let connWatcher = null;
+  function startConnectionWatcher() {
+    if (connWatcher) clearInterval(connWatcher);
+    state._schemaRetryCount = state._schemaRetryCount || 0;
+    connWatcher = setInterval(() => {
+      if (state.view !== 'setup') return;
+      const next = readConnections();
+      const connsChanged =
+        (!!next.source) !== (!!state.conns.source) ||
+        (!!next.target) !== (!!state.conns.target) ||
+        (next.source && state.conns.source && next.source.label !== state.conns.source.label) ||
+        (next.target && state.conns.target && next.target.label !== state.conns.target.label);
+      // Also retry the schema load if we have a source but the last attempt
+      // failed with 'pending' (endpoint was 404 at the time) or with an error.
+      // This handles the case where the function is deployed/fixed AFTER init.
+      // Cap retries to avoid hammering a permanently-down endpoint.
+      const shouldRetrySchema = next.source &&
+        !state.sourceSchemaLoading &&
+        (state.sourceSchema === 'pending' || state.sourceSchemaError) &&
+        state._schemaRetryCount < 5;
+      if (connsChanged) {
+        state.conns = next;
+        state.sourceSchema = null;
+        state.sourceSchemaError = null;
+        state.activeAction = null;
+        state.selectedSchema = null;
+        state.activeGroupId = null;
+        state.userEditedPrompt = false;
+        state._schemaRetryCount = 0;
+        renderSetup();
+        if (state.conns.source) loadSourceSchema();
+      } else if (shouldRetrySchema) {
+        state._schemaRetryCount++;
+        state.sourceSchema = null;
+        state.sourceSchemaError = null;
+        loadSourceSchema();
+      }
+    }, 4000);
+  }
+  function stopConnectionWatcher() {
+    if (connWatcher) { clearInterval(connWatcher); connWatcher = null; }
+  }
+
+  // ── Source schema introspection (NEW) ─────────────────────────
+  // Calls a backend endpoint that should return:
+  //   { schemas: [{ name, tables: [{ name, rows, hasPii, columnCount }] }],
+  //     edges:   [{ from: "schema.table", to: "schema.table" }],
+  //     totals:  { schemas, tables, columns, piiColumns } }
+  // If the endpoint isn't deployed yet we degrade gracefully.
+  // Pull the user's source connection details directly from localStorage
+  // (via CygenixConnections.get) and POST them to the introspection endpoint.
+  // This matches how dashboard.html calls /api/db: the browser holds the
+  // authoritative copy of the connection, the function never persists it.
+  async function loadSourceSchema() {
+    if (!state.conns.source) return;
+    if (state.sourceSchemaLoading) return;
+    state.sourceSchemaLoading = true;
+    state.sourceSchemaError = null;
+    renderSetup();
+
+    // Read connection from CygenixConnections (same way readConnections does).
+    let body = {};
+    try {
+      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
+        ? (CygenixConnections.get() || {})
+        : {};
+      if (c.srcFnUrl) {
+        body.srcFnUrl = c.srcFnUrl;
+      } else if (c.srcConnString) {
+        body.srcConnString = c.srcConnString;
+      }
+    } catch (e) {
+      console.warn('[AgentiveMigration] could not read connection for schema load:', e.message);
+    }
+
+    if (!body.srcConnString && !body.srcFnUrl) {
+      state.sourceSchemaError = 'No source connection details found in browser storage.';
+      state.sourceSchemaLoading = false;
+      if (state.view === 'setup') renderSetup();
+      return;
+    }
+
+    try {
+      const data = await api('/agent/source-schema', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      state.sourceSchema = data;
+      if (data && Array.isArray(data.schemas) && data.schemas.length > 0) {
+        state.selectedSchema = data.schemas[0].name;
+      }
+    } catch (e) {
+      if (e instanceof ApiNotImplementedError) {
+        state.sourceSchema = 'pending'; // backend endpoint not deployed yet
+      } else {
+        state.sourceSchemaError = e.message;
+      }
+    } finally {
+      state.sourceSchemaLoading = false;
+      if (state.view === 'setup') renderSetup();
+    }
+  }
+
+  // ── Persistence ───────────────────────────────────────────────
+  function saveActiveRun(runId) {
+    try {
+      const userKey = (localStorage.getItem('cygenix_active_user') || 'anon');
+      const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      data[userKey] = { runId, savedAt: Date.now() };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) { /* ignore */ }
+  }
+  function loadActiveRun() {
+    try {
+      const userKey = (localStorage.getItem('cygenix_active_user') || 'anon');
+      const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      const entry = data[userKey];
+      if (entry && Date.now() - entry.savedAt < 24 * 60 * 60 * 1000) return entry.runId;
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  function clearActiveRun() {
+    try {
+      const userKey = (localStorage.getItem('cygenix_active_user') || 'anon');
+      const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      delete data[userKey];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) { /* ignore */ }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function setTopbarStatus(text) {
+    const el = document.getElementById('topbar-status');
+    if (el) el.textContent = text || '';
+  }
+
+  function formatRows(n) {
+    if (n == null) return '';
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  // ── Source-overview renderer (NEW) ────────────────────────────
+  function renderSourceOverview() {
+    // Three states:
+    //   1. No source connection → show prompt to configure it
+    //   2. Loading → spinner
+    //   3. Backend pending (sentinel) → show degraded "ready" state
+    //   4. Loaded → render the SVG node graph + stats
+
+    if (!state.conns.source) {
+      return `
+        <div class="map-frame">
+          <div class="map-overlay">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text3)">
+              <ellipse cx="12" cy="5" rx="9" ry="3"/>
+              <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
+              <path d="M3 12a9 3 0 0 0 18 0"/>
+            </svg>
+            <div>Configure a source connection to introspect your database.</div>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
+        </div>`;
+    }
+
+    if (state.sourceSchemaLoading || state.sourceSchema === null) {
+      return `
+        <div class="map-frame">
+          <div class="map-overlay">
+            <div class="spinner"></div>
+            <div>Reading source database structure…</div>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
+        </div>`;
+    }
+
+    if (state.sourceSchemaError) {
+      return `
+        <div class="map-frame">
+          <div class="map-overlay">
+            <div style="color:var(--red);font-weight:500">Couldn't read source schema</div>
+            <div style="font-size:11px">${escapeHtml(state.sourceSchemaError)}</div>
+            <button class="btn btn-sm" id="am-retry-schema-btn" style="margin-top:0.4rem">Retry</button>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
+        </div>`;
+    }
+
+    if (state.sourceSchema === 'pending') {
+      // Backend endpoint not deployed yet — degrade to a "ready, not yet introspected" state
+      return `
+        <div class="map-frame">
+          <div class="map-overlay">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <div style="color:var(--text2)">Source connected. Visual schema map loads when the introspection endpoint is deployed.</div>
+            <div style="font-size:11px;color:var(--text3);max-width:380px">For now, the agent introspects the database itself once you start a run — the structure shows in the run log.</div>
+          </div>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
+          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
+        </div>`;
+    }
+
+    // Loaded state — render real data
+    const schema = state.sourceSchema;
+    const totals = schema.totals || {};
+    const svgMarkup = buildSchemaSvg(schema);
+
+    const piiCount = totals.piiColumns || 0;
+    const piiNote = piiCount > 0
+      ? `Detected PII in <code>${piiCount}</code> column${piiCount === 1 ? '' : 's'} — flagged in the map above.`
+      : `No obvious PII detected by the introspection pass.`;
+
+    return `
+      <div class="map-frame">
+        ${svgMarkup}
+      </div>
+      <div class="stat-grid">
+        <div class="stat-tile"><div class="stat-num">${escapeHtml(String(totals.schemas || 0))}</div><div class="stat-lbl">Schemas</div></div>
+        <div class="stat-tile"><div class="stat-num">${escapeHtml(String(totals.tables || 0))}</div><div class="stat-lbl">Tables</div></div>
+        <div class="stat-tile"><div class="stat-num">${escapeHtml(String(totals.columns || 0))}</div><div class="stat-lbl">Columns</div></div>
+        <div class="stat-tile"><div class="stat-num ${piiCount > 0 ? 'warn' : 'muted'}">${escapeHtml(String(piiCount))}</div><div class="stat-lbl">PII columns</div></div>
+      </div>
+      <div class="descriptor">
+        ${escapeHtml(schema.databaseLabel || state.conns.source.label)} · ${totals.schemas || 0} schema${(totals.schemas || 0) === 1 ? '' : 's'}, ${totals.tables || 0} tables.
+        ${piiNote}
+      </div>`;
+  }
+
+  // Build an SVG node graph from real schema data.
+  // Layout: one column per schema (max 2 columns wide), tables stack vertically inside.
+  function buildSchemaSvg(schema) {
+    const schemas = Array.isArray(schema.schemas) ? schema.schemas : [];
+    if (schemas.length === 0) {
+      return `<svg viewBox="0 0 700 340"><text x="350" y="170" text-anchor="middle" class="table-name" style="font-size:12px">No schemas found</text></svg>`;
+    }
+
+    const COL_WIDTH = 280;
+    const COL_GAP = 30;
+    const COL_X_START = 30;
+    const HEADER_H = 26;
+    const TABLE_H = 22;
+    const TABLE_GAP = 4;
+    const PADDING = 10;
+
+    // Place schemas in a 2-column layout
+    const cols = Math.min(2, schemas.length);
+    const positions = {}; // "schema.table" → bbox
+
+    let svgTables = '';
+    let svgSchemas = '';
+
+    schemas.forEach((sch, idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      const x = COL_X_START + col * (COL_WIDTH + COL_GAP);
+      // Per-row Y: based on the heights of schemas in earlier rows of the same column
+      let y = 20;
+      for (let i = 0; i < idx; i++) {
+        if (i % cols === col) {
+          const prev = schemas[i];
+          const prevTables = Math.min(prev.tables ? prev.tables.length : 0, 5); // cap displayed
+          const prevHeight = HEADER_H + PADDING + prevTables * (TABLE_H + TABLE_GAP) + 12;
+          y += prevHeight;
+        }
+      }
+
+      const tables = Array.isArray(sch.tables) ? sch.tables.slice(0, 5) : []; // show top 5
+      const totalTables = sch.tables ? sch.tables.length : 0;
+      const moreCount = totalTables - tables.length;
+      const height = HEADER_H + PADDING + tables.length * (TABLE_H + TABLE_GAP) + (moreCount > 0 ? 14 : 0) + 8;
+
+      svgSchemas += `<rect class="schema-rect" x="${x}" y="${y}" width="${COL_WIDTH}" height="${height}" rx="6"/>`;
+      svgSchemas += `<text class="schema-label" x="${x + 12}" y="${y + 17}">${escapeHtml(sch.name)}</text>`;
+      svgSchemas += `<text class="table-meta" x="${x + COL_WIDTH - 12}" y="${y + 17}" text-anchor="end">${totalTables} table${totalTables === 1 ? '' : 's'}</text>`;
+
+      tables.forEach((t, i) => {
+        const tx = x + PADDING;
+        const ty = y + HEADER_H + i * (TABLE_H + TABLE_GAP);
+        const tw = COL_WIDTH - PADDING * 2;
+        const piiCls = t.hasPii ? ' pii' : '';
+        const displayName = (t.hasPii ? '⚠ ' : '') + (t.name || '');
+        svgTables += `<rect class="table-rect${piiCls}" x="${tx}" y="${ty}" width="${tw}" height="${TABLE_H}" rx="3"/>`;
+        svgTables += `<text class="table-name" x="${tx + 8}" y="${ty + 14}">${escapeHtml(displayName)}</text>`;
+        if (t.rows != null) {
+          svgTables += `<text class="table-meta" x="${tx + tw - 8}" y="${ty + 14}" text-anchor="end">${escapeHtml(formatRows(t.rows))}</text>`;
+        }
+        positions[sch.name + '.' + t.name] = {
+          left: tx, right: tx + tw, cy: ty + TABLE_H / 2
+        };
+      });
+
+      if (moreCount > 0) {
+        const moreY = y + HEADER_H + tables.length * (TABLE_H + TABLE_GAP) + 8;
+        svgTables += `<text class="table-meta" x="${x + COL_WIDTH / 2}" y="${moreY}" text-anchor="middle">+${moreCount} more table${moreCount === 1 ? '' : 's'}</text>`;
+      }
+    });
+
+    // Edges
+    let svgEdges = '';
+    const edges = Array.isArray(schema.edges) ? schema.edges : [];
+    edges.forEach(edge => {
+      const a = positions[edge.from];
+      const b = positions[edge.to];
+      if (!a || !b) return;
+      const ax = a.cx < b.cx || a.right < b.left ? a.right : a.left;
+      const bx = ax === a.right ? b.left : b.right;
+      const ay = a.cy, by = b.cy;
+      const midX = (ax + bx) / 2;
+      svgEdges += `<path class="edge" d="M ${ax} ${ay} C ${midX} ${ay}, ${midX} ${by}, ${bx} ${by}"/>`;
+    });
+
+    // Compute viewBox height from the last placed schema's bottom edge
+    let maxBottom = 100;
+    Object.values(positions).forEach(p => { if (p.cy + TABLE_H > maxBottom) maxBottom = p.cy + TABLE_H; });
+    const vbHeight = Math.max(340, maxBottom + 30);
+
+    return `<svg viewBox="0 0 700 ${vbHeight}" preserveAspectRatio="xMidYMid meet">
+      <g>${svgEdges}</g>
+      <g>${svgSchemas}</g>
+      <g>${svgTables}</g>
+    </svg>`;
+  }
+
+  // ── Action card → prompt wiring (NEW) ─────────────────────────
+  function buildPromptForAction(action, schemaName) {
+    if (action === 'map-schema') {
+      const s = schemaName || '<schema name>';
+      return `Propose a complete mapping for the ${s} schema only. Preserve foreign key relationships within the schema. Flag any PII columns for my review before including them. Pause for approval before writing anything to the target.`;
+    }
+    return '';
+  }
+
+  function buildPromptForGroup(group) {
+    if (!group) return '';
+    const tables = (group.tables || []).map(t => t.fullName || (t.schema + '.' + t.name));
+    const tableList = tables.length <= 6
+      ? tables.join(', ')
+      : tables.slice(0, 6).join(', ') + ` (and ${tables.length - 6} more in this group)`;
+    const piiNote = group.piiCount > 0
+      ? ` ${group.piiCount} PII column${group.piiCount === 1 ? '' : 's'} flagged in this group — flag each for my review before including in the mapping.`
+      : '';
+    return `Migrate the "${group.name}" group of tables from source to target. Tables in scope: ${tableList}. Preserve any foreign-key relationships within the group.${piiNote} Pause for approval before writing anything to the target.`;
+  }
+
+  function applyActionToPrompt() {
+    const ta = document.getElementById('am-goal');
+    if (!ta) return;
+    if (state.activeAction) {
+      ta.value = buildPromptForAction(state.activeAction, state.selectedSchema);
+      state.userEditedPrompt = false;
+    }
+  }
+
+  function getAvailableSchemas() {
+    if (state.sourceSchema && state.sourceSchema !== 'pending' && Array.isArray(state.sourceSchema.schemas)) {
+      return state.sourceSchema.schemas.map(s => ({ name: s.name, tableCount: s.tables ? s.tables.length : 0 }));
+    }
+    return [];
+  }
+
+  // ── Group carousel (NEW) ──────────────────────────────────────────
+  function getAvailableGroups() {
+    if (state.sourceSchema && state.sourceSchema !== 'pending' && Array.isArray(state.sourceSchema.groups)) {
+      return state.sourceSchema.groups;
+    }
+    return [];
+  }
+
+  function formatRowsShort(n) {
+    if (n == null) return '';
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  function renderGroupCarousel() {
+    const groups = getAvailableGroups();
+
+    // Three rendering states match renderSourceOverview
+    if (!state.conns.source) {
+      return `<div class="carousel-empty">Configure a source connection to see suggested groups.</div>`;
+    }
+    if (state.sourceSchemaLoading || state.sourceSchema === null) {
+      return `<div class="carousel-empty"><div class="spinner" style="display:inline-block;margin-right:8px;vertical-align:middle"></div>Reading source database — groups appear here once introspection finishes.</div>`;
+    }
+    if (state.sourceSchema === 'pending') {
+      return `<div class="carousel-empty">Backend introspection endpoint isn't deployed yet. Once it is, suggested groups will appear here automatically.</div>`;
+    }
+    if (state.sourceSchemaError) {
+      return `<div class="carousel-empty" style="color:var(--red)">${escapeHtml(state.sourceSchemaError)}</div>`;
+    }
+    if (groups.length === 0) {
+      return `<div class="carousel-empty">No tables found to group. Check that your source connection points at a database with user tables.</div>`;
+    }
+
+    const cardsHtml = groups.map(g => {
+      const isActive = state.activeGroupId === g.id;
+      const previewTables = (g.tables || []).slice(0, 5);
+      const moreCount = (g.tables || []).length - previewTables.length;
+      return `
+        <button class="group-card${isActive ? ' active' : ''}" data-group-id="${escapeHtml(g.id)}" type="button">
+          <div class="group-card-head">
+            <div class="group-card-icon">${escapeHtml(g.icon || '◆')}</div>
+            <div class="group-card-name">${escapeHtml(g.name)}</div>
+          </div>
+          <div class="group-card-stats">
+            <span class="stat">${g.tableCount} table${g.tableCount === 1 ? '' : 's'}</span>
+            <span class="stat">${formatRowsShort(g.totalRows)} rows</span>
+            ${g.piiCount > 0 ? `<span class="stat warn">⚠ ${g.piiCount} PII</span>` : ''}
+          </div>
+          <div class="group-card-tables">
+            ${previewTables.map(t => `<div class="row"><span class="name">${escapeHtml(t.name)}${t.hasPii ? ' ⚠' : ''}</span><span class="rows">${formatRowsShort(t.rows)}</span></div>`).join('')}
+            ${moreCount > 0 ? `<div class="more">+${moreCount} more</div>` : ''}
+          </div>
+          <div class="group-card-action">${isActive ? '✓ Selected' : 'Migrate this data →'}</div>
+        </button>`;
+    }).join('');
+
+    return `
+      <div class="carousel-wrap">
+        <button class="carousel-arrow prev" id="am-carousel-prev" type="button" aria-label="Scroll left">‹</button>
+        <button class="carousel-arrow next" id="am-carousel-next" type="button" aria-label="Scroll right">›</button>
+        <div class="carousel-fade left" id="am-carousel-fade-left"></div>
+        <div class="carousel-fade right" id="am-carousel-fade-right"></div>
+        <div class="carousel-track-wrap">
+          <div class="carousel-track" id="am-carousel-track">${cardsHtml}</div>
+        </div>
+      </div>`;
+  }
+
+  function wireCarousel() {
+    const track = document.getElementById('am-carousel-track');
+    if (!track) return;
+    const prev = document.getElementById('am-carousel-prev');
+    const next = document.getElementById('am-carousel-next');
+    const fadeL = document.getElementById('am-carousel-fade-left');
+    const fadeR = document.getElementById('am-carousel-fade-right');
+
+    const updateAffordances = () => {
+      const atStart = track.scrollLeft <= 4;
+      const atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
+      if (prev) prev.disabled = atStart;
+      if (next) next.disabled = atEnd;
+      if (fadeL) fadeL.style.opacity = atStart ? '0' : '1';
+      if (fadeR) fadeR.style.opacity = atEnd ? '0' : '1';
+    };
+
+    const scrollByOneCard = (dir) => {
+      const card = track.querySelector('.group-card');
+      const step = card ? card.getBoundingClientRect().width + 14 : 280;
+      track.scrollBy({ left: dir * step, behavior: 'smooth' });
+    };
+
+    if (prev) prev.addEventListener('click', () => scrollByOneCard(-1));
+    if (next) next.addEventListener('click', () => scrollByOneCard(1));
+    track.addEventListener('scroll', updateAffordances, { passive: true });
+
+    // Card selection
+    track.querySelectorAll('.group-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const groupId = card.dataset.groupId;
+        const groups = getAvailableGroups();
+        const group = groups.find(g => g.id === groupId);
+        if (!group) return;
+        state.activeGroupId = groupId;
+        state.activeAction = 'migrate-group'; // distinguish from old map-schema action
+        state.userEditedPrompt = false;
+        // Scroll the chosen card into view (helpful on mobile / narrow viewports)
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        renderSetup();
+      });
+    });
+
+    updateAffordances();
+  }
+
+  function renderActionCards() {
+    const schemas = getAvailableSchemas();
+    const isActive = state.activeAction === 'map-schema';
+    const isReady = schemas.length > 0; // We have real schema names
+
+    // Build dropdown — only when we have real schemas
+    let schemaSelect = '';
+    if (isReady) {
+      const options = schemas.map(s => {
+        const sel = s.name === state.selectedSchema ? ' selected' : '';
+        return `<option value="${escapeHtml(s.name)}"${sel}>${escapeHtml(s.name)} (${s.tableCount} table${s.tableCount === 1 ? '' : 's'})</option>`;
+      }).join('');
+      schemaSelect = `
+        <div class="action-card-controls">
+          <label for="am-schema-select">Choose a schema</label>
+          <select id="am-schema-select">${options}</select>
+        </div>`;
+    } else {
+      schemaSelect = `
+        <div class="action-card-controls">
+          <label>Choose a schema</label>
+          <div style="font-size:11px;color:var(--text3);font-style:italic">Schemas appear once the source is introspected.</div>
+        </div>`;
+    }
+
+    return `
+      <button class="action-card${isActive ? ' active' : ''}" id="am-action-map-schema" ${isReady ? '' : 'disabled style="opacity:.55;cursor:not-allowed"'}>
+        <div class="action-card-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="5" rx="9" ry="3"/>
+            <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
+            <path d="M3 12a9 3 0 0 0 18 0"/>
+          </svg>
+          Map one schema
+        </div>
+        <div class="action-card-desc">Focus on a single source schema. The agent proposes table and column mappings, preserves foreign keys, and flags PII before mapping.</div>
+        <div class="action-card-meta">Estimated cost: ~$0.20–$0.60 per schema</div>
+        ${schemaSelect}
+      </button>`;
+  }
+
+  // ── Views ─────────────────────────────────────────────────────
+  function renderDisabled() {
+    state.view = 'disabled';
+    setTopbarStatus('Feature disabled');
+    stage.innerHTML = `
+      <div class="disabled-state">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text3)">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+        </svg>
+        <h3>Agentive Migration is not enabled</h3>
+        <p>An administrator needs to enable AI features for this tenant, and you'll need to opt in from your user settings.</p>
+      </div>`;
+  }
+
+  function renderLoading(msg) {
+    state.view = 'loading';
+    setTopbarStatus(msg || 'Loading…');
+    stage.innerHTML = `
+      <div class="card" style="display:flex;align-items:center;gap:0.7rem;justify-content:center">
+        <div class="spinner"></div>
+        <span style="color:var(--text2);font-size:12.5px">${escapeHtml(msg || 'Loading…')}</span>
+      </div>`;
+  }
+
+  function renderError(msg) {
+    state.view = 'error';
+    setTopbarStatus('Error');
+    stage.innerHTML = `
+      <div class="error-card">
+        <h3>Something went wrong</h3>
+        <p>${escapeHtml(msg)}</p>
+        <button class="btn btn-sm" onclick="window.location.reload()">Reload page</button>
+      </div>`;
+  }
+
+  function renderSetup() {
+    state.view = 'setup';
+    setTopbarStatus('Ready');
+
+    const { source, target } = state.conns;
+    const bothConfigured = !!(source && target);
+
+    const sourceCard = source ? `
+      <div class="conn-card">
+        <div class="conn-role"><span class="conn-dot"></span>Source</div>
+        <div class="conn-label">${escapeHtml(source.label)}</div>
+      </div>` : `
+      <div class="conn-card conn-card-missing">
+        <div class="conn-role"><span class="conn-dot"></span>Source</div>
+        <div class="conn-label">Not configured</div>
+      </div>`;
+
+    const targetCard = target ? `
+      <div class="conn-card">
+        <div class="conn-role"><span class="conn-dot"></span>Target</div>
+        <div class="conn-label">${escapeHtml(target.label)}</div>
+      </div>` : `
+      <div class="conn-card conn-card-missing">
+        <div class="conn-role"><span class="conn-dot"></span>Target</div>
+        <div class="conn-label">Not configured</div>
+      </div>`;
+
+    const missingNotice = bothConfigured ? '' : `
+      <div class="notice">
+        <strong>Connections not fully configured.</strong>
+        The agent needs both a source and a target before it can run.
+        <a href="/dashboard.html#connections">Set them up in Connections →</a>
+      </div>`;
+
+    // Compute current prompt source label
+    let promptSourceLabel = 'Pick a group above, or type your own instruction.';
+    let showClear = false;
+    if (state.activeAction === 'migrate-group' && state.activeGroupId) {
+      const groups = getAvailableGroups();
+      const grp = groups.find(g => g.id === state.activeGroupId);
+      const grpName = grp ? grp.name : 'group';
+      promptSourceLabel = state.userEditedPrompt
+        ? `Edited from: ${grpName}`
+        : `Filled from: ${grpName}`;
+      showClear = true;
+    } else if (state.activeAction === 'map-schema') {
+      promptSourceLabel = state.userEditedPrompt
+        ? 'Edited from: Map one schema'
+        : 'Filled from: Map one schema';
+      showClear = true;
+    } else if (state.userEditedPrompt) {
+      promptSourceLabel = 'Custom instruction';
+      showClear = true;
+    }
+
+    stage.innerHTML = `
+      <div class="card" style="padding:1.25rem 1.5rem">
+        <div class="field" style="margin-bottom:0">
+          <label>Migration direction</label>
+          <div class="conn-flow">
+            ${sourceCard}
+            <div class="conn-arrow" aria-hidden="true">→</div>
+            ${targetCard}
+          </div>
+          <div class="hint">Cygenix migrates from your project's source to its target. Configure these in the Connections page.</div>
+        </div>
+        ${missingNotice}
+      </div>
+
+      <div class="panel" style="margin-bottom:1rem">
+        <div class="panel-title">Source overview</div>
+        ${renderSourceOverview()}
+      </div>
+
+      <div class="panel" style="margin-bottom:1rem">
+        <div class="panel-title">Pick a group of tables to migrate</div>
+        ${renderGroupCarousel()}
+      </div>
+
+      <div class="card">
+        <div class="field">
+          <div class="prompt-source">
+            <span>${escapeHtml(promptSourceLabel)}</span>
+            ${showClear ? '<button type="button" class="clear-btn" id="am-clear-prompt-btn">Clear</button>' : ''}
+          </div>
+          <textarea id="am-goal" class="form-textarea" placeholder="Or write your own instruction — e.g. 'Propose a mapping for the sales schema. Exclude any PII columns and ask me before including columns that look sensitive.'" ${bothConfigured ? '' : 'disabled'}></textarea>
+          <div class="hint">Editing this overrides the action card above. The agent uses whatever is in this box when you press Start.</div>
+        </div>
+
+        <div class="field">
+          <label>Budget cap</label>
+          <div class="budget-row">
+            <strong>$2.00</strong>
+            <span>maximum spend per run</span>
+            <span style="margin-left:auto;font-size:11px;color:var(--text3)">Hard ceiling — the agent stops if reached.</span>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary btn-sm" id="am-start-btn" ${bothConfigured ? '' : 'disabled'}>▶ Start agent</button>
+        </div>
+      </div>`;
+
+    // Wire up the textarea — populate from active action/group if there is one
+    const ta = document.getElementById('am-goal');
+    if (ta && !state.userEditedPrompt) {
+      if (state.activeAction === 'migrate-group' && state.activeGroupId) {
+        const groups = getAvailableGroups();
+        const grp = groups.find(g => g.id === state.activeGroupId);
+        if (grp) ta.value = buildPromptForGroup(grp);
+      } else if (state.activeAction === 'map-schema') {
+        ta.value = buildPromptForAction(state.activeAction, state.selectedSchema);
+      }
+    }
+
+    // Wire carousel scroll buttons + card click handlers
+    wireCarousel();
+
+    // Action card click (legacy "map-schema" — kept for backward compat but
+    // hidden by current renderSetup which now uses the carousel instead)
+    const actionCard = document.getElementById('am-action-map-schema');
+    if (actionCard) {
+      actionCard.addEventListener('click', (e) => {
+        if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
+        if (actionCard.disabled) return;
+        state.activeAction = 'map-schema';
+        state.userEditedPrompt = false;
+        if (!state.selectedSchema) {
+          const schemas = getAvailableSchemas();
+          if (schemas.length > 0) state.selectedSchema = schemas[0].name;
+        }
+        renderSetup();
+      });
+    }
+
+    // Schema dropdown change
+    const schemaSelectEl = document.getElementById('am-schema-select');
+    if (schemaSelectEl) {
+      schemaSelectEl.addEventListener('click', (e) => e.stopPropagation());
+      schemaSelectEl.addEventListener('change', (e) => {
+        state.selectedSchema = e.target.value;
+        if (state.activeAction === 'map-schema' && !state.userEditedPrompt) {
+          const ta2 = document.getElementById('am-goal');
+          if (ta2) ta2.value = buildPromptForAction('map-schema', state.selectedSchema);
+        }
+      });
+    }
+
+    // Clear prompt
+    const clearBtn = document.getElementById('am-clear-prompt-btn');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.activeAction = null;
+        state.activeGroupId = null;
+        state.userEditedPrompt = false;
+        const ta2 = document.getElementById('am-goal');
+        if (ta2) ta2.value = '';
+        renderSetup();
+      });
+    }
+
+    // Detect manual edits
+    if (ta) {
+      ta.addEventListener('input', () => {
+        state.userEditedPrompt = true;
+        const sourceEl = document.querySelector('.prompt-source span');
+        if (sourceEl) {
+          if (state.activeAction === 'migrate-group' && state.activeGroupId) {
+            const groups = getAvailableGroups();
+            const grp = groups.find(g => g.id === state.activeGroupId);
+            sourceEl.textContent = grp ? `Edited from: ${grp.name}` : 'Custom instruction';
+          } else if (state.activeAction === 'map-schema') {
+            sourceEl.textContent = 'Edited from: Map one schema';
+          } else {
+            sourceEl.textContent = 'Custom instruction';
+          }
+        }
+        // Show the clear button if not already visible
+        if (!document.getElementById('am-clear-prompt-btn')) {
+          const sp = document.querySelector('.prompt-source');
+          if (sp) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'clear-btn';
+            btn.id = 'am-clear-prompt-btn';
+            btn.textContent = 'Clear';
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              state.activeAction = null;
+              state.activeGroupId = null;
+              state.userEditedPrompt = false;
+              ta.value = '';
+              renderSetup();
+            });
+            sp.appendChild(btn);
+          }
+        }
+      });
+    }
+
+    // Retry schema introspection
+    const retryBtn = document.getElementById('am-retry-schema-btn');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', () => {
+        state.sourceSchema = null;
+        state.sourceSchemaError = null;
+        loadSourceSchema();
+      });
+    }
+
+    // Start button
+    const startBtn = document.getElementById('am-start-btn');
+    if (startBtn) startBtn.addEventListener('click', startRun);
+  }
+
+  async function startRun() {
+    const goal = document.getElementById('am-goal').value.trim();
+    if (!state.conns.source || !state.conns.target) {
+      alert('Both source and target connections must be configured first.');
+      return;
+    }
+    if (goal.length < 10) {
+      alert('Please describe what the agent should do (at least a sentence).');
+      return;
+    }
+    stopConnectionWatcher();
+    renderLoading('Starting agent…');
+    try {
+      const result = await api('/agent/migrate', {
+        method: 'POST',
+        body: JSON.stringify({ direction: 'source_to_target', goal }),
+      });
+      state.currentRunId = result.runId;
+      state.lastSeq = 0;
+      saveActiveRun(result.runId);
+      startPolling();
+    } catch (e) {
+      if (e instanceof ApiNotImplementedError) {
+        renderBackendPending();
+      } else {
+        renderError(e.message);
+      }
+    }
+  }
+
+  function renderBackendPending() {
+    state.view = 'pending';
+    setTopbarStatus('Backend pending');
+    stage.innerHTML = `
+      <div class="card">
+        <div style="display:flex;gap:0.85rem;align-items:flex-start">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+               style="color:var(--accent);flex-shrink:0;margin-top:2px">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <div style="flex:1">
+            <h3 style="margin:0 0 0.4rem;font-size:15px;font-weight:600;color:var(--text)">Agent backend not deployed yet</h3>
+            <p style="color:var(--text2);font-size:12.5px;line-height:1.55;margin:0 0 0.85rem">
+              The Agentive Migration UI is ready, but the Azure Function endpoints that run the agent
+              (<code style="font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);padding:1px 5px;border-radius:3px">/api/agent/migrate</code>,
+              <code style="font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);padding:1px 5px;border-radius:3px">/api/agent/run/:id</code>,
+              <code style="font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg3);padding:1px 5px;border-radius:3px">/api/agent/run/:id/respond</code>)
+              haven't been built yet. Once they're deployed, this page will start the agent.
+            </p>
+            <div style="display:flex;gap:0.5rem">
+              <button class="btn btn-sm" id="am-back-btn">← Back to setup</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+    document.getElementById('am-back-btn').addEventListener('click', () => {
+      state.conns = readConnections();
+      renderSetup();
+      startConnectionWatcher();
+    });
+  }
+
+  function renderRunning(run, messages) {
+    state.view = 'running';
+    setTopbarStatus('Running');
+
+    const usage = run.tokenUsage || { input: 0, output: 0, costUSD: 0 };
+    const cap = (run.budgetCap && run.budgetCap.maxCostUSD) || 2.0;
+    const pct = Math.min(100, Math.round((usage.costUSD / cap) * 100));
+    const entries = messagesToLogEntries(messages);
+
+    const turnCount = (messages || []).filter(m => m.role === 'assistant').length;
+    const proposalCount = (messages || []).reduce((acc, m) => {
+      if (m.role === 'assistant' && Array.isArray(m.content)) {
+        for (const b of m.content) {
+          if (b.type === 'tool_use' && b.name === 'propose_table_mapping') acc++;
+        }
+      }
+      return acc;
+    }, 0);
+    const startedAt = run.createdAt ? new Date(run.createdAt).getTime() : Date.now();
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const elapsedStr = elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+
+    stage.innerHTML = `
+      <div class="status-bar">
+        <div class="status-left">
+          <div class="status-dot"></div>
+          <div>
+            <div class="status-text">Agent running</div>
+            <div class="status-meta">${escapeHtml(currentActivity(messages))}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.85rem;flex-wrap:wrap;justify-content:flex-end">
+          <div class="status-meta" title="Elapsed time since run started">⏱ ${elapsedStr}</div>
+          <div class="status-meta" title="Model round-trips so far (cap: 12)">Turn ${turnCount}/12</div>
+          ${proposalCount > 0 ? `<div class="status-meta">${proposalCount} proposal${proposalCount === 1 ? '' : 's'}</div>` : ''}
+          <div class="cost-meter">
+            <strong>$${usage.costUSD.toFixed(3)}</strong>
+            <span>/ $${cap.toFixed(2)}</span>
+            <span style="margin-left:4px">(${pct}%)</span>
+          </div>
+          <button class="btn btn-danger btn-sm" id="am-cancel-btn">Cancel</button>
+        </div>
+      </div>
+      <div class="log" id="am-log">
+        ${entries.length === 0
+          ? '<div class="log-empty">Waiting for the agent to start…</div>'
+          : entries.map(renderLogEntry).join('')}
+      </div>`;
+
+    const cancelBtn = document.getElementById('am-cancel-btn');
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelRun);
+    const logEl = document.getElementById('am-log');
+    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function currentActivity(messages) {
+    if (!messages || messages.length === 0) return 'Initializing…';
+    const last = messages[messages.length - 1];
+    if (last.role === 'assistant' && last.content) {
+      for (const block of last.content) {
+        if (block.type === 'tool_use') return prettyToolName(block.name) + '…';
+      }
+    }
+    return 'Thinking…';
+  }
+
+  function prettyToolName(name) {
+    return ({
+      list_schemas:            'Listing schemas',
+      list_tables:             'Listing tables',
+      search_tables:           'Searching tables',
+      describe_tables:         'Describing tables',
+      get_table_relationships: 'Reading relationships',
+      sample_table:            'Sampling rows',
+      propose_table_mapping:   'Proposing mapping',
+      finalize_proposal:       'Finalizing proposal',
+      introspect_source_schema: 'Reading source schema',
+      introspect_target_schema: 'Reading target schema',
+      propose_mapping:         'Preparing proposal',
+      ask_user:                'Awaiting your input',
+    })[name] || name;
+  }
+
+  function messagesToLogEntries(messages) {
+    const entries = [];
+    for (const msg of messages || []) {
+      if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'text' && block.text && block.text.trim()) {
+            entries.push({ kind: 'thinking', title: 'Thinking', detail: block.text.trim() });
+          } else if (block.type === 'tool_use') {
+            entries.push({ kind: 'tool', title: prettyToolName(block.name), detail: summarizeToolInput(block.name, block.input) });
+          }
+        }
+      } else if (msg.role === 'user' && Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === 'tool_result') {
+            entries.push({
+              kind: block.is_error ? 'error' : 'result',
+              title: block.is_error ? 'Tool error' : 'Result received',
+              detail: summarizeToolResult(block.content),
+            });
+          }
+        }
+      }
+    }
+    return entries;
+  }
+
+  function summarizeToolInput(name, input) {
+    if (!input) return '';
+    switch (name) {
+      case 'list_schemas':
+        return input.side ? `${input.side}` : '';
+      case 'list_tables': {
+        const parts = [`${input.side || ''}`];
+        if (input.schema) parts.push(`schema: ${input.schema}`);
+        if (input.namePattern) parts.push(`pattern: ${input.namePattern}`);
+        return parts.filter(Boolean).join(' · ');
+      }
+      case 'search_tables':
+        return input.term ? `${input.side} · "${input.term}"` : input.side || '';
+      case 'describe_tables': {
+        const tables = Array.isArray(input.tables) ? input.tables : [];
+        const preview = tables.slice(0, 3).join(', ');
+        const more = tables.length > 3 ? ` +${tables.length - 3} more` : '';
+        return `${input.side} · ${preview}${more}`;
+      }
+      case 'get_table_relationships':
+        return `${input.side} · ${input.table || ''}`;
+      case 'sample_table':
+        return `${input.side} · ${input.table || ''} (${input.n || 5} rows)`;
+      case 'propose_table_mapping':
+        return `${input.sourceTable || '?'} → ${input.targetTable || '?'}`;
+      case 'finalize_proposal':
+        return input.summary ? input.summary.slice(0, 80) + (input.summary.length > 80 ? '…' : '') : '';
+      case 'introspect_source_schema':
+      case 'introspect_target_schema': {
+        const parts = [];
+        if (input.schemaFilter) parts.push(`schema: ${input.schemaFilter}`);
+        if (input.tablePattern) parts.push(`pattern: ${input.tablePattern}`);
+        return parts.length ? parts.join(', ') : 'all tables';
+      }
+      default:
+        return JSON.stringify(input).slice(0, 160);
+    }
+  }
+
+  function summarizeToolResult(content) {
+    const text = typeof content === 'string' ? content : JSON.stringify(content);
+    return text.length <= 200 ? text : text.slice(0, 200) + '…';
+  }
+
+  function renderLogEntry(entry) {
+    const icons = { thinking: '·', tool: '→', result: '✓', error: '!' };
+    return `
+      <div class="log-entry log-${entry.kind}">
+        <div class="log-icon">${icons[entry.kind] || '·'}</div>
+        <div class="log-body">
+          <div class="log-title">${escapeHtml(entry.title)}</div>
+          ${entry.detail ? `<div class="log-detail">${escapeHtml(entry.detail)}</div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  async function cancelRun() {
+    if (!state.currentRunId) return;
+    if (!confirm('Cancel this agent run? You can start a new one afterwards.')) return;
+    try {
+      await api(`/agent/run/${state.currentRunId}/cancel`, { method: 'POST' });
+    } catch (e) { console.warn('[AgentiveMigration] cancel failed:', e.message); }
+    stopPolling();
+    clearActiveRun();
+    state.currentRunId = null;
+    state.conns = readConnections();
+    renderSetup();
+    startConnectionWatcher();
+  }
+
+  function getActiveProjectId() {
+    try {
+      return localStorage.getItem('cygenix_active_project_id') || '';
+    } catch { return ''; }
+  }
+
+  function renderProposalApproval(run) {
+    state.view = 'approval';
+    setTopbarStatus('Awaiting your review');
+    const payload = (run.pendingApproval && run.pendingApproval.payload) || {};
+    const summary = payload.summary || 'No summary provided.';
+    const proposedJobs = Array.isArray(payload.proposedJobs) ? payload.proposedJobs : [];
+    const decisionsForUser = Array.isArray(payload.decisionsForUser) ? payload.decisionsForUser : [];
+    const risks = Array.isArray(payload.risks) ? payload.risks : [];
+    const finalized = !!payload.finalized;
+
+    const totalCols = proposedJobs.reduce((acc, j) => acc + (Array.isArray(j.columnMapping) ? j.columnMapping.length : 0), 0);
+
+    const noJobsNotice = (proposedJobs.length === 0) ? `
+      <div class="notice">
+        <strong>No table mappings were proposed.</strong>
+        ${finalized
+          ? 'The agent finished but did not propose any mappings. Read the summary below for why.'
+          : 'The agent did not finalize properly (likely hit a limit). The summary below shows what it had time to figure out.'}
+      </div>
+    ` : '';
+
+    stage.innerHTML = `
+      <div class="approval-banner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 9v4"/><path d="M12 17h.01"/>
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        </svg>
+        <span>The agent proposed <strong>${proposedJobs.length}</strong> mapping${proposedJobs.length === 1 ? '' : 's'} (${totalCols} column${totalCols === 1 ? '' : 's'} total). Review before saving.</span>
+      </div>
+
+      <div class="card">
+        <div class="section-label">Summary</div>
+        <div class="proposal-summary">${escapeHtml(summary)}</div>
+
+        ${noJobsNotice}
+
+        ${proposedJobs.length > 0 ? `
+          <div style="margin-bottom:1rem">
+            <div class="section-label">Proposed mapping jobs (${proposedJobs.length})</div>
+            <div class="mapping-preview">
+              ${proposedJobs.map(j => {
+                const cols = Array.isArray(j.columnMapping) ? j.columnMapping : [];
+                const high = cols.filter(c => c.match === 'HIGH').length;
+                const med  = cols.filter(c => c.match === 'MEDIUM').length;
+                const low  = cols.filter(c => c.match === 'LOW').length;
+                const conf = j.confidence || 'MEDIUM';
+                const warn = Array.isArray(j.warnings) && j.warnings.length > 0 ? j.warnings.length : 0;
+                return `
+                  <div class="mapping-row">
+                    <div class="mapping-name">
+                      <span>${escapeHtml(j.sourceTable || '?')}</span>
+                      <span class="mapping-arrow">→</span>
+                      <span>${escapeHtml(j.targetTable || '?')}</span>
+                      <span class="decision-confidence ${escapeHtml(conf.toLowerCase())}" style="margin-left:auto">${escapeHtml(conf)}</span>
+                    </div>
+                    <div class="mapping-meta">
+                      ${cols.length} column${cols.length === 1 ? '' : 's'}
+                      ${high > 0 ? ` · ${high} high` : ''}${med > 0 ? ` · ${med} medium` : ''}${low > 0 ? ` · ${low} low` : ''}
+                      ${warn > 0 ? ` · ⚠ ${warn} warning${warn === 1 ? '' : 's'}` : ''}
+                    </div>
+                    ${j.reasoning ? `<div class="decision-reasoning" style="margin-top:6px">${escapeHtml(j.reasoning)}</div>` : ''}
+                  </div>`;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        ${decisionsForUser.length > 0 ? `
+          <div class="decisions">
+            <div class="section-label">Decisions for you to weigh in on</div>
+            ${decisionsForUser.map(d => `
+              <div class="decision">
+                <div class="decision-label">${escapeHtml(d.question || '')}</div>
+                <div class="decision-reasoning">${escapeHtml(d.context || '')}</div>
+              </div>`).join('')}
+          </div>` : ''}
+
+        ${risks.length > 0 ? `
+          <div class="decisions">
+            <div class="section-label">Risks</div>
+            ${risks.map(r => `
+              <div class="decision">
+                <div class="decision-reasoning">⚠ ${escapeHtml(r)}</div>
+              </div>`).join('')}
+          </div>` : ''}
+
+        <div class="actions">
+          <button class="btn btn-danger btn-sm" id="am-reject-btn">Reject &amp; revise</button>
+          <button class="btn btn-green btn-sm" id="am-approve-btn"${proposedJobs.length === 0 ? ' disabled' : ''}>
+            ✓ Approve &amp; save ${proposedJobs.length} job${proposedJobs.length === 1 ? '' : 's'}
+          </button>
+        </div>
+      </div>`;
+
+    document.getElementById('am-approve-btn').addEventListener('click', () => {
+      const projectId = getActiveProjectId();
+      respondToApproval('approve', null, null, null, projectId);
+    });
+    document.getElementById('am-reject-btn').addEventListener('click', async () => {
+      const feedback = prompt('What should the agent change? Be specific.');
+      if (feedback && feedback.trim()) respondToApproval('reject', null, feedback.trim());
+    });
+  }
+
+  function renderQuestion(run) {
+    state.view = 'question';
+    setTopbarStatus('Awaiting your input');
+    const payload = (run.pendingApproval && run.pendingApproval.payload) || {};
+    const options = Array.isArray(payload.options) ? payload.options : [];
+
+    stage.innerHTML = `
+      <div class="card question">
+        <h3>${escapeHtml(payload.question || 'The agent has a question.')}</h3>
+        ${payload.context ? `<div class="context">${escapeHtml(payload.context)}</div>` : ''}
+        <div class="question-options">
+          ${options.map((opt, i) => `<button class="question-option" data-idx="${i}">${escapeHtml(opt.label || opt.value || '')}</button>`).join('')}
+        </div>
+        <div style="margin-top:1rem;display:flex;justify-content:flex-end">
+          <button class="btn btn-danger btn-sm" id="am-cancel-q-btn">Cancel run</button>
+        </div>
+      </div>`;
+
+    document.querySelectorAll('.question-option').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        const chosen = options[idx];
+        if (chosen) respondToApproval('answer', null, null, chosen.value);
+      });
+    });
+    document.getElementById('am-cancel-q-btn').addEventListener('click', cancelRun);
+  }
+
+  async function respondToApproval(action, mapping, feedback, answer, projectId) {
+    if (!state.currentRunId) return;
+    renderLoading('Submitting your response…');
+    try {
+      const body = { action };
+      if (mapping) body.mapping = mapping;
+      if (feedback) body.feedback = feedback;
+      if (answer != null) body.answer = answer;
+      if (projectId) body.projectId = projectId;
+      await api(`/agent/run/${state.currentRunId}/respond`, {
+        method: 'POST', body: JSON.stringify(body),
+      });
+      startPolling();
+    } catch (e) { renderError(e.message); }
+  }
+
+  function renderCompleted(run) {
+    state.view = 'completed';
+    setTopbarStatus('Completed');
+    const result = run.result || {};
+    const firstJobId = result.firstJobId;
+    const jobCount = result.jobCount || 0;
+
+    stage.innerHTML = `
+      <div class="card completed">
+        <div class="success-icon">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </div>
+        <h2>${jobCount > 0 ? `Saved ${jobCount} mapping job${jobCount === 1 ? '' : 's'}` : 'Run complete'}</h2>
+        <p>${escapeHtml(result.summary || 'The run is finished.')}</p>
+        <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap">
+          ${firstJobId ? `<a class="btn btn-primary btn-sm" href="/object_mapping.html?edit=${encodeURIComponent(firstJobId)}">Open first job in Object Mapping</a>` : ''}
+          ${jobCount > 1 ? `<a class="btn btn-sm" href="/dashboard.html#jobs">View all jobs</a>` : ''}
+          <button class="btn btn-sm" id="am-new-btn">Start a new run</button>
+        </div>
+      </div>`;
+    document.getElementById('am-new-btn').addEventListener('click', () => {
+      clearActiveRun();
+      state.currentRunId = null;
+      state.conns = readConnections();
+      state.sourceSchema = null;
+      state.activeAction = null;
+      state.activeGroupId = null;
+      state.userEditedPrompt = false;
+      renderSetup();
+      startConnectionWatcher();
+      if (state.conns.source) loadSourceSchema();
+    });
+  }
+
+  function renderFailed(run) {
+    state.view = 'failed';
+    setTopbarStatus('Failed');
+    stage.innerHTML = `
+      <div class="error-card">
+        <h3>Run failed</h3>
+        <p>${escapeHtml((run.result && run.result.error) || 'The agent encountered an error and could not complete.')}</p>
+        <button class="btn btn-sm" id="am-retry-btn">Start a new run</button>
+      </div>`;
+    document.getElementById('am-retry-btn').addEventListener('click', () => {
+      clearActiveRun();
+      state.currentRunId = null;
+      state.conns = readConnections();
+      renderSetup();
+      startConnectionWatcher();
+    });
+  }
+
+  // ── Polling ───────────────────────────────────────────────────
+  function startPolling() {
+    stopPolling();
+    poll();
+    state.polling = setInterval(poll, POLL_INTERVAL_MS);
+  }
+  function stopPolling() {
+    if (state.polling) { clearInterval(state.polling); state.polling = null; }
+  }
+
+  async function poll() {
+    if (!state.currentRunId) return;
+    try {
+      const data = await api(`/agent/run/${state.currentRunId}?sinceSeq=${state.lastSeq}`);
+      const run = data.run;
+      const messages = data.messages || [];
+      if (messages.length > 0) state.lastSeq = messages[messages.length - 1].seq || state.lastSeq;
+
+      switch (run.status) {
+        case 'running':
+          renderRunning(run, data.allMessages || messages);
+          break;
+        case 'awaiting_approval':
+          stopPolling();
+          if (run.pendingApproval && run.pendingApproval.type === 'ask_user') renderQuestion(run);
+          else renderProposalApproval(run);
+          break;
+        case 'completed':
+          stopPolling();
+          clearActiveRun();
+          renderCompleted(run);
+          break;
+        case 'failed':
+        case 'cancelled':
+          stopPolling();
+          clearActiveRun();
+          renderFailed(run);
+          break;
+      }
+    } catch (e) {
+      console.warn('[AgentiveMigration] poll error:', e.message);
+    }
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────
+  async function init() {
+    console.log('[AgentiveMigration] boot diagnostics:', {
+      hasCygenixConnections: typeof CygenixConnections !== 'undefined',
+      activeProjectId: localStorage.getItem('cygenix_active_project_id'),
+      activeProjectSession: sessionStorage.getItem('cygenix_active_project'),
+      hasProjects: !!localStorage.getItem('cygenix_projects'),
+      projectsLength: (() => {
+        try { return JSON.parse(localStorage.getItem('cygenix_projects') || '[]').length; }
+        catch { return 'parse-error'; }
+      })(),
+      hasToken: !!sessionStorage.getItem('cygenix_token'),
+    });
+
+    renderLoading('Checking access…');
+    await checkFeatureEnabled();
+    if (!state.featureEnabled) { renderDisabled(); return; }
+
+    const existing = loadActiveRun();
+    if (existing) {
+      state.currentRunId = existing;
+      renderLoading('Resuming run…');
+      startPolling();
+      return;
+    }
+
+    renderLoading('Loading connections…');
+    state.conns = readConnections();
+    renderSetup();
+    startConnectionWatcher();
+
+    // Kick off source schema introspection if we have a source
+    if (state.conns.source) loadSourceSchema();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -66,6 +66,188 @@ function looksLikePII(columnName) {
   return PII_PATTERNS.some(rx => rx.test(columnName));
 }
 
+// ── Theme classifier ─────────────────────────────────────────────────────
+// Rule-based pass that groups tables by what they semantically contain.
+// Each theme has a list of regex patterns — a table matches if ANY of its
+// signals (table name, column names) match the theme. Themes are checked
+// in priority order: a table only goes into ONE group (the first match).
+//
+// A table earns "score points" per theme based on how many distinct signals
+// match. Highest scoring theme wins; ties broken by theme order. Tables
+// with zero matches go to "Other".
+const THEMES = [
+  {
+    id: 'matters',
+    name: 'Matters & Cases',
+    icon: '⚖',
+    description: 'Legal matters, cases, files, and case-related work',
+    // Priority: legal-domain table names are usually unambiguous
+    patterns: {
+      tableName: [/matter/i, /^case/i, /^cases/i, /^file/i, /^files/i, /docket/i, /lawsuit/i, /claim/i, /^rm[a-z]*folder/i],
+      columnName: [/matter_?id/i, /matter_?num/i, /case_?(id|num)/i, /docket/i]
+    }
+  },
+  {
+    id: 'contacts',
+    name: 'Contacts & People',
+    icon: '👤',
+    description: 'Clients, contacts, addresses, and people-related data',
+    patterns: {
+      tableName: [/^client/i, /contact/i, /address/i, /person/i, /^people$/i, /customer/i, /party/i, /attorney/i, /lawyer/i, /staff/i, /employee/i, /user(?!_log)/i],
+      columnName: [/first_?name/i, /last_?name/i, /full_?name/i, /^name$/i, /email/i, /phone/i, /^mobile$/i, /addr/i, /^city$/i, /^postcode$/i, /^zip$/i]
+    }
+  },
+  {
+    id: 'financial',
+    name: 'Financial Data',
+    icon: '💰',
+    description: 'Invoices, payments, ledger entries, billing, and money',
+    patterns: {
+      tableName: [/invoice/i, /payment/i, /^bill/i, /billing/i, /^gl[_-]?entr/i, /general_?ledger/i, /journal/i, /transaction/i, /receipt/i, /tax/i, /^cost/i, /^fee/i, /charge/i, /trust/i, /disburse/i, /collect/i, /^ar[_-]/i, /^ap[_-]/i],
+      columnName: [/^amount$/i, /^total$/i, /^balance$/i, /currency/i, /^debit$/i, /^credit$/i, /invoice_?num/i, /tax_?rate/i, /^paid$/i]
+    }
+  },
+  {
+    id: 'time-activity',
+    name: 'Time & Activity',
+    icon: '⏱',
+    description: 'Time entries, timesheets, activities, and work logs',
+    patterns: {
+      tableName: [/^time/i, /timesheet/i, /timekeep/i, /^activity/i, /activities/i, /worklog/i, /work_?entry/i, /^hours/i, /effort/i],
+      columnName: [/^hours$/i, /minutes/i, /duration/i, /start_?time/i, /end_?time/i, /work_?date/i, /timer/i]
+    }
+  },
+  {
+    id: 'documents',
+    name: 'Documents & Files',
+    icon: '📄',
+    description: 'Documents, files, attachments, folders, and content',
+    patterns: {
+      tableName: [/document/i, /^doc[_-]/i, /^docs$/i, /^file(?!_)/i, /folder/i, /attachment/i, /^image/i, /upload/i, /content/i, /template/i, /letter/i, /email_?msg/i],
+      columnName: [/file_?name/i, /file_?path/i, /^path$/i, /mime_?type/i, /content_?type/i, /file_?size/i, /^size$/i]
+    }
+  },
+  {
+    id: 'audit',
+    name: 'Audit & Logs',
+    icon: '🛡',
+    description: 'Audit trails, change logs, history, and access tracking',
+    patterns: {
+      tableName: [/^audit/i, /^log(?!in)/i, /^logs$/i, /history/i, /^hist[_-]/i, /change_?log/i, /event_?log/i, /trail/i, /tracking/i, /access_?log/i, /login_?hist/i, /session/i],
+      columnName: [/created_?(at|by|date)/i, /modified_?(at|by|date)/i, /changed_?(at|by|date)/i, /event_?type/i, /audit_?id/i]
+    }
+  },
+  {
+    id: 'reference',
+    name: 'Reference Data',
+    icon: '📚',
+    description: 'Lookup tables, codes, types, and reference values',
+    patterns: {
+      tableName: [/^lookup/i, /lookup$/i, /^lk_/i, /^ref_/i, /^code/i, /^type$/i, /^types$/i, /^status$/i, /^statuses$/i, /^categor/i, /classification/i, /^enum/i, /^group(?!s_)/i, /^role(?!_)/i, /currency_?ref/i, /^country/i, /^state(?:s)?$/i, /^region/i, /^industry/i],
+      columnName: [/^code$/i, /^lookup_?val/i, /code_?val/i]
+    }
+  },
+  {
+    id: 'system',
+    name: 'System & Tech',
+    icon: '⚙',
+    description: 'Configuration, settings, system tables, and migration scaffolding',
+    patterns: {
+      tableName: [/^config/i, /^settings?$/i, /^sys[_-]/i, /^tmp[_-]/i, /^temp[_-]/i, /_temp$/i, /_tmp$/i, /^stage/i, /staging/i, /_bak$/i, /_backup$/i, /_old$/i, /^test/i, /_test$/i, /migration/i, /^validation/i, /^script/i, /^cygenix/i, /post_?gre/i, /^pgsql/i],
+      columnName: []
+    }
+  }
+];
+
+function classifyTable(t) {
+  const tName = (t.name || '').toLowerCase();
+  const cols  = (t.colNames || []).map(c => c.toLowerCase());
+
+  // Hard rule: _bak / _backup / _old / _tmp / _temp suffixes always go to System,
+  // regardless of what the rest of the name suggests. Backup of an "Address"
+  // table is still a backup — the user typically doesn't want to migrate it.
+  if (/_(bak|backup|old|tmp|temp|test|copy)$/i.test(tName)) {
+    return 'system';
+  }
+
+  let best = null;
+  let bestScore = 0;
+  for (const theme of THEMES) {
+    let score = 0;
+    // Table name signals are weighted heavier than column signals
+    for (const rx of (theme.patterns.tableName || [])) {
+      if (rx.test(tName)) { score += 10; break; }
+    }
+    // Each unique column signal adds 1 (capped at 5 to avoid one big table dominating)
+    let colHits = 0;
+    for (const rx of (theme.patterns.columnName || [])) {
+      if (cols.some(c => rx.test(c))) {
+        colHits++;
+        if (colHits >= 5) break;
+      }
+    }
+    score += colHits;
+    if (score > bestScore) { best = theme; bestScore = score; }
+  }
+  // Require minimum score of 2 to claim a theme — avoids a single weak column
+  // signal placing a table in the wrong group.
+  return bestScore >= 2 ? best.id : 'other';
+}
+
+function classifyIntoGroups(flatTables) {
+  // Map of themeId -> table list
+  const buckets = new Map();
+  for (const theme of THEMES) buckets.set(theme.id, []);
+  buckets.set('other', []);
+
+  for (const t of flatTables) {
+    const themeId = classifyTable(t);
+    buckets.get(themeId).push({
+      schema:      t.schema,
+      name:        t.name,
+      fullName:    t.fullName,
+      rows:        t.rows,
+      hasPii:      t.hasPii,
+      piiCount:    t.piiCount
+    });
+  }
+
+  // Build the response, dropping empty groups except keeping "Other" only
+  // if it has tables. Sort tables in each group by row count descending.
+  const groups = [];
+  for (const theme of THEMES) {
+    const tables = buckets.get(theme.id);
+    if (tables.length === 0) continue;
+    tables.sort((a, b) => (b.rows || 0) - (a.rows || 0));
+    groups.push({
+      id:           theme.id,
+      name:         theme.name,
+      icon:         theme.icon,
+      description:  theme.description,
+      tableCount:   tables.length,
+      totalRows:    tables.reduce((s, t) => s + (t.rows || 0), 0),
+      piiCount:     tables.reduce((s, t) => s + (t.piiCount || 0), 0),
+      tables
+    });
+  }
+  // Add "Other" at the end if non-empty
+  const other = buckets.get('other');
+  if (other.length > 0) {
+    other.sort((a, b) => (b.rows || 0) - (a.rows || 0));
+    groups.push({
+      id:           'other',
+      name:         'Other',
+      icon:         '❓',
+      description:  'Tables that didn\'t match any specific theme',
+      tableCount:   other.length,
+      totalRows:    other.reduce((s, t) => s + (t.rows || 0), 0),
+      piiCount:     other.reduce((s, t) => s + (t.piiCount || 0), 0),
+      tables:       other
+    });
+  }
+  return groups;
+}
+
 // ── Connection-string parser for direct mode ─────────────────────────────────
 // Accepts mssql://USER:PASS@HOST:PORT/DBNAME?encrypt=true&trustServerCertificate=false
 function parseMssqlUrl(connString) {
@@ -143,13 +325,14 @@ async function introspect(pool, databaseLabel) {
     `)
   ]);
 
-  // Roll columns up by table — count + PII flag
+  // Roll columns up by table — count + PII flag + names (used by classifier)
   const tableMap = new Map();
   for (const row of colsR.recordset) {
     const key = `${row.schema_name}.${row.table_name}`;
-    if (!tableMap.has(key)) tableMap.set(key, { count: 0, hasPii: false, piiCount: 0 });
+    if (!tableMap.has(key)) tableMap.set(key, { count: 0, hasPii: false, piiCount: 0, colNames: [] });
     const e2 = tableMap.get(key);
     e2.count++;
+    e2.colNames.push(row.column_name);
     if (looksLikePII(row.column_name)) {
       e2.hasPii = true;
       e2.piiCount++;
@@ -160,17 +343,29 @@ async function introspect(pool, databaseLabel) {
   const bySchema = new Map();
   let totalCols = 0;
   let totalPii  = 0;
+  // Also build a flat list of all tables (with full schema-qualified names) for the classifier
+  const flatTables = [];
   for (const t of tablesR.recordset) {
     const key = `${t.schema_name}.${t.table_name}`;
-    const ce  = tableMap.get(key) || { count: 0, hasPii: false, piiCount: 0 };
+    const ce  = tableMap.get(key) || { count: 0, hasPii: false, piiCount: 0, colNames: [] };
     totalCols += ce.count;
     totalPii  += ce.piiCount;
-    if (!bySchema.has(t.schema_name)) bySchema.set(t.schema_name, []);
-    bySchema.get(t.schema_name).push({
+    const tableObj = {
       name:        t.table_name,
       rows:        Number(t.row_count) || 0,
       columnCount: ce.count,
       hasPii:      ce.hasPii
+    };
+    if (!bySchema.has(t.schema_name)) bySchema.set(t.schema_name, []);
+    bySchema.get(t.schema_name).push(tableObj);
+    flatTables.push({
+      schema: t.schema_name,
+      name:   t.table_name,
+      fullName: key,
+      rows:   tableObj.rows,
+      hasPii: ce.hasPii,
+      piiCount: ce.piiCount,
+      colNames: ce.colNames
     });
   }
 
@@ -201,10 +396,14 @@ async function introspect(pool, databaseLabel) {
     if (s.tables.length > 200) s.tables = s.tables.slice(0, 200);
   }
 
+  // ── Classify tables into themed groups for the carousel UI ─────────────
+  const groups = classifyIntoGroups(flatTables);
+
   return {
     databaseLabel,
     schemas,
     edges,
+    groups,
     totals: {
       schemas:    schemas.length,
       tables:     tablesR.recordset.length,
