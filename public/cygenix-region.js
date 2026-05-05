@@ -42,22 +42,63 @@
 
   function detect() {
     try {
-      const locale = (navigator.languages && navigator.languages[0]) ||
-                     navigator.language ||
-                     'en-GB';
-      const lc = String(locale || '').toLowerCase();
+      // ── Step 1: timezone-based detection ──────────────────────────────
+      // This is the most reliable signal we have. Browser language often
+      // says 'en-US' for users physically in the UK, EU, AU, etc. because
+      // their browser shipped with US English defaults and they never
+      // changed it. Timezone tells us where the machine actually is.
+      let tz = '';
+      try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch {}
 
-      // Region matching — most specific first
-      if (lc.startsWith('en-us') || lc.startsWith('en-ca')) return 'USD';
-      if (lc.startsWith('en-gb')) return 'GBP';
+      if (tz === 'Europe/London') return 'GBP';
+      if (tz.startsWith('Europe/')) {
+        // Most Europe/* timezones are EUR (Berlin, Paris, Madrid, Rome,
+        // Amsterdam, Dublin, etc.). A handful of non-EUR ones are
+        // explicitly mapped here so we don't mis-classify them.
+        const nonEurEurope = {
+          'Europe/London':    'GBP',  // already handled above, defensive
+          'Europe/Jersey':    'GBP',
+          'Europe/Guernsey':  'GBP',
+          'Europe/Isle_of_Man':'GBP',
+          'Europe/Zurich':    'GBP',  // CHF really, but we don't support CHF — closest is GBP
+          'Europe/Oslo':      'GBP',  // NOK; we don't support, fall back to GBP
+          'Europe/Stockholm': 'GBP',  // SEK; ditto
+          'Europe/Copenhagen':'GBP',  // DKK; ditto
+          'Europe/Moscow':    'GBP',  // RUB; ditto
+          'Europe/Istanbul':  'GBP',  // TRY; ditto
+          'Europe/Kiev':      'GBP',
+          'Europe/Warsaw':    'GBP'   // PLN; ditto. Polish customers can override.
+        };
+        return nonEurEurope[tz] || 'EUR';
+      }
 
-      // EUR-using locales. Not exhaustive but covers the common cases.
-      const eurPrefixes = ['de', 'fr', 'it', 'es', 'nl', 'pt-pt', 'pl', 'sv', 'da', 'fi', 'cs',
-                           'sk', 'sl', 'el', 'et', 'lv', 'lt', 'mt', 'ga', 'hu', 'hr'];
-      if (eurPrefixes.some(p => lc.startsWith(p))) return 'EUR';
+      if (tz.startsWith('America/')) {
+        // North America defaults to USD. Real Canadian/Mexican customers
+        // can override with the dropdown.
+        return 'USD';
+      }
 
-      // English fallbacks: en-AU, en-NZ, en-IE, en-IN, etc.
-      // Default these to GBP (safest — closest to our "home" currency).
+      // ── Step 2: language fallback for unusual timezones ───────────────
+      // If we got here, the timezone wasn't European or American. Use the
+      // language list as a softer hint. Walk ALL entries (not just [0]),
+      // because browsers sometimes report ['en','en-GB'] in that order.
+      const langs = (navigator.languages && navigator.languages.length)
+        ? navigator.languages
+        : [navigator.language || 'en-GB'];
+
+      for (const raw of langs) {
+        const lc = String(raw || '').toLowerCase();
+        if (lc.startsWith('en-us') || lc.startsWith('en-ca')) return 'USD';
+        if (lc.startsWith('en-gb') || lc.startsWith('en-ie')) return 'GBP';
+        const eurPrefixes = ['de', 'fr', 'it', 'es', 'nl', 'pt-pt', 'pl', 'sv',
+                             'da', 'fi', 'cs', 'sk', 'sl', 'el', 'et', 'lv',
+                             'lt', 'mt', 'ga', 'hu', 'hr'];
+        if (eurPrefixes.some(p => lc.startsWith(p))) return 'EUR';
+      }
+
+      // ── Step 3: ultimate fallback ─────────────────────────────────────
+      // Unknown locale and unknown timezone. Default to GBP since this is
+      // a UK product and that's the safest assumption for ambiguous cases.
       return DEFAULT;
     } catch {
       return DEFAULT;
