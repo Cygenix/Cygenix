@@ -485,26 +485,40 @@ body.cyg-collapsed .topbar{left:54px}
   let connWatcher = null;
   function startConnectionWatcher() {
     if (connWatcher) clearInterval(connWatcher);
+    state._schemaRetryCount = state._schemaRetryCount || 0;
     connWatcher = setInterval(() => {
       if (state.view !== 'setup') return;
       const next = readConnections();
-      const changed =
+      const connsChanged =
         (!!next.source) !== (!!state.conns.source) ||
         (!!next.target) !== (!!state.conns.target) ||
         (next.source && state.conns.source && next.source.label !== state.conns.source.label) ||
         (next.target && state.conns.target && next.target.label !== state.conns.target.label);
-      if (changed) {
+      // Also retry the schema load if we have a source but the last attempt
+      // failed with 'pending' (endpoint was 404 at the time) or with an error.
+      // This handles the case where the function is deployed/fixed AFTER init.
+      // Cap retries to avoid hammering a permanently-down endpoint.
+      const shouldRetrySchema = next.source &&
+        !state.sourceSchemaLoading &&
+        (state.sourceSchema === 'pending' || state.sourceSchemaError) &&
+        state._schemaRetryCount < 5;
+      if (connsChanged) {
         state.conns = next;
-        // Reset schema when source changes
         state.sourceSchema = null;
         state.sourceSchemaError = null;
         state.activeAction = null;
         state.selectedSchema = null;
         state.userEditedPrompt = false;
+        state._schemaRetryCount = 0;
         renderSetup();
         if (state.conns.source) loadSourceSchema();
+      } else if (shouldRetrySchema) {
+        state._schemaRetryCount++;
+        state.sourceSchema = null;
+        state.sourceSchemaError = null;
+        loadSourceSchema();
       }
-    }, 800);
+    }, 4000);
   }
   function stopConnectionWatcher() {
     if (connWatcher) { clearInterval(connWatcher); connWatcher = null; }
@@ -516,22 +530,51 @@ body.cyg-collapsed .topbar{left:54px}
   //     edges:   [{ from: "schema.table", to: "schema.table" }],
   //     totals:  { schemas, tables, columns, piiColumns } }
   // If the endpoint isn't deployed yet we degrade gracefully.
+  // Pull the user's source connection details directly from localStorage
+  // (via CygenixConnections.get) and POST them to the introspection endpoint.
+  // This matches how dashboard.html calls /api/db: the browser holds the
+  // authoritative copy of the connection, the function never persists it.
   async function loadSourceSchema() {
     if (!state.conns.source) return;
     if (state.sourceSchemaLoading) return;
     state.sourceSchemaLoading = true;
     state.sourceSchemaError = null;
-    renderSetup(); // show loading state
+    renderSetup();
+
+    // Read connection from CygenixConnections (same way readConnections does).
+    let body = {};
     try {
-      const data = await api('/agent/source-schema');
+      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
+        ? (CygenixConnections.get() || {})
+        : {};
+      if (c.srcFnUrl) {
+        body.srcFnUrl = c.srcFnUrl;
+      } else if (c.srcConnString) {
+        body.srcConnString = c.srcConnString;
+      }
+    } catch (e) {
+      console.warn('[AgentiveMigration] could not read connection for schema load:', e.message);
+    }
+
+    if (!body.srcConnString && !body.srcFnUrl) {
+      state.sourceSchemaError = 'No source connection details found in browser storage.';
+      state.sourceSchemaLoading = false;
+      if (state.view === 'setup') renderSetup();
+      return;
+    }
+
+    try {
+      const data = await api('/agent/source-schema', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
       state.sourceSchema = data;
-      // Default the schema selector to the first available schema
       if (data && Array.isArray(data.schemas) && data.schemas.length > 0) {
         state.selectedSchema = data.schemas[0].name;
       }
     } catch (e) {
       if (e instanceof ApiNotImplementedError) {
-        state.sourceSchema = 'pending'; // sentinel: backend not deployed
+        state.sourceSchema = 'pending'; // backend endpoint not deployed yet
       } else {
         state.sourceSchemaError = e.message;
       }
