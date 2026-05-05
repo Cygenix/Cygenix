@@ -1285,9 +1285,43 @@ app.http('agent_migrate', {
     const goal = (body.goal || '').trim();
     if (goal.length < 10) return err(400, 'goal must be at least 10 characters');
 
-    const conns = await getUserConnections(userId, ctx);
+    // Resolve connections. Prefer body-supplied values (the browser is the
+    // source of truth — Connections page persists locally, then passes the
+    // current values in each request) and fall back to the Cosmos record
+    // for backward compatibility. When body-supplied values are used, we
+    // also write them back to Cosmos so the record stays current for any
+    // other consumers (and so subsequent calls without a body still work).
+    let conns = null;
+    const bodySrc = (body.srcConnString || '').trim();
+    const bodyTgtConn = (body.tgtConnString || '').trim();
+    const bodyTgtFn   = (body.tgtFnUrl    || '').trim();
+    if (bodySrc && (bodyTgtConn || bodyTgtFn)) {
+      conns = {
+        srcConnString: bodySrc,
+        tgtConnString: bodyTgtConn,
+        tgtFnUrl:      bodyTgtFn,
+        tgtFnKey:      (body.tgtFnKey || '').trim()
+      };
+      // Best-effort write-through to Cosmos. Failure here is not fatal —
+      // the run still proceeds with the body-supplied values.
+      try {
+        await getCosmosContainer('projects').items.upsert({
+          id: userId,
+          userId,
+          connections: conns,
+          updatedAt: nowIso()
+        });
+        ctx.log(`[agent] connections refreshed in Cosmos for ${userId}`);
+      } catch (e) {
+        ctx.log(`[agent] cosmos connection upsert failed (non-fatal): ${e.message}`);
+      }
+    } else {
+      conns = await getUserConnections(userId, ctx);
+    }
     if (!conns) {
-      return err(400, 'Source and target connections must be configured before starting an agent run.');
+      return err(400, 'Source and target connections must be configured before starting an agent run. ' +
+                      'Pass srcConnString and tgtConnString (or tgtFnUrl) in the request body, ' +
+                      'or configure them via the Connections page.');
     }
 
     const run = newRunDoc({ userId, goal, conns });
