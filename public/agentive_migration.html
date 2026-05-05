@@ -150,6 +150,39 @@ body.cyg-collapsed .topbar{left:54px}
 .action-card-controls select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-family:inherit;font-size:12.5px}
 .action-card-controls select:focus{outline:none;border-color:var(--accent)}
 
+/* ── Group carousel (NEW) ───────────────────────────────────────── */
+.carousel-wrap{position:relative}
+.carousel-empty{padding:2.5rem 1rem;text-align:center;color:var(--text3);font-size:12.5px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r)}
+.carousel-track-wrap{position:relative;overflow:hidden;border-radius:var(--r)}
+.carousel-track{display:flex;gap:0.85rem;overflow-x:auto;scroll-behavior:smooth;scroll-snap-type:x mandatory;padding:0.4rem 0.4rem 0.85rem;-webkit-overflow-scrolling:touch;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.carousel-track::-webkit-scrollbar{height:6px}
+.carousel-track::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.group-card{flex:0 0 280px;scroll-snap-align:start;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:1rem 1.05rem 0.9rem;cursor:pointer;text-align:left;color:inherit;font-family:inherit;display:flex;flex-direction:column;gap:0.5rem;transition:border-color .15s,background .15s,transform .12s;min-height:230px}
+.group-card:hover{border-color:var(--accent);background:var(--bg4);transform:translateY(-2px)}
+.group-card.active{border-color:var(--accent);background:var(--accent-glow);box-shadow:inset 0 0 0 1px var(--accent)}
+.group-card-head{display:flex;align-items:center;gap:0.5rem}
+.group-card-icon{font-size:18px;line-height:1;flex-shrink:0;width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:6px;border:1px solid var(--border)}
+.group-card-name{font-size:13.5px;font-weight:600;color:var(--text)}
+.group-card-stats{display:flex;flex-wrap:wrap;gap:0.45rem;font-size:10.5px;color:var(--text2);font-family:var(--mono)}
+.group-card-stats .stat{background:var(--bg);border:1px solid var(--border);padding:2px 7px;border-radius:4px;white-space:nowrap}
+.group-card-stats .stat.warn{color:var(--amber);border-color:rgba(245,158,11,0.25)}
+.group-card-tables{flex:1;display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--text2);font-family:var(--mono);overflow:hidden}
+.group-card-tables .row{display:flex;justify-content:space-between;gap:0.5rem;line-height:1.45}
+.group-card-tables .row .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.group-card-tables .row .rows{color:var(--text3);flex-shrink:0}
+.group-card-tables .more{color:var(--text3);font-size:10.5px;margin-top:2px}
+.group-card-action{margin-top:auto;padding:7px 10px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s}
+.group-card-action:hover{background:#5d97ff}
+.group-card.active .group-card-action{background:#fff;color:var(--accent)}
+.carousel-fade{position:absolute;top:0;bottom:0;width:36px;pointer-events:none;z-index:2;transition:opacity .2s}
+.carousel-fade.left{left:0;background:linear-gradient(to right,var(--bg2),transparent)}
+.carousel-fade.right{right:0;background:linear-gradient(to left,var(--bg2),transparent)}
+.carousel-arrow{position:absolute;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;transition:background .15s,transform .12s;font-family:inherit;font-size:14px;line-height:1}
+.carousel-arrow:hover:not(:disabled){background:var(--bg4);transform:translateY(-50%) scale(1.06)}
+.carousel-arrow:disabled{opacity:0.35;cursor:not-allowed}
+.carousel-arrow.prev{left:-4px}
+.carousel-arrow.next{right:-4px}
+
 .prompt-source{font-size:10.5px;color:var(--text3);margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center}
 .prompt-source .clear-btn{background:none;border:none;color:var(--accent);cursor:pointer;font-family:inherit;font-size:10.5px;padding:0}
 .prompt-source .clear-btn:hover{text-decoration:underline}
@@ -337,8 +370,9 @@ body.cyg-collapsed .topbar{left:54px}
     sourceSchemaLoading: false,
     sourceSchemaError: null,
     // New: action card state
-    activeAction: null,        // null | 'map-schema'
+    activeAction: null,        // null | 'map-schema' | 'migrate-group'
     selectedSchema: null,      // schema name when 'map-schema' is active
+    activeGroupId: null,       // group id when 'migrate-group' is active
     userEditedPrompt: false,
   };
 
@@ -508,6 +542,7 @@ body.cyg-collapsed .topbar{left:54px}
         state.sourceSchemaError = null;
         state.activeAction = null;
         state.selectedSchema = null;
+        state.activeGroupId = null;
         state.userEditedPrompt = false;
         state._schemaRetryCount = 0;
         renderSetup();
@@ -841,6 +876,18 @@ body.cyg-collapsed .topbar{left:54px}
     return '';
   }
 
+  function buildPromptForGroup(group) {
+    if (!group) return '';
+    const tables = (group.tables || []).map(t => t.fullName || (t.schema + '.' + t.name));
+    const tableList = tables.length <= 6
+      ? tables.join(', ')
+      : tables.slice(0, 6).join(', ') + ` (and ${tables.length - 6} more in this group)`;
+    const piiNote = group.piiCount > 0
+      ? ` ${group.piiCount} PII column${group.piiCount === 1 ? '' : 's'} flagged in this group — flag each for my review before including in the mapping.`
+      : '';
+    return `Migrate the "${group.name}" group of tables from source to target. Tables in scope: ${tableList}. Preserve any foreign-key relationships within the group.${piiNote} Pause for approval before writing anything to the target.`;
+  }
+
   function applyActionToPrompt() {
     const ta = document.getElementById('am-goal');
     if (!ta) return;
@@ -855,6 +902,122 @@ body.cyg-collapsed .topbar{left:54px}
       return state.sourceSchema.schemas.map(s => ({ name: s.name, tableCount: s.tables ? s.tables.length : 0 }));
     }
     return [];
+  }
+
+  // ── Group carousel (NEW) ──────────────────────────────────────────
+  function getAvailableGroups() {
+    if (state.sourceSchema && state.sourceSchema !== 'pending' && Array.isArray(state.sourceSchema.groups)) {
+      return state.sourceSchema.groups;
+    }
+    return [];
+  }
+
+  function formatRowsShort(n) {
+    if (n == null) return '';
+    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+    return String(n);
+  }
+
+  function renderGroupCarousel() {
+    const groups = getAvailableGroups();
+
+    // Three rendering states match renderSourceOverview
+    if (!state.conns.source) {
+      return `<div class="carousel-empty">Configure a source connection to see suggested groups.</div>`;
+    }
+    if (state.sourceSchemaLoading || state.sourceSchema === null) {
+      return `<div class="carousel-empty"><div class="spinner" style="display:inline-block;margin-right:8px;vertical-align:middle"></div>Reading source database — groups appear here once introspection finishes.</div>`;
+    }
+    if (state.sourceSchema === 'pending') {
+      return `<div class="carousel-empty">Backend introspection endpoint isn't deployed yet. Once it is, suggested groups will appear here automatically.</div>`;
+    }
+    if (state.sourceSchemaError) {
+      return `<div class="carousel-empty" style="color:var(--red)">${escapeHtml(state.sourceSchemaError)}</div>`;
+    }
+    if (groups.length === 0) {
+      return `<div class="carousel-empty">No tables found to group. Check that your source connection points at a database with user tables.</div>`;
+    }
+
+    const cardsHtml = groups.map(g => {
+      const isActive = state.activeGroupId === g.id;
+      const previewTables = (g.tables || []).slice(0, 5);
+      const moreCount = (g.tables || []).length - previewTables.length;
+      return `
+        <button class="group-card${isActive ? ' active' : ''}" data-group-id="${escapeHtml(g.id)}" type="button">
+          <div class="group-card-head">
+            <div class="group-card-icon">${escapeHtml(g.icon || '◆')}</div>
+            <div class="group-card-name">${escapeHtml(g.name)}</div>
+          </div>
+          <div class="group-card-stats">
+            <span class="stat">${g.tableCount} table${g.tableCount === 1 ? '' : 's'}</span>
+            <span class="stat">${formatRowsShort(g.totalRows)} rows</span>
+            ${g.piiCount > 0 ? `<span class="stat warn">⚠ ${g.piiCount} PII</span>` : ''}
+          </div>
+          <div class="group-card-tables">
+            ${previewTables.map(t => `<div class="row"><span class="name">${escapeHtml(t.name)}${t.hasPii ? ' ⚠' : ''}</span><span class="rows">${formatRowsShort(t.rows)}</span></div>`).join('')}
+            ${moreCount > 0 ? `<div class="more">+${moreCount} more</div>` : ''}
+          </div>
+          <div class="group-card-action">${isActive ? '✓ Selected' : 'Migrate this data →'}</div>
+        </button>`;
+    }).join('');
+
+    return `
+      <div class="carousel-wrap">
+        <button class="carousel-arrow prev" id="am-carousel-prev" type="button" aria-label="Scroll left">‹</button>
+        <button class="carousel-arrow next" id="am-carousel-next" type="button" aria-label="Scroll right">›</button>
+        <div class="carousel-fade left" id="am-carousel-fade-left"></div>
+        <div class="carousel-fade right" id="am-carousel-fade-right"></div>
+        <div class="carousel-track-wrap">
+          <div class="carousel-track" id="am-carousel-track">${cardsHtml}</div>
+        </div>
+      </div>`;
+  }
+
+  function wireCarousel() {
+    const track = document.getElementById('am-carousel-track');
+    if (!track) return;
+    const prev = document.getElementById('am-carousel-prev');
+    const next = document.getElementById('am-carousel-next');
+    const fadeL = document.getElementById('am-carousel-fade-left');
+    const fadeR = document.getElementById('am-carousel-fade-right');
+
+    const updateAffordances = () => {
+      const atStart = track.scrollLeft <= 4;
+      const atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
+      if (prev) prev.disabled = atStart;
+      if (next) next.disabled = atEnd;
+      if (fadeL) fadeL.style.opacity = atStart ? '0' : '1';
+      if (fadeR) fadeR.style.opacity = atEnd ? '0' : '1';
+    };
+
+    const scrollByOneCard = (dir) => {
+      const card = track.querySelector('.group-card');
+      const step = card ? card.getBoundingClientRect().width + 14 : 280;
+      track.scrollBy({ left: dir * step, behavior: 'smooth' });
+    };
+
+    if (prev) prev.addEventListener('click', () => scrollByOneCard(-1));
+    if (next) next.addEventListener('click', () => scrollByOneCard(1));
+    track.addEventListener('scroll', updateAffordances, { passive: true });
+
+    // Card selection
+    track.querySelectorAll('.group-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const groupId = card.dataset.groupId;
+        const groups = getAvailableGroups();
+        const group = groups.find(g => g.id === groupId);
+        if (!group) return;
+        state.activeGroupId = groupId;
+        state.activeAction = 'migrate-group'; // distinguish from old map-schema action
+        state.userEditedPrompt = false;
+        // Scroll the chosen card into view (helpful on mobile / narrow viewports)
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        renderSetup();
+      });
+    });
+
+    updateAffordances();
   }
 
   function renderActionCards() {
@@ -970,9 +1133,17 @@ body.cyg-collapsed .topbar{left:54px}
       </div>`;
 
     // Compute current prompt source label
-    let promptSourceLabel = 'Pick an action above, or type your own instruction.';
+    let promptSourceLabel = 'Pick a group above, or type your own instruction.';
     let showClear = false;
-    if (state.activeAction === 'map-schema') {
+    if (state.activeAction === 'migrate-group' && state.activeGroupId) {
+      const groups = getAvailableGroups();
+      const grp = groups.find(g => g.id === state.activeGroupId);
+      const grpName = grp ? grp.name : 'group';
+      promptSourceLabel = state.userEditedPrompt
+        ? `Edited from: ${grpName}`
+        : `Filled from: ${grpName}`;
+      showClear = true;
+    } else if (state.activeAction === 'map-schema') {
       promptSourceLabel = state.userEditedPrompt
         ? 'Edited from: Map one schema'
         : 'Filled from: Map one schema';
@@ -996,16 +1167,14 @@ body.cyg-collapsed .topbar{left:54px}
         ${missingNotice}
       </div>
 
-      <div class="setup-grid">
-        <div class="panel">
-          <div class="panel-title">Source overview</div>
-          ${renderSourceOverview()}
-        </div>
+      <div class="panel" style="margin-bottom:1rem">
+        <div class="panel-title">Source overview</div>
+        ${renderSourceOverview()}
+      </div>
 
-        <div class="panel">
-          <div class="panel-title">What should the agent do?</div>
-          ${renderActionCards()}
-        </div>
+      <div class="panel" style="margin-bottom:1rem">
+        <div class="panel-title">Pick a group of tables to migrate</div>
+        ${renderGroupCarousel()}
       </div>
 
       <div class="card">
@@ -1032,13 +1201,23 @@ body.cyg-collapsed .topbar{left:54px}
         </div>
       </div>`;
 
-    // Wire up the textarea — populate from active action if there is one
+    // Wire up the textarea — populate from active action/group if there is one
     const ta = document.getElementById('am-goal');
-    if (ta && state.activeAction && !state.userEditedPrompt) {
-      ta.value = buildPromptForAction(state.activeAction, state.selectedSchema);
+    if (ta && !state.userEditedPrompt) {
+      if (state.activeAction === 'migrate-group' && state.activeGroupId) {
+        const groups = getAvailableGroups();
+        const grp = groups.find(g => g.id === state.activeGroupId);
+        if (grp) ta.value = buildPromptForGroup(grp);
+      } else if (state.activeAction === 'map-schema') {
+        ta.value = buildPromptForAction(state.activeAction, state.selectedSchema);
+      }
     }
 
-    // Action card click
+    // Wire carousel scroll buttons + card click handlers
+    wireCarousel();
+
+    // Action card click (legacy "map-schema" — kept for backward compat but
+    // hidden by current renderSetup which now uses the carousel instead)
     const actionCard = document.getElementById('am-action-map-schema');
     if (actionCard) {
       actionCard.addEventListener('click', (e) => {
@@ -1073,6 +1252,7 @@ body.cyg-collapsed .topbar{left:54px}
       clearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         state.activeAction = null;
+        state.activeGroupId = null;
         state.userEditedPrompt = false;
         const ta2 = document.getElementById('am-goal');
         if (ta2) ta2.value = '';
@@ -1086,9 +1266,15 @@ body.cyg-collapsed .topbar{left:54px}
         state.userEditedPrompt = true;
         const sourceEl = document.querySelector('.prompt-source span');
         if (sourceEl) {
-          sourceEl.textContent = state.activeAction
-            ? 'Edited from: Map one schema'
-            : 'Custom instruction';
+          if (state.activeAction === 'migrate-group' && state.activeGroupId) {
+            const groups = getAvailableGroups();
+            const grp = groups.find(g => g.id === state.activeGroupId);
+            sourceEl.textContent = grp ? `Edited from: ${grp.name}` : 'Custom instruction';
+          } else if (state.activeAction === 'map-schema') {
+            sourceEl.textContent = 'Edited from: Map one schema';
+          } else {
+            sourceEl.textContent = 'Custom instruction';
+          }
         }
         // Show the clear button if not already visible
         if (!document.getElementById('am-clear-prompt-btn')) {
@@ -1102,6 +1288,7 @@ body.cyg-collapsed .topbar{left:54px}
             btn.addEventListener('click', (e) => {
               e.stopPropagation();
               state.activeAction = null;
+              state.activeGroupId = null;
               state.userEditedPrompt = false;
               ta.value = '';
               renderSetup();
@@ -1554,6 +1741,7 @@ body.cyg-collapsed .topbar{left:54px}
       state.conns = readConnections();
       state.sourceSchema = null;
       state.activeAction = null;
+      state.activeGroupId = null;
       state.userEditedPrompt = false;
       renderSetup();
       startConnectionWatcher();
