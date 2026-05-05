@@ -217,6 +217,27 @@ body.cyg-collapsed .topbar{left:54px}
 .tighten-input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:var(--r);font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;min-height:54px;box-sizing:border-box}
 .tighten-input:focus{outline:none;border-color:var(--accent)}
 
+/* ── Dependency panel (NEW) ─────────────────────────────────────── */
+.dep-list{display:flex;flex-direction:column;gap:0.55rem;margin-bottom:0.85rem}
+.dep-row{display:flex;gap:0.65rem;padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);align-items:flex-start}
+.dep-icon{flex-shrink:0;font-size:18px;line-height:1;width:30px;height:30px;display:flex;align-items:center;justify-content:center;background:var(--bg);border-radius:6px;border:1px solid var(--border)}
+.dep-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.dep-name{font-size:13px;font-weight:600;color:var(--text)}
+.dep-meta{font-size:11px;font-weight:400;color:var(--text3);font-family:var(--mono)}
+.dep-summary{font-size:11.5px;color:var(--text2);line-height:1.4}
+.dep-fill{margin-top:3px;height:4px;background:var(--bg);border-radius:2px;overflow:hidden}
+.dep-fill-bar{height:100%;background:var(--accent);transition:width 0.3s}
+.dep-rec-hint{font-size:11.5px;color:var(--text3);font-style:italic;margin-bottom:0.6rem;padding:0 0.2rem}
+
+.dep-choices{display:flex;flex-direction:column;gap:0.4rem}
+.dep-choice{display:flex;align-items:flex-start;gap:0.6rem;padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;transition:border-color .15s,background .15s}
+.dep-choice:hover{border-color:var(--accent);background:var(--bg4)}
+.dep-choice.active{border-color:var(--accent);background:var(--accent-glow);box-shadow:inset 0 0 0 1px var(--accent)}
+.dep-choice input[type="radio"]{margin-top:3px;flex-shrink:0;accent-color:var(--accent)}
+.dep-choice-body{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.dep-choice-label{font-size:13px;font-weight:600;color:var(--text)}
+.dep-choice-desc{font-size:11.5px;color:var(--text2);line-height:1.45}
+
 .prompt-source{font-size:10.5px;color:var(--text3);margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center}
 .prompt-source .clear-btn{background:none;border:none;color:var(--accent);cursor:pointer;font-family:inherit;font-size:10.5px;padding:0}
 .prompt-source .clear-btn:hover{text-decoration:underline}
@@ -411,6 +432,9 @@ body.cyg-collapsed .topbar{left:54px}
     criteriaCache: {},         // { [groupId]: { suggestions: [...] } | { error: '...' } | 'loading' }
     selectedCriteria: {},      // { [groupId]: { [criterionId]: { enabled: bool, value: ... } } }
     tightenText: {},           // { [groupId]: 'WHERE-clause-style additional filter text' }
+    // Dependency analysis per group (cached for the session)
+    dependencyCache: {},       // { [groupId]: { dependencies: [...], overallRecommendation: '...' } | 'loading' | { error } }
+    dependencyChoice: {},      // { [groupId]: 'bring-along' | 'assume-present' | 'let-agent-decide' }
     userEditedPrompt: false,
   };
 
@@ -583,6 +607,12 @@ body.cyg-collapsed .topbar{left:54px}
         state.activeGroupId = null;
         state.userEditedPrompt = false;
         state._schemaRetryCount = 0;
+        // Clear caches that were keyed against the previous connection
+        state.criteriaCache = {};
+        state.selectedCriteria = {};
+        state.tightenText = {};
+        state.dependencyCache = {};
+        state.dependencyChoice = {};
         renderSetup();
         if (state.conns.source) loadSourceSchema();
       } else if (shouldRetrySchema) {
@@ -936,6 +966,22 @@ body.cyg-collapsed .topbar{left:54px}
     const tighten = (state.tightenText[group.id] || '').trim();
 
     let extras = '';
+
+    // Dependency strategy: tell the agent how to handle parent groups
+    const depCache = state.dependencyCache[group.id];
+    const depDeps = (depCache && Array.isArray(depCache.dependencies)) ? depCache.dependencies : [];
+    if (depDeps.length > 0) {
+      const choice = state.dependencyChoice[group.id] || 'bring-along';
+      const parentList = depDeps.map(d => `${d.groupName} (${d.parentTableCount} table${d.parentTableCount === 1 ? '' : 's'})`).join(', ');
+      if (choice === 'bring-along') {
+        extras += `\n\nDependencies — bring along: This group depends on ${parentList}. Migrate those parent tables FIRST in the same run, then the chosen group's tables, preserving foreign-key integrity.`;
+      } else if (choice === 'assume-present') {
+        extras += `\n\nDependencies — assume present: This group depends on ${parentList}. Do NOT migrate the parent tables — assume they already exist in the target. If the agent finds parent records missing during the run, log them as orphans for review rather than failing the run.`;
+      } else if (choice === 'let-agent-decide') {
+        extras += `\n\nDependencies — agent decides: This group depends on ${parentList}. For each parent group: inspect its current state in the target. If the parent is empty or sparse (<5% populated), migrate it before the chosen group. If the parent looks fully present (>95% populated), skip it. If mixed, migrate only the missing parent records that the chosen group's filtered rows need.`;
+      }
+    }
+
     if (criteriaLines.length > 0) {
       extras += '\n\nApply these criteria to the records being migrated:\n' +
         criteriaLines.map(l => `- ${l}`).join('\n');
@@ -1100,13 +1146,230 @@ body.cyg-collapsed .topbar{left:54px}
         // Eagerly fetch criteria suggestions in the background. The render above
         // will show a spinner; this resolves a moment later and renderSetup runs again.
         loadCriteriaSuggestions(groupId);
+        // Also kick off the dependency check (target row counts).
+        loadDependencies(groupId);
       });
     });
 
     updateAffordances();
   }
 
-  // ── Criteria suggestions (NEW) ────────────────────────────────────
+  // ── Dependency analysis (NEW) ─────────────────────────────────────
+  // Computes which OTHER themed groups a given group depends on (via FKs)
+  // and their parent tables. Pure client-side computation — uses the
+  // schema and groups already loaded by /api/agent/source-schema.
+  function computeDependencyGroups(groupId) {
+    const sch = state.sourceSchema;
+    if (!sch || sch === 'pending' || !Array.isArray(sch.groups) || !Array.isArray(sch.edges)) return [];
+    const groups = sch.groups;
+    const ourGroup = groups.find(g => g.id === groupId);
+    if (!ourGroup) return [];
+
+    // Build a fullName -> groupId map across ALL groups
+    const tableToGroup = new Map();
+    for (const g of groups) {
+      for (const t of (g.tables || [])) {
+        tableToGroup.set(t.fullName, g.id);
+      }
+    }
+
+    // Set of fullNames in our chosen group (so we can identify "external" parents)
+    const ourTables = new Set((ourGroup.tables || []).map(t => t.fullName));
+
+    // Walk edges: for each edge whose `from` is in our group, the `to` is
+    // a parent we depend on. If that parent maps to a DIFFERENT group, log it.
+    // We collect parent tables grouped by their owning group.
+    const depMap = new Map(); // groupId -> { groupName, icon, parentTables: Map<fullName, expectedRows> }
+    for (const edge of sch.edges) {
+      if (!ourTables.has(edge.from)) continue;
+      const parentGroupId = tableToGroup.get(edge.to);
+      if (!parentGroupId || parentGroupId === groupId) continue; // self-references ignored
+
+      const parentGroup = groups.find(g => g.id === parentGroupId);
+      if (!parentGroup) continue;
+      const parentTable = (parentGroup.tables || []).find(t => t.fullName === edge.to);
+      if (!parentTable) continue;
+
+      if (!depMap.has(parentGroupId)) {
+        depMap.set(parentGroupId, {
+          groupId: parentGroupId,
+          groupName: parentGroup.name,
+          icon: parentGroup.icon,
+          parentTables: new Map()
+        });
+      }
+      const bucket = depMap.get(parentGroupId);
+      // Dedupe parents (multiple FK edges to the same parent table count once)
+      if (!bucket.parentTables.has(parentTable.fullName)) {
+        bucket.parentTables.set(parentTable.fullName, {
+          schema: parentTable.schema,
+          name:   parentTable.name,
+          expectedRows: parentTable.rows || 0
+        });
+      }
+    }
+
+    // Convert to the array shape the backend expects
+    return [...depMap.values()].map(b => ({
+      groupId:   b.groupId,
+      groupName: b.groupName,
+      icon:      b.icon,
+      parentTables: [...b.parentTables.values()]
+    }));
+  }
+
+  async function loadDependencies(groupId) {
+    if (!groupId) return;
+    if (state.dependencyCache[groupId] && state.dependencyCache[groupId] !== 'loading') return;
+    if (state.dependencyCache[groupId] === 'loading') return;
+
+    const depGroups = computeDependencyGroups(groupId);
+    if (depGroups.length === 0) {
+      // No external FK dependencies — record as empty result so the UI
+      // can render "no dependencies, this group stands alone".
+      state.dependencyCache[groupId] = { dependencies: [], overallRecommendation: 'no-deps' };
+      if (state.activeGroupId === groupId) renderSetup();
+      return;
+    }
+
+    // Pull the target connection from the browser's Connections store —
+    // same pattern as loadSourceSchema.
+    let body = { dependencyGroups: depGroups };
+    try {
+      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
+        ? (CygenixConnections.get() || {}) : {};
+      if (c.tgtFnUrl)        body.tgtFnUrl     = c.tgtFnUrl;
+      else if (c.tgtConnString) body.tgtConnString = c.tgtConnString;
+    } catch (e) {
+      console.warn('[AgentiveMigration] could not read target connection:', e.message);
+    }
+
+    if (!body.tgtFnUrl && !body.tgtConnString) {
+      state.dependencyCache[groupId] = {
+        dependencies: depGroups.map(d => ({
+          groupId: d.groupId, groupName: d.groupName, icon: d.icon,
+          parentTableCount: d.parentTables.length,
+          expectedRows: d.parentTables.reduce((s, t) => s + (t.expectedRows || 0), 0),
+          targetRows: 0, tablesMissing: 0, tablesEmpty: d.parentTables.length, tablesPopulated: 0,
+          fillRatio: 0, recommendation: 'bring-along'
+        })),
+        overallRecommendation: 'no-target',
+        targetUnreachable: true
+      };
+      if (state.activeGroupId === groupId) renderSetup();
+      return;
+    }
+
+    state.dependencyCache[groupId] = 'loading';
+    if (state.activeGroupId === groupId) renderSetup();
+
+    try {
+      const data = await api('/agent/check-dependencies', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      state.dependencyCache[groupId] = data;
+      // Pre-select the recommended choice if user hasn't picked yet
+      if (!state.dependencyChoice[groupId] && data.overallRecommendation && data.overallRecommendation !== 'no-deps') {
+        const rec = data.overallRecommendation;
+        // Map "no-target" or "target-unreachable" to bring-along default
+        state.dependencyChoice[groupId] = (rec === 'no-target' || rec === 'target-unreachable') ? 'bring-along' : rec;
+      }
+    } catch (e) {
+      state.dependencyCache[groupId] = { error: e.message || 'Could not check dependencies' };
+    } finally {
+      if (state.activeGroupId === groupId) renderSetup();
+    }
+  }
+
+  function renderDependencyPanel() {
+    const groupId = state.activeGroupId;
+    if (!groupId) return '';
+
+    const cache = state.dependencyCache[groupId];
+
+    if (cache === undefined || cache === 'loading') {
+      return `<div class="criteria-loading"><div class="spinner"></div>Checking which other groups this data depends on…</div>`;
+    }
+
+    if (cache && cache.error) {
+      return `<div class="criteria-error">Couldn't check dependencies: ${escapeHtml(cache.error)}</div>`;
+    }
+
+    const deps = (cache && Array.isArray(cache.dependencies)) ? cache.dependencies : [];
+    if (deps.length === 0) {
+      return `<div class="criteria-empty">This group's tables don't reference any other groups — no dependencies to handle.</div>`;
+    }
+
+    const targetUnreachable = !!cache.targetUnreachable || cache.overallRecommendation === 'target-unreachable';
+    const choice = state.dependencyChoice[groupId] || 'bring-along';
+
+    const depsList = deps.map(d => {
+      const ratio = Math.max(0, Math.min(1, d.fillRatio || 0));
+      const pct = Math.round(ratio * 100);
+      let summary;
+      if (targetUnreachable) {
+        summary = `Target not reachable yet — assume empty`;
+      } else if (d.expectedRows === 0) {
+        summary = `Target check skipped (no source rows)`;
+      } else {
+        summary = `Target has ${formatRowsShort(d.targetRows)} of ${formatRowsShort(d.expectedRows)} expected (${pct}%)`;
+      }
+      const fillBar = `<div class="dep-fill"><div class="dep-fill-bar" style="width:${pct}%"></div></div>`;
+      return `
+        <div class="dep-row">
+          <div class="dep-icon">${escapeHtml(d.icon)}</div>
+          <div class="dep-body">
+            <div class="dep-name">${escapeHtml(d.groupName)} <span class="dep-meta">· ${d.parentTableCount} parent table${d.parentTableCount === 1 ? '' : 's'}</span></div>
+            <div class="dep-summary">${escapeHtml(summary)}</div>
+            ${targetUnreachable || d.expectedRows === 0 ? '' : fillBar}
+          </div>
+        </div>`;
+    }).join('');
+
+    const recommendation = cache.overallRecommendation || 'bring-along';
+    const recHint = targetUnreachable
+      ? `Target wasn't reachable — assuming empty, recommended: bring along.`
+      : recommendation === 'bring-along'
+        ? `Target looks empty for these — recommended: bring along.`
+        : recommendation === 'assume-present'
+          ? `Target already has these — recommended: assume present.`
+          : `Mixed state in target — recommended: let agent decide.`;
+
+    const radio = (val, label, desc) => `
+      <label class="dep-choice ${choice === val ? 'active' : ''}">
+        <input type="radio" name="dep-choice" value="${val}" ${choice === val ? 'checked' : ''}>
+        <span class="dep-choice-body">
+          <span class="dep-choice-label">${escapeHtml(label)}</span>
+          <span class="dep-choice-desc">${escapeHtml(desc)}</span>
+        </span>
+      </label>`;
+
+    return `
+      <div class="dep-list">${depsList}</div>
+      <div class="dep-rec-hint">${escapeHtml(recHint)}</div>
+      <div class="dep-choices">
+        ${radio('bring-along', 'Bring them along', 'Migrate the parent tables as part of this run, before the chosen group.')}
+        ${radio('assume-present', 'Assume already in target', 'Skip the parents — assume the target already has the records this group references.')}
+        ${radio('let-agent-decide', 'Let the agent decide', 'The agent will inspect each parent in target and choose per-group.')}
+      </div>`;
+  }
+
+  function wireDependencyPanel() {
+    const groupId = state.activeGroupId;
+    if (!groupId) return;
+    document.querySelectorAll('input[name="dep-choice"]').forEach(input => {
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          state.dependencyChoice[groupId] = input.value;
+          rebuildPromptFromGroup();
+          renderSetup();
+        }
+      });
+    });
+  }
+
+
   // Called eagerly when a group is selected. Caches per-group within the
   // session so re-selecting an already-loaded group is instant.
   async function loadCriteriaSuggestions(groupId) {
@@ -1541,6 +1804,13 @@ body.cyg-collapsed .topbar{left:54px}
 
       ${state.activeGroupId ? `
       <div class="panel" style="margin-bottom:1rem">
+        <div class="panel-title">Dependencies for "${escapeHtml((getAvailableGroups().find(g => g.id === state.activeGroupId) || {}).name || 'this group')}"</div>
+        ${renderDependencyPanel()}
+      </div>
+      ` : ''}
+
+      ${state.activeGroupId ? `
+      <div class="panel" style="margin-bottom:1rem">
         <div class="panel-title">Refine criteria for "${escapeHtml((getAvailableGroups().find(g => g.id === state.activeGroupId) || {}).name || 'this group')}"</div>
         ${renderCriteriaPanel()}
       </div>
@@ -1584,6 +1854,9 @@ body.cyg-collapsed .topbar{left:54px}
 
     // Wire carousel scroll buttons + card click handlers
     wireCarousel();
+
+    // Wire the dependency panel radio choices
+    wireDependencyPanel();
 
     // Wire the criteria panel (toggles, controls, tighten textarea)
     wireCriteriaPanel();
