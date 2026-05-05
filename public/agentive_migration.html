@@ -183,6 +183,40 @@ body.cyg-collapsed .topbar{left:54px}
 .carousel-arrow.prev{left:-4px}
 .carousel-arrow.next{right:-4px}
 
+/* ── Criteria panel (NEW) ───────────────────────────────────────── */
+.criteria-loading{display:flex;align-items:center;gap:0.5rem;padding:1rem 0.4rem;color:var(--text2);font-size:12.5px}
+.criteria-error{padding:0.85rem 1rem;background:rgba(240,70,70,0.08);border:1px solid rgba(240,70,70,0.3);border-radius:var(--r);color:var(--text2);font-size:12px;margin-bottom:0.85rem}
+.criteria-list{display:flex;flex-direction:column;gap:0.55rem;margin-bottom:0.85rem}
+.criterion{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:0.7rem 0.9rem;display:flex;flex-direction:column;gap:0.4rem;transition:border-color .15s,background .15s}
+.criterion.active{border-color:var(--accent);background:var(--accent-glow)}
+.criterion-head{display:flex;align-items:flex-start;gap:0.6rem}
+.criterion-toggle{flex-shrink:0;margin-top:2px;width:16px;height:16px;border-radius:4px;border:1.5px solid var(--border2);background:var(--bg);cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:bold;line-height:1;padding:0;transition:background .15s,border-color .15s}
+.criterion.active .criterion-toggle{background:var(--accent);border-color:var(--accent)}
+.criterion-body{flex:1;min-width:0}
+.criterion-label{font-size:13px;font-weight:600;color:var(--text);line-height:1.3}
+.criterion-reason{font-size:11.5px;color:var(--text2);margin-top:2px;line-height:1.45}
+.criterion-evidence{display:flex;flex-wrap:wrap;gap:0.3rem;margin-top:0.35rem}
+.criterion-evidence .ev{font-size:10px;color:var(--text3);font-family:var(--mono);background:var(--bg);border:1px solid var(--border);padding:1px 6px;border-radius:3px}
+.criterion-controls{margin-top:0.5rem;padding-top:0.5rem;border-top:0.5px dashed var(--border);display:none}
+.criterion.active .criterion-controls{display:block}
+.criterion-controls .row{display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;font-size:12px}
+.criterion-controls .row label{font-size:11px;color:var(--text2);min-width:40px}
+.criterion-controls input[type="date"],
+.criterion-controls input[type="text"]{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-family:inherit;font-size:12px;flex:1;min-width:100px}
+.criterion-controls input[type="date"]:focus,
+.criterion-controls input[type="text"]:focus{outline:none;border-color:var(--accent)}
+.criterion-controls .enum-options{display:flex;flex-wrap:wrap;gap:0.35rem}
+.criterion-controls .enum-opt{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--border);background:var(--bg);color:var(--text2);cursor:pointer;font-family:inherit;transition:background .15s,border-color .15s,color .15s}
+.criterion-controls .enum-opt.selected{background:var(--accent);border-color:var(--accent);color:#fff}
+.criterion-bool-row{font-size:11.5px;color:var(--text2)}
+.criterion-bool-row strong{color:var(--text)}
+.criteria-empty{padding:1rem;background:var(--bg3);border:1px dashed var(--border);border-radius:var(--r);color:var(--text2);font-size:12px;text-align:center;margin-bottom:0.85rem}
+.tighten-row{margin-top:0.85rem}
+.tighten-label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem;display:flex;justify-content:space-between;align-items:center}
+.tighten-label .hint{font-size:10.5px;text-transform:none;letter-spacing:0;color:var(--text3);font-weight:400}
+.tighten-input{width:100%;background:var(--bg3);border:1px solid var(--border);color:var(--text);padding:9px 12px;border-radius:var(--r);font-family:var(--mono);font-size:12px;line-height:1.5;resize:vertical;min-height:54px;box-sizing:border-box}
+.tighten-input:focus{outline:none;border-color:var(--accent)}
+
 .prompt-source{font-size:10.5px;color:var(--text3);margin-bottom:0.4rem;display:flex;justify-content:space-between;align-items:center}
 .prompt-source .clear-btn{background:none;border:none;color:var(--accent);cursor:pointer;font-family:inherit;font-size:10.5px;padding:0}
 .prompt-source .clear-btn:hover{text-decoration:underline}
@@ -373,6 +407,10 @@ body.cyg-collapsed .topbar{left:54px}
     activeAction: null,        // null | 'map-schema' | 'migrate-group'
     selectedSchema: null,      // schema name when 'map-schema' is active
     activeGroupId: null,       // group id when 'migrate-group' is active
+    // Criteria suggestions per group (cached for the session)
+    criteriaCache: {},         // { [groupId]: { suggestions: [...] } | { error: '...' } | 'loading' }
+    selectedCriteria: {},      // { [groupId]: { [criterionId]: { enabled: bool, value: ... } } }
+    tightenText: {},           // { [groupId]: 'WHERE-clause-style additional filter text' }
     userEditedPrompt: false,
   };
 
@@ -885,7 +923,52 @@ body.cyg-collapsed .topbar{left:54px}
     const piiNote = group.piiCount > 0
       ? ` ${group.piiCount} PII column${group.piiCount === 1 ? '' : 's'} flagged in this group — flag each for my review before including in the mapping.`
       : '';
-    return `Migrate the "${group.name}" group of tables from source to target. Tables in scope: ${tableList}. Preserve any foreign-key relationships within the group.${piiNote} Pause for approval before writing anything to the target.`;
+
+    // Append any active criteria as bullet points the agent should respect
+    const criteriaLines = [];
+    const sel = state.selectedCriteria[group.id] || {};
+    const sugs = ((state.criteriaCache[group.id] || {}).suggestions) || [];
+    for (const s of sugs) {
+      const cur = sel[s.id];
+      if (!cur || !cur.enabled) continue;
+      criteriaLines.push(criterionToPromptLine(s, cur.value));
+    }
+    const tighten = (state.tightenText[group.id] || '').trim();
+
+    let extras = '';
+    if (criteriaLines.length > 0) {
+      extras += '\n\nApply these criteria to the records being migrated:\n' +
+        criteriaLines.map(l => `- ${l}`).join('\n');
+    }
+    if (tighten) {
+      extras += `\n\nAdditional WHERE-clause-style filter (apply to all tables where columns exist):\n${tighten}`;
+    }
+
+    return `Migrate the "${group.name}" group of tables from source to target. Tables in scope: ${tableList}. Preserve any foreign-key relationships within the group.${piiNote} Pause for approval before writing anything to the target.${extras}`;
+  }
+
+  function criterionToPromptLine(s, value) {
+    const label = s.label;
+    const predicate = s.predicate || '';
+    if (s.type === 'date-range') {
+      const v = value || s.default || {};
+      const from = toIsoDate(v.from) || v.from || '';
+      const to = toIsoDate(v.to) || v.to || '';
+      return `${label}: include only records between ${from} and ${to}` +
+        (predicate ? ` (predicate: ${predicate} with from=${from}, to=${to})` : '');
+    }
+    if (s.type === 'boolean') {
+      return `${label}: ${value ? 'enabled' : 'disabled'}` + (predicate ? ` (predicate: ${predicate})` : '');
+    }
+    if (s.type === 'enum') {
+      const opts = (value && Array.isArray(value.selected)) ? value.selected : ((s.default || {}).selected || []);
+      return `${label}: include only records where value is one of [${opts.join(', ')}]` + (predicate ? ` (predicate: ${predicate})` : '');
+    }
+    if (s.type === 'text') {
+      const v = value === undefined ? (s.default || '') : value;
+      return `${label}: ${v}` + (predicate ? ` (predicate: ${predicate})` : '');
+    }
+    return `${label}` + (predicate ? ` (predicate: ${predicate})` : '');
   }
 
   function applyActionToPrompt() {
@@ -1014,12 +1097,296 @@ body.cyg-collapsed .topbar{left:54px}
         // Scroll the chosen card into view (helpful on mobile / narrow viewports)
         card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
         renderSetup();
+        // Eagerly fetch criteria suggestions in the background. The render above
+        // will show a spinner; this resolves a moment later and renderSetup runs again.
+        loadCriteriaSuggestions(groupId);
       });
     });
 
     updateAffordances();
   }
 
+  // ── Criteria suggestions (NEW) ────────────────────────────────────
+  // Called eagerly when a group is selected. Caches per-group within the
+  // session so re-selecting an already-loaded group is instant.
+  async function loadCriteriaSuggestions(groupId) {
+    if (!groupId) return;
+    if (state.criteriaCache[groupId] && state.criteriaCache[groupId] !== 'loading') return; // already loaded
+    if (state.criteriaCache[groupId] === 'loading') return; // in flight
+
+    const group = getAvailableGroups().find(g => g.id === groupId);
+    if (!group) return;
+
+    // Build a compact payload — only tables that have column data attached
+    // (the backend included columns for the top 30 tables of each group).
+    const tablesWithCols = (group.tables || []).filter(t => Array.isArray(t.columns) && t.columns.length > 0);
+    if (tablesWithCols.length === 0) {
+      state.criteriaCache[groupId] = { suggestions: [] };
+      if (state.activeGroupId === groupId) renderSetup();
+      return;
+    }
+
+    state.criteriaCache[groupId] = 'loading';
+    if (state.activeGroupId === groupId) renderSetup();
+
+    try {
+      const data = await api('/agent/suggest-criteria', {
+        method: 'POST',
+        body: JSON.stringify({
+          groupId:   group.id,
+          groupName: group.name,
+          groupDesc: group.description || '',
+          tables:    tablesWithCols.map(t => ({ name: t.name, columns: t.columns }))
+        })
+      });
+      state.criteriaCache[groupId] = { suggestions: Array.isArray(data.suggestions) ? data.suggestions : [] };
+    } catch (e) {
+      state.criteriaCache[groupId] = { error: e.message || 'Could not load suggestions' };
+    } finally {
+      if (state.activeGroupId === groupId) renderSetup();
+    }
+  }
+
+  // Render the criteria panel for the currently-active group.
+  // States: loading (spinner) | error | empty (no suggestions) | populated (chips)
+  function renderCriteriaPanel() {
+    const groupId = state.activeGroupId;
+    if (!groupId) return '';
+
+    const cache = state.criteriaCache[groupId];
+
+    if (cache === 'loading' || cache === undefined) {
+      return `<div class="criteria-loading"><div class="spinner"></div>Looking at the columns and suggesting filters…</div>`;
+    }
+
+    if (cache && cache.error) {
+      return `<div class="criteria-error">Couldn't load suggestions: ${escapeHtml(cache.error)}</div>
+              <div class="tighten-row">
+                <div class="tighten-label">Refine further <span class="hint">— optional WHERE-clause-style filter, applied to all tables in scope</span></div>
+                <textarea class="tighten-input" id="am-tighten" placeholder="e.g.  status = 'open' AND closed_date IS NULL">${escapeHtml(state.tightenText[groupId] || '')}</textarea>
+              </div>`;
+    }
+
+    const suggestions = (cache && cache.suggestions) || [];
+    const sel = state.selectedCriteria[groupId] || {};
+
+    let chipsHtml;
+    if (suggestions.length === 0) {
+      chipsHtml = `<div class="criteria-empty">No specific filters suggested for this group. You can use the free-text refinement below.</div>`;
+    } else {
+      chipsHtml = `<div class="criteria-list">${suggestions.map(s => renderCriterion(s, sel[s.id])).join('')}</div>`;
+    }
+
+    return chipsHtml + `
+      <div class="tighten-row">
+        <div class="tighten-label">Refine further <span class="hint">— optional WHERE-clause-style filter, applied to all tables in scope</span></div>
+        <textarea class="tighten-input" id="am-tighten" placeholder="e.g.  status = 'open' AND closed_date IS NULL">${escapeHtml(state.tightenText[groupId] || '')}</textarea>
+      </div>`;
+  }
+
+  function renderCriterion(s, current) {
+    const enabled = !!(current && current.enabled);
+    const value = current && current.value;
+    const evidenceHtml = (s.evidence || []).length
+      ? `<div class="criterion-evidence">${s.evidence.map(e => `<span class="ev">${escapeHtml(e)}</span>`).join('')}</div>`
+      : '';
+
+    let controlsHtml = '';
+    if (s.type === 'date-range') {
+      const def = s.default || {};
+      const v = value || def;
+      // The backend may return plain-English defaults like "2 years ago".
+      // Convert to ISO date strings on first render.
+      const fromIso = toIsoDate(v.from);
+      const toIso = toIsoDate(v.to);
+      controlsHtml = `
+        <div class="criterion-controls">
+          <div class="row">
+            <label for="cri-${escapeHtml(s.id)}-from">From</label>
+            <input type="date" id="cri-${escapeHtml(s.id)}-from" data-cri="${escapeHtml(s.id)}" data-field="from" value="${escapeHtml(fromIso)}">
+            <label for="cri-${escapeHtml(s.id)}-to">to</label>
+            <input type="date" id="cri-${escapeHtml(s.id)}-to" data-cri="${escapeHtml(s.id)}" data-field="to" value="${escapeHtml(toIso)}">
+          </div>
+        </div>`;
+    } else if (s.type === 'boolean') {
+      const v = value === undefined ? !!s.default : !!value;
+      controlsHtml = `
+        <div class="criterion-controls">
+          <div class="row criterion-bool-row">
+            Apply this filter as <strong>${v ? 'YES' : 'NO'}</strong>
+            <button type="button" class="enum-opt ${v ? '' : 'selected'}" data-cri="${escapeHtml(s.id)}" data-bool="false">No</button>
+            <button type="button" class="enum-opt ${v ? 'selected' : ''}" data-cri="${escapeHtml(s.id)}" data-bool="true">Yes</button>
+          </div>
+        </div>`;
+    } else if (s.type === 'enum') {
+      const def = s.default || {};
+      const opts = Array.isArray(def.options) ? def.options : [];
+      const selectedOpts = (value && Array.isArray(value.selected)) ? value.selected : (def.selected || []);
+      controlsHtml = `
+        <div class="criterion-controls">
+          <div class="row enum-options">
+            ${opts.map(o => `<button type="button" class="enum-opt ${selectedOpts.includes(o) ? 'selected' : ''}" data-cri="${escapeHtml(s.id)}" data-enum="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}
+          </div>
+        </div>`;
+    } else { // text
+      const v = value === undefined ? (s.default || '') : value;
+      controlsHtml = `
+        <div class="criterion-controls">
+          <div class="row">
+            <input type="text" data-cri="${escapeHtml(s.id)}" data-field="text" value="${escapeHtml(v)}" placeholder="Custom value">
+          </div>
+        </div>`;
+    }
+
+    return `
+      <div class="criterion ${enabled ? 'active' : ''}" data-cri-id="${escapeHtml(s.id)}">
+        <div class="criterion-head">
+          <button type="button" class="criterion-toggle" data-cri-toggle="${escapeHtml(s.id)}" aria-label="Toggle ${escapeHtml(s.label)}">${enabled ? '✓' : ''}</button>
+          <div class="criterion-body">
+            <div class="criterion-label">${escapeHtml(s.label)}</div>
+            ${s.reason ? `<div class="criterion-reason">${escapeHtml(s.reason)}</div>` : ''}
+            ${evidenceHtml}
+          </div>
+        </div>
+        ${controlsHtml}
+      </div>`;
+  }
+
+  // Convert a plain-English date hint ("2 years ago", "today") into an ISO date.
+  // If input is already YYYY-MM-DD, pass through.
+  function toIsoDate(input) {
+    if (!input) return '';
+    if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}/.test(input)) return input.slice(0, 10);
+    const now = new Date();
+    const s = String(input).toLowerCase().trim();
+    if (s === 'today' || s === 'now') return now.toISOString().slice(0, 10);
+    const yearsAgoMatch = s.match(/(\d+)\s*years?\s*ago/);
+    if (yearsAgoMatch) {
+      const d = new Date(now); d.setFullYear(d.getFullYear() - Number(yearsAgoMatch[1]));
+      return d.toISOString().slice(0, 10);
+    }
+    const monthsAgoMatch = s.match(/(\d+)\s*months?\s*ago/);
+    if (monthsAgoMatch) {
+      const d = new Date(now); d.setMonth(d.getMonth() - Number(monthsAgoMatch[1]));
+      return d.toISOString().slice(0, 10);
+    }
+    return '';
+  }
+
+  // After renderSetup, wire up the criterion toggles, controls, and tighten textarea.
+  function wireCriteriaPanel() {
+    const groupId = state.activeGroupId;
+    if (!groupId) return;
+    if (!state.selectedCriteria[groupId]) state.selectedCriteria[groupId] = {};
+    const sel = state.selectedCriteria[groupId];
+
+    // Toggle a criterion on/off
+    document.querySelectorAll('[data-cri-toggle]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.criToggle;
+        const cur = sel[id] || { enabled: false, value: undefined };
+        cur.enabled = !cur.enabled;
+        if (cur.enabled && cur.value === undefined) {
+          // Initialise value from the suggestion default
+          const sug = ((state.criteriaCache[groupId] || {}).suggestions || []).find(x => x.id === id);
+          if (sug) cur.value = cloneDefault(sug);
+        }
+        sel[id] = cur;
+        rebuildPromptFromGroup();
+        renderSetup();
+      });
+    });
+
+    // Date inputs
+    document.querySelectorAll('input[type="date"][data-cri]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const id = inp.dataset.cri;
+        const field = inp.dataset.field;
+        if (!sel[id]) sel[id] = { enabled: true, value: {} };
+        if (typeof sel[id].value !== 'object' || sel[id].value === null) sel[id].value = {};
+        sel[id].value[field] = inp.value;
+        sel[id].enabled = true;
+        rebuildPromptFromGroup();
+        // Don't full re-render; just update the relevant header chip state if needed
+        const card = document.querySelector(`[data-cri-id="${CSS.escape(id)}"]`);
+        if (card) card.classList.add('active');
+        const tog = document.querySelector(`[data-cri-toggle="${CSS.escape(id)}"]`);
+        if (tog) tog.textContent = '✓';
+      });
+    });
+
+    // Boolean toggles
+    document.querySelectorAll('[data-bool]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.cri;
+        const v = btn.dataset.bool === 'true';
+        sel[id] = { enabled: true, value: v };
+        rebuildPromptFromGroup();
+        renderSetup();
+      });
+    });
+
+    // Enum option pills (multi-select)
+    document.querySelectorAll('[data-enum]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.cri;
+        const opt = btn.dataset.enum;
+        if (!sel[id]) sel[id] = { enabled: true, value: { selected: [] } };
+        if (!sel[id].value || !Array.isArray(sel[id].value.selected)) sel[id].value = { selected: [] };
+        const idx = sel[id].value.selected.indexOf(opt);
+        if (idx >= 0) sel[id].value.selected.splice(idx, 1);
+        else sel[id].value.selected.push(opt);
+        sel[id].enabled = sel[id].value.selected.length > 0;
+        rebuildPromptFromGroup();
+        renderSetup();
+      });
+    });
+
+    // Text inputs
+    document.querySelectorAll('input[type="text"][data-cri]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const id = inp.dataset.cri;
+        sel[id] = { enabled: !!inp.value, value: inp.value };
+        rebuildPromptFromGroup();
+      });
+    });
+
+    // Tighten textarea — debounced
+    const tighten = document.getElementById('am-tighten');
+    if (tighten) {
+      let t;
+      tighten.addEventListener('input', () => {
+        state.tightenText[groupId] = tighten.value;
+        clearTimeout(t);
+        t = setTimeout(rebuildPromptFromGroup, 250);
+      });
+    }
+  }
+
+  function cloneDefault(suggestion) {
+    if (!suggestion || suggestion.default == null) return undefined;
+    try { return JSON.parse(JSON.stringify(suggestion.default)); } catch { return suggestion.default; }
+  }
+
+  // Rebuild the agent prompt from the active group + selected criteria + tighten text.
+  // Doesn't re-render the whole page; just updates the textarea value if the user
+  // hasn't manually edited it.
+  function rebuildPromptFromGroup() {
+    if (state.activeAction !== 'migrate-group' || !state.activeGroupId) return;
+    if (state.userEditedPrompt) return; // respect manual edits
+    const ta = document.getElementById('am-goal');
+    if (!ta) return;
+    const group = getAvailableGroups().find(g => g.id === state.activeGroupId);
+    if (!group) return;
+    ta.value = buildPromptForGroup(group);
+  }
+
+  // Legacy "map-schema" action card — kept for backward compat. Currently
+  // not rendered anywhere by renderSetup (the carousel replaced it), but
+  // the function and its handlers stay so we don't break older state shapes.
   function renderActionCards() {
     const schemas = getAvailableSchemas();
     const isActive = state.activeAction === 'map-schema';
@@ -1168,14 +1535,16 @@ body.cyg-collapsed .topbar{left:54px}
       </div>
 
       <div class="panel" style="margin-bottom:1rem">
-        <div class="panel-title">Source overview</div>
-        ${renderSourceOverview()}
-      </div>
-
-      <div class="panel" style="margin-bottom:1rem">
         <div class="panel-title">Pick a group of tables to migrate</div>
         ${renderGroupCarousel()}
       </div>
+
+      ${state.activeGroupId ? `
+      <div class="panel" style="margin-bottom:1rem">
+        <div class="panel-title">Refine criteria for "${escapeHtml((getAvailableGroups().find(g => g.id === state.activeGroupId) || {}).name || 'this group')}"</div>
+        ${renderCriteriaPanel()}
+      </div>
+      ` : ''}
 
       <div class="card">
         <div class="field">
@@ -1215,6 +1584,9 @@ body.cyg-collapsed .topbar{left:54px}
 
     // Wire carousel scroll buttons + card click handlers
     wireCarousel();
+
+    // Wire the criteria panel (toggles, controls, tighten textarea)
+    wireCriteriaPanel();
 
     // Action card click (legacy "map-schema" — kept for backward compat but
     // hidden by current renderSetup which now uses the carousel instead)
