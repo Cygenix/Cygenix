@@ -40,6 +40,25 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .nav-signout{font-family:var(--mono);font-size:11px;color:var(--text2);text-decoration:none;letter-spacing:0.05em;text-transform:uppercase;padding:6px 12px;border:0.5px solid var(--border2);border-radius:6px;transition:all 0.2s;cursor:pointer;background:transparent}
 .nav-signout:hover{color:var(--text);border-color:var(--text2)}
 
+/* Region selector — sits to the LEFT of the Sign out button. */
+.region-selector{position:relative;margin-right:0.6rem}
+.region-selector-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--text2);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.7rem;font-size:13px;cursor:pointer;font-family:var(--mono);letter-spacing:0.04em;transition:all 0.2s}
+.region-selector-btn:hover{color:var(--text);border-color:var(--text2)}
+.region-selector-btn .chev{font-size:10px;color:var(--text3);transition:transform 0.2s}
+.region-selector.open .region-selector-btn .chev{transform:rotate(180deg)}
+.region-selector-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:4px;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,0.4);display:none;z-index:200}
+.region-selector.open .region-selector-menu{display:block}
+.region-selector-menu button{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:none;color:var(--text);padding:0.55rem 0.7rem;border-radius:6px;font-family:var(--serif);font-size:13px;text-align:left;cursor:pointer;transition:background 0.15s}
+.region-selector-menu button:hover{background:var(--bg3)}
+.region-selector-menu button.active{background:var(--bg3);color:var(--accent)}
+.region-selector-menu .flag{font-size:16px;line-height:1}
+.region-selector-menu .label{flex:1;font-family:var(--mono);font-size:12px;letter-spacing:0.04em}
+.region-selector-menu .region-label{color:var(--text3);font-size:11px;font-family:var(--mono);letter-spacing:0.04em}
+.nav-right{display:flex;align-items:center}
+@media(max-width:640px){
+  .region-selector-btn{padding:0.35rem 0.55rem;font-size:11px}
+}
+
 /* Hero — same shape as pricing-hero, lighter copy because this is a
    one-decision page rather than the marketing pricing page. */
 .pricing-hero{padding:6rem 2rem 2.5rem;text-align:center;position:relative;z-index:1}
@@ -109,12 +128,23 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
   .pricing-hero h1{font-size:1.75rem}
 }
 </style>
+<script src="/cygenix-region.js" defer></script>
 </head>
 <body>
 
 <nav>
   <a href="/" class="nav-logo">Cyge<span>nix</span></a>
-  <button class="nav-signout" id="signout-link" type="button">Sign out</button>
+  <div class="nav-right">
+    <div class="region-selector" id="region-selector">
+      <button type="button" class="region-selector-btn" id="region-selector-btn" aria-haspopup="true" aria-expanded="false">
+        <span class="flag" id="region-current-flag">🇬🇧</span>
+        <span id="region-current-code">GBP</span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="region-selector-menu" role="menu" id="region-selector-menu"></div>
+    </div>
+    <button class="nav-signout" id="signout-link" type="button">Sign out</button>
+  </div>
 </nav>
 
 <section class="pricing-hero">
@@ -142,10 +172,10 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
     <div class="tier-tagline">For consultants and small teams running occasional migrations.</div>
     <div class="tier-price">
       <span class="currency">£</span>
-      <span class="amount" data-monthly="99" data-annual="79">99</span>
+      <span class="amount">99</span>
       <span class="period">/month</span>
     </div>
-    <div class="tier-price-sub" data-monthly="Billed monthly" data-annual="Billed annually · £948/year">Billed monthly</div>
+    <div class="tier-price-sub">Billed monthly</div>
     <button class="tier-cta primary" data-tier="starter" onclick="event.stopPropagation();startCheckout('starter',this)">Start 14-day free trial →</button>
     <ul class="tier-features">
       <li><strong>1 migration</strong> at a time</li>
@@ -164,10 +194,10 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
     <div class="tier-tagline">For growing teams running multiple migrations in parallel.</div>
     <div class="tier-price">
       <span class="currency">£</span>
-      <span class="amount" data-monthly="299" data-annual="239">299</span>
+      <span class="amount">299</span>
       <span class="period">/month</span>
     </div>
-    <div class="tier-price-sub" data-monthly="Billed monthly" data-annual="Billed annually · £2,868/year">Billed monthly</div>
+    <div class="tier-price-sub">Billed monthly</div>
     <button class="tier-cta primary" data-tier="pro" onclick="event.stopPropagation();startCheckout('pro',this)">Start 14-day free trial →</button>
     <ul class="tier-features">
       <li><strong>3 migrations</strong> in parallel</li>
@@ -189,7 +219,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
       <span class="amount">799</span>
       <span class="period">/month</span>
     </div>
-    <div class="tier-price-sub">Sales-led</div>
+    <div class="tier-price-sub" data-static-sub="true">Sales-led</div>
     <a class="tier-cta secondary" href="mailto:sales@cygenix.co.uk?subject=Cygenix%20Business%20enquiry" onclick="event.stopPropagation()">Contact sales →</a>
     <ul class="tier-features">
       <li><strong>10 migrations</strong> in parallel</li>
@@ -255,6 +285,63 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
   banner.classList.add('visible');
 })();
 
+// ─── Pricing data (mirrors pricing.html) ────────────────────────────────
+// Single source of truth for all visible prices on this page.
+// Business is included so its price symbol updates with the region too,
+// even though the "Sales-led" sub line stays static (data-static-sub="true").
+const TIER_PRICES = {
+  starter: {
+    GBP: { monthly: 99,  annual: 79,  annualLump: '948'   },
+    USD: { monthly: 129, annual: 103, annualLump: '1,236' },
+    EUR: { monthly: 115, annual: 92,  annualLump: '1,104' }
+  },
+  pro: {
+    GBP: { monthly: 299, annual: 239, annualLump: '2,868' },
+    USD: { monthly: 389, annual: 309, annualLump: '3,708' },
+    EUR: { monthly: 349, annual: 279, annualLump: '3,348' }
+  },
+  business: {
+    GBP: { monthly: 799, annual: 639, annualLump: '7,668' },
+    USD: { monthly: 1039, annual: 829, annualLump: '9,948' },
+    EUR: { monthly: 929, annual: 739, annualLump: '8,868' }
+  }
+  // Enterprise is "Custom" — handled by data-static-amount (not present
+  // here; the markup doesn't have a numeric amount to swap).
+};
+
+function formatNumber(n) {
+  return Number(n).toLocaleString('en-GB');
+}
+
+// Render every numeric tier card. Skips Enterprise (no entry in
+// TIER_PRICES). Respects data-static-sub on .tier-price-sub elements
+// (used by Business to keep "Sales-led" not overwritten with "Billed
+// monthly").
+function renderPrices() {
+  const region = (window.CygenixRegion?.get() || { currency: 'GBP', symbol: '£' });
+  const period = window.cygenixBilling || 'monthly';
+
+  document.querySelectorAll('.tier[data-tier]').forEach(card => {
+    const tierKey = card.dataset.tier;
+    const data = TIER_PRICES[tierKey];
+    if (!data) return;
+    const prices = data[region.currency] || data.GBP;
+    const amount = prices[period];
+
+    const currencyEl = card.querySelector('.tier-price .currency');
+    const amountEl   = card.querySelector('.tier-price .amount');
+    const subEl      = card.querySelector('.tier-price-sub');
+
+    if (currencyEl) currencyEl.textContent = region.symbol;
+    if (amountEl)   amountEl.textContent   = formatNumber(amount);
+    if (subEl && subEl.dataset.staticSub !== 'true') {
+      subEl.textContent = (period === 'monthly')
+        ? 'Billed monthly'
+        : `Billed annually · ${region.symbol}${prices.annualLump}/year`;
+    }
+  });
+}
+
 // ─── Tier selection ─────────────────────────────────────────────────────
 // Click anywhere on a card → moves the .featured class (and visible badge
 // + glow border) to that card. Mirrors the behaviour on /pricing exactly.
@@ -266,15 +353,77 @@ function selectTier(name) {
 
 // ─── Billing toggle ─────────────────────────────────────────────────────
 function setBilling(period) {
-  const amounts = document.querySelectorAll('.tier-price .amount[data-monthly]');
-  amounts.forEach(el => { el.textContent = el.dataset[period]; });
-  const subs = document.querySelectorAll('.tier-price-sub[data-monthly]');
-  subs.forEach(el => { el.textContent = el.dataset[period]; });
   document.getElementById('bill-monthly').classList.toggle('active', period === 'monthly');
   document.getElementById('bill-annual').classList.toggle('active', period === 'annual');
   window.cygenixBilling = period;
+  renderPrices();
 }
 window.cygenixBilling = 'monthly';
+
+// ─── Region selector ─────────────────────────────────────────────────────
+// Wires up the dropdown in the nav. cygenix-region.js handles persistence.
+(function setupRegionSelector() {
+  function init() {
+    if (!window.CygenixRegion) return setTimeout(init, 50);
+
+    const sel    = document.getElementById('region-selector');
+    const btn    = document.getElementById('region-selector-btn');
+    const menu   = document.getElementById('region-selector-menu');
+    const flagEl = document.getElementById('region-current-flag');
+    const codeEl = document.getElementById('region-current-code');
+    if (!sel || !btn || !menu) return;
+
+    menu.innerHTML = window.CygenixRegion.SUPPORTED.map(r =>
+      `<button type="button" data-currency="${r.currency}">
+         <span class="flag">${r.flag}</span>
+         <span class="label">${r.label}</span>
+         <span class="region-label">${r.regionLabel}</span>
+       </button>`
+    ).join('');
+
+    function reflect() {
+      const cur = window.CygenixRegion.get();
+      flagEl.textContent = cur.flag;
+      codeEl.textContent = cur.code;
+      menu.querySelectorAll('button[data-currency]').forEach(b => {
+        b.classList.toggle('active', b.dataset.currency === cur.currency);
+      });
+    }
+    reflect();
+    renderPrices();
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sel.classList.toggle('open');
+      btn.setAttribute('aria-expanded', sel.classList.contains('open') ? 'true' : 'false');
+    });
+
+    menu.addEventListener('click', (e) => {
+      const target = e.target.closest('button[data-currency]');
+      if (!target) return;
+      window.CygenixRegion.set(target.dataset.currency);
+      sel.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (sel.classList.contains('open') && !sel.contains(e.target)) {
+        sel.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    window.CygenixRegion.onChange(() => {
+      reflect();
+      renderPrices();
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
 
 // ─── MSAL email helper ──────────────────────────────────────────────────
 // Reads the signed-in user's email straight from MSAL's localStorage cache
@@ -318,7 +467,12 @@ async function startCheckout(tier, btn) {
     const r = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tier, billing, userEmail: getUserEmail() })
+      body: JSON.stringify({
+        tier,
+        billing,
+        currency: (window.CygenixRegion?.get()?.currency) || 'GBP',
+        userEmail: getUserEmail()
+      })
     });
 
     const data = await r.json().catch(() => null);

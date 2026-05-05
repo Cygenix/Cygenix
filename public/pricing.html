@@ -46,6 +46,27 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}
 .nav-cta:hover{background:var(--accent2);color:#fff}
 
+/* Region selector — sits to the LEFT of the Log in CTA in the nav.
+   Closed state: flag + currency code, e.g. "🇬🇧 GBP". Click toggles a small
+   dropdown of all three options. Persists choice in localStorage via
+   cygenix-region.js. */
+.region-selector{position:relative;margin-right:0.6rem}
+.region-selector-btn{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--text2);border:0.5px solid var(--border2);border-radius:6px;padding:0.4rem 0.7rem;font-size:13px;cursor:pointer;font-family:var(--mono);letter-spacing:0.04em;transition:all 0.2s}
+.region-selector-btn:hover{color:var(--text);border-color:var(--text2)}
+.region-selector-btn .chev{font-size:10px;color:var(--text3);transition:transform 0.2s}
+.region-selector.open .region-selector-btn .chev{transform:rotate(180deg)}
+.region-selector-menu{position:absolute;top:calc(100% + 6px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:4px;min-width:200px;box-shadow:0 8px 24px rgba(0,0,0,0.4);display:none;z-index:200}
+.region-selector.open .region-selector-menu{display:block}
+.region-selector-menu button{display:flex;align-items:center;gap:10px;width:100%;background:transparent;border:none;color:var(--text);padding:0.55rem 0.7rem;border-radius:6px;font-family:var(--serif);font-size:13px;text-align:left;cursor:pointer;transition:background 0.15s}
+.region-selector-menu button:hover{background:var(--bg3)}
+.region-selector-menu button.active{background:var(--bg3);color:var(--accent)}
+.region-selector-menu .flag{font-size:16px;line-height:1}
+.region-selector-menu .label{flex:1;font-family:var(--mono);font-size:12px;letter-spacing:0.04em}
+.region-selector-menu .region-label{color:var(--text3);font-size:11px;font-family:var(--mono);letter-spacing:0.04em}
+@media(max-width:640px){
+  .region-selector-btn{padding:0.35rem 0.55rem;font-size:11px}
+}
+
 /* Hero */
 .pricing-hero{padding:9rem 2rem 3rem;text-align:center;position:relative;z-index:1}
 .hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--glow);border:0.5px solid rgba(79,142,255,0.3);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:500;color:var(--accent);font-family:var(--mono);letter-spacing:0.05em;margin-bottom:1.5rem}
@@ -186,6 +207,7 @@ footer a:hover{text-decoration:underline}
   .trust-grid{grid-template-columns:1fr;gap:1.5rem}
 }
 </style>
+<script src="/cygenix-region.js" defer></script>
 </head>
 <body>
 
@@ -199,7 +221,17 @@ footer a:hover{text-decoration:underline}
     <a href="/pricing.html" class="active">Pricing</a>
     <a href="#" onclick="openContactModal();return false">Contact us</a>
   </div>
-  <a href="/login.html" class="nav-cta">Log in →</a>
+  <div style="display:flex;align-items:center">
+    <div class="region-selector" id="region-selector">
+      <button type="button" class="region-selector-btn" id="region-selector-btn" aria-haspopup="true" aria-expanded="false">
+        <span class="flag" id="region-current-flag">🇬🇧</span>
+        <span id="region-current-code">GBP</span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="region-selector-menu" role="menu" id="region-selector-menu"></div>
+    </div>
+    <a href="/login.html" class="nav-cta">Log in →</a>
+  </div>
 </nav>
 
 <!-- ===================== HERO ===================== -->
@@ -227,10 +259,10 @@ footer a:hover{text-decoration:underline}
     <div class="tier-tagline">For consultants and small teams running occasional migrations.</div>
     <div class="tier-price">
       <span class="currency">£</span>
-      <span class="amount" data-monthly="99" data-annual="79">99</span>
+      <span class="amount">99</span>
       <span class="period">/month</span>
     </div>
-    <div class="tier-price-sub" data-monthly="Billed monthly" data-annual="Billed annually · £948/year">Billed monthly</div>
+    <div class="tier-price-sub">Billed monthly</div>
     <a href="#" class="tier-cta primary" onclick="startCheckout('starter');return false">Start 14-day free trial →</a>
     <ul class="tier-features">
       <li><strong>1 migration</strong> at a time</li>
@@ -260,10 +292,10 @@ footer a:hover{text-decoration:underline}
     <div class="tier-tagline">For growing teams running multiple migrations in parallel.</div>
     <div class="tier-price">
       <span class="currency">£</span>
-      <span class="amount" data-monthly="299" data-annual="239">299</span>
+      <span class="amount">299</span>
       <span class="period">/month</span>
     </div>
-    <div class="tier-price-sub" data-monthly="Billed monthly" data-annual="Billed annually · £2,868/year">Billed monthly</div>
+    <div class="tier-price-sub">Billed monthly</div>
     <a href="#" class="tier-cta primary" onclick="startCheckout('pro');return false">Start 14-day free trial →</a>
     <ul class="tier-features">
       <li><strong>3 migrations</strong> in parallel</li>
@@ -294,10 +326,10 @@ footer a:hover{text-decoration:underline}
     <div class="tier-tagline">For teams running large-scale, mission-critical migrations.</div>
     <div class="tier-price">
       <span class="currency">£</span>
-      <span class="amount" data-monthly="799" data-annual="639">799</span>
+      <span class="amount">799</span>
       <span class="period">/month</span>
     </div>
-    <div class="tier-price-sub" data-monthly="Billed monthly" data-annual="Billed annually · £7,668/year">Billed monthly</div>
+    <div class="tier-price-sub">Billed monthly</div>
     <a href="#" class="tier-cta secondary" onclick="openContactModal('business');return false">Contact sales →</a>
     <ul class="tier-features">
       <li><strong>10 migrations</strong> in parallel</li>
@@ -605,30 +637,162 @@ footer a:hover{text-decoration:underline}
    it ships as a single drop-in file with no external JS deps.
    -------------------------------------------------------------- */
 
+// ─── Pricing data ────────────────────────────────────────────────────────
+// Single source of truth for all visible prices. Numbers are integer
+// minor units? No — these are display values. The Stripe Price IDs in the
+// backend are what actually get charged; these are just for the UI.
+// When you change a number here, also update the matching Stripe Price's
+// currency_options in the Stripe Dashboard. See PHASE-4-DEPLOYMENT.md.
+//
+// annualLump = the total billed once a year (display only; Stripe charges
+//              the per-year price stored on the annual Price object).
+const TIER_PRICES = {
+  starter: {
+    GBP: { monthly: 99,  annual: 79,  annualLump: '948'   },
+    USD: { monthly: 129, annual: 103, annualLump: '1,236' },
+    EUR: { monthly: 115, annual: 92,  annualLump: '1,104' }
+  },
+  pro: {
+    GBP: { monthly: 299, annual: 239, annualLump: '2,868' },
+    USD: { monthly: 389, annual: 309, annualLump: '3,708' },
+    EUR: { monthly: 349, annual: 279, annualLump: '3,348' }
+  },
+  business: {
+    GBP: { monthly: 799, annual: 639, annualLump: '7,668' },
+    USD: { monthly: 1039, annual: 829, annualLump: '9,948' },
+    EUR: { monthly: 929, annual: 739, annualLump: '8,868' }
+  }
+  // Enterprise is "Custom" — no per-currency price.
+};
+
+function formatNumber(n) {
+  // Thin thousands separator using browser locale of the user's chosen
+  // currency. Keeps 99 as "99" but turns 1039 into "1,039" (or "1.039"
+  // for EUR locales — but consistency across the page beats locale-perfect
+  // formatting for these display amounts).
+  return Number(n).toLocaleString('en-GB');
+}
+
+// Render every tier card's price block based on the current region +
+// billing period. Called on initial load, on region change, and on
+// monthly/annual toggle.
+function renderPrices() {
+  const region  = (window.CygenixRegion?.get() || { currency: 'GBP', symbol: '£' });
+  const period  = window.cygenixBilling || 'monthly';
+
+  document.querySelectorAll('.tier[data-tier]').forEach(card => {
+    const tierKey = card.dataset.tier;
+    const data = TIER_PRICES[tierKey];
+    if (!data) return; // enterprise — leave "Custom" alone
+    const prices = data[region.currency] || data.GBP;
+    const amount = prices[period];
+
+    const currencyEl = card.querySelector('.tier-price .currency');
+    const amountEl   = card.querySelector('.tier-price .amount');
+    const subEl      = card.querySelector('.tier-price-sub');
+
+    if (currencyEl) currencyEl.textContent = region.symbol;
+    if (amountEl)   amountEl.textContent   = formatNumber(amount);
+    if (subEl) {
+      subEl.textContent = (period === 'monthly')
+        ? 'Billed monthly'
+        : `Billed annually · ${region.symbol}${prices.annualLump}/year`;
+    }
+  });
+}
+
 // Tier selection: clicking any tier card moves the .featured class
 // (and therefore the highlight border + visible badge) to that card.
-// CTA-button clicks bubble up to the card so picking a CTA also
-// updates the selected state. Page reload resets to Pro because the
-// HTML ships with .featured on Pro (no localStorage by design).
 function selectTier(name){
   document.querySelectorAll('.tier').forEach(card => {
     card.classList.toggle('featured', card.dataset.tier === name);
   });
 }
 
-// Billing toggle: swap monthly / annual prices on every .amount and
-// .tier-price-sub element that has a data-monthly / data-annual attr.
+// Billing toggle: stores the period on window and re-renders all prices.
 function setBilling(period){
-  const amounts = document.querySelectorAll('.tier-price .amount[data-monthly]');
-  amounts.forEach(el => { el.textContent = el.dataset[period]; });
-  const subs = document.querySelectorAll('.tier-price-sub[data-monthly]');
-  subs.forEach(el => { el.textContent = el.dataset[period]; });
   document.getElementById('bill-monthly').classList.toggle('active', period === 'monthly');
-  document.getElementById('bill-annual').classList.toggle('active', period === 'annual');
-  // Stash on window so checkout flow can pick the right price
+  document.getElementById('bill-annual').classList.toggle('active',  period === 'annual');
   window.cygenixBilling = period;
+  renderPrices();
 }
 window.cygenixBilling = 'monthly';
+
+// ─── Region selector ─────────────────────────────────────────────────────
+// Wires up the dropdown in the nav. cygenix-region.js handles persistence
+// and broadcasts changes; this code is just the UI glue.
+(function setupRegionSelector() {
+  function init() {
+    if (!window.CygenixRegion) {
+      // Module hasn't loaded yet — try again shortly. Avoids a race with
+      // `defer` on slow connections.
+      return setTimeout(init, 50);
+    }
+
+    const sel    = document.getElementById('region-selector');
+    const btn    = document.getElementById('region-selector-btn');
+    const menu   = document.getElementById('region-selector-menu');
+    const flagEl = document.getElementById('region-current-flag');
+    const codeEl = document.getElementById('region-current-code');
+    if (!sel || !btn || !menu) return;
+
+    // Build the dropdown options
+    menu.innerHTML = window.CygenixRegion.SUPPORTED.map(r =>
+      `<button type="button" data-currency="${r.currency}">
+         <span class="flag">${r.flag}</span>
+         <span class="label">${r.label}</span>
+         <span class="region-label">${r.regionLabel}</span>
+       </button>`
+    ).join('');
+
+    // Reflect current choice in button + dropdown active state
+    function reflect() {
+      const cur = window.CygenixRegion.get();
+      flagEl.textContent = cur.flag;
+      codeEl.textContent = cur.code;
+      menu.querySelectorAll('button[data-currency]').forEach(b => {
+        b.classList.toggle('active', b.dataset.currency === cur.currency);
+      });
+    }
+    reflect();
+    renderPrices();
+
+    // Toggle dropdown
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sel.classList.toggle('open');
+      btn.setAttribute('aria-expanded', sel.classList.contains('open') ? 'true' : 'false');
+    });
+
+    // Pick a currency
+    menu.addEventListener('click', (e) => {
+      const target = e.target.closest('button[data-currency]');
+      if (!target) return;
+      window.CygenixRegion.set(target.dataset.currency);
+      sel.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (sel.classList.contains('open') && !sel.contains(e.target)) {
+        sel.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    // React to changes (whether triggered here or in another tab)
+    window.CygenixRegion.onChange(() => {
+      reflect();
+      renderPrices();
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
 
 // Expandable technical details on each tier card.
 function toggleTech(btn){
@@ -654,6 +818,7 @@ function toggleFaq(btn){
 // Function App Settings, looked up from the {tier, billing} pair.
 async function startCheckout(tier){
   const billing = window.cygenixBilling || 'monthly';
+  const currency = (window.CygenixRegion?.get()?.currency) || 'GBP';
 
   // Find the button that was clicked so we can show a loading state.
   // event is set by the inline onclick — defensive in case it's not.
@@ -671,7 +836,7 @@ async function startCheckout(tier){
     const res = await fetch('/api/create-checkout-session', {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ tier, billing })
+      body:    JSON.stringify({ tier, billing, currency })
     });
 
     if (!res.ok) {
