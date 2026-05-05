@@ -565,10 +565,26 @@ body.cyg-collapsed .topbar{left:54px}
 
   function describeConnString(s) {
     if (!s) return 'Configured connection';
-    const server = (s.match(/(?:Server|Data Source)\s*=\s*([^;]+)/i) || [])[1];
+
+    // mssql://USER:PASS@HOST:PORT/DBNAME — parse with URL for cleanliness.
+    // Strip credentials so we never show user/password to the user.
+    if (/^mssql:\/\//i.test(s)) {
+      try {
+        const u = new URL(s);
+        const host = decodeURIComponent(u.hostname);
+        const port = u.port ? `:${u.port}` : '';
+        const db   = decodeURIComponent((u.pathname || '/').slice(1));
+        if (host && db) return `${db} on ${host}${port}`;
+        if (host) return `${host}${port}`;
+        if (db)   return db;
+      } catch { /* fall through to ADO.NET parsing */ }
+    }
+
+    // ADO.NET / SqlClient format: "Server=X;Database=Y;..." or "Data Source=X;Initial Catalog=Y;..."
+    const server   = (s.match(/(?:Server|Data Source)\s*=\s*([^;]+)/i) || [])[1];
     const database = (s.match(/(?:Database|Initial Catalog)\s*=\s*([^;]+)/i) || [])[1];
     if (server && database) return `${database.trim()} on ${server.trim()}`;
-    if (server) return server.trim();
+    if (server)   return server.trim();
     if (database) return database.trim();
     return 'Configured connection';
   }
