@@ -7,6 +7,7 @@ const { app } = require('@azure/functions');
 // and app.timer() calls run at load time.
 require('./schedules');
 require('./agent'); 
+require('./agent-source-schema');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
