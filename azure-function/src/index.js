@@ -1596,6 +1596,17 @@ app.http('create-checkout-session', {
       const tier    = String(body.tier    || '').toLowerCase().trim();
       const billing = String(body.billing || '').toLowerCase().trim();
 
+      // Currency. Pricing pages send 'GBP'/'USD'/'EUR'; Stripe expects
+      // lowercase ISO 4217 ('gbp'/'usd'/'eur'). Default to GBP if missing
+      // so older callers that never pass currency still work.
+      const currencyRaw = String(body.currency || 'GBP').toUpperCase().trim();
+      const SUPPORTED_CURRENCIES = ['GBP', 'USD', 'EUR'];
+      if (!SUPPORTED_CURRENCIES.includes(currencyRaw)) {
+        return err(400,
+          `Unsupported currency "${currencyRaw}". Supported: ${SUPPORTED_CURRENCIES.join(', ')}.`);
+      }
+      const currency = currencyRaw.toLowerCase();
+
       // Optional caller email — pre-fills the email field in Stripe Checkout
       // so the user can't accidentally type a different one and trigger a
       // mismatch on /api/data/checkout-status. Source of truth order:
@@ -1638,6 +1649,12 @@ app.http('create-checkout-session', {
         mode: 'subscription',
         payment_method_types: ['card'],
         line_items: [{ price: priceId, quantity: 1 }],
+        // Currency to charge in. Stripe will pick the matching
+        // currency_options entry on the Price object. If the Price doesn't
+        // have currency_options for this currency configured, Stripe will
+        // throw — that's the deployment hint to add USD/EUR options to
+        // each Price in the Stripe Dashboard. See PHASE-4-DEPLOYMENT.md.
+        currency,
         // Pre-fill the email field with the signed-in MSAL email so
         // checkout-status's email check (defending against session-id
         // sharing across users) doesn't false-positive on a typo. If the
@@ -1653,7 +1670,11 @@ app.http('create-checkout-session', {
           trial_period_days: 14,
           // Stash the tier on the subscription itself so the webhook handler
           // can read it back without another lookup.
-          metadata: { cygenix_tier: tier, cygenix_billing: billing }
+          metadata: {
+            cygenix_tier: tier,
+            cygenix_billing: billing,
+            cygenix_currency: currency
+          }
         },
         // Same metadata on the session for traceability. Includes
         // cygenix_user_id (the signed-in MSAL email) so checkout-status
@@ -1662,6 +1683,7 @@ app.http('create-checkout-session', {
         metadata: {
           cygenix_tier: tier,
           cygenix_billing: billing,
+          cygenix_currency: currency,
           ...(callerEmail ? { cygenix_user_id: callerEmail } : {})
         },
         // Where Stripe sends the user after they finish (or bail).
@@ -1671,7 +1693,7 @@ app.http('create-checkout-session', {
         billing_address_collection: 'required'
       });
 
-      ctx.log(`Created Stripe Checkout Session ${session.id} for ${tier}:${billing}`);
+      ctx.log(`Created Stripe Checkout Session ${session.id} for ${tier}:${billing}:${currency}`);
       return ok({ url: session.url, sessionId: session.id });
 
     } catch (e) {
