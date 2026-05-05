@@ -93,6 +93,8 @@ DEFAULT VALUE FORMATS by type:
 - enum:        { "options": ["voided","posted","draft"], "selected": ["posted"] }
 - text:        ""  (empty)
 
+When the input includes "Sample values" for a column, those are REAL distinct values pulled from the actual database. Use them verbatim in enum suggestions — do NOT invent values like "active" if the real values are "In progress" / "Closed". When sample values are given, prefer enum type over boolean for that column.
+
 Never invent column names. If a column you'd want isn't in the input, omit that suggestion.`;
 
 // ── Helpers ─────────────────────────────────────────────────────────────
@@ -105,6 +107,108 @@ function compressTablesForPrompt(tables) {
     name: t.name,
     columns: (t.columns || []).slice(0, 30).map(c => `${c.name}:${c.dataType || 'unknown'}`)
   }));
+}
+
+// ── Connection helpers (mirror agent-source-schema) ─────────────────────
+function parseMssqlUrl(connString) {
+  let u;
+  try { u = new URL(connString); }
+  catch (e) { throw new Error(`Invalid connection string: ${e.message}`); }
+  if (u.protocol !== 'mssql:') {
+    throw new Error(`Unsupported protocol: ${u.protocol} (expected mssql:)`);
+  }
+  const params  = u.searchParams;
+  const encrypt = params.get('encrypt') !== 'false';
+  const trust   = params.get('trustServerCertificate') === 'true';
+  return {
+    server:   decodeURIComponent(u.hostname),
+    port:     u.port ? Number(u.port) : 1433,
+    database: decodeURIComponent((u.pathname || '/').slice(1)),
+    user:     decodeURIComponent(u.username || ''),
+    password: decodeURIComponent(u.password || ''),
+    options: { encrypt, trustServerCertificate: trust, enableArithAbort: true },
+    requestTimeout:    15000,
+    connectionTimeout: 10000
+  };
+}
+
+async function connectSource(srcConnStr, srcFnUrl, ctx) {
+  const sql = require('mssql');
+  if (srcConnStr) {
+    const cfg = parseMssqlUrl(srcConnStr);
+    ctx.log(`[suggest-criteria] sampling via direct: ${cfg.database}@${cfg.server}`);
+    return sql.connect(cfg);
+  }
+  if (srcFnUrl) {
+    const { DefaultAzureCredential } = require('@azure/identity');
+    ctx.log('[suggest-criteria] sampling via Managed Identity');
+    const credential = new DefaultAzureCredential();
+    const tokenResp  = await credential.getToken('https://database.windows.net/.default');
+    return sql.connect({
+      server:   process.env.SQL_SERVER,
+      database: process.env.SQL_DATABASE,
+      options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
+      authentication: {
+        type: 'azure-active-directory-access-token',
+        options: { token: tokenResp.token }
+      }
+    });
+  }
+  return null;
+}
+
+// Decide which columns are worth sampling. We're looking for short-string
+// columns that smell like enums/status fields — varchar/nvarchar/char with
+// modest length. Date and numeric types don't need samples (Haiku already
+// knows what to suggest from the type alone).
+function pickSampleableColumns(tables) {
+  const SHORT_STRING_TYPES = new Set(['varchar','nvarchar','char','nchar']);
+  const STATUS_HINT_RX = /(status|state|type|flag|kind|code|active|posted|closed|void|deleted|archived)/i;
+  const picks = []; // [{schema, table, column}]
+  let cap = 12; // global cap on samples per call to keep latency bounded
+  for (const t of tables) {
+    if (cap <= 0) break;
+    for (const c of (t.columns || [])) {
+      if (cap <= 0) break;
+      const dt = String(c.dataType || '').toLowerCase();
+      if (!SHORT_STRING_TYPES.has(dt)) continue;
+      if (!STATUS_HINT_RX.test(c.name)) continue;
+      picks.push({ table: t.name, column: c.name });
+      cap--;
+    }
+  }
+  return picks;
+}
+
+async function sampleColumns(pool, picks, ctx) {
+  if (!pool || picks.length === 0) return {};
+  const samples = {}; // "table.column" -> [val1, val2, ...]
+  const CHUNK = 6; // run a few queries in parallel
+  for (let i = 0; i < picks.length; i += CHUNK) {
+    const slice = picks.slice(i, i + CHUNK);
+    await Promise.all(slice.map(async (p) => {
+      try {
+        // SELECT TOP 5 distinct values, ignoring NULL/empty.
+        const tableName = `[dbo].[${p.table.replace(/]/g, ']]')}]`;
+        const colName = `[${p.column.replace(/]/g, ']]')}]`;
+        const r = await pool.request().query(`
+          SELECT TOP 5 ${colName} AS v
+          FROM ${tableName}
+          WHERE ${colName} IS NOT NULL AND LTRIM(RTRIM(CAST(${colName} AS NVARCHAR(200)))) <> ''
+          GROUP BY ${colName}
+          ORDER BY COUNT(*) DESC
+        `);
+        const vals = r.recordset.map(row => row.v).filter(v => v != null).map(String);
+        if (vals.length > 0) {
+          samples[`${p.table}.${p.column}`] = vals;
+        }
+      } catch (e) {
+        // Silently skip — table may have no rows, column type may not coerce, etc.
+        ctx.log(`[suggest-criteria] sample skipped for ${p.table}.${p.column}: ${e.message}`);
+      }
+    }));
+  }
+  return samples;
 }
 
 // ── Route registration (v4 programming model) ───────────────────────────
@@ -136,17 +240,45 @@ app.http('agent-suggest-criteria', {
     const compressed = compressTablesForPrompt(tables);
     const totalColCount = compressed.reduce((s, t) => s + t.columns.length, 0);
 
+    // Optional inline sampling: if source connection details were passed,
+    // pick a few enum-likely columns and fetch their distinct values from
+    // the actual database. Haiku then grounds its enum suggestions in
+    // real values instead of inventing things like 'active'.
+    const srcConnStr = (body.srcConnString || '').trim();
+    const srcFnUrl   = (body.srcFnUrl     || '').trim();
+    let samples = {};
+    if (srcConnStr || srcFnUrl) {
+      let pool;
+      try {
+        pool = await connectSource(srcConnStr, srcFnUrl, ctx);
+        if (pool) {
+          const picks = pickSampleableColumns(compressed);
+          samples = await sampleColumns(pool, picks, ctx);
+        }
+      } catch (e) {
+        // Sampling is best-effort — if the source connect fails, proceed
+        // without samples rather than blocking the suggestion.
+        ctx.log(`[suggest-criteria] sampling skipped: ${e.message}`);
+      } finally {
+        try { if (pool) await pool.close(); } catch { /* ignore */ }
+      }
+    }
+    const sampleEntries = Object.entries(samples);
+    const sampleBlock = sampleEntries.length > 0
+      ? `\n\nSample values (real distinct values from the actual database):\n${sampleEntries.map(([k, v]) => `- ${k}: [${v.map(x => `"${x}"`).join(', ')}]`).join('\n')}`
+      : '';
+
     const userMsg = `Group: ${groupName}
 Description: ${groupDesc || '(none)'}
 Total tables in group: ${tables.length} (showing first ${compressed.length})
 Total columns sampled: ${totalColCount}
 
 Tables and columns:
-${compressed.map(t => `- ${t.name}: [${t.columns.join(', ')}]`).join('\n')}
+${compressed.map(t => `- ${t.name}: [${t.columns.join(', ')}]`).join('\n')}${sampleBlock}
 
 Suggest 3–6 filter criteria for migrating this group. Return JSON only.`;
 
-    ctx.log(`[suggest-criteria] group=${groupId} tables=${tables.length} sampled=${compressed.length} cols=${totalColCount}`);
+    ctx.log(`[suggest-criteria] group=${groupId} tables=${tables.length} sampled=${compressed.length} cols=${totalColCount} valueSamples=${sampleEntries.length}`);
 
     let resp;
     try {
