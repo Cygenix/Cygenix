@@ -267,6 +267,20 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <span style="font-size:11px;color:var(--text3);font-weight:400;margin-left:auto">Drag to reorder · click job on left to add</span>
       </div>
 
+      <!-- Orphaned-steps banner: shown when this project's groups contain
+           steps whose source jobs belong to a DIFFERENT project. Hidden by
+           default; populated and shown by detectOrphanedSteps(). -->
+      <div id="orphan-banner" style="display:none;background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.35);border-radius:8px;padding:0.6rem 0.85rem;margin:0.5rem 0;align-items:center;gap:0.75rem;flex-wrap:wrap">
+        <span style="font-size:18px;line-height:1">⚠️</span>
+        <div style="flex:1;min-width:200px">
+          <div style="font-size:12px;font-weight:600;color:var(--amber)" id="orphan-banner-title">This project has steps that belong elsewhere</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px" id="orphan-banner-detail"></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="showOrphanDetails()" title="See exactly which steps are orphaned and where they came from">Details</button>
+        <button class="btn btn-amber btn-sm" onclick="cleanupOrphanedSteps()" title="Remove orphaned steps from this project (does NOT delete the underlying jobs)">Remove orphaned</button>
+        <button class="btn btn-ghost btn-sm" onclick="dismissOrphanBanner()" title="Hide this notice for this session">✕</button>
+      </div>
+
       <!-- Master selection bar -->
       <div class="plan-select-bar" id="plan-select-bar" style="display:none">
         <input type="checkbox" class="sel-check" id="sel-all" onchange="setAllEnabled(this.checked)" title="Select all / none">
@@ -627,7 +641,194 @@ function hydrateProjectIntoUI(){
   document.getElementById('proj-tgt-conn').value = globalTgtConn() || '';
   renderSteps();
   renderJobs();
+  // Surface any cross-project pollution: steps in this project's groups whose
+  // underlying job records actually belong to a different project. Runs every
+  // time we hydrate so switching projects re-evaluates the warning.
+  detectOrphanedSteps();
 }
+
+// ── Orphaned-step detection & cleanup ────────────────────────────────────────
+// A "step" inside project.groups[].steps carries a jobId that points at a
+// record in localStorage 'cygenix_jobs'. Each job has its own projectId.
+// Sometimes the project's groups end up with steps whose source job belongs
+// to a DIFFERENT project — usually because the same project state got saved
+// against the wrong active id at some earlier point, or because the project
+// was duplicated/imported. The user sees jobs they never added.
+//
+// Strategy: cache the latest scan on _orphanState so the banner buttons can
+// act on it without re-scanning. Distinguish three step health states so we
+// don't accidentally delete legitimate-but-unusual steps:
+//   ok           — jobId resolves to a job whose projectId matches, OR step
+//                  has no jobId at all (very old/legacy step — leave alone)
+//   missing-job  — jobId is set but the job no longer exists in the library
+//                  (job was deleted). Don't auto-clean — could be a different
+//                  problem. Surface as info only.
+//   wrong-project— jobId resolves to a job whose projectId is a real,
+//                  different project's id. THIS is the bug we clean up.
+//   unassigned   — jobId resolves to a job with no projectId at all. Common
+//                  for legacy jobs; treat as ok (don't clean).
+const _orphanState = { wrongProject: [], missingJob: [], dismissed: false };
+
+function detectOrphanedSteps(){
+  const banner = document.getElementById('orphan-banner');
+  if (!banner) return;
+  _orphanState.wrongProject = [];
+  _orphanState.missingJob   = [];
+
+  if (_orphanState.dismissed){
+    banner.style.display = 'none';
+    return;
+  }
+  if (!project || !project.id || !Array.isArray(project.groups)){
+    banner.style.display = 'none';
+    return;
+  }
+
+  // Build a lookup: jobId → job. Done once, not per-step, because cygenix_jobs
+  // can hit dozens of entries.
+  let jobs = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch { jobs = []; }
+  const jobById = new Map();
+  jobs.forEach(j => { if (j && j.id) jobById.set(j.id, j); });
+
+  // Build a set of valid project ids — only flag a step as "wrong project"
+  // if the source job's projectId points at an actual existing project. If
+  // the projectId is just stale/garbage, treat as missing-job to be safe.
+  const validProjectIds = new Set(projects.map(p => p.id));
+
+  project.groups.forEach((g, gi) => {
+    (g.steps || []).forEach((s, si) => {
+      if (!s || !s.jobId) return; // legacy/manual step — leave alone
+      const job = jobById.get(s.jobId);
+      if (!job){
+        _orphanState.missingJob.push({ gi, si, step:s });
+        return;
+      }
+      const sourcePid = job.projectId || '';
+      if (!sourcePid) return;                       // unassigned source job — fine
+      if (sourcePid === project.id) return;         // matches active project — fine
+      if (!validProjectIds.has(sourcePid)) {
+        // Job claims a projectId we don't recognise — could be a stale/orphan
+        // pointer rather than another live project. Treat as missing rather
+        // than wrong-project to avoid aggressive cleanup.
+        _orphanState.missingJob.push({ gi, si, step:s, jobProjectId:sourcePid });
+        return;
+      }
+      const otherProj = projects.find(p => p.id === sourcePid);
+      _orphanState.wrongProject.push({
+        gi, si,
+        step: s,
+        jobProjectId: sourcePid,
+        jobProjectName: otherProj ? (otherProj.name || '(unnamed)') : '(unknown project)'
+      });
+    });
+  });
+
+  const wrongCount = _orphanState.wrongProject.length;
+  const missingCount = _orphanState.missingJob.length;
+
+  if (!wrongCount && !missingCount){
+    banner.style.display = 'none';
+    return;
+  }
+
+  // Build the banner text. Wrong-project is the loud case; missing-job is a
+  // softer footnote shown only when relevant.
+  const titleEl  = document.getElementById('orphan-banner-title');
+  const detailEl = document.getElementById('orphan-banner-detail');
+
+  if (wrongCount){
+    // List the projects the orphaned steps came from, deduplicated, so the
+    // user can recognise where the leak came from.
+    const projNames = [...new Set(_orphanState.wrongProject.map(o => o.jobProjectName))];
+    const projSummary = projNames.slice(0, 3).join(', ') + (projNames.length > 3 ? ` +${projNames.length - 3} more` : '');
+    titleEl.textContent = wrongCount + ' step' + (wrongCount===1?'':'s') + ' in this project belong elsewhere';
+    let detail = 'Source projects: ' + projSummary + '.';
+    if (missingCount){
+      detail += ' Also ' + missingCount + ' step' + (missingCount===1?'':'s') + ' point to a job that no longer exists.';
+    }
+    detail += ' Click "Remove orphaned" to strip them — your saved jobs are not affected.';
+    detailEl.textContent = detail;
+  } else {
+    // Only missing-job cases. Show a quieter info banner — no destructive action.
+    titleEl.textContent = missingCount + ' step' + (missingCount===1?'':'s') + ' point to a job that no longer exists';
+    detailEl.textContent = 'These steps will fail at run time. Use "Details" to review, then either delete them manually or recreate the underlying job.';
+  }
+
+  banner.style.display = 'flex';
+
+  // Hide the destructive button when there's nothing to clean up.
+  const removeBtn = banner.querySelector('button.btn-amber');
+  if (removeBtn) removeBtn.style.display = wrongCount ? '' : 'none';
+}
+
+function showOrphanDetails(){
+  const w = _orphanState.wrongProject;
+  const m = _orphanState.missingJob;
+  if (!w.length && !m.length){
+    alert('No orphaned steps detected.');
+    return;
+  }
+  const lines = [];
+  if (w.length){
+    lines.push('Belongs to a different project (' + w.length + '):');
+    w.forEach(o => {
+      const grp = (project.groups[o.gi]?.name || 'group ' + (o.gi+1));
+      lines.push('  • ' + (o.step.name || '(unnamed step)') + '  —  in "' + grp + '", source project: ' + o.jobProjectName);
+    });
+  }
+  if (m.length){
+    if (lines.length) lines.push('');
+    lines.push('Source job no longer exists (' + m.length + '):');
+    m.forEach(o => {
+      const grp = (project.groups[o.gi]?.name || 'group ' + (o.gi+1));
+      lines.push('  • ' + (o.step.name || '(unnamed step)') + '  —  in "' + grp + '"');
+    });
+  }
+  alert(lines.join('\n'));
+}
+
+function cleanupOrphanedSteps(){
+  const w = _orphanState.wrongProject;
+  if (!w.length){
+    alert('Nothing to clean up.');
+    return;
+  }
+  const ok = confirm('Remove ' + w.length + ' orphaned step' + (w.length===1?'':'s') +
+    ' from this project?\n\nThis only removes them from this project\'s plan. ' +
+    'The underlying jobs in your jobs library are NOT deleted and remain available ' +
+    'in their original projects.');
+  if (!ok) return;
+
+  // Build a Set of (gi,si) pairs to remove, then walk each group's steps
+  // backwards and splice. We can't trust the original indices to stay valid
+  // after one splice, so the back-to-front walk inside each group is essential.
+  const toRemove = new Set(w.map(o => o.gi + ':' + o.si));
+  project.groups.forEach((g, gi) => {
+    if (!Array.isArray(g.steps)) return;
+    for (let si = g.steps.length - 1; si >= 0; si--){
+      if (toRemove.has(gi + ':' + si)){
+        g.steps.splice(si, 1);
+      }
+    }
+  });
+
+  // Persist immediately — this is a destructive operation; users expect it
+  // to "stick" without having to remember to hit Save.
+  saveProject();
+  // saveProject() calls hydrateProjectIntoUI? No — it doesn't. Re-render manually.
+  renderSteps();
+  detectOrphanedSteps();
+  showToast('Removed ' + w.length + ' orphaned step' + (w.length===1?'':'s'));
+}
+
+function dismissOrphanBanner(){
+  _orphanState.dismissed = true;
+  const banner = document.getElementById('orphan-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 // Effective connection strings — always the Dashboard global.
 // Kept as named functions so existing call sites don't need updating.
