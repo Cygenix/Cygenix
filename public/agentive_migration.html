@@ -548,14 +548,28 @@ body.cyg-collapsed .topbar{left:54px}
       return { source: null, target: null };
     }
 
+    // Honour the explicit *ConnMode flag rather than guessing from which
+    // field happens to be populated. Previously this guessed mode by field
+    // presence, which would mis-label a target whose mode was 'azure' but
+    // whose tgtFnUrl had not yet been populated (and vice versa). The
+    // mode flag is the source of truth — the field values are derived.
     let source = null;
-    if (c.srcFnUrl) {
+    if (c.srcConnMode === 'azure' && c.srcFnUrl) {
+      source = { label: describeFnUrl(c.srcFnUrl), kind: 'azure' };
+    } else if (c.srcConnMode === 'direct' && c.srcConnString) {
+      source = { label: describeConnString(c.srcConnString), kind: 'direct' };
+    } else if (c.srcFnUrl) {
+      // Fall-through for legacy data without an explicit mode flag.
       source = { label: describeFnUrl(c.srcFnUrl), kind: 'azure' };
     } else if (c.srcConnString) {
       source = { label: describeConnString(c.srcConnString), kind: 'direct' };
     }
     let target = null;
-    if (c.tgtFnUrl) {
+    if (c.tgtConnMode === 'azure' && c.tgtFnUrl) {
+      target = { label: describeFnUrl(c.tgtFnUrl), kind: 'azure' };
+    } else if (c.tgtConnMode === 'direct' && c.tgtConnString) {
+      target = { label: describeConnString(c.tgtConnString), kind: 'direct' };
+    } else if (c.tgtFnUrl) {
       target = { label: describeFnUrl(c.tgtFnUrl), kind: 'azure' };
     } else if (c.tgtConnString) {
       target = { label: describeConnString(c.tgtConnString), kind: 'direct' };
@@ -666,11 +680,16 @@ body.cyg-collapsed .topbar{left:54px}
       const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
         ? (CygenixConnections.get() || {})
         : {};
-      if (c.srcFnUrl) {
+      // Honour srcConnMode rather than guessing from field presence.
+      // See buildAgentMigrateBody() for full rationale.
+      const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
+      if (srcMode === 'azure' && c.srcFnUrl) {
         body.srcFnUrl = c.srcFnUrl;
-      } else if (c.srcConnString) {
+        if (c.srcFnKey) body.srcFnKey = c.srcFnKey;
+      } else if (srcMode === 'direct' && c.srcConnString) {
         body.srcConnString = c.srcConnString;
       }
+      body.srcConnMode = srcMode;
     } catch (e) {
       console.warn('[AgentiveMigration] could not read connection for schema load:', e.message);
     }
@@ -1288,8 +1307,15 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     try {
       const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
         ? (CygenixConnections.get() || {}) : {};
-      if (c.tgtFnUrl)        body.tgtFnUrl     = c.tgtFnUrl;
-      else if (c.tgtConnString) body.tgtConnString = c.tgtConnString;
+      // Honour tgtConnMode rather than guessing from field presence.
+      const tgtMode = c.tgtConnMode === 'azure' ? 'azure' : 'direct';
+      if (tgtMode === 'azure' && c.tgtFnUrl) {
+        body.tgtFnUrl = c.tgtFnUrl;
+        if (c.tgtFnKey) body.tgtFnKey = c.tgtFnKey;
+      } else if (tgtMode === 'direct' && c.tgtConnString) {
+        body.tgtConnString = c.tgtConnString;
+      }
+      body.tgtConnMode = tgtMode;
     } catch (e) {
       console.warn('[AgentiveMigration] could not read target connection:', e.message);
     }
@@ -1456,8 +1482,14 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
       try {
         const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
           ? (CygenixConnections.get() || {}) : {};
-        if (c.srcFnUrl)        reqBody.srcFnUrl     = c.srcFnUrl;
-        else if (c.srcConnString) reqBody.srcConnString = c.srcConnString;
+        const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
+        if (srcMode === 'azure' && c.srcFnUrl) {
+          reqBody.srcFnUrl = c.srcFnUrl;
+          if (c.srcFnKey) reqBody.srcFnKey = c.srcFnKey;
+        } else if (srcMode === 'direct' && c.srcConnString) {
+          reqBody.srcConnString = c.srcConnString;
+        }
+        reqBody.srcConnMode = srcMode;
       } catch { /* sampling will be skipped */ }
       const data = await api('/agent/suggest-criteria', {
         method: 'POST',
@@ -2095,8 +2127,14 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     try {
       const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
         ? (CygenixConnections.get() || {}) : {};
-      if (c.srcFnUrl)        reqBody.srcFnUrl     = c.srcFnUrl;
-      else if (c.srcConnString) reqBody.srcConnString = c.srcConnString;
+      const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
+      if (srcMode === 'azure' && c.srcFnUrl) {
+        reqBody.srcFnUrl = c.srcFnUrl;
+        if (c.srcFnKey) reqBody.srcFnKey = c.srcFnKey;
+      } else if (srcMode === 'direct' && c.srcConnString) {
+        reqBody.srcConnString = c.srcConnString;
+      }
+      reqBody.srcConnMode = srcMode;
     } catch { /* fall through to error path */ }
     if (!reqBody.srcFnUrl && !reqBody.srcConnString) {
       // Can't verify without a source connection — let the run proceed and
@@ -2432,15 +2470,39 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
   // source/target connections from localStorage. The agent backend prefers
   // body-supplied connections over its Cosmos record, so this guarantees
   // the agent operates on the same database the page is showing.
+  //
+  // IMPORTANT: We also send srcConnMode and tgtConnMode. The agent's
+  // verify-targets step uses these flags to disambiguate Azure-Function
+  // targets from direct-SQL targets — without them, an Azure-Function
+  // target whose tgtConnString happens to be empty was being reported back
+  // as "target not configured" because the agent had no signal that azure
+  // mode was the user's intent. Fix: send the mode explicitly, and only
+  // send the connection field that matches the chosen mode.
   function buildAgentMigrateBody(goal) {
     const out = { direction: 'source_to_target', goal };
     try {
       const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
         ? (CygenixConnections.get() || {}) : {};
-      if (c.srcConnString) out.srcConnString = c.srcConnString;
-      if (c.tgtConnString) out.tgtConnString = c.tgtConnString;
-      if (c.tgtFnUrl)      out.tgtFnUrl      = c.tgtFnUrl;
-      if (c.tgtFnKey)      out.tgtFnKey      = c.tgtFnKey;
+
+      // Source — pick the right field based on mode.
+      const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
+      out.srcConnMode = srcMode;
+      if (srcMode === 'azure' && c.srcFnUrl) {
+        out.srcFnUrl = c.srcFnUrl;
+        if (c.srcFnKey) out.srcFnKey = c.srcFnKey;
+      } else if (srcMode === 'direct' && c.srcConnString) {
+        out.srcConnString = c.srcConnString;
+      }
+
+      // Target — same pattern.
+      const tgtMode = c.tgtConnMode === 'azure' ? 'azure' : 'direct';
+      out.tgtConnMode = tgtMode;
+      if (tgtMode === 'azure' && c.tgtFnUrl) {
+        out.tgtFnUrl = c.tgtFnUrl;
+        if (c.tgtFnKey) out.tgtFnKey = c.tgtFnKey;
+      } else if (tgtMode === 'direct' && c.tgtConnString) {
+        out.tgtConnString = c.tgtConnString;
+      }
     } catch (e) {
       console.warn('[AgentiveMigration] could not read connections for migrate body:', e.message);
     }
