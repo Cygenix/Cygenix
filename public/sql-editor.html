@@ -211,14 +211,40 @@ body.fullscreen .script-panel { display:none }
 .file-menu-sep{height:0.5px;background:var(--border);margin:4px 0}
 
 /* ── UNIFIED LIBRARY PANEL ────────────────────────────────────────────────── */
-.lib-filter{display:flex;gap:4px;padding:0.5rem 0.5rem 0;flex-shrink:0}
-.lib-pill{flex:1;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3);padding:4px 8px;border-radius:4px;font-size:11px;font-weight:500;font-family:var(--serif);cursor:pointer;transition:all 0.12s}
-.lib-pill:hover{color:var(--text2);border-color:var(--text3)}
-.lib-pill.active{background:var(--accent-glow);border-color:rgba(61,126,255,0.35);color:var(--accent)}
+/* ── Library filter (replaces old All/Scripts/Jobs pills) ─────────────────── */
+/* Single-row layout: dropdown on the left, search box flexing to fill the rest.
+   Saves a row vs the old pill bar, and keeps the same setLibFilter() wiring. */
+.lib-head{display:flex;gap:6px;align-items:center;padding:0.5rem 0.5rem 0.4rem;flex-shrink:0}
+.lib-filter-select{font-size:11px;padding:4px 6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;color:var(--text2);font-family:var(--serif);cursor:pointer;outline:none;flex-shrink:0;width:88px}
+.lib-filter-select:hover,.lib-filter-select:focus{border-color:var(--text3);color:var(--text)}
+.lib-search{font-size:11px;padding:5px 8px;margin:0;flex:1;min-width:0}
 
-.lib-search{font-size:11px;padding:5px 8px;margin:0.5rem 0.5rem 0.4rem;width:calc(100% - 1rem)}
 .lib-list{flex:1;overflow-y:auto;padding:0 0.5rem 0.5rem}
 .lib-empty{padding:1.5rem 1rem;text-align:center;font-size:12px;color:var(--text3);line-height:1.5}
+
+/* ── Script panel collapse / expand ───────────────────────────────────────── */
+/* Collapsed state: panel narrows to a 36px rail. The lib-head, lib-list and
+   resize handle hide; the "rail dock" (icon shortcuts) shows. Toggle button
+   stays visible at the top in both states and rotates the chevron. */
+.script-panel.collapsed{width:36px!important;min-width:36px!important;max-width:36px!important}
+.script-panel.collapsed .lib-head,
+.script-panel.collapsed .lib-list{display:none}
+.script-panel.collapsed .panel-rail-dock{display:flex}
+.script-panel.collapsed + #col-resize-left{display:none}
+
+.panel-toggle-bar{display:flex;align-items:center;justify-content:flex-end;padding:6px 6px 4px;flex-shrink:0;border-bottom:0.5px solid transparent}
+.script-panel.collapsed .panel-toggle-bar{justify-content:center;border-bottom-color:var(--border)}
+.panel-toggle-btn{background:transparent;border:0.5px solid var(--border2);color:var(--text3);width:24px;height:24px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:11px;line-height:1;transition:all 0.12s;padding:0}
+.panel-toggle-btn:hover{color:var(--text);border-color:var(--text3)}
+.panel-toggle-btn .chev{display:inline-block;transition:transform 0.18s}
+.script-panel.collapsed .panel-toggle-btn .chev{transform:rotate(180deg)}
+
+/* Rail dock — visible only when panel is collapsed. Icon-only shortcut
+   buttons that expand the panel AND set the corresponding filter. */
+.panel-rail-dock{display:none;flex-direction:column;gap:6px;padding:8px 4px;align-items:center}
+.rail-btn{background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);width:28px;height:28px;border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;transition:all 0.12s;padding:0}
+.rail-btn:hover{color:var(--text);border-color:var(--text3);background:var(--bg2)}
+.rail-btn.active{background:var(--accent-glow);border-color:rgba(61,126,255,0.35);color:var(--accent)}
 
 .lib-section{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);padding:0.6rem 0.25rem 0.3rem}
 .lib-item{position:relative;background:var(--bg3);border:0.5px solid var(--border2);border-radius:5px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all 0.12s}
@@ -416,16 +442,32 @@ body.fullscreen .script-panel { display:none }
 <div class="editor-layout">
 
   <!-- Script library + Jobs panel -->
-  <div class="script-panel">
-    <!-- Filter pills -->
-    <div class="lib-filter">
-      <button class="lib-pill active" data-filter="all"     onclick="setLibFilter('all')">All</button>
-      <button class="lib-pill"        data-filter="scripts" onclick="setLibFilter('scripts')">Scripts</button>
-      <button class="lib-pill"        data-filter="jobs"    onclick="setLibFilter('jobs')">Jobs</button>
+  <div class="script-panel" id="script-panel">
+    <!-- Collapse / expand toggle. Stays visible in both states; chevron
+         rotates 180° when the panel is collapsed. -->
+    <div class="panel-toggle-bar">
+      <button class="panel-toggle-btn" id="panel-toggle-btn" onclick="toggleScriptPanel()" title="Collapse / expand">
+        <span class="chev">◀</span>
+      </button>
     </div>
 
-    <!-- Search -->
-    <input id="lib-search" class="form-input lib-search" placeholder="Search…" oninput="renderLibrary()">
+    <!-- Rail dock: visible only when panel is collapsed. Icon shortcuts that
+         expand the panel and set the filter at the same time. -->
+    <div class="panel-rail-dock">
+      <button class="rail-btn" data-rail="all"     onclick="expandScriptPanel('all')"     title="All — scripts and jobs">📋</button>
+      <button class="rail-btn" data-rail="scripts" onclick="expandScriptPanel('scripts')" title="Scripts only">📜</button>
+      <button class="rail-btn" data-rail="jobs"    onclick="expandScriptPanel('jobs')"    title="Migration jobs only">⚙</button>
+    </div>
+
+    <!-- Filter dropdown + search (single row, replaces old pill bar) -->
+    <div class="lib-head">
+      <select class="lib-filter-select" id="lib-filter-select" onchange="setLibFilter(this.value)" title="Filter the library">
+        <option value="all">All</option>
+        <option value="scripts">Scripts</option>
+        <option value="jobs">Jobs</option>
+      </select>
+      <input id="lib-search" class="form-input lib-search" placeholder="Search…" oninput="renderLibrary()">
+    </div>
 
     <!-- Unified list — Scripts and Jobs render together with type pills -->
     <div class="lib-list" id="lib-list">
@@ -1023,144 +1065,49 @@ function registerSqlCompletions(){
         });
       });
 
-      // Schema (tables & columns) from live schema cache if present.
-      // The bridge in initMonaco() populates window.__schemaCache as
-      // { source: <schema>, target: <schema> } where each schema looks like
-      // { database, tables: [{ schema, name, columns: [{name, type, ...}] }] }.
-      // We also keep tolerance for older/flat shapes so this stays robust.
+      // Schema (tables & columns) from live schema cache if present
       try {
-        const cache = window.__schemaCache || window.schemaCache || null;
-        if (cache) {
-          // Build a single working list of table objects, no matter the shape
-          const allTables = []; // each: { schema, name, columns: [colNames], origin }
-          const pushTable = (t, origin) => {
-            if (!t) return;
-            const schemaName = t.schema || t.schema_name || 'dbo';
-            const tableName  = t.name   || t.table_name;
-            if (!tableName) return;
-            const cols = (t.columns || []).map(c => (typeof c === 'string' ? c : (c.name || c.column_name))).filter(Boolean);
-            allTables.push({ schema: schemaName, name: tableName, columns: cols, origin: origin || '' });
-          };
+        const schema = window.__schemaCache || window.schemaCache || null;
+        if (schema) {
+          // Support a few shapes: { tables: [{name, schema, columns:[...]}, ...] }
+          // or flat { 'dbo.table': ['col1','col2', ...] }
+          const afterDot = /\.\s*$/.test(lineText) || /\[\s*$/.test(lineText);
 
-          // Shape A: bridged dual-cache { source, target }
-          if (cache.source && Array.isArray(cache.source.tables)) {
-            cache.source.tables.forEach(t => pushTable(t, 'source'));
-          }
-          if (cache.target && Array.isArray(cache.target.tables)) {
-            cache.target.tables.forEach(t => pushTable(t, 'target'));
-          }
-          // Shape B: single schema object { tables: [...] }
-          if (!allTables.length && Array.isArray(cache.tables)) {
-            cache.tables.forEach(t => pushTable(t, ''));
-          }
-          // Shape C: flat map { 'dbo.table': ['col1', ...] }
-          if (!allTables.length) {
-            Object.keys(cache).forEach(key => {
-              const v = cache[key];
-              if (Array.isArray(v)) {
-                const parts = key.split('.');
-                pushTable({
-                  schema: parts.length > 1 ? parts[0] : 'dbo',
-                  name:   parts[parts.length - 1],
-                  columns: v
-                }, '');
-              }
-            });
-          }
-
-          // Detect whether the cursor is right after `something.` — if so, the
-          // user is asking for columns of THAT specific table/alias, not for a
-          // global list. Match either bare identifier or [bracketed] form, with
-          // an optional schema prefix.
-          //   e.g.  Matter.        → prefix = 'Matter'
-          //         [dbo].[Matter].→ prefix = 'Matter'
-          //         m.             → prefix = 'm'  (alias — handled below)
-          const dotMatch = lineText.match(/(?:\[([^\]]+)\]|([A-Za-z_][\w$]*))\.\s*$/);
-          const afterDotPrefix = dotMatch ? (dotMatch[1] || dotMatch[2]) : null;
-
-          if (afterDotPrefix) {
-            // First try: treat prefix as a table name (case-insensitive)
-            const prefixLower = afterDotPrefix.toLowerCase();
-            let matches = allTables.filter(t => t.name.toLowerCase() === prefixLower);
-
-            // If nothing matched, the prefix might be an alias declared earlier
-            // in the query. Look back in the full document for a pattern like
-            // "FROM dbo.Foo f" or "JOIN [dbo].[Bar] AS b" and resolve the alias
-            // back to its real table name.
-            if (!matches.length) {
-              const fullText = model.getValue();
-              const aliasRegex = new RegExp(
-                '(?:FROM|JOIN)\\s+' +
-                '(?:\\[?[A-Za-z_][\\w]*\\]?\\.)?' +              // optional schema
-                '\\[?([A-Za-z_][\\w]*)\\]?' +                    // captured table name
-                '(?:\\s+(?:AS\\s+)?\\[?(' +                      // optional alias group
-                  afterDotPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
-                ')\\]?)',
-                'gi'
-              );
-              const m2 = aliasRegex.exec(fullText);
-              if (m2) {
-                const realName = m2[1].toLowerCase();
-                matches = allTables.filter(t => t.name.toLowerCase() === realName);
-              }
-            }
-
-            if (matches.length) {
-              // Show ONLY columns from the matched table(s). Don't pollute the
-              // suggestion list with keywords / functions / other tables —
-              // after a dot, the user wants this table's columns and nothing else.
-              suggestions.length = 0;
-              matches.forEach(t => {
-                t.columns.forEach(col => {
-                  suggestions.push({
-                    label: col,
-                    kind: monaco.languages.CompletionItemKind.Field,
-                    insertText: col,
-                    detail: 'Column of ' + t.schema + '.' + t.name,
-                    range,
-                    sortText: '0_' + col
-                  });
-                });
-              });
-              return { suggestions };
-            }
-            // Prefix didn't resolve to a known table — fall through to the
-            // generic suggestion list so the user still sees something useful.
-          }
-
-          // Generic case: add all tables and (lightly) all columns.
-          allTables.forEach(t => {
-            const full = '[' + t.schema + '].[' + t.name + ']';
+          const addTable = (schemaName, tableName) => {
+            const full = schemaName ? `[${schemaName}].[${tableName}]` : `[${tableName}]`;
             suggestions.push({
-              label: t.name,
+              label: tableName,
               kind: monaco.languages.CompletionItemKind.Class,
               insertText: full,
-              detail: 'Table in [' + t.schema + ']' + (t.origin ? ' (' + t.origin + ')' : ''),
-              filterText: t.name + ' ' + full,
+              detail: schemaName ? `Table in [${schemaName}]` : 'Table',
               range,
-              sortText: '3_' + t.name
+              sortText: '3_' + tableName
             });
-          });
+          };
+          const addColumn = (colName, tableName) => {
+            suggestions.push({
+              label: colName,
+              kind: monaco.languages.CompletionItemKind.Field,
+              insertText: colName,
+              detail: tableName ? `Column of ${tableName}` : 'Column',
+              range,
+              sortText: (afterDot ? '0_' : '4_') + colName
+            });
+          };
 
-          // De-duplicate column names across tables so the list isn't 5x as long
-          // as it needs to be — Monaco handles many entries fine, but a tidier
-          // list ranks better.
-          const seenCols = new Set();
-          allTables.forEach(t => {
-            t.columns.forEach(col => {
-              const key = col.toLowerCase();
-              if (seenCols.has(key)) return;
-              seenCols.add(key);
-              suggestions.push({
-                label: col,
-                kind: monaco.languages.CompletionItemKind.Field,
-                insertText: col,
-                detail: 'Column',
-                range,
-                sortText: '4_' + col
-              });
+          if (Array.isArray(schema.tables)) {
+            schema.tables.forEach(t => {
+              addTable(t.schema || t.schema_name || 'dbo', t.name || t.table_name);
+              (t.columns || []).forEach(c => addColumn(c.name || c, t.name));
             });
-          });
+          } else if (typeof schema === 'object') {
+            Object.keys(schema).forEach(key => {
+              const parts = key.split('.');
+              addTable(parts.length > 1 ? parts[0] : null, parts[parts.length - 1]);
+              const cols = schema[key];
+              if (Array.isArray(cols)) cols.forEach(c => addColumn(typeof c === 'string' ? c : c.name, key));
+            });
+          }
         }
       } catch(e) { /* schema cache absent or malformed — fine */ }
 
@@ -1169,125 +1116,6 @@ function registerSqlCompletions(){
   });
 }
 
-// ══════════════════════════════════════════════════════════════════════════════
-// SCHEMA BRIDGE FOR INTELLISENSE
-// ──────────────────────────────────────────────────────────────────────────────
-// The completion provider (registerSqlCompletions) reads schema data from
-// window.__schemaCache. The Object Browser / AI features write schema data
-// into a private _schemaCache map keyed by connection-string slice. These
-// two caches were never connected — that's why CTE/keyword/snippet completion
-// worked but table names never appeared in the autocomplete dropdown.
-//
-// This block does two things:
-//   1. Bridge — expose the active source + target schemas to the completion
-//      provider as window.__schemaCache = { source, target }, refreshed any
-//      time the underlying _schemaCache changes.
-//   2. Auto-load — once Monaco is ready and a connection is configured,
-//      kick off a one-time schema fetch in the background so tables show
-//      up in autocomplete without the user having to open the Object
-//      Browser or click "↻ Schema" first.
-// ══════════════════════════════════════════════════════════════════════════════
-(function setupSchemaIntellisenseBridge() {
-  // Mirror the private cache into the global the completion provider reads.
-  // Called whenever schemas might have changed (after a fetch, after a
-  // connection switch, etc.).
-  function syncSchemaCache() {
-    try {
-      if (typeof getOBSchemas !== 'function') return;
-      const { source, target } = getOBSchemas();
-      // Only set if at least one side has data — otherwise leave whatever
-      // was there before so the provider doesn't briefly go empty during
-      // a refresh.
-      if (source || target) {
-        window.__schemaCache = { source: source || null, target: target || null };
-      }
-    } catch (e) { /* don't let bridge errors break anything else */ }
-  }
-
-  // Wrap refreshSchemaCache so the bridge re-syncs after every refresh.
-  // We can't just attach a listener — the codebase doesn't have an event
-  // bus — so wrapping is the cleanest way to hook in.
-  function wrapRefresh() {
-    if (typeof window.refreshSchemaCache === 'function' && !window.refreshSchemaCache.__bridged) {
-      const orig = window.refreshSchemaCache;
-      window.refreshSchemaCache = async function (...args) {
-        const r = await orig.apply(this, args);
-        syncSchemaCache();
-        return r;
-      };
-      window.refreshSchemaCache.__bridged = true;
-    }
-    if (typeof window.fetchSchemaForConn === 'function' && !window.fetchSchemaForConn.__bridged) {
-      const orig = window.fetchSchemaForConn;
-      window.fetchSchemaForConn = async function (...args) {
-        const r = await orig.apply(this, args);
-        syncSchemaCache();
-        return r;
-      };
-      window.fetchSchemaForConn.__bridged = true;
-    }
-  }
-
-  // Auto-load schemas in the background once Monaco is ready and we have a
-  // connection to talk to. Single-shot — refreshSchemaCache itself caches by
-  // connection string, so re-running it is a no-op anyway, but no need to be
-  // wasteful.
-  let _autoLoaded = false;
-  async function autoLoadSchemasIfReady() {
-    if (_autoLoaded) return;
-    if (typeof CygenixConnections === 'undefined') return;
-    if (typeof refreshSchemaCache !== 'function') return;
-
-    const c = CygenixConnections.get();
-    const hasSrc = !!(c.srcConnString || c.srcFnUrl);
-    const hasTgt = !!(c.tgtConnString || c.tgtFnUrl);
-    if (!hasSrc && !hasTgt) {
-      // No connections configured yet — don't bother. The user will configure
-      // one, then either open the Object Browser or click ↻ Schema, both of
-      // which will trigger a fetch and the bridge will catch up.
-      return;
-    }
-
-    _autoLoaded = true;
-    try {
-      console.log('[intellisense] auto-loading schemas for autocomplete…');
-      await refreshSchemaCache(); // bridged version, will syncSchemaCache after
-    } catch (e) {
-      console.warn('[intellisense] schema auto-load failed:', e.message);
-      _autoLoaded = false; // let it retry next time
-    }
-  }
-
-  // Wait for Monaco to be ready, then attach the wrapper + auto-load.
-  let attempts = 0;
-  function tick() {
-    wrapRefresh();
-    // Always sync once at startup in case schemas were already loaded
-    // (e.g. if the user navigated here from another page that fetched them).
-    syncSchemaCache();
-    if (window.__cygMonaco?.ready) {
-      autoLoadSchemasIfReady();
-      return;
-    }
-    if (attempts++ < 50) setTimeout(tick, 200); // up to 10 s
-  }
-  setTimeout(tick, 300); // small initial delay so other init has a chance to run
-
-  // Re-try auto-load when the user changes connection in the dropdown — they
-  // may have just configured a connection that wasn't there at page load.
-  document.addEventListener('change', (e) => {
-    if (e.target && e.target.id === 'conn-select') {
-      // Don't reset _autoLoaded — refreshSchemaCache already caches per
-      // connection so a second call is cheap and safe.
-      autoLoadSchemasIfReady();
-      // Also re-sync immediately in case both schemas are already cached
-      syncSchemaCache();
-    }
-  });
-
-  // Expose for manual debugging from the console
-  window.cygenixSyncSchemaCache = syncSchemaCache;
-})();
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -2710,6 +2538,11 @@ function toggleFullscreen() {
   } else {
     const layout = document.querySelector('.editor-layout');
     if (layout) layout.style.gridTemplateColumns = '';
+    // Clear the inline width that was set on enter so the panel returns to
+    // its CSS-driven width (or its .collapsed state if the user had it
+    // collapsed before going fullscreen).
+    const sp = document.querySelector('.script-panel');
+    if (sp) sp.style.width = '';
   }
   setTimeout(()=>document.getElementById('sql-editor').focus(), 50);
 }
@@ -2870,8 +2703,14 @@ let libFilter = 'all';
 
 function setLibFilter(f) {
   libFilter = f;
-  document.querySelectorAll('.lib-pill').forEach(b => {
-    b.classList.toggle('active', b.dataset.filter === f);
+  // Keep the dropdown in sync (when called from rail buttons or programmatic
+  // callers like switchLibTab below).
+  const sel = document.getElementById('lib-filter-select');
+  if (sel && sel.value !== f) sel.value = f;
+  // Highlight the corresponding rail button so the collapsed-state shortcut
+  // shows which filter is currently in effect.
+  document.querySelectorAll('.rail-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.rail === f);
   });
   renderLibrary();
 }
@@ -2880,6 +2719,49 @@ function setLibFilter(f) {
 // a job, so keep the name working but redirect to the new filter.
 function switchLibTab(tab) {
   setLibFilter(tab === 'jobs' ? 'jobs' : (tab === 'scripts' ? 'scripts' : 'all'));
+}
+
+// ── Script panel collapse / expand ─────────────────────────────────────────
+// State is persisted under localStorage['cygenix_sql_panel_collapsed'] so it
+// sticks across page loads. Default: expanded (matches existing behaviour).
+function toggleScriptPanel() {
+  const panel = document.getElementById('script-panel');
+  if (!panel) return;
+  const collapsing = !panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed', collapsing);
+  try { localStorage.setItem('cygenix_sql_panel_collapsed', collapsing ? '1' : '0'); } catch(e) {}
+  // Monaco needs to reflow its layout when the editor's flex container changes
+  // width. Fire a window resize so the editor picks up the new bounds.
+  setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch(e) {} }, 220);
+}
+
+// Expand the panel AND apply the requested filter. Used by the rail-dock
+// shortcut buttons so a collapsed-state click jumps straight to the right
+// view in one tap.
+function expandScriptPanel(filter) {
+  const panel = document.getElementById('script-panel');
+  if (panel && panel.classList.contains('collapsed')) {
+    panel.classList.remove('collapsed');
+    try { localStorage.setItem('cygenix_sql_panel_collapsed', '0'); } catch(e) {}
+    setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch(e) {} }, 220);
+  }
+  if (filter) setLibFilter(filter);
+}
+
+// Restore collapsed state on load. Has to run after the panel exists in the
+// DOM — we call it from the same DOMContentLoaded path that wires the
+// resize handles, see the bottom of this file.
+function restoreScriptPanelState() {
+  try {
+    if (localStorage.getItem('cygenix_sql_panel_collapsed') === '1') {
+      const panel = document.getElementById('script-panel');
+      if (panel) panel.classList.add('collapsed');
+    }
+  } catch(e) {}
+  // Sync rail-button highlight to current filter even on first paint
+  document.querySelectorAll('.rail-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.rail === libFilter);
+  });
 }
 
 // Replaces the old separate renderScriptList() + renderJobsList()
@@ -3739,6 +3621,11 @@ function copyResultsForExcel() {
   makeColResizer('col-resize-left',  document.querySelector('.script-panel'),    'left');
   makeColResizer('col-resize-ob',    document.getElementById('object-browser'),  'left');
   makeColResizer('col-resize-right', document.querySelector('.right-pane'),      'right');
+
+  // Restore the persisted collapsed state for the script library panel and
+  // sync the rail-dock button highlight. Runs after the DOM is ready (we're
+  // inside a DOMContentLoaded-driven IIFE here) so #script-panel exists.
+  if (typeof restoreScriptPanelState === 'function') restoreScriptPanelState();
 })();
 
 // ── Row drag resize ───────────────────────────────────────────────────────────
