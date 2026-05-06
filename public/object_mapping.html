@@ -691,7 +691,22 @@ let editJobId = null;
 function $(id){ return document.getElementById(id); }
 function esc(s){ const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML; }
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
-function parseDbName(cs){ try{ const m=cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i)||cs.match(/\/([^/?]+)(?:\?|$)/i); return m?m[1].trim():''; }catch{return '';} }
+function parseDbName(cs){
+  try {
+    // Standard SQL Server conn-string keys first — unambiguous.
+    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i);
+    if (m) return m[1].trim();
+    // Path-segment fallback only works for true conn-string-shaped URLs
+    // (e.g. mssql://user:pass@host:1433/MyDb). For Azure Function URLs the
+    // path is the route name (/api/db etc.) — NOT the database. Don't
+    // return that as a DB name; bail and let callers fall back to the
+    // schema cache or to no DB-prefix in generated SQL.
+    if (/^https?:\/\//i.test(cs) && /\.azurewebsites\.net\b/i.test(cs)) return '';
+    if (/\/api\/[^/?]+(?:\?|$)/i.test(cs)) return '';
+    const p = cs.match(/\/([^/?]+)(?:\?|$)/i);
+    return p ? p[1].trim() : '';
+  } catch { return ''; }
+}
 function showStatus(msg, type='info'){
   const el=$('status-bar');
   el.textContent=msg; el.className='status-bar visible status-'+type;

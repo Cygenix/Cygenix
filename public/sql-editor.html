@@ -2528,9 +2528,24 @@ function updateStatus() {
 function _parseDbNameFromConn(cs){
   if (!cs) return '';
   try {
-    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i)
-           || cs.match(/\/([^/?]+)(?:\?|$)/i);
-    return m ? m[1].trim() : '';
+    // First try standard SQL Server connection string keys. These are
+    // unambiguous when present.
+    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i);
+    if (m) return m[1].trim();
+
+    // Path-segment fallback (e.g. mssql://user:pass@host:1433/MyDb) is ONLY
+    // valid for connection-string-shaped URLs where the path really IS the
+    // database. For Azure Function URLs the path is the route name (like
+    // /api/db) and has nothing to do with the database, which is configured
+    // via env vars on the Function App itself. Detect those and bail out
+    // rather than returning a misleading "db" label that also leaks into
+    // generated SQL comments. Schema-cache lookup still wins later once
+    // Object Browser has loaded.
+    if (/^https?:\/\//i.test(cs) && /\.azurewebsites\.net\b/i.test(cs)) return '';
+    if (/\/api\/[^/?]+(?:\?|$)/i.test(cs)) return '';
+
+    const p = cs.match(/\/([^/?]+)(?:\?|$)/i);
+    return p ? p[1].trim() : '';
   } catch { return ''; }
 }
 
