@@ -401,7 +401,7 @@ body.fullscreen .script-panel { display:none }
   </div>
 
   <div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">
-    <select id="conn-select" class="form-input" style="width:140px;font-size:12px" onchange="updateConnLabel()">
+    <select id="conn-select" class="form-input" style="width:200px;font-size:12px" onchange="updateConnLabel()">
       <option value="source">Source DB</option>
       <option value="target">Target DB</option>
     </select>
@@ -434,7 +434,6 @@ body.fullscreen .script-panel { display:none }
     </div>
     <input type="file" id="load-sql-file" accept=".sql,.txt,.ddl" style="display:none" onchange="loadSQLFromFile(this)">
 
-    <input type="password" id="api-key" class="form-input" style="width:140px;font-size:11px" placeholder="Anthropic API key">
     <button class="btn btn-ghost btn-sm" onclick="toggleFullscreen()" id="fs-btn" title="Toggle fullscreen (F11)">⛶</button>
   </div>
 </div>
@@ -1124,9 +1123,10 @@ let scripts = [];
 let currentScript = null;
 let queryHistory = [];
 
-// Load API key
-const savedKey = localStorage.getItem('cygenix_api_key') || '';
-if (savedKey) document.getElementById('api-key').value = savedKey;
+// API key is read from localStorage directly when needed (askClaude). The
+// top-bar input that used to live here was removed in favour of an inline
+// prompt the first time AI is invoked — the key still persists across
+// sessions under localStorage['cygenix_api_key'] like before.
 
 // ── Script library ─────────────────────────────────────────────────────────────
 // Track currently loaded job
@@ -1294,8 +1294,15 @@ function getConn() {
 }
 
 function updateConnLabel() {
-  const which = document.getElementById('conn-select').value;
-  document.getElementById('status-conn').textContent = 'DB: ' + (which==='target'?'Target':'Source');
+  // Real implementation lives lower in the file (search for the second
+  // updateConnLabel definition) — that one resolves real database names
+  // for the dropdown options + status bar. Keeping a stub here so that any
+  // call site that was hit before the file finished parsing doesn't break.
+  // (Function declarations get hoisted, so in practice the second
+  // definition always wins, but the stub doesn't hurt either way.)
+  const which = document.getElementById('conn-select')?.value;
+  const sb = document.getElementById('status-conn');
+  if (sb && which) sb.textContent = 'DB: ' + (which==='target'?'Target':'Source');
 }
 
 function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
@@ -2017,6 +2024,11 @@ async function fetchSchemaForConn(connStr, label) {
     if (data.tables && data.tables.length) {
       _schemaCache[cacheKey] = data;
       console.log('[schema] ' + (label||'?') + ': loaded ' + data.tables.length + ' tables, db=' + (data.database||'?'));
+      // The dropdown labels and status bar now show real DB names — refresh
+      // them as soon as we know the live name from the schema response. No-op
+      // when the helper isn't defined (early init, or the function was
+      // removed in a future refactor).
+      if (typeof refreshConnLabels === 'function') refreshConnLabels();
       return data;
     }
     console.log('[schema] ' + (label||'?') + ': response had no tables', data);
@@ -2135,9 +2147,22 @@ function updateSchemaStatusBar(srcSchema, tgtSchema) {
 async function askClaude() {
   const prompt = document.getElementById('ai-prompt').value.trim();
   if (!prompt) return;
-  const apiKey = document.getElementById('api-key').value.trim();
-  if (!apiKey) { alert('Enter your Anthropic API key in the top right.'); return; }
-  localStorage.setItem('cygenix_api_key', apiKey);
+
+  // Read the API key from localStorage. If it's not set, ask the user once
+  // via a browser prompt — captured and persisted, then reused for every
+  // subsequent call. This replaces the old top-bar input field.
+  let apiKey = (localStorage.getItem('cygenix_api_key') || '').trim();
+  if (!apiKey) {
+    const entered = window.prompt(
+      'Enter your Anthropic API key to use the AI assistant.\n\n' +
+      'Get one from: https://console.anthropic.com/settings/keys\n\n' +
+      'The key is stored locally in your browser and never sent anywhere ' +
+      'except directly to Anthropic.'
+    );
+    if (!entered || !entered.trim()) return;
+    apiKey = entered.trim();
+    localStorage.setItem('cygenix_api_key', apiKey);
+  }
 
   const editor = document.getElementById('sql-editor');
   const selected = editor.value.substring(editor.selectionStart, editor.selectionEnd).trim();
@@ -2487,10 +2512,77 @@ function updateStatus() {
   if (typeof updateLineNumbers === 'function') updateLineNumbers();
 }
 
-function updateConnLabel() {
-  const which = document.getElementById('conn-select').value;
+// ── DB name resolution ────────────────────────────────────────────────────────
+// Pulls the actual database name for the source / target connections so the
+// connection dropdown and the editor status bar show "Agentive" instead of
+// the generic "Source DB" / "Target DB" labels.
+//
+// Strategy (best-effort, three fallbacks):
+//   1. Schema cache (_schemaCache[key].database) — populated after the user
+//      opens Object Browser or runs anything that fetches schema. Most
+//      reliable because it's the live name the server actually reports.
+//   2. Parsed from the connection string (Database=Foo or Initial Catalog=Foo,
+//      or the path segment of an Azure Function URL like /Foo).
+//   3. The literal "Source DB" / "Target DB" if neither is resolvable —
+//      same as today's behaviour.
+function _parseDbNameFromConn(cs){
+  if (!cs) return '';
+  try {
+    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i)
+           || cs.match(/\/([^/?]+)(?:\?|$)/i);
+    return m ? m[1].trim() : '';
+  } catch { return ''; }
+}
+
+function _resolveDbNameFor(which){
+  // First try the schema cache. Re-uses the same cache-key derivation as
+  // getOBSchemas() so the lookup hits whenever schema has been fetched.
+  if (typeof CygenixConnections !== 'undefined') {
+    try {
+      const c = CygenixConnections.get();
+      const connRaw = which === 'target'
+        ? (c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString || ''))
+        : (c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || ''));
+      const cached = (typeof _schemaCache !== 'undefined') ? _schemaCache[connRaw.slice(0,80)] : null;
+      if (cached && cached.database) return cached.database;
+      const parsed = _parseDbNameFromConn(connRaw);
+      if (parsed) return parsed;
+    } catch {}
+  }
+  return which === 'target' ? 'Target DB' : 'Source DB';
+}
+
+// Refresh the connection dropdown options + status bar with real DB names.
+// Cheap to call on every event — runs in <1ms and only writes if values
+// changed. Hook this into anything that might affect the resolved name:
+// page load, connection-changed events, schema-fetched callbacks.
+function refreshConnLabels(){
+  const sel = document.getElementById('conn-select');
+  if (!sel) return;
+  const srcName = _resolveDbNameFor('source');
+  const tgtName = _resolveDbNameFor('target');
+  const opts = sel.options;
+  if (opts && opts.length >= 2) {
+    // Append " (source)" / " (target)" suffix when the resolved name is
+    // a real DB name (not a fallback) so the user can still tell which
+    // connection is which when both happen to point at the same database.
+    const isFallback = (n, w) => n === (w==='target'?'Target DB':'Source DB');
+    const srcLabel = isFallback(srcName,'source') ? srcName : srcName + ' (source)';
+    const tgtLabel = isFallback(tgtName,'target') ? tgtName : tgtName + ' (target)';
+    if (opts[0].textContent !== srcLabel) opts[0].textContent = srcLabel;
+    if (opts[1].textContent !== tgtLabel) opts[1].textContent = tgtLabel;
+  }
+  // Status bar still uses the short "DB: Name" form.
+  const which = sel.value;
   const lbl = document.getElementById('status-conn');
-  if (lbl) lbl.textContent = which==='target' ? 'Target DB' : 'Source DB';
+  if (lbl) lbl.textContent = 'DB: ' + (which === 'target' ? tgtName : srcName);
+}
+
+function updateConnLabel() {
+  // Now just a thin wrapper — keep the name because the <select> markup's
+  // onchange="updateConnLabel()" still calls it, and other code paths
+  // throughout the file invoke it after switching connections.
+  refreshConnLabels();
 }
 
 // ── Line numbers ──────────────────────────────────────────────────────────────
@@ -3626,6 +3718,13 @@ function copyResultsForExcel() {
   // sync the rail-dock button highlight. Runs after the DOM is ready (we're
   // inside a DOMContentLoaded-driven IIFE here) so #script-panel exists.
   if (typeof restoreScriptPanelState === 'function') restoreScriptPanelState();
+
+  // Resolve and display real database names in the connection dropdown
+  // (e.g. "Agentive (source)" instead of "Source DB"). Falls back to the
+  // generic labels when the connection strings haven't been configured
+  // yet. Refreshed again automatically whenever a schema fetch completes,
+  // so the live server-reported name supersedes the parsed one.
+  if (typeof refreshConnLabels === 'function') refreshConnLabels();
 })();
 
 // ── Row drag resize ───────────────────────────────────────────────────────────
