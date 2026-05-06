@@ -237,17 +237,106 @@ app.http('db', {
           break;
         }
         case 'execute': {
-          const r = await pool.request().query(body.sql);
-          result = { success: true, rowsAffected: r.rowsAffected?.[0]||0, recordset: r.recordset||[] };
+          // SQL execution is the single biggest failure surface in this
+          // function — it's where a user-supplied INSERT against an arbitrary
+          // target meets a real database. We wrap it in its own try/catch so
+          // we can capture mssql-driver-specific error fields (number, line,
+          // state, etc.) that the outer catch would lose, and so a SQL
+          // Server error never leaks out as a generic "Non-JSON HTTP 500".
+          //
+          // What we expose on failure:
+          //   error      — err.message (or fallback if missing)
+          //   sqlNumber  — SQL Server error number (e.g. 515 = NULL violation,
+          //                547 = FK constraint, 208 = invalid object name,
+          //                2627 = unique violation, 8152 = string truncation)
+          //   sqlState   — error severity / state combo
+          //   sqlLine    — line in the user's SQL that triggered the error
+          //   sqlProc    — procedure name (empty for ad-hoc batches)
+          //   sqlServer  — server name from the driver
+          //   sqlClass   — error class (severity bucket)
+          //   sqlPrev    — chained pre-cursor errors when SQL Server raises
+          //                multiple errors (e.g. transaction rolled back +
+          //                root cause); these usually carry the *real* cause
+          //   sqlPreview — first 400 chars of the SQL that failed, so the
+          //                Function log lines up with what the client sent
+          try {
+            const sqlText = (body && typeof body.sql === 'string') ? body.sql : '';
+            if (!sqlText) {
+              result = { success: false, error: 'execute called without a `sql` field in the request body' };
+              break;
+            }
+            const r = await pool.request().query(sqlText);
+            result = { success: true, rowsAffected: r.rowsAffected?.[0] || 0, recordset: r.recordset || [] };
+          } catch (sqlErr) {
+            // Some mssql errors carry a `precedingErrors` array with the
+            // root-cause error before the wrapper. Surface them all so we
+            // don't have to debug blind.
+            const precedingErrors = Array.isArray(sqlErr?.precedingErrors)
+              ? sqlErr.precedingErrors.map(e => ({
+                  message: e?.message || String(e),
+                  number:  e?.number,
+                  line:    e?.lineNumber,
+                  state:   e?.state,
+                  proc:    e?.procName || ''
+                }))
+              : [];
+
+            const sqlPreview = (body && typeof body.sql === 'string')
+              ? body.sql.slice(0, 400) + (body.sql.length > 400 ? ' …(truncated)' : '')
+              : '';
+
+            ctx.log.error('SQL EXECUTE ERROR:', sqlErr?.message || String(sqlErr),
+              '| number=', sqlErr?.number,
+              '| line=',   sqlErr?.lineNumber,
+              '| state=',  sqlErr?.state);
+
+            // Note: success:false + error field — dbCall on the client side
+            // checks `data.error` even on HTTP 200 and treats it as a
+            // failure, so this surfaces correctly without a 500.
+            result = {
+              success:    false,
+              error:      sqlErr?.message || String(sqlErr) || 'Unknown SQL error',
+              sqlNumber:  sqlErr?.number,
+              sqlState:   sqlErr?.state,
+              sqlLine:    sqlErr?.lineNumber,
+              sqlProc:    sqlErr?.procName || '',
+              sqlServer:  sqlErr?.serverName || '',
+              sqlClass:   sqlErr?.class,
+              sqlPrev:    precedingErrors,
+              sqlPreview: sqlPreview
+            };
+          }
           break;
         }
         case 'batch': {
-          let totalRows=0, errors=0; const results=[];
-          for (let i=0;i<body.batchSql.length;i++) {
-            try { const r=await pool.request().query(body.batchSql[i]); const rows=r.rowsAffected?.[0]||0; totalRows+=rows; results.push({index:i,success:true,rowsAffected:rows}); }
-            catch(e) { errors++; results.push({index:i,success:false,error:e.message}); }
+          // Batched inserts during paginated migration. Each statement is
+          // independent — one failure shouldn't abort the rest of the page.
+          // For each failure we surface the same SQL-Server-specific fields
+          // as the `execute` action, so the runner's per-batch log can show
+          // exactly which constraint/column/line broke.
+          let totalRows = 0, errors = 0;
+          const results = [];
+          const batchSql = Array.isArray(body?.batchSql) ? body.batchSql : [];
+          for (let i = 0; i < batchSql.length; i++) {
+            try {
+              const r = await pool.request().query(batchSql[i]);
+              const rows = r.rowsAffected?.[0] || 0;
+              totalRows += rows;
+              results.push({ index: i, success: true, rowsAffected: rows });
+            } catch (e) {
+              errors++;
+              results.push({
+                index:     i,
+                success:   false,
+                error:     e?.message || String(e) || 'Unknown SQL error',
+                sqlNumber: e?.number,
+                sqlState:  e?.state,
+                sqlLine:   e?.lineNumber,
+                sqlProc:   e?.procName || ''
+              });
+            }
           }
-          result = { success:errors===0, totalBatches:body.batchSql.length, totalRowsAffected:totalRows, errors, results };
+          result = { success: errors === 0, totalBatches: batchSql.length, totalRowsAffected: totalRows, errors, results };
           break;
         }
         case 'rowcounts': {
@@ -260,24 +349,63 @@ app.http('db', {
           result = { success: false, error: `Unknown action: ${action}` };
       }
 
-      await pool.close();
-      return { status: 200, headers, body: JSON.stringify(result) };
+      // Try to close the pool, but never let a close-time hiccup mask the
+      // actual response. If close fails we just log it — the connection will
+      // be reaped by the platform anyway.
+      try { await pool.close(); } catch (closeErr) { ctx.log.warn('pool.close() failed:', closeErr?.message || closeErr); }
+
+      // Defensive serialisation: if `result` contains anything JSON.stringify
+      // can't handle (rare — would mean SQL Server returned an exotic type
+      // through the recordset), we don't want the whole response to die.
+      // Falling back to a structured error keeps the client's dbCall happy
+      // (it parses a JSON body and surfaces our error string) instead of
+      // letting the runtime's default text/HTML 500 page leak through.
+      let responseBody;
+      try {
+        responseBody = JSON.stringify(result);
+      } catch (stringifyErr) {
+        ctx.log.error('Result JSON.stringify failed:', stringifyErr?.message || stringifyErr);
+        responseBody = JSON.stringify({
+          success: false,
+          error:   'Internal: response could not be serialised — ' + (stringifyErr?.message || String(stringifyErr))
+        });
+      }
+      return { status: 200, headers, body: responseBody };
 
     } catch (err) {
-      ctx.log.error('CAUGHT ERROR:', err.message, err.stack);
-      return {
-        status: 500,
-        headers,
-        body: JSON.stringify({
-          error: err.message,
-          stack: err.stack ? err.stack.split('\n').slice(0,5).join(' | ') : null,
+      // Outer catch: covers connection failures (DefaultAzureCredential,
+      // getToken, sql.connect), import-time errors, and anything thrown by
+      // the schema/test/etc. case branches that don't have their own
+      // try/catch. The execute and batch actions already surface SQL errors
+      // as success:false 200 responses; this catch is for everything else
+      // that genuinely deserves a 500.
+      const errMsg   = err?.message || String(err) || 'Unknown error';
+      const errStack = err?.stack ? err.stack.split('\n').slice(0, 5).join(' | ') : null;
+      ctx.log.error('CAUGHT ERROR:', errMsg, errStack);
+
+      // Defensive: even the catch needs to be bullet-proof. JSON.stringify
+      // shouldn't fail on this shape, but if it does we fall back to a
+      // hand-crafted JSON literal so the client never sees a non-JSON 500.
+      let body;
+      try {
+        body = JSON.stringify({
+          error:     errMsg,
+          stack:     errStack,
+          // SQL-driver fields, if this happens to be a SQL error that
+          // escaped the inner catch (defence in depth):
+          sqlNumber: err?.number,
+          sqlState:  err?.state,
+          sqlLine:   err?.lineNumber,
           env: {
-            SQL_SERVER:       process.env.SQL_SERVER    || 'NOT SET',
-            SQL_DATABASE:     process.env.SQL_DATABASE  || 'NOT SET',
-            AZURE_CLIENT_ID:  process.env.AZURE_CLIENT_ID ? 'SET' : 'NOT SET'
+            SQL_SERVER:      process.env.SQL_SERVER    || 'NOT SET',
+            SQL_DATABASE:    process.env.SQL_DATABASE  || 'NOT SET',
+            AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID ? 'SET' : 'NOT SET'
           }
-        })
-      };
+        });
+      } catch {
+        body = '{"error":"Unhandled server error (fallback)"}';
+      }
+      return { status: 500, headers, body };
     }
   }
 });
