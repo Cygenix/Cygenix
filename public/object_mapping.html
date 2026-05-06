@@ -1361,23 +1361,34 @@ function renderVisualOTM(){
       <span class="vp-type">${escAttr(c.type)}</span>
     </div>`).join('');
 
-  // Render one group per target table, each containing that table's target-col pills
+  // Render one group per target table, each containing that table's target-col pills.
+  // Identity columns are shown but visibly dimmed and not droppable — the
+  // override flow lives in the table view (per-row "Allow override" checkbox)
+  // because drag-and-drop onto a locked identity column would be ambiguous.
   $('vo-tgt-col').innerHTML = targetTables.map((tt,ti) => {
-    const tgtCols = (tt.columns||[]).filter(c=>!c.isIdentity);
+    const tgtCols = (tt.columns||[]);
     const pills = tgtCols.map(c => {
       const m = (tt.mappings||[]).find(x => x.tgtCol === c.name);
       const mapped = m && m.srcCol;
       const matchCls = matchClass(m?.match);
+      const isIdent = !!c.isIdentity;
+      const overridden = !!(m && m._identityOverride);
+      const locked = isIdent && !overridden;
+      // Locked identity rows render with reduced opacity and no drop target.
+      // Overridden identity rows behave like normal target pills.
       return `
       <div class="visual-pill ${matchCls}"
-           data-side="tgt" data-tgt-idx="${ti}" data-col="${escAttr(c.name)}">
+           ${locked ? 'data-locked="1"' : `data-side="tgt" data-tgt-idx="${ti}" data-col="${escAttr(c.name)}"`}
+           style="${locked ? 'opacity:0.45;cursor:not-allowed' : ''}"
+           title="${locked ? 'Identity column — override in the Table view to map' : ''}">
         <span>
           ${escAttr(c.name)}
+          ${isIdent ? `<span style="color:var(--purple);font-size:9px;margin-left:4px">${overridden?'IDENTITY (override)':'IDENTITY'}</span>` : ''}
           ${mapped ? `<span style="color:var(--text3);font-size:10px"> ← ${escAttr(m.srcCol)}</span>` : ''}
         </span>
         <span style="display:flex;align-items:center;gap:0.3rem">
           <span class="vp-type">${escAttr(c.type||'')}</span>
-          ${mapped ? `<button class="vp-remove" onclick="event.stopPropagation();unmapOTM(${ti},'${escAttr(c.name)}')" title="Remove mapping">✕</button>` : ''}
+          ${mapped && !locked ? `<button class="vp-remove" onclick="event.stopPropagation();unmapOTM(${ti},'${escAttr(c.name)}')" title="Remove mapping">✕</button>` : ''}
         </span>
       </div>`;
     }).join('');
@@ -1699,27 +1710,39 @@ function quickMap(colName){
   }
 }
 
-// ── Single-map column mapping ─────────────────────────────────────────────────
-// Ensure every non-identity target column appears as a row in the mapping.
-// Claude's API sometimes returns fewer rows than the target has columns.
-// Any returned rows are kept; missing target columns are appended as unmapped.
-// Also dedupes any duplicate tgtCol entries.
+// Ensure every target column appears as a row in the mapping (including
+// identity columns, which render disabled by default but are shown so users
+// can flip "Allow override" per row). Claude's API sometimes returns fewer
+// rows than the target has columns. Any returned rows are kept; missing
+// target columns are appended as unmapped. Also dedupes any duplicate tgtCol
+// entries.
 function ensureAllTargetCols(mapping, tgt){
   if(!tgt) return mapping;
-  const tgtCols = (tgt.columns||[]).filter(c=>!c.isIdentity);
+  const tgtCols = (tgt.columns||[]);
   const seen = new Set();
   const deduped = [];
   for(const m of mapping){
     const key = (m.tgtCol||'').toLowerCase();
     if(!key) continue;
     if(seen.has(key)) continue;
+    // Tag identity rows so the renderer can disable them. Only set if not
+    // already explicitly set, so a deliberately overridden row that has
+    // come back from the AI / a saved job survives this normalisation.
+    const tcDef = tgtCols.find(c => c.name.toLowerCase() === key);
+    if (tcDef && tcDef.isIdentity) {
+      m._isIdentity = true;
+      if (m._identityOverride === undefined) m._identityOverride = false;
+    }
     seen.add(key);
     deduped.push(m);
   }
-  // Append any target columns that didn't come back
+  // Append any target columns that didn't come back. Identity columns join
+  // the bottom of the list as disabled rows (override unchecked).
   for(const tc of tgtCols){
     if(!seen.has(tc.name.toLowerCase())){
-      deduped.push({srcCol:'', tgtCol:tc.name, transform:'NONE', match:''});
+      const row = {srcCol:'', tgtCol:tc.name, transform:'NONE', match:''};
+      if (tc.isIdentity) { row._isIdentity = true; row._identityOverride = false; }
+      deduped.push(row);
     }
   }
   return deduped;
@@ -1939,8 +1962,18 @@ function clearMapFilter(){
 
 function autoMap(src, tgt){
   // Drive off TARGET columns so every target field appears in the mapping table.
+  // We now INCLUDE identity columns in the table — they show as disabled rows
+  // with an "Allow override" checkbox that, when ticked, includes them in the
+  // INSERT and turns on SET IDENTITY_INSERT for the target. By default they
+  // are unmapped and excluded from the generated SQL.
   const srcCols = src.columns.map(c=>typeof c==='string'?{name:c,type:''}:c);
-  return tgt.columns.filter(tc=>!tc.isIdentity).map(tc=>{
+  return tgt.columns.map(tc=>{
+    // Identity rows: don't auto-suggest a source column — let SQL Server
+    // generate the next value. The user can flip Allow override per row.
+    if (tc.isIdentity) {
+      return { srcCol:'', tgtCol:tc.name, transform:'NONE', match:'',
+               _isIdentity:true, _identityOverride:false };
+    }
     const exact = srcCols.find(sc=>sc.name.toLowerCase()===tc.name.toLowerCase());
     const fuzzy = !exact && srcCols.find(sc=>
       sc.name.toLowerCase().includes(tc.name.toLowerCase())||
@@ -1975,37 +2008,107 @@ function renderMappingTable(){
     const tgtType = tgtDef?.type||'';
     const matchColor = m.match==='HIGH'?'var(--green)':m.match==='MEDIUM'?'var(--amber)':m.match==='LOW'?'var(--red)':'var(--text3)';
     const hasFixed = !!(m.literalValue !== undefined && m.literalValue !== '');
+    const hasMapping = !!m.srcCol || hasFixed;
+
+    // ── Identity column handling ──────────────────────────────────────────
+    // Identity rows are disabled by default — the source picker is locked
+    // out and the row dims so the user knows SQL Server will generate the
+    // value. Ticking the per-row "Allow override" checkbox unlocks the
+    // source picker AND adds the column to the generated INSERT, with
+    // SET IDENTITY_INSERT ON/OFF wrapping the statement automatically.
+    const isIdentity        = !!m._isIdentity;
+    const identityOverride  = !!m._identityOverride;
+    const identityLocked    = isIdentity && !identityOverride;
+
+    // ── NOT NULL warning ──────────────────────────────────────────────────
+    // tgtDef.nullable comes through as false for NOT NULL columns. Identity
+    // columns are NOT NULL too, but SQL Server fills them — so we only
+    // surface the warning for identity rows when the user has chosen to
+    // override (i.e. they're now responsible for the value).
+    const isNotNull         = tgtDef && tgtDef.nullable === false;
+    const requiresValue     = isNotNull && (!isIdentity || identityOverride);
+    const notNullBlocking   = requiresValue && !hasMapping;
+
     // Truncation: source char wider than target char, no transform or TRIM
     const willTruncate = !hasFixed && m.srcCol && srcType && tgtType
       && isCharType(srcType) && isCharType(tgtType)
       && (m.transform==='NONE'||m.transform==='TRIM')
       && parseTypeLen(srcType) > parseTypeLen(tgtType);
     const truncLen = willTruncate ? parseTypeLen(tgtType) : 0;
-    const rowBg = hasFixed ? 'rgba(45,212,191,0.04)' : willTruncate ? 'rgba(245,158,11,0.04)' : '';
-    return `<tr style="${rowBg?'background:'+rowBg:''}">
+
+    // Row background — order of precedence: blocking error > identity locked
+    // > fixed value > truncation warning > nothing.
+    let rowStyle = '';
+    if (notNullBlocking) {
+      // Loud red so it can't be missed and matches the "blocks Generate SQL"
+      // contract.
+      rowStyle = 'background:rgba(240,70,70,0.07);box-shadow:inset 3px 0 0 var(--red)';
+    } else if (identityLocked) {
+      rowStyle = 'background:rgba(255,255,255,0.02);opacity:0.55';
+    } else if (hasFixed) {
+      rowStyle = 'background:rgba(45,212,191,0.04)';
+    } else if (willTruncate) {
+      rowStyle = 'background:rgba(245,158,11,0.04)';
+    }
+
+    // Disabled flag for inputs on locked identity rows. We allow the
+    // checkbox itself, the literal-value field (so users could provide a
+    // hard-coded id even without overriding), and the remove button —
+    // everything else is locked.
+    const disAttr = identityLocked ? 'disabled' : '';
+
+    // Identity badge + override checkbox. Sits in the target-type cell so
+    // it's right next to the column type info — minimal layout change.
+    const identityBadgeHtml = isIdentity
+      ? `<div style="margin-top:3px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+           <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(167,139,250,0.25)">IDENTITY</span>
+           <label style="font-size:10px;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px"
+                  title="Allow override for this identity column. When ticked, this column is included in the INSERT and SET IDENTITY_INSERT ON is set on the target.">
+             <input type="checkbox" ${identityOverride?'checked':''}
+                    onchange="setIdentityOverride(${i}, this.checked)"
+                    style="margin:0;cursor:pointer">
+             Allow override
+           </label>
+         </div>`
+      : '';
+
+    // NOT NULL inline blocking message — sits under the target column name
+    // so it reads as part of the row context, not floating somewhere else.
+    const notNullMsgHtml = notNullBlocking
+      ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600">⚠ NOT NULL — must be mapped or given a fixed value</div>`
+      : (isNotNull && !isIdentity
+          ? `<div style="margin-top:2px;color:var(--text3);font-size:9px;font-weight:500">NOT NULL</div>`
+          : '');
+
+    return `<tr style="${rowStyle}">
       <td>
-        <select class="map-select" style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}"
+        <select class="map-select" ${disAttr} style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
           onchange="columnMapping[${i}].srcCol=this.value;columnMapping[${i}].match=this.value?'HIGH':'';renderMappingTable();renderSrcColList();tryAutoGenSQL()">
           <option value="">— none —</option>
           ${srcColOpts.replace(`value="${esc(m.srcCol)}"`,`value="${esc(m.srcCol)}" selected`)}
         </select>
       </td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
-      <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(m.tgtCol)}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">
+        ${esc(m.tgtCol)}
+        ${notNullMsgHtml}
+      </td>
       <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
         ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})">⚠ LEFT(${truncLen})</span>`:''}
+        ${identityBadgeHtml}
       </td>
-      <td><select class="map-select" style="width:80px" onchange="updateTransform(${i},this.value)">
+      <td><select class="map-select" ${disAttr} style="width:80px${identityLocked?';cursor:not-allowed':''}" onchange="updateTransform(${i},this.value)">
         ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
       </select></td>
       <td>
-        <input class="map-select" style="width:120px;color:var(--teal);font-family:var(--mono);font-size:11px"
-          placeholder="e.g. N'Value', 0, NULL…"
+        <input class="map-select" style="width:120px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
+          ${disAttr}
+          placeholder="${identityLocked?'(identity locked)':"e.g. N'Value', 0, NULL…"}"
           value="${esc(m.literalValue||'')}"
           oninput="columnMapping[${i}].literalValue=this.value.trim();tryAutoGenSQL()"
           title="Fixed SQL value — overrides source column. Leave blank to use source.">
       </td>
-      <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${m.match||'—'}</span></td>
+      <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${identityLocked?'<span style="color:var(--text3)">auto</span>':(m.match||'—')}</span></td>
       <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
     </tr>`;
   }).join('');
@@ -2024,8 +2127,56 @@ function generateSingleSQL(silent){
   // A row is only a real mapping if it has a target column AND either a source
   // column or a fixed literal value. Rows with just a tgtCol (empty srcCol and
   // no literalValue) would emit garbage like "[] AS [colname]" in the SELECT.
-  const mapping = columnMapping.filter(m=>m.tgtCol && (m.srcCol || (m.literalValue!==undefined && m.literalValue!=='')));
+  //
+  // Identity columns: only included when the user has explicitly ticked
+  // "Allow override" on that row. Otherwise SQL Server generates the next
+  // value and the column doesn't appear in our INSERT at all.
+  const mapping = columnMapping.filter(m =>
+    m.tgtCol &&
+    (m.srcCol || (m.literalValue!==undefined && m.literalValue!=='')) &&
+    (!m._isIdentity || m._identityOverride)
+  );
   if(!mapping.length){ if(!silent) alert('No columns mapped.'); return; }
+
+  // ── BLOCKING CHECK: NOT NULL columns must be mapped or fixed-valued ──
+  // Identity columns are NOT NULL by definition but SQL Server fills them,
+  // so we only require user-supplied values for non-identity NOT NULLs (and
+  // for identity rows that the user has chosen to override — at that point
+  // they own the value and SQL Server won't generate one).
+  const unmappedRequired = (tgtTable.columns||[])
+    .filter(c => c.nullable === false)
+    .filter(c => {
+      const m = columnMapping.find(x => x.tgtCol === c.name);
+      // Identity column with no override: fine, SQL Server provides value.
+      if (c.isIdentity && !(m && m._identityOverride)) return false;
+      // Otherwise: must have a source mapping or a fixed literal value.
+      const hasSrc = !!(m && m.srcCol);
+      const hasLit = !!(m && m.literalValue !== undefined && m.literalValue !== '');
+      return !(hasSrc || hasLit);
+    })
+    .map(c => c.name);
+
+  if (unmappedRequired.length) {
+    // Block generation. The mapping table itself shows red borders and
+    // inline messages on each offending row — see renderMappingTable —
+    // so the user already has visual context. We only need to surface
+    // the message here so the click on Generate SQL has a clear, single
+    // failure mode rather than silently producing partial SQL.
+    if (!silent) {
+      const list = unmappedRequired.slice(0, 8).map(n => '  • ' + n).join('\n');
+      const more = unmappedRequired.length > 8 ? `\n  …and ${unmappedRequired.length - 8} more` : '';
+      alert(
+        'Cannot generate SQL — ' + unmappedRequired.length +
+        ' NOT NULL target column' + (unmappedRequired.length===1?'':'s') +
+        ' have no mapping:\n\n' + list + more +
+        '\n\nMap a source column or set a fixed value on each, then try again.'
+      );
+    }
+    // Important: do NOT call showSQLOutput / clear the panel — leave any
+    // previously-generated SQL in place so it doesn't look like the user
+    // lost their work.
+    return;
+  }
 
   const warnings = [];
   const srcFull = '['+srcTable.schema+'].['+srcTable.name+']';
@@ -2177,6 +2328,29 @@ function updateTransform(i, val){
   tryAutoGenSQL();
 }
 
+// Toggle the per-row "Allow override" checkbox on identity columns. When the
+// user ticks it, the row becomes editable in the mapping table AND the
+// generated SQL includes the column in its INSERT (with SET IDENTITY_INSERT
+// ON/OFF wrapping the statement — that part is handled in generateSingleSQL,
+// triggered by the row carrying _isIdentity + _identityOverride together).
+// Untick to lock the column back out and let SQL Server generate values.
+function setIdentityOverride(i, on){
+  if (!columnMapping[i]) return;
+  columnMapping[i]._identityOverride = !!on;
+  // When locking the column back out we also clear any source picker /
+  // literal that the user set, otherwise the row carries stale state and
+  // tryAutoGenSQL silently includes the column. Cleared to a clean unmapped
+  // identity row (matches what autoMap produces).
+  if (!on) {
+    columnMapping[i].srcCol = '';
+    columnMapping[i].literalValue = '';
+    columnMapping[i].match = '';
+    columnMapping[i].transform = 'NONE';
+  }
+  renderMappingTable();
+  tryAutoGenSQL();
+}
+
 function tryAutoGenSQL(){
   if(srcTable && tgtTable && columnMapping.filter(m=>m.tgtCol && (m.srcCol || (m.literalValue!==undefined && m.literalValue!==''))).length > 0){
     try { generateSingleSQL(true); } catch(e) {}
@@ -2285,30 +2459,106 @@ function renderOTMCards(){
         <table class="map-table" style="margin-bottom:0.4rem" id="otm-table-${ti}">
           <thead><tr><th>Source col</th><th>Src type</th><th>Target col ▲</th><th>Tgt type</th><th>Transform</th><th title="Fixed SQL value — overrides source col">Fixed value</th><th></th></tr></thead>
           <tbody id="otm-tbody-${ti}">
-          ${tt.columns.filter(c=>!c.isIdentity).map((tc,mi)=>{
-            const m=tt.mappings.find(mp=>mp.tgtCol===tc.name)||{srcCol:'',tgtCol:tc.name,transform:'NONE',literalValue:''};
+          ${tt.columns.map((tc,mi)=>{
+            // Find or synthesise the mapping row for this target column. When
+            // we synthesise on the fly here the row isn't actually pushed into
+            // tt.mappings — that happens lazily in updateOTMSrcCol etc. when
+            // the user edits. To carry identity state through, we tag the
+            // synthesised object the same way ensureAllTargetCols does.
+            let m = tt.mappings.find(mp=>mp.tgtCol===tc.name);
+            if (!m) {
+              m = {srcCol:'',tgtCol:tc.name,transform:'NONE',literalValue:''};
+              if (tc.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+            } else if (tc.isIdentity && m._isIdentity === undefined) {
+              // Mapping came from older code paths that didn't tag identity —
+              // tag it now so render + generator agree.
+              m._isIdentity = true;
+              if (m._identityOverride === undefined) m._identityOverride = false;
+            }
+
             const realMi=tt.mappings.findIndex(mp=>mp.tgtCol===tc.name);
             const srcDef=(srcTable?.columns||[]).find(sc=>(typeof sc==='string'?sc:sc.name)===m.srcCol);
             const srcType=srcDef&&typeof srcDef==='object'?srcDef.type:'';
             const willTrunc=m.srcCol&&srcType&&tc.type&&isCharType(srcType)&&isCharType(tc.type)&&(m.transform||'NONE')==='NONE'&&parseTypeLen(srcType)>parseTypeLen(tc.type);
             const truncLen=willTrunc?parseTypeLen(tc.type):0;
             const hasFixed=!!(m.literalValue&&m.literalValue!=='');
-            const rowBg=hasFixed?'background:rgba(45,212,191,0.04)':willTrunc?'background:rgba(245,158,11,0.04)':'';
-            const unmapped=!m.srcCol&&!hasFixed;
-            return `<tr data-unmapped="${unmapped}" style="${rowBg?rowBg:''}">
-              <td><select class="map-select" style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}"
+            const hasMapping = !!m.srcCol || hasFixed;
+
+            // ── Identity column handling ─────────────────────────────────
+            // Identity rows show greyed out by default, with an "Allow
+            // override" checkbox per row. When ticked, the row becomes
+            // editable AND the OTM generator wraps that table's INSERT in
+            // SET IDENTITY_INSERT ON/OFF and includes the identity column
+            // in the column list. Same contract as Single-map.
+            const isIdentity       = !!m._isIdentity || !!tc.isIdentity;
+            const identityOverride = !!m._identityOverride;
+            const identityLocked   = isIdentity && !identityOverride;
+
+            // ── NOT NULL warning ─────────────────────────────────────────
+            // tgtDef.nullable === false means NOT NULL. Identity columns
+            // are NOT NULL but SQL Server fills them, so we only require
+            // user-supplied values when the column is non-identity OR the
+            // user has chosen to override the identity.
+            const isNotNull       = tc.nullable === false;
+            const requiresValue   = isNotNull && (!isIdentity || identityOverride);
+            const notNullBlocking = requiresValue && !hasMapping;
+
+            // Row visual: blocking error wins, then identity locked, then
+            // fixed value, then truncation warning.
+            let rowStyle = '';
+            if (notNullBlocking) {
+              rowStyle = 'background:rgba(240,70,70,0.07);box-shadow:inset 3px 0 0 var(--red)';
+            } else if (identityLocked) {
+              rowStyle = 'background:rgba(255,255,255,0.02);opacity:0.55';
+            } else if (hasFixed) {
+              rowStyle = 'background:rgba(45,212,191,0.04)';
+            } else if (willTrunc) {
+              rowStyle = 'background:rgba(245,158,11,0.04)';
+            }
+
+            const disAttr = identityLocked ? 'disabled' : '';
+            const unmapped = !m.srcCol && !hasFixed;
+
+            const identityBadgeHtml = isIdentity
+              ? `<div style="margin-top:3px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                   <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(167,139,250,0.25)">IDENTITY</span>
+                   <label style="font-size:10px;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px"
+                          title="Allow override for this identity column. When ticked, this column is included in this table's INSERT and SET IDENTITY_INSERT ON wraps the statement.">
+                     <input type="checkbox" ${identityOverride?'checked':''}
+                            onchange="setOTMIdentityOverride(${ti}, '${esc(tc.name)}', this.checked)"
+                            style="margin:0;cursor:pointer">
+                     Allow override
+                   </label>
+                 </div>`
+              : '';
+
+            const notNullMsgHtml = notNullBlocking
+              ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600">⚠ NOT NULL — must be mapped or given a fixed value</div>`
+              : (isNotNull && !isIdentity
+                  ? `<div style="margin-top:2px;color:var(--text3);font-size:9px;font-weight:500">NOT NULL</div>`
+                  : '');
+
+            return `<tr data-unmapped="${unmapped}" style="${rowStyle}">
+              <td><select class="map-select" ${disAttr} style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
                 onchange="updateOTMSrcCol(${ti},'${esc(tc.name)}',this.value)">
                 <option value="">— none —</option>
                 ${srcOpts.map(sc=>`<option value="${esc(sc.name)}" ${m.srcCol===sc.name?'selected':''}>${sc.fromJoin?'⊞ ':''}${esc(sc.name)}</option>`).join('')}
               </select></td>
               <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
-              <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">${esc(tc.name)}</td>
-              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px">⚠ LEFT(${truncLen})</span>`:''}</td>
-              <td><select class="map-select" style="width:75px" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
+              <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">
+                ${esc(tc.name)}
+                ${notNullMsgHtml}
+              </td>
+              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
+                ${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px">⚠ LEFT(${truncLen})</span>`:''}
+                ${identityBadgeHtml}
+              </td>
+              <td><select class="map-select" ${disAttr} style="width:75px${identityLocked?';cursor:not-allowed':''}" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
                 ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
               </select></td>
-              <td><input class="map-select" style="width:110px;color:var(--teal);font-family:var(--mono);font-size:11px"
-                placeholder="e.g. N'Value', NULL…"
+              <td><input class="map-select" style="width:110px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
+                ${disAttr}
+                placeholder="${identityLocked?'(identity locked)':"e.g. N'Value', NULL…"}"
                 value="${esc(m.literalValue||'')}"
                 oninput="updateOTMLiteral(${ti},'${esc(tc.name)}',this.value)"
                 title="Fixed SQL value — overrides source col. Leave blank to use source."></td>
@@ -2375,7 +2625,13 @@ function filterOTMRows(ti, q){
 function updateOTMSrcCol(ti, tgtCol, srcCol){
   const tt=targetTables[ti]; if(!tt) return;
   let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
-  if(!m){ m={srcCol:'',tgtCol,transform:'NONE',literalValue:''}; tt.mappings.push(m); }
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    // Preserve identity tagging when synthesising on first edit
+    const tcDef = (tt.columns||[]).find(c => c.name === tgtCol);
+    if (tcDef && tcDef.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+    tt.mappings.push(m);
+  }
   m.srcCol=srcCol;
   checkOTMReady();
 }
@@ -2383,7 +2639,12 @@ function updateOTMSrcCol(ti, tgtCol, srcCol){
 function updateOTMTransform(ti, tgtCol, transform){
   const tt=targetTables[ti]; if(!tt) return;
   let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
-  if(!m){ m={srcCol:'',tgtCol,transform:'NONE',literalValue:''}; tt.mappings.push(m); }
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    const tcDef = (tt.columns||[]).find(c => c.name === tgtCol);
+    if (tcDef && tcDef.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+    tt.mappings.push(m);
+  }
   m.transform=transform;
   checkOTMReady();
 }
@@ -2391,8 +2652,38 @@ function updateOTMTransform(ti, tgtCol, transform){
 function updateOTMLiteral(ti, tgtCol, val){
   const tt=targetTables[ti]; if(!tt) return;
   let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
-  if(!m){ m={srcCol:'',tgtCol,transform:'NONE',literalValue:''}; tt.mappings.push(m); }
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    const tcDef = (tt.columns||[]).find(c => c.name === tgtCol);
+    if (tcDef && tcDef.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+    tt.mappings.push(m);
+  }
   m.literalValue=val.trim();
+  checkOTMReady();
+}
+
+// Toggle the per-row "Allow override" checkbox on identity columns in the OTM
+// editor. Mirrors setIdentityOverride for Single-map. When ON the row becomes
+// editable AND the OTM SQL generator wraps that table's INSERT in
+// SET IDENTITY_INSERT ON/OFF and includes the column in the INSERT list.
+// When OFF the column is locked again (SQL Server mints values via the
+// existing OUTPUT INSERTED dance) and any srcCol/literal is cleared.
+function setOTMIdentityOverride(ti, tgtCol, on){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    tt.mappings.push(m);
+  }
+  m._isIdentity = true;
+  m._identityOverride = !!on;
+  if (!on) {
+    m.srcCol = '';
+    m.literalValue = '';
+    m.match = '';
+    m.transform = 'NONE';
+  }
+  renderOTMCards();
   checkOTMReady();
 }
 
@@ -2510,6 +2801,42 @@ function generateOTMSQL(){
   const srcCols=[...new Set(targetTables.flatMap(tt=>tt.mappings.filter(m=>m.srcCol).map(m=>m.srcCol)))];
   if(!srcCols.length){ alert('Add at least one column mapping.'); return; }
 
+  // ── BLOCKING CHECK: NOT NULL columns across ALL target tables ────────────
+  // Same contract as Single-map: every NOT NULL target column must have a
+  // source mapping or a fixed literal. Identity columns are NOT NULL but
+  // SQL Server fills them, so we only require a value for an identity
+  // column when the user has ticked Allow override. FK columns are
+  // satisfied by tt.fks entries — they get filled from the parent's PK
+  // var inside the cursor loop.
+  const otmUnmapped = [];
+  targetTables.forEach(tt => {
+    const fkCols = new Set((tt.fks||[]).map(fk => (fk.myCol||'').toLowerCase()));
+    (tt.columns||[]).filter(c => c.nullable === false).forEach(tc => {
+      const m = (tt.mappings||[]).find(x => x.tgtCol === tc.name);
+      // Identity, no override: SQL Server fills it (or OUTPUT INSERTED captures
+      // the auto value). Skip the check.
+      if (tc.isIdentity && !(m && m._identityOverride)) return;
+      // FK column: satisfied by a parent PK reference, skip.
+      if (fkCols.has(tc.name.toLowerCase())) return;
+      const hasSrc = !!(m && m.srcCol);
+      const hasLit = !!(m && m.literalValue !== undefined && m.literalValue !== '');
+      if (!(hasSrc || hasLit)) {
+        otmUnmapped.push(tt.fullName + '.' + tc.name);
+      }
+    });
+  });
+  if (otmUnmapped.length) {
+    const list = otmUnmapped.slice(0, 10).map(n => '  • ' + n).join('\n');
+    const more = otmUnmapped.length > 10 ? `\n  …and ${otmUnmapped.length - 10} more` : '';
+    alert(
+      'Cannot generate SQL — ' + otmUnmapped.length +
+      ' NOT NULL target column' + (otmUnmapped.length===1?'':'s') +
+      ' have no mapping:\n\n' + list + more +
+      '\n\nMap a source column or set a fixed value on each, then try again.'
+    );
+    return;
+  }
+
   let sql='';
   sql+=`-- ╔══════════════════════════════════════════════════════════════════╗\n`;
   sql+=`-- ║  Cygenix One-to-Many Migration\n`;
@@ -2591,12 +2918,43 @@ function generateOTMSQL(){
     // Always 2-part for executable SQL — see the "Database-qualified names"
     // comment in the single-map generator for why we drop the DB prefix.
     const tgtFullQ = tgtFull;
-    const mappedCols=tt.mappings.filter(m=>m.srcCol&&m.tgtCol&&!tt.columns.find(c=>c.name===m.tgtCol&&c.isIdentity));
+
+    // Identity columns are NORMALLY excluded from this table's INSERT — SQL
+    // Server fills them. But when the user has ticked "Allow override" on
+    // a row, we DO include that column and wrap the table's INSERT in
+    // SET IDENTITY_INSERT ON/OFF so SQL Server accepts the explicit value.
+    // Only counts as "overridden" if the row also has a real source/literal,
+    // otherwise the row is empty and gets filtered out below regardless.
+    const overriddenIdentityCols = new Set(
+      tt.mappings
+        .filter(m => m._isIdentity && m._identityOverride && (m.srcCol || (m.literalValue !== undefined && m.literalValue !== '')))
+        .map(m => (m.tgtCol || '').toLowerCase())
+    );
+    const isIdentityCol = (name) => {
+      const c = tt.columns.find(c => c.name === name);
+      return !!(c && c.isIdentity);
+    };
+
+    const mappedCols = tt.mappings.filter(m =>
+      m.srcCol && m.tgtCol &&
+      // Include the column if either it's not an identity column, OR it IS
+      // an identity column AND the user has overridden it.
+      (!isIdentityCol(m.tgtCol) || overriddenIdentityCols.has(m.tgtCol.toLowerCase()))
+    );
     const fkCols=tt.fks;
     if(!mappedCols.length&&!fkCols.length){ sql+=`  -- Table ${ti+1}: ${tt.fullName} — no mappings, skipping\n\n`; return; }
 
     sql+=`  -- ── ${ti+1}. INSERT into ${tgtDb?tgtDb+'.':''}${tt.fullName}\n`;
     if(txMode==='independent') sql+=`  BEGIN TRY\n  BEGIN TRAN;\n`;
+
+    // SET IDENTITY_INSERT wraps when ANY identity column on this target is
+    // being explicitly populated by the user. Applies regardless of the
+    // table's overall pkMode — even a non-identity-pk table can have
+    // additional identity columns the user wants to override.
+    const wrapIdentityInsert = overriddenIdentityCols.size > 0;
+    if (wrapIdentityInsert) {
+      sql+=`  SET IDENTITY_INSERT ${tgtFullQ} ON;\n`;
+    }
 
     const insertCols=[...mappedCols.map(m=>'  ['+m.tgtCol+']'),...fkCols.map(fk=>'  ['+fk.myCol+']')].join(',\n');
 
@@ -2633,6 +2991,11 @@ function generateOTMSQL(){
       ...fkCols.map(fk=>`  ${fk.refTableVar}`)
     ].join(',\n');
 
+    // Note: the pkMode === 'identity' branch still uses OUTPUT INSERTED to
+    // capture the PK value into @tbl... so child tables can FK to it. This
+    // works correctly whether the value was minted by SQL Server (default
+    // path) or supplied explicitly via the override (then OUTPUT INSERTED
+    // simply captures the value the user provided). No change needed there.
     if(tt.pkMode==='identity'){
       sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n`;
       sql+=`  OUTPUT INSERTED.[${tt.pkCol}] INTO @tbl${tt.id.replace(/[^a-z0-9]/gi,'')}(Id)\n`;
@@ -2643,6 +3006,10 @@ function generateOTMSQL(){
       sql+=`  INSERT INTO ${tgtFullQ} ([${tt.pkCol}],\n${insertCols}\n  )\n  VALUES (${tt.pkVar},\n${insertVals}\n  );\n`;
     } else {
       sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n  VALUES (\n${insertVals}\n  );\n`;
+    }
+
+    if (wrapIdentityInsert) {
+      sql+=`  SET IDENTITY_INSERT ${tgtFullQ} OFF;\n`;
     }
 
     if(txMode==='independent'){
