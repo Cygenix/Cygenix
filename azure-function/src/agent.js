@@ -1542,9 +1542,19 @@ async function saveProposedJobs(userId, proposedJobs, run, projectId, ctx) {
 
   for (const proposal of proposedJobs) {
     const jobId = `job_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
+    // Job name: prefer the agent-supplied proposal.name, fall back to a
+    // run-id-based default. Then append `_adj` to mark this as an Agentive
+    // Migration-generated job — visible in the Project Builder canvas, the
+    // SQL Editor library, and every job dropdown so users can immediately
+    // tell which jobs came from this AI flow vs ones they built by hand.
+    // Idempotent — won't double-suffix if for any reason the input name
+    // already ends in `_adj` (e.g. re-running an approve, agent reusing
+    // a previous proposal name).
+    const baseName = proposal.name || `agent_${run.id.slice(-6)}`;
+    const jobName = baseName.endsWith('_adj') ? baseName : `${baseName}_adj`;
     const job = {
       id: jobId,
-      name: proposal.name || `agent_${run.id.slice(-6)}`,
+      name: jobName,
       jobType: 'simple-map',
       type: 'migration',
       projectId: projectId || '',
