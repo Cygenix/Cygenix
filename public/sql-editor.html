@@ -1023,49 +1023,144 @@ function registerSqlCompletions(){
         });
       });
 
-      // Schema (tables & columns) from live schema cache if present
+      // Schema (tables & columns) from live schema cache if present.
+      // The bridge in initMonaco() populates window.__schemaCache as
+      // { source: <schema>, target: <schema> } where each schema looks like
+      // { database, tables: [{ schema, name, columns: [{name, type, ...}] }] }.
+      // We also keep tolerance for older/flat shapes so this stays robust.
       try {
-        const schema = window.__schemaCache || window.schemaCache || null;
-        if (schema) {
-          // Support a few shapes: { tables: [{name, schema, columns:[...]}, ...] }
-          // or flat { 'dbo.table': ['col1','col2', ...] }
-          const afterDot = /\.\s*$/.test(lineText) || /\[\s*$/.test(lineText);
-
-          const addTable = (schemaName, tableName) => {
-            const full = schemaName ? `[${schemaName}].[${tableName}]` : `[${tableName}]`;
-            suggestions.push({
-              label: tableName,
-              kind: monaco.languages.CompletionItemKind.Class,
-              insertText: full,
-              detail: schemaName ? `Table in [${schemaName}]` : 'Table',
-              range,
-              sortText: '3_' + tableName
-            });
-          };
-          const addColumn = (colName, tableName) => {
-            suggestions.push({
-              label: colName,
-              kind: monaco.languages.CompletionItemKind.Field,
-              insertText: colName,
-              detail: tableName ? `Column of ${tableName}` : 'Column',
-              range,
-              sortText: (afterDot ? '0_' : '4_') + colName
-            });
+        const cache = window.__schemaCache || window.schemaCache || null;
+        if (cache) {
+          // Build a single working list of table objects, no matter the shape
+          const allTables = []; // each: { schema, name, columns: [colNames], origin }
+          const pushTable = (t, origin) => {
+            if (!t) return;
+            const schemaName = t.schema || t.schema_name || 'dbo';
+            const tableName  = t.name   || t.table_name;
+            if (!tableName) return;
+            const cols = (t.columns || []).map(c => (typeof c === 'string' ? c : (c.name || c.column_name))).filter(Boolean);
+            allTables.push({ schema: schemaName, name: tableName, columns: cols, origin: origin || '' });
           };
 
-          if (Array.isArray(schema.tables)) {
-            schema.tables.forEach(t => {
-              addTable(t.schema || t.schema_name || 'dbo', t.name || t.table_name);
-              (t.columns || []).forEach(c => addColumn(c.name || c, t.name));
-            });
-          } else if (typeof schema === 'object') {
-            Object.keys(schema).forEach(key => {
-              const parts = key.split('.');
-              addTable(parts.length > 1 ? parts[0] : null, parts[parts.length - 1]);
-              const cols = schema[key];
-              if (Array.isArray(cols)) cols.forEach(c => addColumn(typeof c === 'string' ? c : c.name, key));
+          // Shape A: bridged dual-cache { source, target }
+          if (cache.source && Array.isArray(cache.source.tables)) {
+            cache.source.tables.forEach(t => pushTable(t, 'source'));
+          }
+          if (cache.target && Array.isArray(cache.target.tables)) {
+            cache.target.tables.forEach(t => pushTable(t, 'target'));
+          }
+          // Shape B: single schema object { tables: [...] }
+          if (!allTables.length && Array.isArray(cache.tables)) {
+            cache.tables.forEach(t => pushTable(t, ''));
+          }
+          // Shape C: flat map { 'dbo.table': ['col1', ...] }
+          if (!allTables.length) {
+            Object.keys(cache).forEach(key => {
+              const v = cache[key];
+              if (Array.isArray(v)) {
+                const parts = key.split('.');
+                pushTable({
+                  schema: parts.length > 1 ? parts[0] : 'dbo',
+                  name:   parts[parts.length - 1],
+                  columns: v
+                }, '');
+              }
             });
           }
+
+          // Detect whether the cursor is right after `something.` — if so, the
+          // user is asking for columns of THAT specific table/alias, not for a
+          // global list. Match either bare identifier or [bracketed] form, with
+          // an optional schema prefix.
+          //   e.g.  Matter.        → prefix = 'Matter'
+          //         [dbo].[Matter].→ prefix = 'Matter'
+          //         m.             → prefix = 'm'  (alias — handled below)
+          const dotMatch = lineText.match(/(?:\[([^\]]+)\]|([A-Za-z_][\w$]*))\.\s*$/);
+          const afterDotPrefix = dotMatch ? (dotMatch[1] || dotMatch[2]) : null;
+
+          if (afterDotPrefix) {
+            // First try: treat prefix as a table name (case-insensitive)
+            const prefixLower = afterDotPrefix.toLowerCase();
+            let matches = allTables.filter(t => t.name.toLowerCase() === prefixLower);
+
+            // If nothing matched, the prefix might be an alias declared earlier
+            // in the query. Look back in the full document for a pattern like
+            // "FROM dbo.Foo f" or "JOIN [dbo].[Bar] AS b" and resolve the alias
+            // back to its real table name.
+            if (!matches.length) {
+              const fullText = model.getValue();
+              const aliasRegex = new RegExp(
+                '(?:FROM|JOIN)\\s+' +
+                '(?:\\[?[A-Za-z_][\\w]*\\]?\\.)?' +              // optional schema
+                '\\[?([A-Za-z_][\\w]*)\\]?' +                    // captured table name
+                '(?:\\s+(?:AS\\s+)?\\[?(' +                      // optional alias group
+                  afterDotPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+                ')\\]?)',
+                'gi'
+              );
+              const m2 = aliasRegex.exec(fullText);
+              if (m2) {
+                const realName = m2[1].toLowerCase();
+                matches = allTables.filter(t => t.name.toLowerCase() === realName);
+              }
+            }
+
+            if (matches.length) {
+              // Show ONLY columns from the matched table(s). Don't pollute the
+              // suggestion list with keywords / functions / other tables —
+              // after a dot, the user wants this table's columns and nothing else.
+              suggestions.length = 0;
+              matches.forEach(t => {
+                t.columns.forEach(col => {
+                  suggestions.push({
+                    label: col,
+                    kind: monaco.languages.CompletionItemKind.Field,
+                    insertText: col,
+                    detail: 'Column of ' + t.schema + '.' + t.name,
+                    range,
+                    sortText: '0_' + col
+                  });
+                });
+              });
+              return { suggestions };
+            }
+            // Prefix didn't resolve to a known table — fall through to the
+            // generic suggestion list so the user still sees something useful.
+          }
+
+          // Generic case: add all tables and (lightly) all columns.
+          allTables.forEach(t => {
+            const full = '[' + t.schema + '].[' + t.name + ']';
+            suggestions.push({
+              label: t.name,
+              kind: monaco.languages.CompletionItemKind.Class,
+              insertText: full,
+              detail: 'Table in [' + t.schema + ']' + (t.origin ? ' (' + t.origin + ')' : ''),
+              filterText: t.name + ' ' + full,
+              range,
+              sortText: '3_' + t.name
+            });
+          });
+
+          // De-duplicate column names across tables so the list isn't 5x as long
+          // as it needs to be — Monaco handles many entries fine, but a tidier
+          // list ranks better.
+          const seenCols = new Set();
+          allTables.forEach(t => {
+            t.columns.forEach(col => {
+              const key = col.toLowerCase();
+              if (seenCols.has(key)) return;
+              seenCols.add(key);
+              suggestions.push({
+                label: col,
+                kind: monaco.languages.CompletionItemKind.Field,
+                insertText: col,
+                detail: 'Column',
+                range,
+                sortText: '4_' + col
+              });
+            });
+          });
         }
       } catch(e) { /* schema cache absent or malformed — fine */ }
 
@@ -1074,6 +1169,125 @@ function registerSqlCompletions(){
   });
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SCHEMA BRIDGE FOR INTELLISENSE
+// ──────────────────────────────────────────────────────────────────────────────
+// The completion provider (registerSqlCompletions) reads schema data from
+// window.__schemaCache. The Object Browser / AI features write schema data
+// into a private _schemaCache map keyed by connection-string slice. These
+// two caches were never connected — that's why CTE/keyword/snippet completion
+// worked but table names never appeared in the autocomplete dropdown.
+//
+// This block does two things:
+//   1. Bridge — expose the active source + target schemas to the completion
+//      provider as window.__schemaCache = { source, target }, refreshed any
+//      time the underlying _schemaCache changes.
+//   2. Auto-load — once Monaco is ready and a connection is configured,
+//      kick off a one-time schema fetch in the background so tables show
+//      up in autocomplete without the user having to open the Object
+//      Browser or click "↻ Schema" first.
+// ══════════════════════════════════════════════════════════════════════════════
+(function setupSchemaIntellisenseBridge() {
+  // Mirror the private cache into the global the completion provider reads.
+  // Called whenever schemas might have changed (after a fetch, after a
+  // connection switch, etc.).
+  function syncSchemaCache() {
+    try {
+      if (typeof getOBSchemas !== 'function') return;
+      const { source, target } = getOBSchemas();
+      // Only set if at least one side has data — otherwise leave whatever
+      // was there before so the provider doesn't briefly go empty during
+      // a refresh.
+      if (source || target) {
+        window.__schemaCache = { source: source || null, target: target || null };
+      }
+    } catch (e) { /* don't let bridge errors break anything else */ }
+  }
+
+  // Wrap refreshSchemaCache so the bridge re-syncs after every refresh.
+  // We can't just attach a listener — the codebase doesn't have an event
+  // bus — so wrapping is the cleanest way to hook in.
+  function wrapRefresh() {
+    if (typeof window.refreshSchemaCache === 'function' && !window.refreshSchemaCache.__bridged) {
+      const orig = window.refreshSchemaCache;
+      window.refreshSchemaCache = async function (...args) {
+        const r = await orig.apply(this, args);
+        syncSchemaCache();
+        return r;
+      };
+      window.refreshSchemaCache.__bridged = true;
+    }
+    if (typeof window.fetchSchemaForConn === 'function' && !window.fetchSchemaForConn.__bridged) {
+      const orig = window.fetchSchemaForConn;
+      window.fetchSchemaForConn = async function (...args) {
+        const r = await orig.apply(this, args);
+        syncSchemaCache();
+        return r;
+      };
+      window.fetchSchemaForConn.__bridged = true;
+    }
+  }
+
+  // Auto-load schemas in the background once Monaco is ready and we have a
+  // connection to talk to. Single-shot — refreshSchemaCache itself caches by
+  // connection string, so re-running it is a no-op anyway, but no need to be
+  // wasteful.
+  let _autoLoaded = false;
+  async function autoLoadSchemasIfReady() {
+    if (_autoLoaded) return;
+    if (typeof CygenixConnections === 'undefined') return;
+    if (typeof refreshSchemaCache !== 'function') return;
+
+    const c = CygenixConnections.get();
+    const hasSrc = !!(c.srcConnString || c.srcFnUrl);
+    const hasTgt = !!(c.tgtConnString || c.tgtFnUrl);
+    if (!hasSrc && !hasTgt) {
+      // No connections configured yet — don't bother. The user will configure
+      // one, then either open the Object Browser or click ↻ Schema, both of
+      // which will trigger a fetch and the bridge will catch up.
+      return;
+    }
+
+    _autoLoaded = true;
+    try {
+      console.log('[intellisense] auto-loading schemas for autocomplete…');
+      await refreshSchemaCache(); // bridged version, will syncSchemaCache after
+    } catch (e) {
+      console.warn('[intellisense] schema auto-load failed:', e.message);
+      _autoLoaded = false; // let it retry next time
+    }
+  }
+
+  // Wait for Monaco to be ready, then attach the wrapper + auto-load.
+  let attempts = 0;
+  function tick() {
+    wrapRefresh();
+    // Always sync once at startup in case schemas were already loaded
+    // (e.g. if the user navigated here from another page that fetched them).
+    syncSchemaCache();
+    if (window.__cygMonaco?.ready) {
+      autoLoadSchemasIfReady();
+      return;
+    }
+    if (attempts++ < 50) setTimeout(tick, 200); // up to 10 s
+  }
+  setTimeout(tick, 300); // small initial delay so other init has a chance to run
+
+  // Re-try auto-load when the user changes connection in the dropdown — they
+  // may have just configured a connection that wasn't there at page load.
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.id === 'conn-select') {
+      // Don't reset _autoLoaded — refreshSchemaCache already caches per
+      // connection so a second call is cheap and safe.
+      autoLoadSchemasIfReady();
+      // Also re-sync immediately in case both schemas are already cached
+      syncSchemaCache();
+    }
+  });
+
+  // Expose for manual debugging from the console
+  window.cygenixSyncSchemaCache = syncSchemaCache;
+})();
 // ══════════════════════════════════════════════════════════════════════════════
 
 // ── State ─────────────────────────────────────────────────────────────────────
