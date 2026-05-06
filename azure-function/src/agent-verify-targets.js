@@ -165,11 +165,30 @@ app.http('agent-verify-targets', {
 
     const srcConnStr = (body.srcConnString || '').trim();
     const srcFnUrl   = (body.srcFnUrl     || '').trim();
+    const srcConnMode = body.srcConnMode === 'azure' ? 'azure' : 'direct';
+
+    // Azure-mode source: verify-targets is a pre-flight optimisation that
+    // avoids burning AI tokens on a hopeless run. It's not a correctness
+    // check — the agent's own introspection will catch any name mismatches.
+    // Rather than introduce a parallel azure-mode path here (which would
+    // mean wiring the executor through this endpoint too), we cleanly
+    // skip and return ok=true with a marker. The page treats this as
+    // "verify skipped, proceed".
+    if (srcConnMode === 'azure' || (!srcConnStr && srcFnUrl)) {
+      ctx.log('[verify-targets] azure-mode source — skipping pre-flight verification');
+      return ok({
+        ok: true,
+        skipped: true,
+        skippedReason: 'azure-mode source — verification will happen during agent introspection',
+        tablesOk: [], tablesMissing: [],
+        columnsOk: [], columnsMissing: [],
+        suggestions: []
+      });
+    }
 
     let pool;
     try {
       if (srcConnStr) pool = await connectDirect(srcConnStr, ctx);
-      else if (srcFnUrl) pool = await connectViaManagedIdentity(ctx);
       else return err(400, 'No source connection provided.');
     } catch (e) {
       ctx.log(`[verify-targets] connect failed: ${e.message}`);

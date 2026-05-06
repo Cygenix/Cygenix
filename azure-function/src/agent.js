@@ -110,12 +110,21 @@ async function getUserConnections(userId, ctx) {
     const conns = resource && resource.connections;
     if (!conns) return null;
     const srcConnString = conns.srcConnString || conns.source || '';
+    const srcConnMode   = conns.srcConnMode   === 'azure' ? 'azure' : 'direct';
+    const srcFnUrl      = conns.srcFnUrl || '';
+    const srcFnKey      = conns.srcFnKey || '';
     const tgtConnString = conns.tgtConnString || conns.target || '';
+    const tgtConnMode   = conns.tgtConnMode   === 'azure' ? 'azure' : 'direct';
     const tgtFnUrl      = conns.tgtFnUrl || '';
     const tgtFnKey      = conns.tgtFnKey || '';
-    if (!srcConnString) return null;
+    // Source must resolve to *something* — direct conn string or azure Fn URL.
+    if (!srcConnString && !srcFnUrl) return null;
+    // Target likewise.
     if (!tgtConnString && !tgtFnUrl) return null;
-    return { srcConnString, tgtConnString, tgtFnUrl, tgtFnKey };
+    return {
+      srcConnString, srcConnMode, srcFnUrl, srcFnKey,
+      tgtConnString, tgtConnMode, tgtFnUrl, tgtFnKey,
+    };
   } catch (e) {
     if (e.code === 404) return null;
     ctx.log('getUserConnections error:', e.message);
@@ -132,7 +141,7 @@ function newRunDoc({ userId, goal, conns }) {
     goal,
     direction: 'source_to_target',
     connectionsFingerprint: {
-      sourceFingerprint: fingerprint(conns.srcConnString),
+      sourceFingerprint: fingerprint(conns.srcConnString || conns.srcFnUrl),
       targetFingerprint: fingerprint(conns.tgtConnString || conns.tgtFnUrl),
     },
     createdAt: nowIso(),
@@ -262,44 +271,39 @@ function parseMssqlUrl(connString) {
   };
 }
 
-// Per-run pool cache. Key is `${runId}:${side}`. We don't want pools to leak
-// across runs, so the cache is cleared via closeRunPools() at end of run.
-const _pools = new Map();
+// ─────────────────────────────────────────────────────────────────────────────
+// EXECUTOR LAYER — supports BOTH direct mssql:// and azure-mode targets
+// ─────────────────────────────────────────────────────────────────────────────
+// Previously this layer was direct-mssql only: getPool() opened an mssql
+// ConnectionPool and runQuery() ran SQL through it. That meant azure-mode
+// targets (where the user's tgtFnUrl points at a Cygenix-managed Function
+// instead of an mssql:// string) were not supported — the agent would
+// throw "No target connection string configured" on the first target tool
+// call, even though the request body had a valid tgtFnUrl.
+//
+// Now everything routes through agent-target-executor.js, which returns an
+// executor object whose .query()/.close() methods work the same regardless
+// of the underlying transport. The function names below (getPool /
+// runQuery / closeRunPools) are kept as-is for back-compat with all the
+// existing tool-handler call sites — they're now thin wrappers.
+const { getExecutor, closeRunExecutors } = require('./agent-target-executor');
 
 async function getPool(side, conns, runId) {
-  const sql = require('mssql');
-  const cacheKey = `${runId}:${side}`;
-  if (_pools.has(cacheKey)) return _pools.get(cacheKey);
-
-  const connString = side === 'source' ? conns.srcConnString : conns.tgtConnString;
-  if (!connString) {
-    throw new Error(`No ${side} connection string configured`);
-  }
-  const config = parseMssqlUrl(connString);
-  const pool = await new sql.ConnectionPool(config).connect();
-  _pools.set(cacheKey, pool);
-  return pool;
+  // Returns an executor (not a raw mssql pool). The executor exposes the
+  // same query interface for both modes via runQuery() below.
+  return getExecutor(side, conns, runId);
 }
 
 async function closeRunPools(runId) {
-  const keys = [...(_pools.keys())].filter(k => k.startsWith(`${runId}:`));
-  for (const k of keys) {
-    const pool = _pools.get(k);
-    try { await pool.close(); } catch (_e) { /* ignore */ }
-    _pools.delete(k);
-  }
+  await closeRunExecutors(runId);
 }
 
-// Run a parameterized query and return rows. Wraps mssql's request API.
-async function runQuery(pool, sqlText, params) {
-  const req = pool.request();
-  if (params) {
-    for (const [name, value] of Object.entries(params)) {
-      req.input(name, value);
-    }
-  }
-  const result = await req.query(sqlText);
-  return result.recordset || [];
+// Run a parameterized query and return rows. The first argument is now an
+// executor (returned from getPool above), not a raw mssql pool — but the
+// call signature is unchanged so existing tool handlers don't need
+// modification.
+async function runQuery(executor, sqlText, params) {
+  return executor.query(sqlText, params);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1291,16 +1295,30 @@ app.http('agent_migrate', {
     // for backward compatibility. When body-supplied values are used, we
     // also write them back to Cosmos so the record stays current for any
     // other consumers (and so subsequent calls without a body still work).
+    //
+    // We accept BOTH transport modes per side:
+    //   - direct mode: srcConnString / tgtConnString (mssql://...)
+    //   - azure mode:  srcFnUrl / tgtFnUrl (HTTP endpoint at /api/db)
+    // The explicit srcConnMode / tgtConnMode flags are honoured when the
+    // browser sends them; otherwise the executor infers mode from which
+    // field is populated.
     let conns = null;
-    const bodySrc = (body.srcConnString || '').trim();
-    const bodyTgtConn = (body.tgtConnString || '').trim();
-    const bodyTgtFn   = (body.tgtFnUrl    || '').trim();
-    if (bodySrc && (bodyTgtConn || bodyTgtFn)) {
+    const bodySrc      = (body.srcConnString || '').trim();
+    const bodySrcFn    = (body.srcFnUrl      || '').trim();
+    const bodyTgtConn  = (body.tgtConnString || '').trim();
+    const bodyTgtFn    = (body.tgtFnUrl      || '').trim();
+    const haveSrc = !!(bodySrc || bodySrcFn);
+    const haveTgt = !!(bodyTgtConn || bodyTgtFn);
+    if (haveSrc && haveTgt) {
       conns = {
         srcConnString: bodySrc,
+        srcConnMode:   body.srcConnMode === 'azure' ? 'azure' : 'direct',
+        srcFnUrl:      bodySrcFn,
+        srcFnKey:      (body.srcFnKey || '').trim(),
         tgtConnString: bodyTgtConn,
+        tgtConnMode:   body.tgtConnMode === 'azure' ? 'azure' : 'direct',
         tgtFnUrl:      bodyTgtFn,
-        tgtFnKey:      (body.tgtFnKey || '').trim()
+        tgtFnKey:      (body.tgtFnKey || '').trim(),
       };
       // Best-effort write-through to Cosmos. Failure here is not fatal —
       // the run still proceeds with the body-supplied values.
@@ -1311,7 +1329,7 @@ app.http('agent_migrate', {
           connections: conns,
           updatedAt: nowIso()
         });
-        ctx.log(`[agent] connections refreshed in Cosmos for ${userId}`);
+        ctx.log(`[agent] connections refreshed in Cosmos for ${userId} (srcMode=${conns.srcConnMode}, tgtMode=${conns.tgtConnMode})`);
       } catch (e) {
         ctx.log(`[agent] cosmos connection upsert failed (non-fatal): ${e.message}`);
       }
@@ -1320,7 +1338,7 @@ app.http('agent_migrate', {
     }
     if (!conns) {
       return err(400, 'Source and target connections must be configured before starting an agent run. ' +
-                      'Pass srcConnString and tgtConnString (or tgtFnUrl) in the request body, ' +
+                      'Pass srcConnString (or srcFnUrl) and tgtConnString (or tgtFnUrl) in the request body, ' +
                       'or configure them via the Connections page.');
     }
 
