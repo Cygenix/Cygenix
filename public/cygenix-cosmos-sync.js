@@ -381,6 +381,60 @@ const CygenixSync = (() => {
   async function ping() { return callApi('ping','GET'); }
   async function getSubscription() { return callApi('subscription','GET'); }
 
+  // ── Per-key on-demand fetch ──────────────────────────────────────────────
+  // Pages that need a specific localStorage key to reflect the cloud BEFORE
+  // they read it (e.g. Object Mapping opening a job that the Agentive
+  // backend just created in Cosmos) call this. It bypasses the gap-fill
+  // policy in init() — gap-fill only runs when local is missing/empty,
+  // which doesn't catch "local has *some* jobs but not THIS one." This
+  // unconditionally fetches cloud, then OVERWRITES the local key for the
+  // matching FIELD_MAP entry.
+  //
+  // Important: this clobbers local-only items in lists — it's "cloud is
+  // truth for this key right now." Callers that need merge semantics
+  // should use saveNow() (which merges) instead.
+  //
+  // Returns true if the local key was updated, false otherwise. Never
+  // throws — failures log and return false so callers can proceed with
+  // whatever they have locally.
+  //
+  // De-duplicates concurrent calls per key, so two views opening at
+  // once don't fire two parallel cloud loads.
+  const _ensureKeyInflight = new Map(); // localKey -> Promise<boolean>
+  async function ensureKey(localKey) {
+    if (typeof localKey !== 'string' || !localKey) return false;
+    // Reverse-lookup: which cloud field corresponds to this localStorage key?
+    const cloudField = Object.entries(FIELD_MAP).find(([, k]) => k === localKey)?.[0];
+    if (!cloudField) {
+      console.warn('[CygenixSync] ensureKey: not a sync key:', localKey);
+      return false;
+    }
+    if (_ensureKeyInflight.has(localKey)) return _ensureKeyInflight.get(localKey);
+
+    const p = (async () => {
+      try {
+        const data = await callApi('load', 'GET');
+        if (!data || typeof data !== 'object') return false;
+        const cloudVal = data[cloudField];
+        if (cloudVal === undefined || cloudVal === null) return false;
+        try {
+          // Use _orig to avoid re-triggering the auto-save debounce — this is
+          // a cloud-to-local hydration, not a user edit, so there's nothing
+          // to push back up.
+          _orig(localKey, JSON.stringify(cloudVal));
+          return true;
+        } catch (e) {
+          console.warn('[CygenixSync] ensureKey: write failed for', localKey, e.message);
+          return false;
+        }
+      } finally {
+        _ensureKeyInflight.delete(localKey);
+      }
+    })();
+    _ensureKeyInflight.set(localKey, p);
+    return p;
+  }
+
   // Debounced auto-save on localStorage writes — shared timer so the manual
   // saveNow() can cancel pending writes and flush immediately.
   let _saveTimer = null;
@@ -526,7 +580,7 @@ const CygenixSync = (() => {
   setTimeout(init, 800);
 
   return {
-    init, save, saveNow, load, forceLoad, ensureUser, ping, getSubscription, getUserId,
+    init, save, saveNow, load, forceLoad, ensureKey, ensureUser, ping, getSubscription, getUserId,
     // Exposed for other modules (e.g. cygenix-project-summary.js) that need to
     // call the Function with the same auth as the rest of the dashboard.
     // Keep this the SINGLE source of truth — never duplicate the function key

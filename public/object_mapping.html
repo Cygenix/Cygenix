@@ -1057,6 +1057,15 @@ async function dbCall(conn, body){
   const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(60000)});
   const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
   if(!res.ok) throw new Error(data.error||res.statusText);
+  // Application-level error: the Azure /api/db Function returns HTTP 200 with
+  // `{ success: false, error: 'Unknown action: schema-tables' }` for unknown
+  // actions. Without this check, the smart-fallback in _fetchSchemaSmart() can't
+  // see the failure and silently treats the unknown-action response as a real
+  // schema, leaving the page stuck on "0 tables". Throwing here lets the
+  // smart-fallback's catch block fall through to the legacy `schema` action.
+  if (data && data.success === false && data.error) {
+    throw new Error(data.error);
+  }
   return data;
 }
 
@@ -2779,11 +2788,27 @@ function saveAsJob(){
 }
 
 // ── Edit mode — load saved job ────────────────────────────────────────────────
-function checkEditMode(){
+// Async because jobs can be created server-side by the Agentive Migration
+// backend (which writes directly to the user's Cosmos `projects` document).
+// Those jobs aren't in this browser's localStorage yet — CygenixSync's
+// gap-fill on init() only fills *missing* keys, and a localStorage that
+// already has older jobs isn't "missing." We explicitly hydrate before
+// reading so the user's "Open in Object Mapping" link from Agentive
+// resolves on the first attempt instead of showing "Job not found."
+async function checkEditMode(){
   const params=new URLSearchParams(location.search);
   const jobId=params.get('edit')||params.get('job');
   if(!jobId) return;
   editJobId=jobId;
+
+  // Pull the latest jobs from Cosmos before looking up. Best-effort —
+  // ensureKey returns false on failure and we proceed with whatever's
+  // already in localStorage. ensureKey de-duplicates concurrent calls,
+  // so this is cheap if anything else on the page also asks for jobs.
+  if (typeof CygenixSync !== 'undefined' && typeof CygenixSync.ensureKey === 'function') {
+    try { await CygenixSync.ensureKey('cygenix_jobs'); } catch {}
+  }
+
   const jobs=(() => { try{ return JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); }catch{return[];} })();
   const job=jobs.find(j=>j.id===jobId);
   if(!job){ showStatus('Job not found: '+jobId,'err'); return; }
