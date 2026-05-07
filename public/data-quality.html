@@ -1760,19 +1760,39 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SAVE / LOAD / DELETE / RENAME REPORTS  (via /api/data quality-* actions)
+  // SAVE / LOAD / DELETE / RENAME REPORTS via the /api/data Azure Function.
+  //
+  // The Function lives at a fixed URL on cygenix-db-api.azurewebsites.net
+  // with a function-level access key required as ?code=… on every call.
+  // This matches the pattern used in dashboard.html (whoami, billing-portal).
+  // The relative-URL approach (/api/data/...) doesn't work because there's
+  // no Netlify rewrite forwarding /api/data/* to Azure.
   // ─────────────────────────────────────────────────────────────────────────
+  const DATA_API_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+  const DATA_API_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
   async function apiData(action, body, method = 'POST') {
     const userId = getUserId();
     if (!userId) throw new Error('Not signed in.');
-    const url = '/api/data/' + action + (method === 'GET' && body
-                  ? '?' + new URLSearchParams(body).toString() : '');
+
+    // GET requests carry params in the query string; the function key is
+    // appended alongside.
+    const params = new URLSearchParams();
+    if (method === 'GET' && body) {
+      for (const [k, v] of Object.entries(body)) {
+        if (v !== undefined && v !== null) params.set(k, String(v));
+      }
+    }
+    params.set('code', DATA_API_CODE);
+
+    const url  = DATA_API_BASE + '/' + action + '?' + params.toString();
     const opts = {
       method,
       headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
     };
     if (method !== 'GET' && body) opts.body = JSON.stringify(body);
-    const res = await fetch(url, opts);
+
+    const res  = await fetch(url, opts);
     const data = await res.json().catch(() => ({ error: 'Non-JSON ' + res.status }));
     if (!res.ok) throw new Error(data.error || res.statusText);
     return data;
