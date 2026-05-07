@@ -1727,7 +1727,6 @@ app.http('data', {
           const SUGGEST_MAX_LOOKUPS   = 200;
           const SUGGEST_MAX_TX_TABLES = 5000;
           const SUGGEST_MAX_COLS_PER  = 60;
-          const RELATED_TX_LIMIT      = 800;     // post-filter cap on transactional names
           const MODEL                 = 'claude-sonnet-4-5';
           let stage = 'init';
 
@@ -1779,49 +1778,20 @@ app.http('data', {
             })).filter(t => t.n);
             if (!lookupBlock.length) return err(400, 'stage=build-lookup-block: no usable lookup names');
 
-            // ─── Relevance filter for transactional tables ───────────────────
-            // Build "stems" from each lookup name (3+ char prefixes / parts) and
-            // keep only transactional tables whose name contains any stem. This
-            // typically cuts a 2400-table list down to ~200-800, dramatically
-            // reducing the prompt size with little quality loss — names that
-            // share no substring with any lookup are very unlikely to reference
-            // those lookups.
-            stage = 'build-relevance-filter';
-            function stemsForLookup(name) {
-              const lower = (name || '').toLowerCase();
-              const parts = lower.split(/[^a-z0-9]+/).filter(p => p.length >= 3);
-              const stems = new Set(parts);
-              // Add a trimmed singular form for common plurals (Currencies → currenc, currenci)
-              for (const p of parts) {
-                if (p.endsWith('ies') && p.length > 4) stems.add(p.slice(0, -3));   // currenc
-                else if (p.endsWith('es') && p.length > 4) stems.add(p.slice(0, -2));
-                else if (p.endsWith('s')  && p.length > 4) stems.add(p.slice(0, -1));
-                if (p.length > 5) stems.add(p.slice(0, 5));   // first 5 chars as fuzzy stem
-              }
-              return [...stems].filter(s => s.length >= 3);
-            }
-            const allStems = new Set();
-            for (const t of lookupBlock) {
-              for (const s of stemsForLookup(t.n)) allStems.add(s);
-            }
-            const stemArr = [...allStems];
-
-            stage = 'apply-relevance-filter';
-            const relevant = [];
-            for (const tx of transactionalIn) {
-              if (relevant.length >= RELATED_TX_LIMIT) break;
-              const lower = String(tx || '').toLowerCase();
-              if (!lower) continue;
-              for (const stem of stemArr) {
-                if (lower.indexOf(stem) >= 0) { relevant.push(tx); break; }
-              }
-            }
-            // Cap to be safe even if the filter didn't find a stop condition
-            const transactionalTables = relevant.slice(0, RELATED_TX_LIMIT);
+            // ─── Trust the client's curation ─────────────────────────────────
+            // The client sends a pre-curated list of tables to scan (after the
+            // user has reviewed the suggestions in the prep panel). We used to
+            // re-filter here using stem-matching against lookup names, but that
+            // discards core tables (e.g. "glpost", "timecard") whose names share
+            // no substring with any lookup. Result: model would receive zero
+            // transactional tables and return zero suggestions. Now we just
+            // pass through whatever the client sent, capped for safety.
+            stage = 'pass-through-tx';
+            const transactionalTables = transactionalIn.slice(0, SUGGEST_MAX_TX_TABLES);
 
             ctx.log(`quality-suggest-rels: stage=${stage} ` +
                     `lookups=${lookupBlock.length} ` +
-                    `transactionalIn=${transactionalIn.length} relevant=${transactionalTables.length} ` +
+                    `transactionalIn=${transactionalIn.length} sentToModel=${transactionalTables.length} ` +
                     `existing=${existingRels.length}`);
 
             stage = 'build-prompt';
