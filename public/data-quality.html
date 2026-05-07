@@ -595,6 +595,78 @@
     margin: 0 1px;
   }
 
+  /* ── AI suggestion panel (Inferred Relationships tab) ───────────────── */
+  .suggest-panel {
+    margin: 0 0 1rem 0;
+    padding: 0.85rem 1rem;
+    background: var(--bg2);
+    border: 1px solid var(--accent);
+    border-radius: var(--r);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .suggest-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .suggest-header h3 {
+    margin: 0; font-family: var(--serif); font-weight: 600;
+    font-size: 1rem; letter-spacing: -0.01em;
+  }
+  .suggest-meta {
+    font-family: var(--mono); font-size: 11px; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .suggest-list {
+    display: grid; gap: 0.35rem;
+    max-height: 480px; overflow-y: auto;
+  }
+  .suggest-row {
+    display: grid;
+    grid-template-columns: 22px 1fr auto;
+    gap: 0.65rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg3);
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+  .suggest-row:hover { background: var(--bg4); border-color: var(--border2); }
+  .suggest-row input[type="checkbox"] {
+    margin-top: 0.15rem;
+    width: 14px; height: 14px;
+  }
+  .suggest-row .sg-mapping {
+    font-family: var(--mono); font-size: 12.5px; color: var(--text);
+    line-height: 1.5;
+  }
+  .suggest-row .sg-arrow { color: var(--text3); margin: 0 0.4rem; }
+  .suggest-row .sg-reasoning {
+    font-size: 11.5px; color: var(--text3);
+    margin-top: 0.25rem; line-height: 1.45;
+  }
+  .suggest-row .sg-conf {
+    align-self: start;
+    display: inline-block; padding: 0.18rem 0.5rem;
+    border-radius: 100px;
+    font-family: var(--mono); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    font-weight: 600;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .suggest-row .sg-conf.high { background: var(--green-bg); color: var(--green); border-color: rgba(34,201,122,0.35); }
+  .suggest-row .sg-conf.med  { background: var(--amber-bg); color: var(--amber); border-color: rgba(245,158,11,0.35); }
+  .suggest-row .sg-conf.low  { background: var(--bg4);     color: var(--text3); border-color: var(--border2); }
+
+  .suggest-empty, .suggest-error {
+    padding: 1rem; text-align: center;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--text3);
+  }
+  .suggest-error { color: var(--red); }
+
   /* ── Schema bar (Inferred Relationships tab) ────────────────────────── */
   .schema-bar {
     display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;
@@ -755,8 +827,28 @@
             <option value="source">Source DB</option>
             <option value="target">Target DB</option>
           </select>
-          <button class="btn btn-sm" id="schema-load-btn" onclick="loadSchema()">⬇ Load schema</button>
+          <button class="btn btn-sm" id="schema-load-btn"   onclick="loadSchema()">⬇ Load schema</button>
+          <button class="btn btn-sm" id="suggest-rels-btn" onclick="suggestRels()" title="Use AI to propose inferred relationships from your schema (table + column names). Review and approve before adding.">🪄 Suggest with AI</button>
           <span class="schema-status" id="schema-status">Schema not loaded — typing-only mode.</span>
+        </div>
+
+        <!--
+          AI suggestions panel — populated after suggestRels() returns. Each row
+          has a checkbox, the proposed mapping, a confidence badge, and the
+          model's reasoning. Users review and bulk-add the ones they accept.
+          Hidden by default.
+        -->
+        <div id="suggest-panel" class="suggest-panel" style="display:none">
+          <div class="suggest-header">
+            <h3>AI suggestions</h3>
+            <span class="suggest-meta" id="suggest-meta"></span>
+            <span style="flex:1"></span>
+            <button class="btn btn-sm btn-ghost" onclick="toggleAllSuggestions(true)">Select all</button>
+            <button class="btn btn-sm btn-ghost" onclick="toggleAllSuggestions(false)">Clear</button>
+            <button class="btn btn-sm btn-green" id="suggest-add-btn" onclick="addSelectedSuggestions()">Add selected</button>
+            <button class="btn btn-sm btn-ghost" onclick="closeSuggestions()" title="Close">✕</button>
+          </div>
+          <div id="suggest-list" class="suggest-list"></div>
         </div>
 
         <!--
@@ -2302,6 +2394,186 @@
     const inputs = document.querySelectorAll('.combo input[data-combo]');
     inputs.forEach(wireCombo);
     console.log('[combo] wired', inputs.length, 'combo inputs');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // AI SUGGEST RELATIONSHIPS
+  //
+  // Sends the cached schema (table + column names + simplified types) plus
+  // the list of already-configured inferred relationships to the
+  // /api/data/quality-suggest-rels endpoint, which calls Anthropic's API
+  // server-side. Returns a list of proposed relationships with confidence
+  // scores. User reviews and bulk-adds the ones they accept.
+  // ─────────────────────────────────────────────────────────────────────────
+  let _lastSuggestions = [];   // cached so toggleAll/addSelected can read
+
+  async function suggestRels() {
+    const projectId = getCurrentProjectId();
+    if (!projectId) { showToast('No active project. Open a project from the Dashboard first.', 'error'); return; }
+
+    // Schema must be loaded first. If it isn't, kick off a load and wait.
+    let schema = _relSchemaCache[getRelSide()];
+    if (!schema) {
+      const conn = getRelConn();
+      if (!conn) { showToast('No ' + getRelSide() + ' connection — set one in Connections.', 'error'); return; }
+      // Re-use the existing loader so the user sees the same status updates.
+      await loadSchema();
+      schema = _relSchemaCache[getRelSide()];
+      if (!schema) return;   // loadSchema already showed the error
+    }
+
+    const btn = document.getElementById('suggest-rels-btn');
+    btn.disabled = true;
+    btn.textContent = '🪄 Thinking…';
+    setSchemaStatus('Asking AI for suggestions (this can take 10–20s)…', 'busy');
+
+    try {
+      // Build the existingRels payload from the inferredRels list cached for
+      // the current project — saves the model from re-suggesting them.
+      const existingRels = (inferredRels || []).map(r => ({
+        sourceTable:  r.sourceTable, sourceColumn: r.sourceColumn,
+        lookupTable:  r.lookupTable, lookupColumn: r.lookupColumn
+      }));
+
+      const data = await apiData('quality-suggest-rels', {
+        schema: { tables: schema.tables },
+        existingRels
+      });
+
+      _lastSuggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
+      renderSuggestions(_lastSuggestions);
+      const cached = _relSchemaCache[getRelSide()];
+      setSchemaStatus('✓ ' + cached.tables.length + ' tables (' + getRelSide() + ')', 'ok');
+    } catch (e) {
+      console.error('[suggest] failed:', e);
+      _lastSuggestions = [];
+      renderSuggestionsError(e.message || String(e));
+      setSchemaStatus('AI suggest failed — see panel', 'error');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '🪄 Suggest with AI';
+    }
+  }
+
+  function renderSuggestions(suggestions) {
+    const panel = document.getElementById('suggest-panel');
+    const list  = document.getElementById('suggest-list');
+    const meta  = document.getElementById('suggest-meta');
+
+    if (!suggestions.length) {
+      list.innerHTML = '<div class="suggest-empty">No new relationships found. Either everything plausible is already configured, or the schema doesn\'t have obvious lookup tables.</div>';
+      meta.textContent = '0 suggestions';
+      panel.style.display = '';
+      document.getElementById('suggest-add-btn').disabled = true;
+      return;
+    }
+
+    // Group + sort: high confidence first, then med, then low.
+    const order = { high: 0, med: 1, low: 2 };
+    const sorted = [...suggestions].sort((a, b) =>
+      (order[a.confidence] ?? 9) - (order[b.confidence] ?? 9));
+
+    const counts = sorted.reduce((acc, s) => {
+      acc[s.confidence] = (acc[s.confidence] || 0) + 1;
+      return acc;
+    }, {});
+    meta.textContent =
+      sorted.length + ' total' +
+      (counts.high ? ' · ' + counts.high + ' high'  : '') +
+      (counts.med  ? ' · ' + counts.med  + ' med'   : '') +
+      (counts.low  ? ' · ' + counts.low  + ' low'   : '');
+
+    list.innerHTML = sorted.map((s, i) => {
+      const checked = (s.confidence === 'high') ? 'checked' : '';
+      return `
+        <label class="suggest-row" data-suggest-idx="${i}">
+          <input type="checkbox" class="suggest-check" ${checked} />
+          <div>
+            <div class="sg-mapping">
+              ${escapeHtml(s.sourceTable)}.${escapeHtml(s.sourceColumn)}
+              <span class="sg-arrow">→</span>
+              ${escapeHtml(s.lookupTable)}.${escapeHtml(s.lookupColumn)}
+            </div>
+            <div class="sg-reasoning">${escapeHtml(s.reasoning || '')}</div>
+          </div>
+          <span class="sg-conf ${escapeHtml(s.confidence)}">${escapeHtml(s.confidence)}</span>
+        </label>
+      `;
+    }).join('');
+
+    // Re-key suggestions to the sorted order so addSelected reads the right indices
+    _lastSuggestions = sorted;
+
+    panel.style.display = '';
+    document.getElementById('suggest-add-btn').disabled = false;
+  }
+
+  function renderSuggestionsError(msg) {
+    document.getElementById('suggest-meta').textContent = 'error';
+    document.getElementById('suggest-list').innerHTML =
+      '<div class="suggest-error">' + escapeHtml(msg) + '</div>';
+    document.getElementById('suggest-panel').style.display = '';
+    document.getElementById('suggest-add-btn').disabled    = true;
+  }
+
+  function toggleAllSuggestions(check) {
+    document.querySelectorAll('.suggest-check').forEach(cb => { cb.checked = !!check; });
+  }
+
+  function closeSuggestions() {
+    document.getElementById('suggest-panel').style.display = 'none';
+    _lastSuggestions = [];
+  }
+
+  // Add the ticked suggestions as real inferred relationships. Done one
+  // at a time via the existing quality-add-rel endpoint so we get the same
+  // server-side validation and id generation as manual entries.
+  async function addSelectedSuggestions() {
+    const projectId = getCurrentProjectId();
+    if (!projectId) { showToast('No active project.', 'error'); return; }
+
+    const checks = Array.from(document.querySelectorAll('.suggest-check'));
+    const picked = [];
+    checks.forEach((cb, i) => {
+      if (cb.checked && _lastSuggestions[i]) picked.push(_lastSuggestions[i]);
+    });
+    if (!picked.length) { showToast('Tick at least one suggestion to add.', 'error'); return; }
+
+    const btn = document.getElementById('suggest-add-btn');
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+
+    let added = 0, failed = 0;
+    for (const s of picked) {
+      try {
+        await apiData('quality-add-rel', {
+          rel: {
+            projectId,
+            sourceTable:  s.sourceTable,
+            sourceColumn: s.sourceColumn,
+            lookupTable:  s.lookupTable,
+            lookupColumn: s.lookupColumn,
+            label:        'AI suggested · ' + s.confidence
+          }
+        });
+        added++;
+      } catch (e) {
+        console.error('[suggest] add failed for', s, e);
+        failed++;
+      }
+    }
+
+    btn.disabled    = false;
+    btn.textContent = 'Add selected';
+
+    if (added) {
+      showToast('Added ' + added + ' relationship' + (added !== 1 ? 's' : '') +
+                (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
+      await loadRels();
+      closeSuggestions();
+    } else {
+      showToast('No relationships added — all attempts failed.', 'error');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
