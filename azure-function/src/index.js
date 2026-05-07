@@ -1715,205 +1715,263 @@ app.http('data', {
         //   existingRels:        [{ sourceTable, sourceColumn, lookupTable, lookupColumn }, ...]
         // }
         //
-        // Returns: { suggestions: [...], lookupCandidates: <count>, transactionalTables: <count> }
+        // The browser-side heuristic categorises tables before sending —
+        // server just narrows further (related-only filter) and calls Anthropic.
         //
-        // Browser does the heuristic filter to identify lookup vs transactional
-        // tables BEFORE sending — keeps the request body small (sub-100KB even
-        // on a 2451-table schema, vs ~5MB if the full raw schema were sent).
-        // This avoids Function timeout / memory issues on large enterprise DBs.
-        //
-        // Server validates the pre-filtered input, builds the prompt, calls
-        // Anthropic, parses+sanitises the suggestions. Same model and key as
-        // the narrative endpoint (ANTHROPIC_API_KEY app setting).
+        // Stage-tagged error handling: every potentially-failing step is
+        // wrapped so a 500 response carries a meaningful "stage:" prefix in
+        // the error body. Without Application Insights this is the only
+        // diagnostic we get when something goes wrong server-side.
         case 'quality-suggest-rels': {
-          const SUGGEST_OUTPUT_CAP        = 60;     // hard cap on returned suggestions
-          const SUGGEST_MAX_LOOKUPS       = 200;    // hard cap on lookup tables we'll process
-          const SUGGEST_MAX_TX_TABLES     = 5000;   // hard cap on transactional names
-          const SUGGEST_MAX_COLS_PER      = 60;     // truncate per-lookup column list
-          const MODEL                     = 'claude-sonnet-4-5';
+          const SUGGEST_OUTPUT_CAP    = 60;
+          const SUGGEST_MAX_LOOKUPS   = 200;
+          const SUGGEST_MAX_TX_TABLES = 5000;
+          const SUGGEST_MAX_COLS_PER  = 60;
+          const RELATED_TX_LIMIT      = 800;     // post-filter cap on transactional names
+          const MODEL                 = 'claude-sonnet-4-5';
+          let stage = 'init';
 
-          const apiKey = process.env.ANTHROPIC_API_KEY;
-          if (!apiKey) {
-            ctx.log.error('ANTHROPIC_API_KEY not configured for quality-suggest-rels');
-            return err(500, 'Server not configured — ANTHROPIC_API_KEY missing');
-          }
+          try {
+            stage = 'env-check';
+            const apiKey = process.env.ANTHROPIC_API_KEY;
+            if (!apiKey) {
+              ctx.log.error('ANTHROPIC_API_KEY not configured');
+              return err(500, 'stage=env-check: ANTHROPIC_API_KEY missing');
+            }
 
-          const body = await req.json().catch(() => null);
-          if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
+            stage = 'parse-body';
+            const body = await req.json().catch(() => null);
+            if (!body || typeof body !== 'object') return err(400, 'stage=parse-body: invalid JSON');
 
-          const lookupTables        = Array.isArray(body.lookupTables)        ? body.lookupTables        : [];
-          const transactionalTables = Array.isArray(body.transactionalTables) ? body.transactionalTables : [];
-          const existingRels        = Array.isArray(body.existingRels)        ? body.existingRels        : [];
+            const lookupTables        = Array.isArray(body.lookupTables)        ? body.lookupTables        : [];
+            const transactionalIn     = Array.isArray(body.transactionalTables) ? body.transactionalTables : [];
+            const existingRels        = Array.isArray(body.existingRels)        ? body.existingRels        : [];
 
-          if (!lookupTables.length) {
-            return ok({
-              suggestions: [], lookupCandidates: 0, transactionalTables: transactionalTables.length,
-              note: 'No lookup tables identified by the client-side heuristic. Either this schema does not use traditional lookup tables or naming conventions are unusual. You can still add inferred relationships manually.'
-            });
-          }
-          if (lookupTables.length > SUGGEST_MAX_LOOKUPS) {
-            return err(413, `Too many lookup candidates (${lookupTables.length}; limit ${SUGGEST_MAX_LOOKUPS}). The client-side heuristic should be tightened.`);
-          }
-          if (transactionalTables.length > SUGGEST_MAX_TX_TABLES) {
-            // Truncate rather than reject — losing tail items is better than failing the whole call
-            transactionalTables.length = SUGGEST_MAX_TX_TABLES;
-          }
+            if (!lookupTables.length) {
+              return ok({
+                suggestions: [], lookupCandidates: 0, transactionalTables: transactionalIn.length,
+                note: 'No lookup tables identified by the client-side heuristic.'
+              });
+            }
+            if (lookupTables.length > SUGGEST_MAX_LOOKUPS) {
+              return err(413, `stage=parse-body: too many lookup candidates (${lookupTables.length}; limit ${SUGGEST_MAX_LOOKUPS})`);
+            }
 
-          // Type bucket simplifier (matches what the client uses).
-          function simplifyType(t) {
-            if (!t) return 'unknown';
-            const s = String(t).toLowerCase();
-            if (/^(int|bigint|smallint|tinyint|bit)/.test(s)) return 'int';
-            if (/^(decimal|numeric|float|real|money|smallmoney)/.test(s)) return 'number';
-            if (/^(date|datetime|datetime2|smalldatetime|datetimeoffset|time)/.test(s)) return 'date';
-            if (/^(varchar|nvarchar|char|nchar|text|ntext)/.test(s)) return 'string';
-            if (/^(uniqueidentifier|guid)/.test(s)) return 'guid';
-            if (/^(varbinary|binary|image)/.test(s)) return 'binary';
-            return s.split('(')[0];
-          }
+            stage = 'simplify-types';
+            function simplifyType(t) {
+              if (!t) return 'unknown';
+              const s = String(t).toLowerCase();
+              if (/^(int|bigint|smallint|tinyint|bit)/.test(s)) return 'int';
+              if (/^(decimal|numeric|float|real|money|smallmoney)/.test(s)) return 'number';
+              if (/^(date|datetime|datetime2|smalldatetime|datetimeoffset|time)/.test(s)) return 'date';
+              if (/^(varchar|nvarchar|char|nchar|text|ntext)/.test(s)) return 'string';
+              if (/^(uniqueidentifier|guid)/.test(s)) return 'guid';
+              if (/^(varbinary|binary|image)/.test(s)) return 'binary';
+              return s.split('(')[0];
+            }
 
-          // Compact lookup tables for the prompt: keep only name + simplified-type columns.
-          const lookupBlock = lookupTables.map(t => ({
-            n: String(t.name || '').trim(),
-            c: (Array.isArray(t.columns) ? t.columns : [])
-                 .slice(0, SUGGEST_MAX_COLS_PER)
-                 .map(c => ({ n: String(c.name || ''), t: simplifyType(c.type || c.dataType) }))
-          })).filter(t => t.n);
+            stage = 'build-lookup-block';
+            const lookupBlock = lookupTables.map(t => ({
+              n: String(t.name || '').trim(),
+              c: (Array.isArray(t.columns) ? t.columns : [])
+                   .slice(0, SUGGEST_MAX_COLS_PER)
+                   .map(c => ({ n: String(c.name || ''), t: simplifyType(c.type || c.dataType) }))
+            })).filter(t => t.n);
+            if (!lookupBlock.length) return err(400, 'stage=build-lookup-block: no usable lookup names');
 
-          if (!lookupBlock.length) {
-            return err(400, 'lookupTables payload had no usable entries');
-          }
+            // ─── Relevance filter for transactional tables ───────────────────
+            // Build "stems" from each lookup name (3+ char prefixes / parts) and
+            // keep only transactional tables whose name contains any stem. This
+            // typically cuts a 2400-table list down to ~200-800, dramatically
+            // reducing the prompt size with little quality loss — names that
+            // share no substring with any lookup are very unlikely to reference
+            // those lookups.
+            stage = 'build-relevance-filter';
+            function stemsForLookup(name) {
+              const lower = (name || '').toLowerCase();
+              const parts = lower.split(/[^a-z0-9]+/).filter(p => p.length >= 3);
+              const stems = new Set(parts);
+              // Add a trimmed singular form for common plurals (Currencies → currenc, currenci)
+              for (const p of parts) {
+                if (p.endsWith('ies') && p.length > 4) stems.add(p.slice(0, -3));   // currenc
+                else if (p.endsWith('es') && p.length > 4) stems.add(p.slice(0, -2));
+                else if (p.endsWith('s')  && p.length > 4) stems.add(p.slice(0, -1));
+                if (p.length > 5) stems.add(p.slice(0, 5));   // first 5 chars as fuzzy stem
+              }
+              return [...stems].filter(s => s.length >= 3);
+            }
+            const allStems = new Set();
+            for (const t of lookupBlock) {
+              for (const s of stemsForLookup(t.n)) allStems.add(s);
+            }
+            const stemArr = [...allStems];
 
-          const SYSTEM_PROMPT = `You are a database schema analyst identifying soft (non-FK) reference relationships.
+            stage = 'apply-relevance-filter';
+            const relevant = [];
+            for (const tx of transactionalIn) {
+              if (relevant.length >= RELATED_TX_LIMIT) break;
+              const lower = String(tx || '').toLowerCase();
+              if (!lower) continue;
+              for (const stem of stemArr) {
+                if (lower.indexOf(stem) >= 0) { relevant.push(tx); break; }
+              }
+            }
+            // Cap to be safe even if the filter didn't find a stop condition
+            const transactionalTables = relevant.slice(0, RELATED_TX_LIMIT);
 
-A "soft FK" or "inferred relationship" is when a column in one table appears intended to reference a primary key or code in a lookup table, but no formal FK constraint exists. Examples:
-- A column "currency_code" in "Matters" referencing the "code" column of "Currencies".
-- A column "office" in "TimeEntries" referencing "id" or "code" of "Offices".
-- A column "country" or "nationality" in "Clients" referencing "Countries".
+            ctx.log(`quality-suggest-rels: stage=${stage} ` +
+                    `lookups=${lookupBlock.length} ` +
+                    `transactionalIn=${transactionalIn.length} relevant=${transactionalTables.length} ` +
+                    `existing=${existingRels.length}`);
+
+            stage = 'build-prompt';
+            const SYSTEM_PROMPT = `You are a database schema analyst identifying soft (non-FK) reference relationships.
+
+A "soft FK" or "inferred relationship" is when a column in one table appears intended to reference a primary key or code in a lookup table, but no formal FK constraint exists.
 
 The user's schema has been pre-filtered into two groups:
 - LOOKUP TABLES: small reference tables, given to you with their full column lists.
-- OTHER TABLES: a longer list of (likely transactional) table names without columns.
+- OTHER TABLES: a list of tables whose names share a substring with one or more lookup tables, given as names only. Their column lists are not shown — infer column names from the table name and standard naming conventions.
 
-Your task: for each LOOKUP TABLE, identify columns in OTHER tables (or in other lookups) that look like soft FKs to it. You will infer column names in OTHER tables from the table name and standard database naming conventions (e.g. an "Invoices" table likely has "currency_code", "matter_id", "office_id" columns even though those columns aren't shown).
+Your task: for each LOOKUP TABLE, identify columns in OTHER tables (or in other lookups) that look like soft FKs to it.
 
 Rules:
 1. Output ONLY a JSON array. No prose, no markdown fences.
-2. Each element is an object with EXACTLY these fields:
-   - "sourceTable":   the table containing the referencing column (use exact name from the lists provided)
-   - "sourceColumn":  the referencing column name (your inference if it's an OTHER table; the actual name if it's a lookup)
-   - "lookupTable":   the lookup table being referenced
-   - "lookupColumn":  the column in the lookup being referenced (id / code / key / etc.)
-   - "confidence":    "high" | "med" | "low"
-   - "reasoning":     one short sentence
-3. CONFIDENCE GUIDE:
-   - "high": column name strongly maps to lookup name AND types are compatible (e.g. "currency_code" → "Currencies.code"). For OTHER tables, "high" means the column name you're inferring would be a near-universal naming choice.
-   - "med": plausible but ambiguous. Less direct name match, or you are inferring a column name that COULD differ in this schema.
-   - "low": weak signal. Use sparingly — better to omit than fill the list with guesses.
-4. SKIP relationships already in the "Already configured" list.
-5. NEVER suggest a self-reference (sourceTable == lookupTable).
-6. NEVER suggest the lookup table as a source for itself.
-7. Cap suggestions at ${SUGGEST_OUTPUT_CAP} total. Quality over quantity.
-8. If no plausible relationships, return [].
-9. Schemas: SQL Server. Type buckets: int, number, date, string, guid, binary, unknown.
+2. Each element is an object with EXACTLY: sourceTable, sourceColumn, lookupTable, lookupColumn, confidence (high|med|low), reasoning (one short sentence).
+3. CONFIDENCE: high = strong name match + compatible types; med = plausible but ambiguous, or column name is inferred; low = weak signal (use sparingly).
+4. SKIP relationships in the "Already configured" list.
+5. NEVER suggest self-references.
+6. Cap at ${SUGGEST_OUTPUT_CAP} suggestions.
+7. If none found, return [].
+8. Schema dialect: SQL Server. Type buckets: int, number, date, string, guid, binary, unknown.
 
-For OTHER tables, prefer "med" confidence when you're inferring the column name (since you can't see it), unless the inferred name is virtually certain (e.g. "TimeEntries" almost certainly has a "matter_id" column).`;
+For OTHER tables, prefer "med" confidence when inferring column names, unless a near-universal name (e.g. "TimeEntries" → "matter_id").`;
 
-          const existingBlock = existingRels.length
-            ? 'Already configured (do not propose these):\n' +
-              existingRels.map(r =>
-                '  - ' + r.sourceTable + '.' + r.sourceColumn +
-                ' → ' + r.lookupTable + '.' + r.lookupColumn).join('\n') +
-              '\n\n'
-            : '';
+            const existingBlock = existingRels.length
+              ? 'Already configured (do not propose these):\n' +
+                existingRels.map(r =>
+                  '  - ' + r.sourceTable + '.' + r.sourceColumn +
+                  ' → ' + r.lookupTable + '.' + r.lookupColumn).join('\n') +
+                '\n\n'
+              : '';
 
-          const userMsg = existingBlock +
-            'LOOKUP TABLES (n=name, c=columns, t=type bucket):\n```json\n' +
-            JSON.stringify(lookupBlock) + '\n```\n\n' +
-            'OTHER TABLES (' + transactionalTables.length + ' total — column lists not provided; infer column names from table names):\n```\n' +
-            transactionalTables.join(', ') + '\n```';
+            const userMsg = existingBlock +
+              'LOOKUP TABLES (n=name, c=columns, t=type):\n```json\n' +
+              JSON.stringify(lookupBlock) + '\n```\n\n' +
+              'OTHER TABLES (' + transactionalTables.length + ' related to one or more lookups; column lists not provided):\n```\n' +
+              transactionalTables.join(', ') + '\n```';
 
-          ctx.log(`quality-suggest-rels: ${lookupBlock.length} lookups, ${transactionalTables.length} other tables, prompt ~${Math.round(userMsg.length / 4)} tokens`);
+            const promptKb = Math.round(userMsg.length / 1024);
+            ctx.log(`quality-suggest-rels: prompt=${promptKb}KB ~${Math.round(userMsg.length / 4)} tokens`);
 
-          const resp = await fetch('https://api.anthropic.com/v1/messages', {
-            method:  'POST',
-            headers: {
-              'Content-Type':      'application/json',
-              'x-api-key':         apiKey,
-              'anthropic-version': '2023-06-01'
-            },
-            body: JSON.stringify({
-              model:      MODEL,
-              max_tokens: 4000,
-              system:     SYSTEM_PROMPT,
-              messages: [{ role: 'user', content: userMsg }]
-            })
-          });
-
-          if (!resp.ok) {
-            const errText = await resp.text();
-            ctx.log.error('Anthropic API error in suggest-rels', resp.status, errText);
-            return err(502, `Upstream error (${resp.status})`);
-          }
-
-          const data = await resp.json();
-          const text = (data.content || [])
-            .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-          if (!text) return err(502, 'Empty response from model');
-
-          // Robust JSON extraction
-          let suggestions;
-          try {
-            let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-            const firstBracket = cleaned.indexOf('[');
-            const lastBracket  = cleaned.lastIndexOf(']');
-            if (firstBracket < 0 || lastBracket <= firstBracket) {
-              throw new Error('No JSON array found in response');
+            stage = 'anthropic-call';
+            // 90s timeout — Anthropic typically returns in 15-30s for this size,
+            // but bigger prompts and busy hours can push that. 90s leaves headroom
+            // before Azure's HTTP timeout (~230s).
+            const controller = new AbortController();
+            const timeoutId  = setTimeout(() => controller.abort(), 90000);
+            let resp;
+            try {
+              resp = await fetch('https://api.anthropic.com/v1/messages', {
+                method:  'POST',
+                signal:  controller.signal,
+                headers: {
+                  'Content-Type':      'application/json',
+                  'x-api-key':         apiKey,
+                  'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                  model:      MODEL,
+                  max_tokens: 4000,
+                  system:     SYSTEM_PROMPT,
+                  messages: [{ role: 'user', content: userMsg }]
+                })
+              });
+            } catch (fetchErr) {
+              clearTimeout(timeoutId);
+              const cause = fetchErr.name === 'AbortError' ? 'timeout-90s' : fetchErr.message;
+              ctx.log.error(`anthropic-call failed: ${cause}`);
+              return err(504, `stage=anthropic-call: ${cause}`);
             }
-            cleaned = cleaned.slice(firstBracket, lastBracket + 1);
-            suggestions = JSON.parse(cleaned);
-          } catch (e) {
-            ctx.log.error('Failed to parse LLM JSON:', e.message, '— raw:', text.slice(0, 500));
-            return err(502, 'Could not parse model output as JSON');
-          }
-          if (!Array.isArray(suggestions)) {
-            return err(502, 'Model output was not a JSON array');
-          }
+            clearTimeout(timeoutId);
 
-          // Whitelist + validate. Drop self-refs, malformed entries, and duplicates of existingRels.
-          const existingKeys = new Set(existingRels.map(r =>
-            (r.sourceTable + '|' + r.sourceColumn + '|' + r.lookupTable + '|' + r.lookupColumn).toLowerCase()));
-          const validConfidences = new Set(['high', 'med', 'low']);
-          const seen = new Set();
-          const cleanSuggestions = [];
-          for (const s of suggestions) {
-            if (!s || typeof s !== 'object') continue;
-            const sourceTable  = String(s.sourceTable  || '').trim();
-            const sourceColumn = String(s.sourceColumn || '').trim();
-            const lookupTable  = String(s.lookupTable  || '').trim();
-            const lookupColumn = String(s.lookupColumn || '').trim();
-            const confidence   = String(s.confidence   || '').trim().toLowerCase();
-            const reasoning    = String(s.reasoning    || '').trim().slice(0, 300);
-            if (!sourceTable || !sourceColumn || !lookupTable || !lookupColumn) continue;
-            if (sourceTable.toLowerCase() === lookupTable.toLowerCase()) continue;
-            if (!validConfidences.has(confidence)) continue;
+            stage = 'check-response';
+            if (!resp.ok) {
+              let errText = '';
+              try { errText = await resp.text(); } catch {}
+              ctx.log.error(`Anthropic API ${resp.status}:`, errText.slice(0, 500));
+              return err(502, `stage=check-response: anthropic returned ${resp.status} — ${errText.slice(0, 200)}`);
+            }
 
-            const key = (sourceTable + '|' + sourceColumn + '|' + lookupTable + '|' + lookupColumn).toLowerCase();
-            if (existingKeys.has(key) || seen.has(key)) continue;
-            seen.add(key);
+            stage = 'parse-response';
+            let data;
+            try { data = await resp.json(); }
+            catch (e) { return err(502, `stage=parse-response: ${e.message}`); }
 
-            cleanSuggestions.push({
-              sourceTable, sourceColumn, lookupTable, lookupColumn, confidence, reasoning
+            const text = (data.content || [])
+              .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+            if (!text) {
+              ctx.log.error('Empty model response. stop_reason:', data.stop_reason, 'usage:', JSON.stringify(data.usage));
+              return err(502, 'stage=parse-response: empty model response');
+            }
+
+            stage = 'extract-json';
+            let suggestions;
+            try {
+              let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+              const firstBracket = cleaned.indexOf('[');
+              const lastBracket  = cleaned.lastIndexOf(']');
+              if (firstBracket < 0 || lastBracket <= firstBracket) {
+                throw new Error('No JSON array found');
+              }
+              cleaned = cleaned.slice(firstBracket, lastBracket + 1);
+              suggestions = JSON.parse(cleaned);
+            } catch (e) {
+              ctx.log.error('Failed to parse LLM JSON:', e.message, 'raw start:', text.slice(0, 200));
+              return err(502, `stage=extract-json: ${e.message}`);
+            }
+            if (!Array.isArray(suggestions)) return err(502, 'stage=extract-json: not an array');
+
+            stage = 'sanitise-suggestions';
+            const existingKeys = new Set(existingRels.map(r =>
+              (r.sourceTable + '|' + r.sourceColumn + '|' + r.lookupTable + '|' + r.lookupColumn).toLowerCase()));
+            const validConfidences = new Set(['high', 'med', 'low']);
+            const seen = new Set();
+            const cleanSuggestions = [];
+            for (const s of suggestions) {
+              if (!s || typeof s !== 'object') continue;
+              const sourceTable  = String(s.sourceTable  || '').trim();
+              const sourceColumn = String(s.sourceColumn || '').trim();
+              const lookupTable  = String(s.lookupTable  || '').trim();
+              const lookupColumn = String(s.lookupColumn || '').trim();
+              const confidence   = String(s.confidence   || '').trim().toLowerCase();
+              const reasoning    = String(s.reasoning    || '').trim().slice(0, 300);
+              if (!sourceTable || !sourceColumn || !lookupTable || !lookupColumn) continue;
+              if (sourceTable.toLowerCase() === lookupTable.toLowerCase()) continue;
+              if (!validConfidences.has(confidence)) continue;
+
+              const key = (sourceTable + '|' + sourceColumn + '|' + lookupTable + '|' + lookupColumn).toLowerCase();
+              if (existingKeys.has(key) || seen.has(key)) continue;
+              seen.add(key);
+
+              cleanSuggestions.push({ sourceTable, sourceColumn, lookupTable, lookupColumn, confidence, reasoning });
+              if (cleanSuggestions.length >= SUGGEST_OUTPUT_CAP) break;
+            }
+
+            ctx.log(`quality-suggest-rels: returned ${cleanSuggestions.length} suggestions (raw=${suggestions.length})`);
+            return ok({
+              suggestions:         cleanSuggestions,
+              lookupCandidates:    lookupBlock.length,
+              transactionalTables: transactionalTables.length,
+              transactionalTotal:  transactionalIn.length
             });
-            if (cleanSuggestions.length >= SUGGEST_OUTPUT_CAP) break;
-          }
 
-          ctx.log(`quality-suggest-rels: returned ${cleanSuggestions.length} suggestions (raw=${suggestions.length})`);
-          return ok({
-            suggestions:         cleanSuggestions,
-            lookupCandidates:    lookupBlock.length,
-            transactionalTables: transactionalTables.length
-          });
+          } catch (innerErr) {
+            // Catches anything we didn't explicitly handle. The stage variable
+            // tells us where it died.
+            ctx.log.error(`quality-suggest-rels CRASHED at stage=${stage}:`, innerErr.message, innerErr.stack?.split('\n').slice(0, 3).join(' | '));
+            return err(500, `stage=${stage}: ${innerErr.message}`);
+          }
         }
 
         default:
