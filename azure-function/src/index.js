@@ -1512,8 +1512,204 @@ app.http('data', {
           return html(body);
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // QUALITY REVIEW — saved-report CRUD + inferred-relationship CRUD.
+        //
+        // Storage:
+        //   Container `quality_reports`         partition key /projectId
+        //   Container `inferred_relationships`  partition key /projectId
+        //
+        // Both must exist in Cosmos before these endpoints will work.
+        //
+        // Authentication is handled by the surrounding switch — every action
+        // here requires x-user-id (none are in PUBLIC_ACTIONS). Reports and
+        // rels are scoped to a projectId; userId is recorded for audit but
+        // does NOT gate read access — anyone with the project open can see
+        // its reports. Project-level access control lives elsewhere.
+        // ─────────────────────────────────────────────────────────────────────
+
+        // ── QUALITY-LIST-REPORTS: list saved quality reports for a project ───
+        // GET /api/data/quality-list-reports?projectId=PROJ_ID
+        // Returns headers only (no `results` blob) to keep the list payload small.
+        case 'quality-list-reports': {
+          const projectId = req.query.get('projectId');
+          if (!projectId) return err(400, 'projectId query param is required');
+
+          const { resources } = await getCosmosContainer('quality_reports').items
+            .query({
+              query: 'SELECT c.id, c.projectId, c.userId, c.sourceName, c.connSide, ' +
+                     'c.reportName, c.runAt, c.status, c.checksRun, c.summary ' +
+                     'FROM c WHERE c.projectId = @projectId ORDER BY c.runAt DESC',
+              parameters: [{ name: '@projectId', value: projectId }]
+            }, { partitionKey: projectId })
+            .fetchAll();
+          return ok({ reports: resources || [] });
+        }
+
+        // ── QUALITY-GET-REPORT: fetch one report with full results ───────────
+        // GET /api/data/quality-get-report?id=qr_xxx&projectId=PROJ_ID
+        case 'quality-get-report': {
+          const id        = req.query.get('id');
+          const projectId = req.query.get('projectId');
+          if (!id || !projectId) return err(400, 'id and projectId query params are required');
+
+          try {
+            const { resource } = await getCosmosContainer('quality_reports')
+              .item(id, projectId).read();
+            if (!resource) return err(404, 'Report not found');
+            return ok({ report: resource });
+          } catch (e) {
+            if (e.code === 404) return err(404, 'Report not found');
+            throw e;
+          }
+        }
+
+        // ── QUALITY-SAVE-REPORT: persist a completed quality report ──────────
+        // POST /api/data/quality-save-report
+        // Body: { report: { id, projectId, userId, sourceName, connSide,
+        //                   reportName, runAt, status, checksRun, summary, results } }
+        // The client generates the id (qr_<ts>_<rand>) so it can render results
+        // immediately and then save without waiting for the round-trip.
+        case 'quality-save-report': {
+          const body = await req.json().catch(() => null);
+          if (!body || !body.report) return err(400, 'report is required');
+          const r = body.report;
+          if (!r.id || !r.projectId) return err(400, 'report.id and report.projectId are required');
+
+          // Coerce/whitelist fields — never trust the client to supply arbitrary keys.
+          const doc = {
+            id:          String(r.id),
+            projectId:   String(r.projectId),
+            userId:      String(r.userId || userId),
+            sourceName:  String(r.sourceName || ''),
+            connSide:    r.connSide === 'target' ? 'target' : 'source',
+            reportName:  String(r.reportName || 'Untitled report'),
+            runAt:       r.runAt || new Date().toISOString(),
+            status:      String(r.status || 'complete'),
+            checksRun:   Array.isArray(r.checksRun) ? r.checksRun.map(String) : [],
+            summary:     r.summary && typeof r.summary === 'object' ? r.summary : {},
+            results:     r.results && typeof r.results === 'object' ? r.results : {}
+          };
+
+          await getCosmosContainer('quality_reports').items.upsert(doc);
+          ctx.log(`Saved quality report ${doc.id} for project ${doc.projectId}`);
+          return ok({ saved: true, id: doc.id });
+        }
+
+        // ── QUALITY-RENAME-REPORT: rename a saved report ─────────────────────
+        // POST /api/data/quality-rename-report
+        // Body: { id, projectId, reportName }
+        case 'quality-rename-report': {
+          const body = await req.json().catch(() => null);
+          if (!body || !body.id || !body.projectId || !body.reportName) {
+            return err(400, 'id, projectId and reportName are required');
+          }
+          const newName = String(body.reportName).trim().slice(0, 200);
+          if (!newName) return err(400, 'reportName cannot be empty');
+
+          try {
+            const container = getCosmosContainer('quality_reports');
+            const { resource } = await container.item(body.id, body.projectId).read();
+            if (!resource) return err(404, 'Report not found');
+            resource.reportName = newName;
+            await container.item(body.id, body.projectId).replace(resource);
+            return ok({ renamed: true, reportName: newName });
+          } catch (e) {
+            if (e.code === 404) return err(404, 'Report not found');
+            throw e;
+          }
+        }
+
+        // ── QUALITY-DELETE-REPORT: hard delete a saved report ────────────────
+        // DELETE /api/data/quality-delete-report?id=qr_xxx&projectId=PROJ_ID
+        // (Body also accepted as a fallback for clients that prefer POST.)
+        case 'quality-delete-report': {
+          let id        = req.query.get('id');
+          let projectId = req.query.get('projectId');
+          if (!id || !projectId) {
+            const body = await req.json().catch(() => null);
+            id        = id        || (body && body.id);
+            projectId = projectId || (body && body.projectId);
+          }
+          if (!id || !projectId) return err(400, 'id and projectId are required');
+
+          try {
+            await getCosmosContainer('quality_reports').item(id, projectId).delete();
+            return ok({ deleted: true });
+          } catch (e) {
+            if (e.code === 404) return ok({ deleted: false, reason: 'not found' });
+            throw e;
+          }
+        }
+
+        // ── QUALITY-LIST-RELS: list inferred relationships for a project ─────
+        // GET /api/data/quality-list-rels?projectId=PROJ_ID
+        case 'quality-list-rels': {
+          const projectId = req.query.get('projectId');
+          if (!projectId) return err(400, 'projectId query param is required');
+
+          const { resources } = await getCosmosContainer('inferred_relationships').items
+            .query({
+              query: 'SELECT c.id, c.projectId, c.sourceTable, c.sourceColumn, ' +
+                     'c.lookupTable, c.lookupColumn, c.label, c.createdAt ' +
+                     'FROM c WHERE c.projectId = @projectId ORDER BY c.createdAt DESC',
+              parameters: [{ name: '@projectId', value: projectId }]
+            }, { partitionKey: projectId })
+            .fetchAll();
+          return ok({ rels: resources || [] });
+        }
+
+        // ── QUALITY-ADD-REL: create one inferred relationship ────────────────
+        // POST /api/data/quality-add-rel
+        // Body: { rel: { projectId, sourceTable, sourceColumn, lookupTable, lookupColumn, label? } }
+        case 'quality-add-rel': {
+          const body = await req.json().catch(() => null);
+          if (!body || !body.rel) return err(400, 'rel is required');
+          const r = body.rel;
+          if (!r.projectId || !r.sourceTable || !r.sourceColumn ||
+              !r.lookupTable || !r.lookupColumn) {
+            return err(400, 'rel.projectId, sourceTable, sourceColumn, lookupTable, lookupColumn are all required');
+          }
+
+          const id = 'rel_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          const doc = {
+            id,
+            projectId:    String(r.projectId),
+            sourceTable:  String(r.sourceTable).trim(),
+            sourceColumn: String(r.sourceColumn).trim(),
+            lookupTable:  String(r.lookupTable).trim(),
+            lookupColumn: String(r.lookupColumn).trim(),
+            label:        String(r.label || '').trim().slice(0, 100),
+            createdAt:    new Date().toISOString(),
+            createdBy:    userId
+          };
+          await getCosmosContainer('inferred_relationships').items.create(doc);
+          return ok({ added: true, id });
+        }
+
+        // ── QUALITY-DELETE-REL: delete one inferred relationship ─────────────
+        // DELETE /api/data/quality-delete-rel?id=rel_xxx&projectId=PROJ_ID
+        case 'quality-delete-rel': {
+          let id        = req.query.get('id');
+          let projectId = req.query.get('projectId');
+          if (!id || !projectId) {
+            const body = await req.json().catch(() => null);
+            id        = id        || (body && body.id);
+            projectId = projectId || (body && body.projectId);
+          }
+          if (!id || !projectId) return err(400, 'id and projectId are required');
+
+          try {
+            await getCosmosContainer('inferred_relationships').item(id, projectId).delete();
+            return ok({ deleted: true });
+          } catch (e) {
+            if (e.code === 404) return ok({ deleted: false, reason: 'not found' });
+            throw e;
+          }
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel`);
       }
 
     } catch (e) {
