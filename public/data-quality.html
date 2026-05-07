@@ -429,10 +429,11 @@
 
   /* ── Inline ghost-text combo (Inferred Relationships inputs) ──────────
      The pattern: each input has a transparent ghost <span> layered behind
-     it that mirrors the typed text + an italic suggestion suffix. Both the
-     input and the ghost use identical font / padding / border so the glyphs
-     align precisely. The input itself stays a normal text field — the user
-     can type whatever they want; the ghost is purely a visual hint. */
+     it that mirrors the typed text + an italic suggestion suffix. The input
+     stays transparent at all times so the faded suffix shows through past
+     where the typed glyphs end. CRITICAL: input padding/border/font/line-
+     height MUST match the ghost exactly or the suffix won't align with the
+     cursor. */
   .combo {
     position: relative;
     display: block;
@@ -440,42 +441,35 @@
   .combo input {
     position: relative;
     z-index: 2;
-    background: transparent !important;   /* let the ghost show through */
+    background: transparent !important;   /* always transparent — never hide the ghost */
     width: 100%;
   }
   .combo-ghost {
     position: absolute;
     inset: 0;
     z-index: 1;
-    /* Match the input's box exactly so glyphs line up */
+    /* Match the input's box exactly so glyphs line up with the cursor. */
     padding: 0.45rem 0.7rem;
     border: 1px solid transparent;        /* same width as input border, no visible edge */
     border-radius: 6px;
     font-size: 13px;
     font-family: var(--serif);
+    font-weight: normal;
     line-height: 1.5;
+    letter-spacing: normal;
     color: var(--text3);
     pointer-events: none;
     white-space: pre;
     overflow: hidden;
-    /* The typed-prefix span inside the ghost is invisible (visibility:hidden
-       keeps it laying out so the suffix sits in the right place). The
-       suffix is what the user sees as the ghost. */
   }
+  /* The typed-prefix span is invisible (visibility:hidden keeps it laying
+     out so the suffix sits in exactly the right place — i.e. immediately
+     after where the user's cursor is). The suffix is what the user sees. */
   .combo-ghost .ghost-typed { visibility: hidden; }
   .combo-ghost .ghost-suffix {
     color: var(--text3);
-    opacity: 0.7;
-  }
-
-  /* The combo input gets a more solid background normally; we override only
-     when there's a ghost active so the suffix can show through. */
-  .combo.has-ghost input {
-    background: var(--bg3) !important;    /* keep the field visible */
-  }
-  .combo.has-ghost .combo-ghost {
-    /* Sits on top of the input background so the suffix is readable */
-    background: transparent;
+    opacity: 0.65;
+    font-style: italic;
   }
 
   .combo-hint {
@@ -1311,6 +1305,8 @@
 
       const side = getRelSide();
       _relSchemaCache[side] = data;
+      console.log('[schema] loaded', data.tables.length, 'tables for', side,
+                  '— sample:', data.tables.slice(0, 3).map(t => t.name));
 
       const colsKnown = (data.tables[0]?.columns || []).length > 0 || !data._tableListOnly;
       setSchemaStatus('✓ ' + data.tables.length + ' tables loaded' + (colsKnown ? '' : ' (names only — column completion unavailable)'),
@@ -1475,7 +1471,9 @@
   }
 
   function setupCombos() {
-    document.querySelectorAll('.combo input[data-combo]').forEach(wireCombo);
+    const inputs = document.querySelectorAll('.combo input[data-combo]');
+    inputs.forEach(wireCombo);
+    console.log('[combo] wired', inputs.length, 'combo inputs');
   }
 
   // ─────────────────────────────────────────────────────────────────────────
