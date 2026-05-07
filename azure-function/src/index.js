@@ -1707,23 +1707,34 @@ app.http('data', {
             throw e;
           }
         }
-
         // ── QUALITY-SUGGEST-RELS: AI-suggest inferred relationships from a schema ──
         // POST /api/data/quality-suggest-rels
         // Body: { schema: { tables: [{ name, schema?, columns: [{ name, type? }] }] },
         //         existingRels?: [{ sourceTable, sourceColumn, lookupTable, lookupColumn }] }
         //
         // Returns: { suggestions: [{ sourceTable, sourceColumn, lookupTable, lookupColumn,
-        //                            confidence: 'high'|'med'|'low', reasoning: '...' }] }
+        //                            confidence: 'high'|'med'|'low', reasoning: '...' }],
+        //           lookupCandidates: number,    // how many tables we identified as candidates
+        //           transactionalTables: number  // remainder
+        //         }
         //
-        // Calls Anthropic's Messages API server-side (uses the same ANTHROPIC_API_KEY
-        // app setting as the /api/narrative endpoint). The browser never sees the key.
-        // Schemas larger than SUGGEST_MAX_TABLES are rejected to keep token cost
-        // and latency bounded — call site should fall back to manual entry in that case.
+        // Calls Anthropic's Messages API server-side. Browser never sees the key.
+        //
+        // Two-pass design for large schemas (3E-sized at ~2400 tables fits comfortably):
+        //   1. SERVER-SIDE HEURISTIC: identify "lookup" tables vs "transactional" tables.
+        //      Lookup tables get sent to the model with their full column list.
+        //      Transactional tables get sent as names-only — the model can propose
+        //      relationships from them but doesn't need their columns to do so
+        //      (because the prompt asks "where does this lookup get referenced",
+        //      and the model will infer column names from the table name).
+        //   2. LLM CALL: focused, smaller payload, sharper reasoning.
+        //
+        // This drops a 2400-table schema from ~150K tokens (would never work) to
+        // ~15-25K tokens. Cost goes from "doesn't run" to roughly £0.05-0.15 per call.
         case 'quality-suggest-rels': {
-          const SUGGEST_MAX_TABLES   = 500;
-          const SUGGEST_MAX_COLS_PER = 80;        // truncate per-table column list
-          const SUGGEST_OUTPUT_CAP   = 50;        // hard cap on returned suggestions
+          const SUGGEST_MAX_TABLES   = 5000;       // hard ceiling — anything bigger is unreasonable
+          const SUGGEST_MAX_COLS_PER = 60;         // truncate per-table column list (lookups only)
+          const SUGGEST_OUTPUT_CAP   = 60;         // hard cap on returned suggestions
           const MODEL                = 'claude-sonnet-4-5';
 
           const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -1743,9 +1754,7 @@ app.http('data', {
           }
           const existingRels = Array.isArray(body.existingRels) ? body.existingRels : [];
 
-          // Compact the schema for the LLM. We send table+column names plus a
-          // simplified type bucket, not the full SQL Server type with length/scale.
-          // This keeps token cost predictable.
+          // ─── Helpers ─────────────────────────────────────────────────────
           function simplifyType(t) {
             if (!t) return 'unknown';
             const s = String(t).toLowerCase();
@@ -1757,45 +1766,130 @@ app.http('data', {
             if (/^(varbinary|binary|image)/.test(s)) return 'binary';
             return s.split('(')[0];
           }
-          const compact = tables.map(t => ({
-            n: (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name,
+          function tableLabel(t) {
+            return (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name;
+          }
+          function columnNames(t) {
+            return (t.columns || []).map(c => (c.name || '').toLowerCase());
+          }
+          function nameMatches(re, name) { return re.test(name || ''); }
+
+          // ─── PASS 1: lookup-table heuristic ──────────────────────────────
+          // A table is a "lookup candidate" if it satisfies all of:
+          //   - column count ≤ MAX_COLS  (typical lookup is 3-8 cols)
+          //   - has at least one identifier column (id, code, key, abbrev, short, abbreviation)
+          //   - has at least one descriptive column (name, description, label, title, value, text)
+          //   - name doesn't match an exclusion pattern (logs, audit, history, temp, etc.)
+          // OR a table whose NAME is a strong lookup signal (Country, Currency, Status, Type, etc.)
+          // and column count is reasonable (≤ 12) — catches lookups missing the
+          // strict id+name pair (e.g. just a single-column code list).
+          const MAX_LOOKUP_COLS         = 8;
+          const MAX_LOOKUP_COLS_BY_NAME = 12;
+          const ID_COL_RE       = /^(id|code|key|abbrev(iation)?|short(_?code)?|num(ber)?|nbr|cd)$|_id$|_code$|_key$/i;
+          const DESC_COL_RE     = /^(name|description|desc|label|title|value|text|caption|long_?name|display_?name|full_?name)$|_name$|_desc(ription)?$|_label$/i;
+          const EXCLUDE_NAME_RE = /(^|_)(log|logs|history|audit|tmp|temp|bk|backup|stage|staging|tmp_|temp_|hist_)($|_)|^_+|_+$|^z_|^zz_|^bk_|^bkp_|^old_|^new_|^arch_|_dt$|^dt_/i;
+          const LOOKUP_NAME_RE  = /(^|_)(country|countries|currency|currencies|currenc(?:y|ies)|state|states|province|region|locale|language|country_?code|currency_?code|status|statuses|type|types|category|categories|class|classification|kind|level|priority|severity|reason|method|methods|stage|phase|step|tier|grade|rating|gender|salutation|title|prefix|suffix|department|dept|office|location|branch|division|team|role|permission|nationality|industry|sector|frequency|unit|units|measure|measurement|colour|color|size|format|template|action|event|disposition|outcome|result|origin|source|channel|provider|carrier|airline|courier|shipper|payment_?method|delivery_?method)($|_)/i;
+
+          const lookupCandidates  = [];
+          const transactionalNames = [];
+          for (const t of tables) {
+            const cols     = t.columns || [];
+            const colNames = columnNames(t);
+            const tName    = (t.name || '').toLowerCase();
+            const fullName = tableLabel(t);
+
+            if (nameMatches(EXCLUDE_NAME_RE, tName)) {
+              transactionalNames.push(fullName);
+              continue;
+            }
+
+            const hasId   = colNames.some(n => nameMatches(ID_COL_RE,   n));
+            const hasDesc = colNames.some(n => nameMatches(DESC_COL_RE, n));
+            const nameLooksLikeLookup = nameMatches(LOOKUP_NAME_RE, tName);
+
+            const compactByShape =
+              cols.length <= MAX_LOOKUP_COLS && hasId && hasDesc;
+            const compactByName =
+              nameLooksLikeLookup && cols.length <= MAX_LOOKUP_COLS_BY_NAME;
+
+            if (compactByShape || compactByName) {
+              lookupCandidates.push(t);
+            } else {
+              transactionalNames.push(fullName);
+            }
+          }
+
+          // Bound the total count of lookup candidates we send. If somehow we
+          // identified hundreds of "lookups" (loose heuristics on a strange
+          // schema), keep the most likely ones (compactByName first, then
+          // compactByShape) and demote the rest to transactional names.
+          const HARD_LOOKUP_LIMIT = 150;
+          if (lookupCandidates.length > HARD_LOOKUP_LIMIT) {
+            // Re-rank: tables matching LOOKUP_NAME_RE first, then by ascending column count.
+            lookupCandidates.sort((a, b) => {
+              const an = nameMatches(LOOKUP_NAME_RE, (a.name || '').toLowerCase()) ? 0 : 1;
+              const bn = nameMatches(LOOKUP_NAME_RE, (b.name || '').toLowerCase()) ? 0 : 1;
+              if (an !== bn) return an - bn;
+              return (a.columns?.length || 0) - (b.columns?.length || 0);
+            });
+            const overflow = lookupCandidates.splice(HARD_LOOKUP_LIMIT);
+            for (const t of overflow) transactionalNames.push(tableLabel(t));
+          }
+
+          ctx.log(`quality-suggest-rels: ${tables.length} tables → ${lookupCandidates.length} lookup candidates, ${transactionalNames.length} transactional`);
+
+          if (!lookupCandidates.length) {
+            return ok({
+              suggestions: [],
+              lookupCandidates: 0,
+              transactionalTables: transactionalNames.length,
+              note: 'No tables matched the lookup-table heuristic. Either this schema does not use traditional lookup tables, or naming conventions are unusual. You can still add inferred relationships manually.'
+            });
+          }
+
+          // ─── PASS 2: build the focused LLM prompt ────────────────────────
+          const lookupBlock = lookupCandidates.map(t => ({
+            n: tableLabel(t),
             c: (t.columns || [])
                  .slice(0, SUGGEST_MAX_COLS_PER)
                  .map(c => ({ n: c.name, t: simplifyType(c.type || c.dataType) }))
           }));
 
-          const SYSTEM_PROMPT = `You are a database schema analyst identifying soft (non-FK) reference relationships in a SQL schema.
+          const SYSTEM_PROMPT = `You are a database schema analyst identifying soft (non-FK) reference relationships.
 
 A "soft FK" or "inferred relationship" is when a column in one table appears intended to reference a primary key or code in a lookup table, but no formal FK constraint exists. Examples:
-- A column "currency_code" in "Matters" that should reference the "code" column of a "Currencies" table.
-- A column "office" in "TimeEntries" that should match the "id" or "code" of an "Offices" table.
-- A column "country" or "nationality" in "Clients" referencing a "Countries" table.
+- A column "currency_code" in "Matters" referencing the "code" column of "Currencies".
+- A column "office" in "TimeEntries" referencing "id" or "code" of "Offices".
+- A column "country" or "nationality" in "Clients" referencing "Countries".
 
-Your job: scan the schema and propose plausible inferred relationships.
+The user's schema has been pre-filtered into two groups:
+- LOOKUP TABLES: small reference tables, given to you with their full column lists.
+- OTHER TABLES: a longer list of (likely transactional) table names without columns.
+
+Your task: for each LOOKUP TABLE, identify columns in OTHER tables (or in other lookups) that look like soft FKs to it. You will infer column names in OTHER tables from the table name and standard database naming conventions (e.g. an "Invoices" table likely has "currency_code", "matter_id", "office_id" columns even though those columns aren't shown).
 
 Rules:
-1. Output ONLY a JSON array. No prose, no markdown fences, no preamble.
-2. Each element must be an object with EXACTLY these fields:
-   - "sourceTable":   the table containing the referencing column (use exact name from schema, including schema prefix if given)
-   - "sourceColumn":  the referencing column name
-   - "lookupTable":   the table being referenced
-   - "lookupColumn":  the column being referenced (usually the lookup table's id/code/name column)
+1. Output ONLY a JSON array. No prose, no markdown fences.
+2. Each element is an object with EXACTLY these fields:
+   - "sourceTable":   the table containing the referencing column (use exact name from the lists provided)
+   - "sourceColumn":  the referencing column name (your inference if it's an OTHER table; the actual name if it's a lookup)
+   - "lookupTable":   the lookup table being referenced
+   - "lookupColumn":  the column in the lookup being referenced (id / code / key / etc.)
    - "confidence":    "high" | "med" | "low"
-   - "reasoning":     one short sentence explaining why this is a likely match
-3. "high" confidence: column name strongly matches the lookup table name (e.g. "currency_code" → "Currencies.code"; "office_id" → "Offices.id"). Types compatible.
-4. "med" confidence: plausible but ambiguous (e.g. "country" in a single-purpose table; could match by convention but column name doesn't include the lookup table's name).
-5. "low" confidence: weak signal — only include if you have specific reasoning. Don't fill the list with low-confidence guesses.
-6. Skip relationships that already exist in the "Already configured" list at the top of the user message.
-7. Do not propose self-references (sourceTable == lookupTable).
-8. Do not propose relationships where the lookup table doesn't actually exist in the schema.
-9. If a column already IS a primary key, do not suggest it as a source (those are formal FKs, not inferred).
-10. Cap at ${SUGGEST_OUTPUT_CAP} suggestions total. Prefer quality over quantity.
-11. If you find no plausible relationships, return an empty array: [].
+   - "reasoning":     one short sentence
+3. CONFIDENCE GUIDE:
+   - "high": column name strongly maps to lookup name AND types are compatible (e.g. "currency_code" → "Currencies.code"). For OTHER tables, "high" means the column name you're inferring would be a near-universal naming choice.
+   - "med": plausible but ambiguous. Less direct name match, or you are inferring a column name that COULD differ in this schema.
+   - "low": weak signal. Use sparingly — better to omit than fill the list with guesses.
+4. SKIP relationships already in the "Already configured" list.
+5. NEVER suggest a self-reference (sourceTable == lookupTable).
+6. NEVER suggest the lookup table as a source for itself.
+7. Cap suggestions at ${SUGGEST_OUTPUT_CAP} total. Quality over quantity.
+8. If no plausible relationships, return [].
+9. Schemas: SQL Server. Type buckets: int, number, date, string, guid, binary, unknown.
 
-Schema dialect: SQL Server. Type buckets used: int, number, date, string, guid, binary, unknown.`;
+For OTHER tables, prefer "med" confidence when you're inferring the column name (since you can't see it), unless the inferred name is virtually certain (e.g. "TimeEntries" almost certainly has a "matter_id" column).`;
 
-          // Build the user message: existing rels at the top so the model
-          // can dedupe, then the schema as compact JSON.
           const existingBlock = existingRels.length
             ? 'Already configured (do not propose these):\n' +
               existingRels.map(r =>
@@ -1803,11 +1897,14 @@ Schema dialect: SQL Server. Type buckets used: int, number, date, string, guid, 
                 ' → ' + r.lookupTable + '.' + r.lookupColumn).join('\n') +
               '\n\n'
             : '';
-          const userMsg = existingBlock +
-                          'Schema (n=name, c=columns, t=type bucket):\n```json\n' +
-                          JSON.stringify(compact) + '\n```';
 
-          ctx.log(`quality-suggest-rels: ${tables.length} tables, ${existingRels.length} existing rels`);
+          const userMsg = existingBlock +
+            'LOOKUP TABLES (n=name, c=columns, t=type bucket):\n```json\n' +
+            JSON.stringify(lookupBlock) + '\n```\n\n' +
+            'OTHER TABLES (' + transactionalNames.length + ' total — column lists not provided; infer column names from table names):\n```\n' +
+            transactionalNames.join(', ') + '\n```';
+
+          ctx.log(`quality-suggest-rels: prompt size ~${Math.round(userMsg.length / 4)} tokens (estimate)`);
 
           const resp = await fetch('https://api.anthropic.com/v1/messages', {
             method:  'POST',
@@ -1835,12 +1932,9 @@ Schema dialect: SQL Server. Type buckets used: int, number, date, string, guid, 
             .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
           if (!text) return err(502, 'Empty response from model');
 
-          // Robust JSON extraction: handle markdown fences, accidental preamble,
-          // and trailing prose. Strategy: find the first '[' and last ']', parse
-          // what's between them. If that fails, give up cleanly.
+          // Robust JSON extraction
           let suggestions;
           try {
-            // Strip ```json fences if present
             let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
             const firstBracket = cleaned.indexOf('[');
             const lastBracket  = cleaned.lastIndexOf(']');
@@ -1850,15 +1944,15 @@ Schema dialect: SQL Server. Type buckets used: int, number, date, string, guid, 
             cleaned = cleaned.slice(firstBracket, lastBracket + 1);
             suggestions = JSON.parse(cleaned);
           } catch (e) {
-            ctx.log.error('Failed to parse LLM JSON output:', e.message, '— raw:', text.slice(0, 500));
+            ctx.log.error('Failed to parse LLM JSON:', e.message, '— raw:', text.slice(0, 500));
             return err(502, 'Could not parse model output as JSON');
           }
           if (!Array.isArray(suggestions)) {
             return err(502, 'Model output was not a JSON array');
           }
 
-          // Whitelist + validate each suggestion. Drop any that are malformed
-          // or self-referential or duplicates of existingRels.
+          // Whitelist + validate. Drop self-refs, malformed entries, and
+          // duplicates of existingRels.
           const existingKeys = new Set(existingRels.map(r =>
             (r.sourceTable + '|' + r.sourceColumn + '|' + r.lookupTable + '|' + r.lookupColumn).toLowerCase()));
           const validConfidences = new Set(['high', 'med', 'low']);
@@ -1887,7 +1981,11 @@ Schema dialect: SQL Server. Type buckets used: int, number, date, string, guid, 
           }
 
           ctx.log(`quality-suggest-rels: returned ${cleanSuggestions.length} suggestions (raw=${suggestions.length})`);
-          return ok({ suggestions: cleanSuggestions });
+          return ok({
+            suggestions:         cleanSuggestions,
+            lookupCandidates:    lookupCandidates.length,
+            transactionalTables: transactionalNames.length
+          });
         }
 
         default:
