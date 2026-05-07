@@ -1708,8 +1708,190 @@ app.http('data', {
           }
         }
 
+        // ── QUALITY-SUGGEST-RELS: AI-suggest inferred relationships from a schema ──
+        // POST /api/data/quality-suggest-rels
+        // Body: { schema: { tables: [{ name, schema?, columns: [{ name, type? }] }] },
+        //         existingRels?: [{ sourceTable, sourceColumn, lookupTable, lookupColumn }] }
+        //
+        // Returns: { suggestions: [{ sourceTable, sourceColumn, lookupTable, lookupColumn,
+        //                            confidence: 'high'|'med'|'low', reasoning: '...' }] }
+        //
+        // Calls Anthropic's Messages API server-side (uses the same ANTHROPIC_API_KEY
+        // app setting as the /api/narrative endpoint). The browser never sees the key.
+        // Schemas larger than SUGGEST_MAX_TABLES are rejected to keep token cost
+        // and latency bounded — call site should fall back to manual entry in that case.
+        case 'quality-suggest-rels': {
+          const SUGGEST_MAX_TABLES   = 500;
+          const SUGGEST_MAX_COLS_PER = 80;        // truncate per-table column list
+          const SUGGEST_OUTPUT_CAP   = 50;        // hard cap on returned suggestions
+          const MODEL                = 'claude-sonnet-4-5';
+
+          const apiKey = process.env.ANTHROPIC_API_KEY;
+          if (!apiKey) {
+            ctx.log.error('ANTHROPIC_API_KEY not configured for quality-suggest-rels');
+            return err(500, 'Server not configured — ANTHROPIC_API_KEY missing');
+          }
+
+          const body = await req.json().catch(() => null);
+          if (!body || !body.schema || !Array.isArray(body.schema.tables)) {
+            return err(400, 'schema.tables required');
+          }
+          const tables = body.schema.tables;
+          if (!tables.length) return err(400, 'schema.tables is empty');
+          if (tables.length > SUGGEST_MAX_TABLES) {
+            return err(413, `Schema too large for AI suggest (${tables.length} tables; limit ${SUGGEST_MAX_TABLES}).`);
+          }
+          const existingRels = Array.isArray(body.existingRels) ? body.existingRels : [];
+
+          // Compact the schema for the LLM. We send table+column names plus a
+          // simplified type bucket, not the full SQL Server type with length/scale.
+          // This keeps token cost predictable.
+          function simplifyType(t) {
+            if (!t) return 'unknown';
+            const s = String(t).toLowerCase();
+            if (/^(int|bigint|smallint|tinyint|bit)/.test(s)) return 'int';
+            if (/^(decimal|numeric|float|real|money|smallmoney)/.test(s)) return 'number';
+            if (/^(date|datetime|datetime2|smalldatetime|datetimeoffset|time)/.test(s)) return 'date';
+            if (/^(varchar|nvarchar|char|nchar|text|ntext)/.test(s)) return 'string';
+            if (/^(uniqueidentifier|guid)/.test(s)) return 'guid';
+            if (/^(varbinary|binary|image)/.test(s)) return 'binary';
+            return s.split('(')[0];
+          }
+          const compact = tables.map(t => ({
+            n: (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name,
+            c: (t.columns || [])
+                 .slice(0, SUGGEST_MAX_COLS_PER)
+                 .map(c => ({ n: c.name, t: simplifyType(c.type || c.dataType) }))
+          }));
+
+          const SYSTEM_PROMPT = `You are a database schema analyst identifying soft (non-FK) reference relationships in a SQL schema.
+
+A "soft FK" or "inferred relationship" is when a column in one table appears intended to reference a primary key or code in a lookup table, but no formal FK constraint exists. Examples:
+- A column "currency_code" in "Matters" that should reference the "code" column of a "Currencies" table.
+- A column "office" in "TimeEntries" that should match the "id" or "code" of an "Offices" table.
+- A column "country" or "nationality" in "Clients" referencing a "Countries" table.
+
+Your job: scan the schema and propose plausible inferred relationships.
+
+Rules:
+1. Output ONLY a JSON array. No prose, no markdown fences, no preamble.
+2. Each element must be an object with EXACTLY these fields:
+   - "sourceTable":   the table containing the referencing column (use exact name from schema, including schema prefix if given)
+   - "sourceColumn":  the referencing column name
+   - "lookupTable":   the table being referenced
+   - "lookupColumn":  the column being referenced (usually the lookup table's id/code/name column)
+   - "confidence":    "high" | "med" | "low"
+   - "reasoning":     one short sentence explaining why this is a likely match
+3. "high" confidence: column name strongly matches the lookup table name (e.g. "currency_code" → "Currencies.code"; "office_id" → "Offices.id"). Types compatible.
+4. "med" confidence: plausible but ambiguous (e.g. "country" in a single-purpose table; could match by convention but column name doesn't include the lookup table's name).
+5. "low" confidence: weak signal — only include if you have specific reasoning. Don't fill the list with low-confidence guesses.
+6. Skip relationships that already exist in the "Already configured" list at the top of the user message.
+7. Do not propose self-references (sourceTable == lookupTable).
+8. Do not propose relationships where the lookup table doesn't actually exist in the schema.
+9. If a column already IS a primary key, do not suggest it as a source (those are formal FKs, not inferred).
+10. Cap at ${SUGGEST_OUTPUT_CAP} suggestions total. Prefer quality over quantity.
+11. If you find no plausible relationships, return an empty array: [].
+
+Schema dialect: SQL Server. Type buckets used: int, number, date, string, guid, binary, unknown.`;
+
+          // Build the user message: existing rels at the top so the model
+          // can dedupe, then the schema as compact JSON.
+          const existingBlock = existingRels.length
+            ? 'Already configured (do not propose these):\n' +
+              existingRels.map(r =>
+                '  - ' + r.sourceTable + '.' + r.sourceColumn +
+                ' → ' + r.lookupTable + '.' + r.lookupColumn).join('\n') +
+              '\n\n'
+            : '';
+          const userMsg = existingBlock +
+                          'Schema (n=name, c=columns, t=type bucket):\n```json\n' +
+                          JSON.stringify(compact) + '\n```';
+
+          ctx.log(`quality-suggest-rels: ${tables.length} tables, ${existingRels.length} existing rels`);
+
+          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method:  'POST',
+            headers: {
+              'Content-Type':      'application/json',
+              'x-api-key':         apiKey,
+              'anthropic-version': '2023-06-01'
+            },
+            body: JSON.stringify({
+              model:      MODEL,
+              max_tokens: 4000,
+              system:     SYSTEM_PROMPT,
+              messages: [{ role: 'user', content: userMsg }]
+            })
+          });
+
+          if (!resp.ok) {
+            const errText = await resp.text();
+            ctx.log.error('Anthropic API error in suggest-rels', resp.status, errText);
+            return err(502, `Upstream error (${resp.status})`);
+          }
+
+          const data = await resp.json();
+          const text = (data.content || [])
+            .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+          if (!text) return err(502, 'Empty response from model');
+
+          // Robust JSON extraction: handle markdown fences, accidental preamble,
+          // and trailing prose. Strategy: find the first '[' and last ']', parse
+          // what's between them. If that fails, give up cleanly.
+          let suggestions;
+          try {
+            // Strip ```json fences if present
+            let cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+            const firstBracket = cleaned.indexOf('[');
+            const lastBracket  = cleaned.lastIndexOf(']');
+            if (firstBracket < 0 || lastBracket <= firstBracket) {
+              throw new Error('No JSON array found in response');
+            }
+            cleaned = cleaned.slice(firstBracket, lastBracket + 1);
+            suggestions = JSON.parse(cleaned);
+          } catch (e) {
+            ctx.log.error('Failed to parse LLM JSON output:', e.message, '— raw:', text.slice(0, 500));
+            return err(502, 'Could not parse model output as JSON');
+          }
+          if (!Array.isArray(suggestions)) {
+            return err(502, 'Model output was not a JSON array');
+          }
+
+          // Whitelist + validate each suggestion. Drop any that are malformed
+          // or self-referential or duplicates of existingRels.
+          const existingKeys = new Set(existingRels.map(r =>
+            (r.sourceTable + '|' + r.sourceColumn + '|' + r.lookupTable + '|' + r.lookupColumn).toLowerCase()));
+          const validConfidences = new Set(['high', 'med', 'low']);
+          const seen = new Set();
+          const cleanSuggestions = [];
+          for (const s of suggestions) {
+            if (!s || typeof s !== 'object') continue;
+            const sourceTable  = String(s.sourceTable  || '').trim();
+            const sourceColumn = String(s.sourceColumn || '').trim();
+            const lookupTable  = String(s.lookupTable  || '').trim();
+            const lookupColumn = String(s.lookupColumn || '').trim();
+            const confidence   = String(s.confidence   || '').trim().toLowerCase();
+            const reasoning    = String(s.reasoning    || '').trim().slice(0, 300);
+            if (!sourceTable || !sourceColumn || !lookupTable || !lookupColumn) continue;
+            if (sourceTable.toLowerCase() === lookupTable.toLowerCase()) continue;
+            if (!validConfidences.has(confidence)) continue;
+
+            const key = (sourceTable + '|' + sourceColumn + '|' + lookupTable + '|' + lookupColumn).toLowerCase();
+            if (existingKeys.has(key) || seen.has(key)) continue;
+            seen.add(key);
+
+            cleanSuggestions.push({
+              sourceTable, sourceColumn, lookupTable, lookupColumn, confidence, reasoning
+            });
+            if (cleanSuggestions.length >= SUGGEST_OUTPUT_CAP) break;
+          }
+
+          ctx.log(`quality-suggest-rels: returned ${cleanSuggestions.length} suggestions (raw=${suggestions.length})`);
+          return ok({ suggestions: cleanSuggestions });
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-suggest-rels`);
       }
 
     } catch (e) {
