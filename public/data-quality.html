@@ -854,10 +854,14 @@
   // PROJECT + USER context (mirrors how SQL editor reads these)
   // ─────────────────────────────────────────────────────────────────────────
   function getCurrentProjectId() {
-    // Most pages stash the active project id under this key.
-    // If your codebase uses a different key, this is the place to change it.
+    // Active project id is stored under 'cygenix_active_project_id' by the
+    // dashboard whenever the user opens a project. (We also fall back to
+    // 'cygenix_current_project_id' for any stray older code path that
+    // might still write to that key.)
     try {
-      return localStorage.getItem('cygenix_current_project_id') || '';
+      return localStorage.getItem('cygenix_active_project_id')
+          || localStorage.getItem('cygenix_current_project_id')
+          || '';
     } catch { return ''; }
   }
 
@@ -984,6 +988,14 @@
 
     const conn = getConn();
     if (!conn) { showToast('No ' + getConnLabel() + ' connection configured. Set one under Connections.', 'error'); return; }
+
+    // Need an active project to save the report against — the projectId is
+    // the partition key for the quality_reports container.
+    const projectId = getCurrentProjectId();
+    if (!projectId) {
+      showToast('No active project. Open a project from the Dashboard first.', 'error');
+      return;
+    }
 
     // Inferred-setups check requires Phase 3 — flag it but keep going.
     const phase3Ids = enabledIds.filter(id => id === 'inferred');
