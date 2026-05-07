@@ -595,6 +595,80 @@
     margin: 0 1px;
   }
 
+  /* ── AI scope-curation panel (Inferred Relationships tab) ───────────── */
+  .suggest-prep {
+    margin: 0 0 1rem 0;
+    padding: 0.85rem 1rem;
+    background: var(--bg2);
+    border: 1px solid var(--accent);
+    border-radius: var(--r);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  .prep-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 0.85rem; margin-bottom: 0.85rem;
+  }
+  @media (max-width: 720px) {
+    .prep-grid { grid-template-columns: 1fr; }
+  }
+  .prep-col {
+    display: flex; flex-direction: column; gap: 0.55rem;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.65rem 0.75rem;
+  }
+  .prep-col-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12.5px;
+  }
+  .prep-col-head strong { color: var(--text); font-weight: 600; }
+  .prep-col-meta { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .prep-col-help {
+    font-size: 11px; color: var(--text3);
+    line-height: 1.45;
+  }
+  .prep-controls {
+    display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;
+  }
+  .prep-filter {
+    flex: 1; min-width: 140px;
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); padding: 5px 9px; border-radius: 4px;
+    font-family: var(--mono); font-size: 11.5px;
+  }
+  .prep-filter:focus { outline: none; border-color: var(--accent); }
+  .prep-list {
+    max-height: 280px; overflow-y: auto;
+    border: 1px solid var(--border); border-radius: 5px;
+    padding: 0.4rem 0.5rem;
+    background: var(--bg);
+    display: grid; gap: 2px;
+    font-family: var(--mono); font-size: 11.5px;
+  }
+  .prep-row {
+    display: grid; grid-template-columns: 16px 1fr auto;
+    gap: 0.5rem; align-items: center;
+    padding: 3px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .prep-row:hover { background: var(--bg3); }
+  .prep-row input[type="checkbox"] { width: 13px; height: 13px; margin: 0; }
+  .prep-row .prep-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prep-row .prep-rc   { color: var(--text3); font-size: 10.5px; }
+  .prep-row.unchecked .prep-name { color: var(--text3); }
+  .prep-empty {
+    padding: 1rem; text-align: center; color: var(--text3); font-size: 11px;
+  }
+
+  .prep-footer {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid var(--border);
+  }
+  .prep-cost-est {
+    font-family: var(--mono); font-size: 11px; color: var(--text3);
+  }
+
   /* ── AI suggestion panel (Inferred Relationships tab) ───────────────── */
   .suggest-panel {
     margin: 0 0 1rem 0;
@@ -845,7 +919,61 @@
         </div>
 
         <!--
-          AI suggestions panel — populated after suggestRels() returns. Each row
+          AI scope-curation panel — appears after the user clicks Suggest with AI.
+          Shows the heuristic's detected lookup tables + a filter for which
+          transactional tables to scan. User reviews and tunes the scope before
+          firing the LLM calls (which are slow and cost real money on big DBs).
+          Hidden by default.
+        -->
+        <div id="suggest-prep" class="suggest-prep" style="display:none">
+          <div class="suggest-header">
+            <h3>Refine AI scope</h3>
+            <span class="suggest-meta" id="suggest-prep-meta"></span>
+            <span style="flex:1"></span>
+            <button class="btn btn-sm btn-ghost" onclick="closeSuggestPrep()" title="Close">✕</button>
+          </div>
+
+          <div class="prep-grid">
+            <!-- LEFT: Lookup tables to consider -->
+            <div class="prep-col">
+              <div class="prep-col-head">
+                <strong>Lookup tables</strong>
+                <span class="prep-col-meta" id="prep-lookup-meta"></span>
+              </div>
+              <div class="prep-col-help">Tables Claude will treat as reference data. Untick the ones that are not real lookups in your domain.</div>
+              <div class="prep-controls">
+                <button class="btn btn-sm btn-ghost" onclick="prepToggleAllLookups(true)">All</button>
+                <button class="btn btn-sm btn-ghost" onclick="prepToggleAllLookups(false)">None</button>
+              </div>
+              <div id="prep-lookup-list" class="prep-list"></div>
+            </div>
+
+            <!-- RIGHT: Transactional tables to scan -->
+            <div class="prep-col">
+              <div class="prep-col-head">
+                <strong>Tables to scan</strong>
+                <span class="prep-col-meta" id="prep-tx-meta"></span>
+              </div>
+              <div class="prep-col-help">Tables Claude will examine for soft-FK columns. Defaults to tables whose names share a substring with one or more lookups.</div>
+              <div class="prep-controls">
+                <input type="text" id="prep-tx-filter" class="prep-filter" placeholder="Name contains… (e.g. matter, bill)" oninput="prepRenderTxList()" />
+                <button class="btn btn-sm btn-ghost" onclick="prepToggleAllTx(true)">All visible</button>
+                <button class="btn btn-sm btn-ghost" onclick="prepToggleAllTx(false)">None</button>
+              </div>
+              <div id="prep-tx-list" class="prep-list"></div>
+            </div>
+          </div>
+
+          <div class="prep-footer">
+            <span id="prep-cost-est" class="prep-cost-est"></span>
+            <span style="flex:1"></span>
+            <button class="btn btn-ghost" onclick="closeSuggestPrep()">Cancel</button>
+            <button class="btn btn-primary" id="prep-run-btn" onclick="runSuggestWithCuratedScope()">Run AI →</button>
+          </div>
+        </div>
+
+        <!--
+          AI suggestions panel — populated after the LLM calls return. Each row
           has a checkbox, the proposed mapping, a confidence badge, and the
           model's reasoning. Users review and bulk-add the ones they accept.
           Hidden by default.
@@ -2517,6 +2645,9 @@
     return { categorise };
   })();
 
+  // Prep state — populated by suggestRels(), consumed by runSuggestWithCuratedScope()
+  let _suggestPrepState = null;
+
   async function suggestRels() {
     const projectId = getCurrentProjectId();
     if (!projectId) { showToast('No active project. Open a project from the Dashboard first.', 'error'); return; }
@@ -2554,12 +2685,9 @@
         return;
       }
 
-      // 2. Relevance filter: only keep transactional names that contain a
-      //    substring of one of the lookup names. This is MUCH cheaper to
-      //    compute client-side than to send all 2400 names to the server,
-      //    and dramatically reduces the prompt size for each LLM call.
-      //    Stop-list catches generic stems that match too many tables and
-      //    aren't useful as filter criteria (e.g. "code", "type", "desc").
+      // 2. Stem-based relevance filter on transactional tables.
+      //    Same logic as before, but the result feeds into the curation panel
+      //    rather than going straight to the LLM.
       const STEM_STOPLIST = new Set([
         'code', 'type', 'desc', 'descr', 'val', 'value', 'name', 'head', 'header',
         'stat', 'status', 'tbl', 'temp', 'tmp', 'new', 'old', 'sav', 'save', 'bat',
@@ -2576,8 +2704,6 @@
           else if (p.endsWith('es') && p.length > 5) stems.add(p.slice(0, -2));
           else if (p.endsWith('s')  && p.length > 5) stems.add(p.slice(0, -1));
         }
-        // Drop noise stems and require ≥ 4 chars (3-char stems caused too many
-        // false positives like 'bat' matching every batch table).
         return [...stems].filter(s => s.length >= 4 && !STEM_STOPLIST.has(s));
       }
       const allStems = new Set();
@@ -2594,41 +2720,210 @@
       }
       console.log('[suggest] relevance filter: kept', relevantTx.length, 'of', transactionalNames.length);
 
-      // 3. Chunk the relevant transactional names. Empirical testing on a
-      //    2451-table 3E schema: chunks of 30 succeed about 50% of the time
-      //    when the chunk contains many similar reasoning-heavy tables
-      //    (e.g. 3E cv_*wasis* tables). Chunks of 20 succeed reliably.
-      //    Each chunk + LLM call takes ~25-35s, so a busy schema with
-      //    ~100 relevant tx tables runs in ~3 minutes.
-      const CHUNK_SIZE       = 20;
-      const CHUNK_MAX_RETRIES = 1;     // retry once on failure before giving up
+      // 3. Stash everything into _suggestPrepState and open the curation panel.
+      //    The actual LLM run is deferred until the user clicks "Run AI →".
+      _suggestPrepState = {
+        lookups,
+        relevantTx,
+        // Default selections: all lookups ticked, all relevant tx ticked.
+        // User can untick / filter before running.
+        lookupChecked: lookups.map(() => true),
+        txChecked:     relevantTx.map(() => true)
+      };
+
+      // Hide the old results panel if it was open
+      document.getElementById('suggest-panel').style.display = 'none';
+      // Show the prep panel
+      renderSuggestPrep();
+      setSchemaStatus('Review scope, then click Run AI →', 'busy');
+    } catch (e) {
+      console.error('[suggest] prep failed:', e);
+      _suggestPrepState = null;
+      renderSuggestionsError(e.message || String(e));
+      setSchemaStatus('AI suggest prep failed', 'error');
+    } finally {
+      btn.disabled    = false;
+      btn.textContent = '🪄 Suggest with AI';
+    }
+  }
+
+  // ── Curation panel rendering ──────────────────────────────────────────
+  function renderSuggestPrep() {
+    if (!_suggestPrepState) return;
+    const panel = document.getElementById('suggest-prep');
+    panel.style.display = '';
+
+    const { lookups, relevantTx, lookupChecked, txChecked } = _suggestPrepState;
+    document.getElementById('suggest-prep-meta').textContent =
+      lookups.length + ' lookups · ' + relevantTx.length + ' related tables';
+
+    // Lookup list — sorted by row count ascending (real lookups first).
+    const lookupOrder = lookups
+      .map((t, i) => ({ t, i }))
+      .sort((a, b) => (a.t.rowCount ?? 999999) - (b.t.rowCount ?? 999999));
+    document.getElementById('prep-lookup-list').innerHTML = lookupOrder.map(({ t, i }) => {
+      const checked = lookupChecked[i] ? 'checked' : '';
+      const rc = (typeof t.rowCount === 'number') ? t.rowCount.toLocaleString() : '?';
+      return `<label class="prep-row${lookupChecked[i] ? '' : ' unchecked'}">
+        <input type="checkbox" data-lookup-idx="${i}" ${checked} onchange="prepOnLookupToggle(${i}, this.checked)" />
+        <span class="prep-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>
+        <span class="prep-rc">${rc}</span>
+      </label>`;
+    }).join('');
+    updatePrepLookupMeta();
+
+    // Tx list with filter
+    prepRenderTxList();
+  }
+
+  function prepRenderTxList() {
+    if (!_suggestPrepState) return;
+    const { relevantTx, txChecked } = _suggestPrepState;
+    const filterEl = document.getElementById('prep-tx-filter');
+    const filter = (filterEl ? filterEl.value : '').trim().toLowerCase();
+
+    // If a filter is set, only show rows matching it. Unticking a hidden row
+    // is impossible — that's the design point of the filter.
+    const visibleRows = relevantTx
+      .map((name, i) => ({ name, i }))
+      .filter(r => !filter || r.name.toLowerCase().includes(filter));
+
+    const listEl = document.getElementById('prep-tx-list');
+    if (!visibleRows.length) {
+      listEl.innerHTML = '<div class="prep-empty">No tables match this filter.</div>';
+    } else {
+      listEl.innerHTML = visibleRows.map(({ name, i }) => {
+        const checked = txChecked[i] ? 'checked' : '';
+        return `<label class="prep-row${txChecked[i] ? '' : ' unchecked'}">
+          <input type="checkbox" data-tx-idx="${i}" ${checked} onchange="prepOnTxToggle(${i}, this.checked)" />
+          <span class="prep-name" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        </label>`;
+      }).join('');
+    }
+    updatePrepTxMeta();
+    updatePrepCostEst();
+  }
+
+  function updatePrepLookupMeta() {
+    if (!_suggestPrepState) return;
+    const sel = _suggestPrepState.lookupChecked.filter(Boolean).length;
+    document.getElementById('prep-lookup-meta').textContent =
+      sel + ' / ' + _suggestPrepState.lookupChecked.length + ' selected';
+  }
+
+  function updatePrepTxMeta() {
+    if (!_suggestPrepState) return;
+    const sel = _suggestPrepState.txChecked.filter(Boolean).length;
+    document.getElementById('prep-tx-meta').textContent =
+      sel + ' / ' + _suggestPrepState.txChecked.length + ' selected';
+  }
+
+  function updatePrepCostEst() {
+    if (!_suggestPrepState) return;
+    const txSel     = _suggestPrepState.txChecked.filter(Boolean).length;
+    const chunks    = Math.max(1, Math.ceil(txSel / 20));   // CHUNK_SIZE = 20
+    const seconds   = chunks * 30;
+    const minutes   = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    const timeText  = minutes ? minutes + 'm ' + remainder + 's' : seconds + 's';
+    document.getElementById('prep-cost-est').textContent =
+      chunks + ' chunk' + (chunks !== 1 ? 's' : '') + ' · ~' + timeText;
+  }
+
+  function prepOnLookupToggle(idx, checked) {
+    if (!_suggestPrepState) return;
+    _suggestPrepState.lookupChecked[idx] = !!checked;
+    // Update row class without re-rendering everything
+    const row = document.querySelector('label.prep-row input[data-lookup-idx="' + idx + '"]')?.closest('.prep-row');
+    if (row) row.classList.toggle('unchecked', !checked);
+    updatePrepLookupMeta();
+  }
+
+  function prepOnTxToggle(idx, checked) {
+    if (!_suggestPrepState) return;
+    _suggestPrepState.txChecked[idx] = !!checked;
+    const row = document.querySelector('label.prep-row input[data-tx-idx="' + idx + '"]')?.closest('.prep-row');
+    if (row) row.classList.toggle('unchecked', !checked);
+    updatePrepTxMeta();
+    updatePrepCostEst();
+  }
+
+  function prepToggleAllLookups(check) {
+    if (!_suggestPrepState) return;
+    _suggestPrepState.lookupChecked = _suggestPrepState.lookupChecked.map(() => !!check);
+    renderSuggestPrep();
+  }
+
+  function prepToggleAllTx(check) {
+    if (!_suggestPrepState) return;
+    // "All visible" means: only toggle rows currently passing the filter.
+    const filter = (document.getElementById('prep-tx-filter')?.value || '').trim().toLowerCase();
+    if (!filter && check) {
+      _suggestPrepState.txChecked = _suggestPrepState.txChecked.map(() => true);
+    } else if (!filter && !check) {
+      _suggestPrepState.txChecked = _suggestPrepState.txChecked.map(() => false);
+    } else {
+      _suggestPrepState.relevantTx.forEach((name, i) => {
+        if (name.toLowerCase().includes(filter)) {
+          _suggestPrepState.txChecked[i] = !!check;
+        }
+      });
+    }
+    prepRenderTxList();
+  }
+
+  function closeSuggestPrep() {
+    _suggestPrepState = null;
+    document.getElementById('suggest-prep').style.display = 'none';
+    setSchemaStatus('', 'idle');
+  }
+
+  // ── The actual LLM run, triggered from the curation panel ─────────────
+  async function runSuggestWithCuratedScope() {
+    if (!_suggestPrepState) return;
+    const { lookups, relevantTx, lookupChecked, txChecked } = _suggestPrepState;
+
+    const selectedLookups = lookups.filter((_, i) => lookupChecked[i]);
+    const selectedTx      = relevantTx.filter((_, i) => txChecked[i]);
+
+    if (!selectedLookups.length) {
+      showToast('Tick at least one lookup table first.', 'error');
+      return;
+    }
+
+    // Hide prep panel for the run, but keep _suggestPrepState in case of error
+    document.getElementById('suggest-prep').style.display = 'none';
+
+    const btn = document.getElementById('suggest-rels-btn');
+    btn.disabled = true;
+
+    try {
+      // Chunk the transactional tables — same logic that worked before.
+      const CHUNK_SIZE        = 20;
+      const CHUNK_MAX_RETRIES = 1;
       const chunks = [];
-      for (let i = 0; i < relevantTx.length; i += CHUNK_SIZE) {
-        chunks.push(relevantTx.slice(i, i + CHUNK_SIZE));
+      for (let i = 0; i < selectedTx.length; i += CHUNK_SIZE) {
+        chunks.push(selectedTx.slice(i, i + CHUNK_SIZE));
       }
-      // Always have at least one chunk (even if empty) so we still hit the
-      // server with the lookups and get any lookup-to-lookup suggestions.
+      // Always send at least one call (for lookup-to-lookup suggestions)
       if (!chunks.length) chunks.push([]);
 
-      console.log('[suggest] chunking:', chunks.length, 'chunks of up to', CHUNK_SIZE);
+      console.log('[suggest] running:', selectedLookups.length, 'lookups,',
+                  selectedTx.length, 'tx in', chunks.length, 'chunks');
 
-      // 4. Run chunks sequentially. Each call sends the FULL lookup list
-      //    plus its slice of transactional names. Progress shown in the
-      //    schema-status line.
       const existingRels = (inferredRels || []).map(r => ({
         sourceTable:  r.sourceTable, sourceColumn: r.sourceColumn,
         lookupTable:  r.lookupTable, lookupColumn: r.lookupColumn
       }));
 
       const allSuggestions = [];
-      const seenKeys = new Set();
-      const errorMessages = [];
+      const seenKeys       = new Set();
+      const errorMessages  = [];
 
       for (let i = 0; i < chunks.length; i++) {
         btn.textContent = '🪄 Thinking… ' + (i + 1) + '/' + chunks.length;
         setSchemaStatus('AI batch ' + (i + 1) + ' of ' + chunks.length + '…', 'busy');
-        let lastError = null;
-        let success = false;
+        let lastError = null, success = false;
         for (let attempt = 0; attempt <= CHUNK_MAX_RETRIES && !success; attempt++) {
           if (attempt > 0) {
             btn.textContent = '🪄 Retry ' + (i + 1) + '/' + chunks.length;
@@ -2636,7 +2931,7 @@
           }
           try {
             const data = await apiData('quality-suggest-rels', {
-              lookupTables:        lookups,
+              lookupTables:        selectedLookups,
               transactionalTables: chunks[i],
               existingRels
             });
@@ -2652,26 +2947,24 @@
             console.warn('[suggest] chunk', i + 1, 'attempt', attempt + 1, 'failed:', e.message);
           }
         }
-        if (!success) {
-          errorMessages.push('Chunk ' + (i + 1) + ': ' + lastError.message);
-        }
+        if (!success) errorMessages.push('Chunk ' + (i + 1) + ': ' + lastError.message);
       }
 
-      // 5. Render
       _lastSuggestions = allSuggestions;
       renderSuggestions(allSuggestions, {
-        lookupCandidates: lookups.length,
-        transactionalTables: relevantTx.length,
-        chunksRun: chunks.length,
-        chunksFailed: errorMessages.length,
+        lookupCandidates:    selectedLookups.length,
+        transactionalTables: selectedTx.length,
+        chunksRun:           chunks.length,
+        chunksFailed:        errorMessages.length,
         note: errorMessages.length
           ? errorMessages.length + ' batch(es) errored — partial results shown. ' + errorMessages.slice(0, 2).join(' · ')
           : null
       });
       const cached = _relSchemaCache[getRelSide()];
       setSchemaStatus('✓ ' + cached.tables.length + ' tables (' + getRelSide() + ')', 'ok');
+      _suggestPrepState = null;   // run completed; clear prep state
     } catch (e) {
-      console.error('[suggest] failed:', e);
+      console.error('[suggest] run failed:', e);
       _lastSuggestions = [];
       renderSuggestionsError(e.message || String(e));
       setSchemaStatus('AI suggest failed — see panel', 'error');
