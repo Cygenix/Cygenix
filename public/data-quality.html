@@ -427,10 +427,29 @@
   }
   .phase-banner strong { color: var(--amber); font-weight: 600; }
 
-  /* ── Connection-ready hint next to source/target picker ──────────────── */
-  .conn-hint { font-size: 11px; font-family: var(--mono); color: var(--text3); margin-left: 0.25rem; }
-  .conn-hint.ok   { color: var(--green); }
-  .conn-hint.warn { color: var(--red); }
+  /* ── Schema bar (Inferred Relationships tab) ────────────────────────── */
+  .schema-bar {
+    display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;
+    padding: 0.6rem 0.85rem;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    margin-bottom: 0.85rem;
+  }
+  .schema-bar label {
+    font-size: 10px; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    font-family: var(--mono);
+  }
+  .schema-bar select { min-width: 130px; }
+  .schema-status {
+    font-family: var(--mono); font-size: 11px; color: var(--text3);
+    margin-left: auto;
+  }
+  .schema-status.ok    { color: var(--green); }
+  .schema-status.warn  { color: var(--amber); }
+  .schema-status.error { color: var(--red); }
+  .schema-status.busy  { color: var(--text2); }
   </style>
 </head>
 <body>
@@ -531,26 +550,56 @@
           (e.g. a matter with <code>CurrencyCode = 'GPB'</code> when no such code is in <code>Currencies</code>).
         </p>
 
-        <!-- Add form -->
+        <!--
+          Schema bar: pulls table + column lists from the source DB so the four
+          inputs below offer a dropdown of valid names. Cached in memory for the
+          page lifetime. Datalists backing the inputs allow free typing too —
+          if the user knows of a table that hasn't been loaded yet (e.g. a view,
+          or one not yet picked up by the cached schema), they can still type it.
+
+          The "Database" select here mirrors the one on the Run Review tab —
+          relationships are usually defined against the source, but the user
+          can choose. Whatever's picked here is what we fetch the schema from
+          and what relationships will run against in Phase 3.
+        -->
+        <div class="schema-bar">
+          <label>Database:</label>
+          <select id="rel-conn-select" onchange="onRelConnChange()">
+            <option value="source">Source DB</option>
+            <option value="target">Target DB</option>
+          </select>
+          <button class="btn btn-sm" id="schema-load-btn" onclick="loadSchema()">⬇ Load schema</button>
+          <span class="schema-status" id="schema-status">Schema not loaded — pick from typing only.</span>
+        </div>
+
+        <!-- Add form (datalist-backed combos: dropdown + free-text) -->
         <div class="inline-form">
           <div class="field">
             <label for="rel-src-table">Source table</label>
-            <input id="rel-src-table" placeholder="e.g. Matters" />
+            <input id="rel-src-table" list="dl-src-tables" placeholder="e.g. Matters"
+                   autocomplete="off" oninput="onSourceTableChange()" />
+            <datalist id="dl-src-tables"></datalist>
           </div>
           <div class="field">
             <label for="rel-src-col">Source column</label>
-            <input id="rel-src-col" placeholder="e.g. CurrencyCode" />
+            <input id="rel-src-col" list="dl-src-cols" placeholder="e.g. CurrencyCode"
+                   autocomplete="off" />
+            <datalist id="dl-src-cols"></datalist>
           </div>
           <div class="field">
             <label for="rel-lkp-table">Lookup table</label>
-            <input id="rel-lkp-table" placeholder="e.g. Currencies" />
+            <input id="rel-lkp-table" list="dl-lkp-tables" placeholder="e.g. Currencies"
+                   autocomplete="off" oninput="onLookupTableChange()" />
+            <datalist id="dl-lkp-tables"></datalist>
           </div>
           <div class="field">
             <label for="rel-lkp-col">Lookup column</label>
-            <input id="rel-lkp-col" placeholder="e.g. Code" />
+            <input id="rel-lkp-col" list="dl-lkp-cols" placeholder="e.g. Code"
+                   autocomplete="off" />
+            <datalist id="dl-lkp-cols"></datalist>
           </div>
           <button class="btn btn-green" onclick="addRel()">Add</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadRels()" title="Refresh">↻</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadRels()" title="Refresh list">↻</button>
         </div>
 
         <!-- List -->
@@ -1085,6 +1134,149 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // SCHEMA LOADING for Inferred Relationships dropdowns.
+  //
+  // The four inputs (source table/col, lookup table/col) are <input list="…">
+  // combos: native HTML datalist gives us a dropdown of suggestions while
+  // still allowing free typing — so users can add a relationship for a table
+  // not yet in the cached schema.
+  //
+  // Schema is fetched on demand (button click) from whichever DB is picked in
+  // the rel-conn-select dropdown, using the same schemaCall as the SQL editor:
+  //   POST {action:'schema'} to the connection URL  →  { tables: [{ name, columns: [{ name }] }] }
+  //
+  // We cache per-side ('source' | 'target') for the page lifetime — switching
+  // tabs doesn't re-fetch. New page load = no cache (matching SQL editor).
+  // ─────────────────────────────────────────────────────────────────────────
+  const _relSchemaCache = { source: null, target: null };
+
+  function getRelConn() {
+    if (typeof CygenixConnections === 'undefined') return '';
+    const which = document.getElementById('rel-conn-select').value;
+    return which === 'target' ? CygenixConnections.tgtConn : CygenixConnections.srcConn;
+  }
+  function getRelSide() {
+    return document.getElementById('rel-conn-select').value;   // 'source' | 'target'
+  }
+
+  function setSchemaStatus(text, kind) {
+    const el = document.getElementById('schema-status');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'schema-status' + (kind ? ' ' + kind : '');
+  }
+
+  // Switching DB invalidates the populated dropdowns — schemas differ between
+  // source and target — but we keep BOTH cached blobs around so the user can
+  // flip back and forth without re-fetching.
+  function onRelConnChange() {
+    const side = getRelSide();
+    const cached = _relSchemaCache[side];
+    if (cached) {
+      populateTableDatalists(cached);
+      setSchemaStatus('✓ ' + (cached.tables?.length || 0) + ' tables (' + side + ')', 'ok');
+    } else {
+      clearAllDatalists();
+      setSchemaStatus('Schema not loaded — pick from typing only.', '');
+    }
+    // Reset column dropdowns (they're table-scoped, so always stale on side change)
+    populateColumnDatalist('dl-src-cols', null);
+    populateColumnDatalist('dl-lkp-cols', null);
+  }
+
+  async function loadSchema() {
+    const conn = getRelConn();
+    if (!conn) {
+      setSchemaStatus('No ' + getRelSide() + ' connection — set one in Connections.', 'error');
+      return;
+    }
+    const btn = document.getElementById('schema-load-btn');
+    btn.disabled = true;
+    setSchemaStatus('Fetching schema…', 'busy');
+    try {
+      // Same call shape the SQL editor uses. Function URLs go directly; bare
+      // connection strings go via the Netlify db-connect proxy.
+      const isFn  = /^https?:\/\//.test(conn);
+      const url   = isFn ? conn : '/.netlify/functions/db-connect';
+      const body  = isFn ? { action: 'schema' } : { action: 'schema', connectionString: conn };
+      const res   = await fetch(url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+        signal:  AbortSignal.timeout(30000)
+      });
+      const data  = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      if (!data.tables || !data.tables.length) throw new Error('Schema response had no tables');
+
+      const side = getRelSide();
+      _relSchemaCache[side] = data;
+      populateTableDatalists(data);
+      // Reset column dropdowns until a table is picked
+      populateColumnDatalist('dl-src-cols', null);
+      populateColumnDatalist('dl-lkp-cols', null);
+
+      const colsKnown = (data.tables[0]?.columns || []).length > 0 || !data._tableListOnly;
+      setSchemaStatus('✓ ' + data.tables.length + ' tables loaded' + (colsKnown ? '' : ' (names only — column dropdowns unavailable)'),
+                      colsKnown ? 'ok' : 'warn');
+      // Update the button label for the next click
+      btn.textContent = '↻ Refresh schema';
+    } catch (e) {
+      console.error('[schema] fetch failed:', e);
+      setSchemaStatus('Schema load failed: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function populateTableDatalists(schema) {
+    const names = (schema.tables || []).map(t => t.name).filter(Boolean).sort();
+    const html = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    document.getElementById('dl-src-tables').innerHTML = html;
+    document.getElementById('dl-lkp-tables').innerHTML = html;
+  }
+
+  function clearAllDatalists() {
+    ['dl-src-tables', 'dl-src-cols', 'dl-lkp-tables', 'dl-lkp-cols'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
+  }
+
+  // Find a table in the cached schema (case-insensitive match — SQL Server is
+  // typically case-insensitive on identifiers anyway, and users may type any case).
+  function findTable(tableName) {
+    const cache = _relSchemaCache[getRelSide()];
+    if (!cache || !cache.tables || !tableName) return null;
+    const lower = tableName.toLowerCase();
+    return cache.tables.find(t => (t.name || '').toLowerCase() === lower) || null;
+  }
+
+  function populateColumnDatalist(datalistId, table) {
+    const el = document.getElementById(datalistId);
+    if (!el) return;
+    if (!table || !Array.isArray(table.columns) || !table.columns.length) {
+      el.innerHTML = '';
+      return;
+    }
+    const names = table.columns.map(c => c.name || c).filter(Boolean).sort();
+    el.innerHTML = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+  }
+
+  // Re-populate the source-column datalist whenever the source-table input
+  // changes. We match against the cached schema; if there's no match (e.g.
+  // user typed a name that isn't in the schema, or schema isn't loaded), the
+  // column dropdown is just empty — free-text entry still works.
+  function onSourceTableChange() {
+    const tableName = document.getElementById('rel-src-table').value.trim();
+    populateColumnDatalist('dl-src-cols', findTable(tableName));
+  }
+  function onLookupTableChange() {
+    const tableName = document.getElementById('rel-lkp-table').value.trim();
+    populateColumnDatalist('dl-lkp-cols', findTable(tableName));
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // INFERRED RELATIONSHIPS — list / add / delete
   // ─────────────────────────────────────────────────────────────────────────
   async function loadRels() {
@@ -1152,6 +1344,10 @@
       });
       ['rel-src-table', 'rel-src-col', 'rel-lkp-table', 'rel-lkp-col'].forEach(id =>
         document.getElementById(id).value = '');
+      // Column datalists are table-scoped — clear them so the next entry
+      // doesn't pre-populate against the table the user just added.
+      populateColumnDatalist('dl-src-cols', null);
+      populateColumnDatalist('dl-lkp-cols', null);
       await loadRels();
       showToast('Added.', 'success');
     } catch (e) {
@@ -1178,7 +1374,12 @@
       t.classList.toggle('active', t.dataset.tab === name));
     document.querySelectorAll('.tab-pane').forEach(p =>
       p.classList.toggle('active', p.id === 'tab-' + name));
-    if (name === 'rels') loadRels();
+    if (name === 'rels') {
+      loadRels();
+      // Reflect cached schema state in the bar — if the user has already
+      // loaded the schema this session, the dropdowns should be populated.
+      onRelConnChange();
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
