@@ -1707,35 +1707,30 @@ app.http('data', {
             throw e;
           }
         }
-        // ── QUALITY-SUGGEST-RELS: AI-suggest inferred relationships from a schema ──
+        // ── QUALITY-SUGGEST-RELS: AI-suggest inferred relationships ──────────
         // POST /api/data/quality-suggest-rels
-        // Body: { schema: { tables: [{ name, schema?, columns: [{ name, type? }] }] },
-        //         existingRels?: [{ sourceTable, sourceColumn, lookupTable, lookupColumn }] }
+        // Body: {
+        //   lookupTables:        [{ name, columns: [{ name, type? }] }, ...],
+        //   transactionalTables: ["TableA", "schema.TableB", ...],
+        //   existingRels:        [{ sourceTable, sourceColumn, lookupTable, lookupColumn }, ...]
+        // }
         //
-        // Returns: { suggestions: [{ sourceTable, sourceColumn, lookupTable, lookupColumn,
-        //                            confidence: 'high'|'med'|'low', reasoning: '...' }],
-        //           lookupCandidates: number,    // how many tables we identified as candidates
-        //           transactionalTables: number  // remainder
-        //         }
+        // Returns: { suggestions: [...], lookupCandidates: <count>, transactionalTables: <count> }
         //
-        // Calls Anthropic's Messages API server-side. Browser never sees the key.
+        // Browser does the heuristic filter to identify lookup vs transactional
+        // tables BEFORE sending — keeps the request body small (sub-100KB even
+        // on a 2451-table schema, vs ~5MB if the full raw schema were sent).
+        // This avoids Function timeout / memory issues on large enterprise DBs.
         //
-        // Two-pass design for large schemas (3E-sized at ~2400 tables fits comfortably):
-        //   1. SERVER-SIDE HEURISTIC: identify "lookup" tables vs "transactional" tables.
-        //      Lookup tables get sent to the model with their full column list.
-        //      Transactional tables get sent as names-only — the model can propose
-        //      relationships from them but doesn't need their columns to do so
-        //      (because the prompt asks "where does this lookup get referenced",
-        //      and the model will infer column names from the table name).
-        //   2. LLM CALL: focused, smaller payload, sharper reasoning.
-        //
-        // This drops a 2400-table schema from ~150K tokens (would never work) to
-        // ~15-25K tokens. Cost goes from "doesn't run" to roughly £0.05-0.15 per call.
+        // Server validates the pre-filtered input, builds the prompt, calls
+        // Anthropic, parses+sanitises the suggestions. Same model and key as
+        // the narrative endpoint (ANTHROPIC_API_KEY app setting).
         case 'quality-suggest-rels': {
-          const SUGGEST_MAX_TABLES   = 5000;       // hard ceiling — anything bigger is unreasonable
-          const SUGGEST_MAX_COLS_PER = 60;         // truncate per-table column list (lookups only)
-          const SUGGEST_OUTPUT_CAP   = 60;         // hard cap on returned suggestions
-          const MODEL                = 'claude-sonnet-4-5';
+          const SUGGEST_OUTPUT_CAP        = 60;     // hard cap on returned suggestions
+          const SUGGEST_MAX_LOOKUPS       = 200;    // hard cap on lookup tables we'll process
+          const SUGGEST_MAX_TX_TABLES     = 5000;   // hard cap on transactional names
+          const SUGGEST_MAX_COLS_PER      = 60;     // truncate per-lookup column list
+          const MODEL                     = 'claude-sonnet-4-5';
 
           const apiKey = process.env.ANTHROPIC_API_KEY;
           if (!apiKey) {
@@ -1744,17 +1739,27 @@ app.http('data', {
           }
 
           const body = await req.json().catch(() => null);
-          if (!body || !body.schema || !Array.isArray(body.schema.tables)) {
-            return err(400, 'schema.tables required');
-          }
-          const tables = body.schema.tables;
-          if (!tables.length) return err(400, 'schema.tables is empty');
-          if (tables.length > SUGGEST_MAX_TABLES) {
-            return err(413, `Schema too large for AI suggest (${tables.length} tables; limit ${SUGGEST_MAX_TABLES}).`);
-          }
-          const existingRels = Array.isArray(body.existingRels) ? body.existingRels : [];
+          if (!body || typeof body !== 'object') return err(400, 'Invalid JSON body');
 
-          // ─── Helpers ─────────────────────────────────────────────────────
+          const lookupTables        = Array.isArray(body.lookupTables)        ? body.lookupTables        : [];
+          const transactionalTables = Array.isArray(body.transactionalTables) ? body.transactionalTables : [];
+          const existingRels        = Array.isArray(body.existingRels)        ? body.existingRels        : [];
+
+          if (!lookupTables.length) {
+            return ok({
+              suggestions: [], lookupCandidates: 0, transactionalTables: transactionalTables.length,
+              note: 'No lookup tables identified by the client-side heuristic. Either this schema does not use traditional lookup tables or naming conventions are unusual. You can still add inferred relationships manually.'
+            });
+          }
+          if (lookupTables.length > SUGGEST_MAX_LOOKUPS) {
+            return err(413, `Too many lookup candidates (${lookupTables.length}; limit ${SUGGEST_MAX_LOOKUPS}). The client-side heuristic should be tightened.`);
+          }
+          if (transactionalTables.length > SUGGEST_MAX_TX_TABLES) {
+            // Truncate rather than reject — losing tail items is better than failing the whole call
+            transactionalTables.length = SUGGEST_MAX_TX_TABLES;
+          }
+
+          // Type bucket simplifier (matches what the client uses).
           function simplifyType(t) {
             if (!t) return 'unknown';
             const s = String(t).toLowerCase();
@@ -1766,94 +1771,18 @@ app.http('data', {
             if (/^(varbinary|binary|image)/.test(s)) return 'binary';
             return s.split('(')[0];
           }
-          function tableLabel(t) {
-            return (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name;
-          }
-          function columnNames(t) {
-            return (t.columns || []).map(c => (c.name || '').toLowerCase());
-          }
-          function nameMatches(re, name) { return re.test(name || ''); }
 
-          // ─── PASS 1: lookup-table heuristic ──────────────────────────────
-          // A table is a "lookup candidate" if it satisfies all of:
-          //   - column count ≤ MAX_COLS  (typical lookup is 3-8 cols)
-          //   - has at least one identifier column (id, code, key, abbrev, short, abbreviation)
-          //   - has at least one descriptive column (name, description, label, title, value, text)
-          //   - name doesn't match an exclusion pattern (logs, audit, history, temp, etc.)
-          // OR a table whose NAME is a strong lookup signal (Country, Currency, Status, Type, etc.)
-          // and column count is reasonable (≤ 12) — catches lookups missing the
-          // strict id+name pair (e.g. just a single-column code list).
-          const MAX_LOOKUP_COLS         = 8;
-          const MAX_LOOKUP_COLS_BY_NAME = 12;
-          const ID_COL_RE       = /^(id|code|key|abbrev(iation)?|short(_?code)?|num(ber)?|nbr|cd)$|_id$|_code$|_key$/i;
-          const DESC_COL_RE     = /^(name|description|desc|label|title|value|text|caption|long_?name|display_?name|full_?name)$|_name$|_desc(ription)?$|_label$/i;
-          const EXCLUDE_NAME_RE = /(^|_)(log|logs|history|audit|tmp|temp|bk|backup|stage|staging|tmp_|temp_|hist_)($|_)|^_+|_+$|^z_|^zz_|^bk_|^bkp_|^old_|^new_|^arch_|_dt$|^dt_/i;
-          const LOOKUP_NAME_RE  = /(^|_)(country|countries|currency|currencies|currenc(?:y|ies)|state|states|province|region|locale|language|country_?code|currency_?code|status|statuses|type|types|category|categories|class|classification|kind|level|priority|severity|reason|method|methods|stage|phase|step|tier|grade|rating|gender|salutation|title|prefix|suffix|department|dept|office|location|branch|division|team|role|permission|nationality|industry|sector|frequency|unit|units|measure|measurement|colour|color|size|format|template|action|event|disposition|outcome|result|origin|source|channel|provider|carrier|airline|courier|shipper|payment_?method|delivery_?method)($|_)/i;
-
-          const lookupCandidates  = [];
-          const transactionalNames = [];
-          for (const t of tables) {
-            const cols     = t.columns || [];
-            const colNames = columnNames(t);
-            const tName    = (t.name || '').toLowerCase();
-            const fullName = tableLabel(t);
-
-            if (nameMatches(EXCLUDE_NAME_RE, tName)) {
-              transactionalNames.push(fullName);
-              continue;
-            }
-
-            const hasId   = colNames.some(n => nameMatches(ID_COL_RE,   n));
-            const hasDesc = colNames.some(n => nameMatches(DESC_COL_RE, n));
-            const nameLooksLikeLookup = nameMatches(LOOKUP_NAME_RE, tName);
-
-            const compactByShape =
-              cols.length <= MAX_LOOKUP_COLS && hasId && hasDesc;
-            const compactByName =
-              nameLooksLikeLookup && cols.length <= MAX_LOOKUP_COLS_BY_NAME;
-
-            if (compactByShape || compactByName) {
-              lookupCandidates.push(t);
-            } else {
-              transactionalNames.push(fullName);
-            }
-          }
-
-          // Bound the total count of lookup candidates we send. If somehow we
-          // identified hundreds of "lookups" (loose heuristics on a strange
-          // schema), keep the most likely ones (compactByName first, then
-          // compactByShape) and demote the rest to transactional names.
-          const HARD_LOOKUP_LIMIT = 150;
-          if (lookupCandidates.length > HARD_LOOKUP_LIMIT) {
-            // Re-rank: tables matching LOOKUP_NAME_RE first, then by ascending column count.
-            lookupCandidates.sort((a, b) => {
-              const an = nameMatches(LOOKUP_NAME_RE, (a.name || '').toLowerCase()) ? 0 : 1;
-              const bn = nameMatches(LOOKUP_NAME_RE, (b.name || '').toLowerCase()) ? 0 : 1;
-              if (an !== bn) return an - bn;
-              return (a.columns?.length || 0) - (b.columns?.length || 0);
-            });
-            const overflow = lookupCandidates.splice(HARD_LOOKUP_LIMIT);
-            for (const t of overflow) transactionalNames.push(tableLabel(t));
-          }
-
-          ctx.log(`quality-suggest-rels: ${tables.length} tables → ${lookupCandidates.length} lookup candidates, ${transactionalNames.length} transactional`);
-
-          if (!lookupCandidates.length) {
-            return ok({
-              suggestions: [],
-              lookupCandidates: 0,
-              transactionalTables: transactionalNames.length,
-              note: 'No tables matched the lookup-table heuristic. Either this schema does not use traditional lookup tables, or naming conventions are unusual. You can still add inferred relationships manually.'
-            });
-          }
-
-          // ─── PASS 2: build the focused LLM prompt ────────────────────────
-          const lookupBlock = lookupCandidates.map(t => ({
-            n: tableLabel(t),
-            c: (t.columns || [])
+          // Compact lookup tables for the prompt: keep only name + simplified-type columns.
+          const lookupBlock = lookupTables.map(t => ({
+            n: String(t.name || '').trim(),
+            c: (Array.isArray(t.columns) ? t.columns : [])
                  .slice(0, SUGGEST_MAX_COLS_PER)
-                 .map(c => ({ n: c.name, t: simplifyType(c.type || c.dataType) }))
-          }));
+                 .map(c => ({ n: String(c.name || ''), t: simplifyType(c.type || c.dataType) }))
+          })).filter(t => t.n);
+
+          if (!lookupBlock.length) {
+            return err(400, 'lookupTables payload had no usable entries');
+          }
 
           const SYSTEM_PROMPT = `You are a database schema analyst identifying soft (non-FK) reference relationships.
 
@@ -1901,10 +1830,10 @@ For OTHER tables, prefer "med" confidence when you're inferring the column name 
           const userMsg = existingBlock +
             'LOOKUP TABLES (n=name, c=columns, t=type bucket):\n```json\n' +
             JSON.stringify(lookupBlock) + '\n```\n\n' +
-            'OTHER TABLES (' + transactionalNames.length + ' total — column lists not provided; infer column names from table names):\n```\n' +
-            transactionalNames.join(', ') + '\n```';
+            'OTHER TABLES (' + transactionalTables.length + ' total — column lists not provided; infer column names from table names):\n```\n' +
+            transactionalTables.join(', ') + '\n```';
 
-          ctx.log(`quality-suggest-rels: prompt size ~${Math.round(userMsg.length / 4)} tokens (estimate)`);
+          ctx.log(`quality-suggest-rels: ${lookupBlock.length} lookups, ${transactionalTables.length} other tables, prompt ~${Math.round(userMsg.length / 4)} tokens`);
 
           const resp = await fetch('https://api.anthropic.com/v1/messages', {
             method:  'POST',
@@ -1951,8 +1880,7 @@ For OTHER tables, prefer "med" confidence when you're inferring the column name 
             return err(502, 'Model output was not a JSON array');
           }
 
-          // Whitelist + validate. Drop self-refs, malformed entries, and
-          // duplicates of existingRels.
+          // Whitelist + validate. Drop self-refs, malformed entries, and duplicates of existingRels.
           const existingKeys = new Set(existingRels.map(r =>
             (r.sourceTable + '|' + r.sourceColumn + '|' + r.lookupTable + '|' + r.lookupColumn).toLowerCase()));
           const validConfidences = new Set(['high', 'med', 'low']);
@@ -1983,8 +1911,8 @@ For OTHER tables, prefer "med" confidence when you're inferring the column name 
           ctx.log(`quality-suggest-rels: returned ${cleanSuggestions.length} suggestions (raw=${suggestions.length})`);
           return ok({
             suggestions:         cleanSuggestions,
-            lookupCandidates:    lookupCandidates.length,
-            transactionalTables: transactionalNames.length
+            lookupCandidates:    lookupBlock.length,
+            transactionalTables: transactionalTables.length
           });
         }
 
