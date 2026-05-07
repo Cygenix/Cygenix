@@ -30,29 +30,33 @@
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!--
-    Source Data Quality Review (Phase 1 — UI shell + plumbing).
+    Source Data Quality Review.
 
-    What this page does in Phase 1:
-      - Provides full UI: source/target picker, 8 toggleable checks (master + per-check),
-        Run button, results panel, saved-reports list, rename/delete/export-to-Excel.
-      - "Run Review" produces MOCK results client-side so the full save/export/delete
-        loop can be exercised end-to-end without the Phase 2/3 SQL implementations.
-      - Inferred Relationships sub-page (add/list/delete) — fully working in Phase 1
-        since it's just CRUD against the new Cosmos container.
-      - Reports and inferred relationships are saved to Cosmos via /api/data
-        (new actions: quality-list-reports, quality-get-report, quality-save-report,
-        quality-delete-report, quality-rename-report, quality-list-rels,
-        quality-add-rel, quality-delete-rel).
+    What this page does:
+      - Source/target connection picker, 7 toggleable checks (master + per-check),
+        Run button with live progress + cancel, results panel, saved-reports
+        list, rename/delete/export-to-Excel.
+      - Reports stored in Cosmos via /api/data (actions quality-list-reports,
+        quality-get-report, quality-save-report, quality-rename-report,
+        quality-delete-report).
+      - Inferred Relationships sub-page (Phase 3 placeholder — relationships
+        are configured here but the inferred-setups check itself is still TBD).
+        Stored via quality-list-rels, quality-add-rel, quality-delete-rel.
 
-    Phase 2 will replace the mock check runner (runChecksMock) with calls to the
-    existing /api/db endpoint, using the same source/target connection routing
-    that the SQL editor uses. Phase 3 adds the inferred-setups orphan check.
+    Phase 2 (real check execution against SQL Server) is shipped:
+      - Browser-orchestrated batched queries via /api/db/execute (the SQL
+        editor's endpoint), max 5 in parallel.
+      - Schema fetched once per session via /api/db/schema, cached in memory.
+      - Per-check row-count caps to keep runs fast on huge tables; user can
+        override with the "Skip row-count cap" toolbar toggle.
+      - Permission errors on individual queries are caught and reported as
+        check failures rather than aborting the whole run.
+
+    SQL Server only. Postgres support is a separate follow-up.
 
     Storage model:
       Cosmos container `quality_reports`, partition key `/projectId`.
       Cosmos container `inferred_relationships`, partition key `/projectId`.
-      (See verification steps in the delivery message — these must be created
-      manually in the Azure Portal before this page can save anything.)
   -->
 
   <!-- Shared connections helper (gives us CygenixConnections.srcConn / tgtConn) -->
@@ -414,18 +418,96 @@
   #toast.toast-error   { background: var(--red-bg);   border-color: var(--red);   color: var(--red); }
   #toast.toast-success { background: var(--green-bg); border-color: var(--green); color: var(--green); }
 
-  /* ── Phase 1 banner ──────────────────────────────────────────────────── */
-  .phase-banner {
-    padding: 0.55rem 0.95rem;
-    background: var(--amber-bg);
-    border: 1px solid rgba(245,158,11,0.35);
-    border-radius: 6px;
-    font-size: 12px;
-    color: var(--amber);
-    margin-bottom: 1rem;
+  /* ── Phase 2: toolbar toggle, progress panel ─────────────────────────── */
+  .toolbar-toggle {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 11px; color: var(--text2);
     font-family: var(--mono);
+    cursor: pointer;
+    user-select: none;
   }
-  .phase-banner strong { color: var(--amber); font-weight: 600; }
+  .toolbar-toggle input { width: 12px; height: 12px; }
+
+  /* The progress panel REPLACES the checks list during a run, sitting in
+     the same .panel container so the page layout doesn't jump. */
+  .progress-overall {
+    display: flex; align-items: center; gap: 0.75rem;
+    margin-bottom: 0.85rem;
+    padding-bottom: 0.65rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .progress-overall-label {
+    font-family: var(--mono); font-size: 11px; color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .progress-bar {
+    flex: 1; height: 6px;
+    background: var(--bg4); border-radius: 3px; overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%; background: var(--accent);
+    width: 0%; transition: width 0.3s ease;
+  }
+  .progress-overall-count {
+    font-family: var(--mono); font-size: 12px; color: var(--text);
+    min-width: 60px; text-align: right;
+  }
+
+  .progress-list { display: grid; gap: 0.4rem; }
+  .progress-row {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    align-items: center; gap: 0.6rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg3);
+    font-size: 12.5px;
+  }
+  .progress-row .pr-name { color: var(--text); font-weight: 500; }
+  .progress-row .pr-detail { font-size: 11px; color: var(--text3); margin-top: 2px; font-family: var(--mono); }
+  .progress-row .pr-status {
+    font-family: var(--mono); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+
+  /* Status icons. pending = empty ring, running = spinner, complete = check, errored = !, cancelled = × */
+  .pr-icon {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1.5px solid var(--text3);
+    position: relative;
+  }
+  .progress-row.running .pr-icon {
+    border-color: var(--accent);
+    border-top-color: transparent;
+    animation: spin 0.7s linear infinite;
+  }
+  .progress-row.complete .pr-icon { border-color: var(--green); background: var(--green); }
+  .progress-row.complete .pr-icon::after {
+    content: ''; position: absolute;
+    left: 3px; top: 4px; width: 6px; height: 3px;
+    border-left: 1.5px solid var(--bg);
+    border-bottom: 1.5px solid var(--bg);
+    transform: rotate(-45deg);
+  }
+  .progress-row.errored .pr-icon { border-color: var(--red); background: var(--red); }
+  .progress-row.errored .pr-icon::after {
+    content: '!'; position: absolute; left: 0; right: 0; top: -2px;
+    text-align: center; font-size: 10px; font-weight: 700;
+    color: var(--bg); font-family: var(--mono);
+  }
+  .progress-row.cancelled .pr-icon { border-color: var(--text3); background: var(--text3); }
+  .progress-row.cancelled .pr-icon::after {
+    content: '×'; position: absolute; left: 0; right: 0; top: -4px;
+    text-align: center; font-size: 14px; line-height: 1;
+    color: var(--bg); font-family: var(--mono);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .progress-row.pending   .pr-status { color: var(--text3); }
+  .progress-row.running   .pr-status { color: var(--accent); }
+  .progress-row.complete  .pr-status { color: var(--green); }
+  .progress-row.errored   .pr-status { color: var(--red); }
+  .progress-row.cancelled .pr-status { color: var(--text3); }
 
   /* ── Inline ghost-text combo (Inferred Relationships inputs) ──────────
      The pattern: each input has a custom dropdown ("combo-menu") that
@@ -548,10 +630,6 @@
     <h1>Data Quality Review</h1>
     <p class="lede">Pre-flight checks on a source database. Save reports for the project, export to Excel for sharing.</p>
 
-    <div class="phase-banner" id="phase-banner">
-      <strong>Phase 1 (UI shell):</strong> Run Review currently produces simulated results so the save / rename / delete / export flow can be tested end-to-end. Real check execution lands in Phase 2; the inferred-setups check lands in Phase 3.
-    </div>
-
     <!-- Tabs: Run Review | Inferred Relationships -->
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="review"  onclick="switchTab('review')">Run Review</button>
@@ -574,14 +652,21 @@
 
         <span style="flex:1"></span>
 
-        <button class="btn btn-primary" id="run-btn" onclick="runReview()">▶ Run Review</button>
+        <label class="toolbar-toggle" title="Run checks against very large tables. Off by default — large tables are skipped to keep runs fast.">
+          <input type="checkbox" id="skip-cap-toggle" />
+          <span>Skip row-count cap</span>
+        </label>
+
+        <button class="btn"         id="cancel-btn" onclick="cancelReview()" style="display:none">⏹ Cancel</button>
+        <button class="btn btn-primary" id="run-btn"    onclick="runReview()">▶ Run Review</button>
       </div>
 
       <div class="grid">
 
-        <!-- LEFT: Checks + results -->
+        <!-- LEFT: Checks + progress + results -->
         <div>
-          <div class="panel">
+          <!-- Checks list (visible when idle) -->
+          <div class="panel" id="checks-panel">
             <div class="checks-header">
               <h2 style="margin:0">Checks</h2>
               <div>
@@ -593,6 +678,22 @@
             </div>
             <div class="checks-list" id="checks-list">
               <!-- Populated by JS so the list is the single source of truth -->
+            </div>
+          </div>
+
+          <!-- Progress panel (visible during a run, replaces checks-panel) -->
+          <div class="panel" id="progress-panel" style="display:none">
+            <div class="checks-header">
+              <h2 style="margin:0">Running review</h2>
+              <span id="progress-meta" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+            </div>
+            <div class="progress-overall">
+              <span class="progress-overall-label">Overall</span>
+              <div class="progress-bar"><div class="progress-bar-fill" id="progress-bar-fill"></div></div>
+              <span class="progress-overall-count" id="progress-overall-count">0 / 0</span>
+            </div>
+            <div class="progress-list" id="progress-list">
+              <!-- Populated by runReview -->
             </div>
           </div>
 
@@ -824,36 +925,130 @@
   // ─────────────────────────────────────────────────────────────────────────
   // RUN REVIEW (Phase 1: mock results)
   // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PHASE 2 — REAL CHECK RUNNER for Run Review.
+  //
+  // Architecture:
+  //   1. Run starts: fetch source schema if not cached, build query plan
+  //      (one check = many queries, e.g. NULL check fires 1 query per
+  //      NOT NULL column across all eligible tables).
+  //   2. Browser fires queries in parallel (max RUN_CONCURRENCY at once)
+  //      against the existing /api/db/execute endpoint that the SQL editor
+  //      uses. Same connection routing — whatever's picked in conn-select.
+  //   3. Live progress UI updates as each check completes — pending →
+  //      running → complete/errored. Cancel button stops launching new
+  //      queries (in-flight ones complete normally).
+  //   4. Per-check row caps: tables exceeding the cap for a given check
+  //      are skipped and counted under skippedTables in that check's
+  //      result. The "Skip row-count cap" toggle disables this.
+  //   5. Permission errors on any single query are caught and turned into
+  //      a structured "permission denied" message in that row's items —
+  //      the check status becomes 'fail' but the run continues.
+  //
+  // SQL Server only for now. Postgres dialect is a separate follow-up.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const RUN_CONCURRENCY = 5;        // max parallel queries
+  const SAMPLE_LIMIT    = 20;       // top-N bad values per check
+  const SAMPLE_OUTLIERS = 20;
+  const PER_QUERY_TIMEOUT_MS = 60000;
+
+  // Per-check row caps. A table with row count above its check's cap is
+  // skipped. Row counts come from sys.dm_db_partition_stats (much cheaper
+  // than COUNT(*) — uses statistics, no scan). The skip-cap toggle bypasses
+  // these entirely.
+  const ROW_CAPS = {
+    'rowcounts':     Infinity,    // counts ARE the result, no cap
+    'null-required': 5_000_000,
+    'bad-dates':     5_000_000,
+    'duplicates':    10_000_000,
+    'orphans':       5_000_000,
+    'outliers':      1_000_000,
+    'string-anom':   5_000_000
+    // 'inferred' — Phase 3
+  };
+
+  // Cancellation flag — set by cancelReview(). Checked between query batches
+  // so in-flight queries always complete (no way to abort them server-side).
+  let _cancelRequested = false;
+  // Track if a run is currently in progress
+  let _runInProgress   = false;
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Top-level: orchestrate the full run.
+  // ────────────────────────────────────────────────────────────────────────
   async function runReview() {
+    if (_runInProgress) return;
     const enabledIds = getEnabledCheckIds();
-    if (!enabledIds.length) {
-      showToast('Pick at least one check to run.', 'error');
-      return;
-    }
+    if (!enabledIds.length) { showToast('Pick at least one check to run.', 'error'); return; }
 
     const conn = getConn();
-    if (!conn) {
-      showToast('No ' + getConnLabel() + ' connection configured. Set one under Connections.', 'error');
-      return;
-    }
+    if (!conn) { showToast('No ' + getConnLabel() + ' connection configured. Set one under Connections.', 'error'); return; }
 
-    const btn = document.getElementById('run-btn');
-    btn.disabled = true;
-    btn.textContent = '⏳ Running…';
+    // Inferred-setups check requires Phase 3 — flag it but keep going.
+    const phase3Ids = enabledIds.filter(id => id === 'inferred');
+
+    _cancelRequested = false;
+    _runInProgress   = true;
+    setRunUI(true);
+    showProgressPanel(enabledIds);
+
+    const reportId = 'qr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const results  = {};
 
     try {
-      // Phase 1: mock. Phase 2 will replace this with /api/db calls per check.
-      const results = await runChecksMock(enabledIds);
+      // 1. Schema fetch (uses existing in-memory cache)
+      setProgressMeta('Fetching schema…');
+      const schema = await ensureSchema(conn);
+      if (_cancelRequested) throw new Error('Cancelled');
 
+      // 2. For each check, build its query plan + execute
+      for (let i = 0; i < enabledIds.length; i++) {
+        const checkId = enabledIds[i];
+        if (_cancelRequested) {
+          // Mark all remaining checks as cancelled
+          for (let j = i; j < enabledIds.length; j++) {
+            results[enabledIds[j]] = { status: 'cancelled', issuesFound: 0, items: [], note: 'Run cancelled before this check started' };
+            updateProgressRow(enabledIds[j], 'cancelled', 'cancelled');
+          }
+          break;
+        }
+
+        if (checkId === 'inferred') {
+          // Phase 3 — skip with a friendly message
+          results[checkId] = { status: 'info', issuesFound: 0, items: [], note: 'This check is implemented in Phase 3 (not yet shipped). Configure inferred relationships in the other tab — they will be checked once Phase 3 is live.' };
+          updateProgressRow(checkId, 'complete', 'pending phase 3');
+          continue;
+        }
+
+        updateProgressRow(checkId, 'running', 'running…');
+        try {
+          const r = await runOneCheck(checkId, schema);
+          results[checkId] = r;
+          const status = r.status;
+          const detail = r.issuesFound + (status === 'info' ? ' rows' : ' issues');
+          updateProgressRow(checkId, 'complete', detail);
+        } catch (e) {
+          console.error('[check] ' + checkId + ' failed:', e);
+          results[checkId] = {
+            status: 'fail', issuesFound: 0, items: [],
+            note: 'Check errored: ' + (e.message || String(e))
+          };
+          updateProgressRow(checkId, 'errored', 'error');
+        }
+        updateProgressOverall(i + 1, enabledIds.length);
+      }
+
+      // 3. Build report record
       currentReport = {
-        id:           'qr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        id:           reportId,
         projectId:    getCurrentProjectId(),
         userId:       getUserId(),
         sourceName:   getConnLabel(),
         connSide:     document.getElementById('conn-select').value,
         reportName:   defaultReportName(),
         runAt:        new Date().toISOString(),
-        status:       'complete',
+        status:       _cancelRequested ? 'cancelled' : 'complete',
         checksRun:    enabledIds,
         summary:      buildSummary(results),
         results:      results,
@@ -861,84 +1056,587 @@
       };
 
       renderResults(currentReport);
+      hideProgressPanel();
 
-      // Auto-save to Cosmos so the user can find it again
-      const ok = await saveReport(currentReport);
-      if (ok) {
-        currentReport.saved = true;
-        showToast('Review complete and saved.', 'success');
-        await loadReports();
-        highlightActiveReport(currentReport.id);
+      // 4. Auto-save (unless the run was cancelled before any check finished)
+      const anyResults = Object.keys(results).some(k => results[k].status !== 'cancelled');
+      if (anyResults) {
+        const ok = await saveReport(currentReport);
+        if (ok) {
+          currentReport.saved = true;
+          if (_cancelRequested) showToast('Run cancelled — partial results saved.', 'success');
+          else if (currentReport.summary.fail > 0) showToast('Review complete with advisories.', 'success');
+          else showToast('Review complete — all checks passed.', 'success');
+          await loadReports();
+          highlightActiveReport(currentReport.id);
+        } else {
+          showToast('Review complete, but save failed (see console).', 'error');
+        }
       } else {
-        showToast('Review complete, but save failed (see console).', 'error');
+        showToast('Run cancelled before any results.', 'error');
       }
     } catch (e) {
       console.error('runReview error:', e);
+      hideProgressPanel();
       showToast('Run failed: ' + e.message, 'error');
     } finally {
-      btn.disabled = false;
-      btn.textContent = '▶ Run Review';
+      _runInProgress   = false;
+      _cancelRequested = false;
+      setRunUI(false);
     }
   }
 
-  // PHASE 1 ONLY — produces fake but realistic-looking results so the full
-  // save/load/export loop is testable. Replaced in Phase 2.
-  async function runChecksMock(enabledIds) {
-    await new Promise(r => setTimeout(r, 600)); // simulate work
-    const out = {};
-    for (const id of enabledIds) {
-      switch (id) {
-        case 'inferred':
-          out[id] = { status: 'warn', issuesFound: 23, items: [
-            { table: 'Matters', column: 'CurrencyCode', badValue: 'GPB',  rowCount: 18 },
-            { table: 'Matters', column: 'CurrencyCode', badValue: 'EURO', rowCount:  5 },
-          ]};
-          break;
-        case 'bad-dates':
-          out[id] = { status: 'warn', issuesFound: 12, items: [
-            { table: 'Matters',     column: 'OpenDate',  issue: 'Year < 1900',  rowCount:  3 },
-            { table: 'TimeEntries', column: 'WorkDate',  issue: 'Year > today + 10', rowCount: 9 },
-          ]};
-          break;
-        case 'null-required':
-          out[id] = { status: 'pass', issuesFound: 0, items: [] };
-          break;
-        case 'duplicates':
-          out[id] = { status: 'fail', issuesFound: 4, items: [
-            { table: 'Clients', column: 'ClientCode', duplicateValue: 'C0001', rowCount: 2 },
-            { table: 'Clients', column: 'ClientCode', duplicateValue: 'C0042', rowCount: 2 },
-          ]};
-          break;
-        case 'orphans':
-          out[id] = { status: 'warn', issuesFound: 7, items: [
-            { childTable: 'TimeEntries', childColumn: 'MatterID', parentTable: 'Matters', orphanCount: 7 }
-          ]};
-          break;
-        case 'rowcounts':
-          out[id] = { status: 'info', issuesFound: 0, items: [
-            { table: 'Matters',     rowCount: 14_220 },
-            { table: 'Clients',     rowCount:  3_891 },
-            { table: 'TimeEntries', rowCount: 482_117 },
-            { table: 'Currencies',  rowCount:     42 },
-          ]};
-          break;
-        case 'outliers':
-          out[id] = { status: 'warn', issuesFound: 2, items: [
-            { table: 'TimeEntries', column: 'Hours', value: 200.0, mean: 6.4, stddev: 2.1 },
-            { table: 'Invoices',    column: 'Amount', value: 50_000_000, mean: 12_400, stddev: 8_200 },
-          ]};
-          break;
-        case 'string-anom':
-          out[id] = { status: 'warn', issuesFound: 18, items: [
-            { table: 'Matters', column: 'MatterName', issue: 'trailing whitespace',     rowCount: 11 },
-            { table: 'Matters', column: 'MatterName', issue: 'at column max length',    rowCount:  7 },
-          ]};
-          break;
-        default:
-          out[id] = { status: 'info', issuesFound: 0, items: [], note: 'Not implemented yet' };
+  function cancelReview() {
+    if (!_runInProgress) return;
+    _cancelRequested = true;
+    setProgressMeta('Cancelling — waiting for in-flight queries to finish…');
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // RUN UI HELPERS
+  // ────────────────────────────────────────────────────────────────────────
+  function setRunUI(running) {
+    document.getElementById('run-btn').disabled    = running;
+    document.getElementById('run-btn').textContent = running ? '⏳ Running…' : '▶ Run Review';
+    document.getElementById('cancel-btn').style.display = running ? '' : 'none';
+    document.getElementById('skip-cap-toggle').disabled = running;
+  }
+
+  function showProgressPanel(enabledIds) {
+    document.getElementById('checks-panel').style.display    = 'none';
+    document.getElementById('results-empty').style.display   = 'none';
+    document.getElementById('results-container').style.display = 'none';
+    const panel = document.getElementById('progress-panel');
+    panel.style.display = '';
+    // Build one row per check. They start as "pending".
+    const rows = enabledIds.map(id => {
+      const def = CHECKS.find(c => c.id === id);
+      return `
+        <div class="progress-row pending" data-check-id="${id}">
+          <div class="pr-icon"></div>
+          <div>
+            <div class="pr-name">${escapeHtml(def?.name || id)}</div>
+            <div class="pr-detail" id="pr-detail-${id}"></div>
+          </div>
+          <div class="pr-status" id="pr-status-${id}">pending</div>
+        </div>
+      `;
+    }).join('');
+    document.getElementById('progress-list').innerHTML = rows;
+    updateProgressOverall(0, enabledIds.length);
+    setProgressMeta('');
+  }
+
+  function hideProgressPanel() {
+    document.getElementById('progress-panel').style.display = 'none';
+    document.getElementById('checks-panel').style.display   = '';
+  }
+
+  function updateProgressRow(checkId, klass, statusText, detailText) {
+    const row = document.querySelector('.progress-row[data-check-id="' + checkId + '"]');
+    if (!row) return;
+    row.classList.remove('pending', 'running', 'complete', 'errored', 'cancelled');
+    row.classList.add(klass);
+    const st = document.getElementById('pr-status-' + checkId);
+    if (st) st.textContent = statusText || klass;
+    if (detailText !== undefined) {
+      const dt = document.getElementById('pr-detail-' + checkId);
+      if (dt) dt.textContent = detailText;
+    }
+  }
+
+  function updateProgressOverall(done, total) {
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    document.getElementById('progress-bar-fill').style.width = pct + '%';
+    document.getElementById('progress-overall-count').textContent = done + ' / ' + total;
+  }
+
+  function setProgressMeta(text) {
+    document.getElementById('progress-meta').textContent = text || '';
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // SCHEMA FETCH (with cache reuse from inferred-relationships tab)
+  // ────────────────────────────────────────────────────────────────────────
+  async function ensureSchema(conn) {
+    const side = document.getElementById('conn-select').value;
+    if (_relSchemaCache[side]) return _relSchemaCache[side];
+
+    const isFn = /^https?:\/\//.test(conn);
+    const url  = isFn ? conn : '/.netlify/functions/db-connect';
+    const body = isFn ? { action: 'schema' } : { action: 'schema', connectionString: conn };
+    const res  = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(60000)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('Schema fetch failed: ' + res.statusText));
+    if (!data.tables || !data.tables.length) throw new Error('Schema response had no tables');
+
+    _relSchemaCache[side] = data;
+    return data;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // dbExecute — fire one SQL query against the active connection
+  // Returns rows array. Throws on error. Distinguishes permission errors
+  // so the orchestrator can mark them gracefully.
+  // ────────────────────────────────────────────────────────────────────────
+  async function dbExecute(sql) {
+    const conn = getConn();
+    if (!conn) throw new Error('No connection');
+    const isFn = /^https?:\/\//.test(conn);
+    const url  = isFn ? conn : '/.netlify/functions/db-connect';
+    const body = isFn ? { action: 'execute', sql } : { action: 'execute', sql, connectionString: conn };
+    const res  = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(PER_QUERY_TIMEOUT_MS)
+    });
+    const data = await res.json().catch(() => ({ error: 'Non-JSON ' + res.status }));
+    if (!res.ok) {
+      const err = new Error(data.error || res.statusText);
+      // Tag permission errors so the check can degrade gracefully
+      if (/permission|denied|access|principal|cannot find|invalid object/i.test(err.message)) {
+        err.kind = 'permission';
+      }
+      throw err;
+    }
+    return data.recordset || [];
+  }
+
+  // Run multiple SQL queries with bounded concurrency. Each item is
+  //   { id, sql, parse: (rows) => {...} }
+  // Errors on a single query are CAPTURED and returned as
+  //   { id, error: <msg>, errorKind: 'permission' | 'other' }
+  // …rather than thrown — so one bad query doesn't kill the whole batch.
+  async function runQueries(items) {
+    const results = [];
+    let cursor = 0;
+    async function worker() {
+      while (true) {
+        if (_cancelRequested) return;
+        const i = cursor++;
+        if (i >= items.length) return;
+        const it = items[i];
+        try {
+          const rows = await dbExecute(it.sql);
+          results[i] = { id: it.id, rows };
+        } catch (e) {
+          results[i] = { id: it.id, error: e.message, errorKind: e.kind || 'other' };
+        }
       }
     }
-    return out;
+    const workers = Array.from({ length: Math.min(RUN_CONCURRENCY, items.length) }, worker);
+    await Promise.all(workers);
+    return results;
+  }
+
+  // Quote a SQL Server identifier ([schema].[table] / [column])
+  function qid(ident) {
+    return '[' + String(ident).replace(/\]/g, ']]') + ']';
+  }
+  function qtable(t) {
+    // Schema-qualify when known. Default 'dbo' is the SQL Server convention.
+    const schema = t.schema || 'dbo';
+    return qid(schema) + '.' + qid(t.name);
+  }
+  function tableLabel(t) {
+    return (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name;
+  }
+
+  // Skip-cap helper. Returns true if a table should be skipped for this check.
+  function shouldSkipForCap(checkId, table) {
+    if (document.getElementById('skip-cap-toggle').checked) return false;
+    const cap = ROW_CAPS[checkId];
+    if (!cap || cap === Infinity) return false;
+    const rc = (typeof table.rowCount === 'number') ? table.rowCount : 0;
+    return rc > cap;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // INDIVIDUAL CHECK RUNNERS
+  // Each returns { status, issuesFound, items, skippedTables?, note? }
+  // ────────────────────────────────────────────────────────────────────────
+
+  async function runOneCheck(checkId, schema) {
+    switch (checkId) {
+      case 'rowcounts':     return await checkRowCounts(schema);
+      case 'null-required': return await checkNullsInRequired(schema);
+      case 'bad-dates':     return await checkBadDates(schema);
+      case 'duplicates':    return await checkDuplicates(schema);
+      case 'orphans':       return await checkOrphans(schema);
+      case 'outliers':      return await checkOutliers(schema);
+      case 'string-anom':   return await checkStringAnomalies(schema);
+      default:
+        return { status: 'info', issuesFound: 0, items: [], note: 'Unknown check id' };
+    }
+  }
+
+  // ── Row counts (informational) ──────────────────────────────────────────
+  async function checkRowCounts(schema) {
+    const items   = [];
+    const queries = schema.tables.map(t => ({
+      id: tableLabel(t),
+      sql: 'SELECT COUNT_BIG(*) AS [c] FROM ' + qtable(t) + ';'
+    }));
+    const results = await runQueries(queries);
+    let errs = 0;
+    results.forEach((r, i) => {
+      const t = schema.tables[i];
+      if (r.error) { errs++; items.push({ table: tableLabel(t), rowCount: '(error)' }); return; }
+      const c = r.rows && r.rows[0] ? Number(r.rows[0].c || r.rows[0].C || 0) : 0;
+      items.push({ table: tableLabel(t), rowCount: c });
+      // Cache the row count on the schema entry so other checks can use it
+      // for the row-count cap without re-querying.
+      t.rowCount = c;
+    });
+    items.sort((a, b) => (Number(b.rowCount) || 0) - (Number(a.rowCount) || 0));
+    return { status: 'info', issuesFound: items.length, items, note: errs ? errs + ' tables errored' : null };
+  }
+
+  // ── NULLs in NOT NULL columns ───────────────────────────────────────────
+  // Source: schema.tables[i].columns[j].nullable === false
+  async function checkNullsInRequired(schema) {
+    const items   = [];
+    const skipped = [];
+    const queries = [];
+    for (const t of schema.tables) {
+      if (shouldSkipForCap('null-required', t)) { skipped.push(tableLabel(t)); continue; }
+      const cols = (t.columns || []).filter(c => c.nullable === false);
+      for (const col of cols) {
+        queries.push({
+          id: tableLabel(t) + '.' + col.name,
+          tag: { table: t, column: col },
+          sql: 'SELECT COUNT_BIG(*) AS [c] FROM ' + qtable(t) + ' WHERE ' + qid(col.name) + ' IS NULL;'
+        });
+      }
+    }
+    const results = await runQueries(queries);
+    let permissionErrors = 0;
+    results.forEach((r, i) => {
+      const tag = queries[i].tag;
+      if (r.error) {
+        if (r.errorKind === 'permission') permissionErrors++;
+        return;
+      }
+      const c = r.rows && r.rows[0] ? Number(r.rows[0].c || r.rows[0].C || 0) : 0;
+      if (c > 0) {
+        items.push({ table: tableLabel(tag.table), column: tag.column.name, nullCount: c });
+      }
+    });
+    items.sort((a, b) => b.nullCount - a.nullCount);
+    items.splice(SAMPLE_LIMIT);
+    let note = null;
+    if (skipped.length) note = (note ? note + ' · ' : '') + skipped.length + ' tables skipped (over row cap)';
+    if (permissionErrors) note = (note ? note + ' · ' : '') + permissionErrors + ' permission errors';
+    return {
+      status: items.length ? 'fail' : 'pass',
+      issuesFound: items.length,
+      items, skippedTables: skipped, note
+    };
+  }
+
+  // ── Bad / unusual dates ────────────────────────────────────────────────
+  async function checkBadDates(schema) {
+    const items   = [];
+    const skipped = [];
+    const queries = [];
+    const DATE_TYPES = /^(date|datetime|datetime2|smalldatetime|datetimeoffset)$/i;
+    for (const t of schema.tables) {
+      if (shouldSkipForCap('bad-dates', t)) { skipped.push(tableLabel(t)); continue; }
+      const cols = (t.columns || []).filter(c => DATE_TYPES.test(c.type || c.dataType || ''));
+      for (const col of cols) {
+        queries.push({
+          id: tableLabel(t) + '.' + col.name,
+          tag: { table: t, column: col },
+          sql:
+            'SELECT ' +
+              'SUM(CASE WHEN ' + qid(col.name) + ' < \'1900-01-01\' THEN 1 ELSE 0 END) AS too_old, ' +
+              'SUM(CASE WHEN ' + qid(col.name) + ' > DATEADD(year, 10, GETDATE()) THEN 1 ELSE 0 END) AS too_far_future ' +
+            'FROM ' + qtable(t) + ' WHERE ' + qid(col.name) + ' IS NOT NULL;'
+        });
+      }
+    }
+    const results = await runQueries(queries);
+    let permissionErrors = 0;
+    results.forEach((r, i) => {
+      const tag = queries[i].tag;
+      if (r.error) { if (r.errorKind === 'permission') permissionErrors++; return; }
+      const row = r.rows && r.rows[0] ? r.rows[0] : null;
+      if (!row) return;
+      const tooOld = Number(row.too_old || 0);
+      const tooFut = Number(row.too_far_future || 0);
+      if (tooOld > 0) items.push({ table: tableLabel(tag.table), column: tag.column.name, issue: 'before 1900', rowCount: tooOld });
+      if (tooFut > 0) items.push({ table: tableLabel(tag.table), column: tag.column.name, issue: '>10y in future', rowCount: tooFut });
+    });
+    items.sort((a, b) => b.rowCount - a.rowCount);
+    items.splice(SAMPLE_LIMIT);
+    let note = null;
+    if (skipped.length) note = skipped.length + ' tables skipped (over row cap)';
+    if (permissionErrors) note = (note ? note + ' · ' : '') + permissionErrors + ' permission errors';
+    return {
+      status: items.length ? 'fail' : 'pass',
+      issuesFound: items.length, items, skippedTables: skipped, note
+    };
+  }
+
+  // ── Duplicate primary keys ──────────────────────────────────────────────
+  // Schema gives us PKs via column.isPrimaryKey or table.primaryKey.
+  // For composite PKs we group by all PK columns.
+  async function checkDuplicates(schema) {
+    const items   = [];
+    const skipped = [];
+    const queries = [];
+    for (const t of schema.tables) {
+      if (shouldSkipForCap('duplicates', t)) { skipped.push(tableLabel(t)); continue; }
+      // Find PK columns. Source schema endpoint may use `primaryKey: [..]` on
+      // the table or `isPrimaryKey: true` on each column.
+      let pkCols = [];
+      if (Array.isArray(t.primaryKey) && t.primaryKey.length) pkCols = t.primaryKey;
+      else pkCols = (t.columns || []).filter(c => c.isPrimaryKey).map(c => c.name);
+      if (!pkCols.length) continue;   // no PK declared, skip silently
+
+      const cols = pkCols.map(qid).join(', ');
+      queries.push({
+        id: tableLabel(t),
+        tag: { table: t, pkCols },
+        sql:
+          'SELECT TOP ' + SAMPLE_LIMIT + ' ' + cols + ', COUNT_BIG(*) AS dup_count ' +
+          'FROM ' + qtable(t) + ' GROUP BY ' + cols + ' HAVING COUNT_BIG(*) > 1 ORDER BY COUNT_BIG(*) DESC;'
+      });
+    }
+    const results = await runQueries(queries);
+    let permissionErrors = 0;
+    results.forEach((r, i) => {
+      const tag = queries[i].tag;
+      if (r.error) { if (r.errorKind === 'permission') permissionErrors++; return; }
+      for (const row of r.rows || []) {
+        const keyParts = tag.pkCols.map(c => c + '=' + row[c]);
+        items.push({
+          table: tableLabel(tag.table),
+          pkColumn: tag.pkCols.join(' + '),
+          duplicateValue: keyParts.join(', '),
+          rowCount: Number(row.dup_count || 0)
+        });
+      }
+    });
+    items.sort((a, b) => b.rowCount - a.rowCount);
+    items.splice(SAMPLE_LIMIT);
+    let note = null;
+    if (skipped.length) note = skipped.length + ' tables skipped (over row cap)';
+    if (permissionErrors) note = (note ? note + ' · ' : '') + permissionErrors + ' permission errors';
+    return {
+      status: items.length ? 'fail' : 'pass',
+      issuesFound: items.length, items, skippedTables: skipped, note
+    };
+  }
+
+  // ── Orphaned foreign keys (HARD FKs only — soft FKs are Phase 3) ───────
+  // First query INFORMATION_SCHEMA for the FKs. If that errors with a
+  // permission denial, degrade gracefully — return an info status with
+  // a clear note. Otherwise, for each FK, run a LEFT JOIN orphan query.
+  async function checkOrphans(schema) {
+    const items   = [];
+    const skipped = [];
+
+    // 1. Discover hard FKs
+    let fks;
+    try {
+      const fkRows = await dbExecute(
+        'SELECT ' +
+          'fk.name                AS fk_name, ' +
+          'OBJECT_SCHEMA_NAME(fk.parent_object_id)    AS child_schema, ' +
+          'OBJECT_NAME(fk.parent_object_id)           AS child_table, ' +
+          'COL_NAME(fkc.parent_object_id, fkc.parent_column_id)  AS child_col, ' +
+          'OBJECT_SCHEMA_NAME(fk.referenced_object_id)           AS parent_schema, ' +
+          'OBJECT_NAME(fk.referenced_object_id)                  AS parent_table, ' +
+          'COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS parent_col ' +
+        'FROM sys.foreign_keys fk ' +
+        'JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id;'
+      );
+      fks = fkRows;
+    } catch (e) {
+      if (e.kind === 'permission') {
+        return {
+          status: 'info', issuesFound: 0, items: [], skippedTables: [],
+          note: 'Could not enumerate foreign keys — connection user lacks read access to sys.foreign_keys. Grant VIEW DEFINITION (or use a higher-privilege account) to enable this check.'
+        };
+      }
+      throw e;
+    }
+    if (!fks || !fks.length) {
+      return { status: 'pass', issuesFound: 0, items: [], note: 'No declared foreign keys in source.' };
+    }
+
+    // 2. Group composite FKs by fk_name (composite FKs span multiple rows in sys.fk_columns)
+    const byName = {};
+    for (const r of fks) {
+      const k = r.fk_name;
+      if (!byName[k]) byName[k] = { name: k, child_schema: r.child_schema, child_table: r.child_table, parent_schema: r.parent_schema, parent_table: r.parent_table, cols: [] };
+      byName[k].cols.push({ child: r.child_col, parent: r.parent_col });
+    }
+
+    // 3. For each FK, build an orphan query
+    const queries = [];
+    for (const fk of Object.values(byName)) {
+      const childT = schema.tables.find(t => t.name === fk.child_table && (t.schema || 'dbo') === fk.child_schema);
+      if (childT && shouldSkipForCap('orphans', childT)) {
+        skipped.push(fk.child_schema + '.' + fk.child_table);
+        continue;
+      }
+      const childRef  = qid(fk.child_schema)  + '.' + qid(fk.child_table);
+      const parentRef = qid(fk.parent_schema) + '.' + qid(fk.parent_table);
+      const joinCond  = fk.cols.map(c => 'c.' + qid(c.child) + ' = p.' + qid(c.parent)).join(' AND ');
+      const childCols = fk.cols.map(c => 'c.' + qid(c.child)).join(', ');
+      const parentNotNull = fk.cols.map(c => 'c.' + qid(c.child) + ' IS NOT NULL').join(' AND ');
+      const parentNullCheck = 'p.' + qid(fk.cols[0].parent) + ' IS NULL';
+      queries.push({
+        id: fk.name,
+        tag: fk,
+        sql:
+          'SELECT TOP ' + SAMPLE_LIMIT + ' ' + childCols + ', COUNT_BIG(*) AS orphan_count ' +
+          'FROM ' + childRef + ' c LEFT JOIN ' + parentRef + ' p ON ' + joinCond + ' ' +
+          'WHERE ' + parentNotNull + ' AND ' + parentNullCheck + ' ' +
+          'GROUP BY ' + childCols + ' ORDER BY COUNT_BIG(*) DESC;'
+      });
+    }
+
+    const results = await runQueries(queries);
+    let permissionErrors = 0;
+    results.forEach((r, i) => {
+      const fk = queries[i].tag;
+      if (r.error) { if (r.errorKind === 'permission') permissionErrors++; return; }
+      for (const row of r.rows || []) {
+        const colVals = fk.cols.map(c => row['c'] !== undefined && fk.cols.length === 1
+          ? String(row[fk.cols[0].child])
+          : fk.cols.map(c2 => c2.child + '=' + row[c2.child]).join(', '));
+        items.push({
+          fkName: fk.name,
+          childTable: fk.child_schema + '.' + fk.child_table,
+          parentTable: fk.parent_schema + '.' + fk.parent_table,
+          orphanValue: fk.cols.length === 1 ? String(row[fk.cols[0].child]) : fk.cols.map(c => c.child + '=' + row[c.child]).join(', '),
+          orphanCount: Number(row.orphan_count || 0)
+        });
+      }
+    });
+    items.sort((a, b) => b.orphanCount - a.orphanCount);
+    items.splice(SAMPLE_LIMIT);
+    let note = null;
+    if (skipped.length) note = skipped.length + ' tables skipped (over row cap)';
+    if (permissionErrors) note = (note ? note + ' · ' : '') + permissionErrors + ' permission errors';
+    return {
+      status: items.length ? 'fail' : 'pass',
+      issuesFound: items.length, items, skippedTables: skipped, note
+    };
+  }
+
+  // ── Numeric outliers (>3σ from mean) ────────────────────────────────────
+  async function checkOutliers(schema) {
+    const items   = [];
+    const skipped = [];
+    const queries = [];
+    const NUM_TYPES = /^(int|bigint|smallint|tinyint|decimal|numeric|float|real|money|smallmoney)$/i;
+    for (const t of schema.tables) {
+      if (shouldSkipForCap('outliers', t)) { skipped.push(tableLabel(t)); continue; }
+      const cols = (t.columns || []).filter(c => NUM_TYPES.test(c.type || c.dataType || ''));
+      for (const col of cols) {
+        // Single CTE query: compute mean+stddev, then return up to N rows >3σ.
+        queries.push({
+          id: tableLabel(t) + '.' + col.name,
+          tag: { table: t, column: col },
+          sql:
+            'WITH s AS ( ' +
+              'SELECT AVG(CAST(' + qid(col.name) + ' AS FLOAT)) AS mean, ' +
+                     'STDEV(CAST(' + qid(col.name) + ' AS FLOAT)) AS sd ' +
+              'FROM ' + qtable(t) + ' WHERE ' + qid(col.name) + ' IS NOT NULL ' +
+            ') ' +
+            'SELECT TOP ' + SAMPLE_OUTLIERS + ' ' +
+              qid(col.name) + ' AS [val], s.mean, s.sd ' +
+            'FROM ' + qtable(t) + ' CROSS JOIN s ' +
+            'WHERE ' + qid(col.name) + ' IS NOT NULL ' +
+              'AND s.sd > 0 AND ABS(CAST(' + qid(col.name) + ' AS FLOAT) - s.mean) > 3 * s.sd ' +
+            'ORDER BY ABS(CAST(' + qid(col.name) + ' AS FLOAT) - s.mean) DESC;'
+        });
+      }
+    }
+    const results = await runQueries(queries);
+    let permissionErrors = 0;
+    results.forEach((r, i) => {
+      const tag = queries[i].tag;
+      if (r.error) { if (r.errorKind === 'permission') permissionErrors++; return; }
+      for (const row of r.rows || []) {
+        items.push({
+          table: tableLabel(tag.table),
+          column: tag.column.name,
+          value: Number(row.val),
+          mean: Math.round(Number(row.mean) * 100) / 100,
+          stddev: Math.round(Number(row.sd) * 100) / 100
+        });
+      }
+    });
+    items.sort((a, b) => Math.abs(b.value - b.mean) - Math.abs(a.value - a.mean));
+    items.splice(SAMPLE_LIMIT);
+    let note = null;
+    if (skipped.length) note = skipped.length + ' tables skipped (over row cap)';
+    if (permissionErrors) note = (note ? note + ' · ' : '') + permissionErrors + ' permission errors';
+    return {
+      status: items.length ? 'fail' : 'pass',
+      issuesFound: items.length, items, skippedTables: skipped, note
+    };
+  }
+
+  // ── String anomalies (whitespace + max-length truncation suspects) ──────
+  async function checkStringAnomalies(schema) {
+    const items   = [];
+    const skipped = [];
+    const queries = [];
+    const STR_TYPES = /^(varchar|nvarchar|char|nchar|text|ntext)$/i;
+    for (const t of schema.tables) {
+      if (shouldSkipForCap('string-anom', t)) { skipped.push(tableLabel(t)); continue; }
+      const cols = (t.columns || []).filter(c => STR_TYPES.test(c.type || c.dataType || ''));
+      for (const col of cols) {
+        const colRef = qid(col.name);
+        // For varchar(MAX) / text / ntext we can't usefully detect max-length truncation.
+        const len = col.maxLength || col.length;
+        const lenCheck = (typeof len === 'number' && len > 0 && len < 8000)
+          ? 'SUM(CASE WHEN LEN(' + colRef + ') = ' + len + ' THEN 1 ELSE 0 END)'
+          : '0';
+        queries.push({
+          id: tableLabel(t) + '.' + col.name,
+          tag: { table: t, column: col },
+          sql:
+            'SELECT ' +
+              'SUM(CASE WHEN ' + colRef + ' LIKE \' %\' OR ' + colRef + ' LIKE \'% \' THEN 1 ELSE 0 END) AS ws_issues, ' +
+              lenCheck + ' AS at_max ' +
+            'FROM ' + qtable(t) + ' WHERE ' + colRef + ' IS NOT NULL;'
+        });
+      }
+    }
+    const results = await runQueries(queries);
+    let permissionErrors = 0;
+    results.forEach((r, i) => {
+      const tag = queries[i].tag;
+      if (r.error) { if (r.errorKind === 'permission') permissionErrors++; return; }
+      const row = r.rows && r.rows[0] ? r.rows[0] : null;
+      if (!row) return;
+      const ws = Number(row.ws_issues || 0);
+      const am = Number(row.at_max || 0);
+      if (ws > 0) items.push({ table: tableLabel(tag.table), column: tag.column.name, issue: 'leading/trailing whitespace', rowCount: ws });
+      if (am > 0) items.push({ table: tableLabel(tag.table), column: tag.column.name, issue: 'at column max length',         rowCount: am });
+    });
+    items.sort((a, b) => b.rowCount - a.rowCount);
+    items.splice(SAMPLE_LIMIT);
+    let note = null;
+    if (skipped.length) note = skipped.length + ' tables skipped (over row cap)';
+    if (permissionErrors) note = (note ? note + ' · ' : '') + permissionErrors + ' permission errors';
+    return {
+      status: items.length ? 'fail' : 'pass',
+      issuesFound: items.length, items, skippedTables: skipped, note
+    };
   }
 
   function buildSummary(results) {
@@ -993,7 +1691,7 @@
         <span class="stat-value stat-warn">${s.warn || 0}</span>
       </div>
       <div class="summary-stat">
-        <span class="stat-label">Fail</span>
+        <span class="stat-label">Advisories</span>
         <span class="stat-value stat-fail">${s.fail || 0}</span>
       </div>
       <div class="summary-stat">
@@ -1111,7 +1809,7 @@
         <div class="report-item${cls}" data-id="${r.id}" onclick="openReport('${r.id}')">
           <div class="r-name">${escapeHtml(r.reportName || '(untitled)')}</div>
           <div class="r-meta">
-            ${formatDate(r.runAt)} · ${issues} issues${fails ? ' · ' + fails + ' fail' : ''}
+            ${formatDate(r.runAt)} · ${issues} issues${fails ? ' · ' + fails + ' advisory' : ''}
           </div>
         </div>
       `;
@@ -1202,7 +1900,7 @@
         ['Status',         'Count'],
         ['Pass',           currentReport.summary?.pass  || 0],
         ['Warn',           currentReport.summary?.warn  || 0],
-        ['Fail',           currentReport.summary?.fail  || 0],
+        ['Advisories',     currentReport.summary?.fail  || 0],
         ['Info',           currentReport.summary?.info  || 0],
         ['Total issues',   currentReport.summary?.totalIssues || 0],
       ];
