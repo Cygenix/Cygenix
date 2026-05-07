@@ -1,0 +1,1024 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Data Quality Review — Cygenix</title>
+
+  <!--
+    Source Data Quality Review (Phase 1 — UI shell + plumbing).
+
+    What this page does in Phase 1:
+      - Provides full UI: source/target picker, 8 toggleable checks (master + per-check),
+        Run button, results panel, saved-reports list, rename/delete/export-to-Excel.
+      - "Run Review" produces MOCK results client-side so the full save/export/delete
+        loop can be exercised end-to-end without the Phase 2/3 SQL implementations.
+      - Inferred Relationships sub-page (add/list/delete) — fully working in Phase 1
+        since it's just CRUD against the new Cosmos container.
+      - Reports and inferred relationships are saved to Cosmos via /api/data
+        (new actions: quality-list-reports, quality-get-report, quality-save-report,
+        quality-delete-report, quality-rename-report, quality-list-rels,
+        quality-add-rel, quality-delete-rel).
+
+    Phase 2 will replace the mock check runner (runChecksMock) with calls to the
+    existing /api/db endpoint, using the same source/target connection routing
+    that the SQL editor uses. Phase 3 adds the inferred-setups orphan check.
+
+    Storage model:
+      Cosmos container `quality_reports`, partition key `/projectId`.
+      Cosmos container `inferred_relationships`, partition key `/projectId`.
+      (See verification steps in the delivery message — these must be created
+      manually in the Azure Portal before this page can save anything.)
+  -->
+
+  <!-- Shared connections helper (gives us CygenixConnections.srcConn / tgtConn) -->
+  <script src="/connections.js"></script>
+
+  <!-- SheetJS for client-side Excel export. Same CDN pattern other pages use. -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root {
+      --bg:        #fafaf7;
+      --surface:   #ffffff;
+      --text:      #1a1a1a;
+      --text2:     #555;
+      --text3:     #888;
+      --border:    #e5e5e0;
+      --accent:    #b25c2e;
+      --green:     #4a7c4a;
+      --red:       #b04040;
+      --amber:     #d4862c;
+      --teal:      #3d7a7e;
+      --purple:    #6d4a8e;
+      --serif:     Georgia, 'Times New Roman', serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    body { display: flex; min-height: 100vh; }
+
+    /* Main content area — leaves room for the sidebar (handled by cygenix-sidebar.js) */
+    .page {
+      flex: 1;
+      margin-left: 230px;
+      padding: 1.5rem 2rem 4rem 2rem;
+      transition: margin-left 0.18s ease;
+    }
+    body.cyg-collapsed .page { margin-left: 54px; }
+
+    h1 { font-family: var(--serif); font-size: 1.6rem; font-weight: 600; margin: 0 0 0.25rem 0; }
+    h2 { font-family: var(--serif); font-size: 1.15rem; font-weight: 600; margin: 1.25rem 0 0.5rem 0; }
+    .lede { color: var(--text2); font-size: 0.92rem; margin-bottom: 1rem; }
+
+    /* Top bar: source/target selector + run button */
+    .toolbar {
+      display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+      padding: 0.75rem 1rem; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 1rem;
+    }
+    .toolbar label { font-size: 0.85rem; color: var(--text2); }
+    .toolbar select, .toolbar input {
+      padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); font-size: 0.9rem; min-width: 140px;
+    }
+
+    .btn {
+      padding: 0.45rem 0.9rem; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); cursor: pointer; font-size: 0.88rem; color: var(--text);
+      transition: background 0.12s ease;
+    }
+    .btn:hover:not(:disabled) { background: #f0f0eb; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+    .btn-primary:hover:not(:disabled) { background: #9b4f27; }
+    .btn-green { background: var(--green); color: white; border-color: var(--green); }
+    .btn-green:hover:not(:disabled) { background: #3d6a3d; }
+    .btn-danger { color: var(--red); border-color: var(--red); }
+    .btn-danger:hover:not(:disabled) { background: #fdf0f0; }
+    .btn-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+    .btn-ghost { background: transparent; border-color: transparent; }
+    .btn-ghost:hover:not(:disabled) { background: #f0f0eb; }
+
+    /* Two-column layout: checks panel | reports list */
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      gap: 1rem;
+    }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem 1.2rem;
+    }
+
+    /* Checks list */
+    .checks-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);
+    }
+    .checks-list { display: grid; gap: 0.5rem; }
+    .check-row {
+      display: flex; align-items: flex-start; gap: 0.6rem;
+      padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 4px;
+      background: #fdfdfa;
+    }
+    .check-row input[type=checkbox] { margin-top: 0.2rem; }
+    .check-row .ck-name { font-weight: 500; font-size: 0.92rem; }
+    .check-row .ck-desc { font-size: 0.82rem; color: var(--text3); margin-top: 0.15rem; }
+
+    /* Reports list */
+    .reports-list { display: grid; gap: 0.5rem; }
+    .report-item {
+      padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 4px;
+      background: #fdfdfa; cursor: pointer;
+    }
+    .report-item:hover { background: #f0f0eb; }
+    .report-item.active { border-color: var(--accent); background: #fdf6f0; }
+    .report-item .r-name { font-weight: 500; font-size: 0.9rem; }
+    .report-item .r-meta { font-size: 0.78rem; color: var(--text3); margin-top: 0.15rem; }
+
+    /* Results panel */
+    .results { margin-top: 1rem; }
+    .result-summary {
+      display: flex; gap: 1.5rem; flex-wrap: wrap;
+      padding: 0.75rem 1rem; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; margin-bottom: 1rem;
+    }
+    .summary-stat { display: flex; flex-direction: column; }
+    .summary-stat .stat-label { font-size: 0.75rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; }
+    .summary-stat .stat-value { font-size: 1.2rem; font-weight: 600; font-family: var(--serif); }
+    .stat-pass  { color: var(--green); }
+    .stat-warn  { color: var(--amber); }
+    .stat-fail  { color: var(--red); }
+
+    .check-result {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.9rem 1.1rem; margin-bottom: 0.6rem;
+    }
+    .check-result-head {
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    }
+    .check-result-title { font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem; }
+    .badge {
+      display: inline-block; padding: 0.15rem 0.5rem; border-radius: 12px;
+      font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+    }
+    .badge-pass { background: #e3f0e3; color: var(--green); }
+    .badge-warn { background: #fbecd5; color: var(--amber); }
+    .badge-fail { background: #f5dcdc; color: var(--red); }
+    .badge-info { background: #e0eaef; color: var(--teal); }
+    .check-result-body { margin-top: 0.6rem; font-size: 0.88rem; color: var(--text2); }
+    .check-result-body table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; font-size: 0.84rem; }
+    .check-result-body th, .check-result-body td { border: 1px solid var(--border); padding: 0.3rem 0.5rem; text-align: left; }
+    .check-result-body th { background: #f0f0eb; font-weight: 600; }
+
+    /* Empty state */
+    .empty {
+      padding: 2rem 1rem; text-align: center; color: var(--text3); font-size: 0.9rem;
+      border: 1px dashed var(--border); border-radius: 8px;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .tab {
+      padding: 0.5rem 0.9rem; border: none; background: none; cursor: pointer;
+      font-size: 0.9rem; color: var(--text2); border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* Inferred relationships table */
+    .rel-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.88rem; }
+    .rel-table th, .rel-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); text-align: left; }
+    .rel-table th { background: #f0f0eb; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text3); }
+    .rel-table tr:hover { background: #fdfdfa; }
+
+    .inline-form {
+      display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto auto;
+      gap: 0.5rem; align-items: end; margin-bottom: 1rem;
+      padding: 0.75rem; background: #fdfdfa; border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .inline-form .field { display: flex; flex-direction: column; gap: 0.2rem; }
+    .inline-form label { font-size: 0.75rem; color: var(--text3); text-transform: uppercase; letter-spacing: 0.04em; }
+    .inline-form input {
+      padding: 0.4rem 0.55rem; border: 1px solid var(--border); border-radius: 4px;
+      background: var(--surface); font-size: 0.88rem;
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+      padding: 0.7rem 1.1rem; background: #1a1a1a; color: white;
+      border-radius: 6px; font-size: 0.88rem; opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+    #toast.toast-error { background: var(--red); }
+    #toast.toast-success { background: var(--green); }
+
+    /* Phase 1 banner */
+    .phase-banner {
+      padding: 0.5rem 0.9rem; background: #fbecd5; border: 1px solid #e8d4a8;
+      border-radius: 6px; font-size: 0.83rem; color: #6b5020; margin-bottom: 1rem;
+    }
+    .phase-banner strong { color: #4a3614; }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar mounts here. data-active matches the key in cygenix-sidebar.js -->
+  <div id="cyg-sidebar-mount" data-active="data-quality"></div>
+
+  <main class="page">
+
+    <h1>Data Quality Review</h1>
+    <p class="lede">Pre-flight checks on a source database. Save reports for the project, export to Excel for sharing.</p>
+
+    <div class="phase-banner" id="phase-banner">
+      <strong>Phase 1 (UI shell):</strong> Run Review currently produces simulated results so the save / rename / delete / export flow can be tested end-to-end. Real check execution lands in Phase 2; the inferred-setups check lands in Phase 3.
+    </div>
+
+    <!-- Tabs: Run Review | Inferred Relationships -->
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="review"  onclick="switchTab('review')">Run Review</button>
+      <button class="tab"        data-tab="rels"    onclick="switchTab('rels')">Inferred Relationships</button>
+    </div>
+
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <!-- TAB: RUN REVIEW                                                       -->
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <div class="tab-pane active" id="tab-review">
+
+      <div class="toolbar">
+        <label for="conn-select">Database:</label>
+        <select id="conn-select" onchange="updateConnLabel()">
+          <option value="source">Source DB</option>
+          <option value="target">Target DB</option>
+        </select>
+
+        <span id="conn-label" style="font-size:0.82rem;color:var(--text3);margin-left:0.25rem"></span>
+
+        <span style="flex:1"></span>
+
+        <button class="btn btn-primary" id="run-btn" onclick="runReview()">▶ Run Review</button>
+      </div>
+
+      <div class="grid">
+
+        <!-- LEFT: Checks + results -->
+        <div>
+          <div class="panel">
+            <div class="checks-header">
+              <h2 style="margin:0">Checks</h2>
+              <div>
+                <label style="font-size:0.85rem">
+                  <input type="checkbox" id="master-toggle" checked onchange="toggleAllChecks(this.checked)" />
+                  All on
+                </label>
+              </div>
+            </div>
+            <div class="checks-list" id="checks-list">
+              <!-- Populated by JS so the list is the single source of truth -->
+            </div>
+          </div>
+
+          <!-- Results render here after Run -->
+          <div id="results-container" class="results" style="display:none">
+            <div class="result-summary" id="result-summary"></div>
+            <div id="result-details"></div>
+          </div>
+
+          <!-- Empty state when no review has been run yet -->
+          <div id="results-empty" class="empty" style="margin-top:1rem">
+            Pick a database, choose which checks to run, then hit <strong>Run Review</strong>.
+          </div>
+        </div>
+
+        <!-- RIGHT: Saved reports list -->
+        <div>
+          <div class="panel">
+            <div class="checks-header">
+              <h2 style="margin:0">Saved Reports</h2>
+              <button class="btn btn-sm btn-ghost" onclick="loadReports()" title="Refresh list">↻</button>
+            </div>
+            <div id="reports-list" class="reports-list">
+              <div class="empty" style="padding:1rem">Loading…</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <!-- TAB: INFERRED RELATIONSHIPS                                           -->
+    <!-- ──────────────────────────────────────────────────────────────────── -->
+    <div class="tab-pane" id="tab-rels">
+      <div class="panel">
+        <h2 style="margin-top:0">Inferred Relationships</h2>
+        <p class="lede" style="margin-bottom:1rem">
+          A schema-level "soft" foreign key — a column expected to contain values from a lookup table, where no formal FK constraint exists.
+          Used by the <em>Missing / wrong inferred setups</em> check to find orphaned values
+          (e.g. a matter with <code>CurrencyCode = 'GPB'</code> when no such code is in <code>Currencies</code>).
+        </p>
+
+        <!-- Add form -->
+        <div class="inline-form">
+          <div class="field">
+            <label for="rel-src-table">Source table</label>
+            <input id="rel-src-table" placeholder="e.g. Matters" />
+          </div>
+          <div class="field">
+            <label for="rel-src-col">Source column</label>
+            <input id="rel-src-col" placeholder="e.g. CurrencyCode" />
+          </div>
+          <div class="field">
+            <label for="rel-lkp-table">Lookup table</label>
+            <input id="rel-lkp-table" placeholder="e.g. Currencies" />
+          </div>
+          <div class="field">
+            <label for="rel-lkp-col">Lookup column</label>
+            <input id="rel-lkp-col" placeholder="e.g. Code" />
+          </div>
+          <button class="btn btn-green" onclick="addRel()">Add</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadRels()" title="Refresh">↻</button>
+        </div>
+
+        <!-- List -->
+        <div id="rels-table-wrap">
+          <div class="empty" style="padding:1rem">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Sidebar (auto-mounts on DOMContentLoaded) -->
+  <script src="/cygenix-sidebar.js"></script>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script>
+  // ─────────────────────────────────────────────────────────────────────────
+  // CHECK DEFINITIONS — single source of truth.
+  // To add a new check in Phase 2/3: append a row here and add a `runner`
+  // function in the runChecks() switch. The UI rebuilds from this list.
+  // ─────────────────────────────────────────────────────────────────────────
+  const CHECKS = [
+    { id: 'inferred',       name: 'Missing / wrong inferred setups',  desc: 'Values in a column that don\'t match the configured lookup table (e.g. unknown currency codes). Configure relationships in the Inferred Relationships tab.' },
+    { id: 'bad-dates',      name: 'Bad / unusual dates',              desc: 'NULLs in date columns, dates before 1900, dates more than 10 years in the future.' },
+    { id: 'null-required',  name: 'NULLs in required fields',         desc: 'Columns flagged NOT NULL at the schema level that contain NULL values.' },
+    { id: 'duplicates',     name: 'Duplicate primary keys',           desc: 'Rows where a unique-constrained column has duplicate values.' },
+    { id: 'orphans',        name: 'Orphaned foreign keys',            desc: 'Child rows whose foreign key references a parent that no longer exists.' },
+    { id: 'rowcounts',      name: 'Row counts (snapshot)',            desc: 'Per-table row count at time of run. Informational, not pass/fail.' },
+    { id: 'outliers',       name: 'Numeric outliers',                 desc: 'Numeric values more than 3 standard deviations from the mean — possible data-entry errors.' },
+    { id: 'string-anom',    name: 'String anomalies',                 desc: 'Trailing whitespace, hidden control characters, values at exactly the column max length (truncation suspects).' }
+  ];
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STATE
+  // ─────────────────────────────────────────────────────────────────────────
+  let currentReport  = null;   // currently displayed report (whether just run or loaded from list)
+  let savedReports   = [];     // list of report headers from Cosmos
+  let inferredRels   = [];     // list of inferred relationships
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROJECT + USER context (mirrors how SQL editor reads these)
+  // ─────────────────────────────────────────────────────────────────────────
+  function getCurrentProjectId() {
+    // Most pages stash the active project id under this key.
+    // If your codebase uses a different key, this is the place to change it.
+    try {
+      return localStorage.getItem('cygenix_current_project_id') || '';
+    } catch { return ''; }
+  }
+
+  function getUserId() {
+    if (typeof CygenixConnections !== 'undefined' && CygenixConnections.currentUserTag) {
+      return CygenixConnections.currentUserTag() || '';
+    }
+    return '';
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CONNECTION HELPERS — same shape as SQL editor
+  // ─────────────────────────────────────────────────────────────────────────
+  function getConn() {
+    if (typeof CygenixConnections === 'undefined') return '';
+    const which = document.getElementById('conn-select').value;
+    return which === 'target' ? CygenixConnections.tgtConn : CygenixConnections.srcConn;
+  }
+
+  function getConnLabel() {
+    return document.getElementById('conn-select').value === 'target' ? 'Target DB' : 'Source DB';
+  }
+
+  function updateConnLabel() {
+    const conn  = getConn();
+    const label = document.getElementById('conn-label');
+    label.textContent = conn
+      ? '✓ ' + getConnLabel() + ' connection ready'
+      : '⚠ No ' + getConnLabel() + ' configured — set in Connections';
+    label.style.color = conn ? 'var(--green)' : 'var(--red)';
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // CHECKS UI — render and toggle
+  // ─────────────────────────────────────────────────────────────────────────
+  function renderChecks() {
+    const html = CHECKS.map(c => `
+      <label class="check-row">
+        <input type="checkbox" class="check-toggle" data-check-id="${c.id}" checked onchange="syncMasterToggle()" />
+        <div>
+          <div class="ck-name">${c.name}</div>
+          <div class="ck-desc">${c.desc}</div>
+        </div>
+      </label>
+    `).join('');
+    document.getElementById('checks-list').innerHTML = html;
+  }
+
+  function toggleAllChecks(on) {
+    document.querySelectorAll('.check-toggle').forEach(cb => cb.checked = on);
+  }
+
+  function syncMasterToggle() {
+    const all = document.querySelectorAll('.check-toggle');
+    const checked = document.querySelectorAll('.check-toggle:checked');
+    document.getElementById('master-toggle').checked = (all.length === checked.length);
+  }
+
+  function getEnabledCheckIds() {
+    return Array.from(document.querySelectorAll('.check-toggle:checked'))
+                .map(cb => cb.dataset.checkId);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RUN REVIEW (Phase 1: mock results)
+  // ─────────────────────────────────────────────────────────────────────────
+  async function runReview() {
+    const enabledIds = getEnabledCheckIds();
+    if (!enabledIds.length) {
+      showToast('Pick at least one check to run.', 'error');
+      return;
+    }
+
+    const conn = getConn();
+    if (!conn) {
+      showToast('No ' + getConnLabel() + ' connection configured. Set one under Connections.', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Running…';
+
+    try {
+      // Phase 1: mock. Phase 2 will replace this with /api/db calls per check.
+      const results = await runChecksMock(enabledIds);
+
+      currentReport = {
+        id:           'qr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        projectId:    getCurrentProjectId(),
+        userId:       getUserId(),
+        sourceName:   getConnLabel(),
+        connSide:     document.getElementById('conn-select').value,
+        reportName:   defaultReportName(),
+        runAt:        new Date().toISOString(),
+        status:       'complete',
+        checksRun:    enabledIds,
+        summary:      buildSummary(results),
+        results:      results,
+        saved:        false
+      };
+
+      renderResults(currentReport);
+
+      // Auto-save to Cosmos so the user can find it again
+      const ok = await saveReport(currentReport);
+      if (ok) {
+        currentReport.saved = true;
+        showToast('Review complete and saved.', 'success');
+        await loadReports();
+        highlightActiveReport(currentReport.id);
+      } else {
+        showToast('Review complete, but save failed (see console).', 'error');
+      }
+    } catch (e) {
+      console.error('runReview error:', e);
+      showToast('Run failed: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '▶ Run Review';
+    }
+  }
+
+  // PHASE 1 ONLY — produces fake but realistic-looking results so the full
+  // save/load/export loop is testable. Replaced in Phase 2.
+  async function runChecksMock(enabledIds) {
+    await new Promise(r => setTimeout(r, 600)); // simulate work
+    const out = {};
+    for (const id of enabledIds) {
+      switch (id) {
+        case 'inferred':
+          out[id] = { status: 'warn', issuesFound: 23, items: [
+            { table: 'Matters', column: 'CurrencyCode', badValue: 'GPB',  rowCount: 18 },
+            { table: 'Matters', column: 'CurrencyCode', badValue: 'EURO', rowCount:  5 },
+          ]};
+          break;
+        case 'bad-dates':
+          out[id] = { status: 'warn', issuesFound: 12, items: [
+            { table: 'Matters',     column: 'OpenDate',  issue: 'Year < 1900',  rowCount:  3 },
+            { table: 'TimeEntries', column: 'WorkDate',  issue: 'Year > today + 10', rowCount: 9 },
+          ]};
+          break;
+        case 'null-required':
+          out[id] = { status: 'pass', issuesFound: 0, items: [] };
+          break;
+        case 'duplicates':
+          out[id] = { status: 'fail', issuesFound: 4, items: [
+            { table: 'Clients', column: 'ClientCode', duplicateValue: 'C0001', rowCount: 2 },
+            { table: 'Clients', column: 'ClientCode', duplicateValue: 'C0042', rowCount: 2 },
+          ]};
+          break;
+        case 'orphans':
+          out[id] = { status: 'warn', issuesFound: 7, items: [
+            { childTable: 'TimeEntries', childColumn: 'MatterID', parentTable: 'Matters', orphanCount: 7 }
+          ]};
+          break;
+        case 'rowcounts':
+          out[id] = { status: 'info', issuesFound: 0, items: [
+            { table: 'Matters',     rowCount: 14_220 },
+            { table: 'Clients',     rowCount:  3_891 },
+            { table: 'TimeEntries', rowCount: 482_117 },
+            { table: 'Currencies',  rowCount:     42 },
+          ]};
+          break;
+        case 'outliers':
+          out[id] = { status: 'warn', issuesFound: 2, items: [
+            { table: 'TimeEntries', column: 'Hours', value: 200.0, mean: 6.4, stddev: 2.1 },
+            { table: 'Invoices',    column: 'Amount', value: 50_000_000, mean: 12_400, stddev: 8_200 },
+          ]};
+          break;
+        case 'string-anom':
+          out[id] = { status: 'warn', issuesFound: 18, items: [
+            { table: 'Matters', column: 'MatterName', issue: 'trailing whitespace',     rowCount: 11 },
+            { table: 'Matters', column: 'MatterName', issue: 'at column max length',    rowCount:  7 },
+          ]};
+          break;
+        default:
+          out[id] = { status: 'info', issuesFound: 0, items: [], note: 'Not implemented yet' };
+      }
+    }
+    return out;
+  }
+
+  function buildSummary(results) {
+    let pass = 0, warn = 0, fail = 0, info = 0, totalIssues = 0;
+    for (const r of Object.values(results)) {
+      if (r.status === 'pass')  pass++;
+      if (r.status === 'warn')  warn++;
+      if (r.status === 'fail')  fail++;
+      if (r.status === 'info')  info++;
+      totalIssues += (r.issuesFound || 0);
+    }
+    return { pass, warn, fail, info, totalIssues };
+  }
+
+  function defaultReportName() {
+    const which = getConnLabel();
+    const d = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+    return `${which}_${stamp}`;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RESULTS RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+  function renderResults(report) {
+    document.getElementById('results-empty').style.display = 'none';
+    document.getElementById('results-container').style.display = 'block';
+
+    // Summary bar
+    const s = report.summary || {};
+    const summaryHtml = `
+      <div class="summary-stat">
+        <span class="stat-label">Report</span>
+        <span class="stat-value" style="font-size:1rem">
+          <input id="report-name-input" value="${escapeHtml(report.reportName)}"
+                 onblur="renameCurrentReport(this.value)"
+                 style="font-family:var(--serif);font-size:1rem;font-weight:600;border:none;background:transparent;border-bottom:1px dashed var(--border);min-width:240px;padding:0.1rem 0.2rem" />
+        </span>
+      </div>
+      <div class="summary-stat">
+        <span class="stat-label">Database</span>
+        <span class="stat-value" style="font-size:1rem">${escapeHtml(report.sourceName)}</span>
+      </div>
+      <div class="summary-stat">
+        <span class="stat-label">Run at</span>
+        <span class="stat-value" style="font-size:1rem">${formatDate(report.runAt)}</span>
+      </div>
+      <div class="summary-stat">
+        <span class="stat-label">Pass</span>
+        <span class="stat-value stat-pass">${s.pass || 0}</span>
+      </div>
+      <div class="summary-stat">
+        <span class="stat-label">Warn</span>
+        <span class="stat-value stat-warn">${s.warn || 0}</span>
+      </div>
+      <div class="summary-stat">
+        <span class="stat-label">Fail</span>
+        <span class="stat-value stat-fail">${s.fail || 0}</span>
+      </div>
+      <div class="summary-stat">
+        <span class="stat-label">Total issues</span>
+        <span class="stat-value">${s.totalIssues || 0}</span>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;gap:0.4rem;align-items:center">
+        <button class="btn btn-green btn-sm" onclick="exportToExcel()">⬇ Export to Excel</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCurrentReport()">🗑 Delete</button>
+      </div>
+    `;
+    document.getElementById('result-summary').innerHTML = summaryHtml;
+
+    // Per-check details
+    const detailsHtml = CHECKS.filter(c => report.results[c.id]).map(c => {
+      const r = report.results[c.id];
+      const badge = badgeFor(r.status);
+      return `
+        <div class="check-result">
+          <div class="check-result-head">
+            <div class="check-result-title">
+              ${badge}
+              ${escapeHtml(c.name)}
+            </div>
+            <div style="font-size:0.85rem;color:var(--text3)">
+              ${r.issuesFound || 0} ${r.status === 'info' ? 'rows' : 'issues'}
+            </div>
+          </div>
+          <div class="check-result-body">${renderCheckBody(c.id, r)}</div>
+        </div>
+      `;
+    }).join('');
+    document.getElementById('result-details').innerHTML = detailsHtml;
+  }
+
+  function badgeFor(status) {
+    const map = { pass: 'badge-pass', warn: 'badge-warn', fail: 'badge-fail', info: 'badge-info' };
+    const cls = map[status] || 'badge-info';
+    return `<span class="badge ${cls}">${status}</span>`;
+  }
+
+  function renderCheckBody(checkId, r) {
+    if (!r.items || !r.items.length) {
+      return r.note ? `<em>${escapeHtml(r.note)}</em>` : '<em>No issues found.</em>';
+    }
+    // Items can have any shape — render whatever keys are present.
+    const cols = Object.keys(r.items[0]);
+    const headerRow = cols.map(c => `<th>${escapeHtml(c)}</th>`).join('');
+    const bodyRows  = r.items.map(it =>
+      `<tr>${cols.map(c => `<td>${escapeHtml(String(it[c] ?? ''))}</td>`).join('')}</tr>`
+    ).join('');
+    return `<table><thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table>`;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // SAVE / LOAD / DELETE / RENAME REPORTS  (via /api/data quality-* actions)
+  // ─────────────────────────────────────────────────────────────────────────
+  async function apiData(action, body, method = 'POST') {
+    const userId = getUserId();
+    if (!userId) throw new Error('Not signed in.');
+    const url = '/api/data/' + action + (method === 'GET' && body
+                  ? '?' + new URLSearchParams(body).toString() : '');
+    const opts = {
+      method,
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
+    };
+    if (method !== 'GET' && body) opts.body = JSON.stringify(body);
+    const res = await fetch(url, opts);
+    const data = await res.json().catch(() => ({ error: 'Non-JSON ' + res.status }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+
+  async function saveReport(report) {
+    try {
+      await apiData('quality-save-report', { report });
+      return true;
+    } catch (e) {
+      console.error('saveReport failed:', e);
+      return false;
+    }
+  }
+
+  async function loadReports() {
+    const projectId = getCurrentProjectId();
+    if (!projectId) {
+      document.getElementById('reports-list').innerHTML =
+        '<div class="empty" style="padding:1rem">No active project — open one in the Dashboard first.</div>';
+      return;
+    }
+    try {
+      const data = await apiData('quality-list-reports', { projectId }, 'GET');
+      savedReports = data.reports || [];
+      renderReportsList();
+    } catch (e) {
+      document.getElementById('reports-list').innerHTML =
+        `<div class="empty" style="padding:1rem;color:var(--red)">Load failed: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function renderReportsList() {
+    if (!savedReports.length) {
+      document.getElementById('reports-list').innerHTML =
+        '<div class="empty" style="padding:1rem">No saved reports yet.</div>';
+      return;
+    }
+    // Newest first
+    const sorted = [...savedReports].sort((a, b) => (b.runAt || '').localeCompare(a.runAt || ''));
+    const html = sorted.map(r => {
+      const issues = r.summary?.totalIssues ?? 0;
+      const fails  = r.summary?.fail ?? 0;
+      const cls    = (currentReport && currentReport.id === r.id) ? ' active' : '';
+      return `
+        <div class="report-item${cls}" data-id="${r.id}" onclick="openReport('${r.id}')">
+          <div class="r-name">${escapeHtml(r.reportName || '(untitled)')}</div>
+          <div class="r-meta">
+            ${formatDate(r.runAt)} · ${issues} issues${fails ? ' · ' + fails + ' fail' : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+    document.getElementById('reports-list').innerHTML = html;
+  }
+
+  function highlightActiveReport(id) {
+    document.querySelectorAll('.report-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.id === id);
+    });
+  }
+
+  async function openReport(id) {
+    try {
+      const data = await apiData('quality-get-report', { id, projectId: getCurrentProjectId() }, 'GET');
+      currentReport = data.report || null;
+      if (!currentReport) { showToast('Report not found.', 'error'); return; }
+      renderResults(currentReport);
+      highlightActiveReport(id);
+    } catch (e) {
+      showToast('Open failed: ' + e.message, 'error');
+    }
+  }
+
+  async function renameCurrentReport(newName) {
+    if (!currentReport) return;
+    newName = (newName || '').trim();
+    if (!newName) {
+      document.getElementById('report-name-input').value = currentReport.reportName;
+      return;
+    }
+    if (newName === currentReport.reportName) return;
+    try {
+      await apiData('quality-rename-report', {
+        id: currentReport.id, projectId: currentReport.projectId, reportName: newName
+      });
+      currentReport.reportName = newName;
+      // Update list cache
+      const idx = savedReports.findIndex(r => r.id === currentReport.id);
+      if (idx >= 0) savedReports[idx].reportName = newName;
+      renderReportsList();
+      highlightActiveReport(currentReport.id);
+      showToast('Renamed.', 'success');
+    } catch (e) {
+      showToast('Rename failed: ' + e.message, 'error');
+      document.getElementById('report-name-input').value = currentReport.reportName;
+    }
+  }
+
+  async function deleteCurrentReport() {
+    if (!currentReport) return;
+    if (!confirm(`Delete "${currentReport.reportName}"? This can't be undone.`)) return;
+    try {
+      await apiData('quality-delete-report', {
+        id: currentReport.id, projectId: currentReport.projectId
+      }, 'DELETE');
+      showToast('Deleted.', 'success');
+      currentReport = null;
+      document.getElementById('results-container').style.display = 'none';
+      document.getElementById('results-empty').style.display = 'block';
+      await loadReports();
+    } catch (e) {
+      showToast('Delete failed: ' + e.message, 'error');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // EXCEL EXPORT (client-side via SheetJS)
+  // One sheet per check + a Summary sheet. File name matches report name.
+  // ─────────────────────────────────────────────────────────────────────────
+  function exportToExcel() {
+    if (!currentReport) return;
+    if (typeof XLSX === 'undefined') {
+      showToast('Excel library not loaded — refresh and try again.', 'error');
+      return;
+    }
+    try {
+      const wb = XLSX.utils.book_new();
+
+      // Summary sheet
+      const summaryRows = [
+        ['Report',         currentReport.reportName],
+        ['Database',       currentReport.sourceName],
+        ['Run at',         formatDate(currentReport.runAt)],
+        ['Project ID',     currentReport.projectId],
+        [],
+        ['Status',         'Count'],
+        ['Pass',           currentReport.summary?.pass  || 0],
+        ['Warn',           currentReport.summary?.warn  || 0],
+        ['Fail',           currentReport.summary?.fail  || 0],
+        ['Info',           currentReport.summary?.info  || 0],
+        ['Total issues',   currentReport.summary?.totalIssues || 0],
+      ];
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+      XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+
+      // One sheet per check that has results
+      for (const c of CHECKS) {
+        const r = currentReport.results?.[c.id];
+        if (!r) continue;
+
+        const sheetName = c.name.length > 28 ? c.name.slice(0, 28) : c.name;
+        const headerRow = ['Status', r.status];
+        const issuesRow = ['Issues found', r.issuesFound || 0];
+        const blank     = [];
+
+        let dataRows = [];
+        if (r.items && r.items.length) {
+          const cols = Object.keys(r.items[0]);
+          dataRows = [cols, ...r.items.map(it => cols.map(k => it[k]))];
+        } else {
+          dataRows = [['(no rows)']];
+        }
+        const sheet = XLSX.utils.aoa_to_sheet([headerRow, issuesRow, blank, ...dataRows]);
+        // Make sheet name Excel-safe (no slashes, square brackets, etc.)
+        const safeName = sheetName.replace(/[\\/?*[\]:]/g, '_');
+        XLSX.utils.book_append_sheet(wb, sheet, safeName);
+      }
+
+      const filename = (currentReport.reportName || 'data-quality-report').replace(/[^\w\-. ]/g, '_') + '.xlsx';
+      XLSX.writeFile(wb, filename);
+      showToast('Exported.', 'success');
+    } catch (e) {
+      console.error('Excel export failed:', e);
+      showToast('Export failed: ' + e.message, 'error');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // INFERRED RELATIONSHIPS — list / add / delete
+  // ─────────────────────────────────────────────────────────────────────────
+  async function loadRels() {
+    const projectId = getCurrentProjectId();
+    if (!projectId) {
+      document.getElementById('rels-table-wrap').innerHTML =
+        '<div class="empty" style="padding:1rem">No active project — open one in the Dashboard first.</div>';
+      return;
+    }
+    try {
+      const data = await apiData('quality-list-rels', { projectId }, 'GET');
+      inferredRels = data.rels || [];
+      renderRels();
+    } catch (e) {
+      document.getElementById('rels-table-wrap').innerHTML =
+        `<div class="empty" style="padding:1rem;color:var(--red)">Load failed: ${escapeHtml(e.message)}</div>`;
+    }
+  }
+
+  function renderRels() {
+    if (!inferredRels.length) {
+      document.getElementById('rels-table-wrap').innerHTML =
+        '<div class="empty" style="padding:1rem">No inferred relationships configured for this project yet.</div>';
+      return;
+    }
+    const rows = inferredRels.map(r => `
+      <tr>
+        <td>${escapeHtml(r.sourceTable)}</td>
+        <td>${escapeHtml(r.sourceColumn)}</td>
+        <td style="text-align:center;color:var(--text3)">→</td>
+        <td>${escapeHtml(r.lookupTable)}</td>
+        <td>${escapeHtml(r.lookupColumn)}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm btn-danger" onclick="deleteRel('${r.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+    document.getElementById('rels-table-wrap').innerHTML = `
+      <table class="rel-table">
+        <thead>
+          <tr>
+            <th>Source table</th><th>Source column</th><th></th>
+            <th>Lookup table</th><th>Lookup column</th><th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  async function addRel() {
+    const projectId   = getCurrentProjectId();
+    if (!projectId) { showToast('No active project.', 'error'); return; }
+    const sourceTable  = document.getElementById('rel-src-table').value.trim();
+    const sourceColumn = document.getElementById('rel-src-col').value.trim();
+    const lookupTable  = document.getElementById('rel-lkp-table').value.trim();
+    const lookupColumn = document.getElementById('rel-lkp-col').value.trim();
+    if (!sourceTable || !sourceColumn || !lookupTable || !lookupColumn) {
+      showToast('Fill in all four fields.', 'error');
+      return;
+    }
+    try {
+      await apiData('quality-add-rel', {
+        rel: { projectId, sourceTable, sourceColumn, lookupTable, lookupColumn }
+      });
+      ['rel-src-table', 'rel-src-col', 'rel-lkp-table', 'rel-lkp-col'].forEach(id =>
+        document.getElementById(id).value = '');
+      await loadRels();
+      showToast('Added.', 'success');
+    } catch (e) {
+      showToast('Add failed: ' + e.message, 'error');
+    }
+  }
+
+  async function deleteRel(id) {
+    if (!confirm('Delete this inferred relationship?')) return;
+    try {
+      await apiData('quality-delete-rel', { id, projectId: getCurrentProjectId() }, 'DELETE');
+      await loadRels();
+      showToast('Deleted.', 'success');
+    } catch (e) {
+      showToast('Delete failed: ' + e.message, 'error');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TABS
+  // ─────────────────────────────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(t =>
+      t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.tab-pane').forEach(p =>
+      p.classList.toggle('active', p.id === 'tab-' + name));
+    if (name === 'rels') loadRels();
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // UTILITIES
+  // ─────────────────────────────────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function formatDate(iso) {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    } catch { return iso; }
+  }
+  function showToast(msg, kind) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'show' + (kind === 'error' ? ' toast-error' : kind === 'success' ? ' toast-success' : '');
+    setTimeout(() => { t.className = t.className.replace(' show', ''); }, 2400);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // INIT
+  // ─────────────────────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', () => {
+    renderChecks();
+    updateConnLabel();
+    loadReports();
+  });
+  </script>
+
+</body>
+</html>

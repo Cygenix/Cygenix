@@ -67,6 +67,7 @@
       { key:'agentive-migration', label:'Agentive Migration', href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
     ]},
     { section: 'Analysis', group:'analysis', items: [
+      { key:'data-quality',      label:'Data Quality Review', href:'/data-quality.html',  color:'var(--green)',  icon: iconQuality() },
       { key:'insights',          label:'Data Insights',       href:'/insights.html',      color:'var(--purple)', icon: iconInsights() },
       { key:'data-cleansing',    label:'Data Cleansing',      href:'/data-cleansing.html',color:'var(--teal)',   icon: iconClean() },
       { key:'validation',        label:'Validation',          href:'/validation.html',    color:'var(--amber)',  icon: iconCheck() },
@@ -119,6 +120,10 @@
   function iconHand(){         return svg('<path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 8.5l4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconInsights(){     return svg('<circle cx="8" cy="6" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M4 14c0-2 2-3 4-3s4 1 4 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconClean(){        return svg('<path d="M4 2v4M4 10v4M2 6h4M2 12h4M10 3l3 3-6 6-3-3z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
+  // Clipboard with a tick on its page — used for Data Quality Review.
+  // Distinct from iconCheck (plain circle + tick, used for Validation) and
+  // iconReport (single-page document, used for Conversion Report).
+  function iconQuality(){      return svg('<rect x="3" y="3" width="10" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="6" y="1.5" width="4" height="2.5" rx="0.4" stroke="currentColor" stroke-width="1.2" fill="none"/><path d="M5.5 8.5l1.6 1.6 3.4-3.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconCheck(){        return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 8l2 2 3-4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconPlay(){         return svg('<rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M7 6l3 2-3 2z" fill="currentColor"/>'); }
   function iconList(){         return svg('<path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>'); }
