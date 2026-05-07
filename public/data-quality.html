@@ -2431,10 +2431,22 @@
   const LOOKUP_HEURISTIC = (function () {
     const MAX_LOOKUP_COLS         = 8;
     const MAX_LOOKUP_COLS_BY_NAME = 12;
-    const HARD_LOOKUP_LIMIT       = 150;
+    const MAX_LOOKUP_ROWS         = 500;     // real lookups are tiny; if rowCount > this, not a lookup
+    const HARD_LOOKUP_LIMIT       = 80;      // reduced from 150 — quality matters more than quantity
+
     const ID_COL_RE       = /^(id|code|key|abbrev(iation)?|short(_?code)?|num(ber)?|nbr|cd)$|_id$|_code$|_key$/i;
     const DESC_COL_RE     = /^(name|description|desc|descr|label|title|value|text|caption|long_?name|display_?name|full_?name)$|_name$|_desc(ription|r)?$|_label$/i;
-    const EXCLUDE_NAME_RE = /(^|_)(log|logs|history|audit|tmp|temp|bk|backup|stage|staging|tmp_|temp_|hist_)($|_)|^_+|_+$|^z_|^zz_|^bk_|^bkp_|^old_|^new_|^arch_|_dt$|^dt_/i;
+
+    // Tables we DEFINITELY don't want as lookups, even if they otherwise match.
+    // Catches: logs, history, audit, temp/staging/backup, system tables, control
+    // tables, save/restore copies, prefixes like _BAKTAB_xxx, frx_*_ctrl_*, etc.
+    const EXCLUDE_NAME_RE = new RegExp(
+      '(^|_)(log|logs|history|audit|tmp|temp|bk|backup|stage|staging|hist|ctrl|control|sav|save|restore|orig|prev|cache|queue|que|sync|sync_|migr|migrate|migration|stat|stats|properties|jobs|job|task|run|results|diagnostic|trace|profile)($|_)' +
+      '|^_+|_+$|^z_|^zz_|^bk_|^bkp_|^old_|^new_|^arch_|^archive_|_dt$|^dt_' +
+      '|^_baktab|^tbl_|^xt_|^msrep|^sysdiagrams$|^dtproperties$',
+      'i'
+    );
+
     const LOOKUP_NAME_RE  = /(^|_)(country|countries|currency|currencies|state|states|province|region|locale|language|country_?code|currency_?code|status|statuses|type|types|category|categories|class|classification|kind|level|priority|severity|reason|method|methods|stage|phase|step|tier|grade|rating|gender|salutation|title|prefix|suffix|department|dept|office|location|branch|division|team|role|permission|nationality|industry|sector|frequency|unit|units|measure|measurement|colour|color|size|format|template|action|event|disposition|outcome|result|origin|source|channel|provider|carrier|airline|courier|shipper|payment_?method|delivery_?method)($|_)/i;
 
     function tableLabel(t) {
@@ -2446,10 +2458,21 @@
       for (const t of tables) {
         const tName = (t.name || '').toLowerCase();
         const fullName = tableLabel(t);
+
         if (EXCLUDE_NAME_RE.test(tName)) {
           transactionalNames.push(fullName);
           continue;
         }
+
+        // Row-count gate. If rowCount is known and exceeds the threshold,
+        // this can't be a lookup. If rowCount is missing/null, fall through
+        // to the structural test (older schemas without stats).
+        const rc = (typeof t.rowCount === 'number') ? t.rowCount : null;
+        if (rc !== null && rc > MAX_LOOKUP_ROWS) {
+          transactionalNames.push(fullName);
+          continue;
+        }
+
         const cols     = Array.isArray(t.columns) ? t.columns : [];
         const colNames = cols.map(c => (c.name || '').toLowerCase());
         const hasId    = colNames.some(n => ID_COL_RE.test(n));
@@ -2460,10 +2483,10 @@
         const compactByName  = nameLooksLikeLookup && cols.length <= MAX_LOOKUP_COLS_BY_NAME;
 
         if (compactByShape || compactByName) {
-          // Send a slim copy: just name + columns (name + simplified type)
           lookups.push({
             name: t.name,
             schema: t.schema,
+            rowCount: rc,
             columns: cols.map(c => ({ name: c.name, type: c.type || c.dataType }))
           });
         } else {
@@ -2471,11 +2494,14 @@
         }
       }
 
-      // If we somehow detected hundreds of lookups, keep only the most likely
-      // (LOOKUP_NAME_RE matches first, then by ascending column count) and
-      // demote the rest to transactional names.
+      // If we still have too many "lookups", rank by quality and demote the rest.
+      // Quality order: smallest rowCount first (real lookups are tiny), then
+      // LOOKUP_NAME_RE matches first, then ascending column count.
       if (lookups.length > HARD_LOOKUP_LIMIT) {
         lookups.sort((a, b) => {
+          const arc = a.rowCount ?? 99999;
+          const brc = b.rowCount ?? 99999;
+          if (arc !== brc) return arc - brc;
           const an = LOOKUP_NAME_RE.test((a.name || '').toLowerCase()) ? 0 : 1;
           const bn = LOOKUP_NAME_RE.test((b.name || '').toLowerCase()) ? 0 : 1;
           if (an !== bn) return an - bn;
@@ -2495,7 +2521,7 @@
     const projectId = getCurrentProjectId();
     if (!projectId) { showToast('No active project. Open a project from the Dashboard first.', 'error'); return; }
 
-    // Schema must be loaded first. If it isn't, kick off a load and wait.
+    // Schema must be loaded first.
     let schema = _relSchemaCache[getRelSide()];
     if (!schema) {
       const conn = getRelConn();
@@ -2507,11 +2533,11 @@
 
     const btn = document.getElementById('suggest-rels-btn');
     btn.disabled = true;
-    btn.textContent = '🪄 Thinking…';
-    setSchemaStatus('Categorising schema and asking AI (this can take 10–30s)…', 'busy');
+    btn.textContent = '🪄 Preparing…';
+    setSchemaStatus('Categorising schema…', 'busy');
 
     try {
-      // Categorise client-side
+      // 1. Heuristic categorise: lookups vs transactional
       const { lookups, transactionalNames } =
         LOOKUP_HEURISTIC.categorise(schema.tables || []);
 
@@ -2528,19 +2554,120 @@
         return;
       }
 
+      // 2. Relevance filter: only keep transactional names that contain a
+      //    substring of one of the lookup names. This is MUCH cheaper to
+      //    compute client-side than to send all 2400 names to the server,
+      //    and dramatically reduces the prompt size for each LLM call.
+      //    Stop-list catches generic stems that match too many tables and
+      //    aren't useful as filter criteria (e.g. "code", "type", "desc").
+      const STEM_STOPLIST = new Set([
+        'code', 'type', 'desc', 'descr', 'val', 'value', 'name', 'head', 'header',
+        'stat', 'status', 'tbl', 'temp', 'tmp', 'new', 'old', 'sav', 'save', 'bat',
+        'data', 'item', 'list', 'log', 'set', 'job', 'tab', 'rec', 'row', 'flag',
+        'info', 'main', 'sub', 'all', 'lookup', 'ref', 'master', 'detail',
+        'system', 'config', 'control', 'meta'
+      ]);
+      function stemsForLookup(name) {
+        const lower = (name || '').toLowerCase();
+        const parts = lower.split(/[^a-z0-9]+/).filter(p => p.length >= 4);
+        const stems = new Set(parts);
+        for (const p of parts) {
+          if (p.endsWith('ies') && p.length > 5) stems.add(p.slice(0, -3));
+          else if (p.endsWith('es') && p.length > 5) stems.add(p.slice(0, -2));
+          else if (p.endsWith('s')  && p.length > 5) stems.add(p.slice(0, -1));
+        }
+        // Drop noise stems and require ≥ 4 chars (3-char stems caused too many
+        // false positives like 'bat' matching every batch table).
+        return [...stems].filter(s => s.length >= 4 && !STEM_STOPLIST.has(s));
+      }
+      const allStems = new Set();
+      for (const t of lookups) for (const s of stemsForLookup(t.name)) allStems.add(s);
+      const stemArr = [...allStems];
+
+      const relevantTx = [];
+      for (const tx of transactionalNames) {
+        const lower = String(tx || '').toLowerCase();
+        if (!lower) continue;
+        for (const stem of stemArr) {
+          if (lower.indexOf(stem) >= 0) { relevantTx.push(tx); break; }
+        }
+      }
+      console.log('[suggest] relevance filter: kept', relevantTx.length, 'of', transactionalNames.length);
+
+      // 3. Chunk the relevant transactional names. Empirical testing on a
+      //    2451-table 3E schema: chunks of 30 succeed about 50% of the time
+      //    when the chunk contains many similar reasoning-heavy tables
+      //    (e.g. 3E cv_*wasis* tables). Chunks of 20 succeed reliably.
+      //    Each chunk + LLM call takes ~25-35s, so a busy schema with
+      //    ~100 relevant tx tables runs in ~3 minutes.
+      const CHUNK_SIZE       = 20;
+      const CHUNK_MAX_RETRIES = 1;     // retry once on failure before giving up
+      const chunks = [];
+      for (let i = 0; i < relevantTx.length; i += CHUNK_SIZE) {
+        chunks.push(relevantTx.slice(i, i + CHUNK_SIZE));
+      }
+      // Always have at least one chunk (even if empty) so we still hit the
+      // server with the lookups and get any lookup-to-lookup suggestions.
+      if (!chunks.length) chunks.push([]);
+
+      console.log('[suggest] chunking:', chunks.length, 'chunks of up to', CHUNK_SIZE);
+
+      // 4. Run chunks sequentially. Each call sends the FULL lookup list
+      //    plus its slice of transactional names. Progress shown in the
+      //    schema-status line.
       const existingRels = (inferredRels || []).map(r => ({
         sourceTable:  r.sourceTable, sourceColumn: r.sourceColumn,
         lookupTable:  r.lookupTable, lookupColumn: r.lookupColumn
       }));
 
-      const data = await apiData('quality-suggest-rels', {
-        lookupTables:        lookups,
-        transactionalTables: transactionalNames,
-        existingRels
-      });
+      const allSuggestions = [];
+      const seenKeys = new Set();
+      const errorMessages = [];
 
-      _lastSuggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
-      renderSuggestions(_lastSuggestions, data);
+      for (let i = 0; i < chunks.length; i++) {
+        btn.textContent = '🪄 Thinking… ' + (i + 1) + '/' + chunks.length;
+        setSchemaStatus('AI batch ' + (i + 1) + ' of ' + chunks.length + '…', 'busy');
+        let lastError = null;
+        let success = false;
+        for (let attempt = 0; attempt <= CHUNK_MAX_RETRIES && !success; attempt++) {
+          if (attempt > 0) {
+            btn.textContent = '🪄 Retry ' + (i + 1) + '/' + chunks.length;
+            setSchemaStatus('Batch ' + (i + 1) + ' retry…', 'busy');
+          }
+          try {
+            const data = await apiData('quality-suggest-rels', {
+              lookupTables:        lookups,
+              transactionalTables: chunks[i],
+              existingRels
+            });
+            for (const s of (data.suggestions || [])) {
+              const key = (s.sourceTable + '|' + s.sourceColumn + '|' + s.lookupTable + '|' + s.lookupColumn).toLowerCase();
+              if (seenKeys.has(key)) continue;
+              seenKeys.add(key);
+              allSuggestions.push(s);
+            }
+            success = true;
+          } catch (e) {
+            lastError = e;
+            console.warn('[suggest] chunk', i + 1, 'attempt', attempt + 1, 'failed:', e.message);
+          }
+        }
+        if (!success) {
+          errorMessages.push('Chunk ' + (i + 1) + ': ' + lastError.message);
+        }
+      }
+
+      // 5. Render
+      _lastSuggestions = allSuggestions;
+      renderSuggestions(allSuggestions, {
+        lookupCandidates: lookups.length,
+        transactionalTables: relevantTx.length,
+        chunksRun: chunks.length,
+        chunksFailed: errorMessages.length,
+        note: errorMessages.length
+          ? errorMessages.length + ' batch(es) errored — partial results shown. ' + errorMessages.slice(0, 2).join(' · ')
+          : null
+      });
       const cached = _relSchemaCache[getRelSide()];
       setSchemaStatus('✓ ' + cached.tables.length + ' tables (' + getRelSide() + ')', 'ok');
     } catch (e) {
