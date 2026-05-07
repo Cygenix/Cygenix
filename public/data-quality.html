@@ -2411,13 +2411,85 @@
   // ─────────────────────────────────────────────────────────────────────────
   // AI SUGGEST RELATIONSHIPS
   //
-  // Sends the cached schema (table + column names + simplified types) plus
-  // the list of already-configured inferred relationships to the
-  // /api/data/quality-suggest-rels endpoint, which calls Anthropic's API
-  // server-side. Returns a list of proposed relationships with confidence
-  // scores. User reviews and bulk-adds the ones they accept.
+  // Heuristic filter runs IN THE BROWSER to identify lookup vs transactional
+  // tables, then sends only the pre-filtered payload to the Function. This
+  // keeps the request body tiny (~100KB even on a 2451-table schema vs ~5MB
+  // if the raw schema were sent) and avoids Function timeouts.
+  //
+  // The Function then calls Anthropic with a focused prompt: full column
+  // detail for ~50-150 lookup candidates + just the names of the rest. The
+  // model infers transactional column names from the table name + standard
+  // SQL Server naming conventions.
   // ─────────────────────────────────────────────────────────────────────────
   let _lastSuggestions = [];   // cached so toggleAll/addSelected can read
+
+  // Heuristic regexes — same shape as the older server-side version. A table
+  // is a "lookup candidate" if it satisfies one of:
+  //   - shape:  ≤ MAX_LOOKUP_COLS columns + has an id-like col + has a name-like col
+  //   - byName: matches LOOKUP_NAME_RE AND ≤ MAX_LOOKUP_COLS_BY_NAME columns
+  // Then EXCLUDE_NAME_RE filters out anything that's clearly a log/audit/temp/etc.
+  const LOOKUP_HEURISTIC = (function () {
+    const MAX_LOOKUP_COLS         = 8;
+    const MAX_LOOKUP_COLS_BY_NAME = 12;
+    const HARD_LOOKUP_LIMIT       = 150;
+    const ID_COL_RE       = /^(id|code|key|abbrev(iation)?|short(_?code)?|num(ber)?|nbr|cd)$|_id$|_code$|_key$/i;
+    const DESC_COL_RE     = /^(name|description|desc|descr|label|title|value|text|caption|long_?name|display_?name|full_?name)$|_name$|_desc(ription|r)?$|_label$/i;
+    const EXCLUDE_NAME_RE = /(^|_)(log|logs|history|audit|tmp|temp|bk|backup|stage|staging|tmp_|temp_|hist_)($|_)|^_+|_+$|^z_|^zz_|^bk_|^bkp_|^old_|^new_|^arch_|_dt$|^dt_/i;
+    const LOOKUP_NAME_RE  = /(^|_)(country|countries|currency|currencies|state|states|province|region|locale|language|country_?code|currency_?code|status|statuses|type|types|category|categories|class|classification|kind|level|priority|severity|reason|method|methods|stage|phase|step|tier|grade|rating|gender|salutation|title|prefix|suffix|department|dept|office|location|branch|division|team|role|permission|nationality|industry|sector|frequency|unit|units|measure|measurement|colour|color|size|format|template|action|event|disposition|outcome|result|origin|source|channel|provider|carrier|airline|courier|shipper|payment_?method|delivery_?method)($|_)/i;
+
+    function tableLabel(t) {
+      return (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name;
+    }
+    function categorise(tables) {
+      const lookups = [];
+      const transactionalNames = [];
+      for (const t of tables) {
+        const tName = (t.name || '').toLowerCase();
+        const fullName = tableLabel(t);
+        if (EXCLUDE_NAME_RE.test(tName)) {
+          transactionalNames.push(fullName);
+          continue;
+        }
+        const cols     = Array.isArray(t.columns) ? t.columns : [];
+        const colNames = cols.map(c => (c.name || '').toLowerCase());
+        const hasId    = colNames.some(n => ID_COL_RE.test(n));
+        const hasDesc  = colNames.some(n => DESC_COL_RE.test(n));
+        const nameLooksLikeLookup = LOOKUP_NAME_RE.test(tName);
+
+        const compactByShape = cols.length <= MAX_LOOKUP_COLS && hasId && hasDesc;
+        const compactByName  = nameLooksLikeLookup && cols.length <= MAX_LOOKUP_COLS_BY_NAME;
+
+        if (compactByShape || compactByName) {
+          // Send a slim copy: just name + columns (name + simplified type)
+          lookups.push({
+            name: t.name,
+            schema: t.schema,
+            columns: cols.map(c => ({ name: c.name, type: c.type || c.dataType }))
+          });
+        } else {
+          transactionalNames.push(fullName);
+        }
+      }
+
+      // If we somehow detected hundreds of lookups, keep only the most likely
+      // (LOOKUP_NAME_RE matches first, then by ascending column count) and
+      // demote the rest to transactional names.
+      if (lookups.length > HARD_LOOKUP_LIMIT) {
+        lookups.sort((a, b) => {
+          const an = LOOKUP_NAME_RE.test((a.name || '').toLowerCase()) ? 0 : 1;
+          const bn = LOOKUP_NAME_RE.test((b.name || '').toLowerCase()) ? 0 : 1;
+          if (an !== bn) return an - bn;
+          return (a.columns?.length || 0) - (b.columns?.length || 0);
+        });
+        const overflow = lookups.splice(HARD_LOOKUP_LIMIT);
+        for (const t of overflow) transactionalNames.push(tableLabel(t));
+      }
+
+      return { lookups, transactionalNames };
+    }
+
+    return { categorise };
+  })();
 
   async function suggestRels() {
     const projectId = getCurrentProjectId();
@@ -2428,27 +2500,42 @@
     if (!schema) {
       const conn = getRelConn();
       if (!conn) { showToast('No ' + getRelSide() + ' connection — set one in Connections.', 'error'); return; }
-      // Re-use the existing loader so the user sees the same status updates.
       await loadSchema();
       schema = _relSchemaCache[getRelSide()];
-      if (!schema) return;   // loadSchema already showed the error
+      if (!schema) return;
     }
 
     const btn = document.getElementById('suggest-rels-btn');
     btn.disabled = true;
     btn.textContent = '🪄 Thinking…';
-    setSchemaStatus('Asking AI for suggestions (this can take 10–20s)…', 'busy');
+    setSchemaStatus('Categorising schema and asking AI (this can take 10–30s)…', 'busy');
 
     try {
-      // Build the existingRels payload from the inferredRels list cached for
-      // the current project — saves the model from re-suggesting them.
+      // Categorise client-side
+      const { lookups, transactionalNames } =
+        LOOKUP_HEURISTIC.categorise(schema.tables || []);
+
+      console.log('[suggest] heuristic:',
+        lookups.length, 'lookup candidates,',
+        transactionalNames.length, 'transactional');
+
+      if (!lookups.length) {
+        renderSuggestions([], {
+          lookupCandidates: 0,
+          transactionalTables: transactionalNames.length,
+          note: 'No lookup tables identified by the heuristic. Either this schema does not use traditional lookup tables or naming conventions are unusual. You can still add inferred relationships manually.'
+        });
+        return;
+      }
+
       const existingRels = (inferredRels || []).map(r => ({
         sourceTable:  r.sourceTable, sourceColumn: r.sourceColumn,
         lookupTable:  r.lookupTable, lookupColumn: r.lookupColumn
       }));
 
       const data = await apiData('quality-suggest-rels', {
-        schema: { tables: schema.tables },
+        lookupTables:        lookups,
+        transactionalTables: transactionalNames,
         existingRels
       });
 
