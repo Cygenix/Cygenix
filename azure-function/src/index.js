@@ -1837,15 +1837,16 @@ Your task: for each LOOKUP TABLE, identify columns in OTHER tables (or in other 
 
 Rules:
 1. Output ONLY a JSON array. No prose, no markdown fences.
-2. Each element is an object with EXACTLY: sourceTable, sourceColumn, lookupTable, lookupColumn, confidence (high|med|low), reasoning (one short sentence).
-3. CONFIDENCE: high = strong name match + compatible types; med = plausible but ambiguous, or column name is inferred; low = weak signal (use sparingly).
+2. Each element is an object with EXACTLY: sourceTable, sourceColumn, lookupTable, lookupColumn, confidence (high|med), reasoning (max 12 words, one short phrase).
+3. CONFIDENCE: high = strong name match + compatible types; med = plausible but ambiguous, or column name is inferred. DO NOT include low-confidence suggestions.
 4. SKIP relationships in the "Already configured" list.
 5. NEVER suggest self-references.
-6. Cap at ${SUGGEST_OUTPUT_CAP} suggestions.
-7. If none found, return [].
-8. Schema dialect: SQL Server. Type buckets: int, number, date, string, guid, binary, unknown.
+6. Cap at ${SUGGEST_OUTPUT_CAP} suggestions. Be SELECTIVE — quality over quantity.
+7. If a table has no plausible lookup match, skip it entirely. Do not invent matches.
+8. If none found, return [].
+9. Schema dialect: SQL Server. Type buckets: int, number, date, string, guid, binary, unknown.
 
-For OTHER tables, prefer "med" confidence when inferring column names, unless a near-universal name (e.g. "TimeEntries" → "matter_id").`;
+Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (e.g. "direct name match", "standard FK convention", "lookup table for tax regions").`;
 
             const existingBlock = existingRels.length
               ? 'Already configured (do not propose these):\n' +
@@ -1882,7 +1883,7 @@ For OTHER tables, prefer "med" confidence when inferring column names, unless a 
                 },
                 body: JSON.stringify({
                   model:      MODEL,
-                  max_tokens: 4000,
+                  max_tokens: 2000,
                   system:     SYSTEM_PROMPT,
                   messages: [{ role: 'user', content: userMsg }]
                 })
@@ -1935,7 +1936,7 @@ For OTHER tables, prefer "med" confidence when inferring column names, unless a 
             stage = 'sanitise-suggestions';
             const existingKeys = new Set(existingRels.map(r =>
               (r.sourceTable + '|' + r.sourceColumn + '|' + r.lookupTable + '|' + r.lookupColumn).toLowerCase()));
-            const validConfidences = new Set(['high', 'med', 'low']);
+            const validConfidences = new Set(['high', 'med']);   // 'low' suggestions are dropped — too noisy
             const seen = new Set();
             const cleanSuggestions = [];
             for (const s of suggestions) {
