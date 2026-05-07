@@ -258,6 +258,17 @@
   .report-item.active { border-color: var(--accent); background: var(--accent-glow); }
   .report-item .r-name { font-weight: 500; font-size: 13px; color: var(--text); }
   .report-item .r-meta { font-size: 11px; color: var(--text3); margin-top: 0.2rem; font-family: var(--mono); }
+  .report-item .r-badge {
+    display: inline-block; vertical-align: middle;
+    margin-left: 0.4rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: var(--mono); font-size: 9px;
+    font-weight: 600; letter-spacing: 0.05em;
+    border: 1px solid transparent;
+  }
+  .report-item .r-badge.partial   { background: var(--amber-bg); color: var(--amber); border-color: rgba(245,158,11,0.35); }
+  .report-item .r-badge.cancelled { background: var(--bg4);     color: var(--text3); border-color: var(--border2); }
 
   /* ── Results summary bar ─────────────────────────────────────────────── */
   .results { margin-top: 1rem; }
@@ -1260,11 +1271,58 @@
     const reportId = 'qr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const results  = {};
 
+    // ── Partial-save infrastructure ─────────────────────────────────────
+    // Cosmos upsert is keyed on report.id, so saving the same id repeatedly
+    // just replaces the document. We save:
+    //   1. Once at run start (status: 'partial', empty results)
+    //   2. After each check completes (status: 'partial', accumulating results)
+    //   3. Once at the end (status: 'complete' / 'cancelled')
+    // If the user closes the browser mid-run, the most recent partial save
+    // remains in Cosmos and shows up under Saved Reports as a 'partial' run.
+    //
+    // Saves run in the background so they don't add latency to the run loop.
+    // Tracked in _saveQueue so we can wait for the last one before reporting
+    // "saved" status to the user.
+    const buildReportSnapshot = (status) => ({
+      id:          reportId,
+      projectId:   projectId,
+      userId:      getUserId(),
+      sourceName:  getConnLabel(),
+      connSide:    document.getElementById('conn-select').value,
+      reportName:  defaultReportName(),
+      runAt:       new Date().toISOString(),
+      status:      status,
+      checksRun:   enabledIds,
+      summary:     buildSummary(results),
+      results:     results,
+      saved:       false
+    });
+    let _saveInFlight = null;       // promise of the most recent save (or null)
+    let _lastSaveOk   = true;
+    function queuePartialSave(status) {
+      // Coalesce: if a save is already in flight, the new one waits for it
+      // to finish, then runs with the LATEST snapshot. This avoids piling
+      // up parallel writes when checks complete fast.
+      const next = (_saveInFlight || Promise.resolve())
+        .then(async () => {
+          const ok = await saveReport(buildReportSnapshot(status));
+          _lastSaveOk = !!ok;
+          return ok;
+        })
+        .catch(e => { console.warn('[partial-save] error:', e); _lastSaveOk = false; return false; });
+      _saveInFlight = next;
+      return next;
+    }
+
     try {
       // 1. Schema fetch (uses existing in-memory cache)
       setProgressMeta('Fetching schema…');
       const schema = await ensureSchema(conn);
       if (_cancelRequested) throw new Error('Cancelled');
+
+      // 1a. First partial save — creates the doc so a closed tab leaves
+      //     evidence the run was attempted, even if no checks complete.
+      queuePartialSave('partial');
 
       // 2. For each check, build its query plan + execute
       for (let i = 0; i < enabledIds.length; i++) {
@@ -1282,6 +1340,7 @@
           // Phase 3 — skip with a friendly message
           results[checkId] = { status: 'info', issuesFound: 0, items: [], note: 'This check is implemented in Phase 3 (not yet shipped). Configure inferred relationships in the other tab — they will be checked once Phase 3 is live.' };
           updateProgressRow(checkId, 'complete', 'pending phase 3');
+          queuePartialSave('partial');
           continue;
         }
 
@@ -1301,30 +1360,23 @@
           updateProgressRow(checkId, 'errored', 'error');
         }
         updateProgressOverall(i + 1, enabledIds.length);
+        // Partial save after every check (whether it passed, failed, or errored).
+        // Non-blocking — the next check starts immediately while the save runs.
+        queuePartialSave('partial');
       }
 
-      // 3. Build report record
-      currentReport = {
-        id:           reportId,
-        projectId:    getCurrentProjectId(),
-        userId:       getUserId(),
-        sourceName:   getConnLabel(),
-        connSide:     document.getElementById('conn-select').value,
-        reportName:   defaultReportName(),
-        runAt:        new Date().toISOString(),
-        status:       _cancelRequested ? 'cancelled' : 'complete',
-        checksRun:    enabledIds,
-        summary:      buildSummary(results),
-        results:      results,
-        saved:        false
-      };
+      // 3. Build final report record
+      currentReport = buildReportSnapshot(_cancelRequested ? 'cancelled' : 'complete');
 
       renderResults(currentReport);
       hideProgressPanel();
 
-      // 4. Auto-save (unless the run was cancelled before any check finished)
+      // 4. Final save (awaited so we know whether it succeeded before toasting).
+      //    First wait for any in-flight partial save to finish, then do the
+      //    final save with the 'complete' / 'cancelled' status.
       const anyResults = Object.keys(results).some(k => results[k].status !== 'cancelled');
       if (anyResults) {
+        if (_saveInFlight) await _saveInFlight.catch(() => {});   // let in-flight finish
         const ok = await saveReport(currentReport);
         if (ok) {
           currentReport.saved = true;
@@ -1541,26 +1593,80 @@
   }
 
   // ── Row counts (informational) ──────────────────────────────────────────
+  // ── Row counts ──────────────────────────────────────────────────────────
+  // Reads from sys.dm_db_partition_stats — a metadata DMV that returns row
+  // counts for every table in the database in ONE query. Runs in milliseconds
+  // even on huge schemas (no table scans). The numbers can be slightly stale
+  // (last stats update) but that's fine for a pre-flight quality snapshot.
+  //
+  // Permission requirement: connection user needs VIEW DATABASE STATE.
+  // db_datareader alone is not enough. If we get a permission denial, we
+  // surface a clear message rather than falling back to slow per-table
+  // COUNT(*) queries which would defeat the purpose of using the DMV.
   async function checkRowCounts(schema) {
-    const items   = [];
-    const queries = schema.tables.map(t => ({
-      id: tableLabel(t),
-      sql: 'SELECT COUNT_BIG(*) AS [c] FROM ' + qtable(t) + ';'
-    }));
-    const results = await runQueries(queries);
-    let errs = 0;
-    results.forEach((r, i) => {
-      const t = schema.tables[i];
-      if (r.error) { errs++; items.push({ table: tableLabel(t), rowCount: '(error)' }); return; }
-      const c = r.rows && r.rows[0] ? Number(r.rows[0].c || r.rows[0].C || 0) : 0;
-      items.push({ table: tableLabel(t), rowCount: c });
-      // Cache the row count on the schema entry so other checks can use it
-      // for the row-count cap without re-querying.
-      t.rowCount = c;
-    });
+    // Build a name-keyed map so we can match DMV results back to schema entries.
+    // sys.dm_db_partition_stats joins on object_id; we use OBJECT_SCHEMA_NAME
+    // and OBJECT_NAME to project a friendly key, then group by it.
+    const sql =
+      "SELECT " +
+        "OBJECT_SCHEMA_NAME(p.object_id) AS [schema], " +
+        "OBJECT_NAME(p.object_id)        AS [name], " +
+        "SUM(p.rows)                     AS [c] " +
+      "FROM sys.dm_db_partition_stats p " +
+      "INNER JOIN sys.tables t ON t.object_id = p.object_id " +
+      "WHERE p.index_id IN (0,1) " +    // 0 = heap, 1 = clustered (each row counted once)
+      "GROUP BY p.object_id;";
+
+    let rows;
+    try {
+      rows = await dbExecute(sql);
+    } catch (e) {
+      if (e.kind === 'permission') {
+        return {
+          status: 'info', issuesFound: 0, items: [], skippedTables: [],
+          note: 'Could not read table statistics — connection user lacks VIEW DATABASE STATE permission on this database. Grant VIEW DATABASE STATE (or use a higher-privilege account) to enable this check.'
+        };
+      }
+      throw e;
+    }
+
+    // Build a quick name → count map from the DMV result. Match keys are
+    // [schema].[name] when schema isn't dbo, or just [name] otherwise — the
+    // same convention tableLabel() uses elsewhere.
+    const countByLabel = new Map();
+    for (const r of rows || []) {
+      const sch  = r.schema || r.Schema || 'dbo';
+      const nm   = r.name   || r.Name   || '';
+      const c    = Number(r.c || r.C || 0);
+      const lbl  = (sch !== 'dbo' ? sch + '.' : '') + nm;
+      countByLabel.set(lbl, c);
+    }
+
+    const items = [];
+    let missing = 0;
+    for (const t of schema.tables) {
+      const lbl = tableLabel(t);
+      const c   = countByLabel.get(lbl);
+      if (typeof c === 'number') {
+        items.push({ table: lbl, rowCount: c });
+        // Cache on the schema entry so the row-count-cap helper in other
+        // checks doesn't have to re-query.
+        t.rowCount = c;
+      } else {
+        missing++;
+        items.push({ table: lbl, rowCount: '(no stats)' });
+      }
+    }
+
     items.sort((a, b) => (Number(b.rowCount) || 0) - (Number(a.rowCount) || 0));
-    return { status: 'info', issuesFound: items.length, items, note: errs ? errs + ' tables errored' : null };
+    return {
+      status: 'info',
+      issuesFound: items.length,
+      items,
+      note: missing ? missing + ' table(s) had no stats entry (newly created or empty)' : null
+    };
   }
+
 
   // ── NULLs in NOT NULL columns ───────────────────────────────────────────
   // Source: schema.tables[i].columns[j].nullable === false
@@ -2089,9 +2195,14 @@
       const issues = r.summary?.totalIssues ?? 0;
       const fails  = r.summary?.fail ?? 0;
       const cls    = (currentReport && currentReport.id === r.id) ? ' active' : '';
+      // Show a clear badge for non-complete runs so the user can spot
+      // partial runs (browser closed mid-run) or cancelled ones.
+      let statusBadge = '';
+      if (r.status === 'partial')        statusBadge = '<span class="r-badge partial">PARTIAL</span>';
+      else if (r.status === 'cancelled') statusBadge = '<span class="r-badge cancelled">CANCELLED</span>';
       return `
         <div class="report-item${cls}" data-id="${r.id}" onclick="openReport('${r.id}')">
-          <div class="r-name">${escapeHtml(r.reportName || '(untitled)')}</div>
+          <div class="r-name">${escapeHtml(r.reportName || '(untitled)')}${statusBadge}</div>
           <div class="r-meta">
             ${formatDate(r.runAt)} · ${issues} issues${fails ? ' · ' + fails + ' advisory' : ''}
           </div>
