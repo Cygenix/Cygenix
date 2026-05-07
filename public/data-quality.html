@@ -427,6 +427,77 @@
   }
   .phase-banner strong { color: var(--amber); font-weight: 600; }
 
+  /* ── Inline ghost-text combo (Inferred Relationships inputs) ──────────
+     The pattern: each input has a transparent ghost <span> layered behind
+     it that mirrors the typed text + an italic suggestion suffix. Both the
+     input and the ghost use identical font / padding / border so the glyphs
+     align precisely. The input itself stays a normal text field — the user
+     can type whatever they want; the ghost is purely a visual hint. */
+  .combo {
+    position: relative;
+    display: block;
+  }
+  .combo input {
+    position: relative;
+    z-index: 2;
+    background: transparent !important;   /* let the ghost show through */
+    width: 100%;
+  }
+  .combo-ghost {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    /* Match the input's box exactly so glyphs line up */
+    padding: 0.45rem 0.7rem;
+    border: 1px solid transparent;        /* same width as input border, no visible edge */
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: var(--serif);
+    line-height: 1.5;
+    color: var(--text3);
+    pointer-events: none;
+    white-space: pre;
+    overflow: hidden;
+    /* The typed-prefix span inside the ghost is invisible (visibility:hidden
+       keeps it laying out so the suffix sits in the right place). The
+       suffix is what the user sees as the ghost. */
+  }
+  .combo-ghost .ghost-typed { visibility: hidden; }
+  .combo-ghost .ghost-suffix {
+    color: var(--text3);
+    opacity: 0.7;
+  }
+
+  /* The combo input gets a more solid background normally; we override only
+     when there's a ghost active so the suffix can show through. */
+  .combo.has-ghost input {
+    background: var(--bg3) !important;    /* keep the field visible */
+  }
+  .combo.has-ghost .combo-ghost {
+    /* Sits on top of the input background so the suffix is readable */
+    background: transparent;
+  }
+
+  .combo-hint {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: -0.25rem;
+    margin-bottom: 0.85rem;
+    letter-spacing: 0.02em;
+  }
+  .kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    border: 1px solid var(--border2);
+    border-radius: 3px;
+    background: var(--bg3);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text2);
+    margin: 0 1px;
+  }
+
   /* ── Schema bar (Inferred Relationships tab) ────────────────────────── */
   .schema-bar {
     display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap;
@@ -552,10 +623,10 @@
 
         <!--
           Schema bar: pulls table + column lists from the source DB so the four
-          inputs below offer a dropdown of valid names. Cached in memory for the
-          page lifetime. Datalists backing the inputs allow free typing too —
-          if the user knows of a table that hasn't been loaded yet (e.g. a view,
-          or one not yet picked up by the cached schema), they can still type it.
+          inputs below offer inline ghost-text completion. Cached in memory for
+          the page lifetime. Free typing always works — if the user knows of a
+          table that isn't in the cached schema (e.g. a view, or one fetched
+          before they refreshed), they can just type it and ignore the ghost.
 
           The "Database" select here mirrors the one on the Run Review tab —
           relationships are usually defined against the source, but the user
@@ -569,38 +640,61 @@
             <option value="target">Target DB</option>
           </select>
           <button class="btn btn-sm" id="schema-load-btn" onclick="loadSchema()">⬇ Load schema</button>
-          <span class="schema-status" id="schema-status">Schema not loaded — pick from typing only.</span>
+          <span class="schema-status" id="schema-status">Schema not loaded — typing-only mode.</span>
         </div>
 
-        <!-- Add form (datalist-backed combos: dropdown + free-text) -->
+        <!--
+          Add form. Each .combo wraps an <input> with a ghost <span> behind it.
+          As the user types, the ghost shows the rest of the best-matching
+          schema entry in faded text, aligned exactly with the input glyphs.
+          Tab or → at end-of-input accepts; Esc dismisses; Ctrl+↓/↑ cycles
+          through alternates. Free typing is unaffected — the ghost is purely
+          visual hint, never auto-inserted.
+        -->
         <div class="inline-form">
           <div class="field">
             <label for="rel-src-table">Source table</label>
-            <input id="rel-src-table" list="dl-src-tables" placeholder="e.g. Matters"
-                   autocomplete="off" oninput="onSourceTableChange()" />
-            <datalist id="dl-src-tables"></datalist>
+            <div class="combo">
+              <span class="combo-ghost" id="ghost-src-table" aria-hidden="true"></span>
+              <input id="rel-src-table" type="text" placeholder="e.g. Matters"
+                     autocomplete="off" spellcheck="false"
+                     data-combo="src-table" />
+            </div>
           </div>
           <div class="field">
             <label for="rel-src-col">Source column</label>
-            <input id="rel-src-col" list="dl-src-cols" placeholder="e.g. CurrencyCode"
-                   autocomplete="off" />
-            <datalist id="dl-src-cols"></datalist>
+            <div class="combo">
+              <span class="combo-ghost" id="ghost-src-col" aria-hidden="true"></span>
+              <input id="rel-src-col" type="text" placeholder="e.g. CurrencyCode"
+                     autocomplete="off" spellcheck="false"
+                     data-combo="src-col" />
+            </div>
           </div>
           <div class="field">
             <label for="rel-lkp-table">Lookup table</label>
-            <input id="rel-lkp-table" list="dl-lkp-tables" placeholder="e.g. Currencies"
-                   autocomplete="off" oninput="onLookupTableChange()" />
-            <datalist id="dl-lkp-tables"></datalist>
+            <div class="combo">
+              <span class="combo-ghost" id="ghost-lkp-table" aria-hidden="true"></span>
+              <input id="rel-lkp-table" type="text" placeholder="e.g. Currencies"
+                     autocomplete="off" spellcheck="false"
+                     data-combo="lkp-table" />
+            </div>
           </div>
           <div class="field">
             <label for="rel-lkp-col">Lookup column</label>
-            <input id="rel-lkp-col" list="dl-lkp-cols" placeholder="e.g. Code"
-                   autocomplete="off" />
-            <datalist id="dl-lkp-cols"></datalist>
+            <div class="combo">
+              <span class="combo-ghost" id="ghost-lkp-col" aria-hidden="true"></span>
+              <input id="rel-lkp-col" type="text" placeholder="e.g. Code"
+                     autocomplete="off" spellcheck="false"
+                     data-combo="lkp-col" />
+            </div>
           </div>
           <button class="btn btn-green" onclick="addRel()">Add</button>
           <button class="btn btn-ghost btn-sm" onclick="loadRels()" title="Refresh list">↻</button>
         </div>
+
+        <p class="combo-hint">
+          <span class="kbd">Tab</span> to accept · <span class="kbd">Esc</span> to dismiss · <span class="kbd">Ctrl ↓</span> / <span class="kbd">Ctrl ↑</span> to cycle alternates
+        </p>
 
         <!-- List -->
         <div id="rels-table-wrap">
@@ -1134,21 +1228,34 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SCHEMA LOADING for Inferred Relationships dropdowns.
+  // SCHEMA LOADING + INLINE GHOST-TEXT COMBOS for Inferred Relationships.
   //
-  // The four inputs (source table/col, lookup table/col) are <input list="…">
-  // combos: native HTML datalist gives us a dropdown of suggestions while
-  // still allowing free typing — so users can add a relationship for a table
-  // not yet in the cached schema.
+  // Each of the four inputs (source table/col, lookup table/col) is a "combo":
+  // a normal <input> with a transparent ghost <span> layered behind it. As the
+  // user types, the combo finds the best prefix match in its candidate list
+  // and renders the unmatched suffix as faded text aligned with the cursor.
   //
-  // Schema is fetched on demand (button click) from whichever DB is picked in
-  // the rel-conn-select dropdown, using the same schemaCall as the SQL editor:
-  //   POST {action:'schema'} to the connection URL  →  { tables: [{ name, columns: [{ name }] }] }
+  //   Source table input:  user types "matt"
+  //   Ghost shows:         "matt" (invisible) + "ers" (faded)
+  //   Tab pressed:         input fills in to "Matters"
   //
-  // We cache per-side ('source' | 'target') for the page lifetime — switching
-  // tabs doesn't re-fetch. New page load = no cache (matching SQL editor).
+  // Free typing always works — the ghost is purely visual hint, never
+  // auto-inserted. If no candidates match, the ghost stays empty.
+  //
+  // Schema is fetched on demand (Load schema button), cached in memory per
+  // side ('source' | 'target') for the page lifetime.
   // ─────────────────────────────────────────────────────────────────────────
   const _relSchemaCache = { source: null, target: null };
+
+  // Per-combo state. Keys match the data-combo attribute on each input.
+  // `cycleIdx` lets Ctrl+↓/Ctrl+↑ cycle through alternates that share the
+  // same prefix. Reset to 0 whenever the input value changes.
+  const _comboState = {
+    'src-table': { cycleIdx: 0 },
+    'src-col':   { cycleIdx: 0 },
+    'lkp-table': { cycleIdx: 0 },
+    'lkp-col':   { cycleIdx: 0 }
+  };
 
   function getRelConn() {
     if (typeof CygenixConnections === 'undefined') return '';
@@ -1166,22 +1273,17 @@
     el.className = 'schema-status' + (kind ? ' ' + kind : '');
   }
 
-  // Switching DB invalidates the populated dropdowns — schemas differ between
-  // source and target — but we keep BOTH cached blobs around so the user can
-  // flip back and forth without re-fetching.
+  // Switching DB invalidates currently-shown ghosts (different schema) but
+  // we keep both cached blobs so the user can flip back without re-fetching.
   function onRelConnChange() {
     const side = getRelSide();
     const cached = _relSchemaCache[side];
     if (cached) {
-      populateTableDatalists(cached);
       setSchemaStatus('✓ ' + (cached.tables?.length || 0) + ' tables (' + side + ')', 'ok');
     } else {
-      clearAllDatalists();
-      setSchemaStatus('Schema not loaded — pick from typing only.', '');
+      setSchemaStatus('Schema not loaded — typing-only mode.', '');
     }
-    // Reset column dropdowns (they're table-scoped, so always stale on side change)
-    populateColumnDatalist('dl-src-cols', null);
-    populateColumnDatalist('dl-lkp-cols', null);
+    refreshAllGhosts();
   }
 
   async function loadSchema() {
@@ -1194,8 +1296,6 @@
     btn.disabled = true;
     setSchemaStatus('Fetching schema…', 'busy');
     try {
-      // Same call shape the SQL editor uses. Function URLs go directly; bare
-      // connection strings go via the Netlify db-connect proxy.
       const isFn  = /^https?:\/\//.test(conn);
       const url   = isFn ? conn : '/.netlify/functions/db-connect';
       const body  = isFn ? { action: 'schema' } : { action: 'schema', connectionString: conn };
@@ -1211,16 +1311,12 @@
 
       const side = getRelSide();
       _relSchemaCache[side] = data;
-      populateTableDatalists(data);
-      // Reset column dropdowns until a table is picked
-      populateColumnDatalist('dl-src-cols', null);
-      populateColumnDatalist('dl-lkp-cols', null);
 
       const colsKnown = (data.tables[0]?.columns || []).length > 0 || !data._tableListOnly;
-      setSchemaStatus('✓ ' + data.tables.length + ' tables loaded' + (colsKnown ? '' : ' (names only — column dropdowns unavailable)'),
+      setSchemaStatus('✓ ' + data.tables.length + ' tables loaded' + (colsKnown ? '' : ' (names only — column completion unavailable)'),
                       colsKnown ? 'ok' : 'warn');
-      // Update the button label for the next click
       btn.textContent = '↻ Refresh schema';
+      refreshAllGhosts();
     } catch (e) {
       console.error('[schema] fetch failed:', e);
       setSchemaStatus('Schema load failed: ' + e.message, 'error');
@@ -1229,22 +1325,8 @@
     }
   }
 
-  function populateTableDatalists(schema) {
-    const names = (schema.tables || []).map(t => t.name).filter(Boolean).sort();
-    const html = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
-    document.getElementById('dl-src-tables').innerHTML = html;
-    document.getElementById('dl-lkp-tables').innerHTML = html;
-  }
-
-  function clearAllDatalists() {
-    ['dl-src-tables', 'dl-src-cols', 'dl-lkp-tables', 'dl-lkp-cols'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.innerHTML = '';
-    });
-  }
-
-  // Find a table in the cached schema (case-insensitive match — SQL Server is
-  // typically case-insensitive on identifiers anyway, and users may type any case).
+  // Look up a table by name in the current side's cache (case-insensitive
+  // match — SQL Server identifiers are typically CI, and users type any case).
   function findTable(tableName) {
     const cache = _relSchemaCache[getRelSide()];
     if (!cache || !cache.tables || !tableName) return null;
@@ -1252,28 +1334,148 @@
     return cache.tables.find(t => (t.name || '').toLowerCase() === lower) || null;
   }
 
-  function populateColumnDatalist(datalistId, table) {
-    const el = document.getElementById(datalistId);
-    if (!el) return;
-    if (!table || !Array.isArray(table.columns) || !table.columns.length) {
-      el.innerHTML = '';
-      return;
+  // Return the candidate list for a given combo, sorted alphabetically.
+  // For columns, the list depends on the table currently typed in the
+  // matching table input.
+  function getComboCandidates(comboId) {
+    const cache = _relSchemaCache[getRelSide()];
+    if (!cache || !cache.tables) return [];
+    if (comboId === 'src-table' || comboId === 'lkp-table') {
+      return cache.tables.map(t => t.name).filter(Boolean).slice().sort();
     }
-    const names = table.columns.map(c => c.name || c).filter(Boolean).sort();
-    el.innerHTML = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    if (comboId === 'src-col') {
+      const t = findTable(document.getElementById('rel-src-table').value.trim());
+      return t ? (t.columns || []).map(c => c.name || c).filter(Boolean).slice().sort() : [];
+    }
+    if (comboId === 'lkp-col') {
+      const t = findTable(document.getElementById('rel-lkp-table').value.trim());
+      return t ? (t.columns || []).map(c => c.name || c).filter(Boolean).slice().sort() : [];
+    }
+    return [];
   }
 
-  // Re-populate the source-column datalist whenever the source-table input
-  // changes. We match against the cached schema; if there's no match (e.g.
-  // user typed a name that isn't in the schema, or schema isn't loaded), the
-  // column dropdown is just empty — free-text entry still works.
-  function onSourceTableChange() {
-    const tableName = document.getElementById('rel-src-table').value.trim();
-    populateColumnDatalist('dl-src-cols', findTable(tableName));
+  // Find all candidates whose lowercase name starts with the lowercase typed
+  // prefix, in original case. Empty string returns no matches (we only show
+  // ghosts after the user has typed something — otherwise every input would
+  // permanently show a faded "Matters" or whatever the first table is).
+  function findPrefixMatches(typed, candidates) {
+    if (!typed || !candidates || !candidates.length) return [];
+    const lower = typed.toLowerCase();
+    return candidates.filter(c => c.toLowerCase().startsWith(lower) && c.length > typed.length);
   }
-  function onLookupTableChange() {
-    const tableName = document.getElementById('rel-lkp-table').value.trim();
-    populateColumnDatalist('dl-lkp-cols', findTable(tableName));
+
+  // Update one combo's ghost based on its current value + cycleIdx.
+  function refreshGhost(input) {
+    const comboId  = input.dataset.combo;
+    const ghost    = document.getElementById('ghost-' + comboId);
+    const wrap     = input.closest('.combo');
+    if (!ghost || !wrap) return;
+
+    const typed    = input.value;
+    const matches  = findPrefixMatches(typed, getComboCandidates(comboId));
+    const state    = _comboState[comboId];
+
+    if (!matches.length) {
+      ghost.innerHTML = '';
+      wrap.classList.remove('has-ghost');
+      state.cycleIdx = 0;
+      return;
+    }
+    // Clamp cycleIdx in case the list has shrunk
+    if (state.cycleIdx >= matches.length) state.cycleIdx = 0;
+    const pick    = matches[state.cycleIdx];
+    const suffix  = pick.slice(typed.length);
+
+    // Render: typed prefix invisible (preserves layout), suffix faded
+    ghost.innerHTML =
+      '<span class="ghost-typed">' + escapeHtml(typed) + '</span>' +
+      '<span class="ghost-suffix">' + escapeHtml(suffix) + '</span>';
+    wrap.classList.add('has-ghost');
+  }
+
+  function refreshAllGhosts() {
+    document.querySelectorAll('.combo input[data-combo]').forEach(refreshGhost);
+  }
+
+  // Accept the ghost: replace the input's value with the full match.
+  function acceptGhost(input) {
+    const comboId = input.dataset.combo;
+    const matches = findPrefixMatches(input.value, getComboCandidates(comboId));
+    if (!matches.length) return false;
+    const state   = _comboState[comboId];
+    if (state.cycleIdx >= matches.length) state.cycleIdx = 0;
+    input.value   = matches[state.cycleIdx];
+    state.cycleIdx = 0;
+    refreshGhost(input);
+    // Picking a table should refresh the corresponding column combo too
+    if (comboId === 'src-table') refreshGhost(document.getElementById('rel-src-col'));
+    if (comboId === 'lkp-table') refreshGhost(document.getElementById('rel-lkp-col'));
+    return true;
+  }
+
+  // Wire one combo's input handlers. Called once at init for each combo.
+  function wireCombo(input) {
+    const comboId = input.dataset.combo;
+
+    input.addEventListener('input', () => {
+      // Reset cycle on any edit so the "current" suggestion is always #0
+      _comboState[comboId].cycleIdx = 0;
+      refreshGhost(input);
+      // Typing in a table input changes which columns are valid — refresh
+      // the column ghost too.
+      if (comboId === 'src-table') refreshGhost(document.getElementById('rel-src-col'));
+      if (comboId === 'lkp-table') refreshGhost(document.getElementById('rel-lkp-col'));
+    });
+
+    input.addEventListener('keydown', (ev) => {
+      // Tab — accept ghost (and KEEP focus on this input so the user can see
+      // it filled in; the next Tab moves focus normally). Only intercept Tab
+      // if we actually have a ghost to accept; otherwise let it work as
+      // normal focus traversal.
+      if (ev.key === 'Tab' && !ev.shiftKey) {
+        if (input.closest('.combo').classList.contains('has-ghost')) {
+          ev.preventDefault();
+          acceptGhost(input);
+          return;
+        }
+      }
+      // → at end of input: same as Tab (Notion-style)
+      if (ev.key === 'ArrowRight' && input.selectionStart === input.value.length) {
+        if (input.closest('.combo').classList.contains('has-ghost')) {
+          ev.preventDefault();
+          acceptGhost(input);
+          return;
+        }
+      }
+      // Esc — dismiss the ghost without changing the value
+      if (ev.key === 'Escape') {
+        const wrap = input.closest('.combo');
+        const ghost = document.getElementById('ghost-' + comboId);
+        if (wrap.classList.contains('has-ghost')) {
+          ev.preventDefault();
+          wrap.classList.remove('has-ghost');
+          if (ghost) ghost.innerHTML = '';
+          return;
+        }
+      }
+      // Ctrl+↓ / Ctrl+↑ — cycle alternates
+      if (ev.ctrlKey && (ev.key === 'ArrowDown' || ev.key === 'ArrowUp')) {
+        const matches = findPrefixMatches(input.value, getComboCandidates(comboId));
+        if (matches.length > 1) {
+          ev.preventDefault();
+          const state = _comboState[comboId];
+          state.cycleIdx = (state.cycleIdx + (ev.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length;
+          refreshGhost(input);
+        }
+      }
+    });
+
+    // Re-render on focus so a stale ghost reappears when the user comes back
+    input.addEventListener('focus', () => refreshGhost(input));
+  }
+
+  function setupCombos() {
+    document.querySelectorAll('.combo input[data-combo]').forEach(wireCombo);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1344,10 +1546,8 @@
       });
       ['rel-src-table', 'rel-src-col', 'rel-lkp-table', 'rel-lkp-col'].forEach(id =>
         document.getElementById(id).value = '');
-      // Column datalists are table-scoped — clear them so the next entry
-      // doesn't pre-populate against the table the user just added.
-      populateColumnDatalist('dl-src-cols', null);
-      populateColumnDatalist('dl-lkp-cols', null);
+      // Cleared inputs — refresh ghosts so they don't show stale suggestions.
+      refreshAllGhosts();
       await loadRels();
       showToast('Added.', 'success');
     } catch (e) {
@@ -1412,6 +1612,7 @@
     renderChecks();
     updateConnLabel();
     loadReports();
+    setupCombos();
   });
   </script>
 
