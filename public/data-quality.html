@@ -973,12 +973,12 @@
                 <strong>Tables to scan</strong>
                 <span class="prep-col-meta" id="prep-tx-meta"></span>
               </div>
-              <div class="prep-col-help">Tables Claude will examine for soft-FK columns. <em>Suggested</em> tables (tagged below) share a substring with a lookup name and are pre-ticked. Type to filter, tick others to widen scope.</div>
+              <div class="prep-col-help">Tables Claude will examine for soft-FK columns. Nothing is ticked by default — pick the tables you care about. Click <em>Suggested</em> to start with the heuristic's pick (tables sharing a name substring with a lookup), or filter and tick specific ones.</div>
               <div class="prep-controls">
                 <input type="text" id="prep-tx-filter" class="prep-filter" placeholder="Name contains… (e.g. matter, bill)" oninput="prepRenderTxList()" />
+                <button class="btn btn-sm btn-ghost" onclick="prepTickSuggestedScope()" title="Tick the heuristic's suggested scope">Suggested</button>
                 <button class="btn btn-sm btn-ghost" onclick="prepToggleAllTx(true)" title="Tick all currently visible rows">All visible</button>
                 <button class="btn btn-sm btn-ghost" onclick="prepToggleAllTx(false)" title="Untick all currently visible rows">None</button>
-                <button class="btn btn-sm btn-ghost" onclick="prepTickSuggestedScope()" title="Reset to the heuristic's suggested scope">Suggested</button>
               </div>
               <div id="prep-tx-list" class="prep-list"></div>
             </div>
@@ -2760,8 +2760,10 @@
         suggestedSet,                            // names that the heuristic suggests
         // Default lookup selection: all on
         lookupChecked: lookups.map(() => true),
-        // Default tx selection: only the substring-matched ones (the suggested scope)
-        txChecked:    transactionalNames.map(name => suggestedSet.has(name))
+        // Default tx selection: NOTHING ticked. Forces the user to be explicit
+        // about scope. They can click "Use suggested" to tick the heuristic's
+        // recommended set, or filter+tick specific tables.
+        txChecked:    transactionalNames.map(() => false)
       };
 
       // Hide the old results panel if it was open
@@ -2810,13 +2812,10 @@
     prepRenderTxList();
   }
 
-  // Tx list rendering. The full list can be 2400+ tables, so we cap the
-  // initial render at PREP_TX_RENDER_CAP. The user types in the filter to
-  // narrow down to specific tables. Suggested-scope tables (the ~91 the
-  // heuristic matched) are floated to the top so they're always visible
-  // without scrolling.
-  const PREP_TX_RENDER_CAP = 250;
-
+  // Tx list rendering. Renders ALL rows (no cap) — testing showed that even
+  // 2400+ checkboxes render in well under a second on a modern browser, and
+  // capping the list silently hid tables the user wanted to tick. Filter
+  // narrows the list when needed.
   function prepRenderTxList() {
     if (!_suggestPrepState) return;
     const { allTx, suggestedSet, txChecked } = _suggestPrepState;
@@ -2834,36 +2833,30 @@
     const filterEl = document.getElementById('prep-tx-filter');
     const filter = (filterEl ? filterEl.value : '').trim().toLowerCase();
 
-    // Build candidate rows. If filter is set, show all matches (no cap).
-    // If no filter, show: (a) all suggested-scope tables, then (b) up to
-    // PREP_TX_RENDER_CAP additional tables, sorted by row count desc so the
-    // biggest core tables (Matter, Client, etc.) are at the top.
-    let visibleRows;
-    let truncated = false;
-    if (filter) {
-      visibleRows = allTx
-        .map((name, i) => ({ name, i }))
-        .filter(r => r.name.toLowerCase().includes(filter));
-    } else {
-      const suggested = [];
-      const others = [];
-      allTx.forEach((name, i) => {
-        if (suggestedSet.has(name)) suggested.push({ name, i });
-        else others.push({ name, i });
-      });
-      // Sort suggested by row count asc (lookups-like first), others by row count desc
-      suggested.sort((a, b) => (rowCountByName.get(a.name) ?? 999999) - (rowCountByName.get(b.name) ?? 999999));
-      others.sort((a, b)    => (rowCountByName.get(b.name) ?? -1) - (rowCountByName.get(a.name) ?? -1));
-      const remaining = Math.max(0, PREP_TX_RENDER_CAP - suggested.length);
-      visibleRows = suggested.concat(others.slice(0, remaining));
-      truncated = others.length > remaining;
-    }
+    // Build the visible row list. Sort: suggested first (by rowCount asc, so
+    // small lookup-like tables float up), then non-suggested by rowCount desc
+    // (so big core tables — Matter, Client, GLPost — appear high in the list).
+    const allRows = allTx
+      .map((name, i) => ({ name, i }))
+      .filter(r => !filter || r.name.toLowerCase().includes(filter));
+
+    allRows.sort((a, b) => {
+      const aSugg = suggestedSet.has(a.name) ? 0 : 1;
+      const bSugg = suggestedSet.has(b.name) ? 0 : 1;
+      if (aSugg !== bSugg) return aSugg - bSugg;
+      if (aSugg === 0) {
+        // both suggested: smallest first (lookups-like)
+        return (rowCountByName.get(a.name) ?? 999999) - (rowCountByName.get(b.name) ?? 999999);
+      }
+      // both non-suggested: biggest first (core tables)
+      return (rowCountByName.get(b.name) ?? -1) - (rowCountByName.get(a.name) ?? -1);
+    });
 
     const listEl = document.getElementById('prep-tx-list');
-    if (!visibleRows.length) {
+    if (!allRows.length) {
       listEl.innerHTML = '<div class="prep-empty">No tables match this filter.</div>';
     } else {
-      const rowsHtml = visibleRows.map(({ name, i }) => {
+      const rowsHtml = allRows.map(({ name, i }) => {
         const checked    = txChecked[i] ? 'checked' : '';
         const isSuggest  = suggestedSet.has(name);
         const rc         = rowCountByName.get(name);
@@ -2875,10 +2868,7 @@
           <span class="prep-rc">${rcText}</span>
         </label>`;
       }).join('');
-      const truncNote = truncated
-        ? '<div class="prep-truncated">Showing ' + visibleRows.length + ' of ' + allTx.length + ' tables. Type in the filter above to find others.</div>'
-        : '';
-      listEl.innerHTML = rowsHtml + truncNote;
+      listEl.innerHTML = rowsHtml;
     }
     updatePrepTxMeta();
     updatePrepCostEst();
@@ -2936,41 +2926,19 @@
 
   function prepToggleAllTx(check) {
     if (!_suggestPrepState) return;
-    // "All visible" means: only toggle rows that are currently in the rendered
-    // list (the filter result, OR the suggested+top tables when no filter).
-    // We cannot toggle the entire 2400-row list — that would silently tick
-    // tables the user can't see, leading to surprise during the LLM run.
+    // "All visible" toggles every row that's actually visible in the list.
+    // With the render cap removed, "all visible" with no filter active means
+    // ALL rows. With a filter active, just the rows that pass the filter.
     const filter = (document.getElementById('prep-tx-filter')?.value || '').trim().toLowerCase();
-    const { allTx, suggestedSet, txChecked } = _suggestPrepState;
+    const { allTx, txChecked } = _suggestPrepState;
 
     if (filter) {
-      // Tick/untick all rows matching the current filter
       allTx.forEach((name, i) => {
         if (name.toLowerCase().includes(filter)) txChecked[i] = !!check;
       });
     } else {
-      // No filter: tick/untick the same set that's actually rendered (suggested
-      // + top non-suggested up to PREP_TX_RENDER_CAP). Keep behaviour predictable.
-      const schema = _relSchemaCache[getRelSide()];
-      const rcByName = new Map();
-      for (const t of (schema?.tables || [])) {
-        const fullName = (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name;
-        rcByName.set(fullName, (typeof t.rowCount === 'number') ? t.rowCount : null);
-      }
-      const suggestedNames = [];
-      const otherNames = [];
-      allTx.forEach((name, i) => {
-        if (suggestedSet.has(name)) suggestedNames.push({ name, i });
-        else otherNames.push({ name, i });
-      });
-      otherNames.sort((a, b) => (rcByName.get(b.name) ?? -1) - (rcByName.get(a.name) ?? -1));
-      const renderedIdx = new Set(
-        suggestedNames.concat(otherNames.slice(0, Math.max(0, PREP_TX_RENDER_CAP - suggestedNames.length)))
-                      .map(r => r.i)
-      );
-      allTx.forEach((_, i) => {
-        if (renderedIdx.has(i)) txChecked[i] = !!check;
-      });
+      // No filter: every row is visible, so tick/untick everything
+      for (let i = 0; i < txChecked.length; i++) txChecked[i] = !!check;
     }
     prepRenderTxList();
   }
@@ -3001,6 +2969,10 @@
 
     if (!selectedLookups.length) {
       showToast('Tick at least one lookup table first.', 'error');
+      return;
+    }
+    if (!selectedTx.length) {
+      showToast('Tick at least one table to scan, or click "Suggested" for the heuristic\'s default.', 'error');
       return;
     }
 
