@@ -666,6 +666,18 @@
     color: var(--text3);
   }
   .suggest-error { color: var(--red); }
+  .suggest-heuristic {
+    padding: 0.55rem 0.7rem;
+    margin-bottom: 0.5rem;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+    line-height: 1.5;
+  }
+  .suggest-heuristic strong { color: var(--text2); font-weight: 600; }
 
   /* ── Schema bar (Inferred Relationships tab) ────────────────────────── */
   .schema-bar {
@@ -2441,7 +2453,7 @@
       });
 
       _lastSuggestions = Array.isArray(data.suggestions) ? data.suggestions : [];
-      renderSuggestions(_lastSuggestions);
+      renderSuggestions(_lastSuggestions, data);
       const cached = _relSchemaCache[getRelSide()];
       setSchemaStatus('✓ ' + cached.tables.length + ' tables (' + getRelSide() + ')', 'ok');
     } catch (e) {
@@ -2455,13 +2467,28 @@
     }
   }
 
-  function renderSuggestions(suggestions) {
+  function renderSuggestions(suggestions, fullResponse) {
     const panel = document.getElementById('suggest-panel');
     const list  = document.getElementById('suggest-list');
     const meta  = document.getElementById('suggest-meta');
 
+    // Build the heuristic-stats line shown above the suggestions list.
+    // For small schemas these counts will be uninformative; for large
+    // schemas (3E-sized) they explain why we focused on N lookup tables
+    // out of thousands.
+    const stats   = fullResponse || {};
+    const lkCount = Number(stats.lookupCandidates    || 0);
+    const txCount = Number(stats.transactionalTables || 0);
+    const heurLine = (lkCount + txCount > 0)
+      ? '<div class="suggest-heuristic">Scanned <strong>' + (lkCount + txCount) + '</strong> tables — focused on <strong>' + lkCount + '</strong> identified as lookup candidates' +
+        (txCount ? ' (other ' + txCount + ' as referencing tables)' : '') + '.</div>'
+      : '';
+
     if (!suggestions.length) {
-      list.innerHTML = '<div class="suggest-empty">No new relationships found. Either everything plausible is already configured, or the schema doesn\'t have obvious lookup tables.</div>';
+      const note = stats.note
+        ? escapeHtml(stats.note)
+        : 'No new relationships found. Either everything plausible is already configured, or the schema doesn\'t have obvious lookup tables.';
+      list.innerHTML = heurLine + '<div class="suggest-empty">' + note + '</div>';
       meta.textContent = '0 suggestions';
       panel.style.display = '';
       document.getElementById('suggest-add-btn').disabled = true;
@@ -2483,7 +2510,7 @@
       (counts.med  ? ' · ' + counts.med  + ' med'   : '') +
       (counts.low  ? ' · ' + counts.low  + ' low'   : '');
 
-    list.innerHTML = sorted.map((s, i) => {
+    const rowsHtml = sorted.map((s, i) => {
       const checked = (s.confidence === 'high') ? 'checked' : '';
       return `
         <label class="suggest-row" data-suggest-idx="${i}">
@@ -2500,6 +2527,7 @@
         </label>
       `;
     }).join('');
+    list.innerHTML = heurLine + rowsHtml;
 
     // Re-key suggestions to the sorted order so addSelected reads the right indices
     _lastSuggestions = sorted;
