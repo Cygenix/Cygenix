@@ -655,6 +655,27 @@
     display: grid; gap: 2px;
     font-family: var(--mono); font-size: 11.5px;
   }
+  .prep-list-header {
+    display: grid; grid-template-columns: 16px 1fr auto 22px;
+    gap: 0.5rem; align-items: center;
+    padding: 4px 5px;
+    margin-bottom: 0.15rem;
+    font-family: var(--mono); font-size: 10.5px;
+    color: var(--text3);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    border-radius: 4px 4px 0 0;
+    user-select: none;
+  }
+  .prep-list-header .prep-h-col {
+    cursor: pointer;
+    transition: color 0.12s;
+  }
+  .prep-list-header .prep-h-col:hover { color: var(--accent); }
+  .prep-list-header .prep-h-col.numeric { text-align: right; }
+  .prep-list-header .prep-h-cb,
+  .prep-list-header .prep-h-act { /* spacer cells */ }
   .prep-row {
     display: grid; grid-template-columns: 16px 1fr auto 22px;
     gap: 0.5rem; align-items: center;
@@ -755,6 +776,43 @@
     display: grid; gap: 0.35rem;
     max-height: 480px; overflow-y: auto;
   }
+
+  /* ── Inferred-setups results panel ────────────────────────────────────── */
+  .inferred-results-table-wrap {
+    max-height: 480px; overflow: auto;
+    border: 1px solid var(--border); border-radius: 5px;
+    background: var(--bg);
+  }
+  .inferred-results-table {
+    width: 100%; border-collapse: collapse;
+    font-family: var(--mono); font-size: 11.5px;
+  }
+  .inferred-results-table thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--bg2);
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text2);
+    font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .inferred-results-table thead th.numeric { text-align: right; }
+  .inferred-results-table tbody td {
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: top;
+  }
+  .inferred-results-table tbody td.numeric {
+    text-align: right; font-variant-numeric: tabular-nums;
+    color: var(--text2);
+  }
+  .inferred-results-table tbody tr:hover { background: var(--bg3); }
+  .inferred-results-table tbody tr:last-child td { border-bottom: 0; }
+
   .suggest-row {
     display: grid;
     grid-template-columns: 22px 1fr auto;
@@ -973,7 +1031,8 @@
             <option value="target">Target DB</option>
           </select>
           <button class="btn btn-sm" id="schema-load-btn"   onclick="loadSchema()">⬇ Load schema</button>
-          <button class="btn btn-sm" id="suggest-rels-btn" onclick="suggestRels()" title="Use AI to propose inferred relationships from your schema (table + column names). Review and approve before adding.">🪄 Suggest with AI</button>
+          <button class="btn btn-sm" id="suggest-rels-btn"  onclick="suggestRels()" title="Use AI to propose inferred relationships from your schema (table + column names). Review and approve before adding.">🪄 Suggest with AI</button>
+          <button class="btn btn-sm btn-primary" id="run-inferred-btn" onclick="runInferredSetupsCheck()" title="Run the inferred-setups check against every configured relationship. Results are saved as a report under Run Review.">▶ Run check</button>
           <span class="schema-status" id="schema-status">Schema not loaded — typing-only mode.</span>
         </div>
 
@@ -1007,6 +1066,7 @@
                 <button class="btn btn-sm btn-ghost" onclick="prepToggleAllLookups(true)">All</button>
                 <button class="btn btn-sm btn-ghost" onclick="prepToggleAllLookups(false)">None</button>
               </div>
+              <div id="prep-lookup-header" class="prep-list-header"></div>
               <div id="prep-lookup-list" class="prep-list"></div>
             </div>
 
@@ -1023,6 +1083,7 @@
                 <button class="btn btn-sm btn-ghost" onclick="prepToggleAllTx(true)" title="Tick all currently visible rows">All visible</button>
                 <button class="btn btn-sm btn-ghost" onclick="prepToggleAllTx(false)" title="Untick all currently visible rows">None</button>
               </div>
+              <div id="prep-tx-header" class="prep-list-header"></div>
               <div id="prep-tx-list" class="prep-list"></div>
             </div>
           </div>
@@ -1052,6 +1113,23 @@
             <button class="btn btn-sm btn-ghost" onclick="closeSuggestions()" title="Close">✕</button>
           </div>
           <div id="suggest-list" class="suggest-list"></div>
+        </div>
+
+        <!--
+          Inferred-setups check results panel. Renders inline below the schema
+          bar after the user clicks "Run check". Same visual style as the AI
+          suggestions panel. Each row is one orphan finding (a value in a
+          source column that doesn't exist in its lookup column).
+        -->
+        <div id="inferred-results-panel" class="suggest-panel" style="display:none">
+          <div class="suggest-header">
+            <h3>Inferred-setups results</h3>
+            <span class="suggest-meta" id="inferred-results-meta"></span>
+            <span style="flex:1"></span>
+            <button class="btn btn-sm btn-green" id="inferred-export-btn" onclick="exportInferredResultsToExcel()" title="Export the orphan findings to an .xlsx file">⬇ Export to Excel</button>
+            <button class="btn btn-sm btn-ghost" onclick="closeInferredResults()" title="Close">✕</button>
+          </div>
+          <div id="inferred-results-list"></div>
         </div>
 
         <!--
@@ -2810,6 +2888,11 @@
 
   // Prep state — populated by suggestRels(), consumed by runSuggestWithCuratedScope()
   let _suggestPrepState = null;
+  // Sort state for the prep lists. null means "use default grouping" (custom
+  // first / suggested first, then by row count). Otherwise an object like
+  // { col: 'name'|'rows', dir: 'asc'|'desc' }.
+  let _prepLookupSort = null;
+  let _prepTxSort     = null;
 
   async function suggestRels() {
     const projectId = getCurrentProjectId();
@@ -2978,23 +3061,16 @@
     document.getElementById('suggest-prep-meta').textContent =
       lookups.length + ' lookups · ' + scannables.length + ' other tables';
 
-    // Lookup list — sorted by row count ascending (real lookups first).
-    // Custom lookups float to the top so the user sees their additions clearly.
+    // Lookup list. If user has clicked a column header, _prepLookupSort
+    // overrides the default grouping. Default: custom-added first, then by
+    // row count ascending (real lookups first).
     const customNames = new Set(_suggestPrepState.customLookups.map(l => l.name));
-    const sorted = [...lookups].sort((a, b) => {
-      const aCustom = customNames.has(a.name) ? 0 : 1;
-      const bCustom = customNames.has(b.name) ? 0 : 1;
-      if (aCustom !== bCustom) return aCustom - bCustom;
-      return (a.rowCount ?? 999999) - (b.rowCount ?? 999999);
-    });
+    const sorted = sortLookupList(lookups, customNames, _prepLookupSort);
     document.getElementById('prep-lookup-list').innerHTML = sorted.map(l => {
       const isChecked = _suggestPrepState.lookupCheckedNames.has(l.name);
       const isCustom  = customNames.has(l.name);
       const rc = (typeof l.rowCount === 'number') ? l.rowCount.toLocaleString() : '?';
       const customBadge = isCustom ? ' <span class="prep-custom-badge">added</span>' : '';
-      // Demote button (✕) — moves the table back to the right side. For
-      // custom lookups it removes them entirely; for auto-lookups it adds
-      // them to excludedAutoLookups so they reappear as scannable.
       return `<label class="prep-row${isChecked ? '' : ' unchecked'}">
         <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="prepOnLookupToggleByName('${escapeAttr(l.name)}', this.checked)" />
         <span class="prep-name" title="${escapeHtml(l.name)}">${escapeHtml(l.name)}${customBadge}</span>
@@ -3002,11 +3078,61 @@
         <button class="prep-action-btn" title="Move back to scan side" onclick="prepDemoteLookup('${escapeAttr(l.name)}'); event.preventDefault();">✕</button>
       </label>`;
     }).join('');
+    renderPrepHeader('lookup', _prepLookupSort);
     updatePrepLookupMeta();
 
     // Tx list with filter
     prepRenderTxList();
   }
+
+  // Sort comparator for the lookup list. If sort is null, fall back to the
+  // grouping default (custom-first, then row count asc).
+  function sortLookupList(lookups, customNames, sort) {
+    return [...lookups].sort((a, b) => {
+      if (sort) {
+        // Explicit user sort — ignore grouping
+        const dir = sort.dir === 'desc' ? -1 : 1;
+        if (sort.col === 'name') return dir * a.name.localeCompare(b.name);
+        if (sort.col === 'rows') return dir * ((a.rowCount ?? -1) - (b.rowCount ?? -1));
+      }
+      // Default grouping
+      const aCustom = customNames.has(a.name) ? 0 : 1;
+      const bCustom = customNames.has(b.name) ? 0 : 1;
+      if (aCustom !== bCustom) return aCustom - bCustom;
+      return (a.rowCount ?? 999999) - (b.rowCount ?? 999999);
+    });
+  }
+
+  // Render the small clickable header above each list. The headers sit
+  // outside the scrolling list (always visible). Three columns line up with
+  // the rows: a blank checkbox cell, name, rows, blank action cell.
+  function renderPrepHeader(which, sort) {
+    const headEl = document.getElementById('prep-' + which + '-header');
+    if (!headEl) return;
+    function arrow(col) {
+      if (!sort || sort.col !== col) return '';
+      return sort.dir === 'desc' ? ' ▼' : ' ▲';
+    }
+    headEl.innerHTML =
+      '<span class="prep-h-cb"></span>' +
+      '<span class="prep-h-col" data-col="name" onclick="prepToggleSort(\'' + which + '\', \'name\')">Name' + arrow('name') + '</span>' +
+      '<span class="prep-h-col numeric" data-col="rows" onclick="prepToggleSort(\'' + which + '\', \'rows\')">Rows' + arrow('rows') + '</span>' +
+      '<span class="prep-h-act"></span>';
+  }
+
+  function prepToggleSort(which, col) {
+    const stateRef = which === 'lookup' ? '_prepLookupSort' : '_prepTxSort';
+    const cur = which === 'lookup' ? _prepLookupSort : _prepTxSort;
+    let next;
+    if (!cur || cur.col !== col)         next = { col, dir: 'asc' };
+    else if (cur.dir === 'asc')          next = { col, dir: 'desc' };
+    else                                 next = null;   // third click clears
+    if (which === 'lookup') _prepLookupSort = next;
+    else                    _prepTxSort     = next;
+    if (which === 'lookup') renderSuggestPrep();
+    else                    prepRenderTxList();
+  }
+
 
   // Tx list rendering. Renders ALL rows (no cap) — testing showed that even
   // 2400+ checkboxes render in well under a second on a modern browser.
@@ -3024,6 +3150,15 @@
       .map(name => ({ name }));
 
     allRows.sort((a, b) => {
+      // Explicit user sort overrides default grouping
+      if (_prepTxSort) {
+        const dir = _prepTxSort.dir === 'desc' ? -1 : 1;
+        if (_prepTxSort.col === 'name') return dir * a.name.localeCompare(b.name);
+        if (_prepTxSort.col === 'rows') {
+          return dir * ((prepRowCountFor(a.name) ?? -1) - (prepRowCountFor(b.name) ?? -1));
+        }
+      }
+      // Default grouping: suggested first, then row count
       const aSugg = suggestedSet.has(a.name) ? 0 : 1;
       const bSugg = suggestedSet.has(b.name) ? 0 : 1;
       if (aSugg !== bSugg) return aSugg - bSugg;
@@ -3032,6 +3167,8 @@
       }
       return (prepRowCountFor(b.name) ?? -1) - (prepRowCountFor(a.name) ?? -1);
     });
+
+    renderPrepHeader('tx', _prepTxSort);
 
     const listEl = document.getElementById('prep-tx-list');
     if (!allRows.length) {
@@ -3262,6 +3399,242 @@
   // Tables names typically don't have quotes, but defend anyway.
   function escapeAttr(s) {
     return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // INFERRED-SETUPS CHECK — standalone runner from the Inferred Relationships
+  // tab. Runs orphan-style queries against every configured relationship and
+  // saves the result as a report (visible in the Run Review tab's Saved
+  // Reports list, with check id 'inferred').
+  //
+  // For each relationship { sourceTable, sourceColumn, lookupTable, lookupColumn }:
+  //   SELECT TOP 20 source.X, COUNT_BIG(*) AS bad_count
+  //   FROM SourceTable source LEFT JOIN LookupTable lookup ON source.X = lookup.Y
+  //   WHERE source.X IS NOT NULL AND lookup.Y IS NULL
+  //   GROUP BY source.X ORDER BY COUNT_BIG(*) DESC;
+  //
+  // Permission errors degrade gracefully (counted, run continues).
+  // ─────────────────────────────────────────────────────────────────────────
+  async function runInferredSetupsCheck() {
+    if (_runInProgress) { showToast('A run is already in progress.', 'error'); return; }
+
+    const projectId = getCurrentProjectId();
+    if (!projectId) { showToast('No active project. Open a project from the Dashboard first.', 'error'); return; }
+
+    const conn = getRelConn();
+    if (!conn) { showToast('No ' + getRelSide() + ' connection — set one in Connections.', 'error'); return; }
+
+    if (!inferredRels || !inferredRels.length) {
+      showToast('No inferred relationships configured. Add some first (or use 🪄 Suggest with AI).', 'error');
+      return;
+    }
+
+    _cancelRequested = false;
+    _runInProgress   = true;
+
+    const btn = document.getElementById('run-inferred-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Running…';
+    setSchemaStatus('Running inferred-setups check…', 'busy');
+
+    // Hide other panels so the user focuses on the run results
+    document.getElementById('suggest-prep').style.display  = 'none';
+    document.getElementById('suggest-panel').style.display = 'none';
+
+    const reportId = 'qr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const SAMPLE_LIMIT = 20;
+    const items   = [];
+    const errored = [];
+    let permissionErrors = 0;
+
+    try {
+      // Build the query plan: one SELECT per relationship.
+      // We don't need the schema fetch for this — the relationship rows
+      // already carry the table + column names.
+      const queries = inferredRels.map(rel => {
+        // Quote schema.table — if the relationship doesn't include schema
+        // prefix, default to dbo (consistent with how the rest of the page
+        // handles SQL Server identifiers).
+        function splitTbl(name) {
+          const ix = String(name).indexOf('.');
+          if (ix >= 0) return { schema: name.slice(0, ix), name: name.slice(ix + 1) };
+          return { schema: 'dbo', name };
+        }
+        const src = splitTbl(rel.sourceTable);
+        const lkp = splitTbl(rel.lookupTable);
+        const srcRef  = qid(src.schema) + '.' + qid(src.name);
+        const lkpRef  = qid(lkp.schema) + '.' + qid(lkp.name);
+        const srcCol  = qid(rel.sourceColumn);
+        const lkpCol  = qid(rel.lookupColumn);
+        return {
+          id:  rel.id || (rel.sourceTable + '.' + rel.sourceColumn + '→' + rel.lookupTable + '.' + rel.lookupColumn),
+          tag: rel,
+          sql:
+            'SELECT TOP ' + SAMPLE_LIMIT + ' s.' + srcCol + ' AS [bad_value], COUNT_BIG(*) AS [bad_count] ' +
+            'FROM ' + srcRef + ' s LEFT JOIN ' + lkpRef + ' l ON s.' + srcCol + ' = l.' + lkpCol + ' ' +
+            'WHERE s.' + srcCol + ' IS NOT NULL AND l.' + lkpCol + ' IS NULL ' +
+            'GROUP BY s.' + srcCol + ' ORDER BY COUNT_BIG(*) DESC;'
+        };
+      });
+
+      const results = await runQueries(queries);
+
+      // Build per-row output items
+      results.forEach((r, i) => {
+        const rel = queries[i].tag;
+        if (r.error) {
+          if (r.errorKind === 'permission') permissionErrors++;
+          errored.push({ rel, error: r.error });
+          return;
+        }
+        for (const row of r.rows || []) {
+          items.push({
+            sourceTable:  rel.sourceTable,
+            sourceColumn: rel.sourceColumn,
+            lookupTable:  rel.lookupTable,
+            lookupColumn: rel.lookupColumn,
+            badValue:     String(row.bad_value ?? ''),
+            badCount:     Number(row.bad_count || 0)
+          });
+        }
+      });
+
+      // Sort by bad_count desc — biggest data-quality problems first
+      items.sort((a, b) => b.badCount - a.badCount);
+
+      // Build report doc shape compatible with the Run Review tab
+      let note = null;
+      if (errored.length) note = errored.length + ' relationship(s) errored';
+      if (permissionErrors) note = (note ? note + ' · ' : '') + permissionErrors + ' permission error(s)';
+
+      const summary = {
+        pass:        items.length === 0 ? 1 : 0,
+        warn:        0,
+        fail:        items.length > 0 ? 1 : 0,
+        info:        0,
+        totalIssues: items.length
+      };
+
+      currentReport = {
+        id:           reportId,
+        projectId:    projectId,
+        userId:       getUserId(),
+        sourceName:   getConnLabel(),
+        connSide:     getRelSide(),
+        reportName:   'Inferred-setups · ' + new Date().toISOString().slice(0, 16).replace('T', ' '),
+        runAt:        new Date().toISOString(),
+        status:       'complete',
+        checksRun:    ['inferred'],
+        summary,
+        results: {
+          inferred: {
+            status:      items.length ? 'fail' : 'pass',
+            issuesFound: items.length,
+            items,
+            note
+          }
+        },
+        saved: false
+      };
+
+      // Save to Cosmos so it appears in the Saved Reports list
+      const ok = await saveReport(currentReport);
+      if (ok) {
+        currentReport.saved = true;
+        await loadReports();
+      } else {
+        showToast('Run completed but save failed (see console).', 'error');
+      }
+
+      // Render the inline results panel
+      renderInferredResults(currentReport);
+      setSchemaStatus(items.length
+        ? items.length + ' orphan finding(s) — see panel below'
+        : 'No orphans — all configured relationships are clean.',
+        items.length ? 'error' : 'ok');
+
+      if (items.length === 0) {
+        showToast('Check complete — no orphans found.', 'success');
+      } else {
+        showToast(items.length + ' orphan finding(s). Saved as report.', 'success');
+      }
+
+    } catch (e) {
+      console.error('[run-inferred] failed:', e);
+      showToast('Run failed: ' + e.message, 'error');
+      setSchemaStatus('Inferred-setups run failed', 'error');
+    } finally {
+      _runInProgress   = false;
+      _cancelRequested = false;
+      btn.disabled    = false;
+      btn.textContent = '▶ Run check';
+    }
+  }
+
+  // Render results inline below the schema bar. Same visual style as the
+  // suggestions panel. One row per orphan finding.
+  function renderInferredResults(report) {
+    const panel  = document.getElementById('inferred-results-panel');
+    const list   = document.getElementById('inferred-results-list');
+    const meta   = document.getElementById('inferred-results-meta');
+    const result = report.results?.inferred || { items: [], note: null };
+    const items  = result.items || [];
+
+    panel.style.display = '';
+    document.getElementById('inferred-export-btn').disabled = items.length === 0;
+
+    const checkedRels = (inferredRels || []).length;
+    const counts = items.reduce((acc, it) => {
+      acc[it.lookupTable] = (acc[it.lookupTable] || 0) + 1;
+      return acc;
+    }, {});
+    const distinctLookups = Object.keys(counts).length;
+
+    meta.textContent =
+      items.length + ' orphan(s) across ' + distinctLookups + ' lookup(s) · ' +
+      'checked ' + checkedRels + ' relationship(s)' +
+      (result.note ? ' · ' + result.note : '');
+
+    if (!items.length) {
+      list.innerHTML = '<div class="suggest-empty">No orphans — every value in every configured source column has a matching row in its lookup. ' + (result.note ? '<br><em>' + escapeHtml(result.note) + '</em>' : '') + '</div>';
+      return;
+    }
+
+    list.innerHTML =
+      '<div class="inferred-results-table-wrap"><table class="inferred-results-table">' +
+        '<thead><tr>' +
+          '<th>Source table</th>' +
+          '<th>Source column</th>' +
+          '<th>Lookup table</th>' +
+          '<th>Lookup column</th>' +
+          '<th>Bad value</th>' +
+          '<th class="numeric">Rows</th>' +
+        '</tr></thead><tbody>' +
+        items.map(it =>
+          '<tr>' +
+            '<td>' + escapeHtml(it.sourceTable) + '</td>' +
+            '<td>' + escapeHtml(it.sourceColumn) + '</td>' +
+            '<td>' + escapeHtml(it.lookupTable) + '</td>' +
+            '<td>' + escapeHtml(it.lookupColumn) + '</td>' +
+            '<td>' + escapeHtml(it.badValue) + '</td>' +
+            '<td class="numeric">' + Number(it.badCount).toLocaleString() + '</td>' +
+          '</tr>'
+        ).join('') +
+        '</tbody></table></div>';
+  }
+
+  function closeInferredResults() {
+    document.getElementById('inferred-results-panel').style.display = 'none';
+  }
+
+  // Reuse the Run Review tab's Excel exporter — it already handles whatever
+  // shape currentReport has, including a single-check report.
+  function exportInferredResultsToExcel() {
+    if (!currentReport) {
+      showToast('Nothing to export.', 'error');
+      return;
+    }
+    exportToExcel();
   }
 
   // ── The actual LLM run, triggered from the curation panel ─────────────
