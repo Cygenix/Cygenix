@@ -2035,12 +2035,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="btn btn-ghost btn-sm" onclick="ServerMigration.startOver()">↻ Start over</button>
       </div>
 
-      <!-- Phase notice — set expectations about what's in v1 vs what's coming -->
-      <div style="padding:10px 14px;margin-bottom:1rem;border:0.5px solid rgba(79,142,255,0.25);background:rgba(79,142,255,0.05);border-radius:var(--r);font-size:11.5px;color:var(--text2);line-height:1.55">
-        <strong style="color:var(--accent)">Phase 1 + 2 + 3 + 4 — Logins, SQL Agent jobs, SSIS packages &amp; Linked servers.</strong>
-        Migrate any combination in a single session. Logins move with hashed passwords and SIDs preserved. Agent jobs migrate with their steps, schedules, categories, and notification operators. SSIS support covers the project deployment model. Linked servers reproduce the exact provider/datasource/options from source — supply the remote password at step 2 (it cannot be read from the source server).
-      </div>
-
       <!-- Step tabs — five-step flow: verify → discover → preview → execute → audit.
            Tabs are clickable for navigation but the user is naturally led through
            in order via Proceed / Preview / Execute buttons inside each panel. -->
@@ -4341,7 +4335,6 @@ function jobsTableHTML(jobs) {
       <td>${lastRunText(j)}</td>
       <td>
         <div class="jobs-actions">
-          <button class="btn btn-ghost" onclick="openJobModal('${j.id}')" title="View">View</button>
           <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
           ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
           <button class="btn btn-teal" onclick="downloadJobSQL('${j.id}','schema')" title="Download schema SQL">⬇ Schema</button>

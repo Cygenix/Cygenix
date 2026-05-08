@@ -66,7 +66,7 @@
       { key:'sql-editor',         label:'SQL Editor',         href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
       { key:'agentive-migration', label:'Agentive Migration', href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
     ]},
-    { section: 'Analysis', group:'analysis', items: [
+    { section: 'Data Analysis', group:'analysis', items: [
       { key:'data-quality',      label:'Data Quality Review', href:'/data-quality.html',  color:'var(--green)',  icon: iconQuality() },
       { key:'insights',          label:'Data Insights',       href:'/insights.html',      color:'var(--purple)', icon: iconInsights() },
       { key:'data-cleansing',    label:'Data Cleansing',      href:'/data-cleansing.html',color:'var(--teal)',   icon: iconClean() },

@@ -128,7 +128,9 @@
 
   .page {
     padding: 1.5rem 2rem 4rem 2rem;
-    max-width: 1400px;
+    /* Use the full viewport up to a generous cap. 1400px was leaving big
+       empty bands on widescreen monitors. */
+    max-width: min(1800px, calc(100vw - 80px));
   }
 
   h1 { font-family: var(--serif); font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 0.25rem 0; }
