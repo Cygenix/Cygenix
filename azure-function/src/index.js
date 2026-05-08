@@ -1535,11 +1535,14 @@ app.http('data', {
           const projectId = req.query.get('projectId');
           if (!projectId) return err(400, 'projectId query param is required');
 
+          // Note: quality_reports also stores scope configs (id prefix qsc_).
+          // Filter them out of the report list — they aren't reports.
           const { resources } = await getCosmosContainer('quality_reports').items
             .query({
               query: 'SELECT c.id, c.projectId, c.userId, c.sourceName, c.connSide, ' +
                      'c.reportName, c.runAt, c.status, c.checksRun, c.summary ' +
-                     'FROM c WHERE c.projectId = @projectId ORDER BY c.runAt DESC',
+                     "FROM c WHERE c.projectId = @projectId AND NOT STARTSWITH(c.id, 'qsc_') " +
+                     'ORDER BY c.runAt DESC',
               parameters: [{ name: '@projectId', value: projectId }]
             }, { partitionKey: projectId })
             .fetchAll();
@@ -1707,6 +1710,75 @@ app.http('data', {
             throw e;
           }
         }
+        // ── QUALITY-SAVE-SCOPE: persist the user's curated AI-suggest scope ──
+        // POST /api/data/quality-save-scope
+        // Body: {
+        //   projectId, connSide ('source' | 'target'),
+        //   customLookups:        [{ name, columns:[{name,type?}], lookupColumn? }],
+        //   excludedAutoLookups:  ["tableName", ...],
+        //   scanTables:           ["tableName", ...]
+        // }
+        //
+        // Stored in the existing quality_reports container with id
+        // 'qsc_<projectId>_<connSide>' so we don't need a new container in
+        // Azure. The list-reports endpoint filters these out.
+        case 'quality-save-scope': {
+          const body = await req.json().catch(() => null);
+          if (!body || !body.projectId) return err(400, 'projectId is required');
+
+          const connSide = body.connSide === 'target' ? 'target' : 'source';
+          const id = 'qsc_' + body.projectId + '_' + connSide;
+
+          // Coerce + whitelist the payload — never trust client to supply
+          // arbitrary fields. Defensive shape ensures load-scope returns
+          // something sane even if the body was partial.
+          const doc = {
+            id,
+            projectId:           String(body.projectId),
+            connSide,
+            userId:              userId,
+            updatedAt:           new Date().toISOString(),
+            customLookups:       Array.isArray(body.customLookups) ? body.customLookups.slice(0, 200).map(l => ({
+              name:    String(l?.name || '').slice(0, 200),
+              schema:  l?.schema ? String(l.schema).slice(0, 64) : undefined,
+              columns: Array.isArray(l?.columns) ? l.columns.slice(0, 80).map(c => ({
+                name: String(c?.name || '').slice(0, 200),
+                type: c?.type ? String(c.type).slice(0, 64) : undefined
+              })) : [],
+              lookupColumn: l?.lookupColumn ? String(l.lookupColumn).slice(0, 200) : undefined
+            })) : [],
+            excludedAutoLookups: Array.isArray(body.excludedAutoLookups)
+              ? body.excludedAutoLookups.slice(0, 1000).map(s => String(s).slice(0, 200))
+              : [],
+            scanTables:          Array.isArray(body.scanTables)
+              ? body.scanTables.slice(0, 5000).map(s => String(s).slice(0, 200))
+              : []
+          };
+
+          await getCosmosContainer('quality_reports').items.upsert(doc);
+          ctx.log(`Saved quality scope ${id}`);
+          return ok({ saved: true, id, updatedAt: doc.updatedAt });
+        }
+
+        // ── QUALITY-LOAD-SCOPE: read the user's saved scope for a project ────
+        // GET /api/data/quality-load-scope?projectId=PROJ_ID&connSide=source
+        case 'quality-load-scope': {
+          const projectId = req.query.get('projectId');
+          const connSide  = req.query.get('connSide') === 'target' ? 'target' : 'source';
+          if (!projectId) return err(400, 'projectId is required');
+
+          const id = 'qsc_' + projectId + '_' + connSide;
+          try {
+            const { resource } = await getCosmosContainer('quality_reports')
+              .item(id, projectId).read();
+            if (!resource) return ok({ scope: null });
+            return ok({ scope: resource });
+          } catch (e) {
+            if (e.code === 404) return ok({ scope: null });
+            throw e;
+          }
+        }
+
         // ── QUALITY-SUGGEST-RELS: AI-suggest inferred relationships ──────────
         // POST /api/data/quality-suggest-rels
         // Body: {
@@ -1946,7 +2018,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
         }
 
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-suggest-rels`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels`);
       }
 
     } catch (e) {
