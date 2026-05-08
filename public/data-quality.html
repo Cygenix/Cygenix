@@ -270,6 +270,64 @@
   .report-item .r-badge.partial   { background: var(--amber-bg); color: var(--amber); border-color: rgba(245,158,11,0.35); }
   .report-item .r-badge.cancelled { background: var(--bg4);     color: var(--text3); border-color: var(--border2); }
 
+  /* Row layout: name on the left, actions on the right (hidden until hover). */
+  .report-item .r-row-top {
+    display: flex; align-items: center; gap: 0.5rem;
+    min-width: 0;
+  }
+  .report-item .r-row-top .r-name {
+    flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* Hover-only actions (✏ rename, ✕ delete) */
+  .report-item .r-actions {
+    display: flex; gap: 0.2rem;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.12s ease;
+  }
+  .report-item:hover .r-actions,
+  .report-item:focus-within .r-actions {
+    opacity: 1; pointer-events: auto;
+  }
+  .report-item .r-act {
+    width: 22px; height: 22px;
+    padding: 0; line-height: 1;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    border-radius: 4px;
+    font-family: var(--mono); font-size: 11px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .report-item .r-act:hover {
+    background: var(--bg2); color: var(--text); border-color: var(--border2);
+  }
+  .report-item .r-act-del:hover {
+    background: var(--red-bg); color: var(--red); border-color: rgba(239,68,68,0.35);
+  }
+
+  /* Inline rename input — sits where the .r-name span used to */
+  .r-name-input {
+    width: 100%;
+    padding: 2px 6px;
+    background: var(--bg);
+    border: 1px solid var(--accent);
+    color: var(--text);
+    border-radius: 3px;
+    font-family: inherit; font-size: 12.5px;
+    outline: none;
+  }
+
+  /* Brief green flash on the bottom-panel rename input after a successful save */
+  @keyframes rename-saved-flash {
+    0%   { box-shadow: 0 0 0 0   rgba(34,201,122,0.0);  border-color: var(--border); }
+    20%  { box-shadow: 0 0 0 3px rgba(34,201,122,0.45); border-color: var(--green); }
+    100% { box-shadow: 0 0 0 0   rgba(34,201,122,0.0);  border-color: var(--border); }
+  }
+  .rename-saved-flash { animation: rename-saved-flash 1.2s ease-out; }
+
   /* ── Results summary bar ─────────────────────────────────────────────── */
   .results { margin-top: 1rem; }
   .result-summary {
@@ -892,7 +950,21 @@
   .schema-status.ok    { color: var(--green); }
   .schema-status.warn  { color: var(--amber); }
   .schema-status.error { color: var(--red); }
-  .schema-status.busy  { color: var(--text2); }
+  .schema-status.busy  {
+    /* Amber + pill background + slow pulse, so a long-running sample/AI
+       phase doesn't look like the page has frozen. */
+    color: var(--amber);
+    background: var(--amber-bg);
+    border: 1px solid rgba(245,158,11,0.35);
+    padding: 3px 9px;
+    border-radius: 100px;
+    font-weight: 500;
+    animation: schema-status-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes schema-status-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.0); }
+    50%      { box-shadow: 0 0 0 4px rgba(245,158,11,0.18); }
+  }
   </style>
 </head>
 <body>
@@ -908,7 +980,7 @@
     <!-- Tabs: Run Review | Inferred Relationships -->
     <div class="tabs" role="tablist">
       <button class="tab active" data-tab="review"  onclick="switchTab('review')">Run Review</button>
-      <button class="tab"        data-tab="rels"    onclick="switchTab('rels')">Inferred Relationships</button>
+      <button class="tab"        data-tab="rels"    onclick="switchTab('rels')">Validate Lookups</button>
     </div>
 
     <!-- ──────────────────────────────────────────────────────────────────── -->
@@ -1005,10 +1077,10 @@
     <!-- ──────────────────────────────────────────────────────────────────── -->
     <div class="tab-pane" id="tab-rels">
       <div class="panel">
-        <h2 style="margin-top:0">Inferred Relationships</h2>
+        <h2 style="margin-top:0">Validate Lookups</h2>
         <p class="lede" style="margin-bottom:1rem">
-          A schema-level "soft" foreign key — a column expected to contain values from a lookup table, where no formal FK constraint exists.
-          Used by the <em>Missing / wrong inferred setups</em> check to find orphaned values
+          Configure soft foreign keys — columns expected to contain values from a lookup table where no formal FK constraint exists.
+          The <em>Missing / wrong inferred setups</em> check on the Run Review tab uses these to find orphaned values
           (e.g. a matter with <code>CurrencyCode = 'GPB'</code> when no such code is in <code>Currencies</code>).
         </p>
 
@@ -1108,7 +1180,7 @@
             <span style="flex:1"></span>
             <button class="btn btn-sm btn-ghost" onclick="toggleAllSuggestions(true)">Select all</button>
             <button class="btn btn-sm btn-ghost" onclick="toggleAllSuggestions(false)">Clear</button>
-            <button class="btn btn-sm btn-green" id="suggest-add-btn" onclick="addSelectedSuggestions()">Add selected</button>
+            <button class="btn btn-sm btn-green" id="suggest-add-btn" onclick="addSelectedSuggestions()" title="Save the ticked suggestions as inferred relationships for this project. They become available to the Missing / wrong inferred setups check on the Run Review tab.">Save selected</button>
             <button class="btn btn-sm btn-ghost" onclick="closeSuggestions()" title="Close">✕</button>
           </div>
           <div id="suggest-list" class="suggest-list"></div>
@@ -1188,7 +1260,7 @@
   // function in the runChecks() switch. The UI rebuilds from this list.
   // ─────────────────────────────────────────────────────────────────────────
   const CHECKS = [
-    { id: 'inferred',       name: 'Missing / wrong inferred setups',  desc: 'Values in a column that don\'t match the configured lookup table (e.g. unknown currency codes). Configure relationships in the Inferred Relationships tab.' },
+    { id: 'inferred',       name: 'Missing / wrong inferred setups',  desc: 'Values in a column that don\'t match the configured lookup table (e.g. unknown currency codes). Configure lookups in the Validate Lookups tab.' },
     { id: 'bad-dates',      name: 'Bad / unusual dates',              desc: 'NULLs in date columns, dates before 1900, dates more than 10 years in the future.' },
     { id: 'null-required',  name: 'NULLs in required fields',         desc: 'Columns flagged NOT NULL at the schema level that contain NULL values.' },
     { id: 'duplicates',     name: 'Duplicate primary keys',           desc: 'Rows where a unique-constrained column has duplicate values.' },
@@ -1610,9 +1682,11 @@
   // Errors on a single query are CAPTURED and returned as
   //   { id, error: <msg>, errorKind: 'permission' | 'other' }
   // …rather than thrown — so one bad query doesn't kill the whole batch.
-  async function runQueries(items) {
+  // Optional onItemDone(doneCount, total) is called as each query finishes,
+  // so the caller can show live progress on long sampling/check runs.
+  async function runQueries(items, onItemDone) {
     const results = [];
-    let cursor = 0;
+    let cursor = 0, done = 0;
     async function worker() {
       while (true) {
         if (_cancelRequested) return;
@@ -1624,6 +1698,10 @@
           results[i] = { id: it.id, rows };
         } catch (e) {
           results[i] = { id: it.id, error: e.message, errorKind: e.kind || 'other' };
+        }
+        done++;
+        if (typeof onItemDone === 'function') {
+          try { onItemDone(done, items.length); } catch (e) { /* ignore */ }
         }
       }
     }
@@ -2282,9 +2360,21 @@
       let statusBadge = '';
       if (r.status === 'partial')        statusBadge = '<span class="r-badge partial">PARTIAL</span>';
       else if (r.status === 'cancelled') statusBadge = '<span class="r-badge cancelled">CANCELLED</span>';
+      // Per-row hover actions: rename (✏) and delete (✕). The actions
+      // sit on the right and only become visible on hover so the row
+      // stays uncluttered. Stop click propagation so they don't open
+      // the report when used.
+      const actions =
+        '<div class="r-actions">' +
+          '<button class="r-act" title="Rename" onclick="event.stopPropagation(); startInlineRename(\'' + r.id + '\')">✏</button>' +
+          '<button class="r-act r-act-del" title="Delete" onclick="event.stopPropagation(); deleteReportById(\'' + r.id + '\')">✕</button>' +
+        '</div>';
       return `
         <div class="report-item${cls}" data-id="${r.id}" onclick="openReport('${r.id}')">
-          <div class="r-name">${escapeHtml(r.reportName || '(untitled)')}${statusBadge}</div>
+          <div class="r-row-top">
+            <div class="r-name" data-id="${r.id}">${escapeHtml(r.reportName || '(untitled)')}${statusBadge}</div>
+            ${actions}
+          </div>
           <div class="r-meta">
             ${formatDate(r.runAt)} · ${issues} issues${fails ? ' · ' + fails + ' advisory' : ''}
           </div>
@@ -2312,11 +2402,79 @@
     }
   }
 
+  // ── Inline rename in the Saved Reports list ───────────────────────────
+  // Replaces the .r-name span with an <input> for the duration of the edit.
+  // Enter or blur saves; Esc cancels. The rest of the row keeps its onclick
+  // handler so the report still opens from any non-input click.
+  function startInlineRename(id) {
+    const report = savedReports.find(r => r.id === id);
+    if (!report) return;
+    const nameEl = document.querySelector('.r-name[data-id="' + id + '"]');
+    if (!nameEl) return;
+    // Already in edit mode? bail.
+    if (nameEl.querySelector('input')) return;
+
+    const orig = report.reportName || '';
+    nameEl.innerHTML =
+      '<input class="r-name-input" type="text" value="' + escapeAttr(orig) + '" ' +
+        'onclick="event.stopPropagation()" ' +
+        'onkeydown="if(event.key===\'Enter\'){this.blur();} else if(event.key===\'Escape\'){this.dataset.cancelled=\'1\'; this.blur();}" ' +
+        'onblur="commitInlineRename(\'' + id + '\', this)" />';
+    const inp = nameEl.querySelector('input');
+    inp.focus();
+    inp.select();
+  }
+
+  async function commitInlineRename(id, inputEl) {
+    if (!inputEl) return;
+    const cancelled = inputEl.dataset.cancelled === '1';
+    const newName   = (inputEl.value || '').trim();
+    const report    = savedReports.find(r => r.id === id);
+    if (!report) { renderReportsList(); return; }
+
+    if (cancelled || !newName || newName === report.reportName) {
+      // Restore the row visually
+      renderReportsList();
+      highlightActiveReport(currentReport?.id);
+      return;
+    }
+    try {
+      await apiData('quality-rename-report', {
+        id: id, projectId: report.projectId, reportName: newName
+      });
+      report.reportName = newName;
+      if (currentReport && currentReport.id === id) currentReport.reportName = newName;
+      renderReportsList();
+      highlightActiveReport(currentReport?.id);
+      // If the bottom-panel rename input is mounted for this report, sync it
+      const bottomInput = document.getElementById('report-name-input');
+      if (bottomInput && currentReport && currentReport.id === id) {
+        bottomInput.value = newName;
+        flashRenameSaved(bottomInput);
+      }
+      showToast('Renamed.', 'success');
+    } catch (e) {
+      showToast('Rename failed: ' + e.message, 'error');
+      renderReportsList();
+      highlightActiveReport(currentReport?.id);
+    }
+  }
+
+  // Briefly flash the rename input green so the user gets visible
+  // confirmation that the rename actually saved (not just blurred away).
+  function flashRenameSaved(el) {
+    if (!el) return;
+    el.classList.remove('rename-saved-flash');   // restart animation
+    void el.offsetWidth;                          // force reflow
+    el.classList.add('rename-saved-flash');
+  }
+
   async function renameCurrentReport(newName) {
     if (!currentReport) return;
     newName = (newName || '').trim();
+    const inputEl = document.getElementById('report-name-input');
     if (!newName) {
-      document.getElementById('report-name-input').value = currentReport.reportName;
+      if (inputEl) inputEl.value = currentReport.reportName;
       return;
     }
     if (newName === currentReport.reportName) return;
@@ -2330,28 +2488,40 @@
       if (idx >= 0) savedReports[idx].reportName = newName;
       renderReportsList();
       highlightActiveReport(currentReport.id);
+      flashRenameSaved(inputEl);
       showToast('Renamed.', 'success');
     } catch (e) {
       showToast('Rename failed: ' + e.message, 'error');
-      document.getElementById('report-name-input').value = currentReport.reportName;
+      if (inputEl) inputEl.value = currentReport.reportName;
+    }
+  }
+
+  // Delete a report by id (used by the per-row ✕ button). If the report
+  // being deleted is the currently-loaded one, we also clear the results
+  // panel so the user isn't left looking at a deleted report.
+  async function deleteReportById(id) {
+    const report = savedReports.find(r => r.id === id);
+    if (!report) return;
+    if (!confirm(`Delete "${report.reportName || '(untitled)'}"? This can't be undone.`)) return;
+    try {
+      await apiData('quality-delete-report', {
+        id: id, projectId: report.projectId
+      }, 'DELETE');
+      showToast('Deleted.', 'success');
+      if (currentReport && currentReport.id === id) {
+        currentReport = null;
+        document.getElementById('results-container').style.display = 'none';
+        document.getElementById('results-empty').style.display = 'block';
+      }
+      await loadReports();
+    } catch (e) {
+      showToast('Delete failed: ' + e.message, 'error');
     }
   }
 
   async function deleteCurrentReport() {
     if (!currentReport) return;
-    if (!confirm(`Delete "${currentReport.reportName}"? This can't be undone.`)) return;
-    try {
-      await apiData('quality-delete-report', {
-        id: currentReport.id, projectId: currentReport.projectId
-      }, 'DELETE');
-      showToast('Deleted.', 'success');
-      currentReport = null;
-      document.getElementById('results-container').style.display = 'none';
-      document.getElementById('results-empty').style.display = 'block';
-      await loadReports();
-    } catch (e) {
-      showToast('Delete failed: ' + e.message, 'error');
-    }
+    return deleteReportById(currentReport.id);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -3421,7 +3591,7 @@
         status: 'info',
         issuesFound: 0,
         items: [],
-        note: 'No inferred relationships configured for this project. Use the Inferred Relationships tab to add some (or use 🪄 Suggest with AI).'
+        note: 'No inferred relationships configured for this project. Use the Validate Lookups tab to add some (or use 🪄 Suggest with AI).'
       };
     }
 
@@ -3593,8 +3763,10 @@
     const TOTAL_SAMPLE_CAP = 800;
     const planned = queries.slice(0, TOTAL_SAMPLE_CAP);
 
-    if (typeof onProgress === 'function') onProgress({ planned: planned.length });
-    const results = await runQueries(planned);
+    if (typeof onProgress === 'function') onProgress({ planned: planned.length, done: 0 });
+    const results = await runQueries(planned, (done, total) => {
+      if (typeof onProgress === 'function') onProgress({ planned: total, done });
+    });
 
     const samplesByKey = new Map();
     results.forEach((r, i) => {
@@ -3653,7 +3825,19 @@
       let samplesByKey;
       try {
         samplesByKey = await collectColumnSamples(scanDetails, selectedLookups,
-          ({ planned }) => console.log('[suggest] sampling', planned, 'columns'));
+          ({ planned, done }) => {
+            // Live update: show "Sampling 145 / 420 column values…" so the
+            // user knows the page isn't frozen during long sampling phases.
+            if (planned) {
+              const completed = (typeof done === 'number') ? done : 0;
+              setSchemaStatus(
+                'Sampling ' + completed + ' / ' + planned + ' column values…',
+                'busy'
+              );
+              btn.textContent = '🔬 Sampling ' + completed + '/' + planned;
+            }
+            console.log('[suggest] sampling progress', done, '/', planned);
+          });
       } catch (e) {
         console.warn('[suggest] sampling failed (continuing without samples):', e);
         samplesByKey = new Map();
@@ -3808,7 +3992,7 @@
       const checked = (s.confidence === 'high') ? 'checked' : '';
       return `
         <label class="suggest-row" data-suggest-idx="${i}">
-          <input type="checkbox" class="suggest-check" ${checked} />
+          <input type="checkbox" class="suggest-check" ${checked} onchange="updateAddButtonLabel()" />
           <div>
             <div class="sg-mapping">
               ${escapeHtml(s.sourceTable)}.${escapeHtml(s.sourceColumn)}
@@ -3828,6 +4012,17 @@
 
     panel.style.display = '';
     document.getElementById('suggest-add-btn').disabled = false;
+    updateAddButtonLabel();
+  }
+
+  // Updates the Save-selected button to show the live count of ticked rows,
+  // e.g. "Save 3 selected". This makes it obvious the click commits the
+  // ticked suggestions to the relationships list.
+  function updateAddButtonLabel() {
+    const btn = document.getElementById('suggest-add-btn');
+    if (!btn || btn.disabled && btn.textContent === 'Saving…') return;
+    const n = document.querySelectorAll('.suggest-check:checked').length;
+    btn.textContent = n ? 'Save ' + n + ' selected' : 'Save selected';
   }
 
   function renderSuggestionsError(msg) {
@@ -3840,6 +4035,7 @@
 
   function toggleAllSuggestions(check) {
     document.querySelectorAll('.suggest-check').forEach(cb => { cb.checked = !!check; });
+    updateAddButtonLabel();
   }
 
   function closeSuggestions() {
@@ -3863,7 +4059,7 @@
 
     const btn = document.getElementById('suggest-add-btn');
     btn.disabled = true;
-    btn.textContent = 'Adding…';
+    btn.textContent = 'Saving…';
 
     let added = 0, failed = 0;
     for (const s of picked) {
@@ -3885,11 +4081,11 @@
       }
     }
 
-    btn.disabled    = false;
-    btn.textContent = 'Add selected';
+    btn.disabled = false;
+    updateAddButtonLabel();
 
     if (added) {
-      showToast('Added ' + added + ' relationship' + (added !== 1 ? 's' : '') +
+      showToast('Saved ' + added + ' relationship' + (added !== 1 ? 's' : '') +
                 (failed ? ' (' + failed + ' failed)' : ''), failed ? 'error' : 'success');
       await loadRels();
       closeSuggestions();
