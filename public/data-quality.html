@@ -656,7 +656,7 @@
     font-family: var(--mono); font-size: 11.5px;
   }
   .prep-row {
-    display: grid; grid-template-columns: 16px 1fr auto;
+    display: grid; grid-template-columns: 16px 1fr auto 22px;
     gap: 0.5rem; align-items: center;
     padding: 3px 5px;
     border-radius: 3px;
@@ -667,6 +667,23 @@
   .prep-row .prep-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .prep-row .prep-rc   { color: var(--text3); font-size: 10.5px; }
   .prep-row.unchecked .prep-name { color: var(--text3); }
+  .prep-action-btn {
+    width: 18px; height: 18px;
+    padding: 0; line-height: 1;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--text2);
+    border-radius: 3px;
+    font-family: var(--mono); font-size: 12px;
+    cursor: pointer; opacity: 0.55;
+    transition: opacity 0.15s, background 0.15s, color 0.15s;
+  }
+  .prep-row:hover .prep-action-btn { opacity: 1; }
+  .prep-action-btn:hover {
+    background: var(--accent-glow);
+    color: var(--accent);
+    border-color: var(--accent);
+  }
   .prep-empty {
     padding: 1rem; text-align: center; color: var(--text3); font-size: 11px;
   }
@@ -684,6 +701,18 @@
     background: var(--accent-glow);
     color: var(--accent);
     border: 1px solid rgba(61,126,255,0.35);
+    border-radius: 100px;
+    font-size: 9px; font-family: var(--mono);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+  .prep-custom-badge {
+    display: inline-block; vertical-align: middle;
+    margin-left: 0.45rem;
+    padding: 1px 6px;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(34,201,122,0.35);
     border-radius: 100px;
     font-size: 9px; font-family: var(--mono);
     text-transform: uppercase; letter-spacing: 0.05em;
@@ -960,6 +989,9 @@
             <h3>Refine AI scope</h3>
             <span class="suggest-meta" id="suggest-prep-meta"></span>
             <span style="flex:1"></span>
+            <button class="btn btn-sm btn-ghost" id="prep-load-btn" onclick="prepLoadScope()" title="Load this project's saved scope (custom lookups, exclusions, scan-table picks)">Load saved scope</button>
+            <button class="btn btn-sm btn-ghost" id="prep-save-btn" onclick="prepSaveScope()" title="Save the current scope so it loads next time">Save scope</button>
+            <button class="btn btn-sm btn-ghost" onclick="prepResetToDefaults()" title="Clear all customisations and restore heuristic defaults">Reset</button>
             <button class="btn btn-sm btn-ghost" onclick="closeSuggestPrep()" title="Close">✕</button>
           </div>
 
@@ -2857,24 +2889,28 @@
 
       // 3. Stash everything into _suggestPrepState and open the curation panel.
       //    The actual LLM run is deferred until the user clicks "Run AI →".
+      //    NEW MODEL: tracks promote/demote so user can move tables between
+      //    the lookup column and the scan column.
+      //      autoLookups[]                — heuristic-detected lookups (immutable for the session)
+      //      autoNonLookups[]             — every non-lookup table (immutable for the session)
+      //      suggestedSet                 — heuristic-suggested scan tables (substring match)
+      //      customLookups[]              — tables the user promoted from the right side
+      //      excludedAutoLookups: Set     — auto-lookups the user demoted (back to scan side)
+      //      lookupCheckedNames: Set      — currently-ticked lookups (effective list)
+      //      txCheckedNames: Set          — currently-ticked scannables
       //
-      //    KEY DESIGN DECISION: the right-hand "Tables to scan" column shows
-      //    ALL non-lookup tables, not just the substring-matched ~91. Why:
-      //    core tables like `client`, `matter`, `invoice` typically share NO
-      //    substring with any lookup name, so the relevance filter hides them.
-      //    But the user definitely wants to scan those. So we show everything
-      //    and pre-tick only the substring-matched ones (the "suggested
-      //    scope") — the user can tick more or untick what we suggested.
+      //    Effective "lookup" list at render time:
+      //      = autoLookups − excludedAutoLookups + customLookups
+      //    Effective "scan" list at render time:
+      //      = (autoNonLookups + excludedAutoLookups) − customLookupNames
       _suggestPrepState = {
-        lookups,
-        allTx:        transactionalNames,        // every non-lookup table
-        suggestedSet,                            // names that the heuristic suggests
-        // Default lookup selection: all on
-        lookupChecked: lookups.map(() => true),
-        // Default tx selection: NOTHING ticked. Forces the user to be explicit
-        // about scope. They can click "Use suggested" to tick the heuristic's
-        // recommended set, or filter+tick specific tables.
-        txChecked:    transactionalNames.map(() => false)
+        autoLookups:         lookups,
+        autoNonLookups:      transactionalNames,
+        suggestedSet,
+        customLookups:       [],
+        excludedAutoLookups: new Set(),
+        lookupCheckedNames:  new Set(lookups.map(l => l.name)),  // all lookups ticked by default
+        txCheckedNames:      new Set()                            // nothing ticked on right by default
       };
 
       // Hide the old results panel if it was open
@@ -2894,27 +2930,76 @@
   }
 
   // ── Curation panel rendering ──────────────────────────────────────────
+  // ── Effective-list derivation ────────────────────────────────────────
+  // Computes the live "lookup" and "scan" lists from the prep state. Called
+  // by every render — single source of truth.
+  function prepEffectiveLists() {
+    const s = _suggestPrepState;
+    if (!s) return { lookups: [], scannables: [] };
+    const customNames = new Set(s.customLookups.map(l => l.name));
+    // Effective lookups = (auto - excluded) + custom
+    const effectiveLookups = s.autoLookups
+      .filter(l => !s.excludedAutoLookups.has(l.name))
+      .concat(s.customLookups);
+    // Effective scannables = (autoNonLookups + excluded) - customLookupNames
+    const effectiveScannables = [];
+    const seen = new Set();
+    for (const name of s.autoNonLookups) {
+      if (customNames.has(name)) continue;
+      if (seen.has(name)) continue;
+      effectiveScannables.push(name);
+      seen.add(name);
+    }
+    // Excluded auto-lookups are now scannables
+    for (const name of s.excludedAutoLookups) {
+      if (customNames.has(name)) continue;
+      if (seen.has(name)) continue;
+      effectiveScannables.push(name);
+      seen.add(name);
+    }
+    return { lookups: effectiveLookups, scannables: effectiveScannables };
+  }
+
+  function prepRowCountFor(name) {
+    const schema = _relSchemaCache[getRelSide()];
+    const t = (schema?.tables || []).find(t => {
+      const fullName = (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name;
+      return fullName === name;
+    });
+    return (t && typeof t.rowCount === 'number') ? t.rowCount : null;
+  }
+
   function renderSuggestPrep() {
     if (!_suggestPrepState) return;
     const panel = document.getElementById('suggest-prep');
     panel.style.display = '';
 
-    const { lookups, allTx, suggestedSet, lookupChecked, txChecked } = _suggestPrepState;
-    const suggestedCount = txChecked.filter(Boolean).length;
+    const { lookups, scannables } = prepEffectiveLists();
     document.getElementById('suggest-prep-meta').textContent =
-      lookups.length + ' lookups · ' + allTx.length + ' other tables';
+      lookups.length + ' lookups · ' + scannables.length + ' other tables';
 
     // Lookup list — sorted by row count ascending (real lookups first).
-    const lookupOrder = lookups
-      .map((t, i) => ({ t, i }))
-      .sort((a, b) => (a.t.rowCount ?? 999999) - (b.t.rowCount ?? 999999));
-    document.getElementById('prep-lookup-list').innerHTML = lookupOrder.map(({ t, i }) => {
-      const checked = lookupChecked[i] ? 'checked' : '';
-      const rc = (typeof t.rowCount === 'number') ? t.rowCount.toLocaleString() : '?';
-      return `<label class="prep-row${lookupChecked[i] ? '' : ' unchecked'}">
-        <input type="checkbox" data-lookup-idx="${i}" ${checked} onchange="prepOnLookupToggle(${i}, this.checked)" />
-        <span class="prep-name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>
+    // Custom lookups float to the top so the user sees their additions clearly.
+    const customNames = new Set(_suggestPrepState.customLookups.map(l => l.name));
+    const sorted = [...lookups].sort((a, b) => {
+      const aCustom = customNames.has(a.name) ? 0 : 1;
+      const bCustom = customNames.has(b.name) ? 0 : 1;
+      if (aCustom !== bCustom) return aCustom - bCustom;
+      return (a.rowCount ?? 999999) - (b.rowCount ?? 999999);
+    });
+    document.getElementById('prep-lookup-list').innerHTML = sorted.map(l => {
+      const isChecked = _suggestPrepState.lookupCheckedNames.has(l.name);
+      const isCustom  = customNames.has(l.name);
+      const rc = (typeof l.rowCount === 'number') ? l.rowCount.toLocaleString() : '?';
+      const customBadge = isCustom ? ' <span class="prep-custom-badge">added</span>' : '';
+      // Demote button (✕) — moves the table back to the right side. For
+      // custom lookups it removes them entirely; for auto-lookups it adds
+      // them to excludedAutoLookups so they reappear as scannable.
+      return `<label class="prep-row${isChecked ? '' : ' unchecked'}">
+        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="prepOnLookupToggleByName('${escapeAttr(l.name)}', this.checked)" />
+        <span class="prep-name" title="${escapeHtml(l.name)}">${escapeHtml(l.name)}${customBadge}</span>
         <span class="prep-rc">${rc}</span>
+        <button class="prep-action-btn" title="Move back to scan side" onclick="prepDemoteLookup('${escapeAttr(l.name)}'); event.preventDefault();">✕</button>
       </label>`;
     }).join('');
     updatePrepLookupMeta();
@@ -2924,59 +3009,45 @@
   }
 
   // Tx list rendering. Renders ALL rows (no cap) — testing showed that even
-  // 2400+ checkboxes render in well under a second on a modern browser, and
-  // capping the list silently hid tables the user wanted to tick. Filter
-  // narrows the list when needed.
+  // 2400+ checkboxes render in well under a second on a modern browser.
+  // Each row has a "+" button to promote the table to the lookup side.
   function prepRenderTxList() {
     if (!_suggestPrepState) return;
-    const { allTx, suggestedSet, txChecked } = _suggestPrepState;
-    const schema = _relSchemaCache[getRelSide()];
-    // Build a name → rowCount lookup once
-    const rowCountByName = (() => {
-      const m = new Map();
-      for (const t of (schema?.tables || [])) {
-        const fullName = (t.schema && t.schema !== 'dbo' ? t.schema + '.' : '') + t.name;
-        m.set(fullName, (typeof t.rowCount === 'number') ? t.rowCount : null);
-      }
-      return m;
-    })();
+    const { scannables } = prepEffectiveLists();
+    const { suggestedSet, txCheckedNames } = _suggestPrepState;
 
     const filterEl = document.getElementById('prep-tx-filter');
     const filter = (filterEl ? filterEl.value : '').trim().toLowerCase();
 
-    // Build the visible row list. Sort: suggested first (by rowCount asc, so
-    // small lookup-like tables float up), then non-suggested by rowCount desc
-    // (so big core tables — Matter, Client, GLPost — appear high in the list).
-    const allRows = allTx
-      .map((name, i) => ({ name, i }))
-      .filter(r => !filter || r.name.toLowerCase().includes(filter));
+    const allRows = scannables
+      .filter(name => !filter || name.toLowerCase().includes(filter))
+      .map(name => ({ name }));
 
     allRows.sort((a, b) => {
       const aSugg = suggestedSet.has(a.name) ? 0 : 1;
       const bSugg = suggestedSet.has(b.name) ? 0 : 1;
       if (aSugg !== bSugg) return aSugg - bSugg;
       if (aSugg === 0) {
-        // both suggested: smallest first (lookups-like)
-        return (rowCountByName.get(a.name) ?? 999999) - (rowCountByName.get(b.name) ?? 999999);
+        return (prepRowCountFor(a.name) ?? 999999) - (prepRowCountFor(b.name) ?? 999999);
       }
-      // both non-suggested: biggest first (core tables)
-      return (rowCountByName.get(b.name) ?? -1) - (rowCountByName.get(a.name) ?? -1);
+      return (prepRowCountFor(b.name) ?? -1) - (prepRowCountFor(a.name) ?? -1);
     });
 
     const listEl = document.getElementById('prep-tx-list');
     if (!allRows.length) {
       listEl.innerHTML = '<div class="prep-empty">No tables match this filter.</div>';
     } else {
-      const rowsHtml = allRows.map(({ name, i }) => {
-        const checked    = txChecked[i] ? 'checked' : '';
-        const isSuggest  = suggestedSet.has(name);
-        const rc         = rowCountByName.get(name);
-        const rcText     = (typeof rc === 'number') ? rc.toLocaleString() : '';
+      const rowsHtml = allRows.map(({ name }) => {
+        const isChecked = txCheckedNames.has(name);
+        const isSuggest = suggestedSet.has(name);
+        const rc        = prepRowCountFor(name);
+        const rcText    = (typeof rc === 'number') ? rc.toLocaleString() : '';
         const suggestBadge = isSuggest ? ' <span class="prep-suggest-badge">suggested</span>' : '';
-        return `<label class="prep-row${txChecked[i] ? '' : ' unchecked'}">
-          <input type="checkbox" data-tx-idx="${i}" ${checked} onchange="prepOnTxToggle(${i}, this.checked)" />
+        return `<label class="prep-row${isChecked ? '' : ' unchecked'}">
+          <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="prepOnTxToggleByName('${escapeAttr(name)}', this.checked)" />
           <span class="prep-name" title="${escapeHtml(name)}">${escapeHtml(name)}${suggestBadge}</span>
           <span class="prep-rc">${rcText}</span>
+          <button class="prep-action-btn" title="Use as lookup table" onclick="prepPromoteToLookup('${escapeAttr(name)}'); event.preventDefault();">+</button>
         </label>`;
       }).join('');
       listEl.innerHTML = rowsHtml;
@@ -2987,22 +3058,23 @@
 
   function updatePrepLookupMeta() {
     if (!_suggestPrepState) return;
-    const sel = _suggestPrepState.lookupChecked.filter(Boolean).length;
-    document.getElementById('prep-lookup-meta').textContent =
-      sel + ' / ' + _suggestPrepState.lookupChecked.length + ' selected';
+    const { lookups } = prepEffectiveLists();
+    const sel = lookups.filter(l => _suggestPrepState.lookupCheckedNames.has(l.name)).length;
+    document.getElementById('prep-lookup-meta').textContent = sel + ' / ' + lookups.length + ' selected';
   }
 
   function updatePrepTxMeta() {
     if (!_suggestPrepState) return;
-    const sel = _suggestPrepState.txChecked.filter(Boolean).length;
-    document.getElementById('prep-tx-meta').textContent =
-      sel + ' / ' + _suggestPrepState.txChecked.length + ' selected';
+    const { scannables } = prepEffectiveLists();
+    const sel = scannables.filter(n => _suggestPrepState.txCheckedNames.has(n)).length;
+    document.getElementById('prep-tx-meta').textContent = sel + ' / ' + scannables.length + ' selected';
   }
 
   function updatePrepCostEst() {
     if (!_suggestPrepState) return;
-    const txSel     = _suggestPrepState.txChecked.filter(Boolean).length;
-    const chunks    = Math.max(1, Math.ceil(txSel / 20));   // CHUNK_SIZE = 20
+    const { scannables } = prepEffectiveLists();
+    const txSel = scannables.filter(n => _suggestPrepState.txCheckedNames.has(n)).length;
+    const chunks    = Math.max(1, Math.ceil(txSel / 20));
     const seconds   = chunks * 30;
     const minutes   = Math.floor(seconds / 60);
     const remainder = seconds % 60;
@@ -3011,57 +3083,173 @@
       chunks + ' chunk' + (chunks !== 1 ? 's' : '') + ' · ~' + timeText;
   }
 
-  function prepOnLookupToggle(idx, checked) {
+  function prepOnLookupToggleByName(name, checked) {
     if (!_suggestPrepState) return;
-    _suggestPrepState.lookupChecked[idx] = !!checked;
-    // Update row class without re-rendering everything
-    const row = document.querySelector('label.prep-row input[data-lookup-idx="' + idx + '"]')?.closest('.prep-row');
-    if (row) row.classList.toggle('unchecked', !checked);
+    if (checked) _suggestPrepState.lookupCheckedNames.add(name);
+    else         _suggestPrepState.lookupCheckedNames.delete(name);
+    // Update row class without full re-render
+    const inputs = document.querySelectorAll('#prep-lookup-list input[type="checkbox"]');
+    inputs.forEach(cb => {
+      const row = cb.closest('.prep-row');
+      const rowName = row?.querySelector('.prep-name')?.textContent?.split(' ')[0];
+      if (cb.checked === checked) row?.classList.toggle('unchecked', !cb.checked);
+    });
     updatePrepLookupMeta();
   }
 
-  function prepOnTxToggle(idx, checked) {
+  function prepOnTxToggleByName(name, checked) {
     if (!_suggestPrepState) return;
-    _suggestPrepState.txChecked[idx] = !!checked;
-    const row = document.querySelector('label.prep-row input[data-tx-idx="' + idx + '"]')?.closest('.prep-row');
-    if (row) row.classList.toggle('unchecked', !checked);
+    if (checked) _suggestPrepState.txCheckedNames.add(name);
+    else         _suggestPrepState.txCheckedNames.delete(name);
+    // Quick row-class refresh; cheaper than full re-render
+    const inputs = document.querySelectorAll('#prep-tx-list input[type="checkbox"]');
+    inputs.forEach(cb => {
+      const row = cb.closest('.prep-row');
+      if (cb.checked === checked) row?.classList.toggle('unchecked', !cb.checked);
+    });
     updatePrepTxMeta();
     updatePrepCostEst();
   }
 
+  // ── Promote a scan-side table to a lookup ────────────────────────────
+  // Builds a custom-lookup entry with the table's schema columns. Auto-picks
+  // the first id-looking column as the lookup column; user can edit later
+  // (column picker is a future enhancement).
+  function prepPromoteToLookup(name) {
+    if (!_suggestPrepState) return;
+    const schema = _relSchemaCache[getRelSide()];
+    const t = (schema?.tables || []).find(tt => {
+      const full = (tt.schema && tt.schema !== 'dbo' ? tt.schema + '.' : '') + tt.name;
+      return full === name;
+    });
+    if (!t) { console.warn('[promote] table not found in schema:', name); return; }
+
+    // Same regex as the heuristic uses to identify id columns
+    const ID_COL_RE = /^(id|code|key|abbrev(iation)?|short(_?code)?|num(ber)?|nbr|cd)$|_id$|_code$|_key$/i;
+    const cols = (t.columns || []).map(c => ({ name: c.name, type: c.type || c.dataType }));
+    const idCol = cols.find(c => ID_COL_RE.test(c.name)) || cols[0];
+
+    _suggestPrepState.customLookups.push({
+      name:         name,
+      schema:       t.schema,
+      rowCount:     (typeof t.rowCount === 'number') ? t.rowCount : null,
+      columns:      cols,
+      lookupColumn: idCol?.name
+    });
+    // Auto-tick the new lookup; un-tick from scan if it was ticked
+    _suggestPrepState.lookupCheckedNames.add(name);
+    _suggestPrepState.txCheckedNames.delete(name);
+    renderSuggestPrep();
+  }
+
+  // ── Demote a lookup back to the scan side ────────────────────────────
+  // Custom lookups: removed entirely (back to autoNonLookups list).
+  // Auto-lookups: added to excludedAutoLookups (still tracked, can be
+  // re-promoted via the + button).
+  function prepDemoteLookup(name) {
+    if (!_suggestPrepState) return;
+    const customIdx = _suggestPrepState.customLookups.findIndex(l => l.name === name);
+    if (customIdx >= 0) {
+      _suggestPrepState.customLookups.splice(customIdx, 1);
+    } else {
+      _suggestPrepState.excludedAutoLookups.add(name);
+    }
+    _suggestPrepState.lookupCheckedNames.delete(name);
+    renderSuggestPrep();
+  }
+
   function prepToggleAllLookups(check) {
     if (!_suggestPrepState) return;
-    _suggestPrepState.lookupChecked = _suggestPrepState.lookupChecked.map(() => !!check);
+    const { lookups } = prepEffectiveLists();
+    if (check) lookups.forEach(l => _suggestPrepState.lookupCheckedNames.add(l.name));
+    else       _suggestPrepState.lookupCheckedNames.clear();
     renderSuggestPrep();
   }
 
   function prepToggleAllTx(check) {
     if (!_suggestPrepState) return;
-    // "All visible" toggles every row that's actually visible in the list.
-    // With the render cap removed, "all visible" with no filter active means
-    // ALL rows. With a filter active, just the rows that pass the filter.
     const filter = (document.getElementById('prep-tx-filter')?.value || '').trim().toLowerCase();
-    const { allTx, txChecked } = _suggestPrepState;
-
-    if (filter) {
-      allTx.forEach((name, i) => {
-        if (name.toLowerCase().includes(filter)) txChecked[i] = !!check;
-      });
-    } else {
-      // No filter: every row is visible, so tick/untick everything
-      for (let i = 0; i < txChecked.length; i++) txChecked[i] = !!check;
-    }
+    const { scannables } = prepEffectiveLists();
+    const target = filter
+      ? scannables.filter(n => n.toLowerCase().includes(filter))
+      : scannables;
+    if (check) target.forEach(n => _suggestPrepState.txCheckedNames.add(n));
+    else       target.forEach(n => _suggestPrepState.txCheckedNames.delete(n));
     prepRenderTxList();
   }
 
-  // Tick the heuristic's suggested-scope tables (the substring-matched set).
-  // Useful as a "back to defaults" shortcut after the user has been
-  // tinkering with the selection.
   function prepTickSuggestedScope() {
     if (!_suggestPrepState) return;
-    const { allTx, suggestedSet } = _suggestPrepState;
-    _suggestPrepState.txChecked = allTx.map(name => suggestedSet.has(name));
+    const { suggestedSet } = _suggestPrepState;
+    _suggestPrepState.txCheckedNames = new Set([...suggestedSet]);
     prepRenderTxList();
+  }
+
+  // ── Save / load scope to Cosmos ──────────────────────────────────────
+  // Save sends only the deltas (custom lookups + excluded auto-lookups +
+  // ticked scan tables). Load applies those onto the freshly-detected
+  // auto state, so schema changes pick up new tables automatically.
+  async function prepSaveScope() {
+    if (!_suggestPrepState) return;
+    const projectId = getCurrentProjectId();
+    if (!projectId) { showToast('No active project.', 'error'); return; }
+    const btn = document.getElementById('prep-save-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      await apiData('quality-save-scope', {
+        projectId,
+        connSide:            getRelSide(),
+        customLookups:       _suggestPrepState.customLookups,
+        excludedAutoLookups: [..._suggestPrepState.excludedAutoLookups],
+        scanTables:          [..._suggestPrepState.txCheckedNames]
+      });
+      showToast('Scope saved.', 'success');
+    } catch (e) {
+      console.error('[prep] save failed:', e);
+      showToast('Save failed: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save scope'; }
+    }
+  }
+
+  async function prepLoadScope() {
+    if (!_suggestPrepState) return;
+    const projectId = getCurrentProjectId();
+    if (!projectId) { showToast('No active project.', 'error'); return; }
+    const btn = document.getElementById('prep-load-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+    try {
+      const data = await apiData('quality-load-scope',
+                                  { projectId, connSide: getRelSide() }, 'GET');
+      const scope = data.scope;
+      if (!scope) { showToast('No saved scope for this project + side.', 'error'); return; }
+      // Apply: custom lookups, excluded auto-lookups, ticked scan tables.
+      // Lookups themselves are re-detected from the current schema, so adding
+      // a new auto-lookup via heuristic upgrade is picked up automatically.
+      _suggestPrepState.customLookups       = Array.isArray(scope.customLookups) ? scope.customLookups : [];
+      _suggestPrepState.excludedAutoLookups = new Set(scope.excludedAutoLookups || []);
+      _suggestPrepState.txCheckedNames      = new Set(scope.scanTables || []);
+      // Tick the effective lookups (all auto + all custom) — the user can
+      // untick after loading if they want to.
+      const { lookups } = prepEffectiveLists();
+      _suggestPrepState.lookupCheckedNames = new Set(lookups.map(l => l.name));
+      renderSuggestPrep();
+      showToast('Saved scope loaded.', 'success');
+    } catch (e) {
+      console.error('[prep] load failed:', e);
+      showToast('Load failed: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Load saved scope'; }
+    }
+  }
+
+  function prepResetToDefaults() {
+    if (!_suggestPrepState) return;
+    _suggestPrepState.customLookups       = [];
+    _suggestPrepState.excludedAutoLookups = new Set();
+    _suggestPrepState.txCheckedNames      = new Set();
+    _suggestPrepState.lookupCheckedNames  = new Set(_suggestPrepState.autoLookups.map(l => l.name));
+    renderSuggestPrep();
   }
 
   function closeSuggestPrep() {
@@ -3070,13 +3258,20 @@
     setSchemaStatus('', 'idle');
   }
 
+  // Helper: escape attribute-safe string (for inline onclick handlers).
+  // Tables names typically don't have quotes, but defend anyway.
+  function escapeAttr(s) {
+    return String(s).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+  }
+
   // ── The actual LLM run, triggered from the curation panel ─────────────
   async function runSuggestWithCuratedScope() {
     if (!_suggestPrepState) return;
-    const { lookups, allTx, lookupChecked, txChecked } = _suggestPrepState;
+    const { lookups, scannables } = prepEffectiveLists();
+    const { lookupCheckedNames, txCheckedNames } = _suggestPrepState;
 
-    const selectedLookups = lookups.filter((_, i) => lookupChecked[i]);
-    const selectedTx      = allTx.filter((_, i) => txChecked[i]);
+    const selectedLookups = lookups.filter(l => lookupCheckedNames.has(l.name));
+    const selectedTx      = scannables.filter(n => txCheckedNames.has(n));
 
     if (!selectedLookups.length) {
       showToast('Tick at least one lookup table first.', 'error');
