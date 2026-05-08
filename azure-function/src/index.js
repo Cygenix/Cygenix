@@ -1846,25 +1846,53 @@ app.http('data', {
               n: String(t.name || '').trim(),
               c: (Array.isArray(t.columns) ? t.columns : [])
                    .slice(0, SUGGEST_MAX_COLS_PER)
-                   .map(c => ({ n: String(c.name || ''), t: simplifyType(c.type || c.dataType) }))
+                   .map(c => {
+                     const obj = { n: String(c.name || ''), t: simplifyType(c.type || c.dataType) };
+                     // Optional sample values from the lookup column (helps the
+                     // model see what FK values look like — e.g. 3-letter codes).
+                     if (Array.isArray(c.samples) && c.samples.length) {
+                       obj.s = c.samples.slice(0, 5).map(s => String(s).slice(0, 40));
+                     }
+                     return obj;
+                   })
             })).filter(t => t.n);
             if (!lookupBlock.length) return err(400, 'stage=build-lookup-block: no usable lookup names');
 
             // ─── Trust the client's curation ─────────────────────────────────
             // The client sends a pre-curated list of tables to scan (after the
-            // user has reviewed the suggestions in the prep panel). We used to
-            // re-filter here using stem-matching against lookup names, but that
-            // discards core tables (e.g. "glpost", "timecard") whose names share
-            // no substring with any lookup. Result: model would receive zero
-            // transactional tables and return zero suggestions. Now we just
-            // pass through whatever the client sent, capped for safety.
+            // user has reviewed the suggestions in the prep panel). We just
+            // pass through what's sent, capped for safety.
+            //
+            // transactionalIn entries can be either:
+            //   - a string (table name only — legacy form)
+            //   - an object { name, columns:[{name,type,samples?}] } — new richer form
+            // The richer form lets the model reason about column names and
+            // sample data, which is critical for non-obvious FKs (e.g. 3E
+            // matter columns mbillaty/msupaty/morgaty referencing timekeep).
             stage = 'pass-through-tx';
-            const transactionalTables = transactionalIn.slice(0, SUGGEST_MAX_TX_TABLES);
+            const transactionalBlock = transactionalIn.slice(0, SUGGEST_MAX_TX_TABLES).map(t => {
+              if (typeof t === 'string') return { n: t, c: null };
+              const cols = Array.isArray(t.columns) ? t.columns.slice(0, SUGGEST_MAX_COLS_PER) : null;
+              return {
+                n: String(t.name || '').trim(),
+                c: cols ? cols.map(c => {
+                  const obj = { n: String(c.name || ''), t: simplifyType(c.type || c.dataType) };
+                  if (Array.isArray(c.samples) && c.samples.length) {
+                    obj.s = c.samples.slice(0, 5).map(s => String(s).slice(0, 40));
+                  }
+                  return obj;
+                }) : null
+              };
+            }).filter(t => t.n);
+
+            // Count tables with column data so the log shows whether we're
+            // running in the new richer mode or fallback to names-only.
+            const txWithCols = transactionalBlock.filter(t => Array.isArray(t.c) && t.c.length).length;
 
             ctx.log(`quality-suggest-rels: stage=${stage} ` +
                     `lookups=${lookupBlock.length} ` +
-                    `transactionalIn=${transactionalIn.length} sentToModel=${transactionalTables.length} ` +
-                    `existing=${existingRels.length}`);
+                    `transactionalIn=${transactionalIn.length} sentToModel=${transactionalBlock.length} ` +
+                    `withCols=${txWithCols} existing=${existingRels.length}`);
 
             stage = 'build-prompt';
             const SYSTEM_PROMPT = `You are a database schema analyst identifying soft (non-FK) reference relationships.
@@ -1872,23 +1900,24 @@ app.http('data', {
 A "soft FK" or "inferred relationship" is when a column in one table appears intended to reference a primary key or code in a lookup table, but no formal FK constraint exists.
 
 The user's schema has been pre-filtered into two groups:
-- LOOKUP TABLES: small reference tables, given to you with their full column lists.
-- OTHER TABLES: a list of tables whose names share a substring with one or more lookup tables, given as names only. Their column lists are not shown — infer column names from the table name and standard naming conventions.
+- LOOKUP TABLES: small reference tables, given to you with their full column lists. Some columns may include sample values ("s") — these are the most common distinct values in that column.
+- OTHER TABLES: tables to scan for soft FK columns. Each entry has a name ("n") and may include a column list ("c"). Some columns may include sample values ("s"). When column samples are 3- or 4-character codes that match samples from a lookup column, that's strong evidence of a soft FK.
 
-Your task: for each LOOKUP TABLE, identify columns in OTHER tables (or in other lookups) that look like soft FKs to it.
+Your task: for each column in OTHER tables, identify if it looks like a soft FK to a column in LOOKUP TABLES.
 
 Rules:
 1. Output ONLY a JSON array. No prose, no markdown fences.
 2. Each element is an object with EXACTLY: sourceTable, sourceColumn, lookupTable, lookupColumn, confidence (high|med), reasoning (max 12 words, one short phrase).
-3. CONFIDENCE: high = strong name match + compatible types; med = plausible but ambiguous, or column name is inferred. DO NOT include low-confidence suggestions.
+3. CONFIDENCE: high = strong evidence (name match, sample-value overlap, or strong domain convention); med = plausible but ambiguous. DO NOT include low-confidence suggestions.
 4. SKIP relationships in the "Already configured" list.
 5. NEVER suggest self-references.
 6. Cap at ${SUGGEST_OUTPUT_CAP} suggestions. Be SELECTIVE — quality over quantity.
-7. If a table has no plausible lookup match, skip it entirely. Do not invent matches.
-8. If none found, return [].
-9. Schema dialect: SQL Server. Type buckets: int, number, date, string, guid, binary, unknown.
+7. If no plausible lookup match for a column, skip it. Do not invent matches.
+8. Use sample values when present — they reveal patterns the column name doesn't (e.g. timekeeper initials like "JAB", "CRS"). When source.col samples and lookup.col samples overlap, confidence is high.
+9. If none found, return [].
+10. Schema dialect: SQL Server. Type buckets: int, number, date, string, guid, binary, unknown.
 
-Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (e.g. "direct name match", "standard FK convention", "lookup table for tax regions").`;
+Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (e.g. "sample codes match", "standard FK convention", "lookup table for tax regions").`;
 
             const existingBlock = existingRels.length
               ? 'Already configured (do not propose these):\n' +
@@ -1899,10 +1928,10 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
               : '';
 
             const userMsg = existingBlock +
-              'LOOKUP TABLES (n=name, c=columns, t=type):\n```json\n' +
+              'LOOKUP TABLES (n=name, c=columns, t=type, s=sample values):\n```json\n' +
               JSON.stringify(lookupBlock) + '\n```\n\n' +
-              'OTHER TABLES (' + transactionalTables.length + ' related to one or more lookups; column lists not provided):\n```\n' +
-              transactionalTables.join(', ') + '\n```';
+              'OTHER TABLES (' + transactionalBlock.length + ' tables; n=name, c=columns or null, t=type, s=sample values):\n```json\n' +
+              JSON.stringify(transactionalBlock) + '\n```';
 
             const promptKb = Math.round(userMsg.length / 1024);
             ctx.log(`quality-suggest-rels: prompt=${promptKb}KB ~${Math.round(userMsg.length / 4)} tokens`);
@@ -2005,7 +2034,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
             return ok({
               suggestions:         cleanSuggestions,
               lookupCandidates:    lookupBlock.length,
-              transactionalTables: transactionalTables.length,
+              transactionalTables: transactionalBlock.length,
               transactionalTotal:  transactionalIn.length
             });
 
