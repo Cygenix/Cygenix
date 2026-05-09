@@ -137,6 +137,9 @@
        page never spills past the right edge. */
     max-width: min(1800px, calc(100vw - 230px - 32px));
     box-sizing: border-box;
+    /* Safety net: if any descendant tries to grow wider than this page,
+       clip it rather than letting it trigger a page-level scrollbar. */
+    overflow-x: hidden;
   }
   body.cyg-collapsed .page {
     max-width: min(1800px, calc(100vw - 54px - 32px));
@@ -218,14 +221,19 @@
   /* ── Layout grid ─────────────────────────────────────────────────────── */
   .grid {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    /* Checks gets 2 parts, Saved Reports 1 part (min 280px so it stays
+       readable on narrow screens, max 420px so it doesn't get silly wide
+       on big monitors). Previous 1fr 320px left Saved Reports cramped. */
+    grid-template-columns: 2fr minmax(280px, 420px);
     gap: 1rem;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
   }
   /* Grid items default to min-width:auto, which expands to fit content and
      can push the whole page past its max-width. Force them to shrinkable. */
   .grid > * { min-width: 0; }
-  @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
 
   .panel {
     background: var(--bg2);
