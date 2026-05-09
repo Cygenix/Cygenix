@@ -16,69 +16,85 @@
  *   setPat(token)                → void
  *   clearPat()                   → void
  *   isConfigured()               → boolean
+ *   getRememberedLogin()         → string | null
  *   whoami()                     → Promise<{ login, scopes, has_repo_scope, ... }>
  *   ensureRepo(name, opts)       → Promise<{ existed, full_name, default_branch, html_url }>
  *   getRepoState(name)           → Promise<{ default_branch, latest_commit_sha, html_url }>
  *   pushFiles(name, opts)        → Promise<{ commit_sha, commit_html_url, file_count }>
+ *   pushProject(opts)            → Promise<{ ok, repo, commit } | { ok:false, conflict:true, ... }>
  *
- * Function key:
- *   The Azure Function uses authLevel: 'function', so every call needs ?code=.
- *   We re-use whatever the rest of the dashboard already uses to call /api/db
- *   and /api/data. The function key is read from window.CYGENIX_FUNCTION_KEY,
- *   set elsewhere at page-load. If a different mechanism is in place (e.g.
- *   the URL is built by a helper) you can override the FUNCTION_BASE constant
- *   in one place at the top.
+ * Function URL + key:
+ *   Hardcoded below to the cygenix-db-api Function App, matching the pattern
+ *   used by the user-pill enhancement IIFE in dashboard.html (~line 5074).
+ *   The GitHub proxy lives on the same Function App as /api/data and /api/db,
+ *   so it shares the same key.
+ *
+ *   This is NOT the same key as `cygenix_fn_url` / `cygenix_fn_key` in
+ *   localStorage — those are user-configured Target Database connections,
+ *   which is a different concern. Don't read from them here.
  *
  * User identity:
- *   The endpoint requires the x-user-id header (matches /api/data, /api/agent
- *   etc.). We read window.CYGENIX_USER_ID, which is set by the existing auth
- *   layer after MSAL sign-in. If it's missing, calls fail loudly with a clear
- *   error rather than silently dropping the header.
+ *   Mirrors getUserIdFromMsal() at dashboard.html line 5078 — walks
+ *   localStorage looking for the MSAL account record. Falls back to
+ *   `cygenix_active_user` if MSAL state isn't readable.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 (function () {
   'use strict';
 
-  // ── Config — adjust here if the rest of the codebase moves ────────────────
-  // FUNCTION_BASE: full base URL of the Azure Function. The same value the
-  // existing /api/db calls use. If your dashboard already centralises this in
-  // a constant or a helper (e.g. window.CYGENIX_FN_BASE), change the line
-  // below to read from there instead. Hard-coded to the production endpoint
-  // for now to match how /api/db is currently invoked from the page.
-  const FUNCTION_BASE =
-    (typeof window !== 'undefined' && window.CYGENIX_FN_BASE) ||
-    'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net';
+  // ── Function App config ───────────────────────────────────────────────────
+  // Same Function App as /api/data, /api/db, /api/agent. The route segment
+  // changes per feature but the host + key are shared.
+  const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/github';
+  const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
 
-  // localStorage keys. Prefixed `cygenix_gh_` so they're easy to spot and
-  // wipe in devtools, and so they don't collide with anything else (the
-  // existing app uses cygenix_* without the gh_ infix).
-  const LS_PAT     = 'cygenix_gh_pat';
-  const LS_LOGIN   = 'cygenix_gh_login';   // remembered after a successful whoami,
-                                            // for showing "Connected as @username"
-                                            // in the UI without re-calling whoami
+  // localStorage keys for this feature. Prefixed `cygenix_gh_` so they're
+  // easy to spot, easy to wipe, and don't collide with anything else.
+  const LS_PAT   = 'cygenix_gh_pat';
+  const LS_LOGIN = 'cygenix_gh_login';   // remembered after a successful whoami,
+                                         // for showing "Connected as @username"
+                                         // in the UI without re-calling whoami
 
-  // ── Internal: build a function-key-aware URL ──────────────────────────────
-  function fnUrl(action) {
-    // Read the function key fresh each call. If it's rotated mid-session,
-    // re-loading the page will pick up the new one without a code change.
-    const key = (typeof window !== 'undefined' && window.CYGENIX_FUNCTION_KEY) || '';
-    const sep = key ? `?code=${encodeURIComponent(key)}` : '';
-    return `${FUNCTION_BASE}/api/github/${action}${sep}`;
+  // ── Resolve the current user's email ──────────────────────────────────────
+  // This is exactly the strategy the user-pill enhancement uses
+  // (getUserIdFromMsal at dashboard.html ~line 5078). Walks localStorage
+  // looking for an MSAL account record. Falls back to cygenix_active_user
+  // because that key is reliably populated after sign-in.
+  function getUserId() {
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (!k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+        const raw = localStorage.getItem(k);
+        if (!raw || raw[0] !== '{') continue;
+        let obj;
+        try { obj = JSON.parse(raw); } catch { continue; }
+        if (obj && obj.username && obj.authorityType && obj.homeAccountId) {
+          return String(obj.username || '').trim().toLowerCase();
+        }
+      }
+    } catch {}
+    // Fallback for environments where MSAL keys aren't enumerable yet but
+    // active_user has been written.
+    try {
+      const fallback = localStorage.getItem('cygenix_active_user');
+      if (fallback) return String(fallback).trim().toLowerCase();
+    } catch {}
+    return null;
   }
 
-  // ── Internal: get current user id, throwing if missing ────────────────────
   function requireUserId() {
-    const uid = (typeof window !== 'undefined' && window.CYGENIX_USER_ID) || '';
+    const uid = getUserId();
     if (!uid) {
       throw new Error(
-        'CygenixGitHub: window.CYGENIX_USER_ID is not set. The user must be ' +
-        'signed in before calling GitHub features.'
+        'CygenixGitHub: not signed in. The user must sign in before using GitHub features.'
       );
     }
     return uid;
   }
 
-  // ── Internal: POST to a GitHub-proxy action ───────────────────────────────
+  // ── Internal: POST to a github-proxy action ───────────────────────────────
   // Always includes the PAT and userId. Throws Error with .status and .body
   // populated on non-2xx so callers can branch on error type (409 conflict
   // is the main one that needs special handling in the UI).
@@ -90,7 +106,9 @@
       throw e;
     }
 
-    const resp = await fetch(fnUrl(action), {
+    const url = `${API_BASE}/${action}?code=${encodeURIComponent(FUNC_CODE)}`;
+
+    const resp = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -268,6 +286,8 @@
     clearPat,
     isConfigured,
     getRememberedLogin,
+    // Identity (exposed for debugging — UI code shouldn't need to call this)
+    _getUserId: getUserId,
     // Direct API
     whoami,
     ensureRepo,
