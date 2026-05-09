@@ -37,7 +37,8 @@ const err = (code, msg, extra) => ({
  
 // Single minimal route. If THIS doesn't register, the problem is something
 // fundamental about how this file is being loaded — not anything inside it.
-app.http('github', {
+
+app.http('cygenix-github', {
   methods:   ['POST', 'OPTIONS', 'GET'],
   authLevel: 'function',
   route:     'github/{action}',
