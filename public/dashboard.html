@@ -5,6 +5,10 @@
 <script src="/auth-gate.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- Site-wide theme overrides (Financial palette + future themes).
+     This must load BEFORE the pre-paint script below so its CSS variables
+     are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-theme.css">
 <meta name="theme-color" content="#0d0f14">
 <!-- Theme pre-paint: read the user's saved theme and apply it to <html> BEFORE
      any content renders, so we don't get a flash of the wrong theme on load.
@@ -1379,9 +1383,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <select id="pref-theme" class="form-input" style="margin-top:5px" onchange="applyThemePreview(this.value)">
               <option value="dark">Dark (default)</option>
               <option value="light">Light</option>
+              <option value="financial">Financial — FT pink</option>
               <option value="auto">Auto — follow system</option>
             </select>
-            <div style="font-size:11px;color:var(--text3);margin-top:5px">Light mode uses a Boomi-style palette: soft grey workspace, white panels, dark navy topbar. Click Save to persist.</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:5px">Light mode: soft grey workspace, white panels, dark navy topbar. Financial: FT-style cream workspace with salmon-pink accent and dark masthead. Click Save to persist.</div>
           </div>
           <div>
             <label class="form-label">Default landing view</label>
@@ -7805,8 +7810,14 @@ function applyThemePreview(theme) {
   }
   document.documentElement.setAttribute('data-theme', resolved);
   // Keep the browser chrome colour (mobile address bar, etc.) in sync.
+  // Financial uses the dark FT-style masthead, so its mobile chrome matches that.
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', resolved === 'light' ? '#13161d' : '#0d0f14');
+  if (meta) {
+    const chrome = resolved === 'light'     ? '#13161d'
+                 : resolved === 'financial' ? '#1A1614'
+                 : '#0d0f14';
+    meta.setAttribute('content', chrome);
+  }
 }
 
 // API key handlers wired to the new Settings card. Same backing storage as

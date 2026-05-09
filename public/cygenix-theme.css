@@ -1,0 +1,122 @@
+/* cygenix-theme.css — Site-wide theme overrides.
+ *
+ * The Cygenix base palette lives in dashboard.html (and matched copies in
+ * other pages) inside :root and html[data-theme="light"]. This file adds
+ * additional named themes that anyone can switch to via the existing
+ * cygenix_app_prefs.theme setting (Settings → Theme dropdown).
+ *
+ * How it works:
+ *   - Every page already has a pre-paint <script> that reads
+ *     localStorage.cygenix_app_prefs.theme and sets <html data-theme="...">.
+ *   - Sidebar (cygenix-sidebar.js) and all page CSS reference variables like
+ *     --bg, --bg2, --text, --accent — so re-mapping these variables retones
+ *     the entire app, sidebar included, with zero per-page changes.
+ *
+ * To add this stylesheet to a page, add ONE line at the top of <head>:
+ *   <link rel="stylesheet" href="/cygenix-theme.css">
+ *
+ * Add new themes here by adding another html[data-theme="name"] block.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+
+/* ───── Financial — Financial Times salmon-pink palette ─────
+ * Backdrop: warm FT newsprint cream (#FFF1E5 family).
+ * Accent:   #FCD0B1 (per spec) for highlights and active items.
+ * Text:     dark FT charcoal (#33302E) for high readability on cream.
+ *
+ * Designed to feel editorial and warm rather than tech-cold. The topbar is
+ * kept dark (FT-style) for contrast against the cream workspace, similar to
+ * how FT.com pairs its salmon paper with a near-black masthead.
+ */
+html[data-theme="financial"]{
+  /* Workspace surfaces — graduated FT-cream tones */
+  --bg:#FFF1E5;       /* main workspace — classic FT salmon-pink paper */
+  --bg2:#FFFAF5;      /* panels, cards, sidebar — almost white cream */
+  --bg3:#FFF8F0;      /* sub-panel / hover surface */
+  --bg4:#F2DFCE;      /* deeper FT cream for inset / pressed states */
+
+  /* Borders — warm taupe instead of cold grey */
+  --border:rgba(80,50,30,0.10);
+  --border2:rgba(80,50,30,0.18);
+
+  /* Text — FT-style dark charcoal with warm undertone */
+  --text:#33302E;
+  --text2:#5C5852;
+  --text3:#8A847C;
+
+  /* Accent — the FT pink the user picked */
+  --accent:#FCD0B1;
+  --accent2:#F5B98A;                          /* darker variant for hover/strong */
+  --accent-glow:rgba(252,208,177,0.35);       /* soft halo for active nav, focus rings */
+
+  /* Status colours — re-tuned for warm cream backgrounds.
+   * Original blues/greens look cold against cream; these lean warmer
+   * but stay readable for badges, dots, and chart accents. */
+  --green:#2E8B57;     --green-bg:rgba(46,139,87,0.12);
+  --amber:#C77700;     --amber-bg:rgba(199,119,0,0.12);
+  --red:#C0392B;       --red-bg:rgba(192,57,43,0.10);
+  --purple:#8E44AD;    --purple-bg:rgba(142,68,173,0.12);
+  --teal:#0D7A80;      --teal-bg:rgba(13,122,128,0.12);
+
+  /* Topbar — keep dark for FT-masthead contrast against the cream workspace.
+   * If you'd prefer a light cream topbar instead, change --topbar-bg to
+   * #FFFAF5 and --topbar-text to #33302E. */
+  --topbar-bg:#1A1614;
+  --topbar-text:#FFF1E5;
+
+  /* Tints, scrims, shadows — warm rather than neutral grey */
+  --hover-tint:rgba(80,50,30,0.04);
+  --code-tint:rgba(80,50,30,0.06);
+  --modal-scrim:rgba(40,25,15,0.45);
+  --shadow-strong:0 20px 60px rgba(80,50,30,0.18);
+  --shadow-soft:0 6px 24px rgba(80,50,30,0.12);
+}
+
+/* The topbar in this app uses an inverted (dark-on-light) treatment in
+ * light mode — we replicate that for Financial so the masthead reads as
+ * deliberate FT styling rather than a colour mismatch. These rules only
+ * apply when data-theme="financial" is active. */
+html[data-theme="financial"] .topbar{
+  background:var(--topbar-bg);
+  color:var(--topbar-text);
+  border-bottom-color:rgba(255,241,229,0.12);
+}
+html[data-theme="financial"] .topbar .logo{ color:var(--topbar-text); }
+html[data-theme="financial"] .topbar .logo span{ color:var(--accent); }
+html[data-theme="financial"] .topbar .logo-console{ color:rgba(255,241,229,0.55); }
+html[data-theme="financial"] .topbar .back-link{ color:rgba(255,241,229,0.6); }
+html[data-theme="financial"] .topbar .back-link:hover{ color:rgba(255,241,229,0.9); }
+
+/* Active-row text on a pale pink accent halo can wash out — bump active
+ * nav items to dark text when on Financial, keeping the pink as the
+ * background highlight. */
+html[data-theme="financial"] .cyg-nav-item.active{
+  color:var(--text);
+  background:var(--accent-glow);
+  border-left-color:var(--accent2);
+}
+html[data-theme="financial"] .cyg-nav-item.active .cyg-nav-icon{
+  color:var(--text);
+}
+
+/* Buttons / pills that hard-code white text on --accent (e.g. .dash-proj-active-pill)
+ * become unreadable on pale pink. Force dark text wherever the accent is
+ * used as a solid fill. Keep this list in sync with any new pill classes. */
+html[data-theme="financial"] .dash-proj-active-pill{ color:var(--text); }
+
+/* Form focus ring — the default --accent-glow is now warm pink, which is
+ * already correct, but ensure the focused border is visible on cream by
+ * switching to the darker variant. */
+html[data-theme="financial"] .form-input:focus{
+  border-color:var(--accent2);
+  box-shadow:0 0 0 3px var(--accent-glow);
+}
+
+/* Modals look better on the warmer scrim already, but boost the panel
+ * shadow so the cream-on-cream contrast doesn't lose the modal edge. */
+html[data-theme="financial"] .modal,
+html[data-theme="financial"] .dg-modal,
+html[data-theme="financial"] #user-menu,
+html[data-theme="financial"] .rc-chips-menu{
+  box-shadow:var(--shadow-strong);
+}
