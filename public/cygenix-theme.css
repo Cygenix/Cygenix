@@ -24,9 +24,8 @@
  * Accent:   #FCD0B1 (per spec) for highlights and active items.
  * Text:     dark FT charcoal (#33302E) for high readability on cream.
  *
- * Designed to feel editorial and warm rather than tech-cold. The topbar is
- * kept dark (FT-style) for contrast against the cream workspace, similar to
- * how FT.com pairs its salmon paper with a near-black masthead.
+ * Designed to feel editorial and warm. The topbar is kept cream-on-cream
+ * so the masthead flows into the workspace rather than creating a dark band.
  */
 html[data-theme="financial"]{
   /* Workspace surfaces — graduated FT-cream tones */
@@ -58,11 +57,11 @@ html[data-theme="financial"]{
   --purple:#8E44AD;    --purple-bg:rgba(142,68,173,0.12);
   --teal:#0D7A80;      --teal-bg:rgba(13,122,128,0.12);
 
-  /* Topbar — keep dark for FT-masthead contrast against the cream workspace.
-   * If you'd prefer a light cream topbar instead, change --topbar-bg to
-   * #FFFAF5 and --topbar-text to #33302E. */
-  --topbar-bg:#1A1614;
-  --topbar-text:#FFF1E5;
+  /* Topbar — cream-on-cream so the masthead reads as part of the workspace
+   * rather than a dark band across the top. Slightly deeper than --bg2 so
+   * there's still a soft visual separation from the panels below. */
+  --topbar-bg:#F2DFCE;
+  --topbar-text:#33302E;
 
   /* Tints, scrims, shadows — warm rather than neutral grey */
   --hover-tint:rgba(80,50,30,0.04);
@@ -72,20 +71,19 @@ html[data-theme="financial"]{
   --shadow-soft:0 6px 24px rgba(80,50,30,0.12);
 }
 
-/* The topbar in this app uses an inverted (dark-on-light) treatment in
- * light mode — we replicate that for Financial so the masthead reads as
- * deliberate FT styling rather than a colour mismatch. These rules only
- * apply when data-theme="financial" is active. */
+/* Topbar styling for Financial — cream-on-cream with warm border separation.
+ * The dashboard's light-mode rules force light-on-dark topbar text, which
+ * would be unreadable on our cream topbar; we override those here. */
 html[data-theme="financial"] .topbar{
   background:var(--topbar-bg);
   color:var(--topbar-text);
-  border-bottom-color:rgba(255,241,229,0.12);
+  border-bottom-color:var(--border2);
 }
 html[data-theme="financial"] .topbar .logo{ color:var(--topbar-text); }
-html[data-theme="financial"] .topbar .logo span{ color:var(--accent); }
-html[data-theme="financial"] .topbar .logo-console{ color:rgba(255,241,229,0.55); }
-html[data-theme="financial"] .topbar .back-link{ color:rgba(255,241,229,0.6); }
-html[data-theme="financial"] .topbar .back-link:hover{ color:rgba(255,241,229,0.9); }
+html[data-theme="financial"] .topbar .logo span{ color:var(--accent2); }
+html[data-theme="financial"] .topbar .logo-console{ color:var(--text3); }
+html[data-theme="financial"] .topbar .back-link{ color:var(--text2); }
+html[data-theme="financial"] .topbar .back-link:hover{ color:var(--text); }
 
 /* Active-row text on a pale pink accent halo can wash out — bump active
  * nav items to dark text when on Financial, keeping the pink as the
