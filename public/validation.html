@@ -61,7 +61,8 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 body.cyg-collapsed{padding-left:54px}
 .topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
 .logo{font-family:var(--serif);font-size:1.1rem;font-weight:600;color:var(--text);text-decoration:none}.logo span{color:var(--accent)}
-.page{max-width:1300px;margin:0 auto;padding:1.5rem}
+.page{max-width:min(1500px,calc(100vw - 230px - 32px));margin:0 auto;padding:1.5rem;box-sizing:border-box}
+body.cyg-collapsed .page{max-width:min(1500px,calc(100vw - 54px - 32px))}
 .panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.1rem;overflow:hidden}
 .panel-head{padding:0.75rem 1.1rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;background:var(--bg3)}
 .panel-title{font-size:13px;font-weight:600}

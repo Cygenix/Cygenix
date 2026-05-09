@@ -132,9 +132,14 @@
 
   .page {
     padding: 1.5rem 2rem 4rem 2rem;
-    /* Use the full viewport up to a generous cap. 1400px was leaving big
-       empty bands on widescreen monitors. */
-    max-width: min(1800px, calc(100vw - 80px));
+    /* Use the full viewport up to a generous cap, but subtract the sidebar
+       (230px expanded / 54px collapsed) plus a small right gutter so the
+       page never spills past the right edge. */
+    max-width: min(1800px, calc(100vw - 230px - 32px));
+    box-sizing: border-box;
+  }
+  body.cyg-collapsed .page {
+    max-width: min(1800px, calc(100vw - 54px - 32px));
   }
 
   h1 { font-family: var(--serif); font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 0.25rem 0; }
