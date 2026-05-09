@@ -5,6 +5,10 @@
   <script src="/auth-gate.js"></script>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- Site-wide theme overrides (Financial palette + future themes).
+     Must load BEFORE the pre-paint script below so its CSS variables
+     are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-theme.css">
   <title>Data Quality Review — Cygenix</title>
 
   <!-- Theme pre-paint: read the user's saved theme and apply it to <html> BEFORE

@@ -5,6 +5,27 @@
 <script src="/auth-gate.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- Site-wide theme overrides (Financial palette + future themes).
+     Must load BEFORE the pre-paint script below so its CSS variables
+     are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-theme.css">
+<!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
+     BEFORE any content renders, preventing a flash of the wrong theme.
+     Reads from cygenix_app_prefs (same key the Settings page writes to). -->
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'dark';
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+})();
+</script>
 <meta name="theme-color" content="#0d0f14">
 <meta name="description" content="AI column mapping for SQL database migrations.">
 <meta property="og:title" content="Cygenix – Mapper">
