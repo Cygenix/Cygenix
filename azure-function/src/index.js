@@ -11,6 +11,7 @@ require('./agent-source-schema');
 require('./agent-suggest-criteria');
 require('./agent-check-dependencies');
 require('./agent-verify-targets');
+require('./github-proxy');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
