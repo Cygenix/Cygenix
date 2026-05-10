@@ -436,12 +436,26 @@
   }
 
   // ── Live status badges ──────────────────────────────────────────────────
-  // Project Planner badge: count of items needing attention today.
+  // Project Planner badge: count of items needing attention today, minus
+  // anything the user has already "seen" (by visiting /project-plan.html).
+  //
+  // Attention items:
   //   - Calendar events (calEvents) with date === today
   //   - Tasks with due === today AND status !== 'done'
   //   - Overdue tasks (due < today AND status !== 'done')
+  //
+  // Dismiss behaviour:
+  //   When the user visits /project-plan.html, project-plan.html itself calls
+  //   CygenixSidebar.markProjectPlanSeen() — which snapshots the current set
+  //   of attention item IDs into localStorage['cygenix_pp_seen']. The badge
+  //   then counts only items NOT in that set, so visiting the page clears
+  //   the badge until something new appears (a new task, midnight rollover,
+  //   etc). Marking a task done or deleting an event also clears it because
+  //   it falls out of the attention set entirely.
+  //
   // Reads localStorage['cygenix_project_plan'] (the key project-plan.html writes to).
   const PLAN_STORAGE_KEY = 'cygenix_project_plan';
+  const SEEN_STORAGE_KEY = 'cygenix_pp_seen';
 
   function todayIsoDate(){
     const d = new Date();
@@ -451,37 +465,53 @@
     return `${y}-${m}-${day}`;
   }
 
-  function getProjectPlanAttentionCount(){
+  // Returns array of stable IDs for items currently needing attention.
+  // IDs are prefixed so task/event namespaces never collide.
+  function getAttentionItemIds(){
     try {
       const raw = localStorage.getItem(PLAN_STORAGE_KEY);
-      if (!raw) return 0;
+      if (!raw) return [];
       const data = JSON.parse(raw);
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
       const calEvents = Array.isArray(data.calEvents) ? data.calEvents : [];
       const today = todayIsoDate();
-      let count = 0;
-      // Calendar events scheduled for today (any type: task/deadline/milestone/meeting)
+      const ids = [];
       for (const e of calEvents){
-        if (e && e.date === today) count++;
+        if (e && e.id && e.date === today) ids.push('event:' + e.id);
       }
-      // Tasks due today (not yet done)
       for (const t of tasks){
-        if (!t || t.status === 'done') continue;
-        if (t.due === today) count++;
-        else if (t.due && t.due < today) count++; // overdue
+        if (!t || !t.id || t.status === 'done') continue;
+        if (t.due === today) ids.push('task:' + t.id);
+        else if (t.due && t.due < today) ids.push('task:' + t.id);
       }
-      return count;
-    } catch { return 0; }
+      return ids;
+    } catch { return []; }
+  }
+
+  // Read the "seen" set. Stored as { date: 'YYYY-MM-DD', ids: [...] }.
+  // The date stamp lets us auto-expire seen entries at midnight — anything
+  // marked seen yesterday is ignored today, so a task that was overdue
+  // yesterday and is *still* overdue today re-surfaces in the badge.
+  function getSeenSet(){
+    try {
+      const raw = localStorage.getItem(SEEN_STORAGE_KEY);
+      if (!raw) return new Set();
+      const data = JSON.parse(raw);
+      if (!data || data.date !== todayIsoDate()) return new Set();
+      return new Set(Array.isArray(data.ids) ? data.ids : []);
+    } catch { return new Set(); }
   }
 
   function refreshProjectPlanBadge(){
     const el = document.getElementById('cyg-badge-project-plan');
     if (!el) return;
-    const n = getProjectPlanAttentionCount();
-    if (n > 0){
-      el.textContent = n > 99 ? '99+' : String(n);
+    const allIds = getAttentionItemIds();
+    const seen = getSeenSet();
+    const unseenCount = allIds.filter(id => !seen.has(id)).length;
+    if (unseenCount > 0){
+      el.textContent = unseenCount > 99 ? '99+' : String(unseenCount);
       el.classList.add('show');
-      el.title = `${n} item${n === 1 ? '' : 's'} due today or overdue`;
+      el.title = `${unseenCount} new item${unseenCount === 1 ? '' : 's'} due today or overdue`;
     } else {
       el.textContent = '';
       el.classList.remove('show');
@@ -489,11 +519,26 @@
     }
   }
 
+  // Public: called by project-plan.html on load to mark all current
+  // attention items as "seen" for the rest of today.
+  function markProjectPlanSeen(){
+    try {
+      const ids = getAttentionItemIds();
+      localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify({
+        date: todayIsoDate(),
+        ids
+      }));
+    } catch {}
+    refreshProjectPlanBadge();
+  }
+
   function startBadgeUpdater(){
     refreshProjectPlanBadge();
-    // Refresh when the project plan key changes in another tab
+    // Refresh when the project plan key (or seen key) changes in another tab
     window.addEventListener('storage', (ev) => {
-      if (ev.key === PLAN_STORAGE_KEY) refreshProjectPlanBadge();
+      if (ev.key === PLAN_STORAGE_KEY || ev.key === SEEN_STORAGE_KEY) {
+        refreshProjectPlanBadge();
+      }
     });
     // Refresh when the project plan page dispatches an in-tab update event
     window.addEventListener('cygenix-plan-changed', refreshProjectPlanBadge);
@@ -513,6 +558,9 @@
       const toggle = el && el.querySelector('#cyg-sidebar-toggle');
       if (toggle) toggle.textContent = on ? '❯' : '❮';
     },
+    // Mark all current Project Planner attention items as "seen" for today.
+    // Called by project-plan.html on load to dismiss the sidebar badge.
+    markProjectPlanSeen,
     // Re-render after feature flags change (call this from dashboard.html
     // after refreshFeatureFlags() updates localStorage).
     refresh: () => {

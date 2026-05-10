@@ -1553,6 +1553,22 @@ loadIntegrationConfig();
 renderAll();
 setCalView('month'); // force month as the default view on page load
 
+// Dismiss the sidebar notification badge — landing on this page counts as
+// having "seen" today's due/overdue items. The sidebar exposes a helper for
+// this. We defer to DOMContentLoaded so the sidebar script has had a chance
+// to run; if it fires later anyway, also retry on window load as a safety net.
+function dismissPlannerBadge(){
+  if (window.CygenixSidebar && typeof window.CygenixSidebar.markProjectPlanSeen === 'function'){
+    try { window.CygenixSidebar.markProjectPlanSeen(); } catch {}
+  }
+}
+if (document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', dismissPlannerBadge);
+} else {
+  dismissPlannerBadge();
+}
+window.addEventListener('load', dismissPlannerBadge);
+
 // ── Integration state ─────────────────────────────────────────────────────────
 
 function saveIntegrationConfig(){
