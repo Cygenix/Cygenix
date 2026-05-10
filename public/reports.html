@@ -198,6 +198,25 @@ body.cyg-collapsed{padding-left:54px}
 .ds-rm-btn{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:14px;padding:0 0.4rem;line-height:1}
 .ds-rm-btn:hover{color:var(--red)}
 
+/* Source-type toggle on each FROM / TBL row. Mirrors the Visual / Raw SQL
+   segmented control at the top of each dataset card so the visual language
+   is consistent — small, dense, monospaced, with the active state in the
+   accent colour. */
+.ds-kind-toggle{display:inline-flex;border:0.5px solid var(--border2);border-radius:6px;overflow:hidden;flex-shrink:0}
+.ds-kind-btn{
+  background:transparent;color:var(--text3);
+  border:none;border-right:0.5px solid var(--border2);
+  padding:0.28rem 0.55rem;font-size:10.5px;font-family:var(--mono);
+  text-transform:uppercase;letter-spacing:0.05em;
+  cursor:pointer;transition:all 0.12s;
+}
+.ds-kind-btn:last-child{border-right:none}
+.ds-kind-btn:hover{color:var(--text2);background:rgba(255,255,255,0.03)}
+.ds-kind-btn.active{
+  color:var(--accent);
+  background:rgba(61,126,255,0.10);
+}
+
 /* Raw-SQL textarea */
 .ds-sql-textarea{width:100%;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.6rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none;min-height:140px;resize:vertical;line-height:1.5}
 .ds-sql-textarea:focus{border-color:var(--accent)}
@@ -1227,6 +1246,9 @@ async function loadSchemaFor(scope){
         schema:   t.schema,
         name:     t.name,
         fullName: (t.schema ? t.schema + '.' : '') + t.name,
+        // kind: 'table' | 'view' — defaults to 'table' for backends that
+        // don't yet emit it, so legacy connections keep working.
+        kind:     t.kind === 'view' ? 'view' : 'table',
         rowCount: t.rowCount || 0,
         columns:  paginated ? null : (t.columns || []),
       }));
@@ -1337,6 +1359,11 @@ function dsPickerHtml(kind, scope, value, commitId, extra){
     'data-pick-commit="' + commitId + '"',
   ];
   if (extra.tableInputId) dataAttrs.push('data-pick-table="' + extra.tableInputId + '"');
+  // For a 'tables' picker, optionally restrict the dropdown to a single
+  // kind ('table' or 'view'). When omitted, the picker shows everything,
+  // which preserves the original behaviour for any caller that doesn't
+  // care about the distinction.
+  if (extra.tableKind)    dataAttrs.push('data-pick-tablekind="' + escapeHtml(extra.tableKind) + '"');
   const placeholder = extra.placeholder || (kind === 'tables' ? 'schema.TableName' : 'column');
   const wrapClass   = extra.wide ? 'search-wrap search-wrap-wide' : 'search-wrap';
   const inputId     = extra.id ? ' id="' + extra.id + '"' : '';
@@ -1365,10 +1392,23 @@ function _pickerListFor(input){
   const s     = _schemas.get(scope);
   if (kind === 'tables') {
     if (!s) return [];
-    return s.tables.map(t => ({
+    // Optional kind filter — only show tables, only show views, or both.
+    // Used by the FROM-row Table/View toggle so each row's dropdown only
+    // lists its kind, avoiding accidental selection of the wrong type.
+    const wantKind = input.getAttribute('data-pick-tablekind') || '';
+    const filtered = wantKind
+      ? s.tables.filter(t => (t.kind || 'table') === wantKind)
+      : s.tables;
+    return filtered.map(t => ({
       value: t.fullName,
       label: t.fullName,
-      meta:  t.rowCount ? Number(t.rowCount).toLocaleString() + ' rows' : ''
+      // Surface the kind in the dropdown row's right-side meta — useful when
+      // the filter is OFF (mixed list) so the user can tell tables from views.
+      // When the filter is on, the meta shows the row count instead, which
+      // is more useful info than a redundant 'view' label.
+      meta:  wantKind
+               ? (t.rowCount ? Number(t.rowCount).toLocaleString() + ' rows' : '')
+               : ((t.kind === 'view' ? 'view' : (t.rowCount ? Number(t.rowCount).toLocaleString() + ' rows' : '')))
     }));
   }
   if (kind === 'columns') {
@@ -1744,7 +1784,29 @@ function dsToggleMode(idx, mode){
 function dsAddTable(idx){
   const r = dsCurrentReport(); if (!r) return;
   const d = r.datasets[idx]; if (!d) return;
-  d.visual.tables.push({ fullName: '', alias: '' });
+  d.visual.tables.push({ fullName: '', alias: '', kind: 'table' });
+  rbSaveToLocal(); dsRender();
+}
+// Same as dsAddTable but pre-marks the new row as a view, so its picker
+// only shows views in the dropdown.
+function dsAddView(idx){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  d.visual.tables.push({ fullName: '', alias: '', kind: 'view' });
+  rbSaveToLocal(); dsRender();
+}
+// Toggle a row between Table and View. Switching kinds clears the
+// selected fullName so the user can't accidentally end up with a row
+// labelled "View" pointing at a base table (the SQL would still work,
+// but the UI/SQL preview would lie about what the source is).
+function dsUpdateTableKind(idx, tIdx, newKind){
+  const r = dsCurrentReport(); if (!r) return;
+  const d = r.datasets[idx]; if (!d) return;
+  const t = d.visual.tables[tIdx]; if (!t) return;
+  const wantKind = (newKind === 'view') ? 'view' : 'table';
+  if ((t.kind || 'table') === wantKind) return;
+  t.kind = wantKind;
+  t.fullName = '';
   rbSaveToLocal(); dsRender();
 }
 function dsRemoveTable(idx, tIdx){
@@ -2237,7 +2299,17 @@ function dsRenderVisual(d, idx){
   const open = d.openSections || {};
   const v = d.visual || {};
 
-  const tablesSection = dsSection(idx, 'tables', 'Tables', (v.tables || []).length + ' table' + ((v.tables || []).length === 1 ? '' : 's'),
+  // Section meta — show table/view split so users at a glance can see
+  // what's in the dataset without expanding it.
+  const _tbls = v.tables || [];
+  const _nT = _tbls.filter(t => (t.kind || 'table') === 'table').length;
+  const _nV = _tbls.filter(t =>  t.kind === 'view').length;
+  const _meta =
+      (_nT ? _nT + ' table' + (_nT === 1 ? '' : 's') : '')
+    + (_nT && _nV ? ' · ' : '')
+    + (_nV ? _nV + ' view'  + (_nV === 1 ? '' : 's')  : '')
+    || '0 tables';
+  const tablesSection = dsSection(idx, 'tables', 'Tables', _meta,
     dsRenderTablesBody(d, idx), open.tables !== false);
 
   const joinsSection = (v.tables || []).length >= 2
@@ -2282,10 +2354,24 @@ function dsRenderTablesBody(d, idx){
     const commitId = _registerCommitter(value => {
       dsUpdateTable(idx, tIdx, 'fullName', value);
     });
+    // Kind defaults to 'table' for legacy entries that pre-date the toggle.
+    // The picker is filtered to that kind so a row labelled "View" only
+    // shows views in its dropdown, and vice versa.
+    const rowKind = (t.kind === 'view') ? 'view' : 'table';
+    const toggleHtml =
+        '<div class="ds-kind-toggle" role="group" aria-label="Source type">'
+      +   '<button type="button" class="ds-kind-btn' + (rowKind === 'table' ? ' active' : '') + '" '
+      +           'onclick="dsUpdateTableKind(' + idx + ',' + tIdx + ',\'table\')" '
+      +           'title="List base tables in the dropdown">Table</button>'
+      +   '<button type="button" class="ds-kind-btn' + (rowKind === 'view'  ? ' active' : '') + '" '
+      +           'onclick="dsUpdateTableKind(' + idx + ',' + tIdx + ',\'view\')" '
+      +           'title="List views in the dropdown">View</button>'
+      + '</div>';
     return '<div class="ds-row">'
       +   '<span class="ds-row-label">' + (tIdx === 0 ? 'FROM' : 'TBL ' + (tIdx + 1)) + '</span>'
       +   '<div class="ds-row-fields">'
-      +     dsPickerHtml('tables', scope, t.fullName, commitId, { id: inputId, wide: true, placeholder: 'schema.TableName' })
+      +     toggleHtml
+      +     dsPickerHtml('tables', scope, t.fullName, commitId, { id: inputId, wide: true, placeholder: rowKind === 'view' ? 'schema.ViewName' : 'schema.TableName', tableKind: rowKind })
       +     '<input class="ds-input" placeholder="alias (optional)" value="' + escapeHtml(t.alias || '') + '" '
       +       'onchange="dsUpdateTable(' + idx + ',' + tIdx + ',\'alias\',this.value)">'
       +   '</div>'
@@ -2295,6 +2381,7 @@ function dsRenderTablesBody(d, idx){
   return rows
     + '<div style="margin-top:0.5rem">'
     +   '<button class="ds-add-btn" onclick="dsAddTable(' + idx + ')">＋ Add table</button>'
+    +   '<button class="ds-add-btn" onclick="dsAddView('  + idx + ')" style="margin-left:0.5rem">＋ Add view</button>'
     + '</div>';
 }
 
