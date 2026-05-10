@@ -837,6 +837,37 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   margin-top:0.55rem;max-width:780px;
 }
 
+/* Database history — captured per project so users can see what database
+   settings have been used over the project's life without having to dig
+   through the Connections page or re-test each saved connection. */
+.ps-dbs{
+  margin-top:0.85rem;
+  display:flex;flex-direction:column;gap:0.4rem;
+}
+.ps-dbs-title{
+  font-size:10.5px;color:var(--text3);font-family:var(--mono);
+  text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
+  display:flex;align-items:center;gap:0.45rem;
+}
+.ps-dbs-title svg{width:11px;height:11px;color:var(--text3);}
+.ps-db-row{
+  display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;
+  font-size:11.5px;font-family:var(--mono);color:var(--text2);
+  padding:0.35rem 0.6rem;
+  background:var(--bg3);border:0.5px solid var(--border);border-radius:7px;
+}
+.ps-db-role{
+  display:inline-block;min-width:48px;padding:1px 6px;border-radius:4px;
+  font-size:9.5px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;
+  text-align:center;
+}
+.ps-db-role.src{background:rgba(79,142,255,0.12);color:var(--accent);border:0.5px solid rgba(79,142,255,0.3);}
+.ps-db-role.tgt{background:rgba(167,139,250,0.12);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);}
+.ps-db-server{color:var(--text);font-weight:500;}
+.ps-db-name{color:var(--accent);}
+.ps-db-meta{color:var(--text3);font-size:10.5px;margin-left:auto;display:flex;gap:0.6rem;}
+.ps-db-meta span{display:inline-flex;align-items:center;gap:0.25rem;}
+
 .ps-grid{
   display:grid;grid-template-columns:repeat(3,1fr);gap:0.85rem;
 }
@@ -4943,6 +4974,243 @@ function svgCheckCircle(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="
 function svgShield()     { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>'; }
 
 // ══════════════════════════════════════════════════════════════════════════
+// DATABASE SNAPSHOT — per-project memory of database settings used
+// ══════════════════════════════════════════════════════════════════════════
+//
+// Why this exists:
+//   Connection strings live in `cygenix_project_connections` as a flat object
+//   shared across the app. When a user switches between projects they lose
+//   visibility of what database settings were used previously. This module
+//   captures the *current* connection state into the *active* project's
+//   `dbHistory[]` array, so each project keeps a record of which databases
+//   it's run against — visible on the Project Status panel.
+//
+// Privacy / safety:
+//   We parse out server, database, auth mode, username, and driver. We
+//   NEVER store passwords or function keys, even though they're sometimes
+//   embedded in connection strings. The parser strips them before write.
+
+// Parse a SQL Server / Postgres connection string OR an Azure Function URL
+// into a plain descriptor. Returns null if nothing identifiable can be
+// extracted (e.g. empty input). This is a forgiving parser — it handles
+// the three formats we know cygenix uses without choking on edge cases.
+function parseDbConnection(connStr){
+  if (!connStr || typeof connStr !== 'string') return null;
+  const s = connStr.trim();
+  if (!s) return null;
+
+  // ─── Form 1: Azure Function URL ─────────────────────────────────────────
+  // e.g. https://cygenix-db-api-xxx.uksouth-01.azurewebsites.net/api/db?code=...
+  // We capture the host (everything before the first /api/) and strip the
+  // function key. The host alone is enough to identify "which Azure Function
+  // backend" — useful when the user has staging vs production deployments.
+  if (/^https?:\/\//i.test(s)){
+    try {
+      const u = new URL(s);
+      return {
+        kind: 'azure-function',
+        server: u.host,                       // e.g. cygenix-db-api-xxx.uksouth-01.azurewebsites.net
+        database: '',                         // not directly visible from a function URL
+        auth: 'function-key',
+        username: '',
+        driver: 'azure-function',
+      };
+    } catch { return null; }
+  }
+
+  // ─── Form 2: URL-style connection string ────────────────────────────────
+  // e.g. mssql://user:pass@host:port/dbname  OR  postgresql://...
+  // The Connections page stores these for direct DB connections that don't
+  // go through an Azure Function.
+  const urlStyle = /^(mssql|postgres|postgresql):\/\/(?:([^:@\/]+)(?::([^@\/]*))?@)?([^:\/]+)(?::(\d+))?(?:\/([^?#]+))?/i.exec(s);
+  if (urlStyle){
+    const driver = urlStyle[1].toLowerCase().replace('postgresql','postgres');
+    const user   = urlStyle[2] || '';
+    const host   = urlStyle[4] || '';
+    const port   = urlStyle[5] || '';
+    const db     = urlStyle[6] || '';
+    return {
+      kind: 'connection-string',
+      server: host + (port ? ':' + port : ''),
+      database: db,
+      auth: user ? 'sql-auth' : 'integrated',
+      username: user,                          // password deliberately discarded
+      driver: driver === 'mssql' ? 'mssql' : 'postgres',
+    };
+  }
+
+  // ─── Form 3: ADO.NET-style connection string ────────────────────────────
+  // e.g. Server=tcp:foo.database.windows.net,1433;Database=foo;User ID=bar;Password=...;
+  // Each segment is a `Key=Value` pair. We pull out the keys we recognise
+  // and ignore everything else, which keeps us forward-compatible if Azure
+  // adds new keys in future.
+  if (s.includes('=') && (s.includes(';') || /server\s*=/i.test(s))){
+    const parts = s.split(';').map(p => p.trim()).filter(Boolean);
+    const map = {};
+    for (const p of parts){
+      const eq = p.indexOf('=');
+      if (eq < 0) continue;
+      const k = p.slice(0, eq).trim().toLowerCase();
+      const v = p.slice(eq + 1).trim();
+      map[k] = v;
+    }
+    const server = (map['server'] || map['data source'] || '').replace(/^tcp:/i, '');
+    const db     = map['database'] || map['initial catalog'] || '';
+    const user   = map['user id'] || map['uid'] || map['user'] || '';
+    let auth = 'sql-auth';
+    if (/yes|true|sspi/i.test(map['integrated security'] || '')) auth = 'integrated';
+    if (/active directory managed identity/i.test(map['authentication'] || '')) auth = 'managed-identity';
+    if (/active directory password/i.test(map['authentication'] || ''))         auth = 'aad-password';
+    if (/active directory interactive/i.test(map['authentication'] || ''))      auth = 'aad-interactive';
+    if (server || db){
+      return { kind: 'connection-string', server, database: db, auth, username: user, driver: 'mssql' };
+    }
+  }
+
+  return null;
+}
+
+// Read whatever connection info is currently configured (from
+// cygenix_project_connections + sessionStorage fallbacks) and return
+// {src, tgt} descriptors. Either side may be null if nothing's configured.
+function readCurrentConnections(){
+  let pc = {};
+  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
+  const ss = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
+  const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
+
+  // Source — try function URL first, then connection string. Same priority
+  // as impGetConn, since this is the same data feeding the same downstream.
+  const srcCandidate = pcGet('cygenix_src_fn_url')
+                    || ss('cygenix_src_fn_url')
+                    || pcGet('cygenix_src_conn_string')
+                    || ss('cygenix_src_conn_string');
+
+  // Target — fnUrl/connString may both be present; we prefer whichever was
+  // last meaningfully set, mirroring impGetConn's HTTP-vs-string heuristic.
+  const tgtFn = pcGet('cygenix_fn_url') || ss('cygenix_fn_url');
+  const tgtCs = pcGet('cygenix_conn_string') || ss('cygenix_conn_string');
+  const tgtCandidate = (/^https?:\/\//i.test(tgtFn) ? tgtFn : '') || tgtCs || tgtFn;
+
+  return {
+    src: parseDbConnection(srcCandidate),
+    tgt: parseDbConnection(tgtCandidate),
+  };
+}
+
+// Append the current connection state to a project's dbHistory if it's
+// not already recorded. Idempotent and side-effect-light: writes to
+// localStorage only when a genuinely new descriptor is seen, so it's safe
+// to call on every dashboard render. Returns the project's current
+// dbHistory (post-append) for immediate use by the renderer.
+function captureDbSnapshot(projectId){
+  if (!projectId) return [];
+  let projects = [];
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch { return []; }
+  const idx = projects.findIndex(p => p.id === projectId);
+  if (idx < 0) return [];
+  const project = projects[idx];
+
+  const current = readCurrentConnections();
+  const existing = Array.isArray(project.dbHistory) ? project.dbHistory.slice() : [];
+
+  // Dedupe key — server + database + role + auth. Two identical descriptors
+  // for the same role won't create duplicate history rows, but the same
+  // server with a different database (common when migrating multiple
+  // databases in one project) gets its own row.
+  const keyOf = (entry) => [entry.role, entry.kind, entry.server, entry.database, entry.auth].join('|').toLowerCase();
+  const seen = new Set(existing.map(keyOf));
+
+  let changed = false;
+  for (const role of ['src','tgt']){
+    const desc = current[role];
+    if (!desc) continue;
+    const entry = {
+      role,                                   // 'src' | 'tgt'
+      kind: desc.kind,                        // 'azure-function' | 'connection-string'
+      server: desc.server || '',
+      database: desc.database || '',
+      auth: desc.auth || '',
+      username: desc.username || '',
+      driver: desc.driver || '',
+      firstSeen: new Date().toISOString(),
+      lastSeen:  new Date().toISOString(),
+    };
+    const k = keyOf(entry);
+    if (seen.has(k)){
+      // Update lastSeen on the matching record so users can see this
+      // database is still in active use.
+      const match = existing.find(e => keyOf(e) === k);
+      if (match){ match.lastSeen = entry.lastSeen; changed = true; }
+    } else {
+      existing.push(entry);
+      seen.add(k);
+      changed = true;
+    }
+  }
+
+  if (changed){
+    project.dbHistory = existing;
+    project.modified = new Date().toISOString();
+    projects[idx] = project;
+    try { localStorage.setItem('cygenix_projects', JSON.stringify(projects)); } catch {}
+  }
+
+  return existing;
+}
+
+// Render a small list of database settings used by this project. Returns
+// HTML or '' if nothing's been captured yet.
+function renderDbHistory(history){
+  if (!Array.isArray(history) || !history.length) return '';
+
+  // Sort: target before source (matches the visual flow on the rest of
+  // the page, source → target), and within each role newest first.
+  const order = { tgt: 0, src: 1 };
+  const sorted = history.slice().sort((a,b) => {
+    if ((order[a.role]||9) !== (order[b.role]||9)) return (order[a.role]||9) - (order[b.role]||9);
+    return String(b.lastSeen||'').localeCompare(String(a.lastSeen||''));
+  });
+
+  const fmtDate = ts => ts ? new Date(ts).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '';
+  const authLabel = (a) => ({
+    'sql-auth':         'SQL auth',
+    'integrated':       'Windows auth',
+    'managed-identity': 'Managed Identity',
+    'aad-password':     'AAD password',
+    'aad-interactive':  'AAD interactive',
+    'function-key':     'Function key',
+  })[a] || (a || 'unknown');
+
+  const rows = sorted.map(e => {
+    const role = e.role === 'tgt' ? 'Target' : 'Source';
+    const roleClass = e.role === 'tgt' ? 'tgt' : 'src';
+    const driver = e.kind === 'azure-function' ? 'Azure Fn' : (e.driver || 'sql');
+    return `
+      <div class="ps-db-row">
+        <span class="ps-db-role ${roleClass}">${role}</span>
+        <span class="ps-db-server" title="Server / host">${escP(e.server || '—')}</span>
+        ${e.database ? `<span class="ps-db-name" title="Database">/ ${escP(e.database)}</span>` : ''}
+        <div class="ps-db-meta">
+          <span title="Driver">${escP(driver)}</span>
+          <span title="Authentication">${escP(authLabel(e.auth))}</span>
+          ${e.username ? `<span title="Username">${escP(e.username)}</span>` : ''}
+          <span title="First seen on this project">since ${fmtDate(e.firstSeen)}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="ps-dbs">
+      <div class="ps-dbs-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+        Databases used
+      </div>
+      ${rows}
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // PROJECT STATUS — replaces the old Migration Pipeline visual
 // Surfaces: description, job failures, mapping count + mode (AI vs system),
 // conversion report status, data quality status, validation status, and
@@ -5173,6 +5441,11 @@ function renderProjectStatus(){
     foot: `<span>Phase: ${escP(project.phase || '—')}</span><span>${fmtDate(project.modified || project.created)}</span>`,
   });
 
+  // Capture the current connection state into the project's dbHistory.
+  // Idempotent — if the same descriptors are already recorded, this is a
+  // cheap dedupe lookup. Returns the up-to-date dbHistory for rendering.
+  const dbHistory = captureDbSnapshot(project.id);
+
   // ── Compose the panel ────────────────────────────────────────────────────
   const projHeadHtml = `
     <div class="ps-head">
@@ -5188,6 +5461,7 @@ function renderProjectStatus(){
           <span>Target end: ${fmtDate(project.end)}</span>
         </div>
         ${projDesc ? `<div class="ps-proj-desc">${escP(projDesc)}</div>` : ''}
+        ${renderDbHistory(dbHistory)}
       </div>
     </div>`;
 
@@ -5413,6 +5687,12 @@ async function generateProjectAiSummary(){
     cleansingRules: wasis.length,
     artifactCount: projInv.length,
     artifactTypes: [...new Set(projInv.map(a => a.type).filter(Boolean))],
+    // Database history captured per project — useful to the engineer
+    // because conn strings live in shared storage and this is the only
+    // place per-project DB usage is recorded.
+    dbHistory: (project.dbHistory || []).slice(0, 8).map(e => ({
+      role: e.role, server: e.server, database: e.database, auth: e.auth, driver: e.driver,
+    })),
   };
 
   const prompt = `You are summarising the live state of a data migration project for an experienced migration engineer's dashboard. Read the JSON below and write 4-6 plain-English sentences (around 80-120 words total) describing:
