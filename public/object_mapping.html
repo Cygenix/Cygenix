@@ -1085,6 +1085,18 @@ function ddlShowResult(msg, kind) {
 
   // Check for edit mode
   checkEditMode();
+
+  // If there's no ?edit=<id> param (i.e. the user didn't arrive via Load Map),
+  // try restoring an in-progress WIP draft saved by _wipDraftSave on previous
+  // visits to this page. This is what makes the editor feel "sticky" when the
+  // user navigates to a different sidebar page and clicks back into Object
+  // Mapping mid-edit. The restore is async because schemas need to load first;
+  // it polls just like checkEditMode() does for ?edit= jobs.
+  const _hasEditParam = new URLSearchParams(location.search).get('edit') ||
+                        new URLSearchParams(location.search).get('job');
+  if(!_hasEditParam){
+    setTimeout(() => { if(typeof _wipDraftRestore==='function') _wipDraftRestore(); }, 0);
+  }
 })();
 
 async function dbCall(conn, body){
@@ -3222,6 +3234,9 @@ function saveAsJob(){
     setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
     if(wasNew && $('job-name-input')) $('job-name-input').value='';
   }
+  // Saved successfully — drop the in-progress draft. The next page load will
+  // hydrate from cygenix_jobs via ?edit= rather than from the WIP cache.
+  if(typeof _wipDraftClear==='function') _wipDraftClear();
 }
 
 // ── Edit mode — load saved job ────────────────────────────────────────────────
@@ -3385,6 +3400,7 @@ function resetAll(){
   $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
   $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
   clearEditMode();
+  if(typeof _wipDraftClear==='function') _wipDraftClear();
 }
 
 // Start a new map. If there's unsaved work, prompt to save/discard/cancel.
@@ -3401,6 +3417,7 @@ function clearMapState(){
   $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
   $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
   clearEditMode();
+  if(typeof _wipDraftClear==='function') _wipDraftClear();
 }
 function newMap(){
   if(!hasWorkInProgress()){
@@ -3921,6 +3938,269 @@ async function aiJoinHelp(i){
   renderJoinBuilder(window._joinContainerId,window._joinAllTables||[],window._joinBaseTable);
   if(window._onJoinChange) window._onJoinChange(window._joinState);
 }
+
+// ══ WIP DRAFT — persistence across screen/tab switches ═══════════════════════
+// Keeps the user's in-progress map alive when they navigate to another sidebar
+// page and click back into Object Mapping. Without this, mid-edit work is
+// silently lost — module-scoped state (srcTable, columnMapping, targetTables,
+// etc.) is wiped on every page navigation because the page reloads from
+// scratch. The draft is a thin localStorage snapshot taken on a 2.5s tick and
+// on beforeunload, then re-hydrated by replaying the same selectTable /
+// renderOTMCards / restoreJobMapping paths the saved-job loader uses.
+//
+// Scoped per active project so switching projects doesn't surface a draft from
+// a different project. Cleared on Save, Reset, Discard, and successful Load
+// of a different saved job (because the draft is then redundant or stale).
+//
+// Data shape (all optional except mode + savedAt):
+//   {
+//     mode:        'single' | 'otm',
+//     savedAt:     ISO timestamp,
+//     editJobId:   string | null,
+//     jobNameInput: string,
+//     viewMode:    'table' | 'visual',
+//     srcFullName: 'schema.Table' | '',
+//     tgtFullName: 'schema.Table' | '',           // single mode only
+//     columnMapping: [...],                       // single mode only
+//     targetTables: [{name, pkCol, pkMode, mappings, fks}, ...],  // OTM only
+//     joinState:   [...] | null,
+//     wasisRules:  [...] | null,                  // snapshot if user changed
+//     generatedSQL: {insert, schema, verify}
+//   }
+(function _wipDraftModule(){
+  const PREFIX = 'cygenix_objmap_wip_';
+  const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
+  const SAVE_INTERVAL_MS = 2500;
+  let _lastSerialized = '';
+  let _restoring = false;
+
+  function _projectScope(){
+    return localStorage.getItem('cygenix_active_project_id') || 'global';
+  }
+  function _key(){
+    return PREFIX + _projectScope();
+  }
+
+  function _captureDraft(){
+    if(_restoring) return null;  // don't snapshot mid-restore (partial state)
+    const hasContent = !!(srcTable || tgtTable ||
+                          (columnMapping && columnMapping.length) ||
+                          (targetTables && targetTables.length));
+    if(!hasContent) return null;
+    return {
+      mode: mode,
+      savedAt: new Date().toISOString(),
+      editJobId: editJobId || null,
+      jobNameInput: ($('job-name-input')?.value || '').trim(),
+      viewMode: window._viewMode || 'table',
+      srcFullName: srcTable?.fullName || '',
+      tgtFullName: tgtTable?.fullName || '',
+      columnMapping: (mode === 'single' && Array.isArray(columnMapping))
+                     ? columnMapping.map(m => ({...m})) : [],
+      targetTables: (mode === 'otm' && Array.isArray(targetTables))
+                    ? targetTables.map(tt => ({
+                        name: tt.fullName,
+                        pkCol: tt.pkCol,
+                        pkMode: tt.pkMode,
+                        mappings: tt.mappings ? tt.mappings.map(m => ({...m})) : [],
+                        fks: tt.fks ? tt.fks.map(f => ({...f})) : []
+                      })) : [],
+      joinState: Array.isArray(window._joinState) ? window._joinState.slice() : null,
+      wasisRules: Array.isArray(wasisRules) && wasisRules.length ? wasisRules : null,
+      generatedSQL: {
+        insert: generatedSQL?.insert || '',
+        schema: generatedSQL?.schema || '',
+        verify: generatedSQL?.verify || ''
+      }
+    };
+  }
+
+  function _wipDraftSave(){
+    try {
+      const d = _captureDraft();
+      if(!d){
+        // Empty editor — clear any stale draft so a "back to dashboard, return"
+        // round-trip on a blank page doesn't keep showing the restore banner.
+        _wipDraftClearInner();
+        return;
+      }
+      const ser = JSON.stringify(d);
+      if(ser === _lastSerialized) return;
+      _lastSerialized = ser;
+      localStorage.setItem(_key(), ser);
+    } catch(e){ /* quota or serialization failure — drop silently */ }
+  }
+
+  function _wipDraftClearInner(){
+    try {
+      localStorage.removeItem(_key());
+      _lastSerialized = '';
+    } catch(e){}
+  }
+
+  // Exposed globally so clearMapState / resetAll / saveAsJob can reach it.
+  window._wipDraftClear = _wipDraftClearInner;
+  window._wipDraftSave  = _wipDraftSave;
+
+  function _readDraft(){
+    let raw = null;
+    try { raw = localStorage.getItem(_key()); } catch(e){ return null; }
+    if(!raw) return null;
+    let d = null;
+    try { d = JSON.parse(raw); } catch(e){ _wipDraftClearInner(); return null; }
+    if(!d || typeof d !== 'object') return null;
+    if(d.savedAt){
+      const age = Date.now() - new Date(d.savedAt).getTime();
+      if(isFinite(age) && age > MAX_AGE_MS){ _wipDraftClearInner(); return null; }
+    }
+    return d;
+  }
+
+  // Restore the WIP draft. Called from init() when there's no ?edit= param.
+  // Polls until schemas are loaded (same pattern as checkEditMode) then
+  // replays selectTable / OTM-add / mapping restoration.
+  async function _wipDraftRestore(){
+    const d = _readDraft();
+    if(!d) return;
+
+    _restoring = true;
+
+    // Restore mode + view first so the right panel is visible during async load.
+    if(d.mode === 'otm') setMode('otm');
+    else                 setMode('single');
+    if(d.viewMode) setView(d.viewMode);
+
+    // Edit-job tracking — if the draft was on top of a saved job, keep that
+    // linkage so Save writes back to the same record. The banner will be
+    // restored once we surface the editing state.
+    if(d.editJobId){
+      editJobId = d.editJobId;
+      const eb = $('edit-banner');
+      const en = $('edit-job-name');
+      // Look up the saved job name (if it still exists) for the banner label
+      let label = 'Saved job';
+      try {
+        const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+        const j = jobs.find(x => x.id === d.editJobId);
+        if(j && j.name) label = j.name;
+      } catch(e){}
+      if(eb) eb.style.display = 'flex';
+      if(en) en.textContent = label;
+    }
+
+    if(d.jobNameInput && $('job-name-input')) $('job-name-input').value = d.jobNameInput;
+
+    if(Array.isArray(d.wasisRules) && d.wasisRules.length){
+      wasisRules = d.wasisRules;
+      try { renderWasisStatusBanner(); } catch(e){}
+    }
+
+    if(!d.srcFullName){
+      // No table selected — nothing more to hydrate, but keep the draft so the
+      // job-name input and editJobId persist as the user keeps typing.
+      _restoring = false;
+      showStatus('Restored work-in-progress draft','info');
+      return;
+    }
+
+    // Wait for schemas to be ready, same pattern as checkEditMode().
+    let attempts = 0;
+    const tryRestore = setInterval(async () => {
+      attempts++;
+      const srcReady = srcAllTables.length > 0;
+      const tgtNeeded = !!(d.tgtFullName || (d.targetTables && d.targetTables.length));
+      const tgtReady = !tgtNeeded || tgtAllTables.length > 0;
+      if(srcReady && tgtReady){
+        clearInterval(tryRestore);
+        try {
+          const srcT = srcAllTables.find(t =>
+            t.value === d.srcFullName || t.label === d.srcFullName);
+          if(!srcT){
+            showStatus('Draft source table "'+d.srcFullName+'" no longer in schema — discarded','err');
+            _wipDraftClearInner();
+            _restoring = false;
+            return;
+          }
+          await selectTable('src', srcT.value);
+
+          // Restore JOIN state on top of the freshly initialised join builder.
+          if(Array.isArray(d.joinState) && d.joinState.length){
+            const otherTables = srcAllTables.filter(t => t.value !== srcT.value);
+            window._joinAllTables = otherTables;
+            window._joinBaseTable  = srcTable;
+            initJoinBuilder('join-container', otherTables, srcTable, function(){
+              renderSrcColList();
+              if(mode==='single') tryAutoGenSQL();
+            });
+            window._joinState = d.joinState;
+            renderJoinBuilder('join-container', otherTables, srcTable);
+            $('join-panel').style.display = 'block';
+          }
+
+          if(d.mode === 'single' && d.tgtFullName){
+            const tgtT = tgtAllTables.find(t =>
+              t.value === d.tgtFullName || t.label === d.tgtFullName);
+            if(!tgtT){
+              showStatus('Draft target table "'+d.tgtFullName+'" no longer in schema','err');
+            } else {
+              await selectTable('tgt', tgtT.value);
+              if(Array.isArray(d.columnMapping) && d.columnMapping.length){
+                columnMapping = d.columnMapping.map(m => ({...m}));
+                columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
+                $('mapping-wrap').style.display = 'block';
+                $('single-empty').style.display = 'none';
+                renderMappingTable();
+                tryAutoGenSQL();
+              }
+            }
+          } else if(d.mode === 'otm' && Array.isArray(d.targetTables) && d.targetTables.length){
+            for(const stt of d.targetTables){
+              const t = tgtAllTables.find(x =>
+                x.value === stt.name || x.label === stt.name);
+              if(!t) continue;
+              if(targetTables.find(tt => tt.fullName === t.value)) continue;
+              try { await ensureColumns('tgt', t); }
+              catch(e){ continue; }
+              addOTMTargetFromTable(t);
+              const ti = targetTables.length - 1;
+              if(stt.pkMode) targetTables[ti].pkMode = stt.pkMode;
+              if(stt.pkCol)  targetTables[ti].pkCol  = stt.pkCol;
+              if(stt.mappings) targetTables[ti].mappings = ensureAllTargetCols(stt.mappings, targetTables[ti]);
+              if(stt.fks)    targetTables[ti].fks = stt.fks;
+            }
+            renderOTMCards();
+            try { generateOTMSQL(); } catch(e){}
+          }
+
+          // Re-apply view in case panel visibility changed during hydration.
+          if(d.viewMode) setView(d.viewMode);
+          showStatus('Restored work-in-progress draft — keep editing or click "New map" to discard','info');
+        } catch(err){
+          showStatus('Could not fully restore draft: '+(err.message||err),'err');
+        } finally {
+          _restoring = false;
+          // Refresh _lastSerialized so the next tick doesn't re-write an
+          // identical snapshot back to localStorage immediately.
+          try { _lastSerialized = JSON.stringify(_captureDraft() || {}); } catch(e){}
+        }
+      } else if(attempts > 40){
+        clearInterval(tryRestore);
+        _restoring = false;
+        // Keep the draft on disk — connection might be temporarily down. The
+        // next page load will retry restoration.
+      }
+    }, 500);
+  }
+  window._wipDraftRestore = _wipDraftRestore;
+
+  // Background tick — capture the current editor state every few seconds.
+  setInterval(_wipDraftSave, SAVE_INTERVAL_MS);
+
+  // Final save on page hide / navigation. Use pagehide (more reliable than
+  // beforeunload on mobile) AND beforeunload (covers desktop reload/close).
+  window.addEventListener('beforeunload', _wipDraftSave);
+  window.addEventListener('pagehide',     _wipDraftSave);
+})();
 </script>
 <script src="/cookie-consent.js"></script>
 <script src="/cygenix-cookie-cleanup.js"></script>

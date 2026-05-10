@@ -3699,6 +3699,119 @@ function copyResultsForExcel() {
   });
 }
 
+// ── Native Ctrl+C / Cmd+C copy of selected results cells ─────────────────────
+// When the user highlights cells in either the row-view or pivot-view results
+// table and presses Ctrl+C (or right-click → Copy), the default browser copy
+// behaviour can flatten the selection into a single text blob — meaning the
+// rectangular layout is lost when pasted into Excel. This handler intercepts
+// the copy event for selections inside .results-table / .pivot-table and
+// writes a properly-shaped TSV (plus an HTML <table> mirror) to the clipboard
+// that Excel pastes back as a grid with the same row/column layout the user
+// can see on screen. Pivot-aware automatically because it reads off the DOM.
+(function _installResultsCopyInterceptor() {
+  const container = document.getElementById('results-container');
+  if (!container) return;
+
+  function tsvEscape(v) {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    // RFC-4180-ish: only quote if the cell contains a tab, newline, or quote.
+    return /[\t\n"]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function htmlEscape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])
+    );
+  }
+
+  container.addEventListener('copy', function (e) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+
+    // Find the table the selection lives in. We treat both result-set tables
+    // identically — their structure is uniform <tr><td>…</td></tr>.
+    const range = sel.getRangeAt(0);
+    const startEl = range.startContainer.nodeType === 1
+                  ? range.startContainer
+                  : range.startContainer.parentElement;
+    if (!startEl) return;
+    const table = startEl.closest('table.results-table, table.pivot-table');
+    if (!table || !container.contains(table)) return;
+    // If selection is entirely inside a single cell, let the browser handle
+    // it normally — the user is copying a substring, not a grid.
+    const endEl = range.endContainer.nodeType === 1
+                ? range.endContainer
+                : range.endContainer.parentElement;
+    const startCell = startEl.closest('td, th');
+    const endCell   = endEl ? endEl.closest('td, th') : null;
+    if (startCell && endCell && startCell === endCell) return;
+
+    // Walk every cell in the table and mark which ones are inside the
+    // selection. A cell is "in" if the range intersects it. Build a bitmap of
+    // {row, col} → selected, then find the bounding rectangle.
+    const rows = Array.from(table.rows);
+    const selected = [];
+    let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+
+    for (let r = 0; r < rows.length; r++) {
+      const cells = Array.from(rows[r].cells);
+      const rowMap = [];
+      for (let c = 0; c < cells.length; c++) {
+        const cell = cells[c];
+        // intersectsNode is the right check — containsNode(cell, true) misses
+        // cells that are partially overlapped, which is what the user usually
+        // selects via drag. Wrap in try/catch defensively (some browsers
+        // throw on detached nodes, though that shouldn't happen here).
+        let hit = false;
+        try { hit = range.intersectsNode(cell); } catch (e) { hit = false; }
+        rowMap[c] = hit;
+        if (hit) {
+          if (r < minR) minR = r;
+          if (r > maxR) maxR = r;
+          if (c < minC) minC = c;
+          if (c > maxC) maxC = c;
+        }
+      }
+      selected.push(rowMap);
+    }
+
+    // No cells selected (shouldn't happen given the earlier checks) → bail.
+    if (minR === Infinity) return;
+
+    // Build TSV + HTML for the bounding rectangle. Cells inside the box but
+    // outside the user's selection come through as empty strings (blank cells
+    // in Excel) — this preserves alignment for irregular selections.
+    const tsvLines = [];
+    const htmlRows = [];
+    for (let r = minR; r <= maxR; r++) {
+      const tsvCells = [];
+      const htmlCells = [];
+      const rowEl = rows[r];
+      for (let c = minC; c <= maxC; c++) {
+        const cell = rowEl ? rowEl.cells[c] : null;
+        const isSel = selected[r] && selected[r][c];
+        // Always render as <td> so Excel pastes a uniform grid (no header
+        // row formatting differences). Plain text source is textContent —
+        // result cells don't contain nested formatting we'd want to preserve.
+        const text = (isSel && cell) ? (cell.textContent || '') : '';
+        tsvCells.push(tsvEscape(text));
+        htmlCells.push('<td>' + htmlEscape(text) + '</td>');
+      }
+      tsvLines.push(tsvCells.join('\t'));
+      htmlRows.push('<tr>' + htmlCells.join('') + '</tr>');
+    }
+    const tsv  = tsvLines.join('\n');
+    const html = '<table>' + htmlRows.join('') + '</table>';
+
+    // Write both formats. Excel + Google Sheets prefer text/html when present;
+    // plain editors fall back to text/plain. Override the default behaviour.
+    if (e.clipboardData) {
+      e.clipboardData.setData('text/plain', tsv);
+      e.clipboardData.setData('text/html',  html);
+      e.preventDefault();
+    }
+  });
+})();
+
 // ── Column drag resize ─────────────────────────────────────────────────────────
 (function() {
   function makeColResizer(handleId, panelEl, side) {
