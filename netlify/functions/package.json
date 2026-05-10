@@ -1,0 +1,11 @@
+{
+  "name": "cygenix-netlify-functions",
+  "version": "1.0.0",
+  "description": "Cygenix Netlify Functions — reports storage, db-connect proxy, health check.",
+  "private": true,
+  "dependencies": {
+    "@azure/cosmos": "^4.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0"
+  }
+}
