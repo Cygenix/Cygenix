@@ -6062,8 +6062,29 @@ async function renderReportsList() {
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     reports = data.reports || [];
   } catch (e) {
-    el.innerHTML = '<div class="empty-state"><h3>Could not load reports</h3><p style="color:var(--red)">' + (e.message || e) + '</p>'
-                 + '<p style="font-size:12px;color:var(--text3);margin-top:0.5rem">If this is the first deploy, check that COSMOS_ENDPOINT and COSMOS_KEY are set in Netlify environment variables, and that the <code>project_reports</code> container exists in the <code>cygenix</code> database.</p></div>';
+    // Tailor the troubleshooting hint based on what actually went wrong.
+    // Auth errors (401) come from the Netlify function rejecting a missing
+    // or invalid Authorization header — pointing the user at Cosmos env
+    // vars in that case is misleading. Server-side Cosmos / 5xx errors
+    // are the only case where the env-vars check is a useful next step.
+    const msg  = String(e && e.message || e || '');
+    const isAuth = /unauthor|missing authorization|bearer|token/i.test(msg);
+    const hint = isAuth
+      ? '<p style="font-size:12px;color:var(--text3);margin-top:0.5rem">'
+        + 'This is an authentication error, not a database error. '
+        + 'Try signing out and back in to refresh your session token. '
+        + 'If it persists, append <code>?authdebug=1</code> to the URL and reload — '
+        + 'the browser console will then show why the token could not be attached. '
+        + '(Recent change: the reports endpoint now requires a valid Entra ID token in the Authorization header.)'
+        + '</p>'
+      : '<p style="font-size:12px;color:var(--text3);margin-top:0.5rem">'
+        + 'If this is the first deploy, check that COSMOS_ENDPOINT and COSMOS_KEY are set in Netlify environment variables, '
+        + 'and that the <code>project_reports</code> container exists in the <code>cygenix</code> database.'
+        + '</p>';
+    el.innerHTML = '<div class="empty-state"><h3>Could not load reports</h3>'
+                 + '<p style="color:var(--red)">' + (msg || 'Unknown error') + '</p>'
+                 + hint
+                 + '</div>';
     return;
   }
 
