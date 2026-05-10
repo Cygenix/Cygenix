@@ -794,6 +794,170 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 
 
+/* ─── Project Status (dashboard) ───────────────────────────────────────── */
+.ps-wrap{
+  background:var(--bg2);border:0.5px solid var(--border);border-radius:12px;
+  padding:1.25rem 1.25rem 1.25rem;margin-bottom:1rem;
+  position:relative;overflow:hidden;
+}
+.ps-wrap::before{
+  content:'';position:absolute;inset:0;
+  background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);
+  background-size:32px 32px;pointer-events:none;opacity:0.5;
+}
+.ps-inner{position:relative;z-index:1;}
+.ps-empty{
+  text-align:center;padding:2rem 1rem;color:var(--text3);
+  font-family:var(--mono);font-size:13px;
+}
+.ps-empty a{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent);}
+.ps-head{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;
+  flex-wrap:wrap;margin-bottom:1.1rem;padding-bottom:0.9rem;
+  border-bottom:0.5px solid var(--border);
+}
+.ps-head-left{min-width:0;flex:1;}
+.ps-proj-name{
+  font-size:1.15rem;font-weight:600;color:var(--text);letter-spacing:-0.01em;
+  display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;
+}
+.ps-active-pill{
+  font-size:9.5px;padding:2px 8px;border-radius:999px;
+  background:var(--accent-glow);color:var(--accent);
+  font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;
+  border:0.5px solid rgba(79,142,255,0.3);
+}
+.ps-proj-meta{
+  font-size:11.5px;color:var(--text3);font-family:var(--mono);
+  margin-top:0.3rem;display:flex;gap:0.9rem;flex-wrap:wrap;
+}
+.ps-proj-meta span{display:inline-flex;align-items:center;gap:0.35rem;}
+.ps-proj-desc{
+  font-size:12.5px;color:var(--text2);line-height:1.55;
+  margin-top:0.55rem;max-width:780px;
+}
+
+.ps-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:0.85rem;
+}
+@media (max-width: 1100px){ .ps-grid{grid-template-columns:repeat(2,1fr);} }
+@media (max-width: 640px){  .ps-grid{grid-template-columns:1fr;} }
+
+.ps-card{
+  background:var(--bg3);border:0.5px solid var(--border2);border-radius:10px;
+  padding:0.9rem 1rem;
+  display:flex;flex-direction:column;gap:0.5rem;
+  position:relative;
+  transition:border-color 0.18s ease,background 0.18s ease;
+}
+.ps-card.is-clickable{cursor:pointer;}
+.ps-card.is-clickable:hover{border-color:var(--accent);background:var(--bg2);}
+.ps-card-head{
+  display:flex;align-items:center;justify-content:space-between;gap:0.5rem;
+}
+.ps-card-title{
+  font-size:10.5px;color:var(--text3);font-family:var(--mono);
+  text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
+}
+.ps-card-icon{
+  width:26px;height:26px;border-radius:7px;
+  display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,rgba(79,142,255,0.10),rgba(45,212,191,0.08));
+  border:0.5px solid rgba(79,142,255,0.2);
+}
+.ps-card-icon svg{width:13px;height:13px;color:var(--accent);}
+.ps-card.status-ok    .ps-card-icon{background:linear-gradient(135deg,rgba(34,201,122,0.12),rgba(34,201,122,0.06));border-color:rgba(34,201,122,0.3);}
+.ps-card.status-ok    .ps-card-icon svg{color:var(--green);}
+.ps-card.status-warn  .ps-card-icon{background:linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06));border-color:rgba(245,158,11,0.3);}
+.ps-card.status-warn  .ps-card-icon svg{color:var(--amber);}
+.ps-card.status-err   .ps-card-icon{background:linear-gradient(135deg,rgba(240,70,70,0.12),rgba(240,70,70,0.06));border-color:rgba(240,70,70,0.3);}
+.ps-card.status-err   .ps-card-icon svg{color:var(--red);}
+.ps-card.status-idle  .ps-card-icon{background:var(--bg3);border-color:var(--border);}
+.ps-card.status-idle  .ps-card-icon svg{color:var(--text3);}
+
+.ps-card-value{
+  font-size:1.25rem;font-weight:700;letter-spacing:-0.02em;color:var(--text);
+  line-height:1.15;
+}
+.ps-card-value-sub{
+  font-size:11px;color:var(--text3);font-family:var(--mono);font-weight:400;margin-left:0.3rem;
+}
+.ps-card-sub{
+  font-size:11.5px;color:var(--text2);line-height:1.45;
+}
+.ps-card-foot{
+  display:flex;align-items:center;justify-content:space-between;gap:0.5rem;
+  padding-top:0.55rem;margin-top:auto;
+  border-top:0.5px solid var(--border);
+  font-size:10.5px;color:var(--text3);font-family:var(--mono);
+}
+.ps-pill{
+  display:inline-flex;align-items:center;gap:0.3rem;
+  padding:2px 8px;border-radius:999px;
+  font-size:10px;font-family:var(--mono);font-weight:600;
+  text-transform:uppercase;letter-spacing:0.05em;
+  border:0.5px solid var(--border2);
+}
+.ps-pill-ok    {background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.3);}
+.ps-pill-warn  {background:var(--amber-bg);color:var(--amber);border-color:rgba(245,158,11,0.3);}
+.ps-pill-err   {background:var(--red-bg);  color:var(--red);  border-color:rgba(240,70,70,0.3);}
+.ps-pill-idle  {background:var(--bg3);     color:var(--text3);}
+.ps-pill-info  {background:var(--accent-glow);color:var(--accent);border-color:rgba(79,142,255,0.3);}
+
+.ps-failed-list{
+  margin:0.4rem 0 0;padding:0;list-style:none;
+  font-size:11.5px;color:var(--text2);
+  display:flex;flex-direction:column;gap:0.25rem;
+}
+.ps-failed-list li{
+  display:flex;align-items:center;gap:0.4rem;
+  font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.ps-failed-list li::before{
+  content:'●';color:var(--red);font-size:8px;flex:0 0 auto;
+}
+.ps-failed-list li.more{color:var(--text3);font-style:italic;}
+.ps-failed-list li.more::before{content:'';}
+
+/* AI summary — full-width below the grid */
+.ps-ai{
+  margin-top:1rem;
+  background:linear-gradient(135deg,rgba(167,139,250,0.06),rgba(79,142,255,0.04));
+  border:0.5px solid rgba(167,139,250,0.25);
+  border-radius:10px;padding:1rem 1.1rem;
+  position:relative;
+}
+.ps-ai-head{
+  display:flex;align-items:center;justify-content:space-between;gap:0.6rem;
+  margin-bottom:0.55rem;
+}
+.ps-ai-title{
+  display:flex;align-items:center;gap:0.5rem;
+  font-size:11px;color:var(--purple);font-family:var(--mono);
+  text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
+}
+.ps-ai-title svg{width:14px;height:14px;}
+.ps-ai-body{
+  font-size:13px;color:var(--text);line-height:1.6;font-family:var(--serif);
+  white-space:pre-wrap;
+}
+.ps-ai-body.empty{color:var(--text3);font-style:italic;}
+.ps-ai-meta{
+  margin-top:0.55rem;font-size:10px;color:var(--text3);font-family:var(--mono);
+  display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;
+}
+.ps-ai-loading{
+  display:inline-flex;align-items:center;gap:0.4rem;
+  font-size:11px;color:var(--purple);font-family:var(--mono);
+}
+.ps-ai-loading::before{
+  content:'';width:10px;height:10px;border-radius:50%;
+  border:1.5px solid var(--purple);border-top-color:transparent;
+  animation:psSpin 0.8s linear infinite;
+}
+@keyframes psSpin{ to{ transform:rotate(360deg);} }
+
+
 /* ─── System Parameters view (scoped) ──────────────────────────────────── */
 #view-system-parameters .sp-head{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
 #view-system-parameters .sp-title{font-size:1.4rem;font-weight:600}
@@ -1131,8 +1295,16 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       </div>
 
       <div id="dashboard-ring-wrap"></div>
-      <div class="panel-header" style="margin-top:1.5rem"><div class="panel-title">Migration Pipeline</div><div class="panel-sub">Click any stage to jump to that module</div></div>
-      <div id="dashboard-pipeline" class="pipeline-wrap"></div>
+      <div class="panel-header" style="margin-top:1.5rem">
+        <div>
+          <div class="panel-title">Project Status</div>
+          <div class="panel-sub" id="ps-sub">Live snapshot of the active project</div>
+        </div>
+        <div style="display:flex;gap:0.5rem">
+          <button id="ps-refresh-btn" class="btn btn-ghost btn-sm" onclick="renderProjectStatus()" title="Refresh project status">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="dashboard-project-status" class="ps-wrap"></div>
     </div>
 
     <!-- NEW JOB -->
@@ -4439,11 +4611,11 @@ function showToast(msg) {
 }
 
 function renderDashboard() {
-  // The Recent Jobs table has been replaced by the Migration Pipeline visual.
+  // The Recent Jobs table has been replaced by the Project Status panel.
   // We still call updateStats() for the stat cards at the top.
   updateStats();
   renderRing();
-  renderPipeline();
+  renderProjectStatus();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -4767,6 +4939,432 @@ function svgSparkles()   { return '<svg viewBox="0 0 24 24" fill="none" stroke="
 function svgPlay()       { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z" fill="currentColor"/></svg>'; }
 function svgCheckCircle(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>'; }
 function svgShield()     { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>'; }
+
+// ══════════════════════════════════════════════════════════════════════════
+// PROJECT STATUS — replaces the old Migration Pipeline visual
+// Surfaces: description, job failures, mapping count + mode (AI vs system),
+// conversion report status, data quality status, validation status, and
+// (on demand) an AI-generated narrative summary of the project.
+// All metrics read real data — no demo values.
+// ══════════════════════════════════════════════════════════════════════════
+function renderProjectStatus(){
+  const host = document.getElementById('dashboard-project-status');
+  if (!host) return;
+  const subEl = document.getElementById('ps-sub');
+
+  // Identify the active project. If none is set or it can't be found, show
+  // an empty state pointing the user to Projects.
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  const projects = safeArr('cygenix_projects');
+  const project  = projects.find(p => p.id === activeId);
+
+  if (!project){
+    if (subEl) subEl.textContent = 'No active project selected';
+    host.innerHTML = `
+      <div class="ps-inner">
+        <div class="ps-empty">
+          No active project. <a href="/projects.html">Go to Projects</a> to create or activate one,
+          and the status panel will populate automatically.
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (subEl) subEl.textContent = `Live snapshot of "${project.name || 'Untitled project'}"`;
+
+  // ── Pull all per-project data ────────────────────────────────────────────
+  const allJobs   = safeArr('cygenix_jobs');
+  const projJobs  = allJobs.filter(j => j.projectId === project.id);
+  const inv       = safeArr('cygenix_inventory');
+  const projInv   = inv.filter(a => a.projectId === project.id);
+
+  // ── Job stats & failures ─────────────────────────────────────────────────
+  const failedJobs = projJobs.filter(j => {
+    const s = String(j.executionStatus || j.status || '').toLowerCase();
+    return s === 'failed' || s === 'error';
+  });
+  const completeJobs = projJobs.filter(j => {
+    const s = String(j.executionStatus || j.status || '').toLowerCase();
+    return s === 'complete' || s === 'success';
+  });
+
+  // ── Mapping stats ────────────────────────────────────────────────────────
+  // A "map" is a job that has at least one mapped column. We also count jobs
+  // that look AI-assisted — heuristic: an explicit aiMapped/mappingSource
+  // flag if present, otherwise jobs where columns have non-NONE transforms
+  // or AI-derived target types (anything beyond a straight srcCol → tgtCol
+  // copy). System-generated = jobs with mapping but no AI hints.
+  const jobsWithMapping = projJobs.filter(j => Array.isArray(j.columnMapping) && j.columnMapping.some(m => m && m.tgtCol));
+  const totalMaps = jobsWithMapping.length;
+
+  function isAiMapped(j){
+    if (j.aiMapped === true) return true;                    // explicit flag (future-proof)
+    if (j.mappingSource && /ai|claude|agent/i.test(j.mappingSource)) return true;
+    const cm = Array.isArray(j.columnMapping) ? j.columnMapping : [];
+    if (!cm.length) return false;
+    // Heuristic: any column with a non-trivial transform suggests AI involvement,
+    // since the system generator only produces NONE / direct copies.
+    return cm.some(m => m && m.transform && String(m.transform).toUpperCase() !== 'NONE');
+  }
+  const aiMappedJobs     = jobsWithMapping.filter(isAiMapped).length;
+  const systemMappedJobs = totalMaps - aiMappedJobs;
+  const mappingMode = totalMaps === 0
+    ? { label: 'No mappings yet', tone: 'idle' }
+    : aiMappedJobs > systemMappedJobs
+      ? { label: 'Agentic (AI-assisted)', tone: 'info' }
+      : aiMappedJobs > 0
+        ? { label: 'Mixed AI + system', tone: 'info' }
+        : { label: 'System-generated',   tone: 'ok'  };
+
+  // ── Conversion report ────────────────────────────────────────────────────
+  // Detected by: (a) inventory items in this project tagged as schema/artifact
+  // that look like conversion reports, OR (b) jobs that have report payloads
+  // computed (job.reportData / job.reportGenerated / has a totalRows + tables
+  // populated, which is what openReport requires to render).
+  const reportInvItems = projInv.filter(a => {
+    const t = String(a.type || '').toLowerCase();
+    const n = String(a.name || a.filename || '').toLowerCase();
+    return t === 'schema' || t === 'artifact' || /report|conversion/i.test(n);
+  });
+  const jobsWithReportData = projJobs.filter(j =>
+    j.reportGenerated === true || (j.tables && j.tables.length && (j.totalRows || j.completedAt))
+  );
+  const reportProduced = (reportInvItems.length + jobsWithReportData.length) > 0;
+  const reportCount    = reportInvItems.length || jobsWithReportData.length;
+
+  // ── Data quality review ──────────────────────────────────────────────────
+  // Cygenix tracks data-cleansing rules (cygenix_wasis_rules) project-wide,
+  // and per-job data quality is implied by import validation having been run.
+  // We surface what we can verify: rules count + % of jobs that have any
+  // tables[].rows recorded (i.e. data has been parsed and inspected).
+  const wasisRules = safeArr('cygenix_wasis_rules');
+  const projWasis  = wasisRules.filter(r => !r.projectId || r.projectId === project.id);
+  const jobsInspected = projJobs.filter(j =>
+    Array.isArray(j.tables) && j.tables.some(t => Number(t.rows) > 0)
+  ).length;
+  const dqRun  = jobsInspected > 0 || projWasis.length > 0;
+  const dqPct  = projJobs.length > 0 ? Math.round((jobsInspected / projJobs.length) * 100) : 0;
+
+  // ── Validation report ────────────────────────────────────────────────────
+  // A job is "validated" if it has a verifySQL block of meaningful length.
+  // "Run" status: lastRun timestamp exists.
+  const validatedJobs = projJobs.filter(j => j.verifySQL && String(j.verifySQL).trim().length > 20);
+  const validationRun = projJobs.some(j => j.verifySQL && (j.lastRun || j.completedAt || j.executedAt));
+  const valPct = projJobs.length > 0 ? Math.round((validatedJobs.length / projJobs.length) * 100) : 0;
+
+  // ── Migration description (what & where) ─────────────────────────────────
+  const fmtDate = ts => ts ? new Date(ts).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' }) : '—';
+  const projDesc = (project.description || '').trim();
+  // Build a one-line "what / where" derived from project + jobs even if no
+  // free-text description exists yet.
+  const distinctSources = [...new Set(projJobs.map(j => j.source).filter(Boolean))];
+  const distinctTargets = [...new Set(projJobs.map(j => j.target).filter(Boolean))];
+  const totalRows = projJobs.reduce((s,j) => s + (Number(j.totalRows) || 0), 0);
+
+  const whereLine = (() => {
+    const src = project.srcSystem || (distinctSources.length === 1 ? distinctSources[0] : (distinctSources.length ? `${distinctSources.length} sources` : '—'));
+    const tgt = project.tgtSystem || (distinctTargets.length === 1 ? distinctTargets[0] : (distinctTargets.length ? `${distinctTargets.length} targets` : '—'));
+    return `${escP(src)} → ${escP(tgt)}`;
+  })();
+
+  // ── Card builders ────────────────────────────────────────────────────────
+  function card({ title, icon, status, value, valueSub, body, foot, onClick }){
+    const cls = ['ps-card', `status-${status || 'idle'}`, onClick ? 'is-clickable' : ''].filter(Boolean).join(' ');
+    return `
+      <div class="${cls}" ${onClick ? `data-action="${onClick}"` : ''}>
+        <div class="ps-card-head">
+          <div class="ps-card-title">${escP(title)}</div>
+          <div class="ps-card-icon">${icon}</div>
+        </div>
+        ${value !== undefined ? `<div class="ps-card-value">${value}${valueSub ? `<span class="ps-card-value-sub">${valueSub}</span>` : ''}</div>` : ''}
+        ${body || ''}
+        ${foot ? `<div class="ps-card-foot">${foot}</div>` : ''}
+      </div>`;
+  }
+
+  // ── Card 1: Failures ─────────────────────────────────────────────────────
+  const failureCard = card({
+    title: 'Job Failures',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v0.5"/></svg>',
+    status: failedJobs.length > 0 ? 'err' : (projJobs.length === 0 ? 'idle' : 'ok'),
+    value: String(failedJobs.length),
+    valueSub: ` of ${projJobs.length} ${projJobs.length === 1 ? 'job' : 'jobs'}`,
+    body: failedJobs.length > 0
+      ? `<ul class="ps-failed-list">${failedJobs.slice(0,3).map(j => `<li title="${escP(j.name)}">${escP(j.name || j.id)}</li>`).join('')}${failedJobs.length > 3 ? `<li class="more">+${failedJobs.length-3} more</li>` : ''}</ul>`
+      : projJobs.length === 0
+        ? '<div class="ps-card-sub">No jobs yet — create one from the New Job page.</div>'
+        : `<div class="ps-card-sub">${completeJobs.length} complete · 0 failures</div>`,
+    foot: `<span>Click to view all jobs</span><span>→</span>`,
+    onClick: 'all-jobs',
+  });
+
+  // ── Card 2: Maps & Jobs ──────────────────────────────────────────────────
+  const mappingCard = card({
+    title: 'Maps & Jobs',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4l-5 2v14l5-2 6 2 5-2V4l-5 2z"/><path d="M9 4v14M15 6v14"/></svg>',
+    status: totalMaps > 0 ? 'ok' : 'idle',
+    value: String(totalMaps),
+    valueSub: ` map${totalMaps === 1 ? '' : 's'} / ${projJobs.length} job${projJobs.length === 1 ? '' : 's'}`,
+    body: `<div class="ps-card-sub">
+      <span class="ps-pill ps-pill-${mappingMode.tone === 'info' ? 'info' : (mappingMode.tone === 'ok' ? 'ok' : 'idle')}">${escP(mappingMode.label)}</span>
+      ${totalMaps > 0 ? `<div style="margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--text3)">${aiMappedJobs} AI-assisted · ${systemMappedJobs} system</div>` : ''}
+    </div>`,
+    foot: `<span>Open Object Mapping</span><span>→</span>`,
+    onClick: 'mapping',
+  });
+
+  // ── Card 3: Conversion Report ────────────────────────────────────────────
+  const reportCard = card({
+    title: 'Conversion Report',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v6h6M9 14h6M9 17h6M9 11h2"/></svg>',
+    status: reportProduced ? 'ok' : 'idle',
+    value: reportProduced ? String(reportCount) : '—',
+    valueSub: reportProduced ? ` produced` : '',
+    body: reportProduced
+      ? `<div class="ps-card-sub"><span class="ps-pill ps-pill-ok">Generated</span><div style="margin-top:0.5rem;color:var(--text3);font-size:11px;font-family:var(--mono)">${reportInvItems.length ? `${reportInvItems.length} in artifacts` : `${jobsWithReportData.length} from jobs`}</div></div>`
+      : '<div class="ps-card-sub"><span class="ps-pill ps-pill-idle">Not yet produced</span><div style="margin-top:0.5rem;color:var(--text3);font-size:11px">Open a completed job and click Report to generate.</div></div>',
+    foot: `<span>Open Reports</span><span>→</span>`,
+    onClick: 'reports',
+  });
+
+  // ── Card 4: Data Quality Review ──────────────────────────────────────────
+  const dqCard = card({
+    title: 'Data Quality Review',
+    icon: svgSparkles(),
+    status: !dqRun ? 'idle' : (dqPct >= 80 ? 'ok' : (dqPct >= 40 ? 'warn' : 'warn')),
+    value: dqRun ? `${dqPct}%` : '—',
+    valueSub: dqRun ? ` of jobs inspected` : '',
+    body: `<div class="ps-card-sub">
+      <span class="ps-pill ps-pill-${dqRun ? (dqPct >= 80 ? 'ok' : 'warn') : 'idle'}">${dqRun ? 'Run' : 'Not run'}</span>
+      <div style="margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--text3)">${jobsInspected}/${projJobs.length} jobs · ${projWasis.length} cleansing rule${projWasis.length===1?'':'s'}</div>
+    </div>`,
+    foot: `<span>Open Cleansing</span><span>→</span>`,
+    onClick: 'cleansing',
+  });
+
+  // ── Card 5: Validation Report ────────────────────────────────────────────
+  const valCard = card({
+    title: 'Validation Report',
+    icon: svgCheckCircle(),
+    status: validatedJobs.length === 0 ? 'idle' : (validationRun ? (valPct >= 80 ? 'ok' : 'warn') : 'warn'),
+    value: validatedJobs.length === 0 ? '—' : `${valPct}%`,
+    valueSub: validatedJobs.length === 0 ? '' : ` of jobs validated`,
+    body: `<div class="ps-card-sub">
+      <span class="ps-pill ps-pill-${validatedJobs.length === 0 ? 'idle' : (validationRun ? 'ok' : 'warn')}">${validatedJobs.length === 0 ? 'No checks set' : (validationRun ? 'Run' : 'Set, not run')}</span>
+      <div style="margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--text3)">${validatedJobs.length}/${projJobs.length} jobs have verify SQL</div>
+    </div>`,
+    foot: `<span>Open Validation</span><span>→</span>`,
+    onClick: 'validation',
+  });
+
+  // ── Card 6: Migration scope ──────────────────────────────────────────────
+  const scopeCard = card({
+    title: 'Migration Scope',
+    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h16M4 12h16M4 16h10"/></svg>',
+    status: totalRows > 0 ? 'ok' : 'idle',
+    value: totalRows > 0 ? totalRows.toLocaleString() : '—',
+    valueSub: totalRows > 0 ? ` row${totalRows === 1 ? '' : 's'}` : '',
+    body: `<div class="ps-card-sub" style="font-family:var(--mono);font-size:11.5px;line-height:1.55">
+      <div style="color:var(--text2)">${whereLine}</div>
+      <div style="color:var(--text3);margin-top:0.25rem">${distinctSources.length || 0} source · ${distinctTargets.length || 0} target tbl(s)</div>
+    </div>`,
+    foot: `<span>Phase: ${escP(project.phase || '—')}</span><span>${fmtDate(project.modified || project.created)}</span>`,
+  });
+
+  // ── Compose the panel ────────────────────────────────────────────────────
+  const projHeadHtml = `
+    <div class="ps-head">
+      <div class="ps-head-left">
+        <div class="ps-proj-name">
+          ${escP(project.name || 'Untitled project')}
+          <span class="ps-active-pill">active</span>
+        </div>
+        <div class="ps-proj-meta">
+          ${project.client ? `<span>Client: ${escP(project.client)}</span>` : ''}
+          ${project.ref ? `<span>Ref: ${escP(project.ref)}</span>` : ''}
+          <span>Started: ${fmtDate(project.start)}</span>
+          <span>Target end: ${fmtDate(project.end)}</span>
+        </div>
+        ${projDesc ? `<div class="ps-proj-desc">${escP(projDesc)}</div>` : ''}
+      </div>
+    </div>`;
+
+  // AI summary panel — gated behind a button so we don't burn API tokens on
+  // every dashboard render. Cached per project; cache is invalidated on
+  // project change or manual regen.
+  const cacheKey = `cygenix_ps_ai_${project.id}`;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch {}
+
+  const aiHtml = `
+    <div class="ps-ai" id="ps-ai-block">
+      <div class="ps-ai-head">
+        <div class="ps-ai-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/></svg>
+          AI Summary
+        </div>
+        <div style="display:flex;gap:0.4rem;align-items:center">
+          <button id="ps-ai-btn" class="btn btn-ghost btn-sm" onclick="generateProjectAiSummary()" style="font-size:11px;padding:0.35rem 0.7rem">
+            ${cached ? '↻ Regenerate' : '✨ Generate summary'}
+          </button>
+        </div>
+      </div>
+      <div id="ps-ai-body" class="ps-ai-body${cached ? '' : ' empty'}">${cached ? escP(cached.text) : 'Click "Generate summary" for an AI-written narrative of the current state of this project.'}</div>
+      ${cached ? `<div class="ps-ai-meta">Generated ${new Date(cached.ts).toLocaleString('en-GB')} · model ${escP(cached.model || 'claude-sonnet-4')}</div>` : ''}
+    </div>`;
+
+  host.innerHTML = `
+    <div class="ps-inner">
+      ${projHeadHtml}
+      <div class="ps-grid">
+        ${failureCard}
+        ${mappingCard}
+        ${reportCard}
+        ${dqCard}
+        ${valCard}
+        ${scopeCard}
+      </div>
+      ${aiHtml}
+    </div>`;
+
+  // Wire card clicks. Using a small action map keeps inline handlers out of
+  // the markup and lets us update navigation targets in one place.
+  const actions = {
+    'all-jobs':   () => showView('all-jobs'),
+    'mapping':    () => { window.location.href = '/object_mapping.html'; },
+    'reports':    () => showView('reports'),
+    'cleansing':  () => { window.location.href = '/data-cleansing.html'; },
+    'validation': () => { window.location.href = '/validation.html'; },
+  };
+  host.querySelectorAll('.ps-card.is-clickable').forEach(el => {
+    const key = el.dataset.action;
+    if (actions[key]) el.addEventListener('click', actions[key]);
+  });
+}
+
+// ── AI summary generator ─────────────────────────────────────────────────
+// Calls Claude with a compact JSON snapshot of the current project state
+// and renders the prose response inline. Result is cached in localStorage
+// against the project id so re-opening the dashboard doesn't re-charge the
+// API. User can hit "Regenerate" to refresh.
+async function generateProjectAiSummary(){
+  const btn      = document.getElementById('ps-ai-btn');
+  const bodyEl   = document.getElementById('ps-ai-body');
+  const blockEl  = document.getElementById('ps-ai-block');
+  if (!btn || !bodyEl || !blockEl) return;
+
+  const apiKey = (typeof getApiKey === 'function' && getApiKey())
+              || localStorage.getItem('cygenix_api_key')
+              || sessionStorage.getItem('cygenix_api_key')
+              || '';
+  if (!apiKey){
+    bodyEl.classList.remove('empty');
+    bodyEl.textContent = 'No Anthropic API key set. Open Settings → API Key to add one, then try again.';
+    return;
+  }
+
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  const project  = safeArr('cygenix_projects').find(p => p.id === activeId);
+  if (!project){ bodyEl.textContent = 'No active project.'; return; }
+
+  // Build a compact, redacted snapshot — no row data, just structure & status.
+  const allJobs  = safeArr('cygenix_jobs');
+  const projJobs = allJobs.filter(j => j.projectId === project.id);
+  const projInv  = safeArr('cygenix_inventory').filter(a => a.projectId === project.id);
+  const wasis    = safeArr('cygenix_wasis_rules').filter(r => !r.projectId || r.projectId === project.id);
+
+  const snapshot = {
+    project: {
+      name: project.name || '',
+      client: project.client || '',
+      description: project.description || '',
+      srcSystem: project.srcSystem || '',
+      tgtSystem: project.tgtSystem || '',
+      phase: project.phase || '',
+      start: project.start || '',
+      end: project.end || '',
+    },
+    jobCount: projJobs.length,
+    statusCounts: projJobs.reduce((acc,j) => {
+      const s = String(j.executionStatus || j.status || 'pending').toLowerCase();
+      acc[s] = (acc[s] || 0) + 1;
+      return acc;
+    }, {}),
+    failedJobNames: projJobs.filter(j => /fail|error/i.test(String(j.executionStatus||j.status||''))).map(j => j.name).slice(0,10),
+    mappedJobs: projJobs.filter(j => Array.isArray(j.columnMapping) && j.columnMapping.some(m => m && m.tgtCol)).length,
+    validatedJobs: projJobs.filter(j => j.verifySQL && String(j.verifySQL).trim().length > 20).length,
+    totalRows: projJobs.reduce((s,j) => s + (Number(j.totalRows) || 0), 0),
+    distinctSources: [...new Set(projJobs.map(j => j.source).filter(Boolean))].slice(0,15),
+    distinctTargets: [...new Set(projJobs.map(j => j.target).filter(Boolean))].slice(0,15),
+    cleansingRules: wasis.length,
+    artifactCount: projInv.length,
+    artifactTypes: [...new Set(projInv.map(a => a.type).filter(Boolean))],
+  };
+
+  const prompt = `You are summarising the live state of a data migration project for an experienced migration engineer's dashboard. Read the JSON below and write 4-6 plain-English sentences (around 80-120 words total) describing:
+1. What is being migrated, from where to where, and the nature of the data.
+2. Current progress (jobs complete vs failed vs pending).
+3. Whether mapping, conversion reports, data-quality review, and validation have been done.
+4. The most useful next action the engineer should take.
+
+Be direct and factual — no marketing tone, no bullet points, no headers, just prose. If something is missing or not yet run, say so plainly. Use British English.
+
+Project state:
+${JSON.stringify(snapshot, null, 2)}`;
+
+  // UI: loading
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.innerHTML = '<span class="ps-ai-loading">Generating</span>';
+  bodyEl.classList.remove('empty');
+  bodyEl.textContent = 'Asking Claude…';
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 600,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!res.ok){
+      const errText = await res.text();
+      throw new Error(`Claude API error (${res.status}): ${errText.slice(0,200)}`);
+    }
+    const data = await res.json();
+    const text = (data.content || []).map(b => b.text || '').join('').trim();
+    if (!text) throw new Error('Claude returned an empty response.');
+
+    // Cache and render
+    const payload = { text, ts: Date.now(), model: 'claude-sonnet-4' };
+    try { localStorage.setItem(`cygenix_ps_ai_${project.id}`, JSON.stringify(payload)); } catch {}
+
+    bodyEl.textContent = text;
+    btn.disabled = false;
+    btn.textContent = '↻ Regenerate';
+
+    // Add or replace the "Generated …" meta line
+    let metaEl = blockEl.querySelector('.ps-ai-meta');
+    if (!metaEl){
+      metaEl = document.createElement('div');
+      metaEl.className = 'ps-ai-meta';
+      blockEl.appendChild(metaEl);
+    }
+    metaEl.textContent = `Generated ${new Date(payload.ts).toLocaleString('en-GB')} · model ${payload.model}`;
+  } catch(err){
+    bodyEl.textContent = `Could not generate summary: ${err.message}`;
+    btn.disabled = false;
+    btn.textContent = originalLabel || '✨ Generate summary';
+  }
+}
+
 function renderAllJobs() {
   // Populate the project filter dropdown from cygenix_projects (+ Active / All / Unassigned entries)
   const select = document.getElementById('jobs-project-filter');
