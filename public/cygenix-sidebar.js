@@ -59,7 +59,7 @@
       { key:'integrations',      label:'Integrations',      view:'integrations',       color:'var(--teal)',   icon: iconIntegrations() },
     ]},
     { section: 'Plan', group:'plan', items: [
-      { key:'project-plan',      label:'Project Planner',   href:'/project-plan.html', color:'var(--green)',  icon: iconCalendar() },
+      { key:'project-plan',      label:'Project Planner',   href:'/project-plan.html', color:'var(--green)',  icon: iconCalendar(), badgeId:'cyg-badge-project-plan' },
     ]},
     { section: 'Develop', group:'develop', items: [
       { key:'object-mapping',     label:'Object Mapping',     href:'/object_mapping.html',     color:'var(--teal)',   icon: iconArrows() },
@@ -267,6 +267,32 @@
       .cyg-sidebar.collapsed .cyg-nav-item-label{ display:none; }
       .cyg-sidebar.collapsed .cyg-nav-item{ justify-content:center;padding:0.5rem 0; }
 
+      /* Notification badge — small red pill with count, anchored to the right */
+      .cyg-nav-item{ position:relative; }
+      .cyg-nav-badge{
+        margin-left:auto;
+        min-width:18px;height:18px;
+        padding:0 5px;
+        border-radius:9px;
+        background:var(--red,#ef4444);
+        color:#fff;
+        font-size:10px;font-weight:600;
+        line-height:18px;
+        text-align:center;
+        display:none;
+        flex-shrink:0;
+      }
+      .cyg-nav-badge.show{ display:inline-block; }
+      /* Collapsed sidebar: show as a small dot in the top-right corner of the icon */
+      .cyg-sidebar.collapsed .cyg-nav-badge{
+        position:absolute;
+        top:6px;right:10px;
+        margin:0;padding:0;
+        min-width:8px;width:8px;height:8px;
+        border-radius:50%;
+        font-size:0;line-height:0;
+      }
+
       body.cyg-collapsed{ --cyg-sidebar-w:${WIDTH_CLOSED}px; }
       body:not(.cyg-collapsed){ --cyg-sidebar-w:${WIDTH_OPEN}px; }
     `;
@@ -293,12 +319,16 @@
   function buildItem(item, activeKey){
     const isActive = item.key === activeKey ? ' active' : '';
     const styleAttr = item.color ? ` style="--item-color:${item.color}; --accent:${item.color};"` : '';
+    const badgeHtml = item.badgeId
+      ? `<span class="cyg-nav-badge" id="${item.badgeId}" aria-live="polite"></span>`
+      : '';
     return `
       <div class="cyg-nav-item${isActive}"
            data-key="${item.key}"
            tabindex="0"${styleAttr}>
         ${item.icon || ''}
         <span class="cyg-nav-item-label">${escapeHtml(item.label)}</span>
+        ${badgeHtml}
       </div>`;
   }
 
@@ -402,11 +432,74 @@
     if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
 
     wireItemClicks(aside);
+    startBadgeUpdater();
   }
 
   // ── Live status badges ──────────────────────────────────────────────────
-  // (No live badges are currently rendered. Reintroduce an updater here and
-  // wire it from mount() if a future nav item uses `badgeId`.)
+  // Project Planner badge: count of items needing attention today.
+  //   - Calendar events (calEvents) with date === today
+  //   - Tasks with due === today AND status !== 'done'
+  //   - Overdue tasks (due < today AND status !== 'done')
+  // Reads localStorage['cygenix_project_plan'] (the key project-plan.html writes to).
+  const PLAN_STORAGE_KEY = 'cygenix_project_plan';
+
+  function todayIsoDate(){
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function getProjectPlanAttentionCount(){
+    try {
+      const raw = localStorage.getItem(PLAN_STORAGE_KEY);
+      if (!raw) return 0;
+      const data = JSON.parse(raw);
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      const calEvents = Array.isArray(data.calEvents) ? data.calEvents : [];
+      const today = todayIsoDate();
+      let count = 0;
+      // Calendar events scheduled for today (any type: task/deadline/milestone/meeting)
+      for (const e of calEvents){
+        if (e && e.date === today) count++;
+      }
+      // Tasks due today (not yet done)
+      for (const t of tasks){
+        if (!t || t.status === 'done') continue;
+        if (t.due === today) count++;
+        else if (t.due && t.due < today) count++; // overdue
+      }
+      return count;
+    } catch { return 0; }
+  }
+
+  function refreshProjectPlanBadge(){
+    const el = document.getElementById('cyg-badge-project-plan');
+    if (!el) return;
+    const n = getProjectPlanAttentionCount();
+    if (n > 0){
+      el.textContent = n > 99 ? '99+' : String(n);
+      el.classList.add('show');
+      el.title = `${n} item${n === 1 ? '' : 's'} due today or overdue`;
+    } else {
+      el.textContent = '';
+      el.classList.remove('show');
+      el.removeAttribute('title');
+    }
+  }
+
+  function startBadgeUpdater(){
+    refreshProjectPlanBadge();
+    // Refresh when the project plan key changes in another tab
+    window.addEventListener('storage', (ev) => {
+      if (ev.key === PLAN_STORAGE_KEY) refreshProjectPlanBadge();
+    });
+    // Refresh when the project plan page dispatches an in-tab update event
+    window.addEventListener('cygenix-plan-changed', refreshProjectPlanBadge);
+    // Periodic refresh — catches the date rolling over at midnight without a reload
+    setInterval(refreshProjectPlanBadge, 60 * 1000);
+  }
 
   // Public API (useful for dashboard to call on showView)
   window.CygenixSidebar = {
@@ -435,6 +528,7 @@
       const toggle = replacement.querySelector('#cyg-sidebar-toggle');
       if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
       wireItemClicks(replacement);
+      refreshProjectPlanBadge();
     }
   };
 
