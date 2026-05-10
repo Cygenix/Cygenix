@@ -5079,17 +5079,31 @@ function readCurrentConnections(){
   const ss = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
   const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
 
-  // Source — try function URL first, then connection string. Same priority
-  // as impGetConn, since this is the same data feeding the same downstream.
-  const srcCandidate = pcGet('cygenix_src_fn_url')
-                    || ss('cygenix_src_fn_url')
-                    || pcGet('cygenix_src_conn_string')
-                    || ss('cygenix_src_conn_string');
+  // The Connections page writes its state under camelCase keys
+  // (srcConnString, tgtConnString, srcFnUrl, tgtFnUrl) on the
+  // cygenix_project_connections wrapper. Older code paths use the
+  // cygenix_-prefixed snake_case names. We try the camelCase keys
+  // first (current source of truth) and fall back to the legacy keys
+  // so historical data still works.
 
-  // Target — fnUrl/connString may both be present; we prefer whichever was
-  // last meaningfully set, mirroring impGetConn's HTTP-vs-string heuristic.
-  const tgtFn = pcGet('cygenix_fn_url') || ss('cygenix_fn_url');
-  const tgtCs = pcGet('cygenix_conn_string') || ss('cygenix_conn_string');
+  // Source — function URL preferred, then connection string.
+  const srcFn = pcGet('srcFnUrl')
+             || pcGet('cygenix_src_fn_url')
+             || ss('cygenix_src_fn_url');
+  const srcCs = pcGet('srcConnString')
+             || pcGet('cygenix_src_conn_string')
+             || ss('cygenix_src_conn_string');
+  const srcCandidate = (/^https?:\/\//i.test(srcFn) ? srcFn : '') || srcCs || srcFn;
+
+  // Target — same priority. fnUrl/connString may both be present; we
+  // pick whichever is a real HTTP URL first, mirroring impGetConn's
+  // routing logic.
+  const tgtFn = pcGet('tgtFnUrl')
+             || pcGet('cygenix_fn_url')
+             || ss('cygenix_fn_url');
+  const tgtCs = pcGet('tgtConnString')
+             || pcGet('cygenix_conn_string')
+             || ss('cygenix_conn_string');
   const tgtCandidate = (/^https?:\/\//i.test(tgtFn) ? tgtFn : '') || tgtCs || tgtFn;
 
   return {
