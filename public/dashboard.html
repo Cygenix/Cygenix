@@ -5259,7 +5259,30 @@ async function generateProjectAiSummary(){
               || '';
   if (!apiKey){
     bodyEl.classList.remove('empty');
-    bodyEl.textContent = 'No Anthropic API key set. Open Settings → API Key to add one, then try again.';
+    // The header "Claude AI · Connected" badge can be green when the server-side
+    // key (Netlify function) is configured even if the browser has no key. The
+    // AI summary feature calls Claude direct from the browser, so it needs a
+    // key in localStorage/sessionStorage. Diagnose which case we're in and tell
+    // the user the truth rather than a generic "no key set" message that
+    // contradicts the green header badge.
+    bodyEl.textContent = 'Checking key location…';
+    let serverHasKey = false;
+    try {
+      const r = await fetch('/.netlify/functions/health', { signal: AbortSignal.timeout(5000) });
+      if (r.ok){
+        const d = await r.json().catch(() => ({}));
+        serverHasKey = !!d.apiKeyConfigured;
+      }
+    } catch {}
+    if (serverHasKey){
+      bodyEl.innerHTML = 'The "Claude AI · Connected" badge is green because an API key is configured on the Cygenix server, '
+        + 'but the AI summary calls Claude directly from your browser and needs a key here too. '
+        + 'Open <strong>Settings → API Key</strong> and paste your Anthropic API key, then try again. '
+        + '<span style="color:var(--text3);display:block;margin-top:0.4rem;font-size:11px;font-family:var(--mono)">'
+        + '(A future update can route this through the server-side key — let me know if you\'d like that.)</span>';
+    } else {
+      bodyEl.textContent = 'No Anthropic API key set. Open Settings → API Key to add one, then try again.';
+    }
     return;
   }
 
