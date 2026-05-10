@@ -850,8 +850,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   position:relative;
   transition:border-color 0.18s ease,background 0.18s ease;
 }
-.ps-card.is-clickable{cursor:pointer;}
-.ps-card.is-clickable:hover{border-color:var(--accent);background:var(--bg2);}
+.ps-card.is-clickable,
+.ps-card[data-action]{cursor:pointer;}
+.ps-card.is-clickable:hover,
+.ps-card[data-action]:hover{border-color:var(--accent);background:var(--bg2);}
 .ps-card-head{
   display:flex;align-items:center;justify-content:space-between;gap:0.5rem;
 }
@@ -5017,20 +5019,16 @@ function renderProjectStatus(){
         : { label: 'System-generated',   tone: 'ok'  };
 
   // ── Conversion report ────────────────────────────────────────────────────
-  // Detected by: (a) inventory items in this project tagged as schema/artifact
-  // that look like conversion reports, OR (b) jobs that have report payloads
-  // computed (job.reportData / job.reportGenerated / has a totalRows + tables
-  // populated, which is what openReport requires to render).
-  const reportInvItems = projInv.filter(a => {
-    const t = String(a.type || '').toLowerCase();
-    const n = String(a.name || a.filename || '').toLowerCase();
-    return t === 'schema' || t === 'artifact' || /report|conversion/i.test(n);
-  });
-  const jobsWithReportData = projJobs.filter(j =>
-    j.reportGenerated === true || (j.tables && j.tables.length && (j.totalRows || j.completedAt))
-  );
-  const reportProduced = (reportInvItems.length + jobsWithReportData.length) > 0;
-  const reportCount    = reportInvItems.length || jobsWithReportData.length;
+  // Source of truth: the `project_reports` Cosmos container, queried via the
+  // /.netlify/functions/reports endpoint (action: 'list'). The card renders
+  // immediately in a "checking…" state and is updated asynchronously by
+  // refreshConversionReportCard() once the real count comes back.
+  //
+  // Earlier versions of this code used a localStorage heuristic (any job
+  // with tables populated counted as a "report produced") which over-
+  // reported — the Reports page would be empty but the card still said 1+
+  // were produced. That heuristic is gone.
+  const reportPlaceholder = { state: 'loading' };  // updated post-render
 
   // ── Data quality review ──────────────────────────────────────────────────
   // Cygenix tracks data-cleansing rules (cygenix_wasis_rules) project-wide,
@@ -5114,18 +5112,22 @@ function renderProjectStatus(){
   });
 
   // ── Card 3: Conversion Report ────────────────────────────────────────────
-  const reportCard = card({
-    title: 'Conversion Report',
-    icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v6h6M9 14h6M9 17h6M9 11h2"/></svg>',
-    status: reportProduced ? 'ok' : 'idle',
-    value: reportProduced ? String(reportCount) : '—',
-    valueSub: reportProduced ? ` produced` : '',
-    body: reportProduced
-      ? `<div class="ps-card-sub"><span class="ps-pill ps-pill-ok">Generated</span><div style="margin-top:0.5rem;color:var(--text3);font-size:11px;font-family:var(--mono)">${reportInvItems.length ? `${reportInvItems.length} in artifacts` : `${jobsWithReportData.length} from jobs`}</div></div>`
-      : '<div class="ps-card-sub"><span class="ps-pill ps-pill-idle">Not yet produced</span><div style="margin-top:0.5rem;color:var(--text3);font-size:11px">Open a completed job and click Report to generate.</div></div>',
-    foot: `<span>Open Reports</span><span>→</span>`,
-    onClick: 'reports',
-  });
+  // Renders in a "checking…" state. refreshConversionReportCard() updates
+  // it after the dashboard mounts, by fetching the real count from Cosmos.
+  const reportCard = `
+    <div class="ps-card status-idle" id="ps-card-report" data-action="reports" style="cursor:pointer">
+      <div class="ps-card-head">
+        <div class="ps-card-title">Conversion Report</div>
+        <div class="ps-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v6h6M9 14h6M9 17h6M9 11h2"/></svg>
+        </div>
+      </div>
+      <div class="ps-card-value" id="ps-card-report-value">—</div>
+      <div class="ps-card-sub" id="ps-card-report-body">
+        <span class="ps-pill ps-pill-idle">Checking…</span>
+      </div>
+      <div class="ps-card-foot"><span>Open Reports</span><span>→</span></div>
+    </div>`;
 
   // ── Card 4: Data Quality Review ──────────────────────────────────────────
   const dqCard = card({
@@ -5236,10 +5238,99 @@ function renderProjectStatus(){
     'cleansing':  () => { window.location.href = '/data-cleansing.html'; },
     'validation': () => { window.location.href = '/validation.html'; },
   };
-  host.querySelectorAll('.ps-card.is-clickable').forEach(el => {
+  // Match every card with a data-action attribute — covers both the
+  // generic .is-clickable cards built by the card() helper and the
+  // bespoke report card (which has its own structure).
+  host.querySelectorAll('.ps-card[data-action]').forEach(el => {
     const key = el.dataset.action;
     if (actions[key]) el.addEventListener('click', actions[key]);
   });
+
+  // Kick off async refresh of the Conversion Report card. This runs out-of-
+  // band so the rest of the dashboard renders synchronously without waiting
+  // on Cosmos. Failures are surfaced inline on the card itself.
+  refreshConversionReportCard(project.id);
+}
+
+// ── Async refresh of the Conversion Report card ─────────────────────────
+// Queries the Cosmos `project_reports` container via the reports Netlify
+// function and updates the card with the real count of saved reports
+// scoped to the active project. Earlier dashboard versions inferred a
+// "report exists" status from local heuristics (any job with rows
+// counted), which over-reported. This is the source of truth.
+async function refreshConversionReportCard(projectId){
+  const cardEl = document.getElementById('ps-card-report');
+  const valEl  = document.getElementById('ps-card-report-value');
+  const bodyEl = document.getElementById('ps-card-report-body');
+  if (!cardEl || !valEl || !bodyEl) return;
+
+  // The reports function requires an Entra ID token via Authorization
+  // header. cygenixFetch attaches it automatically.
+  if (typeof window.cygenixFetch !== 'function'){
+    cardEl.classList.remove('status-ok','status-warn','status-err');
+    cardEl.classList.add('status-idle');
+    valEl.textContent = '—';
+    bodyEl.innerHTML = '<span class="ps-pill ps-pill-idle">Auth not loaded</span>';
+    return;
+  }
+
+  try {
+    const r = await window.cygenixFetch('/.netlify/functions/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'list' }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+
+    const all = Array.isArray(data.reports) ? data.reports : [];
+    // Scope to the active project. Older reports may pre-date the
+    // projectId field — those are excluded from the count rather than
+    // attributed to the active project, since we can't verify ownership.
+    const forThisProject = all.filter(rep => rep && rep.projectId === projectId);
+    const count = forThisProject.length;
+
+    cardEl.classList.remove('status-ok','status-warn','status-err','status-idle');
+    if (count > 0){
+      cardEl.classList.add('status-ok');
+      valEl.innerHTML = String(count) + '<span class="ps-card-value-sub"> saved</span>';
+      // Show the most recently saved report's date, if available.
+      const latest = forThisProject
+        .map(rep => rep.savedAt ? new Date(rep.savedAt).getTime() : 0)
+        .reduce((a,b) => Math.max(a,b), 0);
+      const latestStr = latest
+        ? new Date(latest).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })
+        : '';
+      bodyEl.innerHTML = '<span class="ps-pill ps-pill-ok">Generated</span>'
+        + (latestStr
+            ? '<div style="margin-top:0.5rem;color:var(--text3);font-size:11px;font-family:var(--mono)">Most recent: ' + latestStr + '</div>'
+            : '');
+    } else {
+      cardEl.classList.add('status-idle');
+      valEl.textContent = '—';
+      // Distinguish "no reports for this project" from "no reports at all
+      // across any project" — the latter is more useful for new users.
+      const otherProjects = all.length - forThisProject.length;
+      bodyEl.innerHTML = '<span class="ps-pill ps-pill-idle">Not yet produced</span>'
+        + '<div style="margin-top:0.5rem;color:var(--text3);font-size:11px">'
+        + (otherProjects > 0
+            ? otherProjects + ' report' + (otherProjects===1?'':'s') + ' saved under other projects.'
+            : 'Run a migration in Projects → Execute, then click Save Report.')
+        + '</div>';
+    }
+  } catch (e) {
+    const msg = String(e && e.message || e || '');
+    const isAuth = /unauthor|missing authorization|bearer|token/i.test(msg);
+    cardEl.classList.remove('status-ok','status-warn','status-err','status-idle');
+    cardEl.classList.add(isAuth ? 'status-warn' : 'status-err');
+    valEl.textContent = '—';
+    bodyEl.innerHTML = '<span class="ps-pill ps-pill-' + (isAuth?'warn':'err') + '">'
+      + (isAuth ? 'Sign in required' : 'Lookup failed')
+      + '</span>'
+      + '<div style="margin-top:0.5rem;color:var(--text3);font-size:11px">'
+      + (isAuth ? 'Sign out and back in to refresh your session.' : msg.slice(0, 120))
+      + '</div>';
+  }
 }
 
 // ── AI summary generator ─────────────────────────────────────────────────
