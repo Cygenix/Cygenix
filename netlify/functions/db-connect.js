@@ -130,22 +130,35 @@ async function handleMssql(action, connectionString, database, body) {
       // Used to populate table-lists on pages with very large schemas (9k+ tables)
       // where the full `schema` response would exceed Netlify's 6 MB response cap.
       // For any individual table's columns the client should call `schema-columns`.
+      //
+      // Includes both base tables AND views, tagged with `kind`. Views always
+      // report rowCount 0 because we can't get a row count without scanning
+      // (which can be expensive on a large view) — surfacing them at all is
+      // more valuable than blocking on the count. Indexed views could in
+      // principle be counted from sys.partitions but that's the minority case.
+      // System views from INFORMATION_SCHEMA / sys are excluded — they're
+      // noise for an end-user table picker.
       case 'schema-tables': {
         const tablesR = await pool.request().query(`
           SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
-            COALESCE(p.rows,0) AS row_count
+            CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
+            CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
           FROM INFORMATION_SCHEMA.TABLES t
           LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
           LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
-          WHERE t.TABLE_TYPE='BASE TABLE'
+          WHERE t.TABLE_TYPE IN ('BASE TABLE','VIEW')
+            AND t.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
           ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`);
+        const all = tablesR.recordset.map(t => ({
+          schema:   t.TABLE_SCHEMA,
+          name:     t.TABLE_NAME,
+          kind:     t.kind,
+          rowCount: parseInt(t.row_count) || 0,
+        }));
         result = {
           success: true,
-          tables: tablesR.recordset.map(t => ({
-            schema: t.TABLE_SCHEMA,
-            name: t.TABLE_NAME,
-            rowCount: parseInt(t.row_count) || 0,
-          })),
+          tables: all,                               // legacy callers: full mixed list
+          views:  all.filter(t => t.kind === 'view'),// new callers can read this directly
         };
         break;
       }
@@ -217,11 +230,13 @@ async function handleMssql(action, connectionString, database, body) {
         const [tablesR, colsR, pkR, fkR] = await Promise.all([
           pool.request().query(`
             SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
-              COALESCE(p.rows,0) AS row_count
+              CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
+              CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
             FROM INFORMATION_SCHEMA.TABLES t
             LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
             LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
-            WHERE t.TABLE_TYPE='BASE TABLE'
+            WHERE t.TABLE_TYPE IN ('BASE TABLE','VIEW')
+              AND t.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
             ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`),
 
           // NB: previously used COLUMNPROPERTY(..., 'IsIdentity') per row.
@@ -262,7 +277,7 @@ async function handleMssql(action, connectionString, database, body) {
         const tables = {};
         for (const t of tablesR.recordset) {
           const key = `${t.TABLE_SCHEMA}.${t.TABLE_NAME}`;
-          tables[key] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, rowCount: parseInt(t.row_count)||0, columns: [], primaryKeys: [], foreignKeys: [] };
+          tables[key] = { schema: t.TABLE_SCHEMA, name: t.TABLE_NAME, kind: t.kind || 'table', rowCount: parseInt(t.row_count)||0, columns: [], primaryKeys: [], foreignKeys: [] };
         }
         for (const c of colsR.recordset) {
           const key = `${c.TABLE_SCHEMA}.${c.TABLE_NAME}`;
@@ -409,21 +424,30 @@ async function handlePostgres(action, connectionString, database, body) {
         const tablesR = await client.query(`
           SELECT n.nspname  AS table_schema,
                  c.relname  AS table_name,
-                 COALESCE(c.reltuples, 0)::bigint AS row_count
+                 CASE c.relkind
+                   WHEN 'v' THEN 'view'
+                   WHEN 'm' THEN 'view'
+                   ELSE 'table'
+                 END AS kind,
+                 CASE WHEN c.relkind IN ('v','m') THEN 0
+                      ELSE COALESCE(c.reltuples, 0)::bigint END AS row_count
           FROM   pg_class c
           JOIN   pg_namespace n ON n.oid = c.relnamespace
-          WHERE  c.relkind = 'r'
+          WHERE  c.relkind IN ('r','p','v','m')
             AND  n.nspname NOT IN ('pg_catalog','information_schema')
             AND  n.nspname NOT LIKE 'pg_toast%'
           ORDER  BY n.nspname, c.relname
         `);
+        const all = tablesR.rows.map(t => ({
+          schema:   t.table_schema,
+          name:     t.table_name,
+          kind:     t.kind,
+          rowCount: parseInt(t.row_count) || 0,
+        }));
         result = {
           success: true,
-          tables: tablesR.rows.map(t => ({
-            schema: t.table_schema,
-            name: t.table_name,
-            rowCount: parseInt(t.row_count) || 0,
-          })),
+          tables: all,
+          views:  all.filter(t => t.kind === 'view'),
         };
         break;
       }
@@ -488,10 +512,16 @@ async function handlePostgres(action, connectionString, database, body) {
           client.query(`
             SELECT n.nspname  AS table_schema,
                    c.relname  AS table_name,
-                   COALESCE(c.reltuples, 0)::bigint AS row_count
+                   CASE c.relkind
+                     WHEN 'v' THEN 'view'
+                     WHEN 'm' THEN 'view'
+                     ELSE 'table'
+                   END AS kind,
+                   CASE WHEN c.relkind IN ('v','m') THEN 0
+                        ELSE COALESCE(c.reltuples, 0)::bigint END AS row_count
             FROM   pg_class c
             JOIN   pg_namespace n ON n.oid = c.relnamespace
-            WHERE  c.relkind = 'r'
+            WHERE  c.relkind IN ('r','p','v','m')
               AND  n.nspname NOT IN ('pg_catalog','information_schema')
               AND  n.nspname NOT LIKE 'pg_toast%'
             ORDER  BY n.nspname, c.relname
@@ -538,6 +568,7 @@ async function handlePostgres(action, connectionString, database, body) {
           tables[key] = {
             schema: t.table_schema,
             name: t.table_name,
+            kind: t.kind || 'table',
             rowCount: parseInt(t.row_count) || 0,
             columns: [],
             primaryKeys: [],
