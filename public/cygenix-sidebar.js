@@ -92,7 +92,7 @@
       { key:'audit',             label:'Audit Log',         view:'audit',               color:'var(--text2)', icon: iconAuditLog() },
       { key:'supported',         label:'Supported Formats', view:'supported',           color:'var(--text2)', icon: iconInfo() },
       { key:'diagnostics',       label:'Diagnostics',       view:'diagnostics',         color:'var(--text2)', icon: iconPulse() },
-      { key:'help',              label:'Help & Guide',      action:'open-help',         color:'var(--accent)', icon: iconHelp() },
+      { key:'help',              label:'Help Guide',      action:'open-help',         color:'var(--accent)', icon: iconHelp() },
     ]},
     { section: null, items: [
       { key:'cookie-prefs',      label:'Cookie preferences', action:'cookie-preferences', color:'var(--text3)',  icon: iconCookie() },
