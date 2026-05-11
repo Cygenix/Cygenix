@@ -29,6 +29,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script src="/cygenix-auth-token.js"></script>
 <script src="/cygenix-params.js"></script>
 <script src="/project-manager.js"></script>
 <style>
@@ -2188,13 +2189,31 @@ async function saveReportToCloud() {
     } catch {}
     if (!email) throw new Error('Not signed in — please sign in before saving.');
 
-    const r = await fetch('/.netlify/functions/reports', {
+    // Use cygenixFetch so the Authorization: Bearer <jwt> header is
+    // attached automatically. reports.js requires a verified Entra
+    // token and ignores the legacy userEmail field in the body — the
+    // userId is now derived from the token's verified claims. We
+    // still send userEmail/userName in the body for display purposes,
+    // since the function records userName for UI; userEmail in the
+    // body is harmless (it's ignored on the server).
+    if (typeof window.cygenixFetch !== 'function') {
+      throw new Error('Auth helper not loaded. Refresh the page and try again.');
+    }
+    const r = await window.cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'save', userEmail: email, userName: name, report }),
     });
     const data = await r.json().catch(() => ({ error: 'Non-JSON response (' + r.status + ')' }));
-    if (!r.ok) throw new Error(data.error || ('Save failed: HTTP ' + r.status));
+    if (!r.ok) {
+      // Auth failures here usually mean the MSAL session has expired
+      // in this tab. Give the user a more actionable message than the
+      // raw "Missing Authorization header" the server returns.
+      if (/unauthor|missing authorization|bearer|token/i.test(data.error || '')) {
+        throw new Error('Session expired. Sign out and back in, then try saving again.');
+      }
+      throw new Error(data.error || ('Save failed: HTTP ' + r.status));
+    }
 
     btn.textContent = '✓ Saved';
     setTimeout(() => { btn.textContent = prev; btn.disabled = false; }, 2500);
