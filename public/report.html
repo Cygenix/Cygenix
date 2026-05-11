@@ -335,6 +335,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
     <div class="info-grid">
       <div>
         <div class="info-row"><span class="info-key">System</span><span class="info-val" id="src-system">—</span></div>
+        <div class="info-row"><span class="info-key">Server</span><span class="info-val" id="src-server">—</span></div>
+        <div class="info-row"><span class="info-key">Database</span><span class="info-val" id="src-database">—</span></div>
         <div class="info-row"><span class="info-key">File(s)</span><span class="info-val" id="src-files">—</span></div>
         <div class="info-row"><span class="info-key">Total file size</span><span class="info-val" id="src-size">—</span></div>
       </div>
@@ -516,6 +518,26 @@ function renderReport(d) {
     ? (d.targetSystem || '—')
     : (d.sourceSystem || '—');
 
+  // Friendly-name display logic. The report payload may carry user-defined
+  // labels from the saved-connections library (e.g. "Agentive Source local")
+  // alongside the parsed server/database. When the friendly name is present
+  // we lead with it everywhere a single string identifies the side; when
+  // it isn't, we fall back to the DBMS family label that's been there
+  // historically. This keeps older saved reports rendering unchanged.
+  const srcFriendlyLabel = (d.sourceFriendlyName || '').trim();
+  const tgtFriendlyLabel = (d.targetFriendlyName || '').trim();
+  const srcHeadline = srcFriendlyLabel || sourceSystemDisplay;
+  const tgtHeadline = tgtFriendlyLabel || d.targetSystem || 'Target';
+  // The detail-section "System" row prefers the friendly name too, but
+  // appends the DBMS family in parentheses so the original information
+  // isn't lost. When there's no friendly name, just show the system.
+  const srcSystemRow = srcFriendlyLabel
+    ? srcFriendlyLabel + ' (' + sourceSystemDisplay + ')'
+    : sourceSystemDisplay;
+  const tgtSystemRow = tgtFriendlyLabel
+    ? tgtFriendlyLabel + ' (' + (d.targetSystem || '—') + ')'
+    : (d.targetSystem || '—');
+
   // Multi-migration project? List every migration's source/target rather than
   // showing only the first.
   const migrationSteps = (d.isProjectReport && Array.isArray(d.steps))
@@ -525,13 +547,13 @@ function renderReport(d) {
 
   // Header
   set('rpt-title', `${d.projectName || 'Migration'} — Conversion Report`);
-  set('rpt-subtitle', `${sourceSystemDisplay} → ${d.targetSystem || 'Target'} · Cygenix AI Migration Platform`);
+  set('rpt-subtitle', `${srcHeadline} → ${tgtHeadline} · Cygenix AI Migration Platform`);
   set('rpt-project', d.projectName || '—');
   set('rpt-user', d.userName || d.userEmail || '—');
   set('rpt-date', fmtDate(d.completedAt || now));
   set('rpt-id', reportId);
-  set('rpt-source', sourceSystemDisplay);
-  set('rpt-target', d.targetSystem || '—');
+  set('rpt-source', srcHeadline);
+  set('rpt-target', tgtHeadline);
   // Stats
   const totalRows = d.tables?.reduce((s,t) => s + (t.sourceRows||0), 0) || d.totalRows || 0;
   const inserted  = d.tables?.reduce((s,t) => s + (t.insertedRows||0), 0) || d.insertedRows || 0;
@@ -562,7 +584,9 @@ function renderReport(d) {
     set('d-duration', secs < 60 ? `${secs}s` : `${Math.floor(secs/60)}m ${secs%60}s`);
   }
   // Source
-  set('src-system', sourceSystemDisplay);
+  set('src-system', srcSystemRow);
+  set('src-server',   d.sourceServer   || '—');
+  set('src-database', d.sourceDatabase || '—');
   set('src-files',  d.sourceFiles?.join(', ') || d.sourceFile || '—');
   set('src-size',   fmtSize(d.sourceFileSize));
   set('src-tables', tableCount);
@@ -2092,6 +2116,18 @@ function doExport() {
       ? (d.targetSystem || '—')
       : (d.sourceSystem || '—');
 
+    // Friendly-name display logic — mirrors the on-screen renderer's
+    // approach above. Friendly name leads; DBMS family in parentheses
+    // when both are present. See the on-screen block for details.
+    const srcFriendlyLabel = (d.sourceFriendlyName || '').trim();
+    const tgtFriendlyLabel = (d.targetFriendlyName || '').trim();
+    const srcSystemRow = srcFriendlyLabel
+      ? srcFriendlyLabel + ' (' + sourceSystemDisplay + ')'
+      : sourceSystemDisplay;
+    const tgtSystemRow = tgtFriendlyLabel
+      ? tgtFriendlyLabel + ' (' + (d.targetSystem || '—') + ')'
+      : (d.targetSystem || '—');
+
     // For project reports with multiple migration steps, summarise across all
     // of them rather than only showing the first. Single-migration projects
     // and one-off migrations keep the original single source/target display.
@@ -2148,12 +2184,14 @@ function doExport() {
       ['Duration',        duration,                            '', ''],
       ['', '', '', ''],
       ['MIGRATION SUMMARY', '', '', ''],
-      ['Source system',   sourceSystemDisplay,                'Tables migrated',  tableCount],
+      ['Source system',   srcSystemRow,                       'Tables migrated',  tableCount],
+      ['Source server',   d.sourceServer   || '—',            'Total rows',       totalRows],
+      ['Source database', d.sourceDatabase || '—',            'Rows inserted',    inserted],
       ['Source table',    srcTableCell,                       'Target table',     tgtTableCell],
-      ['Target system',   d.targetSystem || '—',              'Total rows',       totalRows],
-      ['Auth method',     d.authMethod || 'Managed Identity', 'Rows inserted',    inserted],
-      ['Target server',   d.targetServer || '—',              'Errors',           errors],
-      ['Target database', d.targetDatabase || '—',            'Columns mapped',   d.columnMapping?.length || d.columnsMapped || 0],
+      ['Target system',   tgtSystemRow,                       'Errors',           errors],
+      ['Auth method',     d.authMethod || 'Managed Identity', 'Columns mapped',   d.columnMapping?.length || d.columnsMapped || 0],
+      ['Target server',   d.targetServer || '—',              '',                 ''],
+      ['Target database', d.targetDatabase || '—',            '',                 ''],
       ['Was/Is rules',    wasisCell,                          '',                 ''],
       ['', '', '', ''],
       ['STATUS', errors === 0 ? 'SUCCESS' : errors > 0 && inserted > 0 ? 'PARTIAL' : 'FAILED', '', ''],

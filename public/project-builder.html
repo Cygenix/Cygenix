@@ -1796,6 +1796,130 @@ async function testConn(which) {
 
 function isFnUrl(c) { return c.startsWith('https://') || c.startsWith('http://'); }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Connection descriptor + friendly-name resolution (for reports)
+// ──────────────────────────────────────────────────────────────────────────
+//
+// These helpers extract a {kind, server, database} descriptor from a
+// connection string or Azure Function URL, then match the result
+// against the user's saved connections to find a friendly name. The
+// result is written into the report payload so the report viewer
+// renders human-readable identifiers ("Agentive Source local")
+// instead of opaque IPs or DBMS-family labels ("Microsoft SQL Server
+// / Azure SQL").
+//
+// We never store passwords or function keys in the descriptor. The
+// raw conn strings here can contain `mssql://user:pwd@host/db` or
+// `https://...?code=secret`; both are stripped before returning.
+//
+// This is a duplicated implementation of the same parser that lives
+// in dashboard.html. Keeping the two in sync by hand is fine for now
+// — the parser is small, stable, and well-tested. If we ever add a
+// third caller, extract to a shared helper (e.g. cygenix-conn-parse.js)
+// rather than copy a third time.
+function rptParseDbConnection(connStr) {
+  if (!connStr || typeof connStr !== 'string') return null;
+  const s = connStr.trim();
+  if (!s) return null;
+
+  // Azure Function URL — host only, function key stripped.
+  if (/^https?:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      return { kind: 'azure-function', server: u.host, database: '', auth: 'function-key', driver: 'azure-function' };
+    } catch { return null; }
+  }
+
+  // URL-style connection string (mssql://, postgres://, postgresql://).
+  const urlStyle = /^(mssql|postgres|postgresql):\/\/(?:([^:@\/]+)(?::([^@\/]*))?@)?([^:\/]+)(?::(\d+))?(?:\/([^?#]+))?/i.exec(s);
+  if (urlStyle) {
+    const driver = urlStyle[1].toLowerCase().replace('postgresql','postgres');
+    const user   = urlStyle[2] || '';
+    const host   = urlStyle[4] || '';
+    const port   = urlStyle[5] || '';
+    const db     = urlStyle[6] || '';
+    return {
+      kind: 'connection-string',
+      server: host + (port ? ':' + port : ''),
+      database: db,
+      auth: user ? 'sql-auth' : 'integrated',
+      driver: driver === 'mssql' ? 'mssql' : 'postgres',
+    };
+  }
+
+  // ADO.NET-style connection string.
+  if (s.includes('=') && (s.includes(';') || /server\s*=/i.test(s))) {
+    const map = {};
+    for (const p of s.split(';').map(x => x.trim()).filter(Boolean)) {
+      const eq = p.indexOf('=');
+      if (eq < 0) continue;
+      map[p.slice(0, eq).trim().toLowerCase()] = p.slice(eq + 1).trim();
+    }
+    const server = (map['server'] || map['data source'] || '').replace(/^tcp:/i, '');
+    const db     = map['database'] || map['initial catalog'] || '';
+    let auth = 'sql-auth';
+    if (/yes|true|sspi/i.test(map['integrated security'] || '')) auth = 'integrated';
+    if (/active directory managed identity/i.test(map['authentication'] || '')) auth = 'managed-identity';
+    if (server || db) {
+      return { kind: 'connection-string', server, database: db, auth, driver: 'mssql' };
+    }
+  }
+  return null;
+}
+
+// Read the user's saved-connection library and find any with a friendly
+// name that matches the (kind, server, database) tuple of `desc`.
+// Falls back to a server-only match for Azure Function entries that
+// don't carry a database. Returns the saved entry's `.name` or ''.
+//
+// Uses the same per-user wrapper read path as readCurrentConnections
+// in dashboard.html — CygenixConnections.savedGetAll() — so it only
+// sees the active user's saved connections.
+function rptResolveFriendlyName(desc) {
+  if (!desc) return '';
+  let saved = [];
+  try {
+    if (typeof CygenixConnections !== 'undefined' && typeof CygenixConnections.savedGetAll === 'function') {
+      saved = CygenixConnections.savedGetAll() || [];
+    }
+  } catch {}
+  if (!Array.isArray(saved) || !saved.length) return '';
+
+  // Build a key from the descriptor, then walk saved connections in
+  // newest-first order looking for a match. We do an exact match
+  // (kind+server+db) first, then fall back to server-only.
+  const wantKey       = [desc.kind, desc.server || '', desc.database || ''].join('|').toLowerCase();
+  const wantServerKey = [desc.kind, desc.server || '', ''].join('|').toLowerCase();
+
+  const sorted = saved.slice().sort((a, b) =>
+    String(b.savedAt || '').localeCompare(String(a.savedAt || ''))
+  );
+
+  let exactName = '';
+  let serverOnlyName = '';
+  for (const s of sorted) {
+    if (!s || !s.name) continue;
+    const raw = s.mode === 'azure' ? (s.fnUrl || '') : (s.connString || '');
+    const sd = rptParseDbConnection(raw);
+    if (!sd) continue;
+    const sKey       = [sd.kind, sd.server || '', sd.database || ''].join('|').toLowerCase();
+    const sServerKey = [sd.kind, sd.server || '', ''].join('|').toLowerCase();
+    if (!exactName && sKey === wantKey) exactName = s.name;
+    // Server-only fallback is only safe for azure-function entries,
+    // which legitimately have no database in their descriptor. For
+    // connection strings, the database is part of the identity — two
+    // databases on the same server are different things and shouldn't
+    // share a friendly name. Without this guard, "conversion" on the
+    // same host as a saved "Agentive (agentive)" connection would be
+    // wrongly labelled.
+    if (!serverOnlyName && sServerKey === wantServerKey && sd.kind === 'azure-function') {
+      serverOnlyName = s.name;
+    }
+    if (exactName) break;
+  }
+  return exactName || serverOnlyName || '';
+}
+
 async function dbCall(conn, body) {
   if (isFnUrl(conn)) {
     const res  = await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(120000) });
@@ -3118,6 +3242,23 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
   const srcTableName = firstMigStep?.srcTable || '';
   const tgtTableName = firstMigStep?.tgtTable || '';
 
+  // ── Friendly-name resolution for the report ────────────────────────────
+  // Parse both sides into structured {server, database, ...} descriptors,
+  // then look those up against the user's saved connections to find a
+  // human-readable name (e.g. "Agentive Source local"). Both the friendly
+  // name and the underlying server/database identifiers are written into
+  // the report payload so the viewer can display whichever it has.
+  //
+  // Credentials are NEVER written into the report — the descriptor parser
+  // strips passwords and function keys. This is a deliberate change from
+  // the previous code which wrote the raw `tgtConn` string (with embedded
+  // password) into `targetServer`. Reports get saved to Cosmos via the
+  // reports endpoint, so anything in them ends up in the cloud.
+  const srcDesc = rptParseDbConnection(srcConn || '');
+  const tgtDesc = rptParseDbConnection(tgtConn || '');
+  const srcFriendly = rptResolveFriendlyName(srcDesc);
+  const tgtFriendly = rptResolveFriendlyName(tgtDesc);
+
   return {
     id:           'proj_' + Date.now(),
     projectName:  project.name || 'Conversion Project',
@@ -3129,10 +3270,24 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
     // target system here. (Previously this was set to srcTableName, which
     // showed "dbo.something_src" in the report's Source system field.)
     sourceSystem: 'Microsoft SQL Server / Azure SQL',
+    // Friendly identifiers for the report viewer. When present, these
+    // are preferred over the generic sourceSystem / targetSystem labels.
+    // sourceFriendlyName / targetFriendlyName: user-defined name from
+    //   the saved-connections library. Empty if no match.
+    // sourceServer / sourceDatabase: parsed from the active conn string,
+    //   without credentials. Used in the report's structured fields and
+    //   as a fallback when no friendly name is available.
+    sourceFriendlyName: srcFriendly,
+    sourceServer:       srcDesc ? srcDesc.server   : '',
+    sourceDatabase:     srcDesc ? srcDesc.database : '',
     targetTable:  tgtTableName,
     targetSystem: 'Microsoft SQL Server / Azure SQL',
-    targetServer: tgtConn || '',
-    targetDatabase: '',
+    targetFriendlyName: tgtFriendly,
+    // Strip credentials. The previous version wrote `tgtConn` directly,
+    // which for a mssql://user:pwd@host/db string included the password.
+    // Reports are persisted to Cosmos — credentials must never appear.
+    targetServer:   tgtDesc ? tgtDesc.server   : '',
+    targetDatabase: tgtDesc ? tgtDesc.database : '',
     authMethod:   isFnUrl(tgtConn||'') ? 'Azure Managed Identity' : 'SQL Authentication',
     totalRows,
     insertedRows: totalRows,
