@@ -5670,6 +5670,26 @@ function renderProjectStatus(){
   // band so the rest of the dashboard renders synchronously without waiting
   // on Cosmos. Failures are surfaced inline on the card itself.
   refreshConversionReportCard(project.id);
+
+  // Re-render once after a short delay to catch the case where Cosmos
+  // sync arrived after our first render. The first paint reads from
+  // whatever's in localStorage right now; if the cloud has fresher
+  // data (a saved connection added on another browser, secrets
+  // rehydrated after this thread but before the sync settle), the
+  // delayed re-render picks it up. Idempotent: subsequent renders
+  // produce the same DOM unless something genuinely changed.
+  //
+  // Only re-schedule once per render cycle to avoid infinite loops if
+  // the data keeps changing — we use a window-level flag rather than
+  // a closure so multiple top-level renderProjectStatus calls (which
+  // can happen if the user navigates away and back) don't pile up.
+  if (!window._psDelayedRerenderScheduled) {
+    window._psDelayedRerenderScheduled = true;
+    setTimeout(() => {
+      window._psDelayedRerenderScheduled = false;
+      try { renderProjectStatus(); } catch {}
+    }, 1200);
+  }
 }
 
 // ── Async refresh of the Conversion Report card ─────────────────────────
@@ -8148,16 +8168,33 @@ async function syncFromCloud(){
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-renderDashboard();
-// Sanitise any pre-existing saved-connections data that was uploaded
-// to Cosmos before the secrets-split refactor. Idempotent — runs at
-// most once per user.
+// Sanitise saved-connections data BEFORE the first render. This must run
+// first because renderProjectStatus reads saved connections to resolve
+// friendly names — if the migration happens after the first render, the
+// panel sees the pre-migration data shape and the friendly-name lookup
+// silently misses. Idempotent — runs at most once per user.
 sconnSecretsMigrationOnce();
+renderDashboard();
 checkHealth();
 initUserAndProject();
 renderInventory();
 updateInvCount();
 updateWasisBanner();
+
+// Re-render the project status panel whenever Cosmos sync pulls new
+// data from the cloud — covers the case where the user has saved a
+// new connection on another browser and we want it to show up here
+// without a manual refresh. Hooked via the `storage` event, which
+// fires when ANOTHER tab writes to localStorage; for SAME-tab writes
+// the cosmos sync layer calls localStorage.setItem directly so the
+// event doesn't fire — we rely on the sync layer's own redraw hooks
+// for that case where present.
+window.addEventListener('storage', (e) => {
+  if (!e || !e.key) return;
+  if (e.key === 'cygenix_saved_connections' || e.key === 'cygenix_projects'){
+    try { renderProjectStatus(); } catch {}
+  }
+});
 
 // ── First-run onboarding ───────────────────────────────────────────────────────
 (function checkFirstRun(){
