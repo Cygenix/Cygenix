@@ -5671,22 +5671,24 @@ function renderProjectStatus(){
   // on Cosmos. Failures are surfaced inline on the card itself.
   refreshConversionReportCard(project.id);
 
-  // Re-render once after a short delay to catch the case where Cosmos
-  // sync arrived after our first render. The first paint reads from
-  // whatever's in localStorage right now; if the cloud has fresher
+  // Schedule a one-shot delayed re-render to catch the case where
+  // Cosmos sync arrived after our first render. The first paint reads
+  // from whatever's in localStorage right now; if the cloud has fresher
   // data (a saved connection added on another browser, secrets
-  // rehydrated after this thread but before the sync settle), the
-  // delayed re-render picks it up. Idempotent: subsequent renders
-  // produce the same DOM unless something genuinely changed.
+  // rehydrated after this thread but before the sync settles), the
+  // delayed re-render picks it up.
   //
-  // Only re-schedule once per render cycle to avoid infinite loops if
-  // the data keeps changing — we use a window-level flag rather than
-  // a closure so multiple top-level renderProjectStatus calls (which
-  // can happen if the user navigates away and back) don't pile up.
-  if (!window._psDelayedRerenderScheduled) {
-    window._psDelayedRerenderScheduled = true;
+  // CRITICAL: this is a ONE-SHOT scheduler, not a recurring one. The
+  // flag is set the first time renderProjectStatus runs on this page
+  // and NEVER reset — every subsequent call sees the flag set and
+  // skips scheduling. Without this, the re-render in the setTimeout
+  // calls renderProjectStatus again, which schedules another
+  // re-render, which calls renderProjectStatus again, ad infinitum at
+  // 1.2-second intervals. Each render fires a /api/data/reports call,
+  // so the loop ALSO hammers the reports endpoint at ~1 req/s.
+  if (!window._psDelayedRerenderFired) {
+    window._psDelayedRerenderFired = true;  // never reset
     setTimeout(() => {
-      window._psDelayedRerenderScheduled = false;
       try { renderProjectStatus(); } catch {}
     }, 1200);
   }
@@ -5704,6 +5706,26 @@ async function refreshConversionReportCard(projectId){
   const bodyEl = document.getElementById('ps-card-report-body');
   if (!cardEl || !valEl || !bodyEl) return;
 
+  // SAFETY: rate-limit this function to defend against ever
+  // re-introducing a render loop. Two guards:
+  //   1. In-flight guard — if a fetch is already running, drop the
+  //      duplicate call entirely. Prevents fan-out when multiple
+  //      pages of code converge on the same render path.
+  //   2. Minimum-interval guard — if a successful (or even failed)
+  //      fetch completed in the last 3 seconds, return the cached
+  //      result without re-hitting the API. Three seconds is long
+  //      enough to absorb an accidental re-render storm without
+  //      noticeably delaying user-driven refreshes.
+  // Both flags live on the function object itself so they survive
+  // across calls without polluting window.
+  const MIN_INTERVAL_MS = 3000;
+  const now = Date.now();
+  if (refreshConversionReportCard._inFlight) return;
+  if (refreshConversionReportCard._lastCallAt &&
+      now - refreshConversionReportCard._lastCallAt < MIN_INTERVAL_MS) return;
+  refreshConversionReportCard._inFlight   = true;
+  refreshConversionReportCard._lastCallAt = now;
+
   // The reports function requires an Entra ID token via Authorization
   // header. cygenixFetch attaches it automatically.
   if (typeof window.cygenixFetch !== 'function'){
@@ -5711,6 +5733,7 @@ async function refreshConversionReportCard(projectId){
     cardEl.classList.add('status-idle');
     valEl.textContent = '—';
     bodyEl.innerHTML = '<span class="ps-pill ps-pill-idle">Auth not loaded</span>';
+    refreshConversionReportCard._inFlight = false;
     return;
   }
 
@@ -5770,6 +5793,11 @@ async function refreshConversionReportCard(projectId){
       + '<div style="margin-top:0.5rem;color:var(--text3);font-size:11px">'
       + (isAuth ? 'Sign out and back in to refresh your session.' : msg.slice(0, 120))
       + '</div>';
+  } finally {
+    // Always clear the in-flight flag — both success and failure
+    // paths land here. Without this, a single failed fetch would
+    // permanently block all future refreshes of this card.
+    refreshConversionReportCard._inFlight = false;
   }
 }
 
