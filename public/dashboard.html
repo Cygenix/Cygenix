@@ -6023,7 +6023,28 @@ function escapeAttr(s) { return s.replace(/'/g,"\\'").replace(/"/g,'&quot;'); }
 
 // ── User + Project ─────────────────────────────────────────────────────────────
 function initUserAndProject() {
+  // Load user — check Entra session first, then legacy fallbacks.
+  //
+  // RETRY BEHAVIOUR: MSAL's account records are written to localStorage
+  // asynchronously after the msal-browser.min.js script finishes loading
+  // and initialising. If initUserAndProject runs before MSAL has
+  // populated localStorage (a real race on slower networks or first
+  // paint), every email-lookup branch comes up empty, the `if (email)`
+  // block at the end never runs, and the user pill stays on the
+  // "Loading…" placeholder forever.
+  //
+  // The fix: if no email is found AND we haven't exhausted retries yet,
+  // schedule another attempt 250ms later. Caps at 8 attempts (~2s)
+  // before giving up — long enough to cover MSAL init under load,
+  // short enough that genuine "not signed in" cases still resolve
+  // quickly. The retry is keyed on a single closure counter so multiple
+  // calls don't pile up retry chains.
+  const MAX_ATTEMPTS = 8;
+  const RETRY_DELAY_MS = 250;
+  initUserAndProject._attempts = (initUserAndProject._attempts || 0);
+
   // Load user — check Entra session first, then legacy fallbacks
+  let resolvedEmail = '';
   try {
     let email = '', name = '';
 
@@ -6175,8 +6196,29 @@ function initUserAndProject() {
       $('user-avatar')     && ($('user-avatar').textContent = initials);
       $('user-email-menu') && ($('user-email-menu').textContent = email);
       console.log('[Dashboard] User:', email, '| Name:', name);
+      resolvedEmail = email;
     }
   } catch(e) { console.warn('[Dashboard] initUserAndProject error:', e.message); }
+
+  // If MSAL data wasn't ready yet, schedule a retry. This is the fix
+  // for the "user pill stuck on Loading…" symptom — MSAL's
+  // localStorage cache is populated asynchronously after the
+  // msal-browser script loads, and our first synchronous lookup can
+  // miss it. Retry quietly until we find an email or exhaust attempts.
+  if (!resolvedEmail && initUserAndProject._attempts < MAX_ATTEMPTS){
+    initUserAndProject._attempts++;
+    setTimeout(initUserAndProject, RETRY_DELAY_MS);
+    // Important: when we retry, we don't want to fall through to the
+    // project-name block below because it'll just run again on the
+    // retry. Return early. The project-name block executes on the
+    // SUCCESSFUL attempt (when resolvedEmail is set).
+    return;
+  }
+  // Reset attempt counter on both success AND exhaustion. Resetting on
+  // exhaustion means a later manual call (e.g. after sign-in completes
+  // with a delay) starts fresh and gets its own retry chain rather
+  // than being permanently blocked.
+  initUserAndProject._attempts = 0;
 
   // ── Active project name in topbar pill ─────────────────────────────────
   // sessionStorage.cygenix_active_project is a write-cache that other parts
