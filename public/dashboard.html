@@ -864,6 +864,18 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .ps-db-role.src{background:rgba(79,142,255,0.12);color:var(--accent);border:0.5px solid rgba(79,142,255,0.3);}
 .ps-db-role.tgt{background:rgba(167,139,250,0.12);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);}
 .ps-db-server{color:var(--text);font-weight:500;}
+/* Friendly name takes the same visual weight as the server, but uses the
+   accent colour so it reads as 'identified' rather than raw infrastructure. */
+.ps-db-friendly{
+  color:var(--text);font-weight:600;letter-spacing:-0.005em;
+}
+/* Demoted server line shown beneath a friendly name — same monospace
+   feel as the meta section, just smaller, so the host is still
+   inspectable but doesn't compete with the friendly label. */
+.ps-db-server-sm{
+  color:var(--text3);font-size:10.5px;font-family:var(--mono);
+  margin-left:0.1rem;
+}
 .ps-db-name{color:var(--accent);}
 .ps-db-meta{color:var(--text3);font-size:10.5px;margin-left:auto;display:flex;gap:0.6rem;}
 .ps-db-meta span{display:inline-flex;align-items:center;gap:0.25rem;}
@@ -1159,6 +1171,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 </style>
 <script src="/connections.js"></script>
 <script src="/cygenix-auth-token.js"></script>
+<script src="/cygenix-saved-conn-secrets.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 <script src="/cygenix-wasis.js"></script>
 <script src="/cygenix-privacy.js"></script>
@@ -5196,15 +5209,82 @@ function renderDbHistory(history){
     'function-key':     'Function key',
   })[a] || (a || 'unknown');
 
+  // Build a lookup of saved connections, keyed by parsed identity.
+  // For each user-saved connection we run its connString / fnUrl back
+  // through parseDbConnection to get a {server, database, kind} tuple
+  // we can match against dbHistory entries. The tuple key uses the
+  // same shape as the dbHistory entries' (kind|server|database) so a
+  // straightforward string lookup resolves the friendly name.
+  // Users are likely to have multiple connections to the same host
+  // (different databases on the same server), so the match key
+  // includes database too. Multiple matches → most recent wins,
+  // matching how sconnSetAll sorts entries by savedAt.
+  const friendlyByKey = new Map();
+  try {
+    if (typeof sconnGetAll === 'function' && typeof parseDbConnection === 'function'){
+      const saved = sconnGetAll();
+      // Newest first so .set() with same key keeps the freshest name.
+      const sortedSaved = saved.slice().sort((a,b) =>
+        String(b.savedAt||'').localeCompare(String(a.savedAt||''))
+      );
+      for (const s of sortedSaved){
+        if (!s || !s.name) continue;
+        const raw = s.mode === 'azure'
+          ? (s.fnUrl || '')
+          // Note: connString is rehydrated by sconnGetAll on the user's
+          // own browser. On a browser that doesn't have the local
+          // secret, connString will be empty here — that's OK, we just
+          // can't resolve the friendly name there. The host is enough
+          // for Azure Function entries to still resolve.
+          : (s.connString || '');
+        const desc = parseDbConnection(raw);
+        if (!desc) continue;
+        const key = [desc.kind, desc.server || '', desc.database || ''].join('|').toLowerCase();
+        if (!friendlyByKey.has(key)){
+          friendlyByKey.set(key, { name: s.name, side: s.side });
+        }
+        // Also register a server-only fallback so Azure Function
+        // entries (which have no database) still match dbHistory
+        // entries that recorded a database name. Lower priority than
+        // the full match — only set if not already present.
+        const serverOnlyKey = [desc.kind, desc.server || '', ''].join('|').toLowerCase();
+        if (!friendlyByKey.has(serverOnlyKey)){
+          friendlyByKey.set(serverOnlyKey, { name: s.name, side: s.side });
+        }
+      }
+    }
+  } catch (e) {
+    // Resolution is best-effort — never let it break the panel.
+    console.warn('[ps-dbs] friendly-name lookup failed:', e);
+  }
+
+  function friendlyFor(e){
+    const exact = friendlyByKey.get([e.kind, e.server || '', e.database || ''].join('|').toLowerCase());
+    if (exact) return exact;
+    const serverOnly = friendlyByKey.get([e.kind, e.server || '', ''].join('|').toLowerCase());
+    return serverOnly || null;
+  }
+
   const rows = sorted.map(e => {
     const role = e.role === 'tgt' ? 'Target' : 'Source';
     const roleClass = e.role === 'tgt' ? 'tgt' : 'src';
     const driver = e.kind === 'azure-function' ? 'Azure Fn' : (e.driver || 'sql');
+    const f = friendlyFor(e);
+    // When a friendly name is known, lead with it and demote the host
+    // to secondary text. The host is still useful (debugging, sanity-
+    // checking that the right database is in use) but the friendly
+    // name is what the engineer recognises at a glance.
+    const primary = f
+      ? `<span class="ps-db-friendly" title="Saved connection name">${escP(f.name)}</span>`
+      : `<span class="ps-db-server" title="Server / host">${escP(e.server || '—')}</span>`;
+    const secondary = f && (e.server || e.database)
+      ? `<span class="ps-db-server-sm" title="Server / database">${escP(e.server || '—')}${e.database ? ' / ' + escP(e.database) : ''}</span>`
+      : (e.database ? `<span class="ps-db-name" title="Database">/ ${escP(e.database)}</span>` : '');
     return `
       <div class="ps-db-row">
         <span class="ps-db-role ${roleClass}">${role}</span>
-        <span class="ps-db-server" title="Server / host">${escP(e.server || '—')}</span>
-        ${e.database ? `<span class="ps-db-name" title="Database">/ ${escP(e.database)}</span>` : ''}
+        ${primary}
+        ${secondary}
         <div class="ps-db-meta">
           <span title="Driver">${escP(driver)}</span>
           <span title="Authentication">${escP(authLabel(e.auth))}</span>
@@ -8017,6 +8097,10 @@ async function syncFromCloud(){
 // ── Init ──────────────────────────────────────────────────────────────────────
 $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 renderDashboard();
+// Sanitise any pre-existing saved-connections data that was uploaded
+// to Cosmos before the secrets-split refactor. Idempotent — runs at
+// most once per user.
+sconnSecretsMigrationOnce();
 checkHealth();
 initUserAndProject();
 renderInventory();
@@ -9304,23 +9388,72 @@ const SCONN_KEY = 'cygenix_saved_connections';  // legacy — retained only so a
 // Read the saved list. Delegates to CygenixConnections so the data is
 // per-user-scoped (users can't see each other's saved connections). Returns
 // [] if nobody is signed in. Never throws.
+//
+// As of the secrets-split refactor, the synced blob holds sanitised
+// entries (no passwords, no function keys). We rehydrate from the
+// local secrets store before returning so every downstream caller —
+// the chip renderer, sconnLoad, the Connections form — sees entries
+// in their original full shape. On a browser that doesn't have the
+// local secrets (e.g. user just signed in on a new machine),
+// connString/fnKey come back empty and the user is prompted to
+// re-enter the secret when they try to load that saved connection.
 function sconnGetAll(){
   try {
+    let entries;
     if (CygenixConnections && typeof CygenixConnections.savedGetAll === 'function') {
-      return CygenixConnections.savedGetAll();
+      entries = CygenixConnections.savedGetAll();
+    } else {
+      // Fallback only — shouldn't happen if connections.js loaded correctly.
+      const raw = localStorage.getItem(SCONN_KEY);
+      entries = raw ? JSON.parse(raw) : [];
     }
-    // Fallback only — shouldn't happen if connections.js loaded correctly.
-    const raw = localStorage.getItem(SCONN_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
+    if (!Array.isArray(entries)) return [];
+
+    if (window.CygenixSavedConnSecrets && typeof CygenixSavedConnSecrets.rehydrate === 'function'){
+      CygenixSavedConnSecrets.rehydrate(entries);
+    }
+    return entries;
   } catch { return []; }
 }
 
 // Write the full list. Caps at 50 entries. Writes per-user via CygenixConnections.
 // If nobody is signed in, the write is silently dropped to avoid leaking.
+//
+// PRIVACY-CRITICAL: This blob ends up in Cosmos via the SYNC_KEYS
+// pipeline. The sanitiser below moves any password-bearing fields
+// (connString, fnKey) out of each entry and into the local-only
+// secrets store BEFORE we hand the blob to the sync layer. Database
+// passwords and Azure Function keys must never reach the cloud.
 function sconnSetAll(list){
   const capped = list.slice(0, 50);
+
+  // Split each entry into a sanitised half (stays here, gets synced)
+  // and a secret half (goes to a local-only store, never synced).
+  // If CygenixSavedConnSecrets isn't loaded yet (e.g. someone deferred
+  // the script tag), we fall through to the legacy unsanitised path
+  // and warn loudly — better to keep working than to silently drop
+  // saves, but make sure the issue is visible.
+  let toWrite;
+  if (window.CygenixSavedConnSecrets && typeof CygenixSavedConnSecrets.split === 'function'){
+    toWrite = capped.map(entry => {
+      const { sanitised, secrets } = CygenixSavedConnSecrets.split(entry);
+      // Persist secrets locally, keyed by sconn id. If the entry has
+      // no id (shouldn't happen — sconnSaveAs always assigns one),
+      // skip secret storage rather than risk a cross-entry collision.
+      if (sanitised && sanitised.id && secrets){
+        CygenixSavedConnSecrets.set(sanitised.id, secrets);
+      }
+      return sanitised;
+    });
+    // Drop any orphaned secrets whose entries got removed from the list
+    // (e.g. user deleted a saved connection). Without this, deleted
+    // entries' passwords would linger in localStorage indefinitely.
+    CygenixSavedConnSecrets.pruneTo(toWrite.map(e => e && e.id).filter(Boolean));
+  } else {
+    console.warn('[sconn] CygenixSavedConnSecrets not loaded — secrets will sync to cloud unstripped. Check that /cygenix-saved-conn-secrets.js is included before /cygenix-cosmos-sync.js.');
+    toWrite = capped;
+  }
+
   try {
     if (CygenixConnections && typeof CygenixConnections.savedSetAll === 'function') {
       // savedSetAll writes the unnamespaced cygenix_saved_connections blob
@@ -9329,12 +9462,63 @@ function sconnSetAll(list){
       // bodged `cygenix_saved_connections::<email>` directly, which broke the
       // round-trip (reads never saw the data) AND the cloud sync (intercept
       // only fires for the unnamespaced key).
-      CygenixConnections.savedSetAll(capped);
+      CygenixConnections.savedSetAll(toWrite);
       return;
     }
     // Fallback only — shouldn't happen if connections.js loaded correctly.
-    localStorage.setItem(SCONN_KEY, JSON.stringify(capped));
+    localStorage.setItem(SCONN_KEY, JSON.stringify(toWrite));
   } catch (e) { console.error('[sconn] localStorage write failed:', e); }
+}
+
+// One-shot migration: pull existing entries through the secrets-split,
+// then save them back. The save goes through the standard SYNC_KEYS
+// pipeline, so the next outbound sync replaces the tainted blob in
+// Cosmos with the sanitised version.
+//
+// Crucially this MUST NOT run before the synced blob has loaded from
+// Cosmos on a fresh browser — if it ran on an empty local store, the
+// "migration" would push an empty list to Cosmos and wipe the user's
+// saved connections from every other browser. So it runs only when
+// the local list is non-empty AND any entry actually contains a
+// secret. Empty list → nothing to migrate, return immediately.
+//
+// Tracked in a per-user localStorage flag so it doesn't re-run on
+// every page load. Safe to call repeatedly: post-flag, it's a no-op.
+function sconnSecretsMigrationOnce(){
+  const FLAG = 'cygenix_sconn_secrets_migrated_v1';
+  try {
+    if (localStorage.getItem(FLAG) === '1') return;
+    if (!window.CygenixSavedConnSecrets) return;  // helper not loaded; bail
+    const entries = sconnGetAll();
+    if (!Array.isArray(entries) || entries.length === 0){
+      // Nothing to migrate. Mark the flag so we don't re-check forever
+      // — if the user adds a connection later, the new sconnSetAll
+      // path will sanitise it directly.
+      localStorage.setItem(FLAG, '1');
+      return;
+    }
+    // Detect whether any entry still has its secret embedded — if all
+    // are already clean (e.g. user is on a brand-new browser that's
+    // pulled an already-clean blob from Cosmos), skip the rewrite to
+    // avoid an unnecessary sync round-trip.
+    const hasSecretEmbedded = entries.some(e =>
+      e && (e.connString || e.fnKey)
+    );
+    if (!hasSecretEmbedded){
+      localStorage.setItem(FLAG, '1');
+      return;
+    }
+    // Re-save through sconnSetAll, which now strips secrets to the
+    // local store and writes the sanitised list back. The Cosmos sync
+    // layer picks up the change and uploads the clean version,
+    // overwriting whatever's currently up there.
+    sconnSetAll(entries);
+    localStorage.setItem(FLAG, '1');
+    console.log('[sconn] Migration complete: ' + entries.length + ' saved-connection record(s) sanitised. Secrets retained locally; cloud copy will be overwritten on next sync.');
+  } catch (e) {
+    console.error('[sconn] Migration failed:', e);
+    // Don't set the flag — let it retry next page load.
+  }
 }
 
 // Shortened preview string for display — never shows passwords.
