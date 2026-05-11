@@ -847,9 +847,29 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .ps-dbs-title{
   font-size:10.5px;color:var(--text3);font-family:var(--mono);
   text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
-  display:flex;align-items:center;gap:0.45rem;
+  display:flex;align-items:center;justify-content:space-between;gap:0.45rem;
 }
 .ps-dbs-title svg{width:11px;height:11px;color:var(--text3);}
+/* Small unobtrusive clear button on the right of the header. Stays
+   monospaced + lowercase to read as a utility action, not a primary
+   call-to-action — the user shouldn't feel pushed towards wiping
+   their data, but the option needs to be reachable. */
+.ps-dbs-clear{
+  background:transparent;
+  color:var(--text3);
+  border:0.5px solid var(--border2);
+  border-radius:5px;
+  padding:2px 8px;
+  font-size:10px;font-family:var(--mono);
+  text-transform:lowercase;letter-spacing:0.04em;
+  cursor:pointer;
+  transition:color 0.12s, border-color 0.12s, background 0.12s;
+}
+.ps-dbs-clear:hover{
+  color:var(--red);
+  border-color:rgba(240,70,70,0.4);
+  background:rgba(240,70,70,0.06);
+}
 .ps-db-row{
   display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;
   font-size:11.5px;font-family:var(--mono);color:var(--text2);
@@ -5087,36 +5107,40 @@ function parseDbConnection(connStr){
 // cygenix_project_connections + sessionStorage fallbacks) and return
 // {src, tgt} descriptors. Either side may be null if nothing's configured.
 function readCurrentConnections(){
-  let pc = {};
-  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
+  // CRITICAL: connections are stored per-user inside the
+  // cygenix_project_connections blob (keyed by email). Reading raw
+  // localStorage gets you a confused mix of all users' data plus
+  // some legacy flat-keyed fields that drift out of sync with the
+  // namespaced slice. Always go through CygenixConnections.get() —
+  // that's the wrapper that resolves to the current user's slice
+  // (and it's what every other page uses to read the same data).
+  let c = {};
+  try {
+    if (window.CygenixConnections && typeof window.CygenixConnections.get === 'function'){
+      c = window.CygenixConnections.get() || {};
+    } else {
+      // Fallback only — shouldn't happen if connections.js loaded.
+      // Read flat keys from raw localStorage, accepting they may be stale.
+      const pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}');
+      c = pc || {};
+    }
+  } catch {}
+
   const ss = (k) => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } };
-  const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
+  const get = (k) => (c[k] != null ? String(c[k]) : '');
 
-  // The Connections page writes its state under camelCase keys
-  // (srcConnString, tgtConnString, srcFnUrl, tgtFnUrl) on the
-  // cygenix_project_connections wrapper. Older code paths use the
-  // cygenix_-prefixed snake_case names. We try the camelCase keys
-  // first (current source of truth) and fall back to the legacy keys
-  // so historical data still works.
-
-  // Source — function URL preferred, then connection string.
-  const srcFn = pcGet('srcFnUrl')
-             || pcGet('cygenix_src_fn_url')
-             || ss('cygenix_src_fn_url');
-  const srcCs = pcGet('srcConnString')
-             || pcGet('cygenix_src_conn_string')
-             || ss('cygenix_src_conn_string');
+  // Source — function URL preferred, then connection string. The
+  // wrapper's keys are camelCase (srcConnString, srcFnUrl, etc).
+  // sessionStorage still uses the snake_case names — left in as a
+  // legacy fallback for any pre-wrapper data.
+  const srcFn = get('srcFnUrl') || ss('cygenix_src_fn_url');
+  const srcCs = get('srcConnString') || ss('cygenix_src_conn_string');
   const srcCandidate = (/^https?:\/\//i.test(srcFn) ? srcFn : '') || srcCs || srcFn;
 
-  // Target — same priority. fnUrl/connString may both be present; we
-  // pick whichever is a real HTTP URL first, mirroring impGetConn's
-  // routing logic.
-  const tgtFn = pcGet('tgtFnUrl')
-             || pcGet('cygenix_fn_url')
-             || ss('cygenix_fn_url');
-  const tgtCs = pcGet('tgtConnString')
-             || pcGet('cygenix_conn_string')
-             || ss('cygenix_conn_string');
+  // Target — same priority. Choose whichever side actually has a
+  // value, mirroring impGetConn's HTTP-vs-string routing.
+  const tgtFn = get('tgtFnUrl') || ss('cygenix_fn_url');
+  const tgtCs = get('tgtConnString') || ss('cygenix_conn_string');
   const tgtCandidate = (/^https?:\/\//i.test(tgtFn) ? tgtFn : '') || tgtCs || tgtFn;
 
   return {
@@ -5297,11 +5321,39 @@ function renderDbHistory(history){
   return `
     <div class="ps-dbs">
       <div class="ps-dbs-title">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
-        Databases used
+        <span style="display:inline-flex;align-items:center;gap:0.45rem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+          Databases used
+        </span>
+        <button type="button" class="ps-dbs-clear" onclick="clearProjectDbHistory()"
+                title="Wipe the captured history. The current active connections will be re-captured on next render.">
+          Clear
+        </button>
       </div>
       ${rows}
     </div>`;
+}
+
+// Wipe dbHistory for the active project and re-render. The capture
+// runs again automatically on the next renderProjectStatus() pass,
+// which re-populates with whatever's currently active — so this is
+// effectively "reset to current state" rather than "delete forever".
+function clearProjectDbHistory(){
+  if (!confirm('Clear the captured database history for this project?\n\n'
+      + 'Current active connections will be re-captured automatically on the next refresh.')) return;
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  if (!activeId) return;
+  try {
+    const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+    const idx = projects.findIndex(p => p.id === activeId);
+    if (idx < 0) return;
+    projects[idx].dbHistory = [];
+    projects[idx].modified  = new Date().toISOString();
+    localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+    renderProjectStatus();
+  } catch (e) {
+    console.error('[ps-dbs] Clear history failed:', e);
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════
