@@ -4298,11 +4298,27 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   reportProgress({ phase: 'counting', rowsDone: 0, rowsTotal: 0, pageNum: 0, totalPages: 0, lastUpdate: Date.now() });
   let totalRows = 0;
   try {
-    const countRes = await dbCall(srcConn, { action:'count', sql: srcSelectSQL });
-    totalRows = countRes.count || 0;
+    // The backend ('execute' action) returns COUNT in recordset[0].cnt.
+    // We wrap the source SELECT in a subquery so any ORDER BY in the
+    // source SQL is permitted (a bare COUNT() can't have ORDER BY).
+    // Strip a trailing semicolon if present so the wrap is syntactically
+    // valid.
+    const innerSql = srcSelectSQL.replace(/;\s*$/, '');
+    const countSql = 'SELECT COUNT(*) AS cnt FROM (' + innerSql + ') AS _src_count_wrap';
+    const countRes = await dbCall(srcConn, { action: 'execute', sql: countSql });
+    const row = (countRes.recordset && countRes.recordset[0]) || (countRes.rows && countRes.rows[0]) || {};
+    totalRows = Number(row.cnt || row.CNT || 0);
     add('Source has ' + totalRows.toLocaleString() + ' rows — fetching in pages of ' + PAGE_SIZE.toLocaleString() + '…');
   } catch(e) {
     add('Could not count rows (' + e.message + ') — proceeding without progress estimate');
+  }
+  // Fallback: if the count query failed or returned 0 but we have a
+  // saved totalRows on the step from the last job save, use that as
+  // a best-effort estimate so the progress bar still shows X of Y.
+  // It may be slightly stale but is far more useful than nothing.
+  if (!totalRows && step.totalRows) {
+    totalRows = step.totalRows;
+    add('Using saved estimate of ' + totalRows.toLocaleString() + ' rows from last job save.');
   }
 
   // Build column mapping
