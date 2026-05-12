@@ -8237,19 +8237,43 @@ async function syncFromCloud(){
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-$('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-// Sanitise saved-connections data BEFORE the first render. This must run
-// first because renderProjectStatus reads saved connections to resolve
-// friendly names — if the migration happens after the first render, the
-// panel sees the pre-migration data shape and the friendly-name lookup
-// silently misses. Idempotent — runs at most once per user.
-sconnSecretsMigrationOnce();
-renderDashboard();
-checkHealth();
-initUserAndProject();
-renderInventory();
-updateInvCount();
-updateWasisBanner();
+// Each step is wrapped in its own try/catch. Without this, a single
+// throwing line halts the whole sequence — and several times today
+// we've seen "init stops at line N, everything after never runs"
+// symptoms (pill stuck on Loading, etc.) caused by an early step
+// throwing silently. Now each step is independent; one breaking
+// doesn't take the rest with it. Errors get logged so we still see
+// what failed.
+try { $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); } catch(e){ console.error('[init] today-date:', e); }
+try { sconnSecretsMigrationOnce(); } catch(e){ console.error('[init] sconn-migration:', e); }
+try { renderDashboard();           } catch(e){ console.error('[init] renderDashboard:', e); }
+try { checkHealth();               } catch(e){ console.error('[init] checkHealth:', e); }
+try { initUserAndProject();        } catch(e){ console.error('[init] initUserAndProject:', e); }
+try { renderInventory();           } catch(e){ console.error('[init] renderInventory:', e); }
+try { updateInvCount();            } catch(e){ console.error('[init] updateInvCount:', e); }
+try { updateWasisBanner();         } catch(e){ console.error('[init] updateWasisBanner:', e); }
+
+// Safety net: re-run initUserAndProject after the page has fully
+// settled. We've seen cases where the synchronous init-time call
+// never reaches the function (specific cause untraced — possibly
+// browser extension interference, scope quirk, or interaction with
+// an earlier-failing step). A short delayed call catches this:
+// if the original call worked, this one is a no-op (function
+// just re-runs harmlessly). If the original didn't run, this one
+// rescues the pill. Also gives MSAL extra time to populate
+// localStorage if it hadn't on the first call.
+setTimeout(() => {
+  try {
+    if (typeof initUserAndProject === 'function') {
+      const pillEl = document.getElementById('user-name');
+      // Only re-run if the pill still looks unpopulated. Avoids
+      // unnecessary re-execution on healthy page loads.
+      if (pillEl && /loading/i.test(pillEl.textContent || '')) {
+        initUserAndProject();
+      }
+    }
+  } catch(e) { console.error('[init] safety-net initUserAndProject:', e); }
+}, 800);
 
 // Re-render the project status panel whenever Cosmos sync pulls new
 // data from the cloud — covers the case where the user has saved a
