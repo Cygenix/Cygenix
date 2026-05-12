@@ -263,6 +263,23 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <input type="checkbox" id="staging-reload" style="margin:0;cursor:pointer">
           <span>Reload</span>
         </label>
+        <!-- Audit Source toggle.
+             • Unchecked (default): only rows that pass the WHERE clause appear
+               in staging. Rows excluded at source are invisible — there's no
+               record of what was filtered out.
+             • Checked: after the main stage+load completes, runs a second
+               source query for the inverse of the WHERE clause and writes
+               primary keys of excluded rows into the SAME staging table
+               with dm_load_status='excluded' and the WHERE text in
+               dm_load_error. If the source has no usable primary key, a
+               single summary row with dm_load_status='excluded_summary'
+               and the excluded count is written instead.
+             Adds one source query per run (cheap — just keys, not data).
+             Skipped entirely when there's no WHERE clause on the job. -->
+        <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text2);cursor:pointer;user-select:none" title="When checked, source rows excluded by the WHERE clause are also written to staging with status='excluded' for audit. Adds one source query per run.">
+          <input type="checkbox" id="staging-audit-source" style="margin:0;cursor:pointer">
+          <span>Audit Source</span>
+        </label>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
       </div>
@@ -2442,15 +2459,154 @@ const StagingArea = (function(){
   }
 
   // Pick a column from the mapping (or fallback) to use as dm_source_row_id.
-  // Preference order: configured srcRowKeyCol on the step → first column in
-  // mapping whose name looks like a primary key → first column in mapping.
+  // Returns either a column name we're confident enough to use as a row id,
+  // or null when no good candidate exists.
+  //
+  // Preference order:
+  //   1. step.srcRowKeyCol — explicitly configured on the step
+  //   2. mapping entry whose srcCol matches PK-like naming: id, *_id, pk_*, *key
+  // Otherwise: returns null. Callers should treat null as "no usable PK"
+  // and degrade gracefully — for stage rows, fall back to a positional
+  // id; for excluded-row audit, emit a summary count instead of per-row
+  // entries.
+  //
+  // Returning mapping[0] (the previous fallback) was misleading: it gave
+  // callers a column name that wasn't necessarily a unique identifier,
+  // making audit lookups unreliable.
   function pickSourceRowKey(step, mapping){
     if (step && step.srcRowKeyCol) return step.srcRowKeyCol;
     if (!Array.isArray(mapping) || !mapping.length) return null;
     const pkLike = mapping.find(m =>
       /^id$|_id$|^pk_|key$/i.test(m.srcCol || '')
     );
-    return (pkLike && pkLike.srcCol) || mapping[0].srcCol;
+    return (pkLike && pkLike.srcCol) || null;
+  }
+
+  // Capture source rows excluded by the WHERE clause as audit entries in
+  // the staging table. Called only when:
+  //   • The user ticked the "Audit Source" checkbox on the Run UI
+  //   • The job has a non-empty srcWhere
+  //
+  // Two paths depending on whether we have a usable source primary key:
+  //
+  //   Per-row capture (srcKeyCol non-null):
+  //     INSERT INTO staging (audit cols only) SELECT '<runId>',
+  //     'excluded', '<reason>', CAST(<key> AS NVARCHAR(255)), '<jobId>',
+  //     SYSUTCDATETIME() FROM <srcTable> WHERE NOT (<where>). One row
+  //     per excluded source row, all data columns NULL.
+  //
+  //   Summary capture (srcKeyCol null):
+  //     Run a COUNT(*) for the excluded condition, then INSERT a single
+  //     audit row with status='excluded_summary' and the count in
+  //     dm_load_error. Honest fallback when source has no PK — we still
+  //     record that exclusion happened and how many, just not WHICH rows.
+  //
+  // Note about cross-database execution: this query runs on the SOURCE
+  // database, but the INSERT writes to the TARGET (where staging lives).
+  // We can't do a single INSERT … SELECT across databases via separate
+  // connections, so the per-row path does the SELECT on source, builds a
+  // VALUES batch in JS, and INSERTs to target. For very large excluded
+  // sets this means transferring N keys over the wire — fine for typical
+  // migrations, expensive for million-row exclusions.
+  //
+  // Returns: { excluded: int, captureMode: 'per-row'|'summary'|'skipped' }
+  async function captureExcluded({
+    srcConn, tgtConn, srcTable, srcWhere, stagingFull,
+    runId, jobId, srcKeyCol, fmtVal
+  }){
+    if (!srcWhere || !srcWhere.trim()){
+      return { excluded: 0, captureMode: 'skipped' };
+    }
+    const whereTxt = String(srcWhere).trim().replace(/^WHERE\s+/i, '');
+    const reasonLit = "Filtered by WHERE: " + whereTxt;
+
+    // ── Summary path: no usable key ────────────────────────────────────
+    // COUNT(*) on source for the inverse condition, then a single INSERT
+    // to staging.
+    if (!srcKeyCol){
+      let excludedCount = 0;
+      try {
+        const r = await dbCall(srcConn, {
+          action: 'execute',
+          sql: 'SELECT COUNT(*) AS excluded_count FROM ' + srcTable +
+               ' WHERE NOT (' + whereTxt + ')'
+        });
+        const row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]) || {};
+        excludedCount = Number(row.excluded_count || 0);
+      } catch (e) {
+        throw classifyDbError(e,
+          'count excluded source rows from ' + srcTable,
+          'SELECT on the source table'
+        );
+      }
+      if (excludedCount === 0){
+        return { excluded: 0, captureMode: 'summary' };
+      }
+      const summaryReason = reasonLit + ' — ' + excludedCount +
+                            ' row(s) excluded (no source primary key, so individual rows not recorded)';
+      const sql =
+        'INSERT INTO ' + stagingFull +
+        ' ([dm_timestamp], [dm_load_status], [dm_load_error], [dm_run_id], [dm_source_row_id], [dm_job_id]) ' +
+        'VALUES (DEFAULT, ' + fmtVal('excluded_summary') + ', ' + fmtVal(summaryReason) +
+        ', ' + fmtVal(runId) + ', NULL, ' + fmtVal(jobId || 'unknown') + ')';
+      try {
+        await dbCall(tgtConn, { action: 'execute', sql });
+      } catch (e) {
+        throw classifyDbError(e,
+          'write excluded-rows summary to ' + stagingFull,
+          'INSERT permission on the staging table'
+        );
+      }
+      return { excluded: excludedCount, captureMode: 'summary' };
+    }
+
+    // ── Per-row path: usable key exists ────────────────────────────────
+    // Fetch the keys of excluded rows from source. We deliberately fetch
+    // ONLY the key column, not full rows, to keep payload small.
+    let excludedKeys;
+    try {
+      const r = await dbCall(srcConn, {
+        action: 'execute',
+        sql: 'SELECT [' + srcKeyCol + '] AS k FROM ' + srcTable +
+             ' WHERE NOT (' + whereTxt + ')'
+      });
+      excludedKeys = (r.recordset || r.rows || []).map(row => row.k);
+    } catch (e) {
+      throw classifyDbError(e,
+        'fetch excluded source keys from ' + srcTable,
+        'SELECT on the source table'
+      );
+    }
+    if (!excludedKeys.length){
+      return { excluded: 0, captureMode: 'per-row' };
+    }
+
+    // Build INSERT batches. Same batch size as the main stage path to
+    // keep per-statement SQL well under SQL Server's parameter limits.
+    const INSERT_BATCH = 100;
+    let totalInserted = 0;
+    for (let i = 0; i < excludedKeys.length; i += INSERT_BATCH){
+      const batch = excludedKeys.slice(i, i + INSERT_BATCH);
+      const valuesSql = batch.map(k => {
+        const keyLit = k == null ? 'NULL' : fmtVal(String(k));
+        return '(DEFAULT, ' + fmtVal('excluded') + ', ' + fmtVal(reasonLit) +
+               ', ' + fmtVal(runId) + ', ' + keyLit + ', ' + fmtVal(jobId || 'unknown') + ')';
+      }).join(',\n  ');
+      const sql =
+        'INSERT INTO ' + stagingFull +
+        ' ([dm_timestamp], [dm_load_status], [dm_load_error], [dm_run_id], [dm_source_row_id], [dm_job_id]) ' +
+        'VALUES\n  ' + valuesSql;
+      try {
+        const r = await dbCall(tgtConn, { action: 'execute', sql });
+        totalInserted += Number(r.rowsAffected || batch.length);
+      } catch (e) {
+        throw classifyDbError(e,
+          'write excluded-row keys to ' + stagingFull,
+          'INSERT permission on the staging table'
+        );
+      }
+    }
+    return { excluded: totalInserted, captureMode: 'per-row' };
   }
 
   return {
@@ -2463,7 +2619,8 @@ const StagingArea = (function(){
     reloadReset,
     buildStageInsert,
     loadToTarget,
-    pickSourceRowKey
+    pickSourceRowKey,
+    captureExcluded
   };
 })();
 // Expose on window so debugging from DevTools is easy. Not used by any
@@ -2645,9 +2802,14 @@ async function runProject() {
   // on window so runMigrationStep can pick them up without us threading new
   // parameters through every call site.
   const reloadCheckbox = document.getElementById('staging-reload');
+  const auditSourceCheckbox = document.getElementById('staging-audit-source');
   window._currentRun = {
     runId:  StagingArea.newRunId(),
     reload: !!(reloadCheckbox && reloadCheckbox.checked),
+    // When true, runMigrationStep calls StagingArea.captureExcluded after
+    // the main load to write rows excluded by the WHERE clause into the
+    // same staging table. Off by default — adds one source query per run.
+    auditSource: !!(auditSourceCheckbox && auditSourceCheckbox.checked),
     // Track which staging tables we've already reset during this run, so
     // multiple jobs hitting the same target table don't TRUNCATE between
     // each other and lose data the earlier job staged. Keyed by full
@@ -3677,6 +3839,51 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 
   add('Complete — ' + loadedRowCount.toLocaleString() + ' rows loaded into ' + step.tgtTable +
       ' (staged ' + totalInserted.toLocaleString() + ' from ' + pageNum + ' page(s))');
+
+  // ── Audit Source: capture WHERE-excluded rows ────────────────────────────
+  // Only runs when:
+  //   • User ticked the "Audit Source" checkbox on the toolbar
+  //   • Job has a non-empty srcWhere
+  //   • Staging exists for this step (stagingFull was populated)
+  // Writes excluded rows into the SAME staging table with dm_load_status=
+  // 'excluded' (per-row, when source has a usable PK) or 'excluded_summary'
+  // (single audit row with count, when source has no PK). Either way, one
+  // query against staging can show the full filtered + loaded + failed
+  // picture for the run.
+  //
+  // Failure here is non-fatal: the actual migration already succeeded.
+  // We log the error and continue rather than mark the step failed,
+  // since the audit is an extra and shouldn't cause green-then-red on
+  // a run that otherwise worked.
+  if (runCtx.auditSource && step.srcWhere && stagingFull){
+    try {
+      const auditRes = await StagingArea.captureExcluded({
+        srcConn, tgtConn,
+        srcTable: step.srcTable,
+        srcWhere: step.srcWhere,
+        stagingFull,
+        runId: runCtx.runId,
+        jobId: step.jobId || '',
+        srcKeyCol: srcRowKeyCol,  // null when no PK-like column found
+        fmtVal
+      });
+      step.rowsExcluded = auditRes.excluded;
+      step.excludedCapture = auditRes.captureMode;
+      if (auditRes.captureMode === 'per-row'){
+        add('Audit Source: captured ' + auditRes.excluded.toLocaleString() +
+            ' excluded row(s) by source PK [' + srcRowKeyCol + ']');
+      } else if (auditRes.captureMode === 'summary'){
+        add('Audit Source: no source PK available — wrote summary row for ' +
+            auditRes.excluded.toLocaleString() + ' excluded source row(s)');
+      } else {
+        add('Audit Source: nothing to capture (no WHERE clause).');
+      }
+    } catch (e) {
+      add('⚠ Audit Source failed (migration itself succeeded): ' + e.message);
+    }
+  } else if (runCtx.auditSource && !step.srcWhere){
+    add('Audit Source: skipped (no WHERE clause on this job).');
+  }
 
   // Post-migration reconciliation check
   if (reconBefore) {
