@@ -30,6 +30,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 <script src="/cygenix-auth-token.js"></script>
+<script src="/cygenix-saved-conn-secrets.js"></script>
 <script src="/cygenix-params.js"></script>
 <script src="/project-manager.js"></script>
 <style>
@@ -1884,6 +1885,25 @@ function rptResolveFriendlyName(desc) {
     }
   } catch {}
   if (!Array.isArray(saved) || !saved.length) return '';
+
+  // Rehydrate local-only secrets onto each saved entry. The synced
+  // blob from Cosmos holds friendly names + sanitised metadata only —
+  // the actual connString / fnKey live in a local-only secrets store
+  // (cygenix-saved-conn-secrets.js). Without this rehydrate, direct-
+  // mode entries come through with connString='' and the parser
+  // returns null, breaking the match. Azure-mode entries don't need
+  // rehydration because they store fnUrl (not a secret) in the
+  // synced blob — fnKey is the only secret and we don't need it
+  // for the descriptor.
+  //
+  // Best-effort: if the helper isn't loaded for some reason, we
+  // continue without it. Direct-mode matches will silently fail in
+  // that case (same as before this fix), but Azure-mode still works.
+  try {
+    if (window.CygenixSavedConnSecrets && typeof CygenixSavedConnSecrets.rehydrate === 'function') {
+      CygenixSavedConnSecrets.rehydrate(saved);
+    }
+  } catch {}
 
   // Build a key from the descriptor, then walk saved connections in
   // newest-first order looking for a match. We do an exact match
