@@ -4044,12 +4044,94 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SQL expression allowlist (used by fmtVal)
+//
+// Column mappings can include "fixed values" — a value to insert into the
+// target column regardless of source. Most are literal strings ('Active',
+// 'GB') or numbers (1, 0). But some are SQL expressions the database must
+// evaluate at insert time, like newid() for a GUID primary key or
+// getdate() for a timestamp.
+//
+// Without this allowlist, fmtVal wraps everything in N'...' quotes —
+// turning newid() into the literal string 'newid()', which then errors
+// when SQL Server tries to cast it to UNIQUEIDENTIFIER ("Conversion
+// failed when converting from a character string to uniqueidentifier").
+//
+// The allowlist is a flat list of canonical zero-argument SQL functions
+// that should be emitted bare rather than quoted. Comparison is case-
+// insensitive and ignores internal whitespace, so 'NEWID()', 'newid()',
+// and 'newid ( )' all match.
+//
+// What's NOT supported (deliberately):
+//   • Argument-bearing expressions like DATEADD(day, 1, GETDATE()) —
+//     these need real SQL parsing to be safe. If you genuinely need one,
+//     the safer route is a transform with transformExpr rather than a
+//     fixed value.
+//   • Multi-statement values, semicolons, comments — any of these in a
+//     fixed-value field would be a SQL injection vector anyway.
+//
+// To add a new allowed expression: add it to this list with a brief
+// comment explaining what it returns. Lower-case the identifier.
+const SQL_EXPRESSION_ALLOWLIST = [
+  // GUID generators (for uniqueidentifier columns)
+  'newid',             // returns a random GUID
+  'newsequentialid',   // GUID generator that produces ordered values; needs INSERT context
+
+  // Date / time functions (for datetime / datetime2 columns)
+  'getdate',           // local server datetime
+  'getutcdate',        // UTC datetime
+  'sysdatetime',       // higher-precision local datetime2
+  'sysutcdatetime',    // higher-precision UTC datetime2
+  'sysdatetimeoffset', // datetime2 + offset
+  'current_timestamp', // ANSI equivalent of getdate()
+
+  // Identity / context functions
+  'host_name',         // calling machine's hostname
+  'suser_sname',       // connected login name
+  'user_name',         // database user name
+  'app_name',          // calling application name
+  'session_user',      // session login name
+  'current_user',      // current database user
+  'system_user',       // current login
+
+  // Misc
+  '@@spid',            // current session id (special: starts with @@, no parens)
+  '@@servername',      // server name
+  '@@version',         // server version string
+];
+
+// Test whether a JavaScript string represents a SQL expression that
+// fmtVal should emit as bare SQL (no surrounding quotes). Tolerates:
+//   • case differences (NEWID() == newid())
+//   • internal whitespace ('newid ( )' matches 'newid()')
+//   • missing parens on @@ globals (@@SPID == @@spid)
+// Anything else returns false (so fmtVal continues to quote as a literal).
+function isSqlExpression(s){
+  if (typeof s !== 'string') return false;
+  // Normalise: lowercase, strip ALL whitespace.
+  const norm = s.toLowerCase().replace(/\s+/g, '');
+  // For @@ globals, match without parens (e.g. '@@spid' as-is).
+  if (norm.startsWith('@@')) {
+    return SQL_EXPRESSION_ALLOWLIST.includes(norm);
+  }
+  // For function-style, require parens to be present and empty.
+  // 'newid()' → identifier 'newid', and we check membership.
+  const m = /^([a-z_][a-z_0-9]*)\(\)$/.exec(norm);
+  if (!m) return false;
+  return SQL_EXPRESSION_ALLOWLIST.includes(m[1]);
+}
+
 function fmtVal(v) {
   if (v===null||v===undefined) return 'NULL';
   if (typeof v==='boolean') return v?'1':'0';
   if (typeof v==='number') return String(v);
   const s=String(v);
   if (/^-?\d+(\.\d+)?$/.test(s)) return s;
+  // SQL-expression allowlist: emit bare for known functions like newid(),
+  // getdate(), etc. so SQL Server evaluates them at insert time instead of
+  // receiving them as literal strings.
+  if (isSqlExpression(s)) return s;
   return "N'"+s.replace(/'/g,"''")+"'";
 }
 
