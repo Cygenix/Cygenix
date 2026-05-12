@@ -4282,7 +4282,21 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
       log:     s.log || '',
       srcTable: s.srcTable || '',
       tgtTable: s.tgtTable || '',
-      rowsInserted: s.rowsInserted || 0,
+      // Row-count outcomes for this step. rowsInserted is the historic
+      // field name carried for backward compatibility (= rows loaded into
+      // the target). The other fields are populated by the staging path
+      // only — for legacy SQL-script steps or one-to-many jobs they'll
+      // be undefined, which report.html treats as "not applicable" and
+      // hides the breakdown row.
+      rowsInserted:    s.rowsInserted || 0,           // rows that made it to target
+      rowsStaged:      s.rowsStaged,                   // total staged (= loaded + failed)
+      rowsExcluded:    s.rowsExcluded,                 // captured when Audit Source ticked
+      excludedCapture: s.excludedCapture,              // 'per-row' | 'summary' | undefined
+      stagingTable:    s.stagingTable || '',           // dm_staging.[…] name
+      runId:           s.runId || '',                  // dm_run_id for this step's run
+      // WHERE clause from the job. Reported because excluded counts only
+      // make sense in the context of "filtered by THIS clause".
+      srcWhere:        s.srcWhere || '',
       connOn:  s.connOn || 'target',
       reconResult: s.reconResult || null
     })),
