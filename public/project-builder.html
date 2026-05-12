@@ -1391,6 +1391,22 @@ function renderSteps() {
           <option value="parallel"   ${modeVal==='parallel'?'selected':''}>⇉ parallel (coming soon)</option>
         </select>
         <div class="group-actions">
+          ${(() => {
+            // Group-level rollback: count steps in this group that have
+            // rollback-ready metadata. Button only renders when at least
+            // one is rollable. Tooltip shows the count so the user knows
+            // exactly what they're about to undo. The button calls
+            // rollbackGroup(gi), which orchestrates the per-step rollback
+            // in reverse step order to handle inter-job FK dependencies.
+            const rollableInGroup = (group.steps || []).filter(s =>
+              s.rollbackSupported && (s.rowsInserted || 0) > 0 && s.runId && s.stagingTable && s.targetPkCol
+            ).length;
+            if (rollableInGroup === 0) return '';
+            const tip = 'Roll back ' + rollableInGroup + ' job' + (rollableInGroup === 1 ? '' : 's') +
+                        ' in this group — deletes the rows loaded into target. Runs in reverse step order so foreign-key dependencies between jobs unwind cleanly.';
+            return '<button class="group-icon-btn" onclick="rollbackGroup(' + gi + ')" title="' + tip.replace(/"/g, '&quot;') +
+                   '" style="color:var(--amber);font-size:11px;padding:2px 8px">↶ Rollback</button>';
+          })()}
           <button class="group-icon-btn" onclick="moveGroup(${gi},-1)" title="Move up" ${gi===0?'disabled':''}>↑</button>
           <button class="group-icon-btn" onclick="moveGroup(${gi},1)"  title="Move down" ${gi===project.groups.length-1?'disabled':''}>↓</button>
           <button class="group-icon-btn danger" onclick="deleteGroup(${gi})" title="Delete group">✕</button>
@@ -3133,6 +3149,38 @@ function updateRollbackButtonVisibility(){
 }
 
 // Roll back a single step. Called by the per-step "↶ Rollback" button.
+// Roll back all rollback-supported steps in a single group, in REVERSE
+// step order. Reverse-order matters because jobs in the same group often
+// have inter-row FK relationships (e.g. group has "Insert Addresses"
+// followed by "Insert Contacts FK→Addresses"). Forward-order rollback
+// would try to delete Addresses while Contacts still reference them,
+// hitting an FK constraint. Reverse-order unwinds the dependency
+// naturally.
+//
+// Per-step failure semantics (from performRollback): stops on first
+// FK violation. Already-rolled-back steps stay rolled back. The user
+// sees a clear "stopped at step X" message and can resolve the issue
+// before resuming.
+async function rollbackGroup(gi){
+  const group = project.groups?.[gi];
+  if (!group){
+    alert('Group not found.');
+    return;
+  }
+  const rollable = (group.steps || [])
+    .filter(s => s && s.rollbackSupported && (s.rowsInserted || 0) > 0 && s.runId && s.stagingTable && s.targetPkCol)
+    .slice()       // copy so we don't mutate project state
+    .reverse();    // reverse so FK dependencies unwind correctly
+  if (!rollable.length){
+    alert('Nothing in this group to roll back. No step has captured target keys.');
+    return;
+  }
+  const groupLabel = group.name ? '"' + group.name + '"' : 'this group';
+  await performRollback(rollable,
+    'group ' + groupLabel + ' (' + rollable.length + ' job' + (rollable.length === 1 ? '' : 's') + ', reverse order)'
+  );
+}
+
 async function rollbackStep(gi, si){
   const step = project.groups?.[gi]?.steps?.[si];
   if (!step){
