@@ -248,6 +248,21 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
         <button class="btn btn-ghost btn-sm" onclick="openCreateTaskModal()" title="Package selected jobs as a single task for the Task Agent to schedule and run">📦 Create task</button>
+        <!-- Staging mode toggle.
+             • Unchecked (default) = Incremental: each Run appends rows to staging
+               with a fresh dm_run_id. Only rows in 'pending' state are loaded to
+               the target. Safe to run multiple times — older runs stay in the
+               audit log as 'loaded'.
+             • Checked = Reload: staging tables are TRUNCATED before staging
+               begins. Useful when you want a clean slate (e.g. re-running after
+               fixing source data). All previously-staged rows are discarded
+               from the audit log.
+             The label is short to fit the toolbar; the title attribute carries
+             the longer explanation for hover. -->
+        <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text2);cursor:pointer;user-select:none" title="When checked, staging tables are wiped before this Run. Otherwise rows are appended.">
+          <input type="checkbox" id="staging-reload" style="margin:0;cursor:pointer">
+          <span>Reload</span>
+        </label>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
       </div>
@@ -1959,6 +1974,376 @@ async function dbCall(conn, body) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Staging area
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Every INSERT-style migration step now flows through a target-side staging
+// schema (`dm_staging`) instead of writing directly to the final target table.
+// Audit columns on each staged row record what happened: when it was staged,
+// which run staged it, which job, and whether it later loaded into the final
+// target successfully or failed (with the error).
+//
+// Lifecycle per step:
+//   1. ensureSchema(tgtConn)           — CREATE SCHEMA dm_staging if missing
+//   2. ensureTable(tgtConn, tgt, ...)  — CREATE TABLE dm_staging.<name> mirroring
+//                                        the target's columns + 7 dm_* audit cols
+//   3. stageBatch(...) repeated        — INSERT batches of source rows into staging
+//                                        with dm_load_status='pending'
+//   4. loadToTarget(...)               — INSERT INTO tgt SELECT cols FROM staging
+//                                        WHERE dm_run_id=@runId AND status='pending'
+//                                        then UPDATE staging status → 'loaded' or
+//                                        → 'failed' with dm_load_error.
+//
+// Run modes (user-toggleable in the Run UI):
+//   • Incremental  (default): each Run appends rows with a fresh dm_run_id.
+//                             Only rows where status='pending' are loaded.
+//                             Re-running the same Run is idempotent because
+//                             rows from previous runs are already 'loaded'.
+//   • Reload      : staging table is TRUNCATED before staging starts.
+//                   Useful when you want to retry from scratch.
+//
+// Failure semantics:
+//   • Hard-fail on schema/table creation (per Curtis's design call). A run
+//     that can't create staging objects aborts before touching any data.
+//   • Soft-fail on individual rows during load: failed rows are marked
+//     in staging with dm_load_status='failed' and dm_load_error filled
+//     in, so the audit log remains queryable.
+//
+// Scope:
+//   • Applies ONLY to standard SELECT/INSERT migration steps (the path
+//     starting at runMigrationStep where srcTable + tgtTable + column
+//     mapping define the flow).
+//   • Does NOT apply to:
+//       – One-to-many jobs (their pre-generated cursor SQL handles its
+//         own destination logic)
+//       – Raw SQL jobs (the user-supplied SQL is the contract)
+//       – DELETE/UPDATE-only steps (no source rows to stage)
+//
+// Dialect: MSSQL only. Postgres targets would need a separate code path
+// because the introspection SQL, audit-column types, and SYSUTCDATETIME()
+// are MSSQL-specific. Cygenix's existing INSERT pipeline is also MSSQL-
+// only (see fmtVal which emits N'...' literals), so staging inherits that
+// constraint — not a regression.
+const StagingArea = (function(){
+  const SCHEMA_NAME = 'dm_staging';
+
+  // The seven audit columns, in DDL form. Order matters: dm_timestamp first
+  // so it sorts naturally in tools that show recent rows by ordinal position.
+  // dm_run_id and dm_job_id NOT NULL so audit queries can always group by run
+  // without worrying about nulls; everything else can be null where genuinely
+  // unknown (dm_load_error has nothing during 'pending' state, dm_loaded_at
+  // is set only when status flips to 'loaded'). All sized generously enough
+  // that we won't trip a "string truncation" error on real-world identifiers.
+  const AUDIT_COLUMNS_DDL = [
+    '[dm_timestamp]       DATETIME2     NOT NULL CONSTRAINT DF_${T}_dm_timestamp DEFAULT SYSUTCDATETIME()',
+    '[dm_load_status]     NVARCHAR(20)  NOT NULL CONSTRAINT DF_${T}_dm_load_status DEFAULT (N\'pending\')',
+    '[dm_load_error]      NVARCHAR(MAX) NULL',
+    '[dm_loaded_at]       DATETIME2     NULL',
+    '[dm_run_id]          NVARCHAR(50)  NOT NULL',
+    '[dm_source_row_id]   NVARCHAR(255) NULL',
+    '[dm_job_id]          NVARCHAR(100) NOT NULL'
+  ];
+
+  // Names only — used when constructing the INSERT column list, building the
+  // source-cols clause for the load-from-staging SELECT, and when querying
+  // counts. Kept as a single source of truth so adding a new audit column
+  // means changing only AUDIT_COLUMNS_DDL and this list.
+  const AUDIT_COLUMN_NAMES = [
+    'dm_timestamp', 'dm_load_status', 'dm_load_error',
+    'dm_loaded_at', 'dm_run_id', 'dm_source_row_id', 'dm_job_id'
+  ];
+
+  // Parse a fully-qualified target table name into {schema, table}. Tolerates
+  // bracketed identifiers (`[dbo].[Matters]`) and bare ones (`dbo.Matters`),
+  // and falls back to `dbo` for the schema if only the table is given.
+  function parseFullName(fullName){
+    if (!fullName) throw new Error('Target table name required');
+    // Strip brackets and split on the first dot.
+    const cleaned = String(fullName).replace(/[\[\]]/g, '').trim();
+    const parts = cleaned.split('.');
+    if (parts.length === 1) return { schema: 'dbo', table: parts[0] };
+    if (parts.length === 2) return { schema: parts[0], table: parts[1] };
+    throw new Error('Cannot parse target table name "' + fullName + '"');
+  }
+
+  // Build the staging table name for a given target. We use a double
+  // underscore between schema and table to make it unambiguous which side
+  // is which (no real schema is named after a table, but the double
+  // underscore also makes it easy to grep for "dm_staging.dbo__" entries
+  // belonging to a particular source schema).
+  function stagingTableName(tgtFullName){
+    const { schema, table } = parseFullName(tgtFullName);
+    return SCHEMA_NAME + '.[' + schema + '__' + table + ']';
+  }
+
+  // Generate a unique run id for this execution. Format: run_<epoch>_<rand>.
+  // Stored on window so all step calls within one Run share it. Caller is
+  // responsible for setting this at the start of a Run (or generating a
+  // fresh one for each step if not pre-set).
+  function newRunId(){
+    return 'run_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  }
+
+  // Pre-flight: ensure the dm_staging schema exists. Hard-fails on permission
+  // errors with a clear message. Safe to call repeatedly — uses CREATE SCHEMA
+  // ... AUTHORIZATION dbo wrapped in IF NOT EXISTS. CREATE SCHEMA can't sit
+  // inside an IF, so the standard MSSQL pattern is an outer IF NOT EXISTS
+  // dynamic-SQL wrapper. We keep that here.
+  async function ensureSchema(tgtConn){
+    const sql =
+      "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'" + SCHEMA_NAME + "')\n" +
+      "  EXEC('CREATE SCHEMA [" + SCHEMA_NAME + "]');";
+    try {
+      await dbCall(tgtConn, { action: 'execute', sql });
+    } catch (e) {
+      throw new Error(
+        'Could not create the staging schema [' + SCHEMA_NAME + ']. ' +
+        'Cygenix needs CREATE SCHEMA permission on the target database. ' +
+        'Underlying error: ' + (e && e.message ? e.message : e)
+      );
+    }
+  }
+
+  // Pre-flight: ensure the staging table exists for a given target. Returns
+  // the staging table's full name. Idempotent — if the table already exists
+  // it's left alone (its existing structure is trusted; we don't try to
+  // migrate it). If it doesn't exist, we introspect the target's columns
+  // and build a CREATE TABLE that mirrors them plus the audit columns.
+  //
+  // Important: only columns that appear in the job's column mapping are
+  // mirrored into staging. We don't mirror the target's IDENTITY columns
+  // either — they would prevent INSERT EXPLICITLY from working without
+  // SET IDENTITY_INSERT ON, and the staging table's purpose is to hold
+  // values for *insertion into* the target, not to mirror its complete
+  // schema. We do allow NULLs on all mirrored columns (the staging row
+  // is a "candidate", not yet a target row).
+  async function ensureTable(tgtConn, tgtFullName, mapping){
+    const { schema, table } = parseFullName(tgtFullName);
+    const stagingFull = stagingTableName(tgtFullName);
+    const stagingBareName = schema + '__' + table;
+
+    // Introspect target columns so we copy the right types into staging.
+    // Use the existing schema-columns action — same one the column mapping
+    // editor uses.
+    let targetCols;
+    try {
+      const r = await dbCall(tgtConn, {
+        action: 'schema-columns',
+        schemaName: schema,
+        tableName: table
+      });
+      targetCols = r && r.table && r.table.columns;
+      if (!Array.isArray(targetCols) || !targetCols.length){
+        throw new Error('Target table [' + schema + '].[' + table + '] has no columns or does not exist');
+      }
+    } catch (e) {
+      throw new Error(
+        'Could not introspect target table [' + schema + '].[' + table + ']. ' +
+        'Cygenix needs SELECT permission on INFORMATION_SCHEMA. ' +
+        'Underlying error: ' + (e && e.message ? e.message : e)
+      );
+    }
+
+    // Build column DDL for the mirrored data columns. Use the target's
+    // column types verbatim (schema-columns returns them ready-to-use).
+    // Force NULL on everything — staging holds candidate values, some of
+    // which may legitimately be NULL at staging time even though the target
+    // disallows it. Failures will surface at load time, not stage time,
+    // which is where the audit log expects them.
+    const mappedTgtCols = new Set((mapping || []).map(m => (m.tgtCol || '').toLowerCase()));
+    const dataColDdl = targetCols
+      .filter(c => mappedTgtCols.has(c.name.toLowerCase()))
+      .filter(c => !c.isIdentity)  // identity columns: target's IDENTITY generates them
+      .map(c => '[' + c.name + '] ' + c.type + ' NULL');
+
+    if (!dataColDdl.length){
+      throw new Error('No mapped columns to mirror in staging — check column mapping for ' + tgtFullName);
+    }
+
+    // Templated audit-column DDL: substitute the staging table's bare name
+    // into the DEFAULT constraint names so two staging tables can coexist
+    // without colliding on constraint identifiers (MSSQL requires globally
+    // unique constraint names per database).
+    const auditDdl = AUDIT_COLUMNS_DDL.map(
+      d => d.replace(/\$\{T\}/g, stagingBareName.replace(/[^a-zA-Z0-9_]/g, '_'))
+    );
+
+    const createSQL =
+      "IF NOT EXISTS (SELECT 1 FROM sys.tables t " +
+      "  JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+      "  WHERE s.name = N'" + SCHEMA_NAME + "' AND t.name = N'" + stagingBareName + "')\n" +
+      "BEGIN\n" +
+      "  CREATE TABLE " + stagingFull + " (\n    " +
+      [...dataColDdl, ...auditDdl].join(',\n    ') +
+      "\n  );\n" +
+      "  CREATE INDEX IX_" + stagingBareName.replace(/[^a-zA-Z0-9_]/g, '_') +
+        "_run_status ON " + stagingFull + " ([dm_run_id], [dm_load_status]);\n" +
+      "END";
+
+    try {
+      await dbCall(tgtConn, { action: 'execute', sql: createSQL });
+    } catch (e) {
+      throw new Error(
+        'Could not create staging table ' + stagingFull + '. ' +
+        'Cygenix needs CREATE TABLE permission in the [' + SCHEMA_NAME + '] schema. ' +
+        'Underlying error: ' + (e && e.message ? e.message : e)
+      );
+    }
+    return stagingFull;
+  }
+
+  // Truncate the staging table for a given target. Called before staging
+  // when the user picks Reload mode. Idempotent on a missing table — we
+  // catch the error and treat it as a no-op (nothing to truncate).
+  async function reloadReset(tgtConn, stagingFull){
+    try {
+      await dbCall(tgtConn, { action: 'execute', sql: 'TRUNCATE TABLE ' + stagingFull });
+    } catch (e) {
+      // If the table doesn't exist yet, that's fine — ensureTable will
+      // create it next. Only re-throw if it's a different error.
+      const msg = (e && e.message ? e.message : '').toLowerCase();
+      if (!msg.includes('object name') && !msg.includes('does not exist')){
+        throw new Error('Could not reset staging table: ' + (e && e.message ? e.message : e));
+      }
+    }
+  }
+
+  // Build an INSERT statement that writes `rows` to the staging table.
+  // Each row gets transformed/Was-Is rules applied (same logic as the
+  // direct-load path), then the audit columns are appended. Returns the
+  // full SQL string (caller dispatches via dbCall action:'batch').
+  //
+  // Note: takes the same applyMappingTransform, applyStepWasis, and fmtVal
+  // helpers used by the original direct-load path. We DON'T re-implement
+  // them here — staging is a transport mechanism, not a transformation
+  // layer. The values that land in staging are exactly what would have
+  // landed in the target directly.
+  function buildStageInsert(stagingFull, mapping, rows, runId, jobId, step,
+                            applyMappingTransform, applyStepWasis, fmtVal,
+                            sourceRowKeyCol){
+    if (!rows.length) return '';
+    const dataCols = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+    const auditCols = AUDIT_COLUMN_NAMES.map(n => '[' + n + ']').join(', ');
+    const allCols = dataCols + ', ' + auditCols;
+
+    const valuesSql = rows.map((row, i) => {
+      const dataVals = mapping.map(m => {
+        let v = row[m.srcCol];
+        v = applyMappingTransform(m, v);
+        v = applyStepWasis(step, m.srcCol, v);
+        return fmtVal(v);
+      }).join(', ');
+
+      // Source row id: prefer the configured key column from the source row.
+      // Fall back to a positional id if not available — at least the rows
+      // remain individually identifiable within a single page.
+      const srcRowId = sourceRowKeyCol && row[sourceRowKeyCol] != null
+        ? String(row[sourceRowKeyCol])
+        : ('idx_' + i);
+
+      // Audit values:
+      //   dm_timestamp     → DEFAULT (NULL means "use the default constraint")
+      //   dm_load_status   → DEFAULT ('pending')
+      //   dm_load_error    → NULL
+      //   dm_loaded_at     → NULL
+      //   dm_run_id        → the supplied runId
+      //   dm_source_row_id → the source row's key (or idx_N fallback)
+      //   dm_job_id        → the supplied jobId
+      const auditVals = [
+        'DEFAULT', 'DEFAULT', 'NULL', 'NULL',
+        fmtVal(runId), fmtVal(srcRowId), fmtVal(jobId || 'unknown')
+      ].join(', ');
+
+      return '    (' + dataVals + ', ' + auditVals + ')';
+    }).join(',\n');
+
+    return 'INSERT INTO ' + stagingFull + ' (' + allCols + ') VALUES\n' + valuesSql + ';';
+  }
+
+  // Move staged-and-pending rows from staging into the final target. Runs
+  // in a transaction so a partial failure rolls back rather than leaving
+  // half-loaded state. On success, marks all moved rows as 'loaded' and
+  // records dm_loaded_at. On failure, marks them as 'failed' with the
+  // underlying error in dm_load_error (so the audit row carries the
+  // diagnostic information even though the data didn't move).
+  //
+  // Returns: { loaded: int, failed: int, error: string|null }
+  async function loadToTarget(tgtConn, tgtFullName, stagingFull, mapping, runId){
+    const dataCols = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+    // INSERT INTO tgt SELECT data-cols FROM staging WHERE dm_run_id=@r AND
+    // dm_load_status='pending'. We use a TRY/CATCH at the SQL layer so the
+    // staging status update happens regardless of insert success/failure.
+    //
+    // Note on quoting: runId is generated server-side by Cygenix (newRunId)
+    // and contains only [a-z0-9_], so direct interpolation is safe. We still
+    // escape single quotes defensively for any future change.
+    const runIdLit = "'" + String(runId).replace(/'/g, "''") + "'";
+    const sql =
+      "DECLARE @loaded INT = 0;\n" +
+      "DECLARE @errmsg NVARCHAR(MAX) = NULL;\n" +
+      "BEGIN TRY\n" +
+      "  BEGIN TRANSACTION;\n" +
+      "  INSERT INTO " + tgtFullName + " (" + dataCols + ")\n" +
+      "    SELECT " + dataCols + " FROM " + stagingFull +
+                "\n    WHERE [dm_run_id] = " + runIdLit +
+                " AND [dm_load_status] = N'pending';\n" +
+      "  SET @loaded = @@ROWCOUNT;\n" +
+      "  UPDATE " + stagingFull + "\n" +
+      "    SET [dm_load_status] = N'loaded', [dm_loaded_at] = SYSUTCDATETIME()\n" +
+      "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
+      "  COMMIT TRANSACTION;\n" +
+      "END TRY\n" +
+      "BEGIN CATCH\n" +
+      "  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n" +
+      "  SET @errmsg = ERROR_MESSAGE();\n" +
+      "  UPDATE " + stagingFull + "\n" +
+      "    SET [dm_load_status] = N'failed', [dm_load_error] = @errmsg\n" +
+      "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
+      "END CATCH\n" +
+      "SELECT @loaded AS loaded, @errmsg AS errmsg;";
+
+    const r = await dbCall(tgtConn, { action: 'execute', sql });
+    // The execute action returns a recordset for the SELECT at the end.
+    const row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]) || {};
+    const loaded = Number(row.loaded || 0);
+    const errmsg = row.errmsg || row.errMsg || null;
+    return { loaded, failed: errmsg ? -1 : 0, error: errmsg };
+    // failed:-1 is a sentinel meaning "the transaction failed — count of
+    // failed rows equals all pending rows in this run". We don't fetch
+    // the actual count because that would be a second round-trip; the
+    // caller can compute total - loaded if needed.
+  }
+
+  // Pick a column from the mapping (or fallback) to use as dm_source_row_id.
+  // Preference order: configured srcRowKeyCol on the step → first column in
+  // mapping whose name looks like a primary key → first column in mapping.
+  function pickSourceRowKey(step, mapping){
+    if (step && step.srcRowKeyCol) return step.srcRowKeyCol;
+    if (!Array.isArray(mapping) || !mapping.length) return null;
+    const pkLike = mapping.find(m =>
+      /^id$|_id$|^pk_|key$/i.test(m.srcCol || '')
+    );
+    return (pkLike && pkLike.srcCol) || mapping[0].srcCol;
+  }
+
+  return {
+    SCHEMA_NAME,
+    AUDIT_COLUMN_NAMES,
+    newRunId,
+    stagingTableName,
+    ensureSchema,
+    ensureTable,
+    reloadReset,
+    buildStageInsert,
+    loadToTarget,
+    pickSourceRowKey
+  };
+})();
+// Expose on window so debugging from DevTools is easy. Not used by any
+// other file at the moment but harmless to make available.
+window.StagingArea = StagingArea;
+
 // ── Execution ─────────────────────────────────────────────────────────────────
 let isRunning = false;
 let abortRequested = false;
@@ -2125,6 +2510,24 @@ async function runProject() {
   // Count groups that have at least one selected step
   const selectedGroups = new Set(selectedFlat.map(x => x.gi));
   if (!confirm('Run ' + selectedFlat.length + ' selected step(s) across ' + selectedGroups.size + ' group(s)? Execution stops on any error.')) return;
+
+  // ── Staging area run context ─────────────────────────────────────────────
+  // Every run gets a unique dm_run_id stamped onto every row it stages.
+  // Read the Reload toggle from the toolbar checkbox — when checked, staging
+  // tables are wiped before this run; otherwise rows are appended (the
+  // default, matching incremental-load behaviour). Both values are stashed
+  // on window so runMigrationStep can pick them up without us threading new
+  // parameters through every call site.
+  const reloadCheckbox = document.getElementById('staging-reload');
+  window._currentRun = {
+    runId:  StagingArea.newRunId(),
+    reload: !!(reloadCheckbox && reloadCheckbox.checked),
+    // Track which staging tables we've already reset during this run, so
+    // multiple jobs hitting the same target table don't TRUNCATE between
+    // each other and lose data the earlier job staged. Keyed by full
+    // staging-table name (e.g. "dm_staging.[dbo__Matters]").
+    resetTables: new Set()
+  };
 
   isRunning = true;
   // Reset statuses only on steps that will be run; disabled ones keep their prior status
@@ -2851,6 +3254,18 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   let pageNum = 0;
   let offset = 0;
   let hasMore = true;
+  // ── Staging context ────────────────────────────────────────────────────
+  // Set up the per-step staging context. runCtx pulls the run-id and
+  // reload flag from the top-level runProject call. When this function is
+  // invoked outside of runProject (e.g. manual single-step retry), we
+  // generate a fresh runId here so the staging path still works — single
+  // runs are always incremental.
+  const runCtx = window._currentRun || { runId: StagingArea.newRunId(), reload: false, resetTables: new Set() };
+  // Lazily-initialised on first page: the full name of this step's
+  // staging table (e.g. "dm_staging.[dbo__Matters]"), and the source
+  // column we'll record in dm_source_row_id for each staged row.
+  let stagingFull = '';
+  let srcRowKeyCol = null;
   // Track any batch-level errors reported by the target backend. Even if the
   // fetch/batch calls don't throw, the target can report per-batch failures
   // inside the response body — those previously got only a ⚠ log line while
@@ -2883,6 +3298,24 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
           add('Using saved mapping: ' + mapping.length + ' columns');
         }
         colList = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+
+        // ── Staging area setup (first page only) ─────────────────────────
+        // Ensure the dm_staging schema and the per-target staging table
+        // exist before we start staging rows. Both calls hard-fail on
+        // permission issues — the run aborts cleanly with a clear error
+        // rather than half-staging data. The reload reset (if requested)
+        // happens here too, but only once per staging table per run —
+        // multiple jobs sharing a target table won't TRUNCATE between
+        // each other.
+        await StagingArea.ensureSchema(tgtConn);
+        stagingFull = await StagingArea.ensureTable(tgtConn, step.tgtTable, mapping);
+        if (runCtx.reload && !runCtx.resetTables.has(stagingFull)){
+          add('Reload mode — wiping staging table ' + stagingFull + ' before this run');
+          await StagingArea.reloadReset(tgtConn, stagingFull);
+          runCtx.resetTables.add(stagingFull);
+        }
+        srcRowKeyCol = StagingArea.pickSourceRowKey(step, mapping);
+        add('Staging into ' + stagingFull + ' (run_id=' + runCtx.runId + (runCtx.reload ? ', mode=reload' : ', mode=incremental') + ')');
       }
 
       // Split page into INSERT batches.
@@ -2890,18 +3323,19 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       // transform/Was-Is rule (via applyMappingTransform), then any global
       // step-level Was/Is rules (via applyStepWasis), then format the result
       // as a SQL literal via fmtVal.
+      //
+      // Insertion goes to the staging table (not the final target). Audit
+      // columns are appended automatically by StagingArea.buildStageInsert.
+      // The final move from staging → target happens in a single SQL block
+      // after the staging loop completes.
       const batches = [];
       for (let i = 0; i < rows.length; i += INSERT_BATCH) {
         const batch = rows.slice(i, i + INSERT_BATCH);
-        batches.push(
-          'INSERT INTO ' + step.tgtTable + ' (' + colList + ') VALUES\n' +
-          batch.map(row => '    (' + mapping.map(m => {
-            let v = row[m.srcCol];
-            v = applyMappingTransform(m, v);
-            v = applyStepWasis(step, m.srcCol, v);
-            return fmtVal(v);
-          }).join(', ') + ')').join(',\n') + ';'
+        const sql = StagingArea.buildStageInsert(
+          stagingFull, mapping, batch, runCtx.runId, step.jobId || '',
+          step, applyMappingTransform, applyStepWasis, fmtVal, srcRowKeyCol
         );
+        if (sql) batches.push(sql);
       }
 
       // Expose the first batch of this page as the "last executed SQL" so
@@ -2923,7 +3357,10 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       totalInserted += inserted;
 
       const pct = totalRows > 0 ? ' (' + Math.round(totalInserted/totalRows*100) + '%)' : '';
-      add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, inserted ' + inserted.toLocaleString() + ' — total ' + totalInserted.toLocaleString() + pct);
+      // "Staged" not "inserted" — rows are in dm_staging at this point,
+      // not yet in the final target. The load-from-staging step after the
+      // loop completes is what actually moves them.
+      add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, staged ' + inserted.toLocaleString() + ' — total staged ' + totalInserted.toLocaleString() + pct);
 
       if (pageRes2.errors) {
         // Normalize the "errors" field: historically a count (number), but
@@ -3023,8 +3460,62 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
     return { ok:false, log:stepLog, error:msg, rowsInserted: totalInserted };
   }
 
-  add('Complete — ' + totalInserted.toLocaleString() + ' total rows inserted from ' + pageNum + ' page(s)');
-  step.rowsInserted = totalInserted;
+  // ── Staging complete — now load from staging to the final target ──────
+  // Up to this point the rows live in dm_staging.<name> tagged with our
+  // runId and dm_load_status='pending'. The loadToTarget call moves them
+  // (in a single SQL transaction) into the user's target table, then
+  // updates the audit rows to 'loaded' / dm_loaded_at=NOW. On failure it
+  // marks them 'failed' with the error in dm_load_error — those rows
+  // remain queryable in dm_staging for audit afterwards.
+  //
+  // If nothing was staged (totalInserted === 0), skip — no point hitting
+  // the backend with an empty load.
+  let loadedRowCount = 0;
+  if (stagingFull && totalInserted > 0) {
+    add('Loading from staging into ' + step.tgtTable + '…');
+    try {
+      const loadRes = await StagingArea.loadToTarget(tgtConn, step.tgtTable, stagingFull, mapping, runCtx.runId);
+      loadedRowCount = loadRes.loaded;
+      if (loadRes.error){
+        // The transactional load rolled back — none of the staged rows
+        // are in the target. Their audit rows have been flipped to
+        // 'failed' by the CATCH branch in loadToTarget's SQL.
+        const msg = 'Load to target failed (rolled back): ' + loadRes.error +
+          '. ' + totalInserted.toLocaleString() + ' rows remain in ' + stagingFull +
+          ' marked as failed for audit.';
+        add('✕ ' + msg);
+        step.rowsInserted = 0;
+        step.rowsStaged   = totalInserted;
+        step.stagingTable = stagingFull;
+        step.runId        = runCtx.runId;
+        return { ok:false, log:stepLog, error:msg, rowsInserted: 0, rowsStaged: totalInserted };
+      }
+      add('Loaded ' + loadedRowCount.toLocaleString() + ' rows from staging into ' + step.tgtTable);
+    } catch(e) {
+      // dbCall threw — connection error, syntax error in the load SQL,
+      // etc. Same recovery as above: keep audit rows queryable, return
+      // a clean failure.
+      const msg = 'Load to target threw: ' + e.message +
+        '. Staged rows remain in ' + stagingFull + '; check dm_load_status to audit.';
+      add('✕ ' + msg);
+      step.rowsInserted = 0;
+      step.rowsStaged   = totalInserted;
+      step.stagingTable = stagingFull;
+      step.runId        = runCtx.runId;
+      return { ok:false, log:stepLog, error:msg, rowsInserted: 0, rowsStaged: totalInserted };
+    }
+  }
+
+  // Stamp audit metadata on the step for the conversion report and
+  // future audit UI: which staging table, which run id, how many rows
+  // went where. These show up on the saved report payload.
+  step.rowsInserted = loadedRowCount;
+  step.rowsStaged   = totalInserted;
+  step.stagingTable = stagingFull;
+  step.runId        = runCtx.runId;
+
+  add('Complete — ' + loadedRowCount.toLocaleString() + ' rows loaded into ' + step.tgtTable +
+      ' (staged ' + totalInserted.toLocaleString() + ' from ' + pageNum + ' page(s))');
 
   // Post-migration reconciliation check
   if (reconBefore) {
