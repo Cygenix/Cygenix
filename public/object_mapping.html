@@ -1949,6 +1949,12 @@ function persistMappingToSavedJob(){
     const existing = jobs[idx];
     jobs[idx] = Object.assign({}, existing, {
       columnMapping: columnMapping.filter(m => m.tgtCol),
+      // Save srcWhere alongside the mapping so re-opening the job in the
+      // editor reads it back into the WHERE input, and so the migration
+      // runner can apply it to the source SELECT. Without this the WHERE
+      // clause is baked into insertSQL as text but lost as a structured
+      // field — invisible to the runner's paginated path.
+      srcWhere:     ($('src-where')?.value || '').trim(),
       insertSQL: generatedSQL.insert || existing.insertSQL,
       schemaSQL: generatedSQL.schema || existing.schemaSQL,
       verifySQL: generatedSQL.verify || existing.verifySQL,
@@ -3169,6 +3175,11 @@ function saveAsJob(){
       target: tgtTable.fullName,
       targetTable: tgtTable.fullName,
       columnMapping: columnMapping.filter(m=>m.tgtCol),
+      // WHERE clause as a structured field. The generated insertSQL bakes
+      // this into a SELECT-and-INSERT text, but the runner uses its own
+      // paginated SELECT * FROM srcTable and needs srcWhere as a separate
+      // field to append. See project-builder runMigrationStep.
+      srcWhere: ($('src-where')?.value || '').trim(),
       joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
       insertSQL: generatedSQL.insert,
       schemaSQL: generatedSQL.schema,
@@ -3211,6 +3222,11 @@ function saveAsJob(){
       sourceTable: srcTable.fullName,
       target: targetTables.map(t=>t.fullName).join(', '),
       insertSQL: generatedSQL.insert,
+      // WHERE clause — saved structurally so re-opening the OTM editor
+      // restores it into the input. Note: OTM's runner pre-generates the
+      // full insertSQL as a cursor script, so the WHERE clause is baked
+      // in there too; the structured srcWhere is for the editor only.
+      srcWhere: ($('src-where')?.value || '').trim(),
       oneToManyConfig:true,
       joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
       tables: targetTables.map(tt=>({name:tt.fullName, pkCol:tt.pkCol, pkMode:tt.pkMode, mappings:tt.mappings, fks:tt.fks, rows:0})),
@@ -3325,6 +3341,15 @@ async function checkEditMode(){
 }
 
 async function restoreJobMapping(job,isOTM){
+  // ── Restore WHERE clause ──────────────────────────────────────────────────
+  // Put it back in the input BEFORE we regenerate SQL — both branches below
+  // call tryAutoGenSQL / generateOTMSQL which read #src-where. Without this
+  // restore the regenerated preview would lose the WHERE on every reopen,
+  // and saveAsJob would overwrite the stored srcWhere with an empty string.
+  // job.srcWhere is the structured field; fall back to '' for legacy jobs
+  // saved before this field existed.
+  if($('src-where')) $('src-where').value = job.srcWhere || '';
+
   // ── Restore JOIN state first (both modes) ─────────────────────────────────
   if(job.joinState && Array.isArray(job.joinState) && job.joinState.length){
     // Re-init the join builder with saved state so user can add/remove/edit joins

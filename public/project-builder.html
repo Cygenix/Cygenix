@@ -1211,6 +1211,11 @@ function addJobAsStep(jobIndex) {
     name:            job.name || job.target + ' migration',
     srcTable:        job.sourceTable || job.source || '',
     tgtTable:        job.targetTable || job.target || '',
+    // WHERE clause from the Object Mapping editor's input. Applied to the
+    // paginated source SELECT and the row-count query in runMigrationStep,
+    // and to reconciliation queries (which were already reading step.srcWhere
+    // but never had it populated until now).
+    srcWhere:        job.srcWhere || '',
     columnMapping:   job.columnMapping || [],
     totalRows:       job.totalRows || 0,
     jobId:           job.id,
@@ -3354,8 +3359,19 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   const PAGE_SIZE   = 500;   // rows fetched per page from source
   const INSERT_BATCH = 100;  // rows per INSERT VALUES statement (small to keep individual statement size well under the worker-kill threshold)
 
-  // Build the source SELECT
-  const srcSelectSQL = 'SELECT * FROM ' + step.srcTable;
+  // Build the source SELECT. step.srcWhere comes from the Object Mapping
+  // editor's WHERE clause input — when present we append it as " WHERE ..."
+  // so the count and the paginated fetch both honour the filter. The string
+  // is interpolated as-is because the editor doesn't expose it to untrusted
+  // callers and the runner is a trusted client tool (same convention as the
+  // rest of cygenix). Stripping a leading "WHERE " defensively in case the
+  // user typed it explicitly.
+  let srcSelectSQL = 'SELECT * FROM ' + step.srcTable;
+  const wh = (step.srcWhere || '').trim().replace(/^WHERE\s+/i, '');
+  if (wh) {
+    srcSelectSQL += ' WHERE ' + wh;
+    add('Applying WHERE clause from job: ' + wh);
+  }
 
   // Get total count first so we can show progress
   add('Counting rows in ' + step.srcTable + '…');
