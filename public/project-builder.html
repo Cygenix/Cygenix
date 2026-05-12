@@ -3362,6 +3362,13 @@ async function runSingleStep(gi, si) {
   const log = m => { logs.push(m); console.log('[Step '+gi+'.'+si+']', m); };
 
   step.status = 'running'; renderSteps();
+  // Mirror runProject's timing capture — single-step runs need to feed
+  // the same report data, otherwise the report shows missing timing for
+  // a run that was triggered with the per-step ▶ Run button.
+  const _t0 = Date.now();
+  step.startedAt  = new Date(_t0).toISOString();
+  step.finishedAt = null;
+  step.durationMs = null;
   try {
     let res;
     if (step.type === 'migration') {
@@ -3394,6 +3401,11 @@ async function runSingleStep(gi, si) {
     const prior = logs.join('\n');
     step.log = (prior ? prior + '\n\n' : '') + '✕ Error: ' + e.message;
   }
+  // Finalise timing regardless of success/failure. Done outside try/catch
+  // so it always runs.
+  const _t1 = Date.now();
+  step.finishedAt = new Date(_t1).toISOString();
+  step.durationMs = _t1 - _t0;
   renderSteps();
   const btn2 = document.getElementById(btnId);
   if (btn2) { btn2.disabled=false; btn2.textContent='▶ Run'; }
@@ -3509,6 +3521,13 @@ async function runProject() {
       log('Step '+done+': '+step.name);
 
       const t0 = Date.now();
+      // Structured timing fields for the conversion report and any future
+      // analytics. ISO strings for cross-timezone clarity; ms duration for
+      // precise rendering. These survive on the step object (saved in the
+      // project payload) until the next run overwrites them.
+      step.startedAt  = new Date(t0).toISOString();
+      step.finishedAt = null;
+      step.durationMs = null;
       let stepLog='', ok=true, stepError='';
       try {
         if (step.type === 'migration') {
@@ -3531,7 +3550,10 @@ async function runProject() {
         log('Error: '+e.message,'err');
       }
 
-      const dur = ((Date.now()-t0)/1000).toFixed(1)+'s';
+      const t1 = Date.now();
+      step.finishedAt = new Date(t1).toISOString();
+      step.durationMs = t1 - t0;
+      const dur = ((t1-t0)/1000).toFixed(1)+'s';
       stepLog += '\nDuration: '+dur;
       // If the step failed and the error isn't already visible in the log,
       // append it so the red-status step always shows WHY it failed.
@@ -4859,6 +4881,15 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
       // WHERE clause from the job. Reported because excluded counts only
       // make sense in the context of "filtered by THIS clause".
       srcWhere:        s.srcWhere || '',
+      // Step timing — captured by the runner at execution time. ISO
+      // strings for safe round-tripping through JSON; durationMs is the
+      // authoritative number, with the report rendering it in a humanised
+      // form (s/m/h) for display. All three undefined for legacy reports
+      // saved before timing was tracked — report treats undefined as
+      // "not available" and hides the columns gracefully.
+      startedAt:       s.startedAt || null,
+      finishedAt:      s.finishedAt || null,
+      durationMs:      typeof s.durationMs === 'number' ? s.durationMs : null,
       connOn:  s.connOn || 'target',
       reconResult: s.reconResult || null
     })),
