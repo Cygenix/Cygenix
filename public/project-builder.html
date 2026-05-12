@@ -294,6 +294,17 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
         </label>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
+        <!-- Top-level rollback: undoes the most recent run by deleting
+             every target row this run created. Hidden until a run with
+             rollback-supported steps completes; showRollbackButtons()
+             toggles visibility based on lastRunMetadata.
+             The icon uses the standard "undo" arrow. -->
+        <button class="btn btn-ghost btn-sm" id="rollback-last-btn"
+                onclick="rollbackLastRun()"
+                style="display:none;color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)"
+                title="Roll back the most recent run — deletes the rows it loaded into target. Per-step rollback is also available next to each step's row count.">
+          ↶ Rollback last run
+        </button>
       </div>
     </div>
 
@@ -1480,6 +1491,7 @@ function renderSteps() {
               <span class="step-status ${statusCls}">${step.status||'pending'}</span>
               <button class="btn btn-sm" onclick="runSingleStep(${gi},${si})" id="${runBtnId}"
                 style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.25);padding:3px 8px">▶ Run</button>
+              ${step.rollbackSupported && (step.rowsInserted || 0) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="rollbackStep(${gi},${si})" title="Roll back the last run for this job — delete the ${(step.rowsInserted||0).toLocaleString()} rows it loaded into the target." style="padding:3px 8px;color:var(--amber);border-color:rgba(245,158,11,0.25)">↶ Rollback</button>` : ''}
               <button class="btn btn-ghost btn-sm" onclick="editStepJob(${gi},${si})" title="${editTitle}" style="padding:3px 8px;color:var(--purple);border-color:rgba(167,139,250,0.25)" ${editDisabled?'disabled':''}>✏ Edit</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteStep(${gi},${si})" style="color:var(--red);padding:3px 8px">✕</button>
               ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${gi},${si})" style="padding:3px 8px">Log</button>` : ''}
@@ -1578,6 +1590,9 @@ function renderSteps() {
   // Refresh the Audit Source warning indicator based on which selected
   // steps would trigger a large audit query.
   updateAuditSourceWarning();
+  // Show/hide the top-level Rollback button based on whether any step
+  // has rollback metadata from a recent run.
+  updateRollbackButtonVisibility();
 }
 
 // ── Step/group/all enable toggles ─────────────────────────────────────────────
@@ -2141,7 +2156,15 @@ const StagingArea = (function(){
     '[dm_loaded_at]       DATETIME2     NULL',
     '[dm_run_id]          NVARCHAR(50)  NOT NULL',
     '[dm_source_row_id]   NVARCHAR(255) NULL',
-    '[dm_job_id]          NVARCHAR(100) NOT NULL'
+    '[dm_job_id]          NVARCHAR(100) NOT NULL',
+    // Captured at load time via OUTPUT INSERTED.<pk>. Holds the actual
+    // target PK SQL Server generated for this row. Needed for rollback:
+    // a precise DELETE FROM target WHERE pk IN (...) requires the real
+    // post-insert key, which differs from the source row id when the
+    // target uses IDENTITY or newid() to generate keys. NVARCHAR rather
+    // than the native PK type so the column can store INTs, GUIDs, or
+    // composite-key strings uniformly.
+    '[dm_target_row_id]   NVARCHAR(255) NULL'
   ];
 
   // Names only — used when constructing the INSERT column list, building the
@@ -2150,7 +2173,8 @@ const StagingArea = (function(){
   // means changing only AUDIT_COLUMNS_DDL and this list.
   const AUDIT_COLUMN_NAMES = [
     'dm_timestamp', 'dm_load_status', 'dm_load_error',
-    'dm_loaded_at', 'dm_run_id', 'dm_source_row_id', 'dm_job_id'
+    'dm_loaded_at', 'dm_run_id', 'dm_source_row_id', 'dm_job_id',
+    'dm_target_row_id'
   ];
 
   // Parse a fully-qualified target table name into {schema, table}. Tolerates
@@ -2282,6 +2306,55 @@ const StagingArea = (function(){
   // values come from SQL Server's IDENTITY mechanism, not from staging.
   // We allow NULLs on all mirrored columns (the staging row is a
   // "candidate", not yet a target row).
+  // Detect the column on the target table to use as the post-insert key
+  // captured into dm_target_row_id. Strategy (best → fallback):
+  //   1. The target's declared PRIMARY KEY column (if single-column)
+  //   2. The target's IDENTITY column (most likely auto-generated, useful)
+  //   3. The first UNIQUEIDENTIFIER column (often a GUID PK in disguise)
+  //   4. null — no good candidate, rollback won't be possible for this table
+  //
+  // We don't try to handle composite PKs in this version — they need
+  // multiple OUTPUT columns and concatenated matching at delete time.
+  // Real-world Cygenix targets in 3E and similar overwhelmingly use
+  // single-column keys (either IDENTITY INT or GUID), so this covers
+  // the practical cases.
+  //
+  // Note about PK introspection: schema-columns currently returns
+  // isIdentity but not isPrimaryKey. The PK is detected via the
+  // distinct sys.indexes is_primary_key query. We do this with a small
+  // dedicated query rather than extending schema-columns, to avoid
+  // touching all callers.
+  async function detectTargetPk(tgtConn, schema, table, targetCols){
+    // Try PK first via sys.indexes + sys.index_columns. Only consider
+    // single-column PKs (one index_column row for the PK index).
+    try {
+      const pkSql =
+        "SELECT c.name AS col_name " +
+        "FROM sys.indexes i " +
+        "  JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id " +
+        "  JOIN sys.columns c ON ic.object_id = c.object_id AND ic.column_id = c.column_id " +
+        "WHERE i.is_primary_key = 1 " +
+        "  AND i.object_id = OBJECT_ID(N'[" + schema + "].[" + table + "]') " +
+        "ORDER BY ic.key_ordinal";
+      const r = await dbCall(tgtConn, { action: 'execute', sql: pkSql });
+      const rows = r.recordset || r.rows || [];
+      if (rows.length === 1) return { col: rows[0].col_name, kind: 'pk' };
+      if (rows.length > 1) {
+        // Composite PK — not supported for rollback in this version.
+        return { col: null, kind: 'composite', cols: rows.map(r => r.col_name) };
+      }
+    } catch (e) {
+      // sys.indexes query failed; fall through to identity/guid detection.
+    }
+    // Fallback 1: identity column
+    const idCol = targetCols.find(c => c.isIdentity);
+    if (idCol) return { col: idCol.name, kind: 'identity' };
+    // Fallback 2: first uniqueidentifier
+    const guidCol = targetCols.find(c => /uniqueidentifier/i.test(c.type || ''));
+    if (guidCol) return { col: guidCol.name, kind: 'uniqueidentifier' };
+    return { col: null, kind: 'none' };
+  }
+
   async function ensureTable(tgtConn, tgtFullName, mapping){
     const { schema, table } = parseFullName(tgtFullName);
     const stagingFull = stagingTableName(tgtFullName);
@@ -2314,6 +2387,11 @@ const StagingArea = (function(){
     const identityColumns = new Set(
       targetCols.filter(c => c.isIdentity).map(c => c.name.toLowerCase())
     );
+
+    // Detect target PK info so loadToTarget can capture it via OUTPUT.
+    // This must happen BEFORE the CREATE/ALTER below — rollback support
+    // needs the column name to be known when we build the load SQL.
+    const targetPk = await detectTargetPk(tgtConn, schema, table, targetCols);
 
     // Build column DDL for the mirrored data columns. Use the target's
     // column types verbatim (schema-columns returns them ready-to-use).
@@ -2359,7 +2437,28 @@ const StagingArea = (function(){
         'CREATE TABLE permission in the [' + SCHEMA_NAME + '] schema'
       );
     }
-    return { stagingFull, identityColumns };
+
+    // ── Schema migration for pre-existing staging tables ──────────────
+    // Tables created before rollback support don't have dm_target_row_id.
+    // Add it with ALTER if missing. ALTER … ADD with a nullable column
+    // is metadata-only on SQL Server 2012+ (instant on any size table),
+    // so this is safe to run unconditionally on every ensureTable call.
+    // The IF NOT EXISTS wrapper makes it idempotent.
+    const alterSQL =
+      "IF NOT EXISTS (SELECT 1 FROM sys.columns " +
+      "  WHERE object_id = OBJECT_ID(N'" + stagingFull + "') AND name = N'dm_target_row_id')\n" +
+      "  ALTER TABLE " + stagingFull + " ADD [dm_target_row_id] NVARCHAR(255) NULL;";
+    try {
+      await dbCall(tgtConn, { action: 'execute', sql: alterSQL });
+    } catch (e) {
+      // Non-fatal: log and continue. Rollback may fail later, but the
+      // main migration path doesn't need this column.
+      // Caller has no place to surface this so it's swallowed silently
+      // here; we expose targetPk regardless so the caller can decide
+      // whether rollback support is realistic for this table.
+    }
+
+    return { stagingFull, identityColumns, targetPk };
   }
 
   // Drop the staging table for a given target if it exists. Called BEFORE
@@ -2477,7 +2576,7 @@ const StagingArea = (function(){
   // diagnostic information even though the data didn't move).
   //
   // Returns: { loaded: int, failed: int, error: string|null }
-  async function loadToTarget(tgtConn, tgtFullName, stagingFull, mapping, runId, identityColumns){
+  async function loadToTarget(tgtConn, tgtFullName, stagingFull, mapping, runId, identityColumns, targetPk){
     // Filter identity columns from both sides of the INSERT…SELECT.
     // The target's IDENTITY mechanism generates these values; an
     // explicit INSERT that references them errors with "Cannot insert
@@ -2491,48 +2590,112 @@ const StagingArea = (function(){
       .filter(m => !idSet.has((m.tgtCol || '').toLowerCase()))
       .map(m => '[' + m.tgtCol + ']')
       .join(', ');
-    // INSERT INTO tgt SELECT data-cols FROM staging WHERE dm_run_id=@r AND
-    // dm_load_status='pending'. We use a TRY/CATCH at the SQL layer so the
-    // staging status update happens regardless of insert success/failure.
-    //
     // Note on quoting: runId is generated server-side by Cygenix (newRunId)
     // and contains only [a-z0-9_], so direct interpolation is safe. We still
     // escape single quotes defensively for any future change.
     const runIdLit = "'" + String(runId).replace(/'/g, "''") + "'";
-    const sql =
-      "DECLARE @loaded INT = 0;\n" +
-      "DECLARE @errmsg NVARCHAR(MAX) = NULL;\n" +
-      "BEGIN TRY\n" +
-      "  BEGIN TRANSACTION;\n" +
-      "  INSERT INTO " + tgtFullName + " (" + dataCols + ")\n" +
-      "    SELECT " + dataCols + " FROM " + stagingFull +
-                "\n    WHERE [dm_run_id] = " + runIdLit +
-                " AND [dm_load_status] = N'pending';\n" +
-      "  SET @loaded = @@ROWCOUNT;\n" +
-      "  UPDATE " + stagingFull + "\n" +
-      "    SET [dm_load_status] = N'loaded', [dm_loaded_at] = SYSUTCDATETIME()\n" +
-      "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
-      "  COMMIT TRANSACTION;\n" +
-      "END TRY\n" +
-      "BEGIN CATCH\n" +
-      "  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n" +
-      "  SET @errmsg = ERROR_MESSAGE();\n" +
-      "  UPDATE " + stagingFull + "\n" +
-      "    SET [dm_load_status] = N'failed', [dm_load_error] = @errmsg\n" +
-      "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
-      "END CATCH\n" +
-      "SELECT @loaded AS loaded, @errmsg AS errmsg;";
+
+    // ── Build the load statement ──────────────────────────────────────
+    // Two strategies depending on whether we know the target PK:
+    //
+    //   With a target PK column: use MERGE…OUTPUT to capture the
+    //   newly-inserted PK paired with the staging row's dm_source_row_id.
+    //   After the MERGE, UPDATE staging to fill in dm_target_row_id by
+    //   joining on dm_source_row_id. Both happen inside the transaction.
+    //
+    //   Without a target PK (composite or none detected): fall back to
+    //   the original plain INSERT path. dm_target_row_id stays NULL,
+    //   meaning this run can't be rolled back row-by-row. The audit log
+    //   still records what happened, just without rollback support.
+    //
+    // The MERGE pattern uses "WHEN NOT MATCHED THEN INSERT" with an
+    // always-false join condition (1=0) so every source row goes through
+    // the INSERT path. This is a well-established idiom for "INSERT with
+    // OUTPUT that can reference source columns".
+    const haveTargetPk = !!(targetPk && targetPk.col);
+    const tgtPkCol = haveTargetPk ? targetPk.col : null;
+
+    let sql;
+    if (haveTargetPk){
+      sql =
+        "DECLARE @loaded INT = 0;\n" +
+        "DECLARE @errmsg NVARCHAR(MAX) = NULL;\n" +
+        // Captured pairs: target PK value + source row id, so we can
+        // back-fill dm_target_row_id in staging.
+        "DECLARE @captured TABLE (tgt_key NVARCHAR(255), src_key NVARCHAR(255));\n" +
+        "BEGIN TRY\n" +
+        "  BEGIN TRANSACTION;\n" +
+        // MERGE with always-false condition forces all source rows to
+        // route through the INSERT branch.
+        "  MERGE INTO " + tgtFullName + " AS T\n" +
+        "    USING (SELECT " + dataCols + ", [dm_source_row_id] FROM " + stagingFull +
+                  "  WHERE [dm_run_id] = " + runIdLit +
+                  "  AND [dm_load_status] = N'pending') AS S\n" +
+        "    ON 1 = 0\n" +
+        "    WHEN NOT MATCHED THEN INSERT (" + dataCols + ") VALUES (" + dataCols + ")\n" +
+        "  OUTPUT CAST(INSERTED.[" + tgtPkCol + "] AS NVARCHAR(255)), S.[dm_source_row_id] INTO @captured;\n" +
+        "  SET @loaded = @@ROWCOUNT;\n" +
+        // Back-fill dm_target_row_id in staging from the captured pairs.
+        // Match on (dm_run_id, dm_source_row_id) — the source row id is
+        // unique within a run because it's the source PK.
+        "  UPDATE s\n" +
+        "    SET [dm_target_row_id] = c.tgt_key\n" +
+        "    FROM " + stagingFull + " s\n" +
+        "    JOIN @captured c ON s.[dm_source_row_id] = c.src_key\n" +
+        "    WHERE s.[dm_run_id] = " + runIdLit + " AND s.[dm_load_status] = N'pending';\n" +
+        "  UPDATE " + stagingFull + "\n" +
+        "    SET [dm_load_status] = N'loaded', [dm_loaded_at] = SYSUTCDATETIME()\n" +
+        "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
+        "  COMMIT TRANSACTION;\n" +
+        "END TRY\n" +
+        "BEGIN CATCH\n" +
+        "  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n" +
+        "  SET @errmsg = ERROR_MESSAGE();\n" +
+        "  UPDATE " + stagingFull + "\n" +
+        "    SET [dm_load_status] = N'failed', [dm_load_error] = @errmsg\n" +
+        "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
+        "END CATCH\n" +
+        "SELECT @loaded AS loaded, @errmsg AS errmsg;";
+    } else {
+      // No target PK detected — load without capturing target keys.
+      // Rollback will not be possible for this run.
+      sql =
+        "DECLARE @loaded INT = 0;\n" +
+        "DECLARE @errmsg NVARCHAR(MAX) = NULL;\n" +
+        "BEGIN TRY\n" +
+        "  BEGIN TRANSACTION;\n" +
+        "  INSERT INTO " + tgtFullName + " (" + dataCols + ")\n" +
+        "    SELECT " + dataCols + " FROM " + stagingFull +
+                  "\n    WHERE [dm_run_id] = " + runIdLit +
+                  " AND [dm_load_status] = N'pending';\n" +
+        "  SET @loaded = @@ROWCOUNT;\n" +
+        "  UPDATE " + stagingFull + "\n" +
+        "    SET [dm_load_status] = N'loaded', [dm_loaded_at] = SYSUTCDATETIME()\n" +
+        "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
+        "  COMMIT TRANSACTION;\n" +
+        "END TRY\n" +
+        "BEGIN CATCH\n" +
+        "  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n" +
+        "  SET @errmsg = ERROR_MESSAGE();\n" +
+        "  UPDATE " + stagingFull + "\n" +
+        "    SET [dm_load_status] = N'failed', [dm_load_error] = @errmsg\n" +
+        "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'pending';\n" +
+        "END CATCH\n" +
+        "SELECT @loaded AS loaded, @errmsg AS errmsg;";
+    }
 
     const r = await dbCall(tgtConn, { action: 'execute', sql });
-    // The execute action returns a recordset for the SELECT at the end.
     const row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]) || {};
     const loaded = Number(row.loaded || 0);
     const errmsg = row.errmsg || row.errMsg || null;
-    return { loaded, failed: errmsg ? -1 : 0, error: errmsg };
-    // failed:-1 is a sentinel meaning "the transaction failed — count of
-    // failed rows equals all pending rows in this run". We don't fetch
-    // the actual count because that would be a second round-trip; the
-    // caller can compute total - loaded if needed.
+    return {
+      loaded,
+      failed: errmsg ? -1 : 0,
+      error: errmsg,
+      // Expose whether rollback will be possible for this run so callers
+      // can decide whether to surface a rollback button afterward.
+      rollbackSupported: haveTargetPk
+    };
   }
 
   // Pick a column from the mapping (or fallback) to use as dm_source_row_id.
@@ -2686,6 +2849,139 @@ const StagingArea = (function(){
     return { excluded: totalInserted, captureMode: 'per-row' };
   }
 
+  // ── Rollback ──────────────────────────────────────────────────────
+  // Two-phase: previewRollback does the data check (counts what will be
+  // affected, verifies the data is still there), and executeRollback
+  // does the actual delete + audit update inside a transaction.
+  //
+  // Why two phases: the user clicks rollback, we show them the actual
+  // counts ("3 of 50 originally-loaded rows are still in target — the
+  // others were deleted or modified elsewhere"), they confirm with
+  // full information, then we execute. Avoids surprises like "I asked
+  // to rollback 50 rows but it deleted 30,000 because the PK matched
+  // unrelated rows".
+
+  // previewRollback: read-only check. Returns counts so the caller can
+  // build an informed confirmation dialog.
+  //
+  // Returns:
+  //   {
+  //     stagingLoaded: int,  // staging rows with dm_load_status='loaded' for this run
+  //     stagingRollableTargets: int, // staging rows where dm_target_row_id is not null
+  //     targetMatching: int, // target rows that still match those keys
+  //     pkCol: string,       // target PK column name
+  //     allTargetsCaptured: bool,  // true when stagingLoaded === stagingRollableTargets
+  //   }
+  //
+  // Throws on connectivity or permission errors. Returns the structure
+  // even when there's nothing to roll back (counts will be 0).
+  async function previewRollback({tgtConn, tgtFullName, stagingFull, runId, targetPkCol}){
+    if (!targetPkCol){
+      throw new Error('Rollback not supported — target PK column was not captured for this run');
+    }
+    const runIdLit = "'" + String(runId).replace(/'/g, "''") + "'";
+    // One round-trip with three counts:
+    //   1. how many staging rows are status='loaded' for this run
+    //   2. how many of those have dm_target_row_id captured
+    //   3. how many target rows still exist matching those captured keys
+    // CAST the target PK to NVARCHAR(255) to match the staging column's
+    // type, so the comparison works for both INT/BIGINT and GUID PKs.
+    const sql =
+      "SELECT \n" +
+      "  (SELECT COUNT(*) FROM " + stagingFull +
+        " WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'loaded') AS staging_loaded,\n" +
+      "  (SELECT COUNT(*) FROM " + stagingFull +
+        " WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'loaded' AND [dm_target_row_id] IS NOT NULL) AS staging_rollable,\n" +
+      "  (SELECT COUNT(*) FROM " + tgtFullName + " t " +
+        " WHERE CAST(t.[" + targetPkCol + "] AS NVARCHAR(255)) IN " +
+        "   (SELECT [dm_target_row_id] FROM " + stagingFull +
+        "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'loaded' AND [dm_target_row_id] IS NOT NULL)" +
+        ") AS target_matching;";
+    let row;
+    try {
+      const r = await dbCall(tgtConn, { action: 'execute', sql });
+      row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]) || {};
+    } catch (e) {
+      throw classifyDbError(e,
+        'preview rollback for run ' + runId,
+        'SELECT permission on the staging and target tables'
+      );
+    }
+    const stagingLoaded = Number(row.staging_loaded || 0);
+    const stagingRollableTargets = Number(row.staging_rollable || 0);
+    const targetMatching = Number(row.target_matching || 0);
+    return {
+      stagingLoaded,
+      stagingRollableTargets,
+      targetMatching,
+      pkCol: targetPkCol,
+      allTargetsCaptured: stagingLoaded === stagingRollableTargets
+    };
+  }
+
+  // executeRollback: actually delete the rows. Transactional and
+  // fail-the-whole-thing semantics — if even one row can't be deleted
+  // (e.g. FK constraint), the whole DELETE is rolled back and staging
+  // is unchanged.
+  //
+  // Returns:
+  //   { deleted: int, error: string|null }
+  //
+  // On success, staging rows for this run get dm_load_status='rolled_back'
+  // with dm_loaded_at retained (so you can see when they were originally
+  // loaded) and a new audit row appended to dm_load_error noting when
+  // the rollback happened.
+  async function executeRollback({tgtConn, tgtFullName, stagingFull, runId, targetPkCol}){
+    if (!targetPkCol){
+      throw new Error('Rollback not supported — target PK column was not captured for this run');
+    }
+    const runIdLit = "'" + String(runId).replace(/'/g, "''") + "'";
+    // The whole thing in one transaction. On any error (FK violation,
+    // permission denied, etc.) the transaction rolls back and staging
+    // stays exactly as it was — the user sees an honest error.
+    const sql =
+      "DECLARE @deleted INT = 0;\n" +
+      "DECLARE @errmsg NVARCHAR(MAX) = NULL;\n" +
+      "BEGIN TRY\n" +
+      "  BEGIN TRANSACTION;\n" +
+      // DELETE the target rows matching the captured target PKs.
+      "  DELETE FROM t\n" +
+      "    FROM " + tgtFullName + " t\n" +
+      "    INNER JOIN " + stagingFull + " s\n" +
+      "      ON CAST(t.[" + targetPkCol + "] AS NVARCHAR(255)) = s.[dm_target_row_id]\n" +
+      "    WHERE s.[dm_run_id] = " + runIdLit +
+      "      AND s.[dm_load_status] = N'loaded'\n" +
+      "      AND s.[dm_target_row_id] IS NOT NULL;\n" +
+      "  SET @deleted = @@ROWCOUNT;\n" +
+      // Mark staging rows as rolled_back. We don't delete them — the
+      // audit trail of "these rows were loaded then rolled back" stays
+      // queryable forever.
+      "  UPDATE " + stagingFull + "\n" +
+      "    SET [dm_load_status] = N'rolled_back',\n" +
+      "        [dm_load_error] = COALESCE([dm_load_error] + N' | ', N'') + N'Rolled back at ' + CONVERT(NVARCHAR, SYSUTCDATETIME(), 121)\n" +
+      "    WHERE [dm_run_id] = " + runIdLit + " AND [dm_load_status] = N'loaded';\n" +
+      "  COMMIT TRANSACTION;\n" +
+      "END TRY\n" +
+      "BEGIN CATCH\n" +
+      "  IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;\n" +
+      "  SET @errmsg = ERROR_MESSAGE();\n" +
+      "END CATCH\n" +
+      "SELECT @deleted AS deleted, @errmsg AS errmsg;";
+    let row;
+    try {
+      const r = await dbCall(tgtConn, { action: 'execute', sql });
+      row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]) || {};
+    } catch (e) {
+      throw classifyDbError(e,
+        'execute rollback for run ' + runId,
+        'DELETE permission on the target table and UPDATE on the staging table'
+      );
+    }
+    const deleted = Number(row.deleted || 0);
+    const errmsg = row.errmsg || row.errMsg || null;
+    return { deleted, error: errmsg };
+  }
+
   return {
     SCHEMA_NAME,
     AUDIT_COLUMN_NAMES,
@@ -2697,7 +2993,9 @@ const StagingArea = (function(){
     buildStageInsert,
     loadToTarget,
     pickSourceRowKey,
-    captureExcluded
+    captureExcluded,
+    previewRollback,
+    executeRollback
   };
 })();
 // Expose on window so debugging from DevTools is easy. Not used by any
@@ -2793,6 +3091,200 @@ function _showCopyHint(msg) {
   hint.textContent = msg;
   clearTimeout(_showCopyHint._t);
   _showCopyHint._t = setTimeout(() => { hint.textContent = ''; }, 2500);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rollback orchestration
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Two entry points:
+//   rollbackStep(gi, si)  — per-step button, undoes one step's last run
+//   rollbackLastRun()     — top-level button, undoes the most recent run
+//                           across all selected steps that support it
+//
+// Both go through the same two-phase flow:
+//   1. previewRollback for each step — counts how many rows will be affected
+//   2. Confirmation dialog with concrete numbers
+//   3. executeRollback for each step — transactional delete
+//   4. Update step status visually
+//
+// Per design (Curtis 12 May 2026):
+//   • Fail-the-whole-thing on FK violations (no partial rollback)
+//   • Surface SQL Server errors honestly
+//   • Always show counts before deleting (data check)
+//   • Mark staging rows as 'rolled_back' rather than deleting them
+
+// Update both the top-level "Rollback last run" button visibility and any
+// per-step buttons. Called from renderSteps() and after every run completes.
+function updateRollbackButtonVisibility(){
+  const topBtn = document.getElementById('rollback-last-btn');
+  if (!topBtn) return;
+  // Show the top-level button when at least one step has rollback metadata.
+  const flat = getAllStepsFlat();
+  const anyRollable = flat.some(x =>
+    x.step && x.step.rollbackSupported && (x.step.rowsInserted || 0) > 0
+  );
+  topBtn.style.display = anyRollable ? '' : 'none';
+}
+
+// Roll back a single step. Called by the per-step "↶ Rollback" button.
+async function rollbackStep(gi, si){
+  const step = project.groups?.[gi]?.steps?.[si];
+  if (!step){
+    alert('Step not found.');
+    return;
+  }
+  if (!step.runId || !step.stagingTable || !step.targetPkCol){
+    alert('Cannot roll back this step — rollback metadata is missing. Rollback is only available on runs that completed with target PK capture.');
+    return;
+  }
+  await performRollback([step], 'this step');
+}
+
+// Roll back the most recent run across all selected, rollback-supported steps.
+async function rollbackLastRun(){
+  const flat = getAllStepsFlat();
+  const rollable = flat
+    .map(x => x.step)
+    .filter(s => s && s.rollbackSupported && (s.rowsInserted || 0) > 0 && s.runId && s.stagingTable && s.targetPkCol);
+  if (!rollable.length){
+    alert('Nothing to roll back. No recent step has captured target keys.');
+    return;
+  }
+  // Optional: only roll back steps from the most recent runId. When the
+  // user has run multiple times with different runIds, "last run" most
+  // sensibly means the latest one. Group by runId and pick the most
+  // recent. We use the runId's embedded timestamp prefix (run_<epoch>_X)
+  // to compare without an extra DB round-trip.
+  const byRun = new Map();
+  rollable.forEach(s => {
+    const ts = parseRunIdTimestamp(s.runId);
+    const arr = byRun.get(s.runId) || { ts, steps: [] };
+    arr.steps.push(s);
+    byRun.set(s.runId, arr);
+  });
+  const latestRunId = Array.from(byRun.entries())
+    .sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0))[0][0];
+  const steps = byRun.get(latestRunId).steps;
+  await performRollback(steps, 'the most recent run (' + steps.length + ' step' + (steps.length === 1 ? '' : 's') + ')');
+}
+
+// Extract the epoch from a runId like "run_1778598000_xyz" — returns 0 if
+// it doesn't parse, which sorts older.
+function parseRunIdTimestamp(runId){
+  const m = /^run_(\d+)/.exec(String(runId || ''));
+  return m ? Number(m[1]) : 0;
+}
+
+// Shared rollback flow: preview, confirm, execute, report. Takes a list of
+// steps and a human-readable description of what's being rolled back.
+async function performRollback(steps, description){
+  const tgtConn = effectiveTgtConn();
+  if (!tgtConn){
+    alert('Target connection not set.');
+    return;
+  }
+  // Phase 1: preview each step
+  const previews = [];
+  for (const step of steps){
+    try {
+      const p = await StagingArea.previewRollback({
+        tgtConn,
+        tgtFullName: step.tgtTable,
+        stagingFull: step.stagingTable,
+        runId: step.runId,
+        targetPkCol: step.targetPkCol
+      });
+      previews.push({ step, preview: p });
+    } catch (e) {
+      alert('Could not preview rollback for "' + step.name + '": ' + e.message);
+      return;
+    }
+  }
+  // Build a confirmation summary
+  const lines = [];
+  let totalTargetMatching = 0;
+  let totalStagingLoaded = 0;
+  for (const {step, preview} of previews){
+    totalTargetMatching += preview.targetMatching;
+    totalStagingLoaded += preview.stagingLoaded;
+    const drift = preview.stagingLoaded - preview.targetMatching;
+    const driftNote = drift > 0
+      ? ' (⚠ ' + drift + ' originally-loaded row(s) no longer in target — may have been deleted or modified elsewhere)'
+      : '';
+    lines.push('• ' + step.name + ' (' + step.tgtTable + '): ' +
+               preview.targetMatching + ' of ' + preview.stagingLoaded + ' rows still in target' + driftNote);
+  }
+  const confirmMsg =
+    'About to roll back ' + description + '.\n\n' +
+    lines.join('\n') + '\n\n' +
+    'TOTAL: ' + totalTargetMatching + ' row(s) will be DELETED from the target. ' +
+    'Staging rows will be retained and marked as "rolled_back" for audit.\n\n' +
+    (totalTargetMatching === 0
+      ? 'Nothing to delete — proceed anyway to mark staging as rolled_back?'
+      : 'This action cannot be undone. Continue?');
+  if (!confirm(confirmMsg)) return;
+
+  // Phase 2: execute each rollback
+  const results = [];
+  for (const {step, preview} of previews){
+    try {
+      const r = await StagingArea.executeRollback({
+        tgtConn,
+        tgtFullName: step.tgtTable,
+        stagingFull: step.stagingTable,
+        runId: step.runId,
+        targetPkCol: step.targetPkCol
+      });
+      results.push({ step, result: r, preview });
+      if (r.error){
+        // Stop on first failure — fail-the-whole-thing per design call.
+        // Already-processed steps stay rolled back; we report the partial
+        // outcome honestly.
+        const completed = results.length - 1;
+        alert('Rollback failed on step "' + step.name + '":\n\n' + r.error +
+              '\n\n' + completed + ' earlier step(s) were rolled back successfully and remain so. ' +
+              'Resolve the issue (often a FK constraint) and try again on the remaining steps.');
+        break;
+      }
+    } catch (e) {
+      alert('Rollback errored on step "' + step.name + '": ' + e.message);
+      break;
+    }
+  }
+
+  // Phase 3: update step state and re-render
+  let totalDeleted = 0;
+  for (const {step, result} of results){
+    if (result.error) continue;
+    totalDeleted += result.deleted;
+    // Mark step visually as rolled back. We keep the runId in case the
+    // user wants to look at staging, but flip rollbackSupported off so
+    // the button hides.
+    step.rolledBack = true;
+    step.rolledBackAt = new Date().toISOString();
+    step.rolledBackCount = result.deleted;
+    step.rollbackSupported = false;
+    step.status = 'pending';  // back to pending — target is now empty for these rows
+    step.rowsInserted = 0;
+  }
+  renderSteps();
+  markDirty();
+  // Final summary log
+  if (totalDeleted > 0){
+    showToast('Rolled back ' + totalDeleted.toLocaleString() + ' row(s) across ' + results.filter(r => !r.result.error).length + ' step(s).');
+  }
+}
+
+// Lightweight toast helper — uses the existing copy-hint mechanism for
+// transient feedback. Falls back to alert if the hint element isn't on
+// the page.
+function showToast(msg){
+  if (typeof _showCopyHint === 'function'){
+    _showCopyHint(msg);
+  } else {
+    alert(msg);
+  }
 }
 
 async function runSingleStep(gi, si) {
@@ -3644,6 +4136,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   // both stage INSERT and load SELECT — IDENTITY auto-generates them).
   let stagingFull = '';
   let identityColumns = new Set();
+  let targetPk = null;  // {col, kind} from ensureTable; null when no PK detected
   let srcRowKeyCol = null;
   // Track any batch-level errors reported by the target backend. Even if the
   // fetch/batch calls don't throw, the target can report per-batch failures
@@ -3709,6 +4202,16 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         const ensureResult = await StagingArea.ensureTable(tgtConn, step.tgtTable, mapping);
         stagingFull = ensureResult.stagingFull;
         identityColumns = ensureResult.identityColumns || new Set();
+        targetPk = ensureResult.targetPk || null;
+        // Visible feedback on rollback capability — users will appreciate
+        // knowing up-front whether rollback will work for this run.
+        if (targetPk && targetPk.col){
+          add('Target PK detected: [' + targetPk.col + '] (' + targetPk.kind + ') — rollback supported for this run');
+        } else if (targetPk && targetPk.kind === 'composite'){
+          add('⚠ Target has composite PK (' + (targetPk.cols || []).join(', ') + ') — rollback NOT supported in this version');
+        } else {
+          add('⚠ No target PK detected — rollback will NOT be supported for this run');
+        }
         if (identityColumns.size){
           add('Identity columns excluded from staging (target auto-generates): ' +
               Array.from(identityColumns).join(', '));
@@ -3874,7 +4377,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   if (stagingFull && totalInserted > 0) {
     add('Loading from staging into ' + step.tgtTable + '…');
     try {
-      const loadRes = await StagingArea.loadToTarget(tgtConn, step.tgtTable, stagingFull, mapping, runCtx.runId, identityColumns);
+      const loadRes = await StagingArea.loadToTarget(tgtConn, step.tgtTable, stagingFull, mapping, runCtx.runId, identityColumns, targetPk);
       loadedRowCount = loadRes.loaded;
       if (loadRes.error){
         // The transactional load rolled back — none of the staged rows
@@ -3913,6 +4416,12 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   step.rowsStaged   = totalInserted;
   step.stagingTable = stagingFull;
   step.runId        = runCtx.runId;
+  // Rollback-related metadata. rollbackSupported is true only when
+  // targetPk was detected at load time AND the load succeeded for at
+  // least one row. Without these, the rollback button stays hidden.
+  step.targetPkCol       = targetPk && targetPk.col ? targetPk.col : null;
+  step.targetPkKind      = targetPk && targetPk.kind ? targetPk.kind : null;
+  step.rollbackSupported = !!(targetPk && targetPk.col && loadedRowCount > 0);
 
   add('Complete — ' + loadedRowCount.toLocaleString() + ' rows loaded into ' + step.tgtTable +
       ' (staged ' + totalInserted.toLocaleString() + ' from ' + pageNum + ' page(s))');
