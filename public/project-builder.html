@@ -118,6 +118,11 @@ select.proj-name-input:focus{background-color:var(--bg3);border-radius:6px}
 .step-log-area{border-top:0.5px solid var(--border);padding:0.75rem 1rem;background:var(--bg3);display:none}
 .step-log-area.open{display:block}
 .step-log{font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.8;white-space:pre-wrap;max-height:120px;overflow-y:auto}
+/* Step meta line shows progress info while running. The .step-meta-progress
+   class colours the text in accent green so a running step's progress is
+   visually distinct from a passed/stale step's static "94 cols · 9,000 rows"
+   meta. Kept inline within the existing meta line — no layout shift. */
+.step-meta-progress{color:var(--green);font-weight:500}
 .empty-steps{text-align:center;padding:3rem 1rem;color:var(--text3)}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;text-decoration:none}
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
@@ -1347,6 +1352,87 @@ function addJobAsStep(jobIndex) {
 }
 
 // ── Steps (rendered inside groups) ────────────────────────────────────────────
+// ── Step progress (in the existing meta line, while migration is running) ──
+//
+// The runner sets `step.progress = {phase, rowsDone, rowsTotal, pageNum,
+// totalPages, lastUpdate}` and calls updateStepProgress(gi, si) which
+// patches just that step's .step-meta line — NOT a full renderSteps().
+//
+// Phases:
+//   'counting' — running the source COUNT query
+//   'staging'  — fetching pages and writing to staging (the long part)
+//   'loading'  — staging → target transaction
+//   'auditing' — capturing excluded rows
+//
+// step.progress is cleared (clearStepProgress) when the step finishes,
+// after which the next renderSteps puts the static "94 cols · 9,000 rows
+// · 12 May, 21:11" meta back. If the meta still shows running text after
+// a run, that indicates a code path that didn't clean up — file a bug.
+
+// Build the live progress text for a running step. Returns plain HTML
+// (already escaped — no user input goes in) wrapped in
+// <span class="step-meta-progress"> so the existing CSS gives it the
+// green/bold treatment that distinguishes it from static meta.
+function buildProgressMeta(p){
+  if (!p) return '';
+  let text;
+  switch (p.phase){
+    case 'counting':
+      text = 'Counting source rows…';
+      break;
+    case 'staging': {
+      // The headline format you wanted: "Migrating 2,000 of 9,000 rows".
+      // When we don't have a total (count failed), fall back to just the
+      // running tally with the page number for context.
+      const done = (p.rowsDone || 0).toLocaleString();
+      if (p.rowsTotal > 0){
+        const pct = Math.min(100, Math.round((p.rowsDone / p.rowsTotal) * 100));
+        text = 'Migrating ' + done + ' of ' + p.rowsTotal.toLocaleString() + ' rows · ' + pct + '%';
+      } else {
+        text = 'Migrating ' + done + ' rows · page ' + p.pageNum;
+      }
+      break;
+    }
+    case 'loading':
+      text = 'Loading staging → target…';
+      break;
+    case 'auditing':
+      text = 'Auditing excluded rows…';
+      break;
+    default:
+      text = p.phase || 'Working…';
+  }
+  return '<span class="step-meta-progress">' + text + '</span>';
+}
+
+// Patch a single step's meta line. Looks up the .step-meta div by the
+// data attributes we put on the step card, then swaps its text content.
+// Falling back gracefully if the card isn't in the DOM (e.g. user
+// collapsed the group mid-run).
+function updateStepProgress(gi, si){
+  const step = project.groups?.[gi]?.steps?.[si];
+  if (!step) return;
+  const card = document.querySelector('.step-card[data-group-index="' + gi + '"][data-step-index="' + si + '"]');
+  if (!card) return;
+  const metaEl = card.querySelector('.step-meta');
+  if (!metaEl) return;
+  if (step.progress){
+    metaEl.innerHTML = buildProgressMeta(step.progress);
+  } else {
+    // Trigger a full renderSteps to put the static meta back. Cheap —
+    // only happens at step end, not during.
+    renderSteps();
+  }
+}
+
+function clearStepProgress(gi, si){
+  const step = project.groups?.[gi]?.steps?.[si];
+  if (step) delete step.progress;
+  // Don't manually rebuild the meta here — the caller will call renderSteps
+  // anyway (runProject does it implicitly through setStatus → renderSteps;
+  // runSingleStep does it explicitly at the end).
+}
+
 function renderSteps() {
   const list  = document.getElementById('steps-list');
   const empty = document.getElementById('steps-empty');
@@ -1478,7 +1564,12 @@ function renderSteps() {
           ? ` <span style="color:var(--text3);opacity:0.85"${metaTooltip?' title="'+esc(metaTooltip).replace(/"/g,'&quot;')+'"':''}>· ${esc(runStatsParts.join(' · '))}</span>`
           : '';
 
-        const meta = baseMeta + runStatsHtml;
+        // Use live progress text if the runner is mid-step; otherwise the
+        // static "94 cols · 9,000 rows · 12 May, 21:11" meta. Keeping both
+        // paths in renderSteps means the first paint after a status flip
+        // shows correct content without needing an extra updateStepProgress
+        // call from outside.
+        const meta = step.progress ? buildProgressMeta(step.progress) : (baseMeta + runStatsHtml);
         const statusCls = 'status-' + (step.status||'pending');
         const statusEmoji = {pending:'⚪',running:'🟡',passed:'🟢',failed:'🔴',skipped:'🟠'}[step.status||'pending'] || '⚪';
         const runBtnId = `run-step-${gi}-${si}`;
@@ -1514,6 +1605,7 @@ function renderSteps() {
             </div>
           </div>
           ${step.log ? `<div class="step-log-area" id="${logId}"><div class="step-log">${esc(step.log)}</div></div>` : ''}`;
+
 
         // Step drag
         card.addEventListener('dragstart', e => {
@@ -3371,8 +3463,12 @@ async function runSingleStep(gi, si) {
   step.durationMs = null;
   try {
     let res;
+    // onProgress callback for runMigrationStep — patches just THIS step's
+    // progress div. Bound to (gi, si) so the callback knows where to write
+    // without runMigrationStep needing to know its coordinates.
+    const onProgress = () => updateStepProgress(gi, si);
     if (step.type === 'migration') {
-      res = await runMigrationStep(step, srcConn, tgtConn, log);
+      res = await runMigrationStep(step, srcConn, tgtConn, log, onProgress);
     } else {
       res = await runSqlStep(step, srcConn, tgtConn, log);
     }
@@ -3406,6 +3502,9 @@ async function runSingleStep(gi, si) {
   const _t1 = Date.now();
   step.finishedAt = new Date(_t1).toISOString();
   step.durationMs = _t1 - _t0;
+  // Clear in-card progress bar. After this the step is in its final
+  // status — passed/failed — and the progress bar should disappear.
+  clearStepProgress(gi, si);
   renderSteps();
   const btn2 = document.getElementById(btnId);
   if (btn2) { btn2.disabled=false; btn2.textContent='▶ Run'; }
@@ -3530,8 +3629,13 @@ async function runProject() {
       step.durationMs = null;
       let stepLog='', ok=true, stepError='';
       try {
+        // onProgress callback — patches the per-step progress div for
+        // this step's coords. Without this binding, runMigrationStep
+        // would have no way to update the right card during multi-step
+        // runs.
+        const onProgress = () => updateStepProgress(gi, si);
         if (step.type === 'migration') {
-          const r = await runMigrationStep(step, srcConn, tgtConn, log);
+          const r = await runMigrationStep(step, srcConn, tgtConn, log, onProgress);
           stepLog=r.log; ok=r.ok; stepError=r.error||'';
           if (r.rowsInserted !== undefined) step.rowsInserted = r.rowsInserted;
           if (r.tables)                     step.tables       = r.tables;
@@ -3549,6 +3653,9 @@ async function runProject() {
         ok = false;
         log('Error: '+e.message,'err');
       }
+      // Clear the in-card progress bar — step is finishing, the bar
+      // should disappear regardless of outcome.
+      clearStepProgress(gi, si);
 
       const t1 = Date.now();
       step.finishedAt = new Date(t1).toISOString();
@@ -3877,9 +3984,16 @@ async function runReconAfter(step, tgtConn, preResult) {
   };
 }
 
-async function runMigrationStep(step, srcConn, tgtConn, log) {
+async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   let stepLog='';
   const add = m => { stepLog+=m+'\n'; log(m); };
+  // Wrap onProgress so callers don't need to null-check on every call.
+  // Also sets step.progress so that re-renders of renderSteps() during
+  // the run (e.g. status flips) can pick up the latest progress.
+  const reportProgress = (progress) => {
+    step.progress = progress;
+    if (typeof onProgress === 'function') onProgress(progress);
+  };
 
   // ── Safety: if this is actually a raw SQL script job, run it as SQL ──────────
   // This catches jobs saved from SQL Editor that got misrouted as 'migration'
@@ -4181,6 +4295,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
 
   // Get total count first so we can show progress
   add('Counting rows in ' + step.srcTable + '…');
+  reportProgress({ phase: 'counting', rowsDone: 0, rowsTotal: 0, pageNum: 0, totalPages: 0, lastUpdate: Date.now() });
   let totalRows = 0;
   try {
     const countRes = await dbCall(srcConn, { action:'count', sql: srcSelectSQL });
@@ -4339,6 +4454,18 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
       // not yet in the final target. The load-from-staging step after the
       // loop completes is what actually moves them.
       add('Page ' + pageNum + ': fetched ' + rows.length.toLocaleString() + ' rows, staged ' + inserted.toLocaleString() + ' — total staged ' + totalInserted.toLocaleString() + pct);
+      // Update the in-card progress bar. totalPages is best-effort — if
+      // we didn't get a count earlier, we leave it 0 and the renderer
+      // falls back to showing just the page number.
+      const totalPages = totalRows > 0 ? Math.ceil(totalRows / PAGE_SIZE) : 0;
+      reportProgress({
+        phase: 'staging',
+        rowsDone: totalInserted,
+        rowsTotal: totalRows,
+        pageNum,
+        totalPages,
+        lastUpdate: Date.now()
+      });
 
       if (pageRes2.errors) {
         // Normalize the "errors" field: historically a count (number), but
@@ -4451,6 +4578,11 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   let loadedRowCount = 0;
   if (stagingFull && totalInserted > 0) {
     add('Loading from staging into ' + step.tgtTable + '…');
+    reportProgress({
+      phase: 'loading',
+      rowsDone: totalInserted, rowsTotal: totalInserted,
+      pageNum: 0, totalPages: 0, lastUpdate: Date.now()
+    });
     try {
       const loadRes = await StagingArea.loadToTarget(tgtConn, step.tgtTable, stagingFull, mapping, runCtx.runId, identityColumns, targetPk);
       loadedRowCount = loadRes.loaded;
@@ -4527,6 +4659,11 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
           ' rows) — this may take a moment.');
     }
     try {
+      reportProgress({
+        phase: 'auditing',
+        rowsDone: 0, rowsTotal: 0,
+        pageNum: 0, totalPages: 0, lastUpdate: Date.now()
+      });
       const auditRes = await StagingArea.captureExcluded({
         srcConn, tgtConn,
         srcTable: step.srcTable,
