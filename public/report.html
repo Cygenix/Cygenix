@@ -636,26 +636,42 @@ function renderReport(d) {
     table:        t.name,
     sourceRows:   t.sourceRows || 0,
     inserted:     t.insertedRows || 0,
+    excluded:     t.excludedRows || 0,
     errors:       t.errors || 0,
     batches:      t.batches || 0,
     status:       t.status || (t.errors > 0 ? 'partial' : 'success'),
   }));
+  // Show the Excluded column only if at least one table has audit data
+  // (Audit Source ticked on the run, WHERE clause present). Reports
+  // before this feature existed don't carry excludedKnown, so the column
+  // stays hidden and the report looks the same as it used to.
+  const showExcluded = tables.some(t => t.excludedKnown);
   window._grids = window._grids || {};
   const reportConfig = loadReportConfig();
   const resultsConfig = (reportConfig && reportConfig.grids && reportConfig.grids.results) || {};
+  // Columns are built conditionally so the grid stays clean for jobs that
+  // didn't run Audit Source. Order matches the visual flow: source identity
+  // → counts → status.
+  const resultsColumns = [
+    { key: 'source',     label: 'Source',      type: 'text',    mono: true, size: 11, muted: true },
+    { key: 'table',      label: 'Table',       type: 'text',    mono: true, bold: true },
+    { key: 'sourceRows', label: 'Source rows', type: 'number',  align: 'right' },
+    { key: 'inserted',   label: 'Inserted',    type: 'number',  align: 'right', color: 'green', bold: true },
+  ];
+  if (showExcluded){
+    resultsColumns.push({ key: 'excluded', label: 'Excluded', type: 'number',  align: 'right',
+      dynamicColor: v => v > 0 ? 'var(--amber)' : 'var(--text3)' });
+  }
+  resultsColumns.push(
+    { key: 'errors',     label: 'Errors',      type: 'number',  align: 'right', dynamicColor: v => v > 0 ? 'var(--red)' : 'var(--text3)' },
+    { key: 'batches',    label: 'Batches',     type: 'number',  align: 'right' },
+    { key: 'status',     label: 'Status',      type: 'status' }
+  );
   window._grids.results = new DataGrid({
     mount: document.getElementById('grid-results'),
     title: 'migration_results',
     readonly: true,
-    columns: [
-      { key: 'source',     label: 'Source',      type: 'text',    mono: true, size: 11, muted: true },
-      { key: 'table',      label: 'Table',       type: 'text',    mono: true, bold: true },
-      { key: 'sourceRows', label: 'Source rows', type: 'number',  align: 'right' },
-      { key: 'inserted',   label: 'Inserted',    type: 'number',  align: 'right', color: 'green', bold: true },
-      { key: 'errors',     label: 'Errors',      type: 'number',  align: 'right', dynamicColor: v => v > 0 ? 'var(--red)' : 'var(--text3)' },
-      { key: 'batches',    label: 'Batches',     type: 'number',  align: 'right' },
-      { key: 'status',     label: 'Status',      type: 'status' },
-    ],
+    columns: resultsColumns,
     rows: resultsRows,
     emptyMsg: 'No migration results to display.',
     initialSort:       resultsConfig.sort,

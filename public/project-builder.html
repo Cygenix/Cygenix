@@ -4351,11 +4351,44 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
           status:       s.status === 'passed' ? 'success' : s.status
         }));
       }
+      // Standard migration: derive honest row counts from the staging-aware
+      // step fields the runner now populates. The previous version set
+      // sourceRows = rowsInserted, which silently lied about how many rows
+      // were in source — a job that filtered 7 out of 50 reported "43
+      // source rows, 43 inserted" instead of "50 source rows, 43 inserted,
+      // 7 excluded".
+      //
+      // Definitions:
+      //   loaded         → rows that made it into the target (rowsInserted)
+      //   staged         → rows that made it into staging (loaded + failed)
+      //                    Only known when staging path ran; undefined for
+      //                    legacy SQL-script steps. When undefined, we fall
+      //                    back to loaded so the count isn't zero.
+      //   failed         → staged - loaded (only meaningful when staged known)
+      //   excluded       → rows filtered by WHERE (only known when Audit
+      //                    Source ran; otherwise we genuinely don't know)
+      //   sourceRows     → total rows in source. When excluded is known:
+      //                    loaded + failed + excluded. When unknown: same
+      //                    as staged (= rows that passed WHERE), which is
+      //                    the most we honestly know.
+      const loaded = s.rowsInserted || 0;
+      const staged = (typeof s.rowsStaged === 'number') ? s.rowsStaged : loaded;
+      const failed = Math.max(0, staged - loaded);
+      const excluded = (typeof s.rowsExcluded === 'number') ? s.rowsExcluded : null;
+      const sourceRows = excluded !== null
+        ? (loaded + failed + excluded)
+        : staged;  // honest "as much as we know" fallback
       return [{
         name:         s.tgtTable || s.name,
-        sourceRows:   s.rowsInserted || 0,
-        insertedRows: s.rowsInserted || 0,
-        errors:       s.status === 'failed' ? 1 : 0,
+        sourceRows:   sourceRows,
+        insertedRows: loaded,
+        errors:       failed + (s.status === 'failed' && failed === 0 ? 1 : 0),
+        excludedRows: excluded || 0,
+        // Carry along the audit-mode marker so the report renderer can
+        // distinguish "0 excluded because audit ran and there were none"
+        // from "0 excluded because audit didn't run". Reading the field
+        // is opt-in on the renderer side.
+        excludedKnown: excluded !== null,
         status:       s.status === 'passed' ? 'success' : s.status
       }];
     }),
