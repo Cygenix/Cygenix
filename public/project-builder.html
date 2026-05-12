@@ -2159,18 +2159,30 @@ const StagingArea = (function(){
   }
 
   // Pre-flight: ensure the staging table exists for a given target. Returns
-  // the staging table's full name. Idempotent — if the table already exists
-  // it's left alone (its existing structure is trusted; we don't try to
-  // migrate it). If it doesn't exist, we introspect the target's columns
-  // and build a CREATE TABLE that mirrors them plus the audit columns.
+  // { stagingFull, identityColumns }:
+  //   • stagingFull     — fully-qualified staging table name (e.g.
+  //                       "dm_staging.[dbo__Matters]"). Caller uses this for
+  //                       INSERT and SELECT statements.
+  //   • identityColumns — lower-cased Set of target IDENTITY column names
+  //                       that were EXCLUDED from the staging table. Callers
+  //                       MUST also exclude these from the INSERT column
+  //                       list and from the load-back SELECT — SQL Server
+  //                       generates them automatically on the live target,
+  //                       and an INSERT that references them explicitly
+  //                       triggers "Cannot insert explicit value for
+  //                       identity column" (or "Invalid column name" if
+  //                       staging is missing the column).
   //
-  // Important: only columns that appear in the job's column mapping are
-  // mirrored into staging. We don't mirror the target's IDENTITY columns
-  // either — they would prevent INSERT EXPLICITLY from working without
-  // SET IDENTITY_INSERT ON, and the staging table's purpose is to hold
-  // values for *insertion into* the target, not to mirror its complete
-  // schema. We do allow NULLs on all mirrored columns (the staging row
-  // is a "candidate", not yet a target row).
+  // Idempotent — if the table already exists it's left alone (its existing
+  // structure is trusted; we don't try to migrate it). If it doesn't exist,
+  // we introspect the target's columns and build a CREATE TABLE that
+  // mirrors them plus the audit columns.
+  //
+  // Identity columns are NEVER mirrored into staging. The staging table
+  // exists to hold values for *insertion into* the target — identity
+  // values come from SQL Server's IDENTITY mechanism, not from staging.
+  // We allow NULLs on all mirrored columns (the staging row is a
+  // "candidate", not yet a target row).
   async function ensureTable(tgtConn, tgtFullName, mapping){
     const { schema, table } = parseFullName(tgtFullName);
     const stagingFull = stagingTableName(tgtFullName);
@@ -2197,6 +2209,13 @@ const StagingArea = (function(){
       );
     }
 
+    // Collect identity column names so callers can exclude them everywhere.
+    // We lowercase for case-insensitive comparison since the mapping editor
+    // and source data can produce mixed-case column names.
+    const identityColumns = new Set(
+      targetCols.filter(c => c.isIdentity).map(c => c.name.toLowerCase())
+    );
+
     // Build column DDL for the mirrored data columns. Use the target's
     // column types verbatim (schema-columns returns them ready-to-use).
     // Force NULL on everything — staging holds candidate values, some of
@@ -2206,7 +2225,7 @@ const StagingArea = (function(){
     const mappedTgtCols = new Set((mapping || []).map(m => (m.tgtCol || '').toLowerCase()));
     const dataColDdl = targetCols
       .filter(c => mappedTgtCols.has(c.name.toLowerCase()))
-      .filter(c => !c.isIdentity)  // identity columns: target's IDENTITY generates them
+      .filter(c => !identityColumns.has(c.name.toLowerCase()))  // identity columns: target's IDENTITY generates them
       .map(c => '[' + c.name + '] ' + c.type + ' NULL');
 
     if (!dataColDdl.length){
@@ -2241,7 +2260,7 @@ const StagingArea = (function(){
         'CREATE TABLE permission in the [' + SCHEMA_NAME + '] schema'
       );
     }
-    return stagingFull;
+    return { stagingFull, identityColumns };
   }
 
   // Drop the staging table for a given target if it exists. Called BEFORE
@@ -2293,16 +2312,32 @@ const StagingArea = (function(){
   // them here — staging is a transport mechanism, not a transformation
   // layer. The values that land in staging are exactly what would have
   // landed in the target directly.
+  //
+  // identityColumns: a Set of lower-cased target column names that should
+  // be EXCLUDED from the column list and values. These come from ensureTable
+  // (which detected them on the live target via sys.columns) and ensure
+  // the INSERT doesn't reference columns that don't exist on staging (the
+  // staging table excludes them) and that SQL Server's IDENTITY mechanism
+  // generates them automatically on the final target.
   function buildStageInsert(stagingFull, mapping, rows, runId, jobId, step,
                             applyMappingTransform, applyStepWasis, fmtVal,
-                            sourceRowKeyCol){
+                            sourceRowKeyCol, identityColumns){
     if (!rows.length) return '';
-    const dataCols = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+    // Filter the mapping to drop identity columns. This must happen BEFORE
+    // we build the column list and the values list so both stay aligned.
+    // identityColumns is optional (callers from older code paths may pass
+    // null/undefined) — treat absent as "no filtering".
+    const idSet = identityColumns || new Set();
+    const filteredMapping = mapping.filter(m =>
+      !idSet.has((m.tgtCol || '').toLowerCase())
+    );
+
+    const dataCols = filteredMapping.map(m => '[' + m.tgtCol + ']').join(', ');
     const auditCols = AUDIT_COLUMN_NAMES.map(n => '[' + n + ']').join(', ');
     const allCols = dataCols + ', ' + auditCols;
 
     const valuesSql = rows.map((row, i) => {
-      const dataVals = mapping.map(m => {
+      const dataVals = filteredMapping.map(m => {
         let v = row[m.srcCol];
         v = applyMappingTransform(m, v);
         v = applyStepWasis(step, m.srcCol, v);
@@ -2343,8 +2378,20 @@ const StagingArea = (function(){
   // diagnostic information even though the data didn't move).
   //
   // Returns: { loaded: int, failed: int, error: string|null }
-  async function loadToTarget(tgtConn, tgtFullName, stagingFull, mapping, runId){
-    const dataCols = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
+  async function loadToTarget(tgtConn, tgtFullName, stagingFull, mapping, runId, identityColumns){
+    // Filter identity columns from both sides of the INSERT…SELECT.
+    // The target's IDENTITY mechanism generates these values; an
+    // explicit INSERT that references them errors with "Cannot insert
+    // explicit value for identity column when IDENTITY_INSERT is set to OFF".
+    // We could SET IDENTITY_INSERT ON and pass through values, but
+    // staging doesn't HAVE these columns (they were excluded by
+    // ensureTable), so the SELECT would fail with "Invalid column name"
+    // anyway. Excluding them here keeps the whole pipeline consistent.
+    const idSet = identityColumns || new Set();
+    const dataCols = mapping
+      .filter(m => !idSet.has((m.tgtCol || '').toLowerCase()))
+      .map(m => '[' + m.tgtCol + ']')
+      .join(', ');
     // INSERT INTO tgt SELECT data-cols FROM staging WHERE dm_run_id=@r AND
     // dm_load_status='pending'. We use a TRY/CATCH at the SQL layer so the
     // staging status update happens regardless of insert success/failure.
@@ -3336,9 +3383,12 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   // runs are always incremental.
   const runCtx = window._currentRun || { runId: StagingArea.newRunId(), reload: false, resetTables: new Set() };
   // Lazily-initialised on first page: the full name of this step's
-  // staging table (e.g. "dm_staging.[dbo__Matters]"), and the source
-  // column we'll record in dm_source_row_id for each staged row.
+  // staging table (e.g. "dm_staging.[dbo__Matters]"), the source column
+  // we'll record in dm_source_row_id for each staged row, and the set
+  // of identity column names from the target (must be excluded from
+  // both stage INSERT and load SELECT — IDENTITY auto-generates them).
   let stagingFull = '';
+  let identityColumns = new Set();
   let srcRowKeyCol = null;
   // Track any batch-level errors reported by the target backend. Even if the
   // fetch/batch calls don't throw, the target can report per-batch failures
@@ -3380,14 +3430,20 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         //   3. ensureTable        — (re)creates the staging table with the
         //                           CURRENT target schema, picking up any
         //                           column additions or type changes since
-        //                           the last run.
-        // We resolve the staging table's name up front via stagingTableName
-        // (no DB round-trip — just string manipulation) so reloadReset has
-        // something to drop. ensureTable does the actual CREATE either way.
+        //                           the last run. Returns the set of target
+        //                           identity columns that were excluded.
         //
         // resetTables tracks which staging tables we've already dropped in
         // this Run so multiple jobs hitting the same target table don't
         // drop each other's freshly-staged rows.
+        //
+        // identityColumns is the lower-cased set of target IDENTITY column
+        // names that staging won't hold. They're filtered out of both the
+        // stage INSERT and the load SELECT — SQL Server's IDENTITY mechanism
+        // generates them automatically on the live target. Without this
+        // filter, the INSERT references columns staging doesn't have ("Invalid
+        // column name") or that the target won't accept explicit values for
+        // ("Cannot insert explicit value for identity column").
         await StagingArea.ensureSchema(tgtConn);
         const stagingFullPlanned = StagingArea.stagingTableName(step.tgtTable);
         if (runCtx.reload && !runCtx.resetTables.has(stagingFullPlanned)){
@@ -3395,7 +3451,13 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
           await StagingArea.reloadReset(tgtConn, stagingFullPlanned);
           runCtx.resetTables.add(stagingFullPlanned);
         }
-        stagingFull = await StagingArea.ensureTable(tgtConn, step.tgtTable, mapping);
+        const ensureResult = await StagingArea.ensureTable(tgtConn, step.tgtTable, mapping);
+        stagingFull = ensureResult.stagingFull;
+        identityColumns = ensureResult.identityColumns || new Set();
+        if (identityColumns.size){
+          add('Identity columns excluded from staging (target auto-generates): ' +
+              Array.from(identityColumns).join(', '));
+        }
         srcRowKeyCol = StagingArea.pickSourceRowKey(step, mapping);
         add('Staging into ' + stagingFull + ' (run_id=' + runCtx.runId + (runCtx.reload ? ', mode=reload' : ', mode=incremental') + ')');
       }
@@ -3415,7 +3477,8 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         const batch = rows.slice(i, i + INSERT_BATCH);
         const sql = StagingArea.buildStageInsert(
           stagingFull, mapping, batch, runCtx.runId, step.jobId || '',
-          step, applyMappingTransform, applyStepWasis, fmtVal, srcRowKeyCol
+          step, applyMappingTransform, applyStepWasis, fmtVal, srcRowKeyCol,
+          identityColumns
         );
         if (sql) batches.push(sql);
       }
@@ -3556,7 +3619,7 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   if (stagingFull && totalInserted > 0) {
     add('Loading from staging into ' + step.tgtTable + '…');
     try {
-      const loadRes = await StagingArea.loadToTarget(tgtConn, step.tgtTable, stagingFull, mapping, runCtx.runId);
+      const loadRes = await StagingArea.loadToTarget(tgtConn, step.tgtTable, stagingFull, mapping, runCtx.runId, identityColumns);
       loadedRowCount = loadRes.loaded;
       if (loadRes.error){
         // The transactional load rolled back — none of the staged rows
