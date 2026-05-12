@@ -8245,7 +8245,7 @@ async function syncFromCloud(){
 // doesn't take the rest with it. Errors get logged so we still see
 // what failed.
 try { $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); } catch(e){ console.error('[init] today-date:', e); }
-try { sconnSecretsMigrationOnce(); } catch(e){ console.error('[init] sconn-migration:', e); }
+try { window.sconnSecretsMigrationOnce && window.sconnSecretsMigrationOnce(); } catch(e){ console.error('[init] sconn-migration:', e); }
 try { renderDashboard();           } catch(e){ console.error('[init] renderDashboard:', e); }
 try { checkHealth();               } catch(e){ console.error('[init] checkHealth:', e); }
 try { initUserAndProject();        } catch(e){ console.error('[init] initUserAndProject:', e); }
@@ -9667,6 +9667,11 @@ function sconnSetAll(list){
 //
 // Tracked in a per-user localStorage flag so it doesn't re-run on
 // every page load. Safe to call repeatedly: post-flag, it's a no-op.
+// Exposed on `window` so the top-level init block (which lives in a
+// different <script> tag earlier in the file) can call this. Function
+// declarations don't hoist across <script> boundaries — without the
+// window assignment, the init call gets a ReferenceError and silently
+// breaks the rest of init.
 function sconnSecretsMigrationOnce(){
   const FLAG = 'cygenix_sconn_secrets_migrated_v1';
   try {
@@ -9703,6 +9708,26 @@ function sconnSecretsMigrationOnce(){
     // Don't set the flag — let it retry next page load.
   }
 }
+// Make accessible across <script> blocks (see comment on the function).
+window.sconnSecretsMigrationOnce = sconnSecretsMigrationOnce;
+// Invoke from THIS script block since the top-level init block (in an
+// earlier <script>) can't see this function — declarations don't hoist
+// across script-block boundaries. Wrapped in try/catch so any failure
+// stays isolated. Idempotent (gated by the localStorage flag inside
+// the function) so it's safe to call multiple times.
+try {
+  sconnSecretsMigrationOnce();
+  // After migration, saved-connection data may have changed shape
+  // (secrets moved out of the synced blob). The Project Status panel
+  // rendered earlier in init with the pre-migration shape — re-render
+  // it now so friendly-name lookup sees the post-migration data.
+  // The delayed re-render scheduled by renderProjectStatus also picks
+  // this up at +1.2s, but doing it here as well saves the wait when
+  // the page is on a fast connection.
+  if (typeof renderProjectStatus === 'function') {
+    try { renderProjectStatus(); } catch(e){ /* benign */ }
+  }
+} catch(e){ console.error('[init epilogue] sconn-migration:', e); }
 
 // Shortened preview string for display — never shows passwords.
 function sconnPreview(entry){
