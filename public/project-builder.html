@@ -264,9 +264,9 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
           <span>Reload</span>
         </label>
         <!-- Audit Source toggle.
-             • Unchecked (default): only rows that pass the WHERE clause appear
-               in staging. Rows excluded at source are invisible — there's no
-               record of what was filtered out.
+             • Default: ON. Excluded rows captured to staging on every run.
+             • Off: only successfully-loaded/failed rows appear in staging;
+               WHERE-filtered rows are invisible.
              • Checked: after the main stage+load completes, runs a second
                source query for the inverse of the WHERE clause and writes
                primary keys of excluded rows into the SAME staging table
@@ -275,10 +275,22 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
                single summary row with dm_load_status='excluded_summary'
                and the excluded count is written instead.
              Adds one source query per run (cheap — just keys, not data).
-             Skipped entirely when there's no WHERE clause on the job. -->
+             Skipped entirely when there's no WHERE clause on the job.
+
+             A ⚠ warning indicator next to the label appears when any
+             selected step's totalRows exceeds AUDIT_SOURCE_LARGE_TABLE_THRESHOLD
+             (100,000 by default). The indicator's tooltip shows which
+             tables are large and approximately how many extra rows will
+             be scanned. The audit still proceeds — the warning is
+             informational so the user can decide to untick or proceed. -->
         <label style="display:flex;align-items:center;gap:0.4rem;font-size:12px;color:var(--text2);cursor:pointer;user-select:none" title="When checked, source rows excluded by the WHERE clause are also written to staging with status='excluded' for audit. Adds one source query per run.">
-          <input type="checkbox" id="staging-audit-source" style="margin:0;cursor:pointer">
+          <input type="checkbox" id="staging-audit-source" checked style="margin:0;cursor:pointer" onchange="updateAuditSourceWarning()">
           <span>Audit Source</span>
+          <!-- Warning indicator. Hidden by default; updateAuditSourceWarning()
+               shows it when any selected step has totalRows > threshold.
+               Inline-block so it doesn't push the run button around when
+               toggled. -->
+          <span id="staging-audit-warning" style="display:none;color:var(--amber);font-size:13px;cursor:help" title=""></span>
         </label>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
@@ -650,6 +662,68 @@ function getAllStepsFlat(){
   const out = [];
   (project.groups||[]).forEach((g, gi) => (g.steps||[]).forEach((s, si) => out.push({step:s, gi, si})));
   return out;
+}
+
+// Threshold (in source rows) above which an Audit Source run is considered
+// "large" enough to warrant a visible warning indicator. The audit captures
+// only primary keys, not full rows, so it's cheap per-row — but on multi-
+// million-row sources even key-only scans take meaningful time and incur
+// bandwidth on the source DB. 100k is the cutoff at which a single audit
+// query is likely to take more than a few seconds on typical Azure/local
+// SQL Server connections.
+//
+// Changeable as a single constant if real-world usage suggests a different
+// cutoff.
+const AUDIT_SOURCE_LARGE_TABLE_THRESHOLD = 100000;
+
+// Update the ⚠ indicator next to the "Audit Source" checkbox based on
+// which selected steps are large enough to trigger the warning. Called
+// from renderSteps() after the step list is rebuilt, and from the
+// checkbox's own onchange so toggling it off hides the warning.
+//
+// The warning shows when ALL of these are true:
+//   1. Audit Source checkbox is checked
+//   2. At least one selected step has totalRows > AUDIT_SOURCE_LARGE_TABLE_THRESHOLD
+//
+// Hidden otherwise. Tooltip lists the offending tables and the threshold
+// so the user can see exactly which jobs would slow down.
+function updateAuditSourceWarning(){
+  const cb = document.getElementById('staging-audit-source');
+  const ind = document.getElementById('staging-audit-warning');
+  if (!cb || !ind) return;  // Page elements not yet rendered.
+  if (!cb.checked){
+    ind.style.display = 'none';
+    return;
+  }
+  // Find selected steps with large rowcounts. totalRows is set at job-save
+  // time from srcTable.rowCount — stale if the source has grown, but free
+  // to read. We pick only enabled (selected) steps so unchecked steps in
+  // the project don't trigger warnings.
+  const flat = (typeof getAllStepsFlat === 'function') ? getAllStepsFlat() : [];
+  const large = flat
+    .filter(x => x.step && x.step.enabled !== false)
+    .filter(x => (x.step.totalRows || 0) > AUDIT_SOURCE_LARGE_TABLE_THRESHOLD)
+    .map(x => ({
+      name: x.step.srcTable || x.step.name || '(unnamed)',
+      rows: x.step.totalRows || 0
+    }));
+  if (!large.length){
+    ind.style.display = 'none';
+    return;
+  }
+  // Build a tooltip listing each offending table with its row count.
+  // Use \n inside title attribute so it renders as a multi-line tooltip
+  // in browsers that support it; older ones fall back to space-separated.
+  const lines = large.map(l => '• ' + l.name + ': ~' + l.rows.toLocaleString() + ' rows');
+  const tip =
+    'Audit Source will scan source for excluded keys on ' + large.length +
+    ' selected job' + (large.length === 1 ? '' : 's') + ' over ' +
+    AUDIT_SOURCE_LARGE_TABLE_THRESHOLD.toLocaleString() + ' rows:\n\n' +
+    lines.join('\n') + '\n\n' +
+    'This is an extra source query per job — fine for most cases, but if a job is very large the audit may take noticeable time. Untick Audit Source on this run if you want to skip it.';
+  ind.title = tip;
+  ind.textContent = '⚠';
+  ind.style.display = 'inline-block';
 }
 
 // Fallback connections from the global session (used if a project has none set).
@@ -1501,6 +1575,9 @@ function renderSteps() {
 
   // Sync the checkbox UI with current state
   syncSelectionUI();
+  // Refresh the Audit Source warning indicator based on which selected
+  // steps would trigger a large audit query.
+  updateAuditSourceWarning();
 }
 
 // ── Step/group/all enable toggles ─────────────────────────────────────────────
@@ -3856,6 +3933,15 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
   // since the audit is an extra and shouldn't cause green-then-red on
   // a run that otherwise worked.
   if (runCtx.auditSource && step.srcWhere && stagingFull){
+    // Heads-up on large sources: the audit fetches keys for ALL non-matching
+    // rows, so on a 1M-row source filtered down to 50k loaded rows that's a
+    // 950k-row key scan. Cheap per row but visible in wall-clock time.
+    // The constant AUDIT_SOURCE_LARGE_TABLE_THRESHOLD also drives the
+    // toolbar warning indicator.
+    if ((step.totalRows || 0) > AUDIT_SOURCE_LARGE_TABLE_THRESHOLD){
+      add('⚠ Audit Source on large source (~' + step.totalRows.toLocaleString() +
+          ' rows) — this may take a moment.');
+    }
     try {
       const auditRes = await StagingArea.captureExcluded({
         srcConn, tgtConn,
