@@ -2557,9 +2557,14 @@ const StagingArea = (function(){
       //   dm_run_id        → the supplied runId
       //   dm_source_row_id → the source row's key (or idx_N fallback)
       //   dm_job_id        → the supplied jobId
+      //   dm_target_row_id → NULL at stage time, back-filled by loadToTarget's
+      //                      MERGE+OUTPUT after the target INSERT succeeds.
+      //                      Order must match AUDIT_COLUMN_NAMES exactly so
+      //                      the column list and values list stay aligned.
       const auditVals = [
         'DEFAULT', 'DEFAULT', 'NULL', 'NULL',
-        fmtVal(runId), fmtVal(srcRowId), fmtVal(jobId || 'unknown')
+        fmtVal(runId), fmtVal(srcRowId), fmtVal(jobId || 'unknown'),
+        'NULL'
       ].join(', ');
 
       return '    (' + dataVals + ', ' + auditVals + ')';
