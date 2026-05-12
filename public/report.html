@@ -65,10 +65,10 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 .report-meta-item label{font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.08em;display:block;margin-bottom:3px}
 .report-meta-item span{font-size:14px;color:rgba(255,255,255,0.85);font-weight:500}
 /* ── Summary stats ───────────────────────────────────────────────────────────── */
-.stats-row{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:0.5px solid var(--border)}
-.stat-cell{padding:1.25rem 1.5rem;border-right:0.5px solid var(--border);text-align:center}
+.stats-row{display:grid;grid-template-columns:repeat(6,1fr);border-bottom:0.5px solid var(--border)}
+.stat-cell{padding:1.25rem 1rem;border-right:0.5px solid var(--border);text-align:center}
 .stat-cell:last-child{border-right:none}
-.stat-num{font-size:2rem;font-weight:500;line-height:1;margin-bottom:4px}
+.stat-num{font-size:1.65rem;font-weight:500;line-height:1;margin-bottom:4px;white-space:nowrap}
 .stat-num.green{color:var(--green)}
 .stat-num.red{color:var(--red)}
 .stat-num.blue{color:var(--accent)}
@@ -285,6 +285,14 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
       <div class="stat-num" id="stat-errors" style="color:var(--text3)">0</div>
       <div class="stat-label">Errors</div>
     </div>
+    <!-- Throughput: rows-inserted per second across the whole project run.
+         Headline number is rows/sec; tooltip shows /min and /hour for
+         comparison with other runs at different magnitudes. Set to '—'
+         when timing data is missing (legacy reports). -->
+    <div class="stat-cell" id="stat-cell-throughput">
+      <div class="stat-num blue" id="stat-throughput">—</div>
+      <div class="stat-label">Throughput</div>
+    </div>
     <div class="stat-cell">
       <div class="stat-num blue" id="stat-wasis">0</div>
       <div class="stat-label">Was/Is rules</div>
@@ -387,6 +395,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
         <th style="text-align:right">Rows</th>
         <th>Started</th>
         <th style="text-align:right">Duration</th>
+        <th style="text-align:right">Throughput</th>
         <th>Status</th>
       </tr></thead>
       <tbody id="steps-tbody"></tbody>
@@ -468,6 +477,108 @@ function set(id, val){ const el=$(id); if(el) el.textContent = val ?? '—'; }
 function fmt(n){ return n != null ? Number(n).toLocaleString() : '—'; }
 function fmtDate(iso){ return iso ? new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'; }
 function fmtSize(b){ if(!b)return'—'; if(b<1024)return b+'B'; if(b<1048576)return(b/1024).toFixed(1)+'KB'; return(b/1048576).toFixed(1)+'MB'; }
+
+// ── Throughput helpers ─────────────────────────────────────────────
+// Compute and format rows-per-time-unit. Used by:
+//   • The headline Throughput stat (project-wide rate)
+//   • The per-step Throughput column in the execution table
+//   • The per-step Throughput column in the Excel export
+// Consistent across all three so the numbers always agree.
+
+// Compute rows/sec for a single step. Returns null when either input is
+// missing or zero (avoids divide-by-zero and meaningless "infinity" rates).
+function computeStepRowsPerSec(rowsInserted, durationMs){
+  if (!rowsInserted || rowsInserted <= 0) return null;
+  if (!durationMs || durationMs <= 0) return null;
+  return rowsInserted / (durationMs / 1000);
+}
+
+// Aggregate project throughput. Sums migration-step rows and their
+// durations, then divides. We deliberately EXCLUDE SQL-script steps
+// from the duration sum — they have time but no row count, so
+// including them deflates the rate. Returns:
+//   {
+//     rowsPerSec: number | null,
+//     totalRows: number,        // sum across qualifying steps
+//     totalMs:   number,        // sum of qualifying step durations
+//     stepsIncluded: number,
+//     stepsExcluded: number,    // for tooltip transparency
+//     sampleNote: string|null   // 'small' when < 500ms, useful caveat
+//   }
+function computeProjectThroughput(steps){
+  let totalRows = 0;
+  let totalMs = 0;
+  let included = 0;
+  let excluded = 0;
+  for (const s of (steps || [])){
+    const rows = s.rowsInserted || 0;
+    const ms = s.durationMs;
+    // Skip non-migration steps even if they have timing (SQL scripts).
+    if (s.type !== 'migration'){ excluded++; continue; }
+    if (typeof ms !== 'number' || ms <= 0 || rows <= 0){ excluded++; continue; }
+    totalRows += rows;
+    totalMs += ms;
+    included++;
+  }
+  if (included === 0 || totalMs === 0){
+    return { rowsPerSec: null, totalRows: 0, totalMs: 0, stepsIncluded: 0, stepsExcluded: excluded, sampleNote: null };
+  }
+  return {
+    rowsPerSec: totalRows / (totalMs / 1000),
+    totalRows, totalMs,
+    stepsIncluded: included,
+    stepsExcluded: excluded,
+    sampleNote: totalMs < 500 ? 'small' : null
+  };
+}
+
+// Pick the right display unit for the headline. Aim for a number in
+// the 2-4 digit range so it reads naturally.
+//   ≥10 rows/sec      → "X /sec"  (e.g. "1,250 /sec")
+//   ≥1 row/sec        → "X /sec"  (e.g. "3 /sec")
+//   ≥1 row/min        → "X /min"  (e.g. "45 /min")
+//   otherwise         → "X /hour" (very slow runs)
+function formatThroughputHeadline(rowsPerSec){
+  if (rowsPerSec == null) return '—';
+  if (rowsPerSec >= 10) return Math.round(rowsPerSec).toLocaleString() + ' /sec';
+  if (rowsPerSec >= 1)  return rowsPerSec.toFixed(1) + ' /sec';
+  if (rowsPerSec >= 1/60) return Math.round(rowsPerSec * 60).toLocaleString() + ' /min';
+  return Math.round(rowsPerSec * 3600).toLocaleString() + ' /hour';
+}
+
+// Compact per-step variant — same logic, marginally shorter so it fits
+// in a narrow table column. "1,250/s" not "1,250 rows/sec".
+function formatThroughputCompact(rowsPerSec){
+  if (rowsPerSec == null) return '—';
+  if (rowsPerSec >= 10) return Math.round(rowsPerSec).toLocaleString() + '/s';
+  if (rowsPerSec >= 1)  return rowsPerSec.toFixed(1) + '/s';
+  if (rowsPerSec >= 1/60) return Math.round(rowsPerSec * 60).toLocaleString() + '/min';
+  return Math.round(rowsPerSec * 3600).toLocaleString() + '/hr';
+}
+
+// Tooltip that shows all three units for cross-magnitude comparison,
+// plus caveats about what's included and sample size.
+function buildThroughputTooltip(t){
+  if (!t || t.rowsPerSec == null) return '';
+  const r = t.rowsPerSec;
+  const lines = [
+    Math.round(r).toLocaleString() + ' rows/sec',
+    Math.round(r * 60).toLocaleString() + ' rows/min',
+    Math.round(r * 3600).toLocaleString() + ' rows/hour'
+  ];
+  if (t.stepsIncluded != null){
+    lines.push('');
+    lines.push('Based on ' + t.totalRows.toLocaleString() + ' rows over ' +
+               (t.totalMs / 1000).toFixed(1) + 's of migration time');
+    lines.push('(' + t.stepsIncluded + ' migration step(s) included' +
+               (t.stepsExcluded ? ', ' + t.stepsExcluded + ' excluded' : '') + ')');
+  }
+  if (t.sampleNote === 'small'){
+    lines.push('');
+    lines.push('⚠ Sub-second sample — throughput may be volatile');
+  }
+  return lines.join('\n');
+}
 
 // Load report configuration. Source of truth is now `presentationConfig` on
 // the report record itself (set via the dashboard's report settings modal
@@ -566,6 +677,39 @@ function renderReport(d) {
   set('stat-success', fmt(inserted));
   set('stat-errors',  errors);
   $('stat-errors').style.color = errors > 0 ? 'var(--red)' : 'var(--text3)';
+
+  // ── Throughput stat ───────────────────────────────────────────────
+  // Rows-inserted per unit of time, across the whole project. The
+  // headline picks rows/sec / rows/min / rows/hour based on magnitude
+  // so the number is always a comfortable 2-4 digits.
+  //
+  // We sum durations across migration steps only — SQL-script steps
+  // have meaningful durations too but no row count, so including their
+  // time would deflate the rate artificially. Steps without timing
+  // (legacy reports) are skipped, with a tooltip note when this is
+  // the case.
+  //
+  // Sample-size caveat: under ~500ms, throughput is volatile (sub-
+  // second timing jitter dominates the rate). We surface this in the
+  // tooltip rather than hiding the number — it's still useful, just
+  // worth flagging.
+  const throughput = computeProjectThroughput(d.steps || []);
+  const tEl = $('stat-throughput');
+  if (throughput && throughput.rowsPerSec != null){
+    tEl.textContent = formatThroughputHeadline(throughput.rowsPerSec);
+    // Tooltip on the parent cell — covers both number and label.
+    const cellEl = document.getElementById('stat-cell-throughput');
+    if (cellEl){
+      cellEl.title = buildThroughputTooltip(throughput);
+    }
+  } else {
+    tEl.textContent = '—';
+    const cellEl = document.getElementById('stat-cell-throughput');
+    if (cellEl){
+      cellEl.title = 'No timing data available — re-run the project to capture throughput.';
+    }
+  }
+
   // Was/Is count: prefer the rules array length when available, fall back to
   // the explicit count field. This matches the Excel summary's logic so the
   // on-screen and exported reports agree even if only one of the two upstream
@@ -779,6 +923,23 @@ function renderReport(d) {
       const durationTooltip = s.durationMs != null
         ? ' title="' + s.durationMs.toLocaleString() + ' ms"'
         : '';
+      // Throughput cell — only shown for migration steps with both rows
+      // and duration. Per-step tooltip shows the same three units the
+      // headline does, so the comparison is consistent.
+      const stepRps = (s.type === 'migration')
+        ? computeStepRowsPerSec(s.rowsInserted, s.durationMs)
+        : null;
+      const throughputHtml = formatThroughputCompact(stepRps);
+      const throughputTooltip = stepRps != null
+        ? ' title="' + buildThroughputTooltip({
+            rowsPerSec: stepRps,
+            totalRows: s.rowsInserted || 0,
+            totalMs: s.durationMs || 0,
+            stepsIncluded: 1,
+            stepsExcluded: 0,
+            sampleNote: (s.durationMs || 0) < 500 ? 'small' : null
+          }).replace(/"/g, '&quot;') + '"'
+        : '';
       return '<tr>' +
         '<td style="color:#555a6a">'+(i+1)+'</td>' +
         '<td style="font-weight:600">'+(s.name||s.type)+'</td>' +
@@ -790,6 +951,7 @@ function renderReport(d) {
         '</td>' +
         '<td style="font-family:monospace;font-size:11px;color:#8b90a0"' + startTooltip + '>' + startedHtml + '</td>' +
         '<td style="text-align:right;font-family:monospace;font-size:11px;color:#8b90a0"' + durationTooltip + '>' + durationHtml + '</td>' +
+        '<td style="text-align:right;font-family:monospace;font-size:11px;color:#8b90a0"' + throughputTooltip + '>' + throughputHtml + '</td>' +
         '<td><span style="font-size:10px;padding:2px 8px;border-radius:100px;background:'+(statusColor)+'22;color:'+statusColor+';font-family:monospace">'+s.status+'</span></td>' +
         '</tr>';
     }).join('');
@@ -2587,8 +2749,10 @@ function doExport() {
       // when the source had no PK to enumerate per-row).
       // Timing: Started/Ended as ISO strings (Excel auto-detects datetime),
       // Duration in seconds as a number (so users can sum or pivot).
+      // Throughput in rows/sec — derived, helpful for benchmarking the
+      // same step across different runs over time.
       const logData = [['Step', 'Type', 'Status', 'Loaded', 'Failed', 'Excluded',
-                        'Started', 'Ended', 'Duration (s)',
+                        'Started', 'Ended', 'Duration (s)', 'Throughput (rows/sec)',
                         'Run ID', 'Staging Table', 'Log']];
       d.steps.forEach((s,i) => {
         const loaded = s.rowsInserted || 0;
@@ -2605,6 +2769,12 @@ function doExport() {
         const durationSec  = (typeof s.durationMs === 'number')
                              ? +(s.durationMs / 1000).toFixed(2)
                              : '';
+        // Throughput: empty string for non-migration steps or missing
+        // timing so Excel filters/sums don't have to special-case zero.
+        const rps = (s.type === 'migration')
+          ? computeStepRowsPerSec(s.rowsInserted, s.durationMs)
+          : null;
+        const throughputCell = rps != null ? +rps.toFixed(1) : '';
         logData.push([
           (i+1)+'. '+(s.name||s.type),
           s.type==='migration'?'Migration':'SQL script',
@@ -2615,6 +2785,7 @@ function doExport() {
           startedCell,
           finishedCell,
           durationSec,
+          throughputCell,
           s.runId || '',
           s.stagingTable || '',
           (s.log||'').replace(/\n/g,' | ')
@@ -2622,15 +2793,16 @@ function doExport() {
       });
       const wsLog = XLSX.utils.aoa_to_sheet(logData);
       // Column widths: name wide, counts narrow, timestamps moderate,
-      // run-id and staging-table moderate, log very wide.
+      // throughput narrow, run-id and staging-table moderate, log very wide.
       wsLog['!cols'] = [
         {wch:35}, {wch:14}, {wch:14},          // Step, Type, Status
         {wch:11}, {wch:11}, {wch:18},          // Loaded, Failed, Excluded
         {wch:20}, {wch:20}, {wch:14},          // Started, Ended, Duration
+        {wch:20},                              // Throughput
         {wch:28}, {wch:32}, {wch:80}           // Run ID, Staging Table, Log
       ];
       wsLog['!rows'] = logData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
-      styleRange(wsLog, 0, 0, 0, 11, STYLE.tableHeader);
+      styleRange(wsLog, 0, 0, 0, 12, STYLE.tableHeader);
       if (logData.length > 1) {
         styleRange(wsLog, 1, logData.length-1, 0, 1, STYLE.value);
         // Status column with per-row styling
@@ -2653,11 +2825,13 @@ function doExport() {
         }
         // Duration column — numeric with 2 decimal places
         styleNumericRange(wsLog, 1, logData.length-1, 8, 8);
+        // Throughput column — numeric with 1 decimal place
+        styleNumericRange(wsLog, 1, logData.length-1, 9, 9);
         // Run ID and Staging Table — value style (monospace not available
         // via STYLE, so just use value styling)
-        styleRange(wsLog, 1, logData.length-1, 9, 10, STYLE.value);
+        styleRange(wsLog, 1, logData.length-1, 10, 11, STYLE.value);
         // Log column — wider, also value style
-        styleRange(wsLog, 1, logData.length-1, 11, 11, STYLE.value);
+        styleRange(wsLog, 1, logData.length-1, 12, 12, STYLE.value);
       }
       wsLog['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsLog, 'Execution Log');
