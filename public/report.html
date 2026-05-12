@@ -676,12 +676,46 @@ function renderReport(d) {
       const statusColor = s.status==='passed'?'#22c97a':s.status==='failed'?'#f04646':s.status==='skipped'?'#f59e0b':'#555a6a';
       const typeLabel   = s.type==='migration'?'Migration':'SQL script';
       const route       = s.type==='migration' ? (s.srcTable||'?')+' → '+(s.tgtTable||'?') : (s.connOn==='source'?'Source DB':'Target DB');
+      // Row breakdown cell.
+      //   • Headline: rows loaded into the target (the historic
+      //     "Rows inserted" value).
+      //   • Sub-line (only when staging audit data is present): shows
+      //     excluded count and any failed-vs-loaded delta from staged.
+      //     Hidden entirely for legacy reports where rowsStaged is
+      //     undefined, so old reports look identical to before.
+      // Failed = staged - loaded when both are known. Could equal zero,
+      // in which case we don't render the failed pill.
+      const loaded = s.rowsInserted || 0;
+      const staged = (typeof s.rowsStaged === 'number') ? s.rowsStaged : null;
+      const failed = staged !== null ? Math.max(0, staged - loaded) : null;
+      const excluded = (typeof s.rowsExcluded === 'number') ? s.rowsExcluded : null;
+      const breakdownBits = [];
+      if (failed !== null && failed > 0){
+        breakdownBits.push('<span style="color:#f04646">' + failed.toLocaleString() + ' failed</span>');
+      }
+      if (excluded !== null && excluded > 0){
+        const label = s.excludedCapture === 'summary' ? 'excluded (summary)' : 'excluded';
+        breakdownBits.push('<span style="color:#f59e0b">' + excluded.toLocaleString() + ' ' + label + '</span>');
+      }
+      const breakdownHtml = breakdownBits.length
+        ? '<div style="font-size:10px;color:#8b90a0;margin-top:2px">' + breakdownBits.join(' · ') + '</div>'
+        : '';
+      // Tooltip on the cell shows the runId and WHERE clause when present,
+      // so users can copy them out to query staging directly.
+      const tooltipParts = [];
+      if (s.runId) tooltipParts.push('run_id: ' + s.runId);
+      if (s.stagingTable) tooltipParts.push('staging: ' + s.stagingTable);
+      if (s.srcWhere) tooltipParts.push('WHERE: ' + s.srcWhere);
+      const tooltip = tooltipParts.length ? ' title="' + tooltipParts.join('\n').replace(/"/g, '&quot;') + '"' : '';
       return '<tr>' +
         '<td style="color:#555a6a">'+(i+1)+'</td>' +
         '<td style="font-weight:600">'+(s.name||s.type)+'</td>' +
         '<td style="color:#8b90a0;font-size:11px">'+(typeLabel)+'</td>' +
         '<td style="font-family:monospace;font-size:11px;color:#8b90a0">'+route+'</td>' +
-        '<td style="text-align:right;font-family:monospace">'+(s.rowsInserted||s.rowsAffected||0).toLocaleString()+'</td>' +
+        '<td style="text-align:right;font-family:monospace"' + tooltip + '>' +
+          '<div>' + (loaded||s.rowsAffected||0).toLocaleString() + '</div>' +
+          breakdownHtml +
+        '</td>' +
         '<td><span style="font-size:10px;padding:2px 8px;border-radius:100px;background:'+(statusColor)+'22;color:'+statusColor+';font-family:monospace">'+s.status+'</span></td>' +
         '</tr>';
     }).join('');
@@ -2473,29 +2507,54 @@ function doExport() {
     }
     // ── Sheet 4: Execution Log (project reports) ──────────────────────────────
     if (d.isProjectReport && d.steps) {
-      const logData = [['Step', 'Type', 'Status', 'Rows inserted', 'Log']];
+      // Headers reflect the staging-aware breakdown. Failed = Staged - Loaded
+      // when both are known; we don't store Failed directly because it's
+      // derived. Excluded is the WHERE-filtered count (or 'summary' marker
+      // when the source had no PK to enumerate per-row).
+      const logData = [['Step', 'Type', 'Status', 'Loaded', 'Failed', 'Excluded', 'Run ID', 'Staging Table', 'Log']];
       d.steps.forEach((s,i) => {
+        const loaded = s.rowsInserted || 0;
+        const staged = (typeof s.rowsStaged === 'number') ? s.rowsStaged : null;
+        const failed = staged !== null ? Math.max(0, staged - loaded) : '';
+        const excluded = (typeof s.rowsExcluded === 'number')
+          ? (s.excludedCapture === 'summary' ? s.rowsExcluded + ' (summary)' : s.rowsExcluded)
+          : '';
         logData.push([
           (i+1)+'. '+(s.name||s.type),
           s.type==='migration'?'Migration':'SQL script',
           s.status||'pending',
-          s.rowsInserted||0,
+          loaded,
+          failed,
+          excluded,
+          s.runId || '',
+          s.stagingTable || '',
           (s.log||'').replace(/\n/g,' | ')
         ]);
       });
       const wsLog = XLSX.utils.aoa_to_sheet(logData);
-      wsLog['!cols'] = [{wch:35},{wch:14},{wch:14},{wch:16},{wch:80}];
+      // Column widths: step name wide, the count columns narrow, run-id and
+      // staging-table moderate, log very wide because it's the noisiest.
+      wsLog['!cols'] = [
+        {wch:35}, {wch:14}, {wch:14},     // Step, Type, Status
+        {wch:11}, {wch:11}, {wch:18},     // Loaded, Failed, Excluded
+        {wch:28}, {wch:32}, {wch:80}      // Run ID, Staging Table, Log
+      ];
       wsLog['!rows'] = logData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
-      styleRange(wsLog, 0, 0, 0, 4, STYLE.tableHeader);
+      styleRange(wsLog, 0, 0, 0, 8, STYLE.tableHeader);
       if (logData.length > 1) {
         styleRange(wsLog, 1, logData.length-1, 0, 1, STYLE.value);
-        // Status column
+        // Status column with per-row styling
         for (let r = 1; r < logData.length; r++) {
           const addr = XLSX.utils.encode_cell({r, c:2});
           if (wsLog[addr]) wsLog[addr].s = statusStyle(logData[r][2]);
         }
-        styleNumericRange(wsLog, 1, logData.length-1, 3, 3);
-        styleRange(wsLog, 1, logData.length-1, 4, 4, STYLE.value);
+        // Numeric columns: Loaded, Failed, Excluded
+        styleNumericRange(wsLog, 1, logData.length-1, 3, 5);
+        // Run ID and Staging Table — value style (monospace not available
+        // via STYLE, so just use value styling)
+        styleRange(wsLog, 1, logData.length-1, 6, 7, STYLE.value);
+        // Log column — wider, also value style
+        styleRange(wsLog, 1, logData.length-1, 8, 8, STYLE.value);
       }
       wsLog['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsLog, 'Execution Log');
