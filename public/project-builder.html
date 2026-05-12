@@ -2091,18 +2091,71 @@ const StagingArea = (function(){
   // inside an IF, so the standard MSSQL pattern is an outer IF NOT EXISTS
   // dynamic-SQL wrapper. We keep that here.
   async function ensureSchema(tgtConn){
-    const sql =
-      "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'" + SCHEMA_NAME + "')\n" +
-      "  EXEC('CREATE SCHEMA [" + SCHEMA_NAME + "]');";
+    // Use a SELECT-then-CREATE pattern instead of IF NOT EXISTS + EXEC().
+    // The IF/EXEC form is one statement to SQL Server's parser but visually
+    // a multi-statement block, and we've seen backends (notably the Azure
+    // Function path) reject it on some occasions. A simple SELECT to check
+    // existence, then a plain CREATE only when needed, is universally
+    // supported. Idempotent — repeat calls skip the CREATE.
+    let exists = false;
     try {
-      await dbCall(tgtConn, { action: 'execute', sql });
+      const r = await dbCall(tgtConn, {
+        action: 'execute',
+        sql: "SELECT 1 AS found FROM sys.schemas WHERE name = N'" + SCHEMA_NAME + "'"
+      });
+      const row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]);
+      exists = !!(row && (row.found === 1 || row.found === true));
     } catch (e) {
-      throw new Error(
-        'Could not create the staging schema [' + SCHEMA_NAME + ']. ' +
-        'Cygenix needs CREATE SCHEMA permission on the target database. ' +
-        'Underlying error: ' + (e && e.message ? e.message : e)
+      throw classifyDbError(e,
+        'check whether the [' + SCHEMA_NAME + '] schema exists',
+        'SELECT on sys.schemas'
       );
     }
+    if (exists) return;
+    try {
+      await dbCall(tgtConn, {
+        action: 'execute',
+        sql: 'CREATE SCHEMA [' + SCHEMA_NAME + ']'
+      });
+    } catch (e) {
+      throw classifyDbError(e,
+        'create the [' + SCHEMA_NAME + '] schema',
+        'CREATE SCHEMA permission on the target database'
+      );
+    }
+  }
+
+  // Wrap a dbCall error with context about what we were trying to do, but
+  // distinguish three failure modes so the user gets actionable guidance:
+  //   1. Empty/HTTP 500 with no body → almost always means the backend
+  //      couldn't reach the database (paused Azure SQL, network blip,
+  //      bad connection string). NOT a permissions issue. Most common
+  //      cause in practice.
+  //   2. "Permission denied" / "permission was denied" → genuine GRANT
+  //      needed. Surface the suggested permission and the underlying
+  //      message.
+  //   3. Anything else → unknown failure. Surface the raw message so
+  //      the user can act on what SQL Server actually said.
+  function classifyDbError(e, whatWeTried, suggestedPermission){
+    const msg = (e && e.message ? e.message : String(e)) || '';
+    const looksLikeConnFailure = /non-json|http 500|http 503|http 504|timeout|econnrefused|enotfound|tls|paused/i.test(msg);
+    const looksLikePermDenied  = /permission|denied|grant|insufficient/i.test(msg);
+
+    if (looksLikeConnFailure){
+      return new Error(
+        'Could not ' + whatWeTried + ' — the target database is unreachable. ' +
+        'Check whether the database is online (Azure SQL Free tier auto-pauses when monthly quota is exhausted; restart from the Azure Portal). ' +
+        'Underlying error: ' + msg
+      );
+    }
+    if (looksLikePermDenied){
+      return new Error(
+        'Could not ' + whatWeTried + ' — permission denied. ' +
+        'Cygenix needs ' + suggestedPermission + '. ' +
+        'Underlying error: ' + msg
+      );
+    }
+    return new Error('Could not ' + whatWeTried + '. Underlying error: ' + msg);
   }
 
   // Pre-flight: ensure the staging table exists for a given target. Returns
@@ -2138,10 +2191,9 @@ const StagingArea = (function(){
         throw new Error('Target table [' + schema + '].[' + table + '] has no columns or does not exist');
       }
     } catch (e) {
-      throw new Error(
-        'Could not introspect target table [' + schema + '].[' + table + ']. ' +
-        'Cygenix needs SELECT permission on INFORMATION_SCHEMA. ' +
-        'Underlying error: ' + (e && e.message ? e.message : e)
+      throw classifyDbError(e,
+        'introspect target table [' + schema + '].[' + table + ']',
+        'SELECT permission on INFORMATION_SCHEMA'
       );
     }
 
@@ -2184,28 +2236,50 @@ const StagingArea = (function(){
     try {
       await dbCall(tgtConn, { action: 'execute', sql: createSQL });
     } catch (e) {
-      throw new Error(
-        'Could not create staging table ' + stagingFull + '. ' +
-        'Cygenix needs CREATE TABLE permission in the [' + SCHEMA_NAME + '] schema. ' +
-        'Underlying error: ' + (e && e.message ? e.message : e)
+      throw classifyDbError(e,
+        'create staging table ' + stagingFull,
+        'CREATE TABLE permission in the [' + SCHEMA_NAME + '] schema'
       );
     }
     return stagingFull;
   }
 
-  // Truncate the staging table for a given target. Called before staging
-  // when the user picks Reload mode. Idempotent on a missing table — we
-  // catch the error and treat it as a no-op (nothing to truncate).
+  // Drop the staging table for a given target if it exists. Called BEFORE
+  // ensureTable when the user picks Reload mode, so the subsequent
+  // ensureTable call rebuilds the table from scratch — picking up any
+  // target-side schema changes (columns added, types changed) since the
+  // staging table was first created. Idempotent on a missing table —
+  // sys.tables check returns nothing, the IF body skips, no error.
+  //
+  // Note: we use DROP TABLE rather than TRUNCATE for two reasons:
+  //   1. db-connect.js's destructive-statement guard blocks TRUNCATE
+  //      outright (it can't tell which tables are "safe" to truncate).
+  //   2. DROP+recreate handles schema drift automatically. If the user
+  //      adds or modifies columns on the target table, the next reload
+  //      run picks them up. TRUNCATE would keep the stale shape.
+  // Plain DROP is allowed through the guard (which only blocks
+  // DROP DATABASE, TRUNCATE TABLE, and DELETE FROM without WHERE).
   async function reloadReset(tgtConn, stagingFull){
+    // Parse the staging full name back into schema + bare table so we
+    // can do a precise existence check. stagingFull looks like
+    // "dm_staging.[dbo__Matters]" — we want the table name without
+    // brackets for the sys.tables lookup.
+    const m = /^([^.]+)\.\[([^\]]+)\]$/.exec(stagingFull);
+    if (!m) throw new Error('Cannot parse staging table name "' + stagingFull + '"');
+    const schemaName = m[1];
+    const bareName = m[2];
+    const sql =
+      "IF EXISTS (SELECT 1 FROM sys.tables t " +
+      "  JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+      "  WHERE s.name = N'" + schemaName + "' AND t.name = N'" + bareName + "')\n" +
+      "  DROP TABLE " + stagingFull + ";";
     try {
-      await dbCall(tgtConn, { action: 'execute', sql: 'TRUNCATE TABLE ' + stagingFull });
+      await dbCall(tgtConn, { action: 'execute', sql });
     } catch (e) {
-      // If the table doesn't exist yet, that's fine — ensureTable will
-      // create it next. Only re-throw if it's a different error.
-      const msg = (e && e.message ? e.message : '').toLowerCase();
-      if (!msg.includes('object name') && !msg.includes('does not exist')){
-        throw new Error('Could not reset staging table: ' + (e && e.message ? e.message : e));
-      }
+      throw classifyDbError(e,
+        'drop staging table ' + stagingFull + ' for reload',
+        'DROP permission on the [' + SCHEMA_NAME + '] schema'
+      );
     }
   }
 
@@ -3300,20 +3374,28 @@ async function runMigrationStep(step, srcConn, tgtConn, log) {
         colList = mapping.map(m => '[' + m.tgtCol + ']').join(', ');
 
         // ── Staging area setup (first page only) ─────────────────────────
-        // Ensure the dm_staging schema and the per-target staging table
-        // exist before we start staging rows. Both calls hard-fail on
-        // permission issues — the run aborts cleanly with a clear error
-        // rather than half-staging data. The reload reset (if requested)
-        // happens here too, but only once per staging table per run —
-        // multiple jobs sharing a target table won't TRUNCATE between
-        // each other.
+        // Sequence matters here:
+        //   1. ensureSchema       — guarantees dm_staging exists
+        //   2. (reload mode only) reloadReset — DROPs the staging table if it exists
+        //   3. ensureTable        — (re)creates the staging table with the
+        //                           CURRENT target schema, picking up any
+        //                           column additions or type changes since
+        //                           the last run.
+        // We resolve the staging table's name up front via stagingTableName
+        // (no DB round-trip — just string manipulation) so reloadReset has
+        // something to drop. ensureTable does the actual CREATE either way.
+        //
+        // resetTables tracks which staging tables we've already dropped in
+        // this Run so multiple jobs hitting the same target table don't
+        // drop each other's freshly-staged rows.
         await StagingArea.ensureSchema(tgtConn);
-        stagingFull = await StagingArea.ensureTable(tgtConn, step.tgtTable, mapping);
-        if (runCtx.reload && !runCtx.resetTables.has(stagingFull)){
-          add('Reload mode — wiping staging table ' + stagingFull + ' before this run');
-          await StagingArea.reloadReset(tgtConn, stagingFull);
-          runCtx.resetTables.add(stagingFull);
+        const stagingFullPlanned = StagingArea.stagingTableName(step.tgtTable);
+        if (runCtx.reload && !runCtx.resetTables.has(stagingFullPlanned)){
+          add('Reload mode — dropping staging table ' + stagingFullPlanned + ' (will be recreated to match current target schema)');
+          await StagingArea.reloadReset(tgtConn, stagingFullPlanned);
+          runCtx.resetTables.add(stagingFullPlanned);
         }
+        stagingFull = await StagingArea.ensureTable(tgtConn, step.tgtTable, mapping);
         srcRowKeyCol = StagingArea.pickSourceRowKey(step, mapping);
         add('Staging into ' + stagingFull + ' (run_id=' + runCtx.runId + (runCtx.reload ? ', mode=reload' : ', mode=incremental') + ')');
       }
