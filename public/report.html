@@ -385,6 +385,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
         <th>Type</th>
         <th>Source → Target</th>
         <th style="text-align:right">Rows</th>
+        <th>Started</th>
+        <th style="text-align:right">Duration</th>
         <th>Status</th>
       </tr></thead>
       <tbody id="steps-tbody"></tbody>
@@ -688,6 +690,49 @@ function renderReport(d) {
   if (d.isProjectReport && d.steps && d.steps.length) {
     document.getElementById('steps-section').style.display = 'block';
     const stepsBody = document.getElementById('steps-tbody');
+
+    // Humanise a millisecond duration into something readable. Picks
+    // s / m / h based on magnitude. Returns '—' for null/undefined.
+    // Examples:
+    //   2400      → '2.4s'
+    //   65000     → '1m 5s'
+    //   3725000   → '1h 2m'
+    //   null      → '—'
+    // The full ms value goes in a tooltip on the cell so anyone wanting
+    // millisecond precision can hover.
+    const formatDuration = (ms) => {
+      if (ms == null || isNaN(ms)) return '—';
+      if (ms < 1000) return ms + 'ms';
+      if (ms < 60000) return (ms/1000).toFixed(ms < 10000 ? 1 : 0) + 's';
+      if (ms < 3600000) {
+        let m = Math.floor(ms / 60000);
+        let s = Math.round((ms % 60000) / 1000);
+        // Edge case: 59999ms rounds seconds to 60 — carry into minutes.
+        if (s === 60) { m += 1; s = 0; }
+        return m + 'm ' + s + 's';
+      }
+      let h = Math.floor(ms / 3600000);
+      let m = Math.round((ms % 3600000) / 60000);
+      // Same edge case at the hour boundary.
+      if (m === 60) { h += 1; m = 0; }
+      return h + 'h ' + m + 'm';
+    };
+    // Compact start-time format. Uses browser locale for date/time so
+    // it adapts to the user's expectations. Full ISO goes in tooltip.
+    const formatStartTime = (iso) => {
+      if (!iso) return '—';
+      try {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return '—';
+        // "12 May 17:32:45" — compact, day-month time. Year omitted to
+        // keep the column narrow; the full timestamp is in the tooltip.
+        return d.toLocaleString(undefined, {
+          day: '2-digit', month: 'short',
+          hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+      } catch { return '—'; }
+    };
+
     stepsBody.innerHTML = d.steps.map((s, i) => {
       const statusColor = s.status==='passed'?'#22c97a':s.status==='failed'?'#f04646':s.status==='skipped'?'#f59e0b':'#555a6a';
       const typeLabel   = s.type==='migration'?'Migration':'SQL script';
@@ -723,6 +768,17 @@ function renderReport(d) {
       if (s.stagingTable) tooltipParts.push('staging: ' + s.stagingTable);
       if (s.srcWhere) tooltipParts.push('WHERE: ' + s.srcWhere);
       const tooltip = tooltipParts.length ? ' title="' + tooltipParts.join('\n').replace(/"/g, '&quot;') + '"' : '';
+      // Timing cells — Started and Duration. Full ISO start + finish
+      // and the ms count go in tooltips so power users get precision
+      // without cluttering the visible table.
+      const startedHtml = formatStartTime(s.startedAt);
+      const durationHtml = formatDuration(s.durationMs);
+      const startTooltip = s.startedAt
+        ? ' title="Started: ' + s.startedAt + (s.finishedAt ? '\nFinished: ' + s.finishedAt : '') + '"'
+        : '';
+      const durationTooltip = s.durationMs != null
+        ? ' title="' + s.durationMs.toLocaleString() + ' ms"'
+        : '';
       return '<tr>' +
         '<td style="color:#555a6a">'+(i+1)+'</td>' +
         '<td style="font-weight:600">'+(s.name||s.type)+'</td>' +
@@ -732,6 +788,8 @@ function renderReport(d) {
           '<div>' + (loaded||s.rowsAffected||0).toLocaleString() + '</div>' +
           breakdownHtml +
         '</td>' +
+        '<td style="font-family:monospace;font-size:11px;color:#8b90a0"' + startTooltip + '>' + startedHtml + '</td>' +
+        '<td style="text-align:right;font-family:monospace;font-size:11px;color:#8b90a0"' + durationTooltip + '>' + durationHtml + '</td>' +
         '<td><span style="font-size:10px;padding:2px 8px;border-radius:100px;background:'+(statusColor)+'22;color:'+statusColor+';font-family:monospace">'+s.status+'</span></td>' +
         '</tr>';
     }).join('');
@@ -2527,7 +2585,11 @@ function doExport() {
       // when both are known; we don't store Failed directly because it's
       // derived. Excluded is the WHERE-filtered count (or 'summary' marker
       // when the source had no PK to enumerate per-row).
-      const logData = [['Step', 'Type', 'Status', 'Loaded', 'Failed', 'Excluded', 'Run ID', 'Staging Table', 'Log']];
+      // Timing: Started/Ended as ISO strings (Excel auto-detects datetime),
+      // Duration in seconds as a number (so users can sum or pivot).
+      const logData = [['Step', 'Type', 'Status', 'Loaded', 'Failed', 'Excluded',
+                        'Started', 'Ended', 'Duration (s)',
+                        'Run ID', 'Staging Table', 'Log']];
       d.steps.forEach((s,i) => {
         const loaded = s.rowsInserted || 0;
         const staged = (typeof s.rowsStaged === 'number') ? s.rowsStaged : null;
@@ -2535,6 +2597,14 @@ function doExport() {
         const excluded = (typeof s.rowsExcluded === 'number')
           ? (s.excludedCapture === 'summary' ? s.rowsExcluded + ' (summary)' : s.rowsExcluded)
           : '';
+        // Convert ISO strings to Date objects so Excel formats them as
+        // datetime cells (sortable, filterable). Fall back to '' when
+        // timing wasn't captured (legacy reports).
+        const startedCell  = s.startedAt  ? new Date(s.startedAt)  : '';
+        const finishedCell = s.finishedAt ? new Date(s.finishedAt) : '';
+        const durationSec  = (typeof s.durationMs === 'number')
+                             ? +(s.durationMs / 1000).toFixed(2)
+                             : '';
         logData.push([
           (i+1)+'. '+(s.name||s.type),
           s.type==='migration'?'Migration':'SQL script',
@@ -2542,21 +2612,25 @@ function doExport() {
           loaded,
           failed,
           excluded,
+          startedCell,
+          finishedCell,
+          durationSec,
           s.runId || '',
           s.stagingTable || '',
           (s.log||'').replace(/\n/g,' | ')
         ]);
       });
       const wsLog = XLSX.utils.aoa_to_sheet(logData);
-      // Column widths: step name wide, the count columns narrow, run-id and
-      // staging-table moderate, log very wide because it's the noisiest.
+      // Column widths: name wide, counts narrow, timestamps moderate,
+      // run-id and staging-table moderate, log very wide.
       wsLog['!cols'] = [
-        {wch:35}, {wch:14}, {wch:14},     // Step, Type, Status
-        {wch:11}, {wch:11}, {wch:18},     // Loaded, Failed, Excluded
-        {wch:28}, {wch:32}, {wch:80}      // Run ID, Staging Table, Log
+        {wch:35}, {wch:14}, {wch:14},          // Step, Type, Status
+        {wch:11}, {wch:11}, {wch:18},          // Loaded, Failed, Excluded
+        {wch:20}, {wch:20}, {wch:14},          // Started, Ended, Duration
+        {wch:28}, {wch:32}, {wch:80}           // Run ID, Staging Table, Log
       ];
       wsLog['!rows'] = logData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
-      styleRange(wsLog, 0, 0, 0, 8, STYLE.tableHeader);
+      styleRange(wsLog, 0, 0, 0, 11, STYLE.tableHeader);
       if (logData.length > 1) {
         styleRange(wsLog, 1, logData.length-1, 0, 1, STYLE.value);
         // Status column with per-row styling
@@ -2566,11 +2640,24 @@ function doExport() {
         }
         // Numeric columns: Loaded, Failed, Excluded
         styleNumericRange(wsLog, 1, logData.length-1, 3, 5);
+        // Timestamp cells — explicit datetime number format so Excel
+        // shows them as "12 May 2026 17:32:45" rather than serial number.
+        for (let r = 1; r < logData.length; r++) {
+          for (const col of [6, 7]) {
+            const addr = XLSX.utils.encode_cell({r, c: col});
+            if (wsLog[addr] && wsLog[addr].v instanceof Date) {
+              wsLog[addr].t = 'd';
+              wsLog[addr].z = 'yyyy-mm-dd hh:mm:ss';
+            }
+          }
+        }
+        // Duration column — numeric with 2 decimal places
+        styleNumericRange(wsLog, 1, logData.length-1, 8, 8);
         // Run ID and Staging Table — value style (monospace not available
         // via STYLE, so just use value styling)
-        styleRange(wsLog, 1, logData.length-1, 6, 7, STYLE.value);
+        styleRange(wsLog, 1, logData.length-1, 9, 10, STYLE.value);
         // Log column — wider, also value style
-        styleRange(wsLog, 1, logData.length-1, 8, 8, STYLE.value);
+        styleRange(wsLog, 1, logData.length-1, 11, 11, STYLE.value);
       }
       wsLog['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsLog, 'Execution Log');
