@@ -39,6 +39,37 @@
 const mssql = require('mssql');
 const { Client: PgClient } = require('pg');
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Type-formatting helpers (shared across MSSQL + Postgres schema endpoints)
+//
+// INFORMATION_SCHEMA reports NUMERIC_PRECISION and NUMERIC_SCALE for ALL
+// numeric-family types — including integer types like INT, BIGINT, SMALLINT,
+// TINYINT and date types like DATETIME2, TIME, DATETIMEOFFSET. But those
+// values are metadata; you cannot use them in DDL. `INT(10,0)` and
+// `DATETIME(0,0)` are syntax errors in CREATE TABLE.
+//
+// Two-arg `(p,s)` form is valid DDL ONLY for DECIMAL / NUMERIC.
+// One-arg `(p)` form (fractional-seconds precision or float mantissa) is
+// valid for DATETIME2, DATETIMEOFFSET, TIME, FLOAT.
+// Everything else: emit the bare type name and discard the precision/scale
+// metadata.
+//
+// Without these guards, schema-columns / schema responses produce type
+// strings like `INT(10,0)` which look reasonable but blow up any downstream
+// caller that pastes them into a CREATE TABLE. The staging-area code
+// surfaced this bug because it's the first consumer to use these type
+// strings for DDL; the column-mapping UI was only displaying them.
+
+function typeNeedsPrecisionScale(type){
+  const t = String(type || '').toUpperCase();
+  return t === 'DECIMAL' || t === 'NUMERIC' || t === 'DEC';
+}
+
+function typeNeedsPrecisionOnly(type){
+  const t = String(type || '').toUpperCase();
+  return t === 'DATETIME2' || t === 'DATETIMEOFFSET' || t === 'TIME' || t === 'FLOAT';
+}
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'Content-Type',
@@ -210,7 +241,8 @@ async function handleMssql(action, connectionString, database, body) {
         const columns = colsR.recordset.map(c => {
           let type = c.DATA_TYPE.toUpperCase();
           if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
-          else if (c.NUMERIC_PRECISION!=null && c.NUMERIC_SCALE!=null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+          else if (typeNeedsPrecisionScale(type) && c.NUMERIC_PRECISION!=null && c.NUMERIC_SCALE!=null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+          else if (typeNeedsPrecisionOnly(type) && c.NUMERIC_PRECISION!=null) type += `(${c.NUMERIC_PRECISION})`;
           return { name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE==='YES', default: c.COLUMN_DEFAULT, isIdentity: c.is_identity===1, ordinal: c.ORDINAL_POSITION };
         });
         result = {
@@ -284,7 +316,8 @@ async function handleMssql(action, connectionString, database, body) {
           if (!tables[key]) continue;
           let type = c.DATA_TYPE.toUpperCase();
           if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
-          else if (c.NUMERIC_PRECISION!=null && c.NUMERIC_SCALE!=null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+          else if (typeNeedsPrecisionScale(type) && c.NUMERIC_PRECISION!=null && c.NUMERIC_SCALE!=null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+          else if (typeNeedsPrecisionOnly(type) && c.NUMERIC_PRECISION!=null) type += `(${c.NUMERIC_PRECISION})`;
           tables[key].columns.push({ name: c.COLUMN_NAME, type, nullable: c.IS_NULLABLE==='YES', default: c.COLUMN_DEFAULT, isIdentity: c.is_identity===1, ordinal: c.ORDINAL_POSITION });
         }
         for (const pk of pkR.recordset) { const key=`${pk.TABLE_SCHEMA}.${pk.TABLE_NAME}`; if(tables[key]) tables[key].primaryKeys.push(pk.COLUMN_NAME); }
@@ -491,7 +524,8 @@ async function handlePostgres(action, connectionString, database, body) {
         const columns = colsR.rows.map(c => {
           let type = (c.data_type || '').toUpperCase();
           if (c.character_maximum_length) type += `(${c.character_maximum_length})`;
-          else if (c.numeric_precision != null && c.numeric_scale != null) type += `(${c.numeric_precision},${c.numeric_scale})`;
+          else if (typeNeedsPrecisionScale(type) && c.numeric_precision != null && c.numeric_scale != null) type += `(${c.numeric_precision},${c.numeric_scale})`;
+          else if (typeNeedsPrecisionOnly(type) && c.numeric_precision != null) type += `(${c.numeric_precision})`;
           return { name: c.column_name, type, nullable: c.is_nullable === 'YES', default: c.column_default, isIdentity: c.is_identity === true, ordinal: c.ordinal_position };
         });
         result = {
