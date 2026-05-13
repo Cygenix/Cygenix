@@ -252,7 +252,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
-        <button class="btn btn-ghost btn-sm" onclick="openCreateTaskModal()" title="Package selected jobs as a single task for the Task Agent to schedule and run">📦 Create task</button>
+        <button class="btn btn-ghost btn-sm" onclick="openCreateTaskModal()" title="Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule.">📦 Create task</button>
         <!-- Staging mode toggle.
              • Unchecked (default) = Incremental: each Run appends rows to staging
                with a fresh dm_run_id. Only rows in 'pending' state are loaded to
@@ -5700,7 +5700,7 @@ function confirmCreateTask(){
   // Refresh the sidebar so the new composite job is visible straight away
   if (typeof renderJobs === 'function') { try { renderJobs(); } catch {} }
 
-  showToast('Task created: ' + compositeJob.name);
+  showToast('Task packaged — open Task Agent → + New schedule to schedule it');
 }
 </script>
 </body>
