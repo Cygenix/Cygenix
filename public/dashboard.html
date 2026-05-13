@@ -1049,6 +1049,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-system-parameters .sp-icon-btn.danger:hover{color:var(--red)}
 
 #view-system-parameters .sp-empty{padding:2.5rem;text-align:center;color:var(--text3);font-size:13px}
+/* "Used in" badge on parameter rows — tappable pill in the accent
+   colour that shows the reference count and jumps to the Where used
+   tab on click. Designed to read as a compact stat at a glance:
+   "3 refs" / "1 ref" / "—" when none. */
+#view-system-parameters .sp-usage-pill{display:inline-flex;align-items:center;gap:4px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--accent);padding:3px 9px;font-size:11px;font-family:var(--mono);font-weight:500;border-radius:100px;cursor:pointer;transition:all 0.15s}
+#view-system-parameters .sp-usage-pill:hover{background:var(--accent);color:white;border-color:var(--accent)}
 #view-system-parameters .sp-empty .sp-emoji{font-size:32px;opacity:0.4;margin-bottom:0.5rem}
 #view-system-parameters .sp-empty a{color:var(--accent);text-decoration:none}
 
@@ -1882,6 +1888,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="cx-tab" data-sp-tab="wasis" onclick="switchSysTab('wasis')">
           🔄 Was/Is value mapping
         </button>
+        <button class="cx-tab" data-sp-tab="usage" onclick="switchSysTab('usage')">
+          📍 Where used
+        </button>
       </div>
 
       <!-- Tab: Parameters -->
@@ -1904,11 +1913,12 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <table class="sp-params" id="sp-params-table" style="display:none">
             <thead>
               <tr>
-                <th style="width:20%;cursor:pointer;user-select:none" onclick="spSortBy('name')">Name <span class="sp-sort-ind" id="sp-sort-ind-name">⇅</span></th>
-                <th style="width:24%;cursor:pointer;user-select:none" onclick="spSortBy('description')">Description <span class="sp-sort-ind" id="sp-sort-ind-description">⇅</span></th>
-                <th style="width:10%;cursor:pointer;user-select:none" onclick="spSortBy('type')" title="How the value is emitted into SQL">Type <span class="sp-sort-ind" id="sp-sort-ind-type">⇅</span></th>
-                <th style="width:24%;cursor:pointer;user-select:none" onclick="spSortBy('value')">Value <span class="sp-sort-ind" id="sp-sort-ind-value">⇅</span></th>
-                <th style="width:18%;cursor:pointer;user-select:none" onclick="spSortBy('code')">Code <span class="sp-sort-ind" id="sp-sort-ind-code">⇅</span></th>
+                <th style="width:17%;cursor:pointer;user-select:none" onclick="spSortBy('name')">Name <span class="sp-sort-ind" id="sp-sort-ind-name">⇅</span></th>
+                <th style="width:20%;cursor:pointer;user-select:none" onclick="spSortBy('description')">Description <span class="sp-sort-ind" id="sp-sort-ind-description">⇅</span></th>
+                <th style="width:9%;cursor:pointer;user-select:none" onclick="spSortBy('type')" title="How the value is emitted into SQL">Type <span class="sp-sort-ind" id="sp-sort-ind-type">⇅</span></th>
+                <th style="width:20%;cursor:pointer;user-select:none" onclick="spSortBy('value')">Value <span class="sp-sort-ind" id="sp-sort-ind-value">⇅</span></th>
+                <th style="width:15%;cursor:pointer;user-select:none" onclick="spSortBy('code')">Code <span class="sp-sort-ind" id="sp-sort-ind-code">⇅</span></th>
+                <th style="width:15%" title="Click to view all usages of this parameter">Used in</th>
                 <th style="width:4%"></th>
               </tr>
             </thead>
@@ -1969,6 +1979,55 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div>No rules match the filter.</div>
             <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="wiClearFilter();return false">clear the filter</a>.</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Tab: Where used — parameter usage tracking -->
+      <!-- Surfaces every place a system parameter is referenced across all
+           jobs in localStorage. Sources include:
+             • columnMapping[].literalValue / fixedValue (the main path —
+               user typed @@Client as a fixed value in the mapping editor)
+             • columnMapping[].wasisRules[].newVal (per-column Was/Is rule
+               whose replacement value is a parameter token)
+             • job.insertSQL and job.otmSQL — scanned via the same regex
+               for any inline @@Token references in saved SQL
+           Refresh button re-scans localStorage so changes made in
+           object_mapping.html show up without a full dashboard reload. -->
+      <div id="sp-tab-usage" class="sp-panel" style="display:none">
+        <div class="sp-hint">
+          Every place a system parameter is referenced across your saved jobs.
+          Use this before changing a parameter value to see which jobs and columns
+          will be affected. Source is everything in <code>cygenix_jobs</code>
+          on this device — jobs not loaded locally won't appear here.
+        </div>
+        <div class="sp-filter-bar" id="usage-filter-bar" style="display:none">
+          <input type="text" id="usage-filter-input" class="sp-filter-input" placeholder="🔍 Filter by parameter, job, table, or column…" oninput="usageApplyFilter()">
+          <button class="btn btn-sm" id="usage-filter-clear" onclick="usageClearFilter()" title="Clear filter" style="display:none">✕ Clear</button>
+          <button class="btn btn-sm" onclick="usageRefresh()" title="Re-scan all jobs in localStorage">↻ Refresh</button>
+          <span id="usage-filter-count" style="font-size:11px;color:var(--text3);align-self:center;margin-left:auto"></span>
+        </div>
+        <div class="sp-empty" id="usage-empty-state">
+          <div class="sp-emoji">📍</div>
+          <div>No parameter references found.</div>
+          <div style="font-size:11px;margin-top:0.4rem">Once a job's column mapping uses an <code>@@Token</code>, it will appear here.</div>
+        </div>
+        <table class="sp-params" id="usage-table" style="display:none">
+          <thead>
+            <tr>
+              <th style="width:14%;cursor:pointer;user-select:none" onclick="usageSortBy('paramName')">Parameter <span class="sp-sort-ind" id="usage-sort-ind-paramName">⇅</span></th>
+              <th style="width:18%;cursor:pointer;user-select:none" onclick="usageSortBy('jobName')">Job <span class="sp-sort-ind" id="usage-sort-ind-jobName">⇅</span></th>
+              <th style="width:16%;cursor:pointer;user-select:none" onclick="usageSortBy('srcTable')">Source table <span class="sp-sort-ind" id="usage-sort-ind-srcTable">⇅</span></th>
+              <th style="width:16%;cursor:pointer;user-select:none" onclick="usageSortBy('tgtCol')">Target column <span class="sp-sort-ind" id="usage-sort-ind-tgtCol">⇅</span></th>
+              <th style="width:14%;cursor:pointer;user-select:none" onclick="usageSortBy('source')">Via <span class="sp-sort-ind" id="usage-sort-ind-source">⇅</span></th>
+              <th style="width:22%">Expression</th>
+            </tr>
+          </thead>
+          <tbody id="usage-tbody"></tbody>
+        </table>
+        <div class="sp-empty" id="usage-empty-filter-state" style="display:none">
+          <div class="sp-emoji">🔎</div>
+          <div>No references match the filter.</div>
+          <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="usageClearFilter();return false">clear the filter</a>.</div>
         </div>
       </div>
     </div>
@@ -11823,17 +11882,32 @@ function spRender(){
   emptyFilter.style.display = 'none';
   tbl.style.display = '';
 
+  // Make sure usageRows is populated so the "Used in" badge has data
+  // to render. usageScan is fast (<10ms) and only runs once per spRender
+  // when needed.
+  if (!usageRows.length){
+    try { usageRows = usageScan(); } catch { usageRows = []; }
+  }
+
   tbody.innerHTML = displayed.map(({row, origIdx}) => {
     const code = row.code;
     const typeOpts = CygenixParams.PARAM_TYPES.map(t =>
       `<option value="${t}"${row.type === t ? ' selected' : ''}>${t}</option>`
     ).join('');
+    // "Used in" badge — shows a count like "3" with an inline pill style.
+    // Clicking switches to the Where used tab pre-filtered to this
+    // parameter name, so the user can drill in instantly.
+    const usageCount = usageCountForParam(row.name);
+    const usageCell = usageCount > 0
+      ? `<button class="sp-usage-pill" onclick="usageJumpToParam('${spEsc(row.name).replace(/'/g, "\\'")}')" title="View ${usageCount} reference${usageCount === 1 ? '' : 's'} to @@${spEsc(row.name)}">${usageCount} ref${usageCount === 1 ? '' : 's'}</button>`
+      : `<span style="font-size:11px;color:var(--text3)">—</span>`;
     return `<tr>
       <td><input class="sp-cell-input" value="${spEsc(row.name)}" oninput="spUpdateField(${origIdx},'name',this.value)" placeholder="StartDate"></td>
       <td><input class="sp-cell-input" value="${spEsc(row.description)}" oninput="spUpdateField(${origIdx},'description',this.value)" placeholder="Migration cutoff date"></td>
       <td><select class="sp-cell-input" onchange="spUpdateField(${origIdx},'type',this.value)" title="number=unquoted, text/date=quoted, raw=verbatim">${typeOpts}</select></td>
       <td><input class="sp-cell-input mono" value="${spEsc(row.value)}" oninput="spUpdateField(${origIdx},'value',this.value)" placeholder="20260101"></td>
       <td><span class="sp-cell-code" id="sp-code-${origIdx}" title="Click to copy" onclick="spCopyCode('${spEsc(code)}')">${spEsc(code) || '—'}</span></td>
+      <td>${usageCell}</td>
       <td style="text-align:right"><button class="sp-icon-btn danger" onclick="spRemoveRow(${origIdx})" title="Delete">✕</button></td>
     </tr>`;
   }).join('');
@@ -12033,7 +12107,298 @@ function spParseCSV(text){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SYSTEM PARAMETERS — TAB SWITCHER (Parameters ↔ Was/Is)
+// PARAMETER USAGE TRACKING ("Where used" tab)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Scans every job in localStorage's `cygenix_jobs` for places that
+// reference a system parameter via @@Token. Three places are scanned:
+//
+//   1. columnMapping[].literalValue / fixedValue
+//      User typed @@Client as a fixed value in the mapping editor — the
+//      most common path.
+//
+//   2. columnMapping[].wasisRules[].newVal
+//      A Was/Is rule whose replacement value is a parameter — e.g. "when
+//      source = 'legacy' use @@Client". The wasis path that was added
+//      after parameter expansion landed in the runner.
+//
+//   3. job.insertSQL and job.otmSQL
+//      Any inline @@Token in saved INSERT SQL or OTM cursor SQL. Caught
+//      via regex; we attribute these to the job as a whole rather than
+//      to a specific column (the SQL string isn't easily parsed back to
+//      individual columns from here).
+//
+// Output is a flat array of usage records. Same shape regardless of source,
+// so the table rendering doesn't need to special-case anything.
+
+const USAGE_TOKEN_RE = /@@([A-Za-z_][A-Za-z0-9_]*)/g;
+
+let usageRows = [];                  // all scanned usages
+let usageFilterQuery = '';
+let usageSortCol = 'paramName';      // default: group by parameter
+let usageSortDir = 1;                // 1 ascending, -1 descending
+
+// Extract distinct @@Token names from a string. Excludes SQL Server
+// @@globals like @@ROWCOUNT, @@TRANCOUNT, @@VERSION, @@SPID, etc. so
+// the usage view focuses on Cygenix parameters rather than SQL builtins.
+const _SQL_GLOBALS = new Set([
+  'rowcount', 'trancount', 'version', 'spid', 'servername', 'identity',
+  'error', 'fetch_status', 'nestlevel', 'options', 'datefirst', 'language',
+  'lock_timeout', 'max_connections', 'max_precision', 'cursor_rows',
+  'remserver', 'idle', 'cpu_busy', 'io_busy', 'pack_received', 'pack_sent',
+  'packet_errors', 'connections', 'procid', 'textsize', 'total_errors',
+  'total_read', 'total_write'
+]);
+function usageExtractTokens(s){
+  const out = [];
+  const seen = new Set();
+  let m;
+  USAGE_TOKEN_RE.lastIndex = 0;
+  while ((m = USAGE_TOKEN_RE.exec(s)) !== null){
+    const name = m[1];
+    const lower = name.toLowerCase();
+    if (_SQL_GLOBALS.has(lower)) continue;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+// Build the flat usage list. Idempotent — called on tab open and on the
+// Refresh button. Cheap (tens of jobs × hundreds of columns = <10ms).
+function usageScan(){
+  const out = [];
+  let jobs = [];
+  try {
+    jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]') || [];
+  } catch { jobs = []; }
+  for (const job of jobs){
+    if (!job || typeof job !== 'object') continue;
+    const jobName = job.name || job.id || '(unnamed)';
+    const jobId   = job.id   || '';
+    const srcTable = job.source || job.srcTable || job.fromTable || '';
+    const tgtTable = job.target || job.tgtTable || job.toTable   || '';
+
+    // Path 1 + 2: column mapping entries
+    const mapping = Array.isArray(job.columnMapping) ? job.columnMapping : [];
+    for (const m of mapping){
+      if (!m || typeof m !== 'object') continue;
+      const srcCol = m.srcCol || '';
+      const tgtCol = m.tgtCol || '';
+      // literalValue / fixedValue — primary path
+      for (const fieldName of ['literalValue', 'fixedValue']){
+        const v = m[fieldName];
+        if (typeof v !== 'string' || !v.includes('@@')) continue;
+        for (const tok of usageExtractTokens(v)){
+          out.push({
+            paramName: tok,
+            paramToken: '@@' + tok,
+            jobName, jobId, srcTable, tgtTable,
+            srcCol, tgtCol,
+            source: fieldName === 'literalValue' ? 'literal value' : 'fixed value',
+            expression: v
+          });
+        }
+      }
+      // Was/Is rule newVal
+      const rules = Array.isArray(m.wasisRules) ? m.wasisRules : [];
+      for (const r of rules){
+        if (!r) continue;
+        const newVal = r.newVal ?? r.is ?? r.to;
+        if (typeof newVal !== 'string' || !newVal.includes('@@')) continue;
+        const oldVal = r.oldVal ?? r.was ?? r.from ?? '';
+        for (const tok of usageExtractTokens(newVal)){
+          out.push({
+            paramName: tok,
+            paramToken: '@@' + tok,
+            jobName, jobId, srcTable, tgtTable,
+            srcCol, tgtCol,
+            source: 'Was/Is rule',
+            expression: String(oldVal) + ' → ' + newVal
+          });
+        }
+      }
+    }
+
+    // Path 3: inline SQL — capture but don't attribute to a column
+    for (const fieldName of ['insertSQL', 'otmSQL']){
+      const sql = job[fieldName];
+      if (typeof sql !== 'string' || !sql.includes('@@')) continue;
+      // Dedupe tokens within a single SQL string — a token referenced
+      // 50 times in one INSERT statement shows up once per job.
+      const seen = new Set();
+      for (const tok of usageExtractTokens(sql)){
+        if (seen.has(tok)) continue;
+        seen.add(tok);
+        out.push({
+          paramName: tok,
+          paramToken: '@@' + tok,
+          jobName, jobId, srcTable, tgtTable,
+          srcCol: '', tgtCol: '',
+          source: fieldName === 'insertSQL' ? 'inline INSERT SQL' : 'inline cursor SQL',
+          expression: '(inside ' + fieldName + ')'
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// Public refresh API. Called by the Refresh button, by switchSysTab when
+// the Usage tab is opened, and by usageSortBy. Also re-renders the
+// Parameters tab so the "Used in" badge stays in sync with the scan.
+function usageRefresh(){
+  usageRows = usageScan();
+  usageRender();
+  // Keep the Parameters tab's "Used in" badge consistent with the latest
+  // scan, in case the user came from the Usage tab back to Parameters
+  // after editing a job.
+  if (typeof spRender === 'function') spRender();
+}
+
+function usageApplyFilter(){
+  usageFilterQuery = (document.getElementById('usage-filter-input')?.value || '').trim().toLowerCase();
+  usageRender();
+}
+function usageClearFilter(){
+  const el = document.getElementById('usage-filter-input');
+  if (el){ el.value = ''; }
+  usageFilterQuery = '';
+  usageRender();
+}
+function usageSortBy(col){
+  if (usageSortCol === col){ usageSortDir = -usageSortDir; }
+  else { usageSortCol = col; usageSortDir = 1; }
+  usageRender();
+}
+
+function usageRender(){
+  const tbl    = document.getElementById('usage-table');
+  const tbody  = document.getElementById('usage-tbody');
+  const empty  = document.getElementById('usage-empty-state');
+  const emptyF = document.getElementById('usage-empty-filter-state');
+  const filterBar = document.getElementById('usage-filter-bar');
+  const count  = document.getElementById('usage-filter-count');
+  if (!tbl || !tbody || !empty || !filterBar) return;
+
+  if (!usageRows.length){
+    tbl.style.display = 'none';
+    emptyF.style.display = 'none';
+    empty.style.display = 'block';
+    filterBar.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  filterBar.style.display = 'flex';
+
+  // Filter
+  const q = usageFilterQuery;
+  let rows = usageRows;
+  if (q){
+    rows = rows.filter(r =>
+      (r.paramName || '').toLowerCase().includes(q) ||
+      (r.jobName   || '').toLowerCase().includes(q) ||
+      (r.srcTable  || '').toLowerCase().includes(q) ||
+      (r.tgtTable  || '').toLowerCase().includes(q) ||
+      (r.srcCol    || '').toLowerCase().includes(q) ||
+      (r.tgtCol    || '').toLowerCase().includes(q) ||
+      (r.source    || '').toLowerCase().includes(q) ||
+      (r.expression|| '').toLowerCase().includes(q)
+    );
+  }
+  // Sort. Secondary sort always by paramName so usages of the same param
+  // cluster together regardless of primary sort.
+  rows = rows.slice().sort((a, b) => {
+    const av = String(a[usageSortCol] || '').toLowerCase();
+    const bv = String(b[usageSortCol] || '').toLowerCase();
+    if (av < bv) return -1 * usageSortDir;
+    if (av > bv) return  1 * usageSortDir;
+    const an = String(a.paramName || '').toLowerCase();
+    const bn = String(b.paramName || '').toLowerCase();
+    if (an < bn) return -1;
+    if (an > bn) return  1;
+    return 0;
+  });
+
+  // Sort indicators
+  ['paramName','jobName','srcTable','tgtCol','source'].forEach(c => {
+    const el = document.getElementById('usage-sort-ind-'+c);
+    if (!el) return;
+    if (c === usageSortCol){
+      el.textContent = usageSortDir === 1 ? '▲' : '▼';
+      el.classList.add('active');
+    } else {
+      el.textContent = '⇅';
+      el.classList.remove('active');
+    }
+  });
+
+  if (count){
+    if (q){
+      count.textContent = rows.length + ' of ' + usageRows.length + ' reference' + (usageRows.length === 1 ? '' : 's');
+    } else {
+      count.textContent = usageRows.length + ' reference' + (usageRows.length === 1 ? '' : 's') + ' across ' +
+        new Set(usageRows.map(r => r.jobName)).size + ' job(s)';
+    }
+  }
+  const clr = document.getElementById('usage-filter-clear');
+  if (clr) clr.style.display = q ? 'inline-flex' : 'none';
+
+  if (!rows.length){
+    tbl.style.display = 'none';
+    emptyF.style.display = 'block';
+    return;
+  }
+  emptyF.style.display = 'none';
+  tbl.style.display = '';
+
+  // Group rows visually by paramName when sort col is paramName — adds
+  // a subtle row-divider so users can scan "all usages of @@Client" at
+  // a glance.
+  let prevParam = null;
+  tbody.innerHTML = rows.map(r => {
+    const firstOfGroup = (usageSortCol === 'paramName' && prevParam !== r.paramName);
+    prevParam = r.paramName;
+    const divider = firstOfGroup ? 'border-top:1px solid var(--border2)' : '';
+    const exprDisp = r.expression.length > 80 ? r.expression.slice(0, 80) + '…' : r.expression;
+    return `<tr style="${divider}">
+      <td><code class="sp-cell-code" style="display:inline-block;padding:2px 6px">${spEsc(r.paramToken)}</code></td>
+      <td style="font-size:12px">${spEsc(r.jobName)}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${spEsc(r.srcTable || '—')}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${spEsc(r.tgtCol || '—')}</td>
+      <td style="font-size:11px;color:var(--text3)">${spEsc(r.source)}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text3);word-break:break-all" title="${spEsc(r.expression)}">${spEsc(exprDisp)}</td>
+    </tr>`;
+  }).join('');
+}
+
+// Per-parameter usage count — used by the Parameters tab's "Used in"
+// badge so each parameter row can show "3 jobs" inline. Reads from the
+// most recent usageRows scan; spRender calls usageScan if usageRows is
+// empty so the count appears on first load too.
+function usageCountForParam(paramName){
+  if (!usageRows.length) return 0;
+  return usageRows.filter(r => r.paramName.toLowerCase() === paramName.toLowerCase()).length;
+}
+
+// Jump from a parameter row's "X refs" button straight into the Where
+// used tab, pre-filtered to that parameter. Keeps the UX one click —
+// the user doesn't have to switch tabs and re-type the filter.
+function usageJumpToParam(paramName){
+  switchSysTab('usage');
+  // Wait a tick for the tab to render, then set filter input + fire it.
+  setTimeout(() => {
+    const el = document.getElementById('usage-filter-input');
+    if (el){
+      el.value = paramName;
+      usageApplyFilter();
+    }
+  }, 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SYSTEM PARAMETERS — TAB SWITCHER (Parameters ↔ Was/Is ↔ Where used)
 // ═══════════════════════════════════════════════════════════════════════════
 function switchSysTab(tab){
   document.querySelectorAll('#view-system-parameters .cx-tab').forEach(el => {
@@ -12041,23 +12406,39 @@ function switchSysTab(tab){
   });
   const tabParams = document.getElementById('sp-tab-params');
   const tabWasis  = document.getElementById('sp-tab-wasis');
+  const tabUsage  = document.getElementById('sp-tab-usage');
   const toolParams = document.getElementById('sp-toolbar-params');
   const toolWasis  = document.getElementById('sp-toolbar-wasis');
   const subParams  = document.getElementById('sp-view-sub-params');
   const subWasis   = document.getElementById('sp-view-sub-wasis');
   const title      = document.getElementById('sp-view-title');
 
+  // Three-way tab visibility. The toolbars and sub-titles toggle alongside
+  // the panels — the Usage tab has its own toolbar inline (Filter, Refresh)
+  // so it doesn't need a top-bar toolbar like the others.
   const onParams = tab === 'params';
+  const onWasis  = tab === 'wasis';
+  const onUsage  = tab === 'usage';
   if (tabParams) tabParams.style.display = onParams ? '' : 'none';
-  if (tabWasis)  tabWasis.style.display  = onParams ? 'none' : '';
+  if (tabWasis)  tabWasis.style.display  = onWasis  ? '' : 'none';
+  if (tabUsage)  tabUsage.style.display  = onUsage  ? '' : 'none';
+  // Existing toolbars only apply to Params/Was-Is — Usage handles its own.
   if (toolParams) toolParams.style.display = onParams ? '' : 'none';
-  if (toolWasis)  toolWasis.style.display  = onParams ? 'none' : '';
+  if (toolWasis)  toolWasis.style.display  = onWasis  ? '' : 'none';
   if (subParams) subParams.style.display = onParams ? '' : 'none';
-  if (subWasis)  subWasis.style.display  = onParams ? 'none' : '';
-  if (title) title.textContent = onParams ? '⚙ System parameters' : '🔄 Was/Is value mapping';
+  if (subWasis)  subWasis.style.display  = onWasis  ? '' : 'none';
+  if (title){
+    title.textContent = onParams ? '⚙ System parameters'
+                      : onWasis  ? '🔄 Was/Is value mapping'
+                      :            '📍 Where parameters are used';
+  }
 
   // Lazy-init the Was/Is tab the first time it's opened
-  if (!onParams && !wiInitialized){ wiLoad(); wiInitialized = true; }
+  if (onWasis && !wiInitialized){ wiLoad(); wiInitialized = true; }
+  // Same pattern for Usage — scan only when the user actually opens it,
+  // not on every page load. Re-scan on every tab open so changes made
+  // in other tabs/pages show up.
+  if (onUsage){ usageRefresh(); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -12784,22 +13165,10 @@ const TA = {
 };
 
 // Resolve the /api/* base URL (strips /db suffix if present) and function key.
-// Matches the fallback chain used by impGetConn() — checks (1) in-memory
-// CygenixConnections, (2) session/localStorage direct keys, and (3) the
-// `cygenix_project_connections` JSON wrapper that the active Connections
-// view writes to. Without all three sources the Task Agent throws
-// "Azure Function not configured" even when the rest of the app sees
-// a healthy green-dot connection.
 function ta_resolveApi() {
   const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
-  const c  = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
-  let pc = {};
-  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
-  const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
-
-  let fnUrl = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url') || pcGet('cygenix_fn_url');
-  const key = c.tgtFnKey || c.fnKey || ss('cygenix_fn_key') || pcGet('cygenix_fn_key');
-
+  let fnUrl = ss('cygenix_fn_url');
+  const key = ss('cygenix_fn_key');
   if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
   if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
 
