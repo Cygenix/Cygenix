@@ -13586,9 +13586,9 @@ function wiParseRows(rows){
 //   • delete-schedule • toggle-enabled   • list-runs   • get-run
 //   • version-list    • version-create
 //
-// Execution (run-now) and auto-triggers are NOT handled here in phase 1 —
-// they arrive in phase 2/3 of the Task Agent rebuild. Until then, the
-// run-now button will surface "not implemented yet" from the backend.
+// Execution: run-now is wired up in phase 2 (the ▶ Run button executes
+// against the schedule's stored tgtConn via mssql server-side). Auto-
+// triggers (cron firing without a browser open) arrive in phase 3.
 
 const TA = {
   schedules: [],
@@ -14044,17 +14044,27 @@ async function ta_saveSchedule() {
   if (mode === 'cron' && !cron) return alert('Cron expression required');
   if (mode === 'chain' && !chainAfter) return alert('Pick a parent schedule');
 
+  // Capture connection strings so the server can execute the schedule
+  // without a browser open. impGetConn returns either an mssql:// URL or an
+  // https:// Azure Function URL — both are valid to store; phase 2 only
+  // executes mssql:// targets, phase 3 will add Azure Function execution.
+  const srcConn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
+  const tgtConn = (typeof impGetConn === 'function') ? impGetConn('tgt') : '';
+  if (!tgtConn) {
+    return alert('No target connection configured. Open Connections → Target and save a connection before scheduling.');
+  }
+
   const btn = document.getElementById('ta-sched-save-btn');
   btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = 'Saving…';
   try {
     if (TA.editingScheduleId) {
       await ta_sched('update-schedule', {
         id: TA.editingScheduleId,
-        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled },
+        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn },
       });
     } else {
       await ta_sched('create-schedule', {
-        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled,
+        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn,
       });
     }
     ta_closeScheduleModal();
