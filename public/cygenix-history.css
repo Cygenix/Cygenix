@@ -21,7 +21,9 @@
   color: var(--text1, #e8e8e8);
   border: 1px solid var(--border, rgba(255,255,255,0.1));
   border-radius: 8px;
-  width: min(900px, 92vw);
+  /* Wider than the previous 900px to fit the side-by-side compare view.
+     Falls back gracefully on narrower viewports. */
+  width: min(1300px, 95vw);
   max-height: 88vh;
   display: flex;
   flex-direction: column;
@@ -133,16 +135,99 @@
   font-weight: 600;
   margin: 0;
 }
-.cygenix-history-modal .ch-snapshot {
+/* Side-by-side compare layout. The detail area below the header becomes
+   a 2-column grid with sticky column headers above each pane. Each pane
+   scrolls independently, but the JS in selectVersion() syncs their scroll
+   positions so paired lines stay aligned. */
+.cygenix-history-modal .ch-compare {
   flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+.cygenix-history-modal .ch-pane-header {
+  padding: 8px 14px;
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text3, #8a8a8a);
+  background: var(--bg3, rgba(255,255,255,0.03));
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+}
+.cygenix-history-modal .ch-pane-header-left  { border-right: 1px solid var(--border, rgba(255,255,255,0.08)); }
+.cygenix-history-modal .ch-pane {
   overflow: auto;
-  padding: 12px 18px;
+  padding: 4px 0;
   font-family: var(--mono, monospace);
   font-size: 11px;
-  line-height: 1.55;
-  color: var(--text2, #c0c0c0);
-  white-space: pre-wrap;
-  word-break: break-word;
+  line-height: 1.6;
+}
+.cygenix-history-modal .ch-pane-left  { border-right: 1px solid var(--border, rgba(255,255,255,0.08)); }
+.cygenix-history-modal .ch-pane-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text3, #8a8a8a);
+  font-size: 12px;
+  font-family: var(--serif, system-ui, sans-serif);
+}
+
+/* Diff line styles. Each row in either pane is one of these. The colours
+   are tuned so a glance tells you which side has the change without
+   reading the text. */
+.cygenix-history-modal .ch-line {
+  padding: 0 14px;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+  min-height: 1.6em;
+}
+.cygenix-history-modal .ch-line-same     { color: var(--text2, #c0c0c0); }
+.cygenix-history-modal .ch-line-changed  {
+  background: rgba(234, 179, 8, 0.12);   /* amber */
+  color: var(--text1, #e8e8e8);
+  border-left: 2px solid rgba(234, 179, 8, 0.6);
+  padding-left: 12px;
+}
+.cygenix-history-modal .ch-line-added    {
+  background: rgba(34, 197, 94, 0.13);   /* green */
+  color: var(--text1, #e8e8e8);
+  border-left: 2px solid rgba(34, 197, 94, 0.7);
+  padding-left: 12px;
+}
+.cygenix-history-modal .ch-line-removed  {
+  background: rgba(239, 68, 68, 0.13);   /* red */
+  color: var(--text1, #e8e8e8);
+  border-left: 2px solid rgba(239, 68, 68, 0.7);
+  padding-left: 12px;
+}
+.cygenix-history-modal .ch-line-blank    {
+  background: var(--bg3, rgba(255,255,255,0.02));
+}
+
+/* Stats badges in the detail header — small counts that summarise the
+   diff so the user gets a feel for scale before scrolling. */
+.cygenix-history-modal .ch-stats { font-family: var(--mono, monospace); }
+.cygenix-history-modal .ch-stat {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 4px;
+  font-weight: 600;
+}
+.cygenix-history-modal .ch-stat-changed { background: rgba(234,179,8,0.18); color: rgb(234,179,8); }
+.cygenix-history-modal .ch-stat-added   { background: rgba(34,197,94,0.18); color: rgb(34,197,94); }
+.cygenix-history-modal .ch-stat-removed { background: rgba(239,68,68,0.18); color: rgb(239,68,68); }
+
+/* Smaller comparison-sub text inside the title line, so "Comparing v3
+   vs v2 (previous)" reads as one phrase rather than fighting for emphasis. */
+.cygenix-history-modal .ch-detail-sub {
+  font-weight: 400;
+  color: var(--text3, #8a8a8a);
+  font-size: 12px;
+  margin-left: 4px;
 }
 
 .cygenix-history-modal .ch-empty {

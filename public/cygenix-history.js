@@ -152,33 +152,131 @@
     _state.selected = v;
     renderList(); // Re-render to update the .active highlight
 
+    // Find the previous version (vN-1) to diff against. _state.versions is
+    // sorted newest-first by the backend, so "previous" means the next
+    // entry in the array.
+    const idx = _state.versions.findIndex(x => x.id === v.id);
+    const prev = (idx >= 0 && idx < _state.versions.length - 1)
+      ? _state.versions[idx + 1]
+      : null;
+
     const detailEl = _rootEl.querySelector('#ch-detail');
+    const prevHeader = prev
+      ? `v${prev.version} · ${escapeHtml(prev.label || 'manual')}`
+      : '(no earlier version)';
     detailEl.innerHTML = `
       <div class="ch-detail-header">
         <div>
-          <h4 class="ch-detail-title">v${v.version} · ${escapeHtml(v.label || 'manual')}</h4>
-          <div class="ch-sub">${formatDate(v.createdAt)} · ${escapeHtml(v.userId || '')}</div>
+          <h4 class="ch-detail-title">
+            Comparing v${v.version}
+            <span class="ch-detail-sub">vs ${prevHeader}</span>
+          </h4>
+          <div class="ch-sub" id="ch-diff-stats">${formatDate(v.createdAt)} · ${escapeHtml(v.userId || '')}</div>
         </div>
         <div style="display:flex;gap:6px">
-          <button class="ch-btn primary" id="ch-revert-btn">↶ Revert to this version</button>
+          <button class="ch-btn primary" id="ch-revert-btn">↶ Revert to v${v.version}</button>
         </div>
       </div>
-      <div class="ch-snapshot" id="ch-snapshot-pane">Loading snapshot…</div>
+      <div class="ch-compare" id="ch-compare-pane">
+        <div class="ch-pane-header ch-pane-header-left">${prev ? 'v' + prev.version + ' (previous)' : 'No earlier version'}</div>
+        <div class="ch-pane-header ch-pane-header-right">v${v.version} (selected)</div>
+        <div class="ch-pane ch-pane-left" id="ch-pane-left">Loading…</div>
+        <div class="ch-pane ch-pane-right" id="ch-pane-right">Loading…</div>
+      </div>
     `;
     detailEl.querySelector('#ch-revert-btn').addEventListener('click', () => doRevert(v));
 
     try {
-      const full = await window.CygenixAPI.versionGet(_state.jobId, v.id);
-      const snapshot = (full && full.snapshot) || full;
-      detailEl.querySelector('#ch-snapshot-pane').textContent =
-        JSON.stringify(snapshot, null, 2);
-      // Stash the fully-loaded snapshot on the version object so revert
-      // doesn't need to re-fetch.
-      v._fullSnapshot = snapshot;
+      // Fetch both snapshots in parallel. If we've already loaded one earlier
+      // (cached on the version object), reuse it instead of re-fetching.
+      const fetchSnapshot = async (ver) => {
+        if (!ver) return null;
+        if (ver._fullSnapshot) return ver._fullSnapshot;
+        const full = await window.CygenixAPI.versionGet(_state.jobId, ver.id);
+        const snap = (full && full.snapshot) || full;
+        ver._fullSnapshot = snap;
+        return snap;
+      };
+
+      const [selectedSnap, prevSnap] = await Promise.all([
+        fetchSnapshot(v),
+        fetchSnapshot(prev)
+      ]);
+
+      const selectedText = JSON.stringify(selectedSnap, null, 2);
+      const prevText     = prev ? JSON.stringify(prevSnap, null, 2) : '';
+
+      if (!prev) {
+        // No previous version — render the selected snapshot in the right
+        // pane only, with the left pane showing a placeholder. No diff
+        // computation needed.
+        detailEl.querySelector('#ch-pane-left').innerHTML =
+          '<div class="ch-pane-empty">No earlier version to compare against. This is the first snapshot.</div>';
+        detailEl.querySelector('#ch-pane-right').innerHTML =
+          renderPlainSnapshot(selectedText);
+        return;
+      }
+
+      const rows = diffLines(prevText, selectedText);
+      const stats = diffStats(rows);
+      detailEl.querySelector('#ch-diff-stats').innerHTML =
+        formatDate(v.createdAt) + ' · ' + escapeHtml(v.userId || '') +
+        ' <span class="ch-stats">· ' +
+        (stats.changed ? '<span class="ch-stat ch-stat-changed">' + stats.changed + ' changed</span> ' : '') +
+        (stats.added   ? '<span class="ch-stat ch-stat-added">+' + stats.added + '</span> '          : '') +
+        (stats.removed ? '<span class="ch-stat ch-stat-removed">−' + stats.removed + '</span> '      : '') +
+        (!stats.changed && !stats.added && !stats.removed ? '<span class="ch-stat">no changes</span>' : '') +
+        '</span>';
+
+      // Render the two panes as paired rows.
+      const leftHtml  = rows.map(r => renderDiffLine(r.left,  r.type, 'left')).join('');
+      const rightHtml = rows.map(r => renderDiffLine(r.right, r.type, 'right')).join('');
+      detailEl.querySelector('#ch-pane-left').innerHTML  = leftHtml;
+      detailEl.querySelector('#ch-pane-right').innerHTML = rightHtml;
+
+      // Sync scrolling between the two panes so a row in pane A always
+      // lines up with the same row in pane B.
+      const left  = detailEl.querySelector('#ch-pane-left');
+      const right = detailEl.querySelector('#ch-pane-right');
+      let syncing = false;
+      const syncFrom = src => tgt => {
+        if (syncing) return;
+        syncing = true;
+        tgt.scrollTop  = src.scrollTop;
+        tgt.scrollLeft = src.scrollLeft;
+        // Release the lock after the browser has applied the scroll.
+        requestAnimationFrame(() => { syncing = false; });
+      };
+      left.addEventListener('scroll',  () => syncFrom(left)(right));
+      right.addEventListener('scroll', () => syncFrom(right)(left));
     } catch (err) {
-      detailEl.querySelector('#ch-snapshot-pane').textContent =
-        'Failed to load snapshot: ' + err.message;
+      detailEl.querySelector('#ch-pane-left').textContent  = '';
+      detailEl.querySelector('#ch-pane-right').textContent =
+        'Failed to load snapshots: ' + err.message;
     }
+  }
+
+  // Render a single line in a diff pane. The type class drives the
+  // highlighting in the stylesheet:
+  //   .ch-line-same     → grey/default
+  //   .ch-line-changed  → yellow background on both sides
+  //   .ch-line-added    → green background, only on right side
+  //   .ch-line-removed  → red background, only on left side
+  // Empty cells (the other side of an added/removed row) get a 'blank'
+  // class so the row keeps its height but has no content.
+  function renderDiffLine(text, type, side) {
+    if (type === 'added'   && side === 'left')  return '<div class="ch-line ch-line-blank"></div>';
+    if (type === 'removed' && side === 'right') return '<div class="ch-line ch-line-blank"></div>';
+    const cls = 'ch-line ch-line-' + type;
+    return '<div class="' + cls + '">' + escapeHtml(text || ' ') + '</div>';
+  }
+
+  // Render a snapshot without diff highlighting. Used when there's no
+  // previous version to compare against (the v1 case).
+  function renderPlainSnapshot(text) {
+    return text.split('\n').map(line =>
+      '<div class="ch-line ch-line-same">' + escapeHtml(line || ' ') + '</div>'
+    ).join('');
   }
 
   // ── Revert ─────────────────────────────────────────────────────────────────
@@ -391,6 +489,79 @@
       console.warn('[cygenix-history] auto-snapshot threw:', err);
       return Promise.resolve();
     }
+  }
+
+  // ── Line-based diff for side-by-side compare ──────────────────────────────
+  // Computes a line-by-line diff using LCS (longest common subsequence) and
+  // returns aligned pairs so the compare view can render them in matching
+  // rows. Each entry is { left, right, type } where:
+  //   type='same'     → unchanged line, present on both sides
+  //   type='changed'  → both sides have a line at this row but they differ
+  //   type='added'    → only the right side has a line (left is empty)
+  //   type='removed'  → only the left side has a line (right is empty)
+  //
+  // For our use case (pretty-printed JSON of ~few KB), LCS at O(n*m) is
+  // fast enough that we don't need anything more sophisticated. If
+  // snapshots ever grow past ~5,000 lines this will get slow and we'd want
+  // a smarter algorithm (Myers, patience). For now: don't worry about it.
+  function diffLines(leftText, rightText) {
+    const L = (leftText || '').split('\n');
+    const R = (rightText || '').split('\n');
+    const n = L.length, m = R.length;
+
+    // LCS length table.
+    const dp = Array.from({ length: n + 1 }, () => new Int32Array(m + 1));
+    for (let i = 1; i <= n; i++) {
+      for (let j = 1; j <= m; j++) {
+        dp[i][j] = L[i - 1] === R[j - 1]
+          ? dp[i - 1][j - 1] + 1
+          : Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+
+    // Walk backwards to build aligned pairs. We push to the front (or
+    // reverse at the end) to get top-to-bottom order.
+    const rows = [];
+    let i = n, j = m;
+    while (i > 0 && j > 0) {
+      if (L[i - 1] === R[j - 1]) {
+        rows.push({ left: L[i - 1], right: R[j - 1], type: 'same' });
+        i--; j--;
+      } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+        rows.push({ left: L[i - 1], right: '', type: 'removed' });
+        i--;
+      } else {
+        rows.push({ left: '', right: R[j - 1], type: 'added' });
+        j--;
+      }
+    }
+    while (i > 0) { rows.push({ left: L[i - 1], right: '', type: 'removed' }); i--; }
+    while (j > 0) { rows.push({ left: '', right: R[j - 1], type: 'added' }); j--; }
+    rows.reverse();
+
+    // Coalesce adjacent removed/added pairs into 'changed' so the eye can
+    // track them as a single edit rather than a separate delete-then-insert.
+    // This matters most in JSON where a one-character change in a value
+    // produces a remove+add of the same key.
+    const merged = [];
+    for (let k = 0; k < rows.length; k++) {
+      const cur = rows[k], nxt = rows[k + 1];
+      if (cur && nxt && cur.type === 'removed' && nxt.type === 'added') {
+        merged.push({ left: cur.left, right: nxt.right, type: 'changed' });
+        k++;
+      } else {
+        merged.push(cur);
+      }
+    }
+    return merged;
+  }
+
+  // Convenience: count how many of each change type appear in a diff,
+  // so we can render "12 changed, 3 added, 1 removed" at the top of the pane.
+  function diffStats(rows) {
+    const s = { same: 0, changed: 0, added: 0, removed: 0 };
+    for (const r of rows) s[r.type] = (s[r.type] || 0) + 1;
+    return s;
   }
 
   // ── Utilities ──────────────────────────────────────────────────────────────
