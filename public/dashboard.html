@@ -13576,16 +13576,19 @@ function wiParseRows(rows){
 }
 
 // ═══ TASK AGENT ══════════════════════════════════════════════════════════
-// Scheduler UI. Talks directly to the Azure Function cygenix-db-api at two
-// endpoints:
-//   • /api/schedules/{action}   — scheduler CRUD + run-now + history
-//   • /api/data/version-*       — pinned SQL snapshots (existing)
-// SQL execution happens server-side via the Function App's managed identity,
-// so there are no connection strings to manage here.
+// Scheduler UI. Talks to /.netlify/functions/scheduler — a single Netlify
+// Function that owns all reads/writes to the Cosmos scheduler containers
+// (schedules, runs, job_versions). This works identically for Azure-target
+// and direct-SQL-target projects because metadata storage is target-agnostic.
 //
-// Config source: `cygenix_fn_url` + `cygenix_fn_key` localStorage keys —
-// the same values set on the Connections page for the Target database.
-// ─────────────────────────────────────────────────────────────────────────
+// Endpoint actions (POST body: { action, ...payload }, header: x-user-id):
+//   • list-schedules  • create-schedule  • update-schedule
+//   • delete-schedule • toggle-enabled   • list-runs   • get-run
+//   • version-list    • version-create
+//
+// Execution (run-now) and auto-triggers are NOT handled here in phase 1 —
+// they arrive in phase 2/3 of the Task Agent rebuild. Until then, the
+// run-now button will surface "not implemented yet" from the backend.
 
 const TA = {
   schedules: [],
@@ -13595,49 +13598,48 @@ const TA = {
   activeTab: 'schedules',
 };
 
-// Resolve the /api/* base URL (strips /db suffix if present) and function key.
-function ta_resolveApi() {
-  const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
-  let fnUrl = ss('cygenix_fn_url');
-  const key = ss('cygenix_fn_key');
-  if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
-  if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
-
-  fnUrl = fnUrl.replace(/\/+$/, '');
-  const apiIdx = fnUrl.toLowerCase().lastIndexOf('/api');
-  if (apiIdx < 0) throw new Error('Azure Function URL does not contain /api path');
-  const base = fnUrl.slice(0, apiIdx) + '/api';
-  return { base, key };
+// Scheduler API base. Single Netlify Function endpoint — no Azure Function
+// URL/key resolution needed any more. Kept as a function (not a const) so
+// it's easy to swap to a different base in tests if needed.
+function ta_apiBase() {
+  return '/.netlify/functions/scheduler';
 }
 
-async function ta_apiCall(path, body, method) {
+async function ta_apiCall(action, body) {
   const email = currentCygenixEmail();
   if (!email) throw new Error('Please sign in first.');
-  const { base, key } = ta_resolveApi();
-  // Use & if the path already has a ? (e.g. 'data/version-list?jobId=X'),
-  // otherwise use ? to introduce the query string. Without this, a GET
-  // with query params produces a malformed URL like '?jobId=X?code=Y'
-  // and Azure rejects it with 401 because the function key isn't parsed.
-  const sep = path.includes('?') ? '&' : '?';
-  const url = `${base}/${path}${sep}code=${encodeURIComponent(key)}`;
 
-  const opts = {
-    method: method || 'POST',
+  const payload = { action, ...(body || {}) };
+  const r = await fetch(ta_apiBase(), {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-user-id':    email,
     },
-  };
-  if (body && opts.method !== 'GET') opts.body = JSON.stringify(body);
-
-  const r = await fetch(url, opts);
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(60000),
+  });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
   return data;
 }
 
-function ta_sched(action, body)  { return ta_apiCall('schedules/' + action, body, 'POST'); }
-function ta_data(action, body, method) { return ta_apiCall('data/' + action, body, method || 'POST'); }
+// Both helpers now route through the same Netlify scheduler function with an
+// action name in the body. Kept as two helpers (rather than collapsing to one)
+// so the call sites in the rest of the Task Agent code stay readable: "this
+// is a schedule action" vs "this is a version/data action".
+function ta_sched(action, body) { return ta_apiCall(action, body); }
+function ta_data(action, body)  {
+  // Legacy callers passed query-string-style paths like
+  // 'version-list?jobId=X'. Strip the query string and fold any params into
+  // the body so the unified Netlify endpoint sees a clean { action, ...body }.
+  const qIdx = action.indexOf('?');
+  if (qIdx < 0) return ta_apiCall(action, body);
+  const cleanAction = action.slice(0, qIdx);
+  const params = {};
+  new URLSearchParams(action.slice(qIdx + 1)).forEach((v, k) => { params[k] = v; });
+  return ta_apiCall(cleanAction, { ...params, ...(body || {}) });
+}
 
 function ta_init() {
   ta_switchTab(TA.activeTab);
@@ -13683,7 +13685,7 @@ async function ta_loadSchedules() {
     TA.schedules = data.schedules || [];
     ta_renderSchedules();
   } catch (e) {
-    el.innerHTML = '<div class="empty-state"><h3>Could not load schedules</h3><p style="color:var(--red)">' + escapeHtml(e.message) + '</p><p style="font-size:12px;color:var(--text3);margin-top:0.5rem">Check that the <code>schedules</code> and <code>schedule_runs</code> containers exist in Cosmos, and that the Azure Function URL + key are saved in Connections → Target.</p></div>';
+    el.innerHTML = '<div class="empty-state"><h3>Could not load schedules</h3><p style="color:var(--red)">' + escapeHtml(e.message) + '</p><p style="font-size:12px;color:var(--text3);margin-top:0.5rem">Check that the <code>schedules</code>, <code>runs</code>, and <code>job_versions</code> containers exist in the Cygenix Cosmos database, and that <code>COSMOS_CONNECTION_STRING</code> is set in Netlify.</p></div>';
   }
 }
 
