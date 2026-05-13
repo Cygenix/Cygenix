@@ -13689,10 +13689,74 @@ async function ta_loadSchedules() {
   }
 }
 
+// Compute composite jobs (Project Builder → Create task) that don't yet
+// have a schedule pointing at them. These live in localStorage.cygenix_jobs
+// — the Task Agent's primary value-add is scheduling them, so surfacing
+// them on the main screen is much more discoverable than hiding them
+// inside the + New schedule dropdown.
+function ta_unscheduledTasks() {
+  const jobs = safeArr('cygenix_jobs');
+  // Only show composite jobs ("packaged tasks") here — single-table import
+  // jobs would clutter this list without adding value, since they're rarely
+  // scheduled compared to the bundled tasks users build in Project Builder.
+  const composites = jobs.filter(j =>
+    j && (j.jobType === 'composite' || j.type === 'composite')
+  );
+  if (!composites.length) return [];
+  const scheduledJobIds = new Set((TA.schedules || []).map(s => s.jobId).filter(Boolean));
+  return composites.filter(j => !scheduledJobIds.has(j.id));
+}
+
+function ta_renderUnscheduledPanel() {
+  const tasks = ta_unscheduledTasks();
+  if (!tasks.length) return '';
+  const rows = tasks.map(j => {
+    const stepCount = j.childStepCount || (Array.isArray(j.childSteps) ? j.childSteps.length : 0);
+    const groups    = j.groupCount || '';
+    const meta = [
+      stepCount ? (stepCount + ' step' + (stepCount === 1 ? '' : 's')) : '',
+      groups    ? (groups + ' group' + (groups === 1 ? '' : 's'))     : '',
+      j.projectName ? ('from ' + j.projectName) : '',
+    ].filter(Boolean).join(' · ');
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:0.7rem 0.9rem;border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg2);margin-bottom:0.5rem">
+      <div style="min-width:0;flex:1">
+        <div style="display:flex;align-items:center;gap:0.5rem">
+          <span class="badge badge-amber" style="font-size:10px">⚙ needs schedule</span>
+          <strong style="color:var(--text)">${escapeHtml(j.name || '(unnamed)')}</strong>
+        </div>
+        ${meta ? '<div style="font-size:11px;color:var(--text3);margin-top:3px">' + escapeHtml(meta) + '</div>' : ''}
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="ta_scheduleJob('${escapeAttr(j.id)}')" title="Open the schedule dialog with this task preselected">Schedule it</button>
+    </div>`;
+  }).join('');
+  return `<div style="margin-bottom:1.25rem">
+    <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem">
+      Tasks awaiting a schedule
+      <span style="color:var(--text3);text-transform:none;letter-spacing:0;font-weight:400;margin-left:0.4rem">${tasks.length} packaged but not yet scheduled</span>
+    </div>
+    ${rows}
+  </div>`;
+}
+
+// Open the schedule modal with a job preselected — used by the "Schedule it"
+// button on the unscheduled-tasks panel.
+function ta_scheduleJob(jobId) {
+  ta_openScheduleModal(null, jobId);
+}
+
 function ta_renderSchedules() {
   const el = document.getElementById('ta-schedules-list');
+  const unscheduledHtml = ta_renderUnscheduledPanel();
+
   if (!TA.schedules.length) {
-    el.innerHTML = '<div class="empty-state" style="padding:2.5rem 2rem"><h3>No schedules yet</h3><p>Click <strong>+ New schedule</strong> to run a job on a cron or chain it after another.</p></div>';
+    // Empty state — but still show unscheduled tasks above if there are any,
+    // because that's the most likely reason the user opened this screen.
+    el.innerHTML = unscheduledHtml +
+      '<div class="empty-state" style="padding:2.5rem 2rem"><h3>No schedules yet</h3><p>' +
+      (unscheduledHtml
+        ? 'Click <strong>Schedule it</strong> above, or <strong>+ New schedule</strong> for a new one.'
+        : 'Click <strong>+ New schedule</strong> to run a job on a cron or chain it after another.') +
+      '</p></div>';
     return;
   }
   const rows = TA.schedules.map(s => {
@@ -13727,7 +13791,8 @@ function ta_renderSchedules() {
       </td>
     </tr>`;
   }).join('');
-  el.innerHTML = '<table class="jobs-table"><thead><tr>' +
+  el.innerHTML = unscheduledHtml +
+    '<table class="jobs-table"><thead><tr>' +
     '<th>Name / Job</th><th>Trigger</th><th>Next run</th><th>Last run</th><th>Status</th><th>Actions</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
@@ -13792,7 +13857,14 @@ async function ta_runNow(id, btn) {
 }
 
 // ── Schedule modal (create + edit) ──────────────────────────────────────
-async function ta_openScheduleModal(existingId) {
+// `existingId`     — if present, opens in edit mode for that schedule.
+// `preselectJobId` — only used in create mode (existingId null). When set,
+//                    the Job dropdown opens already pointing at that job and
+//                    the Name field is prefilled — used by the "Schedule it"
+//                    button on the unscheduled-tasks panel so the user goes
+//                    straight from "I packaged a task" to "configure the
+//                    trigger" with no hunting in the dropdown.
+async function ta_openScheduleModal(existingId, preselectJobId) {
   TA.editingScheduleId = existingId || null;
   document.getElementById('ta-sched-modal-title').textContent = existingId ? 'Edit schedule' : 'New schedule';
 
@@ -13830,12 +13902,24 @@ async function ta_openScheduleModal(existingId) {
       await ta_onJobPicked(s.jobVersionId);
     }
   } else {
+    // Create mode. If we were handed a preselectJobId (from the "Schedule it"
+    // button on the unscheduled-tasks panel), point the dropdown at it and
+    // seed the schedule name from the job name so the user can hit Save fast.
     document.getElementById('ta-sched-name').value = '';
     document.getElementById('ta-sched-cron').value = '';
     document.getElementById('ta-sched-enabled').checked = true;
     document.querySelector('input[name="ta-trigger-mode"][value="cron"]').checked = true;
     ta_toggleTriggerMode();
-    if (jobs.length) await ta_onJobPicked();
+    if (preselectJobId && jobs.some(j => j.id === preselectJobId)) {
+      jobsSel.value = preselectJobId;
+      const preJob = jobs.find(j => j.id === preselectJobId);
+      if (preJob && preJob.name) {
+        document.getElementById('ta-sched-name').value = preJob.name;
+      }
+      await ta_onJobPicked();
+    } else if (jobs.length) {
+      await ta_onJobPicked();
+    }
   }
   ta_updateCronPreview();
   document.getElementById('ta-schedule-modal').classList.add('open');
