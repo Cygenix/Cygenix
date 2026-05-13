@@ -488,19 +488,43 @@ async function runNow(userId, body, containers) {
   };
   await containers.runs.items.create(runDoc);
 
-  // Open the mssql connection, execute each step, accumulate results.
-  let pool;
+  // Open mssql pools lazily — target always, source only if needed. Some
+  // composite tasks have steps that run on source (e.g. SELECT/staging
+  // operations on the migration source database) and steps that run on
+  // target. Each step's `connOn` field decides which pool it uses. The
+  // canonical interpretation lives in project-builder.html line 4759:
+  //   const useConn = step.connOn === 'source' ? srcConn : tgtConn;
+  // — i.e. default is target, only 'source' diverts to the source pool.
+  let tgtPool = null;
+  let srcPool = null;
+  const ensureTgtPool = async () => {
+    if (tgtPool) return tgtPool;
+    tgtPool = await sql.connect(parseMssqlUrl(tgtConn));
+    return tgtPool;
+  };
+  const ensureSrcPool = async () => {
+    if (srcPool) return srcPool;
+    const srcConn = schedule.srcConn || '';
+    if (!srcConn) throw new Error('Step requires a source connection but the schedule has no srcConn stored. Edit and re-save the schedule.');
+    if (isHttpUrl(srcConn)) throw new Error('Azure Function source connections are not supported by run-now yet.');
+    if (!isMssqlConn(srcConn)) throw new Error('Source connection is not an mssql:// URL.');
+    // mssql package uses a global default pool; for a second concurrent
+    // pool we need a separate ConnectionPool instance.
+    srcPool = new sql.ConnectionPool(parseMssqlUrl(schedule.srcConn));
+    await srcPool.connect();
+    return srcPool;
+  };
+
   let totalRows = 0;
   const stepResults = [];
   let failedStep = null;
   let failedError = null;
   try {
-    pool = await sql.connect(parseMssqlUrl(tgtConn));
-
     for (let i = 0; i < stepsToRun.length; i++) {
       const step = stepsToRun[i];
       const stepLabel = step.tgtTable || step.name || ('step ' + (i + 1));
       const stepSql   = (step.sql || step.insertSQL || '').trim();
+      const connOn    = step.connOn === 'source' ? 'source' : 'target';
       if (!stepSql) {
         stepResults.push({ index: i, label: stepLabel, status: 'skipped', reason: 'no sql' });
         continue;
@@ -517,20 +541,21 @@ async function runNow(userId, body, containers) {
       }
       const stepStart = Date.now();
       try {
+        const pool = connOn === 'source' ? await ensureSrcPool() : await ensureTgtPool();
         const r = await pool.request().query(stepSql);
         const rows = Array.isArray(r.rowsAffected)
           ? r.rowsAffected.reduce((a,b) => a + b, 0)
           : (r.rowsAffected || 0);
         totalRows += rows;
         stepResults.push({
-          index: i, label: stepLabel, status: 'success',
+          index: i, label: stepLabel, status: 'success', connOn,
           rowsAffected: rows, durationMs: Date.now() - stepStart,
         });
       } catch (stepErr) {
         failedStep = i;
         failedError = stepErr;
         stepResults.push({
-          index: i, label: stepLabel, status: 'failed',
+          index: i, label: stepLabel, status: 'failed', connOn,
           durationMs: Date.now() - stepStart,
           errorMessage: String(stepErr.message || stepErr),
         });
@@ -540,7 +565,8 @@ async function runNow(userId, body, containers) {
   } catch (connErr) {
     failedError = connErr;
   } finally {
-    if (pool) { try { await pool.close(); } catch {} }
+    if (tgtPool) { try { await tgtPool.close(); } catch {} }
+    if (srcPool) { try { await srcPool.close(); } catch {} }
   }
 
   // Finalise the run record.
