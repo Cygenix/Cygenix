@@ -1,0 +1,180 @@
+/* cygenix-history.css
+ * --------------------
+ * Styles for the shared History modal. All selectors are scoped under
+ * .cygenix-history-modal so they don't collide with the host page's CSS.
+ */
+
+.cygenix-history-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--serif, system-ui, sans-serif);
+}
+.cygenix-history-modal.open { display: flex; }
+
+.cygenix-history-modal .ch-card {
+  background: var(--bg2, #1a1d24);
+  color: var(--text1, #e8e8e8);
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  border-radius: 8px;
+  width: min(900px, 92vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+
+.cygenix-history-modal .ch-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+}
+.cygenix-history-modal .ch-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.cygenix-history-modal .ch-sub {
+  font-size: 11px;
+  color: var(--text3, #8a8a8a);
+  margin-top: 2px;
+  font-family: var(--mono, monospace);
+}
+.cygenix-history-modal .ch-close {
+  background: transparent;
+  color: var(--text2, #c0c0c0);
+  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cygenix-history-modal .ch-close:hover { color: var(--text1, #fff); }
+
+.cygenix-history-modal .ch-body {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.cygenix-history-modal .ch-list {
+  border-right: 1px solid var(--border, rgba(255,255,255,0.08));
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.cygenix-history-modal .ch-row {
+  padding: 10px 14px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cygenix-history-modal .ch-row:hover {
+  background: var(--bg3, rgba(255,255,255,0.04));
+}
+.cygenix-history-modal .ch-row.active {
+  background: var(--bg3, rgba(255,255,255,0.06));
+  border-left-color: var(--accent, #6da9ff);
+}
+.cygenix-history-modal .ch-row-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono, monospace);
+}
+.cygenix-history-modal .ch-ver { font-weight: 600; color: var(--text1, #fff); }
+.cygenix-history-modal .ch-label {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cygenix-history-modal .ch-label.auto       { background: var(--accent-glow, rgba(109,169,255,0.15)); color: var(--accent, #6da9ff); }
+.cygenix-history-modal .ch-label.manual     { background: var(--teal-bg, rgba(45,212,191,0.15)); color: var(--teal, #2dd4bf); }
+.cygenix-history-modal .ch-label.pre-revert { background: var(--purple-bg, rgba(167,139,250,0.15)); color: var(--purple, #a78bfa); }
+
+.cygenix-history-modal .ch-meta {
+  color: var(--text3, #8a8a8a);
+  font-family: var(--mono, monospace);
+  font-size: 10px;
+}
+.cygenix-history-modal .ch-note {
+  color: var(--text2, #c0c0c0);
+  font-size: 11px;
+  font-style: italic;
+}
+
+.cygenix-history-modal .ch-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.cygenix-history-modal .ch-detail-header {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cygenix-history-modal .ch-detail-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+.cygenix-history-modal .ch-snapshot {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 18px;
+  font-family: var(--mono, monospace);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text2, #c0c0c0);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cygenix-history-modal .ch-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text3, #8a8a8a);
+  font-size: 12px;
+}
+
+.cygenix-history-modal .ch-btn {
+  font-family: var(--serif, system-ui, sans-serif);
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--border, rgba(255,255,255,0.15));
+  background: transparent;
+  color: var(--text2, #c0c0c0);
+}
+.cygenix-history-modal .ch-btn:hover { color: var(--text1, #fff); }
+.cygenix-history-modal .ch-btn.primary {
+  background: var(--accent, #6da9ff);
+  color: #000;
+  border-color: transparent;
+  font-weight: 600;
+}
+.cygenix-history-modal .ch-btn.danger {
+  background: var(--red-bg, rgba(240,70,70,0.15));
+  color: var(--red, #f04646);
+  border-color: rgba(240,70,70,0.3);
+}
+.cygenix-history-modal .ch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
