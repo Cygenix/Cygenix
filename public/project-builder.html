@@ -4939,6 +4939,128 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
   const wasisRuleCount = wasisAggRules.length;
   const wasisColCount  = wasisColSet.size;
 
+  // ── Aggregate parameter usages across migration steps ─────────────────────
+  //
+  // Mirrors the wasis aggregation above but for @@Token references. The
+  // scan looks at the SAME step.columnMapping that the runner actually
+  // used (so the report reflects what really ran, not what's saved
+  // somewhere). We capture both the token and the resolved value from
+  // CygenixParams (when available) so a future reader of the report
+  // can see "this run substituted @@Client with 'AcmeCorp'", which is
+  // the kind of audit trail you want when investigating "why did this
+  // row have THIS value?" months later.
+  //
+  // Three sources captured (same as the dashboard's Where used tab):
+  //   1. columnMapping[].literalValue
+  //   2. columnMapping[].fixedValue
+  //   3. columnMapping[].wasisRules[].newVal
+  //
+  // Inline SQL paths (insertSQL/otmSQL) are NOT captured into the per-
+  // column list — they're job-level rather than column-level, and the
+  // saved report already carries the SQL strings via the steps[] payload
+  // for anyone who wants to inspect them.
+  const PARAM_TOKEN_RE_RPT = /@@([A-Za-z_][A-Za-z0-9_]*)/g;
+  const SQL_GLOBALS_RPT = new Set([
+    'rowcount','trancount','version','spid','servername','identity',
+    'error','fetch_status','nestlevel','options','datefirst','language',
+    'lock_timeout','max_connections','max_precision','cursor_rows',
+    'remserver','idle','cpu_busy','io_busy','pack_received','pack_sent',
+    'packet_errors','connections','procid','textsize','total_errors',
+    'total_read','total_write'
+  ]);
+  const extractParamTokens = (s) => {
+    if (typeof s !== 'string' || !s.includes('@@')) return [];
+    const out = []; const seen = new Set();
+    let m;
+    PARAM_TOKEN_RE_RPT.lastIndex = 0;
+    while ((m = PARAM_TOKEN_RE_RPT.exec(s)) !== null){
+      const name = m[1];
+      if (SQL_GLOBALS_RPT.has(name.toLowerCase())) continue;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      out.push(name);
+    }
+    return out;
+  };
+  // Best-effort resolved-value lookup. If CygenixParams isn't loaded on
+  // this page, return null and the report just shows the token without
+  // resolution. Substitution may return the token unchanged when the
+  // parameter is undefined — also recorded as null so the report can
+  // surface "@@Unknown — UNRESOLVED" honestly.
+  const resolveParam = (token) => {
+    if (typeof CygenixParams === 'undefined') return null;
+    try {
+      const v = CygenixParams.substituteParams(token);
+      return v === token ? null : v;
+    } catch { return null; }
+  };
+
+  const paramUsageRecords = [];
+  const paramUsageSeen = new Set();
+  const paramUsageNames = new Set();
+  const addParamUsage = (jobId, jobName, srcTable, tgtTable, srcCol, tgtCol, source, expression, token) => {
+    // Dedup key: same param + job + tgtCol + source counts once. Without
+    // dedup, a column with literalValue '@@Client' would emit one record
+    // per (paramName, expr) pair; with dedup we only get the canonical
+    // one. Inline-SQL-style multi-token expressions DO get one record
+    // per token because the (token, expr) tuple is unique.
+    const key = (jobId||'') + '|' + (tgtCol||'') + '|' + (source||'') + '|' + token + '|' + (expression||'');
+    if (paramUsageSeen.has(key)) return;
+    paramUsageSeen.add(key);
+    paramUsageNames.add(token);
+    paramUsageRecords.push({
+      paramName:  token,
+      paramToken: '@@' + token,
+      resolved:   resolveParam('@@' + token),  // null if not registered
+      jobId, jobName,
+      srcTable: srcTable || '',
+      tgtTable: tgtTable || '',
+      srcCol:   srcCol   || '',
+      tgtCol:   tgtCol   || '',
+      source, expression
+    });
+  };
+
+  migrationSteps.forEach(s => {
+    const jobId   = s.jobId || '';
+    const jobName = s.name || s.jobId || '(unnamed)';
+    const srcTable = s.srcTable || '';
+    const tgtTable = s.tgtTable || '';
+    const mapping = Array.isArray(s.columnMapping) ? s.columnMapping : [];
+    mapping.forEach(m => {
+      if (!m) return;
+      const srcCol = m.srcCol || '';
+      const tgtCol = m.tgtCol || '';
+      // literalValue / fixedValue
+      ['literalValue', 'fixedValue'].forEach(fieldName => {
+        const v = m[fieldName];
+        if (typeof v !== 'string' || !v.includes('@@')) return;
+        const tokens = extractParamTokens(v);
+        tokens.forEach(tok => {
+          addParamUsage(jobId, jobName, srcTable, tgtTable, srcCol, tgtCol,
+            fieldName === 'literalValue' ? 'literal value' : 'fixed value',
+            v, tok);
+        });
+      });
+      // Was/Is rule newVal
+      const rules = Array.isArray(m.wasisRules) ? m.wasisRules : [];
+      rules.forEach(r => {
+        if (!r) return;
+        const newVal = r.newVal ?? r.is ?? r.to;
+        if (typeof newVal !== 'string' || !newVal.includes('@@')) return;
+        const oldVal = r.oldVal ?? r.was ?? r.from ?? '';
+        const tokens = extractParamTokens(newVal);
+        tokens.forEach(tok => {
+          addParamUsage(jobId, jobName, srcTable, tgtTable, srcCol, tgtCol,
+            'Was/Is rule', String(oldVal) + ' → ' + newVal, tok);
+        });
+      });
+    });
+  });
+
+  const paramUsageCount     = paramUsageRecords.length;
+  const paramUsageParamCount = paramUsageNames.size;
+
   // Get source/target table names from first migration step
   const firstMigStep = migrationSteps[0];
   const srcTableName = firstMigStep?.srcTable || '';
@@ -5003,6 +5125,16 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
     wasisRules:     wasisAggRules,
     wasisRuleCount,
     wasisColCount,
+    // Parameter usage summary — surfaced in the report's MIGRATION SUMMARY
+    // block, the stat cards, and a dedicated Parameters sheet in the Excel
+    // export. Same shape as wasisRules conceptually: a flat list of
+    // {paramName, jobName, srcTable, tgtCol, source, expression, resolved}
+    // records that the report renderer can group as it pleases. The two
+    // count fields mirror the wasis ones — total records vs distinct
+    // parameter names — for the stat cards.
+    paramUsage:        paramUsageRecords,
+    paramUsageCount,
+    paramUsageParamCount,
     warnings:     [
       ...steps.filter(s=>s.status==='failed').map(s=>'Job failed: '+(s.name||s.type)),
       ...steps.flatMap(s=>(s.warnings||[]).filter(w=>typeof w==='string'&&w.startsWith('TRUNCATION:')))
