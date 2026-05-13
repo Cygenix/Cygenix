@@ -9,6 +9,7 @@
      Must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-history.css">
 <!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
      BEFORE any content renders, preventing a flash of the wrong theme.
      Reads from cygenix_app_prefs (same key the Settings page writes to). -->
@@ -250,6 +251,8 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-wasis.js"></script>
 <script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
+<script src="/cygenix-api.js"></script>
+<script src="/cygenix-history.js"></script>
 
 <div id="cyg-sidebar-mount" data-active="object-mapping"></div>
 <script src="/cygenix-sidebar.js"></script>
@@ -275,6 +278,7 @@ body.cyg-collapsed{padding-left:54px}
       <button class="btn btn-teal btn-sm" onclick="openLoadMapModal()" title="Load an existing saved map">📂 Load map</button>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
       <input id="job-name-input" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Job name (optional)" maxlength="120" />
+      <button class="btn btn-ghost btn-sm" id="open-history-btn" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">🕐 History</button>
       <button class="btn btn-primary btn-sm" id="save-job-btn" onclick="saveAsJob()" disabled>💾 Save as job</button>
     </div>
   </div>
@@ -542,6 +546,7 @@ body.cyg-collapsed{padding-left:54px}
             <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none;color:var(--amber)">↩ Undo remove</button>
             <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
             <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
+            <button class="btn btn-ghost btn-sm" id="open-history-btn-2" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">🕐 History</button>
             <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn">💾 Save as job</button>
           </div>
         </div>
@@ -3253,6 +3258,20 @@ function saveAsJob(){
   // Saved successfully — drop the in-progress draft. The next page load will
   // hydrate from cygenix_jobs via ?edit= rather than from the WIP cache.
   if(typeof _wipDraftClear==='function') _wipDraftClear();
+
+  // Auto-snapshot the just-saved job. Fire-and-forget; the backend dedupes
+  // by content hash, so calling on every save is safe and a no-op if
+  // nothing changed since the previous version. Honours the "auto-snapshot
+  // on save" pref (default on). See cygenix-history.js for the no-op fallback.
+  try {
+    const savedJobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const justSaved = savedJobs.find(j => j.id === editJobId);
+    if (justSaved && window.CygenixHistory) {
+      window.CygenixHistory.autoSnapshot(justSaved);
+    }
+  } catch (e) {
+    console.warn('Auto-snapshot skipped:', e);
+  }
 }
 
 // ── Edit mode — load saved job ────────────────────────────────────────────────
@@ -4226,6 +4245,18 @@ async function aiJoinHelp(i){
   window.addEventListener('beforeunload', _wipDraftSave);
   window.addEventListener('pagehide',     _wipDraftSave);
 })();
+
+// If the currently-loaded job is reverted via the History modal, reload
+// the page so checkEditMode() rebuilds the editor from the new snapshot.
+// This is the simplest correct approach — the editor has too much state
+// (joins, OTM cards, was/is rules, srcWhere) to safely patch in-place.
+window.addEventListener('cygenix:job-reverted', (e) => {
+  if (e.detail && e.detail.jobId === editJobId) {
+    const url = new URL(location.href);
+    url.searchParams.set('edit', editJobId);
+    location.href = url.toString();
+  }
+});
 </script>
 <script src="/cookie-consent.js"></script>
 <script src="/cygenix-cookie-cleanup.js"></script>
