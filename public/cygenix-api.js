@@ -33,17 +33,50 @@
     } catch { return ''; }
   }
 
-  // Mirrors ta_resolveApi() in dashboard.html. Reads cygenix_fn_url and
-  // cygenix_fn_key from sessionStorage first, then falls back to localStorage.
+  // Mirrors ta_resolveApi() in dashboard.html — but extended to use the same
+  // multi-source lookup chain as impGetConn() (line ~11620), because
+  // ta_resolveApi alone fails on pages where CygenixConnections has not yet
+  // populated the flat session/local-storage keys.
+  //
+  // Priority (highest to lowest):
+  //   1. window.CygenixConnections.get() → tgtFnUrl/fnUrl + tgtFnKey/fnKey
+  //   2. localStorage.cygenix_project_connections (JSON wrapper) →
+  //        cygenix_fn_url / cygenix_fn_key fields
+  //   3. sessionStorage/localStorage flat keys cygenix_fn_url / cygenix_fn_key
+  //
   // Strips a trailing slash and ensures the URL contains /api so we can return
-  // a base ending in /api. Throws with a user-facing message if anything is
-  // missing — the History modal displays that message in the version list pane.
+  // a base ending in /api. Throws with a user-facing message if nothing is
+  // available — the History modal displays that message in the version list pane.
   function resolveApi() {
     const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
-    let fnUrl = ss('cygenix_fn_url');
-    const key = ss('cygenix_fn_key');
+
+    // Source 1: live CygenixConnections helper, if loaded.
+    let c = {};
+    try {
+      if (window.CygenixConnections && typeof window.CygenixConnections.get === 'function') {
+        c = window.CygenixConnections.get() || {};
+      }
+    } catch { c = {}; }
+
+    // Source 2: project-connections JSON wrapper in localStorage.
+    let pc = {};
+    try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch { pc = {}; }
+    const pcGet = k => (pc[k] != null ? String(pc[k]) : '');
+
+    // Compose with source 3 as final fallback.
+    let fnUrl = c.tgtFnUrl || c.fnUrl || pcGet('cygenix_fn_url') || ss('cygenix_fn_url');
+    const key = c.tgtFnKey || c.fnKey || pcGet('cygenix_fn_key') || ss('cygenix_fn_key');
+
     if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
     if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
+
+    // Guard: rule out non-HTTP values that have been observed mis-saved under
+    // cygenix_fn_url (e.g. raw connection strings like "mssql://host:port/db").
+    // Without this check we'd try to fetch() that string as an HTTPS endpoint
+    // and get a confusing network error.
+    if (!/^https?:\/\//i.test(fnUrl)) {
+      throw new Error('Azure Function URL is not a valid HTTP(S) URL. Go to Connections → Target → Azure Function and re-save.');
+    }
 
     fnUrl = fnUrl.replace(/\/+$/, '');
     const apiIdx = fnUrl.toLowerCase().lastIndexOf('/api');
