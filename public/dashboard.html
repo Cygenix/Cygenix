@@ -1891,6 +1891,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="cx-tab" data-sp-tab="usage" onclick="switchSysTab('usage')">
           📍 Where used
         </button>
+        <button class="cx-tab" data-sp-tab="conn-io" onclick="switchSysTab('conn-io')">
+          🔐 Import/Export connections
+        </button>
       </div>
 
       <!-- Tab: Parameters -->
@@ -2030,6 +2033,78 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="usageClearFilter();return false">clear the filter</a>.</div>
         </div>
       </div>
+
+      <!-- Tab: Import/Export Connections -->
+      <!-- Lets a user move their saved-connection secrets (DB passwords,
+           Azure Function keys) between browsers/machines manually. The
+           sanitised half of each saved connection already syncs through
+           Cosmos; the secret half is held only in the local secrets
+           store (see CygenixSavedConnSecrets) and never leaves the
+           browser via sync. This tab is the deliberate manual escape
+           hatch for those secrets. -->
+      <div id="sp-tab-conn-io" class="sp-panel" style="display:none;padding:1rem">
+        <div class="sp-hint" style="margin:-1rem -1rem 1rem;border-radius:0">
+          Export a portable bundle of your saved source/target connections to a JSON file,
+          or import a bundle previously exported from another browser or machine.
+          Use this to move saved connections (including passwords and Azure Function keys)
+          between devices — the saved-connection <em>names</em> sync automatically through
+          your account, but the <em>secrets</em> stay on the local device by design.
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
+          <!-- EXPORT CARD -->
+          <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:1rem">
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:13px;font-weight:600;margin-bottom:0.5rem">
+              ⬇ Export connections
+            </div>
+            <div style="font-size:12px;color:var(--text3);line-height:1.55;margin-bottom:0.85rem">
+              Pick which saved connections to include, then download a plaintext JSON file.
+            </div>
+            <div style="background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.3);border-radius:6px;padding:0.6rem 0.75rem;font-size:11px;color:var(--amber);line-height:1.5;margin-bottom:0.85rem">
+              ⚠ <strong>Plaintext export.</strong> The downloaded file contains database
+              passwords and Azure Function keys in cleartext. Treat it like a credentials
+              file — don't email it, don't commit it, delete it once imported.
+            </div>
+            <button class="btn btn-primary" onclick="connioOpenExportPicker()">
+              Choose connections to export…
+            </button>
+            <div id="connio-export-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:1em"></div>
+          </div>
+
+          <!-- IMPORT CARD -->
+          <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:1rem">
+            <div style="display:flex;align-items:center;gap:0.5rem;font-size:13px;font-weight:600;margin-bottom:0.5rem">
+              ⬆ Import connections
+            </div>
+            <div style="font-size:12px;color:var(--text3);line-height:1.55;margin-bottom:0.85rem">
+              Load a previously exported JSON file. You'll see what's in it and can pick
+              which entries to import. Existing entries with the same name will be replaced.
+            </div>
+            <input type="file" id="connio-import-file" accept=".json,application/json" style="display:none" onchange="connioReadImportFile(this)">
+            <button class="btn btn-primary" onclick="document.getElementById('connio-import-file').click()">
+              Choose JSON file…
+            </button>
+            <div id="connio-import-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:1em"></div>
+          </div>
+        </div>
+
+        <!-- Picker / preview area, populated dynamically by connioOpenExportPicker
+             (export flow) or connioReadImportFile (import flow). Hidden until
+             one of those is invoked. -->
+        <div id="connio-picker" style="display:none;margin-top:1rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;overflow:hidden">
+          <div style="padding:0.75rem 1rem;background:var(--bg3);border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+            <div id="connio-picker-title" style="font-size:13px;font-weight:600"></div>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+              <button class="btn btn-sm" onclick="connioPickerToggleAll(true)">Select all</button>
+              <button class="btn btn-sm" onclick="connioPickerToggleAll(false)">Clear</button>
+              <button class="btn btn-sm" onclick="connioPickerCancel()">Cancel</button>
+              <button class="btn btn-sm btn-primary" id="connio-picker-confirm" onclick="connioPickerConfirm()">Confirm</button>
+            </div>
+          </div>
+          <div id="connio-picker-body" style="max-height:360px;overflow-y:auto;padding:0.5rem 0"></div>
+        </div>
+      </div>
+
     </div>
     <!-- END SYSTEM PARAMETERS -->
 
@@ -9807,6 +9882,370 @@ function sconnDialectLabel(entry){
   return 'MSSQL';
 }
 
+// ══════════════════════════════════════════════════════════════════════════
+// IMPORT/EXPORT SAVED CONNECTIONS — manual transport for the secret half
+// ══════════════════════════════════════════════════════════════════════════
+// The sanitised half of every saved connection already round-trips via
+// Cosmos sync (see sconnSetAll / SYNC_KEYS). The secret half — connString
+// (with embedded password) and Azure Function fnKey — is stored only in
+// CygenixSavedConnSecrets on the local device and never reaches the
+// cloud. That's the deliberate security posture.
+//
+// This module is the manual escape hatch for moving those secrets
+// between browsers/machines: a user-driven export to a plaintext JSON
+// file and an import that puts the secrets back into the local store
+// on another device.
+//
+// All entry points are wired from the System parameters → Import/Export
+// connections tab. See switchSysTab('conn-io').
+// ══════════════════════════════════════════════════════════════════════════
+
+// Bundle format version. Bump when the shape changes so older imports
+// can warn the user instead of silently misreading fields. The bundle
+// is intentionally simple — just rehydrated sconn entries plus a small
+// header — so future versions should stay additive (new fields ignored
+// by older readers).
+const CONNIO_BUNDLE_VERSION = 1;
+
+// Pending picker state. Holds the rows being shown in the multi-select
+// picker plus the mode flag so connioPickerConfirm knows which path to
+// dispatch to. Reset on cancel/confirm and whenever a fresh picker is
+// opened. Keeping this in module-level state (not on the DOM) means
+// the picker survives DOM redraws and we don't have to parse checked
+// states back out of the markup at confirm time.
+let _connIoMode = null;   // 'export' | 'import' | null
+let _connIoRows = [];     // [{ key, entry, checked }]  key is index in source list
+
+// Status writer shared by both flows. `tone` is one of 'ok' | 'warn' |
+// 'err' | '' (neutral). Empty `msg` clears the line.
+function connioSetStatus(side, msg, tone){
+  const el = document.getElementById(side === 'export' ? 'connio-export-status' : 'connio-import-status');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.style.color =
+      tone === 'ok'   ? 'var(--green)'
+    : tone === 'warn' ? 'var(--amber)'
+    : tone === 'err'  ? 'var(--red)'
+    :                   'var(--text3)';
+}
+
+// Reset and hide the picker. Called by Cancel, by Confirm after success,
+// and by switchSysTab when the tab is reopened (so a half-completed
+// picker from last time doesn't reappear).
+function connioPickerCancel(){
+  _connIoMode = null;
+  _connIoRows = [];
+  const pick = document.getElementById('connio-picker');
+  if (pick) pick.style.display = 'none';
+  const body = document.getElementById('connio-picker-body');
+  if (body) body.innerHTML = '';
+}
+
+// Render the picker rows from _connIoRows. Called whenever the row list
+// changes (initial open, toggle-all). Individual checkbox toggles
+// update _connIoRows directly via the inline onchange and don't need
+// a full re-render.
+function connioPickerRender(titleText, confirmLabel){
+  const pick = document.getElementById('connio-picker');
+  const titleEl = document.getElementById('connio-picker-title');
+  const body = document.getElementById('connio-picker-body');
+  const confirmBtn = document.getElementById('connio-picker-confirm');
+  if (!pick || !body || !titleEl || !confirmBtn) return;
+
+  titleEl.textContent = titleText;
+  confirmBtn.textContent = confirmLabel;
+  pick.style.display = '';
+
+  if (!_connIoRows.length){
+    body.innerHTML = '<div style="padding:1.5rem;text-align:center;color:var(--text3);font-size:12px">No saved connections found.</div>';
+    return;
+  }
+
+  // Build rows. Each row shows: checkbox, side (source/target), name,
+  // dialect chip, sanitised preview. Index encoded as data-idx so the
+  // change handler can update _connIoRows without a closure per row.
+  const rowsHtml = _connIoRows.map((row, idx) => {
+    const e = row.entry;
+    const sideLabel = (e.side === 'source') ? 'SRC' : (e.side === 'target') ? 'TGT' : '?';
+    const sideColor = (e.side === 'source') ? 'var(--accent)' : 'var(--green)';
+    const dialect = sconnDialectLabel(e);
+    const preview = sconnPreview(e);
+    const name = e.name || '(unnamed)';
+    return (
+      '<label style="display:flex;align-items:center;gap:0.75rem;padding:0.5rem 1rem;cursor:pointer;border-bottom:0.5px solid var(--border)" '
+      + 'onmouseover="this.style.background=\'var(--bg3)\'" onmouseout="this.style.background=\'\'">'
+      + '<input type="checkbox" data-connio-idx="' + idx + '" ' + (row.checked ? 'checked' : '') + ' onchange="connioPickerToggleRow(this)">'
+      + '<span style="font-family:var(--mono);font-size:10px;color:' + sideColor + ';min-width:32px">' + sideLabel + '</span>'
+      + '<span style="font-family:var(--mono);font-size:10px;color:var(--text3);min-width:42px">' + dialect + '</span>'
+      + '<span style="font-size:12px;font-weight:500;min-width:140px">' + connioEsc(name) + '</span>'
+      + '<span style="font-family:var(--mono);font-size:11px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + connioEsc(preview) + '</span>'
+      + '</label>'
+    );
+  }).join('');
+
+  body.innerHTML = rowsHtml;
+}
+
+// HTML escape helper — local copy so this module has no dependency on
+// the rest of the file's helpers. Same shape as wiEsc.
+function connioEsc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Single-row toggle handler. Bound inline via onchange; reads the
+// row index from data-connio-idx and flips the checked flag in
+// module state. No re-render — the DOM already reflects the new
+// checkbox state.
+function connioPickerToggleRow(input){
+  const idx = parseInt(input.getAttribute('data-connio-idx'), 10);
+  if (Number.isNaN(idx) || !_connIoRows[idx]) return;
+  _connIoRows[idx].checked = !!input.checked;
+}
+
+// Select-all / clear-all. Toggles every row to the same state and
+// re-renders so the checkboxes reflect it.
+function connioPickerToggleAll(checked){
+  _connIoRows.forEach(r => { r.checked = !!checked; });
+  // Re-render in the same mode so the title/confirm label are preserved.
+  const titleText = _connIoMode === 'export' ? 'Select connections to export' : 'Select connections to import';
+  const confirmLabel = _connIoMode === 'export' ? 'Download bundle' : 'Import selected';
+  connioPickerRender(titleText, confirmLabel);
+}
+
+// ─── EXPORT FLOW ──────────────────────────────────────────────────────────
+
+// Open the multi-select picker pre-populated with every locally
+// available saved connection. sconnGetAll() already rehydrates each
+// entry's secrets from the local secrets store before returning, so
+// the rows here have the same shape as a freshly-saved entry —
+// connString and fnKey present. If the local secrets store is empty
+// (e.g. user just signed in on a new browser), those fields will be
+// blank and there's nothing useful to export from this device.
+function connioOpenExportPicker(){
+  const entries = sconnGetAll();
+  if (!entries.length){
+    connioSetStatus('export', 'No saved connections to export on this device.', 'warn');
+    return;
+  }
+  // Warn (but don't block) if every entry is missing its secret — the
+  // export would still write a file, but it'd contain only sanitised
+  // data, which the user almost certainly doesn't want. Common case
+  // when the user is exporting from the wrong machine.
+  const anyHasSecret = entries.some(e => (e.connString && e.connString.length) || (e.fnKey && e.fnKey.length));
+  if (!anyHasSecret){
+    connioSetStatus('export', 'Warning: no secrets found locally for any saved connection. Export would contain names only. Are you on the right device?', 'warn');
+  } else {
+    connioSetStatus('export', '');
+  }
+
+  _connIoMode = 'export';
+  _connIoRows = entries.map(e => ({ entry: e, checked: true }));
+  connioPickerRender('Select connections to export', 'Download bundle');
+}
+
+// Build the JSON bundle from the ticked rows and trigger a download.
+// Filename includes ISO date so multiple exports don't collide.
+function connioDoExport(){
+  const picked = _connIoRows.filter(r => r.checked).map(r => r.entry);
+  if (!picked.length){
+    connioSetStatus('export', 'Pick at least one connection to export.', 'warn');
+    return;
+  }
+  const bundle = {
+    type: 'cygenix-connections-bundle',
+    version: CONNIO_BUNDLE_VERSION,
+    exportedAt: new Date().toISOString(),
+    count: picked.length,
+    // Entries are the full rehydrated shape (id, name, side, mode,
+    // connString, fnUrl, fnKey, database). We deliberately copy each
+    // entry through JSON.stringify/parse below to drop any internal
+    // helper fields the rehydrator may have attached.
+    entries: picked,
+  };
+  let json;
+  try {
+    json = JSON.stringify(JSON.parse(JSON.stringify(bundle)), null, 2);
+  } catch (e) {
+    console.error('[connio] export serialisation failed:', e);
+    connioSetStatus('export', 'Failed to build export bundle. See console.', 'err');
+    return;
+  }
+
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const today = new Date().toISOString().slice(0, 10);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cygenix-connections-' + today + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revoke after the click has had time to start the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+
+  connioSetStatus('export', 'Exported ' + picked.length + ' connection(s). Handle the file carefully — it contains plaintext credentials.', 'ok');
+  connioPickerCancel();
+}
+
+// ─── IMPORT FLOW ──────────────────────────────────────────────────────────
+
+// File picker change handler. Reads the file, parses it, validates
+// the bundle shape, and opens the multi-select picker so the user
+// can choose which entries to actually import. The file input is
+// cleared at the end so re-selecting the same file fires `change`
+// again — browsers suppress the event when the value is unchanged.
+function connioReadImportFile(input){
+  const file = input && input.files && input.files[0];
+  if (!file){
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    let bundle;
+    try {
+      bundle = JSON.parse(String(reader.result || ''));
+    } catch (e) {
+      connioSetStatus('import', 'Could not parse file as JSON.', 'err');
+      input.value = '';
+      return;
+    }
+    if (!bundle || bundle.type !== 'cygenix-connections-bundle' || !Array.isArray(bundle.entries)){
+      connioSetStatus('import', 'File is not a Cygenix connections bundle.', 'err');
+      input.value = '';
+      return;
+    }
+    if (typeof bundle.version === 'number' && bundle.version > CONNIO_BUNDLE_VERSION){
+      connioSetStatus('import', 'Bundle was created by a newer Cygenix version (v' + bundle.version + '). Some fields may be ignored.', 'warn');
+      // Continue anyway — fields we don't know about are dropped by the
+      // shape filter below, so the worst case is a clean import of
+      // whatever still matches the current schema.
+    } else {
+      connioSetStatus('import', 'Loaded ' + bundle.entries.length + ' entry/entries from ' + (bundle.exportedAt || 'unknown date') + '. Choose which to import.', 'ok');
+    }
+
+    // Normalise each entry: keep only known fields, default missing
+    // ones. Drops anything alien while preserving the round-trip shape.
+    const norm = bundle.entries
+      .filter(e => e && typeof e === 'object')
+      .map(e => ({
+        id:         String(e.id || '').trim(),
+        name:       String(e.name || '').trim(),
+        side:       e.side === 'target' ? 'target' : 'source',
+        mode:       e.mode === 'azure' ? 'azure' : 'direct',
+        connString: typeof e.connString === 'string' ? e.connString : '',
+        database:   typeof e.database === 'string' ? e.database : '',
+        fnUrl:      typeof e.fnUrl === 'string' ? e.fnUrl : '',
+        fnKey:      typeof e.fnKey === 'string' ? e.fnKey : '',
+      }))
+      .filter(e => e.name);  // drop blank-name entries — nothing to merge against
+
+    if (!norm.length){
+      connioSetStatus('import', 'Bundle had no usable entries (missing names).', 'warn');
+      input.value = '';
+      return;
+    }
+
+    _connIoMode = 'import';
+    _connIoRows = norm.map(e => ({ entry: e, checked: true }));
+    connioPickerRender('Select connections to import', 'Import selected');
+    input.value = '';
+  };
+  reader.onerror = () => {
+    connioSetStatus('import', 'Could not read file.', 'err');
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// Confirm handler for the import flow. Merges the picked entries
+// into the existing saved-connections list:
+//   • Match by name + side (case-insensitive). If an existing entry
+//     matches, replace it in place (keeps the existing id so any
+//     references stay stable). If not, append as a new entry with a
+//     fresh id.
+//   • All writes go through sconnSetAll, which splits each entry
+//     into sanitised (synced) and secret (local-only) halves. So
+//     the secrets land in CygenixSavedConnSecrets, the sanitised
+//     half lands in cygenix_saved_connections, and the next Cosmos
+//     sync push uploads the sanitised half.
+function connioDoImport(){
+  const picked = _connIoRows.filter(r => r.checked).map(r => r.entry);
+  if (!picked.length){
+    connioSetStatus('import', 'Pick at least one entry to import.', 'warn');
+    return;
+  }
+
+  const existing = sconnGetAll();
+  // Build a lookup of existing entries by lowercase name+side. Same key
+  // shape used by the merge logic. Two entries with the same name on
+  // opposite sides (source vs target) are different rows, so the side
+  // is part of the key.
+  const keyOf = e => (String(e.name || '').toLowerCase() + '\0' + (e.side || 'source'));
+  const byKey = new Map();
+  existing.forEach((e, i) => byKey.set(keyOf(e), i));
+
+  let replaced = 0;
+  let added = 0;
+  const merged = existing.slice();
+
+  picked.forEach(inc => {
+    const k = keyOf(inc);
+    const idx = byKey.get(k);
+    if (idx != null){
+      // Replace, but keep the existing id so any references survive.
+      const keepId = merged[idx] && merged[idx].id ? merged[idx].id : (inc.id || ('sconn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)));
+      merged[idx] = Object.assign({}, inc, { id: keepId });
+      replaced++;
+    } else {
+      // Append. Ensure an id is present — sconnSetAll's sanitiser
+      // requires it to route secrets correctly.
+      const id = inc.id && inc.id.trim() ? inc.id : ('sconn_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7));
+      merged.push(Object.assign({}, inc, { id }));
+      byKey.set(k, merged.length - 1);
+      added++;
+    }
+  });
+
+  try {
+    sconnSetAll(merged);
+  } catch (e) {
+    console.error('[connio] import write failed:', e);
+    connioSetStatus('import', 'Import failed during save. See console.', 'err');
+    return;
+  }
+
+  // Re-render saved-connection chips on the Connections page so the
+  // import is visible immediately when the user navigates over.
+  if (typeof sconnRender === 'function'){
+    try { sconnRender('source'); sconnRender('target'); } catch(e){ /* benign */ }
+  }
+
+  connioSetStatus('import',
+    'Import done — added ' + added + ', replaced ' + replaced + '. Cloud sync will push the names; secrets stay on this device.',
+    'ok'
+  );
+  connioPickerCancel();
+}
+
+// Generic confirm dispatcher. The picker is shared between flows so
+// the button needs to route based on the current mode.
+function connioPickerConfirm(){
+  if (_connIoMode === 'export'){ connioDoExport(); return; }
+  if (_connIoMode === 'import'){ connioDoImport(); return; }
+  // No active mode — nothing to confirm. Treat as cancel.
+  connioPickerCancel();
+}
+
+// Expose to window so the inline onclick handlers in the tab markup
+// can find them regardless of which <script> block executed first.
+// Same pattern as sconnSecretsMigrationOnce above.
+window.connioOpenExportPicker  = connioOpenExportPicker;
+window.connioReadImportFile    = connioReadImportFile;
+window.connioPickerToggleAll   = connioPickerToggleAll;
+window.connioPickerToggleRow   = connioPickerToggleRow;
+window.connioPickerCancel      = connioPickerCancel;
+window.connioPickerConfirm     = connioPickerConfirm;
+
 // Save current connection under a name. Reads the live fields.
 function sconnSaveAs(side){
   // Read the current mode + fields
@@ -12407,22 +12846,26 @@ function switchSysTab(tab){
   const tabParams = document.getElementById('sp-tab-params');
   const tabWasis  = document.getElementById('sp-tab-wasis');
   const tabUsage  = document.getElementById('sp-tab-usage');
+  const tabConnIo = document.getElementById('sp-tab-conn-io');
   const toolParams = document.getElementById('sp-toolbar-params');
   const toolWasis  = document.getElementById('sp-toolbar-wasis');
   const subParams  = document.getElementById('sp-view-sub-params');
   const subWasis   = document.getElementById('sp-view-sub-wasis');
   const title      = document.getElementById('sp-view-title');
 
-  // Three-way tab visibility. The toolbars and sub-titles toggle alongside
-  // the panels — the Usage tab has its own toolbar inline (Filter, Refresh)
-  // so it doesn't need a top-bar toolbar like the others.
+  // Four-way tab visibility. The toolbars and sub-titles toggle alongside
+  // the panels — the Usage and Conn-IO tabs have their own inline toolbars
+  // so they don't need a top-bar toolbar like Params/Was-Is do.
   const onParams = tab === 'params';
   const onWasis  = tab === 'wasis';
   const onUsage  = tab === 'usage';
+  const onConnIo = tab === 'conn-io';
   if (tabParams) tabParams.style.display = onParams ? '' : 'none';
   if (tabWasis)  tabWasis.style.display  = onWasis  ? '' : 'none';
   if (tabUsage)  tabUsage.style.display  = onUsage  ? '' : 'none';
-  // Existing toolbars only apply to Params/Was-Is — Usage handles its own.
+  if (tabConnIo) tabConnIo.style.display = onConnIo ? '' : 'none';
+  // Existing toolbars only apply to Params/Was-Is — Usage and Conn-IO
+  // handle their own.
   if (toolParams) toolParams.style.display = onParams ? '' : 'none';
   if (toolWasis)  toolWasis.style.display  = onWasis  ? '' : 'none';
   if (subParams) subParams.style.display = onParams ? '' : 'none';
@@ -12430,7 +12873,8 @@ function switchSysTab(tab){
   if (title){
     title.textContent = onParams ? '⚙ System parameters'
                       : onWasis  ? '🔄 Was/Is value mapping'
-                      :            '📍 Where parameters are used';
+                      : onUsage  ? '📍 Where parameters are used'
+                      :            '🔐 Import / Export connections';
   }
 
   // Lazy-init the Was/Is tab the first time it's opened
@@ -12439,6 +12883,10 @@ function switchSysTab(tab){
   // not on every page load. Re-scan on every tab open so changes made
   // in other tabs/pages show up.
   if (onUsage){ usageRefresh(); }
+  // Conn-IO has no init — it's all on-demand via button clicks. But
+  // clear any half-completed picker state from a previous visit so
+  // the tab opens clean.
+  if (onConnIo){ connioPickerCancel(); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
