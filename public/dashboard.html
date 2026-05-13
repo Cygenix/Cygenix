@@ -1708,6 +1708,69 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
       </div>
 
+      <!-- ─── Import/Export Connections — nested under Settings ─── -->
+      <!-- Manual transport for the *secret* half of saved connections
+           (DB passwords, Azure Function keys). The sanitised half
+           (names, host fragments) already round-trips through Cosmos
+           sync; secrets are held only in the local CygenixSavedConnSecrets
+           store by design and never sync. This section is the deliberate
+           manual escape hatch for moving secrets between browsers/machines.
+           Sits below Backup & Restore because it's the same conceptual
+           family (move data between devices) but at a finer granularity. -->
+      <div style="margin-top:2.5rem;padding-top:1.5rem;border-top:0.5px solid var(--border)">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">🔐 Import / Export connections</div>
+            <div class="panel-sub">Move saved source/target connections — including passwords and Azure Function keys — between devices. Connection <em>names</em> sync automatically through your account; <em>secrets</em> stay local by design, and this is how you move them manually.</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
+          <!-- EXPORT CARD -->
+          <div class="panel">
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">⬇ Export connections</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Pick which saved connections to include, then download a plaintext JSON file.</div>
+            <div style="background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.3);border-radius:6px;padding:0.6rem 0.75rem;font-size:11px;color:var(--amber);line-height:1.5;margin-bottom:1rem">
+              ⚠ <strong>Plaintext export.</strong> The downloaded file contains database
+              passwords and Azure Function keys in cleartext. Treat it like a credentials
+              file — don't email it, don't commit it, delete it once imported.
+            </div>
+            <button class="btn btn-primary" onclick="connioOpenExportPicker()" style="width:100%;justify-content:center">
+              Choose connections to export…
+            </button>
+            <div id="connio-export-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:1em"></div>
+          </div>
+
+          <!-- IMPORT CARD -->
+          <div class="panel">
+            <div style="font-size:13px;font-weight:600;margin-bottom:0.875rem">⬆ Import connections</div>
+            <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Load a previously exported JSON file. You'll see what's in it and can pick which entries to import. Existing entries with the same name will be replaced.</div>
+            <div style="border:1.5px dashed var(--border2);border-radius:var(--r);padding:1.5rem;text-align:center;cursor:pointer;background:var(--bg3);margin-bottom:0.875rem" onclick="document.getElementById('connio-import-file').click()">
+              <input type="file" id="connio-import-file" accept=".json,application/json" style="display:none" onchange="connioReadImportFile(this)">
+              <div style="font-size:24px;margin-bottom:0.5rem;opacity:0.4">🔐</div>
+              <div style="font-size:13px;color:var(--text2)">Click to choose a connections JSON file</div>
+            </div>
+            <div id="connio-import-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:1em"></div>
+          </div>
+        </div>
+
+        <!-- Shared picker / preview area, populated dynamically by
+             connioOpenExportPicker (export flow) or connioReadImportFile
+             (import flow). Hidden until one of those is invoked. -->
+        <div id="connio-picker" class="panel" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:0.75rem">
+            <div id="connio-picker-title" style="font-size:13px;font-weight:600"></div>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+              <button class="btn btn-sm" onclick="connioPickerToggleAll(true)">Select all</button>
+              <button class="btn btn-sm" onclick="connioPickerToggleAll(false)">Clear</button>
+              <button class="btn btn-sm" onclick="connioPickerCancel()">Cancel</button>
+              <button class="btn btn-sm btn-primary" id="connio-picker-confirm" onclick="connioPickerConfirm()">Confirm</button>
+            </div>
+          </div>
+          <div id="connio-picker-body" style="max-height:360px;overflow-y:auto;border:0.5px solid var(--border);border-radius:6px;background:var(--bg3)"></div>
+        </div>
+      </div>
+
     </div>
     <!-- END PROJECT SETTINGS -->
 
@@ -1891,9 +1954,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="cx-tab" data-sp-tab="usage" onclick="switchSysTab('usage')">
           📍 Where used
         </button>
-        <button class="cx-tab" data-sp-tab="conn-io" onclick="switchSysTab('conn-io')">
-          🔐 Import/Export connections
-        </button>
       </div>
 
       <!-- Tab: Parameters -->
@@ -2033,78 +2093,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="font-size:11px;margin-top:0.4rem">Try a different search term or <a href="#" onclick="usageClearFilter();return false">clear the filter</a>.</div>
         </div>
       </div>
-
-      <!-- Tab: Import/Export Connections -->
-      <!-- Lets a user move their saved-connection secrets (DB passwords,
-           Azure Function keys) between browsers/machines manually. The
-           sanitised half of each saved connection already syncs through
-           Cosmos; the secret half is held only in the local secrets
-           store (see CygenixSavedConnSecrets) and never leaves the
-           browser via sync. This tab is the deliberate manual escape
-           hatch for those secrets. -->
-      <div id="sp-tab-conn-io" class="sp-panel" style="display:none;padding:1rem">
-        <div class="sp-hint" style="margin:-1rem -1rem 1rem;border-radius:0">
-          Export a portable bundle of your saved source/target connections to a JSON file,
-          or import a bundle previously exported from another browser or machine.
-          Use this to move saved connections (including passwords and Azure Function keys)
-          between devices — the saved-connection <em>names</em> sync automatically through
-          your account, but the <em>secrets</em> stay on the local device by design.
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
-          <!-- EXPORT CARD -->
-          <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:1rem">
-            <div style="display:flex;align-items:center;gap:0.5rem;font-size:13px;font-weight:600;margin-bottom:0.5rem">
-              ⬇ Export connections
-            </div>
-            <div style="font-size:12px;color:var(--text3);line-height:1.55;margin-bottom:0.85rem">
-              Pick which saved connections to include, then download a plaintext JSON file.
-            </div>
-            <div style="background:rgba(245,158,11,0.08);border:0.5px solid rgba(245,158,11,0.3);border-radius:6px;padding:0.6rem 0.75rem;font-size:11px;color:var(--amber);line-height:1.5;margin-bottom:0.85rem">
-              ⚠ <strong>Plaintext export.</strong> The downloaded file contains database
-              passwords and Azure Function keys in cleartext. Treat it like a credentials
-              file — don't email it, don't commit it, delete it once imported.
-            </div>
-            <button class="btn btn-primary" onclick="connioOpenExportPicker()">
-              Choose connections to export…
-            </button>
-            <div id="connio-export-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:1em"></div>
-          </div>
-
-          <!-- IMPORT CARD -->
-          <div style="background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:1rem">
-            <div style="display:flex;align-items:center;gap:0.5rem;font-size:13px;font-weight:600;margin-bottom:0.5rem">
-              ⬆ Import connections
-            </div>
-            <div style="font-size:12px;color:var(--text3);line-height:1.55;margin-bottom:0.85rem">
-              Load a previously exported JSON file. You'll see what's in it and can pick
-              which entries to import. Existing entries with the same name will be replaced.
-            </div>
-            <input type="file" id="connio-import-file" accept=".json,application/json" style="display:none" onchange="connioReadImportFile(this)">
-            <button class="btn btn-primary" onclick="document.getElementById('connio-import-file').click()">
-              Choose JSON file…
-            </button>
-            <div id="connio-import-status" style="font-size:11px;color:var(--text3);margin-top:0.75rem;font-family:var(--mono);min-height:1em"></div>
-          </div>
-        </div>
-
-        <!-- Picker / preview area, populated dynamically by connioOpenExportPicker
-             (export flow) or connioReadImportFile (import flow). Hidden until
-             one of those is invoked. -->
-        <div id="connio-picker" style="display:none;margin-top:1rem;background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;overflow:hidden">
-          <div style="padding:0.75rem 1rem;background:var(--bg3);border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
-            <div id="connio-picker-title" style="font-size:13px;font-weight:600"></div>
-            <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
-              <button class="btn btn-sm" onclick="connioPickerToggleAll(true)">Select all</button>
-              <button class="btn btn-sm" onclick="connioPickerToggleAll(false)">Clear</button>
-              <button class="btn btn-sm" onclick="connioPickerCancel()">Cancel</button>
-              <button class="btn btn-sm btn-primary" id="connio-picker-confirm" onclick="connioPickerConfirm()">Confirm</button>
-            </div>
-          </div>
-          <div id="connio-picker-body" style="max-height:360px;overflow-y:auto;padding:0.5rem 0"></div>
-        </div>
-      </div>
-
     </div>
     <!-- END SYSTEM PARAMETERS -->
 
@@ -12846,26 +12834,22 @@ function switchSysTab(tab){
   const tabParams = document.getElementById('sp-tab-params');
   const tabWasis  = document.getElementById('sp-tab-wasis');
   const tabUsage  = document.getElementById('sp-tab-usage');
-  const tabConnIo = document.getElementById('sp-tab-conn-io');
   const toolParams = document.getElementById('sp-toolbar-params');
   const toolWasis  = document.getElementById('sp-toolbar-wasis');
   const subParams  = document.getElementById('sp-view-sub-params');
   const subWasis   = document.getElementById('sp-view-sub-wasis');
   const title      = document.getElementById('sp-view-title');
 
-  // Four-way tab visibility. The toolbars and sub-titles toggle alongside
-  // the panels — the Usage and Conn-IO tabs have their own inline toolbars
-  // so they don't need a top-bar toolbar like Params/Was-Is do.
+  // Three-way tab visibility. The toolbars and sub-titles toggle alongside
+  // the panels — the Usage tab has its own toolbar inline (Filter, Refresh)
+  // so it doesn't need a top-bar toolbar like the others.
   const onParams = tab === 'params';
   const onWasis  = tab === 'wasis';
   const onUsage  = tab === 'usage';
-  const onConnIo = tab === 'conn-io';
   if (tabParams) tabParams.style.display = onParams ? '' : 'none';
   if (tabWasis)  tabWasis.style.display  = onWasis  ? '' : 'none';
   if (tabUsage)  tabUsage.style.display  = onUsage  ? '' : 'none';
-  if (tabConnIo) tabConnIo.style.display = onConnIo ? '' : 'none';
-  // Existing toolbars only apply to Params/Was-Is — Usage and Conn-IO
-  // handle their own.
+  // Existing toolbars only apply to Params/Was-Is — Usage handles its own.
   if (toolParams) toolParams.style.display = onParams ? '' : 'none';
   if (toolWasis)  toolWasis.style.display  = onWasis  ? '' : 'none';
   if (subParams) subParams.style.display = onParams ? '' : 'none';
@@ -12873,8 +12857,7 @@ function switchSysTab(tab){
   if (title){
     title.textContent = onParams ? '⚙ System parameters'
                       : onWasis  ? '🔄 Was/Is value mapping'
-                      : onUsage  ? '📍 Where parameters are used'
-                      :            '🔐 Import / Export connections';
+                      :            '📍 Where parameters are used';
   }
 
   // Lazy-init the Was/Is tab the first time it's opened
@@ -12883,10 +12866,6 @@ function switchSysTab(tab){
   // not on every page load. Re-scan on every tab open so changes made
   // in other tabs/pages show up.
   if (onUsage){ usageRefresh(); }
-  // Conn-IO has no init — it's all on-demand via button clicks. But
-  // clear any half-completed picker state from a previous visit so
-  // the tab opens clean.
-  if (onConnIo){ connioPickerCancel(); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
