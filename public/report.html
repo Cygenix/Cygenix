@@ -421,6 +421,17 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
     <div class="grid-wrap" id="grid-mapping"></div>
     <div id="col-mapping-list" style="display:none"></div>
   </div>
+  <!-- PARAMETERS USED — surfaced when the run touched any @@Token references.
+       Hidden entirely when paramUsage is empty (most runs without parameters).
+       Same DataGrid component as Column Mapping so sort/filter/pivot/export
+       come for free. -->
+  <div class="section" id="params-used-section" style="display:none">
+    <div class="section-title">Parameters used</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:0.75rem;line-height:1.5">
+      Every system parameter reference (<code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:11px">@@Token</code>) the runner substituted during this migration. Use this to audit which columns ended up populated from runtime parameters rather than source data.
+    </div>
+    <div class="grid-wrap" id="grid-params-used"></div>
+  </div>
   <!-- WARNINGS & NOTES -->
   <div class="section" id="warnings-section" style="display:none">
     <div class="section-title">Warnings &amp; notes</div>
@@ -1000,6 +1011,65 @@ function renderReport(d) {
     initialShowTotals: mappingConfig.showTotals,
     calcColumns:       mappingConfig.calcColumns,
   });
+
+  // ── Parameters used ─────────────────────────────────────────────────────
+  // Mirror the column-mapping grid setup pattern: DataGrid with the same
+  // facilities (sort, group, pivot, export). Section is shown only when
+  // paramUsage has records — empty payload means the run didn't reference
+  // any system parameters and the section stays hidden to avoid noise.
+  //
+  // Backward-compat: legacy reports saved before paramUsage was added
+  // have d.paramUsage === undefined, which falls to the `if` check below
+  // and the section stays hidden. No retrofit needed.
+  const paramUsageRows = Array.isArray(d.paramUsage) ? d.paramUsage : [];
+  if (paramUsageRows.length > 0) {
+    document.getElementById('params-used-section').style.display = 'block';
+    const paramsConfig = (reportConfig && reportConfig.grids && reportConfig.grids.paramsUsed) || {};
+    window._grids.paramsUsed = new DataGrid({
+      mount: document.getElementById('grid-params-used'),
+      title: 'parameters_used',
+      readonly: true,
+      columns: [
+        // paramToken first so usages of the same parameter cluster naturally
+        // when sorted (DataGrid sorts the first column ascending by default
+        // unless overridden). The token is the headline; resolved value is
+        // the next most important column for an auditor.
+        { key: 'paramToken', label: 'Parameter',     type: 'text', mono: true, color: 'accent', bold: true },
+        { key: 'resolved',   label: 'Resolved value', type: 'text', mono: true, size: 11,
+          // Render undefined/null as a clear "unresolved" marker rather
+          // than a blank cell, so reviewers immediately spot typo'd
+          // parameter names that the runner inserted as literal text.
+          render: v => v != null && v !== ''
+            ? '<span style="color:var(--green)">' + String(v) + '</span>'
+            : '<span style="color:var(--amber)">⚠ unresolved</span>' },
+        { key: 'jobName',    label: 'Job',           type: 'text', size: 12 },
+        { key: 'srcTable',   label: 'Source table',  type: 'text', mono: true, size: 11, muted: true },
+        { key: 'tgtCol',     label: 'Target column', type: 'text', mono: true,
+          render: v => v || '<span style="color:var(--text3)">—</span>' },
+        { key: 'source',     label: 'Via',           type: 'text', size: 11, muted: true },
+        { key: 'expression', label: 'Expression',    type: 'text', mono: true, size: 11,
+          // Truncate long expressions on render but keep the full string in
+          // the title attribute for hover. Avoids the column blowing out
+          // when an expression is several hundred chars (rare, but possible
+          // for combined values like "tenant=@@TenantId, client=@@Client,
+          // mode=@@Mode, ...").
+          render: v => {
+            if (v == null || v === '') return '<span style="color:var(--text3)">—</span>';
+            const s = String(v);
+            const trunc = s.length > 60 ? s.slice(0, 60) + '…' : s;
+            return '<span title="' + s.replace(/"/g, '&quot;') + '">' + trunc + '</span>';
+          }
+        },
+      ],
+      rows: paramUsageRows,
+      emptyMsg: 'No parameter references in this run.',
+      initialSort:       paramsConfig.sort       || { col: 'paramToken', dir: 1 },
+      initialGroupBy:    paramsConfig.groupBy,
+      initialShowTotals: paramsConfig.showTotals,
+      calcColumns:       paramsConfig.calcColumns,
+    });
+  }
+
   // Warnings
   const warnings = d.warnings || [];
   if (warnings.length > 0) {
@@ -2867,6 +2937,42 @@ function doExport() {
       }
       wsWasis['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsWasis, 'Was-Is Rules');
+    }
+    // ── Sheet 5b: Parameters Used ───────────────────────────────────────────
+    // Parallels the Was-Is sheet structure. Surfaces every @@Token reference
+    // the runner substituted during this run — useful as a long-term audit
+    // trail when investigating "why did this column end up with that value"
+    // months down the line. Hidden entirely when paramUsage is empty.
+    const paramUsageList = Array.isArray(d.paramUsage) ? d.paramUsage : [];
+    if (paramUsageList.length > 0) {
+      const paramData = [
+        ['Parameter', 'Resolved value', 'Job', 'Source table', 'Target column', 'Via', 'Expression']
+      ].concat(paramUsageList.map(r => [
+        r.paramToken || ('@@' + (r.paramName || '')),
+        r.resolved != null ? String(r.resolved) : '(unresolved)',
+        r.jobName  || '',
+        r.srcTable || '',
+        r.tgtCol   || '',
+        r.source   || '',
+        r.expression || ''
+      ]));
+      const wsParams = XLSX.utils.aoa_to_sheet(paramData);
+      wsParams['!cols'] = [
+        {wch:18},  // Parameter — usually short like "@@Client"
+        {wch:22},  // Resolved value
+        {wch:25},  // Job
+        {wch:24},  // Source table
+        {wch:22},  // Target column
+        {wch:18},  // Via (literal value / fixed value / Was/Is rule)
+        {wch:60}   // Expression — can be long when combined
+      ];
+      wsParams['!rows'] = paramData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
+      styleRange(wsParams, 0, 0, 0, 6, STYLE.tableHeader);
+      if (paramData.length > 1) {
+        styleRange(wsParams, 1, paramData.length-1, 0, 6, STYLE.value);
+      }
+      wsParams['!freeze'] = { xSplit: 0, ySplit: 1 };
+      XLSX.utils.book_append_sheet(wb, wsParams, 'Parameters Used');
     }
     // ── Sheet 6: Warnings ─────────────────────────────────────────────────────
     if (d.warnings && d.warnings.length > 0) {
