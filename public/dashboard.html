@@ -13726,7 +13726,10 @@ function ta_renderUnscheduledPanel() {
         </div>
         ${meta ? '<div style="font-size:11px;color:var(--text3);margin-top:3px">' + escapeHtml(meta) + '</div>' : ''}
       </div>
-      <button class="btn btn-primary btn-sm" onclick="ta_scheduleJob('${escapeAttr(j.id)}')" title="Open the schedule dialog with this task preselected">Schedule it</button>
+      <div style="display:flex;align-items:center;gap:0.4rem">
+        <button class="btn btn-primary btn-sm" onclick="ta_scheduleJob('${escapeAttr(j.id)}')" title="Open the schedule dialog with this task preselected">Schedule it</button>
+        <button class="btn btn-sm" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="ta_deleteUnscheduledTask('${escapeAttr(j.id)}')" title="Delete this packaged task">✕</button>
+      </div>
     </div>`;
   }).join('');
   return `<div style="margin-bottom:1.25rem">
@@ -13742,6 +13745,30 @@ function ta_renderUnscheduledPanel() {
 // button on the unscheduled-tasks panel.
 function ta_scheduleJob(jobId) {
   ta_openScheduleModal(null, jobId);
+}
+
+// Delete a packaged-but-unscheduled task from this browser's cygenix_jobs.
+// This only removes the local composite-job record — there's no Cosmos
+// scheduler row to worry about (that's what "unscheduled" means). If the
+// task DID have a schedule pointing at it, this row wouldn't be showing
+// in the unscheduled panel in the first place, so the check is belt-and-
+// braces only.
+function ta_deleteUnscheduledTask(jobId) {
+  let jobs = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  if (!Array.isArray(jobs)) jobs = [];
+  const job = jobs.find(j => j && j.id === jobId);
+  const name = (job && job.name) || '(unnamed task)';
+  if (!confirm('Delete packaged task "' + name + '"? This removes it from this browser only — it can be re-packaged from Project Builder if needed.')) return;
+  const next = jobs.filter(j => !(j && j.id === jobId));
+  try {
+    localStorage.setItem('cygenix_jobs', JSON.stringify(next));
+  } catch (e) {
+    alert('Could not delete task: ' + (e && e.message || 'storage error'));
+    return;
+  }
+  ta_renderSchedules();
+  if (typeof showToast === 'function') showToast('Task deleted');
 }
 
 function ta_renderSchedules() {
