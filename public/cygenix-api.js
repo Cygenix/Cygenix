@@ -19,23 +19,31 @@
 (function () {
   'use strict';
 
+  // Mirrors currentCygenixEmail() in dashboard.html. Reads the Entra account
+  // object from sessionStorage (preferred) or localStorage, then extracts the
+  // email/userId. Lowercased and trimmed to match how the rest of the app
+  // normalises identifiers.
   function getEmail() {
     try {
-      const u = JSON.parse(localStorage.getItem('cygenix_user') || '{}');
-      return u.email || '';
+      const rawAcc = sessionStorage.getItem('cygenix_entra_account')
+                  || localStorage.getItem('cygenix_entra_account');
+      if (!rawAcc) return '';
+      const acc = JSON.parse(rawAcc);
+      return ((acc.email || acc.userId) || '').toLowerCase().trim();
     } catch { return ''; }
   }
 
+  // Mirrors ta_resolveApi() in dashboard.html. Reads cygenix_fn_url and
+  // cygenix_fn_key from sessionStorage first, then falls back to localStorage.
+  // Strips a trailing slash and ensures the URL contains /api so we can return
+  // a base ending in /api. Throws with a user-facing message if anything is
+  // missing — the History modal displays that message in the version list pane.
   function resolveApi() {
-    // Connections are stored as { target: { azureFunctionUrl, azureFunctionKey }, ... }
-    // matching the shape written by the Connections page.
-    let conn = {};
-    try { conn = JSON.parse(localStorage.getItem('cygenix_connections') || '{}'); } catch {}
-    const t = conn.target || {};
-    let fnUrl = t.azureFunctionUrl || '';
-    const key = t.azureFunctionKey || '';
-    if (!fnUrl) throw new Error('Azure Function URL missing. Go to Connections → Target and save the function URL.');
-    if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target and save the function key.');
+    const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
+    let fnUrl = ss('cygenix_fn_url');
+    const key = ss('cygenix_fn_key');
+    if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
+    if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
 
     fnUrl = fnUrl.replace(/\/+$/, '');
     const apiIdx = fnUrl.toLowerCase().lastIndexOf('/api');
