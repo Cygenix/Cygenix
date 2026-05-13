@@ -258,19 +258,134 @@
     }
   }
 
+  // ── Auto-note diff helpers ────────────────────────────────────────────────
+  // We label every auto-snapshot with a short description of what changed.
+  // The diff is computed against a localStorage-cached copy of the previous
+  // saved snapshot for this job, so it costs zero network calls. First save
+  // has no prior, so we label it "Initial version".
+  //
+  // Storage shape:
+  //   cygenix_last_snapshots: { [jobId]: <full job object> }
+  //
+  // Deliberately kept tiny — only the most recent snapshot per job. We don't
+  // need history here (that lives in Cosmos); this cache exists solely to
+  // diff against on the next save.
+
+  const SNAPSHOT_CACHE_KEY = 'cygenix_last_snapshots';
+
+  // Fields that are part of a "change" worth reporting. Order matters —
+  // changes get reported in this order, so "Mapping" lands before
+  // "Joins" in the resulting label, which reads more naturally.
+  //
+  // Each entry maps the job-object field name to a short display label.
+  // Sub-cases (e.g. single-map columnMapping vs OTM tables) are handled
+  // in describeChange below.
+  const TRACKED_FIELDS = [
+    ['name',            'Renamed'],
+    ['jobType',         'Mode'],
+    ['sourceTable',     'Source table'],
+    ['targetTable',     'Target table'],
+    ['target',          'Targets'],      // OTM target list (comma-joined string)
+    ['columnMapping',   'Mapping'],
+    ['tables',          'OTM tables'],
+    ['srcWhere',        'WHERE clause'],
+    ['joinState',       'Joins'],
+    ['wasisRules',      'Was/is rules'],
+    ['insertSQL',       'Insert SQL'],
+    ['schemaSQL',       'Schema SQL'],
+    ['verifySQL',       'Verify SQL'],
+  ];
+
+  // Fields we deliberately ignore — they change on every save (created
+  // timestamp), are derived from other fields (warnings), or are
+  // bookkeeping that doesn't represent a user intent change.
+  // Listed here for documentation; not actually referenced.
+  // Ignored: created, status, totalRows, warnings, id, projectId
+
+  // Stable equality check that handles arrays, objects, primitives, and nulls.
+  // For arrays/objects we serialise after sorting keys deeply — two values
+  // that differ only in key insertion order count as equal.
+  function deepEqual(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return a === b;
+    if (typeof a !== typeof b) return false;
+    if (typeof a !== 'object') return false;
+    try {
+      return JSON.stringify(sortDeep(a)) === JSON.stringify(sortDeep(b));
+    } catch { return false; }
+  }
+  function sortDeep(v) {
+    if (Array.isArray(v)) return v.map(sortDeep);
+    if (v && typeof v === 'object') {
+      return Object.keys(v).sort().reduce((acc, k) => { acc[k] = sortDeep(v[k]); return acc; }, {});
+    }
+    return v;
+  }
+
+  // Produce a label describing what changed between prev and next.
+  // Returns '' if nothing tracked changed (caller decides what to do then;
+  // the backend will dedupe by content hash regardless, but a noteless save
+  // is fine).
+  function describeChange(prev, next) {
+    if (!prev) return 'Initial version';
+
+    const parts = [];
+    for (const [field, label] of TRACKED_FIELDS) {
+      if (!deepEqual(prev[field], next[field])) parts.push(label);
+    }
+    if (!parts.length) return '';
+    return parts.join(', ') + ' changed';
+  }
+
+  // Read/write the last-snapshot cache. Stored as one combined object so a
+  // browser with many jobs doesn't end up with many localStorage keys.
+  function loadSnapshotCache() {
+    try { return JSON.parse(localStorage.getItem(SNAPSHOT_CACHE_KEY) || '{}') || {}; }
+    catch { return {}; }
+  }
+  function saveSnapshotCache(cache) {
+    try { localStorage.setItem(SNAPSHOT_CACHE_KEY, JSON.stringify(cache)); }
+    catch (e) { console.warn('[cygenix-history] could not write snapshot cache:', e); }
+  }
+
   // ── Public: auto-snapshot after save ──────────────────────────────────────
   /**
    * Fire-and-forget snapshot of a freshly-saved job. Called by saveAsJob.
    * Honours the "auto-snapshot on save" pref — if it's off, this is a no-op.
    * All errors are logged, never surfaced — the save itself already
    * succeeded; a version-create failure should not block the user.
+   *
+   * Before sending, computes a high-level diff label against the previously
+   * cached snapshot for this job and uses it as the version note. The
+   * History modal then displays that note in the version list so users can
+   * see at a glance what each version changed without opening it.
    */
   function autoSnapshot(job, opts) {
     try {
       if (!job || !job.id) return Promise.resolve();
       if (!window.CygenixAPI || !window.CygenixAPI.isAutoSnapshotEnabled()) return Promise.resolve();
-      const note = (opts && opts.note) || '';
+
+      // Compute the auto-note. Caller-supplied note (rare; pre-revert path
+      // uses its own label) takes precedence.
+      let note = (opts && opts.note) || '';
+      if (!note) {
+        const cache = loadSnapshotCache();
+        const prev  = cache[job.id] || null;
+        note = describeChange(prev, job);
+      }
+
       return window.CygenixAPI.versionCreate(job.id, job, 'auto', note)
+        .then(result => {
+          // Only update the cache if the backend actually wrote a new version.
+          // If it was a duplicate (no content change), prev is still the most
+          // recent saved state, so leave the cache alone.
+          if (result && result.created) {
+            const cache = loadSnapshotCache();
+            cache[job.id] = job;
+            saveSnapshotCache(cache);
+          }
+          return result;
+        })
         .catch(err => { console.warn('[cygenix-history] auto-snapshot failed:', err); });
     } catch (err) {
       console.warn('[cygenix-history] auto-snapshot threw:', err);
