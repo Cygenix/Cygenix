@@ -9,6 +9,7 @@
      This must load BEFORE the pre-paint script below so its CSS variables
      are available the moment data-theme is set. -->
 <link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-history.css">
 <meta name="theme-color" content="#0d0f14">
 <!-- Theme pre-paint: read the user's saved theme and apply it to <html> BEFORE
      any content renders, so we don't get a flash of the wrong theme on load.
@@ -1203,6 +1204,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-integrations.js"></script>
 <script src="/cygenix-params.js"></script>
+<script src="/cygenix-api.js"></script>
+<script src="/cygenix-history.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -4701,6 +4704,7 @@ function jobsTableHTML(jobs) {
       <td>
         <div class="jobs-actions">
           <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
+          <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
           ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
           <button class="btn btn-teal" onclick="downloadJobSQL('${j.id}','schema')" title="Download schema SQL">⬇ Schema</button>
           <button class="btn btn-primary" onclick="downloadJobSQL('${j.id}','migration')" title="Download migration SQL">⬇ Migration</button>
@@ -13638,6 +13642,20 @@ function ta_data(action, body, method) { return ta_apiCall('data/' + action, bod
 function ta_init() {
   ta_switchTab(TA.activeTab);
 }
+
+// Re-render the jobs table when a job is reverted via the History modal.
+// CygenixHistory writes the reverted snapshot to cygenix_jobs in localStorage
+// and emits this event — host pages re-read state and re-render. This
+// mirrors the existing pattern at line ~11766 where state.jobs is re-hydrated
+// from localStorage and then renderAllJobs() repaints the table.
+window.addEventListener('cygenix:job-reverted', () => {
+  try {
+    state.jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    if (typeof renderAllJobs === 'function') renderAllJobs();
+  } catch (e) {
+    console.warn('Could not refresh jobs after revert:', e);
+  }
+});
 
 function ta_refresh() {
   if (TA.activeTab === 'schedules') ta_loadSchedules();
