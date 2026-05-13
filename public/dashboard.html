@@ -12784,10 +12784,22 @@ const TA = {
 };
 
 // Resolve the /api/* base URL (strips /db suffix if present) and function key.
+// Matches the fallback chain used by impGetConn() — checks (1) in-memory
+// CygenixConnections, (2) session/localStorage direct keys, and (3) the
+// `cygenix_project_connections` JSON wrapper that the active Connections
+// view writes to. Without all three sources the Task Agent throws
+// "Azure Function not configured" even when the rest of the app sees
+// a healthy green-dot connection.
 function ta_resolveApi() {
   const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
-  let fnUrl = ss('cygenix_fn_url');
-  const key = ss('cygenix_fn_key');
+  const c  = (window.CygenixConnections && window.CygenixConnections.get && window.CygenixConnections.get()) || {};
+  let pc = {};
+  try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch {}
+  const pcGet = (k) => (pc[k] != null ? String(pc[k]) : '');
+
+  let fnUrl = c.tgtFnUrl || c.fnUrl || ss('cygenix_fn_url') || pcGet('cygenix_fn_url');
+  const key = c.tgtFnKey || c.fnKey || ss('cygenix_fn_key') || pcGet('cygenix_fn_key');
+
   if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
   if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
 
