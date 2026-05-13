@@ -1,28 +1,49 @@
 /* cygenix-api.js
  * ----------------
- * Shared Azure Function API helper. Both dashboard.html and object_mapping.html
- * (and any future page) include this script and use window.CygenixAPI for
- * calls into the Cosmos-backed function app.
+ * Shared helper for talking to the Cygenix Azure Function backend
+ * (cygenix-db-api on Azure App Service in UK South). Used by both
+ * dashboard.html and object_mapping.html for version history calls,
+ * and is the right place to add any future site-wide /api/data/*
+ * action call.
  *
- * Replaces the dashboard-only ta_resolveApi / ta_apiCall / ta_data helpers.
- * The dashboard's ta_data wrapper can now delegate to CygenixAPI.call(),
- * so the schedule code keeps working unchanged.
+ * IMPORTANT CONTEXT — read this before changing endpoint resolution:
  *
- * Conventions:
- *   - The Azure Function URL and key are stored under cygenix_connections.target
- *     by the Connections page on the dashboard.
- *   - The signed-in user's email is read from cygenix_user.email (set by the
- *     auth-gate at page load).
- *   - All non-GET requests send Content-Type: application/json and an
- *     x-user-id header so the function can attribute the action.
+ *   The Cygenix backend (Cosmos sync, version history, schedules, the
+ *   /api/data/{action} dispatcher) is a FIXED endpoint baked into the
+ *   deployment. It is NOT user-configurable. cygenix-cosmos-sync.js
+ *   has the URL and function key hardcoded as constants on every page;
+ *   we mirror those constants here.
+ *
+ *   This is DELIBERATE and separate from "Dashboard → Connections →
+ *   Target", which configures the user's own SQL warehouse (the
+ *   destination database that conversion jobs read from and write to).
+ *   That's their data; this is Cygenix infrastructure.
+ *
+ *   An earlier version of this file tried to read the API URL from the
+ *   Connections panel. That was wrong — Connections has nothing to do
+ *   with Cygenix's own backend, and any user whose Target wasn't an
+ *   Azure Function (which is most of them, since SQL Server is more
+ *   common) would see "Azure Function not configured" forever. Do not
+ *   reintroduce that lookup.
+ *
+ *   When Cygenix moves the function key out of static JS (planned
+ *   security fix — see chat 2538d8bf about cygenix-cosmos-sync.js
+ *   line 9), update both cygenix-cosmos-sync.js and the resolve()
+ *   below together so they stay in sync.
  */
 (function () {
   'use strict';
 
+  // ── Cygenix backend endpoint (matches cygenix-cosmos-sync.js) ─────────────
+  // Hardcoded by design — see header comment.
+  const CYGENIX_API_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
+  const CYGENIX_API_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+  // ── Identity ──────────────────────────────────────────────────────────────
   // Mirrors currentCygenixEmail() in dashboard.html. Reads the Entra account
   // object from sessionStorage (preferred) or localStorage, then extracts the
-  // email/userId. Lowercased and trimmed to match how the rest of the app
-  // normalises identifiers.
+  // email/userId. Lowercased and trimmed so it matches how the backend's
+  // x-user-id header dispatch and the audit container key things.
   function getEmail() {
     try {
       const rawAcc = sessionStorage.getItem('cygenix_entra_account')
@@ -33,60 +54,32 @@
     } catch { return ''; }
   }
 
-  // Mirrors ta_resolveApi() in dashboard.html — but extended to use the same
-  // multi-source lookup chain as impGetConn() (line ~11620), because
-  // ta_resolveApi alone fails on pages where CygenixConnections has not yet
-  // populated the flat session/local-storage keys.
+  // ── Endpoint resolution ───────────────────────────────────────────────────
+  // Returns { base, key }. Prefers a runtime override from CygenixSync if
+  // that module ever exposes one (forward compatibility for the planned
+  // server-side-key fix); otherwise returns the hardcoded constants.
   //
-  // Priority (highest to lowest):
-  //   1. window.CygenixConnections.get() → tgtFnUrl/fnUrl + tgtFnKey/fnKey
-  //   2. localStorage.cygenix_project_connections (JSON wrapper) →
-  //        cygenix_fn_url / cygenix_fn_key fields
-  //   3. sessionStorage/localStorage flat keys cygenix_fn_url / cygenix_fn_key
-  //
-  // Strips a trailing slash and ensures the URL contains /api so we can return
-  // a base ending in /api. Throws with a user-facing message if nothing is
-  // available — the History modal displays that message in the version list pane.
+  // We intentionally do NOT throw — the endpoint is always available
+  // because it's compiled in. The only way this can fail is if both
+  // CYGENIX_API_BASE and CYGENIX_API_CODE above are blanked out, in which
+  // case throwing is correct.
   function resolveApi() {
-    const ss = k => { try { return sessionStorage.getItem(k) || localStorage.getItem(k) || ''; } catch { return ''; } };
-
-    // Source 1: live CygenixConnections helper, if loaded.
-    let c = {};
     try {
-      if (window.CygenixConnections && typeof window.CygenixConnections.get === 'function') {
-        c = window.CygenixConnections.get() || {};
+      if (window.CygenixSync && typeof window.CygenixSync.getApiConfig === 'function') {
+        const cfg = window.CygenixSync.getApiConfig();
+        if (cfg && cfg.base && cfg.key) return { base: cfg.base, key: cfg.key };
       }
-    } catch { c = {}; }
+    } catch { /* fall through to constants */ }
 
-    // Source 2: project-connections JSON wrapper in localStorage.
-    let pc = {};
-    try { pc = JSON.parse(localStorage.getItem('cygenix_project_connections') || '{}') || {}; } catch { pc = {}; }
-    const pcGet = k => (pc[k] != null ? String(pc[k]) : '');
-
-    // Compose with source 3 as final fallback.
-    let fnUrl = c.tgtFnUrl || c.fnUrl || pcGet('cygenix_fn_url') || ss('cygenix_fn_url');
-    const key = c.tgtFnKey || c.fnKey || pcGet('cygenix_fn_key') || ss('cygenix_fn_key');
-
-    if (!fnUrl) throw new Error('Azure Function not configured. Go to Connections → Target → Azure Function and save a URL + key.');
-    if (!key)   throw new Error('Azure Function key missing. Go to Connections → Target → Azure Function and save the function key.');
-
-    // Guard: rule out non-HTTP values that have been observed mis-saved under
-    // cygenix_fn_url (e.g. raw connection strings like "mssql://host:port/db").
-    // Without this check we'd try to fetch() that string as an HTTPS endpoint
-    // and get a confusing network error.
-    if (!/^https?:\/\//i.test(fnUrl)) {
-      throw new Error('Azure Function URL is not a valid HTTP(S) URL. Go to Connections → Target → Azure Function and re-save.');
+    if (!CYGENIX_API_BASE || !CYGENIX_API_CODE) {
+      throw new Error('Cygenix API constants are missing. This is a build/deploy issue, not a user-configurable setting.');
     }
-
-    fnUrl = fnUrl.replace(/\/+$/, '');
-    const apiIdx = fnUrl.toLowerCase().lastIndexOf('/api');
-    if (apiIdx < 0) throw new Error('Azure Function URL does not contain /api path');
-    const base = fnUrl.slice(0, apiIdx) + '/api';
-    return { base, key };
+    return { base: CYGENIX_API_BASE, key: CYGENIX_API_CODE };
   }
 
+  // ── Generic call ──────────────────────────────────────────────────────────
   /**
-   * Generic call into the function app.
+   * Make a call into the Cygenix function app.
    * @param {string} path   - e.g. 'data/version-create' or 'data/version-list?jobId=X'
    * @param {object|null} body  - JSON body for non-GET; ignored on GET
    * @param {'GET'|'POST'|'PUT'|'DELETE'} [method='POST']
@@ -98,9 +91,9 @@
     const { base, key } = resolveApi();
 
     // Use & if the path already has a ? (e.g. 'data/version-list?jobId=X'),
-    // otherwise use ? to introduce the query string. Without this, a GET
-    // with query params produces a malformed URL like '?jobId=X?code=Y'
-    // and Azure rejects it with 401 because the function key isn't parsed.
+    // otherwise use ? to introduce the query string. Without this guard a
+    // GET with query params builds a malformed URL like '?jobId=X?code=Y'
+    // and Azure rejects it 401 because the function key never gets parsed.
     const sep = path.includes('?') ? '&' : '?';
     const url = `${base}/${path}${sep}code=${encodeURIComponent(key)}`;
 
@@ -119,13 +112,17 @@
     return data;
   }
 
-  // ── Version control wrappers ────────────────────────────────────────────────
-  // Thin convenience wrappers around the existing data/version-* endpoints.
+  // ── Version control wrappers ──────────────────────────────────────────────
+  // These mirror the handlers in azure-function/src/index.js around
+  // line 1099 (version-create), 1159 (version-list), 1174 (version-get).
 
   /**
-   * Create a snapshot of a job. Backend dedupes by content hash, so calling
-   * this on every save is safe — duplicate snapshots aren't written.
-   * @returns {Promise<{created: boolean, version: number, id?: string}>}
+   * Snapshot a job. Backend dedupes by content hash, so calling on every
+   * save is safe — duplicate snapshots return { created: false }.
+   *
+   * Backend response shapes:
+   *   created → { created: true,  version: <int>, id: 'ver_<jobId>_<ts>' }
+   *   dup     → { created: false, reason: 'duplicate', version: <int> }
    */
   function versionCreate(jobId, snapshot, label, note) {
     return call('data/version-create', {
@@ -137,8 +134,10 @@
   }
 
   /**
-   * List all versions for a job, newest first. Returns lightweight summaries
-   * (no snapshot blob) — call versionGet for the full payload.
+   * List all versions for a job, newest first. Backend returns lightweight
+   * summaries (no snapshot blob) — call versionGet for the full payload.
+   *
+   * Backend response shape: { versions: [...] }
    */
   function versionList(jobId) {
     return call('data/version-list?jobId=' + encodeURIComponent(jobId), null, 'GET');
@@ -146,23 +145,27 @@
 
   /**
    * Fetch a single version document including the full snapshot.
+   *
+   * NOTE: the backend handler reads `id` from the query string, not
+   * `versionId`. The version doc's id field follows the pattern
+   * `ver_<jobId>_<timestamp>` — that's what we pass here, NOT the
+   * integer version number.
    */
-  function versionGet(jobId, versionId) {
+  function versionGet(jobId, versionDocId) {
     return call(
       'data/version-get?jobId=' + encodeURIComponent(jobId) +
-      '&versionId=' + encodeURIComponent(versionId),
+      '&id=' + encodeURIComponent(versionDocId),
       null,
       'GET'
     );
   }
 
-  // ── App-prefs read helper ──────────────────────────────────────────────────
-  // Pages that want to know whether auto-snapshot is enabled.
+  // ── App-prefs read helper ─────────────────────────────────────────────────
+  // Lets pages know whether auto-snapshot is enabled. Default ON matches
+  // DEFAULT_APP_PREFS in dashboard.html.
   function isAutoSnapshotEnabled() {
     try {
       const p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-      // Default ON if the pref hasn't been written yet — matches the dashboard
-      // DEFAULT_APP_PREFS in dashboard.html.
       return (p.autoSnapshot || 'on') === 'on';
     } catch { return true; }
   }
