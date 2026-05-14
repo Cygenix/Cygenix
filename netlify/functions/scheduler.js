@@ -332,10 +332,32 @@ async function versionCreate(userId, body, containers) {
   if (!jobId)    return { __err: 'jobId required' };
   if (!snapshot) return { __err: 'snapshot required' };
 
-  // Dedupe: if the most recent version's snapshot SQL is identical to the
+  // Dedupe: if the most recent version's content is identical to the
   // incoming one, return that existing version instead of creating a new
   // row. Matches the dashboard's expected "no change" path.
-  const incomingSql = snapshot.sql || snapshot.SQL || '';
+  //
+  // For composite tasks the top-level snapshot.sql is empty — the real SQL
+  // lives in childSteps[*].sql / .insertSQL. So we hash a normalised
+  // representation of the whole snapshot (top-level sql + each child step's
+  // executable fields), which correctly distinguishes "the same composite"
+  // from "the composite plus a new column mapping" or "the composite with
+  // a different parameter substitution from phase 2a".
+  const hashSnapshot = (snap) => {
+    if (!snap || typeof snap !== 'object') return '';
+    const parts = [];
+    parts.push('top-sql:' + (snap.sql || snap.SQL || ''));
+    parts.push('top-insertSQL:' + (snap.insertSQL || ''));
+    if (Array.isArray(snap.childSteps)) {
+      snap.childSteps.forEach((step, i) => {
+        parts.push('child-' + i + '-sql:' + (step.sql || ''));
+        parts.push('child-' + i + '-insertSQL:' + (step.insertSQL || ''));
+        parts.push('child-' + i + '-srcWhere:' + (step.srcWhere || ''));
+        parts.push('child-' + i + '-connOn:' + (step.connOn || ''));
+      });
+    }
+    return parts.join('\n');
+  };
+  const incomingHash = hashSnapshot(snapshot);
   const { resources: latest } = await containers.job_versions.items.query({
     query: 'SELECT TOP 1 * FROM c WHERE c.jobId = @j AND c.userId = @u ORDER BY c.version DESC',
     parameters: [
@@ -345,8 +367,8 @@ async function versionCreate(userId, body, containers) {
   }).fetchAll();
   if (latest.length) {
     const prev = latest[0];
-    const prevSql = (prev.snapshot && (prev.snapshot.sql || prev.snapshot.SQL)) || '';
-    if (prevSql && prevSql === incomingSql) {
+    const prevHash = hashSnapshot(prev.snapshot);
+    if (prevHash && prevHash === incomingHash) {
       return { id: prev.id, version: prev.version, created: false };
     }
   }
