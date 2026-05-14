@@ -752,23 +752,54 @@ function buildScheduledReport({ schedule, runRecord, snapshot, userEmail, userNa
   const failed         = mergedSteps.filter(s => s.status === 'failed').length;
   const passed         = mergedSteps.filter(s => s.status === 'passed').length;
 
-  // ── Expanded per-target-table breakdown ──────────────────────────────
-  const expandedTables = childSteps.filter(s => s.srcTable).flatMap(s => {
-    if ((s.jobType === 'one-to-many' || s.oneToManyConfig) && s.tables && s.tables.length) {
+  // ── Per-target-table breakdown for the report's "Migration Results" ──
+  // Same shape as project-builder.html's `tables` field (line ~5221). One
+  // row per target table, with sourceRows / insertedRows / errors / status.
+  // The viewer keys on this field — without it, the migration-results table
+  // collapses to a single misleading row showing every step against the
+  // first source.
+  //
+  // Definitions (matched to manual builder):
+  //   loaded     → rowsAffected (the actual count we got back from INSERT)
+  //   staged     → not produced by scheduled runs; falls back to loaded
+  //   sourceRows → not directly known by scheduled runs (we don't capture
+  //                source row count separately). Best honest estimate is
+  //                rowsAffected when WHERE wasn't applied, or the same
+  //                value as loaded.
+  const tables = childSteps.filter(s => s.srcTable).flatMap((s, _idx, _arr) => {
+    const i  = childSteps.indexOf(s);
+    const sr = stepResultsByIndex.get(i) || {};
+    const loaded = sr.rowsAffected || 0;
+    // One-to-many: explode into one row per target table from s.tables
+    if ((s.jobType === 'one-to-many' || s.oneToManyConfig) && Array.isArray(s.tables) && s.tables.length) {
       return s.tables.map(t => ({
-        name:     t.name || t.fullName || '',
-        rows:     t.rows || 0,
-        cols:     t.cols || 0,
-        srcTable: s.srcTable,
+        name:         t.name || t.fullName || '',
+        sourceRows:   t.rows || 0,
+        insertedRows: t.rows || 0,
+        errors:       sr.status === 'failed' ? 1 : 0,
+        status:       sr.status === 'success' ? 'success' : (sr.status || 'unknown'),
       }));
     }
     return [{
-      name:     s.tgtTable || '',
-      rows:     (stepResultsByIndex.get(childSteps.indexOf(s)) || {}).rowsAffected || 0,
-      cols:     (s.columnMapping || []).filter(m => m.tgtCol).length,
-      srcTable: s.srcTable,
+      name:         s.tgtTable || s.name || '',
+      sourceRows:   loaded,
+      insertedRows: loaded,
+      errors:       sr.batchErrorCount || (sr.status === 'failed' ? 1 : 0),
+      excludedRows: 0,
+      excludedKnown: false,    // scheduled runs don't capture exclusion counts
+      status:       sr.status === 'success' ? 'success'
+                  : sr.status === 'skipped' ? 'skipped'
+                  : sr.status === 'failed'  ? 'failed'
+                  : 'unknown',
     }];
   });
+
+  // Truncation warnings from job metadata, same shape as the manual report.
+  const truncationWarnings = childSteps.flatMap(s =>
+    (Array.isArray(s.warnings) ? s.warnings : []).filter(w =>
+      typeof w === 'string' && w.startsWith('TRUNCATION:')
+    )
+  );
 
   // ── Column mapping summary ───────────────────────────────────────────
   const allMappings = [];
@@ -991,6 +1022,12 @@ function buildScheduledReport({ schedule, runRecord, snapshot, userEmail, userNa
     completedAt:  runRecord.finishedAt || now,
     isProjectReport: true,
     steps: mergedSteps,
+    // Per-target-table breakdown — the report viewer's "Migration Results"
+    // table reads this. Without it, the renderer collapses every step into
+    // a single row keyed on the first migration step's target table, which
+    // is the exact bug seen on 14 May 2026.
+    tables,
+    truncationWarnings,
     reconciliation: [],   // reconciliation skipped in scheduled-run mode
     // Scheduled-run provenance — extra fields not in the manual report so
     // the viewer (and you, when poking at Cosmos) can tell where this
