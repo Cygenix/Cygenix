@@ -48,8 +48,9 @@ function getContainers() {
   _cosmosClient = new CosmosClient(conn);
   const db = _cosmosClient.database(process.env.COSMOS_DATABASE || 'cygenix');
   _containers = {
-    schedules: db.container('schedules'),
-    runs:      db.container('runs'),
+    schedules:       db.container('schedules'),
+    runs:            db.container('runs'),
+    project_reports: db.container('project_reports'),
   };
   return _containers;
 }
@@ -614,6 +615,27 @@ exports.handler = async (event) => {
     console.error('Schedule update failed:', e.message);
   }
 
+  // ── Conversion report ─────────────────────────────────────────────────
+  // Build and persist a conversion report into project_reports — the same
+  // Cosmos container the manual "💾 Save Report" button writes to. After
+  // this, the Reports view shows the scheduled run alongside manual runs
+  // without distinction. Wrapped in try/catch because a report-save
+  // failure must not retroactively fail a run that did its actual work
+  // correctly.
+  try {
+    const reportResult = await saveScheduledReport(containers, schedule, finalRun, snap);
+    if (reportResult.ok) {
+      // Stamp the run record with the report id so the dashboard's run
+      // detail can deep-link to the report.
+      try {
+        finalRun.reportId = reportResult.reportId;
+        await containers.runs.item(finalRun.id, finalRun.scheduleId).replace(finalRun);
+      } catch (e) { console.error('Run record reportId stamp failed:', e.message); }
+    }
+  } catch (e) {
+    console.error('Report save flow failed:', e.message);
+  }
+
   return { statusCode: 200, body: 'done' };
 };
 
@@ -623,6 +645,305 @@ async function openPool(connStr) {
   const pool = new sql.ConnectionPool(parseMssqlUrl(connStr));
   await pool.connect();
   return pool;
+}
+
+// ── Server-side conversion report ─────────────────────────────────────────
+// Port of project-builder.html's buildProjectReport, adapted for the
+// server-side context: no `project` global, no localStorage, no
+// CygenixParams. Reads everything it needs from (a) the pinned snapshot
+// (which already contains the column mappings, generated SQL, projectName,
+// connections) and (b) the run record we just finalised (which has the
+// per-step status, rowsAffected, durations, error messages).
+//
+// Same Cosmos container as the manual save (project_reports, partition
+// key /userId) and the same document shape, so /reports renders scheduled
+// reports identically to manual ones. The only fields that come out
+// emptier than a manual save are:
+//   - sourceFriendlyName / targetFriendlyName — these are looked up from
+//     localStorage.cygenix_saved_connections client-side; the server has
+//     no equivalent. The report viewer falls back to server/database
+//     identifiers gracefully when these are empty.
+//   - Was/Is "Path 3" cross-reference to localStorage.cygenix_wasis_rules
+//     — this is browser-only. Path 1 (per-column attribution) and Path 2
+//     (CASE WHEN regex parsing of insertSQL) still run and cover the
+//     common case where rules are recorded on the columnMapping itself.
+//
+// IMPORTANT: if you change the shape of buildProjectReport in
+// project-builder.html, mirror the change here. Both writers feed the
+// same Cosmos container and the report viewer expects one consistent
+// shape across both.
+
+function parseDbConnFromMssqlUrl(connStr) {
+  try {
+    if (!connStr || !/^mssql:\/\//i.test(connStr)) return null;
+    const u = new URL(connStr);
+    return {
+      server:   u.hostname || '',
+      database: (u.pathname || '').replace(/^\//, ''),
+    };
+  } catch { return null; }
+}
+
+function buildScheduledReport({ schedule, runRecord, snapshot, userEmail, userName }) {
+  const now = new Date().toISOString();
+  const childSteps = Array.isArray(snapshot.childSteps) ? snapshot.childSteps : [];
+
+  // Marry each snapshot step with its corresponding runRecord stepResult,
+  // by index. The runRecord may have fewer entries than the snapshot if
+  // execution stopped early — that's fine; missing entries become
+  // status:'skipped'.
+  const stepResultsByIndex = new Map();
+  (runRecord.stepResults || []).forEach(sr => stepResultsByIndex.set(sr.index, sr));
+
+  // ── Merge snapshot + runRecord into the report's "steps" array ────────
+  // Translate scheduled-run status names to manual-run status names so the
+  // report viewer treats both identically:
+  //   success → passed, failed → failed, skipped → skipped
+  const stepStatusMap = { success: 'passed', failed: 'failed', skipped: 'skipped' };
+  const mergedSteps = childSteps.map((step, i) => {
+    const sr = stepResultsByIndex.get(i) || { status: 'skipped' };
+    const isMig = (step.jobType === 'migration' || step.type === 'migration' || step.srcTable);
+    return {
+      jobId:        step.jobId || '',
+      name:         step.name || step.tgtTable || ('step ' + (i + 1)),
+      type:         isMig ? 'migration' : 'sql',
+      status:       stepStatusMap[sr.status] || sr.status || 'skipped',
+      // Per-step log is what the runner accumulated for this step.
+      log:          Array.isArray(sr.log) ? sr.log.join('\n') : (sr.log || ''),
+      srcTable:     step.srcTable || '',
+      tgtTable:     step.tgtTable || '',
+      rowsInserted: sr.rowsAffected || 0,
+      rowsBefore:   sr.rowsBefore  ?? undefined,
+      rowsAfter:    sr.rowsAfter   ?? undefined,
+      rowsStaged:   undefined,    // not produced by scheduled runs
+      rowsExcluded: undefined,    // not produced (no staging on scheduled runs)
+      excludedCapture: undefined,
+      stagingTable: '',
+      runId:        '',
+      srcWhere:     step.srcWhere || '',
+      // Step timing
+      startedAt:    sr.startedAt   || null,
+      finishedAt:   sr.finishedAt  || null,
+      durationMs:   typeof sr.durationMs === 'number' ? sr.durationMs : null,
+      connOn:       sr.connOn || step.connOn || 'target',
+      reconResult:  null,         // reconciliation skipped in scheduled-run mode
+    };
+  });
+
+  const migrationSteps = mergedSteps.filter(s => s.type === 'migration');
+  const totalRows      = mergedSteps.reduce((sum, s) => sum + (s.rowsInserted || 0), 0);
+  const failed         = mergedSteps.filter(s => s.status === 'failed').length;
+  const passed         = mergedSteps.filter(s => s.status === 'passed').length;
+
+  // ── Expanded per-target-table breakdown ──────────────────────────────
+  const expandedTables = childSteps.filter(s => s.srcTable).flatMap(s => {
+    if ((s.jobType === 'one-to-many' || s.oneToManyConfig) && s.tables && s.tables.length) {
+      return s.tables.map(t => ({
+        name:     t.name || t.fullName || '',
+        rows:     t.rows || 0,
+        cols:     t.cols || 0,
+        srcTable: s.srcTable,
+      }));
+    }
+    return [{
+      name:     s.tgtTable || '',
+      rows:     (stepResultsByIndex.get(childSteps.indexOf(s)) || {}).rowsAffected || 0,
+      cols:     (s.columnMapping || []).filter(m => m.tgtCol).length,
+      srcTable: s.srcTable,
+    }];
+  });
+
+  // ── Column mapping summary ───────────────────────────────────────────
+  const allMappings = [];
+  childSteps.forEach(s => {
+    if (!s.srcTable) return;   // SQL-script steps don't have a mapping
+    (s.columnMapping || []).filter(m => m.tgtCol).forEach(m => {
+      allMappings.push({
+        srcCol:        m.srcCol || '',
+        srcTable:      s.srcTable || '',
+        tgtCol:        m.tgtCol || '',
+        tgtTable:      s.tgtTable || '',
+        tgtType:       m.tgtType || '',
+        transform:     m.transform || 'NONE',
+        transformExpr: m.transformExpr || null,
+        wasisRules:    m.wasisRules || null,
+        wasisCount:    m.wasisCount || (Array.isArray(m.wasisRules) ? m.wasisRules.length : 0),
+      });
+    });
+  });
+
+  // ── Was/Is aggregation (Path 1 + Path 2 from project-builder) ────────
+  // Path 3 (cross-ref against localStorage.cygenix_wasis_rules) is omitted
+  // — that store is browser-only. The viewer handles missing srcField on
+  // a rule gracefully.
+  const wasisAggRules = [];
+  const wasisSeen     = new Set();
+  const wasisColSet   = new Set();
+  const addRule = (srcTable, srcField, oldVal, newVal) => {
+    const key = (srcTable || '') + '|' + (srcField || '') + '|' + (oldVal || '') + '|' + (newVal || '');
+    if (wasisSeen.has(key)) return;
+    wasisSeen.add(key);
+    wasisColSet.add((srcTable || '') + '|' + (srcField || ''));
+    wasisAggRules.push({
+      srcField: srcField || '',
+      srcTable: srcTable || '',
+      oldVal:   oldVal   || '',
+      newVal:   newVal   || '',
+    });
+  };
+  childSteps.forEach(s => {
+    if (!s.srcTable) return;
+    // Path 1 — per-column attribution
+    (s.columnMapping || []).forEach(m => {
+      if (!m || !Array.isArray(m.wasisRules) || !m.wasisRules.length) return;
+      m.wasisRules.forEach(r => {
+        let oldVal = '', newVal = '';
+        if (typeof r === 'string') {
+          const parts = r.split(/\s*(?:→|->|=>)\s*/);
+          oldVal = (parts[0] || '').trim();
+          newVal = (parts[1] || '').trim();
+        } else if (r && typeof r === 'object') {
+          oldVal = r.oldVal != null ? String(r.oldVal) : '';
+          newVal = r.newVal != null ? String(r.newVal) : '';
+        }
+        addRule(s.srcTable, m.srcCol, oldVal, newVal);
+      });
+    });
+    // Path 2 — parse CASE WHEN blocks out of insertSQL. Matches the
+    // generator's output format: `CASE WHEN [col] = N'old' THEN N'new'
+    // ... END AS [tgtCol]`.
+    if (s.insertSQL && typeof s.insertSQL === 'string') {
+      const blockRe = /CASE\s+(?:WHEN[\s\S]+?THEN[\s\S]+?)+(?:ELSE[\s\S]+?)?END(?:\s+AS\s+\[([^\]]+)\])?/gi;
+      let blockMatch;
+      while ((blockMatch = blockRe.exec(s.insertSQL)) !== null) {
+        const block = blockMatch[0];
+        const whenRe = /WHEN\s+\[([^\]]+)\]\s*=\s*N?'((?:''|[^'])*)'\s+THEN\s+N?'((?:''|[^'])*)'/gi;
+        let m2;
+        while ((m2 = whenRe.exec(block)) !== null) {
+          const col    = m2[1];
+          const oldVal = m2[2].replace(/''/g, "'");
+          const newVal = m2[3].replace(/''/g, "'");
+          addRule(s.srcTable, col, oldVal, newVal);
+        }
+      }
+    }
+  });
+  const wasisRuleCount = wasisAggRules.length;
+  const wasisColCount  = wasisColSet.size;
+
+  // ── Connection identifiers (server/database only — never credentials) ─
+  const srcDesc = parseDbConnFromMssqlUrl(schedule.srcConn || '');
+  const tgtDesc = parseDbConnFromMssqlUrl(schedule.tgtConn || '');
+
+  // First migration step's table names (mirror of manual report)
+  const firstMig = childSteps.find(s => s.srcTable);
+  const srcTableName = firstMig ? (firstMig.srcTable || '') : '';
+  const tgtTableName = firstMig ? (firstMig.tgtTable || '') : '';
+
+  return {
+    id:           'rpt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+    projectName:  snapshot.projectName || snapshot.name || 'Scheduled Conversion',
+    userName:     userName || '',
+    userEmail:    userEmail || '',
+    organisation: 'Cygenix',
+    sourceTable:  srcTableName,
+    sourceSystem: 'Microsoft SQL Server / Azure SQL',
+    sourceFriendlyName: '',   // not resolvable server-side
+    sourceServer:       srcDesc ? srcDesc.server   : '',
+    sourceDatabase:     srcDesc ? srcDesc.database : '',
+    targetTable:  tgtTableName,
+    targetSystem: 'Microsoft SQL Server / Azure SQL',
+    targetFriendlyName: '',
+    targetServer:   tgtDesc ? tgtDesc.server   : '',
+    targetDatabase: tgtDesc ? tgtDesc.database : '',
+    authMethod:   'SQL Authentication',
+    totalRows,
+    insertedRows: totalRows,
+    errors:       failed,
+    rowsBefore:   0,
+    rowsAfter:    totalRows,
+    columnMapping: allMappings,
+    columnsMapped: allMappings.length,
+    wasisRules:    wasisAggRules,
+    wasisRuleCount,
+    wasisColCount,
+    // Parameter usage: pre-resolved at phase 2a snapshot time. We surface
+    // the list (with resolved values stamped on the snapshot) so the
+    // report still shows which params drove the run.
+    paramUsage:           Array.isArray(snapshot._substitutedTokens) ? snapshot._substitutedTokens.map(t => ({
+      paramName:  t.token.replace(/^@@/, '').replace(/[{}]/g, ''),
+      paramToken: t.token,
+      resolved:   t.resolved,
+      jobId:      '',
+      jobName:    snapshot.name || '',
+      srcTable:   '',
+      tgtTable:   '',
+      srcCol:     '',
+      tgtCol:     '',
+      source:     'snapshot resolution',
+      expression: t.token,
+    })) : [],
+    paramUsageCount:      Array.isArray(snapshot._substitutedTokens) ? snapshot._substitutedTokens.length : 0,
+    paramUsageParamCount: Array.isArray(snapshot._substitutedTokens)
+      ? new Set(snapshot._substitutedTokens.map(t => t.token)).size
+      : 0,
+    warnings: [
+      ...mergedSteps.filter(s => s.status === 'failed').map(s => 'Job failed: ' + (s.name || s.type)),
+    ],
+    startedAt:    runRecord.startedAt || new Date(Date.now() - mergedSteps.length * 1000).toISOString(),
+    completedAt:  runRecord.finishedAt || now,
+    isProjectReport: true,
+    steps: mergedSteps,
+    reconciliation: [],   // reconciliation skipped in scheduled-run mode
+    // Scheduled-run provenance — extra fields not in the manual report so
+    // the viewer (and you, when poking at Cosmos) can tell where this
+    // report came from. The viewer ignores unknown fields.
+    scheduledRunMeta: {
+      runId:       runRecord.id,
+      scheduleId:  schedule.id,
+      scheduleName: schedule.name,
+      triggeredBy: runRecord.triggeredBy || 'manual',
+      mode:        'scheduled',
+    },
+  };
+}
+
+async function saveScheduledReport(containers, schedule, runRecord, snapshot) {
+  // Build the report payload exactly as the dashboard's buildProjectReport
+  // would, then write it directly to Cosmos. We bypass /api/reports because
+  // that endpoint requires an Entra JWT Bearer token — which the background
+  // function doesn't have. Cosmos write goes through the same container
+  // (project_reports) and same partition key (/userId) as the manual save,
+  // so the report viewer renders both identically.
+  try {
+    const userEmail = schedule.userId;   // userId IS the email per current convention
+    const userName  = '';                // server has no display-name source
+    const report = buildScheduledReport({
+      schedule, runRecord, snapshot, userEmail, userName,
+    });
+    // Match the project_reports document shape used by reports.js:
+    // partition key is /userId, the report payload lives under .report,
+    // and the document carries top-level metadata for list views.
+    const doc = {
+      id:        report.id,
+      userId:    schedule.userId,
+      userEmail,
+      userName,
+      report,
+      createdAt: new Date().toISOString(),
+      projectName: report.projectName,
+      totalRows: report.totalRows,
+      errors:    report.errors,
+      mode:      'scheduled',
+    };
+    await containers.project_reports.items.create(doc);
+    return { ok: true, reportId: report.id };
+  } catch (e) {
+    // Don't fail the whole run because the report-save flopped — the run
+    // record itself is the source of truth. Just log it.
+    console.error('Scheduled report save failed:', e.message, e.stack);
+    return { ok: false, error: e.message };
+  }
 }
 
 async function markRunFailed(containers, run, errorMessage) {
