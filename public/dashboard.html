@@ -6202,6 +6202,36 @@ function initUserAndProject() {
   try {
     let email = '', name = '';
 
+    // -1. cygenix_entra_account — the deterministic record written by
+    //     login.html after a successful MSAL sign-in. Contains email,
+    //     name, userId, idToken, exp. We check this FIRST because:
+    //     (a) it's exactly the same record cygenixFetch uses to attach
+    //         the Authorization header — keeping the pill and the API
+    //         calls in lockstep means a green pill implies a working
+    //         token and vice versa.
+    //     (b) MSAL's localStorage cache can accumulate multiple account
+    //         entries across sessions (Demo + Cygenix Admin, or stale
+    //         partial records from interrupted sign-ins), and
+    //         getAllAccounts()[0] is non-deterministic across them — we
+    //         saw the pill render as "Cygenix Admin" or a synthetic
+    //         localAccountId GUID instead of the actually-signed-in
+    //         identity. Trusting login.html's authoritative single
+    //         write avoids that ambiguity entirely.
+    //     If this record is missing or has no email, we fall through to
+    //     the MSAL fallbacks below — those still work for first-load
+    //     edge cases where login.html hasn't written yet.
+    try {
+      const entraRaw = sessionStorage.getItem('cygenix_entra_account')
+                    || localStorage.getItem('cygenix_entra_account');
+      if (entraRaw) {
+        const entra = JSON.parse(entraRaw);
+        if (entra && typeof entra.email === 'string' && entra.email.includes('@')) {
+          email = entra.email.trim().toLowerCase();
+          name  = entra.name || '';
+        }
+      }
+    } catch {}
+
     // 0. MSAL account cache (primary since Entra migration).
     //    Works whether msal-browser is loaded as a global on this page or
     //    not — MSAL stores its accounts as JSON in localStorage under keys
@@ -6209,7 +6239,7 @@ function initUserAndProject() {
     //    library when available, then fall back to reading the cache
     //    directly. Same pattern as CygenixSync.getUserId().
     try {
-      if (typeof msal !== 'undefined') {
+      if (!email && typeof msal !== 'undefined') {
         const msalApp = new msal.PublicClientApplication({
           auth: {
             clientId:         'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
@@ -8392,9 +8422,16 @@ setTimeout(() => {
   try {
     if (typeof initUserAndProject === 'function') {
       const pillEl = document.getElementById('user-name');
-      // Only re-run if the pill still looks unpopulated. Avoids
-      // unnecessary re-execution on healthy page loads.
-      if (pillEl && /loading/i.test(pillEl.textContent || '')) {
+      // Re-run if the pill still looks unpopulated OR if it looks like a
+      // raw localAccountId GUID (8-4-4-4-12 hex). The latter can happen
+      // when MSAL has multiple cached accounts and getAllAccounts()[0]
+      // returns a synthetic-username one whose local-part is a GUID; the
+      // safety-net call picks up the now-stable cygenix_entra_account
+      // and overwrites the pill with the right display name.
+      const txt = (pillEl?.textContent || '').trim();
+      const looksLoading = /loading/i.test(txt);
+      const looksLikeBareGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(txt);
+      if (pillEl && (looksLoading || looksLikeBareGuid)) {
         initUserAndProject();
       }
     }
