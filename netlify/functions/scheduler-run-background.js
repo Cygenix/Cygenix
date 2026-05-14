@@ -624,14 +624,19 @@ exports.handler = async (event) => {
   // correctly.
   try {
     const reportResult = await saveScheduledReport(containers, schedule, finalRun, snap);
-    if (reportResult.ok) {
-      // Stamp the run record with the report id so the dashboard's run
-      // detail can deep-link to the report.
-      try {
+    try {
+      if (reportResult.ok) {
         finalRun.reportId = reportResult.reportId;
-        await containers.runs.item(finalRun.id, finalRun.scheduleId).replace(finalRun);
-      } catch (e) { console.error('Run record reportId stamp failed:', e.message); }
-    }
+        finalRun.reportSaveError = null;
+      } else {
+        // Don't stamp a fake reportId if the save genuinely failed —
+        // that's what bit us before. Record the error instead so the
+        // dashboard can surface it ("Run succeeded but report save failed").
+        finalRun.reportId = null;
+        finalRun.reportSaveError = reportResult.error || 'unknown';
+      }
+      await containers.runs.item(finalRun.id, finalRun.scheduleId).replace(finalRun);
+    } catch (e) { console.error('Run record reportId stamp failed:', e.message); }
   } catch (e) {
     console.error('Report save flow failed:', e.message);
   }
@@ -915,34 +920,48 @@ async function saveScheduledReport(containers, schedule, runRecord, snapshot) {
   // function doesn't have. Cosmos write goes through the same container
   // (project_reports) and same partition key (/userId) as the manual save,
   // so the report viewer renders both identically.
+  //
+  // Document shape MUST match what reports.js's handleSave produces:
+  //   Object.assign({}, report, { id, userId, userEmail, userName, savedAt })
+  // i.e. report fields are SPREAD AT TOP LEVEL (not nested under .report)
+  // and the timestamp field is `savedAt` (the list query orders by this).
+  // Getting either wrong means the report won't render or won't appear in
+  // the list — both ways have bitten us already (2026-05-14).
   try {
     const userEmail = schedule.userId;   // userId IS the email per current convention
     const userName  = '';                // server has no display-name source
     const report = buildScheduledReport({
       schedule, runRecord, snapshot, userEmail, userName,
     });
-    // Match the project_reports document shape used by reports.js:
-    // partition key is /userId, the report payload lives under .report,
-    // and the document carries top-level metadata for list views.
-    const doc = {
+    const doc = Object.assign({}, report, {
       id:        report.id,
       userId:    schedule.userId,
       userEmail,
       userName,
-      report,
-      createdAt: new Date().toISOString(),
-      projectName: report.projectName,
-      totalRows: report.totalRows,
-      errors:    report.errors,
+      savedAt:   new Date().toISOString(),
+      // Provenance — these are EXTRA fields beyond what the manual save
+      // writes. The viewer ignores unknown fields, so they're safe to add.
+      // Lets you tell scheduled reports from manual ones at a glance in
+      // Cosmos and in the dashboard if you ever surface this in the UI.
       mode:      'scheduled',
-    };
-    await containers.project_reports.items.create(doc);
+      scheduledRunMeta: {
+        runId:        runRecord.id,
+        scheduleId:   schedule.id,
+        scheduleName: schedule.name,
+        triggeredBy:  runRecord.triggeredBy || 'manual',
+      },
+    });
+    // Use upsert (matching handleSave). If a report with this id already
+    // exists, replace it — safer than create() which throws on duplicate.
+    await containers.project_reports.items.upsert(doc);
     return { ok: true, reportId: report.id };
   } catch (e) {
     // Don't fail the whole run because the report-save flopped — the run
-    // record itself is the source of truth. Just log it.
-    console.error('Scheduled report save failed:', e.message, e.stack);
-    return { ok: false, error: e.message };
+    // record itself is the source of truth. But DO log loud enough that
+    // a Netlify log inspection will catch it, and return the error so the
+    // caller can stamp it on the run record for visibility.
+    console.error('Scheduled report save failed:', e.message, e.code, e.stack);
+    return { ok: false, error: (e.message || 'unknown') + (e.code ? ' (code: ' + e.code + ')' : '') };
   }
 }
 
