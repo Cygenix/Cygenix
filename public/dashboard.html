@@ -13867,13 +13867,60 @@ async function ta_deleteSchedule(id) {
 async function ta_runNow(id, btn) {
   if (!confirm('Run this schedule now?')) return;
   const orig = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '… running';
+  btn.disabled = true; btn.innerHTML = '… queueing';
   try {
-    const r = await ta_sched('run-now', { id });
-    if (r.status === 'success') {
-      if (typeof showToast === 'function') showToast('Run succeeded — ' + (r.rowsAffected || 0) + ' rows affected');
+    // Phase 2b: run-now returns immediately with { status: 'queued', runId }
+    // — the actual execution happens in the background function. We poll
+    // get-run every 3 seconds until status flips to success/failed or 15
+    // minutes elapse (matching the background function's hard cap).
+    const queued = await ta_sched('run-now', { id });
+    if (queued.status !== 'queued' || !queued.runId) {
+      // Belt-and-braces: support a future synchronous path returning final
+      // status directly, so this code doesn't fight a later refactor.
+      if (queued.status === 'success') {
+        if (typeof showToast === 'function') showToast('Run succeeded — ' + (queued.rowsAffected || 0) + ' rows affected');
+      } else if (queued.status === 'failed') {
+        alert('Run failed:\n\n' + (queued.errorMessage || 'unknown error'));
+      }
+      ta_loadSchedules();
+      return;
+    }
+
+    btn.innerHTML = '… running';
+    if (typeof showToast === 'function') showToast('Run started in background — polling for completion');
+
+    const POLL_MS = 3000;
+    const MAX_POLLS = (15 * 60 * 1000) / POLL_MS; // 15 min cap
+    let polls = 0;
+    let finalRun = null;
+    while (polls < MAX_POLLS) {
+      await new Promise(r => setTimeout(r, POLL_MS));
+      polls++;
+      let r;
+      try {
+        r = await ta_sched('get-run', { id: queued.runId, scheduleId: id });
+      } catch (e) {
+        // Transient: keep polling rather than failing the whole flow.
+        continue;
+      }
+      const status = r && r.run && r.run.status;
+      // Update the button periodically so the user sees progress
+      if (status === 'queued')  btn.innerHTML = '… queued';
+      if (status === 'running') btn.innerHTML = '… running (' + (polls * POLL_MS / 1000) + 's)';
+      if (status === 'success' || status === 'failed') {
+        finalRun = r.run;
+        break;
+      }
+    }
+
+    if (!finalRun) {
+      alert('Run did not complete within 15 minutes. Check Run history for status — it may still complete.');
+    } else if (finalRun.status === 'success') {
+      const rows = finalRun.rowsAffected || 0;
+      const stepCount = (finalRun.stepResults || []).length;
+      if (typeof showToast === 'function') showToast('Run succeeded — ' + rows.toLocaleString() + ' rows across ' + stepCount + ' step' + (stepCount === 1 ? '' : 's'));
     } else {
-      alert('Run failed:\n\n' + (r.errorMessage || 'unknown error'));
+      alert('Run failed:\n\n' + (finalRun.errorMessage || 'unknown error') + '\n\nSee Run history for step-level detail.');
     }
     ta_loadSchedules();
   } catch (e) {
