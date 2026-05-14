@@ -478,7 +478,7 @@ function parseMssqlUrl(connStr) {
   };
 }
 
-async function runNow(userId, body, containers) {
+async function runNow(userId, body, containers, event) {
   const { id } = body || {};
   if (!id) return { __err: 'id required' };
 
@@ -494,7 +494,8 @@ async function runNow(userId, body, containers) {
   if (!schedule)                       return { __err: 'schedule not found', __status: 404 };
   if (schedule.userId !== userId)      return { __err: 'forbidden', __status: 403 };
 
-  // Read the pinned version's snapshot — that's where the SQL/childSteps live.
+  // Sanity-check the pinned version exists, so we fail fast at the queue
+  // boundary rather than letting the background function discover it.
   let version;
   try {
     const { resource } = await containers.job_versions.item(schedule.jobVersionId, schedule.jobId).read();
@@ -505,165 +506,81 @@ async function runNow(userId, body, containers) {
   if (!version || !version.snapshot) {
     return { __err: 'Pinned version snapshot not found. Re-pin the version on the schedule.', __status: 400 };
   }
-
-  // Resolve what to execute. Two supported shapes:
-  //   (a) composite job → snapshot.childSteps[], execute each .sql in order
-  //   (b) simple job    → snapshot.sql, execute as one statement
-  const snap = version.snapshot;
-  const stepsToRun = Array.isArray(snap.childSteps) && snap.childSteps.length
-    ? snap.childSteps
-    : (snap.sql ? [{ sql: snap.sql, jobType: snap.jobType || 'sql' }] : []);
-  if (!stepsToRun.length) {
-    return { __err: 'No SQL to execute on the pinned version', __status: 400 };
-  }
-
-  // Validate target connection.
+  // Quick connection-string sanity. The background function repeats these
+  // checks, but doing them here gives the user a synchronous error instead
+  // of a queued run that immediately fails.
   const tgtConn = schedule.tgtConn || '';
-  if (!tgtConn) {
-    return { __err: 'No target connection stored on this schedule. Edit and re-save.', __status: 400 };
-  }
-  if (isHttpUrl(tgtConn)) {
-    return { __err: 'Azure Function targets are not supported by run-now yet — phase 3 will add this.', __status: 400 };
-  }
-  if (!isMssqlConn(tgtConn)) {
-    return { __err: 'Only mssql:// connection strings are supported in phase 2.', __status: 400 };
-  }
+  if (!tgtConn)            return { __err: 'No target connection stored on this schedule. Edit and re-save.', __status: 400 };
+  if (isHttpUrl(tgtConn))  return { __err: 'Azure Function targets are not supported by run-now yet — phase 3 will add this.', __status: 400 };
+  if (!isMssqlConn(tgtConn)) return { __err: 'Only mssql:// connection strings are supported.', __status: 400 };
 
-  // Create a "running" run record up front so the UI can see the row even
-  // if the connection hangs / Netlify times out before completion.
+  // Create the run record in 'queued' state. The background function will
+  // flip it to 'running' when it picks up, and then 'success' or 'failed'.
+  // Dashboard polls `get-run` to detect the transition.
   const runId    = newRunId();
   const startedAt = nowIso();
   const runDoc = {
     id: runId,
-    scheduleId: schedule.id,
+    scheduleId:   schedule.id,
     userId,
-    jobId:       schedule.jobId,
+    jobId:        schedule.jobId,
     jobVersionId: schedule.jobVersionId,
-    triggeredBy: body.triggeredBy || 'manual',
-    status:      'running',
+    triggeredBy:  body.triggeredBy || 'manual',
+    status:       'queued',
     startedAt,
-    finishedAt:  null,
+    finishedAt:   null,
     rowsAffected: 0,
     errorMessage: null,
-    stepResults: [],
+    stepResults:  [],
   };
   await containers.runs.items.create(runDoc);
 
-  // Open mssql pools lazily — target always, source only if needed. Some
-  // composite tasks have steps that run on source (e.g. SELECT/staging
-  // operations on the migration source database) and steps that run on
-  // target. Each step's `connOn` field decides which pool it uses. The
-  // canonical interpretation lives in project-builder.html line 4759:
-  //   const useConn = step.connOn === 'source' ? srcConn : tgtConn;
-  // — i.e. default is target, only 'source' diverts to the source pool.
-  let tgtPool = null;
-  let srcPool = null;
-  const ensureTgtPool = async () => {
-    if (tgtPool) return tgtPool;
-    tgtPool = await sql.connect(parseMssqlUrl(tgtConn));
-    return tgtPool;
-  };
-  const ensureSrcPool = async () => {
-    if (srcPool) return srcPool;
-    const srcConn = schedule.srcConn || '';
-    if (!srcConn) throw new Error('Step requires a source connection but the schedule has no srcConn stored. Edit and re-save the schedule.');
-    if (isHttpUrl(srcConn)) throw new Error('Azure Function source connections are not supported by run-now yet.');
-    if (!isMssqlConn(srcConn)) throw new Error('Source connection is not an mssql:// URL.');
-    // mssql package uses a global default pool; for a second concurrent
-    // pool we need a separate ConnectionPool instance.
-    srcPool = new sql.ConnectionPool(parseMssqlUrl(schedule.srcConn));
-    await srcPool.connect();
-    return srcPool;
-  };
+  // Fire-and-forget the background function. Netlify routes
+  // /.netlify/functions/<name>-background to the background runtime, which
+  // accepts the POST, returns 202 within milliseconds, then keeps executing
+  // up to the 15-minute background-function cap.
+  //
+  // We need to use an absolute URL because the Netlify Function context
+  // doesn't have window.location. The host comes from the inbound request's
+  // headers. We `await` the fetch but with a short timeout so we get the
+  // 202 back (confirming the background did start) without waiting for the
+  // actual migration to finish.
+  const host = (event && event.headers && (event.headers['host'] || event.headers['Host'])) || '';
+  const proto = (event && event.headers && (event.headers['x-forwarded-proto'] || event.headers['X-Forwarded-Proto'])) || 'https';
+  const bgUrl = host
+    ? `${proto}://${host}/.netlify/functions/scheduler-run-background`
+    : '/.netlify/functions/scheduler-run-background';
 
-  let totalRows = 0;
-  const stepResults = [];
-  let failedStep = null;
-  let failedError = null;
   try {
-    for (let i = 0; i < stepsToRun.length; i++) {
-      const step = stepsToRun[i];
-      const stepLabel = step.tgtTable || step.name || ('step ' + (i + 1));
-      const stepSql   = (step.sql || step.insertSQL || '').trim();
-      const connOn    = step.connOn === 'source' ? 'source' : 'target';
-      if (!stepSql) {
-        stepResults.push({ index: i, label: stepLabel, status: 'skipped', reason: 'no sql' });
-        continue;
-      }
-      // Migration-style steps need paginated SELECT/INSERT which we haven't
-      // ported server-side yet. Skip them with a clear marker rather than
-      // running just the insertSQL (which would crash without bind data).
-      if (step.jobType === 'migration' && !stepSql.toUpperCase().includes('SELECT')) {
-        stepResults.push({
-          index: i, label: stepLabel, status: 'skipped',
-          reason: 'migration steps not supported in scheduled runs yet — use Project Builder → Run selected',
-        });
-        continue;
-      }
-      const stepStart = Date.now();
-      try {
-        const pool = connOn === 'source' ? await ensureSrcPool() : await ensureTgtPool();
-        const r = await pool.request().query(stepSql);
-        const rows = Array.isArray(r.rowsAffected)
-          ? r.rowsAffected.reduce((a,b) => a + b, 0)
-          : (r.rowsAffected || 0);
-        totalRows += rows;
-        stepResults.push({
-          index: i, label: stepLabel, status: 'success', connOn,
-          rowsAffected: rows, durationMs: Date.now() - stepStart,
-        });
-      } catch (stepErr) {
-        failedStep = i;
-        failedError = stepErr;
-        stepResults.push({
-          index: i, label: stepLabel, status: 'failed', connOn,
-          durationMs: Date.now() - stepStart,
-          errorMessage: String(stepErr.message || stepErr),
-        });
-        break; // stop on first failure (matches "Run selected" behaviour)
-      }
-    }
-  } catch (connErr) {
-    failedError = connErr;
-  } finally {
-    if (tgtPool) { try { await tgtPool.close(); } catch {} }
-    if (srcPool) { try { await srcPool.close(); } catch {} }
+    // Short timeout: we just need the 202 ack, not the work to finish.
+    const ctl = new AbortController();
+    const to  = setTimeout(() => ctl.abort(), 8_000);
+    await fetch(bgUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runId, scheduleId: schedule.id, userId }),
+      signal: ctl.signal,
+    });
+    clearTimeout(to);
+  } catch (e) {
+    // If the dispatch itself failed (DNS, network, abort), mark the run
+    // failed synchronously so the dashboard's poll sees a stable state.
+    const failedRun = {
+      ...runDoc,
+      status: 'failed',
+      finishedAt: nowIso(),
+      errorMessage: 'Could not dispatch background runner: ' + (e.message || e),
+    };
+    try { await containers.runs.item(runId, schedule.id).replace(failedRun); } catch {}
+    return { __err: 'Could not dispatch background runner: ' + (e.message || e), __status: 502 };
   }
-
-  // Finalise the run record.
-  const finishedAt = nowIso();
-  const status = failedError ? 'failed' : 'success';
-  const errorMessage = failedError ? String(failedError.message || failedError) : null;
-
-  const finalRun = {
-    ...runDoc,
-    status,
-    finishedAt,
-    rowsAffected: totalRows,
-    errorMessage,
-    stepResults,
-  };
-  await containers.runs.item(runId, schedule.id).replace(finalRun);
-
-  // Update lastRunAt / lastRunStatus / nextRunAt on the schedule itself.
-  const nextRunAt = schedule.cron ? computeNextRun(schedule.cron, new Date()) : null;
-  const updatedSchedule = {
-    ...schedule,
-    lastRunAt: finishedAt,
-    lastRunStatus: status,
-    nextRunAt,
-    updatedAt: nowIso(),
-  };
-  await containers.schedules.item(schedule.id, userId).replace(updatedSchedule);
 
   return {
     runId,
-    status,
-    rowsAffected: totalRows,
-    errorMessage,
-    stepResults,
+    scheduleId: schedule.id,
+    status: 'queued',
     startedAt,
-    finishedAt,
+    message: 'Run queued — background runner started. Poll get-run for completion.',
   };
 }
 
@@ -712,7 +629,7 @@ exports.handler = async (event) => {
   if (!fn) return errorResponse(400, `Unknown action: ${action}`);
 
   try {
-    const result = await fn(userId, body, containers);
+    const result = await fn(userId, body, containers, event);
     if (result && result.__err) {
       const status = result.__status || 400;
       const { __err, __status, ...rest } = result;
