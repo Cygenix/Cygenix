@@ -538,7 +538,12 @@ exports.handler = async (event) => {
       const step = stepsToRun[i];
       const stepLabel = step.tgtTable || step.name || ('step ' + (i + 1));
       const stepLog = [];
-      const stepStart = Date.now();
+      // Wall-clock ISO timestamps for the conversion report (matches what
+      // project-builder.html stamps on manual runs via `step.startedAt /
+      // finishedAt / durationMs`). Without these the report's Started /
+      // Duration columns render blank on scheduled rows.
+      const stepStart  = Date.now();
+      const startedAt  = new Date(stepStart).toISOString();
       try {
         // Dispatch: SQL-script step vs migration step
         const isSqlStep =
@@ -547,6 +552,8 @@ exports.handler = async (event) => {
         const r = isSqlStep
           ? await execSqlStep(step, ensureSrc, ensureTgt, stepLog)
           : await execMigrationStep(step, ensureSrc, ensureTgt, stepLog);
+        const stepEnd  = Date.now();
+        const finishedAt = new Date(stepEnd).toISOString();
 
         stepResults.push({
           index: i, label: stepLabel,
@@ -557,7 +564,9 @@ exports.handler = async (event) => {
           rowsAfter:    r.rowsAfter  ?? null,
           batchErrorCount: r.batchErrorCount || 0,
           pagesProcessed: r.pagesProcessed || null,
-          durationMs: Date.now() - stepStart,
+          startedAt,
+          finishedAt,
+          durationMs: stepEnd - stepStart,
           reason: r.reason || null,
           errorMessage: r.errorMessage || null,
           log: r.log || stepLog,
@@ -568,10 +577,13 @@ exports.handler = async (event) => {
           break;
         }
       } catch (stepErr) {
+        const stepEnd = Date.now();
         stepResults.push({
           index: i, label: stepLabel, status: 'failed',
           connOn: step.connOn === 'source' ? 'source' : 'target',
-          durationMs: Date.now() - stepStart,
+          startedAt,
+          finishedAt: new Date(stepEnd).toISOString(),
+          durationMs: stepEnd - stepStart,
           errorMessage: String(stepErr.message || stepErr),
           log: stepLog,
         });
@@ -836,6 +848,100 @@ function buildScheduledReport({ schedule, runRecord, snapshot, userEmail, userNa
   const wasisRuleCount = wasisAggRules.length;
   const wasisColCount  = wasisColSet.size;
 
+  // ── Parameter usage (ports manual buildProjectReport's walker) ────────
+  // Phase 2a substitutes @@Tokens in step.sql / insertSQL / srcWhere — but
+  // NOT in columnMapping[].literalValue / fixedValue / wasisRules[].newVal.
+  // The runner applies those at execution time via applyMappingTransform.
+  // So a snapshot can still carry raw @@Token strings on its columnMapping
+  // entries, and the report should surface them for the same Parameters
+  // tab the manual report populates.
+  //
+  // Token-extraction matches the manual side's @@-prefix convention. We
+  // pull each @@Identifier out of a string (e.g. "literal @@Client text" →
+  // ["Client"]) so a single field with multiple tokens produces multiple
+  // records. resolved is left null — we can't run CygenixParams server-
+  // side. The manual viewer treats null resolved as "param exists but no
+  // current value", which is informative enough.
+  function extractAtAtTokens(s) {
+    if (typeof s !== 'string') return [];
+    const out = [];
+    const re = /@@([A-Za-z_][A-Za-z_0-9]*)/g;
+    let m;
+    while ((m = re.exec(s)) !== null) {
+      if (!out.includes(m[1])) out.push(m[1]);
+    }
+    return out;
+  }
+
+  const paramUsageRecords = [];
+  const paramUsageSeen    = new Set();
+  const paramUsageNames   = new Set();
+  const addParamUsage = (jobId, jobName, srcTable, tgtTable, srcCol, tgtCol, source, expression, token) => {
+    const key = (jobId || '') + '|' + (tgtCol || '') + '|' + (source || '') + '|' + token + '|' + (expression || '');
+    if (paramUsageSeen.has(key)) return;
+    paramUsageSeen.add(key);
+    paramUsageNames.add(token);
+    // Match `resolved` to the phase-2a substitution log when we can —
+    // gives the report a real value to display instead of null.
+    let resolved = null;
+    if (Array.isArray(snapshot._substitutedTokens)) {
+      const hit = snapshot._substitutedTokens.find(t => {
+        const cleanToken = String(t.token || '').replace(/^@@/, '').replace(/[{}]/g, '');
+        return cleanToken === token;
+      });
+      if (hit) resolved = hit.resolved;
+    }
+    paramUsageRecords.push({
+      paramName:  token,
+      paramToken: '@@' + token,
+      resolved,
+      jobId, jobName,
+      srcTable: srcTable || '',
+      tgtTable: tgtTable || '',
+      srcCol:   srcCol   || '',
+      tgtCol:   tgtCol   || '',
+      source, expression,
+    });
+  };
+
+  childSteps.forEach(s => {
+    if (!s.srcTable) return;
+    const jobId    = s.jobId || '';
+    const jobName  = s.name || s.jobId || '(unnamed)';
+    const srcTable = s.srcTable || '';
+    const tgtTable = s.tgtTable || '';
+    (Array.isArray(s.columnMapping) ? s.columnMapping : []).forEach(m => {
+      if (!m) return;
+      const srcCol = m.srcCol || '';
+      const tgtCol = m.tgtCol || '';
+      // literalValue / fixedValue
+      ['literalValue', 'fixedValue'].forEach(fieldName => {
+        const v = m[fieldName];
+        if (typeof v !== 'string' || !v.includes('@@')) return;
+        const tokens = extractAtAtTokens(v);
+        tokens.forEach(tok => {
+          addParamUsage(jobId, jobName, srcTable, tgtTable, srcCol, tgtCol,
+            fieldName === 'literalValue' ? 'literal value' : 'fixed value',
+            v, tok);
+        });
+      });
+      // Was/Is rule newVal
+      (Array.isArray(m.wasisRules) ? m.wasisRules : []).forEach(r => {
+        if (!r) return;
+        const newVal = r.newVal ?? r.is ?? r.to;
+        if (typeof newVal !== 'string' || !newVal.includes('@@')) return;
+        const oldVal = r.oldVal ?? r.was ?? r.from ?? '';
+        const tokens = extractAtAtTokens(newVal);
+        tokens.forEach(tok => {
+          addParamUsage(jobId, jobName, srcTable, tgtTable, srcCol, tgtCol,
+            'Was/Is rule', String(oldVal) + ' → ' + newVal, tok);
+        });
+      });
+    });
+  });
+  const paramUsageCount      = paramUsageRecords.length;
+  const paramUsageParamCount = paramUsageNames.size;
+
   // ── Connection identifiers (server/database only — never credentials) ─
   const srcDesc = parseDbConnFromMssqlUrl(schedule.srcConn || '');
   const tgtDesc = parseDbConnFromMssqlUrl(schedule.tgtConn || '');
@@ -875,23 +981,9 @@ function buildScheduledReport({ schedule, runRecord, snapshot, userEmail, userNa
     // Parameter usage: pre-resolved at phase 2a snapshot time. We surface
     // the list (with resolved values stamped on the snapshot) so the
     // report still shows which params drove the run.
-    paramUsage:           Array.isArray(snapshot._substitutedTokens) ? snapshot._substitutedTokens.map(t => ({
-      paramName:  t.token.replace(/^@@/, '').replace(/[{}]/g, ''),
-      paramToken: t.token,
-      resolved:   t.resolved,
-      jobId:      '',
-      jobName:    snapshot.name || '',
-      srcTable:   '',
-      tgtTable:   '',
-      srcCol:     '',
-      tgtCol:     '',
-      source:     'snapshot resolution',
-      expression: t.token,
-    })) : [],
-    paramUsageCount:      Array.isArray(snapshot._substitutedTokens) ? snapshot._substitutedTokens.length : 0,
-    paramUsageParamCount: Array.isArray(snapshot._substitutedTokens)
-      ? new Set(snapshot._substitutedTokens.map(t => t.token)).size
-      : 0,
+    paramUsage:           paramUsageRecords,
+    paramUsageCount,
+    paramUsageParamCount,
     warnings: [
       ...mergedSteps.filter(s => s.status === 'failed').map(s => 'Job failed: ' + (s.name || s.type)),
     ],
