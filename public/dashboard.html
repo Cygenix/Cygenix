@@ -1512,6 +1512,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <span style="font-size:11px;color:var(--accent);font-family:var(--mono)"><span id="jobs-selected-count">0</span> selected</span>
           <select id="jobs-move-target" class="form-input" style="width:auto;min-width:180px;padding:4px 8px;font-size:11px"></select>
           <button class="btn btn-primary btn-sm" onclick="bulkMoveJobsToProject()">Move →</button>
+          <button class="btn btn-ghost btn-sm" onclick="bulkCreateTaskFromJobs()" title="Bundle the selected jobs into a single composite task and schedule it from Task Agent">📦 Create task</button>
           <button class="btn btn-ghost btn-sm" onclick="clearJobSelection()">Clear</button>
         </div>
         <span id="jobs-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
@@ -4658,6 +4659,136 @@ function bulkMoveJobsToProject(){
   }
 }
 
+// Bulk-create a composite task ("📦 Create task") from selected jobs in the
+// All Migration Jobs view. Mirrors the same semantics as project-builder.html's
+// openCreateTaskModal / confirmCreateTask:
+//   - Bundles the selected jobs into a single composite job stored in
+//     localStorage.cygenix_jobs with jobType:'composite'.
+//   - Surfaces in Task Agent → + New schedule → Job dropdown.
+//   - Scheduling happens in Task Agent, not here.
+//
+// Cross-project safety:
+//   Connections (srcConn/tgtConn) live on the project, not the individual
+//   job. If the selection spans multiple projects, the resulting composite
+//   would be ambiguous about which connection to use at run time. Rather
+//   than guess (silent-wrong) or capture per-step connections (would need
+//   runner changes), we require a single-project selection and explain why
+//   when the user picks a mixed set. Unassigned jobs (no projectId) are
+//   their own bucket — also rejected if mixed.
+//
+// Snapshot semantics:
+//   Each child step is a deep-clone of the job at save time, with srcConn
+//   and tgtConn captured from the source project. This matches what the
+//   project-builder version does. Re-runs use the captured snapshot, not
+//   the live job state — same guarantee phase 2a gives manual schedules.
+function bulkCreateTaskFromJobs(){
+  if (!selectedJobIds.size){
+    alert('Tick at least one job first.');
+    return;
+  }
+  let allJobs = [];
+  try { allJobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); } catch {}
+  if (!Array.isArray(allJobs)) allJobs = [];
+  const selectedJobs = allJobs.filter(j => selectedJobIds.has(j.id));
+  if (!selectedJobs.length){
+    alert('Selected jobs not found in storage. Try refreshing.');
+    return;
+  }
+
+  // Same-project guard. Treat empty/falsy projectId as a single shared
+  // "unassigned" bucket so all-unassigned selections are still allowed.
+  const projectIds = new Set(selectedJobs.map(j => j.projectId || '__unassigned'));
+  if (projectIds.size > 1){
+    alert('All selected jobs must belong to the same project. Composite tasks share one source/target connection pair, which is set per project — bundling across projects would be ambiguous at run time. Filter to one project first.');
+    return;
+  }
+  const projectIdRaw = selectedJobs[0].projectId || '';
+  let projects = [];
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]'); } catch {}
+  const project = projectIdRaw ? (projects.find(p => p.id === projectIdRaw) || null) : null;
+  const projectName = project ? (project.name || '') : (projectIdRaw ? '(unknown project)' : '(unassigned)');
+
+  // Resolve project connections. project_connections is keyed by projectId
+  // in cygenix_project_connections. Fall back to global cygenix_connections
+  // if no per-project pair is set.
+  let srcConn = '', tgtConn = '';
+  try {
+    const pc = JSON.parse(localStorage.getItem('cygenix_project_connections')||'{}');
+    if (projectIdRaw && pc[projectIdRaw]){
+      srcConn = pc[projectIdRaw].srcConn || pc[projectIdRaw].source || '';
+      tgtConn = pc[projectIdRaw].tgtConn || pc[projectIdRaw].target || '';
+    }
+  } catch {}
+  if (!tgtConn){
+    if (!confirm('No target connection is configured for project "' + projectName + '". The task will be saved but Task Agent cannot run it until a target is set on the project. Continue?')) return;
+  }
+
+  // Prompt for a task name. Default reflects what we're bundling so the
+  // user can hit Enter for a sensible auto-name.
+  const defaultName = projectName + ' – ' + selectedJobs.length + ' job' + (selectedJobs.length===1?'':'s');
+  const name = (prompt('Name this composite task:', defaultName) || '').trim();
+  if (!name) return;   // user cancelled or cleared
+
+  // Name-clash check — keep the Task Agent's Job dropdown unambiguous.
+  if (allJobs.some(j => (j.name||'').trim().toLowerCase() === name.toLowerCase())){
+    if (!confirm('A job called "' + name + '" already exists. Save this task with the same name anyway?')) return;
+  }
+
+  // Build the child steps array. Deep-clone each selected job and clear
+  // any per-run state so the snapshot is clean.
+  const childSteps = selectedJobs.map((j, order) => {
+    const copy = JSON.parse(JSON.stringify(j));
+    copy.order = order;
+    copy.status = 'pending';
+    copy.log = '';
+    // groupId/groupName aren't tracked on dashboard-level jobs but the
+    // composite shape carries them on project-builder bundles. Stamp
+    // empty values so downstream consumers don't trip on undefined.
+    copy.groupId = copy.groupId || '';
+    copy.groupName = copy.groupName || '';
+    copy.groupMode = copy.groupMode || 'sequential';
+    return copy;
+  });
+
+  const compositeJob = {
+    id: 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+    name,
+    description: '',
+    jobType: 'composite',
+    type:    'composite',                    // mirror for code that reads .type
+    created: new Date().toISOString(),
+    // Standard summary fields so the All Jobs table renders cleanly
+    source:    '(multiple)',
+    target:    '(multiple)',
+    totalRows: 0,
+    tables:    [],
+    // Provenance
+    projectId:   projectIdRaw,
+    projectName: project ? (project.name || '') : '',
+    // Connection snapshot at save time
+    srcConn, tgtConn,
+    // Composite payload
+    childSteps,
+    childStepCount: childSteps.length,
+    groupCount: 1,                           // dashboard-bundled tasks are flat
+  };
+
+  // Prepend so it shows up at the top of Task Agent → Job dropdown
+  allJobs.unshift(compositeJob);
+  try {
+    localStorage.setItem('cygenix_jobs', JSON.stringify(allJobs));
+  } catch (e) {
+    alert('Could not save task: ' + (e && e.message || 'storage error'));
+    return;
+  }
+
+  // Refresh local state mirror, drop selection, re-render
+  if (state && Array.isArray(state.jobs)) state.jobs = allJobs;
+  clearJobSelection();
+  renderAllJobs();
+  showToast('Task packaged — open Task Agent → + New schedule to schedule it');
+}
+
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
 
@@ -6618,6 +6749,133 @@ document.addEventListener('click', function(e) {
   }
 });
 
+// ── Token keep-alive ──────────────────────────────────────────────────────
+// Entra ID tokens default to a 1-hour lifetime. Without proactive refresh,
+// the dashboard's first API call after that hour fails with 401 — and
+// `cygenixFetch` is deliberately dumb-synchronous (just attaches whatever
+// idToken is in cygenix_entra_account) so it can't refresh on its own.
+//
+// Two-pronged keep-alive:
+//   1. ensureFreshToken() — on demand. Reads exp from the stored record,
+//      and if it's expired or within REFRESH_THRESHOLD_MS, runs MSAL's
+//      acquireTokenSilent and writes the new idToken back. Returns true
+//      if the token is now fresh (whether it needed a refresh or not),
+//      false if refresh failed (user needs to re-login).
+//   2. A 10-minute setInterval keep-alive loop — runs ensureFreshToken
+//      in the background so the everyday case never produces a 401 mid
+//      session.
+//
+// The dumb cygenixFetch stays untouched. Callers that hit a 401 anyway
+// (e.g. tab was suspended overnight, timer didn't run) can opportunistically
+// call ensureFreshToken() and retry — see the reports loader for an
+// example.
+const REFRESH_THRESHOLD_MS = 15 * 60 * 1000;       // refresh when ≤15 min remain
+const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000;     // wake every 10 min
+
+async function ensureFreshToken() {
+  try {
+    // Read the stored account record
+    const raw = sessionStorage.getItem('cygenix_entra_account')
+             || localStorage.getItem('cygenix_entra_account');
+    if (!raw) return false;
+    let acc;
+    try { acc = JSON.parse(raw); } catch { return false; }
+    if (!acc || !acc.idToken) return false;
+
+    // exp is stored as a millisecond timestamp (per login.html convention).
+    // If we're still safely inside the window, skip — no work to do.
+    const expMs = Number(acc.exp) || 0;
+    const now = Date.now();
+    if (expMs && (expMs - now) > REFRESH_THRESHOLD_MS) return true;
+
+    // We need a refresh. MSAL silent-refresh path requires the library
+    // and an account in MSAL's cache. If either is missing, we can't
+    // refresh — caller decides whether to surface that to the user.
+    if (typeof msal === 'undefined' || typeof msal.PublicClientApplication !== 'function') {
+      return false;
+    }
+    const app = new msal.PublicClientApplication({
+      auth: {
+        clientId:         'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+        authority:        'https://cygenix.ciamlogin.com/',
+        knownAuthorities: ['cygenix.ciamlogin.com'],
+      },
+      cache: { cacheLocation: 'localStorage' },
+    });
+    await app.initialize();
+
+    // Pick the MSAL account that matches our stored email — there can be
+    // multiple cached accounts (Demo, Cygenix Admin, etc.) and we want to
+    // refresh the one currently in use, not a random other.
+    const accounts = app.getAllAccounts() || [];
+    const target = accounts.find(a => (a.username || '').toLowerCase() === (acc.email || '').toLowerCase())
+                || accounts[0];
+    if (!target) return false;
+
+    let result;
+    try {
+      result = await app.acquireTokenSilent({
+        account: target,
+        scopes: ['openid', 'profile', 'email'],
+      });
+    } catch (e) {
+      // InteractionRequiredAuthError: user needs to redirect-login.
+      // Don't try to handle it here — caller surfaces the prompt.
+      console.warn('[keepalive] acquireTokenSilent failed:', e.errorCode || e.name || e.message);
+      return false;
+    }
+    if (!result || !result.idToken) return false;
+
+    // Write the fresh token back. Preserve all other fields the account
+    // record carries (name, userId, email, provider, accessToken). Update
+    // exp from the new token's exp claim (seconds → ms).
+    let newExpMs = expMs;
+    try {
+      const b64 = result.idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
+      const claims = JSON.parse(atob(padded));
+      if (claims.exp) newExpMs = claims.exp * 1000;
+    } catch {}
+
+    const refreshed = Object.assign({}, acc, {
+      idToken: result.idToken,
+      accessToken: result.accessToken || acc.accessToken || '',
+      exp: newExpMs,
+    });
+    // Write to whichever store the original record lived in so we don't
+    // create a phantom duplicate. localStorage takes precedence per the
+    // read order above (session first, local second), so we mirror that.
+    if (sessionStorage.getItem('cygenix_entra_account')) {
+      sessionStorage.setItem('cygenix_entra_account', JSON.stringify(refreshed));
+    } else {
+      localStorage.setItem('cygenix_entra_account', JSON.stringify(refreshed));
+    }
+    return true;
+  } catch (e) {
+    console.warn('[keepalive] ensureFreshToken error:', e.message);
+    return false;
+  }
+}
+
+// Render a one-off "session expired" overlay when silent refresh isn't
+// possible (e.g. MSAL refresh-token also expired, user has been signed
+// out elsewhere). Single clickable action: re-sign-in via signOut(),
+// which redirects through login.html and brings us back fresh.
+function showSessionExpiredBanner(targetEl, contextLabel) {
+  const label = contextLabel || 'this page';
+  const html =
+    '<div class="empty-state" style="padding:2rem;text-align:center">'
+    + '<h3>Your session has expired</h3>'
+    + '<p style="color:var(--text3);font-size:12px;margin:0.5rem 0 1rem">'
+    + 'Your Entra ID token has timed out — that\'s a normal hourly rotation. '
+    + 'Sign in again to refresh ' + label + '.'
+    + '</p>'
+    + '<button class="btn btn-primary btn-sm" onclick="signOut()">Sign in again</button>'
+    + '</div>';
+  if (targetEl) targetEl.innerHTML = html;
+}
+
+
 async function signOut() {
   // Flag so login.html doesn't auto-resign-in via acquireTokenSilent
   sessionStorage.setItem('cygenix_just_signed_out', '1');
@@ -6816,11 +7074,31 @@ async function renderReportsList() {
 
   let reports = [];
   try {
-    const r = await cygenixFetch('/.netlify/functions/reports', {
+    let r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'list' }),
     });
+    // 401 retry path. The token may have just expired (1-hour rotation)
+    // while the dashboard tab was suspended. Try a single silent refresh
+    // via ensureFreshToken() and retry the call. If it still 401s, the
+    // refresh token itself has expired too — fall through to the
+    // graceful expired-session banner rather than the diagnostic text.
+    if (r.status === 401) {
+      console.info('[reports] 401 — attempting silent token refresh');
+      const refreshed = await ensureFreshToken();
+      if (refreshed) {
+        r = await cygenixFetch('/.netlify/functions/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'list' }),
+        });
+      }
+      if (r.status === 401) {
+        showSessionExpiredBanner(el, 'the reports list');
+        return;
+      }
+    }
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     reports = data.reports || [];
@@ -8437,6 +8715,28 @@ setTimeout(() => {
     }
   } catch(e) { console.error('[init] safety-net initUserAndProject:', e); }
 }, 800);
+
+// ── Token keep-alive scheduler ────────────────────────────────────────────
+// Wakes every KEEP_ALIVE_INTERVAL_MS (10 min) and refreshes the stored
+// idToken if it's getting close to expiry. Means the everyday case
+// (browser tab open, user working) never produces a 401 mid-session —
+// we always have a fresh token attached when cygenixFetch is called.
+//
+// First tick runs 30 seconds after load to give MSAL time to initialise
+// without piling onto the init burst. Subsequent ticks every 10 min.
+// ensureFreshToken() is a no-op when the token has plenty of life left,
+// so the timer is cheap.
+//
+// Note: a sleeping/suspended tab won't fire this timer. That case is
+// handled by the 401-retry path in renderReportsList (and anywhere else
+// we add it later) — the timer is the proactive layer, the retry is the
+// reactive layer.
+setTimeout(() => {
+  try { ensureFreshToken(); } catch (e) { console.warn('[keepalive] first-tick error:', e.message); }
+  setInterval(() => {
+    try { ensureFreshToken(); } catch (e) { console.warn('[keepalive] tick error:', e.message); }
+  }, KEEP_ALIVE_INTERVAL_MS);
+}, 30_000);
 
 // Re-render the project status panel whenever Cosmos sync pulls new
 // data from the cloud — covers the case where the user has saved a
