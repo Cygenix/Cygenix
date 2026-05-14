@@ -388,6 +388,45 @@ async function versionCreate(userId, body, containers) {
   return { id, version: nextVersion, created: true };
 }
 
+// version-delete — remove a single snapshot row. Used to clean up probe
+// versions or accidental snapshots. Refuses if any schedule still pins
+// to this version, to avoid leaving schedules with a dangling jobVersionId.
+async function versionDelete(userId, body, containers) {
+  const { id, jobId } = body || {};
+  if (!id || !jobId) return { __err: 'id and jobId required' };
+
+  // Verify the version belongs to this user before allowing delete.
+  let existing;
+  try {
+    const { resource } = await containers.job_versions.item(id, jobId).read();
+    existing = resource;
+  } catch (e) {
+    if (isMissingResource(e)) return { __err: 'version not found', __status: 404 };
+    throw e;
+  }
+  if (!existing)                    return { __err: 'version not found', __status: 404 };
+  if (existing.userId !== userId)   return { __err: 'forbidden', __status: 403 };
+
+  // Block delete if any schedule pins to this version.
+  const { resources: pinned } = await containers.schedules.items.query({
+    query: 'SELECT c.id, c.name FROM c WHERE c.userId = @u AND c.jobVersionId = @v',
+    parameters: [
+      { name: '@u', value: userId },
+      { name: '@v', value: id },
+    ],
+  }).fetchAll();
+  if (pinned.length) {
+    return {
+      __err: 'Cannot delete: this version is pinned by ' + pinned.length + ' schedule(s): '
+        + pinned.map(s => s.name).join(', '),
+      __status: 409,
+    };
+  }
+
+  await containers.job_versions.item(id, jobId).delete();
+  return { deleted: true };
+}
+
 // ── run-now (Phase 2) ──────────────────────────────────────────────────────
 //
 // Server-side execution of a scheduled task. Takes a scheduleId, reads the
@@ -666,6 +705,7 @@ exports.handler = async (event) => {
     'get-run':         getRun,
     'version-list':    versionList,
     'version-create':  versionCreate,
+    'version-delete':  versionDelete,
     'run-now':         runNow,
   };
   const fn = handlers[action];
