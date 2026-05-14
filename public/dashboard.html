@@ -14012,15 +14012,69 @@ async function ta_createVersionFromSelected() {
   if (!job) return alert('Job not on this browser.');
   const label = prompt('Label for this snapshot (optional):', 'manual');
   if (label === null) return;
+
+  // ── Phase 2a — snapshot parameter substitution ──────────────────────────
+  // Scheduled runs execute server-side with no browser context. CygenixParams
+  // tokens (e.g. {client_id}, {conv_number}) get resolved here at snapshot
+  // time so the scheduled run sees pre-substituted SQL. The substitution
+  // also gets applied to childSteps[*].sql and childSteps[*].insertSQL so
+  // composite tasks behave the same.
+  //
+  // Was/Is rules don't need a separate step — they're already baked into
+  // each step's generated SQL via CASE WHEN blocks at SQL-generation time
+  // (project-builder.html line ~4894). The structured rules also travel
+  // along on each columnMapping[].wasisRules for traceability/reporting.
+  //
+  // Reconciliation, one-to-many cursor SQL, and excluded-row capture are
+  // NOT yet supported in scheduled runs — phase 2b will handle these
+  // explicitly with clear "not supported yet" reasons in the run record.
+  const snapshot = JSON.parse(JSON.stringify(job)); // deep clone — don't mutate localStorage job
+  const substitutedTokens = [];
+  const trySub = (s) => {
+    if (!s || typeof s !== 'string') return s;
+    if (!window.CygenixParams || typeof window.CygenixParams.substituteParams !== 'function') return s;
+    const before = s;
+    const after = window.CygenixParams.substituteParams(s);
+    if (after !== before && typeof window.CygenixParams.findTokens === 'function') {
+      try {
+        const tokens = window.CygenixParams.findTokens(before) || [];
+        tokens.forEach(t => {
+          const resolved = window.CygenixParams.substituteParams(t);
+          if (resolved !== t && !substitutedTokens.find(x => x.token === t)) {
+            substitutedTokens.push({ token: t, resolved });
+          }
+        });
+      } catch {}
+    }
+    return after;
+  };
+  // Top-level SQL fields (raw-SQL jobs).
+  if (snapshot.sql)       snapshot.sql       = trySub(snapshot.sql);
+  if (snapshot.insertSQL) snapshot.insertSQL = trySub(snapshot.insertSQL);
+  // Composite-job children.
+  if (Array.isArray(snapshot.childSteps)) {
+    snapshot.childSteps.forEach(step => {
+      if (step.sql)       step.sql       = trySub(step.sql);
+      if (step.insertSQL) step.insertSQL = trySub(step.insertSQL);
+      if (step.srcWhere)  step.srcWhere  = trySub(step.srcWhere);
+    });
+  }
+  // Stamp the snapshot with substitution metadata so phase 2b's runner —
+  // and any future audit — can see what was resolved and when.
+  snapshot._capturedAt          = new Date().toISOString();
+  snapshot._substitutedTokens   = substitutedTokens;
+  snapshot._captureClientNote   = 'Parameter values were resolved from the browser at version-create time. Was/Is rules are pre-baked into step SQL.';
+
   try {
     const r = await ta_data('version-create', {
       jobId,
-      snapshot: job,
+      snapshot,
       label: label || 'manual',
-      note: ''
+      note:  substitutedTokens.length ? (substitutedTokens.length + ' parameter(s) resolved at snapshot') : ''
     });
     if (r.created) {
-      if (typeof showToast === 'function') showToast('Snapshot v' + r.version + ' created');
+      const tokenSuffix = substitutedTokens.length ? ' (' + substitutedTokens.length + ' param' + (substitutedTokens.length === 1 ? '' : 's') + ' resolved)' : '';
+      if (typeof showToast === 'function') showToast('Snapshot v' + r.version + ' created' + tokenSuffix);
     } else {
       if (typeof showToast === 'function') showToast('No change — matches existing v' + r.version);
     }
