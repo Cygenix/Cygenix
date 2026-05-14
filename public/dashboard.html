@@ -14010,8 +14010,21 @@ async function ta_createVersionFromSelected() {
   const jobs = safeArr('cygenix_jobs');
   const job = jobs.find(j => j.id === jobId);
   if (!job) return alert('Job not on this browser.');
-  const label = prompt('Label for this snapshot (optional):', 'manual');
-  if (label === null) return;
+
+  // Confirm with a clear summary so accidental clicks don't surprise the
+  // user, but DON'T use prompt() — pressing Escape on a prompt returns null
+  // and silently aborts the whole function, which earlier looked exactly
+  // like the snapshot button being broken. confirm() is binary: OK or
+  // Cancel, no hidden third state.
+  const childStepCount = Array.isArray(job.childSteps) ? job.childSteps.length : 0;
+  const summary = childStepCount
+    ? ('Snapshot "' + job.name + '" (' + childStepCount + ' step' + (childStepCount === 1 ? '' : 's') + ')?')
+    : ('Snapshot "' + job.name + '"?');
+  if (!confirm(summary + '\n\nA new pinned version will be created in Cosmos with the current SQL and parameter substitutions.')) {
+    if (typeof showToast === 'function') showToast('Snapshot cancelled');
+    return;
+  }
+  const label = 'manual';
 
   // ── Phase 2a — snapshot parameter substitution ──────────────────────────
   // Scheduled runs execute server-side with no browser context. CygenixParams
