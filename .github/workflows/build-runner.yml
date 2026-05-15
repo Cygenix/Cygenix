@@ -1,0 +1,77 @@
+# .github/workflows/build-runner.yml
+#
+# Build and push the Cygenix migration runner Docker image to Azure Container
+# Registry. Triggered on pushes to main that touch runner/ files, or manually
+# via the Actions tab in GitHub.
+#
+# ── Authentication ──────────────────────────────────────────────────────────
+# Uses OIDC (OpenID Connect) federation with Microsoft Entra ID. No secrets
+# stored in GitHub — the federated credential we set up on the
+# cygenix-aci-trigger app registration trusts tokens issued by GitHub
+# Actions for THIS specific repo and branch. Azure verifies the token
+# signature against GitHub's JWKS endpoint and issues a short-lived access
+# token. Means there's no client secret in GitHub that could leak.
+#
+# ── Image tagging ───────────────────────────────────────────────────────────
+# Builds two tags per push:
+#   :latest       — always the most recent build, used by ACI by default
+#   :{git-sha}    — immutable pointer for rollback / audit
+# Both go to the same registry, both refer to the same image content.
+
+name: Build runner image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'runner/**'
+      - '.github/workflows/build-runner.yml'
+  workflow_dispatch:   # manual trigger from the Actions tab — useful for testing
+
+# OIDC requires id-token write permission. contents:read is needed for actions/checkout.
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log into Azure
+        # azure/login@v2 with client-id + tenant-id + subscription-id + no
+        # secret = OIDC federated auth. GitHub mints a token signed for the
+        # subject "repo:Cygenix/Cygenix:ref:refs/heads/main" and Azure
+        # accepts it because we configured the federated credential on
+        # cygenix-aci-trigger to trust exactly that subject.
+        uses: azure/login@v2
+        with:
+          client-id:       ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id:       ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image to ACR
+        # We use `az acr build` here, which runs the actual Docker build on
+        # ACR's own build agents — not on the GitHub runner. This means:
+        #   - No need to install Docker or buildx on the GitHub runner
+        #   - Native x86_64 build (no cross-compile from any local machine)
+        #   - Faster, because ACR's agents are in the same region as the
+        #     registry, so layer uploads are intra-region.
+        # The credential for the push comes from the az login above —
+        # cygenix-aci-trigger has Container Registry Repository Contributor
+        # via the federated credential, so it can push.
+        run: |
+          az acr build \
+            --registry cygenixacr \
+            --resource-group Cygenix_UK \
+            --image cygenix-runner:latest \
+            --image cygenix-runner:${{ github.sha }} \
+            --platform linux/amd64 \
+            runner
+
+      - name: Output image info
+        run: |
+          echo "✓ Image pushed to cygenixacr.azurecr.io/cygenix-runner:latest"
+          echo "✓ Also tagged cygenixacr.azurecr.io/cygenix-runner:${{ github.sha }}"
