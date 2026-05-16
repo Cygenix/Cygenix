@@ -2986,8 +2986,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div id="ta-cron-block">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
             <label style="display:block">
-              <span style="font-size:11px;color:var(--text3)">Cron expression</span>
-              <input id="ta-sched-cron" class="form-input" style="margin-top:0.35rem;font-family:var(--mono)" placeholder="0 2 * * *" oninput="ta_updateCronPreview()">
+              <span style="font-size:11px;color:var(--text3)">Frequency</span>
+              <select id="ta-sched-freq" class="form-input" style="margin-top:0.35rem" onchange="ta_onFreqChange()">
+                <option value="minutes">Every N minutes</option>
+                <option value="hourly">Hourly</option>
+                <option value="daily" selected>Daily</option>
+                <option value="weekly">Weekly (one day)</option>
+                <option value="monthly">Monthly (one date)</option>
+                <option value="custom">Custom (cron)</option>
+              </select>
             </label>
             <label style="display:block">
               <span style="font-size:11px;color:var(--text3)">Timezone</span>
@@ -3001,14 +3008,82 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               </select>
             </label>
           </div>
-          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('*/15 * * * *')">Every 15 min</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 * * * *')">Hourly</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 2 * * *')">Daily 02:00</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 2 * * 1-5')">Weekdays 02:00</button>
-            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 0 1 * *')">1st of month</button>
+
+          <!-- Per-frequency sub-controls. Only one is visible at a time. -->
+          <div id="ta-freq-minutes" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
+            <label style="display:block;max-width:180px">
+              <span style="font-size:11px;color:var(--text3)">Every how many minutes</span>
+              <select id="ta-sched-every-min" class="form-input" style="margin-top:0.35rem" onchange="ta_updateCronPreview()">
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="15" selected>15</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+              </select>
+            </label>
           </div>
-          <div id="ta-cron-preview" style="font-size:11px;color:var(--text3);margin-top:0.5rem;font-family:var(--mono);min-height:1.2em"></div>
+
+          <div id="ta-freq-hourly" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
+            <label style="display:block;max-width:180px">
+              <span style="font-size:11px;color:var(--text3)">At minute past the hour</span>
+              <input id="ta-sched-hourly-min" type="number" min="0" max="59" value="0" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
+            </label>
+          </div>
+
+          <div id="ta-freq-daily" class="ta-freq-sub" style="margin-top:0.6rem">
+            <label style="display:block;max-width:200px">
+              <span style="font-size:11px;color:var(--text3)">Time</span>
+              <input id="ta-sched-daily-time" type="time" value="02:00" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
+            </label>
+          </div>
+
+          <div id="ta-freq-weekly" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;max-width:420px">
+              <label style="display:block">
+                <span style="font-size:11px;color:var(--text3)">Day of week</span>
+                <select id="ta-sched-weekly-dow" class="form-input" style="margin-top:0.35rem" onchange="ta_updateCronPreview()">
+                  <option value="1">Monday</option>
+                  <option value="2">Tuesday</option>
+                  <option value="3">Wednesday</option>
+                  <option value="4">Thursday</option>
+                  <option value="5">Friday</option>
+                  <option value="6">Saturday</option>
+                  <option value="0">Sunday</option>
+                </select>
+              </label>
+              <label style="display:block">
+                <span style="font-size:11px;color:var(--text3)">Time</span>
+                <input id="ta-sched-weekly-time" type="time" value="02:00" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
+              </label>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">Need more than one day? Create a separate schedule for each day.</div>
+          </div>
+
+          <div id="ta-freq-monthly" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;max-width:420px">
+              <label style="display:block">
+                <span style="font-size:11px;color:var(--text3)">Day of month</span>
+                <input id="ta-sched-monthly-dom" type="number" min="1" max="28" value="1" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
+              </label>
+              <label style="display:block">
+                <span style="font-size:11px;color:var(--text3)">Time</span>
+                <input id="ta-sched-monthly-time" type="time" value="02:00" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
+              </label>
+            </div>
+            <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">Use 1–28 to avoid skipped months (no 29/30/31 in shorter months).</div>
+          </div>
+
+          <div id="ta-freq-custom" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
+            <label style="display:block;max-width:300px">
+              <span style="font-size:11px;color:var(--text3)">Cron expression (5 fields)</span>
+              <input id="ta-sched-cron" class="form-input" style="margin-top:0.35rem;font-family:var(--mono)" placeholder="0 2 * * *" oninput="ta_updateCronPreview()">
+            </label>
+            <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">
+              Supported: literals, <code>*</code>, and <code>*/N</code> per field. Ranges and lists are not yet supported by the runner.
+            </div>
+          </div>
+
+          <div id="ta-cron-preview" style="font-size:12px;color:var(--text2);margin-top:0.7rem;padding:0.5rem 0.7rem;background:var(--bg3);border-radius:var(--r);min-height:1.6em"></div>
         </div>
 
         <div id="ta-chain-block" style="display:none">
@@ -14306,8 +14381,17 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
         chainSel.value = s.chainAfter;
       } else {
         document.querySelector('input[name="ta-trigger-mode"][value="cron"]').checked = true;
-        document.getElementById('ta-sched-cron').value = s.cron || '';
-        document.getElementById('ta-sched-tz').value   = s.timezone || 'Europe/London';
+        document.getElementById('ta-sched-tz').value = s.timezone || 'Europe/London';
+        // Try to map the existing cron to a friendly mode; fall back to
+        // Custom if it uses syntax the builder can't represent.
+        const mapped = ta_cronToFreq(s.cron || '');
+        if (mapped) {
+          ta_applyFreq(mapped);
+        } else {
+          document.getElementById('ta-sched-freq').value = 'custom';
+          document.getElementById('ta-sched-cron').value = s.cron || '';
+          ta_onFreqChange();
+        }
       }
       ta_toggleTriggerMode();
       await ta_onJobPicked(s.jobVersionId);
@@ -14317,9 +14401,13 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
     // button on the unscheduled-tasks panel), point the dropdown at it and
     // seed the schedule name from the job name so the user can hit Save fast.
     document.getElementById('ta-sched-name').value = '';
-    document.getElementById('ta-sched-cron').value = '';
     document.getElementById('ta-sched-enabled').checked = true;
     document.querySelector('input[name="ta-trigger-mode"][value="cron"]').checked = true;
+    // Sensible default: Daily 02:00.
+    document.getElementById('ta-sched-freq').value = 'daily';
+    document.getElementById('ta-sched-daily-time').value = '02:00';
+    document.getElementById('ta-sched-cron').value = '';
+    ta_onFreqChange();
     ta_toggleTriggerMode();
     if (preselectJobId && jobs.some(j => j.id === preselectJobId)) {
       jobsSel.value = preselectJobId;
@@ -14347,23 +14435,155 @@ function ta_toggleTriggerMode() {
   document.getElementById('ta-chain-block').style.display = (mode === 'chain') ? '' : 'none';
 }
 
-function ta_setCron(expr) {
-  document.getElementById('ta-sched-cron').value = expr;
+// ── Friendly schedule builder ────────────────────────────────────────────
+// Builds a 5-field cron expression from the friendly controls in the
+// schedule modal. The backend (run-migration.js computeNextRun) only
+// supports literals, '*' and '*/N' — no ranges or lists — so the friendly
+// modes are limited to what the runner can actually fire.
+function ta_buildCronFromFreq() {
+  const freq = document.getElementById('ta-sched-freq').value;
+  if (freq === 'minutes') {
+    const n = String(parseInt(document.getElementById('ta-sched-every-min').value, 10) || 15);
+    return '*/' + n + ' * * * *';
+  }
+  if (freq === 'hourly') {
+    const mi = Math.max(0, Math.min(59, parseInt(document.getElementById('ta-sched-hourly-min').value, 10) || 0));
+    return mi + ' * * * *';
+  }
+  if (freq === 'daily') {
+    const t = (document.getElementById('ta-sched-daily-time').value || '02:00').split(':');
+    return (parseInt(t[1], 10) || 0) + ' ' + (parseInt(t[0], 10) || 0) + ' * * *';
+  }
+  if (freq === 'weekly') {
+    const dow = document.getElementById('ta-sched-weekly-dow').value;
+    const t = (document.getElementById('ta-sched-weekly-time').value || '02:00').split(':');
+    return (parseInt(t[1], 10) || 0) + ' ' + (parseInt(t[0], 10) || 0) + ' * * ' + dow;
+  }
+  if (freq === 'monthly') {
+    const dom = Math.max(1, Math.min(28, parseInt(document.getElementById('ta-sched-monthly-dom').value, 10) || 1));
+    const t = (document.getElementById('ta-sched-monthly-time').value || '02:00').split(':');
+    return (parseInt(t[1], 10) || 0) + ' ' + (parseInt(t[0], 10) || 0) + ' ' + dom + ' * *';
+  }
+  // custom
+  return (document.getElementById('ta-sched-cron').value || '').trim();
+}
+
+// Inverse of ta_buildCronFromFreq. Tries to map an existing cron back to
+// one of the friendly modes so editing an existing schedule shows the
+// right controls instead of dumping the user into Custom. Returns null
+// when the cron uses syntax the friendly builder can't represent (e.g.
+// ranges, lists, multiple fields with values at once); the caller should
+// fall back to Custom mode.
+function ta_cronToFreq(expr) {
+  const parts = String(expr || '').trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  const [mi, h, dom, mo, dow] = parts;
+  const isLit  = (s, lo, hi) => /^\d+$/.test(s) && +s >= lo && +s <= hi;
+  const isStep = (s) => /^\*\/(\d+)$/.test(s);
+  // Every N minutes:  */N * * * *
+  if (isStep(mi) && h === '*' && dom === '*' && mo === '*' && dow === '*') {
+    return { freq: 'minutes', everyMin: parseInt(mi.split('/')[1], 10) };
+  }
+  // Hourly:  M * * * *  (M is a literal minute)
+  if (isLit(mi, 0, 59) && h === '*' && dom === '*' && mo === '*' && dow === '*') {
+    return { freq: 'hourly', hourlyMin: +mi };
+  }
+  // Daily:  M H * * *
+  if (isLit(mi, 0, 59) && isLit(h, 0, 23) && dom === '*' && mo === '*' && dow === '*') {
+    return { freq: 'daily', time: String(+h).padStart(2, '0') + ':' + String(+mi).padStart(2, '0') };
+  }
+  // Weekly:  M H * * D
+  if (isLit(mi, 0, 59) && isLit(h, 0, 23) && dom === '*' && mo === '*' && isLit(dow, 0, 6)) {
+    return { freq: 'weekly', dow: +dow, time: String(+h).padStart(2, '0') + ':' + String(+mi).padStart(2, '0') };
+  }
+  // Monthly:  M H DOM * *
+  if (isLit(mi, 0, 59) && isLit(h, 0, 23) && isLit(dom, 1, 28) && mo === '*' && dow === '*') {
+    return { freq: 'monthly', dom: +dom, time: String(+h).padStart(2, '0') + ':' + String(+mi).padStart(2, '0') };
+  }
+  return null;
+}
+
+// Show only the sub-block for the picked frequency, then refresh preview.
+function ta_onFreqChange() {
+  const freq = document.getElementById('ta-sched-freq').value;
+  const blocks = ['minutes', 'hourly', 'daily', 'weekly', 'monthly', 'custom'];
+  for (const b of blocks) {
+    const el = document.getElementById('ta-freq-' + b);
+    if (el) el.style.display = (b === freq) ? '' : 'none';
+  }
   ta_updateCronPreview();
 }
 
+// Legacy entry point — preserved in case any old code still calls it.
+// Sets Custom mode and writes the raw cron, then refreshes the preview.
+function ta_setCron(expr) {
+  const mapped = ta_cronToFreq(expr);
+  if (mapped) {
+    ta_applyFreq(mapped);
+  } else {
+    document.getElementById('ta-sched-freq').value = 'custom';
+    document.getElementById('ta-sched-cron').value = expr;
+    ta_onFreqChange();
+  }
+}
+
+// Apply a parsed { freq, ... } shape to the modal controls. Used by edit
+// mode (existing schedule → controls) and the legacy ta_setCron path.
+function ta_applyFreq(m) {
+  document.getElementById('ta-sched-freq').value = m.freq;
+  if (m.freq === 'minutes') {
+    const sel = document.getElementById('ta-sched-every-min');
+    // Snap to nearest dropdown option if the existing value isn't one we offer.
+    const allowed = [5, 10, 15, 20, 30];
+    const closest = allowed.reduce((a, b) => Math.abs(b - m.everyMin) < Math.abs(a - m.everyMin) ? b : a, 15);
+    sel.value = String(closest);
+  } else if (m.freq === 'hourly') {
+    document.getElementById('ta-sched-hourly-min').value = m.hourlyMin;
+  } else if (m.freq === 'daily') {
+    document.getElementById('ta-sched-daily-time').value = m.time;
+  } else if (m.freq === 'weekly') {
+    document.getElementById('ta-sched-weekly-dow').value = String(m.dow);
+    document.getElementById('ta-sched-weekly-time').value = m.time;
+  } else if (m.freq === 'monthly') {
+    document.getElementById('ta-sched-monthly-dom').value = m.dom;
+    document.getElementById('ta-sched-monthly-time').value = m.time;
+  }
+  ta_onFreqChange();
+}
+
+// Refresh the human-readable preview below the controls. Reads the
+// current frequency, builds the cron, and describes it.
 function ta_updateCronPreview() {
-  const expr = document.getElementById('ta-sched-cron').value.trim();
   const preview = document.getElementById('ta-cron-preview');
-  if (!expr) { preview.textContent = ''; return; }
+  if (!preview) return;
+  const expr = ta_buildCronFromFreq();
+  const tz = document.getElementById('ta-sched-tz').value;
+  if (!expr) { preview.innerHTML = '<span style="color:var(--text3)">— no schedule —</span>'; return; }
   const parts = expr.split(/\s+/);
-  if (parts.length !== 5) { preview.textContent = '⚠ cron must have 5 fields'; preview.style.color='var(--amber)'; return; }
-  preview.style.color = 'var(--text3)';
+  if (parts.length !== 5) {
+    preview.innerHTML = '<span style="color:var(--amber)">⚠ cron must have 5 fields</span>';
+    return;
+  }
   const [mi, h, dom, mo, dow] = parts;
-  if (mi==='*' && h==='*') preview.textContent = '→ every minute';
-  else if (h==='*' && dom==='*' && mo==='*' && dow==='*' && /^\d+$/.test(mi)) preview.textContent = '→ every hour at :' + mi.padStart(2,'0');
-  else if (dom==='*' && mo==='*' && dow==='*' && /^\d+$/.test(mi) && /^\d+$/.test(h)) preview.textContent = '→ daily at ' + h.padStart(2,'0') + ':' + mi.padStart(2,'0');
-  else preview.textContent = '→ ' + expr;
+  const DAYS = { '0': 'Sunday', '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday' };
+  let human = '';
+  const stepM = /^\*\/(\d+)$/.exec(mi);
+  if (stepM && h === '*' && dom === '*' && mo === '*' && dow === '*') {
+    human = 'Every ' + stepM[1] + ' minutes';
+  } else if (/^\d+$/.test(mi) && h === '*' && dom === '*' && mo === '*' && dow === '*') {
+    human = 'Every hour at :' + mi.padStart(2, '0');
+  } else if (/^\d+$/.test(mi) && /^\d+$/.test(h) && dom === '*' && mo === '*' && dow === '*') {
+    human = 'Daily at ' + h.padStart(2, '0') + ':' + mi.padStart(2, '0');
+  } else if (/^\d+$/.test(mi) && /^\d+$/.test(h) && dom === '*' && mo === '*' && /^\d+$/.test(dow)) {
+    human = 'Every ' + (DAYS[dow] || ('day ' + dow)) + ' at ' + h.padStart(2, '0') + ':' + mi.padStart(2, '0');
+  } else if (/^\d+$/.test(mi) && /^\d+$/.test(h) && /^\d+$/.test(dom) && mo === '*' && dow === '*') {
+    human = 'Day ' + dom + ' of every month at ' + h.padStart(2, '0') + ':' + mi.padStart(2, '0');
+  } else {
+    human = 'Custom: ' + expr;
+  }
+  preview.innerHTML = '<span style="color:var(--text)">' + human + '</span> '
+    + '<span style="color:var(--text3);font-size:11px">· ' + tz + '</span> '
+    + '<span style="color:var(--text3);font-size:11px;font-family:var(--mono);margin-left:0.4rem">' + expr + '</span>';
 }
 
 async function ta_onJobPicked(preselectVersionId) {
@@ -14485,14 +14705,15 @@ async function ta_saveSchedule() {
   const jobVersionId = document.getElementById('ta-sched-version').value;
   const enabled = document.getElementById('ta-sched-enabled').checked;
   const mode = document.querySelector('input[name="ta-trigger-mode"]:checked').value;
-  const cron = mode === 'cron' ? document.getElementById('ta-sched-cron').value.trim() : null;
+  // Read cron from the friendly builder (or the raw input in Custom mode).
+  const cron = mode === 'cron' ? ta_buildCronFromFreq() : null;
   const timezone = mode === 'cron' ? document.getElementById('ta-sched-tz').value : null;
   const chainAfter = mode === 'chain' ? document.getElementById('ta-sched-chain').value : null;
 
   if (!name) return alert('Name is required');
   if (!jobId) return alert('Pick a job');
   if (!jobVersionId) return alert('Pick a pinned version (or create one)');
-  if (mode === 'cron' && !cron) return alert('Cron expression required');
+  if (mode === 'cron' && !cron) return alert('Pick a frequency (or enter a cron expression)');
   if (mode === 'chain' && !chainAfter) return alert('Pick a parent schedule');
 
   // Capture connection strings so the server can execute the schedule
