@@ -44,6 +44,10 @@
 const { app } = require('@azure/functions');
 const sql = require('mssql');
 
+// Email notifications — fire-and-forget, never throws to caller.
+// See azure-function/src/notify.js.
+const { sendNotification } = require('./notify');
+
 // ── Cosmos client (lazy singleton, matches index.js pattern) ──────────────
 let _cosmos = null;
 function getCosmosContainer(containerName) {
@@ -749,6 +753,25 @@ async function markRunFailed(containers, run, errorMessage, ctx) {
   } catch (e) {
     ctx.log('Could not mark run failed:', e.message);
   }
+
+  // Best-effort failure notification. Never throws.
+  // We look up the schedule to get a friendly name; if that fails we
+  // still send the email with whatever we have.
+  try {
+    let scheduleName = '';
+    try {
+      const { resource: sched } = await containers.schedules
+        .item(run.scheduleId, run.userId).read();
+      if (sched) scheduleName = sched.name || '';
+    } catch {}
+    await sendNotification(run.userId, 'migration-failed', {
+      scheduleName,
+      errorMessage,
+      runId: run.id,
+    }, ctx);
+  } catch (e) {
+    ctx.log('[notify] markRunFailed notify threw:', e.message);
+  }
 }
 
 function computeNextRun(cronExpr, fromDate) {
@@ -1000,6 +1023,22 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
 
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
   ctx.log('[run-migration] done', { runId, status: finalStatus, rowsAffected: totalRows, elapsedSec: elapsed });
+
+  // Best-effort completion email. Never throws — sendNotification swallows
+  // all errors and logs to Cosmos `notifications` for audit. We send for
+  // BOTH success and failure paths so the user always hears back about
+  // a scheduled job.
+  try {
+    await sendNotification(userId, finalStatus === 'success' ? 'migration-success' : 'migration-failed', {
+      scheduleName: schedule.name || '',
+      rowsAffected: totalRows,
+      elapsedSec:   elapsed,
+      errorMessage: firstFailure || '',
+      runId,
+    }, ctx);
+  } catch (e) {
+    ctx.log('[notify] executeRun notify threw:', e.message);
+  }
 }
 
 // ── HTTP route registration (v4 model) ────────────────────────────────────
