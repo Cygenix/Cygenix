@@ -116,20 +116,14 @@ function newRunId() {
 }
 function nowIso() { return new Date().toISOString(); }
 
-// ── Resolve background runner URL ───────────────────────────────────────
-// Netlify exposes process.env.URL as the canonical site URL (e.g.
-// https://cygenix.co.uk). Falls back to DEPLOY_PRIME_URL for branch
-// deploys, then to URL_NETLIFY for the *.netlify.app default. If none of
-// these are set (local dev), the relative URL still routes because
-// Netlify Dev proxies /.netlify/functions/* to the same instance.
+// ── Resolve runner URL ──────────────────────────────────────────────────
+// The migration runner lives on the Azure Function App
+// (cygenix-db-api-e4fng7a4edhydzc4) — Flex Consumption with
+// functionTimeout:-1, no 15-min cap. Same Cosmos containers, same report
+// shape, same poll endpoint. Replaces the previous Netlify background
+// function which capped out at 15 minutes.
 function getBackgroundUrl() {
-  const base = process.env.URL
-            || process.env.DEPLOY_PRIME_URL
-            || process.env.URL_NETLIFY
-            || '';
-  return base
-    ? `${base}/.netlify/functions/scheduler-run-background`
-    : '/.netlify/functions/scheduler-run-background';
+  return 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/run-migration';
 }
 
 // ── Fire one schedule ───────────────────────────────────────────────────

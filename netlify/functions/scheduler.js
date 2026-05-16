@@ -538,18 +538,14 @@ async function runNow(userId, body, containers, event) {
   // Fire-and-forget the background function. Netlify routes
   // /.netlify/functions/<name>-background to the background runtime, which
   // accepts the POST, returns 202 within milliseconds, then keeps executing
-  // up to the 15-minute background-function cap.
+  // for as long as the migration takes — the Azure Function App has
+  // functionTimeout:-1 in host.json so there's no 15-min cap.
   //
-  // We need to use an absolute URL because the Netlify Function context
-  // doesn't have window.location. The host comes from the inbound request's
-  // headers. We `await` the fetch but with a short timeout so we get the
-  // 202 back (confirming the background did start) without waiting for the
-  // actual migration to finish.
-  const host = (event && event.headers && (event.headers['host'] || event.headers['Host'])) || '';
-  const proto = (event && event.headers && (event.headers['x-forwarded-proto'] || event.headers['X-Forwarded-Proto'])) || 'https';
-  const bgUrl = host
-    ? `${proto}://${host}/.netlify/functions/scheduler-run-background`
-    : '/.netlify/functions/scheduler-run-background';
+  // We hit the Azure endpoint by its full URL (the Function App is in a
+  // different origin from this Netlify function). The dashboard's poll
+  // loop on get-run is unchanged — it doesn't care which runner is
+  // executing, it just reads the Cosmos run record.
+  const bgUrl = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/run-migration';
 
   try {
     // Short timeout: we just need the 202 ack, not the work to finish.
