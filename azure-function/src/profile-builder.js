@@ -83,7 +83,14 @@ const err = (code, msg) => ({ status: code, headers: CORS, body: JSON.stringify(
 // async work to complete. Same trick run-migration.js uses.
 app.http('profile-build', {
   methods: ['POST', 'OPTIONS'],
-  authLevel: 'function',
+  // Anonymous because we authenticate via x-user-id in the handler, the same
+  // way create-checkout-session does. Using authLevel:'function' caused 401s
+  // because new functions get their own per-function key that doesn't match
+  // the host-level key the frontend uses — and CORS preflight (OPTIONS) for
+  // requests with custom headers doesn't include the ?code= query param, so
+  // the function-level key check rejects preflight outright. Anonymous fixes
+  // both problems; security is still enforced by the x-user-id check below.
+  authLevel: 'anonymous',
   route: 'profile-build',
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
