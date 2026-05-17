@@ -258,6 +258,43 @@ async function handleMssql(action, connectionString, database, body) {
         break;
       }
 
+      // ── schema-fks ────────────────────────────────────────────────────────
+      // Returns every declared FK edge across the whole DB in one shot, with NO
+      // column / row / table-data payload. The full FK list for a 9k-table DB
+      // is typically <200 KB even with thousands of relationships — well under
+      // the Netlify response ceiling — whereas the legacy `schema` action
+      // bundles columns and row counts too and routinely exceeds 6 MB on large
+      // Elite-style schemas, which is why those requests fail.
+      //
+      // Used by Data Profiling on insights.html: after schema-tables loads the
+      // lightweight table list, schema-fks builds the relationship graph
+      // without paying for per-table column data the user may never look at.
+      case 'schema-fks': {
+        const fkR = await pool.request().query(`
+          SELECT OBJECT_SCHEMA_NAME(fk.parent_object_id) AS fk_schema,
+            OBJECT_NAME(fk.parent_object_id) AS fk_table,
+            COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS fk_column,
+            OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
+            OBJECT_NAME(fk.referenced_object_id) AS ref_table,
+            COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ref_column,
+            fk.name AS fk_name
+          FROM sys.foreign_keys fk
+          JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id`);
+        result = {
+          success: true,
+          foreignKeys: fkR.recordset.map(r => ({
+            fromSchema: r.fk_schema,
+            fromTable:  r.fk_table,
+            fromColumn: r.fk_column,
+            toSchema:   r.ref_schema,
+            toTable:    r.ref_table,
+            toColumn:   r.ref_column,
+            name:       r.fk_name
+          }))
+        };
+        break;
+      }
+
       case 'schema': {
         const [tablesR, colsR, pkR, fkR] = await Promise.all([
           pool.request().query(`
@@ -399,7 +436,7 @@ async function handleMssql(action, connectionString, database, body) {
       }
 
       default:
-        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | execute | fetch-page | batch | rowcounts', 400);
+        return err(`Unknown action: ${action}`, 'Valid actions: test | schema | schema-tables | schema-columns | schema-fks | execute | fetch-page | batch | rowcounts', 400);
     }
 
     return ok(result);
