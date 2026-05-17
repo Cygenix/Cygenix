@@ -315,34 +315,29 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
     <div style="font-size:13px;color:var(--text3)">Select source tables and let Claude AI analyse the data — understanding what it represents, its quality, patterns, anomalies, and migration considerations.</div>
   </div>
 
-  <!-- CONNECTION + API KEY -->
-  <div class="panel">
-    <div class="panel-title">🔌 Connections</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:0.875rem">
-      <div>
-        <label class="form-label">Source database</label>
-        <div style="display:flex;gap:0.5rem">
-          <input id="src-conn" class="form-input" placeholder="Server=...;Database=...;  or  https://fn.azurewebsites.net/api/db?code=...">
-          <button class="btn btn-ghost btn-sm" onclick="connectSrc()" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
-        </div>
-        <div class="conn-status" id="src-status"></div>
-      </div>
-      <div>
-        <label class="form-label">Target database <span style="font-weight:400;color:var(--text3)">(optional — enables migration mapping)</span></label>
-        <div style="display:flex;gap:0.5rem">
-          <input id="tgt-conn" class="form-input" placeholder="Server=...;Database=...;  or  https://fn.azurewebsites.net/api/db?code=...">
-          <button class="btn btn-ghost btn-sm" onclick="connectTgt()" style="flex-shrink:0;white-space:nowrap">🔌 Connect</button>
-        </div>
-        <div class="conn-status" id="tgt-status"></div>
-      </div>
+  <!-- CONNECTIONS STATUS (inherited from project — managed on Connections page) -->
+  <!-- This page does NOT let the user enter connection strings. They're set once -->
+  <!-- on /connections.html and shared across every workspace tool via CygenixConnections. -->
+  <!-- We just SHOW what's configured and offer a "change" link.                          -->
+  <div class="panel" style="display:flex;align-items:center;gap:1rem;padding:0.875rem 1.25rem;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:0.4rem;font-size:12px">
+      <span style="color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-size:10px;font-family:var(--mono)">Source</span>
+      <span id="conn-src-status" style="font-family:var(--mono);color:var(--text3)">…</span>
     </div>
-    <div>
-      <label class="form-label">Anthropic API key <span style="font-weight:400;color:var(--text3)">(for Claude analysis)</span></label>
-      <div class="api-row" style="max-width:420px">
-        <input type="password" id="api-key" class="api-input" placeholder="sk-ant-…" oninput="checkReady()">
+    <div style="width:1px;height:18px;background:var(--border)"></div>
+    <div style="display:flex;align-items:center;gap:0.4rem;font-size:12px">
+      <span style="color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-size:10px;font-family:var(--mono)">Target</span>
+      <span id="conn-tgt-status" style="font-family:var(--mono);color:var(--text3)">…</span>
+    </div>
+    <div style="width:1px;height:18px;background:var(--border)"></div>
+    <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:240px">
+      <span style="color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;font-size:10px;font-family:var(--mono);flex-shrink:0">API key</span>
+      <div class="api-row" style="flex:1;max-width:340px">
+        <input type="password" id="api-key" class="api-input" placeholder="sk-ant-…" oninput="checkReady()" style="font-size:11px;padding:0.3rem 0.6rem">
         <button class="btn btn-ghost btn-sm" onclick="toggleApiKey()" style="flex-shrink:0;font-size:11px">👁</button>
       </div>
     </div>
+    <a href="/connections.html" class="btn btn-ghost btn-sm" style="font-size:11px;text-decoration:none;flex-shrink:0">⚙ Manage connections</a>
   </div>
 
   <!-- DATA PROFILING ─────────────────────────────────────────────────────── -->
@@ -498,21 +493,18 @@ let migrationMap = null; // last migration map result
     document.getElementById('user-avatar').textContent = n[0].toUpperCase();
     document.getElementById('user-name').textContent   = n;
   } catch {}
-  // Pre-fill connection from session
-  // Load from central project connections
-  const _conn = CygenixConnections.get();
-  const srcEl = document.getElementById('src-conn');
-  // Source: handle both shapes (Azure Function URL with key, or direct string)
-  if (srcEl) {
-    srcEl.value = _conn.srcFnUrl
-      ? (_conn.srcFnKey ? _conn.srcFnUrl + '?code=' + encodeURIComponent(_conn.srcFnKey) : _conn.srcFnUrl)
-      : (_conn.srcConnString || '');
-  }
-  const tgtEl = document.getElementById('tgt-conn');
-  if (tgtEl) tgtEl.value = _conn.tgtFnUrl ? _conn.tgtFnUrl+(_conn.tgtFnKey?'?code='+encodeURIComponent(_conn.tgtFnKey):'') : (_conn.tgtConnString||'');
-  // Pre-fill API key
+  // Pre-fill API key (saved per-user in localStorage; not a project setting)
   const ak = localStorage.getItem('cygenix_api_key') || '';
   if (ak) document.getElementById('api-key').value = ak;
+  // Persist API key on change
+  const apiKeyEl = document.getElementById('api-key');
+  if (apiKeyEl) apiKeyEl.addEventListener('change', () => {
+    localStorage.setItem('cygenix_api_key', apiKeyEl.value.trim());
+  });
+  // Auto-load schemas from CygenixConnections (set on /connections.html — shared
+  // across every workspace tool). No Connect button on this page; if a connection
+  // is missing the status banner directs the user to the Connections page.
+  loadSchemasFromCygenixConnections();
   checkReady();
 })();
 
@@ -695,57 +687,89 @@ async function dbCall(conn, body){
   }
 }
 
-// ── Connect ───────────────────────────────────────────────────────────────────
-async function connectSrc(){
-  const conn   = document.getElementById('src-conn').value.trim();
-  const status = document.getElementById('src-status');
-  if (!conn){ alert('Enter a connection string first.'); return; }
-  status.textContent='Connecting…'; status.style.color='var(--accent)';
-  try {
-    const res = await dbCall(conn,{action:'schema'});
-    srcSchema = res;
-    allTables = (res.tables||[]).map((t,i)=>({
-      id:    i,
-      schema: t.schema||'dbo',
-      name:  t.name,
-      fullName: (t.schema||'dbo')+'.'+t.name,
-      rowCount: t.rowCount||0,
-      columns: t.columns||[]
-    }));
-    status.textContent = '🟢 Connected · '+res.database+' · '+allTables.length+' tables';
-    status.style.color = 'var(--green)';
-    renderTablePicker();
-    document.getElementById('table-picker-panel').style.display = 'block';
-    document.getElementById('empty-msg').style.display = 'block';
-    showSchemaQAPanel();
-  } catch(e){
-    status.textContent = '🔴 '+e.message;
-    status.style.color = 'var(--red)';
+// ── Auto-load schemas from project Connections ──────────────────────────────
+// Replaces the per-page Connect buttons. Reads CygenixConnections.srcConn /
+// tgtConn (set on /connections.html, shared with every workspace tool) and
+// loads each schema in parallel. Updates the status banner with results.
+//
+// This page used to have its own connection-string inputs and Connect buttons,
+// but that duplicated state with the Dashboard and confused users. Connections
+// are now ONLY managed on /connections.html.
+async function loadSchemasFromCygenixConnections() {
+  const srcStatus = document.getElementById('conn-src-status');
+  const tgtStatus = document.getElementById('conn-tgt-status');
+
+  if (typeof CygenixConnections === 'undefined') {
+    if (srcStatus) { srcStatus.textContent = '⚠ helper not loaded'; srcStatus.style.color = 'var(--red)'; }
+    if (tgtStatus) { tgtStatus.textContent = '⚠ helper not loaded'; tgtStatus.style.color = 'var(--red)'; }
+    return;
   }
+
+  const srcConn = CygenixConnections.srcConn || '';
+  const tgtConn = CygenixConnections.tgtConn || '';
+
+  // Source — required
+  if (!srcConn) {
+    if (srcStatus) { srcStatus.textContent = '⚠ not configured'; srcStatus.style.color = 'var(--amber)'; }
+  } else {
+    if (srcStatus) { srcStatus.textContent = 'loading…'; srcStatus.style.color = 'var(--accent)'; }
+    try {
+      const res = await dbCall(srcConn, { action: 'schema' });
+      srcSchema = res;
+      allTables = (res.tables || []).map((t, i) => ({
+        id:       i,
+        schema:   t.schema || 'dbo',
+        name:     t.name,
+        fullName: (t.schema || 'dbo') + '.' + t.name,
+        rowCount: t.rowCount || 0,
+        columns:  t.columns || []
+      }));
+      if (srcStatus) {
+        srcStatus.textContent = '🟢 ' + res.database + ' · ' + allTables.length + ' tables';
+        srcStatus.style.color = 'var(--green)';
+      }
+      renderTablePicker();
+      document.getElementById('table-picker-panel').style.display = 'block';
+      document.getElementById('empty-msg').style.display = 'block';
+      showSchemaQAPanel();
+    } catch (e) {
+      if (srcStatus) { srcStatus.textContent = '🔴 ' + (e.message || 'failed'); srcStatus.style.color = 'var(--red)'; }
+    }
+  }
+
+  // Target — optional. Enables migration mapping when present.
+  if (!tgtConn) {
+    if (tgtStatus) { tgtStatus.textContent = 'not configured'; tgtStatus.style.color = 'var(--text3)'; }
+  } else {
+    if (tgtStatus) { tgtStatus.textContent = 'loading…'; tgtStatus.style.color = 'var(--accent)'; }
+    try {
+      const res = await dbCall(tgtConn, { action: 'schema' });
+      tgtSchema = res;
+      if (tgtStatus) {
+        tgtStatus.textContent = '🟢 ' + res.database + ' · ' + (res.tables || []).length + ' tables';
+        tgtStatus.style.color = 'var(--green)';
+      }
+      // Show migration mapping buttons (the existing per-table-picker + topbar pair)
+      ['mapping-btn','mapping-btn-top'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.display = 'inline-flex';
+      });
+    } catch (e) {
+      if (tgtStatus) { tgtStatus.textContent = '🔴 ' + (e.message || 'failed'); tgtStatus.style.color = 'var(--red)'; }
+    }
+  }
+
+  checkReady();
+  // Tell the Data Profiling module to surface itself if a schema loaded.
+  if (typeof dpShowPanelIfReady === 'function') dpShowPanelIfReady();
 }
 
-// ── Connect target ───────────────────────────────────────────────────────────
-async function connectTgt(){
-  const conn   = document.getElementById('tgt-conn').value.trim();
-  const status = document.getElementById('tgt-status');
-  if (!conn){ alert('Enter a target connection string first.'); return; }
-  status.textContent='Connecting…'; status.style.color='var(--accent)';
-  try {
-    const res = await dbCall(conn,{action:'schema'});
-    tgtSchema = res;
-    status.textContent = '🟢 Connected · '+res.database+' · '+(res.tables||[]).length+' tables';
-    status.style.color = 'var(--green)';
-    // Show migration mapping button
-    ['mapping-btn','mapping-btn-top'].forEach(id=>{
-      const btn = document.getElementById(id);
-      if (btn) btn.style.display = 'inline-flex';
-    });
-    checkReady();
-  } catch(e){
-    status.textContent = '🔴 '+e.message;
-    status.style.color = 'var(--red)';
-  }
-}
+// ── Legacy shims for any inline handlers / other code that still calls these.
+// Both buttons are gone from the DOM but a few internal callers (and the data
+// profiling wireUp IIFE at the bottom) still reference them. Pointing them at
+// loadSchemasFromCygenixConnections means "Re-connect" semantics still work.
+async function connectSrc() { return loadSchemasFromCygenixConnections(); }
+async function connectTgt() { return loadSchemasFromCygenixConnections(); }
 
 // ── Table picker ──────────────────────────────────────────────────────────────
 function renderTablePicker(filter=''){
@@ -793,9 +817,9 @@ function checkReady(){
 
 // ── Run insights ──────────────────────────────────────────────────────────────
 async function runInsights(){
-  const conn   = document.getElementById('src-conn').value.trim();
+  const conn   = (typeof CygenixConnections !== 'undefined' ? CygenixConnections.srcConn : '') || '';
   const apiKey = document.getElementById('api-key').value.trim();
-  if (!conn)   { alert('Connect to source database first.'); return; }
+  if (!conn)   { alert('No source database configured. Set one on the Connections page.'); return; }
   if (!apiKey) { alert('Enter your Anthropic API key.'); return; }
   if (!selectedIds.size){ alert('Select at least one table.'); return; }
 
@@ -1067,10 +1091,10 @@ function toggleAccordion(btn){
 
 // ── Full migration mapping ────────────────────────────────────────────────────
 async function runMigrationMapping(){
-  const srcConn = document.getElementById('src-conn').value.trim();
-  const tgtConn = document.getElementById('tgt-conn').value.trim();
+  const srcConn = (typeof CygenixConnections !== 'undefined' ? CygenixConnections.srcConn : '') || '';
+  const tgtConn = (typeof CygenixConnections !== 'undefined' ? CygenixConnections.tgtConn : '') || '';
   const apiKey  = document.getElementById('api-key').value.trim();
-  if (!srcConn || !tgtConn){ alert('Connect both source and target databases first.'); return; }
+  if (!srcConn || !tgtConn){ alert('Both source and target databases must be configured. Set them on the Connections page.'); return; }
   if (!apiKey){ alert('Enter your Anthropic API key.'); return; }
 
   const area = document.getElementById('results-area');
@@ -1654,7 +1678,7 @@ function saveJobFromMapping(mi){
     warnings:     [`Created from Data Insights migration map. Confidence: ${m.confidence}. ${m.notes||''}`],
     sourceSystem: srcSchema?.database || 'Source',
     targetSystem: 'Microsoft SQL Server',
-    targetServer: document.getElementById('tgt-conn')?.value || '',
+    targetServer: (typeof CygenixConnections !== 'undefined' ? (CygenixConnections.tgtConn || '') : ''),
     authMethod:   'SQL Authentication',
     fromInsights: true,
     insightNotes: m.notes || '',
@@ -2048,10 +2072,12 @@ function dpSetProgress(pct, label) {
 // ── MAIN BUILD ENTRY ─────────────────────────────────────────────────────────
 async function dpStartBuild(role) {
   const schema = role === 'source' ? srcSchema : tgtSchema;
-  const conn   = (role === 'source' ? document.getElementById('src-conn').value : document.getElementById('tgt-conn').value).trim();
+  const conn   = (typeof CygenixConnections !== 'undefined'
+                    ? (role === 'source' ? CygenixConnections.srcConn : CygenixConnections.tgtConn)
+                    : '') || '';
   const apiKey = document.getElementById('api-key').value.trim();
 
-  if (!schema)              return alert('Connect to the ' + role + ' database first.');
+  if (!schema)              return alert('The ' + role + ' database schema has not loaded. Open the Connections page to verify the connection.');
   if (!apiKey)              return alert('Enter your Anthropic API key.');
   if (dpState[role].building) return;
 
@@ -2699,19 +2725,11 @@ function dpConfirmRebuild() {
   dpStartBuild(dpActiveRole);
 }
 
-// ── Hook into existing connect functions: extend connectSrc/Tgt + checkReady ─
-// Wrap originals so we don't break their existing callers.
+// ── Hook checkReady so dp panel surfaces as user inputs API key ─────────────
+// Previously this also wrapped connectSrc/Tgt to call dpShowPanelIfReady, but
+// loadSchemasFromCygenixConnections (the new auto-loader) already does that at
+// the end of its run — so we only need the checkReady wrapper here.
 (function dpWireUp(){
-  const _connectSrcOrig = window.connectSrc;
-  window.connectSrc = async function() {
-    await _connectSrcOrig.apply(this, arguments);
-    if (srcSchema) dpShowPanelIfReady();
-  };
-  const _connectTgtOrig = window.connectTgt;
-  window.connectTgt = async function() {
-    await _connectTgtOrig.apply(this, arguments);
-    if (tgtSchema) dpShowPanelIfReady();
-  };
   const _checkReadyOrig = window.checkReady;
   window.checkReady = function() {
     _checkReadyOrig.apply(this, arguments);
