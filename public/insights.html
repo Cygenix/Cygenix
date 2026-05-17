@@ -356,10 +356,14 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
           Build a once-and-done English description of a whole schema — every table classified, declared and inferred relationships graphed, and a per-table page you can drill into. Stored per user so this only needs to run once per database.
         </div>
       </div>
-      <div style="display:flex;gap:0.4rem;flex-shrink:0">
-        <button class="btn btn-purple btn-sm" id="dp-build-src-btn" onclick="dpStartBuild('source')" disabled>🧬 Profile source</button>
+      <div style="display:flex;gap:0.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:340px">
+        <button class="btn btn-purple btn-sm" id="dp-build-src-btn" onclick="dpStartBuild('source')" disabled title="Run the full profile in this browser (~10-15 min for a large schema; keep tab open)">🧬 Profile source</button>
+        <button class="btn btn-sm" id="dp-schedule-src-btn" onclick="dpScheduleBuild('source')" disabled
+                style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)" title="Run on the server overnight — you can close this tab and get an email when it's done">📅 Schedule</button>
         <button class="btn btn-sm" id="dp-build-tgt-btn" onclick="dpStartBuild('target')"
                 style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none" disabled>🧬 Profile target</button>
+        <button class="btn btn-sm" id="dp-schedule-tgt-btn" onclick="dpScheduleBuild('target')"
+                style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2);display:none" disabled title="Run on the server overnight — you can close this tab and get an email when it's done">📅 Schedule</button>
       </div>
     </div>
 
@@ -483,6 +487,15 @@ let srcSchema    = null;
 let tgtSchema    = null;
 let sampleStore  = {};   // { fullName: { rows, insight, table } }
 let migrationMap = null; // last migration map result
+
+// Pagination state for schema-load — declared here (above the auth IIFE) so the
+// first call to _fetchSchemaSmart() during init doesn't hit a temporal dead
+// zone. The variable is read inside _fetchSchemaSmart before the script has
+// finished parsing past its original declaration site further down, which on
+// the FIRST source-load call would throw "Cannot access ... before initialization".
+// (Target loads worked because by the time they ran, parsing had completed and
+// the `let` below had initialised.) Hoisting it here removes the race.
+let _paginatedSchemaSupported = null;   // null=unknown, true/false=detected
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 (function(){
@@ -698,7 +711,8 @@ async function dbCall(conn, body){
 //
 // We try schema-tables first; if the backend doesn't know that action we fall
 // back to the legacy `schema` flow (small DBs still take that path).
-let _paginatedSchemaSupported = null;   // null=unknown, true/false=detected
+// (`_paginatedSchemaSupported` state var is declared at the top of this script
+// block so the first connect call doesn't hit a temporal-dead-zone error.)
 
 async function _fetchSchemaSmart(conn) {
   if (_paginatedSchemaSupported === false) {
@@ -1856,18 +1870,33 @@ function dpShowPanelIfReady() {
   if (!panel) return;
   if (srcSchema || tgtSchema) panel.style.display = '';
 
-  // Enable build buttons whose schema is loaded AND have an API key
+  // Enable build buttons whose schema is loaded AND have an API key.
+  // The "Schedule overnight" button does NOT require an API key in the
+  // browser — the server-side runner uses ANTHROPIC_API_KEY from the
+  // Function App's app settings — so we only gate it on schema presence.
   const apiKey = document.getElementById('api-key').value.trim();
-  const srcBtn = document.getElementById('dp-build-src-btn');
-  const tgtBtn = document.getElementById('dp-build-tgt-btn');
-  if (srcBtn) srcBtn.disabled = !(srcSchema && apiKey.startsWith('sk-ant-'));
+  const hasKey = apiKey.startsWith('sk-ant-');
+
+  const srcBtn      = document.getElementById('dp-build-src-btn');
+  const srcSchedBtn = document.getElementById('dp-schedule-src-btn');
+  const tgtBtn      = document.getElementById('dp-build-tgt-btn');
+  const tgtSchedBtn = document.getElementById('dp-schedule-tgt-btn');
+
+  if (srcBtn)      srcBtn.disabled      = !(srcSchema && hasKey);
+  if (srcSchedBtn) srcSchedBtn.disabled = !srcSchema;
   if (tgtBtn) {
     tgtBtn.style.display = tgtSchema ? 'inline-flex' : 'none';
-    tgtBtn.disabled      = !(tgtSchema && apiKey.startsWith('sk-ant-'));
+    tgtBtn.disabled      = !(tgtSchema && hasKey);
+  }
+  if (tgtSchedBtn) {
+    tgtSchedBtn.style.display = tgtSchema ? 'inline-flex' : 'none';
+    tgtSchedBtn.disabled      = !tgtSchema;
   }
 
-  // Check for existing profiles in Cosmos for both roles, then refresh status pills
+  // Check for existing profiles in Cosmos for both roles, then refresh status pills.
+  // Also check for active overnight tasks (so a returning user sees "still building").
   dpRefreshStatusPills();
+  dpRefreshActiveTasks();
 }
 
 // ── Status pills (Fresh / Stale / None / Building) ───────────────────────────
@@ -2474,6 +2503,155 @@ async function dpStartBuild(role) {
     dpState[role].building = false;
     alert('Profile build failed: ' + e.message);
     dpRefreshStatusPills();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// OVERNIGHT (SERVER-SIDE) BUILD
+// ─────────────────────────────────────────────────────────────────────────
+// Hits the new /api/profile-build Azure Function endpoint. The browser
+// hands off the work, the server runs it on Flex Consumption (no time
+// limit), writes progress to the data_profile_tasks Cosmos container as
+// it goes, and emails the user when it finishes.
+//
+// The user can close this tab right after clicking — the build continues
+// regardless. Next time they open the Insights page, dpRefreshActiveTasks
+// (called from dpShowPanelIfReady on init) picks up the running task and
+// shows live progress in the status pill until completion.
+
+const PROFILE_BUILD_URL = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/profile-build?code=WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+// Active-task polling state — one timer per role
+const dpTaskPolls = { source: null, target: null };
+
+async function dpScheduleBuild(role) {
+  const schema = role === 'source' ? srcSchema : tgtSchema;
+  const conn   = (typeof CygenixConnections !== 'undefined'
+                    ? (role === 'source' ? CygenixConnections.srcConn : CygenixConnections.tgtConn)
+                    : '') || '';
+  if (!schema) { alert('The ' + role + ' schema is not loaded yet.'); return; }
+  if (!conn)   { alert('No ' + role + ' connection configured. Set one on the Connections page.'); return; }
+
+  // Confirm what's about to happen — this isn't free (it spends Anthropic
+  // tokens) and the user should know they can close the tab.
+  let userEmail = '';
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    userEmail = u.email || u.id || '';
+  } catch {}
+
+  const msg =
+    'Schedule an overnight build for ' + (schema.database || role) + '?\n\n' +
+    '• Runs on the server, no need to keep this tab open\n' +
+    '• Spends Anthropic API tokens (~$0.50–$2 for a large schema)\n' +
+    '• You\'ll get an email when it\'s done' + (userEmail ? ' (to ' + userEmail + ')' : '') + '\n\n' +
+    'Proceed?';
+  if (!confirm(msg)) return;
+
+  const fingerprint = await dpFingerprintSchema(schema);
+  dpState[role].fingerprint = fingerprint;
+
+  let userId = '';
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    userId = u.email || u.id || '';
+  } catch {}
+  if (!userId) { alert('Not signed in.'); return; }
+
+  // Hit the Function App endpoint. fire-and-forget — it returns 202.
+  try {
+    const res = await fetch(PROFILE_BUILD_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body:    JSON.stringify({
+        role,
+        conn,
+        database:    schema.database,
+        fingerprint,
+        notifyEmail: userEmail
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if (data.existing) {
+      alert('There\'s already an overnight build running for this schema. The pill will track its progress.');
+    } else {
+      alert('Overnight build scheduled. You can close this tab — you\'ll get an email when it\'s done. The status pill above will update if you keep the tab open.');
+    }
+  } catch (e) {
+    alert('Failed to schedule overnight build: ' + e.message);
+    return;
+  }
+
+  // Start polling for progress so the pill animates
+  dpStartTaskPoll(role);
+}
+
+// Refresh the "is there a running task" check for both roles. Called from
+// dpShowPanelIfReady on init so a returning user sees their build progress.
+async function dpRefreshActiveTasks() {
+  for (const role of ['source','target']) {
+    const schema = role === 'source' ? srcSchema : tgtSchema;
+    if (!schema) continue;
+    try {
+      const data = await dpApi('GET', 'profile-task-active?role=' + role);
+      if (data.task) {
+        dpRenderTaskPill(role, data.task);
+        dpStartTaskPoll(role);
+      }
+    } catch (e) {
+      console.warn('profile-task-active check failed:', e.message);
+    }
+  }
+}
+
+// Poll one role's active task every 10 seconds. Stops when terminal state
+// is reached (succeeded / failed / cancelled).
+function dpStartTaskPoll(role) {
+  if (dpTaskPolls[role]) return;   // already polling
+  dpTaskPolls[role] = setInterval(async () => {
+    try {
+      const data = await dpApi('GET', 'profile-task-active?role=' + role);
+      if (data.task) {
+        dpRenderTaskPill(role, data.task);
+      } else {
+        // No active task → poll one last time for the most recent terminal
+        // task so we can show success/failure briefly, then stop polling.
+        clearInterval(dpTaskPolls[role]);
+        dpTaskPolls[role] = null;
+        try {
+          const list = await dpApi('GET', 'profile-task-list?limit=5');
+          const recent = (list.tasks || []).find(t => t.role === role);
+          if (recent && recent.status === 'succeeded') {
+            // Profile is built — load it
+            await dpLoadProfile(role, recent.fingerprint);
+          }
+        } catch {}
+        dpRefreshStatusPills();
+      }
+    } catch (e) {
+      console.warn('task poll failed:', e.message);
+    }
+  }, 10000);
+}
+
+// Render the status pill for an active task — shows stage + percent
+function dpRenderTaskPill(role, task) {
+  const pill = document.getElementById('dp-status-' + role);
+  if (!pill) return;
+  pill.style.display = 'inline-flex';
+  if (task.status === 'queued' || task.status === 'running') {
+    pill.className = 'dp-status-pill building';
+    const stage = task.stage || '…';
+    const pct   = task.percent != null ? task.percent + '%' : '';
+    const det   = task.stageDetail ? ' · ' + task.stageDetail : '';
+    pill.textContent = (role === 'source' ? 'Source' : 'Target') + ': overnight build · ' + stage + ' ' + pct + det;
+  } else if (task.status === 'cancelling') {
+    pill.className = 'dp-status-pill stale';
+    pill.textContent = (role === 'source' ? 'Source' : 'Target') + ': cancelling…';
+  } else if (task.status === 'failed') {
+    pill.className = 'dp-status-pill stale';
+    pill.textContent = (role === 'source' ? 'Source' : 'Target') + ': overnight build failed — ' + (task.error || 'unknown').slice(0,60);
   }
 }
 
