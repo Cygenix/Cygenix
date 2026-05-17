@@ -244,6 +244,36 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .dp-ref-conf.medium{background:var(--amber-bg);color:var(--amber)}
 .dp-ref-conf.low{background:var(--bg4);color:var(--text3)}
 .dp-empty-refs{font-size:11px;color:var(--text3);font-style:italic;padding:0.4rem 0}
+
+/* SWIMLANES (Compare Profiles view) ───────────────────────────────────────── */
+.dp-swimlanes-panel{background:linear-gradient(180deg,var(--bg2),var(--bg2)),linear-gradient(135deg,rgba(167,139,250,0.04),rgba(45,212,191,0.04));border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem;position:relative;overflow:hidden}
+.dp-swimlanes-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--teal),var(--purple));opacity:0.5}
+.dp-swim-grid{display:grid;grid-template-columns:140px 1fr 1fr;gap:0.5rem;align-items:start;font-size:11px}
+.dp-swim-header{display:contents;font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);font-family:var(--mono)}
+.dp-swim-header > div{padding:0.4rem 0.6rem;border-bottom:0.5px solid var(--border)}
+.dp-swim-row{display:contents}
+.dp-swim-row > div{padding:0.6rem;border-bottom:0.5px solid var(--border);min-height:42px}
+.dp-swim-area-label{display:flex;flex-direction:column;justify-content:flex-start;align-items:flex-start;gap:0.2rem;background:var(--bg3);border-radius:var(--r);padding:0.45rem 0.6rem !important;border:0.5px solid var(--border);min-height:42px !important}
+.dp-swim-area-name{font-size:11px;font-weight:600;color:var(--text)}
+.dp-swim-area-counts{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.dp-swim-cell{background:transparent;display:flex;flex-wrap:wrap;gap:0.3rem;align-content:flex-start}
+.dp-swim-cell.empty{color:var(--text3);font-style:italic;font-size:10px;display:flex;align-items:center;padding-left:0.4rem !important}
+.dp-swim-chip{display:inline-flex;align-items:center;gap:0.3rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:0.2rem 0.5rem;font-size:10px;font-family:var(--mono);color:var(--text2);cursor:pointer;transition:all 0.1s;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dp-swim-chip:hover{background:var(--bg4);border-color:var(--accent);color:var(--accent)}
+.dp-swim-chip .dp-swim-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.dp-swim-chip.hub .dp-swim-dot{background:var(--accent)}
+.dp-swim-chip.spoke .dp-swim-dot{background:var(--teal)}
+.dp-swim-chip.lookup .dp-swim-dot{background:var(--amber)}
+.dp-swim-chip.audit .dp-swim-dot{background:var(--text3)}
+.dp-swim-chip.staging .dp-swim-dot{background:var(--red)}
+.dp-swim-chip .dp-swim-count{color:var(--text3);font-size:9px;margin-left:0.2rem}
+.dp-swim-chip.has-variants .dp-swim-variant-badge{background:var(--purple-bg);color:var(--purple);font-size:8px;padding:0 4px;border-radius:100px;margin-left:0.25rem}
+.dp-swim-more-link{display:inline-flex;align-items:center;gap:0.3rem;background:transparent;border:0.5px dashed var(--border2);border-radius:var(--r);padding:0.2rem 0.5rem;font-size:10px;font-family:var(--mono);color:var(--text3);cursor:pointer}
+.dp-swim-more-link:hover{color:var(--accent);border-color:var(--accent)}
+@media (max-width: 900px) {
+  .dp-swim-grid{grid-template-columns:100px 1fr 1fr;font-size:10px}
+}
+
 </style>
 <script src="/connections.js"></script>
 </head>
@@ -394,11 +424,44 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
       <!-- Table list -->
       <div class="dp-table-list" id="dp-table-list"></div>
 
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.75rem;font-size:11px;color:var(--text3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.75rem;font-size:11px;color:var(--text3);gap:0.5rem;flex-wrap:wrap">
         <span id="dp-result-count"></span>
-        <button class="btn btn-ghost btn-sm" onclick="dpConfirmRebuild()" style="font-size:11px">🔄 Re-build</button>
+        <div style="display:flex;gap:0.4rem;align-items:center">
+          <button class="btn btn-sm" id="dp-compare-btn" onclick="dpCompareProfiles()"
+                  style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);font-size:11px" title="Group source and target tables by business subject area">🧭 Compare Profiles</button>
+          <button class="btn btn-ghost btn-sm" onclick="dpConfirmRebuild()" style="font-size:11px">🔄 Re-build</button>
+        </div>
       </div>
     </div>
+  </div>
+
+  <!-- SWIMLANES (subject-area side-by-side comparison) ─────────────────────── -->
+  <!-- Hidden until "Compare Profiles" is clicked. Renders source and target -->
+  <!-- profiles grouped by business subject area, one row per area, with     -->
+  <!-- chips for each table. Clicking a chip opens the existing drawer.     -->
+  <div class="dp-swimlanes-panel" id="dp-swimlanes-panel" style="display:none">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:0.75rem;flex-wrap:wrap">
+      <div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:0.25rem">🧭 Compare Profiles · Subject Areas</div>
+        <div id="dp-swimlanes-subtitle" style="font-size:11px;color:var(--text3);max-width:600px;line-height:1.55">
+          Source and target schemas grouped by business subject area. Click any table chip to see its description and relationships.
+        </div>
+      </div>
+      <div style="display:flex;gap:0.4rem;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="dpRecomputeClassify()" style="font-size:11px" title="Re-run subject classification (uses Claude API tokens)">🔄 Re-classify</button>
+        <button class="btn btn-ghost btn-sm" onclick="dpCloseSwimlanes()" style="font-size:11px">× Close</button>
+      </div>
+    </div>
+
+    <div id="dp-classify-progress" style="display:none;margin:0.5rem 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:0.4rem">
+        <span id="dp-classify-label" style="font-family:var(--mono)">Classifying tables by subject area…</span>
+        <span id="dp-classify-spinner" style="font-family:var(--mono);color:var(--purple)">◐</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="dp-classify-fill" style="width:0%"></div></div>
+    </div>
+
+    <div id="dp-swimlanes-content" style="margin-top:0.875rem"></div>
   </div>
 
   <!-- DRAWER (table detail) ─────────────────────────────────────────────── -->
@@ -3086,6 +3149,266 @@ function dpConfirmRebuild() {
   dpState[dpActiveRole].profile = null;
   dpStartBuild(dpActiveRole);
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// COMPARE PROFILES — subject-area swimlane view
+// ═════════════════════════════════════════════════════════════════════════════
+// Groups source and target tables by business subject area and renders them
+// side-by-side in horizontal swimlanes (one row per area). Subject area
+// classification is computed by Claude (one API call per role) and cached
+// on each table doc in Cosmos, so subsequent views render instantly.
+//
+// The classifier handles template/draft variants smartly: e.g. on Elite 3E
+// where every table has _draft and _template variants, only the canonical
+// table is sent to Claude and the classification is propagated to variants.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The 12 subject areas — fixed, agnostic across business sectors
+const DP_SUBJECT_AREAS = [
+  { id: 'master_data',   label: 'Master Data',     desc: 'Core entities the business is built around' },
+  { id: 'people',        label: 'People',          desc: 'Users, staff, contacts, employees' },
+  { id: 'addresses',     label: 'Addresses',       desc: 'Addresses, locations, geography' },
+  { id: 'transactions',  label: 'Transactions',    desc: 'Operational events on master data' },
+  { id: 'financial',     label: 'Financial',       desc: 'Balances, ledgers, AR/AP, accounts' },
+  { id: 'billing',       label: 'Billing',         desc: 'Invoices, bills, receipts, payments' },
+  { id: 'reporting',     label: 'Reporting',       desc: 'Pre-aggregated reports, snapshots' },
+  { id: 'setups_config', label: 'Setups / Config', desc: 'Setup tables, system parameters' },
+  { id: 'lookups',       label: 'Lookups',         desc: 'Reference data, codes, dropdowns' },
+  { id: 'audit',         label: 'Audit',           desc: 'Audit trails, logs, change history' },
+  { id: 'integration',   label: 'Integration',     desc: 'Staging, ETL, third-party hand-off' },
+  { id: 'other',         label: 'Other',           desc: 'Anything that doesn\'t fit elsewhere' },
+];
+
+// Max chips per cell before we collapse the rest into a "+N more" link
+const DP_CHIPS_PER_CELL = 50;
+
+// Top-level entry — wired from the "🧭 Compare Profiles" button.
+// Works whether one or both profiles are loaded; if neither has been
+// classified yet, runs the classify pass first.
+async function dpCompareProfiles() {
+  // Need at least one profile in memory
+  const haveSource = !!dpState.source.profile;
+  const haveTarget = !!dpState.target.profile;
+  if (!haveSource && !haveTarget) {
+    alert('Build a profile first — either Source or Target.');
+    return;
+  }
+
+  // Show the swimlanes panel
+  const panel = document.getElementById('dp-swimlanes-panel');
+  panel.style.display = '';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Subtitle: tell the user what they're looking at
+  const sub = document.getElementById('dp-swimlanes-subtitle');
+  const parts = [];
+  if (haveSource) parts.push('Source: ' + (dpState.source.profile.overview.database || '?'));
+  if (haveTarget) parts.push('Target: ' + (dpState.target.profile.overview.database || '?'));
+  sub.textContent = parts.join('  ·  ') + '. Click any table chip to see its description and relationships.';
+
+  // For each role with a profile, ensure subject classification exists
+  for (const role of ['source','target']) {
+    if (!dpState[role].profile) continue;
+    const needsClassify = !dpState[role].profile.tables.some(t => t.subjectArea);
+    if (needsClassify) {
+      try {
+        await dpRunClassify(role);
+      } catch (e) {
+        console.error('Classify failed for', role, e);
+        alert('Classification failed for ' + role + ': ' + e.message);
+        return;
+      }
+    }
+  }
+
+  dpRenderSwimlanes();
+}
+
+// Run classification against the backend for one role. Updates the in-memory
+// profile with the returned classifications and persists via Cosmos.
+async function dpRunClassify(role) {
+  const profile = dpState[role].profile;
+  if (!profile) throw new Error('No profile loaded for ' + role);
+
+  // Show progress strip
+  const prog = document.getElementById('dp-classify-progress');
+  const lbl  = document.getElementById('dp-classify-label');
+  const fill = document.getElementById('dp-classify-fill');
+  prog.style.display = '';
+  lbl.textContent = 'Classifying ' + role + ' tables by subject area…';
+  fill.style.width = '20%';
+
+  // Indeterminate-style heartbeat — Claude call can take 30-180s for big schemas
+  let heartbeat = 20;
+  const heartbeatTimer = setInterval(() => {
+    heartbeat = Math.min(85, heartbeat + 3);
+    fill.style.width = heartbeat + '%';
+  }, 2000);
+
+  try {
+    const res = await dpApi('POST', 'profile-classify-subjects', { fingerprint: profile.fingerprint });
+    fill.style.width = '95%';
+    lbl.textContent = 'Loading results…';
+
+    // Re-fetch the profile from Cosmos to pull in the new subjectArea fields.
+    // Simpler than patching every table in memory and guarantees we render
+    // exactly what was saved.
+    const reload = await dpApi('GET', 'profile-load?fingerprint=' + encodeURIComponent(profile.fingerprint));
+    dpState[role].profile = {
+      fingerprint: profile.fingerprint,
+      overview:    reload.overview,
+      tables:      reload.tables
+    };
+
+    fill.style.width = '100%';
+    lbl.textContent = '✓ Classified ' + (res.updated || 0) + ' tables (' + (res.representatives || 0) + ' canonical reps)';
+  } finally {
+    clearInterval(heartbeatTimer);
+    setTimeout(() => { prog.style.display = 'none'; }, 1200);
+  }
+}
+
+// Render the swimlanes grid. Reads classifications from both profiles
+// (one or both may be present) and groups tables per subject area.
+function dpRenderSwimlanes() {
+  const content = document.getElementById('dp-swimlanes-content');
+  const haveSource = !!dpState.source.profile;
+  const haveTarget = !!dpState.target.profile;
+
+  // Bucket tables by subjectArea per role
+  const buckets = { source: {}, target: {} };
+  for (const role of ['source','target']) {
+    if (!dpState[role].profile) continue;
+    for (const t of dpState[role].profile.tables) {
+      const area = t.subjectArea || 'other';
+      (buckets[role][area] ||= []).push(t);
+    }
+  }
+
+  // Sort each bucket: hub first, then by row count desc, then alphabetical
+  const tierOrder = { hub: 0, spoke: 1, lookup: 2, audit: 3, staging: 4 };
+  for (const role of ['source','target']) {
+    for (const area in buckets[role]) {
+      buckets[role][area].sort((a,b) =>
+        (tierOrder[a.tier]||9) - (tierOrder[b.tier]||9) ||
+        (b.rowCount||0) - (a.rowCount||0) ||
+        a.fullName.localeCompare(b.fullName)
+      );
+    }
+  }
+
+  // Find which areas have ANY content (don't render empty rows for both sides)
+  const areasWithContent = DP_SUBJECT_AREAS.filter(a =>
+    (buckets.source[a.id] && buckets.source[a.id].length) ||
+    (buckets.target[a.id] && buckets.target[a.id].length)
+  );
+
+  // Build the grid
+  const renderCell = (role, area) => {
+    const tables = buckets[role][area] || [];
+    if (!tables.length) {
+      return haveSource && role === 'source' || haveTarget && role === 'target'
+        ? `<div class="dp-swim-cell empty">—</div>`
+        : `<div class="dp-swim-cell empty" style="opacity:0.4">(not profiled)</div>`;
+    }
+    const shown = tables.slice(0, DP_CHIPS_PER_CELL);
+    const hidden = tables.length - shown.length;
+    const chips = shown.map(t => `
+      <span class="dp-swim-chip ${t.tier||''}" onclick="dpOpenDrawerFromRole('${role}','${escapeHtmlAttr(t.fullName)}')" title="${escapeHtmlAttr((t.summary||'').slice(0,200))}">
+        <span class="dp-swim-dot"></span>${escapeHtmlText(t.fullName)}${t.rowCount ? `<span class="dp-swim-count">${t.rowCount.toLocaleString()}</span>` : ''}
+      </span>`).join('');
+    const more = hidden > 0 ? `<span class="dp-swim-more-link" onclick="dpExpandCell('${role}','${area}')">+${hidden} more</span>` : '';
+    return `<div class="dp-swim-cell" data-role="${role}" data-area="${area}">${chips}${more}</div>`;
+  };
+
+  let html = `
+    <div class="dp-swim-grid">
+      <div class="dp-swim-header">
+        <div>Subject Area</div>
+        <div>${haveSource ? 'Source · ' + esc(dpState.source.profile.overview.database || '') : 'Source (not profiled)'}</div>
+        <div>${haveTarget ? 'Target · ' + esc(dpState.target.profile.overview.database || '') : 'Target (not profiled)'}</div>
+      </div>
+  `;
+
+  for (const area of areasWithContent) {
+    const srcCount = buckets.source[area.id]?.length || 0;
+    const tgtCount = buckets.target[area.id]?.length || 0;
+    html += `
+      <div class="dp-swim-row">
+        <div class="dp-swim-area-label" title="${escapeHtmlAttr(area.desc)}">
+          <span class="dp-swim-area-name">${esc(area.label)}</span>
+          <span class="dp-swim-area-counts">${srcCount} / ${tgtCount}</span>
+        </div>
+        ${renderCell('source', area.id)}
+        ${renderCell('target', area.id)}
+      </div>
+    `;
+  }
+
+  html += `</div>`;
+
+  // Footer summary
+  const srcTotal = Object.values(buckets.source).reduce((s,a) => s + a.length, 0);
+  const tgtTotal = Object.values(buckets.target).reduce((s,a) => s + a.length, 0);
+  html += `<div style="margin-top:0.875rem;font-size:11px;color:var(--text3);display:flex;gap:1rem;flex-wrap:wrap">
+    <span>📊 <strong style="color:var(--text2)">${areasWithContent.length}</strong> subject areas in use</span>
+    ${haveSource ? `<span>Source total: <strong style="color:var(--teal)">${srcTotal.toLocaleString()}</strong> tables</span>` : ''}
+    ${haveTarget ? `<span>Target total: <strong style="color:var(--teal)">${tgtTotal.toLocaleString()}</strong> tables</span>` : ''}
+    <span style="margin-left:auto;color:var(--text3);font-size:10px">Counts shown as <em>source / target</em>. Empty rows are hidden.</span>
+  </div>`;
+
+  content.innerHTML = html;
+}
+
+// Expand a collapsed cell — re-renders just that cell with all tables visible
+function dpExpandCell(role, area) {
+  const profile = dpState[role].profile;
+  if (!profile) return;
+  const tables = profile.tables.filter(t => (t.subjectArea || 'other') === area);
+  const tierOrder = { hub: 0, spoke: 1, lookup: 2, audit: 3, staging: 4 };
+  tables.sort((a,b) =>
+    (tierOrder[a.tier]||9) - (tierOrder[b.tier]||9) ||
+    (b.rowCount||0) - (a.rowCount||0) ||
+    a.fullName.localeCompare(b.fullName)
+  );
+  const cell = document.querySelector(`.dp-swim-cell[data-role="${role}"][data-area="${area}"]`);
+  if (!cell) return;
+  cell.innerHTML = tables.map(t => `
+    <span class="dp-swim-chip ${t.tier||''}" onclick="dpOpenDrawerFromRole('${role}','${escapeHtmlAttr(t.fullName)}')" title="${escapeHtmlAttr((t.summary||'').slice(0,200))}">
+      <span class="dp-swim-dot"></span>${escapeHtmlText(t.fullName)}${t.rowCount ? `<span class="dp-swim-count">${t.rowCount.toLocaleString()}</span>` : ''}
+    </span>`).join('');
+}
+
+// Drawer opener that respects the role of the chip clicked — so a target chip
+// opens with the target profile's drawer data, even if dpActiveRole was 'source'.
+function dpOpenDrawerFromRole(role, fullName) {
+  const prevActive = dpActiveRole;
+  dpActiveRole = role;
+  dpOpenDrawer(fullName);
+  dpActiveRole = prevActive;   // restore — don't change the underlying view
+}
+
+function dpCloseSwimlanes() {
+  document.getElementById('dp-swimlanes-panel').style.display = 'none';
+}
+
+// Forced re-classify (user-initiated, costs API tokens)
+async function dpRecomputeClassify() {
+  if (!confirm('Re-run subject area classification? This re-spends Claude API tokens for any profile that\'s loaded.')) return;
+  // Wipe subjectArea on in-memory tables so dpCompareProfiles triggers a fresh run
+  for (const role of ['source','target']) {
+    if (dpState[role].profile) {
+      dpState[role].profile.tables.forEach(t => { delete t.subjectArea; });
+    }
+  }
+  await dpCompareProfiles();
+}
+
+// HTML-escape helpers for attribute and text contexts (use the existing esc()
+// where the value is going into innerHTML inside element body; these are for
+// attributes and labels with quotes/angle brackets specifically).
+function escapeHtmlText(s) { return String(s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escapeHtmlAttr(s) { return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // ── Hook checkReady so dp panel surfaces as user inputs API key ─────────────
 // Previously this also wrapped connectSrc/Tgt to call dpShowPanelIfReady, but
