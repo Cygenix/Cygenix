@@ -186,6 +186,64 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 
 /* SELECTED COUNT BADGE */
 .sel-badge{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);border-radius:100px;font-size:10px;padding:1px 8px;font-family:var(--mono)}
+
+/* DATA PROFILING ─────────────────────────────────────────────────────────── */
+.dp-panel{background:linear-gradient(180deg,var(--bg2),var(--bg2)),linear-gradient(135deg,rgba(167,139,250,0.05),rgba(45,212,191,0.05));border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem;position:relative;overflow:hidden}
+.dp-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--purple),var(--teal));opacity:0.6}
+.dp-status-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:100px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3)}
+.dp-status-pill.fresh{color:var(--green);background:var(--green-bg);border-color:rgba(34,201,122,0.25)}
+.dp-status-pill.stale{color:var(--amber);background:var(--amber-bg);border-color:rgba(245,158,11,0.25)}
+.dp-status-pill.none{color:var(--text3)}
+.dp-status-pill.building{color:var(--purple);background:var(--purple-bg);border-color:rgba(167,139,250,0.3)}
+.dp-stage-list{display:flex;flex-direction:column;gap:0.4rem;margin-top:0.75rem;font-family:var(--mono);font-size:11px}
+.dp-stage{display:flex;align-items:center;gap:0.6rem;color:var(--text3);padding:0.2rem 0}
+.dp-stage.active{color:var(--purple)}
+.dp-stage.done{color:var(--green)}
+.dp-stage.err{color:var(--red)}
+.dp-stage-icon{width:14px;text-align:center;flex-shrink:0}
+.dp-overview{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);padding:1rem 1.1rem;margin-top:0.875rem;font-size:13px;line-height:1.7;color:var(--text2)}
+.dp-tier-bar{display:flex;gap:0.4rem;margin:0.75rem 0;flex-wrap:wrap}
+.dp-tier-chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-family:var(--mono);padding:3px 9px;border-radius:100px;background:var(--bg3);border:0.5px solid var(--border)}
+.dp-tier-chip .dot{width:6px;height:6px;border-radius:50%}
+.dp-tier-chip.hub .dot{background:var(--accent)}
+.dp-tier-chip.spoke .dot{background:var(--teal)}
+.dp-tier-chip.lookup .dot{background:var(--amber)}
+.dp-tier-chip.audit .dot{background:var(--text3)}
+.dp-tier-chip.staging .dot{background:var(--red)}
+.dp-table-list{margin-top:0.75rem;max-height:480px;overflow-y:auto;border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg)}
+.dp-table-row{display:flex;align-items:center;gap:0.75rem;padding:0.55rem 0.875rem;border-bottom:0.5px solid var(--border);cursor:pointer;font-size:12px;transition:background 0.1s}
+.dp-table-row:hover{background:var(--bg3)}
+.dp-table-row:last-child{border-bottom:none}
+.dp-table-row-name{font-family:var(--mono);color:var(--teal);min-width:220px;flex-shrink:0}
+.dp-table-row-summary{flex:1;color:var(--text2);font-size:11px;line-height:1.5;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+.dp-table-row-meta{font-size:10px;color:var(--text3);font-family:var(--mono);flex-shrink:0;white-space:nowrap}
+.dp-table-search{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.45rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--mono);outline:none}
+.dp-table-search:focus{border-color:var(--accent)}
+
+/* DRAWER (table detail) */
+.dp-drawer-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:500;display:none;backdrop-filter:blur(2px)}
+.dp-drawer-overlay.open{display:block}
+.dp-drawer{position:fixed;top:0;right:0;bottom:0;width:min(720px,100vw);background:var(--bg);border-left:0.5px solid var(--border2);z-index:501;display:none;flex-direction:column;box-shadow:-12px 0 40px rgba(0,0,0,0.5)}
+.dp-drawer.open{display:flex}
+.dp-drawer-header{padding:1.25rem 1.5rem;border-bottom:0.5px solid var(--border);display:flex;align-items:flex-start;gap:0.875rem;background:var(--bg2);flex-shrink:0}
+.dp-drawer-body{flex:1;overflow-y:auto;padding:1.25rem 1.5rem}
+.dp-drawer-close{margin-left:auto;background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;line-height:1;padding:0;flex-shrink:0}
+.dp-drawer-close:hover{color:var(--text)}
+.dp-section{margin-bottom:1.5rem}
+.dp-section:last-child{margin-bottom:0}
+.dp-section h4{font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.4rem}
+.dp-ref-list{display:flex;flex-direction:column;gap:0.35rem}
+.dp-ref{display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.6rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);font-size:11px;font-family:var(--mono);transition:background 0.1s}
+.dp-ref:hover{background:var(--bg4);cursor:pointer}
+.dp-ref-arrow{color:var(--text3);font-size:10px}
+.dp-ref-col{color:var(--accent)}
+.dp-ref-tgt{color:var(--teal);flex:1}
+.dp-ref-conf{font-size:9px;padding:1px 6px;border-radius:100px;font-family:var(--mono);flex-shrink:0}
+.dp-ref-conf.declared{background:var(--green-bg);color:var(--green)}
+.dp-ref-conf.high{background:var(--accent-glow);color:var(--accent)}
+.dp-ref-conf.medium{background:var(--amber-bg);color:var(--amber)}
+.dp-ref-conf.low{background:var(--bg4);color:var(--text3)}
+.dp-empty-refs{font-size:11px;color:var(--text3);font-style:italic;padding:0.4rem 0}
 </style>
 <script src="/connections.js"></script>
 </head>
@@ -287,7 +345,78 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
     </div>
   </div>
 
-  <!-- SCHEMA QUESTION PANEL -->
+  <!-- DATA PROFILING ─────────────────────────────────────────────────────── -->
+  <!-- One-time, comprehensive English-language documentation of a whole       -->
+  <!-- schema. Persists per-table so a future migration-strategy tool can      -->
+  <!-- read it and reason about source vs target without re-paying Claude.    -->
+  <div class="dp-panel" id="dp-panel" style="display:none">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:0.5rem">
+      <div>
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.2rem">
+          <span style="font-size:14px;font-weight:600">🧬 Data Profiling</span>
+          <span id="dp-status-source" class="dp-status-pill none" style="display:none">No profile</span>
+          <span id="dp-status-target" class="dp-status-pill none" style="display:none">No profile</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);max-width:640px;line-height:1.55">
+          Build a once-and-done English description of a whole schema — every table classified, declared and inferred relationships graphed, and a per-table page you can drill into. Stored per user so this only needs to run once per database.
+        </div>
+      </div>
+      <div style="display:flex;gap:0.4rem;flex-shrink:0">
+        <button class="btn btn-purple btn-sm" id="dp-build-src-btn" onclick="dpStartBuild('source')" disabled>🧬 Profile source</button>
+        <button class="btn btn-sm" id="dp-build-tgt-btn" onclick="dpStartBuild('target')"
+                style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none" disabled>🧬 Profile target</button>
+      </div>
+    </div>
+
+    <!-- BUILD PROGRESS ───────────────────────────────────────────────────── -->
+    <div id="dp-build-progress" style="display:none;margin-top:0.875rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text2);margin-bottom:0.4rem">
+        <span id="dp-build-label" style="font-family:var(--mono)">Building…</span>
+        <span id="dp-build-percent" style="font-family:var(--mono);color:var(--purple)">0%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="dp-build-fill" style="width:0%"></div></div>
+      <div class="dp-stage-list" id="dp-stage-list"></div>
+    </div>
+
+    <!-- BUILT RESULTS ────────────────────────────────────────────────────── -->
+    <div id="dp-results" style="display:none;margin-top:1rem">
+      <!-- DB selector (source/target tabs when both are profiled) -->
+      <div id="dp-role-tabs" style="display:flex;gap:0.4rem;margin-bottom:0.75rem"></div>
+
+      <!-- Schema overview -->
+      <div class="dp-overview" id="dp-overview">…</div>
+
+      <!-- Tier breakdown -->
+      <div class="dp-tier-bar" id="dp-tier-bar"></div>
+
+      <!-- Filter -->
+      <input type="text" id="dp-table-filter" class="dp-table-search" placeholder="🔍 Filter tables by name, tier, or description…" oninput="dpFilterTables()">
+
+      <!-- Table list -->
+      <div class="dp-table-list" id="dp-table-list"></div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.75rem;font-size:11px;color:var(--text3)">
+        <span id="dp-result-count"></span>
+        <button class="btn btn-ghost btn-sm" onclick="dpConfirmRebuild()" style="font-size:11px">🔄 Re-build</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DRAWER (table detail) ─────────────────────────────────────────────── -->
+  <div class="dp-drawer-overlay" id="dp-drawer-overlay" onclick="dpCloseDrawer()"></div>
+  <aside class="dp-drawer" id="dp-drawer" aria-hidden="true">
+    <div class="dp-drawer-header">
+      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">📄</div>
+      <div style="flex:1;min-width:0">
+        <div id="dp-drawer-title" style="font-family:var(--mono);font-size:14px;font-weight:600;color:var(--teal);overflow:hidden;text-overflow:ellipsis">…</div>
+        <div id="dp-drawer-subtitle" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">…</div>
+      </div>
+      <button class="dp-drawer-close" onclick="dpCloseDrawer()" title="Close">×</button>
+    </div>
+    <div class="dp-drawer-body" id="dp-drawer-body">…</div>
+  </aside>
+
+  <!-- ──────────────────────────────────────────────────────────────────── -->
   <div class="panel" id="schema-qa-panel" style="display:none;margin-bottom:1rem">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
       <div>
@@ -1583,6 +1712,1013 @@ function showSaveToast(msg){
 }
 
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DATA PROFILING MODULE
+// ═════════════════════════════════════════════════════════════════════════════
+// Once-and-done English documentation of a whole schema. Persists per-table
+// docs to Cosmos via /api/data/profile-* so the cost of analysis is paid
+// once per source/target and re-used by future migration-strategy tooling.
+//
+// Document model: one doc per table + one __overview doc per schema, all
+// partitioned by userId in the data_profiles container. See backend handler
+// for full schema.
+//
+// Build pipeline (tiered to keep Claude calls down):
+//   1. Fingerprint the schema
+//   2. Pull declared FKs from existing schema response (no new query)
+//   3. Tier each table (heuristic — no AI)
+//   4. Deep-analyse HUBs (full sample + stats + AI call per table)
+//   5. Light-analyse LOOKUPs in batches (~30 per AI call)
+//   6. Heuristic-only descriptions for AUDIT/STAGING
+//   7. Synthesise schema overview (1 AI call)
+//   8. Persist everything to backend + localStorage cache
+// ─────────────────────────────────────────────────────────────────────────────
+
+// In-memory profile state. Keyed by role so we can hold source + target at once.
+let dpState = {
+  source: { profile: null, fingerprint: null, building: false, schema: null, conn: null },
+  target: { profile: null, fingerprint: null, building: false, schema: null, conn: null }
+};
+let dpActiveRole = 'source';   // which DB the results pane is currently showing
+
+// ── Show the panel once a connection is up ───────────────────────────────────
+function dpShowPanelIfReady() {
+  const panel = document.getElementById('dp-panel');
+  if (!panel) return;
+  if (srcSchema || tgtSchema) panel.style.display = '';
+
+  // Enable build buttons whose schema is loaded AND have an API key
+  const apiKey = document.getElementById('api-key').value.trim();
+  const srcBtn = document.getElementById('dp-build-src-btn');
+  const tgtBtn = document.getElementById('dp-build-tgt-btn');
+  if (srcBtn) srcBtn.disabled = !(srcSchema && apiKey.startsWith('sk-ant-'));
+  if (tgtBtn) {
+    tgtBtn.style.display = tgtSchema ? 'inline-flex' : 'none';
+    tgtBtn.disabled      = !(tgtSchema && apiKey.startsWith('sk-ant-'));
+  }
+
+  // Check for existing profiles in Cosmos for both roles, then refresh status pills
+  dpRefreshStatusPills();
+}
+
+// ── Status pills (Fresh / Stale / None / Building) ───────────────────────────
+async function dpRefreshStatusPills() {
+  for (const role of ['source','target']) {
+    const schema = role === 'source' ? srcSchema : tgtSchema;
+    const pill   = document.getElementById('dp-status-' + role);
+    if (!pill) continue;
+    if (!schema) { pill.style.display = 'none'; continue; }
+    pill.style.display = 'inline-flex';
+
+    if (dpState[role].building) {
+      pill.className = 'dp-status-pill building';
+      pill.textContent = (role==='source'?'Source':'Target') + ': building…';
+      continue;
+    }
+
+    // Compute current fingerprint for this schema
+    const fp = await dpFingerprintSchema(schema);
+    dpState[role].fingerprint = fp;
+
+    // Check localStorage cache first (fast path)
+    const cached = dpLoadFromCache(fp);
+    if (cached && cached.overview) {
+      dpState[role].profile = cached;
+      pill.className = 'dp-status-pill fresh';
+      const ago = dpTimeAgo(cached.overview.updatedAt || cached.overview.createdAt);
+      pill.textContent = (role==='source'?'Source':'Target') + ': profiled ' + ago;
+      // If this is the role currently being shown OR there's no active result yet, render
+      if (!document.getElementById('dp-results').style.display || document.getElementById('dp-results').style.display === 'none') {
+        dpActiveRole = role;
+        dpRenderResults();
+      }
+      continue;
+    }
+
+    // Fall back to backend list to see if there's a profile with this fp
+    try {
+      const list = await dpApi('GET', 'profile-list');
+      const match = (list.profiles || []).find(p => p.fingerprint === fp);
+      if (match) {
+        pill.className = 'dp-status-pill fresh';
+        pill.textContent = (role==='source'?'Source':'Target') + ': profiled ' + dpTimeAgo(match.updatedAt);
+        // Don't auto-load full profile here — let user click to load
+        pill.style.cursor = 'pointer';
+        pill.onclick = () => dpLoadProfile(role, fp);
+        pill.title = 'Click to load';
+      } else {
+        // Check for stale profile (same DB, different fingerprint)
+        const stale = (list.profiles || []).find(p => p.role === role && p.database === schema.database);
+        if (stale) {
+          pill.className = 'dp-status-pill stale';
+          pill.textContent = (role==='source'?'Source':'Target') + ': stale — schema changed';
+        } else {
+          pill.className = 'dp-status-pill none';
+          pill.textContent = (role==='source'?'Source':'Target') + ': no profile';
+        }
+      }
+    } catch (e) {
+      console.warn('Profile-list failed:', e.message);
+      pill.className = 'dp-status-pill none';
+      pill.textContent = (role==='source'?'Source':'Target') + ': no profile';
+    }
+  }
+}
+
+// ── Time ago helper ──────────────────────────────────────────────────────────
+function dpTimeAgo(iso) {
+  if (!iso) return 'just now';
+  const ms = Date.now() - new Date(iso).getTime();
+  const s  = Math.floor(ms/1000);
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s/60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m/60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h/24);
+  return d + 'd ago';
+}
+
+// ── Fingerprint: SHA-256 of database + sorted table.column structure ─────────
+// Stable across builds — only changes when schema structure changes (new/removed
+// tables or columns). Used to detect staleness and to key cached profiles.
+async function dpFingerprintSchema(schema) {
+  if (!schema || !schema.tables) return null;
+  const sig = schema.database + '|' + (schema.tables || []).map(t => {
+    const cols = (t.columns || []).map(c => c.name || c).sort().join(',');
+    return (t.schema || 'dbo') + '.' + t.name + ':' + cols;
+  }).sort().join('|');
+  const buf = new TextEncoder().encode(sig);
+  const hash = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2,'0')).join('').slice(0, 32);
+}
+
+// ── Cache (localStorage) ─────────────────────────────────────────────────────
+function dpCacheKey(fp, suffix) { return 'cygenix_profile_' + fp + '_' + suffix; }
+
+function dpSaveToCache(fp, overview, tables) {
+  try {
+    localStorage.setItem(dpCacheKey(fp, '__overview'), JSON.stringify(overview));
+    for (const t of tables) {
+      localStorage.setItem(dpCacheKey(fp, t.fullName), JSON.stringify(t));
+    }
+    localStorage.setItem(dpCacheKey(fp, '__index'), JSON.stringify({
+      fingerprint: fp, tables: tables.map(t => t.fullName), savedAt: new Date().toISOString()
+    }));
+  } catch (e) {
+    console.warn('Profile cache write failed (likely quota):', e.message);
+  }
+}
+
+function dpLoadFromCache(fp) {
+  try {
+    const idxRaw = localStorage.getItem(dpCacheKey(fp, '__index'));
+    if (!idxRaw) return null;
+    const idx = JSON.parse(idxRaw);
+    const overview = JSON.parse(localStorage.getItem(dpCacheKey(fp, '__overview')) || 'null');
+    if (!overview) return null;
+    const tables = [];
+    for (const fn of idx.tables) {
+      const raw = localStorage.getItem(dpCacheKey(fp, fn));
+      if (raw) tables.push(JSON.parse(raw));
+    }
+    return { fingerprint: fp, overview, tables };
+  } catch { return null; }
+}
+
+function dpClearCache(fp) {
+  try {
+    const idxRaw = localStorage.getItem(dpCacheKey(fp, '__index'));
+    if (idxRaw) {
+      const idx = JSON.parse(idxRaw);
+      for (const fn of idx.tables) localStorage.removeItem(dpCacheKey(fp, fn));
+    }
+    localStorage.removeItem(dpCacheKey(fp, '__overview'));
+    localStorage.removeItem(dpCacheKey(fp, '__index'));
+  } catch {}
+}
+
+// ── API helper ───────────────────────────────────────────────────────────────
+// Calls the Azure Function /api/data/{action} endpoint. Reads userId from the
+// JWT-derived sessionStorage value the rest of the app uses.
+async function dpApi(method, action, body) {
+  // Get user ID the same way cygenix-cosmos-sync.js does. Fall back gracefully.
+  let userId = null;
+  try {
+    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+    userId = u.email || u.id || null;
+  } catch {}
+  if (!userId) throw new Error('Not signed in');
+
+  const url = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data/' + action +
+              '?code=WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
+  };
+  if (body && method !== 'GET') opts.body = JSON.stringify(body);
+
+  const res  = await fetch(url, opts);
+  const data = await res.json().catch(() => ({ error: 'Non-JSON response' }));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+// ── Tier classifier (no AI) ──────────────────────────────────────────────────
+// Heuristic classification so we can decide which tables get deep analysis
+// vs light batched analysis vs heuristic-only descriptions. inboundCount is
+// computed from the FK graph (how many other tables reference this one).
+function dpClassifyTier(t, inboundCount) {
+  const name  = (t.name || '').toLowerCase();
+  const rows  = t.rowCount || 0;
+  const cols  = t.columns || [];
+  const fks   = t.foreignKeys || [];
+
+  // STAGING — clear naming patterns
+  if (/^(tmp_|staging_|stg_|temp_|_temp)/i.test(t.name) || /(_tmp|_temp|_staging)$/i.test(t.name)) {
+    return 'staging';
+  }
+  // AUDIT/LOG — naming patterns or audit-typical columns
+  const auditNamePat = /(_log|_audit|_history|_hist|_archive|_arch|_journal)$|^audit_|^log_/i;
+  const hasAuditCols = cols.some(c => /^(event_?date|log_?date|audit_?date|changed_?at|changed_?by|action_?type|operation)$/i.test(c.name||''));
+  if (auditNamePat.test(t.name) || hasAuditCols) return 'audit';
+
+  // LOOKUP/CONFIG — small, no outbound FKs, classic lookup column shape
+  const lookupNamePat = /^(lk_|lkp_|ref_|cfg_|config_|setting_|type_|status_|code_|param_)/i;
+  const lookupColShape = cols.length <= 8 && cols.some(c => /(_?code|_?type|_?status|_?description|_?name)$/i.test(c.name||''));
+  if (rows > 0 && rows < 500 && fks.length === 0 && (lookupNamePat.test(t.name) || lookupColShape)) {
+    return 'lookup';
+  }
+  // Tiny tables with no FKs in either direction are almost certainly lookups
+  if (rows > 0 && rows < 200 && fks.length === 0 && inboundCount === 0 && cols.length <= 12) {
+    return 'lookup';
+  }
+
+  // HUB — many things point at it, OR it's large
+  if (inboundCount >= 3 || rows >= 10000) return 'hub';
+
+  // SPOKE — default for everything else (has FKs or moderate size)
+  return 'spoke';
+}
+
+// ── Build inbound-ref graph from declared FKs ────────────────────────────────
+// schema.tables[*].foreignKeys is "this table → that table". We invert it to
+// build "that table ← these tables" (inbound) for each potential reference.
+function dpBuildInboundGraph(schema) {
+  const inbound = {};   // { "dbo.NX_Matter": [{ fromSchema, fromTable, fromColumn, toColumn, kind:"declared" }] }
+  for (const t of (schema.tables || [])) {
+    const fromKey = (t.schema || 'dbo') + '.' + t.name;
+    for (const fk of (t.foreignKeys || [])) {
+      // fk.references is "schema.table(column)"
+      const m = /^([^.]+)\.([^(]+)\(([^)]+)\)$/.exec(fk.references || '');
+      if (!m) continue;
+      const toKey = m[1] + '.' + m[2];
+      (inbound[toKey] ||= []).push({
+        fromSchema: t.schema || 'dbo',
+        fromTable:  t.name,
+        fromColumn: fk.column,
+        toColumn:   m[3],
+        kind:       'declared'
+      });
+    }
+  }
+  return inbound;
+}
+
+// ── Outbound refs for a table from its declared FKs ──────────────────────────
+function dpOutboundDeclared(t) {
+  const out = [];
+  for (const fk of (t.foreignKeys || [])) {
+    const m = /^([^.]+)\.([^(]+)\(([^)]+)\)$/.exec(fk.references || '');
+    if (!m) continue;
+    out.push({
+      column:      fk.column,
+      refSchema:   m[1],
+      refTable:    m[2],
+      refColumn:   m[3],
+      kind:        'declared',
+      confidence:  'declared'
+    });
+  }
+  return out;
+}
+
+// ── Stage tracker (UI progress) ──────────────────────────────────────────────
+const dpStages = [
+  { id: 'fingerprint', label: 'Fingerprint schema' },
+  { id: 'graph',       label: 'Build relationship graph' },
+  { id: 'classify',    label: 'Classify tables by tier' },
+  { id: 'deep',        label: 'Deep-analyse hub tables' },
+  { id: 'light',       label: 'Batch-analyse lookups' },
+  { id: 'heuristic',   label: 'Document audit/staging tables' },
+  { id: 'overview',    label: 'Synthesise schema overview' },
+  { id: 'save',        label: 'Save to Cosmos' }
+];
+
+function dpSetStage(stageId, status, detail) {
+  const list = document.getElementById('dp-stage-list');
+  if (!list) return;
+  if (!list.children.length) {
+    list.innerHTML = dpStages.map(s =>
+      `<div class="dp-stage" data-stage="${s.id}"><span class="dp-stage-icon">◦</span><span class="dp-stage-label">${s.label}</span><span class="dp-stage-detail" style="margin-left:auto;color:var(--text3);font-size:10px"></span></div>`
+    ).join('');
+  }
+  const el = list.querySelector(`[data-stage="${stageId}"]`);
+  if (!el) return;
+  el.classList.remove('active','done','err');
+  el.classList.add(status);
+  const icon = el.querySelector('.dp-stage-icon');
+  if (icon) icon.textContent = status === 'done' ? '✓' : status === 'err' ? '✕' : status === 'active' ? '◐' : '◦';
+  if (detail) {
+    const d = el.querySelector('.dp-stage-detail');
+    if (d) d.textContent = detail;
+  }
+}
+
+function dpSetProgress(pct, label) {
+  const fill  = document.getElementById('dp-build-fill');
+  const lbl   = document.getElementById('dp-build-label');
+  const pctEl = document.getElementById('dp-build-percent');
+  if (fill)  fill.style.width = pct + '%';
+  if (lbl  && label) lbl.textContent = label;
+  if (pctEl) pctEl.textContent = Math.round(pct) + '%';
+}
+
+// ── MAIN BUILD ENTRY ─────────────────────────────────────────────────────────
+async function dpStartBuild(role) {
+  const schema = role === 'source' ? srcSchema : tgtSchema;
+  const conn   = (role === 'source' ? document.getElementById('src-conn').value : document.getElementById('tgt-conn').value).trim();
+  const apiKey = document.getElementById('api-key').value.trim();
+
+  if (!schema)              return alert('Connect to the ' + role + ' database first.');
+  if (!apiKey)              return alert('Enter your Anthropic API key.');
+  if (dpState[role].building) return;
+
+  dpState[role].building = true;
+  dpState[role].schema = schema;
+  dpState[role].conn   = conn;
+
+  // UI: show progress, hide results, mark pill building
+  document.getElementById('dp-build-progress').style.display = '';
+  document.getElementById('dp-results').style.display = 'none';
+  document.getElementById('dp-stage-list').innerHTML = '';
+  dpStages.forEach(s => dpSetStage(s.id, 'pending'));
+  dpRefreshStatusPills();
+
+  try {
+    // ─── STAGE 1: Fingerprint ────────────────────────────────────────────
+    dpSetStage('fingerprint', 'active');
+    dpSetProgress(2, 'Fingerprinting ' + schema.database + '…');
+    const fingerprint = await dpFingerprintSchema(schema);
+    dpState[role].fingerprint = fingerprint;
+    dpSetStage('fingerprint', 'done', fingerprint.slice(0,12) + '…');
+
+    // ─── STAGE 2: Build inbound-ref graph from declared FKs ──────────────
+    dpSetStage('graph', 'active');
+    dpSetProgress(6, 'Building relationship graph…');
+    const inboundGraph = dpBuildInboundGraph(schema);
+    const totalFKs = Object.values(inboundGraph).reduce((s,a)=>s+a.length, 0);
+    dpSetStage('graph', 'done', totalFKs + ' declared FKs across ' + Object.keys(inboundGraph).length + ' tables');
+
+    // ─── STAGE 3: Classify ───────────────────────────────────────────────
+    dpSetStage('classify', 'active');
+    dpSetProgress(10, 'Classifying tables by tier…');
+    const tables = (schema.tables || []).map(t => {
+      const fullName = (t.schema || 'dbo') + '.' + t.name;
+      const inboundCount = (inboundGraph[fullName] || []).length;
+      return {
+        raw:          t,
+        fullName,
+        schema:       t.schema || 'dbo',
+        name:         t.name,
+        rowCount:     t.rowCount || 0,
+        columns:      t.columns || [],
+        declaredFKs:  dpOutboundDeclared(t),
+        inboundRefs:  inboundGraph[fullName] || [],
+        tier:         dpClassifyTier(t, inboundCount)
+      };
+    });
+    const tierCounts = tables.reduce((acc,t)=>{ acc[t.tier]=(acc[t.tier]||0)+1; return acc; }, {});
+    dpSetStage('classify', 'done',
+      Object.entries(tierCounts).map(([k,v])=>k+':'+v).join(' · '));
+
+    // ─── STAGE 4: Deep-analyse HUBs ──────────────────────────────────────
+    const hubs = tables.filter(t => t.tier === 'hub');
+    dpSetStage('deep', 'active', '0 / ' + hubs.length);
+    let hubsDone = 0;
+    for (const hub of hubs) {
+      try {
+        const desc = await dpDeepAnalyseTable(hub, conn, apiKey, tables);
+        Object.assign(hub, desc);
+        hub.analysisDepth = 'deep';
+      } catch (e) {
+        console.warn('Deep analyse failed for', hub.fullName, e.message);
+        hub.summary = 'Analysis failed: ' + e.message;
+        hub.analysisDepth = 'failed';
+      }
+      hubsDone++;
+      dpSetStage('deep', 'active', hubsDone + ' / ' + hubs.length + ' · ' + hub.name);
+      // Hubs span roughly 15% → 55% of the bar
+      dpSetProgress(15 + Math.round((hubsDone / Math.max(1, hubs.length)) * 40), 'Deep analysis: ' + hub.fullName);
+    }
+    dpSetStage('deep', 'done', hubsDone + ' hubs');
+
+    // ─── STAGE 5: Batched LOOKUPs ────────────────────────────────────────
+    const lookups = tables.filter(t => t.tier === 'lookup');
+    const BATCH = 30;
+    const batches = [];
+    for (let i = 0; i < lookups.length; i += BATCH) batches.push(lookups.slice(i, i + BATCH));
+    dpSetStage('light', 'active', '0 / ' + batches.length + ' batches');
+    let batchesDone = 0;
+    for (const batch of batches) {
+      try {
+        const results = await dpLightAnalyseBatch(batch, apiKey);
+        for (const r of results) {
+          const tgt = batch.find(b => b.fullName === r.fullName);
+          if (tgt) {
+            tgt.summary       = r.summary || ('Lookup table (' + tgt.rowCount + ' rows)');
+            tgt.keyFields     = r.keyFields || [];
+            tgt.patterns      = r.patterns || [];
+            tgt.migrationNotes= r.migrationNotes || [];
+            tgt.analysisDepth = 'light';
+          }
+        }
+      } catch (e) {
+        console.warn('Batch light-analyse failed:', e.message);
+        for (const b of batch) {
+          if (!b.summary) {
+            b.summary = 'Lookup/reference table — ' + b.rowCount + ' rows, ' + b.columns.length + ' columns.';
+            b.analysisDepth = 'heuristic';
+          }
+        }
+      }
+      batchesDone++;
+      dpSetStage('light', 'active', batchesDone + ' / ' + batches.length);
+      // Lookups span 55% → 75%
+      dpSetProgress(55 + Math.round((batchesDone / Math.max(1, batches.length)) * 20), 'Batched lookups…');
+    }
+    dpSetStage('light', 'done', lookups.length + ' lookups across ' + batches.length + ' batches');
+
+    // ─── STAGE 6: Heuristic-only for audit/staging/spoke-without-deep ────
+    dpSetStage('heuristic', 'active');
+    let heuristicCount = 0;
+    for (const t of tables) {
+      if (t.summary) continue;   // already done by deep or light
+      t.summary = dpHeuristicSummary(t);
+      t.keyFields = [];
+      t.patterns = [];
+      t.migrationNotes = t.tier === 'audit' ? ['Audit / log data — confirm retention policy before migrating.'] :
+                         t.tier === 'staging' ? ['Staging / temporary table — likely excluded from migration.'] : [];
+      t.analysisDepth = 'heuristic';
+      heuristicCount++;
+    }
+    dpSetStage('heuristic', 'done', heuristicCount + ' tables');
+    dpSetProgress(78, 'Documented audit/staging tables');
+
+    // ─── STAGE 7: Schema overview ────────────────────────────────────────
+    dpSetStage('overview', 'active');
+    dpSetProgress(82, 'Synthesising schema overview…');
+    let overviewText, overviewExtras;
+    try {
+      const r = await dpSynthesiseOverview(schema, tables, tierCounts, apiKey);
+      overviewText   = r.overview;
+      overviewExtras = r.extras || {};
+    } catch (e) {
+      console.warn('Overview synthesis failed:', e.message);
+      overviewText   = 'A ' + schema.database + ' database with ' + tables.length + ' tables (' +
+                       Object.entries(tierCounts).map(([k,v])=>v+' '+k).join(', ') + '). Overview synthesis failed: ' + e.message;
+      overviewExtras = {};
+    }
+    dpSetStage('overview', 'done');
+    dpSetProgress(92, 'Saving profile…');
+
+    // ─── STAGE 8: Persist ────────────────────────────────────────────────
+    dpSetStage('save', 'active');
+    const now = new Date().toISOString();
+    let userId = null;
+    try {
+      const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
+      userId = u.email || u.id;
+    } catch {}
+
+    // Build all docs
+    const overviewDoc = {
+      id:           userId + '_' + fingerprint + '__overview',
+      fingerprint,
+      role,
+      database:     schema.database,
+      tableCount:   tables.length,
+      tierCounts,
+      overview:     overviewText,
+      hubs:         tables.filter(t=>t.tier==='hub').map(t=>t.fullName),
+      orphans:      tables.filter(t=>t.inboundRefs.length===0 && t.declaredFKs.length===0).map(t=>t.fullName),
+      ...overviewExtras,
+      createdAt:    now,
+      updatedAt:    now
+    };
+
+    const tableDocs = tables.map(t => ({
+      id:            userId + '_' + fingerprint + '_' + t.fullName,
+      fingerprint,
+      role,
+      database:      schema.database,
+      schema:        t.schema,
+      table:         t.name,
+      fullName:      t.fullName,
+      tier:          t.tier,
+      rowCount:      t.rowCount,
+      columns:       t.columns,
+      declaredFKs:   t.declaredFKs,
+      inferredFKs:   t.inferredFKs || [],
+      inboundRefs:   t.inboundRefs,
+      summary:       t.summary,
+      keyFields:     t.keyFields || [],
+      patterns:      t.patterns || [],
+      migrationNotes:t.migrationNotes || [],
+      analysisDepth: t.analysisDepth || 'heuristic',
+      createdAt:     now,
+      updatedAt:     now
+    }));
+
+    // Delete any prior fingerprint for this role + db (we replace, not accumulate)
+    try {
+      const list = await dpApi('GET', 'profile-list');
+      const stale = (list.profiles || []).filter(p =>
+        p.role === role && p.database === schema.database && p.fingerprint !== fingerprint
+      );
+      for (const s of stale) {
+        await dpApi('POST', 'profile-delete', { fingerprint: s.fingerprint });
+        dpClearCache(s.fingerprint);
+      }
+    } catch (e) {
+      console.warn('Stale cleanup skipped:', e.message);
+    }
+
+    // Save overview + table docs in batches of 50
+    const allDocs = [overviewDoc, ...tableDocs];
+    let saved = 0;
+    for (let i = 0; i < allDocs.length; i += 50) {
+      const batch = allDocs.slice(i, i + 50);
+      const r = await dpApi('POST', 'profile-save', { docs: batch });
+      saved += r.saved || 0;
+      dpSetStage('save', 'active', saved + ' / ' + allDocs.length);
+      dpSetProgress(92 + Math.round((saved / allDocs.length) * 8));
+    }
+    dpSetStage('save', 'done', saved + ' docs');
+
+    // Cache locally too (fast reload)
+    dpSaveToCache(fingerprint, overviewDoc, tableDocs);
+
+    // Put profile in state and render
+    dpState[role].profile = { fingerprint, overview: overviewDoc, tables: tableDocs };
+    dpState[role].building = false;
+    dpActiveRole = role;
+    dpSetProgress(100, 'Done — ' + tables.length + ' tables profiled');
+
+    setTimeout(() => {
+      document.getElementById('dp-build-progress').style.display = 'none';
+      dpRenderResults();
+      dpRefreshStatusPills();
+    }, 600);
+
+  } catch (e) {
+    console.error('Profile build failed:', e);
+    dpState[role].building = false;
+    alert('Profile build failed: ' + e.message);
+    dpRefreshStatusPills();
+  }
+}
+
+// ── Heuristic-only summary for tables not getting AI treatment ───────────────
+function dpHeuristicSummary(t) {
+  switch (t.tier) {
+    case 'audit':
+      return 'Audit / history table. Captures changes to other entities (' + t.rowCount.toLocaleString() + ' rows, ' + t.columns.length + ' columns).';
+    case 'staging':
+      return 'Staging / temporary table. Likely populated and emptied by ETL processes (' + t.rowCount.toLocaleString() + ' rows).';
+    case 'spoke':
+      return 'Operational table with ' + t.rowCount.toLocaleString() + ' rows and ' + t.declaredFKs.length + ' outbound relationship(s). Awaiting deep analysis.';
+    case 'lookup':
+      return 'Reference / lookup table with ' + t.rowCount.toLocaleString() + ' rows and ' + t.columns.length + ' columns.';
+    default:
+      return t.rowCount.toLocaleString() + ' rows · ' + t.columns.length + ' columns.';
+  }
+}
+
+// ── DEEP ANALYSE: samples + stats + AI per hub table ─────────────────────────
+// Also asks Claude to spot implicit FK relationships against a candidate
+// shortlist of other hubs whose names match column suffixes.
+async function dpDeepAnalyseTable(hub, conn, apiKey, allTables) {
+  // 1. Sample rows
+  let rows = [];
+  try {
+    const r = await dbCall(conn, { action:'execute', sql:`SELECT TOP 30 * FROM ${hub.fullName} ORDER BY (SELECT NULL)` });
+    rows = r.recordset || [];
+  } catch (e) { console.warn('Sample query failed for', hub.fullName, e.message); }
+
+  // 2. Stats on first 8 columns (kept tight to stay within Netlify timeout)
+  let statsText = '';
+  try {
+    const statsCols = hub.columns.slice(0,8).map(c =>
+      `COUNT(DISTINCT [${c.name}]) AS [${c.name}_distinct], SUM(CASE WHEN [${c.name}] IS NULL THEN 1 ELSE 0 END) AS [${c.name}_nulls]`
+    ).join(',\n');
+    const r = await dbCall(conn, { action:'execute', sql:`SELECT TOP 1 ${statsCols} FROM ${hub.fullName}` });
+    if (r.recordset?.[0]) statsText = JSON.stringify(r.recordset[0]);
+  } catch {}
+
+  // 3. Candidate hubs for implicit-FK inference (other tables this one might reference by column-name pattern)
+  const candidates = [];
+  for (const c of hub.columns) {
+    // Strip common suffixes to spot reference patterns: MattIndex → Matter, ClntID → Clnt
+    const stripped = c.name.replace(/(index|_?id|_?key|_?code|num|number)$/i, '');
+    if (stripped.length < 3) continue;
+    const matches = allTables.filter(t =>
+      t.fullName !== hub.fullName &&
+      (t.name.toLowerCase().includes(stripped.toLowerCase()) ||
+       stripped.toLowerCase().includes(t.name.toLowerCase().replace(/^(nx_|hbm_|gld_|tk_)/i,'')))
+    ).slice(0, 3);
+    for (const m of matches) {
+      if (!candidates.find(cc => cc.col === c.name && cc.tgt === m.fullName)) {
+        candidates.push({ col: c.name, tgt: m.fullName });
+      }
+    }
+  }
+
+  // 4. Claude prompt
+  const sampleJson  = rows.length ? JSON.stringify(rows.slice(0,5), null, 2).slice(0, 4000) : 'No rows';
+  const colsText    = hub.columns.map(c => `  ${c.name} ${c.type||''}`).join('\n');
+  const declaredFKs = hub.declaredFKs.map(f => `${f.column} → ${f.refSchema}.${f.refTable}(${f.refColumn})`).join('; ') || 'none';
+  const inboundRefs = hub.inboundRefs.slice(0,10).map(r => `${r.fromSchema}.${r.fromTable}.${r.fromColumn}`).join('; ') || 'none';
+  const candText    = candidates.slice(0,12).map(c => `  ${c.col} possibly → ${c.tgt}`).join('\n') || '  none';
+
+  const prompt = `You are a senior data migration consultant documenting a database table. Be specific and reference actual column names. Be concise.
+
+TABLE: ${hub.fullName}
+ROWS: ${hub.rowCount.toLocaleString()}  ·  TIER: hub
+DATABASE: ${hub.raw && (hub.raw.database || '') || ''}
+
+COLUMNS:
+${colsText}
+
+DECLARED FOREIGN KEYS (outbound): ${declaredFKs}
+INBOUND DECLARED REFS (other tables pointing here): ${inboundRefs}
+
+CANDIDATE IMPLICIT REFERENCES (columns that look like they MIGHT reference another table):
+${candText}
+
+SAMPLE ROWS (first 5):
+${sampleJson}
+
+COLUMN STATS (distinct + null counts):
+${statsText || 'unavailable'}
+
+Respond with ONLY a JSON object — no markdown, no commentary outside the JSON:
+{
+  "summary": "2-3 sentence plain English description of what this table stores and its business role",
+  "keyFields": [{"name":"column","role":"primary_key|foreign_key|code|description|date|amount|flag|other","insight":"brief note"}],
+  "patterns": ["pattern 1", "pattern 2"],
+  "migrationNotes": ["consideration 1"],
+  "inferredFKs": [
+    {"column":"MattIndex","refSchema":"dbo","refTable":"NX_Matter","refColumn":"MattIndex","confidence":"high|medium|low","reason":"why you think this"}
+  ]
+}
+
+For inferredFKs: only include relationships you're at least medium-confident about. Do NOT include relationships already in the DECLARED FKs above. Use the candidate list as a starting point but you can suggest others or reject candidates.`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens: 2000, messages:[{role:'user',content:prompt}] })
+  });
+  if (!res.ok) throw new Error('Claude API: ' + (await res.text()).slice(0,200));
+  const data = await res.json();
+  const raw = data.content?.[0]?.text || '{}';
+  let parsed;
+  try {
+    parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+  } catch {
+    const clean = raw.replace(/```json|```/g,'').trim();
+    const lastBrace = clean.lastIndexOf('}');
+    parsed = lastBrace > 0 ? JSON.parse(clean.slice(0, lastBrace + 1)) : { summary: raw.slice(0,400) };
+  }
+  return {
+    summary:        parsed.summary || hub.fullName + ' — analysis incomplete',
+    keyFields:      parsed.keyFields || [],
+    patterns:       parsed.patterns || [],
+    migrationNotes: parsed.migrationNotes || [],
+    inferredFKs:    parsed.inferredFKs || []
+  };
+}
+
+// ── LIGHT ANALYSE: batch of lookup tables in ONE Claude call ─────────────────
+async function dpLightAnalyseBatch(batch, apiKey) {
+  const list = batch.map(t => {
+    const cols = t.columns.slice(0,8).map(c => c.name + ':' + (c.type||'')).join(', ');
+    return `- ${t.fullName} [${t.rowCount} rows]: ${cols}`;
+  }).join('\n');
+
+  const prompt = `You are a data migration consultant documenting small reference/lookup tables. For each table below, write a one-sentence plain-English description of what it stores and what it's used for.
+
+Respond with ONLY a JSON array — one object per table, in the same order. No markdown, no commentary:
+[
+  {"fullName":"dbo.LK_Currency","summary":"Currency reference list mapping ISO codes to display names","keyFields":[{"name":"CurrCode","role":"primary_key","insight":"3-letter ISO code"}],"migrationNotes":["Verify currency list matches target system before migration"]}
+]
+
+TABLES:
+${list}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens: 4000, messages:[{role:'user',content:prompt}] })
+  });
+  if (!res.ok) throw new Error('Claude API: ' + (await res.text()).slice(0,200));
+  const data = await res.json();
+  const raw = data.content?.[0]?.text || '[]';
+  const clean = raw.replace(/```json|```/g,'').trim();
+  try { return JSON.parse(clean); }
+  catch {
+    // Repair truncated JSON
+    const lastBracket = clean.lastIndexOf(']');
+    if (lastBracket > 0) return JSON.parse(clean.slice(0, lastBracket + 1));
+    throw new Error('Unparseable batch response');
+  }
+}
+
+// ── SYNTHESISE OVERVIEW: one final Claude call for the whole DB ──────────────
+async function dpSynthesiseOverview(schema, tables, tierCounts, apiKey) {
+  const hubs = tables.filter(t => t.tier === 'hub').slice(0, 25);
+  const hubSummaries = hubs.map(h => `- ${h.fullName} (${h.rowCount.toLocaleString()} rows): ${h.summary}`).join('\n');
+
+  const prompt = `You are a senior data migration consultant. Below is a profile of a database. Write a high-level English overview of what this database is for and how it's organised.
+
+DATABASE: ${schema.database}
+TOTAL TABLES: ${tables.length}
+TIER BREAKDOWN: ${Object.entries(tierCounts).map(([k,v])=>v+' '+k).join(', ')}
+
+HUB TABLES (the core entities, with their AI-generated descriptions):
+${hubSummaries}
+
+Respond with ONLY a JSON object — no markdown:
+{
+  "overview": "3-5 sentence English description: what kind of system this is, what it stores, how it's organised around its core entities, and anything notable about the data shape.",
+  "domain": "e.g. legal practice management, healthcare claims, e-commerce orders",
+  "coreEntities": ["the 3-6 most important hub tables, by business meaning"],
+  "migrationComplexity": "low|medium|high|very_high",
+  "complexityRationale": "1-2 sentence justification"
+}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'x-api-key': apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true' },
+    body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens: 1500, messages:[{role:'user',content:prompt}] })
+  });
+  if (!res.ok) throw new Error('Claude API: ' + (await res.text()).slice(0,200));
+  const data = await res.json();
+  const raw = data.content?.[0]?.text || '{}';
+  let parsed;
+  try { parsed = JSON.parse(raw.replace(/```json|```/g,'').trim()); }
+  catch { parsed = { overview: raw.slice(0, 600) }; }
+  return {
+    overview: parsed.overview || 'Schema overview unavailable.',
+    extras: {
+      domain:              parsed.domain || null,
+      coreEntities:        parsed.coreEntities || [],
+      migrationComplexity: parsed.migrationComplexity || 'medium',
+      complexityRationale: parsed.complexityRationale || ''
+    }
+  };
+}
+
+// ── LOAD a previously-built profile from backend ─────────────────────────────
+async function dpLoadProfile(role, fingerprint) {
+  try {
+    const data = await dpApi('GET', 'profile-load?fingerprint=' + encodeURIComponent(fingerprint));
+    if (!data.overview) { alert('Profile not found.'); return; }
+    dpState[role].profile = { fingerprint, overview: data.overview, tables: data.tables };
+    dpState[role].fingerprint = fingerprint;
+    dpSaveToCache(fingerprint, data.overview, data.tables);
+    dpActiveRole = role;
+    dpRenderResults();
+    dpRefreshStatusPills();
+  } catch (e) { alert('Load failed: ' + e.message); }
+}
+
+// ── RENDER results pane ──────────────────────────────────────────────────────
+function dpRenderResults() {
+  const wrap = document.getElementById('dp-results');
+  if (!wrap) return;
+  const profile = dpState[dpActiveRole].profile;
+  if (!profile) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  // Role tabs (if both source and target are profiled)
+  const tabs = document.getElementById('dp-role-tabs');
+  const haveBoth = dpState.source.profile && dpState.target.profile;
+  tabs.innerHTML = haveBoth
+    ? ['source','target'].map(r => {
+        const active = r === dpActiveRole;
+        return `<button onclick="dpSwitchRole('${r}')" style="background:${active?'var(--purple-bg)':'var(--bg3)'};color:${active?'var(--purple)':'var(--text2)'};border:0.5px solid ${active?'rgba(167,139,250,0.4)':'var(--border2)'};border-radius:var(--r);padding:0.35rem 0.875rem;font-size:11px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">${r}: ${dpState[r].profile.overview.database}</button>`;
+      }).join('')
+    : '';
+
+  // Overview
+  const ov = profile.overview;
+  const compColor = { low:'var(--green)', medium:'var(--amber)', high:'var(--red)', very_high:'var(--red)' }[ov.migrationComplexity] || 'var(--text2)';
+  document.getElementById('dp-overview').innerHTML =
+    `<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:0.5rem">Schema overview · <span style="color:var(--teal);font-family:var(--mono)">${esc(ov.database)}</span></div>` +
+    `<div style="margin-bottom:0.6rem">${esc(ov.overview)}</div>` +
+    (ov.domain ? `<div style="font-size:11px;color:var(--text3);margin-top:0.5rem">Domain: <span style="color:var(--text2)">${esc(ov.domain)}</span></div>` : '') +
+    (ov.coreEntities && ov.coreEntities.length ? `<div style="font-size:11px;color:var(--text3);margin-top:0.3rem">Core entities: ${ov.coreEntities.map(e=>`<span style="color:var(--teal);font-family:var(--mono);margin-right:0.5rem">${esc(e)}</span>`).join('')}</div>` : '') +
+    (ov.migrationComplexity ? `<div style="font-size:11px;color:var(--text3);margin-top:0.3rem">Migration complexity: <span style="color:${compColor};font-weight:600;text-transform:uppercase">${esc(ov.migrationComplexity)}</span> — ${esc(ov.complexityRationale||'')}</div>` : '');
+
+  // Tier bar
+  const tierBar = document.getElementById('dp-tier-bar');
+  const tc = ov.tierCounts || {};
+  tierBar.innerHTML = ['hub','spoke','lookup','audit','staging'].filter(t=>tc[t]).map(t =>
+    `<span class="dp-tier-chip ${t}"><span class="dot"></span>${tc[t]} ${t}</span>`
+  ).join('');
+
+  // Table list
+  dpFilterTables();
+}
+
+function dpSwitchRole(role) {
+  if (!dpState[role].profile) return;
+  dpActiveRole = role;
+  dpRenderResults();
+}
+
+function dpFilterTables() {
+  const profile = dpState[dpActiveRole].profile;
+  if (!profile) return;
+  const q = (document.getElementById('dp-table-filter').value || '').toLowerCase().trim();
+  const filtered = profile.tables.filter(t =>
+    !q ||
+    t.fullName.toLowerCase().includes(q) ||
+    t.tier.includes(q) ||
+    (t.summary || '').toLowerCase().includes(q)
+  );
+  // Sort: hub first, then spoke, then lookup, then audit, then staging — and within each, alphabetical
+  const tierOrder = { hub:0, spoke:1, lookup:2, audit:3, staging:4 };
+  filtered.sort((a,b) => (tierOrder[a.tier]||9) - (tierOrder[b.tier]||9) || a.fullName.localeCompare(b.fullName));
+
+  const list = document.getElementById('dp-table-list');
+  list.innerHTML = filtered.map(t => `
+    <div class="dp-table-row" onclick="dpOpenDrawer('${esc(t.fullName)}')">
+      <div class="dp-table-row-name">${esc(t.fullName)}</div>
+      <span class="dp-tier-chip ${t.tier}" style="flex-shrink:0"><span class="dot"></span>${t.tier}</span>
+      <div class="dp-table-row-summary">${esc(t.summary || '')}</div>
+      <div class="dp-table-row-meta">${(t.rowCount||0).toLocaleString()} rows · ${t.inboundRefs.length}↙ · ${t.declaredFKs.length}↗</div>
+    </div>
+  `).join('');
+
+  document.getElementById('dp-result-count').textContent =
+    filtered.length + ' of ' + profile.tables.length + ' tables' + (q ? ' (filtered)' : '');
+}
+
+// ── DRAWER (table detail) ────────────────────────────────────────────────────
+function dpOpenDrawer(fullName) {
+  const profile = dpState[dpActiveRole].profile;
+  if (!profile) return;
+  const t = profile.tables.find(x => x.fullName === fullName);
+  if (!t) return;
+
+  document.getElementById('dp-drawer-title').textContent = t.fullName;
+  document.getElementById('dp-drawer-subtitle').innerHTML =
+    `${(t.rowCount||0).toLocaleString()} rows · ${t.columns.length} columns · <span style="color:${({hub:'var(--accent)',spoke:'var(--teal)',lookup:'var(--amber)',audit:'var(--text3)',staging:'var(--red)'})[t.tier]||'var(--text2)'}">${esc(t.tier)}</span> · ${esc(t.analysisDepth||'')} analysis`;
+
+  // Body
+  const body = document.getElementById('dp-drawer-body');
+
+  // Sort inbound refs into declared vs inferred-from-other-tables
+  const declaredInbound = (t.inboundRefs || []).filter(r => r.kind === 'declared');
+  // Inferred inbound from THIS profile: scan all other tables' inferredFKs for ones pointing at this table
+  const inferredInbound = [];
+  for (const other of profile.tables) {
+    for (const inf of (other.inferredFKs || [])) {
+      if ((inf.refSchema + '.' + inf.refTable) === t.fullName) {
+        inferredInbound.push({
+          fromSchema: other.schema,
+          fromTable:  other.name,
+          fromColumn: inf.column,
+          toColumn:   inf.refColumn,
+          kind:       'inferred',
+          confidence: inf.confidence,
+          reason:     inf.reason
+        });
+      }
+    }
+  }
+
+  const refHtml = (refs, kind) => {
+    if (!refs.length) return `<div class="dp-empty-refs">No ${kind} references</div>`;
+    return `<div class="dp-ref-list">` + refs.map(r => {
+      // outbound: column → ref; inbound: from → column
+      if (kind.includes('outbound')) {
+        return `<div class="dp-ref">
+          <span class="dp-ref-col">${esc(r.column)}</span>
+          <span class="dp-ref-arrow">→</span>
+          <span class="dp-ref-tgt">${esc(r.refSchema)}.${esc(r.refTable)}(${esc(r.refColumn)})</span>
+          <span class="dp-ref-conf ${r.confidence||'declared'}" title="${esc(r.reason||'')}">${esc(r.confidence||'declared')}</span>
+        </div>`;
+      } else {
+        return `<div class="dp-ref">
+          <span class="dp-ref-tgt">${esc(r.fromSchema)}.${esc(r.fromTable)}</span>
+          <span class="dp-ref-arrow">.</span>
+          <span class="dp-ref-col">${esc(r.fromColumn)}</span>
+          <span class="dp-ref-arrow">→</span>
+          <span class="dp-ref-col">${esc(r.toColumn || '?')}</span>
+          <span class="dp-ref-conf ${r.confidence||'declared'}" title="${esc(r.reason||'')}">${esc(r.confidence||'declared')}</span>
+        </div>`;
+      }
+    }).join('') + `</div>`;
+  };
+
+  const keyFieldsHtml = (t.keyFields || []).length
+    ? `<table class="field-table" style="width:100%"><thead><tr><th>Column</th><th>Role</th><th>Insight</th></tr></thead><tbody>` +
+      t.keyFields.map(f => `<tr><td style="color:var(--teal);font-weight:600">${esc(f.name)}</td><td><span class="tag tag-blue">${esc(f.role||'')}</span></td><td style="font-family:var(--serif)">${esc(f.insight||'')}</td></tr>`).join('') +
+      `</tbody></table>`
+    : '<div class="dp-empty-refs">No key fields identified</div>';
+
+  body.innerHTML = `
+    <div class="dp-section">
+      <h4>📝 Description</h4>
+      <div style="font-size:13px;line-height:1.7;color:var(--text2)">${esc(t.summary || 'No description available.')}</div>
+    </div>
+
+    <div class="dp-section">
+      <h4>↙ Called by · inbound references (${declaredInbound.length + inferredInbound.length})</h4>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Other tables that reference <span style="color:var(--teal);font-family:var(--mono)">${esc(t.fullName)}</span> — what propagates into this table from elsewhere.</div>
+      ${refHtml(declaredInbound, 'declared inbound')}
+      ${inferredInbound.length ? `<div style="margin-top:0.5rem;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Inferred (from column-name patterns)</div>${refHtml(inferredInbound, 'inferred inbound')}` : ''}
+    </div>
+
+    <div class="dp-section">
+      <h4>↗ Propagates from · outbound references (${(t.declaredFKs||[]).length + (t.inferredFKs||[]).length})</h4>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem">Tables that <span style="color:var(--teal);font-family:var(--mono)">${esc(t.fullName)}</span> references — what feeds into it.</div>
+      ${refHtml(t.declaredFKs || [], 'declared outbound')}
+      ${(t.inferredFKs||[]).length ? `<div style="margin-top:0.5rem;font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Inferred (from column-name patterns)</div>${refHtml(t.inferredFKs, 'inferred outbound')}` : ''}
+    </div>
+
+    <div class="dp-section">
+      <h4>🔑 Key fields</h4>
+      ${keyFieldsHtml}
+    </div>
+
+    ${(t.patterns||[]).length ? `<div class="dp-section"><h4>🔍 Patterns</h4>${t.patterns.map(p=>`<div style="font-size:12px;color:var(--text2);margin-bottom:0.3rem;line-height:1.6">→ ${esc(p)}</div>`).join('')}</div>` : ''}
+
+    ${(t.migrationNotes||[]).length ? `<div class="dp-section"><h4>🚚 Migration notes</h4>${t.migrationNotes.map(p=>`<div style="font-size:12px;color:var(--text2);margin-bottom:0.3rem;line-height:1.6">→ ${esc(p)}</div>`).join('')}</div>` : ''}
+
+    <div class="dp-section">
+      <h4>🗂 All columns (${t.columns.length})</h4>
+      <table class="field-table" style="width:100%">
+        <thead><tr><th>Name</th><th>Type</th><th>Nullable</th></tr></thead>
+        <tbody>${t.columns.map(c=>`<tr><td style="color:var(--teal)">${esc(c.name)}</td><td>${esc(c.type||'')}</td><td>${c.nullable===false?'NOT NULL':'nullable'}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+  `;
+
+  document.getElementById('dp-drawer').classList.add('open');
+  document.getElementById('dp-drawer-overlay').classList.add('open');
+}
+
+function dpCloseDrawer() {
+  document.getElementById('dp-drawer').classList.remove('open');
+  document.getElementById('dp-drawer-overlay').classList.remove('open');
+}
+
+// ── REBUILD ──────────────────────────────────────────────────────────────────
+function dpConfirmRebuild() {
+  if (!confirm('Re-build the profile for ' + dpActiveRole + '? This will replace the existing profile and re-spend Claude API tokens.')) return;
+  // Clear cache for current fingerprint and trigger build
+  const fp = dpState[dpActiveRole].fingerprint;
+  if (fp) dpClearCache(fp);
+  dpState[dpActiveRole].profile = null;
+  dpStartBuild(dpActiveRole);
+}
+
+// ── Hook into existing connect functions: extend connectSrc/Tgt + checkReady ─
+// Wrap originals so we don't break their existing callers.
+(function dpWireUp(){
+  const _connectSrcOrig = window.connectSrc;
+  window.connectSrc = async function() {
+    await _connectSrcOrig.apply(this, arguments);
+    if (srcSchema) dpShowPanelIfReady();
+  };
+  const _connectTgtOrig = window.connectTgt;
+  window.connectTgt = async function() {
+    await _connectTgtOrig.apply(this, arguments);
+    if (tgtSchema) dpShowPanelIfReady();
+  };
+  const _checkReadyOrig = window.checkReady;
+  window.checkReady = function() {
+    _checkReadyOrig.apply(this, arguments);
+    dpShowPanelIfReady();
+  };
+})();
+
 </script>
 </body>
 </html>
