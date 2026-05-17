@@ -186,16 +186,35 @@ async function logNotification({ userId, type, to, subject, status, resendId, er
 // ── Core sender ───────────────────────────────────────────────────────────
 // Returns { ok: true, resendId } on success, { ok: false, error } on
 // failure. Never throws.
+//
+// The `data` argument is the per-event payload passed into the template
+// builder, but two reserved keys are pulled out before templating:
+//
+//   data.overrideTo   — if present and valid, used as the recipient
+//                       instead of userId. Used by schedule-level
+//                       notification overrides (schedule.notifyTo).
+//                       Falsy / invalid → fall back to userId.
+//
+// The audit-log `userId` field always records the schedule owner so the
+// trail isn't lost when an override is in play; the `to` field records
+// the actual recipient that Resend was asked to deliver to.
 async function sendNotification(userId, type, data, ctx) {
-  // Guards — log and skip on bad input rather than throwing
+  // Extract reserved fields so the template builder doesn't see them.
+  const overrideToRaw = data && data.overrideTo;
+  const recipient     = (overrideToRaw && isEmail(String(overrideToRaw).trim()))
+                          ? String(overrideToRaw).trim()
+                          : userId;
+
+  // Guards — log and skip on bad input rather than throwing.
+  // We still require userId so the audit log is anchored to the schedule owner.
   if (!userId)             { ctx && ctx.log && ctx.log('[notify] skip: no userId'); return { ok: false, error: 'no userId' }; }
-  if (!isEmail(userId))    { ctx && ctx.log && ctx.log('[notify] skip: userId is not an email:', userId); await logNotification({ userId, type, to: null, subject: null, status: 'skipped', error: 'userId not an email' }, ctx); return { ok: false, error: 'userId not an email' }; }
+  if (!isEmail(recipient)) { ctx && ctx.log && ctx.log('[notify] skip: recipient is not an email:', recipient); await logNotification({ userId, type, to: recipient || null, subject: null, status: 'skipped', error: 'recipient not an email' }, ctx); return { ok: false, error: 'recipient not an email' }; }
   if (!TEMPLATES[type])    { ctx && ctx.log && ctx.log('[notify] skip: unknown type:', type); return { ok: false, error: 'unknown type' }; }
 
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     ctx && ctx.log && ctx.log('[notify] RESEND_API_KEY not set');
-    await logNotification({ userId, type, to: userId, subject: null, status: 'failed', error: 'RESEND_API_KEY not configured' }, ctx);
+    await logNotification({ userId, type, to: recipient, subject: null, status: 'failed', error: 'RESEND_API_KEY not configured' }, ctx);
     return { ok: false, error: 'RESEND_API_KEY not configured' };
   }
 
@@ -212,7 +231,7 @@ async function sendNotification(userId, type, data, ctx) {
       },
       body: JSON.stringify({
         from,
-        to: [userId],
+        to: [recipient],
         reply_to: replyTo,
         subject,
         html,
@@ -222,19 +241,19 @@ async function sendNotification(userId, type, data, ctx) {
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
       ctx && ctx.log && ctx.log('[notify] Resend error', resp.status, errText);
-      await logNotification({ userId, type, to: userId, subject, status: 'failed', error: `Resend ${resp.status}: ${errText.slice(0, 500)}` }, ctx);
+      await logNotification({ userId, type, to: recipient, subject, status: 'failed', error: `Resend ${resp.status}: ${errText.slice(0, 500)}` }, ctx);
       return { ok: false, error: `Resend ${resp.status}` };
     }
 
     const json = await resp.json().catch(() => ({}));
     const resendId = json && json.id ? json.id : null;
-    ctx && ctx.log && ctx.log('[notify] sent', { type, to: userId, resendId });
-    await logNotification({ userId, type, to: userId, subject, status: 'sent', resendId }, ctx);
+    ctx && ctx.log && ctx.log('[notify] sent', { type, to: recipient, owner: userId, resendId });
+    await logNotification({ userId, type, to: recipient, subject, status: 'sent', resendId }, ctx);
     return { ok: true, resendId };
 
   } catch (e) {
     ctx && ctx.log && ctx.log('[notify] send threw:', e.message);
-    await logNotification({ userId, type, to: userId, subject, status: 'failed', error: e.message || String(e) }, ctx);
+    await logNotification({ userId, type, to: recipient, subject, status: 'failed', error: e.message || String(e) }, ctx);
     return { ok: false, error: e.message || String(e) };
   }
 }

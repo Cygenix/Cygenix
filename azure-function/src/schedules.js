@@ -405,11 +405,15 @@ app.http('schedules', {
 
         // ── CREATE-SCHEDULE ────────────────────────────────────────────────
         case 'create-schedule': {
-          const { name, jobId, jobVersionId, cron, timezone, chainAfter, enabled } = body;
+          const { name, jobId, jobVersionId, cron, timezone, chainAfter, enabled, notifyTo } = body;
           if (!name || !jobId || !jobVersionId) return err(400, 'missing required fields');
           if (!chainAfter && !cron) return err(400, 'must provide cron or chainAfter');
           if (cron) {
             try { parseCron(cron); } catch (e) { return err(400, 'invalid cron: ' + e.message); }
+          }
+          // Optional notification override. If present must look like an email.
+          if (notifyTo != null && notifyTo !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(notifyTo))) {
+            return err(400, 'invalid notifyTo email');
           }
 
           const id = newId('sch');
@@ -419,6 +423,7 @@ app.http('schedules', {
             timezone:   timezone || 'UTC',
             chainAfter: chainAfter || null,
             enabled:    enabled !== false,
+            notifyTo:   notifyTo ? String(notifyTo).trim() : null,
             nextRunAt:  cron ? nextRunAt(cron, timezone || 'UTC') : null,
             lastRunAt:  null,
             lastRunStatus: null,
@@ -437,7 +442,20 @@ app.http('schedules', {
           const { resource: existing } = await getCosmosContainer('schedules').item(id, userId).read();
           if (!existing) return err(404, 'schedule not found');
 
-          const allowed = ['name','cron','timezone','chainAfter','enabled','jobVersionId'];
+          // notifyTo gets its own validation pass — empty string and null both
+          // clear the override, anything else must look like an email.
+          if ('notifyTo' in patch) {
+            const v = patch.notifyTo;
+            if (v == null || v === '') {
+              patch.notifyTo = null;
+            } else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v))) {
+              return err(400, 'invalid notifyTo email');
+            } else {
+              patch.notifyTo = String(v).trim();
+            }
+          }
+
+          const allowed = ['name','cron','timezone','chainAfter','enabled','jobVersionId','notifyTo'];
           for (const k of allowed) if (k in patch) existing[k] = patch[k];
 
           if ('cron' in patch || 'timezone' in patch) {

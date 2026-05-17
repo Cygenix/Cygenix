@@ -755,19 +755,25 @@ async function markRunFailed(containers, run, errorMessage, ctx) {
   }
 
   // Best-effort failure notification. Never throws.
-  // We look up the schedule to get a friendly name; if that fails we
-  // still send the email with whatever we have.
+  // We look up the schedule to get a friendly name and the optional
+  // notification override; if the lookup fails we still send with what
+  // we have, falling back to run.userId as recipient.
   try {
     let scheduleName = '';
+    let overrideTo   = null;
     try {
       const { resource: sched } = await containers.schedules
         .item(run.scheduleId, run.userId).read();
-      if (sched) scheduleName = sched.name || '';
+      if (sched) {
+        scheduleName = sched.name || '';
+        overrideTo   = sched.notifyTo || null;
+      }
     } catch {}
     await sendNotification(run.userId, 'migration-failed', {
       scheduleName,
       errorMessage,
       runId: run.id,
+      overrideTo,
     }, ctx);
   } catch (e) {
     ctx.log('[notify] markRunFailed notify threw:', e.message);
@@ -1027,7 +1033,8 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   // Best-effort completion email. Never throws — sendNotification swallows
   // all errors and logs to Cosmos `notifications` for audit. We send for
   // BOTH success and failure paths so the user always hears back about
-  // a scheduled job.
+  // a scheduled job. If the schedule has a notifyTo override set, it goes
+  // there instead of to the schedule owner.
   try {
     await sendNotification(userId, finalStatus === 'success' ? 'migration-success' : 'migration-failed', {
       scheduleName: schedule.name || '',
@@ -1035,6 +1042,7 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
       elapsedSec:   elapsed,
       errorMessage: firstFailure || '',
       runId,
+      overrideTo:   schedule.notifyTo || null,
     }, ctx);
   } catch (e) {
     ctx.log('[notify] executeRun notify threw:', e.message);
