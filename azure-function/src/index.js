@@ -14,6 +14,7 @@ require('./agent-verify-targets');
 require('./github-proxy');
 require('./run-migration');
 require('./notify');
+require('./profile-builder');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
@@ -2238,8 +2239,130 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
           return ok({ deleted, errors: errors.length ? errors : undefined });
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // PROFILE TASK TRACKING — for overnight (server-side) builds
+        // ─────────────────────────────────────────────────────────────────────
+        // The /api/profile-build endpoint (in profile-builder.js) creates a
+        // task document in the data_profile_tasks container and runs the build
+        // asynchronously. These actions let the frontend look up task state
+        // without exposing the runner's internals.
+        //
+        // Task document shape:
+        //   {
+        //     id:             "task_<userId>_<role>_<timestamp>",
+        //     userId:                                                ← partition key
+        //     role:           "source" | "target",
+        //     database:       "Elite3E_Live",
+        //     fingerprint:    "...",
+        //     status:         "queued" | "running" | "succeeded" | "failed" | "cancelled",
+        //     stage:          "fingerprint" | "graph" | "classify" | "deep" |
+        //                     "light" | "heuristic" | "overview" | "save",
+        //     stageDetail:    "12 / 40 hubs",
+        //     percent:        0-100,
+        //     error:          null | "...",
+        //     startedAt:      ISO,
+        //     updatedAt:      ISO,
+        //     finishedAt:     null | ISO,
+        //     notifyEmail:    "user@example.com",  // for the completion email
+        //     tableCount:     412   // populated once classify completes
+        //   }
+        // ─────────────────────────────────────────────────────────────────────
+
+        // ── PROFILE-TASK-ACTIVE: get the currently-running task for a role ──
+        // Returns the most recent task for (userId, role) that's queued or
+        // running. Frontend polls this on page load to show "still building".
+        // Returns { task: null } when nothing is active.
+        case 'profile-task-active': {
+          const role = req.query.get('role');
+          if (!role || (role !== 'source' && role !== 'target')) {
+            return err(400, 'role query param must be source or target');
+          }
+          const { resources } = await getCosmosContainer('data_profile_tasks').items
+            .query({
+              query: `SELECT TOP 1 * FROM c
+                      WHERE c.userId = @uid AND c.role = @role
+                        AND (c.status = 'queued' OR c.status = 'running')
+                      ORDER BY c.startedAt DESC`,
+              parameters: [
+                { name: '@uid',  value: userId },
+                { name: '@role', value: role   }
+              ]
+            }, { partitionKey: userId })
+            .fetchAll();
+
+          // Sanity-check: if a task has been "running" for >2 hours without
+          // updates, mark it stale so the UI can recover gracefully.
+          const STALE_MS = 2 * 60 * 60 * 1000;
+          if (resources.length) {
+            const t = resources[0];
+            if (t.status === 'running' && Date.now() - new Date(t.updatedAt || t.startedAt).getTime() > STALE_MS) {
+              t.status     = 'failed';
+              t.error      = 'Task appears stalled (no progress for 2+ hours)';
+              t.finishedAt = new Date().toISOString();
+              try { await getCosmosContainer('data_profile_tasks').items.upsert(t); } catch {}
+              return ok({ task: null, stale: t.id });
+            }
+          }
+
+          return ok({ task: resources[0] || null });
+        }
+
+        // ── PROFILE-TASK-LIST: all tasks for this user (history) ────────────
+        case 'profile-task-list': {
+          const limit = Math.min(50, parseInt(req.query.get('limit') || '20'));
+          const { resources } = await getCosmosContainer('data_profile_tasks').items
+            .query({
+              query: `SELECT TOP @lim * FROM c WHERE c.userId = @uid ORDER BY c.startedAt DESC`,
+              parameters: [
+                { name: '@uid', value: userId },
+                { name: '@lim', value: limit  }
+              ]
+            }, { partitionKey: userId })
+            .fetchAll();
+          return ok({ tasks: resources || [] });
+        }
+
+        // ── PROFILE-TASK-GET: fetch one task by id ──────────────────────────
+        case 'profile-task-get': {
+          const taskId = req.query.get('taskId');
+          if (!taskId) return err(400, 'taskId query param is required');
+          try {
+            const { resource } = await getCosmosContainer('data_profile_tasks')
+              .item(taskId, userId).read();
+            return ok({ task: resource });
+          } catch (e) {
+            if (e.code === 404) return ok({ task: null });
+            throw e;
+          }
+        }
+
+        // ── PROFILE-TASK-CANCEL: request cancellation of a running task ─────
+        // We set status to 'cancelling'; profile-builder.js checks this flag
+        // between stages and exits cleanly if set. Idempotent.
+        case 'profile-task-cancel': {
+          const body = await req.json().catch(() => null);
+          const taskId = body?.taskId;
+          if (!taskId) return err(400, 'taskId is required in body');
+
+          try {
+            const container = getCosmosContainer('data_profile_tasks');
+            const { resource } = await container.item(taskId, userId).read();
+            if (!resource) return err(404, 'task not found');
+            if (resource.status !== 'queued' && resource.status !== 'running') {
+              return ok({ cancelled: false, reason: 'already in terminal state', currentStatus: resource.status });
+            }
+            resource.status     = 'cancelling';
+            resource.updatedAt  = new Date().toISOString();
+            await container.items.upsert(resource);
+            return ok({ cancelled: true });
+          } catch (e) {
+            if (e.code === 404) return err(404, 'task not found');
+            throw e;
+          }
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel`);
       }
 
     } catch (e) {
