@@ -2361,8 +2361,191 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
           }
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // PROFILE-CLASSIFY-SUBJECTS — group an existing profile's tables by
+        // business subject area (master_data, people, transactions, etc.)
+        // ─────────────────────────────────────────────────────────────────────
+        // Reads an existing profile from data_profiles, runs ONE Claude call
+        // per role to classify each table into one of 12 generic business
+        // subject areas, then writes a `subjectArea` field back onto each
+        // table doc. Used by the "Compare Profiles" swimlane view on the
+        // Insights page.
+        //
+        // Body: { fingerprint }
+        // Smart de-dup: for schemas with template/draft variants (Elite 3E
+        // generates 9k+ spoke tables this way), only the canonical version
+        // is sent to Claude; variants inherit the same classification.
+        case 'profile-classify-subjects': {
+          const body = await req.json().catch(() => null);
+          const fingerprint = body?.fingerprint;
+          if (!fingerprint) return err(400, 'fingerprint is required in body');
+
+          const apiKey = process.env.ANTHROPIC_API_KEY;
+          if (!apiKey) return err(500, 'ANTHROPIC_API_KEY not configured');
+
+          // Load the profile's table docs
+          const idPrefix = userId + '_' + fingerprint;
+          const { resources } = await getCosmosContainer('data_profiles').items
+            .query({
+              query: 'SELECT * FROM c WHERE c.userId = @uid AND STARTSWITH(c.id, @prefix)',
+              parameters: [
+                { name: '@uid',    value: userId  },
+                { name: '@prefix', value: idPrefix }
+              ]
+            }, { partitionKey: userId })
+            .fetchAll();
+
+          const overview = (resources || []).find(d => d.id.endsWith('__overview'));
+          const tableDocs = (resources || []).filter(d => !d.id.endsWith('__overview'));
+          if (!tableDocs.length) return err(404, 'profile not found or empty for that fingerprint');
+
+          // ─── Smart de-dup: canonical vs. variant tables ────────────────────
+          // Strip a trailing pattern from each table name to spot variants.
+          // Tables sharing the same canonical name will all inherit the
+          // classification of the canonical one (or the first variant if no
+          // canonical exists).
+          const VARIANT_RE = /_?(template|draft|temp|stage|staging|backup|old|new|copy|v\d+|history|hist|archive)$/i;
+          const canonicalNameOf = (name) => name.replace(VARIANT_RE, '');
+
+          // Bucket tables by canonical name
+          const buckets = new Map();   // canonicalName → [tableDoc, ...]
+          for (const t of tableDocs) {
+            const canon = canonicalNameOf(t.table);
+            if (!buckets.has(canon)) buckets.set(canon, []);
+            buckets.get(canon).push(t);
+          }
+
+          // Pick the "representative" for each bucket — prefer the exact name
+          // matching the canonical (no variant suffix); otherwise the largest.
+          const representatives = [];
+          for (const [canon, members] of buckets) {
+            const exactMatch = members.find(m => m.table === canon);
+            const rep = exactMatch || members.reduce((a, b) => (b.rowCount > a.rowCount ? b : a), members[0]);
+            representatives.push({ canon, rep, members });
+          }
+
+          ctx.log(`profile-classify-subjects: ${tableDocs.length} tables → ${representatives.length} canonical reps (variant dedup)`);
+
+          // ─── Build the Claude prompt ───────────────────────────────────────
+          // Send each rep as: name | tier | rowCount | summary (truncated)
+          const lines = representatives.map((r,i) =>
+            `${i+1}. ${r.rep.fullName} [${r.rep.tier}, ${r.rep.rowCount} rows] — ${String(r.rep.summary || '').slice(0,200).replace(/\s+/g,' ')}`
+          ).join('\n');
+
+          const dbDomain = overview?.domain || 'unknown business domain';
+          const dbDesc   = overview?.overview ? String(overview.overview).slice(0, 400) : '';
+
+          const prompt = `You are a senior data architect helping classify database tables by business subject area for a migration project. Be decisive — pick one area per table, even when ambiguous.
+
+DATABASE CONTEXT: ${dbDomain}
+${dbDesc}
+
+CLASSIFY EACH TABLE INTO ONE OF THESE 12 AREAS:
+- master_data     — Core entities the business is organised around (customers, products, clients, matters, projects, assets)
+- people          — Users, staff, contacts, employees, operators
+- addresses       — Addresses, locations, geography
+- transactions    — Operational events (sales, postings, entries, time entry, anything that happens TO master data)
+- financial       — Balances, ledgers, AR/AP, accounts, statements
+- billing         — Invoices, bills, receipts, payments
+- reporting       — Pre-aggregated reporting tables, history snapshots, summary views, balances-as-of-date
+- setups_config   — Setup tables, configuration, parameters, system settings, options
+- lookups         — Reference data, code lists, types, statuses, dropdown values
+- audit           — Audit trails, change history, logs, journals (system-level history, not business history)
+- integration     — Staging, ETL, third-party hand-off, import/export queues
+- other           — Doesn't fit cleanly into any of the above
+
+TABLES:
+${lines}
+
+Respond with ONLY a JSON array — one object per table in the same order. No markdown, no commentary:
+[{"n":1,"area":"master_data"},{"n":2,"area":"people"}, ...]`;
+
+          // ─── Call Claude ───────────────────────────────────────────────────
+          let classifications = [];
+          try {
+            const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+              body:    JSON.stringify({
+                model:     'claude-sonnet-4-20250514',
+                max_tokens: Math.min(16000, Math.max(2000, representatives.length * 25)),   // ~25 tokens per result row
+                messages:  [{ role: 'user', content: prompt }]
+              }),
+              signal: AbortSignal.timeout(180000)   // 3 min — big prompts on huge schemas take time
+            });
+            if (!claudeRes.ok) {
+              const errText = await claudeRes.text().catch(() => '');
+              return err(502, 'Claude API ' + claudeRes.status + ': ' + errText.slice(0, 200));
+            }
+            const claudeData = await claudeRes.json();
+            const raw = claudeData.content?.[0]?.text || '[]';
+            const clean = raw.replace(/```json|```/g, '').trim();
+            try {
+              classifications = JSON.parse(clean);
+            } catch {
+              // Repair truncated JSON — find last full ']' and parse to there
+              const lastBracket = clean.lastIndexOf(']');
+              if (lastBracket > 0) classifications = JSON.parse(clean.slice(0, lastBracket + 1));
+              else throw new Error('Unparseable Claude response');
+            }
+          } catch (e) {
+            ctx.log.error('profile-classify-subjects Claude call failed:', e.message);
+            return err(502, 'Claude classify failed: ' + e.message);
+          }
+
+          // ─── Apply classifications to all tables (rep → all variants) ──────
+          const VALID_AREAS = new Set([
+            'master_data','people','addresses','transactions','financial',
+            'billing','reporting','setups_config','lookups','audit','integration','other'
+          ]);
+
+          const now = new Date().toISOString();
+          let updated = 0;
+          const errors = [];
+
+          for (let i = 0; i < representatives.length; i++) {
+            const cls = classifications.find(c => c.n === i + 1) || classifications[i];
+            let area = cls?.area || 'other';
+            if (!VALID_AREAS.has(area)) area = 'other';
+
+            // Apply to every member of this bucket
+            for (const member of representatives[i].members) {
+              member.subjectArea       = area;
+              member.subjectClassifiedAt = now;
+              try {
+                await getCosmosContainer('data_profiles').items.upsert(member);
+                updated++;
+              } catch (e) {
+                errors.push({ id: member.id, error: e.message });
+              }
+            }
+          }
+
+          // Also update the overview doc with summary counts per area
+          if (overview) {
+            const areaCounts = {};
+            for (const t of tableDocs) {
+              const a = t.subjectArea || 'other';
+              areaCounts[a] = (areaCounts[a] || 0) + 1;
+            }
+            overview.subjectAreaCounts   = areaCounts;
+            overview.subjectClassifiedAt = now;
+            try { await getCosmosContainer('data_profiles').items.upsert(overview); }
+            catch (e) { ctx.log('overview update failed:', e.message); }
+          }
+
+          ctx.log(`profile-classify-subjects: ${updated}/${tableDocs.length} tables classified, ${errors.length} errors`);
+          return ok({
+            updated,
+            total:           tableDocs.length,
+            representatives: representatives.length,
+            classified:      classifications.length,
+            errors:          errors.length ? errors.slice(0,5) : undefined
+          });
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects`);
       }
 
     } catch (e) {
