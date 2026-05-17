@@ -687,14 +687,86 @@ async function dbCall(conn, body){
   }
 }
 
+// ── Paginated schema loading (mirrors object_mapping.html) ─────────────────
+// Large databases (9k+ tables, Elite 3E and similar) produce >6 MB schema JSON
+// which Netlify can't deliver — the legacy single-shot `schema` action just
+// times out or 500s. The backend exposes two newer actions that split the load:
+//
+//   schema-tables    — lightweight list: name + schema + rowCount per table
+//   schema-columns   — per-table: columns + PKs + FKs (called lazily)
+//   schema-fks       — whole-DB declared FK graph in one query, no row/col data
+//
+// We try schema-tables first; if the backend doesn't know that action we fall
+// back to the legacy `schema` flow (small DBs still take that path).
+let _paginatedSchemaSupported = null;   // null=unknown, true/false=detected
+
+async function _fetchSchemaSmart(conn) {
+  if (_paginatedSchemaSupported === false) {
+    const res = await dbCall(conn, { action: 'schema' });
+    return { res, paginated: false };
+  }
+  try {
+    const res = await dbCall(conn, { action: 'schema-tables' });
+    _paginatedSchemaSupported = true;
+    return { res, paginated: true };
+  } catch (e) {
+    if (/Unknown action/i.test(e.message) || /schema-tables/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      const res = await dbCall(conn, { action: 'schema' });
+      return { res, paginated: false };
+    }
+    throw e;
+  }
+}
+
+// Lazy-load columns for one table. No-op on the legacy path (where columns were
+// already populated by the initial `schema` response). Cached per-table so the
+// same hub being deep-analysed twice doesn't re-fetch.
+async function ensureColumns(table, conn) {
+  if (!table) return table;
+  if (Array.isArray(table.columns) && table.columns.length > 0) return table;
+  if (_paginatedSchemaSupported === false) {
+    // Legacy backend should have populated already — defensive fallback.
+    table.columns     = table.columns     || [];
+    table.primaryKeys = table.primaryKeys || [];
+    table.foreignKeys = table.foreignKeys || [];
+    return table;
+  }
+  if (!conn) throw new Error('No connection for column lazy-load');
+  try {
+    const res = await dbCall(conn, {
+      action:     'schema-columns',
+      schemaName: table.schema,
+      tableName:  table.name
+    });
+    if (!res || !res.table) throw new Error('No column info for ' + table.fullName);
+    table.columns     = res.table.columns     || [];
+    table.primaryKeys = res.table.primaryKeys || [];
+    table.foreignKeys = res.table.foreignKeys || [];
+  } catch (e) {
+    // If schema-tables works but schema-columns doesn't, fall back to legacy
+    if (/Unknown action/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      const res = await dbCall(conn, { action: 'schema' });
+      const found = (res.tables || []).find(t => t.schema === table.schema && t.name === table.name);
+      table.columns     = found?.columns     || [];
+      table.primaryKeys = found?.primaryKeys || [];
+      table.foreignKeys = found?.foreignKeys || [];
+    } else {
+      throw e;
+    }
+  }
+  return table;
+}
+
 // ── Auto-load schemas from project Connections ──────────────────────────────
 // Replaces the per-page Connect buttons. Reads CygenixConnections.srcConn /
 // tgtConn (set on /connections.html, shared with every workspace tool) and
 // loads each schema in parallel. Updates the status banner with results.
 //
-// This page used to have its own connection-string inputs and Connect buttons,
-// but that duplicated state with the Dashboard and confused users. Connections
-// are now ONLY managed on /connections.html.
+// Uses _fetchSchemaSmart so 9k-table databases that the legacy single-shot
+// `schema` call can't deliver still load — they take the paginated path
+// (table list now, columns lazy-loaded per-table later).
 async function loadSchemasFromCygenixConnections() {
   const srcStatus = document.getElementById('conn-src-status');
   const tgtStatus = document.getElementById('conn-tgt-status');
@@ -714,18 +786,24 @@ async function loadSchemasFromCygenixConnections() {
   } else {
     if (srcStatus) { srcStatus.textContent = 'loading…'; srcStatus.style.color = 'var(--accent)'; }
     try {
-      const res = await dbCall(srcConn, { action: 'schema' });
+      const { res, paginated } = await _fetchSchemaSmart(srcConn);
       srcSchema = res;
+      srcSchema._paginated = paginated;
       allTables = (res.tables || []).map((t, i) => ({
-        id:       i,
-        schema:   t.schema || 'dbo',
-        name:     t.name,
-        fullName: (t.schema || 'dbo') + '.' + t.name,
-        rowCount: t.rowCount || 0,
-        columns:  t.columns || []
+        id:          i,
+        schema:      t.schema || 'dbo',
+        name:        t.name,
+        fullName:    (t.schema || 'dbo') + '.' + t.name,
+        rowCount:    t.rowCount || 0,
+        // On the paginated path, columns/PKs/FKs arrive later via ensureColumns().
+        // On the legacy path, the initial response carries them all.
+        columns:     paginated ? null : (t.columns     || []),
+        primaryKeys: paginated ? null : (t.primaryKeys || []),
+        foreignKeys: paginated ? null : (t.foreignKeys || [])
       }));
       if (srcStatus) {
-        srcStatus.textContent = '🟢 ' + res.database + ' · ' + allTables.length + ' tables';
+        const tag = paginated ? ' (paginated)' : '';
+        srcStatus.textContent = '🟢 ' + res.database + ' · ' + allTables.length + ' tables' + tag;
         srcStatus.style.color = 'var(--green)';
       }
       renderTablePicker();
@@ -743,13 +821,14 @@ async function loadSchemasFromCygenixConnections() {
   } else {
     if (tgtStatus) { tgtStatus.textContent = 'loading…'; tgtStatus.style.color = 'var(--accent)'; }
     try {
-      const res = await dbCall(tgtConn, { action: 'schema' });
+      const { res, paginated } = await _fetchSchemaSmart(tgtConn);
       tgtSchema = res;
+      tgtSchema._paginated = paginated;
       if (tgtStatus) {
-        tgtStatus.textContent = '🟢 ' + res.database + ' · ' + (res.tables || []).length + ' tables';
+        const tag = paginated ? ' (paginated)' : '';
+        tgtStatus.textContent = '🟢 ' + res.database + ' · ' + (res.tables || []).length + ' tables' + tag;
         tgtStatus.style.color = 'var(--green)';
       }
-      // Show migration mapping buttons (the existing per-table-picker + topbar pair)
       ['mapping-btn','mapping-btn-top'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = 'inline-flex';
@@ -760,7 +839,6 @@ async function loadSchemasFromCygenixConnections() {
   }
 
   checkReady();
-  // Tell the Data Profiling module to surface itself if a schema loaded.
   if (typeof dpShowPanelIfReady === 'function') dpShowPanelIfReady();
 }
 
@@ -865,6 +943,12 @@ function createSkeletonCard(table){
 // ── Analyse a single table ────────────────────────────────────────────────────
 async function analyseTable(table, conn, apiKey, card){
   const prog = document.getElementById('prog-'+table.id);
+  if (prog) prog.style.width = '10%';
+
+  // On the paginated schema path, columns are lazy-loaded — fetch them now
+  // (no-op when the legacy `schema` action already populated them).
+  try { await ensureColumns(table, conn); } catch (e) { console.warn('ensureColumns failed for', table.fullName, e.message); }
+  if (!table.columns) table.columns = [];
   if (prog) prog.style.width = '20%';
 
   try {
@@ -1864,14 +1948,21 @@ function dpTimeAgo(iso) {
   return d + 'd ago';
 }
 
-// ── Fingerprint: SHA-256 of database + sorted table.column structure ─────────
-// Stable across builds — only changes when schema structure changes (new/removed
-// tables or columns). Used to detect staleness and to key cached profiles.
+// ── Fingerprint: SHA-256 of database + sorted table list (+ columns when available) ──
+// Stable across the legacy and paginated schema-load paths. On the paginated
+// path we don't have columns up-front, so we fingerprint by table set alone;
+// the legacy path includes column names too. To keep the fingerprint stable
+// for the same DB regardless of which path was used, we check whether ANY
+// table in the schema has columns populated — if not, drop them from the sig.
 async function dpFingerprintSchema(schema) {
   if (!schema || !schema.tables) return null;
+  const anyCols = (schema.tables || []).some(t => Array.isArray(t.columns) && t.columns.length);
   const sig = schema.database + '|' + (schema.tables || []).map(t => {
-    const cols = (t.columns || []).map(c => c.name || c).sort().join(',');
-    return (t.schema || 'dbo') + '.' + t.name + ':' + cols;
+    if (anyCols) {
+      const cols = (t.columns || []).map(c => c.name || c).sort().join(',');
+      return (t.schema || 'dbo') + '.' + t.name + ':' + cols;
+    }
+    return (t.schema || 'dbo') + '.' + t.name;
   }).sort().join('|');
   const buf = new TextEncoder().encode(sig);
   const hash = await crypto.subtle.digest('SHA-256', buf);
@@ -1970,12 +2061,16 @@ function dpClassifyTier(t, inboundCount) {
 
   // LOOKUP/CONFIG — small, no outbound FKs, classic lookup column shape
   const lookupNamePat = /^(lk_|lkp_|ref_|cfg_|config_|setting_|type_|status_|code_|param_)/i;
-  const lookupColShape = cols.length <= 8 && cols.some(c => /(_?code|_?type|_?status|_?description|_?name)$/i.test(c.name||''));
+  const lookupColShape = cols.length > 0 && cols.length <= 8 && cols.some(c => /(_?code|_?type|_?status|_?description|_?name)$/i.test(c.name||''));
   if (rows > 0 && rows < 500 && fks.length === 0 && (lookupNamePat.test(t.name) || lookupColShape)) {
     return 'lookup';
   }
-  // Tiny tables with no FKs in either direction are almost certainly lookups
-  if (rows > 0 && rows < 200 && fks.length === 0 && inboundCount === 0 && cols.length <= 12) {
+  // Tiny tables with no FKs in either direction are almost certainly lookups —
+  // BUT only apply this rule when we actually have column data. On the paginated
+  // schema path columns aren't loaded yet, so this branch would otherwise mark
+  // every small table as a lookup (cols.length === 0 still passes ≤12), which
+  // is wrong — we'd over-tier on a 9k-table Elite schema.
+  if (rows > 0 && rows < 200 && fks.length === 0 && inboundCount === 0 && cols.length > 0 && cols.length <= 12) {
     return 'lookup';
   }
 
@@ -2101,28 +2196,86 @@ async function dpStartBuild(role) {
     dpSetStage('fingerprint', 'done', fingerprint.slice(0,12) + '…');
 
     // ─── STAGE 2: Build inbound-ref graph from declared FKs ──────────────
+    // Two code paths depending on how the schema was loaded:
+    //   - LEGACY mode: each t.foreignKeys is already populated; just invert.
+    //   - PAGINATED mode: tables come without FK data, so we make one extra
+    //     call to /api/db schema-fks which returns the whole DB's FK list in
+    //     one query (no row/column data, typically <200 KB even on a 9k DB).
     dpSetStage('graph', 'active');
     dpSetProgress(6, 'Building relationship graph…');
-    const inboundGraph = dpBuildInboundGraph(schema);
+    let inboundGraph = {};
+    let outboundByTable = {};   // { "dbo.NX_Matter": [ {column, refSchema, refTable, refColumn, ... } ] }
+
+    if (schema._paginated) {
+      // Paginated path — fetch the FK edge list from the backend
+      dpSetStage('graph', 'active', 'fetching FK edges…');
+      try {
+        const fkRes = await dbCall(conn, { action: 'schema-fks' });
+        const edges = fkRes.foreignKeys || [];
+        for (const e of edges) {
+          const fromKey = e.fromSchema + '.' + e.fromTable;
+          const toKey   = e.toSchema   + '.' + e.toTable;
+          (inboundGraph[toKey] ||= []).push({
+            fromSchema: e.fromSchema,
+            fromTable:  e.fromTable,
+            fromColumn: e.fromColumn,
+            toColumn:   e.toColumn,
+            kind:       'declared'
+          });
+          (outboundByTable[fromKey] ||= []).push({
+            column:     e.fromColumn,
+            refSchema:  e.toSchema,
+            refTable:   e.toTable,
+            refColumn:  e.toColumn,
+            kind:       'declared',
+            confidence: 'declared'
+          });
+        }
+      } catch (e) {
+        // schema-fks unavailable — graph degrades to zero FKs but build continues.
+        // Tier classifier will rely on row-count + name patterns only.
+        console.warn('schema-fks failed — relationship graph will be empty:', e.message);
+        dpSetStage('graph', 'active', 'schema-fks unavailable — degraded');
+      }
+    } else {
+      // Legacy path — invert t.foreignKeys directly
+      inboundGraph = dpBuildInboundGraph(schema);
+      for (const t of (schema.tables || [])) {
+        const key = (t.schema || 'dbo') + '.' + t.name;
+        outboundByTable[key] = dpOutboundDeclared(t);
+      }
+    }
+
     const totalFKs = Object.values(inboundGraph).reduce((s,a)=>s+a.length, 0);
     dpSetStage('graph', 'done', totalFKs + ' declared FKs across ' + Object.keys(inboundGraph).length + ' tables');
 
     // ─── STAGE 3: Classify ───────────────────────────────────────────────
+    // On the paginated path columns aren't loaded yet, so the classifier falls
+    // back to row-count + name-pattern + FK-count rules only. This is fine —
+    // the column-shape lookup heuristic was a refinement, not a primary signal.
     dpSetStage('classify', 'active');
     dpSetProgress(10, 'Classifying tables by tier…');
     const tables = (schema.tables || []).map(t => {
       const fullName = (t.schema || 'dbo') + '.' + t.name;
       const inboundCount = (inboundGraph[fullName] || []).length;
+      const declaredFKs  = outboundByTable[fullName] || [];
+      // Build a synthetic table view for the classifier with the FK count it needs.
+      const tForClassify = {
+        name:        t.name,
+        rowCount:    t.rowCount || 0,
+        columns:     t.columns || [],     // empty array on paginated path — classifier handles it
+        foreignKeys: declaredFKs.map(fk => ({ column: fk.column }))
+      };
       return {
         raw:          t,
         fullName,
         schema:       t.schema || 'dbo',
         name:         t.name,
         rowCount:     t.rowCount || 0,
-        columns:      t.columns || [],
-        declaredFKs:  dpOutboundDeclared(t),
+        columns:      t.columns || null,  // null = needs lazy-load before analysis
+        declaredFKs,
         inboundRefs:  inboundGraph[fullName] || [],
-        tier:         dpClassifyTier(t, inboundCount)
+        tier:         dpClassifyTier(tForClassify, inboundCount)
       };
     });
     const tierCounts = tables.reduce((acc,t)=>{ acc[t.tier]=(acc[t.tier]||0)+1; return acc; }, {});
@@ -2158,6 +2311,14 @@ async function dpStartBuild(role) {
     dpSetStage('light', 'active', '0 / ' + batches.length + ' batches');
     let batchesDone = 0;
     for (const batch of batches) {
+      // Lazy-load columns for each lookup table in this batch (paginated path).
+      // On the legacy path columns are already present so ensureColumns is a no-op.
+      for (const b of batch) {
+        if (!b.columns || !b.columns.length) {
+          try { await ensureColumns(b, conn); } catch (e) { console.warn('ensureColumns failed for lookup', b.fullName, e.message); }
+          if (!b.columns) b.columns = [];
+        }
+      }
       try {
         const results = await dpLightAnalyseBatch(batch, apiKey);
         for (const r of results) {
@@ -2174,7 +2335,7 @@ async function dpStartBuild(role) {
         console.warn('Batch light-analyse failed:', e.message);
         for (const b of batch) {
           if (!b.summary) {
-            b.summary = 'Lookup/reference table — ' + b.rowCount + ' rows, ' + b.columns.length + ' columns.';
+            b.summary = 'Lookup/reference table — ' + b.rowCount + ' rows, ' + ((b.columns||[]).length) + ' columns.';
             b.analysisDepth = 'heuristic';
           }
         }
@@ -2254,7 +2415,7 @@ async function dpStartBuild(role) {
       fullName:      t.fullName,
       tier:          t.tier,
       rowCount:      t.rowCount,
-      columns:       t.columns,
+      columns:       t.columns || [],
       declaredFKs:   t.declaredFKs,
       inferredFKs:   t.inferredFKs || [],
       inboundRefs:   t.inboundRefs,
@@ -2318,17 +2479,19 @@ async function dpStartBuild(role) {
 
 // ── Heuristic-only summary for tables not getting AI treatment ───────────────
 function dpHeuristicSummary(t) {
+  const colCount = (t.columns || []).length;
+  const colSuffix = colCount ? ', ' + colCount + ' columns' : '';
   switch (t.tier) {
     case 'audit':
-      return 'Audit / history table. Captures changes to other entities (' + t.rowCount.toLocaleString() + ' rows, ' + t.columns.length + ' columns).';
+      return 'Audit / history table. Captures changes to other entities (' + t.rowCount.toLocaleString() + ' rows' + colSuffix + ').';
     case 'staging':
       return 'Staging / temporary table. Likely populated and emptied by ETL processes (' + t.rowCount.toLocaleString() + ' rows).';
     case 'spoke':
       return 'Operational table with ' + t.rowCount.toLocaleString() + ' rows and ' + t.declaredFKs.length + ' outbound relationship(s). Awaiting deep analysis.';
     case 'lookup':
-      return 'Reference / lookup table with ' + t.rowCount.toLocaleString() + ' rows and ' + t.columns.length + ' columns.';
+      return 'Reference / lookup table with ' + t.rowCount.toLocaleString() + ' rows' + colSuffix + '.';
     default:
-      return t.rowCount.toLocaleString() + ' rows · ' + t.columns.length + ' columns.';
+      return t.rowCount.toLocaleString() + ' rows' + colSuffix + '.';
   }
 }
 
@@ -2336,6 +2499,17 @@ function dpHeuristicSummary(t) {
 // Also asks Claude to spot implicit FK relationships against a candidate
 // shortlist of other hubs whose names match column suffixes.
 async function dpDeepAnalyseTable(hub, conn, apiKey, allTables) {
+  // 0. Lazy-load columns if not yet present (paginated schema path).
+  // hub.columns is null on the paginated path until we call this.
+  if (!hub.columns || !hub.columns.length) {
+    try {
+      await ensureColumns(hub, conn);
+    } catch (e) {
+      console.warn('ensureColumns failed for hub', hub.fullName, e.message);
+      hub.columns = hub.columns || [];
+    }
+  }
+
   // 1. Sample rows
   let rows = [];
   try {
@@ -2346,16 +2520,18 @@ async function dpDeepAnalyseTable(hub, conn, apiKey, allTables) {
   // 2. Stats on first 8 columns (kept tight to stay within Netlify timeout)
   let statsText = '';
   try {
-    const statsCols = hub.columns.slice(0,8).map(c =>
+    const statsCols = (hub.columns||[]).slice(0,8).map(c =>
       `COUNT(DISTINCT [${c.name}]) AS [${c.name}_distinct], SUM(CASE WHEN [${c.name}] IS NULL THEN 1 ELSE 0 END) AS [${c.name}_nulls]`
     ).join(',\n');
-    const r = await dbCall(conn, { action:'execute', sql:`SELECT TOP 1 ${statsCols} FROM ${hub.fullName}` });
-    if (r.recordset?.[0]) statsText = JSON.stringify(r.recordset[0]);
+    if (statsCols) {
+      const r = await dbCall(conn, { action:'execute', sql:`SELECT TOP 1 ${statsCols} FROM ${hub.fullName}` });
+      if (r.recordset?.[0]) statsText = JSON.stringify(r.recordset[0]);
+    }
   } catch {}
 
   // 3. Candidate hubs for implicit-FK inference (other tables this one might reference by column-name pattern)
   const candidates = [];
-  for (const c of hub.columns) {
+  for (const c of (hub.columns || [])) {
     // Strip common suffixes to spot reference patterns: MattIndex → Matter, ClntID → Clnt
     const stripped = c.name.replace(/(index|_?id|_?key|_?code|num|number)$/i, '');
     if (stripped.length < 3) continue;
@@ -2440,7 +2616,7 @@ For inferredFKs: only include relationships you're at least medium-confident abo
 // ── LIGHT ANALYSE: batch of lookup tables in ONE Claude call ─────────────────
 async function dpLightAnalyseBatch(batch, apiKey) {
   const list = batch.map(t => {
-    const cols = t.columns.slice(0,8).map(c => c.name + ':' + (c.type||'')).join(', ');
+    const cols = (t.columns || []).slice(0,8).map(c => c.name + ':' + (c.type||'')).join(', ');
     return `- ${t.fullName} [${t.rowCount} rows]: ${cols}`;
   }).join('\n');
 
@@ -2613,7 +2789,7 @@ function dpOpenDrawer(fullName) {
 
   document.getElementById('dp-drawer-title').textContent = t.fullName;
   document.getElementById('dp-drawer-subtitle').innerHTML =
-    `${(t.rowCount||0).toLocaleString()} rows · ${t.columns.length} columns · <span style="color:${({hub:'var(--accent)',spoke:'var(--teal)',lookup:'var(--amber)',audit:'var(--text3)',staging:'var(--red)'})[t.tier]||'var(--text2)'}">${esc(t.tier)}</span> · ${esc(t.analysisDepth||'')} analysis`;
+    `${(t.rowCount||0).toLocaleString()} rows · ${(t.columns||[]).length} columns · <span style="color:${({hub:'var(--accent)',spoke:'var(--teal)',lookup:'var(--amber)',audit:'var(--text3)',staging:'var(--red)'})[t.tier]||'var(--text2)'}">${esc(t.tier)}</span> · ${esc(t.analysisDepth||'')} analysis`;
 
   // Body
   const body = document.getElementById('dp-drawer-body');
@@ -2698,11 +2874,14 @@ function dpOpenDrawer(fullName) {
     ${(t.migrationNotes||[]).length ? `<div class="dp-section"><h4>🚚 Migration notes</h4>${t.migrationNotes.map(p=>`<div style="font-size:12px;color:var(--text2);margin-bottom:0.3rem;line-height:1.6">→ ${esc(p)}</div>`).join('')}</div>` : ''}
 
     <div class="dp-section">
-      <h4>🗂 All columns (${t.columns.length})</h4>
-      <table class="field-table" style="width:100%">
-        <thead><tr><th>Name</th><th>Type</th><th>Nullable</th></tr></thead>
-        <tbody>${t.columns.map(c=>`<tr><td style="color:var(--teal)">${esc(c.name)}</td><td>${esc(c.type||'')}</td><td>${c.nullable===false?'NOT NULL':'nullable'}</td></tr>`).join('')}</tbody>
-      </table>
+      <h4>🗂 All columns (${(t.columns||[]).length})</h4>
+      ${(t.columns||[]).length
+        ? `<table class="field-table" style="width:100%">
+             <thead><tr><th>Name</th><th>Type</th><th>Nullable</th></tr></thead>
+             <tbody>${(t.columns||[]).map(c=>`<tr><td style="color:var(--teal)">${esc(c.name)}</td><td>${esc(c.type||'')}</td><td>${c.nullable===false?'NOT NULL':'nullable'}</td></tr>`).join('')}</tbody>
+           </table>`
+        : `<div class="dp-empty-refs">Columns weren't fetched — this table wasn't deep-analysed during the profile build. Use the in-app Insights tool to load columns on demand, or re-build the profile.</div>`
+      }
     </div>
   `;
 
