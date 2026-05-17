@@ -2055,8 +2055,13 @@ async function dpApi(method, action, body) {
   } catch {}
   if (!userId) throw new Error('Not signed in');
 
+  // `action` may itself contain a query string (e.g. "profile-load?fingerprint=...").
+  // If it does, we glue the function-app code with & instead of ? — otherwise we'd
+  // end up with two ?'s in the URL and Azure routes it incorrectly (returns an
+  // HTML error page, which we then surface as "Non-JSON response").
+  const sep = action.includes('?') ? '&' : '?';
   const url = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data/' + action +
-              '?code=WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+              sep + 'code=WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json', 'x-user-id': userId }
