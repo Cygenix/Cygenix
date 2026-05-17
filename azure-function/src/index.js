@@ -2049,8 +2049,197 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
           }
         }
 
+        // ─────────────────────────────────────────────────────────────────────
+        // DATA PROFILING — per-table profile documents
+        // ─────────────────────────────────────────────────────────────────────
+        // Stores English-language descriptions of database schemas one document
+        // per table, plus one __overview document per schema. Documents are
+        // partitioned by userId so a single list-all-my-profiles query is
+        // cheap and per-table updates don't rewrite a giant blob.
+        //
+        // Document shape (table doc):
+        //   {
+        //     id:           "{userId}_{fingerprint}_{schema}.{table}",
+        //     userId:                                              ← partition key
+        //     fingerprint:  "sha256-hex of the schema structure",
+        //     role:         "source" | "target",
+        //     database:     "Elite3E_Live",
+        //     schema:       "dbo",
+        //     table:        "NX_Matter",
+        //     fullName:     "dbo.NX_Matter",
+        //     tier:         "hub" | "spoke" | "lookup" | "audit" | "staging",
+        //     rowCount:     12345,
+        //     columns:      [ { name, type, ... } ],
+        //     declaredFKs:  [ { column, refSchema, refTable, refColumn } ],
+        //     inferredFKs:  [ { column, refSchema, refTable, refColumn, confidence, reason } ],
+        //     inboundRefs:  [ { fromSchema, fromTable, fromColumn, kind: "declared"|"inferred" } ],
+        //     summary:      "English description of what this table stores",
+        //     keyFields:    [ { name, role, insight } ],
+        //     patterns:     [ "..." ],
+        //     migrationNotes: [ "..." ],
+        //     analysisDepth: "deep" | "light" | "heuristic",
+        //     createdAt:    ISO,
+        //     updatedAt:    ISO
+        //   }
+        //
+        // Overview doc has id "{userId}_{fingerprint}__overview" and contains
+        // schema-wide narrative + tier counts + role classification. Distinguished
+        // from table docs by the double-underscore prefix on the suffix.
+        //
+        // Frontend uses these endpoints:
+        //   profile-save   POST { docs: [...] }       (batched, up to 50 docs per call)
+        //   profile-load   GET  ?fingerprint=...      (returns all docs for a schema)
+        //   profile-list   GET                        (returns summaries of all profiles for user)
+        //   profile-delete POST { fingerprint }       (removes a full schema's profiles)
+        // ─────────────────────────────────────────────────────────────────────
+
+        // ── PROFILE-SAVE: upsert one or more profile documents ──────────────
+        // Batched to keep the round-trip count low when building a 400-table
+        // schema. Each doc in the batch must include its own id; if the id is
+        // missing or doesn't follow the {userId}_{fingerprint}_... pattern we
+        // reject the whole batch so a misshaped client can't litter the
+        // container with garbage docs.
+        case 'profile-save': {
+          const body = await req.json().catch(() => null);
+          if (!body || !Array.isArray(body.docs) || !body.docs.length) {
+            return err(400, 'docs array is required (with at least one document)');
+          }
+          if (body.docs.length > 50) {
+            return err(400, 'Batch size exceeds 50 docs — split the request');
+          }
+
+          const container = getCosmosContainer('data_profiles');
+          const now = new Date().toISOString();
+          const expectedPrefix = userId + '_';
+          const results = [];
+          const errors  = [];
+
+          for (const doc of body.docs) {
+            try {
+              if (!doc.id || typeof doc.id !== 'string' || !doc.id.startsWith(expectedPrefix)) {
+                errors.push({ id: doc.id || '(missing)', error: 'id must start with current userId_' });
+                continue;
+              }
+              if (!doc.fingerprint || typeof doc.fingerprint !== 'string') {
+                errors.push({ id: doc.id, error: 'fingerprint is required' });
+                continue;
+              }
+
+              // Force the partition key value to the authenticated user — never
+              // trust client-supplied userId on the doc itself.
+              doc.userId    = userId;
+              doc.updatedAt = now;
+              if (!doc.createdAt) doc.createdAt = now;
+
+              await container.items.upsert(doc);
+              results.push({ id: doc.id, ok: true });
+            } catch (e) {
+              ctx.log.error(`profile-save failed for ${doc?.id}:`, e.message);
+              errors.push({ id: doc?.id || '(unknown)', error: e.message });
+            }
+          }
+
+          return ok({
+            saved:  results.length,
+            failed: errors.length,
+            errors: errors.length ? errors : undefined
+          });
+        }
+
+        // ── PROFILE-LOAD: fetch every doc for a given schema fingerprint ────
+        // Returns both the overview doc and all table docs in one cross-partition
+        // query scoped to the caller's userId. The frontend reassembles into a
+        // single in-memory KB structure for browsing.
+        case 'profile-load': {
+          const fingerprint = req.query.get('fingerprint');
+          if (!fingerprint) return err(400, 'fingerprint query param is required');
+
+          const idPrefix = `${userId}_${fingerprint}`;
+
+          const { resources } = await getCosmosContainer('data_profiles').items
+            .query({
+              // STARTSWITH on id lets us fetch the overview AND all table docs
+              // in one query (the overview id ends "__overview", table doc ids
+              // end "_<schema>.<table>" — both share the same prefix).
+              query: 'SELECT * FROM c WHERE c.userId = @uid AND STARTSWITH(c.id, @prefix)',
+              parameters: [
+                { name: '@uid',    value: userId   },
+                { name: '@prefix', value: idPrefix }
+              ]
+            }, { partitionKey: userId })
+            .fetchAll();
+
+          // Split overview from table docs for the client's convenience.
+          let overview = null;
+          const tables = [];
+          for (const d of (resources || [])) {
+            if (d.id.endsWith('__overview')) overview = d;
+            else tables.push(d);
+          }
+
+          return ok({ fingerprint, overview, tables, count: tables.length });
+        }
+
+        // ── PROFILE-LIST: summarise every profile the user has built ────────
+        // Used by the panel to show "you have profiles for these databases".
+        // Returns one row per overview doc — table docs are not enumerated
+        // here (use profile-load to drill into a specific fingerprint).
+        case 'profile-list': {
+          const { resources } = await getCosmosContainer('data_profiles').items
+            .query({
+              query: `SELECT c.fingerprint, c.role, c.database, c.tableCount, c.tierCounts, c.createdAt, c.updatedAt
+                      FROM c
+                      WHERE c.userId = @uid AND ENDSWITH(c.id, '__overview')
+                      ORDER BY c.updatedAt DESC`,
+              parameters: [{ name: '@uid', value: userId }]
+            }, { partitionKey: userId })
+            .fetchAll();
+
+          return ok({ profiles: resources || [] });
+        }
+
+        // ── PROFILE-DELETE: remove every doc for one fingerprint ────────────
+        // Used when the user clicks "Re-build" — we wipe the old fingerprint's
+        // docs first so the rebuild doesn't accumulate stale table entries
+        // (e.g. tables that have since been dropped from the source schema).
+        case 'profile-delete': {
+          const body = await req.json().catch(() => null);
+          const fingerprint = body?.fingerprint;
+          if (!fingerprint) return err(400, 'fingerprint is required in request body');
+
+          const idPrefix = `${userId}_${fingerprint}`;
+
+          // Find all docs for this fingerprint, then delete them individually.
+          // Cosmos has no "delete by query" — list then loop is the standard
+          // pattern. Should be fast (single partition, indexed prefix).
+          const { resources } = await getCosmosContainer('data_profiles').items
+            .query({
+              query: 'SELECT c.id FROM c WHERE c.userId = @uid AND STARTSWITH(c.id, @prefix)',
+              parameters: [
+                { name: '@uid',    value: userId   },
+                { name: '@prefix', value: idPrefix }
+              ]
+            }, { partitionKey: userId })
+            .fetchAll();
+
+          const container = getCosmosContainer('data_profiles');
+          let deleted = 0;
+          const errors = [];
+          for (const r of (resources || [])) {
+            try {
+              await container.item(r.id, userId).delete();
+              deleted++;
+            } catch (e) {
+              if (e.code !== 404) errors.push({ id: r.id, error: e.message });
+            }
+          }
+
+          ctx.log(`profile-delete: removed ${deleted} docs for fingerprint ${fingerprint}`);
+          return ok({ deleted, errors: errors.length ? errors : undefined });
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete`);
       }
 
     } catch (e) {
