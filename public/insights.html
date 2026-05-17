@@ -2587,7 +2587,12 @@ async function dpStartBuild(role) {
 // (called from dpShowPanelIfReady on init) picks up the running task and
 // shows live progress in the status pill until completion.
 
-const PROFILE_BUILD_URL = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/profile-build?code=WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+// URL points at the anonymous /api/profile-build route. No function-key
+// needed in the URL — the handler authenticates the caller via the x-user-id
+// header (same pattern as create-checkout-session). Originally we used
+// authLevel:'function' with ?code=... but that broke CORS preflight on
+// browsers because preflight requests can't include the query param.
+const PROFILE_BUILD_URL = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/profile-build';
 
 // Active-task polling state — one timer per role
 const dpTaskPolls = { source: null, target: null };
