@@ -3097,6 +3097,29 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
       </div>
 
+      <div style="border-top:0.5px solid var(--border);padding-top:0.9rem">
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.6rem">
+          <span style="font-size:12px;color:var(--text2);font-weight:500">Notifications</span>
+        </div>
+        <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+          <label style="font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:4px">
+            <input type="radio" name="ta-notify-mode" value="self" checked onchange="ta_toggleNotifyMode()"> Send to me
+          </label>
+          <label style="font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:4px">
+            <input type="radio" name="ta-notify-mode" value="other" onchange="ta_toggleNotifyMode()"> Send to a different address
+          </label>
+        </div>
+        <div id="ta-notify-other-block" style="display:none;margin-top:0.5rem">
+          <label style="display:block;max-width:360px">
+            <span style="font-size:11px;color:var(--text3)">Email address</span>
+            <input id="ta-sched-notify-to" type="email" class="form-input" style="margin-top:0.35rem" placeholder="ops@example.com" maxlength="200">
+          </label>
+          <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">
+            Both success and failure emails for this schedule will go to this address.
+          </div>
+        </div>
+      </div>
+
       <label style="display:flex;align-items:center;gap:0.5rem;font-size:12px;color:var(--text2);padding:0.5rem;background:var(--bg3);border-radius:var(--r)">
         <input type="checkbox" id="ta-sched-enabled" checked>
         Enabled — schedule will run automatically at its trigger times
@@ -14393,6 +14416,16 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
           ta_onFreqChange();
         }
       }
+      // Seed notification override controls. If the schedule has a notifyTo
+      // value, switch the radio to "other" and reveal the input.
+      if (s.notifyTo) {
+        document.querySelector('input[name="ta-notify-mode"][value="other"]').checked = true;
+        document.getElementById('ta-sched-notify-to').value = s.notifyTo;
+      } else {
+        document.querySelector('input[name="ta-notify-mode"][value="self"]').checked = true;
+        document.getElementById('ta-sched-notify-to').value = '';
+      }
+      ta_toggleNotifyMode();
       ta_toggleTriggerMode();
       await ta_onJobPicked(s.jobVersionId);
     }
@@ -14408,6 +14441,10 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
     document.getElementById('ta-sched-daily-time').value = '02:00';
     document.getElementById('ta-sched-cron').value = '';
     ta_onFreqChange();
+    // Reset notification controls to "send to me".
+    document.querySelector('input[name="ta-notify-mode"][value="self"]').checked = true;
+    document.getElementById('ta-sched-notify-to').value = '';
+    ta_toggleNotifyMode();
     ta_toggleTriggerMode();
     if (preselectJobId && jobs.some(j => j.id === preselectJobId)) {
       jobsSel.value = preselectJobId;
@@ -14433,6 +14470,15 @@ function ta_toggleTriggerMode() {
   const mode = document.querySelector('input[name="ta-trigger-mode"]:checked').value;
   document.getElementById('ta-cron-block').style.display  = (mode === 'cron')  ? '' : 'none';
   document.getElementById('ta-chain-block').style.display = (mode === 'chain') ? '' : 'none';
+}
+
+// Show/hide the override email input depending on which notification mode
+// radio is selected. "self" means notifications go to the schedule owner
+// (schedule.userId) — no override stored. "other" means store schedule.notifyTo
+// and send there instead.
+function ta_toggleNotifyMode() {
+  const mode = document.querySelector('input[name="ta-notify-mode"]:checked').value;
+  document.getElementById('ta-notify-other-block').style.display = (mode === 'other') ? '' : 'none';
 }
 
 // ── Friendly schedule builder ────────────────────────────────────────────
@@ -14710,6 +14756,18 @@ async function ta_saveSchedule() {
   const timezone = mode === 'cron' ? document.getElementById('ta-sched-tz').value : null;
   const chainAfter = mode === 'chain' ? document.getElementById('ta-sched-chain').value : null;
 
+  // Read notification override. "self" → null (the runner falls back to
+  // schedule.userId). "other" → validated email string. We store null
+  // explicitly so switching from "other" back to "self" clears the
+  // previous override on save.
+  const notifyMode = document.querySelector('input[name="ta-notify-mode"]:checked').value;
+  let notifyTo = null;
+  if (notifyMode === 'other') {
+    notifyTo = (document.getElementById('ta-sched-notify-to').value || '').trim();
+    if (!notifyTo) return alert('Enter a notification email address (or choose "Send to me")');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(notifyTo)) return alert('That doesn\'t look like a valid email address');
+  }
+
   if (!name) return alert('Name is required');
   if (!jobId) return alert('Pick a job');
   if (!jobVersionId) return alert('Pick a pinned version (or create one)');
@@ -14732,11 +14790,11 @@ async function ta_saveSchedule() {
     if (TA.editingScheduleId) {
       await ta_sched('update-schedule', {
         id: TA.editingScheduleId,
-        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn },
+        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn, notifyTo },
       });
     } else {
       await ta_sched('create-schedule', {
-        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn,
+        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn, notifyTo,
       });
     }
     ta_closeScheduleModal();
