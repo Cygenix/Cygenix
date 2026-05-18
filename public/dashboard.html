@@ -1512,7 +1512,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <span style="font-size:11px;color:var(--accent);font-family:var(--mono)"><span id="jobs-selected-count">0</span> selected</span>
           <select id="jobs-move-target" class="form-input" style="width:auto;min-width:180px;padding:4px 8px;font-size:11px"></select>
           <button class="btn btn-primary btn-sm" onclick="bulkMoveJobsToProject()">Move →</button>
-          <button class="btn btn-ghost btn-sm" onclick="bulkCreateTaskFromJobs()" title="Bundle the selected jobs into a single composite task and schedule it from Task Agent">📦 Create task</button>
           <button class="btn btn-ghost btn-sm" onclick="clearJobSelection()">Clear</button>
         </div>
         <span id="jobs-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
@@ -2986,15 +2985,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div id="ta-cron-block">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
             <label style="display:block">
-              <span style="font-size:11px;color:var(--text3)">Frequency</span>
-              <select id="ta-sched-freq" class="form-input" style="margin-top:0.35rem" onchange="ta_onFreqChange()">
-                <option value="minutes">Every N minutes</option>
-                <option value="hourly">Hourly</option>
-                <option value="daily" selected>Daily</option>
-                <option value="weekly">Weekly (one day)</option>
-                <option value="monthly">Monthly (one date)</option>
-                <option value="custom">Custom (cron)</option>
-              </select>
+              <span style="font-size:11px;color:var(--text3)">Cron expression</span>
+              <input id="ta-sched-cron" class="form-input" style="margin-top:0.35rem;font-family:var(--mono)" placeholder="0 2 * * *" oninput="ta_updateCronPreview()">
             </label>
             <label style="display:block">
               <span style="font-size:11px;color:var(--text3)">Timezone</span>
@@ -3008,82 +3000,14 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               </select>
             </label>
           </div>
-
-          <!-- Per-frequency sub-controls. Only one is visible at a time. -->
-          <div id="ta-freq-minutes" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
-            <label style="display:block;max-width:180px">
-              <span style="font-size:11px;color:var(--text3)">Every how many minutes</span>
-              <select id="ta-sched-every-min" class="form-input" style="margin-top:0.35rem" onchange="ta_updateCronPreview()">
-                <option value="5">5</option>
-                <option value="10">10</option>
-                <option value="15" selected>15</option>
-                <option value="20">20</option>
-                <option value="30">30</option>
-              </select>
-            </label>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.5rem">
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('*/15 * * * *')">Every 15 min</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 * * * *')">Hourly</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 2 * * *')">Daily 02:00</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 2 * * 1-5')">Weekdays 02:00</button>
+            <button type="button" class="btn btn-ghost btn-sm" style="padding:0.3rem 0.7rem;font-size:10px" onclick="ta_setCron('0 0 1 * *')">1st of month</button>
           </div>
-
-          <div id="ta-freq-hourly" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
-            <label style="display:block;max-width:180px">
-              <span style="font-size:11px;color:var(--text3)">At minute past the hour</span>
-              <input id="ta-sched-hourly-min" type="number" min="0" max="59" value="0" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
-            </label>
-          </div>
-
-          <div id="ta-freq-daily" class="ta-freq-sub" style="margin-top:0.6rem">
-            <label style="display:block;max-width:200px">
-              <span style="font-size:11px;color:var(--text3)">Time</span>
-              <input id="ta-sched-daily-time" type="time" value="02:00" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
-            </label>
-          </div>
-
-          <div id="ta-freq-weekly" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;max-width:420px">
-              <label style="display:block">
-                <span style="font-size:11px;color:var(--text3)">Day of week</span>
-                <select id="ta-sched-weekly-dow" class="form-input" style="margin-top:0.35rem" onchange="ta_updateCronPreview()">
-                  <option value="1">Monday</option>
-                  <option value="2">Tuesday</option>
-                  <option value="3">Wednesday</option>
-                  <option value="4">Thursday</option>
-                  <option value="5">Friday</option>
-                  <option value="6">Saturday</option>
-                  <option value="0">Sunday</option>
-                </select>
-              </label>
-              <label style="display:block">
-                <span style="font-size:11px;color:var(--text3)">Time</span>
-                <input id="ta-sched-weekly-time" type="time" value="02:00" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
-              </label>
-            </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">Need more than one day? Create a separate schedule for each day.</div>
-          </div>
-
-          <div id="ta-freq-monthly" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;max-width:420px">
-              <label style="display:block">
-                <span style="font-size:11px;color:var(--text3)">Day of month</span>
-                <input id="ta-sched-monthly-dom" type="number" min="1" max="28" value="1" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
-              </label>
-              <label style="display:block">
-                <span style="font-size:11px;color:var(--text3)">Time</span>
-                <input id="ta-sched-monthly-time" type="time" value="02:00" class="form-input" style="margin-top:0.35rem" oninput="ta_updateCronPreview()">
-              </label>
-            </div>
-            <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">Use 1–28 to avoid skipped months (no 29/30/31 in shorter months).</div>
-          </div>
-
-          <div id="ta-freq-custom" class="ta-freq-sub" style="display:none;margin-top:0.6rem">
-            <label style="display:block;max-width:300px">
-              <span style="font-size:11px;color:var(--text3)">Cron expression (5 fields)</span>
-              <input id="ta-sched-cron" class="form-input" style="margin-top:0.35rem;font-family:var(--mono)" placeholder="0 2 * * *" oninput="ta_updateCronPreview()">
-            </label>
-            <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">
-              Supported: literals, <code>*</code>, and <code>*/N</code> per field. Ranges and lists are not yet supported by the runner.
-            </div>
-          </div>
-
-          <div id="ta-cron-preview" style="font-size:12px;color:var(--text2);margin-top:0.7rem;padding:0.5rem 0.7rem;background:var(--bg3);border-radius:var(--r);min-height:1.6em"></div>
+          <div id="ta-cron-preview" style="font-size:11px;color:var(--text3);margin-top:0.5rem;font-family:var(--mono);min-height:1.2em"></div>
         </div>
 
         <div id="ta-chain-block" style="display:none">
@@ -3093,29 +3017,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </label>
           <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">
             Chained schedules fire immediately after their parent finishes with success. If the parent fails, the chain is skipped.
-          </div>
-        </div>
-      </div>
-
-      <div style="border-top:0.5px solid var(--border);padding-top:0.9rem">
-        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.6rem">
-          <span style="font-size:12px;color:var(--text2);font-weight:500">Notifications</span>
-        </div>
-        <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
-          <label style="font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:4px">
-            <input type="radio" name="ta-notify-mode" value="self" checked onchange="ta_toggleNotifyMode()"> Send to me
-          </label>
-          <label style="font-size:11px;color:var(--text3);display:inline-flex;align-items:center;gap:4px">
-            <input type="radio" name="ta-notify-mode" value="other" onchange="ta_toggleNotifyMode()"> Send to a different address
-          </label>
-        </div>
-        <div id="ta-notify-other-block" style="display:none;margin-top:0.5rem">
-          <label style="display:block;max-width:360px">
-            <span style="font-size:11px;color:var(--text3)">Email address</span>
-            <input id="ta-sched-notify-to" type="email" class="form-input" style="margin-top:0.35rem" placeholder="ops@example.com" maxlength="200">
-          </label>
-          <div style="font-size:11px;color:var(--text3);margin-top:0.4rem">
-            Both success and failure emails for this schedule will go to this address.
           </div>
         </div>
       </div>
@@ -4755,136 +4656,6 @@ function bulkMoveJobsToProject(){
   } catch(e){
     alert('Could not move jobs: ' + e.message);
   }
-}
-
-// Bulk-create a composite task ("📦 Create task") from selected jobs in the
-// All Migration Jobs view. Mirrors the same semantics as project-builder.html's
-// openCreateTaskModal / confirmCreateTask:
-//   - Bundles the selected jobs into a single composite job stored in
-//     localStorage.cygenix_jobs with jobType:'composite'.
-//   - Surfaces in Task Agent → + New schedule → Job dropdown.
-//   - Scheduling happens in Task Agent, not here.
-//
-// Cross-project safety:
-//   Connections (srcConn/tgtConn) live on the project, not the individual
-//   job. If the selection spans multiple projects, the resulting composite
-//   would be ambiguous about which connection to use at run time. Rather
-//   than guess (silent-wrong) or capture per-step connections (would need
-//   runner changes), we require a single-project selection and explain why
-//   when the user picks a mixed set. Unassigned jobs (no projectId) are
-//   their own bucket — also rejected if mixed.
-//
-// Snapshot semantics:
-//   Each child step is a deep-clone of the job at save time, with srcConn
-//   and tgtConn captured from the source project. This matches what the
-//   project-builder version does. Re-runs use the captured snapshot, not
-//   the live job state — same guarantee phase 2a gives manual schedules.
-function bulkCreateTaskFromJobs(){
-  if (!selectedJobIds.size){
-    alert('Tick at least one job first.');
-    return;
-  }
-  let allJobs = [];
-  try { allJobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); } catch {}
-  if (!Array.isArray(allJobs)) allJobs = [];
-  const selectedJobs = allJobs.filter(j => selectedJobIds.has(j.id));
-  if (!selectedJobs.length){
-    alert('Selected jobs not found in storage. Try refreshing.');
-    return;
-  }
-
-  // Same-project guard. Treat empty/falsy projectId as a single shared
-  // "unassigned" bucket so all-unassigned selections are still allowed.
-  const projectIds = new Set(selectedJobs.map(j => j.projectId || '__unassigned'));
-  if (projectIds.size > 1){
-    alert('All selected jobs must belong to the same project. Composite tasks share one source/target connection pair, which is set per project — bundling across projects would be ambiguous at run time. Filter to one project first.');
-    return;
-  }
-  const projectIdRaw = selectedJobs[0].projectId || '';
-  let projects = [];
-  try { projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]'); } catch {}
-  const project = projectIdRaw ? (projects.find(p => p.id === projectIdRaw) || null) : null;
-  const projectName = project ? (project.name || '') : (projectIdRaw ? '(unknown project)' : '(unassigned)');
-
-  // Resolve project connections. project_connections is keyed by projectId
-  // in cygenix_project_connections. Fall back to global cygenix_connections
-  // if no per-project pair is set.
-  let srcConn = '', tgtConn = '';
-  try {
-    const pc = JSON.parse(localStorage.getItem('cygenix_project_connections')||'{}');
-    if (projectIdRaw && pc[projectIdRaw]){
-      srcConn = pc[projectIdRaw].srcConn || pc[projectIdRaw].source || '';
-      tgtConn = pc[projectIdRaw].tgtConn || pc[projectIdRaw].target || '';
-    }
-  } catch {}
-  if (!tgtConn){
-    if (!confirm('No target connection is configured for project "' + projectName + '". The task will be saved but Task Agent cannot run it until a target is set on the project. Continue?')) return;
-  }
-
-  // Prompt for a task name. Default reflects what we're bundling so the
-  // user can hit Enter for a sensible auto-name.
-  const defaultName = projectName + ' – ' + selectedJobs.length + ' job' + (selectedJobs.length===1?'':'s');
-  const name = (prompt('Name this composite task:', defaultName) || '').trim();
-  if (!name) return;   // user cancelled or cleared
-
-  // Name-clash check — keep the Task Agent's Job dropdown unambiguous.
-  if (allJobs.some(j => (j.name||'').trim().toLowerCase() === name.toLowerCase())){
-    if (!confirm('A job called "' + name + '" already exists. Save this task with the same name anyway?')) return;
-  }
-
-  // Build the child steps array. Deep-clone each selected job and clear
-  // any per-run state so the snapshot is clean.
-  const childSteps = selectedJobs.map((j, order) => {
-    const copy = JSON.parse(JSON.stringify(j));
-    copy.order = order;
-    copy.status = 'pending';
-    copy.log = '';
-    // groupId/groupName aren't tracked on dashboard-level jobs but the
-    // composite shape carries them on project-builder bundles. Stamp
-    // empty values so downstream consumers don't trip on undefined.
-    copy.groupId = copy.groupId || '';
-    copy.groupName = copy.groupName || '';
-    copy.groupMode = copy.groupMode || 'sequential';
-    return copy;
-  });
-
-  const compositeJob = {
-    id: 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
-    name,
-    description: '',
-    jobType: 'composite',
-    type:    'composite',                    // mirror for code that reads .type
-    created: new Date().toISOString(),
-    // Standard summary fields so the All Jobs table renders cleanly
-    source:    '(multiple)',
-    target:    '(multiple)',
-    totalRows: 0,
-    tables:    [],
-    // Provenance
-    projectId:   projectIdRaw,
-    projectName: project ? (project.name || '') : '',
-    // Connection snapshot at save time
-    srcConn, tgtConn,
-    // Composite payload
-    childSteps,
-    childStepCount: childSteps.length,
-    groupCount: 1,                           // dashboard-bundled tasks are flat
-  };
-
-  // Prepend so it shows up at the top of Task Agent → Job dropdown
-  allJobs.unshift(compositeJob);
-  try {
-    localStorage.setItem('cygenix_jobs', JSON.stringify(allJobs));
-  } catch (e) {
-    alert('Could not save task: ' + (e && e.message || 'storage error'));
-    return;
-  }
-
-  // Refresh local state mirror, drop selection, re-render
-  if (state && Array.isArray(state.jobs)) state.jobs = allJobs;
-  clearJobSelection();
-  renderAllJobs();
-  showToast('Task packaged — open Task Agent → + New schedule to schedule it');
 }
 
 function jobsTableHTML(jobs) {
@@ -6847,133 +6618,6 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ── Token keep-alive ──────────────────────────────────────────────────────
-// Entra ID tokens default to a 1-hour lifetime. Without proactive refresh,
-// the dashboard's first API call after that hour fails with 401 — and
-// `cygenixFetch` is deliberately dumb-synchronous (just attaches whatever
-// idToken is in cygenix_entra_account) so it can't refresh on its own.
-//
-// Two-pronged keep-alive:
-//   1. ensureFreshToken() — on demand. Reads exp from the stored record,
-//      and if it's expired or within REFRESH_THRESHOLD_MS, runs MSAL's
-//      acquireTokenSilent and writes the new idToken back. Returns true
-//      if the token is now fresh (whether it needed a refresh or not),
-//      false if refresh failed (user needs to re-login).
-//   2. A 10-minute setInterval keep-alive loop — runs ensureFreshToken
-//      in the background so the everyday case never produces a 401 mid
-//      session.
-//
-// The dumb cygenixFetch stays untouched. Callers that hit a 401 anyway
-// (e.g. tab was suspended overnight, timer didn't run) can opportunistically
-// call ensureFreshToken() and retry — see the reports loader for an
-// example.
-const REFRESH_THRESHOLD_MS = 15 * 60 * 1000;       // refresh when ≤15 min remain
-const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000;     // wake every 10 min
-
-async function ensureFreshToken() {
-  try {
-    // Read the stored account record
-    const raw = sessionStorage.getItem('cygenix_entra_account')
-             || localStorage.getItem('cygenix_entra_account');
-    if (!raw) return false;
-    let acc;
-    try { acc = JSON.parse(raw); } catch { return false; }
-    if (!acc || !acc.idToken) return false;
-
-    // exp is stored as a millisecond timestamp (per login.html convention).
-    // If we're still safely inside the window, skip — no work to do.
-    const expMs = Number(acc.exp) || 0;
-    const now = Date.now();
-    if (expMs && (expMs - now) > REFRESH_THRESHOLD_MS) return true;
-
-    // We need a refresh. MSAL silent-refresh path requires the library
-    // and an account in MSAL's cache. If either is missing, we can't
-    // refresh — caller decides whether to surface that to the user.
-    if (typeof msal === 'undefined' || typeof msal.PublicClientApplication !== 'function') {
-      return false;
-    }
-    const app = new msal.PublicClientApplication({
-      auth: {
-        clientId:         'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
-        authority:        'https://cygenix.ciamlogin.com/',
-        knownAuthorities: ['cygenix.ciamlogin.com'],
-      },
-      cache: { cacheLocation: 'localStorage' },
-    });
-    await app.initialize();
-
-    // Pick the MSAL account that matches our stored email — there can be
-    // multiple cached accounts (Demo, Cygenix Admin, etc.) and we want to
-    // refresh the one currently in use, not a random other.
-    const accounts = app.getAllAccounts() || [];
-    const target = accounts.find(a => (a.username || '').toLowerCase() === (acc.email || '').toLowerCase())
-                || accounts[0];
-    if (!target) return false;
-
-    let result;
-    try {
-      result = await app.acquireTokenSilent({
-        account: target,
-        scopes: ['openid', 'profile', 'email'],
-      });
-    } catch (e) {
-      // InteractionRequiredAuthError: user needs to redirect-login.
-      // Don't try to handle it here — caller surfaces the prompt.
-      console.warn('[keepalive] acquireTokenSilent failed:', e.errorCode || e.name || e.message);
-      return false;
-    }
-    if (!result || !result.idToken) return false;
-
-    // Write the fresh token back. Preserve all other fields the account
-    // record carries (name, userId, email, provider, accessToken). Update
-    // exp from the new token's exp claim (seconds → ms).
-    let newExpMs = expMs;
-    try {
-      const b64 = result.idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-      const padded = b64 + '='.repeat((4 - b64.length % 4) % 4);
-      const claims = JSON.parse(atob(padded));
-      if (claims.exp) newExpMs = claims.exp * 1000;
-    } catch {}
-
-    const refreshed = Object.assign({}, acc, {
-      idToken: result.idToken,
-      accessToken: result.accessToken || acc.accessToken || '',
-      exp: newExpMs,
-    });
-    // Write to whichever store the original record lived in so we don't
-    // create a phantom duplicate. localStorage takes precedence per the
-    // read order above (session first, local second), so we mirror that.
-    if (sessionStorage.getItem('cygenix_entra_account')) {
-      sessionStorage.setItem('cygenix_entra_account', JSON.stringify(refreshed));
-    } else {
-      localStorage.setItem('cygenix_entra_account', JSON.stringify(refreshed));
-    }
-    return true;
-  } catch (e) {
-    console.warn('[keepalive] ensureFreshToken error:', e.message);
-    return false;
-  }
-}
-
-// Render a one-off "session expired" overlay when silent refresh isn't
-// possible (e.g. MSAL refresh-token also expired, user has been signed
-// out elsewhere). Single clickable action: re-sign-in via signOut(),
-// which redirects through login.html and brings us back fresh.
-function showSessionExpiredBanner(targetEl, contextLabel) {
-  const label = contextLabel || 'this page';
-  const html =
-    '<div class="empty-state" style="padding:2rem;text-align:center">'
-    + '<h3>Your session has expired</h3>'
-    + '<p style="color:var(--text3);font-size:12px;margin:0.5rem 0 1rem">'
-    + 'Your Entra ID token has timed out — that\'s a normal hourly rotation. '
-    + 'Sign in again to refresh ' + label + '.'
-    + '</p>'
-    + '<button class="btn btn-primary btn-sm" onclick="signOut()">Sign in again</button>'
-    + '</div>';
-  if (targetEl) targetEl.innerHTML = html;
-}
-
-
 async function signOut() {
   // Flag so login.html doesn't auto-resign-in via acquireTokenSilent
   sessionStorage.setItem('cygenix_just_signed_out', '1');
@@ -7172,31 +6816,11 @@ async function renderReportsList() {
 
   let reports = [];
   try {
-    let r = await cygenixFetch('/.netlify/functions/reports', {
+    const r = await cygenixFetch('/.netlify/functions/reports', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'list' }),
     });
-    // 401 retry path. The token may have just expired (1-hour rotation)
-    // while the dashboard tab was suspended. Try a single silent refresh
-    // via ensureFreshToken() and retry the call. If it still 401s, the
-    // refresh token itself has expired too — fall through to the
-    // graceful expired-session banner rather than the diagnostic text.
-    if (r.status === 401) {
-      console.info('[reports] 401 — attempting silent token refresh');
-      const refreshed = await ensureFreshToken();
-      if (refreshed) {
-        r = await cygenixFetch('/.netlify/functions/reports', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'list' }),
-        });
-      }
-      if (r.status === 401) {
-        showSessionExpiredBanner(el, 'the reports list');
-        return;
-      }
-    }
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     reports = data.reports || [];
@@ -8813,28 +8437,6 @@ setTimeout(() => {
     }
   } catch(e) { console.error('[init] safety-net initUserAndProject:', e); }
 }, 800);
-
-// ── Token keep-alive scheduler ────────────────────────────────────────────
-// Wakes every KEEP_ALIVE_INTERVAL_MS (10 min) and refreshes the stored
-// idToken if it's getting close to expiry. Means the everyday case
-// (browser tab open, user working) never produces a 401 mid-session —
-// we always have a fresh token attached when cygenixFetch is called.
-//
-// First tick runs 30 seconds after load to give MSAL time to initialise
-// without piling onto the init burst. Subsequent ticks every 10 min.
-// ensureFreshToken() is a no-op when the token has plenty of life left,
-// so the timer is cheap.
-//
-// Note: a sleeping/suspended tab won't fire this timer. That case is
-// handled by the 401-retry path in renderReportsList (and anywhere else
-// we add it later) — the timer is the proactive layer, the retry is the
-// reactive layer.
-setTimeout(() => {
-  try { ensureFreshToken(); } catch (e) { console.warn('[keepalive] first-tick error:', e.message); }
-  setInterval(() => {
-    try { ensureFreshToken(); } catch (e) { console.warn('[keepalive] tick error:', e.message); }
-  }, KEEP_ALIVE_INTERVAL_MS);
-}, 30_000);
 
 // Re-render the project status panel whenever Cosmos sync pulls new
 // data from the cloud — covers the case where the user has saved a
@@ -14131,11 +13733,14 @@ async function ta_loadSchedules() {
 // inside the + New schedule dropdown.
 function ta_unscheduledTasks() {
   const jobs = safeArr('cygenix_jobs');
-  // Only show composite jobs ("packaged tasks") here — single-table import
-  // jobs would clutter this list without adding value, since they're rarely
-  // scheduled compared to the bundled tasks users build in Project Builder.
+  // Show two kinds of jobs in this panel:
+  //   * composite — bundled multi-step migrations from Project Builder
+  //   * profile-build — overnight Claude-AI schema analyses from Insights
+  // Both arrive via a "📦 Create task" button in their respective pages
+  // and exist precisely to be scheduled from here. Single-table import
+  // jobs are excluded because they're rarely scheduled.
   const composites = jobs.filter(j =>
-    j && (j.jobType === 'composite' || j.type === 'composite')
+    j && (j.jobType === 'composite' || j.type === 'composite' || j.jobType === 'profile-build')
   );
   if (!composites.length) return [];
   const scheduledJobIds = new Set((TA.schedules || []).map(s => s.jobId).filter(Boolean));
@@ -14146,13 +13751,26 @@ function ta_renderUnscheduledPanel() {
   const tasks = ta_unscheduledTasks();
   if (!tasks.length) return '';
   const rows = tasks.map(j => {
-    const stepCount = j.childStepCount || (Array.isArray(j.childSteps) ? j.childSteps.length : 0);
-    const groups    = j.groupCount || '';
-    const meta = [
-      stepCount ? (stepCount + ' step' + (stepCount === 1 ? '' : 's')) : '',
-      groups    ? (groups + ' group' + (groups === 1 ? '' : 's'))     : '',
-      j.projectName ? ('from ' + j.projectName) : '',
-    ].filter(Boolean).join(' · ');
+    // Build a meta line that fits the job type. Composite migration tasks
+    // get step/group counts; profile-build tasks get database/role.
+    let meta = '';
+    if (j.jobType === 'profile-build') {
+      const p = (j.profileBuildPayload || {});
+      const parts = [
+        'Profile build',
+        p.database ? ('· ' + p.database) : '',
+        p.role     ? ('(' + p.role + ')') : '',
+      ].filter(Boolean);
+      meta = parts.join(' ');
+    } else {
+      const stepCount = j.childStepCount || (Array.isArray(j.childSteps) ? j.childSteps.length : 0);
+      const groups    = j.groupCount || '';
+      meta = [
+        stepCount ? (stepCount + ' step' + (stepCount === 1 ? '' : 's')) : '',
+        groups    ? (groups + ' group' + (groups === 1 ? '' : 's'))     : '',
+        j.projectName ? ('from ' + j.projectName) : '',
+      ].filter(Boolean).join(' · ');
+    }
     return `<div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:0.7rem 0.9rem;border:0.5px solid var(--border);border-radius:var(--r);background:var(--bg2);margin-bottom:0.5rem">
       <div style="min-width:0;flex:1">
         <div style="display:flex;align-items:center;gap:0.5rem">
@@ -14404,28 +14022,9 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
         chainSel.value = s.chainAfter;
       } else {
         document.querySelector('input[name="ta-trigger-mode"][value="cron"]').checked = true;
-        document.getElementById('ta-sched-tz').value = s.timezone || 'Europe/London';
-        // Try to map the existing cron to a friendly mode; fall back to
-        // Custom if it uses syntax the builder can't represent.
-        const mapped = ta_cronToFreq(s.cron || '');
-        if (mapped) {
-          ta_applyFreq(mapped);
-        } else {
-          document.getElementById('ta-sched-freq').value = 'custom';
-          document.getElementById('ta-sched-cron').value = s.cron || '';
-          ta_onFreqChange();
-        }
+        document.getElementById('ta-sched-cron').value = s.cron || '';
+        document.getElementById('ta-sched-tz').value   = s.timezone || 'Europe/London';
       }
-      // Seed notification override controls. If the schedule has a notifyTo
-      // value, switch the radio to "other" and reveal the input.
-      if (s.notifyTo) {
-        document.querySelector('input[name="ta-notify-mode"][value="other"]').checked = true;
-        document.getElementById('ta-sched-notify-to').value = s.notifyTo;
-      } else {
-        document.querySelector('input[name="ta-notify-mode"][value="self"]').checked = true;
-        document.getElementById('ta-sched-notify-to').value = '';
-      }
-      ta_toggleNotifyMode();
       ta_toggleTriggerMode();
       await ta_onJobPicked(s.jobVersionId);
     }
@@ -14434,17 +14033,9 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
     // button on the unscheduled-tasks panel), point the dropdown at it and
     // seed the schedule name from the job name so the user can hit Save fast.
     document.getElementById('ta-sched-name').value = '';
+    document.getElementById('ta-sched-cron').value = '';
     document.getElementById('ta-sched-enabled').checked = true;
     document.querySelector('input[name="ta-trigger-mode"][value="cron"]').checked = true;
-    // Sensible default: Daily 02:00.
-    document.getElementById('ta-sched-freq').value = 'daily';
-    document.getElementById('ta-sched-daily-time').value = '02:00';
-    document.getElementById('ta-sched-cron').value = '';
-    ta_onFreqChange();
-    // Reset notification controls to "send to me".
-    document.querySelector('input[name="ta-notify-mode"][value="self"]').checked = true;
-    document.getElementById('ta-sched-notify-to').value = '';
-    ta_toggleNotifyMode();
     ta_toggleTriggerMode();
     if (preselectJobId && jobs.some(j => j.id === preselectJobId)) {
       jobsSel.value = preselectJobId;
@@ -14472,164 +14063,23 @@ function ta_toggleTriggerMode() {
   document.getElementById('ta-chain-block').style.display = (mode === 'chain') ? '' : 'none';
 }
 
-// Show/hide the override email input depending on which notification mode
-// radio is selected. "self" means notifications go to the schedule owner
-// (schedule.userId) — no override stored. "other" means store schedule.notifyTo
-// and send there instead.
-function ta_toggleNotifyMode() {
-  const mode = document.querySelector('input[name="ta-notify-mode"]:checked').value;
-  document.getElementById('ta-notify-other-block').style.display = (mode === 'other') ? '' : 'none';
-}
-
-// ── Friendly schedule builder ────────────────────────────────────────────
-// Builds a 5-field cron expression from the friendly controls in the
-// schedule modal. The backend (run-migration.js computeNextRun) only
-// supports literals, '*' and '*/N' — no ranges or lists — so the friendly
-// modes are limited to what the runner can actually fire.
-function ta_buildCronFromFreq() {
-  const freq = document.getElementById('ta-sched-freq').value;
-  if (freq === 'minutes') {
-    const n = String(parseInt(document.getElementById('ta-sched-every-min').value, 10) || 15);
-    return '*/' + n + ' * * * *';
-  }
-  if (freq === 'hourly') {
-    const mi = Math.max(0, Math.min(59, parseInt(document.getElementById('ta-sched-hourly-min').value, 10) || 0));
-    return mi + ' * * * *';
-  }
-  if (freq === 'daily') {
-    const t = (document.getElementById('ta-sched-daily-time').value || '02:00').split(':');
-    return (parseInt(t[1], 10) || 0) + ' ' + (parseInt(t[0], 10) || 0) + ' * * *';
-  }
-  if (freq === 'weekly') {
-    const dow = document.getElementById('ta-sched-weekly-dow').value;
-    const t = (document.getElementById('ta-sched-weekly-time').value || '02:00').split(':');
-    return (parseInt(t[1], 10) || 0) + ' ' + (parseInt(t[0], 10) || 0) + ' * * ' + dow;
-  }
-  if (freq === 'monthly') {
-    const dom = Math.max(1, Math.min(28, parseInt(document.getElementById('ta-sched-monthly-dom').value, 10) || 1));
-    const t = (document.getElementById('ta-sched-monthly-time').value || '02:00').split(':');
-    return (parseInt(t[1], 10) || 0) + ' ' + (parseInt(t[0], 10) || 0) + ' ' + dom + ' * *';
-  }
-  // custom
-  return (document.getElementById('ta-sched-cron').value || '').trim();
-}
-
-// Inverse of ta_buildCronFromFreq. Tries to map an existing cron back to
-// one of the friendly modes so editing an existing schedule shows the
-// right controls instead of dumping the user into Custom. Returns null
-// when the cron uses syntax the friendly builder can't represent (e.g.
-// ranges, lists, multiple fields with values at once); the caller should
-// fall back to Custom mode.
-function ta_cronToFreq(expr) {
-  const parts = String(expr || '').trim().split(/\s+/);
-  if (parts.length !== 5) return null;
-  const [mi, h, dom, mo, dow] = parts;
-  const isLit  = (s, lo, hi) => /^\d+$/.test(s) && +s >= lo && +s <= hi;
-  const isStep = (s) => /^\*\/(\d+)$/.test(s);
-  // Every N minutes:  */N * * * *
-  if (isStep(mi) && h === '*' && dom === '*' && mo === '*' && dow === '*') {
-    return { freq: 'minutes', everyMin: parseInt(mi.split('/')[1], 10) };
-  }
-  // Hourly:  M * * * *  (M is a literal minute)
-  if (isLit(mi, 0, 59) && h === '*' && dom === '*' && mo === '*' && dow === '*') {
-    return { freq: 'hourly', hourlyMin: +mi };
-  }
-  // Daily:  M H * * *
-  if (isLit(mi, 0, 59) && isLit(h, 0, 23) && dom === '*' && mo === '*' && dow === '*') {
-    return { freq: 'daily', time: String(+h).padStart(2, '0') + ':' + String(+mi).padStart(2, '0') };
-  }
-  // Weekly:  M H * * D
-  if (isLit(mi, 0, 59) && isLit(h, 0, 23) && dom === '*' && mo === '*' && isLit(dow, 0, 6)) {
-    return { freq: 'weekly', dow: +dow, time: String(+h).padStart(2, '0') + ':' + String(+mi).padStart(2, '0') };
-  }
-  // Monthly:  M H DOM * *
-  if (isLit(mi, 0, 59) && isLit(h, 0, 23) && isLit(dom, 1, 28) && mo === '*' && dow === '*') {
-    return { freq: 'monthly', dom: +dom, time: String(+h).padStart(2, '0') + ':' + String(+mi).padStart(2, '0') };
-  }
-  return null;
-}
-
-// Show only the sub-block for the picked frequency, then refresh preview.
-function ta_onFreqChange() {
-  const freq = document.getElementById('ta-sched-freq').value;
-  const blocks = ['minutes', 'hourly', 'daily', 'weekly', 'monthly', 'custom'];
-  for (const b of blocks) {
-    const el = document.getElementById('ta-freq-' + b);
-    if (el) el.style.display = (b === freq) ? '' : 'none';
-  }
+function ta_setCron(expr) {
+  document.getElementById('ta-sched-cron').value = expr;
   ta_updateCronPreview();
 }
 
-// Legacy entry point — preserved in case any old code still calls it.
-// Sets Custom mode and writes the raw cron, then refreshes the preview.
-function ta_setCron(expr) {
-  const mapped = ta_cronToFreq(expr);
-  if (mapped) {
-    ta_applyFreq(mapped);
-  } else {
-    document.getElementById('ta-sched-freq').value = 'custom';
-    document.getElementById('ta-sched-cron').value = expr;
-    ta_onFreqChange();
-  }
-}
-
-// Apply a parsed { freq, ... } shape to the modal controls. Used by edit
-// mode (existing schedule → controls) and the legacy ta_setCron path.
-function ta_applyFreq(m) {
-  document.getElementById('ta-sched-freq').value = m.freq;
-  if (m.freq === 'minutes') {
-    const sel = document.getElementById('ta-sched-every-min');
-    // Snap to nearest dropdown option if the existing value isn't one we offer.
-    const allowed = [5, 10, 15, 20, 30];
-    const closest = allowed.reduce((a, b) => Math.abs(b - m.everyMin) < Math.abs(a - m.everyMin) ? b : a, 15);
-    sel.value = String(closest);
-  } else if (m.freq === 'hourly') {
-    document.getElementById('ta-sched-hourly-min').value = m.hourlyMin;
-  } else if (m.freq === 'daily') {
-    document.getElementById('ta-sched-daily-time').value = m.time;
-  } else if (m.freq === 'weekly') {
-    document.getElementById('ta-sched-weekly-dow').value = String(m.dow);
-    document.getElementById('ta-sched-weekly-time').value = m.time;
-  } else if (m.freq === 'monthly') {
-    document.getElementById('ta-sched-monthly-dom').value = m.dom;
-    document.getElementById('ta-sched-monthly-time').value = m.time;
-  }
-  ta_onFreqChange();
-}
-
-// Refresh the human-readable preview below the controls. Reads the
-// current frequency, builds the cron, and describes it.
 function ta_updateCronPreview() {
+  const expr = document.getElementById('ta-sched-cron').value.trim();
   const preview = document.getElementById('ta-cron-preview');
-  if (!preview) return;
-  const expr = ta_buildCronFromFreq();
-  const tz = document.getElementById('ta-sched-tz').value;
-  if (!expr) { preview.innerHTML = '<span style="color:var(--text3)">— no schedule —</span>'; return; }
+  if (!expr) { preview.textContent = ''; return; }
   const parts = expr.split(/\s+/);
-  if (parts.length !== 5) {
-    preview.innerHTML = '<span style="color:var(--amber)">⚠ cron must have 5 fields</span>';
-    return;
-  }
+  if (parts.length !== 5) { preview.textContent = '⚠ cron must have 5 fields'; preview.style.color='var(--amber)'; return; }
+  preview.style.color = 'var(--text3)';
   const [mi, h, dom, mo, dow] = parts;
-  const DAYS = { '0': 'Sunday', '1': 'Monday', '2': 'Tuesday', '3': 'Wednesday', '4': 'Thursday', '5': 'Friday', '6': 'Saturday' };
-  let human = '';
-  const stepM = /^\*\/(\d+)$/.exec(mi);
-  if (stepM && h === '*' && dom === '*' && mo === '*' && dow === '*') {
-    human = 'Every ' + stepM[1] + ' minutes';
-  } else if (/^\d+$/.test(mi) && h === '*' && dom === '*' && mo === '*' && dow === '*') {
-    human = 'Every hour at :' + mi.padStart(2, '0');
-  } else if (/^\d+$/.test(mi) && /^\d+$/.test(h) && dom === '*' && mo === '*' && dow === '*') {
-    human = 'Daily at ' + h.padStart(2, '0') + ':' + mi.padStart(2, '0');
-  } else if (/^\d+$/.test(mi) && /^\d+$/.test(h) && dom === '*' && mo === '*' && /^\d+$/.test(dow)) {
-    human = 'Every ' + (DAYS[dow] || ('day ' + dow)) + ' at ' + h.padStart(2, '0') + ':' + mi.padStart(2, '0');
-  } else if (/^\d+$/.test(mi) && /^\d+$/.test(h) && /^\d+$/.test(dom) && mo === '*' && dow === '*') {
-    human = 'Day ' + dom + ' of every month at ' + h.padStart(2, '0') + ':' + mi.padStart(2, '0');
-  } else {
-    human = 'Custom: ' + expr;
-  }
-  preview.innerHTML = '<span style="color:var(--text)">' + human + '</span> '
-    + '<span style="color:var(--text3);font-size:11px">· ' + tz + '</span> '
-    + '<span style="color:var(--text3);font-size:11px;font-family:var(--mono);margin-left:0.4rem">' + expr + '</span>';
+  if (mi==='*' && h==='*') preview.textContent = '→ every minute';
+  else if (h==='*' && dom==='*' && mo==='*' && dow==='*' && /^\d+$/.test(mi)) preview.textContent = '→ every hour at :' + mi.padStart(2,'0');
+  else if (dom==='*' && mo==='*' && dow==='*' && /^\d+$/.test(mi) && /^\d+$/.test(h)) preview.textContent = '→ daily at ' + h.padStart(2,'0') + ':' + mi.padStart(2,'0');
+  else preview.textContent = '→ ' + expr;
 }
 
 async function ta_onJobPicked(preselectVersionId) {
@@ -14751,36 +14201,33 @@ async function ta_saveSchedule() {
   const jobVersionId = document.getElementById('ta-sched-version').value;
   const enabled = document.getElementById('ta-sched-enabled').checked;
   const mode = document.querySelector('input[name="ta-trigger-mode"]:checked').value;
-  // Read cron from the friendly builder (or the raw input in Custom mode).
-  const cron = mode === 'cron' ? ta_buildCronFromFreq() : null;
+  const cron = mode === 'cron' ? document.getElementById('ta-sched-cron').value.trim() : null;
   const timezone = mode === 'cron' ? document.getElementById('ta-sched-tz').value : null;
   const chainAfter = mode === 'chain' ? document.getElementById('ta-sched-chain').value : null;
-
-  // Read notification override. "self" → null (the runner falls back to
-  // schedule.userId). "other" → validated email string. We store null
-  // explicitly so switching from "other" back to "self" clears the
-  // previous override on save.
-  const notifyMode = document.querySelector('input[name="ta-notify-mode"]:checked').value;
-  let notifyTo = null;
-  if (notifyMode === 'other') {
-    notifyTo = (document.getElementById('ta-sched-notify-to').value || '').trim();
-    if (!notifyTo) return alert('Enter a notification email address (or choose "Send to me")');
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(notifyTo)) return alert('That doesn\'t look like a valid email address');
-  }
 
   if (!name) return alert('Name is required');
   if (!jobId) return alert('Pick a job');
   if (!jobVersionId) return alert('Pick a pinned version (or create one)');
-  if (mode === 'cron' && !cron) return alert('Pick a frequency (or enter a cron expression)');
+  if (mode === 'cron' && !cron) return alert('Cron expression required');
   if (mode === 'chain' && !chainAfter) return alert('Pick a parent schedule');
 
   // Capture connection strings so the server can execute the schedule
   // without a browser open. impGetConn returns either an mssql:// URL or an
   // https:// Azure Function URL — both are valid to store; phase 2 only
   // executes mssql:// targets, phase 3 will add Azure Function execution.
+  //
+  // Profile-build jobs are an exception: their connection lives inside the
+  // pinned snapshot, not on the schedule row, so we skip the tgtConn
+  // requirement when the picked job is type 'profile-build'.
   const srcConn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
   const tgtConn = (typeof impGetConn === 'function') ? impGetConn('tgt') : '';
-  if (!tgtConn) {
+  let isProfileBuild = false;
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const job  = (Array.isArray(jobs) ? jobs : []).find(j => j && j.id === jobId);
+    isProfileBuild = !!(job && job.jobType === 'profile-build');
+  } catch {}
+  if (!isProfileBuild && !tgtConn) {
     return alert('No target connection configured. Open Connections → Target and save a connection before scheduling.');
   }
 
@@ -14790,11 +14237,11 @@ async function ta_saveSchedule() {
     if (TA.editingScheduleId) {
       await ta_sched('update-schedule', {
         id: TA.editingScheduleId,
-        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn, notifyTo },
+        patch: { name, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn },
       });
     } else {
       await ta_sched('create-schedule', {
-        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn, notifyTo,
+        name, jobId, jobVersionId, cron, timezone, chainAfter, enabled, srcConn, tgtConn,
       });
     }
     ta_closeScheduleModal();

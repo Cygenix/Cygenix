@@ -388,12 +388,12 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
       </div>
       <div style="display:flex;gap:0.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:340px">
         <button class="btn btn-purple btn-sm" id="dp-build-src-btn" onclick="dpStartBuild('source')" disabled title="Run the full profile in this browser (~10-15 min for a large schema; keep tab open)">🧬 Profile source</button>
-        <button class="btn btn-sm" id="dp-schedule-src-btn" onclick="dpScheduleBuild('source')" disabled
-                style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)" title="Run on the server overnight — you can close this tab and get an email when it's done">📅 Schedule</button>
+        <button class="btn btn-sm" id="dp-schedule-src-btn" onclick="dpCreateTask('source')" disabled
+                style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)" title="Package this profile build as a task you can schedule from Task Agent (cron or on-demand)">📦 Create task</button>
         <button class="btn btn-sm" id="dp-build-tgt-btn" onclick="dpStartBuild('target')"
                 style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none" disabled>🧬 Profile target</button>
-        <button class="btn btn-sm" id="dp-schedule-tgt-btn" onclick="dpScheduleBuild('target')"
-                style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2);display:none" disabled title="Run on the server overnight — you can close this tab and get an email when it's done">📅 Schedule</button>
+        <button class="btn btn-sm" id="dp-schedule-tgt-btn" onclick="dpCreateTask('target')"
+                style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2);display:none" disabled title="Package this profile build as a task you can schedule from Task Agent (cron or on-demand)">📦 Create task</button>
       </div>
     </div>
 
@@ -2575,29 +2575,33 @@ async function dpStartBuild(role) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// OVERNIGHT (SERVER-SIDE) BUILD
+// PACKAGE AS A TASK (for Task Agent scheduling)
 // ─────────────────────────────────────────────────────────────────────────
-// Hits the new /api/profile-build Azure Function endpoint. The browser
-// hands off the work, the server runs it on Flex Consumption (no time
-// limit), writes progress to the data_profile_tasks Cosmos container as
-// it goes, and emails the user when it finishes.
+// Mirrors the 📦 Create task flow on Project Builder. Packages this profile
+// build as a job in localStorage.cygenix_jobs with jobType:'profile-build',
+// AND creates a job_versions snapshot so the Task Agent's create-schedule
+// validation passes (it requires a pinned version). The user then opens
+// Task Agent → + New schedule to pick a cron or run on demand.
 //
-// The user can close this tab right after clicking — the build continues
-// regardless. Next time they open the Insights page, dpRefreshActiveTasks
-// (called from dpShowPanelIfReady on init) picks up the running task and
-// shows live progress in the status pill until completion.
+// Why not just hit /api/profile-build directly any more? Because we want a
+// single home for "things the server runs unattended" — the Task Agent —
+// rather than two parallel scheduling UIs. Profile-build, migrations, and
+// any future overnight jobs all live in one place users can find, edit,
+// delete, and watch.
+//
+// The original /api/profile-build endpoint is unchanged — it's just now
+// invoked by the Task Agent's runNow / cron dispatch instead of from here.
 
-// URL points at the anonymous /api/profile-build route. No function-key
-// needed in the URL — the handler authenticates the caller via the x-user-id
-// header (same pattern as create-checkout-session). Originally we used
-// authLevel:'function' with ?code=... but that broke CORS preflight on
-// browsers because preflight requests can't include the query param.
+// URL kept around for the in-flight status pill (dpRefreshActiveTasks
+// continues to poll the same Cosmos container regardless of how the task
+// was created — handy for tasks that pre-date the Task Agent flow, and
+// for showing "currently running" state on this page).
 const PROFILE_BUILD_URL = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/profile-build';
 
 // Active-task polling state — one timer per role
 const dpTaskPolls = { source: null, target: null };
 
-async function dpScheduleBuild(role) {
+async function dpCreateTask(role) {
   const schema = role === 'source' ? srcSchema : tgtSchema;
   const conn   = (typeof CygenixConnections !== 'undefined'
                     ? (role === 'source' ? CygenixConnections.srcConn : CygenixConnections.tgtConn)
@@ -2605,65 +2609,115 @@ async function dpScheduleBuild(role) {
   if (!schema) { alert('The ' + role + ' schema is not loaded yet.'); return; }
   if (!conn)   { alert('No ' + role + ' connection configured. Set one on the Connections page.'); return; }
 
-  // Confirm what's about to happen — this isn't free (it spends Anthropic
-  // tokens) and the user should know they can close the tab.
-  let userEmail = '';
-  try {
-    const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
-    userEmail = u.email || u.id || '';
-  } catch {}
-
-  const msg =
-    'Schedule an overnight build for ' + (schema.database || role) + '?\n\n' +
-    '• Runs on the server, no need to keep this tab open\n' +
-    '• Spends Anthropic API tokens (~$0.50–$2 for a large schema)\n' +
-    '• You\'ll get an email when it\'s done' + (userEmail ? ' (to ' + userEmail + ')' : '') + '\n\n' +
-    'Proceed?';
-  if (!confirm(msg)) return;
-
-  const fingerprint = await dpFingerprintSchema(schema);
-  dpState[role].fingerprint = fingerprint;
-
-  let userId = '';
+  let userId = '', userEmail = '';
   try {
     const u = JSON.parse(sessionStorage.getItem('cygenix_user') || '{}');
     userId = u.email || u.id || '';
+    userEmail = u.email || userId;
   } catch {}
   if (!userId) { alert('Not signed in.'); return; }
 
-  // Hit the Function App endpoint. fire-and-forget — it returns 202.
+  // Default task name follows project-builder's pattern (descriptive but
+  // editable). prompt() is OK here — this is a single field, not a modal.
+  const databaseLabel = schema.database || ('unknown_' + role);
+  const defaultName = 'Profile ' + databaseLabel + ' (' + role + ')';
+  const name = (window.prompt('Name this task (it will appear on Task Agent → Tasks awaiting a schedule):', defaultName) || '').trim();
+  if (!name) return; // User cancelled
+
+  // Fingerprint the schema NOW so the snapshot carries it. The Task Agent
+  // runner uses the fingerprint to de-dupe with any in-flight build.
+  let fingerprint;
   try {
-    // schema.database can be undefined on older db-connect.js deploys whose
-    // schema-tables action didn't return the DB name. Fall back to the role
-    // so the server-side runner has something to write into the profile doc
-    // and the de-dup query doesn't blow up on a null database column.
-    const databaseLabel = schema.database || ('unknown_' + role);
-    const res = await fetch(PROFILE_BUILD_URL, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
-      body:    JSON.stringify({
-        role,
-        conn,
-        database:    databaseLabel,
-        fingerprint,
-        notifyEmail: userEmail
-      })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-    if (data.existing) {
-      alert('There\'s already an overnight build running for this schema. The pill will track its progress.');
-    } else {
-      alert('Overnight build scheduled. You can close this tab — you\'ll get an email when it\'s done. The status pill above will update if you keep the tab open.');
-    }
+    fingerprint = await dpFingerprintSchema(schema);
+    dpState[role].fingerprint = fingerprint;
   } catch (e) {
-    alert('Failed to schedule overnight build: ' + e.message);
+    alert('Could not compute schema fingerprint: ' + e.message);
     return;
   }
 
-  // Start polling for progress so the pill animates
-  dpStartTaskPoll(role);
+  // Compose the job record. jobType:'profile-build' is what the Task Agent
+  // backend (scheduler.js, scheduled-runner.js) keys on when deciding to
+  // dispatch to /api/profile-build instead of /api/run-migration.
+  const jobId = 'job_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+  const profileBuildPayload = {
+    role,
+    conn,
+    database:    databaseLabel,
+    fingerprint,
+    notifyEmail: userEmail,
+  };
+  const newJob = {
+    id:          jobId,
+    name,
+    jobType:     'profile-build',
+    type:        'profile-build',
+    created:     new Date().toISOString(),
+    // Summary fields so any generic jobs-renderer surfaces it cleanly.
+    source:      databaseLabel + ' (' + role + ')',
+    target:      '(profile)',
+    totalRows:   0,
+    tables:      [],
+    // Payload the Task Agent runner will dispatch with.
+    profileBuildPayload,
+  };
+
+  // 1. Persist the job to localStorage. cygenix-cosmos-sync.js picks this
+  //    up on its next debounce and pushes it to Cosmos so the Task Agent
+  //    (which reads from Cosmos via sync) sees it.
+  let existingJobs = [];
+  try { existingJobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  if (!Array.isArray(existingJobs)) existingJobs = [];
+  if (existingJobs.some(j => (j.name || '').trim().toLowerCase() === name.toLowerCase())) {
+    if (!confirm('A job called "' + name + '" already exists. Save this one anyway?')) return;
+  }
+  existingJobs.unshift(newJob);
+  try {
+    localStorage.setItem('cygenix_jobs', JSON.stringify(existingJobs));
+  } catch (e) {
+    alert('Could not save task: ' + (e && e.message || 'storage error'));
+    return;
+  }
+
+  // 2. Create a job_versions snapshot via the existing Azure Function
+  //    version-create action. Task Agent's create-schedule requires a
+  //    pinned jobVersionId — by creating the version automatically here,
+  //    we keep the user's path from Insights → Task Agent → schedule
+  //    consistent with the project-builder flow.
+  const FN_KEY = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+  const VERSION_URL = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data/version-create?code=' + FN_KEY;
+  const snapshot = {
+    // Mirror the job record but include the payload at the top level too,
+    // matching how the Task Agent's run-migration consumer would expect
+    // snapshot fields. The scheduler reads snapshot.jobType to route.
+    id:                  jobId,
+    name,
+    jobType:             'profile-build',
+    type:                'profile-build',
+    profileBuildPayload,
+    _capturedAt:         new Date().toISOString(),
+    _captureClientNote:  'Auto-snapshot from Insights → Create task. profileBuildPayload is the dispatch body for /api/profile-build.',
+  };
+  try {
+    const r = await fetch(VERSION_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body:    JSON.stringify({ jobId, snapshot, label: 'auto', note: 'Created from Insights' })
+    });
+    const vd = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(vd.error || ('HTTP ' + r.status));
+    // Version created (or de-duped — either is fine; the schedule modal
+    // will see this jobId in the picker either way).
+  } catch (e) {
+    alert('Task packaged, but snapshot failed: ' + e.message +
+          '\n\nYou can still schedule it from Task Agent — it will create the snapshot when you save the schedule.');
+  }
+
+  alert('Task packaged — open Task Agent → + New schedule to schedule it (cron or on-demand).');
 }
+
+// Kept for backwards compatibility — any old code path that calls
+// dpScheduleBuild should now go through dpCreateTask instead.
+const dpScheduleBuild = dpCreateTask;
 
 // Refresh the "is there a running task" check for both roles. Called from
 // dpShowPanelIfReady on init so a returning user sees their build progress.
