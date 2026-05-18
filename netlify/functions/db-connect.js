@@ -170,16 +170,23 @@ async function handleMssql(action, connectionString, database, body) {
       // System views from INFORMATION_SCHEMA / sys are excluded — they're
       // noise for an end-user table picker.
       case 'schema-tables': {
-        const tablesR = await pool.request().query(`
-          SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
-            CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
-            CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
-          FROM INFORMATION_SCHEMA.TABLES t
-          LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
-          LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
-          WHERE t.TABLE_TYPE IN ('BASE TABLE','VIEW')
-            AND t.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
-          ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`);
+        // Fetch DB_NAME() in parallel with the table list — frontends use the
+        // database name in connection banners and the new profile-build flow
+        // requires it. The legacy `schema` action returned this; the lighter
+        // schema-tables didn't, so callers got `undefined` for the DB name.
+        const [tablesR, dbR] = await Promise.all([
+          pool.request().query(`
+            SELECT t.TABLE_SCHEMA, t.TABLE_NAME,
+              CASE WHEN t.TABLE_TYPE='VIEW' THEN 'view' ELSE 'table' END AS kind,
+              CASE WHEN t.TABLE_TYPE='VIEW' THEN 0 ELSE COALESCE(p.rows,0) END AS row_count
+            FROM INFORMATION_SCHEMA.TABLES t
+            LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA
+            LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN (0,1)
+            WHERE t.TABLE_TYPE IN ('BASE TABLE','VIEW')
+              AND t.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
+            ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME`),
+          pool.request().query('SELECT DB_NAME() AS dbname')
+        ]);
         const all = tablesR.recordset.map(t => ({
           schema:   t.TABLE_SCHEMA,
           name:     t.TABLE_NAME,
@@ -187,9 +194,10 @@ async function handleMssql(action, connectionString, database, body) {
           rowCount: parseInt(t.row_count) || 0,
         }));
         result = {
-          success: true,
-          tables: all,                               // legacy callers: full mixed list
-          views:  all.filter(t => t.kind === 'view'),// new callers can read this directly
+          success:  true,
+          database: dbR.recordset[0]?.dbname || null,
+          tables:   all,                              // legacy callers: full mixed list
+          views:    all.filter(t => t.kind === 'view'),// new callers can read this directly
         };
         break;
       }
@@ -491,23 +499,29 @@ async function handlePostgres(action, connectionString, database, body) {
 
       // See mssql case above for rationale. Lightweight tables-only listing.
       case 'schema-tables': {
-        const tablesR = await client.query(`
-          SELECT n.nspname  AS table_schema,
-                 c.relname  AS table_name,
-                 CASE c.relkind
-                   WHEN 'v' THEN 'view'
-                   WHEN 'm' THEN 'view'
-                   ELSE 'table'
-                 END AS kind,
-                 CASE WHEN c.relkind IN ('v','m') THEN 0
-                      ELSE COALESCE(c.reltuples, 0)::bigint END AS row_count
-          FROM   pg_class c
-          JOIN   pg_namespace n ON n.oid = c.relnamespace
-          WHERE  c.relkind IN ('r','p','v','m')
-            AND  n.nspname NOT IN ('pg_catalog','information_schema')
-            AND  n.nspname NOT LIKE 'pg_toast%'
-          ORDER  BY n.nspname, c.relname
-        `);
+        // Fetch current_database() in parallel so callers get the DB name
+        // (matches the mssql case — previously this returned just tables and
+        // the frontend rendered "Source: undefined" in the connection banner).
+        const [tablesR, dbR] = await Promise.all([
+          client.query(`
+            SELECT n.nspname  AS table_schema,
+                   c.relname  AS table_name,
+                   CASE c.relkind
+                     WHEN 'v' THEN 'view'
+                     WHEN 'm' THEN 'view'
+                     ELSE 'table'
+                   END AS kind,
+                   CASE WHEN c.relkind IN ('v','m') THEN 0
+                        ELSE COALESCE(c.reltuples, 0)::bigint END AS row_count
+            FROM   pg_class c
+            JOIN   pg_namespace n ON n.oid = c.relnamespace
+            WHERE  c.relkind IN ('r','p','v','m')
+              AND  n.nspname NOT IN ('pg_catalog','information_schema')
+              AND  n.nspname NOT LIKE 'pg_toast%'
+            ORDER  BY n.nspname, c.relname
+          `),
+          client.query('SELECT current_database() AS dbname')
+        ]);
         const all = tablesR.rows.map(t => ({
           schema:   t.table_schema,
           name:     t.table_name,
@@ -515,9 +529,10 @@ async function handlePostgres(action, connectionString, database, body) {
           rowCount: parseInt(t.row_count) || 0,
         }));
         result = {
-          success: true,
-          tables: all,
-          views:  all.filter(t => t.kind === 'view'),
+          success:  true,
+          database: dbR.rows[0]?.dbname || null,
+          tables:   all,
+          views:    all.filter(t => t.kind === 'view'),
         };
         break;
       }
