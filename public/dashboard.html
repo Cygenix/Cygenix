@@ -600,6 +600,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .imp-type-bool{ background:rgba(245,158,11,0.12);color:#f59e0b; }
 #view-connections .imp-type-string{ background:rgba(255,255,255,0.06);color:var(--text2); }
 
+/* Blob Source — filter toolbar chips. Inactive chips look like ghost buttons,
+   active chip uses the accent fill matching the rest of the connections UI. */
+#view-connections .blob-type-chip{
+  background:transparent;color:var(--text3);
+  border:0.5px solid var(--border2);
+  font-family:var(--mono);font-size:11px;
+  padding:4px 10px;border-radius:100px;
+  cursor:pointer;transition:all 0.15s;
+}
+#view-connections .blob-type-chip:hover{ color:var(--text2);border-color:var(--text3); }
+#view-connections .blob-type-chip-active{
+  background:var(--accent-glow);color:var(--accent);
+  border-color:rgba(61,126,255,0.35);
+}
+
 /* Overwrite-exists modal (and sheet picker, and validation failure) — reuses the preview-modal-overlay pattern */
 #imp-exists-modal, #imp-sheet-modal, #imp-validate-modal{ display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:400;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(2px); }
 #imp-exists-modal.open, #imp-sheet-modal.open, #imp-validate-modal.open{ display:flex; }
@@ -2437,6 +2452,23 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <button class="btn btn-ghost btn-sm" onclick="blobSourceCloseBrowser()">✕ Close</button>
           </div>
           <div id="blob-browser-result" style="font-size:11.5px;color:var(--text3);font-family:var(--mono);min-height:18px;margin-bottom:0.75rem"></div>
+
+          <!-- Filter toolbar: search + type chips. Both filters compose (AND).
+               Filtering is client-side over the already-fetched blob list —
+               no re-fetch on keystroke. -->
+          <div id="blob-filter-bar" style="display:none;align-items:center;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <input id="blob-filter-search" class="form-input" style="flex:1;min-width:200px;font-family:var(--mono);font-size:12px"
+                   placeholder="🔍 Filter files…"
+                   oninput="blobSourceRenderFiles()">
+            <div style="display:flex;gap:0.25rem;align-items:center">
+              <button class="btn btn-sm blob-type-chip blob-type-chip-active" data-type="all"   onclick="blobSourceSetTypeFilter('all')">All</button>
+              <button class="btn btn-sm blob-type-chip"                       data-type="csv"   onclick="blobSourceSetTypeFilter('csv')">CSV</button>
+              <button class="btn btn-sm blob-type-chip"                       data-type="excel" onclick="blobSourceSetTypeFilter('excel')">Excel</button>
+              <button class="btn btn-sm blob-type-chip"                       data-type="text"  onclick="blobSourceSetTypeFilter('text')">TSV / TXT</button>
+            </div>
+            <span id="blob-filter-count" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:auto"></span>
+          </div>
+
           <div style="overflow-x:auto">
             <table class="imp-schema-table" id="blob-files-table">
               <thead><tr><th>File</th><th>Size</th><th>Last modified</th><th style="text-align:right">Action</th></tr></thead>
@@ -11541,6 +11573,11 @@ const BlobSourceState = {
   activeId: '',
   activeParsed: null,
   activeBlobs: [],
+  // Sorted list (importable first, alphabetic within group). Filter+render
+  // works over this; we never re-fetch or re-sort on keystroke.
+  orderedBlobs: [],
+  // Current type filter chip. One of: 'all' | 'csv' | 'excel' | 'text'.
+  typeFilter: 'all',
 };
 
 async function blobSourceOpenBrowser(id){
@@ -11583,8 +11620,10 @@ async function blobSourceReloadFiles(){
   if (!BlobSourceState.activeParsed) return;
   const resultEl = document.getElementById('blob-browser-result');
   const tbody = document.querySelector('#blob-files-table tbody');
+  const filterBar = document.getElementById('blob-filter-bar');
   if (resultEl){ resultEl.textContent = '⏳ Listing files…'; resultEl.style.color = 'var(--text3)'; }
   if (tbody) tbody.innerHTML = '';
+  if (filterBar) filterBar.style.display = 'none';
 
   const r = await blobSourceListContainer(BlobSourceState.activeParsed);
   if (!r.ok){
@@ -11604,36 +11643,124 @@ async function blobSourceReloadFiles(){
     resultEl.style.color = 'var(--text3)';
   }
 
-  // Sort: importable first, then alphabetic within each group.
+  // Sort once at fetch time: importable first, alphabetic within each group.
+  // Render-time filtering works over this ordered list, so we never re-sort
+  // on keystroke.
   importable.sort((a,b) => a.name.localeCompare(b.name));
   rest.sort((a,b) => a.name.localeCompare(b.name));
-  const ordered = importable.concat(rest);
+  BlobSourceState.orderedBlobs = importable.concat(rest);
 
-  if (tbody){
-    tbody.innerHTML = ordered.map(b => {
-      const usable = blobSourceIsImportable(b.name);
-      const lastMod = b.lastModified ? new Date(b.lastModified) : null;
-      const lastModStr = lastMod && !isNaN(lastMod.getTime())
-        ? lastMod.toISOString().slice(0, 16).replace('T', ' ')
-        : '—';
-      const actionCell = usable
-        ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="blobSourceImportFile(\'' + encodeURIComponent(b.name) + '\')">⬆ Import</button>'
-        : '<span style="font-size:10.5px;color:var(--text3);font-style:italic">Unsupported type</span>';
-      return ''
-        + '<tr' + (usable ? '' : ' style="opacity:0.55"') + '>'
-        +   '<td>' + escP(b.name) + '</td>'
-        +   '<td>' + blobSourceFormatSize(b.size) + '</td>'
-        +   '<td>' + lastModStr + '</td>'
-        +   '<td style="text-align:right">' + actionCell + '</td>'
-        + '</tr>';
-    }).join('');
+  // Reveal filter toolbar now that there's something to filter.
+  if (filterBar) filterBar.style.display = 'flex';
+  // Reset filter inputs on each fresh fetch — user may have switched sources.
+  const searchEl = document.getElementById('blob-filter-search');
+  if (searchEl) searchEl.value = '';
+  BlobSourceState.typeFilter = 'all';
+  // Update chip active state to match reset filter.
+  document.querySelectorAll('#blob-filter-bar .blob-type-chip').forEach(el => {
+    el.classList.toggle('blob-type-chip-active', el.dataset.type === 'all');
+  });
+
+  blobSourceRenderFiles();
+}
+
+// Render the file table from BlobSourceState.orderedBlobs, applying the
+// current search-text and type-filter. Called on initial fetch and on every
+// filter change. Pure DOM work — no network. Cheap enough that we don't
+// debounce the search input.
+function blobSourceRenderFiles(){
+  const tbody = document.querySelector('#blob-files-table tbody');
+  const countEl = document.getElementById('blob-filter-count');
+  const searchEl = document.getElementById('blob-filter-search');
+  if (!tbody) return;
+
+  const all = BlobSourceState.orderedBlobs || [];
+  const searchText = (searchEl?.value || '').trim().toLowerCase();
+  const typeFilter = BlobSourceState.typeFilter || 'all';
+
+  // Type filter — only constrains the *type* of file the import column shows
+  // as actionable. Filtered-out files are hidden entirely (not just greyed)
+  // because users picking "CSV" don't want to scroll past .bak files.
+  function matchesType(name){
+    if (typeFilter === 'all')   return true;
+    if (typeFilter === 'csv')   return /\.csv$/i.test(name);
+    if (typeFilter === 'excel') return /\.(xlsx|xls)$/i.test(name);
+    if (typeFilter === 'text')  return /\.(tsv|txt)$/i.test(name);
+    return true;
   }
+  // Search — case-insensitive substring match against the full path.
+  function matchesSearch(name){
+    if (!searchText) return true;
+    return name.toLowerCase().includes(searchText);
+  }
+
+  const filtered = all.filter(b => matchesType(b.name) && matchesSearch(b.name));
+
+  if (countEl){
+    if (filtered.length === all.length){
+      countEl.textContent = all.length + ' file' + (all.length === 1 ? '' : 's');
+    } else {
+      countEl.textContent = 'Showing ' + filtered.length + ' of ' + all.length;
+    }
+  }
+
+  if (filtered.length === 0){
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:1.5rem;color:var(--text3);font-style:italic">No files match the current filter.</td></tr>';
+    return;
+  }
+
+  // Server-side cap mirrors the Function's MAX_BYTES — anything above this
+  // would 413 on attempt, so we surface it inline rather than letting the
+  // user click and wait for a failed download.
+  const MAX_BYTES = 100 * 1024 * 1024;
+
+  tbody.innerHTML = filtered.map(b => {
+    const usable = blobSourceIsImportable(b.name);
+    const tooBig = (b.size || 0) > MAX_BYTES;
+    const lastMod = b.lastModified ? new Date(b.lastModified) : null;
+    const lastModStr = lastMod && !isNaN(lastMod.getTime())
+      ? lastMod.toISOString().slice(0, 16).replace('T', ' ')
+      : '—';
+
+    // Action buttons: Import (importable only, not too big), Download (any
+    // file under the cap), or "Too large" chip if it exceeds the proxy cap.
+    const enc = encodeURIComponent(b.name);
+    const importBtn = (usable && !tooBig)
+      ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="blobSourceImportFile(\'' + enc + '\')">⬆ Import</button>'
+      : '';
+    const downloadBtn = !tooBig
+      ? '<button class="btn btn-ghost btn-sm" onclick="blobSourceDownloadFile(\'' + enc + '\')" title="Download to your machine">⬇ Download</button>'
+      : '<span style="font-size:10.5px;color:var(--amber);font-family:var(--mono)" title="Files larger than 100MB exceed the proxy cap">⚠ Over 100MB</span>';
+
+    const actionCell = '<div style="display:inline-flex;gap:0.4rem;align-items:center;justify-content:flex-end">' + importBtn + downloadBtn + '</div>';
+
+    // Rows for non-importable files are no longer dimmed — they're still
+    // useful (downloadable) so full opacity is correct.
+    return ''
+      + '<tr>'
+      +   '<td>' + escP(b.name) + '</td>'
+      +   '<td>' + blobSourceFormatSize(b.size) + '</td>'
+      +   '<td>' + lastModStr + '</td>'
+      +   '<td style="text-align:right">' + actionCell + '</td>'
+      + '</tr>';
+  }).join('');
+}
+
+// Click handler for the type chips. Updates state + chip visual + re-renders.
+function blobSourceSetTypeFilter(type){
+  BlobSourceState.typeFilter = type;
+  document.querySelectorAll('#blob-filter-bar .blob-type-chip').forEach(el => {
+    el.classList.toggle('blob-type-chip-active', el.dataset.type === type);
+  });
+  blobSourceRenderFiles();
 }
 
 function blobSourceCloseBrowser(){
   BlobSourceState.activeId = '';
   BlobSourceState.activeParsed = null;
   BlobSourceState.activeBlobs = [];
+  BlobSourceState.orderedBlobs = [];
+  BlobSourceState.typeFilter = 'all';
   const wrap = document.getElementById('blob-browser-wrap');
   if (wrap) wrap.style.display = 'none';
 }
@@ -11739,6 +11866,103 @@ async function blobSourceImportFile(blobNameEncoded){
   }
 }
 
+// Fetch a single blob via the proxy and trigger a browser download. Same
+// endpoint and same 100MB cap as the import path — we just terminate
+// differently (object URL + anchor click instead of impHandleFile). Works
+// for any file type, importable or not: .bak, .zip, .sql are all valid.
+async function blobSourceDownloadFile(blobNameEncoded){
+  if (!BlobSourceState.activeParsed){
+    alert('No blob source is open.');
+    return;
+  }
+  const blobName = decodeURIComponent(blobNameEncoded);
+  const resultEl = document.getElementById('blob-browser-result');
+  if (resultEl){ resultEl.textContent = '⏳ Downloading ' + blobName + ' via Cygenix proxy…'; resultEl.style.color = 'var(--text3)'; }
+
+  const userId = blobSourceCurrentUserId();
+  if (!userId){
+    if (resultEl){
+      resultEl.textContent = '🔴 You need to be signed in to download files.';
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+
+  const parsed = BlobSourceState.activeParsed;
+  const sasUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '?' + parsed.sasToken;
+
+  let resp;
+  try {
+    resp = await fetch(BLOB_PROXY_BASE + '/blob-download?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
+      body: JSON.stringify({ sasUrl, blobName }),
+    });
+  } catch (e){
+    if (resultEl){
+      resultEl.textContent = '🔴 Could not reach Cygenix proxy. (' + (e && e.message || e) + ')';
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+
+  if (!resp.ok){
+    // Function returns JSON error payloads on non-200.
+    let msg = 'HTTP ' + resp.status;
+    try {
+      const payload = await resp.json();
+      if (payload && payload.error) msg = payload.error;
+    } catch {}
+    if (resp.status === 413){
+      msg = 'File too large for proxy (max 100MB). ' + msg;
+    }
+    if (resultEl){
+      resultEl.textContent = '🔴 Download failed: ' + msg;
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+
+  let arrayBuf;
+  try { arrayBuf = await resp.arrayBuffer(); }
+  catch (e){
+    if (resultEl){
+      resultEl.textContent = '🔴 Failed to read download body: ' + (e && e.message || e);
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+
+  // Build a Blob, an object URL, and a hidden anchor with `download="..."`
+  // so the browser saves the file with its original name (last segment of
+  // the path) rather than the default proxy URL filename.
+  const justName = blobName.split('/').pop() || blobName;
+  const blob = new Blob([arrayBuf], { type: resp.headers.get('Content-Type') || 'application/octet-stream' });
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = justName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } finally {
+    // Revoke the object URL after a tick so the browser has time to start the
+    // download. Holding it indefinitely would pin the bytes in memory.
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 2000);
+  }
+
+  if (resultEl){
+    resultEl.textContent = '✓ Downloaded ' + justName + ' (' + blobSourceFormatSize(blob.size) + ').';
+    resultEl.style.color = 'var(--green)';
+  }
+}
+
 // Expose for inline onclick handlers — same defensive pattern used elsewhere
 // in this file because function declarations don't reliably hoist across
 // <script> block boundaries.
@@ -11751,6 +11975,9 @@ if (typeof window !== 'undefined'){
   window.blobSourceCloseBrowser  = blobSourceCloseBrowser;
   window.blobSourceDelete        = blobSourceDelete;
   window.blobSourceImportFile    = blobSourceImportFile;
+  window.blobSourceDownloadFile   = blobSourceDownloadFile;
+  window.blobSourceRenderFiles    = blobSourceRenderFiles;
+  window.blobSourceSetTypeFilter  = blobSourceSetTypeFilter;
 }
 
 function impDragOver(e){ e.preventDefault(); document.getElementById('imp-drop')?.classList.add('drag-over'); }
