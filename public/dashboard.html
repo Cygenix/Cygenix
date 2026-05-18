@@ -11722,15 +11722,17 @@ function blobSourceRenderFiles(){
       ? lastMod.toISOString().slice(0, 16).replace('T', ' ')
       : '—';
 
-    // Action buttons: Import (importable only, not too big), Download (any
-    // file under the cap), or "Too large" chip if it exceeds the proxy cap.
+    // Action buttons: Import (importable, ≤ proxy cap), Download (any file
+    // ≤ proxy cap), or "azcopy command" (files over the cap — proxy can't
+    // handle them, so we hand the user a one-line command they can paste
+    // into PowerShell/Terminal to download direct from Azure).
     const enc = encodeURIComponent(b.name);
     const importBtn = (usable && !tooBig)
       ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="blobSourceImportFile(\'' + enc + '\')">⬆ Import</button>'
       : '';
     const downloadBtn = !tooBig
       ? '<button class="btn btn-ghost btn-sm" onclick="blobSourceDownloadFile(\'' + enc + '\')" title="Download to your machine">⬇ Download</button>'
-      : '<span style="font-size:10.5px;color:var(--amber);font-family:var(--mono)" title="Files larger than 100MB exceed the proxy cap">⚠ Over 100MB</span>';
+      : '<button class="btn btn-sm" style="background:rgba(245,158,11,0.12);color:var(--amber);border:0.5px solid rgba(245,158,11,0.35)" onclick="blobSourceCopyAzcopy(\'' + enc + '\')" title="File is over 100MB. Click to copy an azcopy command to your clipboard — paste into PowerShell or Terminal to download directly from Azure.">📋 Copy azcopy</button>';
 
     const actionCell = '<div style="display:inline-flex;gap:0.4rem;align-items:center;justify-content:flex-end">' + importBtn + downloadBtn + '</div>';
 
@@ -11963,6 +11965,70 @@ async function blobSourceDownloadFile(blobNameEncoded){
   }
 }
 
+// Build an azcopy command for a single blob and copy it to the clipboard.
+// Used for files over the proxy cap (100MB) — instead of failing, we give
+// the user a one-line command they can paste into PowerShell/Terminal to
+// download direct from Azure. azcopy is far faster than browser/proxy for
+// large files anyway (multi-threaded, resumable), so this is genuinely a
+// better path for .bak files and similar.
+//
+// The command uses the SAS URL verbatim — same credential the user already
+// provided. azcopy is free from Microsoft: https://aka.ms/downloadazcopy
+async function blobSourceCopyAzcopy(blobNameEncoded){
+  if (!BlobSourceState.activeParsed){
+    alert('No blob source is open.');
+    return;
+  }
+  const blobName = decodeURIComponent(blobNameEncoded);
+  const parsed = BlobSourceState.activeParsed;
+
+  // Encode each path segment so virtual-directory slashes survive but
+  // spaces/special characters in filenames get escaped properly.
+  const encodedBlob = blobName.split('/').map(encodeURIComponent).join('/');
+  const fileUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '/' + encodedBlob
+    + '?' + parsed.sasToken;
+
+  // Quote the URL with double-quotes — works in both PowerShell and bash.
+  // Destination "." downloads to the user's current working directory.
+  const cmd = 'azcopy copy "' + fileUrl + '" "."';
+
+  const resultEl = document.getElementById('blob-browser-result');
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(cmd);
+    copied = true;
+  } catch (e) {
+    // Fallback: temporary textarea + execCommand. Some browsers refuse the
+    // Clipboard API outside a user gesture or on insecure origins; the
+    // legacy path keeps working.
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = cmd;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch {}
+  }
+
+  if (resultEl){
+    if (copied){
+      resultEl.innerHTML = '✓ azcopy command copied. Paste into PowerShell or Terminal to download <strong>' + escP(blobName.split('/').pop() || blobName) + '</strong>. '
+        + 'Need azcopy? <a href="https://aka.ms/downloadazcopy" target="_blank" rel="noopener" style="color:var(--accent)">Download from Microsoft</a>.';
+      resultEl.style.color = 'var(--green)';
+    } else {
+      // Clipboard refused — surface the command in a prompt so the user
+      // can copy it manually.
+      resultEl.textContent = '⚠ Could not access clipboard. Command shown in popup — copy manually.';
+      resultEl.style.color = 'var(--amber)';
+      try { window.prompt('Copy this azcopy command:', cmd); } catch {}
+    }
+  }
+}
+
 // Expose for inline onclick handlers — same defensive pattern used elsewhere
 // in this file because function declarations don't reliably hoist across
 // <script> block boundaries.
@@ -11976,6 +12042,7 @@ if (typeof window !== 'undefined'){
   window.blobSourceDelete        = blobSourceDelete;
   window.blobSourceImportFile    = blobSourceImportFile;
   window.blobSourceDownloadFile   = blobSourceDownloadFile;
+  window.blobSourceCopyAzcopy     = blobSourceCopyAzcopy;
   window.blobSourceRenderFiles    = blobSourceRenderFiles;
   window.blobSourceSetTypeFilter  = blobSourceSetTypeFilter;
 }
