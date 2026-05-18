@@ -2633,13 +2633,18 @@ async function dpScheduleBuild(role) {
 
   // Hit the Function App endpoint. fire-and-forget — it returns 202.
   try {
+    // schema.database can be undefined on older db-connect.js deploys whose
+    // schema-tables action didn't return the DB name. Fall back to the role
+    // so the server-side runner has something to write into the profile doc
+    // and the de-dup query doesn't blow up on a null database column.
+    const databaseLabel = schema.database || ('unknown_' + role);
     const res = await fetch(PROFILE_BUILD_URL, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
       body:    JSON.stringify({
         role,
         conn,
-        database:    schema.database,
+        database:    databaseLabel,
         fingerprint,
         notifyEmail: userEmail
       })
