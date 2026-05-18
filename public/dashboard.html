@@ -2129,6 +2129,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="cx-tab" data-tab="linked" onclick="switchConnTab('linked')">
           🔗 Linked servers
         </button>
+        <button class="cx-tab" data-tab="blob" onclick="switchConnTab('blob')">
+          ☁ Azure Blob Source
+        </button>
       </div>
 
       <!-- Tab: Database connections -->
@@ -2376,6 +2379,75 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
           <div id="ls-remote-list" style="font-size:12px;color:var(--text3)">Click Refresh or switch to this tab to load existing linked servers on the target SQL Server.</div>
         </div>
+      </div>
+
+      <!-- Tab: Azure Blob Source — client-owned storage. User saves container SAS
+           URLs here; clicking a saved source lists the files in the container and
+           lets the user pick one to feed into the existing Data Import pipeline
+           (impHandleFile). No backend involvement: browser talks directly to the
+           Azure Blob REST API using the SAS, then hands bytes to the parser. -->
+      <div id="conn-tab-blob" style="display:none">
+
+        <!-- Section 1: Add a new SAS source -->
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+            <div style="font-size:13px;font-weight:600">1 · Add an Azure Blob container</div>
+            <span style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 8px;border-radius:100px">Container SAS</span>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Paste a read-list SAS URL the client provides — credentials stay in your browser only.</span>
+          </div>
+
+          <div style="display:grid;grid-template-columns:240px 1fr;gap:0.75rem;margin-bottom:0.75rem">
+            <div>
+              <label class="form-label">Friendly name</label>
+              <input id="blob-add-name" class="form-input" style="font-size:12px" placeholder="e.g. Acme Legal — Matters extract">
+            </div>
+            <div>
+              <label class="form-label">Container SAS URL</label>
+              <input id="blob-add-sas" class="form-input" style="font-family:var(--mono);font-size:11.5px" placeholder="https://acmelaw.blob.core.windows.net/cygenix-uploads?sv=2024-…&amp;sr=c&amp;sp=rl&amp;sig=…">
+            </div>
+          </div>
+          <div id="blob-add-result" style="font-size:11.5px;color:var(--text3);font-family:var(--mono);min-height:18px;margin-bottom:0.75rem"></div>
+          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" onclick="blobSourceTest()">🔌 Test &amp; save</button>
+            <button class="btn btn-ghost btn-sm" onclick="blobSourceClearForm()">✕ Clear</button>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">
+              Required SAS perms: <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Read</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">List</code> · Client must enable CORS for <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">https://cygenix.co.uk</code> on the storage account.
+            </span>
+          </div>
+        </div>
+
+        <!-- Section 2: Saved sources -->
+        <div class="panel" style="margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
+            <div style="font-size:13px;font-weight:600">2 · Saved blob sources</div>
+            <span id="blob-saved-count" style="background:var(--bg4);color:var(--text3);font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:100px">0</span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="blobSourceRenderSaved()">↻ Refresh</button>
+          </div>
+          <div id="blob-saved-list" style="display:flex;flex-direction:column;gap:0.5rem">
+            <div class="sconn-empty" style="font-size:11px;color:var(--text3);font-style:italic">No saved blob sources yet. Add one above.</div>
+          </div>
+        </div>
+
+        <!-- Section 3: File browser for the active source -->
+        <div id="blob-browser-wrap" class="panel" style="margin-bottom:1rem;display:none">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">3 · Files in <span id="blob-browser-source-name" style="color:var(--accent)">—</span></div>
+            <span id="blob-browser-meta" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+            <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="blobSourceReloadFiles()">↻ Refresh files</button>
+            <button class="btn btn-ghost btn-sm" onclick="blobSourceCloseBrowser()">✕ Close</button>
+          </div>
+          <div id="blob-browser-result" style="font-size:11.5px;color:var(--text3);font-family:var(--mono);min-height:18px;margin-bottom:0.75rem"></div>
+          <div style="overflow-x:auto">
+            <table class="imp-schema-table" id="blob-files-table">
+              <thead><tr><th>File</th><th>Size</th><th>Last modified</th><th style="text-align:right">Action</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div style="margin-top:0.75rem;padding:0.6rem 0.75rem;background:var(--bg3);border-radius:var(--r);font-size:11px;color:var(--text3);line-height:1.5">
+            Importing a file fetches it from the client's storage account and hands it straight to the <strong>Data import</strong> tab — same preview, schema review and target-table flow you'd get from a local upload.
+          </div>
+        </div>
+
       </div>
 
     </div>
@@ -11076,9 +11148,11 @@ function switchConnTab(tab){
   const db = document.getElementById('conn-tab-databases');
   const im = document.getElementById('conn-tab-import');
   const lk = document.getElementById('conn-tab-linked');
+  const bl = document.getElementById('conn-tab-blob');
   if (db) db.style.display = tab === 'databases' ? 'block' : 'none';
   if (im) im.style.display = tab === 'import'    ? 'block' : 'none';
   if (lk) lk.style.display = tab === 'linked'    ? 'block' : 'none';
+  if (bl) bl.style.display = tab === 'blob'      ? 'block' : 'none';
   // Hide save/clear buttons when not on db connections tab
   const s = document.getElementById('conn-tab-save-btn');
   const c = document.getElementById('conn-tab-clear-btn');
@@ -11090,6 +11164,558 @@ function switchConnTab(tab){
     lsRenderDrafts();
     lsRefreshServerList();  // fire-and-forget; UI will update when done
   }
+  // When switching TO the blob tab, render the saved-source chips
+  if (tab === 'blob'){
+    try { blobSourceRenderSaved(); } catch(e){ console.warn('[blob-source] render saved failed:', e); }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AZURE BLOB SOURCE — client-owned storage, browser-direct (no Cygenix backend).
+//
+// Storage model: localStorage key `cygenix_blob_sources` holds a per-user map
+// keyed by email (matching CygenixConnections.currentUserTag()), each value an
+// array of saved-source entries:
+//   { id, name, sasUrl, accountName, containerName, sasExpiresAt, createdAt }
+//
+// SAS URL contains the signature — same security posture as storing SQL conn
+// strings with embedded passwords, which the rest of the app already does.
+//
+// The browser hits the Azure Blob REST API directly with the SAS:
+//   list:   GET {scheme}://{account}.blob.core.windows.net/{container}?restype=container&comp=list&{sasToken}
+//   fetch:  GET {scheme}://{account}.blob.core.windows.net/{container}/{blobName}?{sasToken}
+// CORS must be enabled on the client's storage account for our origin or these
+// requests will be blocked by the browser. There's a help line in the UI that
+// flags this; the test step surfaces CORS failures with a recognisable message.
+//
+// After fetch, the bytes are wrapped in a `File` object (so file.name carries
+// through) and passed to the existing impHandleFile() — same code path as a
+// drag-drop in the Data Import tab. The user gets the schema preview, target
+// picker and import button automatically; nothing duplicated.
+//
+// FOLLOW-UP (deferred): add `cygenix_blob_sources` to SYNC_KEYS in
+// cygenix-cosmos-sync.js so saved sources roam across devices. Single-line
+// addition once that file is to hand. v1 is browser-local only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BLOB_SRC_LS_KEY = 'cygenix_blob_sources';
+
+// Per-user blob: read the whole top-level map then slice by current user, same
+// pattern as CygenixConnections. Returns [] if nobody signed in or no entries.
+function blobSourceReadAll(){
+  let uid = '';
+  try {
+    if (window.CygenixConnections && typeof CygenixConnections.currentUserTag === 'function'){
+      uid = CygenixConnections.currentUserTag() || '';
+    }
+  } catch {}
+  if (!uid) return [];
+  let blob;
+  try { blob = JSON.parse(localStorage.getItem(BLOB_SRC_LS_KEY) || '{}'); } catch { return []; }
+  if (!blob || typeof blob !== 'object' || Array.isArray(blob)) return [];
+  const arr = blob[uid];
+  return Array.isArray(arr) ? arr : [];
+}
+
+function blobSourceWriteAll(list){
+  let uid = '';
+  try {
+    if (window.CygenixConnections && typeof CygenixConnections.currentUserTag === 'function'){
+      uid = CygenixConnections.currentUserTag() || '';
+    }
+  } catch {}
+  if (!uid) return false;
+  let blob;
+  try { blob = JSON.parse(localStorage.getItem(BLOB_SRC_LS_KEY) || '{}'); } catch { blob = {}; }
+  if (!blob || typeof blob !== 'object' || Array.isArray(blob)) blob = {};
+  blob[uid] = Array.isArray(list) ? list.slice(0, 50) : [];
+  try { localStorage.setItem(BLOB_SRC_LS_KEY, JSON.stringify(blob)); return true; }
+  catch (e){ console.warn('[blob-source] write failed:', e); return false; }
+}
+
+// Parse a container SAS URL. Container SAS shape:
+//   https://{account}.blob.core.windows.net/{container}?{sasParams}
+// We tolerate a trailing slash on the container and any query-string ordering.
+// Returns { ok, accountName, containerName, sasToken, sasExpiresAt, error }.
+function blobSourceParseSas(sasUrl){
+  if (!sasUrl || typeof sasUrl !== 'string'){
+    return { ok:false, error:'No SAS URL provided.' };
+  }
+  let u;
+  try { u = new URL(sasUrl.trim()); }
+  catch { return { ok:false, error:'That doesn\'t look like a valid URL.' }; }
+
+  if (u.protocol !== 'https:'){
+    return { ok:false, error:'SAS URL must be https://, not ' + u.protocol };
+  }
+  const host = u.hostname.toLowerCase();
+  // Match {account}.blob.core.windows.net (commercial Azure). Sovereign clouds
+  // use different suffixes (.blob.core.chinacloudapi.cn etc) — accept anything
+  // that contains ".blob." to be tolerant. Sovereign clouds are rare for our
+  // client base but we don't want to hard-reject them.
+  if (!/\.blob\./.test(host)){
+    return { ok:false, error:'URL hostname doesn\'t look like Azure Blob Storage (expected *.blob.core.windows.net).' };
+  }
+  const accountName = host.split('.')[0];
+
+  // Container = first non-empty path segment. Anything past that is a blob
+  // name, which we don't accept for v1 (container SAS only).
+  const segs = u.pathname.split('/').filter(Boolean);
+  if (segs.length === 0){
+    return { ok:false, error:'URL is missing the container name.' };
+  }
+  if (segs.length > 1){
+    return { ok:false, error:'This looks like a single-blob SAS. Paste a container SAS URL (no file path after the container name).' };
+  }
+  const containerName = segs[0];
+
+  const sasToken = u.search.startsWith('?') ? u.search.slice(1) : u.search;
+  if (!sasToken){
+    return { ok:false, error:'URL has no SAS token (missing ?sv=… query string).' };
+  }
+  // Check the SAS signature param is present — biggest single sign of a
+  // pasted-but-malformed URL.
+  if (!/[?&]sig=/.test('?' + sasToken)){
+    return { ok:false, error:'SAS token is missing the signature (sig=) parameter. The URL may have been truncated.' };
+  }
+
+  // Pull expiry (`se=...`) for the UI warning. Optional — older SAS variants
+  // may not have it.
+  let sasExpiresAt = '';
+  const params = new URLSearchParams(sasToken);
+  const seRaw = params.get('se');
+  if (seRaw){
+    // se is ISO-8601 (may be URL-encoded — URLSearchParams already decoded it).
+    const d = new Date(seRaw);
+    if (!isNaN(d.getTime())) sasExpiresAt = d.toISOString();
+  }
+
+  return {
+    ok: true,
+    accountName,
+    containerName,
+    sasToken,
+    sasExpiresAt,
+  };
+}
+
+// Build the list-blobs URL for a parsed SAS.
+function blobSourceListUrl(parsed){
+  return 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName)
+    + '?restype=container&comp=list&' + parsed.sasToken;
+}
+
+// Build the download URL for a blob inside a parsed SAS container.
+function blobSourceDownloadUrl(parsed, blobName){
+  // Encode each path segment individually so "/" inside a virtual directory
+  // name stays as a separator.
+  const encoded = blobName.split('/').map(encodeURIComponent).join('/');
+  return 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '/' + encoded
+    + '?' + parsed.sasToken;
+}
+
+// Call the list-blobs API and parse the XML. Returns
+//   { ok, blobs: [{name, size, lastModified, contentType}], error }
+async function blobSourceListContainer(parsed){
+  const url = blobSourceListUrl(parsed);
+  let resp;
+  try {
+    resp = await fetch(url, { method: 'GET' });
+  } catch (e){
+    // Most common cause here is CORS — surface a useful hint.
+    return { ok:false, error:'Network error listing container. This is usually a CORS issue — the client needs to allow https://cygenix.co.uk in the storage account\'s CORS settings. (' + (e && e.message || e) + ')' };
+  }
+  if (!resp.ok){
+    let bodyText = '';
+    try { bodyText = await resp.text(); } catch {}
+    const m = bodyText.match(/<Message[^>]*>([\s\S]*?)<\/Message>/);
+    const msg = m ? m[1].trim().split('\n')[0] : ('HTTP ' + resp.status);
+    return { ok:false, error:'Container list failed: ' + msg };
+  }
+  let xmlText;
+  try { xmlText = await resp.text(); }
+  catch (e){ return { ok:false, error:'Failed to read container response: ' + (e && e.message || e) }; }
+
+  let doc;
+  try {
+    const parser = new DOMParser();
+    doc = parser.parseFromString(xmlText, 'application/xml');
+  } catch (e){
+    return { ok:false, error:'Failed to parse container XML: ' + (e && e.message || e) };
+  }
+  if (doc.querySelector('parsererror')){
+    return { ok:false, error:'Storage account returned invalid XML. The SAS may not have List permission.' };
+  }
+
+  const blobs = [];
+  const nodes = doc.querySelectorAll('Blob');
+  nodes.forEach(n => {
+    const name = (n.querySelector('Name')?.textContent || '').trim();
+    if (!name) return;
+    const props = n.querySelector('Properties');
+    const sizeStr = props?.querySelector('Content-Length')?.textContent || '';
+    const lastMod = props?.querySelector('Last-Modified')?.textContent || '';
+    const ctype   = props?.querySelector('Content-Type')?.textContent || '';
+    blobs.push({
+      name,
+      size: sizeStr ? parseInt(sizeStr, 10) : 0,
+      lastModified: lastMod,
+      contentType: ctype,
+    });
+  });
+  return { ok:true, blobs };
+}
+
+// Format bytes for display.
+function blobSourceFormatSize(b){
+  if (!b && b !== 0) return '—';
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+  return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+}
+
+// Filter to file types impHandleFile actually accepts.
+function blobSourceIsImportable(name){
+  return /\.(csv|tsv|txt|xlsx|xls)$/i.test(name || '');
+}
+
+// ── UI: form actions ────────────────────────────────────────────────────────
+
+function blobSourceClearForm(){
+  const n = document.getElementById('blob-add-name');
+  const s = document.getElementById('blob-add-sas');
+  const r = document.getElementById('blob-add-result');
+  if (n) n.value = '';
+  if (s) s.value = '';
+  if (r){ r.textContent = ''; r.style.color = ''; }
+}
+
+function blobSourceSetAddResult(msg, kind){
+  const el = document.getElementById('blob-add-result');
+  if (!el) return;
+  el.textContent = msg || '';
+  if (kind === 'err')      el.style.color = 'var(--red)';
+  else if (kind === 'ok')  el.style.color = 'var(--green)';
+  else                     el.style.color = 'var(--text3)';
+}
+
+// Test & save: validates the SAS, calls list-container as a real-world probe,
+// and (if it works) persists the source. We deliberately list rather than just
+// HEAD the container — list is the actual permission we need at use time.
+async function blobSourceTest(){
+  const nameEl = document.getElementById('blob-add-name');
+  const sasEl  = document.getElementById('blob-add-sas');
+  const name = (nameEl?.value || '').trim();
+  const sasUrl = (sasEl?.value || '').trim();
+
+  if (!name){
+    blobSourceSetAddResult('Give this source a friendly name first.', 'err');
+    return;
+  }
+  if (!sasUrl){
+    blobSourceSetAddResult('Paste the container SAS URL.', 'err');
+    return;
+  }
+  const parsed = blobSourceParseSas(sasUrl);
+  if (!parsed.ok){
+    blobSourceSetAddResult(parsed.error, 'err');
+    return;
+  }
+
+  // Refuse duplicate names — confusing in the saved-list and likely a mistake.
+  const existing = blobSourceReadAll();
+  if (existing.some(e => (e.name || '').toLowerCase() === name.toLowerCase())){
+    blobSourceSetAddResult('A saved source with that name already exists. Pick another name or delete the existing one first.', 'err');
+    return;
+  }
+
+  blobSourceSetAddResult('⏳ Testing — calling list-container on ' + parsed.accountName + '/' + parsed.containerName + '…');
+  const result = await blobSourceListContainer(parsed);
+  if (!result.ok){
+    blobSourceSetAddResult('🔴 ' + result.error, 'err');
+    return;
+  }
+
+  // Success — save.
+  const entry = {
+    id: 'blob_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    name,
+    sasUrl,
+    accountName: parsed.accountName,
+    containerName: parsed.containerName,
+    sasExpiresAt: parsed.sasExpiresAt,
+    createdAt: new Date().toISOString(),
+  };
+  const next = existing.concat([entry]);
+  const written = blobSourceWriteAll(next);
+  if (!written){
+    blobSourceSetAddResult('🔴 Connected, but failed to save locally (storage quota or signed out?).', 'err');
+    return;
+  }
+
+  const importable = result.blobs.filter(b => blobSourceIsImportable(b.name)).length;
+  blobSourceSetAddResult('✓ Saved. ' + result.blobs.length + ' blob(s) in container, ' + importable + ' importable (CSV/TSV/TXT/XLSX/XLS).', 'ok');
+  blobSourceClearFormSoft();
+  blobSourceRenderSaved();
+}
+
+// Clear name/SAS but keep the result line — used after a successful save so the
+// user sees the confirmation.
+function blobSourceClearFormSoft(){
+  const n = document.getElementById('blob-add-name');
+  const s = document.getElementById('blob-add-sas');
+  if (n) n.value = '';
+  if (s) s.value = '';
+}
+
+// ── UI: saved chips ──────────────────────────────────────────────────────────
+
+function blobSourceRenderSaved(){
+  const list = document.getElementById('blob-saved-list');
+  const count = document.getElementById('blob-saved-count');
+  if (!list) return;
+  const entries = blobSourceReadAll();
+  if (count) count.textContent = String(entries.length);
+  if (entries.length === 0){
+    list.innerHTML = '<div class="sconn-empty" style="font-size:11px;color:var(--text3);font-style:italic">No saved blob sources yet. Add one above.</div>';
+    return;
+  }
+  list.innerHTML = entries.map(e => {
+    const expiry = e.sasExpiresAt ? new Date(e.sasExpiresAt) : null;
+    const now = new Date();
+    let expiryHtml = '';
+    if (expiry){
+      const days = Math.round((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (days < 0){
+        expiryHtml = '<span style="color:var(--red);font-family:var(--mono);font-size:10.5px">SAS expired ' + Math.abs(days) + 'd ago</span>';
+      } else if (days <= 7){
+        expiryHtml = '<span style="color:var(--amber);font-family:var(--mono);font-size:10.5px">SAS expires in ' + days + 'd</span>';
+      } else {
+        expiryHtml = '<span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">SAS expires ' + expiry.toISOString().slice(0,10) + '</span>';
+      }
+    } else {
+      expiryHtml = '<span style="color:var(--text3);font-family:var(--mono);font-size:10.5px">SAS expiry unknown</span>';
+    }
+    return ''
+      + '<div style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 0.75rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r)">'
+      +   '<div style="flex:1;min-width:0">'
+      +     '<div style="font-size:12.5px;font-weight:500;color:var(--text);margin-bottom:2px">' + escP(e.name) + '</div>'
+      +     '<div style="font-family:var(--mono);font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'
+      +       escP(e.accountName) + ' / ' + escP(e.containerName) + ' &nbsp;·&nbsp; ' + expiryHtml
+      +     '</div>'
+      +   '</div>'
+      +   '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="blobSourceOpenBrowser(\'' + e.id + '\')">📂 Browse files</button>'
+      +   '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="blobSourceDelete(\'' + e.id + '\')" title="Remove this saved source">✕</button>'
+      + '</div>';
+  }).join('');
+}
+
+function blobSourceDelete(id){
+  if (!id) return;
+  const entries = blobSourceReadAll();
+  const target = entries.find(e => e.id === id);
+  if (!target) return;
+  if (!confirm('Remove saved blob source "' + target.name + '"?\n\nThis only removes the saved SAS from this browser. The client\'s storage account is unaffected.')) return;
+  const next = entries.filter(e => e.id !== id);
+  blobSourceWriteAll(next);
+  // If the active browser is showing this source, close it.
+  if (BlobSourceState.activeId === id) blobSourceCloseBrowser();
+  blobSourceRenderSaved();
+}
+
+// ── UI: file browser ────────────────────────────────────────────────────────
+
+// Module-level state for the open browser panel — what source we're showing
+// and the parsed SAS so the download buttons don't need to re-parse.
+const BlobSourceState = {
+  activeId: '',
+  activeParsed: null,
+  activeBlobs: [],
+};
+
+async function blobSourceOpenBrowser(id){
+  const entries = blobSourceReadAll();
+  const entry = entries.find(e => e.id === id);
+  if (!entry){
+    alert('That saved source no longer exists.');
+    blobSourceRenderSaved();
+    return;
+  }
+  const parsed = blobSourceParseSas(entry.sasUrl);
+  if (!parsed.ok){
+    alert('Saved SAS is invalid: ' + parsed.error);
+    return;
+  }
+  BlobSourceState.activeId = id;
+  BlobSourceState.activeParsed = parsed;
+  BlobSourceState.activeBlobs = [];
+
+  const wrap = document.getElementById('blob-browser-wrap');
+  const nameEl = document.getElementById('blob-browser-source-name');
+  const metaEl = document.getElementById('blob-browser-meta');
+  const resultEl = document.getElementById('blob-browser-result');
+  const tbody = document.querySelector('#blob-files-table tbody');
+  if (wrap) wrap.style.display = 'block';
+  if (nameEl) nameEl.textContent = entry.name;
+  if (metaEl) metaEl.textContent = parsed.accountName + ' / ' + parsed.containerName;
+  if (resultEl){ resultEl.textContent = '⏳ Listing files…'; resultEl.style.color = 'var(--text3)'; }
+  if (tbody) tbody.innerHTML = '';
+
+  await blobSourceReloadFiles();
+
+  // Scroll into view so the user sees the new panel without hunting.
+  if (wrap && typeof wrap.scrollIntoView === 'function'){
+    wrap.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  }
+}
+
+async function blobSourceReloadFiles(){
+  if (!BlobSourceState.activeParsed) return;
+  const resultEl = document.getElementById('blob-browser-result');
+  const tbody = document.querySelector('#blob-files-table tbody');
+  if (resultEl){ resultEl.textContent = '⏳ Listing files…'; resultEl.style.color = 'var(--text3)'; }
+  if (tbody) tbody.innerHTML = '';
+
+  const r = await blobSourceListContainer(BlobSourceState.activeParsed);
+  if (!r.ok){
+    if (resultEl){ resultEl.textContent = '🔴 ' + r.error; resultEl.style.color = 'var(--red)'; }
+    return;
+  }
+  BlobSourceState.activeBlobs = r.blobs;
+  const importable = r.blobs.filter(b => blobSourceIsImportable(b.name));
+  const rest = r.blobs.filter(b => !blobSourceIsImportable(b.name));
+
+  if (r.blobs.length === 0){
+    if (resultEl){ resultEl.textContent = 'Container is empty.'; resultEl.style.color = 'var(--text3)'; }
+    return;
+  }
+  if (resultEl){
+    resultEl.textContent = '✓ ' + r.blobs.length + ' blob(s) — ' + importable.length + ' importable, ' + rest.length + ' other.';
+    resultEl.style.color = 'var(--text3)';
+  }
+
+  // Sort: importable first, then alphabetic within each group.
+  importable.sort((a,b) => a.name.localeCompare(b.name));
+  rest.sort((a,b) => a.name.localeCompare(b.name));
+  const ordered = importable.concat(rest);
+
+  if (tbody){
+    tbody.innerHTML = ordered.map(b => {
+      const usable = blobSourceIsImportable(b.name);
+      const lastMod = b.lastModified ? new Date(b.lastModified) : null;
+      const lastModStr = lastMod && !isNaN(lastMod.getTime())
+        ? lastMod.toISOString().slice(0, 16).replace('T', ' ')
+        : '—';
+      const actionCell = usable
+        ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="blobSourceImportFile(\'' + encodeURIComponent(b.name) + '\')">⬆ Import</button>'
+        : '<span style="font-size:10.5px;color:var(--text3);font-style:italic">Unsupported type</span>';
+      return ''
+        + '<tr' + (usable ? '' : ' style="opacity:0.55"') + '>'
+        +   '<td>' + escP(b.name) + '</td>'
+        +   '<td>' + blobSourceFormatSize(b.size) + '</td>'
+        +   '<td>' + lastModStr + '</td>'
+        +   '<td style="text-align:right">' + actionCell + '</td>'
+        + '</tr>';
+    }).join('');
+  }
+}
+
+function blobSourceCloseBrowser(){
+  BlobSourceState.activeId = '';
+  BlobSourceState.activeParsed = null;
+  BlobSourceState.activeBlobs = [];
+  const wrap = document.getElementById('blob-browser-wrap');
+  if (wrap) wrap.style.display = 'none';
+}
+
+// Fetch a single blob and hand it to the existing Data Import pipeline. The
+// import lands the user on the Data import tab with the schema preview already
+// rendered — same UX as a drag-drop, just sourced from blob.
+async function blobSourceImportFile(blobNameEncoded){
+  if (!BlobSourceState.activeParsed){
+    alert('No blob source is open.');
+    return;
+  }
+  const blobName = decodeURIComponent(blobNameEncoded);
+  const resultEl = document.getElementById('blob-browser-result');
+  if (resultEl){ resultEl.textContent = '⏳ Downloading ' + blobName + '…'; resultEl.style.color = 'var(--text3)'; }
+
+  const url = blobSourceDownloadUrl(BlobSourceState.activeParsed, blobName);
+  let resp;
+  try {
+    resp = await fetch(url, { method: 'GET' });
+  } catch (e){
+    if (resultEl){
+      resultEl.textContent = '🔴 Network error downloading. Usually a CORS issue on the client storage account. (' + (e && e.message || e) + ')';
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+  if (!resp.ok){
+    let bodyText = '';
+    try { bodyText = await resp.text(); } catch {}
+    const m = bodyText.match(/<Message[^>]*>([\s\S]*?)<\/Message>/);
+    const msg = m ? m[1].trim().split('\n')[0] : ('HTTP ' + resp.status);
+    if (resultEl){
+      resultEl.textContent = '🔴 Download failed: ' + msg;
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+  let arrayBuf;
+  try { arrayBuf = await resp.arrayBuffer(); }
+  catch (e){
+    if (resultEl){
+      resultEl.textContent = '🔴 Failed to read download body: ' + (e && e.message || e);
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+
+  // File extends Blob with a `name` property — `impHandleFile` reads file.name
+  // to decide CSV vs Excel, so we must construct a real File.
+  const justName = blobName.split('/').pop() || blobName;
+  let file;
+  try {
+    file = new File([arrayBuf], justName, { type: resp.headers.get('Content-Type') || '' });
+  } catch {
+    // Older Safari: File constructor missing. Fall back to a plain Blob with a
+    // name field tacked on — impHandleFile only ever reads .name and .size.
+    const b = new Blob([arrayBuf], { type: resp.headers.get('Content-Type') || '' });
+    try { Object.defineProperty(b, 'name', { value: justName }); } catch {}
+    file = b;
+  }
+
+  if (resultEl){
+    resultEl.textContent = '✓ Downloaded ' + justName + ' (' + blobSourceFormatSize(file.size) + '). Handing off to Data Import…';
+    resultEl.style.color = 'var(--green)';
+  }
+
+  // Switch tab so the user sees the schema preview render.
+  try { switchConnTab('import'); } catch(e){ console.warn('[blob-source] could not switch tab:', e); }
+  // Kick off the existing parse pipeline.
+  try { impHandleFile(file); }
+  catch (e){
+    console.error('[blob-source] impHandleFile threw:', e);
+    alert('Import pipeline failed: ' + (e && e.message || e));
+  }
+}
+
+// Expose for inline onclick handlers — same defensive pattern used elsewhere
+// in this file because function declarations don't reliably hoist across
+// <script> block boundaries.
+if (typeof window !== 'undefined'){
+  window.blobSourceTest          = blobSourceTest;
+  window.blobSourceClearForm     = blobSourceClearForm;
+  window.blobSourceRenderSaved   = blobSourceRenderSaved;
+  window.blobSourceOpenBrowser   = blobSourceOpenBrowser;
+  window.blobSourceReloadFiles   = blobSourceReloadFiles;
+  window.blobSourceCloseBrowser  = blobSourceCloseBrowser;
+  window.blobSourceDelete        = blobSourceDelete;
+  window.blobSourceImportFile    = blobSourceImportFile;
 }
 
 function impDragOver(e){ e.preventDefault(); document.getElementById('imp-drop')?.classList.add('drag-over'); }
