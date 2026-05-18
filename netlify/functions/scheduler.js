@@ -178,7 +178,7 @@ async function listSchedules(userId, _body, containers) {
 
 async function createSchedule(userId, body, containers) {
   const { name, jobId, jobVersionId, cron, timezone, chainAfter, enabled,
-          srcConn, tgtConn } = body || {};
+          srcConn, tgtConn, oneShot } = body || {};
   if (!name)         return { __err: 'name required' };
   if (!jobId)        return { __err: 'jobId required' };
   if (!jobVersionId) return { __err: 'jobVersionId required' };
@@ -224,6 +224,7 @@ async function createSchedule(userId, body, containers) {
     cron:        cron || null,
     timezone:    timezone || null,
     chainAfter:  chainAfter || null,
+    oneShot:     !!oneShot,  // one-off schedules auto-disable after firing
     enabled:     enabled !== false,
     humanReadable: cron ? humaniseCron(cron) : null,
     nextRunAt:   cron ? computeNextRun(cron, new Date()) : null,

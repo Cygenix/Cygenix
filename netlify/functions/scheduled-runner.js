@@ -161,12 +161,22 @@ async function fireSchedule(containers, schedule, now) {
   //    optimistic concurrency: if our replace() fails with a 412
   //    PreconditionFailed, another instance already fired this one and
   //    we bail out without doing anything destructive.
+  //
+  //    One-shot schedules (created from the "Once at date/time" trigger
+  //    mode) carry oneShot:true. We disable them after the first fire so
+  //    the cron expression — which would otherwise re-match next year
+  //    on the same day — doesn't auto-fire again. The user can re-enable
+  //    manually if they want to repeat.
   const nextRunAt = schedule.cron ? computeNextRun(schedule.cron, now) : null;
   const bumped = {
     ...schedule,
     nextRunAt,
     updatedAt: nowIso(),
   };
+  if (schedule.oneShot) {
+    bumped.enabled   = false;
+    bumped.nextRunAt = null;  // belt-and-braces: any cron tick must skip
+  }
   try {
     await containers.schedules.item(schedule.id, schedule.userId).replace(bumped, {
       accessCondition: { type: 'IfMatch', condition: schedule._etag },
