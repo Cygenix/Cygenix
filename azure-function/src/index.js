@@ -1,5 +1,5 @@
 // Cosmos DB integration v2 - audit + admin-users + invite
-// CM2
+// CM3
 const { app } = require('@azure/functions');
 
 // Register the Task Agent scheduler module (HTTP route /api/schedules/{action}
