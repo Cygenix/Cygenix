@@ -56,8 +56,9 @@ function getContainers() {
   _cosmosClient = new CosmosClient(conn);
   const db = _cosmosClient.database(process.env.COSMOS_DATABASE || 'cygenix');
   _containers = {
-    schedules: db.container('schedules'),
-    runs:      db.container('runs'),
+    schedules:    db.container('schedules'),
+    runs:         db.container('runs'),
+    job_versions: db.container('job_versions'),
   };
   return _containers;
 }
@@ -116,15 +117,17 @@ function newRunId() {
 }
 function nowIso() { return new Date().toISOString(); }
 
-// ── Resolve runner URL ──────────────────────────────────────────────────
-// The migration runner lives on the Azure Function App
-// (cygenix-db-api-e4fng7a4edhydzc4) — Flex Consumption with
-// functionTimeout:-1, no 15-min cap. Same Cosmos containers, same report
-// shape, same poll endpoint. Replaces the previous Netlify background
-// function which capped out at 15 minutes.
-function getBackgroundUrl() {
-  return 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/run-migration';
-}
+// ── Resolve runner URLs ─────────────────────────────────────────────────
+// Two endpoints on the Azure Function App (cygenix-db-api, Flex Consumption,
+// UK South, no enforced timeout):
+//   migration jobs    → /api/run-migration with {runId, scheduleId, userId}
+//   profile-build jobs → /api/profile-build with {role, conn, database,
+//                        fingerprint, notifyEmail} from the pinned snapshot
+// Routing is driven by schedule.jobType (set by createSchedule from the
+// pinned version's snapshot.jobType).
+const AZ_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api';
+function getMigrationUrl()    { return AZ_BASE + '/run-migration'; }
+function getProfileBuildUrl() { return AZ_BASE + '/profile-build'; }
 
 // ── Fire one schedule ───────────────────────────────────────────────────
 // Returns { fired: bool, reason?: string, runId?: string } for logging.
@@ -138,8 +141,18 @@ async function fireSchedule(containers, schedule, now) {
   if (!schedule.jobVersionId) {
     return { fired: false, reason: 'no pinned jobVersionId' };
   }
-  if (!schedule.tgtConn || (!isMssqlConn(schedule.tgtConn) && !isHttpUrl(schedule.tgtConn))) {
-    return { fired: false, reason: 'invalid target connection' };
+  // Job type is denormalised onto the schedule by createSchedule. Older
+  // schedules (created before profile-build routing existed) won't have
+  // this field — treat absence as 'migration' for backwards compatibility.
+  const jobType = schedule.jobType || 'migration';
+  const isProfileBuild = jobType === 'profile-build';
+
+  // Migration jobs need a target connection string; profile-build doesn't
+  // (it carries its conn in the snapshot).
+  if (!isProfileBuild) {
+    if (!schedule.tgtConn || (!isMssqlConn(schedule.tgtConn) && !isHttpUrl(schedule.tgtConn))) {
+      return { fired: false, reason: 'invalid target connection' };
+    }
   }
 
   // 1. Bump nextRunAt FORWARD before doing anything else — this is our
@@ -176,6 +189,7 @@ async function fireSchedule(containers, schedule, now) {
     userId:       schedule.userId,
     jobId:        schedule.jobId,
     jobVersionId: schedule.jobVersionId,
+    jobType,
     triggeredBy:  'cron',
     status:       'queued',
     startedAt:    nowIso(),
@@ -186,17 +200,51 @@ async function fireSchedule(containers, schedule, now) {
   };
   await containers.runs.items.create(runDoc);
 
-  // 3. Fire-and-forget the background runner. Same dispatch pattern as
-  //    scheduler.js runNow — short timeout because we only need the 202
-  //    ack, not the actual work to finish.
-  const bgUrl = getBackgroundUrl();
+  // 3. Build the dispatch URL + body based on jobType. For profile-build
+  //    we read the pinned version's snapshot to extract the conn/role/etc.
+  //    For migration we keep the existing fast path — no extra reads.
+  let bgUrl, dispatchBody;
+  if (isProfileBuild) {
+    bgUrl = getProfileBuildUrl();
+    let version;
+    try {
+      const { resource } = await containers.job_versions
+        .item(schedule.jobVersionId, schedule.jobId).read();
+      version = resource;
+    } catch {}
+    const p = (version && version.snapshot && version.snapshot.profileBuildPayload) || null;
+    if (!p || !p.role || !p.conn || !p.fingerprint || !p.database) {
+      try {
+        await containers.runs.item(runId, schedule.id).replace({
+          ...runDoc,
+          status:       'failed',
+          finishedAt:   nowIso(),
+          errorMessage: 'Pinned profile-build snapshot missing required fields — re-create the task from Insights.',
+        });
+      } catch {}
+      return { fired: false, reason: 'profile-build snapshot incomplete', runId };
+    }
+    dispatchBody = {
+      role:        p.role,
+      conn:        p.conn,
+      database:    p.database,
+      fingerprint: p.fingerprint,
+      notifyEmail: p.notifyEmail || schedule.userId,
+    };
+  } else {
+    bgUrl = getMigrationUrl();
+    dispatchBody = { runId, scheduleId: schedule.id, userId: schedule.userId };
+  }
+
+  // 4. Fire-and-forget. Short timeout because we only need the 202 ack,
+  //    not the actual work to finish.
   try {
     const ctl = new AbortController();
     const to  = setTimeout(() => ctl.abort(), 8_000);
     await fetch(bgUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ runId, scheduleId: schedule.id, userId: schedule.userId }),
+      headers: { 'Content-Type': 'application/json', 'x-user-id': schedule.userId },
+      body: JSON.stringify(dispatchBody),
       signal: ctl.signal,
     });
     clearTimeout(to);

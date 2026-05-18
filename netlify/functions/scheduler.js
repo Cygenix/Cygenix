@@ -183,20 +183,28 @@ async function createSchedule(userId, body, containers) {
   if (!jobId)        return { __err: 'jobId required' };
   if (!jobVersionId) return { __err: 'jobVersionId required' };
   if (!cron && !chainAfter) return { __err: 'cron or chainAfter required' };
-  // tgtConn is required for run-now / auto-trigger to work without a browser.
-  // We accept the create-schedule call even if it's missing, but the schedule
-  // will fail at execution time with a clear error. Most users get here via
-  // ta_saveSchedule which always sends both fields if Connections is set up.
-  if (!tgtConn) return { __err: 'tgtConn required (configure Connections → Target before scheduling)' };
 
   // Look up the pinned version to denormalise its version number onto the
   // schedule row — the schedules table renders "v3" without doing a second
-  // round trip, so we copy that small number at create time.
+  // round trip, so we copy that small number at create time. We also use
+  // the version's snapshot.jobType to decide whether tgtConn is required:
+  // migration jobs need it (the runner connects to the target server),
+  // profile-build jobs don't (they carry their own conn inside the snapshot).
   let jobVersionNumber = null;
+  let snapJobType = '';
   try {
     const { resource: ver } = await containers.job_versions.item(jobVersionId, jobId).read();
-    if (ver) jobVersionNumber = ver.version;
+    if (ver) {
+      jobVersionNumber = ver.version;
+      snapJobType = (ver.snapshot && ver.snapshot.jobType) || '';
+    }
   } catch (e) { if (!isMissingResource(e)) throw e; }
+
+  // tgtConn is required for migration runs (the runner has no browser to
+  // fetch it from at execution time). Profile-build runs don't need it.
+  if (snapJobType !== 'profile-build' && !tgtConn) {
+    return { __err: 'tgtConn required (configure Connections → Target before scheduling)' };
+  }
 
   const id = newId();
   const doc = {
@@ -206,12 +214,13 @@ async function createSchedule(userId, body, containers) {
     jobId,
     jobVersionId,
     jobVersionNumber,
+    jobType:     snapJobType || 'migration',  // remembered for UI filtering / lifecycle
     // Connection strings (or Azure Function URLs) needed for server-side
     // execution. Stored alongside the schedule because the auto-trigger has
     // no browser to fetch them from at run time. Cosmos is encrypted at
     // rest and access-controlled to the Cygenix Function App.
     srcConn: srcConn || null,
-    tgtConn,
+    tgtConn: tgtConn || null,
     cron:        cron || null,
     timezone:    timezone || null,
     chainAfter:  chainAfter || null,
@@ -506,13 +515,33 @@ async function runNow(userId, body, containers, event) {
   if (!version || !version.snapshot) {
     return { __err: 'Pinned version snapshot not found. Re-pin the version on the schedule.', __status: 400 };
   }
-  // Quick connection-string sanity. The background function repeats these
-  // checks, but doing them here gives the user a synchronous error instead
-  // of a queued run that immediately fails.
-  const tgtConn = schedule.tgtConn || '';
-  if (!tgtConn)            return { __err: 'No target connection stored on this schedule. Edit and re-save.', __status: 400 };
-  if (isHttpUrl(tgtConn))  return { __err: 'Azure Function targets are not supported by run-now yet — phase 3 will add this.', __status: 400 };
-  if (!isMssqlConn(tgtConn)) return { __err: 'Only mssql:// connection strings are supported.', __status: 400 };
+
+  // ── Job type routing ────────────────────────────────────────────────────
+  // The Task Agent now supports two kinds of pinned jobs:
+  //   * migration jobs (jobType missing, or 'composite', or 'migration') →
+  //     dispatched to the Azure /api/run-migration endpoint which runs the
+  //     SQL conversion against srcConn / tgtConn.
+  //   * profile-build jobs (jobType === 'profile-build') → dispatched to
+  //     /api/profile-build which runs an overnight Claude-assisted schema
+  //     analysis. These don't have a tgtConn — they only need {role, conn,
+  //     database, fingerprint, notifyEmail} from the snapshot payload.
+  //
+  // Routing is driven by the snapshot, NOT by the schedule row, so a job's
+  // type is locked at the moment the version is created (which is what
+  // version pinning is for).
+  const snapJobType = (version.snapshot && version.snapshot.jobType) || '';
+  const isProfileBuild = snapJobType === 'profile-build';
+
+  // Quick connection-string sanity for migration jobs. Profile-build jobs
+  // carry their connection inside the snapshot, not on the schedule row, so
+  // these checks don't apply to them.
+  let tgtConn = '';
+  if (!isProfileBuild) {
+    tgtConn = schedule.tgtConn || '';
+    if (!tgtConn)            return { __err: 'No target connection stored on this schedule. Edit and re-save.', __status: 400 };
+    if (isHttpUrl(tgtConn))  return { __err: 'Azure Function targets are not supported by run-now yet — phase 3 will add this.', __status: 400 };
+    if (!isMssqlConn(tgtConn)) return { __err: 'Only mssql:// connection strings are supported.', __status: 400 };
+  }
 
   // Create the run record in 'queued' state. The background function will
   // flip it to 'running' when it picks up, and then 'success' or 'failed'.
@@ -525,6 +554,7 @@ async function runNow(userId, body, containers, event) {
     userId,
     jobId:        schedule.jobId,
     jobVersionId: schedule.jobVersionId,
+    jobType:      snapJobType || 'migration',  // remembered on the run for run-history filtering
     triggeredBy:  body.triggeredBy || 'manual',
     status:       'queued',
     startedAt,
@@ -535,17 +565,39 @@ async function runNow(userId, body, containers, event) {
   };
   await containers.runs.items.create(runDoc);
 
-  // Fire-and-forget the background function. Netlify routes
-  // /.netlify/functions/<name>-background to the background runtime, which
-  // accepts the POST, returns 202 within milliseconds, then keeps executing
-  // for as long as the migration takes — the Azure Function App has
-  // functionTimeout:-1 in host.json so there's no 15-min cap.
-  //
-  // We hit the Azure endpoint by its full URL (the Function App is in a
-  // different origin from this Netlify function). The dashboard's poll
-  // loop on get-run is unchanged — it doesn't care which runner is
-  // executing, it just reads the Cosmos run record.
-  const bgUrl = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/run-migration';
+  // Fire-and-forget the background runner. We hit the Azure Function App
+  // (Flex Consumption, no enforced timeout) by absolute URL. Two endpoints:
+  //   migration   → /api/run-migration with {runId, scheduleId, userId}
+  //   profile-build → /api/profile-build with the snapshot payload directly,
+  //                   because profile-builder.js doesn't read from the runs
+  //                   container — it manages its own data_profile_tasks rows.
+  // Either way we just need the 202 ack, not the work to finish.
+  let bgUrl, dispatchBody;
+  if (isProfileBuild) {
+    bgUrl = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/profile-build';
+    const p = version.snapshot.profileBuildPayload || {};
+    if (!p.role || !p.conn || !p.fingerprint || !p.database) {
+      // Mark the run failed synchronously and bail — the snapshot is malformed.
+      const failedRun = {
+        ...runDoc,
+        status: 'failed',
+        finishedAt: nowIso(),
+        errorMessage: 'Profile-build snapshot is missing required fields (role/conn/database/fingerprint). Re-create the task from the Insights page.',
+      };
+      try { await containers.runs.item(runId, schedule.id).replace(failedRun); } catch {}
+      return { __err: 'Profile-build snapshot incomplete — re-create the task from Insights.', __status: 400 };
+    }
+    dispatchBody = {
+      role:         p.role,
+      conn:         p.conn,
+      database:     p.database,
+      fingerprint:  p.fingerprint,
+      notifyEmail:  p.notifyEmail || userId,
+    };
+  } else {
+    bgUrl = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/run-migration';
+    dispatchBody = { runId, scheduleId: schedule.id, userId };
+  }
 
   try {
     // Short timeout: we just need the 202 ack, not the work to finish.
@@ -553,8 +605,8 @@ async function runNow(userId, body, containers, event) {
     const to  = setTimeout(() => ctl.abort(), 8_000);
     await fetch(bgUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ runId, scheduleId: schedule.id, userId }),
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify(dispatchBody),
       signal: ctl.signal,
     });
     clearTimeout(to);
