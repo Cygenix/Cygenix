@@ -2544,8 +2544,232 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           });
         }
 
+        // ── BLOB-LIST: list files in a client-owned Azure Blob container ─────
+        // POST /api/data/blob-list
+        // Body: { sasUrl: "https://{account}.blob.core.windows.net/{container}?{sas}" }
+        // Returns: { blobs: [{ name, size, lastModified, contentType }] }
+        //
+        // Purpose: proxies the Azure Blob "List Blobs" REST call server-side so
+        // browsers don't need the client's storage account to have CORS
+        // configured for cygenix.co.uk. Cygenix's clients may be deploying via
+        // SaaS without a direct channel to their clients' Azure admins, so we
+        // can't depend on per-storage-account CORS rules being added.
+        //
+        // The SAS URL itself carries the only credential — we don't add anything.
+        // We validate it shapes like an Azure Blob container SAS before calling,
+        // both to give a clear error message and to refuse obviously-malformed
+        // input that would otherwise hit a random hostname server-side.
+        //
+        // Permission needed on the SAS: Read + List (sp=rl).
+        case 'blob-list': {
+          const body = await req.json().catch(() => null);
+          if (!body || typeof body !== 'object') {
+            return err(400, 'Invalid JSON body');
+          }
+          const sasUrl = String(body.sasUrl || '').trim();
+          if (!sasUrl) return err(400, 'sasUrl required');
+
+          // Parse + validate. Same shape checks as the frontend, server-side
+          // copy because we can't trust the browser's prior validation.
+          let parsed;
+          try { parsed = new URL(sasUrl); }
+          catch { return err(400, 'sasUrl is not a valid URL'); }
+          if (parsed.protocol !== 'https:') {
+            return err(400, 'sasUrl must use https');
+          }
+          if (!/\.blob\./.test(parsed.hostname.toLowerCase())) {
+            return err(400, 'sasUrl hostname does not look like Azure Blob Storage');
+          }
+          const segs = parsed.pathname.split('/').filter(Boolean);
+          if (segs.length === 0) return err(400, 'sasUrl is missing the container name');
+          if (segs.length > 1)   return err(400, 'sasUrl looks like a blob URL, not a container URL');
+          const sasToken = parsed.search.startsWith('?') ? parsed.search.slice(1) : parsed.search;
+          if (!sasToken)            return err(400, 'sasUrl has no SAS token');
+          if (!/[?&]sig=/.test('?' + sasToken)) {
+            return err(400, 'SAS token is missing the signature (sig=) parameter');
+          }
+
+          const listUrl = 'https://' + parsed.hostname + parsed.pathname
+            + '?restype=container&comp=list&' + sasToken;
+
+          let resp;
+          try {
+            resp = await fetch(listUrl, { method: 'GET' });
+          } catch (e) {
+            ctx.log.error('blob-list fetch failed:', e.message);
+            return err(502, 'Upstream fetch failed: ' + (e.message || String(e)));
+          }
+
+          if (!resp.ok) {
+            let bodyText = '';
+            try { bodyText = await resp.text(); } catch {}
+            const m = bodyText.match(/<Message[^>]*>([\s\S]*?)<\/Message>/);
+            const msg = m ? m[1].trim().split('\n')[0] : ('HTTP ' + resp.status);
+            return err(resp.status >= 500 ? 502 : 400, 'List failed: ' + msg);
+          }
+
+          let xmlText;
+          try { xmlText = await resp.text(); }
+          catch (e) { return err(502, 'Could not read upstream response: ' + e.message); }
+
+          // Lightweight regex-based parse of the Azure List Blobs XML. We
+          // pull <Blob>...</Blob> chunks and extract Name, Content-Length,
+          // Last-Modified, Content-Type. Azure's response shape is stable,
+          // and avoiding an XML parser dependency keeps the Function package
+          // small. If Azure ever returns malformed XML, the regexes simply
+          // skip the unparseable entries — no exception bubble.
+          const blobs = [];
+          const blobRe = /<Blob>([\s\S]*?)<\/Blob>/g;
+          let m;
+          while ((m = blobRe.exec(xmlText)) !== null) {
+            const chunk = m[1];
+            const name = (chunk.match(/<Name>([\s\S]*?)<\/Name>/)         || [,''])[1].trim();
+            if (!name) continue;
+            const size = parseInt((chunk.match(/<Content-Length>([\s\S]*?)<\/Content-Length>/) || [,'0'])[1], 10) || 0;
+            const lastModified = (chunk.match(/<Last-Modified>([\s\S]*?)<\/Last-Modified>/) || [,''])[1].trim();
+            const contentType  = (chunk.match(/<Content-Type>([\s\S]*?)<\/Content-Type>/)   || [,''])[1].trim();
+            blobs.push({ name, size, lastModified, contentType });
+          }
+          return ok({ blobs });
+        }
+
+        // ── BLOB-DOWNLOAD: stream a single blob's bytes back to the browser ──
+        // POST /api/data/blob-download
+        // Body: { sasUrl: "...?...", blobName: "subfolder/file.csv" }
+        // Returns: binary response with Content-Type + Content-Disposition.
+        //
+        // Hard 100MB size cap (matches the Data Import tab's existing limit).
+        // We HEAD the blob first to read Content-Length and refuse early —
+        // this avoids ever buffering a multi-GB file into Function memory if
+        // a client accidentally points at something huge. Costs one extra
+        // round trip per download; cheap insurance against OOM.
+        //
+        // Response is binary, so we DON'T use the `ok()` helper (which
+        // JSON.stringify's the body — that would corrupt the bytes). We
+        // return a raw Buffer with the appropriate headers instead. The
+        // Azure Functions v4 runtime handles Buffer bodies natively.
+        case 'blob-download': {
+          const MAX_BYTES = 100 * 1024 * 1024;  // 100 MB
+
+          const body = await req.json().catch(() => null);
+          if (!body || typeof body !== 'object') {
+            return err(400, 'Invalid JSON body');
+          }
+          const sasUrl   = String(body.sasUrl   || '').trim();
+          const blobName = String(body.blobName || '').trim();
+          if (!sasUrl)   return err(400, 'sasUrl required');
+          if (!blobName) return err(400, 'blobName required');
+
+          // Same SAS validation as blob-list.
+          let parsed;
+          try { parsed = new URL(sasUrl); }
+          catch { return err(400, 'sasUrl is not a valid URL'); }
+          if (parsed.protocol !== 'https:') return err(400, 'sasUrl must use https');
+          if (!/\.blob\./.test(parsed.hostname.toLowerCase())) {
+            return err(400, 'sasUrl hostname does not look like Azure Blob Storage');
+          }
+          const segs = parsed.pathname.split('/').filter(Boolean);
+          if (segs.length !== 1) {
+            return err(400, 'sasUrl must be a container SAS (one path segment)');
+          }
+          const sasToken = parsed.search.startsWith('?') ? parsed.search.slice(1) : parsed.search;
+          if (!sasToken || !/[?&]sig=/.test('?' + sasToken)) {
+            return err(400, 'SAS token is missing or malformed');
+          }
+
+          // Refuse path traversal attempts. Blob names can legitimately contain
+          // "/" (virtual directories) but never ".." or backslashes.
+          if (blobName.includes('..') || blobName.includes('\\')) {
+            return err(400, 'blobName contains forbidden characters');
+          }
+
+          const encodedBlob = blobName.split('/').map(encodeURIComponent).join('/');
+          const downloadUrl = 'https://' + parsed.hostname + parsed.pathname
+            + '/' + encodedBlob + '?' + sasToken;
+
+          // Step 1: HEAD to check size before downloading. If HEAD is blocked
+          // by the SAS permissions (rare; r implies HEAD on Azure Blob), we
+          // proceed to GET and rely on Content-Length on the response stream.
+          let headSize = null;
+          try {
+            const headResp = await fetch(downloadUrl, { method: 'HEAD' });
+            if (headResp.ok) {
+              const cl = headResp.headers.get('content-length');
+              if (cl) {
+                headSize = parseInt(cl, 10);
+                if (!isNaN(headSize) && headSize > MAX_BYTES) {
+                  return err(413, 'File is ' + headSize + ' bytes; limit is ' + MAX_BYTES + ' (100MB). Use a smaller extract.');
+                }
+              }
+            }
+          } catch (e) {
+            // Non-fatal — fall through to GET. The GET response Content-Length
+            // check below covers the same case.
+            ctx.log('blob-download HEAD failed, continuing:', e.message);
+          }
+
+          // Step 2: GET the file.
+          let resp;
+          try {
+            resp = await fetch(downloadUrl, { method: 'GET' });
+          } catch (e) {
+            ctx.log.error('blob-download fetch failed:', e.message);
+            return err(502, 'Upstream fetch failed: ' + (e.message || String(e)));
+          }
+
+          if (!resp.ok) {
+            let bodyText = '';
+            try { bodyText = await resp.text(); } catch {}
+            const m = bodyText.match(/<Message[^>]*>([\s\S]*?)<\/Message>/);
+            const msg = m ? m[1].trim().split('\n')[0] : ('HTTP ' + resp.status);
+            return err(resp.status === 404 ? 404 : 502, 'Download failed: ' + msg);
+          }
+
+          // Re-check size from the GET response headers (in case HEAD was
+          // blocked or lied). If still unknown we proceed but cap defensively
+          // when reading.
+          const getCl = resp.headers.get('content-length');
+          if (getCl) {
+            const sz = parseInt(getCl, 10);
+            if (!isNaN(sz) && sz > MAX_BYTES) {
+              return err(413, 'File is ' + sz + ' bytes; limit is ' + MAX_BYTES + ' (100MB).');
+            }
+          }
+
+          let arrayBuf;
+          try { arrayBuf = await resp.arrayBuffer(); }
+          catch (e) {
+            return err(502, 'Could not read download body: ' + e.message);
+          }
+          if (arrayBuf.byteLength > MAX_BYTES) {
+            return err(413, 'File is ' + arrayBuf.byteLength + ' bytes; limit is ' + MAX_BYTES + ' (100MB).');
+          }
+
+          const contentType = resp.headers.get('content-type') || 'application/octet-stream';
+          // Derive a download filename — last segment of blobName.
+          const justName = blobName.split('/').pop() || 'download';
+          // RFC 5987 for non-ASCII safety; quote the plain version for older clients.
+          const safeName = justName.replace(/[\r\n"]/g, '_');
+          const encodedName = encodeURIComponent(justName);
+
+          return {
+            status: 200,
+            headers: {
+              'Access-Control-Allow-Origin':  '*',
+              'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+              'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+              // Don't include the JSON Content-Type from the shared CORS object.
+              'Content-Type':        contentType,
+              'Content-Length':      String(arrayBuf.byteLength),
+              'Content-Disposition': `attachment; filename="${safeName}"; filename*=UTF-8''${encodedName}`,
+              'Cache-Control':       'private, no-store',
+            },
+            body: Buffer.from(arrayBuf),
+          };
+        }
+
         default:
-          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects`);
+          return err(404, `Unknown action: ${action}. Valid actions: save, load, user-get, user-create, user-update, subscription, subscription-update, delete-all, ping, invite, admin-users, audit, version-create, version-list, version-get, waitlist, waitlist-list, extend-membership, project-summary-document, whoami, checkout-status, billing-portal, quality-list-reports, quality-get-report, quality-save-report, quality-rename-report, quality-delete-report, quality-list-rels, quality-add-rel, quality-delete-rel, quality-save-scope, quality-load-scope, quality-suggest-rels, profile-save, profile-load, profile-list, profile-delete, profile-task-active, profile-task-list, profile-task-get, profile-task-cancel, profile-classify-subjects, blob-list, blob-download`);
       }
 
     } catch (e) {
