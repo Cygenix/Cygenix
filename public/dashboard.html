@@ -2411,7 +2411,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <button class="btn btn-primary btn-sm" onclick="blobSourceTest()">🔌 Test &amp; save</button>
             <button class="btn btn-ghost btn-sm" onclick="blobSourceClearForm()">✕ Clear</button>
             <span style="font-size:10.5px;color:var(--text3);margin-left:auto">
-              Required SAS perms: <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Read</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">List</code> · Client must enable CORS for <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">https://cygenix.co.uk</code> on the storage account.
+              Required SAS perms: <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">Read</code> + <code style="background:var(--bg4);padding:1px 4px;border-radius:3px;font-family:var(--mono);font-size:10.5px">List</code> · File transfer goes via Cygenix to bypass storage-account CORS restrictions. 100MB cap per file.
             </span>
           </div>
         </div>
@@ -11299,72 +11299,79 @@ function blobSourceParseSas(sasUrl){
   };
 }
 
-// Build the list-blobs URL for a parsed SAS.
-function blobSourceListUrl(parsed){
-  return 'https://' + parsed.accountName + '.blob.core.windows.net/'
-    + encodeURIComponent(parsed.containerName)
-    + '?restype=container&comp=list&' + parsed.sasToken;
+// Azure Function endpoint for the blob proxy. Uses the same hardcoded
+// function key as the rest of dashboard.html (whoami, billing-portal,
+// cygenix-cosmos-sync.js). Flagged in user memory as tech debt — proper
+// fix is JWT Bearer auth mirroring reports.js, deferred until prioritised.
+const BLOB_PROXY_BASE = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
+const BLOB_PROXY_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
+
+// Pull the caller's email from the MSAL local cache for the x-user-id header
+// the Function dispatcher requires. Same retrieval pattern as enhanceUserPill
+// elsewhere in this file. Returns '' if not signed in (the request will then
+// 401 cleanly from the Function).
+function blobSourceCurrentUserId(){
+  // First try CygenixConnections.currentUserTag — it has the same logic plus
+  // legacy fallbacks. If that fails, drop to direct MSAL cache scrape.
+  try {
+    if (window.CygenixConnections && typeof CygenixConnections.currentUserTag === 'function'){
+      const t = CygenixConnections.currentUserTag();
+      if (t) return t;
+    }
+  } catch {}
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (!k.includes('-login.windows.net-') && !k.includes('.ciamlogin.com-')) continue;
+      const raw = localStorage.getItem(k);
+      if (!raw || raw[0] !== '{') continue;
+      let obj; try { obj = JSON.parse(raw); } catch { continue; }
+      if (obj && obj.username && obj.authorityType && obj.homeAccountId) {
+        return String(obj.username || '').trim().toLowerCase();
+      }
+    }
+  } catch {}
+  return '';
 }
 
-// Build the download URL for a blob inside a parsed SAS container.
-function blobSourceDownloadUrl(parsed, blobName){
-  // Encode each path segment individually so "/" inside a virtual directory
-  // name stays as a separator.
-  const encoded = blobName.split('/').map(encodeURIComponent).join('/');
-  return 'https://' + parsed.accountName + '.blob.core.windows.net/'
-    + encodeURIComponent(parsed.containerName) + '/' + encoded
-    + '?' + parsed.sasToken;
-}
-
-// Call the list-blobs API and parse the XML. Returns
+// Server-side proxy of the Azure Blob "List Blobs" REST call. Browser cannot
+// hit the client storage account directly because CORS is unlikely to be
+// enabled there — clients are reached via SaaS without a comms channel to
+// their Azure admins. The Function makes the call server-to-server and
+// returns the parsed blob array. Returns
 //   { ok, blobs: [{name, size, lastModified, contentType}], error }
 async function blobSourceListContainer(parsed){
-  const url = blobSourceListUrl(parsed);
+  const userId = blobSourceCurrentUserId();
+  if (!userId){
+    return { ok:false, error:'You need to be signed in to browse blob containers.' };
+  }
+  // Reconstruct the SAS URL the Function will use. (Keeping `parsed` as the
+  // input shape so callers don't need to change.)
+  const sasUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '?' + parsed.sasToken;
+
   let resp;
   try {
-    resp = await fetch(url, { method: 'GET' });
-  } catch (e){
-    // Most common cause here is CORS — surface a useful hint.
-    return { ok:false, error:'Network error listing container. This is usually a CORS issue — the client needs to allow https://cygenix.co.uk in the storage account\'s CORS settings. (' + (e && e.message || e) + ')' };
-  }
-  if (!resp.ok){
-    let bodyText = '';
-    try { bodyText = await resp.text(); } catch {}
-    const m = bodyText.match(/<Message[^>]*>([\s\S]*?)<\/Message>/);
-    const msg = m ? m[1].trim().split('\n')[0] : ('HTTP ' + resp.status);
-    return { ok:false, error:'Container list failed: ' + msg };
-  }
-  let xmlText;
-  try { xmlText = await resp.text(); }
-  catch (e){ return { ok:false, error:'Failed to read container response: ' + (e && e.message || e) }; }
-
-  let doc;
-  try {
-    const parser = new DOMParser();
-    doc = parser.parseFromString(xmlText, 'application/xml');
-  } catch (e){
-    return { ok:false, error:'Failed to parse container XML: ' + (e && e.message || e) };
-  }
-  if (doc.querySelector('parsererror')){
-    return { ok:false, error:'Storage account returned invalid XML. The SAS may not have List permission.' };
-  }
-
-  const blobs = [];
-  const nodes = doc.querySelectorAll('Blob');
-  nodes.forEach(n => {
-    const name = (n.querySelector('Name')?.textContent || '').trim();
-    if (!name) return;
-    const props = n.querySelector('Properties');
-    const sizeStr = props?.querySelector('Content-Length')?.textContent || '';
-    const lastMod = props?.querySelector('Last-Modified')?.textContent || '';
-    const ctype   = props?.querySelector('Content-Type')?.textContent || '';
-    blobs.push({
-      name,
-      size: sizeStr ? parseInt(sizeStr, 10) : 0,
-      lastModified: lastMod,
-      contentType: ctype,
+    resp = await fetch(BLOB_PROXY_BASE + '/blob-list?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
+      body: JSON.stringify({ sasUrl }),
     });
-  });
+  } catch (e){
+    return { ok:false, error:'Could not reach Cygenix proxy. Check your internet connection. (' + (e && e.message || e) + ')' };
+  }
+
+  let payload = {};
+  try { payload = await resp.json(); } catch {}
+  if (!resp.ok){
+    const msg = payload && payload.error ? payload.error : ('HTTP ' + resp.status);
+    return { ok:false, error:'List failed: ' + msg };
+  }
+  const blobs = Array.isArray(payload.blobs) ? payload.blobs : [];
   return { ok:true, blobs };
 }
 
@@ -11641,30 +11648,58 @@ async function blobSourceImportFile(blobNameEncoded){
   }
   const blobName = decodeURIComponent(blobNameEncoded);
   const resultEl = document.getElementById('blob-browser-result');
-  if (resultEl){ resultEl.textContent = '⏳ Downloading ' + blobName + '…'; resultEl.style.color = 'var(--text3)'; }
+  if (resultEl){ resultEl.textContent = '⏳ Downloading ' + blobName + ' via Cygenix proxy…'; resultEl.style.color = 'var(--text3)'; }
 
-  const url = blobSourceDownloadUrl(BlobSourceState.activeParsed, blobName);
-  let resp;
-  try {
-    resp = await fetch(url, { method: 'GET' });
-  } catch (e){
+  const userId = blobSourceCurrentUserId();
+  if (!userId){
     if (resultEl){
-      resultEl.textContent = '🔴 Network error downloading. Usually a CORS issue on the client storage account. (' + (e && e.message || e) + ')';
+      resultEl.textContent = '🔴 You need to be signed in to download files.';
       resultEl.style.color = 'var(--red)';
     }
     return;
   }
+
+  // Reconstruct the SAS URL from the parsed shape — same approach as
+  // blobSourceListContainer.
+  const parsed = BlobSourceState.activeParsed;
+  const sasUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
+    + encodeURIComponent(parsed.containerName) + '?' + parsed.sasToken;
+
+  let resp;
+  try {
+    resp = await fetch(BLOB_PROXY_BASE + '/blob-download?code=' + encodeURIComponent(BLOB_PROXY_CODE), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
+      body: JSON.stringify({ sasUrl, blobName }),
+    });
+  } catch (e){
+    if (resultEl){
+      resultEl.textContent = '🔴 Could not reach Cygenix proxy. Check your internet connection. (' + (e && e.message || e) + ')';
+      resultEl.style.color = 'var(--red)';
+    }
+    return;
+  }
+
   if (!resp.ok){
-    let bodyText = '';
-    try { bodyText = await resp.text(); } catch {}
-    const m = bodyText.match(/<Message[^>]*>([\s\S]*?)<\/Message>/);
-    const msg = m ? m[1].trim().split('\n')[0] : ('HTTP ' + resp.status);
+    // Function returns JSON error payloads on non-200; binary body only on 200.
+    let msg = 'HTTP ' + resp.status;
+    try {
+      const payload = await resp.json();
+      if (payload && payload.error) msg = payload.error;
+    } catch {}
+    if (resp.status === 413){
+      msg = 'File too large for proxy (max 100MB). ' + msg;
+    }
     if (resultEl){
       resultEl.textContent = '🔴 Download failed: ' + msg;
       resultEl.style.color = 'var(--red)';
     }
     return;
   }
+
   let arrayBuf;
   try { arrayBuf = await resp.arrayBuffer(); }
   catch (e){
