@@ -11840,8 +11840,11 @@ async function blobSourceImportFile(blobNameEncoded){
   }
 
   // File extends Blob with a `name` property — `impHandleFile` reads file.name
-  // to decide CSV vs Excel, so we must construct a real File.
-  const justName = blobName.split('/').pop() || blobName;
+  // to decide CSV vs Excel, so we must construct a real File. Strip any
+  // trailing slash defensively: some Azure listings include blob names
+  // ending with '/' which would yield an empty filename.
+  const cleanName = blobName.replace(/\/+$/, '');
+  const justName = cleanName.split('/').pop() || cleanName;
   let file;
   try {
     file = new File([arrayBuf], justName, { type: resp.headers.get('Content-Type') || '' });
@@ -11941,8 +11944,11 @@ async function blobSourceDownloadFile(blobNameEncoded){
 
   // Build a Blob, an object URL, and a hidden anchor with `download="..."`
   // so the browser saves the file with its original name (last segment of
-  // the path) rather than the default proxy URL filename.
-  const justName = blobName.split('/').pop() || blobName;
+  // the path) rather than the default proxy URL filename. Strip any
+  // trailing slash defensively — some Azure listings include blob names
+  // ending with '/' which would yield an empty filename.
+  const cleanName = blobName.replace(/\/+$/, '');
+  const justName = cleanName.split('/').pop() || cleanName;
   const blob = new Blob([arrayBuf], { type: resp.headers.get('Content-Type') || 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   try {
@@ -11982,9 +11988,15 @@ async function blobSourceCopyAzcopy(blobNameEncoded){
   const blobName = decodeURIComponent(blobNameEncoded);
   const parsed = BlobSourceState.activeParsed;
 
+  // Some Azure listings include blob names with a trailing slash (artefact
+  // of certain upload tools). Trailing slashes make azcopy interpret the
+  // target as a directory and fail with "cannot use directory as source
+  // without --recursive". Strip them — real files never end in '/'.
+  const cleanName = blobName.replace(/\/+$/, '');
+
   // Encode each path segment so virtual-directory slashes survive but
   // spaces/special characters in filenames get escaped properly.
-  const encodedBlob = blobName.split('/').map(encodeURIComponent).join('/');
+  const encodedBlob = cleanName.split('/').map(encodeURIComponent).join('/');
   const fileUrl = 'https://' + parsed.accountName + '.blob.core.windows.net/'
     + encodeURIComponent(parsed.containerName) + '/' + encodedBlob
     + '?' + parsed.sasToken;
@@ -12016,7 +12028,7 @@ async function blobSourceCopyAzcopy(blobNameEncoded){
 
   if (resultEl){
     if (copied){
-      resultEl.innerHTML = '✓ azcopy command copied. Paste into PowerShell or Terminal to download <strong>' + escP(blobName.split('/').pop() || blobName) + '</strong>. '
+      resultEl.innerHTML = '✓ azcopy command copied. Paste into PowerShell or Terminal to download <strong>' + escP(cleanName.split('/').pop() || cleanName) + '</strong>. '
         + 'Need azcopy? <a href="https://aka.ms/downloadazcopy" target="_blank" rel="noopener" style="color:var(--accent)">Download from Microsoft</a>.';
       resultEl.style.color = 'var(--green)';
     } else {
