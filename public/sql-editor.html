@@ -110,7 +110,23 @@ body.cyg-collapsed .topbar{left:54px}
 
 /* Results table */
 .results-wrap{flex:1;overflow:auto;padding:0.75rem}
-.results-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
+/* width:max-content lets the table grow as wide as its cells need (each cell
+ * is nowrap), which triggers the horizontal scrollbar on the parent
+ * .results-bottom-body container. min-width:100% keeps the empty/short
+ * results from looking awkwardly narrow. */
+.results-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
+/* Make the horizontal/vertical scrollbars on the results body explicitly
+ * visible. The browser default on dark backgrounds (especially macOS overlay
+ * scrollbars) is nearly invisible, leaving users unable to tell scrolling is
+ * possible. Scoped to .results-bottom-body so it doesn't affect the rest of
+ * the page. Firefox uses the scrollbar-* properties; Webkit uses the
+ * ::-webkit-scrollbar pseudo-elements. */
+.results-bottom-body{scrollbar-width:thin;scrollbar-color:#ffffff33 transparent}
+.results-bottom-body::-webkit-scrollbar{width:10px;height:10px}
+.results-bottom-body::-webkit-scrollbar-track{background:transparent}
+.results-bottom-body::-webkit-scrollbar-thumb{background:#ffffff26;border-radius:5px;border:2px solid transparent;background-clip:padding-box}
+.results-bottom-body::-webkit-scrollbar-thumb:hover{background:#ffffff4d;border:2px solid transparent;background-clip:padding-box}
+.results-bottom-body::-webkit-scrollbar-corner{background:transparent}
 .results-table th{background:var(--bg3);padding:0.4rem 0.6rem;text-align:left;font-size:9px;text-transform:uppercase;color:var(--text3);letter-spacing:0.05em;border-bottom:0.5px solid var(--border);position:sticky;top:0;white-space:nowrap}
 .results-table td{padding:0.35rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
 .results-table tr:hover td{background:rgba(255,255,255,0.02)}
@@ -185,7 +201,7 @@ body.fullscreen .script-panel { display:none }
 
 
 /* Pivot view */
-.pivot-table{width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
+.pivot-table{width:max-content;min-width:100%;border-collapse:collapse;font-size:11px;font-family:var(--mono)}
 .pivot-table td:first-child{background:var(--bg3);color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:0.05em;padding:0.35rem 0.75rem;border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);white-space:nowrap;font-weight:600;position:sticky;left:0}
 .pivot-table td:not(:first-child){padding:0.35rem 0.6rem;border-bottom:0.5px solid var(--border);color:var(--text2);border-right:0.5px solid var(--border)}
 .pivot-table th{background:var(--bg4);padding:0.4rem 0.75rem;font-size:9px;color:var(--text3);text-transform:uppercase;border-bottom:0.5px solid var(--border);border-right:0.5px solid var(--border);text-align:left;position:sticky;top:0;white-space:nowrap}
