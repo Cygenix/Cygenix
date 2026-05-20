@@ -594,8 +594,11 @@ body.fullscreen .script-panel { display:none }
     <!-- Drag handle -->
     <div class="resize-handle" id="resize-handle"></div>
 
-    <!-- Results panel (lower third) -->
-    <div class="results-bottom" id="results-bottom" style="height:36px">
+    <!-- Results panel (lower third). Starts collapsed (just the tab strip
+         visible). Uses flex-basis so window resizes don't push the panel
+         past the viewport bottom — that was an old bug that hid the
+         horizontal scrollbar below the visible area. -->
+    <div class="results-bottom" id="results-bottom" style="flex:0 0 36px">
       <div class="results-bottom-tabs">
         <div class="results-bottom-tab active" onclick="switchBottomTab('results')" id="btab-results">📊 Results</div>
         <div class="results-bottom-tab" onclick="switchBottomTab('history')" id="btab-history">🕐 History</div>
@@ -1555,10 +1558,12 @@ function collapseResults() {
   const rb = document.getElementById('results-bottom');
   const eu = document.getElementById('editor-upper');
   if (!rb || !eu) return;
-  rb.style.height = '36px';
-  rb.style.flex   = 'none';
+  // Collapsed = just the 36px tab strip. Use flex-basis so window resizes
+  // don't break the layout.
+  rb.style.flex   = '0 0 36px';
+  rb.style.height = '';   // clear any stale inline height from old code paths
+  eu.style.flex   = '1 1 auto';
   eu.style.height = '';
-  eu.style.flex   = '1';
   eu.style.minHeight = '0';
 }
 
@@ -1566,12 +1571,57 @@ function expandResults() {
   const rb = document.getElementById('results-bottom');
   const eu = document.getElementById('editor-upper');
   if (!rb || !eu) return;
-  const paneH = document.getElementById('editor-pane')?.offsetHeight || window.innerHeight - 52;
-  const resultH = Math.max(200, Math.round(paneH * 0.38));
-  rb.style.height = resultH + 'px';
-  eu.style.flex   = 'none';
-  eu.style.height = (paneH - resultH - 5) + 'px';
+  // Use flex-basis with a fixed pixel target. The parent .editor-pane is a
+  // flex column that fills exactly the viewport minus topbar — so as long as
+  // both children use proper flex sizing, the layout stays inside the
+  // viewport regardless of window size. The editor-upper takes everything
+  // that's left.
+  //
+  // Why not Math.round(paneH * 0.38) like the old code did? Because that
+  // computed a SNAPSHOT pixel height at the moment expand was called. If
+  // the user then resized the window, the panel kept its absolute height —
+  // potentially extending past the viewport bottom and hiding the
+  // horizontal scrollbar. flex-basis with flex-shrink:1 means the panel
+  // naturally adjusts on resize.
+  rb.style.flex   = '0 1 320px';  // base 320px, shrinks if not enough room
+  rb.style.height = '';
+  eu.style.flex   = '1 1 auto';
+  eu.style.height = '';
+  eu.style.minHeight = '80px';
 }
+
+// Watch for window resize and re-clamp the results panel. When the user
+// resizes a window smaller than the original layout, flex:0 1 320px will
+// shrink the panel naturally, but we also need to handle the case where the
+// row-drag handler left absolute pixel heights on the elements (those don't
+// participate in flex shrinking the same way). On resize, if either pane
+// has an inline pixel height, recompute proportionally.
+(function attachResizeClamp(){
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const rb = document.getElementById('results-bottom');
+      const eu = document.getElementById('editor-upper');
+      const pane = document.getElementById('editor-pane');
+      if (!rb || !eu || !pane) return;
+      // If the user has dragged the splitter (which sets inline pixel
+      // heights), recompute to keep the same RATIO with the new pane height.
+      // If they haven't (heights are empty / using flex-basis), do nothing.
+      const ruH = rb.style.height;
+      const euH = eu.style.height;
+      if (!ruH && !euH) return;  // pure flex layout — nothing to fix
+      const paneH  = pane.offsetHeight;
+      const oldTotal = parseFloat(ruH || 0) + parseFloat(euH || 0) + 5;  // +5 for handle
+      if (!oldTotal) return;
+      const ratio = parseFloat(ruH || 0) / oldTotal;
+      const newRu = Math.max(36, Math.min(paneH - 80, Math.round(paneH * ratio)));
+      const newEu = paneH - newRu - 5;
+      rb.style.height = newRu + 'px';
+      eu.style.height = newEu + 'px';
+    }, 100);
+  });
+})();
 
 // ── Bottom panel controls ─────────────────────────────────────────────────────
 function switchBottomTab(tab) {
