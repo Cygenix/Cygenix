@@ -13424,9 +13424,14 @@ function impBatchRender(){
     // View icon — opens the SQL editor with a SELECT TOP 1000 against this
     // unit's table on the connection it was imported into. Only enabled when
     // the unit reached the database (status === 'done' AND we know targetDb).
+    // Tooltip reflects the click behaviour: same-tab when idle, new-tab when
+    // an import is running (so we don't tear down the in-flight loop).
     let viewBtn = '';
     if (u.status === 'done' && u.targetDb){
-      viewBtn = `<button class="btn btn-ghost btn-sm" title="Open in SQL editor" onclick="impBatchView('${escP(u.id)}')" style="padding:2px 6px;font-size:13px;line-height:1">👁</button>`;
+      const tip = impBatch.running
+        ? 'Open in SQL editor (new tab — import in progress)'
+        : 'Open in SQL editor';
+      viewBtn = `<button class="btn btn-ghost btn-sm" title="${tip}" onclick="impBatchView('${escP(u.id)}')" style="padding:2px 6px;font-size:13px;line-height:1">👁</button>`;
     } else {
       viewBtn = `<span style="color:var(--text3);font-size:13px;opacity:0.3;padding:2px 6px" title="${u.status === 'done' ? 'Imported before View support — re-import to enable' : 'Available once import completes'}">👁</span>`;
     }
@@ -13445,9 +13450,22 @@ function impBatchRender(){
   if (countEl) countEl.textContent = impBatch.units.length + ' file' + (impBatch.units.length === 1 ? '' : 's');
 }
 
-// View button handler — navigate to SQL editor with a SELECT TOP 1000 against
+// View button handler — opens the SQL editor with a SELECT TOP 1000 against
 // the imported table on the connection it was imported into. The editor reads
 // the URL params and auto-runs if ?run=1 is present.
+//
+// IMPORTANT — navigation behaviour depends on whether an import is running:
+//
+//   • Import IDLE: same-tab navigation. The user said they want to come back
+//     to the import screen, and restoring batch state from localStorage on
+//     return preserves the list. This is the original requested UX.
+//
+//   • Import RUNNING: new-tab open. Same-tab navigation would tear down the
+//     dashboard's JS context, killing the in-flight import loop. The
+//     currently-running INSERT continues on the server but the JS that
+//     advances to the next file never runs, leaving remaining files marked
+//     "Import interrupted by page navigation" on return. Opening a new tab
+//     keeps the dashboard alive and the batch continues uninterrupted.
 function impBatchView(unitId){
   const unit = impBatch.units.find(u => u.id === unitId);
   if (!unit){
@@ -13458,15 +13476,23 @@ function impBatchView(unitId){
     alert('This row was imported before the View feature was added. Re-import to enable viewing.');
     return;
   }
-  // Save state before navigating so the batch list is preserved on return.
-  impBatchSaveState();
   const conn = unit.targetDb === 'tgt' ? 'target' : 'source';
   // The table name is already fully-qualified (dbo.X_cgx), so just SELECT TOP 1000
   // from it. Using TOP 1000 instead of 100 is closer to SSMS's default and gives
   // a reasonable preview without saturating the results panel.
   const sql = `SELECT TOP 1000 * FROM ${unit.tableName};`;
   const params = new URLSearchParams({ sql: sql, conn: conn, run: '1' });
-  window.location.href = '/sql-editor.html?' + params.toString();
+  const url = '/sql-editor.html?' + params.toString();
+
+  if (impBatch.running){
+    // Don't tear down the running import. Open in a new tab so the user can
+    // peek at completed tables while the rest of the batch keeps importing.
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } else {
+    // Idle — same-tab navigation. Save state first so we restore on return.
+    impBatchSaveState();
+    window.location.href = url;
+  }
 }
 
 function impBatchSummary(msg, kind){
