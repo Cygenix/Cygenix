@@ -2226,24 +2226,68 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
       </div>
 
-      <!-- Tab: Data import — CSV only in Session 1. Excel/JSON/type override come in Session 2. -->
+      <!-- Tab: Data import — single-file flow (with schema review) OR batch flow when multiple files
+           are selected. Batch flow auto-targets the SOURCE database, suffixes table names with _cgx,
+           and falls back to NVARCHAR(MAX) on any column that fails type validation. -->
       <div id="conn-tab-import" style="display:none">
         <!-- Step 1: file + parse -->
         <div class="panel" style="margin-bottom:1rem">
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
-            <div style="font-size:13px;font-weight:600">1 · Choose a file</div>
+            <div style="font-size:13px;font-weight:600">1 · Choose a file (or several)</div>
             <span style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 8px;border-radius:100px">CSV · Excel</span>
             <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Up to ~50,000 rows per file. JSON coming in next release.</span>
           </div>
 
           <div id="imp-drop" class="imp-drop" onclick="document.getElementById('imp-file').click()" ondragover="impDragOver(event)" ondragleave="impDragLeave(event)" ondrop="impDrop(event)">
-            <input type="file" id="imp-file" accept=".csv,.tsv,.txt,.xlsx,.xls" style="display:none" onchange="impHandleFile(this.files[0])">
+            <input type="file" id="imp-file" accept=".csv,.tsv,.txt,.xlsx,.xls" multiple style="display:none" onchange="impHandleFiles(this.files)">
             <div style="font-size:28px;margin-bottom:0.4rem;opacity:0.5">📄</div>
-            <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop a CSV or Excel file here or click to browse</div>
-            <div style="font-size:11px;color:var(--text3)">First row should contain column headers · Multi-sheet workbooks will prompt for a sheet</div>
+            <div style="font-size:13px;color:var(--text);font-weight:500;margin-bottom:0.25rem">Drop one or more CSV / Excel files here, or click to browse</div>
+            <div style="font-size:11px;color:var(--text3)">Single file → schema preview · Multiple files → auto-import to <strong>source</strong> DB as <code style="font-family:var(--mono)">filename_cgx</code></div>
           </div>
 
           <div id="imp-file-meta" style="display:none;margin-top:0.75rem;padding:0.75rem 0.9rem;background:var(--bg3);border-radius:var(--r);font-family:var(--mono);font-size:11px"></div>
+        </div>
+
+        <!-- Batch panel — only shown when 2+ files are selected. Auto-runs through every file
+             without showing the schema preview or target picker. Per-file status updates inline. -->
+        <div id="imp-batch-wrap" class="panel" style="display:none;margin-bottom:1rem">
+          <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem;flex-wrap:wrap">
+            <div style="font-size:13px;font-weight:600">Batch import</div>
+            <span id="imp-batch-count" style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 8px;border-radius:100px">0 files</span>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">
+              <label style="font-size:11px;color:var(--text3)">Destination</label>
+              <select id="imp-batch-db" class="form-input" style="font-size:11.5px;padding:4px 8px;width:auto">
+                <option value="src" selected>Source database</option>
+                <option value="tgt">Target database</option>
+              </select>
+              <label style="font-size:11px;color:var(--text3);margin-left:0.5rem">If table exists</label>
+              <select id="imp-batch-exists" class="form-input" style="font-size:11.5px;padding:4px 8px;width:auto">
+                <option value="append" selected>Append rows</option>
+                <option value="overwrite">Overwrite (drop + recreate)</option>
+                <option value="skip">Skip file</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="font-size:11px;color:var(--text3);margin-bottom:0.5rem;line-height:1.55">
+            Every file becomes a table named <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">dbo.&lt;filename&gt;_cgx</code> in the selected database.
+            Multi-sheet Excel workbooks produce one table per sheet (named <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">&lt;file&gt;_&lt;sheet&gt;_cgx</code>).
+            Columns that fail type checks are silently converted to <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">NVARCHAR(MAX)</code> — no prompts.
+          </div>
+
+          <div style="overflow-x:auto">
+            <table class="imp-schema-table" id="imp-batch-table">
+              <thead><tr><th style="width:34%">File</th><th style="width:18%">Table</th><th style="width:10%">Rows</th><th style="width:8%">Cols</th><th>Status</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div id="imp-batch-summary" style="font-size:12px;color:var(--text3);font-family:var(--mono);min-height:18px;margin-top:0.75rem;padding:0.5rem 0.75rem;background:var(--bg3);border-radius:var(--r);display:none"></div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+            <button id="imp-batch-run-btn" class="btn btn-primary btn-sm" onclick="impBatchRun()">⬆ Import all files</button>
+            <button class="btn btn-ghost btn-sm" onclick="impBatchReset()">✕ Clear batch</button>
+          </div>
         </div>
 
         <!-- Step 2: schema preview -->
@@ -12064,8 +12108,27 @@ function impDragLeave(e){ document.getElementById('imp-drop')?.classList.remove(
 function impDrop(e){
   e.preventDefault();
   document.getElementById('imp-drop')?.classList.remove('drag-over');
-  const f = e.dataTransfer?.files?.[0];
-  if (f) impHandleFile(f);
+  const files = e.dataTransfer?.files;
+  if (files && files.length) impHandleFiles(files);
+}
+
+// Router: single file → existing schema-preview flow; multiple files → batch flow.
+// Called from both the file input's onchange and impDrop.
+function impHandleFiles(fileList){
+  if (!fileList || fileList.length === 0) return;
+  if (fileList.length === 1){
+    // Make sure the batch panel is hidden in case it was left open from a prior batch
+    const bw = document.getElementById('imp-batch-wrap');
+    if (bw) bw.style.display = 'none';
+    impHandleFile(fileList[0]);
+  } else {
+    // Hide the single-file schema/target panels so the UI focuses on the batch view
+    const sw = document.getElementById('imp-schema-wrap');
+    const tw = document.getElementById('imp-target-wrap');
+    if (sw) sw.style.display = 'none';
+    if (tw) tw.style.display = 'none';
+    impBatchPrepare(Array.from(fileList));
+  }
 }
 
 function impHandleFile(file){
@@ -12822,6 +12885,535 @@ async function impDbCall(conn, body){
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// DATA IMPORT — BATCH MODE
+// ──────────────────────────────────────────────────────────────────────────
+// Triggered when the user drops or selects two or more files. The single-file
+// flow (impHandleFile → schema preview → manual target picker) is bypassed
+// entirely. Instead, every file goes through the same parse/infer/import
+// pipeline automatically with these defaults:
+//
+//   • Destination = source DB (configurable in the batch panel)
+//   • Table name  = dbo.<filename-stem>_cgx
+//                   (multi-sheet Excel → <stem>_<sheet>_cgx, one table per sheet)
+//   • Type policy = use inferred types, but on ANY validation failure for a
+//                   column, silently switch that column to NVARCHAR(MAX) and
+//                   retry. No modal, no user prompt.
+//   • If exists  = append rows by default (configurable: append / overwrite / skip)
+//
+// Files are processed sequentially so the Azure SQL Free tier isn't hammered
+// and so per-file status reporting stays clean.
+// ══════════════════════════════════════════════════════════════════════════
+
+// In-memory state for the batch. Each entry tracks one file/sheet pair as a
+// distinct import unit (so a single workbook with 3 sheets becomes 3 entries).
+const impBatch = {
+  // Array of { id, file, fileName, sheetName, displayName, tableName,
+  //            status:'pending'|'parsing'|'parsed'|'importing'|'done'|'error',
+  //            rows, columns, rowCount, error, importedRows }
+  units: [],
+  running: false,
+  cancelled: false,
+};
+
+// Slugify a filename or sheet name into a SQL-Server-safe identifier stem.
+// Strips file extension, replaces non-alphanumeric with underscore, collapses
+// runs of underscores, trims leading underscores. Returns 'Imported' as a
+// last resort so we never produce an empty table name.
+function impBatchSlug(s){
+  if (!s) return 'Imported';
+  let out = String(s)
+    .replace(/\.(csv|tsv|txt|xlsx|xls)$/i, '')
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return out || 'Imported';
+}
+
+// Build the per-file table name with the _cgx suffix. Sheet name appended for
+// multi-sheet workbooks. Schema is always dbo (Cygenix doesn't expose a schema
+// picker in the import flow yet).
+function impBatchTableName(fileName, sheetName){
+  const fileStem = impBatchSlug(fileName);
+  if (sheetName){
+    return `dbo.${fileStem}_${impBatchSlug(sheetName)}_cgx`;
+  }
+  return `dbo.${fileStem}_cgx`;
+}
+
+// Render the batch table. Called once on prepare and after every status flip.
+function impBatchRender(){
+  const tbl = document.getElementById('imp-batch-table');
+  if (!tbl) return;
+  const tbody = tbl.querySelector('tbody');
+  if (!tbody) return;
+
+  tbody.innerHTML = impBatch.units.map(u => {
+    let statusHtml = '';
+    if (u.status === 'pending')    statusHtml = '<span style="color:var(--text3)">Waiting…</span>';
+    else if (u.status === 'parsing')   statusHtml = '<span style="color:var(--text2)">⏳ Parsing…</span>';
+    else if (u.status === 'parsed')    statusHtml = '<span style="color:var(--text2)">✓ Parsed · waiting to import</span>';
+    else if (u.status === 'importing') statusHtml = `<span style="color:var(--text2)">⏳ Importing ${(u.importedRows||0).toLocaleString()}/${(u.rowCount||0).toLocaleString()}…</span>`;
+    else if (u.status === 'done')      statusHtml = `<span style="color:var(--green)">✓ Done · ${(u.rowCount||0).toLocaleString()} rows</span>`;
+    else if (u.status === 'error')     statusHtml = `<span style="color:var(--red)" title="${escP(u.error||'')}">🔴 ${escP((u.error||'Failed').slice(0,80))}</span>`;
+
+    return `<tr>
+      <td title="${escP(u.displayName)}">${escP(u.displayName.length > 50 ? u.displayName.slice(0,47)+'…' : u.displayName)}</td>
+      <td style="font-family:var(--mono);font-size:11px">${escP(u.tableName)}</td>
+      <td>${u.rowCount != null ? u.rowCount.toLocaleString() : '—'}</td>
+      <td>${u.columns ? u.columns.length : '—'}</td>
+      <td>${statusHtml}</td>
+    </tr>`;
+  }).join('');
+
+  const countEl = document.getElementById('imp-batch-count');
+  if (countEl) countEl.textContent = impBatch.units.length + ' file' + (impBatch.units.length === 1 ? '' : 's');
+}
+
+function impBatchSummary(msg, kind){
+  const el = document.getElementById('imp-batch-summary');
+  if (!el) return;
+  el.style.display = 'block';
+  el.textContent = msg;
+  el.style.color = kind === 'err' ? 'var(--red)'
+                 : kind === 'ok'  ? 'var(--green)'
+                 : 'var(--text2)';
+}
+
+// Prepare the batch by parsing every file in parallel, then rendering. The
+// import itself still happens sequentially when the user hits Run.
+async function impBatchPrepare(files){
+  impBatch.units = [];
+  impBatch.cancelled = false;
+
+  // Reset the meta line from any prior single-file run
+  const meta = document.getElementById('imp-file-meta');
+  if (meta){ meta.style.display = 'none'; meta.innerHTML = ''; }
+
+  // Validate file types up front; reject anything unsupported with a row entry
+  // (so the user can see exactly what was ignored).
+  for (const f of files){
+    if (!/\.(csv|tsv|txt|xlsx|xls)$/i.test(f.name)){
+      impBatch.units.push({
+        id: 'u' + Math.random().toString(36).slice(2,9),
+        file: f, fileName: f.name, sheetName: null,
+        displayName: f.name, tableName: '—',
+        status:'error', error:'Unsupported file type (need .csv/.tsv/.txt/.xlsx/.xls)',
+        rows:null, columns:null, rowCount:null, importedRows:0,
+      });
+      continue;
+    }
+    if (f.size > 100 * 1024 * 1024){
+      impBatch.units.push({
+        id: 'u' + Math.random().toString(36).slice(2,9),
+        file: f, fileName: f.name, sheetName: null,
+        displayName: f.name, tableName: '—',
+        status:'error', error:'File is over 100MB',
+        rows:null, columns:null, rowCount:null, importedRows:0,
+      });
+      continue;
+    }
+    // Stub a unit per file. For Excel we expand to one unit per sheet during
+    // parse (so we can't know the final count until parsing completes).
+    impBatch.units.push({
+      id: 'u' + Math.random().toString(36).slice(2,9),
+      file: f, fileName: f.name, sheetName: null,
+      displayName: f.name,
+      tableName: impBatchTableName(f.name, null),
+      status:'pending',
+      rows:null, columns:null, rowCount:null, error:null, importedRows:0,
+    });
+  }
+
+  document.getElementById('imp-batch-wrap').style.display = 'block';
+  impBatchRender();
+  impBatchSummary('Parsing files…', 'info');
+
+  // Parse all units in parallel. Each parse may expand a single unit into
+  // multiple (one per Excel sheet), so we rebuild the units array as we go.
+  const parsePromises = impBatch.units
+    .filter(u => u.status === 'pending')
+    .map(u => impBatchParseUnit(u));
+
+  await Promise.allSettled(parsePromises);
+
+  impBatchRender();
+  const ok = impBatch.units.filter(u => u.status === 'parsed').length;
+  const bad = impBatch.units.filter(u => u.status === 'error').length;
+  if (ok === 0){
+    impBatchSummary(`No files could be parsed (${bad} failed). Fix the issues above and try again.`, 'err');
+  } else {
+    impBatchSummary(`Parsed ${ok} table${ok===1?'':'s'} from ${files.length} file${files.length===1?'':'s'}${bad?` · ${bad} failed`:''}. Click “Import all files” to push them to the database.`, 'info');
+  }
+}
+
+// Parse a single unit. CSV is straightforward. Excel may produce N sub-units —
+// in which case we replace the original unit in impBatch.units with N new units.
+function impBatchParseUnit(unit){
+  return new Promise((resolve) => {
+    unit.status = 'parsing';
+    impBatchRender();
+
+    const f = unit.file;
+    const isCSV = /\.(csv|tsv|txt)$/i.test(f.name);
+
+    if (isCSV){
+      if (typeof Papa === 'undefined'){
+        unit.status = 'error';
+        unit.error = 'CSV parser failed to load (PapaParse missing). Reload the page.';
+        return resolve();
+      }
+      Papa.parse(f, {
+        header: true,
+        skipEmptyLines: true,
+        dynamicTyping: false,
+        transformHeader: h => String(h || '').trim(),
+        complete: (result) => {
+          try {
+            const rows = result.data || [];
+            impBatchFinalizeUnit(unit, rows);
+          } catch (e){
+            unit.status = 'error';
+            unit.error = 'CSV finalize failed: ' + (e?.message || String(e));
+          }
+          resolve();
+        },
+        error: (err) => {
+          unit.status = 'error';
+          unit.error = 'CSV parse failed: ' + (err?.message || String(err));
+          resolve();
+        }
+      });
+      return;
+    }
+
+    // Excel
+    if (typeof XLSX === 'undefined'){
+      unit.status = 'error';
+      unit.error = 'Excel parser failed to load (XLSX missing). Reload the page.';
+      return resolve();
+    }
+    const reader = new FileReader();
+    reader.onerror = () => { unit.status = 'error'; unit.error = 'Failed to read file.'; resolve(); };
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target.result);
+        const wb = XLSX.read(data, { type:'array', cellDates:true });
+        const sheets = wb.SheetNames || [];
+        if (sheets.length === 0){
+          unit.status = 'error';
+          unit.error = 'Workbook has no sheets.';
+          return resolve();
+        }
+        if (sheets.length === 1){
+          const ws = wb.Sheets[sheets[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false, blankrows:false });
+          impBatchFinalizeUnit(unit, rows);
+          return resolve();
+        }
+        // Multi-sheet — expand into one unit per sheet, replacing this unit
+        // in-place in impBatch.units.
+        const idx = impBatch.units.findIndex(u => u.id === unit.id);
+        const expanded = sheets.map(sheetName => {
+          const ws = wb.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(ws, { defval:'', raw:false, blankrows:false });
+          const sub = {
+            id: 'u' + Math.random().toString(36).slice(2,9),
+            file: unit.file,
+            fileName: unit.fileName,
+            sheetName,
+            displayName: `${unit.fileName} [${sheetName}]`,
+            tableName: impBatchTableName(unit.fileName, sheetName),
+            status:'parsing',
+            rows:null, columns:null, rowCount:null, error:null, importedRows:0,
+          };
+          impBatchFinalizeUnit(sub, rows);
+          return sub;
+        });
+        if (idx >= 0){
+          impBatch.units.splice(idx, 1, ...expanded);
+        }
+        resolve();
+      } catch (e) {
+        unit.status = 'error';
+        unit.error = 'Excel parse failed: ' + (e?.message || String(e));
+        resolve();
+      }
+    };
+    reader.readAsArrayBuffer(f);
+  });
+}
+
+// Apply parsed rows to a unit: row-count check, schema inference. Mirrors
+// impFinalizeRows but writes into the unit object instead of impState.
+function impBatchFinalizeUnit(unit, rows){
+  if (!rows || rows.length === 0){
+    unit.status = 'error';
+    unit.error = 'File appears empty or has no data rows.';
+    return;
+  }
+  if (rows.length > 50000){
+    unit.status = 'error';
+    unit.error = `File has ${rows.length.toLocaleString()} rows. Max supported is 50,000.`;
+    return;
+  }
+  const firstRow = rows[0];
+  const cols = Object.keys(firstRow || {}).filter(k => k != null && k !== '');
+  if (cols.length === 0){
+    unit.status = 'error';
+    unit.error = 'No column headers detected. Make sure the first row contains header names.';
+    return;
+  }
+  unit.rows = rows;
+  unit.rowCount = rows.length;
+  unit.columns = impInferSchema(cols, rows);
+  unit.status = 'parsed';
+}
+
+// Top-level Run handler — sequential import across every parsed unit.
+async function impBatchRun(){
+  if (impBatch.running){
+    impBatchSummary('Import already in progress…', 'info');
+    return;
+  }
+  const ready = impBatch.units.filter(u => u.status === 'parsed');
+  if (ready.length === 0){
+    impBatchSummary('No parsed files to import. Drop some files first.', 'err');
+    return;
+  }
+
+  const dbChoice = document.getElementById('imp-batch-db').value || 'src';
+  const conn = impGetConn(dbChoice);
+  if (!conn){
+    const target = dbChoice === 'src' ? 'source' : 'target';
+    impBatchSummary(`No ${target} database connection configured. Open the "Database connections" tab, configure ${target}, click "Connect & test" (green dot), then press "Save connections".`, 'err');
+    return;
+  }
+  const existsMode = document.getElementById('imp-batch-exists').value || 'append';
+
+  impBatch.running = true;
+  const btn = document.getElementById('imp-batch-run-btn');
+  if (btn){ btn.disabled = true; btn.textContent = 'Importing…'; }
+  impBatchSummary(`Starting import of ${ready.length} file${ready.length===1?'':'s'} into ${dbChoice==='src'?'source':'target'} database…`, 'info');
+
+  let done = 0, failed = 0;
+  for (const unit of ready){
+    if (impBatch.cancelled) break;
+    try {
+      await impBatchImportUnit(unit, conn, existsMode);
+      done++;
+    } catch (e){
+      unit.status = 'error';
+      unit.error = e?.message || String(e);
+      failed++;
+      impBatchRender();
+    }
+  }
+
+  impBatch.running = false;
+  if (btn){ btn.disabled = false; btn.textContent = '⬆ Import all files'; }
+  impBatchSummary(`Finished. ${done} succeeded${failed?`, ${failed} failed`:''}. ${impBatch.units.filter(u=>u.status==='done').reduce((a,u)=>a+(u.rowCount||0),0).toLocaleString()} rows total.`, failed ? (done?'info':'err') : 'ok');
+}
+
+// Import one unit. Workflow:
+//   1. Check if the target table exists
+//   2. If yes, honour the user's "if exists" policy (append / overwrite / skip)
+//   3. Build the CREATE TABLE (skipped for append)
+//   4. Insert rows in 500-row batches
+//   5. On ANY error during validation or insert that looks like a type mismatch,
+//      promote ALL non-string columns to NVARCHAR(MAX) and retry from CREATE.
+//      This is the auto-recovery the user asked for: "defaulting to nvarchar(max)
+//      on problem fields".
+async function impBatchImportUnit(unit, conn, existsMode){
+  unit.status = 'importing';
+  unit.importedRows = 0;
+  impBatchRender();
+
+  // ── Pre-flight: silently coerce any bad column to NVARCHAR(MAX) before we
+  // even talk to the DB. This is the cleanest place to apply Curtis's
+  // "automatically handle errors → default to NVARCHAR(MAX) on problem fields"
+  // rule, because we have the parsed rows in memory and can scan them quickly.
+  const issues = impBatchValidate(unit);
+  if (issues.affectedCols.size > 0){
+    issues.affectedCols.forEach(colName => {
+      const col = unit.columns.find(c => c.name === colName);
+      if (col) col.chosenType = 'max';
+    });
+  }
+
+  // ── Existence check
+  const tableName = unit.tableName;
+  const probeSQL = `SELECT CASE WHEN OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NULL THEN 0 ELSE 1 END AS [exists];`;
+  let exists = false;
+  try {
+    const res = await impDbCall(conn, { action:'execute', sql: probeSQL });
+    exists = (res?.rows?.[0]?.exists === 1) || (res?.rows?.[0]?.['(No column name)'] === 1);
+  } catch (e){
+    throw new Error('Probe failed: ' + (e?.message || e));
+  }
+
+  let mode = 'create';
+  if (exists){
+    if (existsMode === 'skip'){
+      unit.status = 'error';
+      unit.error = `Table ${tableName} already exists — skipped per batch policy.`;
+      impBatchRender();
+      return;
+    }
+    mode = existsMode;  // 'append' or 'overwrite'
+  }
+
+  await impBatchExecuteUnit(unit, conn, mode);
+}
+
+// Scan a unit's rows against its inferred types. Returns the set of column
+// names with at least one value that won't fit. NVARCHAR (string/max) columns
+// are skipped — they accept anything.
+function impBatchValidate(unit){
+  const cols = unit.columns || [];
+  const rows = unit.rows || [];
+  const affectedCols = new Set();
+
+  const fitsType = (v, type) => {
+    if (v === null || v === undefined || v === '') return true;
+    const s = String(v).trim();
+    if (/^(null|n\/a|na|-|—)$/i.test(s)) return true;
+    if (type === 'string' || type === 'max') return true;
+    if (type === 'int'){
+      if (!/^-?\d+$/.test(s)) return false;
+      return Math.abs(Number(s)) < 2**31;
+    }
+    if (type === 'bigint'){
+      if (!/^-?\d+$/.test(s)) return false;
+      return Math.abs(Number(s)) < 2**53;
+    }
+    if (type === 'decimal'){
+      return /^-?\d+(\.\d+)?$/.test(s) || /^-?\.\d+$/.test(s);
+    }
+    if (type === 'money'){
+      const cleaned = s.replace(/[£$€,\s]/g, '');
+      return /^-?\d+(\.\d+)?$/.test(cleaned) || /^-?\.\d+$/.test(cleaned);
+    }
+    if (type === 'bool'){
+      return /^(true|false|yes|no|y|n|1|0)$/i.test(s);
+    }
+    if (type === 'date' || type === 'datetime'){
+      const d = new Date(s);
+      return !isNaN(d.getTime());
+    }
+    return true;
+  };
+
+  for (let i = 0; i < rows.length; i++){
+    const r = rows[i];
+    for (const c of cols){
+      if (affectedCols.has(c.name)) continue;  // already flagged — skip the rest
+      const v = r[c.name];
+      const type = c.chosenType || c.inferredType;
+      if (!fitsType(v, type)) affectedCols.add(c.name);
+    }
+  }
+  return { affectedCols };
+}
+
+// Build DDL + run INSERTs for one unit. On a DB-side error that looks like a
+// type mismatch (msg includes "convert", "overflow", "truncat", or "incorrect
+// syntax near 'NULL'"), we fall back to NVARCHAR(MAX) for ALL non-string
+// columns and retry once. This is the safety net for cases where our client-
+// side validation missed something (eg. exotic date formats SQL Server rejects
+// but Date.parse accepts).
+async function impBatchExecuteUnit(unit, conn, mode){
+  const cols = unit.columns;
+  const rows = unit.rows;
+  const tableName = unit.tableName;
+
+  const buildDDL = (m) => {
+    const colsSql = cols.map(c => {
+      const nullness = c.nullable === false ? 'NOT NULL' : 'NULL';
+      return `[${c.name.replace(/]/g, ']]')}] ${impSqlType(c)} ${nullness}`;
+    }).join(',\n  ');
+    const dropFirst = (m === 'overwrite')
+      ? `IF OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NOT NULL DROP TABLE ${tableName};\n`
+      : '';
+    return `${dropFirst}CREATE TABLE ${tableName} (\n  ${colsSql}\n);`;
+  };
+
+  const looksLikeTypeError = (msg) => {
+    if (!msg) return false;
+    const m = String(msg).toLowerCase();
+    return m.includes('convert') || m.includes('overflow') || m.includes('truncat')
+        || m.includes('out of range') || m.includes('arithmetic')
+        || m.includes('conversion failed');
+  };
+
+  let attempts = 0;
+  while (attempts < 2){
+    attempts++;
+    try {
+      if (mode === 'create' || mode === 'overwrite'){
+        await impDbCall(conn, { action:'execute', sql: buildDDL(mode) });
+      }
+
+      // Insert in batches of 500 rows
+      const BATCH = 500;
+      const colNames = cols.map(c => `[${c.name.replace(/]/g, ']]')}]`).join(',');
+      unit.importedRows = 0;
+      impBatchRender();
+
+      for (let i = 0; i < rows.length; i += BATCH){
+        const slice = rows.slice(i, i + BATCH);
+        const valuesSql = slice.map(r => {
+          const tuple = cols.map(c => impLiteral(r[c.name], c.chosenType || c.inferredType));
+          return '(' + tuple.join(',') + ')';
+        }).join(',\n');
+        const batchSql = `INSERT INTO ${tableName} (${colNames}) VALUES\n${valuesSql};`;
+        await impDbCall(conn, { action:'execute', sql: batchSql });
+        unit.importedRows += slice.length;
+        impBatchRender();
+      }
+
+      unit.status = 'done';
+      impBatchRender();
+      return;
+    } catch (e){
+      const msg = e?.message || String(e);
+      if (attempts === 1 && looksLikeTypeError(msg)){
+        // Promote every non-string column to NVARCHAR(MAX) and retry. We also
+        // need to flip mode to 'overwrite' if it was 'create' so the partially-
+        // created table from the first attempt (if any) is rebuilt cleanly;
+        // for 'append' we leave alone since the table belongs to existing data.
+        cols.forEach(c => {
+          if (c.chosenType !== 'string' && c.chosenType !== 'max') c.chosenType = 'max';
+        });
+        if (mode === 'create') mode = 'overwrite';
+        console.warn(`[batch-import] ${tableName}: type error on attempt 1 ("${msg}"), retrying with all non-string columns as NVARCHAR(MAX).`);
+        continue;
+      }
+      // Either it's not a type error, or we already retried. Fail the unit.
+      throw new Error(msg);
+    }
+  }
+}
+
+function impBatchReset(){
+  impBatch.units = [];
+  impBatch.running = false;
+  impBatch.cancelled = false;
+  const wrap = document.getElementById('imp-batch-wrap');
+  if (wrap) wrap.style.display = 'none';
+  const summary = document.getElementById('imp-batch-summary');
+  if (summary){ summary.style.display = 'none'; summary.textContent = ''; }
+  const fileInput = document.getElementById('imp-file');
+  if (fileInput) fileInput.value = '';
+  const tbody = document.querySelector('#imp-batch-table tbody');
+  if (tbody) tbody.innerHTML = '';
+}
+
+// Expose for inline handlers
+window.impHandleFiles  = impHandleFiles;
+window.impBatchRun     = impBatchRun;
+window.impBatchReset   = impBatchReset;
 
 // Update nav dot on load
 setTimeout(updateConnDots, 500);
