@@ -2278,7 +2278,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
           <div style="overflow-x:auto">
             <table class="imp-schema-table" id="imp-batch-table">
-              <thead><tr><th style="width:34%">File</th><th style="width:18%">Table</th><th style="width:10%">Rows</th><th style="width:8%">Cols</th><th>Status</th></tr></thead>
+              <thead><tr><th style="width:32%">File</th><th style="width:18%">Table</th><th style="width:10%">Rows</th><th style="width:8%">Cols</th><th>Status</th><th style="width:36px;text-align:center" title="Open in SQL editor"></th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -13302,11 +13302,83 @@ async function impDbCall(conn, body){
 const impBatch = {
   // Array of { id, file, fileName, sheetName, displayName, tableName,
   //            status:'pending'|'parsing'|'parsed'|'importing'|'done'|'error',
-  //            rows, columns, rowCount, error, importedRows }
+  //            rows, columns, rowCount, error, importedRows,
+  //            streaming, streamingFile, targetDb }
+  // targetDb is 'src' or 'tgt', recorded at import time. Used by the View
+  // button to send the user to the SQL editor with the correct connection.
   units: [],
   running: false,
   cancelled: false,
 };
+
+// ─── Batch persistence ─────────────────────────────────────────────────────
+// We persist completed batch state to localStorage so users can navigate away
+// (e.g. to the SQL editor via the View button) and come back to see what they
+// imported. Only serialisable fields are saved — File objects are dropped, so
+// restored units can be VIEWED but not re-imported or re-streamed. The
+// localStorage key holds the most recent batch only; starting a new batch
+// (drop more files) replaces it.
+const IMP_BATCH_STORAGE_KEY = 'cygenix_batch_import_history';
+
+function impBatchSerialize(){
+  // Strip the File reference and the rows array (large, and rows are gone
+  // anyway after a streaming import). Keep everything needed to render the
+  // table + wire up the View button.
+  return impBatch.units.map(u => ({
+    id: u.id,
+    fileName: u.fileName,
+    sheetName: u.sheetName || null,
+    displayName: u.displayName,
+    tableName: u.tableName,
+    status: u.status,
+    rowCount: u.rowCount || null,
+    columns: u.columns ? u.columns.map(c => ({ name: c.name })) : null,  // just names — full schema isn't needed post-import
+    error: u.error || null,
+    importedRows: u.importedRows || 0,
+    targetDb: u.targetDb || null,
+    // Mark restored units so the renderer can grey out actions that need a live File
+    restored: true,
+  }));
+}
+
+function impBatchSaveState(){
+  try {
+    if (!impBatch.units || impBatch.units.length === 0){
+      localStorage.removeItem(IMP_BATCH_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(IMP_BATCH_STORAGE_KEY, JSON.stringify(impBatchSerialize()));
+  } catch (e){
+    console.warn('[batch-import] Failed to persist batch state:', e);
+  }
+}
+
+function impBatchRestoreState(){
+  try {
+    const raw = localStorage.getItem(IMP_BATCH_STORAGE_KEY);
+    if (!raw) return false;
+    const units = JSON.parse(raw);
+    if (!Array.isArray(units) || units.length === 0) return false;
+    // Normalise any in-flight statuses — these can occur if the user
+    // navigated away during an import. They'd otherwise render with a
+    // spinner that never resolves.
+    units.forEach(u => {
+      if (u.status === 'importing' || u.status === 'parsing'){
+        u.status = 'error';
+        u.error = u.error || 'Import interrupted by page navigation';
+      }
+    });
+    impBatch.units = units;
+    const wrap = document.getElementById('imp-batch-wrap');
+    if (wrap) wrap.style.display = 'block';
+    impBatchRender();
+    impBatchSummary(`Restored last batch (${units.length} file${units.length===1?'':'s'}). View imported tables via the eye icons; drop new files to start a fresh batch.`, 'info');
+    return true;
+  } catch (e){
+    console.warn('[batch-import] Failed to restore batch state:', e);
+    return false;
+  }
+}
 
 // Slugify a filename or sheet name into a SQL-Server-safe identifier stem.
 // Strips file extension, replaces non-alphanumeric with underscore, collapses
@@ -13349,17 +13421,52 @@ function impBatchRender(){
     else if (u.status === 'done')      statusHtml = `<span style="color:var(--green)">✓ Done · ${(u.rowCount||0).toLocaleString()} rows</span>`;
     else if (u.status === 'error')     statusHtml = `<span style="color:var(--red)" title="${escP(u.error||'')}">🔴 ${escP((u.error||'Failed').slice(0,80))}</span>`;
 
+    // View icon — opens the SQL editor with a SELECT TOP 1000 against this
+    // unit's table on the connection it was imported into. Only enabled when
+    // the unit reached the database (status === 'done' AND we know targetDb).
+    let viewBtn = '';
+    if (u.status === 'done' && u.targetDb){
+      viewBtn = `<button class="btn btn-ghost btn-sm" title="Open in SQL editor" onclick="impBatchView('${escP(u.id)}')" style="padding:2px 6px;font-size:13px;line-height:1">👁</button>`;
+    } else {
+      viewBtn = `<span style="color:var(--text3);font-size:13px;opacity:0.3;padding:2px 6px" title="${u.status === 'done' ? 'Imported before View support — re-import to enable' : 'Available once import completes'}">👁</span>`;
+    }
+
     return `<tr>
       <td title="${escP(u.displayName)}">${escP(u.displayName.length > 50 ? u.displayName.slice(0,47)+'…' : u.displayName)}</td>
       <td style="font-family:var(--mono);font-size:11px">${escP(u.tableName)}</td>
       <td>${u.rowCount != null ? u.rowCount.toLocaleString() : '—'}</td>
       <td>${u.columns ? u.columns.length : '—'}</td>
       <td>${statusHtml}</td>
+      <td style="text-align:center;width:36px">${viewBtn}</td>
     </tr>`;
   }).join('');
 
   const countEl = document.getElementById('imp-batch-count');
   if (countEl) countEl.textContent = impBatch.units.length + ' file' + (impBatch.units.length === 1 ? '' : 's');
+}
+
+// View button handler — navigate to SQL editor with a SELECT TOP 1000 against
+// the imported table on the connection it was imported into. The editor reads
+// the URL params and auto-runs if ?run=1 is present.
+function impBatchView(unitId){
+  const unit = impBatch.units.find(u => u.id === unitId);
+  if (!unit){
+    alert('Could not find that table in the batch — try refreshing the page.');
+    return;
+  }
+  if (!unit.targetDb){
+    alert('This row was imported before the View feature was added. Re-import to enable viewing.');
+    return;
+  }
+  // Save state before navigating so the batch list is preserved on return.
+  impBatchSaveState();
+  const conn = unit.targetDb === 'tgt' ? 'target' : 'source';
+  // The table name is already fully-qualified (dbo.X_cgx), so just SELECT TOP 1000
+  // from it. Using TOP 1000 instead of 100 is closer to SSMS's default and gives
+  // a reasonable preview without saturating the results panel.
+  const sql = `SELECT TOP 1000 * FROM ${unit.tableName};`;
+  const params = new URLSearchParams({ sql: sql, conn: conn, run: '1' });
+  window.location.href = '/sql-editor.html?' + params.toString();
 }
 
 function impBatchSummary(msg, kind){
@@ -13377,6 +13484,9 @@ function impBatchSummary(msg, kind){
 async function impBatchPrepare(files){
   impBatch.units = [];
   impBatch.cancelled = false;
+  // Dropping new files starts a fresh batch — wipe the persisted history so
+  // restored "done" rows from a prior batch don't linger in the UI.
+  try { localStorage.removeItem(IMP_BATCH_STORAGE_KEY); } catch {}
 
   // Reset the meta line from any prior single-file run
   const meta = document.getElementById('imp-file-meta');
@@ -13679,6 +13789,11 @@ async function impBatchRun(){
   let done = 0, failed = 0;
   for (const unit of ready){
     if (impBatch.cancelled) break;
+    // Record the destination on the unit itself so the View button can later
+    // open the right connection in the SQL editor. Done per-unit (not batch-
+    // wide) because in principle a future enhancement might let different
+    // files target different DBs.
+    unit.targetDb = dbChoice;
     try {
       await impBatchImportUnit(unit, conn, existsMode);
       // impBatchImportUnit may have set status='error' with an abort message;
@@ -13691,11 +13806,15 @@ async function impBatchRun(){
       failed++;
       impBatchRender();
     }
+    // Persist after every unit so a mid-batch navigation/refresh preserves
+    // whatever's already imported.
+    impBatchSaveState();
   }
 
   impBatch.running = false;
   if (btn){ btn.disabled = false; btn.textContent = '⬆ Import all files'; }
   impBatchSetAbortVisible(false);
+  impBatchSaveState();  // final state — includes final statuses for all units
   const totalRowsImported = impBatch.units.filter(u=>u.status==='done').reduce((a,u)=>a+(u.rowCount||0),0);
   if (impBatch.cancelled){
     impBatchSummary(`✕ Aborted by user. ${done} succeeded, ${failed} failed/aborted before stop. ${totalRowsImported.toLocaleString()} rows imported in total.`, 'info');
@@ -14004,6 +14123,8 @@ function impBatchReset(){
   impBatch.running = false;
   impBatch.cancelled = false;
   impBatchSetAbortVisible(false);
+  // Explicit clear → wipe persisted state too. (Just navigating away keeps it.)
+  try { localStorage.removeItem(IMP_BATCH_STORAGE_KEY); } catch {}
   const wrap = document.getElementById('imp-batch-wrap');
   if (wrap) wrap.style.display = 'none';
   const summary = document.getElementById('imp-batch-summary');
@@ -14020,9 +14141,21 @@ window.impBatchRun     = impBatchRun;
 window.impBatchReset   = impBatchReset;
 window.impAbortRun     = impAbortRun;
 window.impBatchAbort   = impBatchAbort;
+window.impBatchView    = impBatchView;
 
 // Update nav dot on load
 setTimeout(updateConnDots, 500);
+
+// Restore the most recent batch's status table on page load so users coming
+// back from the SQL editor (via a View click) see their import history. The
+// markup only exists once the Data Import tab is in the DOM, which it always
+// is since the tab content is rendered up-front (only display:none toggled).
+// Wrapped in its own try/catch + small delay so a malformed persisted blob
+// can't break the rest of dashboard init.
+setTimeout(() => {
+  try { impBatchRestoreState(); }
+  catch (e){ console.warn('[batch-import] Restore failed:', e); }
+}, 600);
 
 </script>
 

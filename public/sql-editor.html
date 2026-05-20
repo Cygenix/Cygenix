@@ -4032,6 +4032,88 @@ updateStatus();
 })();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Open-with-SQL handler — driven by ?sql=<urlencoded>&conn=source|target&run=1
+// URL params. The dashboard's batch-import "View" button uses this to land the
+// user here with a SELECT TOP 1000 against the table they just imported,
+// already pointed at the right connection, ready (or already running).
+//
+// Lifecycle:
+//   1. Read params on script load
+//   2. Set the conn-select dropdown immediately (it's plain HTML, ready now)
+//   3. Stuff the SQL into __cygMonaco.pendingValue so Monaco picks it up on
+//      mount. If Monaco is already mounted, setValue directly.
+//   4. If ?run=1, poll for Monaco ready + connection available, then fire
+//      runSQL() exactly once.
+//
+// We also set a flag so the draft-restore code below doesn't overwrite our
+// loaded SQL with the user's previous draft.
+// ─────────────────────────────────────────────────────────────────────────────
+window.__cygOpenWithSqlActive = false;
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const sqlParam  = params.get('sql');
+  const connParam = params.get('conn');
+  const runParam  = params.get('run');
+
+  if (!sqlParam) return;
+  window.__cygOpenWithSqlActive = true;
+
+  // 1. Set connection dropdown if requested. Validate against known options
+  // before assigning so a malformed param doesn't leave the dropdown empty.
+  if (connParam === 'source' || connParam === 'target'){
+    const sel = document.getElementById('conn-select');
+    if (sel){
+      sel.value = connParam;
+      try { if (typeof updateConnLabel === 'function') updateConnLabel(); } catch {}
+    }
+  }
+
+  // 2. Load the SQL into the editor. Prefer Monaco if it's ready; otherwise
+  // leave a pending value (the editor's create-time read of pendingValue
+  // will pick it up).
+  try {
+    if (window.__cygMonaco?.ready && window.__cygMonaco.editor){
+      window.__cygMonaco.editor.setValue(sqlParam);
+    } else if (window.__cygMonaco){
+      window.__cygMonaco.pendingValue = sqlParam;
+    }
+    // Mirror to the proxy textarea so any non-Monaco code path that reads
+    // .value gets the right content (e.g. runSQL itself reads from the
+    // textarea on line 1196, which Monaco keeps in sync via setValue).
+    const ta = document.getElementById('sql-editor');
+    if (ta) ta.value = sqlParam;
+  } catch (e){
+    console.warn('[open-with-sql] Failed to load SQL into editor:', e);
+  }
+
+  // 3. Auto-run if asked. Wait for Monaco to mount (so the editor value is
+  // canonical) AND give the connection check a moment to populate. Cap at
+  // ~5s so we don't hang forever if something's wrong.
+  if (runParam === '1'){
+    let attempts = 0;
+    const tryRun = () => {
+      attempts++;
+      const ready = window.__cygMonaco?.ready === true;
+      if (!ready && attempts < 50){
+        return setTimeout(tryRun, 100);
+      }
+      if (typeof runSQL === 'function'){
+        try { runSQL(); }
+        catch (e){ console.warn('[open-with-sql] runSQL failed:', e); }
+      }
+    };
+    setTimeout(tryRun, 250);
+  }
+
+  // Clean the URL so a refresh doesn't re-run the query (and so the params
+  // don't sit there confusingly). Leaves the path + hash intact.
+  try {
+    const cleanUrl = window.location.pathname + (window.location.hash || '');
+    window.history.replaceState({}, '', cleanUrl);
+  } catch {}
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SQL Editor draft persistence — keeps the user's in-progress SQL across page
 // navigations until they explicitly start a new script or load a saved one.
 //
@@ -4116,6 +4198,10 @@ updateStatus();
   // If Monaco never loads, the fallback path still works because we set
   // ta.value too.
   function restoreDraft() {
+    // If the dashboard sent us here with ?sql=..., that loaded SQL is the
+    // user's current intent — don't overwrite it with their previous draft.
+    if (window.__cygOpenWithSqlActive) return;
+
     let draft = '';
     try { draft = localStorage.getItem(DRAFT_KEY) || ''; } catch {}
     if (!draft) return;
