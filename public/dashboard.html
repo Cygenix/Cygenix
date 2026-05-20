@@ -2235,7 +2235,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.75rem">
             <div style="font-size:13px;font-weight:600">1 · Choose a file (or several)</div>
             <span style="font-size:11px;color:var(--text3);font-family:var(--mono);background:var(--bg3);padding:2px 8px;border-radius:100px">CSV · Excel</span>
-            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">Up to ~50,000 rows per file. JSON coming in next release.</span>
+            <span style="font-size:10.5px;color:var(--text3);margin-left:auto">CSV: streams up to ~2M rows · Excel: up to 200k rows</span>
           </div>
 
           <div id="imp-drop" class="imp-drop" onclick="document.getElementById('imp-file').click()" ondragover="impDragOver(event)" ondragleave="impDragLeave(event)" ondrop="impDrop(event)">
@@ -2273,6 +2273,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             Every file becomes a table named <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">dbo.&lt;filename&gt;_cgx</code> in the selected database.
             Multi-sheet Excel workbooks produce one table per sheet (named <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">&lt;file&gt;_&lt;sheet&gt;_cgx</code>).
             Columns that fail type checks are silently converted to <code style="font-family:var(--mono);background:var(--bg3);padding:1px 5px;border-radius:3px">NVARCHAR(MAX)</code> — no prompts.
+            CSV files stream up to ~2M rows; Excel up to 200k rows.
           </div>
 
           <div style="overflow-x:auto">
@@ -2286,6 +2287,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
           <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
             <button id="imp-batch-run-btn" class="btn btn-primary btn-sm" onclick="impBatchRun()">⬆ Import all files</button>
+            <button id="imp-batch-abort-btn" class="btn btn-sm" style="display:none;background:rgba(239,68,68,0.1);color:var(--red);border:0.5px solid rgba(239,68,68,0.4)" onclick="impBatchAbort()">✕ Abort batch</button>
             <button class="btn btn-ghost btn-sm" onclick="impBatchReset()">✕ Clear batch</button>
           </div>
         </div>
@@ -2328,6 +2330,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div id="imp-run-result" style="font-size:12px;color:var(--text3);font-family:var(--mono);min-height:20px;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:var(--bg3);border-radius:var(--r);display:none"></div>
           <div style="display:flex;gap:0.5rem">
             <button id="imp-run-btn" class="btn btn-primary btn-sm" onclick="impRun()">⬆ Import to database</button>
+            <button id="imp-abort-btn" class="btn btn-sm" style="display:none;background:rgba(239,68,68,0.1);color:var(--red);border:0.5px solid rgba(239,68,68,0.4)" onclick="impAbortRun()">✕ Abort import</button>
             <button class="btn btn-ghost btn-sm" onclick="impReset()">✕ Start over</button>
           </div>
         </div>
@@ -11210,12 +11213,45 @@ function escHtml(s){
 // ══════════════════════════════════════════════════════════════════════════
 
 // Parsed state lives in memory until Import runs. Cleared on reset.
+// For files above IMP_STREAMING_THRESHOLD rows, impState.rows is NULL and
+// impState.streamingFile holds the source File for the import-time pass.
+const IMP_STREAMING_THRESHOLD = 50000;  // rows — above this, switch to streaming
+const IMP_XLSX_HARD_CAP       = 200000; // rows — XLSX can't stream, must fit in RAM
+const IMP_CSV_HARD_CAP        = 2000000; // rows — guardrail, browser starts to struggle past this
+
 let impState = {
   fileName: null,
-  rows: null,       // array of row objects keyed by column name
-  columns: null,    // array of { name, type, nullable, samples, nullCount }
+  rows: null,            // array of row objects keyed by column name (in-memory mode only)
+  columns: null,         // array of { name, type, nullable, samples, nullCount }
   rowCount: 0,
+  streaming: false,      // true → impState.rows is null, use impState.streamingFile instead
+  streamingFile: null,   // File object — re-parsed during impExecute when streaming
 };
+
+// ─── Abort support (single-file flow) ────────────────────────────────────
+// Set to true when the user clicks the Abort button during an import. The
+// in-memory and streaming execute paths check this before each 500-row batch
+// and exit cleanly with a partial-import message. The partial table is NOT
+// rolled back — partly because we can't (each INSERT auto-commits unless we
+// wrapped in a transaction, which we don't), partly because for create/over-
+// write modes the user can just drop the table afterwards if they want.
+let impAbortRequested = false;
+
+function impAbortRun(){
+  impAbortRequested = true;
+  const ab = document.getElementById('imp-abort-btn');
+  if (ab){ ab.disabled = true; ab.textContent = 'Aborting…'; }
+}
+
+function impSetAbortVisible(visible){
+  const ab = document.getElementById('imp-abort-btn');
+  if (!ab) return;
+  ab.style.display = visible ? '' : 'none';
+  if (visible){
+    ab.disabled = false;
+    ab.textContent = '✕ Abort import';
+  }
+}
 
 function switchConnTab(tab){
   document.querySelectorAll('#view-connections .cx-tab').forEach(el => {
@@ -12139,8 +12175,14 @@ function impHandleFile(file){
     impShowError('Only CSV, TSV, TXT, XLSX, or XLS files are supported in this release.');
     return;
   }
-  if (file.size > 100 * 1024 * 1024){  // 100 MB
-    impShowError('File is over 100MB. This release supports files up to 100MB / 50,000 rows.');
+  // CSV is streamed in passes, so we can handle up to ~1GB. Excel must be loaded
+  // whole into memory by the parser, so we stay at 100MB to avoid browser OOM.
+  if (isCSV && file.size > 1024 * 1024 * 1024){  // 1 GB
+    impShowError('CSV file is over 1GB. That exceeds what the browser can stream reliably.');
+    return;
+  }
+  if (isExcel && file.size > 100 * 1024 * 1024){  // 100 MB
+    impShowError('Excel file is over 100MB. Save as CSV first — CSV files can be much larger.');
     return;
   }
   impState.fileName = file.name;
@@ -12159,25 +12201,132 @@ function impHandleFile(file){
   }
 }
 
+// CSV parser — two modes:
+//   - In-memory (legacy): file size suggests <= IMP_STREAMING_THRESHOLD rows,
+//     so we load everything, run schema inference, and hand to impFinalizeRows.
+//     This preserves the existing validation-modal UX for small files.
+//   - Streaming: large file. We stream pass-1 with Papa.parse({ step }), keep
+//     the first 500 rows for inference and count the rest. impState.rows stays
+//     null; the import-time path will re-stream the file in pass-2.
+//
+// File-size heuristic for picking the mode: most CSVs run ~150-300 bytes/row,
+// so 10MB is a safe lower bound for files likely under 50k rows. Above that we
+// stream regardless; we'll find out the exact row count during pass-1.
 function impParseCSV(file){
   if (typeof Papa === 'undefined'){
     impShowError('CSV parser failed to load. Check your internet connection and reload the page.');
     return;
   }
+
+  const SIZE_HEURISTIC = 10 * 1024 * 1024;  // 10 MB
+  if (file.size <= SIZE_HEURISTIC){
+    // Try in-memory mode first. If the row count comes back above the threshold
+    // (we couldn't tell from file size alone — could be a CSV with tiny rows),
+    // we'll fall through to streaming inside impFinalizeRows.
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      transformHeader: h => String(h || '').trim(),
+      complete: (result) => {
+        if (result.errors && result.errors.length){
+          console.warn('[data-import] CSV parse warnings:', result.errors.slice(0, 5));
+        }
+        const rows = result.data || [];
+        if (rows.length > IMP_STREAMING_THRESHOLD){
+          // Surprise — small file but lots of rows. Discard the in-memory array
+          // and switch to streaming so we get the right UX/limits.
+          console.log('[data-import] Small file but ' + rows.length + ' rows — switching to streaming mode.');
+          impParseCSVStreaming(file);
+        } else {
+          impFinalizeRows(file.name, rows);
+        }
+      },
+      error: (err) => {
+        impShowError('CSV parse failed: ' + (err?.message || String(err)));
+      }
+    });
+  } else {
+    impParseCSVStreaming(file);
+  }
+}
+
+// Pass-1 streaming parse: collect the first IMP_INFER_SAMPLE rows for schema
+// inference, then keep streaming purely to count the total. Stops the parser
+// once we have both (a) enough sample and (b) the rest of the file consumed.
+function impParseCSVStreaming(file){
+  const IMP_INFER_SAMPLE = 500;
+  const sampleRows = [];
+  let totalRows = 0;
+  let cols = null;
+  let abortedEarly = false;
+
+  const meta = document.getElementById('imp-file-meta');
+  if (meta){
+    meta.innerHTML = `⏳ Streaming <strong>${escP(file.name)}</strong> (${(file.size/1024/1024).toFixed(1)} MB) — counting rows…`;
+  }
+
+  // Throttled progress updates so we don't thrash the DOM on huge files.
+  let lastProgressUpdate = 0;
+
   Papa.parse(file, {
     header: true,
     skipEmptyLines: true,
-    dynamicTyping: false,   // we do our own type inference below
+    dynamicTyping: false,
     transformHeader: h => String(h || '').trim(),
-    complete: (result) => {
-      if (result.errors && result.errors.length){
-        // Non-fatal parse warnings. Show count; keep going with whatever parsed.
-        console.warn('[data-import] CSV parse warnings:', result.errors.slice(0, 5));
+    step: (row, parser) => {
+      if (!cols){
+        // Capture column order from the first row Papa hands us
+        cols = Object.keys(row.data || {}).filter(k => k != null && k !== '');
+        if (cols.length === 0){
+          parser.abort();
+          abortedEarly = true;
+          impShowError('No column headers detected. Make sure the first row contains header names.');
+          return;
+        }
       }
-      impFinalizeRows(file.name, result.data || []);
+      if (sampleRows.length < IMP_INFER_SAMPLE){
+        sampleRows.push(row.data);
+      }
+      totalRows++;
+      if (totalRows > IMP_CSV_HARD_CAP){
+        parser.abort();
+        abortedEarly = true;
+        impShowError(`File exceeds ${IMP_CSV_HARD_CAP.toLocaleString()} rows. Split the file or contact support.`);
+        return;
+      }
+      const now = Date.now();
+      if (now - lastProgressUpdate > 250 && meta){
+        lastProgressUpdate = now;
+        meta.innerHTML = `⏳ Streaming <strong>${escP(file.name)}</strong> — ${totalRows.toLocaleString()} rows counted so far…`;
+      }
+    },
+    complete: () => {
+      if (abortedEarly) return;
+      if (totalRows === 0){
+        impShowError('The file appears to be empty or has no data rows.');
+        return;
+      }
+      // Mark streaming mode and stash the file for pass-2 during import.
+      impState.streaming     = true;
+      impState.streamingFile = file;
+      impState.rows          = null;
+      impState.fileName      = file.name;
+      impState.rowCount      = totalRows;
+      impState.columns       = impInferSchema(cols, sampleRows);
+
+      if (meta){
+        meta.innerHTML = `✓ Streamed <strong>${escP(file.name)}</strong> — ${totalRows.toLocaleString()} rows, ${cols.length} columns (large file — data will be streamed at import time)`;
+      }
+      impRenderSchemaTable();
+      document.getElementById('imp-schema-wrap').style.display = 'block';
+      document.getElementById('imp-target-wrap').style.display = 'block';
+
+      const stem = file.name.replace(/\.(csv|tsv|txt|xlsx|xls)$/i, '').replace(/[^A-Za-z0-9_]/g, '_');
+      document.getElementById('imp-target-table').value = 'dbo.' + stem;
     },
     error: (err) => {
-      impShowError('CSV parse failed: ' + (err?.message || String(err)));
+      impShowError('CSV stream failed: ' + (err?.message || String(err)));
     }
   });
 }
@@ -12261,14 +12410,17 @@ function impExtractSheet(fileName, wb, sheetName){
 }
 
 // Shared post-parse logic: row validation, schema inference, UI render.
+// Used by Excel (any size, up to IMP_XLSX_HARD_CAP) and small CSVs (in-memory
+// mode, under IMP_STREAMING_THRESHOLD). Large CSVs use impParseCSVStreaming
+// instead and never hit this function.
 function impFinalizeRows(fileName, rows, opts){
   opts = opts || {};
   if (rows.length === 0){
     impShowError('The file appears to be empty or has no data rows.');
     return;
   }
-  if (rows.length > 50000){
-    impShowError('File has ' + rows.length.toLocaleString() + ' rows. Maximum supported is 50,000 in this release.');
+  if (rows.length > IMP_XLSX_HARD_CAP){
+    impShowError('File has ' + rows.length.toLocaleString() + ' rows. Maximum supported is ' + IMP_XLSX_HARD_CAP.toLocaleString() + ' for Excel. Save as CSV to stream larger files.');
     return;
   }
 
@@ -12448,7 +12600,9 @@ function impShowError(msg){
 }
 
 function impReset(){
-  impState = { fileName:null, rows:null, columns:null, rowCount:0 };
+  impState = { fileName:null, rows:null, columns:null, rowCount:0, streaming:false, streamingFile:null };
+  impAbortRequested = false;
+  impSetAbortVisible(false);
   const fileInput = document.getElementById('imp-file');
   if (fileInput) fileInput.value = '';
   const meta = document.getElementById('imp-file-meta');
@@ -12463,7 +12617,10 @@ function impReset(){
 // ── Execution flow ────────────────────────────────────────────────────────
 
 function impRun(){
-  if (!impState.rows || !impState.columns){
+  // In streaming mode we don't have impState.rows — we have impState.streamingFile.
+  // Either is enough to proceed; columns are always required.
+  const haveData = impState.streaming ? !!impState.streamingFile : !!impState.rows;
+  if (!haveData || !impState.columns){
     impShowError('Parse a file first.');
     return;
   }
@@ -12477,12 +12634,17 @@ function impRun(){
     return;
   }
 
-  // Pre-flight: validate rows against chosen column types. String/max columns
-  // are skipped (they accept anything).
-  const issues = impValidateRows();
-  if (issues.bad.length > 0){
-    impOpenValidateModal(issues, tableName);
-    return;
+  // Pre-flight: validate rows against chosen column types — only for in-memory
+  // mode. Streaming files skip the validation modal because we'd need to load
+  // the whole file to count issues. Instead, the streaming insert path auto-
+  // coerces bad values to NULL inline (and triggers the same NVARCHAR(MAX)
+  // fallback the batch flow uses if SQL Server still rejects the data).
+  if (!impState.streaming){
+    const issues = impValidateRows();
+    if (issues.bad.length > 0){
+      impOpenValidateModal(issues, tableName);
+      return;
+    }
   }
 
   // No issues → proceed to existence check, then create/overwrite/append flow
@@ -12665,10 +12827,16 @@ async function impCheckTableExists(tableName){
 
   // Probe with a harmless SELECT. If it returns, the table exists.
   // Using OBJECT_ID keeps the permission surface small.
-  const probeSQL = `SELECT CASE WHEN OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NULL THEN 0 ELSE 1 END AS [exists];`;
+  //
+  // The result-row key isn't reliable across our two backends (Azure Function
+  // direct vs Netlify db-connect proxy): one returns `{ exists: 1 }`, the
+  // other has been observed to return `{ Exists: 1 }`, `{ '': 1 }`, or even
+  // string values. So instead of checking a specific key, we scan every value
+  // in the first row and treat any truthy/1-equivalent as "exists".
+  const probeSQL = `SELECT CASE WHEN OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NULL THEN 0 ELSE 1 END AS tbl_exists;`;
   try {
     const res = await impDbCall(conn, { action:'execute', sql: probeSQL });
-    const exists = (res?.rows?.[0]?.exists === 1) || (res?.rows?.[0]?.['(No column name)'] === 1);
+    const exists = impRowSaysExists(res);
     if (exists){
       impOpenExistsModal(tableName);
     } else {
@@ -12681,6 +12849,22 @@ async function impCheckTableExists(tableName){
     // would be catastrophic.
     impRunResult('Could not verify target table: ' + (e.message || e) + '. Fix the connection or permissions and try again.', 'err');
   }
+}
+
+// Shared helper used by both single-file and batch probes. Given the result of
+// a `SELECT CASE WHEN OBJECT_ID(...) IS NULL THEN 0 ELSE 1 END AS tbl_exists`
+// query, return true if any value in the first row equals 1 (number) or '1'
+// (string). Permissive on purpose — different backends and driver versions
+// serialise the column name differently, but the value is always 0/1.
+function impRowSaysExists(res){
+  const row = res?.rows?.[0];
+  if (!row || typeof row !== 'object') return false;
+  for (const k of Object.keys(row)){
+    const v = row[k];
+    if (v === 1 || v === true) return true;
+    if (typeof v === 'string' && v.trim() === '1') return true;
+  }
+  return false;
 }
 
 let _impPendingTable = null;
@@ -12704,8 +12888,19 @@ function impProceed(mode){
 }
 
 async function impExecute(tableName, mode){
+  if (impState.streaming){
+    return impExecuteStreaming(tableName, mode);
+  }
+  return impExecuteInMemory(tableName, mode);
+}
+
+// In-memory execute (legacy path) — used for small CSVs and all Excel files
+// where the full row array is held in impState.rows.
+async function impExecuteInMemory(tableName, mode){
   const btn = document.getElementById('imp-run-btn');
   if (btn){ btn.disabled = true; btn.textContent = 'Importing…'; }
+  impAbortRequested = false;
+  impSetAbortVisible(true);
 
   const dbChoice = document.getElementById('imp-target-db').value;
   const conn = impGetConn(dbChoice);
@@ -12715,19 +12910,26 @@ async function impExecute(tableName, mode){
   const totalRows = rows.length;
 
   try {
-    // Build CREATE TABLE (or DROP+CREATE for overwrite). For 'append' we skip creation.
+    // Build CREATE TABLE (or DROP+CREATE for overwrite). For 'append' we skip
+    // DDL entirely — the table exists by definition, we're just inserting.
+    // For 'create', we wrap in IF OBJECT_ID(...) IS NULL so a false-negative
+    // probe (or a race with another import) can't crash us with msg 2714
+    // "There is already an object named...".
     const createSQL = cols.map(c => {
       const nullness = c.nullable === false ? 'NOT NULL' : 'NULL';
       return `[${c.name.replace(/]/g, ']]')}] ${impSqlType(c)} ${nullness}`;
     }).join(',\n  ');
-    if (mode === 'create' || mode === 'overwrite'){
-      const dropFirst = (mode === 'overwrite')
-        ? `IF OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NOT NULL DROP TABLE ${tableName};\n`
-        : '';
-      const ddl = `${dropFirst}CREATE TABLE ${tableName} (\n  ${createSQL}\n);`;
-      impRunResult(mode === 'overwrite' ? 'Dropping and recreating table…' : 'Creating table…', 'info');
+    const safeName = tableName.replace(/'/g, "''");
+    if (mode === 'overwrite'){
+      const ddl = `IF OBJECT_ID(N'${safeName}', 'U') IS NOT NULL DROP TABLE ${tableName};\nCREATE TABLE ${tableName} (\n  ${createSQL}\n);`;
+      impRunResult('Dropping and recreating table…', 'info');
+      await impDbCall(conn, { action:'execute', sql: ddl });
+    } else if (mode === 'create'){
+      const ddl = `IF OBJECT_ID(N'${safeName}', 'U') IS NULL\nCREATE TABLE ${tableName} (\n  ${createSQL}\n);`;
+      impRunResult('Creating table…', 'info');
       await impDbCall(conn, { action:'execute', sql: ddl });
     }
+    // For 'append' mode: no DDL — go straight to INSERT.
 
     // Insert in batches of 500 rows (stays well under SQL Server's 1000-row
     // INSERT VALUES limit and keeps request bodies manageable).
@@ -12736,6 +12938,10 @@ async function impExecute(tableName, mode){
     const insertedSoFar = { n: 0 };
 
     for (let i = 0; i < totalRows; i += BATCH){
+      if (impAbortRequested){
+        impRunResult(`✕ Aborted by user — ${insertedSoFar.n.toLocaleString()} of ${totalRows.toLocaleString()} rows imported. The partial table remains in the database; drop or truncate it manually if you want to start fresh.`, 'info');
+        return;
+      }
       const slice = rows.slice(i, i + BATCH);
       const valuesSql = slice.map(r => {
         const tuple = cols.map(c => impLiteral(r[c.name], c.chosenType || c.inferredType));
@@ -12752,6 +12958,191 @@ async function impExecute(tableName, mode){
     impRunResult('🔴 Import failed: ' + (e.message || e), 'err');
   } finally {
     if (btn){ btn.disabled = false; btn.textContent = '⬆ Import to database'; }
+    impSetAbortVisible(false);
+    impAbortRequested = false;
+  }
+}
+
+// Streaming execute — for CSVs above IMP_STREAMING_THRESHOLD rows.
+//
+// Workflow:
+//   1. CREATE/DROP+CREATE the table (skipped for append).
+//   2. Re-stream the source file with Papa.parse({ step }), buffering rows
+//      into a 500-row chunk. When the chunk fills, fire an INSERT, drop the
+//      chunk, continue.
+//   3. Inside each insert, any value that doesn't fit its column's chosen
+//      type is silently coerced to NULL (no validation modal — we couldn't
+//      show one without the whole file in memory anyway).
+//   4. If a chunk INSERT fails with a type-error-shaped message, promote all
+//      non-string columns to NVARCHAR(MAX) and retry: redo the CREATE (with
+//      DROP first), then resume streaming from the start. This is the same
+//      auto-recovery the batch path uses.
+async function impExecuteStreaming(tableName, mode){
+  const btn = document.getElementById('imp-run-btn');
+  if (btn){ btn.disabled = true; btn.textContent = 'Importing…'; }
+  impAbortRequested = false;
+  impSetAbortVisible(true);
+
+  const dbChoice = document.getElementById('imp-target-db').value;
+  const conn = impGetConn(dbChoice);
+  const cols = impState.columns;
+  const file = impState.streamingFile;
+  const totalRows = impState.rowCount;
+
+  // Build the CREATE DDL from the (possibly column-modified) schema. Recomputed
+  // on retry after we promote columns to MAX. We always wrap CREATE in
+  // IF OBJECT_ID(...) IS NULL so a false-negative existence probe (or a race)
+  // can't blow up with msg 2714. For 'overwrite' we DROP-then-CREATE; for
+  // 'append' we return empty string (skip DDL entirely — table exists).
+  const buildDDL = (m) => {
+    if (m === 'append') return '';
+    const colsSql = cols.map(c => {
+      const nullness = c.nullable === false ? 'NOT NULL' : 'NULL';
+      return `[${c.name.replace(/]/g, ']]')}] ${impSqlType(c)} ${nullness}`;
+    }).join(',\n  ');
+    const safeName = tableName.replace(/'/g, "''");
+    if (m === 'overwrite'){
+      return `IF OBJECT_ID(N'${safeName}', 'U') IS NOT NULL DROP TABLE ${tableName};\nCREATE TABLE ${tableName} (\n  ${colsSql}\n);`;
+    }
+    // 'create'
+    return `IF OBJECT_ID(N'${safeName}', 'U') IS NULL\nCREATE TABLE ${tableName} (\n  ${colsSql}\n);`;
+  };
+
+  const looksLikeTypeError = (msg) => {
+    if (!msg) return false;
+    const m = String(msg).toLowerCase();
+    return m.includes('convert') || m.includes('overflow') || m.includes('truncat')
+        || m.includes('out of range') || m.includes('arithmetic')
+        || m.includes('conversion failed');
+  };
+
+  // Stream-and-insert in one pass. Returns when complete or rejects on fatal
+  // error. Resolves with { inserted } so the caller can report the final count.
+  // If the user clicks Abort mid-stream, we stop the parser and resolve with
+  // the partial count + an abort flag, so the caller can show a clean message
+  // instead of an error.
+  const streamAndInsert = () => new Promise((resolve, reject) => {
+    const BATCH = 500;
+    const colNames = cols.map(c => `[${c.name.replace(/]/g, ']]')}]`).join(',');
+    let buffer = [];
+    let inserted = 0;
+    let lastUiUpdate = 0;
+    let aborted = false;
+    let userAborted = false;
+
+    // Helper to flush the current buffer. Called from step (chunk full) and
+    // from complete (final partial chunk). Pauses the parser during the await.
+    const flush = async (parser) => {
+      if (buffer.length === 0) return;
+      const slice = buffer;
+      buffer = [];
+      const valuesSql = slice.map(r => {
+        const tuple = cols.map(c => impLiteral(r[c.name], c.chosenType || c.inferredType));
+        return '(' + tuple.join(',') + ')';
+      }).join(',\n');
+      const batchSql = `INSERT INTO ${tableName} (${colNames}) VALUES\n${valuesSql};`;
+      await impDbCall(conn, { action:'execute', sql: batchSql });
+      inserted += slice.length;
+      const now = Date.now();
+      if (now - lastUiUpdate > 250){
+        lastUiUpdate = now;
+        impRunResult(`Imported ${inserted.toLocaleString()} / ${totalRows.toLocaleString()} rows…`, 'info');
+      }
+    };
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      transformHeader: h => String(h || '').trim(),
+      step: (row, parser) => {
+        if (aborted) return;
+        // User clicked Abort — stop the parser and resolve with what we have
+        if (impAbortRequested){
+          aborted = true;
+          userAborted = true;
+          parser.abort();
+          resolve({ inserted, aborted:true });
+          return;
+        }
+        buffer.push(row.data);
+        if (buffer.length >= BATCH){
+          parser.pause();
+          flush(parser).then(() => {
+            if (impAbortRequested){
+              aborted = true;
+              userAborted = true;
+              parser.abort();
+              resolve({ inserted, aborted:true });
+              return;
+            }
+            if (!aborted) parser.resume();
+          }).catch(err => {
+            aborted = true;
+            parser.abort();
+            reject(err);
+          });
+        }
+      },
+      complete: () => {
+        if (aborted) return;
+        flush().then(() => resolve({ inserted, aborted:false })).catch(reject);
+      },
+      error: (err) => {
+        aborted = true;
+        reject(new Error('CSV stream failed: ' + (err?.message || String(err))));
+      }
+    });
+  });
+
+  let attempts = 0;
+  let currentMode = mode;
+  try {
+    while (attempts < 2){
+      attempts++;
+      try {
+        const ddl = buildDDL(currentMode);
+        if (ddl){
+          impRunResult(currentMode === 'overwrite' ? 'Dropping and recreating table…' : 'Creating table…', 'info');
+          await impDbCall(conn, { action:'execute', sql: ddl });
+        }
+        impRunResult(`Streaming ${totalRows.toLocaleString()} rows into ${tableName}…`, 'info');
+        const { inserted, aborted: wasAborted } = await streamAndInsert();
+        if (wasAborted){
+          impRunResult(`✕ Aborted by user — ${inserted.toLocaleString()} of ${totalRows.toLocaleString()} rows imported. The partial table remains in the database; drop or truncate it manually if you want to start fresh.`, 'info');
+          return;
+        }
+        impRunResult(`✓ Imported ${inserted.toLocaleString()} rows into ${tableName}.`, 'ok');
+        return;
+      } catch (e) {
+        const msg = e?.message || String(e);
+        // The MAX-promote retry only makes sense when we own the table schema
+        // (create/overwrite). For append, the table already exists with fixed
+        // column types — promoting our local schema to MAX wouldn't actually
+        // change the table on the server, so retrying would hit the same error.
+        if (attempts === 1 && looksLikeTypeError(msg) && currentMode !== 'append'){
+          cols.forEach(c => {
+            if (c.chosenType !== 'string' && c.chosenType !== 'max') c.chosenType = 'max';
+          });
+          impRenderSchemaTable();
+          if (currentMode === 'create') currentMode = 'overwrite';
+          console.warn(`[data-import] ${tableName}: type error ("${msg}"), retrying stream with all non-string columns as NVARCHAR(MAX).`);
+          impRunResult('Type mismatch — converting affected columns to TEXT (MAX) and restarting…', 'info');
+          continue;
+        }
+        throw e;
+      }
+    }
+  } catch (e) {
+    if (e && e.aborted){
+      impRunResult('✕ Aborted by user.', 'info');
+    } else {
+      impRunResult('🔴 Import failed: ' + (e.message || e), 'err');
+    }
+  } finally {
+    if (btn){ btn.disabled = false; btn.textContent = '⬆ Import to database'; }
+    impSetAbortVisible(false);
+    impAbortRequested = false;
   }
 }
 
@@ -13004,12 +13395,15 @@ async function impBatchPrepare(files){
       });
       continue;
     }
-    if (f.size > 100 * 1024 * 1024){
+    // CSV is streamed (1GB cap), Excel must fit in browser memory (100MB cap).
+    const isCsvFile = /\.(csv|tsv|txt)$/i.test(f.name);
+    const sizeCap = isCsvFile ? (1024 * 1024 * 1024) : (100 * 1024 * 1024);
+    if (f.size > sizeCap){
       impBatch.units.push({
         id: 'u' + Math.random().toString(36).slice(2,9),
         file: f, fileName: f.name, sheetName: null,
         displayName: f.name, tableName: '—',
-        status:'error', error:'File is over 100MB',
+        status:'error', error: isCsvFile ? 'CSV is over 1GB' : 'Excel file is over 100MB (save as CSV for larger files)',
         rows:null, columns:null, rowCount:null, importedRows:0,
       });
       continue;
@@ -13023,6 +13417,7 @@ async function impBatchPrepare(files){
       tableName: impBatchTableName(f.name, null),
       status:'pending',
       rows:null, columns:null, rowCount:null, error:null, importedRows:0,
+      streaming:false, streamingFile:null,
     });
   }
 
@@ -13048,8 +13443,11 @@ async function impBatchPrepare(files){
   }
 }
 
-// Parse a single unit. CSV is straightforward. Excel may produce N sub-units —
-// in which case we replace the original unit in impBatch.units with N new units.
+// Parse a single unit. CSV is streamed in pass-1 (sample + count) when the
+// file is large; smaller files are loaded in-memory like before. Excel
+// always goes through the full in-memory parse (library limitation) and may
+// produce N sub-units (one per sheet), in which case we replace the original
+// unit in impBatch.units with N new units.
 function impBatchParseUnit(unit){
   return new Promise((resolve) => {
     unit.status = 'parsing';
@@ -13064,6 +13462,76 @@ function impBatchParseUnit(unit){
         unit.error = 'CSV parser failed to load (PapaParse missing). Reload the page.';
         return resolve();
       }
+
+      // Files above 10MB go straight to streaming pass-1. Smaller files use the
+      // in-memory parse; if the row count comes back above IMP_STREAMING_THRESHOLD
+      // we fall through to streaming anyway.
+      const SIZE_HEURISTIC = 10 * 1024 * 1024;
+
+      const doStreamingParse = () => {
+        const IMP_INFER_SAMPLE = 500;
+        const sampleRows = [];
+        let totalRows = 0;
+        let cols = null;
+        let aborted = false;
+
+        Papa.parse(f, {
+          header: true,
+          skipEmptyLines: true,
+          dynamicTyping: false,
+          transformHeader: h => String(h || '').trim(),
+          step: (row, parser) => {
+            if (!cols){
+              cols = Object.keys(row.data || {}).filter(k => k != null && k !== '');
+              if (cols.length === 0){
+                parser.abort();
+                aborted = true;
+                unit.status = 'error';
+                unit.error = 'No column headers detected.';
+                return;
+              }
+            }
+            if (sampleRows.length < IMP_INFER_SAMPLE){
+              sampleRows.push(row.data);
+            }
+            totalRows++;
+            if (totalRows > IMP_CSV_HARD_CAP){
+              parser.abort();
+              aborted = true;
+              unit.status = 'error';
+              unit.error = `File exceeds ${IMP_CSV_HARD_CAP.toLocaleString()} rows.`;
+              return;
+            }
+          },
+          complete: () => {
+            if (aborted) return resolve();
+            if (totalRows === 0){
+              unit.status = 'error';
+              unit.error = 'File appears empty or has no data rows.';
+              return resolve();
+            }
+            unit.streaming     = true;
+            unit.streamingFile = f;
+            unit.rows          = null;
+            unit.rowCount      = totalRows;
+            unit.columns       = impInferSchema(cols, sampleRows);
+            unit.status        = 'parsed';
+            resolve();
+          },
+          error: (err) => {
+            unit.status = 'error';
+            unit.error = 'CSV stream failed: ' + (err?.message || String(err));
+            resolve();
+          }
+        });
+      };
+
+      if (f.size > SIZE_HEURISTIC){
+        doStreamingParse();
+        return;
+      }
+
+      // Small file — try in-memory; switch to streaming if surprisingly long.
       Papa.parse(f, {
         header: true,
         skipEmptyLines: true,
@@ -13072,12 +13540,18 @@ function impBatchParseUnit(unit){
         complete: (result) => {
           try {
             const rows = result.data || [];
-            impBatchFinalizeUnit(unit, rows);
+            if (rows.length > IMP_STREAMING_THRESHOLD){
+              console.log('[batch-import] Small file but ' + rows.length + ' rows — switching to streaming.');
+              doStreamingParse();
+            } else {
+              impBatchFinalizeUnit(unit, rows);
+              resolve();
+            }
           } catch (e){
             unit.status = 'error';
             unit.error = 'CSV finalize failed: ' + (e?.message || String(e));
+            resolve();
           }
-          resolve();
         },
         error: (err) => {
           unit.status = 'error';
@@ -13127,6 +13601,7 @@ function impBatchParseUnit(unit){
             tableName: impBatchTableName(unit.fileName, sheetName),
             status:'parsing',
             rows:null, columns:null, rowCount:null, error:null, importedRows:0,
+            streaming:false, streamingFile:null,
           };
           impBatchFinalizeUnit(sub, rows);
           return sub;
@@ -13146,16 +13621,18 @@ function impBatchParseUnit(unit){
 }
 
 // Apply parsed rows to a unit: row-count check, schema inference. Mirrors
-// impFinalizeRows but writes into the unit object instead of impState.
+// impFinalizeRows but writes into the unit object instead of impState. Only
+// used for in-memory units (small CSVs + all Excel). Streamed CSVs set
+// unit.streaming directly inside impBatchParseUnit and never hit this fn.
 function impBatchFinalizeUnit(unit, rows){
   if (!rows || rows.length === 0){
     unit.status = 'error';
     unit.error = 'File appears empty or has no data rows.';
     return;
   }
-  if (rows.length > 50000){
+  if (rows.length > IMP_XLSX_HARD_CAP){
     unit.status = 'error';
-    unit.error = `File has ${rows.length.toLocaleString()} rows. Max supported is 50,000.`;
+    unit.error = `File has ${rows.length.toLocaleString()} rows. Max ${IMP_XLSX_HARD_CAP.toLocaleString()} for Excel — save as CSV to stream more.`;
     return;
   }
   const firstRow = rows[0];
@@ -13192,9 +13669,11 @@ async function impBatchRun(){
   }
   const existsMode = document.getElementById('imp-batch-exists').value || 'append';
 
-  impBatch.running = true;
+  impBatch.running   = true;
+  impBatch.cancelled = false;  // fresh run; clear any prior abort flag
   const btn = document.getElementById('imp-batch-run-btn');
   if (btn){ btn.disabled = true; btn.textContent = 'Importing…'; }
+  impBatchSetAbortVisible(true);
   impBatchSummary(`Starting import of ${ready.length} file${ready.length===1?'':'s'} into ${dbChoice==='src'?'source':'target'} database…`, 'info');
 
   let done = 0, failed = 0;
@@ -13202,7 +13681,10 @@ async function impBatchRun(){
     if (impBatch.cancelled) break;
     try {
       await impBatchImportUnit(unit, conn, existsMode);
-      done++;
+      // impBatchImportUnit may have set status='error' with an abort message;
+      // count it as neither done nor failed in that case
+      if (unit.status === 'done') done++;
+      else if (unit.status === 'error') failed++;
     } catch (e){
       unit.status = 'error';
       unit.error = e?.message || String(e);
@@ -13213,7 +13695,33 @@ async function impBatchRun(){
 
   impBatch.running = false;
   if (btn){ btn.disabled = false; btn.textContent = '⬆ Import all files'; }
-  impBatchSummary(`Finished. ${done} succeeded${failed?`, ${failed} failed`:''}. ${impBatch.units.filter(u=>u.status==='done').reduce((a,u)=>a+(u.rowCount||0),0).toLocaleString()} rows total.`, failed ? (done?'info':'err') : 'ok');
+  impBatchSetAbortVisible(false);
+  const totalRowsImported = impBatch.units.filter(u=>u.status==='done').reduce((a,u)=>a+(u.rowCount||0),0);
+  if (impBatch.cancelled){
+    impBatchSummary(`✕ Aborted by user. ${done} succeeded, ${failed} failed/aborted before stop. ${totalRowsImported.toLocaleString()} rows imported in total.`, 'info');
+  } else {
+    impBatchSummary(`Finished. ${done} succeeded${failed?`, ${failed} failed`:''}. ${totalRowsImported.toLocaleString()} rows total.`, failed ? (done?'info':'err') : 'ok');
+  }
+}
+
+// User clicked the batch Abort button. The flag is checked between units
+// (impBatchRun loop), inside both insert loops, and inside the streaming
+// step callback. We never tear down the connection — let the current
+// HTTP-in-flight finish, then bail out at the next checkpoint.
+function impBatchAbort(){
+  impBatch.cancelled = true;
+  const ab = document.getElementById('imp-batch-abort-btn');
+  if (ab){ ab.disabled = true; ab.textContent = 'Aborting…'; }
+}
+
+function impBatchSetAbortVisible(visible){
+  const ab = document.getElementById('imp-batch-abort-btn');
+  if (!ab) return;
+  ab.style.display = visible ? '' : 'none';
+  if (visible){
+    ab.disabled = false;
+    ab.textContent = '✕ Abort batch';
+  }
 }
 
 // Import one unit. Workflow:
@@ -13231,24 +13739,32 @@ async function impBatchImportUnit(unit, conn, existsMode){
   impBatchRender();
 
   // ── Pre-flight: silently coerce any bad column to NVARCHAR(MAX) before we
-  // even talk to the DB. This is the cleanest place to apply Curtis's
+  // even talk to the DB. This is the cleanest place to apply the
   // "automatically handle errors → default to NVARCHAR(MAX) on problem fields"
   // rule, because we have the parsed rows in memory and can scan them quickly.
-  const issues = impBatchValidate(unit);
-  if (issues.affectedCols.size > 0){
-    issues.affectedCols.forEach(colName => {
-      const col = unit.columns.find(c => c.name === colName);
-      if (col) col.chosenType = 'max';
-    });
+  //
+  // Skipped for streamed units (CSVs over ~50k rows) — they don't keep rows
+  // in memory, so we couldn't scan them without a separate pass. The streaming
+  // execute path catches type errors via the SQL-side retry instead.
+  if (!unit.streaming){
+    const issues = impBatchValidate(unit);
+    if (issues.affectedCols.size > 0){
+      issues.affectedCols.forEach(colName => {
+        const col = unit.columns.find(c => c.name === colName);
+        if (col) col.chosenType = 'max';
+      });
+    }
   }
 
-  // ── Existence check
+  // ── Existence check. Uses the same robust probe as the single-file flow
+  // (impRowSaysExists scans every key in the first row for a truthy/1 value,
+  // because column-name casing/aliasing has varied between backends).
   const tableName = unit.tableName;
-  const probeSQL = `SELECT CASE WHEN OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NULL THEN 0 ELSE 1 END AS [exists];`;
+  const probeSQL = `SELECT CASE WHEN OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NULL THEN 0 ELSE 1 END AS tbl_exists;`;
   let exists = false;
   try {
     const res = await impDbCall(conn, { action:'execute', sql: probeSQL });
-    exists = (res?.rows?.[0]?.exists === 1) || (res?.rows?.[0]?.['(No column name)'] === 1);
+    exists = impRowSaysExists(res);
   } catch (e){
     throw new Error('Probe failed: ' + (e?.message || e));
   }
@@ -13325,18 +13841,20 @@ function impBatchValidate(unit){
 // but Date.parse accepts).
 async function impBatchExecuteUnit(unit, conn, mode){
   const cols = unit.columns;
-  const rows = unit.rows;
   const tableName = unit.tableName;
 
   const buildDDL = (m) => {
+    if (m === 'append') return '';
     const colsSql = cols.map(c => {
       const nullness = c.nullable === false ? 'NOT NULL' : 'NULL';
       return `[${c.name.replace(/]/g, ']]')}] ${impSqlType(c)} ${nullness}`;
     }).join(',\n  ');
-    const dropFirst = (m === 'overwrite')
-      ? `IF OBJECT_ID(N'${tableName.replace(/'/g, "''")}', 'U') IS NOT NULL DROP TABLE ${tableName};\n`
-      : '';
-    return `${dropFirst}CREATE TABLE ${tableName} (\n  ${colsSql}\n);`;
+    const safeName = tableName.replace(/'/g, "''");
+    if (m === 'overwrite'){
+      return `IF OBJECT_ID(N'${safeName}', 'U') IS NOT NULL DROP TABLE ${tableName};\nCREATE TABLE ${tableName} (\n  ${colsSql}\n);`;
+    }
+    // 'create' — guarded so a probe false-negative or race doesn't trigger msg 2714
+    return `IF OBJECT_ID(N'${safeName}', 'U') IS NULL\nCREATE TABLE ${tableName} (\n  ${colsSql}\n);`;
   };
 
   const looksLikeTypeError = (msg) => {
@@ -13347,30 +13865,115 @@ async function impBatchExecuteUnit(unit, conn, mode){
         || m.includes('conversion failed');
   };
 
+  // Two insert backends, picked by unit.streaming. Both honour the BATCH=500
+  // chunk size and update unit.importedRows + re-render between batches.
+  const colNames = cols.map(c => `[${c.name.replace(/]/g, ']]')}]`).join(',');
+  const BATCH = 500;
+
+  const insertFromMemory = async () => {
+    const rows = unit.rows;
+    unit.importedRows = 0;
+    impBatchRender();
+    for (let i = 0; i < rows.length; i += BATCH){
+      if (impBatch.cancelled) return { aborted:true };
+      const slice = rows.slice(i, i + BATCH);
+      const valuesSql = slice.map(r => {
+        const tuple = cols.map(c => impLiteral(r[c.name], c.chosenType || c.inferredType));
+        return '(' + tuple.join(',') + ')';
+      }).join(',\n');
+      const batchSql = `INSERT INTO ${tableName} (${colNames}) VALUES\n${valuesSql};`;
+      await impDbCall(conn, { action:'execute', sql: batchSql });
+      unit.importedRows += slice.length;
+      impBatchRender();
+    }
+    return { aborted:false };
+  };
+
+  // Streaming insert — re-parses unit.streamingFile from the start, buffers
+  // BATCH rows, fires the INSERT, drops the buffer. Pauses the parser while
+  // awaiting each flush so memory stays flat at ~BATCH rows. Honours the
+  // global batch abort flag — sets aborted:true in the resolution if so.
+  const insertFromStream = () => new Promise((resolve, reject) => {
+    let buffer = [];
+    let aborted = false;
+    let userAborted = false;
+    unit.importedRows = 0;
+    impBatchRender();
+
+    const flush = async () => {
+      if (buffer.length === 0) return;
+      const slice = buffer;
+      buffer = [];
+      const valuesSql = slice.map(r => {
+        const tuple = cols.map(c => impLiteral(r[c.name], c.chosenType || c.inferredType));
+        return '(' + tuple.join(',') + ')';
+      }).join(',\n');
+      const batchSql = `INSERT INTO ${tableName} (${colNames}) VALUES\n${valuesSql};`;
+      await impDbCall(conn, { action:'execute', sql: batchSql });
+      unit.importedRows += slice.length;
+      impBatchRender();
+    };
+
+    Papa.parse(unit.streamingFile, {
+      header: true,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      transformHeader: h => String(h || '').trim(),
+      step: (row, parser) => {
+        if (aborted) return;
+        if (impBatch.cancelled){
+          aborted = true; userAborted = true;
+          parser.abort();
+          resolve({ aborted:true });
+          return;
+        }
+        buffer.push(row.data);
+        if (buffer.length >= BATCH){
+          parser.pause();
+          flush().then(() => {
+            if (impBatch.cancelled){
+              aborted = true; userAborted = true;
+              parser.abort();
+              resolve({ aborted:true });
+              return;
+            }
+            if (!aborted) parser.resume();
+          }).catch(err => {
+            aborted = true;
+            parser.abort();
+            reject(err);
+          });
+        }
+      },
+      complete: () => {
+        if (aborted) return;
+        flush().then(() => resolve({ aborted:false })).catch(reject);
+      },
+      error: (err) => {
+        aborted = true;
+        reject(new Error('CSV stream failed: ' + (err?.message || String(err))));
+      }
+    });
+  });
+
   let attempts = 0;
   while (attempts < 2){
     attempts++;
     try {
-      if (mode === 'create' || mode === 'overwrite'){
-        await impDbCall(conn, { action:'execute', sql: buildDDL(mode) });
+      const ddl = buildDDL(mode);
+      if (ddl){
+        await impDbCall(conn, { action:'execute', sql: ddl });
       }
 
-      // Insert in batches of 500 rows
-      const BATCH = 500;
-      const colNames = cols.map(c => `[${c.name.replace(/]/g, ']]')}]`).join(',');
-      unit.importedRows = 0;
-      impBatchRender();
+      const result = unit.streaming
+        ? await insertFromStream()
+        : await insertFromMemory();
 
-      for (let i = 0; i < rows.length; i += BATCH){
-        const slice = rows.slice(i, i + BATCH);
-        const valuesSql = slice.map(r => {
-          const tuple = cols.map(c => impLiteral(r[c.name], c.chosenType || c.inferredType));
-          return '(' + tuple.join(',') + ')';
-        }).join(',\n');
-        const batchSql = `INSERT INTO ${tableName} (${colNames}) VALUES\n${valuesSql};`;
-        await impDbCall(conn, { action:'execute', sql: batchSql });
-        unit.importedRows += slice.length;
+      if (result && result.aborted){
+        unit.status = 'error';
+        unit.error = `Aborted — ${(unit.importedRows||0).toLocaleString()}/${(unit.rowCount||0).toLocaleString()} rows imported`;
         impBatchRender();
+        return;
       }
 
       unit.status = 'done';
@@ -13378,11 +13981,11 @@ async function impBatchExecuteUnit(unit, conn, mode){
       return;
     } catch (e){
       const msg = e?.message || String(e);
-      if (attempts === 1 && looksLikeTypeError(msg)){
-        // Promote every non-string column to NVARCHAR(MAX) and retry. We also
-        // need to flip mode to 'overwrite' if it was 'create' so the partially-
-        // created table from the first attempt (if any) is rebuilt cleanly;
-        // for 'append' we leave alone since the table belongs to existing data.
+      // MAX-promote retry only makes sense when we own the table schema
+      // (create/overwrite). For append, the table already exists with fixed
+      // column types — promoting our local schema to MAX wouldn't change the
+      // table on the server, so the retry would hit the exact same error.
+      if (attempts === 1 && looksLikeTypeError(msg) && mode !== 'append'){
         cols.forEach(c => {
           if (c.chosenType !== 'string' && c.chosenType !== 'max') c.chosenType = 'max';
         });
@@ -13390,7 +13993,7 @@ async function impBatchExecuteUnit(unit, conn, mode){
         console.warn(`[batch-import] ${tableName}: type error on attempt 1 ("${msg}"), retrying with all non-string columns as NVARCHAR(MAX).`);
         continue;
       }
-      // Either it's not a type error, or we already retried. Fail the unit.
+      // Either it's not a type error, we're in append mode, or we already retried.
       throw new Error(msg);
     }
   }
@@ -13400,6 +14003,7 @@ function impBatchReset(){
   impBatch.units = [];
   impBatch.running = false;
   impBatch.cancelled = false;
+  impBatchSetAbortVisible(false);
   const wrap = document.getElementById('imp-batch-wrap');
   if (wrap) wrap.style.display = 'none';
   const summary = document.getElementById('imp-batch-summary');
@@ -13414,6 +14018,8 @@ function impBatchReset(){
 window.impHandleFiles  = impHandleFiles;
 window.impBatchRun     = impBatchRun;
 window.impBatchReset   = impBatchReset;
+window.impAbortRun     = impAbortRun;
+window.impBatchAbort   = impBatchAbort;
 
 // Update nav dot on load
 setTimeout(updateConnDots, 500);
