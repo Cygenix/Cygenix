@@ -13121,13 +13121,22 @@ async function impExecuteStreaming(tableName, mode){
         // column types — promoting our local schema to MAX wouldn't actually
         // change the table on the server, so retrying would hit the same error.
         if (attempts === 1 && looksLikeTypeError(msg) && currentMode !== 'append'){
+          // Promote EVERY non-MAX column to NVARCHAR(MAX), including columns
+          // we'd already typed as 'string' (NVARCHAR(N)). Schema inference
+          // only samples the first 500 rows of a streamed CSV; a later row
+          // with a longer-than-sampled value triggers SQL Server msg 8152
+          // ("String or binary data would be truncated"). The fix is to give
+          // up on sample-based sizing and use MAX for everything that wasn't
+          // already MAX. We don't skip 'string' here (that was the bug —
+          // it left the too-small NVARCHAR(N) columns alone and the retry
+          // hit the same truncation error).
           cols.forEach(c => {
-            if (c.chosenType !== 'string' && c.chosenType !== 'max') c.chosenType = 'max';
+            if (c.chosenType !== 'max') c.chosenType = 'max';
           });
           impRenderSchemaTable();
           if (currentMode === 'create') currentMode = 'overwrite';
-          console.warn(`[data-import] ${tableName}: type error ("${msg}"), retrying stream with all non-string columns as NVARCHAR(MAX).`);
-          impRunResult('Type mismatch — converting affected columns to TEXT (MAX) and restarting…', 'info');
+          console.warn(`[data-import] ${tableName}: type error ("${msg}"), retrying stream with all columns as NVARCHAR(MAX).`);
+          impRunResult('Type mismatch (likely truncation) — converting all columns to TEXT (MAX) and restarting…', 'info');
           continue;
         }
         throw e;
@@ -14131,11 +14140,17 @@ async function impBatchExecuteUnit(unit, conn, mode){
       // column types — promoting our local schema to MAX wouldn't change the
       // table on the server, so the retry would hit the exact same error.
       if (attempts === 1 && looksLikeTypeError(msg) && mode !== 'append'){
+        // Promote EVERY non-MAX column to NVARCHAR(MAX), including columns
+        // we'd already typed as 'string' (NVARCHAR(N)). The schema-inference
+        // sample only sees 500 rows; longer values later in the file cause
+        // SQL Server msg 8152 ("String or binary data would be truncated").
+        // Don't skip 'string' here — that was the bug; it left too-small
+        // NVARCHAR(N) columns alone so the retry hit the same truncation.
         cols.forEach(c => {
-          if (c.chosenType !== 'string' && c.chosenType !== 'max') c.chosenType = 'max';
+          if (c.chosenType !== 'max') c.chosenType = 'max';
         });
         if (mode === 'create') mode = 'overwrite';
-        console.warn(`[batch-import] ${tableName}: type error on attempt 1 ("${msg}"), retrying with all non-string columns as NVARCHAR(MAX).`);
+        console.warn(`[batch-import] ${tableName}: type error on attempt 1 ("${msg}"), retrying with all columns as NVARCHAR(MAX).`);
         continue;
       }
       // Either it's not a type error, we're in append mode, or we already retried.
