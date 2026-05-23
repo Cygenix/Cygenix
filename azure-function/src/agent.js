@@ -133,10 +133,11 @@ async function getUserConnections(userId, ctx) {
 }
 
 // ── Run document helpers ────────────────────────────────────────────────────
-function newRunDoc({ userId, goal, conns }) {
+function newRunDoc({ userId, goal, conns, projectId }) {
   return {
     id: shortId('run'),
     userId,
+    projectId: projectId || '',
     status: 'running',
     goal,
     direction: 'source_to_target',
@@ -889,6 +890,49 @@ If the user's goal is unclear, infeasible, or the source/target don't have what'
 
 Be concise. Each turn should advance the proposal — don't explore for the sake of exploring.`;
 
+// ── Memory injection ────────────────────────────────────────────────────────
+// Cap on how many memory entries we inject into the system prompt at run
+// start. A mature project might accumulate hundreds; injecting all of them
+// blows up the prompt and dilutes the model's attention. 50 covers any
+// realistic project; entries past 50 are still in storage and visible in the
+// UI, just not loaded into this run's context. Sorted by updatedAt DESC so
+// the most recent (likely most relevant) entries always make the cut.
+const MEMORY_INJECTION_CAP = 50;
+
+// Format the memory entries into a section appended to the base system
+// prompt. Returns the FULL system prompt string. If there are no entries,
+// returns the base prompt unchanged (no empty "PROJECT MEMORY:" section that
+// the model might try to interpret).
+//
+// Each entry is rendered as a single line so the model can scan them
+// quickly. Kind is shown to help the model weight them (a 'warning' should
+// be heeded more than a 'fact' that might be stale).
+function buildSystemPrompt(memoryEntries) {
+  const entries = Array.isArray(memoryEntries) ? memoryEntries : [];
+  if (entries.length === 0) return SYSTEM_PROMPT;
+
+  const used = entries.slice(0, MEMORY_INJECTION_CAP);
+  const lines = used.map((e, i) => {
+    // Keep each line short — content is already free text so we don't
+    // re-quote it, just prefix with kind for the model's benefit.
+    const kind = (e.kind || 'note').toUpperCase();
+    const content = (e.content || '').replace(/\s+/g, ' ').trim();
+    return `${i + 1}. [${kind}] ${content}`;
+  }).join('\n');
+
+  const truncatedNote = entries.length > MEMORY_INJECTION_CAP
+    ? `\n(${entries.length - MEMORY_INJECTION_CAP} older memory entries omitted to keep this prompt manageable.)`
+    : '';
+
+  return `${SYSTEM_PROMPT}
+
+## Project memory
+
+The following things were learned or decided on this project in previous runs. Take them into account: prefer choices consistent with established preferences and warnings, and do not re-ask the user to clarify things already settled here.
+
+${lines}${truncatedNote}`;
+}
+
 // Rough token estimation: ~4 chars per token for English/JSON. Used to decide
 // whether the next Anthropic call would blow the per-minute rate limit.
 function estimateTokens(messages, systemPrompt) {
@@ -916,6 +960,27 @@ function estimateTokens(messages, systemPrompt) {
 async function runAgentLoop(run, conns, ctx) {
   const anthropic = getAnthropic();
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
+
+  // ── Load project memory (best-effort) ─────────────────────────────────
+  // Memory is per-(user, project). If the run has no projectId attached
+  // (older client, or a flow without an active project), we silently run
+  // with no memory — same behaviour as before this feature existed.
+  // A Cosmos error here is logged but does NOT fail the run; we degrade
+  // to running without memory rather than aborting work the user asked for.
+  let memoryEntries = [];
+  if (run.projectId) {
+    try {
+      const projectMemory = require('./project-memory');
+      memoryEntries = await projectMemory.readActiveMemory(run.userId, run.projectId, ctx);
+      ctx.log(`[agent] run ${run.id} loaded ${memoryEntries.length} memory entries for project ${run.projectId}`);
+    } catch (e) {
+      ctx.log(`[agent] run ${run.id} memory load failed (proceeding without memory): ${e.message}`);
+      memoryEntries = [];
+    }
+  } else {
+    ctx.log(`[agent] run ${run.id} has no projectId — running without memory`);
+  }
+  const systemPrompt = buildSystemPrompt(memoryEntries);
 
   // State accumulated by propose_table_mapping / finalize_proposal calls
   const proposalState = {
@@ -945,7 +1010,7 @@ async function runAgentLoop(run, conns, ctx) {
     }
 
     // Token estimate check before each model call (rate limit)
-    const estimatedTokens = estimateTokens(messages, SYSTEM_PROMPT);
+    const estimatedTokens = estimateTokens(messages, systemPrompt);
     if (estimatedTokens > TOKEN_BUDGET_PER_CALL) {
       ctx.log(`[agent] run ${run.id} would exceed token budget (${estimatedTokens} > ${TOKEN_BUDGET_PER_CALL}), forcing wrap-up`);
       const wrapUpText = proposalState.proposals.length > 0
@@ -956,7 +1021,7 @@ async function runAgentLoop(run, conns, ctx) {
       // both to complete the run. Disallow introspection tools (those got us
       // into the budget overrun in the first place).
       const wrapUpTools = TOOLS.filter(t => t.name === 'propose_table_mapping' || t.name === 'finalize_proposal');
-      return await wrapUpAndReturn(anthropic, model, messages, wrapUpTools, run, proposalState, nextSeq, ctx);
+      return await wrapUpAndReturn(anthropic, model, messages, wrapUpTools, run, proposalState, nextSeq, ctx, systemPrompt);
     }
 
     ctx.log(`[agent] turn ${turn + 1}/${MAX_TURNS} (cost so far $${(run.tokenUsage.costUSD || 0).toFixed(4)}, est ${estimatedTokens} input tokens, ${proposalState.proposals.length} proposals so far)`);
@@ -967,7 +1032,7 @@ async function runAgentLoop(run, conns, ctx) {
       response = await anthropic.messages.create({
         model,
         max_tokens: MODEL_MAX_TOKENS,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         tools: TOOLS,
         messages,
       });
@@ -1066,7 +1131,7 @@ async function runAgentLoop(run, conns, ctx) {
     : `You have hit the maximum number of turns (${MAX_TURNS}). Based on what you have already seen, call propose_table_mapping for the table pair(s) you can map, then call finalize_proposal. Do not call any other tools.`;
   messages.push({ role: 'user', content: wrapUpText });
   const wrapUpTools = TOOLS.filter(t => t.name === 'propose_table_mapping' || t.name === 'finalize_proposal');
-  return await wrapUpAndReturn(getAnthropic(), model, messages, wrapUpTools, run, proposalState, nextSeq, ctx);
+  return await wrapUpAndReturn(getAnthropic(), model, messages, wrapUpTools, run, proposalState, nextSeq, ctx, systemPrompt);
 }
 
 // Forced wrap-up helper. Called when the loop must exit (token budget hit or
@@ -1075,13 +1140,13 @@ async function runAgentLoop(run, conns, ctx) {
 // doesn't, we make ONE more call asking only for finalize. This handles the
 // common case where the model uses a turn to emit proposals, then a second
 // turn to finalize.
-async function wrapUpAndReturn(anthropic, model, messages, tools, run, proposalState, nextSeq, ctx) {
+async function wrapUpAndReturn(anthropic, model, messages, tools, run, proposalState, nextSeq, ctx, systemPrompt) {
   let resp;
   try {
     resp = await anthropic.messages.create({
       model,
       max_tokens: MODEL_MAX_TOKENS,
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       tools,
       messages,
     });
@@ -1143,7 +1208,7 @@ async function wrapUpAndReturn(anthropic, model, messages, tools, run, proposalS
       const finalizeOnly = await anthropic.messages.create({
         model,
         max_tokens: 1024,  // finalize is small
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         tools: TOOLS.filter(t => t.name === 'finalize_proposal'),
         messages,
       });
@@ -1342,7 +1407,7 @@ app.http('agent_migrate', {
                       'or configure them via the Connections page.');
     }
 
-    const run = newRunDoc({ userId, goal, conns });
+    const run = newRunDoc({ userId, goal, conns, projectId: (body.projectId || '').trim() });
     await getCosmosContainer('agent_runs').items.create(run);
     await appendMessage(run.id, {
       seq: 1,

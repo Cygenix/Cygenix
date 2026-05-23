@@ -120,6 +120,44 @@ function validateEntry(input) {
   return { ok: true };
 }
 
+// ── Server-side helper: read active memory ───────────────────────────────────
+// Used by other Function modules running inside the same Function App (e.g.
+// agent.js, when it needs to inject memory into the system prompt at run
+// start). Bypasses the HTTP layer because (a) we are server-side already and
+// (b) function-key auth between modules in the same app is theatre.
+//
+// Returns an array of memory entry documents, ordered by updatedAt DESC, with
+// status='active'. Empty array if no entries exist (a missing projectId or
+// userId silently returns []). Throws only on Cosmos-level errors; the caller
+// can choose to treat those as fatal or as "run without memory".
+//
+// Caller is responsible for deciding what to inject into the prompt — this
+// helper does not format or summarise. It is the single read path used by
+// both the HTTP route and internal callers, so query logic stays in one
+// place.
+async function readActiveMemory(userId, projectId, ctx) {
+  if (!userId || !projectId) return [];
+  const key = makeUserProjectKey(userId, projectId);
+  try {
+    const { resources } = await getContainer().items
+      .query({
+        query: `SELECT * FROM c
+                WHERE c.userProjectKey = @key
+                  AND c.status = 'active'
+                ORDER BY c.updatedAt DESC`,
+        parameters: [{ name: '@key', value: key }]
+      }, { partitionKey: key })
+      .fetchAll();
+    return resources || [];
+  } catch (e) {
+    // Log but rethrow — the agent decides whether to degrade or fail.
+    if (ctx && ctx.log) ctx.log(`[project-memory] readActiveMemory failed: ${e.message}`);
+    throw e;
+  }
+}
+
+module.exports = { readActiveMemory };
+
 // ── Read: GET /agent/project-memory ──────────────────────────────────────────
 // Returns every active memory entry for caller+project. Optional ?status=
 // filter to retrieve superseded or rejected entries for audit views.
