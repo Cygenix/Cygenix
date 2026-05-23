@@ -1473,21 +1473,27 @@ Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}`;
   // a dependency was missed during scope planning, or the source data
   // requires looking at an adjacent table to understand structure). When
   // it does step outside, it must explain why.
-  if (scope && Array.isArray(scope.effectiveTables) && scope.effectiveTables.length > 0) {
-    const tables = scope.effectiveTables;
-    // Cap the list in the prompt to keep it manageable. Up to 200 inline,
-    // beyond that we list a sample + a count. The full list is in Cosmos
-    // and the agent has search_tables / list_tables introspection.
+  if (scope && Array.isArray(scope.rootTables) && scope.rootTables.length > 0) {
+    // Option (c): list ONLY root tables in the prompt — the tables the user
+    // explicitly picked. FK-closure dependencies are stored in the scope
+    // doc (for downstream load-order use) but are NOT listed here, because
+    // listing 80+ FK-dependency tables in the prompt eats tokens that
+    // should be spent on column-level mapping work. The agent can fetch
+    // any FK dependency on demand via describe_tables.
+    const roots = scope.rootTables;
     let tableList;
-    if (tables.length <= 200) {
-      tableList = tables.map(t => `- ${t}`).join('\n');
+    if (roots.length <= 200) {
+      tableList = roots.map(t => `- ${t}`).join('\n');
     } else {
-      tableList = tables.slice(0, 200).map(t => `- ${t}`).join('\n') +
-        `\n- ... (+${tables.length - 200} more tables in this scope)`;
+      tableList = roots.slice(0, 200).map(t => `- ${t}`).join('\n') +
+        `\n- ... (+${roots.length - 200} more root tables in this scope)`;
     }
-    const expandedNote = scope.hasExpansion
-      ? `(${scope.rootTables.length} root tables + ${scope.expandedTables.length} FK dependencies)`
-      : `(${scope.rootTables.length} root tables — scope has not been expanded against a target plan; treat the list as advisory)`;
+
+    // Mention FK dependencies as a count, not a list. Lets the agent know
+    // they exist if it needs to look one up, but keeps the prompt small.
+    const fkNote = scope.hasExpansion && scope.expandedTables && scope.expandedTables.length > 0
+      ? `${scope.expandedTables.length} foreign-key dependency table${scope.expandedTables.length === 1 ? '' : 's'} ${scope.expandedTables.length === 1 ? 'is' : 'are'} known to exist in the load-order graph around these roots, but they're NOT pre-listed in this prompt to save tokens. If you need to inspect one (e.g. to understand an FK column's data type), use describe_tables to fetch it on demand.`
+      : 'No FK expansion was computed for this scope; treat the root list as the full set of in-scope tables.';
 
     // Confirmed source→target pairs, when present, change the agent's job
     // significantly: it does NOT need to discover which source table feeds
@@ -1513,6 +1519,8 @@ ${pairLines}${extra}
 
 **Do not propose new source→target pairs unless essential.** Your job for this run is column-level mapping WITHIN each confirmed pair: which source column feeds which target column, what transformations are needed (CAST, LOOKUP, SPLIT, etc.), and where the source data is missing or malformed. Skip the discovery phase — the pairs are already established.
 
+**Budget guidance.** Realistically, complete column-level mapping for ~2–4 pairs per run is what the per-run budget supports. If after completing the first pair or two you can see that the remaining budget is insufficient to do all ${pairs.length} pair${pairs.length === 1 ? '' : 's'} thoroughly, STOP and surface a decisionForUser asking which remaining pairs to prioritise (or to run a separate scope for them). Producing 2 thorough mappings is far better than 4 partial ones.
+
 If a pair is genuinely wrong (e.g. the source table contains data that clearly belongs in a different target), surface it as a decisionForUser rather than silently substituting another pair.`;
     }
 
@@ -1520,9 +1528,11 @@ If a pair is genuinely wrong (e.g. the source table contains data that clearly b
 
 ## Migration scope: "${scope.name}"
 
-${scope.description ? scope.description + '\n\n' : ''}This run is scoped. The user has committed to migrating the following ${tables.length} target tables ${expandedNote}. Focus your introspection and proposals on these tables.
+${scope.description ? scope.description + '\n\n' : ''}This run is scoped. The user has committed to migrating the following ${roots.length} target table${roots.length === 1 ? '' : 's'}. Focus your introspection and proposals on these.
 
 ${tableList}
+
+${fkNote}
 ${pairsBlock}
 
 Stay within this scope unless something essential forces you to look outside it — for example, a dependency that wasn't anticipated when the scope was built, or a table whose structure can only be understood by examining an adjacent one. If you do step outside, explain why in your reasoning and surface it as a decisionForUser at the end so the user can update the scope.
