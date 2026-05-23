@@ -132,12 +132,122 @@ async function getUserConnections(userId, ctx) {
   }
 }
 
+// ── Scope lookup ────────────────────────────────────────────────────────────
+//
+// Read a saved scope and return its full details, including the effective
+// table list (root + expanded tables) in load order. Returns null if the
+// scope doesn't exist or doesn't belong to this user.
+//
+// This is called at the start of an agent run when the request body included
+// a scopeId — the agent then receives the effective table list as anchoring
+// context in the initial prompt (see buildInitialPrompt). Anchored, not
+// strictly constrained — the agent is asked to focus on these tables but may
+// step outside if essential, with explanation.
+async function loadScopeForRun(userId, scopeId, ctx) {
+  if (!scopeId) return null;
+  try {
+    const { resource: scope } = await getCosmosContainer('agent_scopes')
+      .item(`${userId}_${scopeId}`, userId).read();
+    if (!scope) return null;
+
+    // The scope's effective table list is (rootTables + expandedTables).
+    // If the scope hasn't been expanded yet (no expansion record), we still
+    // anchor on the roots — better than nothing — but flag it.
+    const expanded = Array.isArray(scope.expandedTables) ? scope.expandedTables : [];
+    const roots    = Array.isArray(scope.rootTables) ? scope.rootTables : [];
+    const all      = [...new Set([...roots, ...expanded])];
+
+    return {
+      scopeId:        scope.scopeId,
+      name:           scope.name,
+      description:    scope.description || '',
+      rootTables:     roots,
+      expandedTables: expanded,
+      effectiveTables: all,
+      hasExpansion:   !!scope.expansion && !!scope.expansion.planId,
+      planId:         scope.expansion ? scope.expansion.planId : null,
+    };
+  } catch (e) {
+    if (e.code === 404) return null;
+    ctx.log(`[agent] loadScopeForRun error for scope ${scopeId}: ${e.message}`);
+    return null;
+  }
+}
+
+// ── Memory write on successful run completion ───────────────────────────────
+//
+// When the user approves a scope-driven run's proposals, we record what was
+// loaded as a memory entry so future runs in the same project know that
+// these tables have been migrated. The next time the agent loads project
+// memory, it'll see "loaded: X, Y, Z (scope: 'Master Files')" and can avoid
+// re-introspecting / re-asking about those tables.
+//
+// The write is best-effort. A Cosmos error here logs but does NOT roll back
+// the approval — the run is already completed; failing to record the memory
+// entry just means future runs won't have that hint.
+//
+// Schema mirrors the project_memory container established in round 1:
+//   userProjectKey = `${userId}::${projectId}`  (partition key)
+//   id             = unique memory entry id
+//   kind           = 'fact' | 'decision' | 'preference' | 'warning' | 'note'
+//   content        = free text
+//   createdAt, updatedAt = ISO timestamps
+async function recordScopeLoadCompleted(run, ctx) {
+  if (!run.userId || !run.projectId || !run.scopeId) {
+    // Without all three we can't write a per-project memory entry. Old runs
+    // without scope just complete normally.
+    return;
+  }
+  let scope;
+  try {
+    scope = await loadScopeForRun(run.userId, run.scopeId, ctx);
+  } catch (e) {
+    ctx.log(`[agent] recordScopeLoadCompleted: scope lookup failed: ${e.message}`);
+    return;
+  }
+  if (!scope) {
+    ctx.log(`[agent] recordScopeLoadCompleted: scope ${run.scopeId} not found — skipping memory write`);
+    return;
+  }
+  const tables = scope.effectiveTables || [];
+  if (tables.length === 0) {
+    return;
+  }
+  // Keep the memory content compact. The agent reads up to 50 entries per
+  // run; one entry per scope-load keeps that budget sensible.
+  const tableSummary = tables.length > 20
+    ? `${tables.slice(0, 20).join(', ')}, +${tables.length - 20} more (${tables.length} total)`
+    : tables.join(', ');
+
+  const entry = {
+    id:              `mem_${run.id}_loaded`,
+    userProjectKey:  `${run.userId}::${run.projectId}`,
+    userId:          run.userId,
+    projectId:       run.projectId,
+    kind:            'fact',
+    content:         `Loaded tables via scope "${scope.name}" (run ${run.id} completed ${nowIso()}): ${tableSummary}.`,
+    source:          'agent_run_completion',
+    runId:           run.id,
+    scopeId:         run.scopeId,
+    createdAt:       nowIso(),
+    updatedAt:       nowIso(),
+  };
+
+  try {
+    await getCosmosContainer('project_memory').items.upsert(entry);
+    ctx.log(`[agent] recorded scope-load memory entry for run ${run.id} (scope "${scope.name}", ${tables.length} tables)`);
+  } catch (e) {
+    ctx.log(`[agent] recordScopeLoadCompleted: upsert failed (non-fatal): ${e.message}`);
+  }
+}
+
 // ── Run document helpers ────────────────────────────────────────────────────
-function newRunDoc({ userId, goal, conns, projectId }) {
+function newRunDoc({ userId, goal, conns, projectId, scopeId }) {
   return {
     id: shortId('run'),
     userId,
     projectId: projectId || '',
+    scopeId: scopeId || '',
     status: 'running',
     goal,
     direction: 'source_to_target',
@@ -982,6 +1092,25 @@ async function runAgentLoop(run, conns, ctx) {
   }
   const systemPrompt = buildSystemPrompt(memoryEntries);
 
+  // ── Load scope (best-effort) ───────────────────────────────────────────
+  // If the run is scope-driven, fetch the effective table list and weave it
+  // into the initial prompt. Failure to load the scope degrades to an
+  // unscoped run (same as if no scopeId had been sent) rather than aborting.
+  let scope = null;
+  if (run.scopeId) {
+    try {
+      scope = await loadScopeForRun(run.userId, run.scopeId, ctx);
+      if (scope) {
+        ctx.log(`[agent] run ${run.id} loaded scope "${scope.name}" (${scope.effectiveTables.length} tables)`);
+      } else {
+        ctx.log(`[agent] run ${run.id} scope ${run.scopeId} not found — running unscoped`);
+      }
+    } catch (e) {
+      ctx.log(`[agent] run ${run.id} scope load failed (proceeding unscoped): ${e.message}`);
+      scope = null;
+    }
+  }
+
   // State accumulated by propose_table_mapping / finalize_proposal calls
   const proposalState = {
     proposals: [],         // array of { name, sourceTable, targetTable, columnMapping, reasoning, confidence, warnings }
@@ -994,7 +1123,7 @@ async function runAgentLoop(run, conns, ctx) {
   // Conversation builds up across turns. Start with the user's initial message.
   const messages = [{
     role: 'user',
-    content: buildInitialPrompt(run.goal, run),
+    content: buildInitialPrompt(run.goal, run, scope),
   }];
 
   let nextSeq = 2;  // seq=1 is the initial user message we wrote at run creation
@@ -1320,14 +1449,55 @@ function stubCols(n, excluded) {
   return cols;
 }
 
-function buildInitialPrompt(goal, run) {
-  return `Migrate from source to target.
+function buildInitialPrompt(goal, run, scope) {
+  const base = `Migrate from source to target.
 
 User goal: ${goal}
 
 Run id: ${run.id}
 Source fingerprint: ${run.connectionsFingerprint.sourceFingerprint}
-Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}
+Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}`;
+
+  // If the run is scoped, anchor the agent's attention on the scope's
+  // effective table list. The scope tells the agent: "these are the tables
+  // the user has committed to migrating in this round."
+  //
+  // Important — this is ANCHORED, not strictly constrained. The agent is
+  // asked to focus on these tables but may step outside if essential (e.g.
+  // a dependency was missed during scope planning, or the source data
+  // requires looking at an adjacent table to understand structure). When
+  // it does step outside, it must explain why.
+  if (scope && Array.isArray(scope.effectiveTables) && scope.effectiveTables.length > 0) {
+    const tables = scope.effectiveTables;
+    // Cap the list in the prompt to keep it manageable. Up to 200 inline,
+    // beyond that we list a sample + a count. The full list is in Cosmos
+    // and the agent has search_tables / list_tables introspection.
+    let tableList;
+    if (tables.length <= 200) {
+      tableList = tables.map(t => `- ${t}`).join('\n');
+    } else {
+      tableList = tables.slice(0, 200).map(t => `- ${t}`).join('\n') +
+        `\n- ... (+${tables.length - 200} more tables in this scope)`;
+    }
+    const expandedNote = scope.hasExpansion
+      ? `(${scope.rootTables.length} root tables + ${scope.expandedTables.length} FK dependencies)`
+      : `(${scope.rootTables.length} root tables — scope has not been expanded against a target plan; treat the list as advisory)`;
+
+    return `${base}
+
+## Migration scope: "${scope.name}"
+
+${scope.description ? scope.description + '\n\n' : ''}This run is scoped. The user has committed to migrating the following ${tables.length} target tables ${expandedNote}. Focus your introspection and proposals on these tables.
+
+${tableList}
+
+Stay within this scope unless something essential forces you to look outside it — for example, a dependency that wasn't anticipated when the scope was built, or a table whose structure can only be understood by examining an adjacent one. If you do step outside, explain why in your reasoning and surface it as a decisionForUser at the end so the user can update the scope.
+
+Use the introspection tools to explore the schema and produce your analysis. Start by listing schemas to confirm the structure, then use describe_tables on the scoped tables.`;
+  }
+
+  // Unscoped run — original prompt.
+  return `${base}
 
 Use the introspection tools to explore both databases and produce your analysis. Start by listing schemas to understand the structure.`;
 }
@@ -1407,12 +1577,37 @@ app.http('agent_migrate', {
                       'or configure them via the Connections page.');
     }
 
-    const run = newRunDoc({ userId, goal, conns, projectId: (body.projectId || '').trim() });
+    const scopeIdFromBody = (body.scopeId || '').trim();
+    const projectIdFromBody = (body.projectId || '').trim();
+
+    // Best-effort scope load BEFORE creating the run. If the scope exists,
+    // the initial seeded message includes its table list (so the run record's
+    // message log matches what the agent loop will see). If the scope can't
+    // be loaded, the run still proceeds — degrades to an unscoped run rather
+    // than blocking the user. The agent loop also loads scope independently;
+    // this load is purely for the seeded message text.
+    let scopeForPrompt = null;
+    if (scopeIdFromBody) {
+      try {
+        scopeForPrompt = await loadScopeForRun(userId, scopeIdFromBody, ctx);
+        if (!scopeForPrompt) {
+          ctx.log(`[agent] migrate: scope ${scopeIdFromBody} not found for user — proceeding unscoped`);
+        }
+      } catch (e) {
+        ctx.log(`[agent] migrate: scope load failed for ${scopeIdFromBody} (proceeding unscoped): ${e.message}`);
+      }
+    }
+
+    const run = newRunDoc({
+      userId, goal, conns,
+      projectId: projectIdFromBody,
+      scopeId:   scopeForPrompt ? scopeIdFromBody : ''   // only attach scopeId if scope actually loaded
+    });
     await getCosmosContainer('agent_runs').items.create(run);
     await appendMessage(run.id, {
       seq: 1,
       role: 'user',
-      content: [{ type: 'text', text: buildInitialPrompt(goal, run) }],
+      content: [{ type: 'text', text: buildInitialPrompt(goal, run, scopeForPrompt) }],
     });
 
     ctx.log(`[agent] run ${run.id} created (mode=${run.mode}) for user ${userId}`);
@@ -1544,6 +1739,13 @@ app.http('agent_run_respond', {
             : 'No structured mappings to save (run did not produce any).',
         };
         await writeRun(run);
+
+        // Auto-write a "scope loaded" memory entry so future scope runs in
+        // this project know these tables have been migrated. Best-effort —
+        // a failure here doesn't roll back the approval.
+        try { await recordScopeLoadCompleted(run, ctx); }
+        catch (e) { ctx.log(`[agent] recordScopeLoadCompleted threw: ${e.message}`); }
+
         return ok({ ok: true, status: 'completed', jobIds, firstJobId: jobIds[0] || null });
       }
       case 'edit': {
@@ -1562,6 +1764,11 @@ app.http('agent_run_respond', {
           summary: 'Mapping saved with your edits.',
         };
         await writeRun(run);
+
+        // Same scope-loaded memory write as the approve path.
+        try { await recordScopeLoadCompleted(run, ctx); }
+        catch (e) { ctx.log(`[agent] recordScopeLoadCompleted threw: ${e.message}`); }
+
         return ok({ ok: true, status: 'completed', jobIds, firstJobId: jobIds[0] || null });
       }
       case 'reject': {
