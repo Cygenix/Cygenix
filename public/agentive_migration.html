@@ -470,6 +470,11 @@ body.cyg-collapsed .topbar{left:54px}
     expandedBucket: null,
     bucketSearch: {},     // { [bucketKey]: 'fuzzy search text' }
 
+    // Cross-bucket "Find a table" search. Empty string = picker hidden.
+    // When non-empty, a list of matching tables across ALL buckets is
+    // shown at the top of the cards section.
+    globalSearch: '',
+
     // Working scope being built — at table granularity. Each entry is a
     // fully-qualified table name (e.g. "dbo.Matter"). The set IS the
     // scope's root list when the user clicks Save.
@@ -672,6 +677,7 @@ body.cyg-collapsed .topbar{left:54px}
         state.pickedTables = new Set();
         state.expandedBucket = null;
         state.bucketSearch = {};
+        state.globalSearch = '';
         state.savedScope = null;
         renderSetup();
       }
@@ -931,6 +937,32 @@ body.cyg-collapsed .topbar{left:54px}
     renderSetup();
   }
 
+  // Fuzzy-score a single (name, fullName) pair against a lowercase query.
+  // Returns a positive score for a match, or null for no match.
+  //   - Substring on name (highest), score boosted for earlier match position
+  //   - Subsequence (chars of q appear in order in name), score penalised by
+  //     how scattered the matched chars are
+  function fuzzyScore(name, fullName, q) {
+    const lname = name.toLowerCase();
+    const lfq   = fullName.toLowerCase();
+    if (lname.includes(q) || lfq.includes(q)) {
+      const pos = lname.indexOf(q);
+      return 1000 + (pos === -1 ? 50 : (50 - Math.min(pos, 50)));
+    }
+    // Subsequence match against name
+    let ni = 0, qi = 0, runs = 0, lastIdx = -2;
+    while (ni < lname.length && qi < q.length) {
+      if (lname[ni] === q[qi]) {
+        if (ni !== lastIdx + 1) runs++;
+        lastIdx = ni;
+        qi++;
+      }
+      ni++;
+    }
+    if (qi === q.length) return 500 - runs * 10;
+    return null;
+  }
+
   // Apply the per-bucket fuzzy search filter. Returns the bucket's tables
   // ordered by how strongly they match (when searching) or by load level
   // then name (when not).
@@ -941,38 +973,46 @@ body.cyg-collapsed .topbar{left:54px}
         a.level - b.level || a.name.localeCompare(b.name)
       );
     }
-    // Fuzzy match: find all tables where every character of q appears in
-    // the name in order (classic subsequence match — handles typos like
-    // "matr" matching "Matter"). Score by how clustered the matches are:
-    // a contiguous substring scores higher than scattered chars.
     const scored = [];
     for (const t of bucket.tables) {
-      const name = t.name.toLowerCase();
-      const fq   = t.fullName.toLowerCase();
-      // Quick filter: shortest path is substring on name OR fullName.
-      if (name.includes(q) || fq.includes(q)) {
-        // Strong: substring match. Higher score for earlier position.
-        const pos = name.indexOf(q);
-        scored.push({ t, score: 1000 + (pos === -1 ? 50 : (50 - Math.min(pos, 50))) });
-        continue;
-      }
-      // Subsequence: do every char of q appear in name in order?
-      let ni = 0, qi = 0, runs = 0, lastIdx = -2;
-      while (ni < name.length && qi < q.length) {
-        if (name[ni] === q[qi]) {
-          if (ni !== lastIdx + 1) runs++;
-          lastIdx = ni;
-          qi++;
-        }
-        ni++;
-      }
-      if (qi === q.length) {
-        // All chars matched. Fewer runs = more contiguous = better score.
-        scored.push({ t, score: 500 - runs * 10 });
-      }
+      const s = fuzzyScore(t.name, t.fullName, q);
+      if (s !== null) scored.push({ t, score: s });
     }
     scored.sort((a, b) => b.score - a.score || a.t.name.localeCompare(b.t.name));
     return scored.map(s => s.t);
+  }
+
+  // Cross-bucket search: scan every bucket's tables and return matches with
+  // their bucket key attached so the UI can show "table · bucket · level".
+  function visibleTablesGlobal() {
+    const q = (state.globalSearch || '').trim().toLowerCase();
+    if (!q) return [];
+    const scored = [];
+    for (const bucket of state.buckets) {
+      for (const t of bucket.tables) {
+        const s = fuzzyScore(t.name, t.fullName, q);
+        if (s !== null) {
+          scored.push({ t, bucket: bucket.key, bucketLabel: bucket.label, score: s });
+        }
+      }
+    }
+    scored.sort((a, b) => b.score - a.score || a.t.name.localeCompare(b.t.name));
+    return scored;
+  }
+
+  function setGlobalSearch(value) {
+    state.globalSearch = value || '';
+    renderSetup();
+    // Restore focus on the input — same focus-after-rerender trick as
+    // setBucketSearch.
+    Promise.resolve().then(() => {
+      const el = document.getElementById('am-global-search');
+      if (el) {
+        el.focus();
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    });
   }
 
   function collectPickedTables() {
@@ -1179,6 +1219,66 @@ body.cyg-collapsed .topbar{left:54px}
     </div>`;
   }
 
+  // Cross-bucket picker: a search box that finds tables across ALL buckets,
+  // showing which bucket each result belongs to and letting the user pick
+  // tables directly without opening any specific card.
+  function renderGlobalPicker() {
+    const q = (state.globalSearch || '').trim();
+    const results = q ? visibleTablesGlobal() : [];
+    const CAP = 100;
+    const shown = results.slice(0, CAP);
+
+    let listHtml = '';
+    if (q && shown.length > 0) {
+      listHtml = shown.map(({ t, bucket, bucketLabel }) => {
+        const picked = state.pickedTables.has(t.fullName);
+        return `
+          <label class="table-pick-row${picked ? ' picked' : ''}" data-global-row="${escapeHtml(t.fullName)}">
+            <input type="checkbox" data-pick-table="${escapeHtml(t.fullName)}" ${picked ? 'checked' : ''} style="margin:0;flex-shrink:0">
+            <div style="flex:1;min-width:0">
+              <div style="font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</div>
+              <div style="font-size:10.5px;color:var(--text3);font-family:var(--mono)">${escapeHtml(t.fullName)} · L${t.level} · ${formatRows(t.rows)} rows</div>
+            </div>
+            <div style="font-size:10.5px;color:var(--accent);background:var(--accent-glow);padding:2px 8px;border-radius:999px;flex-shrink:0">${escapeHtml(bucketLabel)}</div>
+          </label>`;
+      }).join('');
+    } else if (q) {
+      listHtml = `<div style="padding:1.25rem;text-align:center;color:var(--text3);font-size:12.5px">
+        No tables across any bucket match "${escapeHtml(q)}". Try a shorter or different search.
+      </div>`;
+    }
+
+    const overflowNote = (q && results.length > CAP)
+      ? `<div style="padding:0.55rem 0.85rem;background:var(--amber-bg);border:1px solid rgba(245,158,11,0.3);border-radius:var(--r);font-size:11.5px;color:var(--text2);margin-top:0.5rem">
+           Showing first ${CAP} of ${results.length} matches. Narrow your search to see the rest.
+         </div>`
+      : '';
+
+    const summary = q
+      ? `<div style="font-size:11.5px;color:var(--text3);margin-top:4px">
+           ${results.length} match${results.length === 1 ? '' : 'es'} across all buckets · ${state.pickedTables.size} table${state.pickedTables.size === 1 ? '' : 's'} picked overall
+         </div>`
+      : `<div style="font-size:11.5px;color:var(--text3);margin-top:4px">
+           Search across all buckets at once — no need to open each card. Try "matt", "client", "trust" …
+         </div>`;
+
+    return `
+      <div class="card">
+        <div style="display:flex;align-items:flex-start;gap:1rem;justify-content:space-between;margin-bottom:0.65rem">
+          <div style="flex:1">
+            <div class="panel-title" style="margin-bottom:0.35rem">Find a table</div>
+            ${summary}
+          </div>
+        </div>
+        <input type="text" class="form-input" id="am-global-search"
+               placeholder="Search target tables across all buckets — e.g. 'mattdate', 'trust', 'NMaster'"
+               value="${escapeHtml(q)}"
+               style="font-size:12.5px;font-family:var(--mono)">
+        ${q ? `<div class="table-pick-list" style="max-height:340px;margin-top:0.65rem">${listHtml}</div>` : ''}
+        ${overflowNote}
+      </div>`;
+  }
+
   function renderBucketCards() {
     if (!Array.isArray(state.buckets) || state.buckets.length === 0) {
       return '';
@@ -1204,8 +1304,6 @@ body.cyg-collapsed .topbar{left:54px}
       const tableCount = b.tables.length;
       const isExpanded = expanded && expanded.key === b.key;
 
-      // The "picked" indicator on the collapsed card: shows N/Total when
-      // a partial selection exists in this bucket.
       const pickedBadge = pickedCount > 0
         ? `<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:0.15rem">${pickedCount}/${tableCount} picked</div>`
         : '';
@@ -1232,9 +1330,10 @@ body.cyg-collapsed .topbar{left:54px}
         </div>`;
     }).join('');
 
-    let html = `
+    let html = renderGlobalPicker();
+    html += `
       <div class="card">
-        <div class="panel-title" style="margin-bottom:0.85rem">Pick a group of tables to migrate</div>
+        <div class="panel-title" style="margin-bottom:0.85rem">Or pick by group</div>
         <div class="carousel-track-wrap">
           <div class="carousel-track">${cardsHtml}</div>
         </div>
@@ -1429,6 +1528,7 @@ body.cyg-collapsed .topbar{left:54px}
       state.pickedTables = new Set();
       state.expandedBucket = null;
       state.bucketSearch = {};
+        state.globalSearch = '';
       state.savedScope = null;
       loadOrCreatePlan(true);
     });
@@ -1437,7 +1537,7 @@ body.cyg-collapsed .topbar{left:54px}
     document.querySelectorAll('[data-bucket]').forEach(el => {
       el.addEventListener('click', (e) => {
         // Don't double-fire when an interactive child is clicked
-        if (e.target.closest('[data-bucket-btn], [data-pick-table], [data-bucket-select-all], [data-bucket-deselect-all], [data-bucket-close], [data-bucket-search]')) return;
+        if (e.target.closest('[data-bucket-btn], [data-pick-table], [data-bucket-select-all], [data-bucket-deselect-all], [data-bucket-close], [data-bucket-search], [data-global-row], #am-global-search')) return;
         expandBucket(el.getAttribute('data-bucket'));
       });
     });
@@ -1460,6 +1560,12 @@ body.cyg-collapsed .topbar{left:54px}
         setBucketSearch(el.getAttribute('data-bucket-search'), el.value);
       });
     });
+
+    // Cross-bucket "Find a table" search input
+    const globalSearch = document.getElementById('am-global-search');
+    if (globalSearch) {
+      globalSearch.addEventListener('input', (e) => setGlobalSearch(e.target.value));
+    }
     document.querySelectorAll('[data-bucket-select-all]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1985,6 +2091,7 @@ body.cyg-collapsed .topbar{left:54px}
       state.pickedTables = new Set();
       state.expandedBucket = null;
       state.bucketSearch = {};
+        state.globalSearch = '';
       state.savedScope = null;
       renderSetup();
       startConnectionWatcher();
