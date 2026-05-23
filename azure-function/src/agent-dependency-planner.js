@@ -73,9 +73,61 @@ function sha256(s) {
 // Tables matching any of these are flagged isNoise: true but still included
 // in the plan. The user can filter them out in the UI; we never silently
 // drop tables here. See spec §8.
+// Noise patterns flag tables that exist in the schema but are unlikely to
+// be migration scope. Tables matching these get isNoise:true on the level
+// doc — they stay in the plan (the user might want to see them) but the UI
+// can filter them out by default.
+//
+// Two pattern groups, additive:
+//
+// 1. GENERIC patterns — backups and temporary tables. Match almost any
+//    SQL system's "obvious junk" naming conventions.
+//
+// 2. 3E-SPECIFIC patterns — recognise the structural noise unique to
+//    Thomson Reuters 3E target schemas. A typical 3E target has thousands
+//    of tables in the schema that aren't migration targets:
+//      - _draft and _template companions: 3E's pending-changes
+//        architecture creates draft and template copies of almost every
+//        configurable table (e.g. Activity / Activity_draft /
+//        Activity_template). They have no FKs because nothing references
+//        them — they're workspace copies.
+//      - _audit suffix: audit-trail mirrors of base tables.
+//      - Leading-underscore + dated suffix: backup tables made during
+//        system change events (e.g. _cashjournal18Dec2019).
+//      - WV_*_(CCC|draft|template): WorkSpace Visualizer system tables.
+//      - XVAL*: validation exclusion lists.
+//
+// These are added as flags only — the planner does NOT drop these tables
+// from the FK graph. If a "noise" table has a real FK relationship, it
+// still participates in the topological sort. The flag is purely a UI hint.
 const DEFAULT_NOISE_PATTERNS = [
+  // Generic backup / temp patterns (additive — apply to any target type)
   /_bak$/i, /_backup$/i, /_old$/i, /_tmp$/i, /_temp$/i, /_copy$/i,
   /^tmp_/i, /^temp_/i,
+
+  // 3E pending-changes architecture
+  /_draft$/i,
+  /_template$/i,
+  /_audit$/i,
+
+  // 3E dated backup convention: leading underscore + name + DDMmmYYYY suffix
+  // (e.g. _cashjournal18Dec2019, _BankRecWorkDet_draft18Dec2019).
+  // Strict regex to avoid catching legitimate names that happen to contain digits.
+  /^_.+\d{2}[A-Za-z]{3}\d{4}(_draft|_template)?$/i,
+
+  // NOTE: we deliberately do NOT flag bare leading-underscore tables
+  // (e.g. _TE3EInstance, _RecMaster). Too risky — some legitimate 3E
+  // tables use underscore prefix and we'd over-flag. Non-dated
+  // underscore tables that are genuinely junk will surface in the
+  // isolatedTables list instead, which the user reviews anyway.
+
+  // WorkSpace Visualizer 3E system tables. Catches the _draft/_template
+  // companions explicitly, AND the _CCC live tables which are 3E
+  // telemetry / system data, not migration scope.
+  /^WV_.*_(CCC|draft|template)/i,
+
+  // 3E validation exclusion lists
+  /^XVAL/,
 ];
 
 // ── Soft-reference column patterns ──────────────────────────────────────────
