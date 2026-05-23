@@ -164,6 +164,7 @@ async function loadScopeForRun(userId, scopeId, ctx) {
       rootTables:     roots,
       expandedTables: expanded,
       effectiveTables: all,
+      sourceTargetPairs: Array.isArray(scope.sourceTargetPairs) ? scope.sourceTargetPairs : [],
       hasExpansion:   !!scope.expansion && !!scope.expansion.planId,
       planId:         scope.expansion ? scope.expansion.planId : null,
     };
@@ -219,13 +220,18 @@ async function recordScopeLoadCompleted(run, ctx) {
     ? `${tables.slice(0, 20).join(', ')}, +${tables.length - 20} more (${tables.length} total)`
     : tables.join(', ');
 
+  const pairs = scope.sourceTargetPairs || [];
+  const pairsSuffix = pairs.length > 0
+    ? ` Includes ${pairs.length} confirmed source→target pair${pairs.length === 1 ? '' : 's'}.`
+    : '';
+
   const entry = {
     id:              `mem_${run.id}_loaded`,
     userProjectKey:  `${run.userId}::${run.projectId}`,
     userId:          run.userId,
     projectId:       run.projectId,
     kind:            'fact',
-    content:         `Loaded tables via scope "${scope.name}" (run ${run.id} completed ${nowIso()}): ${tableSummary}.`,
+    content:         `Loaded tables via scope "${scope.name}" (run ${run.id} completed ${nowIso()}): ${tableSummary}.${pairsSuffix}`,
     source:          'agent_run_completion',
     runId:           run.id,
     scopeId:         run.scopeId,
@@ -235,7 +241,7 @@ async function recordScopeLoadCompleted(run, ctx) {
 
   try {
     await getCosmosContainer('project_memory').items.upsert(entry);
-    ctx.log(`[agent] recorded scope-load memory entry for run ${run.id} (scope "${scope.name}", ${tables.length} tables)`);
+    ctx.log(`[agent] recorded scope-load memory entry for run ${run.id} (scope "${scope.name}", ${tables.length} tables, ${pairs.length} pairs)`);
   } catch (e) {
     ctx.log(`[agent] recordScopeLoadCompleted: upsert failed (non-fatal): ${e.message}`);
   }
@@ -1483,6 +1489,33 @@ Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}`;
       ? `(${scope.rootTables.length} root tables + ${scope.expandedTables.length} FK dependencies)`
       : `(${scope.rootTables.length} root tables — scope has not been expanded against a target plan; treat the list as advisory)`;
 
+    // Confirmed source→target pairs, when present, change the agent's job
+    // significantly: it does NOT need to discover which source table feeds
+    // which target table — the user has already decided. The agent's
+    // remaining work is column-level mapping within each pair.
+    const pairs = Array.isArray(scope.sourceTargetPairs) ? scope.sourceTargetPairs : [];
+    let pairsBlock = '';
+    if (pairs.length > 0) {
+      // Cap pair list at 100 inline; beyond that, list a sample + count.
+      const PAIR_CAP = 100;
+      const pairLines = pairs.slice(0, PAIR_CAP).map(p => {
+        const conf = (typeof p.confidence === 'number') ? ` (confidence ${p.confidence.toFixed(2)})` : '';
+        return `- ${p.source}  →  ${p.target}${conf}`;
+      }).join('\n');
+      const extra = pairs.length > PAIR_CAP ? `\n- ... (+${pairs.length - PAIR_CAP} more pairs)` : '';
+      pairsBlock = `
+
+## Confirmed source → target pairs
+
+The user has already decided which source table feeds each target table. ${pairs.length} pair${pairs.length === 1 ? '' : 's'} ${pairs.length === 1 ? 'is' : 'are'} confirmed:
+
+${pairLines}${extra}
+
+**Do not propose new source→target pairs unless essential.** Your job for this run is column-level mapping WITHIN each confirmed pair: which source column feeds which target column, what transformations are needed (CAST, LOOKUP, SPLIT, etc.), and where the source data is missing or malformed. Skip the discovery phase — the pairs are already established.
+
+If a pair is genuinely wrong (e.g. the source table contains data that clearly belongs in a different target), surface it as a decisionForUser rather than silently substituting another pair.`;
+    }
+
     return `${base}
 
 ## Migration scope: "${scope.name}"
@@ -1490,6 +1523,7 @@ Target fingerprint: ${run.connectionsFingerprint.targetFingerprint}`;
 ${scope.description ? scope.description + '\n\n' : ''}This run is scoped. The user has committed to migrating the following ${tables.length} target tables ${expandedNote}. Focus your introspection and proposals on these tables.
 
 ${tableList}
+${pairsBlock}
 
 Stay within this scope unless something essential forces you to look outside it — for example, a dependency that wasn't anticipated when the scope was built, or a table whose structure can only be understood by examining an adjacent one. If you do step outside, explain why in your reasoning and surface it as a decisionForUser at the end so the user can update the scope.
 

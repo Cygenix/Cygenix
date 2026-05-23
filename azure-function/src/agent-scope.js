@@ -107,6 +107,30 @@ function validateScopeInput(input) {
       return { ok: false, code: 400, msg: `rootTables entries must be "schema.table" strings; got: ${JSON.stringify(t)}` };
     }
   }
+  // sourceTargetPairs is OPTIONAL — older clients won't send it and that's
+  // fine, the scope just runs without pre-confirmed source-to-target
+  // matches. When supplied, each entry must be { source: "schema.table",
+  // target: "schema.table" } with optional confidence/reason fields the
+  // UI used for display.
+  if (input.sourceTargetPairs !== undefined) {
+    if (!Array.isArray(input.sourceTargetPairs)) {
+      return { ok: false, code: 400, msg: 'sourceTargetPairs must be an array if supplied' };
+    }
+    if (input.sourceTargetPairs.length > 500) {
+      return { ok: false, code: 400, msg: 'sourceTargetPairs exceeds 500 entries — split into multiple scopes' };
+    }
+    for (const p of input.sourceTargetPairs) {
+      if (!p || typeof p !== 'object') {
+        return { ok: false, code: 400, msg: 'each sourceTargetPairs entry must be an object' };
+      }
+      if (typeof p.source !== 'string' || !p.source.includes('.')) {
+        return { ok: false, code: 400, msg: `sourceTargetPairs.source must be "schema.table"; got: ${JSON.stringify(p.source)}` };
+      }
+      if (typeof p.target !== 'string' || !p.target.includes('.')) {
+        return { ok: false, code: 400, msg: `sourceTargetPairs.target must be "schema.table"; got: ${JSON.stringify(p.target)}` };
+      }
+    }
+  }
   return { ok: true };
 }
 
@@ -237,6 +261,15 @@ async function handleCreateOrUpdate(req, ctx) {
   }
 
   const now = nowIso();
+  // Normalise pairs once so the stored document has a clean shape regardless
+  // of which optional fields the client sent.
+  const inputPairs = Array.isArray(body.sourceTargetPairs) ? body.sourceTargetPairs : [];
+  const normalizedPairs = inputPairs.map(p => ({
+    source:     p.source,
+    target:     p.target,
+    confidence: typeof p.confidence === 'number' ? p.confidence : null,
+    reason:     typeof p.reason === 'string' ? p.reason : null
+  }));
   let doc;
   if (existing) {
     doc = {
@@ -244,6 +277,9 @@ async function handleCreateOrUpdate(req, ctx) {
       name:        body.name,
       description: body.description || existing.description || '',
       rootTables:  body.rootTables,
+      // If the caller supplied pairs, replace; otherwise keep existing pairs.
+      // Mirrors the "explicit-only updates" pattern we use for description.
+      sourceTargetPairs: inputPairs.length > 0 ? normalizedPairs : (existing.sourceTargetPairs || []),
       // Expansion is invalidated when roots change. Caller must re-expand.
       expandedTables: [],
       expansion:      null,
@@ -259,6 +295,7 @@ async function handleCreateOrUpdate(req, ctx) {
       name:        body.name,
       description: body.description || '',
       rootTables:  body.rootTables,
+      sourceTargetPairs: normalizedPairs,
       expandedTables: [],
       expansion:   null,
       createdAt:   now,
@@ -288,6 +325,7 @@ async function handleList(req, ctx) {
       query: `SELECT c.scopeId, c.projectId, c.name, c.description, c.createdAt, c.updatedAt,
                      ARRAY_LENGTH(c.rootTables) AS rootCount,
                      ARRAY_LENGTH(c.expandedTables) AS expandedCount,
+                     ARRAY_LENGTH(c.sourceTargetPairs) AS pairCount,
                      c.expansion
               FROM c
               WHERE c.userId = @uid AND c.projectId = @pid
@@ -302,6 +340,7 @@ async function handleList(req, ctx) {
       query: `SELECT c.scopeId, c.projectId, c.name, c.description, c.createdAt, c.updatedAt,
                      ARRAY_LENGTH(c.rootTables) AS rootCount,
                      ARRAY_LENGTH(c.expandedTables) AS expandedCount,
+                     ARRAY_LENGTH(c.sourceTargetPairs) AS pairCount,
                      c.expansion
               FROM c
               WHERE c.userId = @uid
@@ -506,7 +545,8 @@ async function handleEffective(req, ctx, scopeId) {
     rootCount: (scope.rootTables || []).length,
     expandedCount: (scope.expandedTables || []).length,
     totalCount: effective.length,
-    tables:    effective
+    tables:    effective,
+    sourceTargetPairs: scope.sourceTargetPairs || []
   });
 }
 
