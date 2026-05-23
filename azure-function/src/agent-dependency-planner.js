@@ -782,9 +782,162 @@ async function persistPlan(overview, levelDocs, ctx) {
   }
 }
 
+// ── Target-mode introspection ───────────────────────────────────────────────
+//
+// In TARGET mode, the planner connects directly to the target SQL database
+// and reads its declared FK graph as the authoritative load order. This is
+// the primary mode for real engagements: source schemas are denormalised
+// flat data with weak structure, but target schemas (3E, etc.) are properly
+// structured with declared foreign keys.
+//
+// Queries are deliberately mirrored from agent-source-schema.js (sys.tables
+// for table list + row counts, INFORMATION_SCHEMA.COLUMNS for columns,
+// sys.foreign_keys for the FK graph) so behaviour stays consistent across
+// the two introspection paths.
+//
+// Connection-string parser: same shape as agent-source-schema.js parseMssqlUrl.
+
+function parseMssqlUrl(connString) {
+  let u;
+  try { u = new URL(connString); }
+  catch (e) { throw new Error(`Invalid connection string: ${e.message}`); }
+  if (u.protocol !== 'mssql:') {
+    throw new Error(`Unsupported protocol: ${u.protocol} (expected mssql:)`);
+  }
+  const params  = u.searchParams;
+  const encrypt = params.get('encrypt') !== 'false';
+  const trust   = params.get('trustServerCertificate') === 'true';
+  return {
+    server:   decodeURIComponent(u.hostname),
+    port:     u.port ? Number(u.port) : 1433,
+    database: decodeURIComponent((u.pathname || '/').slice(1)),
+    user:     decodeURIComponent(u.username || ''),
+    password: decodeURIComponent(u.password || ''),
+    options: {
+      encrypt,
+      trustServerCertificate: trust,
+      enableArithAbort: true
+    },
+    requestTimeout:    30000,
+    connectionTimeout: 15000
+  };
+}
+
+function describeTarget(cfg) {
+  return `${cfg.database} on ${cfg.server}:${cfg.port}`;
+}
+
+async function connectTargetDirect(connString, ctx) {
+  const sql = require('mssql');
+  const cfg = parseMssqlUrl(connString);
+  ctx.log(`[planner] target connect: ${cfg.database}@${cfg.server}`);
+  const pool = await sql.connect(cfg);
+  return { pool, label: describeTarget(cfg) };
+}
+
+// Run the three queries against the target. Returns the data in the SAME
+// shape generatePlan() already consumes — { tables, edges } — so it slots
+// straight into the existing pipeline. The inference engine becomes
+// effectively a no-op here because the target's declared FK graph is
+// authoritative; inferred edges from column-name guessing would only add
+// noise.
+async function introspectTarget(pool, ctx) {
+  const [tablesR, colsR, fksR] = await Promise.all([
+    pool.request().query(`
+      SELECT
+        s.name AS schema_name,
+        t.name AS table_name,
+        SUM(CASE WHEN p.index_id IN (0,1) THEN p.rows ELSE 0 END) AS row_count
+      FROM sys.tables t
+      INNER JOIN sys.schemas s    ON s.schema_id = t.schema_id
+      LEFT  JOIN sys.partitions p ON p.object_id = t.object_id
+      WHERE s.name NOT IN ('sys','INFORMATION_SCHEMA')
+      GROUP BY s.name, t.name
+      ORDER BY s.name, t.name
+    `),
+    pool.request().query(`
+      SELECT
+        c.TABLE_SCHEMA AS schema_name,
+        c.TABLE_NAME   AS table_name,
+        c.COLUMN_NAME  AS column_name
+      FROM INFORMATION_SCHEMA.COLUMNS c
+      WHERE c.TABLE_SCHEMA NOT IN ('sys','INFORMATION_SCHEMA')
+    `),
+    pool.request().query(`
+      SELECT
+        OBJECT_SCHEMA_NAME(fk.parent_object_id)     AS fk_schema,
+        OBJECT_NAME(fk.parent_object_id)            AS fk_table,
+        OBJECT_SCHEMA_NAME(fk.referenced_object_id) AS ref_schema,
+        OBJECT_NAME(fk.referenced_object_id)        AS ref_table,
+        COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS fk_column
+      FROM sys.foreign_keys fk
+      INNER JOIN sys.foreign_key_columns fkc
+        ON fkc.constraint_object_id = fk.object_id
+    `)
+  ]);
+
+  // Roll columns up per table.
+  const colsByTable = new Map();
+  for (const row of colsR.recordset) {
+    const key = `${row.schema_name}.${row.table_name}`;
+    if (!colsByTable.has(key)) colsByTable.set(key, []);
+    colsByTable.get(key).push(row.column_name);
+  }
+
+  // Build the tables array in generatePlan's shape.
+  const tables = [];
+  for (const t of tablesR.recordset) {
+    const fullName = `${t.schema_name}.${t.table_name}`;
+    tables.push({
+      schema:   t.schema_name,
+      name:     t.table_name,
+      fullName,
+      rows:     Number(t.row_count) || 0,
+      colNames: colsByTable.get(fullName) || [],
+      theme:    'other'    // theme classification not done here; the target
+                           // is already structured, themes are a UI concern
+                           // not a planner concern.
+    });
+  }
+
+  // Build the edges array. Dedupe multi-column FKs (which produce one row
+  // per column in sys.foreign_key_columns) by (from, to, via) tuple — first
+  // column wins as the 'via' label.
+  const seen = new Set();
+  const edges = [];
+  for (const fk of fksR.recordset) {
+    if (!fk.fk_schema || !fk.ref_schema) continue;
+    const from = `${fk.fk_schema}.${fk.fk_table}`;
+    const to   = `${fk.ref_schema}.${fk.ref_table}`;
+    if (from === to) continue;     // self-FKs: not load-order constraints
+    const key = `${from}->${to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push({ from, to, via: fk.fk_column || null });
+  }
+
+  ctx.log(`[planner] target introspected: ${tables.length} tables, ${edges.length} declared FK edges`);
+  return { tables, edges };
+}
+
 // ── HTTP handlers ──────────────────────────────────────────────────────────
 
 // POST /api/agent/plan — generate a new plan
+//
+// Two input modes supported on the request body:
+//
+//   TARGET MODE (preferred for real engagements):
+//     { projectId, tgtConnString: "mssql://...", options? }
+//   The planner connects to the target itself, reads its FK graph, and
+//   produces a plan from the target's authoritative structure.
+//
+//   SUPPLIED MODE (legacy / for testing):
+//     { projectId, tables: [...], edges: [...], options? }
+//   The caller supplies pre-introspected schema data. Used by the source-
+//   side inference path and the smoke tests.
+//
+// Detection is by presence of `tgtConnString`. If both are present,
+// `tgtConnString` wins and `tables`/`edges` are ignored.
 async function handlePost(req, ctx) {
   const userId = getUserId(req);
   if (!userId) return err(401, 'x-user-id header is required');
@@ -794,29 +947,64 @@ async function handlePost(req, ctx) {
   catch { return err(400, 'request body must be valid JSON'); }
 
   if (!body || typeof body !== 'object') return err(400, 'request body must be a JSON object');
-  if (!Array.isArray(body.tables) || body.tables.length === 0) {
-    return err(400, 'tables array is required (the source schema). Call /api/agent/source-schema first and pass its tables and edges.');
-  }
 
-  const projectId = (body.projectId || '').trim();
+  const projectId    = (body.projectId    || '').trim();
+  const tgtConnStr   = (body.tgtConnString || '').trim();
+  const isTargetMode = !!tgtConnStr;
+
+  // Resolve tables + edges according to mode.
+  let inputTables, inputEdges, planMode;
+  if (isTargetMode) {
+    planMode = 'target';
+    let pool;
+    try {
+      ({ pool } = await connectTargetDirect(tgtConnStr, ctx));
+    } catch (e) {
+      ctx.log(`[planner] target connect failed: ${e.message}`);
+      return err(500, `Could not connect to target database: ${e.message}`,
+        (e.stack || '').split('\n').slice(0, 6).join('\n'));
+    }
+    try {
+      ({ tables: inputTables, edges: inputEdges } = await introspectTarget(pool, ctx));
+    } catch (e) {
+      ctx.log(`[planner] target introspect failed: ${e.message}\n${e.stack || ''}`);
+      return err(500, `Target introspection failed: ${e.message}`,
+        (e.stack || '').split('\n').slice(0, 6).join('\n'));
+    } finally {
+      try { await pool.close(); } catch { /* ignore */ }
+    }
+    if (!inputTables.length) {
+      return err(400, 'Target database introspection returned zero tables. Check the connection string points at a populated database.');
+    }
+  } else {
+    planMode = 'supplied';
+    if (!Array.isArray(body.tables) || body.tables.length === 0) {
+      return err(400, 'Either tgtConnString (target mode) OR tables array (supplied mode) is required. ' +
+                       'Target mode is recommended: pass tgtConnString and the planner will introspect the target itself.');
+    }
+    inputTables = body.tables;
+    inputEdges  = body.edges || [];
+  }
 
   const t0 = Date.now();
   let plan;
   try {
     plan = generatePlan({
-      tables:    body.tables,
-      edges:     body.edges || [],
+      tables:    inputTables,
+      edges:     inputEdges,
       options:   body.options || {},
       userId,
       projectId
     });
+    // Tag the overview with the mode so the UI can render appropriately.
+    plan.overview.planMode = planMode;
   } catch (e) {
     ctx.log(`[planner] generate failed: ${e.message}\n${e.stack || ''}`);
     return err(500, `Plan generation failed: ${e.message}`,
       (e.stack || '').split('\n').slice(0, 6).join('\n'));
   }
   const genMs = Date.now() - t0;
-  ctx.log(`[planner] plan ${plan.overview.planId} generated in ${genMs}ms (${plan.overview.summary.totalTables} tables, ${plan.overview.summary.totalLevels} levels, ${plan.overview.summary.cycleCount} cycles)`);
+  ctx.log(`[planner] plan ${plan.overview.planId} generated in ${genMs}ms (mode=${planMode}, ${plan.overview.summary.totalTables} tables, ${plan.overview.summary.totalLevels} levels, ${plan.overview.summary.cycleCount} cycles)`);
 
   try {
     await persistPlan(plan.overview, plan.levelDocs, ctx);
@@ -828,6 +1016,7 @@ async function handlePost(req, ctx) {
 
   return ok({
     planId:    plan.overview.planId,
+    planMode,
     overview:  plan.overview,
     levelCount: plan.levelDocs.length,
     generationMs: genMs
