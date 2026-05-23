@@ -5399,6 +5399,16 @@ async function startBulkGenerate(){
     try { state.jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); } catch {}
     renderAllJobs();
   }
+
+  // Force the parent's CygenixSync to push the merged result to Cosmos.
+  // Each iframe wrote to localStorage but the iframe's own push may race
+  // (or be guarded). Writing here from the parent tab triggers the parent's
+  // monkey-patched setItem, which queues a clean push of the final state.
+  // No-op if sync is unavailable.
+  try {
+    const fresh = localStorage.getItem('cygenix_jobs');
+    if (fresh != null) localStorage.setItem('cygenix_jobs', fresh);
+  } catch {}
 }
 
 function _bulkGenRunOne(job){

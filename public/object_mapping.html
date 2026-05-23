@@ -250,7 +250,81 @@ body.cyg-collapsed{padding-left:54px}
 <script src="/cygenix-params.js"></script>
 <script src="/cygenix-wasis.js"></script>
 <script src="/cygenix-privacy.js"></script>
+<script>
+// ──────────────────────────────────────────────────────────────────────────
+// AUTOSAVE FETCH GUARD — must run BEFORE cygenix-cosmos-sync.js loads.
+//
+// When the dashboard's "⚡ Generate SQL — Bulk" runner opens this page in
+// a hidden iframe with ?autosave=1, we need to prevent the iframe's
+// CygenixSync.init() from pulling stale data from Cosmos and overwriting
+// localStorage. Each iframe runs init() at module load — synchronously
+// dispatched, awaiting the network GET. By the time my CygenixSync method
+// patches install, init has already grabbed its internal callApi closure.
+//
+// So we go one level deeper and patch `fetch` itself. For the Cosmos
+// data-API "load" GET (api/data/load), we return a fake "success, no
+// data" response. localStorage stays untouched and the editor proceeds
+// with whatever the parent dashboard wrote there.
+//
+// All other fetches pass through unchanged, including the Azure Function
+// schema fetches and the Cosmos save POST (which we WANT to happen so the
+// iframe's saveAsJob propagates to Cosmos as a normal write).
+// ──────────────────────────────────────────────────────────────────────────
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('autosave') !== '1') return;
+
+    const origFetch = window.fetch;
+    window.fetch = function(input, init){
+      try {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const method = (init && init.method) || (typeof input === 'object' && input.method) || 'GET';
+        // The Cosmos data-API exposes /api/data/load (GET) — block ONLY this.
+        // Save (POST) and all other endpoints (db-connect, schema-tables, etc.)
+        // are untouched.
+        if (/\/api\/data\/load(\?|$)/i.test(url) && /^GET$/i.test(method)){
+          window._cygenixAutosaveBlockedLoad = (window._cygenixAutosaveBlockedLoad||0) + 1;
+          // Match the shape the real endpoint returns: { success:true, data:{} }
+          // sync.js's init expects a payload it can iterate; an empty object
+          // means "nothing to apply".
+          return Promise.resolve(new Response(
+            JSON.stringify({ success: true, data: {} }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          ));
+        }
+      } catch(e) { /* fall through to real fetch */ }
+      return origFetch.apply(this, arguments);
+    };
+
+    window._cygenixAutosaveFetchGuardActive = true;
+  } catch(e){ /* never block page load over this */ }
+})();
+</script>
 <script src="/cygenix-cosmos-sync.js"></script>
+<script>
+// Belt-and-braces second layer: even with the fetch guard, also patch the
+// public pull methods so any explicit call (e.g. by checkEditMode's
+// ensureKey) is a no-op for cygenix_jobs. Other keys remain functional.
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('autosave') !== '1') return;
+    if (typeof CygenixSync === 'undefined') return;
+    const GUARDED = 'cygenix_jobs';
+    function wrap(name){
+      const orig = CygenixSync[name];
+      if (typeof orig !== 'function') return;
+      CygenixSync[name] = function(key, ...rest){
+        if (key === GUARDED) return Promise.resolve(true);
+        return orig.call(this, key, ...rest);
+      };
+    }
+    wrap('ensureKey'); wrap('load'); wrap('forceLoad');
+    window._cygenixAutosavePullGuardActive = true;
+  } catch(e){}
+})();
+</script>
 <script src="/cygenix-api.js"></script>
 <script src="/cygenix-history.js"></script>
 
