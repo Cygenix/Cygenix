@@ -1,0 +1,12 @@
+{
+  "_comment": "Module templates map 3E functional area names to root table lists. v1 ships these empty. Populate as engagement experience builds. See docs/agent-scope-spec.md §7.",
+
+  "matters":    [],
+  "clients":    [],
+  "time":       [],
+  "billing":    [],
+  "gl":         [],
+  "ap":         [],
+  "trust":      [],
+  "conflicts":  []
+}

@@ -17,6 +17,7 @@ require('./notify');
 require('./profile-builder');
 require('./project-memory');
 require('./agent-dependency-planner');
+require('./agent-scope');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
