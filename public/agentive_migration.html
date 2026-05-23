@@ -828,8 +828,33 @@ body.cyg-collapsed .topbar{left:54px}
     }
   }
 
+  // Curated list of 3E target tables that should ALWAYS land in the
+  // "Master entities" bucket regardless of their FK depth in the plan.
+  //
+  // Why this is needed: the planner topo-sorts by FK dependencies, which
+  // pushes 3E core entities like Client and Matter down to Level 11+ because
+  // they reference many lookup tables. From a consultant's mental model
+  // those ARE master files, not transactions — so we override the
+  // level-based bucket assignment for known master entities.
+  //
+  // List intentionally short and conservative. Tables not on this list are
+  // bucketed by level as before. Extend this list as patterns emerge.
+  const MASTER_ENTITY_OVERRIDES = new Set([
+    // 3E top-level entities
+    'Client', 'Matter', 'Entity', 'Timekeeper', 'NMaster',
+    'Vendor', 'Office', 'Department', 'PracticeArea', 'PracticeGroup',
+    'Industry', 'Region',
+    // First-class entity extensions
+    'ClientAdditionalInfo', 'MatterAdditionalInfo',
+    'Site', 'Address', 'Phone', 'Email', 'Relate',
+    // Common 3E master configurations consultants treat as master data
+    'BillTo', 'TaxCode', 'BankAcct'
+  ]);
+
   // Build the 5 buckets from the plan's levels. Each bucket gets the set of
   // non-noise tables that fall in its level range, sorted by load level.
+  // Tables matching MASTER_ENTITY_OVERRIDES are FORCED into the 'master'
+  // bucket regardless of their level.
   function buildBuckets(plan, levelDocs) {
     const buckets = BUCKET_DEFS.map(def => ({
       key:         def.key,
@@ -839,20 +864,26 @@ body.cyg-collapsed .topbar{left:54px}
       tables:      [],
       totalRows:   0
     }));
+    const masterBucket = buckets.find(b => b.key === 'master');
     for (const lvl of levelDocs) {
       if (!lvl || !Array.isArray(lvl.tables)) continue;
-      const bucket = buckets.find(b => lvl.level >= b.range[0] && lvl.level <= b.range[1]);
-      if (!bucket) continue;
       for (const t of lvl.tables) {
         if (t.isNoise) continue;     // hide noise from bucket cards
-        bucket.tables.push({
+        const tableEntry = {
           fullName: t.fullName,
           schema:   t.schema,
           name:     t.name,
           rows:     t.rows || 0,
           level:    lvl.level
-        });
-        bucket.totalRows += (t.rows || 0);
+        };
+        // Override: if the table name matches a known master entity, force
+        // it into the master bucket regardless of level.
+        const targetBucket = MASTER_ENTITY_OVERRIDES.has(t.name)
+          ? masterBucket
+          : buckets.find(b => lvl.level >= b.range[0] && lvl.level <= b.range[1]);
+        if (!targetBucket) continue;
+        targetBucket.tables.push(tableEntry);
+        targetBucket.totalRows += (t.rows || 0);
       }
     }
     return buckets;
