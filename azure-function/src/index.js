@@ -15,6 +15,7 @@ require('./github-proxy');
 require('./run-migration');
 require('./notify');
 require('./profile-builder');
+require('./project-memory');
 
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
