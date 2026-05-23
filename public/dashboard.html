@@ -1518,7 +1518,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     <div id="view-jobs" class="view">
       <div class="panel-header">
         <div class="panel-title">All Migration Jobs</div>
-        <div style="display:flex;gap:0.5rem;align-items:center">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)">⚡ Generate SQL</button>
           <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
           <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
         </div>
@@ -1574,6 +1575,34 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="modal-actions">
           <button class="btn btn-ghost" onclick="closeExportScriptsModal()">Cancel</button>
           <button class="btn btn-primary" id="exp-run-btn" onclick="runExportScripts()">Export</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- BULK GENERATE SQL MODAL -->
+    <div class="modal-overlay" id="bulk-generate-modal">
+      <div class="modal" style="width:640px">
+        <div class="modal-title">Generate SQL — Bulk</div>
+        <div class="modal-sub" id="bulk-gen-scope">Runs object_mapping silently in the background, one job at a time. Don't close this window.</div>
+
+        <div id="bulk-gen-warn" class="alert alert-amber" style="margin-bottom:1rem">
+          <strong>Before you start:</strong> connections must be configured (Dashboard → Connections). Jobs without a saved column mapping will be skipped.
+        </div>
+
+        <!-- Per-job progress list (shown once Start is clicked) -->
+        <div id="bulk-gen-progress-wrap" style="display:none;max-height:42vh;overflow-y:auto;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);padding:0.5rem">
+          <div id="bulk-gen-progress-list" style="font-family:var(--mono);font-size:12px;line-height:1.65"></div>
+        </div>
+
+        <!-- Live status footer (shown during the run) -->
+        <div id="bulk-gen-status" style="display:none;margin-top:0.75rem;font-size:12px;color:var(--text3);font-family:var(--mono)"></div>
+
+        <!-- Hidden iframe host — only attached when a run is active -->
+        <div id="bulk-gen-iframe-host" style="position:absolute;left:-10000px;top:-10000px;width:1024px;height:768px;visibility:hidden" aria-hidden="true"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="bulk-gen-cancel-btn" onclick="closeBulkGenerateModal()">Cancel</button>
+          <button class="btn btn-primary" id="bulk-gen-start-btn" onclick="startBulkGenerate()">Start</button>
         </div>
       </div>
     </div>
@@ -5093,7 +5122,6 @@ async function runExportScripts(){
   const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
 
   if (format === 'single'){
-    // Concatenate everything into one .sql file with banner separators
     const banner = (e) => `-- ============================================================\n-- Job: ${e.jobName}\n-- Script: ${e.kind}\n-- ============================================================\n`;
     const header = `-- Cygenix combined export\n-- Generated: ${new Date().toISOString()}\n-- Scripts: ${entries.length} (${jobs.length} job${jobs.length===1?'':'s'})\n-- ============================================================\n\n`;
     const body = entries.map(e => banner(e) + '\n' + e.content + '\n').join('\nGO\n\n');
@@ -5101,7 +5129,6 @@ async function runExportScripts(){
     if (typeof showToast === 'function') showToast(`Exported 1 combined .sql (${entries.length} script${entries.length===1?'':'s'})`);
     if (typeof addAudit === 'function') addAudit(`Export Scripts: combined .sql with ${entries.length} script(s) from ${jobs.length} job(s)`);
   } else {
-    // ZIP with one .sql per script
     let JSZip;
     try { JSZip = await _loadJSZip(); }
     catch(e){
@@ -5109,7 +5136,6 @@ async function runExportScripts(){
       return;
     }
     const zip = new JSZip();
-    // De-duplicate filenames (two jobs with the same sanitised name)
     const used = new Map();
     for (const e of entries){
       let fn = e.filename;
@@ -5122,7 +5148,6 @@ async function runExportScripts(){
       }
       zip.file(fn, e.content);
     }
-    // Bundle a small manifest so the user can see what's inside
     const manifest = [
       `Cygenix script export`,
       `Generated: ${new Date().toISOString()}`,
@@ -5148,11 +5173,266 @@ async function runExportScripts(){
   closeExportScriptsModal();
 }
 
-// Expose on window so the inline onclick attributes can find them even if
-// the script block boundaries change in dashboard.html.
 window.openExportScriptsModal  = openExportScriptsModal;
 window.closeExportScriptsModal = closeExportScriptsModal;
 window.runExportScripts        = runExportScripts;
+
+// ── Bulk Generate SQL (hidden-iframe runner) ──────────────────────────────
+// Strictly sequential — one iframe at a time, destroyed between jobs — to
+// avoid Cosmos sync races on the shared cygenix_jobs key.
+// Each iframe loads /object_mapping.html?edit=<id>&autosave=1, which on
+// page load runs its normal hydration path (connect → load schema → restore
+// mapping → tryAutoGenSQL/generateOTMSQL) and then calls saveAsJob() silently.
+// The iframe sends a postMessage back when done or errored.
+const _bulkGen = {
+  running: false,
+  cancelled: false,
+  queue: [],
+  skipped: [],      // {jobName, reason}
+  results: [],      // {jobName, ok, message}
+  current: null,    // {job, iframe, timeoutId}
+  perJobTimeoutMs: 90000  // 90s — single big tables can take a while to fetch schema
+};
+
+function openBulkGenerateModal(){
+  // Resolve scope identically to Export Scripts: selection wins, otherwise filter.
+  const { jobs, source } = getJobsForExport();
+  const scopeEl = document.getElementById('bulk-gen-scope');
+  const warnEl  = document.getElementById('bulk-gen-warn');
+  const startBtn= document.getElementById('bulk-gen-start-btn');
+
+  // Reset state
+  _bulkGen.running = false;
+  _bulkGen.cancelled = false;
+  _bulkGen.queue = [];
+  _bulkGen.skipped = [];
+  _bulkGen.results = [];
+  document.getElementById('bulk-gen-progress-wrap').style.display = 'none';
+  document.getElementById('bulk-gen-progress-list').innerHTML = '';
+  document.getElementById('bulk-gen-status').style.display = 'none';
+  document.getElementById('bulk-gen-status').textContent = '';
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start';
+  document.getElementById('bulk-gen-cancel-btn').textContent = 'Cancel';
+
+  if (!jobs.length){
+    if (scopeEl) scopeEl.textContent = 'No jobs available.';
+    startBtn.disabled = true;
+    document.getElementById('bulk-generate-modal').classList.add('open');
+    return;
+  }
+
+  // Filter: only mapping jobs (single-map, one-to-many). SQL-editor jobs (jobType==='sql')
+  // and jobs with no saved mapping are skipped with a reason.
+  const runnable = [];
+  for (const j of jobs){
+    if (j.jobType === 'sql'){
+      _bulkGen.skipped.push({ jobName: j.name, reason: 'Raw SQL job — open in SQL Editor instead' });
+      continue;
+    }
+    // Need at least source + target to be runnable
+    const hasMapping = (Array.isArray(j.columnMapping) && j.columnMapping.length > 0)
+                   || (j.oneToManyConfig && Array.isArray(j.tables) && j.tables.length > 0);
+    if (!hasMapping){
+      _bulkGen.skipped.push({ jobName: j.name, reason: 'No saved mapping — open and configure first' });
+      continue;
+    }
+    if (!j.sourceTable && !j.source){
+      _bulkGen.skipped.push({ jobName: j.name, reason: 'No source table set' });
+      continue;
+    }
+    runnable.push(j);
+  }
+  _bulkGen.queue = runnable;
+
+  const totalIn = jobs.length;
+  const skipN   = _bulkGen.skipped.length;
+  const runN    = runnable.length;
+
+  if (scopeEl){
+    const scopeLabel = source === 'selection'
+      ? `${totalIn} selected job${totalIn===1?'':'s'}`
+      : `all ${totalIn} job${totalIn===1?'':'s'} in the current filter (nothing ticked)`;
+    scopeEl.textContent = `Will run on ${scopeLabel}. ${runN} runnable, ${skipN} skipped.`;
+  }
+
+  // If any skipped, show them upfront so the user can cancel and re-pick
+  if (skipN){
+    const list = _bulkGen.skipped.slice(0, 8)
+      .map(s => `<li><code>${(s.jobName||'(unnamed)').replace(/</g,'&lt;')}</code> — ${s.reason}</li>`).join('');
+    const more = skipN > 8 ? `<li>…and ${skipN-8} more</li>` : '';
+    warnEl.innerHTML = `<strong>${skipN} job${skipN===1?'':'s'} will be skipped:</strong><ul style="margin:0.4rem 0 0 1rem;padding:0">${list}${more}</ul>`;
+    warnEl.classList.add('visible');
+  } else {
+    warnEl.innerHTML = '<strong>Before you start:</strong> connections must be configured (Dashboard → Connections). The runner uses your current source/target connections for every job.';
+    warnEl.classList.add('visible');
+  }
+
+  if (runN === 0){
+    startBtn.disabled = true;
+    startBtn.textContent = 'Nothing to run';
+  }
+
+  document.getElementById('bulk-generate-modal').classList.add('open');
+}
+
+function closeBulkGenerateModal(){
+  // If a run is active, this acts as Cancel.
+  if (_bulkGen.running){
+    _bulkGen.cancelled = true;
+    document.getElementById('bulk-gen-status').textContent = 'Cancelling…';
+    // Resolve the in-flight job's promise so the await in startBulkGenerate
+    // can unblock; the loop's `if (_bulkGen.cancelled) break` then exits.
+    if (_bulkGen.current){
+      _bulkGenFinishCurrent(false, 'Cancelled');
+    }
+    return;
+  }
+  document.getElementById('bulk-generate-modal').classList.remove('open');
+  _bulkGenCleanupIframe();
+}
+
+function _bulkGenCleanupIframe(){
+  if (_bulkGen.current){
+    if (_bulkGen.current.timeoutId) clearTimeout(_bulkGen.current.timeoutId);
+    if (_bulkGen.current.iframe && _bulkGen.current.iframe.parentNode){
+      _bulkGen.current.iframe.parentNode.removeChild(_bulkGen.current.iframe);
+    }
+    _bulkGen.current = null;
+  }
+}
+
+function _bulkGenUpdateRow(jobId, status, message){
+  const row = document.querySelector(`[data-bgrow="${jobId}"]`);
+  if (!row) return;
+  const icon = status === 'running' ? '⏳'
+             : status === 'ok'      ? '✓'
+             : status === 'fail'    ? '✕'
+             : status === 'queue'   ? '·'
+             : '?';
+  const colour = status === 'running' ? 'var(--accent)'
+               : status === 'ok'      ? 'var(--green)'
+               : status === 'fail'    ? 'var(--red)'
+               : 'var(--text3)';
+  row.querySelector('.bg-icon').textContent = icon;
+  row.querySelector('.bg-icon').style.color = colour;
+  if (message){
+    const msgEl = row.querySelector('.bg-msg');
+    msgEl.textContent = ' — ' + message;
+    msgEl.style.color = colour;
+  }
+}
+
+function _bulkGenRenderProgressList(){
+  const wrap = document.getElementById('bulk-gen-progress-wrap');
+  const list = document.getElementById('bulk-gen-progress-list');
+  wrap.style.display = 'block';
+  list.innerHTML = _bulkGen.queue.map(j => `
+    <div data-bgrow="${j.id}" style="display:flex;align-items:flex-start;gap:0.5rem;padding:2px 0">
+      <span class="bg-icon" style="width:14px;text-align:center;color:var(--text3)">·</span>
+      <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(j.name||'(unnamed)').replace(/</g,'&lt;')}</span>
+      <span class="bg-msg" style="color:var(--text3);font-size:11px"></span>
+    </div>
+  `).join('');
+  document.getElementById('bulk-gen-status').style.display = 'block';
+}
+
+async function startBulkGenerate(){
+  if (_bulkGen.running) return;
+  if (!_bulkGen.queue.length) return;
+
+  _bulkGen.running = true;
+  _bulkGen.cancelled = false;
+  document.getElementById('bulk-gen-start-btn').disabled = true;
+  document.getElementById('bulk-gen-start-btn').textContent = 'Running…';
+  document.getElementById('bulk-gen-cancel-btn').textContent = 'Cancel';
+  _bulkGenRenderProgressList();
+
+  // Single shared postMessage listener for the lifetime of the run
+  const onMsg = (ev) => {
+    // Same-origin only — we don't accept results from foreign frames
+    if (ev.origin !== window.location.origin) return;
+    const d = ev.data;
+    if (!d || d.source !== 'cygenix-autosave') return;
+    if (!_bulkGen.current || d.jobId !== _bulkGen.current.job.id) return;
+    // Mark current done, advance
+    _bulkGenFinishCurrent(d.ok, d.message || (d.ok ? 'Done' : 'Failed'));
+  };
+  window.addEventListener('message', onMsg);
+
+  for (let i = 0; i < _bulkGen.queue.length; i++){
+    if (_bulkGen.cancelled) break;
+    const job = _bulkGen.queue[i];
+
+    document.getElementById('bulk-gen-status').textContent =
+      `Running ${i+1} of ${_bulkGen.queue.length}: ${job.name}`;
+    _bulkGenUpdateRow(job.id, 'running', 'starting…');
+
+    await _bulkGenRunOne(job);
+  }
+
+  window.removeEventListener('message', onMsg);
+  _bulkGenCleanupIframe();
+  _bulkGen.running = false;
+
+  // Final summary
+  const okN   = _bulkGen.results.filter(r => r.ok).length;
+  const failN = _bulkGen.results.filter(r => !r.ok).length;
+  const skipN = _bulkGen.skipped.length;
+  const cancelTail = _bulkGen.cancelled ? ' (cancelled)' : '';
+  document.getElementById('bulk-gen-status').innerHTML =
+    `<span style="color:var(--green)">${okN} succeeded</span> · ` +
+    `<span style="color:var(--red)">${failN} failed</span> · ` +
+    `<span style="color:var(--text3)">${skipN} skipped</span>${cancelTail}`;
+  document.getElementById('bulk-gen-start-btn').textContent = 'Done';
+  document.getElementById('bulk-gen-cancel-btn').textContent = 'Close';
+
+  if (typeof showToast === 'function'){
+    showToast(`Bulk generate: ${okN} ok, ${failN} fail, ${skipN} skip${cancelTail}`);
+  }
+  if (typeof addAudit === 'function'){
+    addAudit(`Bulk Generate SQL: ${okN} succeeded, ${failN} failed, ${skipN} skipped${cancelTail}`);
+  }
+
+  // Refresh the jobs table so updated SQL/badges show up
+  if (typeof renderAllJobs === 'function'){
+    try { state.jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); } catch {}
+    renderAllJobs();
+  }
+}
+
+function _bulkGenRunOne(job){
+  return new Promise(resolve => {
+    const host = document.getElementById('bulk-gen-iframe-host');
+    const iframe = document.createElement('iframe');
+    iframe.src = `/object_mapping.html?edit=${encodeURIComponent(job.id)}&autosave=1`;
+    iframe.style.width  = '1024px';
+    iframe.style.height = '768px';
+    iframe.style.border = '0';
+    host.appendChild(iframe);
+
+    // Hard per-job timeout. If the iframe never reports back (e.g. schema
+    // fetch hangs, connection broken), we mark it failed and move on.
+    const timeoutId = setTimeout(() => {
+      _bulkGenFinishCurrent(false, `Timeout after ${Math.round(_bulkGen.perJobTimeoutMs/1000)}s`);
+    }, _bulkGen.perJobTimeoutMs);
+
+    _bulkGen.current = { job, iframe, timeoutId, resolve };
+  });
+}
+
+function _bulkGenFinishCurrent(ok, message){
+  if (!_bulkGen.current) return;
+  const { job, resolve } = _bulkGen.current;
+  _bulkGen.results.push({ jobName: job.name, ok, message });
+  _bulkGenUpdateRow(job.id, ok ? 'ok' : 'fail', message);
+  _bulkGenCleanupIframe();
+  if (resolve) resolve();
+}
+
+window.openBulkGenerateModal  = openBulkGenerateModal;
+window.closeBulkGenerateModal = closeBulkGenerateModal;
+window.startBulkGenerate      = startBulkGenerate;
 
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
