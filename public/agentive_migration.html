@@ -342,6 +342,20 @@ body.cyg-collapsed .topbar{left:54px}
 .table-name{fill:var(--text);font-family:var(--mono);font-size:10.5px}
 .table-meta{fill:var(--text3);font-family:var(--mono);font-size:9px}
 .edge{stroke:var(--border2);stroke-width:0.5;fill:none;opacity:0.7}
+
+/* Bucket card variants */
+.action-card.has-picks:not(.active){border-color:rgba(61,126,255,0.5)}
+
+/* Expanded-bucket panel */
+.bucket-expanded-panel{background:var(--bg2)}
+.table-pick-list{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:0.4rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+.table-pick-list::-webkit-scrollbar{width:8px}
+.table-pick-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.table-pick-row{display:flex;align-items:center;gap:0.7rem;padding:0.45rem 0.65rem;border-radius:6px;cursor:pointer;transition:background .12s;user-select:none}
+.table-pick-row:hover{background:var(--bg3)}
+.table-pick-row.picked{background:var(--accent-glow)}
+.table-pick-row.picked:hover{background:rgba(61,126,255,0.22)}
+.table-pick-row input[type="checkbox"]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -450,10 +464,16 @@ body.cyg-collapsed .topbar{left:54px}
     // Bucket cards derived from plan levels. Computed when plan loads.
     buckets: [],          // [{ key, label, description, levels: [N..M], tables: [...] }]
 
-    // Working scope being built (in-memory until "Save scope" clicked).
-    // pickedBuckets: Set of bucket keys currently toggled on.
-    // savedScope: the persisted scope doc (null until saved/loaded).
-    pickedBuckets: new Set(),
+    // Which bucket card is currently expanded (showing its table list).
+    // null = none expanded; only the card view is visible. Per-bucket
+    // search text lives in bucketSearch keyed by bucket key.
+    expandedBucket: null,
+    bucketSearch: {},     // { [bucketKey]: 'fuzzy search text' }
+
+    // Working scope being built — at table granularity. Each entry is a
+    // fully-qualified table name (e.g. "dbo.Matter"). The set IS the
+    // scope's root list when the user clicks Save.
+    pickedTables: new Set(),
     savedScope: null,
 
     // Scopes available for this project (loaded from /api/agent/scope).
@@ -649,7 +669,9 @@ body.cyg-collapsed .topbar{left:54px}
         state.plan = null;
         state.planError = null;
         state.buckets = [];
-        state.pickedBuckets = new Set();
+        state.pickedTables = new Set();
+        state.expandedBucket = null;
+        state.bucketSearch = {};
         state.savedScope = null;
         renderSetup();
       }
@@ -836,26 +858,123 @@ body.cyg-collapsed .topbar{left:54px}
     return buckets;
   }
 
-  function togglePickBucket(bucketKey) {
-    if (state.pickedBuckets.has(bucketKey)) {
-      state.pickedBuckets.delete(bucketKey);
+  // ── Bucket expansion / table-level picking ─────────────────────────────
+  //
+  // Cards are a filter/browser, not the unit of selection. Clicking a card
+  // expands it to reveal its table list with checkboxes and fuzzy search.
+  // Selection happens per-table. The scope's root tables are the union of
+  // ticked table names.
+
+  function expandBucket(bucketKey) {
+    // Toggle: clicking the same expanded card closes it.
+    state.expandedBucket = (state.expandedBucket === bucketKey) ? null : bucketKey;
+    renderSetup();
+  }
+
+  function toggleTablePick(fullName) {
+    if (state.pickedTables.has(fullName)) {
+      state.pickedTables.delete(fullName);
     } else {
-      state.pickedBuckets.add(bucketKey);
+      state.pickedTables.add(fullName);
     }
-    // Saved-scope link is invalidated as soon as the picks diverge from it.
+    // Saved-scope link breaks as soon as the picks diverge from it.
     state.savedScope = null;
     renderSetup();
   }
 
-  // Collect every table currently picked across all selected buckets.
-  // These become the scope's root tables when the user saves.
-  function collectPickedTables() {
-    const set = new Set();
-    for (const b of state.buckets) {
-      if (!state.pickedBuckets.has(b.key)) continue;
-      for (const t of b.tables) set.add(t.fullName);
+  function selectAllVisibleInBucket(bucketKey) {
+    const bucket = state.buckets.find(b => b.key === bucketKey);
+    if (!bucket) return;
+    const visible = visibleTablesForBucket(bucket);
+    for (const t of visible) state.pickedTables.add(t.fullName);
+    state.savedScope = null;
+    renderSetup();
+  }
+
+  function deselectAllVisibleInBucket(bucketKey) {
+    const bucket = state.buckets.find(b => b.key === bucketKey);
+    if (!bucket) return;
+    const visible = visibleTablesForBucket(bucket);
+    for (const t of visible) state.pickedTables.delete(t.fullName);
+    state.savedScope = null;
+    renderSetup();
+  }
+
+  // Apply the per-bucket fuzzy search filter. Returns the bucket's tables
+  // ordered by how strongly they match (when searching) or by load level
+  // then name (when not).
+  function visibleTablesForBucket(bucket) {
+    const q = (state.bucketSearch[bucket.key] || '').trim().toLowerCase();
+    if (!q) {
+      return [...bucket.tables].sort((a, b) =>
+        a.level - b.level || a.name.localeCompare(b.name)
+      );
     }
-    return [...set];
+    // Fuzzy match: find all tables where every character of q appears in
+    // the name in order (classic subsequence match — handles typos like
+    // "matr" matching "Matter"). Score by how clustered the matches are:
+    // a contiguous substring scores higher than scattered chars.
+    const scored = [];
+    for (const t of bucket.tables) {
+      const name = t.name.toLowerCase();
+      const fq   = t.fullName.toLowerCase();
+      // Quick filter: shortest path is substring on name OR fullName.
+      if (name.includes(q) || fq.includes(q)) {
+        // Strong: substring match. Higher score for earlier position.
+        const pos = name.indexOf(q);
+        scored.push({ t, score: 1000 + (pos === -1 ? 50 : (50 - Math.min(pos, 50))) });
+        continue;
+      }
+      // Subsequence: do every char of q appear in name in order?
+      let ni = 0, qi = 0, runs = 0, lastIdx = -2;
+      while (ni < name.length && qi < q.length) {
+        if (name[ni] === q[qi]) {
+          if (ni !== lastIdx + 1) runs++;
+          lastIdx = ni;
+          qi++;
+        }
+        ni++;
+      }
+      if (qi === q.length) {
+        // All chars matched. Fewer runs = more contiguous = better score.
+        scored.push({ t, score: 500 - runs * 10 });
+      }
+    }
+    scored.sort((a, b) => b.score - a.score || a.t.name.localeCompare(b.t.name));
+    return scored.map(s => s.t);
+  }
+
+  function collectPickedTables() {
+    return [...state.pickedTables];
+  }
+
+  // For the scope panel summary: which buckets contain at least one picked
+  // table? Used to give a friendly summary like "3 buckets · 42 tables".
+  function pickedBucketCount() {
+    if (state.pickedTables.size === 0) return 0;
+    let count = 0;
+    for (const b of state.buckets) {
+      for (const t of b.tables) {
+        if (state.pickedTables.has(t.fullName)) { count++; break; }
+      }
+    }
+    return count;
+  }
+
+  function setBucketSearch(bucketKey, value) {
+    state.bucketSearch[bucketKey] = value;
+    renderSetup();
+    // Restore focus on the search input — renderSetup rebuilds the DOM so
+    // we lose focus by default. Use a microtask to ensure the element exists.
+    Promise.resolve().then(() => {
+      const el = document.getElementById('am-bucket-search-' + bucketKey);
+      if (el) {
+        el.focus();
+        // Put cursor at end
+        const len = el.value.length;
+        el.setSelectionRange(len, len);
+      }
+    });
   }
 
   async function saveScope(name) {
@@ -874,7 +993,7 @@ body.cyg-collapsed .topbar{left:54px}
       body: JSON.stringify({
         projectId:   getActiveProjectId() || 'default',
         name:        cleanName,
-        description: 'Built from buckets: ' + [...state.pickedBuckets].join(', '),
+        description: `${rootTables.length} root tables picked from ${pickedBucketCount()} bucket${pickedBucketCount() === 1 ? '' : 's'}`,
         rootTables
       })
     });
@@ -910,7 +1029,7 @@ body.cyg-collapsed .topbar{left:54px}
     if (!scopeId) {
       // Clear any selection — go back to building from buckets.
       state.savedScope = null;
-      state.pickedBuckets = new Set();
+      state.pickedTables = new Set();
       renderSetup();
       return;
     }
@@ -918,17 +1037,9 @@ body.cyg-collapsed .topbar{left:54px}
       const scope = await api('/agent/scope/' + encodeURIComponent(scopeId));
       if (!scope || !scope.scopeId) return;
       state.savedScope = scope;
-      // Reverse-engineer which buckets the saved scope's roots belong to so
-      // the cards visually reflect the loaded scope.
-      const tableToBucket = new Map();
-      for (const b of state.buckets) {
-        for (const t of b.tables) tableToBucket.set(t.fullName, b.key);
-      }
-      state.pickedBuckets = new Set();
-      for (const t of (scope.rootTables || [])) {
-        const k = tableToBucket.get(t);
-        if (k) state.pickedBuckets.add(k);
-      }
+      // Populate pickedTables directly from the scope's roots so the table
+      // checkboxes inside any expanded bucket reflect what's in the scope.
+      state.pickedTables = new Set(scope.rootTables || []);
       renderSetup();
     } catch (e) {
       console.warn('Could not load scope:', e.message);
@@ -1041,44 +1152,153 @@ body.cyg-collapsed .topbar{left:54px}
     if (!Array.isArray(state.buckets) || state.buckets.length === 0) {
       return '';
     }
+
+    // Count picked tables per bucket — used in card subtitles
+    const pickedCountsByBucket = {};
+    for (const b of state.buckets) {
+      let n = 0;
+      for (const t of b.tables) if (state.pickedTables.has(t.fullName)) n++;
+      pickedCountsByBucket[b.key] = n;
+    }
+
+    // If a bucket is expanded, render the carousel WITHOUT that card (or
+    // with it as a thin "expanded" header tile) plus the full expanded
+    // panel below.
+    const expanded = state.expandedBucket
+      ? state.buckets.find(b => b.key === state.expandedBucket)
+      : null;
+
     const cardsHtml = state.buckets.map(b => {
-      const picked = state.pickedBuckets.has(b.key);
+      const pickedCount = pickedCountsByBucket[b.key];
       const tableCount = b.tables.length;
+      const isExpanded = expanded && expanded.key === b.key;
+
+      // The "picked" indicator on the collapsed card: shows N/Total when
+      // a partial selection exists in this bucket.
+      const pickedBadge = pickedCount > 0
+        ? `<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:0.15rem">${pickedCount}/${tableCount} picked</div>`
+        : '';
+
       const previewNames = b.tables.slice(0, 5).map(t => t.name);
       const previewHtml = previewNames.map(n => `<div style="font-size:11.5px;color:var(--text2);font-family:var(--mono)">${escapeHtml(n)}</div>`).join('');
       const moreHtml = tableCount > 5
         ? `<div style="font-size:10.5px;color:var(--text3);margin-top:0.2rem">+${tableCount - 5} more</div>`
         : '';
-      const buttonLabel = picked ? '✓ In scope — remove' : '+ Add to scope';
-      const cardClass = 'action-card' + (picked ? ' active' : '');
+
+      const buttonLabel = isExpanded ? 'Close' : (pickedCount > 0 ? 'Refine' : 'Open');
+      const cardClass = 'action-card' + (isExpanded ? ' active' : '') + (pickedCount > 0 ? ' has-picks' : '');
+
       return `
         <div class="${cardClass}" data-bucket="${escapeHtml(b.key)}" role="button" tabindex="0" style="min-width:220px;max-width:240px;flex-shrink:0;display:flex;flex-direction:column">
           <div class="action-card-title">${escapeHtml(b.label)}</div>
           <div class="action-card-desc">${escapeHtml(b.description)}</div>
           <div class="action-card-meta">${tableCount} table${tableCount === 1 ? '' : 's'} · ${formatRows(b.totalRows)} rows</div>
+          ${pickedBadge}
           <div style="margin-top:0.6rem;display:flex;flex-direction:column;gap:0.2rem;min-height:90px">
             ${tableCount === 0 ? '<div style="font-size:11px;color:var(--text3);font-style:italic">(no tables in this bucket)</div>' : previewHtml + moreHtml}
           </div>
-          <button class="btn btn-sm ${picked ? 'btn-primary' : ''}" style="margin-top:0.85rem" data-bucket-btn="${escapeHtml(b.key)}" ${tableCount === 0 ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
+          <button class="btn btn-sm ${isExpanded ? 'btn-primary' : ''}" style="margin-top:0.85rem" data-bucket-btn="${escapeHtml(b.key)}" ${tableCount === 0 ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
         </div>`;
     }).join('');
-    return `
+
+    let html = `
       <div class="card">
         <div class="panel-title" style="margin-bottom:0.85rem">Pick a group of tables to migrate</div>
         <div class="carousel-track-wrap">
           <div class="carousel-track">${cardsHtml}</div>
         </div>
       </div>`;
+
+    // Expanded panel below
+    if (expanded) {
+      html += renderExpandedBucket(expanded);
+    }
+    return html;
+  }
+
+  // Detailed table picker for one bucket. Shows the table list with
+  // fuzzy-search box, checkboxes, select-all/none, and a count summary.
+  function renderExpandedBucket(bucket) {
+    const visible = visibleTablesForBucket(bucket);
+    const search = state.bucketSearch[bucket.key] || '';
+    const pickedInBucket = bucket.tables.filter(t => state.pickedTables.has(t.fullName)).length;
+    const visiblePickedCount = visible.filter(t => state.pickedTables.has(t.fullName)).length;
+    const allVisiblePicked = visible.length > 0 && visiblePickedCount === visible.length;
+
+    // Build the rows. Cap at 500 for safety — 650-table buckets should
+    // still scroll fine, but we'll show a soft cap warning if it's hit.
+    const ROW_CAP = 500;
+    const showing = visible.slice(0, ROW_CAP);
+    const overflow = visible.length > ROW_CAP;
+
+    const rowsHtml = showing.map(t => {
+      const picked = state.pickedTables.has(t.fullName);
+      return `
+        <label class="table-pick-row${picked ? ' picked' : ''}" data-table-row="${escapeHtml(t.fullName)}">
+          <input type="checkbox" data-pick-table="${escapeHtml(t.fullName)}" ${picked ? 'checked' : ''} style="margin:0;flex-shrink:0">
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</div>
+            <div style="font-size:10.5px;color:var(--text3);font-family:var(--mono)">${escapeHtml(t.fullName)} · L${t.level} · ${formatRows(t.rows)} rows</div>
+          </div>
+        </label>`;
+    }).join('');
+
+    const emptyState = visible.length === 0
+      ? `<div style="padding:1.5rem;text-align:center;color:var(--text3);font-size:12.5px">
+           ${search ? 'No tables match "' + escapeHtml(search) + '". Try a shorter or different search.' : 'No tables in this bucket.'}
+         </div>`
+      : '';
+
+    const overflowNote = overflow
+      ? `<div style="padding:0.6rem 0.85rem;background:var(--amber-bg);border:1px solid rgba(245,158,11,0.3);border-radius:var(--r);font-size:11.5px;color:var(--text2);margin-top:0.5rem">
+           Showing first ${ROW_CAP} of ${visible.length} matching tables. Narrow your search to see the rest.
+         </div>`
+      : '';
+
+    return `
+      <div class="card bucket-expanded-panel">
+        <div style="display:flex;align-items:flex-start;gap:1rem;justify-content:space-between;flex-wrap:wrap;margin-bottom:0.85rem">
+          <div style="min-width:0">
+            <div style="font-weight:600;font-size:14px">${escapeHtml(bucket.label)} — refine selection</div>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:2px">
+              ${bucket.tables.length} total · ${pickedInBucket} picked
+              ${search ? ` · ${visible.length} match search` : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+            <button class="btn btn-sm" data-bucket-select-all="${escapeHtml(bucket.key)}" ${visible.length === 0 || allVisiblePicked ? 'disabled' : ''}>
+              ${search ? `Select all ${visible.length} shown` : 'Select all'}
+            </button>
+            <button class="btn btn-sm" data-bucket-deselect-all="${escapeHtml(bucket.key)}" ${visiblePickedCount === 0 ? 'disabled' : ''}>
+              ${search ? `Deselect ${visiblePickedCount} shown` : 'Deselect all'}
+            </button>
+            <button class="btn btn-sm btn-ghost" data-bucket-close="${escapeHtml(bucket.key)}">Close ✕</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:0.65rem">
+          <input type="text" class="form-input" id="am-bucket-search-${escapeHtml(bucket.key)}"
+                 data-bucket-search="${escapeHtml(bucket.key)}"
+                 placeholder="Fuzzy search — e.g. 'matter', 'bill', 'mttr'"
+                 value="${escapeHtml(search)}"
+                 style="font-size:12.5px;font-family:var(--mono)">
+        </div>
+
+        <div class="table-pick-list">
+          ${rowsHtml}
+        </div>
+        ${emptyState}
+        ${overflowNote}
+      </div>`;
   }
 
   function renderScopePanel() {
     if (!Array.isArray(state.buckets) || state.buckets.length === 0) return '';
-    const pickedCount = state.pickedBuckets.size;
-    const pickedTables = collectPickedTables();
-    const tableCount = pickedTables.length;
+    const tableCount = state.pickedTables.size;
+    const bucketCount = pickedBucketCount();
 
     const scopeListOptions = (state.scopeList || []).map(s =>
-      `<option value="${escapeHtml(s.scopeId)}">${escapeHtml(s.name)} (${s.rootCount || 0} roots${s.expandedCount ? ', ' + s.expandedCount + ' expanded' : ''})</option>`
+      `<option value="${escapeHtml(s.scopeId)}"${state.savedScope && state.savedScope.scopeId === s.scopeId ? ' selected' : ''}>${escapeHtml(s.name)} (${s.rootCount || 0} roots${s.expandedCount ? ', ' + s.expandedCount + ' expanded' : ''})</option>`
     ).join('');
 
     const savedBanner = state.savedScope
@@ -1097,13 +1317,13 @@ body.cyg-collapsed .topbar{left:54px}
           <div>
             <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem">Build from cards</label>
             <div style="padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);font-size:12.5px;color:var(--text2);min-height:54px">
-              ${pickedCount === 0
-                ? '<span style="color:var(--text3);font-style:italic">No buckets picked yet</span>'
-                : `<strong style="color:var(--text)">${pickedCount}</strong> bucket${pickedCount === 1 ? '' : 's'} picked · ~${formatRows(tableCount)} root tables`}
+              ${tableCount === 0
+                ? '<span style="color:var(--text3);font-style:italic">No tables picked yet — open a card to pick individual tables</span>'
+                : `<strong style="color:var(--text)">${tableCount}</strong> table${tableCount === 1 ? '' : 's'} picked across <strong style="color:var(--text)">${bucketCount}</strong> bucket${bucketCount === 1 ? '' : 's'}`}
             </div>
             <div style="margin-top:0.6rem;display:flex;gap:0.4rem">
               <input type="text" class="form-input" id="am-scope-name" placeholder="Name this scope (e.g. Master Files)" style="flex:1;font-size:12.5px" value="${state.savedScope ? escapeHtml(state.savedScope.name) : ''}">
-              <button class="btn btn-primary btn-sm" id="am-save-scope-btn" ${pickedCount === 0 ? 'disabled' : ''}>Save scope</button>
+              <button class="btn btn-primary btn-sm" id="am-save-scope-btn" ${tableCount === 0 ? 'disabled' : ''}>Save scope</button>
             </div>
           </div>
           <div>
@@ -1175,23 +1395,56 @@ body.cyg-collapsed .topbar{left:54px}
     if (regenBtn) regenBtn.addEventListener('click', () => {
       state.plan = null;
       state.buckets = [];
-      state.pickedBuckets = new Set();
+      state.pickedTables = new Set();
+      state.expandedBucket = null;
+      state.bucketSearch = {};
       state.savedScope = null;
       loadOrCreatePlan(true);
     });
 
-    // Card click handlers (toggle bucket)
+    // Card click handlers (open/close the bucket — does NOT toggle selection)
     document.querySelectorAll('[data-bucket]').forEach(el => {
       el.addEventListener('click', (e) => {
-        // Don't double-fire when the button inside is clicked
-        if (e.target.closest('[data-bucket-btn]')) return;
-        togglePickBucket(el.getAttribute('data-bucket'));
+        // Don't double-fire when an interactive child is clicked
+        if (e.target.closest('[data-bucket-btn], [data-pick-table], [data-bucket-select-all], [data-bucket-deselect-all], [data-bucket-close], [data-bucket-search]')) return;
+        expandBucket(el.getAttribute('data-bucket'));
       });
     });
     document.querySelectorAll('[data-bucket-btn]').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        togglePickBucket(el.getAttribute('data-bucket-btn'));
+        expandBucket(el.getAttribute('data-bucket-btn'));
+      });
+    });
+
+    // Inside the expanded panel: per-table checkboxes, search box,
+    // select-all / deselect-all, and close.
+    document.querySelectorAll('[data-pick-table]').forEach(el => {
+      el.addEventListener('change', (e) => {
+        toggleTablePick(el.getAttribute('data-pick-table'));
+      });
+    });
+    document.querySelectorAll('[data-bucket-search]').forEach(el => {
+      el.addEventListener('input', (e) => {
+        setBucketSearch(el.getAttribute('data-bucket-search'), el.value);
+      });
+    });
+    document.querySelectorAll('[data-bucket-select-all]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectAllVisibleInBucket(el.getAttribute('data-bucket-select-all'));
+      });
+    });
+    document.querySelectorAll('[data-bucket-deselect-all]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deselectAllVisibleInBucket(el.getAttribute('data-bucket-deselect-all'));
+      });
+    });
+    document.querySelectorAll('[data-bucket-close]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        expandBucket(el.getAttribute('data-bucket-close'));  // toggles it closed
       });
     });
 
@@ -1698,7 +1951,9 @@ body.cyg-collapsed .topbar{left:54px}
       // Reset scope-related state so the user can build a fresh scope (or
       // re-select an existing one). The plan persists across runs because
       // it's tied to the target schema, not the run.
-      state.pickedBuckets = new Set();
+      state.pickedTables = new Set();
+      state.expandedBucket = null;
+      state.bucketSearch = {};
       state.savedScope = null;
       renderSetup();
       startConnectionWatcher();
