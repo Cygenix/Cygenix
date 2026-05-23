@@ -2501,6 +2501,10 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
   // send the connection field that matches the chosen mode.
   function buildAgentMigrateBody(goal) {
     const out = { direction: 'source_to_target', goal };
+    // Active project id — enables per-project memory loading on the backend.
+    // Empty string is acceptable; the agent silently runs without memory in
+    // that case (same behaviour as before this feature existed).
+    out.projectId = getActiveProjectId();
     try {
       const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
         ? (CygenixConnections.get() || {}) : {};
