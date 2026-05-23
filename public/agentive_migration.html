@@ -346,6 +346,21 @@ body.cyg-collapsed .topbar{left:54px}
 /* Bucket card variants */
 .action-card.has-picks:not(.active){border-color:rgba(61,126,255,0.5)}
 
+/* Source-driven pair picker (Piece C) */
+.src-expanded-panel{background:var(--bg2)}
+.src-pair-list{display:flex;flex-direction:column;gap:2px;padding:0.4rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);scrollbar-width:thin;scrollbar-color:var(--border2) transparent;max-height:480px;overflow-y:auto}
+.src-pair-list::-webkit-scrollbar{width:8px}
+.src-pair-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.src-pair-row{display:flex;align-items:center;gap:0.85rem;padding:0.5rem 0.7rem;border-radius:6px;transition:background .12s}
+.src-pair-row:hover{background:var(--bg3)}
+.src-pair-row.picked{background:var(--accent-glow)}
+.src-pair-row.picked:hover{background:rgba(61,126,255,0.22)}
+.src-pair-row input[type="checkbox"]{accent-color:var(--accent);width:14px;height:14px;cursor:pointer}
+.target-picker-panel{margin:0 0.4rem 6px 0.4rem;padding:0.7rem 0.85rem;background:var(--bg3);border:1px solid var(--accent);border-radius:var(--r)}
+.target-cand-list{display:flex;flex-direction:column;gap:2px;max-height:240px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:0.3rem;scrollbar-width:thin}
+.target-cand-row{display:flex;align-items:center;gap:0.6rem;padding:0.4rem 0.6rem;border-radius:4px;cursor:pointer;transition:background .12s}
+.target-cand-row:hover{background:var(--bg3)}
+
 /* Expanded-bucket panel */
 .bucket-expanded-panel{background:var(--bg2)}
 .table-pick-list{max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:0.4rem;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
@@ -456,13 +471,41 @@ body.cyg-collapsed .topbar{left:54px}
     conns: { source: null, target: null },
     view: 'loading',
 
+    // Source schema fetched from /agent/source-schema. null = not yet
+    // loaded, 'pending' = in flight, object = loaded. The shape matches
+    // the endpoint's response: { groups: [...], totals: {...} }.
+    sourceSchema: null,
+    sourceSchemaError: null,
+
+    // Which source card is expanded (showing its table list with checkboxes
+    // and per-table target matches). Only one open at a time.
+    expandedSourceGroup: null,
+    sourceGroupSearch: {},      // { [groupId]: 'fuzzy search text' }
+
+    // Source-driven scope building. The user's picks are pairs
+    // (sourceTable -> targetTable). Each entry: { source, target,
+    // confidence, reason }. The set IS the scope's pair list when saved.
+    // Map keyed by source fullName so a re-pick replaces the prior target.
+    pickedPairs: new Map(),     // sourceFullName -> {source,target,confidence,reason}
+
+    // Which source row currently has its "Change target" picker open.
+    // null = none. When set, a small inline candidate list is shown.
+    openTargetPicker: null,     // source fullName (string)
+    targetPickerSearch: '',     // active search text in the open picker
+
     // Target-mode plan against the configured target connection.
     // null = none generated yet, 'pending' = generating, object = loaded.
+    // STILL NEEDED — even in source-driven mode we use the plan for
+    // FK closure when saving the scope, and as the candidate pool for
+    // the heuristic's target table list.
     plan: null,
     planError: null,
 
-    // Bucket cards derived from plan levels. Computed when plan loads.
-    buckets: [],          // [{ key, label, description, levels: [N..M], tables: [...] }]
+    // Bucket cards derived from plan levels (DEMOTED to "Advanced" panel
+    // — these now live behind a toggle, available for users who want to
+    // add specific target tables that have no source counterpart).
+    buckets: [],
+    showAdvancedTargets: false, // toggle for the advanced panel
 
     // Which bucket card is currently expanded (showing its table list).
     // null = none expanded; only the card view is visible. Per-bucket
@@ -475,10 +518,11 @@ body.cyg-collapsed .topbar{left:54px}
     // shown at the top of the cards section.
     globalSearch: '',
 
-    // Working scope being built — at table granularity. Each entry is a
-    // fully-qualified table name (e.g. "dbo.Matter"). The set IS the
-    // scope's root list when the user clicks Save.
-    pickedTables: new Set(),
+    // Standalone target tables picked from the Advanced panel (not via
+    // a source pair). These get added as scope roots WITHOUT a paired
+    // source. Used for things like seeding a 3E lookup table that has
+    // no source data behind it.
+    pickedStandaloneTargets: new Set(),
     savedScope: null,
 
     // Scopes available for this project (loaded from /api/agent/scope).
@@ -674,12 +718,22 @@ body.cyg-collapsed .topbar{left:54px}
         state.plan = null;
         state.planError = null;
         state.buckets = [];
-        state.pickedTables = new Set();
+        state.pickedStandaloneTargets = new Set();
+        state.pickedPairs = new Map();
+        state.openTargetPicker = null;
+        state.targetPickerSearch = '';
+        state.sourceSchema = null;
+        state.sourceSchemaError = null;
+        state.expandedSourceGroup = null;
+        state.sourceGroupSearch = {};
         state.expandedBucket = null;
         state.bucketSearch = {};
         state.globalSearch = '';
         state.savedScope = null;
+        autoMatchCache = {};
         renderSetup();
+        // Kick off fresh schema loads
+        if (state.conns.source) loadSourceSchema(true);
       }
     }, 4000);
   }
@@ -763,7 +817,254 @@ body.cyg-collapsed .topbar{left:54px}
 
   // Generate (or regenerate) a target plan. Caches the result in state.plan.
   // Calls the planner with the user's TARGET connection — the planner reads
-  // sys.foreign_keys to produce a load-order graph for the entire schema.
+  // ── Source-driven helpers (Piece C) ────────────────────────────────────
+  //
+  // Load the source schema once on page mount. The endpoint returns 5
+  // pre-classified themed groups (Matters & Cases, Contacts & People,
+  // Financial Data, Time & Activity, Other), each with a tables array.
+  async function loadSourceSchema(force) {
+    if (!force && state.sourceSchema && state.sourceSchema !== 'pending') return;
+    if (!state.conns.source) {
+      state.sourceSchemaError = 'Source connection not configured.';
+      renderSetup();
+      return;
+    }
+    state.sourceSchema = 'pending';
+    state.sourceSchemaError = null;
+    renderSetup();
+
+    let body = {};
+    try {
+      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
+        ? (CygenixConnections.get() || {}) : {};
+      const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
+      if (srcMode === 'direct' && c.srcConnString) body.srcConnString = c.srcConnString;
+      else if (srcMode === 'azure' && c.srcFnUrl) {
+        body.srcFnUrl = c.srcFnUrl;
+        if (c.srcFnKey) body.srcFnKey = c.srcFnKey;
+      } else {
+        state.sourceSchema = null;
+        state.sourceSchemaError = 'Source connection is missing required fields.';
+        renderSetup();
+        return;
+      }
+    } catch (e) {
+      state.sourceSchema = null;
+      state.sourceSchemaError = 'Could not read source connection: ' + e.message;
+      renderSetup();
+      return;
+    }
+    try {
+      const data = await api('/agent/source-schema', { method: 'POST', body: JSON.stringify(body) });
+      state.sourceSchema = data;
+      // Once both source schema and plan are loaded, auto-run the heuristic
+      // for every source table so candidates are already computed by the
+      // time the user clicks open a card. Re-runs are cheap; the function
+      // is pure JS.
+      maybeComputeAutoMatches();
+      renderSetup();
+    } catch (e) {
+      state.sourceSchema = null;
+      state.sourceSchemaError = e.message || 'Schema introspection failed.';
+      renderSetup();
+    }
+  }
+
+  // ── Source-to-target heuristic (inline copy of lib/source-to-target-
+  // heuristic.js, kept here so the page is single-file deployable). ──────
+  const ABBREV_EXPANSIONS = {
+    matt: 'matter', mtr: 'matter', cli: 'client', tkpr: 'timekeeper',
+    tkp: 'timekeeper', addr: 'address', addl: 'additional',
+    info: 'information', org: 'organisation', wip: 'workinprogress',
+    chrg: 'charge', spv: 'supervisor', prlf: 'profile',
+    recv: 'receive', rcpt: 'receipt'
+  };
+  function htNormalize(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+  function htStripDm(name) {
+    return name.replace(/_DM$/i, '').replace(/_dm$/i, '');
+  }
+  function htExpand(name) {
+    const parts = name.replace(/([A-Z])/g, ' $1').trim().split(/\s+/);
+    return parts.map(p => {
+      const k = p.toLowerCase();
+      if (ABBREV_EXPANSIONS[k]) {
+        const r = ABBREV_EXPANSIONS[k];
+        return r.charAt(0).toUpperCase() + r.slice(1);
+      }
+      return p;
+    }).join('');
+  }
+  function htFuzzy(query, candidate) {
+    const q = htNormalize(query), c = htNormalize(candidate);
+    if (!q || !c)        return 0;
+    if (c === q)         return 1.0;
+    if (c.includes(q))   return 0.85 - Math.min(0.3, (c.length - q.length) / c.length * 0.3);
+    if (q.includes(c))   return 0.50 + 0.32 * (c.length / q.length);
+    let qi = 0, ci = 0, runs = 0, last = -2;
+    while (ci < c.length && qi < q.length) {
+      if (c[ci] === q[qi]) {
+        if (ci !== last + 1) runs++;
+        last = ci; qi++;
+      }
+      ci++;
+    }
+    if (qi !== q.length) return 0;
+    const cov = q.length / c.length;
+    const coh = 1 - (runs - 1) / Math.max(q.length - 1, 1);
+    return Math.max(0, Math.min(0.65, 0.4 * cov + 0.25 * coh));
+  }
+  function matchSourceToTarget(sourceName, targetNames, opts) {
+    opts = opts || {};
+    const topK = opts.topK || 5;
+    const minConf = opts.minConfidence || 0.3;
+    const sShort = sourceName.split('.').pop();
+    const sStrip = htStripDm(sShort);
+    const sExp   = htExpand(sStrip);
+    const cands = [];
+    for (const tgt of targetNames) {
+      const tShort = tgt.split('.').pop();
+      let s = 0, reason = null;
+      if (tShort === sShort) { s = 1.0; reason = 'exact match'; }
+      else if (tShort.toLowerCase() === sStrip.toLowerCase()) { s = 0.95; reason = '_DM stripped'; }
+      else if (tShort.toLowerCase() === sExp.toLowerCase()) { s = 0.80; reason = 'abbreviations expanded'; }
+      else {
+        const s1 = htFuzzy(sStrip, tShort);
+        const s2 = htFuzzy(sExp, tShort);
+        if (s1 >= s2 && s1 > 0) { s = s1; reason = 'fuzzy (_DM stripped)'; }
+        else if (s2 > 0)        { s = s2; reason = 'fuzzy (expanded)'; }
+      }
+      if (s >= minConf) cands.push({ target: tgt, confidence: s, reason });
+    }
+    cands.sort((a, b) => b.confidence - a.confidence || a.target.localeCompare(b.target));
+    return { sourceTable: sourceName, candidates: cands.slice(0, topK), top: cands[0] || null };
+  }
+  function confidenceBucket(score) {
+    if (score >= 0.90) return 'high';
+    if (score >= 0.60) return 'medium';
+    if (score >= 0.30) return 'low';
+    return 'none';
+  }
+
+  // Cache of pre-computed match results keyed by source fullName.
+  // Populated by maybeComputeAutoMatches() once source schema + plan are
+  // both loaded; cleared when either changes.
+  let autoMatchCache = {};
+  function maybeComputeAutoMatches() {
+    autoMatchCache = {};
+    if (!state.sourceSchema || state.sourceSchema === 'pending') return;
+    if (!Array.isArray(state.buckets) || state.buckets.length === 0)  return;
+    // Build flat target list (all non-noise tables across all buckets)
+    const targetNames = [];
+    for (const b of state.buckets) {
+      for (const t of b.tables) targetNames.push(t.fullName);
+    }
+    const groups = (state.sourceSchema && state.sourceSchema.groups) || [];
+    for (const g of groups) {
+      for (const t of (g.tables || [])) {
+        autoMatchCache[t.fullName] = matchSourceToTarget(t.fullName, targetNames);
+      }
+    }
+  }
+
+  // Toggle a source table's pair status. If currently unpicked, auto-match
+  // is used to pick the top candidate; user can change target via the
+  // picker dropdown. If picked, removes the pair entirely.
+  function togglePairPick(sourceFullName) {
+    if (state.pickedPairs.has(sourceFullName)) {
+      state.pickedPairs.delete(sourceFullName);
+      // Also close target-picker if it was open on this source
+      if (state.openTargetPicker === sourceFullName) {
+        state.openTargetPicker = null;
+        state.targetPickerSearch = '';
+      }
+    } else {
+      const match = autoMatchCache[sourceFullName];
+      if (match && match.top) {
+        state.pickedPairs.set(sourceFullName, {
+          source:     sourceFullName,
+          target:     match.top.target,
+          confidence: match.top.confidence,
+          reason:     match.top.reason
+        });
+      } else {
+        // No auto-match — add with empty target, force-open the picker so
+        // the user must choose.
+        state.pickedPairs.set(sourceFullName, {
+          source:     sourceFullName,
+          target:     '',
+          confidence: 0,
+          reason:     'manual'
+        });
+        state.openTargetPicker = sourceFullName;
+        state.targetPickerSearch = '';
+      }
+    }
+    state.savedScope = null;
+    renderSetup();
+  }
+
+  function setPairTarget(sourceFullName, targetFullName, confidence, reason) {
+    if (!state.pickedPairs.has(sourceFullName)) return;
+    state.pickedPairs.set(sourceFullName, {
+      source:     sourceFullName,
+      target:     targetFullName,
+      confidence: typeof confidence === 'number' ? confidence : 1.0,
+      reason:     reason || 'manual override'
+    });
+    state.openTargetPicker = null;
+    state.targetPickerSearch = '';
+    state.savedScope = null;
+    renderSetup();
+  }
+
+  function openTargetPickerFor(sourceFullName) {
+    state.openTargetPicker = state.openTargetPicker === sourceFullName ? null : sourceFullName;
+    state.targetPickerSearch = '';
+    renderSetup();
+  }
+
+  // Combined picked target tables: pair targets ∪ standalone picks. Used as
+  // the scope's rootTables when saving.
+  function collectPickedTargets() {
+    const set = new Set();
+    for (const p of state.pickedPairs.values()) {
+      if (p.target) set.add(p.target);
+    }
+    for (const t of state.pickedStandaloneTargets) set.add(t);
+    return [...set];
+  }
+
+  // Toggle expansion of a source group card. Closes others (only one open).
+  function expandSourceGroup(groupId) {
+    state.expandedSourceGroup = (state.expandedSourceGroup === groupId) ? null : groupId;
+    state.sourceGroupSearch[groupId] = state.sourceGroupSearch[groupId] || '';
+    renderSetup();
+  }
+
+  function setSourceGroupSearch(groupId, value) {
+    state.sourceGroupSearch[groupId] = value || '';
+    renderSetup();
+    Promise.resolve().then(() => {
+      const el = document.getElementById('am-srcgroup-search-' + groupId);
+      if (el) { el.focus(); const len = el.value.length; el.setSelectionRange(len, len); }
+    });
+  }
+
+  function visibleSourceTables(group) {
+    const q = (state.sourceGroupSearch[group.id] || '').trim().toLowerCase();
+    if (!q) return [...(group.tables || [])].sort((a, b) => a.name.localeCompare(b.name));
+    // Cheap substring filter — source-side lists are small (max ~25)
+    return (group.tables || []).filter(t =>
+      t.name.toLowerCase().includes(q) || t.fullName.toLowerCase().includes(q)
+    );
+  }
+
+  // ── Target-mode plan (kept; needed for FK closure and as candidate pool
+  // for the source-to-target heuristic). ────────────────────────────────
+  // Generate (or regenerate) a target plan. Caches the result in state.plan.
+  // Calls the planner with the user's TARGET connection — the planner reads
   async function loadOrCreatePlan(force) {
     if (!force && state.plan && state.plan.planId) return;
     if (!state.conns.target) {
@@ -826,6 +1127,9 @@ body.cyg-collapsed .topbar{left:54px}
         }
       }
       state.buckets = buildBuckets(plan, levelDocs);
+      // Buckets now contain the full target table list — recompute the
+      // heuristic for every source table.
+      maybeComputeAutoMatches();
       renderSetup();
     } catch (e) {
       state.plan = null;
@@ -908,13 +1212,15 @@ body.cyg-collapsed .topbar{left:54px}
     renderSetup();
   }
 
+  // Advanced-panel standalone target picking. These operate on the target
+  // bucket cards (now demoted behind the "Add standalone target" toggle).
+  // For source-driven picks, see togglePairPick above.
   function toggleTablePick(fullName) {
-    if (state.pickedTables.has(fullName)) {
-      state.pickedTables.delete(fullName);
+    if (state.pickedStandaloneTargets.has(fullName)) {
+      state.pickedStandaloneTargets.delete(fullName);
     } else {
-      state.pickedTables.add(fullName);
+      state.pickedStandaloneTargets.add(fullName);
     }
-    // Saved-scope link breaks as soon as the picks diverge from it.
     state.savedScope = null;
     renderSetup();
   }
@@ -923,7 +1229,7 @@ body.cyg-collapsed .topbar{left:54px}
     const bucket = state.buckets.find(b => b.key === bucketKey);
     if (!bucket) return;
     const visible = visibleTablesForBucket(bucket);
-    for (const t of visible) state.pickedTables.add(t.fullName);
+    for (const t of visible) state.pickedStandaloneTargets.add(t.fullName);
     state.savedScope = null;
     renderSetup();
   }
@@ -932,9 +1238,20 @@ body.cyg-collapsed .topbar{left:54px}
     const bucket = state.buckets.find(b => b.key === bucketKey);
     if (!bucket) return;
     const visible = visibleTablesForBucket(bucket);
-    for (const t of visible) state.pickedTables.delete(t.fullName);
+    for (const t of visible) state.pickedStandaloneTargets.delete(t.fullName);
     state.savedScope = null;
     renderSetup();
+  }
+
+  // Combined Set: every target that is part of the scope, whether it came
+  // via a source pair or as a standalone advanced pick. Used by the bucket
+  // UI's per-row checkboxes and counters.
+  function allPickedTargets() {
+    const set = new Set(state.pickedStandaloneTargets);
+    for (const p of state.pickedPairs.values()) {
+      if (p.target) set.add(p.target);
+    }
+    return set;
   }
 
   // Fuzzy-score a single (name, fullName) pair against a lowercase query.
@@ -1016,17 +1333,20 @@ body.cyg-collapsed .topbar{left:54px}
   }
 
   function collectPickedTables() {
-    return [...state.pickedTables];
+    // Returns every target table that should be in the scope's root list:
+    // pair targets ∪ standalone advanced picks.
+    return collectPickedTargets();
   }
 
   // For the scope panel summary: which buckets contain at least one picked
-  // table? Used to give a friendly summary like "3 buckets · 42 tables".
+  // target? Used to give a friendly summary like "3 buckets · 42 tables".
   function pickedBucketCount() {
-    if (state.pickedTables.size === 0) return 0;
+    const picked = allPickedTargets();
+    if (picked.size === 0) return 0;
     let count = 0;
     for (const b of state.buckets) {
       for (const t of b.tables) {
-        if (state.pickedTables.has(t.fullName)) { count++; break; }
+        if (picked.has(t.fullName)) { count++; break; }
       }
     }
     return count;
@@ -1054,18 +1374,43 @@ body.cyg-collapsed .topbar{left:54px}
     if (!state.plan || !state.plan.planId) { alert('No plan loaded.'); return; }
     const rootTables = collectPickedTables();
     if (rootTables.length === 0) {
-      alert('Pick at least one bucket before saving the scope.');
+      alert('Pick at least one source table (or one standalone target in the advanced section) before saving the scope.');
       return;
     }
 
-    // Step 1: create / update the scope
+    // Pairs to send to the backend. Only include pairs with a non-empty target.
+    const incompletePairs = [];
+    const completePairs   = [];
+    for (const p of state.pickedPairs.values()) {
+      if (!p.target) incompletePairs.push(p.source);
+      else completePairs.push({
+        source: p.source, target: p.target,
+        confidence: typeof p.confidence === 'number' ? p.confidence : null,
+        reason: p.reason || null
+      });
+    }
+    if (incompletePairs.length > 0) {
+      alert('Some picked source tables have no target chosen yet:\n\n' +
+            incompletePairs.map(s => '  • ' + s).join('\n') +
+            '\n\nClick "Pick target" on each of those rows, or untick them.');
+      return;
+    }
+
+    // Step 1: create / update the scope, including the pairs
+    const description = completePairs.length > 0
+      ? `${completePairs.length} source→target pair${completePairs.length === 1 ? '' : 's'}`
+        + (state.pickedStandaloneTargets.size > 0
+            ? ` + ${state.pickedStandaloneTargets.size} standalone target${state.pickedStandaloneTargets.size === 1 ? '' : 's'}`
+            : '')
+      : `${rootTables.length} standalone targets`;
     const created = await api('/agent/scope', {
       method: 'POST',
       body: JSON.stringify({
-        projectId:   getActiveProjectId() || 'default',
-        name:        cleanName,
-        description: `${rootTables.length} root tables picked from ${pickedBucketCount()} bucket${pickedBucketCount() === 1 ? '' : 's'}`,
-        rootTables
+        projectId:         getActiveProjectId() || 'default',
+        name:              cleanName,
+        description,
+        rootTables,
+        sourceTargetPairs: completePairs
       })
     });
     if (!created || !created.scope) { alert('Save failed.'); return; }
@@ -1098,9 +1443,10 @@ body.cyg-collapsed .topbar{left:54px}
 
   async function selectScope(scopeId) {
     if (!scopeId) {
-      // Clear any selection — go back to building from buckets.
+      // Clear any selection — go back to building from cards.
       state.savedScope = null;
-      state.pickedTables = new Set();
+      state.pickedPairs = new Map();
+      state.pickedStandaloneTargets = new Set();
       renderSetup();
       return;
     }
@@ -1108,9 +1454,22 @@ body.cyg-collapsed .topbar{left:54px}
       const scope = await api('/agent/scope/' + encodeURIComponent(scopeId));
       if (!scope || !scope.scopeId) return;
       state.savedScope = scope;
-      // Populate pickedTables directly from the scope's roots so the table
-      // checkboxes inside any expanded bucket reflect what's in the scope.
-      state.pickedTables = new Set(scope.rootTables || []);
+      // Re-hydrate the picks from the saved scope so the UI reflects what
+      // the agent will run against. Pairs come from sourceTargetPairs;
+      // standalone targets are roots that aren't the target of any pair.
+      const pairs = Array.isArray(scope.sourceTargetPairs) ? scope.sourceTargetPairs : [];
+      const pairTargets = new Set(pairs.map(p => p.target));
+      state.pickedPairs = new Map();
+      for (const p of pairs) {
+        state.pickedPairs.set(p.source, {
+          source: p.source, target: p.target,
+          confidence: typeof p.confidence === 'number' ? p.confidence : null,
+          reason: p.reason || null
+        });
+      }
+      state.pickedStandaloneTargets = new Set(
+        (scope.rootTables || []).filter(t => !pairTargets.has(t))
+      );
       renderSetup();
     } catch (e) {
       console.warn('Could not load scope:', e.message);
@@ -1231,7 +1590,7 @@ body.cyg-collapsed .topbar{left:54px}
     let listHtml = '';
     if (q && shown.length > 0) {
       listHtml = shown.map(({ t, bucket, bucketLabel }) => {
-        const picked = state.pickedTables.has(t.fullName);
+        const picked = allPickedTargets().has(t.fullName);
         return `
           <label class="table-pick-row${picked ? ' picked' : ''}" data-global-row="${escapeHtml(t.fullName)}">
             <input type="checkbox" data-pick-table="${escapeHtml(t.fullName)}" ${picked ? 'checked' : ''} style="margin:0;flex-shrink:0">
@@ -1256,7 +1615,7 @@ body.cyg-collapsed .topbar{left:54px}
 
     const summary = q
       ? `<div style="font-size:11.5px;color:var(--text3);margin-top:4px">
-           ${results.length} match${results.length === 1 ? '' : 'es'} across all buckets · ${state.pickedTables.size} table${state.pickedTables.size === 1 ? '' : 's'} picked overall
+           ${results.length} match${results.length === 1 ? '' : 'es'} across all buckets · ${allPickedTargets().size} table${allPickedTargets().size === 1 ? '' : 's'} picked overall
          </div>`
       : `<div style="font-size:11.5px;color:var(--text3);margin-top:4px">
            Search across all buckets at once — no need to open each card. Try "matt", "client", "trust" …
@@ -1279,6 +1638,241 @@ body.cyg-collapsed .topbar{left:54px}
       </div>`;
   }
 
+  // ── Source-driven primary picker ──────────────────────────────────────
+  function renderSourceCards() {
+    if (state.sourceSchema === 'pending') {
+      return `<div class="card">
+        <div style="display:flex;align-items:center;gap:0.85rem">
+          <div class="spinner"></div>
+          <div>
+            <div style="font-weight:600">Reading the source schema…</div>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:2px">Inspecting tables, columns, and themes.</div>
+          </div>
+        </div>
+      </div>`;
+    }
+    if (!state.sourceSchema) {
+      const errBlock = state.sourceSchemaError
+        ? `<div class="notice" style="margin-top:0.85rem"><strong>Source schema failed to load.</strong> ${escapeHtml(state.sourceSchemaError)}</div>`
+        : '';
+      return `<div class="card">
+        <div style="display:flex;align-items:center;gap:0.85rem;justify-content:space-between">
+          <div>
+            <div style="font-weight:600">Source schema not loaded</div>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:2px">Cygenix needs to read the source so you can pick tables to migrate.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="am-load-source-btn">Read source schema</button>
+        </div>
+        ${errBlock}
+      </div>`;
+    }
+    if (!state.plan || state.plan === 'pending') {
+      // Plan still loading — show source schema overview but disable picking
+      // since we have no target candidates yet for the heuristic.
+      return `<div class="card">
+        <div style="font-weight:600;margin-bottom:0.4rem">Source schema loaded</div>
+        <div style="font-size:11.5px;color:var(--text3);line-height:1.55">
+          ${(state.sourceSchema.totals && state.sourceSchema.totals.tables) || 0} tables across
+          ${(state.sourceSchema.totals && state.sourceSchema.totals.schemas) || 0} schema(s).
+          Waiting for target plan to finish loading before showing source-to-target matches…
+        </div>
+      </div>`;
+    }
+
+    const groups = (state.sourceSchema && state.sourceSchema.groups) || [];
+    const expanded = state.expandedSourceGroup
+      ? groups.find(g => g.id === state.expandedSourceGroup)
+      : null;
+
+    const cardsHtml = groups.map(g => {
+      const tableCount = (g.tables || []).length;
+      // How many tables in this group are currently picked as pairs?
+      let pickedInGroup = 0;
+      for (const t of (g.tables || [])) {
+        if (state.pickedPairs.has(t.fullName)) pickedInGroup++;
+      }
+      const isExpanded = expanded && expanded.id === g.id;
+      const pickedBadge = pickedInGroup > 0
+        ? `<div style="font-size:11px;color:var(--accent);font-weight:600;margin-top:0.15rem">${pickedInGroup}/${tableCount} picked</div>`
+        : '';
+      const previewNames = (g.tables || []).slice(0, 5).map(t => t.name);
+      const previewHtml = previewNames.map(n => `<div style="font-size:11.5px;color:var(--text2);font-family:var(--mono)">${escapeHtml(n)}</div>`).join('');
+      const moreHtml = tableCount > 5
+        ? `<div style="font-size:10.5px;color:var(--text3);margin-top:0.2rem">+${tableCount - 5} more</div>`
+        : '';
+      const buttonLabel = isExpanded ? 'Close' : (pickedInGroup > 0 ? 'Refine' : 'Open');
+      const cardClass = 'action-card' + (isExpanded ? ' active' : '') + (pickedInGroup > 0 ? ' has-picks' : '');
+      const piiNote = g.piiCount > 0
+        ? `<div style="font-size:10.5px;color:var(--amber);margin-top:2px">⚠ ${g.piiCount} PII column${g.piiCount === 1 ? '' : 's'}</div>`
+        : '';
+      const icon = g.icon ? `<span style="font-size:18px;margin-right:6px">${escapeHtml(g.icon)}</span>` : '';
+      return `
+        <div class="${cardClass}" data-srcgroup="${escapeHtml(g.id)}" role="button" tabindex="0" style="min-width:220px;max-width:240px;flex-shrink:0;display:flex;flex-direction:column">
+          <div class="action-card-title">${icon}${escapeHtml(g.name)}</div>
+          <div class="action-card-desc">${escapeHtml(g.description || '')}</div>
+          <div class="action-card-meta">${tableCount} table${tableCount === 1 ? '' : 's'} · ${formatRows(g.totalRows || 0)} rows</div>
+          ${piiNote}
+          ${pickedBadge}
+          <div style="margin-top:0.6rem;display:flex;flex-direction:column;gap:0.2rem;min-height:90px">
+            ${tableCount === 0 ? '<div style="font-size:11px;color:var(--text3);font-style:italic">(no tables in this group)</div>' : previewHtml + moreHtml}
+          </div>
+          <button class="btn btn-sm ${isExpanded ? 'btn-primary' : ''}" style="margin-top:0.85rem" data-srcgroup-btn="${escapeHtml(g.id)}" ${tableCount === 0 ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
+        </div>`;
+    }).join('');
+
+    let html = `
+      <div class="card">
+        <div class="panel-title" style="margin-bottom:0.85rem">Pick source tables to migrate</div>
+        <div style="font-size:11.5px;color:var(--text3);margin-bottom:0.85rem;line-height:1.5">
+          Source tables are grouped by theme. Open a card to see its tables — when you tick one, Cygenix proposes a target table to map to. You can confirm or change the proposed target.
+        </div>
+        <div class="carousel-track-wrap">
+          <div class="carousel-track">${cardsHtml}</div>
+        </div>
+      </div>`;
+
+    if (expanded) html += renderExpandedSourceGroup(expanded);
+    return html;
+  }
+
+  function renderExpandedSourceGroup(group) {
+    const visible = visibleSourceTables(group);
+    const search = state.sourceGroupSearch[group.id] || '';
+    const pickedInGroup = (group.tables || []).filter(t => state.pickedPairs.has(t.fullName)).length;
+
+    const rowsHtml = visible.map(t => {
+      const picked = state.pickedPairs.has(t.fullName);
+      const pair   = picked ? state.pickedPairs.get(t.fullName) : null;
+      const match  = autoMatchCache[t.fullName];
+      const top    = match && match.top;
+
+      // Target column content varies by state:
+      //   - not picked: show top candidate as "→ Matter (high 0.95)" greyed out
+      //   - picked: show the picked target with confidence + Change button
+      let targetHtml;
+      if (picked) {
+        if (pair.target) {
+          const tShort  = pair.target.split('.').pop();
+          const conf    = (typeof pair.confidence === 'number') ? pair.confidence : null;
+          const bucket  = conf == null ? '' : confidenceBucket(conf);
+          const confTag = conf == null ? '<span style="font-size:10px;color:var(--text3)">manual</span>'
+                          : `<span style="font-size:10px;color:${bucket==='high'?'var(--green)':bucket==='medium'?'var(--amber)':'var(--text3)'}">${bucket} ${conf.toFixed(2)}</span>`;
+          targetHtml = `
+            <div style="display:flex;align-items:center;gap:0.45rem">
+              <span style="font-family:var(--mono);font-size:12px;color:var(--text)">→ ${escapeHtml(tShort)}</span>
+              ${confTag}
+              <button class="btn btn-sm" data-open-target-picker="${escapeHtml(t.fullName)}" style="padding:2px 8px;font-size:11px">Change</button>
+            </div>`;
+        } else {
+          targetHtml = `
+            <div style="display:flex;align-items:center;gap:0.45rem">
+              <span style="color:var(--amber);font-size:11.5px">⚠ No target chosen yet</span>
+              <button class="btn btn-sm" data-open-target-picker="${escapeHtml(t.fullName)}" style="padding:2px 8px;font-size:11px">Pick target</button>
+            </div>`;
+        }
+      } else if (top) {
+        const tShort = top.target.split('.').pop();
+        const bucket = confidenceBucket(top.confidence);
+        const confColor = bucket === 'high' ? 'var(--green)' : bucket === 'medium' ? 'var(--amber)' : 'var(--text3)';
+        targetHtml = `<span style="font-family:var(--mono);font-size:11px;color:var(--text3)">→ ${escapeHtml(tShort)} <span style="color:${confColor}">(${bucket} ${top.confidence.toFixed(2)})</span></span>`;
+      } else {
+        targetHtml = `<span style="font-size:11px;color:var(--text3);font-style:italic">no match — you'll need to pick a target</span>`;
+      }
+
+      // If the target picker is open on this row, render its candidate list below
+      let pickerHtml = '';
+      if (state.openTargetPicker === t.fullName) {
+        pickerHtml = renderTargetPickerInline(t.fullName);
+      }
+
+      return `
+        <div class="src-pair-row${picked ? ' picked' : ''}" data-src-row="${escapeHtml(t.fullName)}">
+          <label style="display:flex;align-items:center;gap:0.7rem;cursor:pointer;flex:1;min-width:0">
+            <input type="checkbox" data-pick-source="${escapeHtml(t.fullName)}" ${picked ? 'checked' : ''} style="margin:0;flex-shrink:0">
+            <div style="flex:1;min-width:0">
+              <div style="font-family:var(--mono);font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(t.name)}</div>
+              <div style="font-size:10.5px;color:var(--text3);font-family:var(--mono)">${escapeHtml(t.fullName)} · ${formatRows(t.rows || 0)} rows</div>
+            </div>
+          </label>
+          <div style="flex:1;min-width:0;display:flex;justify-content:flex-end;text-align:right">${targetHtml}</div>
+        </div>
+        ${pickerHtml}`;
+    }).join('');
+
+    return `
+      <div class="card src-expanded-panel">
+        <div style="display:flex;align-items:flex-start;gap:1rem;justify-content:space-between;flex-wrap:wrap;margin-bottom:0.85rem">
+          <div style="min-width:0">
+            <div style="font-weight:600;font-size:14px">${escapeHtml(group.name)} — pick source tables</div>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:2px">
+              ${(group.tables || []).length} total · ${pickedInGroup} picked
+            </div>
+          </div>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+            <button class="btn btn-sm btn-ghost" data-srcgroup-close="${escapeHtml(group.id)}">Close ✕</button>
+          </div>
+        </div>
+        <div style="margin-bottom:0.65rem">
+          <input type="text" class="form-input" id="am-srcgroup-search-${escapeHtml(group.id)}"
+                 data-srcgroup-search="${escapeHtml(group.id)}"
+                 placeholder="Filter — e.g. 'matter', 'rate'"
+                 value="${escapeHtml(search)}"
+                 style="font-size:12.5px;font-family:var(--mono)">
+        </div>
+        <div class="src-pair-list">
+          ${rowsHtml || '<div style="padding:1rem;text-align:center;color:var(--text3);font-size:12.5px">No tables match your filter.</div>'}
+        </div>
+      </div>`;
+  }
+
+  // Inline target picker that opens beneath a source row when "Change" is
+  // clicked. Shows the heuristic's top-5 candidates plus a search field for
+  // when none of them is right.
+  function renderTargetPickerInline(sourceFullName) {
+    const match = autoMatchCache[sourceFullName];
+    const search = (state.targetPickerSearch || '').trim();
+
+    // Default candidates from the heuristic; if user is searching, do a
+    // fresh fuzzy match across all target tables using the query as source.
+    let candidates;
+    if (search) {
+      const targetNames = [];
+      for (const b of state.buckets) for (const t of b.tables) targetNames.push(t.fullName);
+      const fresh = matchSourceToTarget(search, targetNames, { topK: 8, minConfidence: 0.2 });
+      candidates = fresh.candidates;
+    } else {
+      candidates = (match && match.candidates) || [];
+    }
+
+    const candidatesHtml = candidates.map(c => {
+      const bucket = confidenceBucket(c.confidence);
+      const confColor = bucket === 'high' ? 'var(--green)' : bucket === 'medium' ? 'var(--amber)' : 'var(--text3)';
+      return `
+        <div class="target-cand-row" data-pick-target-for="${escapeHtml(sourceFullName)}" data-pick-target-name="${escapeHtml(c.target)}" data-pick-target-conf="${c.confidence.toFixed(4)}" data-pick-target-reason="${escapeHtml(c.reason || '')}">
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--mono);font-size:12px;color:var(--text)">${escapeHtml(c.target.split('.').pop())}</div>
+            <div style="font-size:10.5px;color:var(--text3);font-family:var(--mono)">${escapeHtml(c.target)} · ${escapeHtml(c.reason || '')}</div>
+          </div>
+          <span style="font-size:10.5px;color:${confColor}">${bucket} ${c.confidence.toFixed(2)}</span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="target-picker-panel" data-target-picker="${escapeHtml(sourceFullName)}">
+        <div style="font-size:11px;color:var(--text3);margin-bottom:0.45rem">Choose target for <strong style="color:var(--text);font-family:var(--mono)">${escapeHtml(sourceFullName)}</strong></div>
+        <input type="text" class="form-input" id="am-target-picker-search"
+               placeholder="Search target tables — type a name or part of one"
+               value="${escapeHtml(search)}"
+               style="font-size:12.5px;font-family:var(--mono);margin-bottom:0.55rem">
+        <div class="target-cand-list">
+          ${candidatesHtml || '<div style="padding:0.85rem;text-align:center;color:var(--text3);font-size:12px">No candidates match. Try a different search term.</div>'}
+        </div>
+        <div style="display:flex;gap:0.4rem;justify-content:flex-end;margin-top:0.55rem">
+          <button class="btn btn-sm btn-ghost" data-cancel-target-picker="${escapeHtml(sourceFullName)}">Cancel</button>
+        </div>
+      </div>`;
+  }
+
   function renderBucketCards() {
     if (!Array.isArray(state.buckets) || state.buckets.length === 0) {
       return '';
@@ -1288,7 +1882,7 @@ body.cyg-collapsed .topbar{left:54px}
     const pickedCountsByBucket = {};
     for (const b of state.buckets) {
       let n = 0;
-      for (const t of b.tables) if (state.pickedTables.has(t.fullName)) n++;
+      for (const t of b.tables) if (allPickedTargets().has(t.fullName)) n++;
       pickedCountsByBucket[b.key] = n;
     }
 
@@ -1351,8 +1945,8 @@ body.cyg-collapsed .topbar{left:54px}
   function renderExpandedBucket(bucket) {
     const visible = visibleTablesForBucket(bucket);
     const search = state.bucketSearch[bucket.key] || '';
-    const pickedInBucket = bucket.tables.filter(t => state.pickedTables.has(t.fullName)).length;
-    const visiblePickedCount = visible.filter(t => state.pickedTables.has(t.fullName)).length;
+    const pickedInBucket = bucket.tables.filter(t => allPickedTargets().has(t.fullName)).length;
+    const visiblePickedCount = visible.filter(t => allPickedTargets().has(t.fullName)).length;
     const allVisiblePicked = visible.length > 0 && visiblePickedCount === visible.length;
 
     // Build the rows. Cap at 500 for safety — 650-table buckets should
@@ -1362,7 +1956,7 @@ body.cyg-collapsed .topbar{left:54px}
     const overflow = visible.length > ROW_CAP;
 
     const rowsHtml = showing.map(t => {
-      const picked = state.pickedTables.has(t.fullName);
+      const picked = allPickedTargets().has(t.fullName);
       return `
         <label class="table-pick-row${picked ? ' picked' : ''}" data-table-row="${escapeHtml(t.fullName)}">
           <input type="checkbox" data-pick-table="${escapeHtml(t.fullName)}" ${picked ? 'checked' : ''} style="margin:0;flex-shrink:0">
@@ -1424,36 +2018,53 @@ body.cyg-collapsed .topbar{left:54px}
 
   function renderScopePanel() {
     if (!Array.isArray(state.buckets) || state.buckets.length === 0) return '';
-    const tableCount = state.pickedTables.size;
-    const bucketCount = pickedBucketCount();
+    const pairCount = state.pickedPairs.size;
+    const standaloneCount = state.pickedStandaloneTargets.size;
+    const targetCount = allPickedTargets().size;
 
     const scopeListOptions = (state.scopeList || []).map(s =>
-      `<option value="${escapeHtml(s.scopeId)}"${state.savedScope && state.savedScope.scopeId === s.scopeId ? ' selected' : ''}>${escapeHtml(s.name)} (${s.rootCount || 0} roots${s.expandedCount ? ', ' + s.expandedCount + ' expanded' : ''})</option>`
+      `<option value="${escapeHtml(s.scopeId)}"${state.savedScope && state.savedScope.scopeId === s.scopeId ? ' selected' : ''}>${escapeHtml(s.name)} (${s.rootCount || 0} roots${s.pairCount ? ', ' + s.pairCount + ' pairs' : ''}${s.expandedCount ? ', ' + s.expandedCount + ' expanded' : ''})</option>`
     ).join('');
 
     const savedBanner = state.savedScope
       ? `<div class="notice" style="margin-top:0.85rem">
           <strong>Scope saved:</strong> "${escapeHtml(state.savedScope.name)}" —
           ${(state.savedScope.rootTables || []).length} root tables,
-          ${(state.savedScope.expandedTables || []).length} FK dependencies pulled in.
+          ${(state.savedScope.expandedTables || []).length} FK dependencies pulled in${
+            state.savedScope.sourceTargetPairs && state.savedScope.sourceTargetPairs.length > 0
+              ? `, ${state.savedScope.sourceTargetPairs.length} confirmed source→target pair${state.savedScope.sourceTargetPairs.length === 1 ? '' : 's'}`
+              : ''
+          }.
           Ready to migrate.
         </div>`
       : '';
+
+    const overWarn = pairCount > 10
+      ? `<div class="notice" style="margin-top:0.85rem;background:var(--amber-bg);border-color:rgba(245,158,11,0.4)">
+          <strong>${pairCount} pairs picked.</strong> The agent's budget realistically covers ~5–10 source-target pairs per run. Consider splitting this into smaller scopes (e.g. master files first, transactions later).
+        </div>`
+      : '';
+
+    let summaryText;
+    if (targetCount === 0) {
+      summaryText = '<span style="color:var(--text3);font-style:italic">Nothing picked yet — open a source card above to begin.</span>';
+    } else {
+      const parts = [];
+      if (pairCount > 0) parts.push(`<strong style="color:var(--text)">${pairCount}</strong> source→target pair${pairCount === 1 ? '' : 's'}`);
+      if (standaloneCount > 0) parts.push(`<strong style="color:var(--text)">${standaloneCount}</strong> standalone target${standaloneCount === 1 ? '' : 's'}`);
+      summaryText = parts.join(' + ') + ` → <strong style="color:var(--text)">${targetCount}</strong> target table${targetCount === 1 ? '' : 's'} in scope`;
+    }
 
     return `
       <div class="card">
         <div class="panel-title">Working scope</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
           <div>
-            <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem">Build from cards</label>
-            <div style="padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);font-size:12.5px;color:var(--text2);min-height:54px">
-              ${tableCount === 0
-                ? '<span style="color:var(--text3);font-style:italic">No tables picked yet — open a card to pick individual tables</span>'
-                : `<strong style="color:var(--text)">${tableCount}</strong> table${tableCount === 1 ? '' : 's'} picked across <strong style="color:var(--text)">${bucketCount}</strong> bucket${bucketCount === 1 ? '' : 's'}`}
-            </div>
+            <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem">Build from picks</label>
+            <div style="padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);font-size:12.5px;color:var(--text2);min-height:54px">${summaryText}</div>
             <div style="margin-top:0.6rem;display:flex;gap:0.4rem">
               <input type="text" class="form-input" id="am-scope-name" placeholder="Name this scope (e.g. Master Files)" style="flex:1;font-size:12.5px" value="${state.savedScope ? escapeHtml(state.savedScope.name) : ''}">
-              <button class="btn btn-primary btn-sm" id="am-save-scope-btn" ${tableCount === 0 ? 'disabled' : ''}>Save scope</button>
+              <button class="btn btn-primary btn-sm" id="am-save-scope-btn" ${targetCount === 0 ? 'disabled' : ''}>Save scope</button>
             </div>
           </div>
           <div>
@@ -1467,7 +2078,43 @@ body.cyg-collapsed .topbar{left:54px}
             </div>
           </div>
         </div>
+        ${overWarn}
         ${savedBanner}
+      </div>`;
+  }
+
+  // Advanced collapsed section: target-side bucket picker for adding
+  // standalone target tables that have no source counterpart.
+  function renderAdvancedTargetsSection() {
+    const open = !!state.showAdvancedTargets;
+    const standaloneCount = state.pickedStandaloneTargets.size;
+    const summary = standaloneCount > 0
+      ? `<span style="color:var(--accent);font-weight:600">${standaloneCount} standalone target${standaloneCount === 1 ? '' : 's'} picked</span>`
+      : '<span style="color:var(--text3)">No standalone targets picked</span>';
+    if (!open) {
+      return `<div class="card" style="padding:0.7rem 0.95rem">
+        <div style="display:flex;align-items:center;gap:0.85rem;justify-content:space-between">
+          <div>
+            <div style="font-size:12.5px;font-weight:600">Advanced: add target tables directly</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">For seeding target tables that have no source counterpart (e.g. 3E lookups). ${summary}</div>
+          </div>
+          <button class="btn btn-sm" id="am-advanced-toggle">Show ▾</button>
+        </div>
+      </div>`;
+    }
+    // Open: render the target buckets + global search as before, but in a
+    // visually demoted container.
+    return `
+      <div class="card" style="background:var(--bg2)">
+        <div style="display:flex;align-items:center;gap:0.85rem;justify-content:space-between;margin-bottom:0.85rem">
+          <div>
+            <div style="font-size:12.5px;font-weight:600">Advanced: add target tables directly</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${summary}</div>
+          </div>
+          <button class="btn btn-sm" id="am-advanced-toggle">Hide ▴</button>
+        </div>
+        ${renderGlobalPicker()}
+        ${renderBucketCards()}
       </div>`;
   }
 
@@ -1504,9 +2151,14 @@ body.cyg-collapsed .topbar{left:54px}
     body += renderConnectionSummary();
     if (bothConfigured) {
       body += renderPlanSection();
+      // PRIMARY picker: source cards.
+      body += renderSourceCards();
       if (haveBuckets) {
-        body += renderBucketCards();
         body += renderScopePanel();
+        // Advanced (collapsed) panel — target buckets for adding standalone
+        // target tables that have no source counterpart (e.g. seeding 3E
+        // lookups). Hidden behind a toggle.
+        body += renderAdvancedTargetsSection();
       }
       body += renderGoalSection();
     } else {
@@ -1518,6 +2170,9 @@ body.cyg-collapsed .topbar{left:54px}
     stage.innerHTML = body;
 
     // Wire buttons
+    const loadSrcBtn = document.getElementById('am-load-source-btn');
+    if (loadSrcBtn) loadSrcBtn.addEventListener('click', () => loadSourceSchema(true));
+
     const genBtn = document.getElementById('am-generate-plan-btn');
     if (genBtn) genBtn.addEventListener('click', () => loadOrCreatePlan(false));
 
@@ -1525,12 +2180,88 @@ body.cyg-collapsed .topbar{left:54px}
     if (regenBtn) regenBtn.addEventListener('click', () => {
       state.plan = null;
       state.buckets = [];
-      state.pickedTables = new Set();
+      state.pickedStandaloneTargets = new Set();
+      state.pickedPairs = new Map();
+      state.openTargetPicker = null;
       state.expandedBucket = null;
       state.bucketSearch = {};
-        state.globalSearch = '';
+      state.globalSearch = '';
       state.savedScope = null;
+      autoMatchCache = {};
       loadOrCreatePlan(true);
+    });
+
+    // Source-card handlers (open/close source group)
+    document.querySelectorAll('[data-srcgroup]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-srcgroup-btn], [data-pick-source], [data-srcgroup-search], [data-srcgroup-close], [data-open-target-picker], [data-pick-target-for], [data-cancel-target-picker], [data-src-row], #am-target-picker-search, [data-target-picker]')) return;
+        expandSourceGroup(el.getAttribute('data-srcgroup'));
+      });
+    });
+    document.querySelectorAll('[data-srcgroup-btn]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        expandSourceGroup(el.getAttribute('data-srcgroup-btn'));
+      });
+    });
+    document.querySelectorAll('[data-srcgroup-close]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        expandSourceGroup(el.getAttribute('data-srcgroup-close'));
+      });
+    });
+    document.querySelectorAll('[data-srcgroup-search]').forEach(el => {
+      el.addEventListener('input', (e) => {
+        setSourceGroupSearch(el.getAttribute('data-srcgroup-search'), el.value);
+      });
+    });
+    document.querySelectorAll('[data-pick-source]').forEach(el => {
+      el.addEventListener('change', (e) => {
+        e.stopPropagation();
+        togglePairPick(el.getAttribute('data-pick-source'));
+      });
+    });
+    document.querySelectorAll('[data-open-target-picker]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openTargetPickerFor(el.getAttribute('data-open-target-picker'));
+      });
+    });
+    document.querySelectorAll('[data-pick-target-for]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const src   = el.getAttribute('data-pick-target-for');
+        const tgt   = el.getAttribute('data-pick-target-name');
+        const conf  = parseFloat(el.getAttribute('data-pick-target-conf'));
+        const reason= el.getAttribute('data-pick-target-reason');
+        setPairTarget(src, tgt, conf, reason);
+      });
+    });
+    document.querySelectorAll('[data-cancel-target-picker]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        state.openTargetPicker = null;
+        state.targetPickerSearch = '';
+        renderSetup();
+      });
+    });
+    const tgtPickerSearch = document.getElementById('am-target-picker-search');
+    if (tgtPickerSearch) {
+      tgtPickerSearch.addEventListener('input', (e) => {
+        state.targetPickerSearch = e.target.value || '';
+        renderSetup();
+        Promise.resolve().then(() => {
+          const el = document.getElementById('am-target-picker-search');
+          if (el) { el.focus(); const len = el.value.length; el.setSelectionRange(len, len); }
+        });
+      });
+    }
+
+    // Advanced section toggle
+    const advBtn = document.getElementById('am-advanced-toggle');
+    if (advBtn) advBtn.addEventListener('click', () => {
+      state.showAdvancedTargets = !state.showAdvancedTargets;
+      renderSetup();
     });
 
     // Card click handlers (open/close the bucket — does NOT toggle selection)
@@ -2088,8 +2819,11 @@ body.cyg-collapsed .topbar{left:54px}
       // Reset scope-related state so the user can build a fresh scope (or
       // re-select an existing one). The plan persists across runs because
       // it's tied to the target schema, not the run.
-      state.pickedTables = new Set();
+      state.pickedStandaloneTargets = new Set();
+      state.pickedPairs = new Map();
+      state.openTargetPicker = null;
       state.expandedBucket = null;
+      state.expandedSourceGroup = null;
       state.bucketSearch = {};
         state.globalSearch = '';
       state.savedScope = null;
@@ -2197,11 +2931,13 @@ body.cyg-collapsed .topbar{left:54px}
     startConnectionWatcher();
 
     // Load saved scopes for this project so they appear in the dropdown.
-    // The list is read-only; saving/expanding happens explicitly when the
-    // user clicks the relevant buttons. Best-effort.
     loadScopeList().then(() => {
       if (state.view === 'setup') renderSetup();
     });
+
+    // Kick off source-schema introspection if the source is configured.
+    // The source side is the primary picker now, so load eagerly.
+    if (state.conns.source) loadSourceSchema(true);
   }
 
   if (document.readyState === 'loading') {
