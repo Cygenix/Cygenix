@@ -441,22 +441,23 @@ body.cyg-collapsed .topbar{left:54px}
     featureEnabled: null,
     conns: { source: null, target: null },
     view: 'loading',
-    // New: source schema introspection
-    sourceSchema: null,        // null = not loaded, {} = loaded data, 'pending' = backend not built
-    sourceSchemaLoading: false,
-    sourceSchemaError: null,
-    // New: action card state
-    activeAction: null,        // null | 'map-schema' | 'migrate-group'
-    selectedSchema: null,      // schema name when 'map-schema' is active
-    activeGroupId: null,       // group id when 'migrate-group' is active
-    // Criteria suggestions per group (cached for the session)
-    criteriaCache: {},         // { [groupId]: { suggestions: [...] } | { error: '...' } | 'loading' }
-    selectedCriteria: {},      // { [groupId]: { [criterionId]: { enabled: bool, value: ... } } }
-    tightenText: {},           // { [groupId]: 'WHERE-clause-style additional filter text' }
-    // Dependency analysis per group (cached for the session)
-    dependencyCache: {},       // { [groupId]: { dependencies: [...], overallRecommendation: '...' } | 'loading' | { error } }
-    dependencyChoice: {},      // { [groupId]: 'bring-along' | 'assume-present' | 'let-agent-decide' }
-    userEditedPrompt: false,
+
+    // Target-mode plan against the configured target connection.
+    // null = none generated yet, 'pending' = generating, object = loaded.
+    plan: null,
+    planError: null,
+
+    // Bucket cards derived from plan levels. Computed when plan loads.
+    buckets: [],          // [{ key, label, description, levels: [N..M], tables: [...] }]
+
+    // Working scope being built (in-memory until "Save scope" clicked).
+    // pickedBuckets: Set of bucket keys currently toggled on.
+    // savedScope: the persisted scope doc (null until saved/loaded).
+    pickedBuckets: new Set(),
+    savedScope: null,
+
+    // Scopes available for this project (loaded from /api/agent/scope).
+    scopeList: [],
   };
 
   const stage = document.getElementById('am-stage');
@@ -632,7 +633,6 @@ body.cyg-collapsed .topbar{left:54px}
   let connWatcher = null;
   function startConnectionWatcher() {
     if (connWatcher) clearInterval(connWatcher);
-    state._schemaRetryCount = state._schemaRetryCount || 0;
     connWatcher = setInterval(() => {
       if (state.view !== 'setup') return;
       const next = readConnections();
@@ -641,106 +641,22 @@ body.cyg-collapsed .topbar{left:54px}
         (!!next.target) !== (!!state.conns.target) ||
         (next.source && state.conns.source && next.source.label !== state.conns.source.label) ||
         (next.target && state.conns.target && next.target.label !== state.conns.target.label);
-      // Also retry the schema load if we have a source but the last attempt
-      // failed with 'pending' (endpoint was 404 at the time) or with an error.
-      // This handles the case where the function is deployed/fixed AFTER init.
-      // Cap retries to avoid hammering a permanently-down endpoint.
-      const shouldRetrySchema = next.source &&
-        !state.sourceSchemaLoading &&
-        (state.sourceSchema === 'pending' || state.sourceSchemaError) &&
-        state._schemaRetryCount < 5;
       if (connsChanged) {
         state.conns = next;
-        state.sourceSchema = null;
-        state.sourceSchemaError = null;
-        state.activeAction = null;
-        state.selectedSchema = null;
-        state.activeGroupId = null;
-        state.userEditedPrompt = false;
-        state._schemaRetryCount = 0;
-        // Clear caches that were keyed against the previous connection
-        state.criteriaCache = {};
-        state.selectedCriteria = {};
-        state.tightenText = {};
-        state.dependencyCache = {};
-        state.dependencyChoice = {};
+        // Connections changed — the previously-generated plan no longer
+        // applies. Drop everything plan/scope-related and re-render. The
+        // user can regenerate the plan against the new target.
+        state.plan = null;
+        state.planError = null;
+        state.buckets = [];
+        state.pickedBuckets = new Set();
+        state.savedScope = null;
         renderSetup();
-        if (state.conns.source) loadSourceSchema();
-      } else if (shouldRetrySchema) {
-        state._schemaRetryCount++;
-        state.sourceSchema = null;
-        state.sourceSchemaError = null;
-        loadSourceSchema();
       }
     }, 4000);
   }
   function stopConnectionWatcher() {
     if (connWatcher) { clearInterval(connWatcher); connWatcher = null; }
-  }
-
-  // ── Source schema introspection (NEW) ─────────────────────────
-  // Calls a backend endpoint that should return:
-  //   { schemas: [{ name, tables: [{ name, rows, hasPii, columnCount }] }],
-  //     edges:   [{ from: "schema.table", to: "schema.table" }],
-  //     totals:  { schemas, tables, columns, piiColumns } }
-  // If the endpoint isn't deployed yet we degrade gracefully.
-  // Pull the user's source connection details directly from localStorage
-  // (via CygenixConnections.get) and POST them to the introspection endpoint.
-  // This matches how dashboard.html calls /api/db: the browser holds the
-  // authoritative copy of the connection, the function never persists it.
-  async function loadSourceSchema() {
-    if (!state.conns.source) return;
-    if (state.sourceSchemaLoading) return;
-    state.sourceSchemaLoading = true;
-    state.sourceSchemaError = null;
-    renderSetup();
-
-    // Read connection from CygenixConnections (same way readConnections does).
-    let body = {};
-    try {
-      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
-        ? (CygenixConnections.get() || {})
-        : {};
-      // Honour srcConnMode rather than guessing from field presence.
-      // See buildAgentMigrateBody() for full rationale.
-      const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
-      if (srcMode === 'azure' && c.srcFnUrl) {
-        body.srcFnUrl = c.srcFnUrl;
-        if (c.srcFnKey) body.srcFnKey = c.srcFnKey;
-      } else if (srcMode === 'direct' && c.srcConnString) {
-        body.srcConnString = c.srcConnString;
-      }
-      body.srcConnMode = srcMode;
-    } catch (e) {
-      console.warn('[AgentiveMigration] could not read connection for schema load:', e.message);
-    }
-
-    if (!body.srcConnString && !body.srcFnUrl) {
-      state.sourceSchemaError = 'No source connection details found in browser storage.';
-      state.sourceSchemaLoading = false;
-      if (state.view === 'setup') renderSetup();
-      return;
-    }
-
-    try {
-      const data = await api('/agent/source-schema', {
-        method: 'POST',
-        body: JSON.stringify(body)
-      });
-      state.sourceSchema = data;
-      if (data && Array.isArray(data.schemas) && data.schemas.length > 0) {
-        state.selectedSchema = data.schemas[0].name;
-      }
-    } catch (e) {
-      if (e instanceof ApiNotImplementedError) {
-        state.sourceSchema = 'pending'; // backend endpoint not deployed yet
-      } else {
-        state.sourceSchemaError = e.message;
-      }
-    } finally {
-      state.sourceSchemaLoading = false;
-      if (state.view === 'setup') renderSetup();
-    }
   }
 
   // ── Persistence ───────────────────────────────────────────────
@@ -788,1046 +704,257 @@ body.cyg-collapsed .topbar{left:54px}
     return String(n);
   }
 
-  // ── Source-overview renderer (NEW) ────────────────────────────
-  function renderSourceOverview() {
-    // Three states:
-    //   1. No source connection → show prompt to configure it
-    //   2. Loading → spinner
-    //   3. Backend pending (sentinel) → show degraded "ready" state
-    //   4. Loaded → render the SVG node graph + stats
+  // ── Plan, scope, and bucket logic (NEW — phase 1 of UI rework) ────────
+  //
+  // The new flow replaces the source-side semantic-group carousel with
+  // target-mode planning + scope selection. The user:
+  //   1. Sees a plan (auto-generated against the target) split into 5
+  //      thematic buckets in load order (reference → master → setup →
+  //      transactions → details).
+  //   2. Clicks bucket cards to add their tables to a working scope.
+  //   3. Names and saves the scope; the agent runs against it.
+  //
+  // No source-side introspection happens client-side any more. The agent
+  // does that work inside its run, anchored by the scope.
 
-    if (!state.conns.source) {
-      return `
-        <div class="map-frame">
-          <div class="map-overlay">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text3)">
-              <ellipse cx="12" cy="5" rx="9" ry="3"/>
-              <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
-              <path d="M3 12a9 3 0 0 0 18 0"/>
-            </svg>
-            <div>Configure a source connection to introspect your database.</div>
-          </div>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
-        </div>`;
-    }
+  // Fixed bucket definitions. Level boundaries derived empirically against
+  // a 3E target; refine later if needed. See agent-dependency-planner-3e-
+  // noise-patterns.md for noise-table handling.
+  const BUCKET_DEFS = [
+    { key: 'reference', label: 'Reference data',          range: [0, 0],
+      description: 'Lookup tables, currencies, country codes, status codes' },
+    { key: 'master',    label: 'Master entities',         range: [1, 3],
+      description: 'Top-level entities: Entity, Client, Matter, Timekeeper' },
+    { key: 'setup',     label: 'Configuration & setup',   range: [4, 8],
+      description: 'Bank accounts, billing rates, fee arrangements, security' },
+    { key: 'transactions', label: 'Transactions',         range: [9, 15],
+      description: 'Bills, time entries, costs, trust receipts, payments' },
+    { key: 'details',   label: 'Details & audit',         range: [16, 999],
+      description: 'Child detail tables and audit history' }
+  ];
 
-    if (state.sourceSchemaLoading || state.sourceSchema === null) {
-      return `
-        <div class="map-frame">
-          <div class="map-overlay">
-            <div class="spinner"></div>
-            <div>Reading source database structure…</div>
-          </div>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
-        </div>`;
-    }
-
-    if (state.sourceSchemaError) {
-      return `
-        <div class="map-frame">
-          <div class="map-overlay">
-            <div style="color:var(--red);font-weight:500">Couldn't read source schema</div>
-            <div style="font-size:11px">${escapeHtml(state.sourceSchemaError)}</div>
-            <button class="btn btn-sm" id="am-retry-schema-btn" style="margin-top:0.4rem">Retry</button>
-          </div>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
-        </div>`;
-    }
-
-    if (state.sourceSchema === 'pending') {
-      // Backend endpoint not deployed yet — degrade to a "ready, not yet introspected" state
-      return `
-        <div class="map-frame">
-          <div class="map-overlay">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--accent)">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-            <div style="color:var(--text2)">Source connected. Visual schema map loads when the introspection endpoint is deployed.</div>
-            <div style="font-size:11px;color:var(--text3);max-width:380px">For now, the agent introspects the database itself once you start a run — the structure shows in the run log.</div>
-          </div>
-        </div>
-        <div class="stat-grid">
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Schemas</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Tables</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">Columns</div></div>
-          <div class="stat-tile"><div class="stat-num muted">—</div><div class="stat-lbl">PII columns</div></div>
-        </div>`;
-    }
-
-    // Loaded state — render real data
-    const schema = state.sourceSchema;
-    const totals = schema.totals || {};
-    const svgMarkup = buildSchemaSvg(schema);
-
-    const piiCount = totals.piiColumns || 0;
-    const piiNote = piiCount > 0
-      ? `Detected PII in <code>${piiCount}</code> column${piiCount === 1 ? '' : 's'} — flagged in the map above.`
-      : `No obvious PII detected by the introspection pass.`;
-
-    return `
-      <div class="map-frame">
-        ${svgMarkup}
-      </div>
-      <div class="stat-grid">
-        <div class="stat-tile"><div class="stat-num">${escapeHtml(String(totals.schemas || 0))}</div><div class="stat-lbl">Schemas</div></div>
-        <div class="stat-tile"><div class="stat-num">${escapeHtml(String(totals.tables || 0))}</div><div class="stat-lbl">Tables</div></div>
-        <div class="stat-tile"><div class="stat-num">${escapeHtml(String(totals.columns || 0))}</div><div class="stat-lbl">Columns</div></div>
-        <div class="stat-tile"><div class="stat-num ${piiCount > 0 ? 'warn' : 'muted'}">${escapeHtml(String(piiCount))}</div><div class="stat-lbl">PII columns</div></div>
-      </div>
-      <div class="descriptor">
-        ${escapeHtml(schema.databaseLabel || state.conns.source.label)} · ${totals.schemas || 0} schema${(totals.schemas || 0) === 1 ? '' : 's'}, ${totals.tables || 0} tables.
-        ${piiNote}
-      </div>`;
-  }
-
-  // Build an SVG node graph from real schema data.
-  // Layout: one column per schema (max 2 columns wide), tables stack vertically inside.
-  function buildSchemaSvg(schema) {
-    const schemas = Array.isArray(schema.schemas) ? schema.schemas : [];
-    if (schemas.length === 0) {
-      return `<svg viewBox="0 0 700 340"><text x="350" y="170" text-anchor="middle" class="table-name" style="font-size:12px">No schemas found</text></svg>`;
-    }
-
-    const COL_WIDTH = 280;
-    const COL_GAP = 30;
-    const COL_X_START = 30;
-    const HEADER_H = 26;
-    const TABLE_H = 22;
-    const TABLE_GAP = 4;
-    const PADDING = 10;
-
-    // Place schemas in a 2-column layout
-    const cols = Math.min(2, schemas.length);
-    const positions = {}; // "schema.table" → bbox
-
-    let svgTables = '';
-    let svgSchemas = '';
-
-    schemas.forEach((sch, idx) => {
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
-      const x = COL_X_START + col * (COL_WIDTH + COL_GAP);
-      // Per-row Y: based on the heights of schemas in earlier rows of the same column
-      let y = 20;
-      for (let i = 0; i < idx; i++) {
-        if (i % cols === col) {
-          const prev = schemas[i];
-          const prevTables = Math.min(prev.tables ? prev.tables.length : 0, 5); // cap displayed
-          const prevHeight = HEADER_H + PADDING + prevTables * (TABLE_H + TABLE_GAP) + 12;
-          y += prevHeight;
-        }
-      }
-
-      const tables = Array.isArray(sch.tables) ? sch.tables.slice(0, 5) : []; // show top 5
-      const totalTables = sch.tables ? sch.tables.length : 0;
-      const moreCount = totalTables - tables.length;
-      const height = HEADER_H + PADDING + tables.length * (TABLE_H + TABLE_GAP) + (moreCount > 0 ? 14 : 0) + 8;
-
-      svgSchemas += `<rect class="schema-rect" x="${x}" y="${y}" width="${COL_WIDTH}" height="${height}" rx="6"/>`;
-      svgSchemas += `<text class="schema-label" x="${x + 12}" y="${y + 17}">${escapeHtml(sch.name)}</text>`;
-      svgSchemas += `<text class="table-meta" x="${x + COL_WIDTH - 12}" y="${y + 17}" text-anchor="end">${totalTables} table${totalTables === 1 ? '' : 's'}</text>`;
-
-      tables.forEach((t, i) => {
-        const tx = x + PADDING;
-        const ty = y + HEADER_H + i * (TABLE_H + TABLE_GAP);
-        const tw = COL_WIDTH - PADDING * 2;
-        const piiCls = t.hasPii ? ' pii' : '';
-        const displayName = (t.hasPii ? '⚠ ' : '') + (t.name || '');
-        svgTables += `<rect class="table-rect${piiCls}" x="${tx}" y="${ty}" width="${tw}" height="${TABLE_H}" rx="3"/>`;
-        svgTables += `<text class="table-name" x="${tx + 8}" y="${ty + 14}">${escapeHtml(displayName)}</text>`;
-        if (t.rows != null) {
-          svgTables += `<text class="table-meta" x="${tx + tw - 8}" y="${ty + 14}" text-anchor="end">${escapeHtml(formatRows(t.rows))}</text>`;
-        }
-        positions[sch.name + '.' + t.name] = {
-          left: tx, right: tx + tw, cy: ty + TABLE_H / 2
-        };
-      });
-
-      if (moreCount > 0) {
-        const moreY = y + HEADER_H + tables.length * (TABLE_H + TABLE_GAP) + 8;
-        svgTables += `<text class="table-meta" x="${x + COL_WIDTH / 2}" y="${moreY}" text-anchor="middle">+${moreCount} more table${moreCount === 1 ? '' : 's'}</text>`;
-      }
-    });
-
-    // Edges
-    let svgEdges = '';
-    const edges = Array.isArray(schema.edges) ? schema.edges : [];
-    edges.forEach(edge => {
-      const a = positions[edge.from];
-      const b = positions[edge.to];
-      if (!a || !b) return;
-      const ax = a.cx < b.cx || a.right < b.left ? a.right : a.left;
-      const bx = ax === a.right ? b.left : b.right;
-      const ay = a.cy, by = b.cy;
-      const midX = (ax + bx) / 2;
-      svgEdges += `<path class="edge" d="M ${ax} ${ay} C ${midX} ${ay}, ${midX} ${by}, ${bx} ${by}"/>`;
-    });
-
-    // Compute viewBox height from the last placed schema's bottom edge
-    let maxBottom = 100;
-    Object.values(positions).forEach(p => { if (p.cy + TABLE_H > maxBottom) maxBottom = p.cy + TABLE_H; });
-    const vbHeight = Math.max(340, maxBottom + 30);
-
-    return `<svg viewBox="0 0 700 ${vbHeight}" preserveAspectRatio="xMidYMid meet">
-      <g>${svgEdges}</g>
-      <g>${svgSchemas}</g>
-      <g>${svgTables}</g>
-    </svg>`;
-  }
-
-  // ── Action card → prompt wiring (NEW) ─────────────────────────
-  function buildPromptForAction(action, schemaName) {
-    if (action === 'map-schema') {
-      const s = schemaName || '<schema name>';
-      return `Propose a complete mapping for the ${s} schema only. Preserve foreign key relationships within the schema. Flag any PII columns for my review before including them. Pause for approval before writing anything to the target.`;
-    }
-    return '';
-  }
-
-  function buildPromptForGroup(group) {
-    if (!group) return '';
-
-    // FULL list of fully-qualified table names — no truncation. The agent
-    // hallucinates table names when given vague hints like "and 37 more",
-    // so we list every single one. Cost: a few hundred bytes; benefit: no
-    // invented names like 'arcs_ext_matter' or 'cv_hbmmatter'.
-    const tables = (group.tables || []).map(t => t.fullName || (t.schema + '.' + t.name));
-    const tableListBlock = tables.length === 0
-      ? '(no tables — group is empty)'
-      : tables.map(n => `  - ${n}`).join('\n');
-
-    const piiNote = group.piiCount > 0
-      ? ` ${group.piiCount} PII column${group.piiCount === 1 ? '' : 's'} flagged in this group — flag each for my review before including in the mapping.`
-      : '';
-
-    // Build active criteria as ground-truth lines that name the actual
-    // columns from the suggestion's evidence (the source of those names is
-    // the schema introspection, NOT Claude's loose predicate text).
-    const criteriaLines = [];
-    const sel = state.selectedCriteria[group.id] || {};
-    const sugs = ((state.criteriaCache[group.id] || {}).suggestions) || [];
-    for (const s of sugs) {
-      const cur = sel[s.id];
-      if (!cur || !cur.enabled) continue;
-      criteriaLines.push(criterionToPromptLine(s, cur.value));
-    }
-    const tighten = (state.tightenText[group.id] || '').trim();
-
-    let extras = '';
-
-    // Dependency strategy: tell the agent how to handle parent groups
-    const depCache = state.dependencyCache[group.id];
-    const depDeps = (depCache && Array.isArray(depCache.dependencies)) ? depCache.dependencies : [];
-    if (depDeps.length > 0) {
-      const choice = state.dependencyChoice[group.id] || 'bring-along';
-      const parentList = depDeps.map(d => `${d.groupName} (${d.parentTableCount} table${d.parentTableCount === 1 ? '' : 's'})`).join(', ');
-      if (choice === 'bring-along') {
-        extras += `\n\nDependencies — bring along: This group depends on ${parentList}. Migrate those parent tables FIRST in the same run, then the chosen group's tables, preserving foreign-key integrity.`;
-      } else if (choice === 'assume-present') {
-        extras += `\n\nDependencies — assume present: This group depends on ${parentList}. Do NOT migrate the parent tables — assume they already exist in the target. If the agent finds parent records missing during the run, log them as orphans for review rather than failing the run.`;
-      } else if (choice === 'let-agent-decide') {
-        extras += `\n\nDependencies — agent decides: This group depends on ${parentList}. For each parent group: inspect its current state in the target. If the parent is empty or sparse (<5% populated), migrate it before the chosen group. If the parent looks fully present (>95% populated), skip it. If mixed, migrate only the missing parent records that the chosen group's filtered rows need.`;
-      }
-    }
-
-    if (criteriaLines.length > 0) {
-      extras += '\n\nApply these criteria to the records being migrated:\n' +
-        criteriaLines.map(l => `- ${l}`).join('\n');
-    }
-    if (tighten) {
-      extras += `\n\nAdditional WHERE-clause-style filter (apply to all tables where the named columns exist):\n${tighten}`;
-    }
-
-    // Anti-hallucination guardrail. Without this, Claude tends to "regularise"
-    // unusual column names (e.g. mtstatus → mstatus) and invent plausible-but-
-    // wrong table names. The instruction is explicit: only use names from the
-    // list, and ASK rather than guess if anything is missing.
-    const groundingRule = `\n\nIMPORTANT — name fidelity:
-- The table list above is the COMPLETE and AUTHORITATIVE set of tables in scope. Do not introduce, infer, or assume any tables not in that list.
-- Use column names EXACTLY as they appear in the source schema. Do not normalise, abbreviate, or "correct" column names that look unusual (for example, "mtstatus" must stay as "mtstatus", not become "mstatus" or "status").
-- If a column or table you expect doesn't exist, STOP and ask me — do not substitute a similarly-named one.`;
-
-    return `Migrate the "${group.name}" group of tables from source to target.
-
-Tables in scope (${tables.length} total):
-${tableListBlock}
-
-Preserve any foreign-key relationships within the group.${piiNote} Pause for approval before writing anything to the target.${extras}${groundingRule}`;
-  }
-
-  function criterionToPromptLine(s, value) {
-    const label = s.label;
-    // Pull authoritative column names out of the evidence array.
-    // Evidence entries look like "mtstatus in 412 tables" or "mtopendt: date".
-    // We extract the leading identifier-looking token from each.
-    const evidenceCols = (s.evidence || [])
-      .map(e => {
-        const m = String(e).match(/^[\s`"']*([A-Za-z_][A-Za-z0-9_]*)/);
-        return m ? m[1] : null;
-      })
-      .filter(Boolean);
-    const colsClause = evidenceCols.length > 0
-      ? ` Use these exact column names where they exist: ${evidenceCols.map(c => `\`${c}\``).join(', ')}.`
-      : '';
-
-    if (s.type === 'date-range') {
-      const v = value || s.default || {};
-      const from = toIsoDate(v.from) || v.from || '';
-      const to = toIsoDate(v.to) || v.to || '';
-      return `${label}: include only records between ${from} and ${to}.${colsClause}`;
-    }
-    if (s.type === 'boolean') {
-      return `${label}: ${value ? 'enabled' : 'disabled'}.${colsClause}`;
-    }
-    if (s.type === 'enum') {
-      const opts = (value && Array.isArray(value.selected)) ? value.selected : ((s.default || {}).selected || []);
-      const optsStr = opts.length > 0 ? opts.map(o => `'${o}'`).join(', ') : '(none selected)';
-      return `${label}: include only records where the column value is in [${optsStr}].${colsClause}`;
-    }
-    if (s.type === 'text') {
-      const v = value === undefined ? (s.default || '') : value;
-      return `${label}: ${v}.${colsClause}`;
-    }
-    return `${label}.${colsClause}`;
-  }
-
-  function applyActionToPrompt() {
-    const ta = document.getElementById('am-goal');
-    if (!ta) return;
-    if (state.activeAction) {
-      ta.value = buildPromptForAction(state.activeAction, state.selectedSchema);
-      state.userEditedPrompt = false;
-    }
-  }
-
-  function getAvailableSchemas() {
-    if (state.sourceSchema && state.sourceSchema !== 'pending' && Array.isArray(state.sourceSchema.schemas)) {
-      return state.sourceSchema.schemas.map(s => ({ name: s.name, tableCount: s.tables ? s.tables.length : 0 }));
-    }
-    return [];
-  }
-
-  // ── Group carousel (NEW) ──────────────────────────────────────────
-  function getAvailableGroups() {
-    if (state.sourceSchema && state.sourceSchema !== 'pending' && Array.isArray(state.sourceSchema.groups)) {
-      return state.sourceSchema.groups;
-    }
-    return [];
-  }
-
-  function formatRowsShort(n) {
-    if (n == null) return '';
-    if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
-    if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
-    return String(n);
-  }
-
-  function renderGroupCarousel() {
-    const groups = getAvailableGroups();
-
-    // Three rendering states match renderSourceOverview
-    if (!state.conns.source) {
-      return `<div class="carousel-empty">Configure a source connection to see suggested groups.</div>`;
-    }
-    if (state.sourceSchemaLoading || state.sourceSchema === null) {
-      return `<div class="carousel-empty"><div class="spinner" style="display:inline-block;margin-right:8px;vertical-align:middle"></div>Reading source database — groups appear here once introspection finishes.</div>`;
-    }
-    if (state.sourceSchema === 'pending') {
-      return `<div class="carousel-empty">Backend introspection endpoint isn't deployed yet. Once it is, suggested groups will appear here automatically.</div>`;
-    }
-    if (state.sourceSchemaError) {
-      return `<div class="carousel-empty" style="color:var(--red)">${escapeHtml(state.sourceSchemaError)}</div>`;
-    }
-    if (groups.length === 0) {
-      return `<div class="carousel-empty">No tables found to group. Check that your source connection points at a database with user tables.</div>`;
-    }
-
-    const cardsHtml = groups.map(g => {
-      const isActive = state.activeGroupId === g.id;
-      const previewTables = (g.tables || []).slice(0, 5);
-      const moreCount = (g.tables || []).length - previewTables.length;
-      return `
-        <button class="group-card${isActive ? ' active' : ''}" data-group-id="${escapeHtml(g.id)}" type="button">
-          <div class="group-card-head">
-            <div class="group-card-icon">${escapeHtml(g.icon || '◆')}</div>
-            <div class="group-card-name">${escapeHtml(g.name)}</div>
-          </div>
-          <div class="group-card-stats">
-            <span class="stat">${g.tableCount} table${g.tableCount === 1 ? '' : 's'}</span>
-            <span class="stat">${formatRowsShort(g.totalRows)} rows</span>
-            ${g.piiCount > 0 ? `<span class="stat warn">⚠ ${g.piiCount} PII</span>` : ''}
-          </div>
-          <div class="group-card-tables">
-            ${previewTables.map(t => `<div class="row"><span class="name">${escapeHtml(t.name)}${t.hasPii ? ' ⚠' : ''}</span><span class="rows">${formatRowsShort(t.rows)}</span></div>`).join('')}
-            ${moreCount > 0 ? `<div class="more">+${moreCount} more</div>` : ''}
-          </div>
-          <div class="group-card-action">${isActive ? '✓ Selected' : 'Migrate this data →'}</div>
-        </button>`;
-    }).join('');
-
-    return `
-      <div class="carousel-wrap">
-        <button class="carousel-arrow prev" id="am-carousel-prev" type="button" aria-label="Scroll left">‹</button>
-        <button class="carousel-arrow next" id="am-carousel-next" type="button" aria-label="Scroll right">›</button>
-        <div class="carousel-fade left" id="am-carousel-fade-left"></div>
-        <div class="carousel-fade right" id="am-carousel-fade-right"></div>
-        <div class="carousel-track-wrap">
-          <div class="carousel-track" id="am-carousel-track">${cardsHtml}</div>
-        </div>
-      </div>`;
-  }
-
-  function wireCarousel() {
-    const track = document.getElementById('am-carousel-track');
-    if (!track) return;
-    const prev = document.getElementById('am-carousel-prev');
-    const next = document.getElementById('am-carousel-next');
-    const fadeL = document.getElementById('am-carousel-fade-left');
-    const fadeR = document.getElementById('am-carousel-fade-right');
-
-    const updateAffordances = () => {
-      const atStart = track.scrollLeft <= 4;
-      const atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
-      if (prev) prev.disabled = atStart;
-      if (next) next.disabled = atEnd;
-      if (fadeL) fadeL.style.opacity = atStart ? '0' : '1';
-      if (fadeR) fadeR.style.opacity = atEnd ? '0' : '1';
-    };
-
-    const scrollByOneCard = (dir) => {
-      const card = track.querySelector('.group-card');
-      const step = card ? card.getBoundingClientRect().width + 14 : 280;
-      track.scrollBy({ left: dir * step, behavior: 'smooth' });
-    };
-
-    if (prev) prev.addEventListener('click', () => scrollByOneCard(-1));
-    if (next) next.addEventListener('click', () => scrollByOneCard(1));
-    track.addEventListener('scroll', updateAffordances, { passive: true });
-
-    // Card selection
-    track.querySelectorAll('.group-card').forEach(card => {
-      card.addEventListener('click', () => {
-        const groupId = card.dataset.groupId;
-        const groups = getAvailableGroups();
-        const group = groups.find(g => g.id === groupId);
-        if (!group) return;
-        state.activeGroupId = groupId;
-        state.activeAction = 'migrate-group'; // distinguish from old map-schema action
-        state.userEditedPrompt = false;
-        // Scroll the chosen card into view (helpful on mobile / narrow viewports)
-        card.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-        renderSetup();
-        // Eagerly fetch criteria suggestions in the background. The render above
-        // will show a spinner; this resolves a moment later and renderSetup runs again.
-        loadCriteriaSuggestions(groupId);
-        // Also kick off the dependency check (target row counts).
-        loadDependencies(groupId);
-      });
-    });
-
-    updateAffordances();
-  }
-
-  // ── Dependency analysis (NEW) ─────────────────────────────────────
-  // Computes which OTHER themed groups a given group depends on (via FKs)
-  // and their parent tables. Pure client-side computation — uses the
-  // schema and groups already loaded by /api/agent/source-schema.
-  function computeDependencyGroups(groupId) {
-    const sch = state.sourceSchema;
-    if (!sch || sch === 'pending' || !Array.isArray(sch.groups) || !Array.isArray(sch.edges)) return [];
-    const groups = sch.groups;
-    const ourGroup = groups.find(g => g.id === groupId);
-    if (!ourGroup) return [];
-
-    // Build a fullName -> groupId map across ALL groups
-    const tableToGroup = new Map();
-    for (const g of groups) {
-      for (const t of (g.tables || [])) {
-        tableToGroup.set(t.fullName, g.id);
-      }
-    }
-
-    // Set of fullNames in our chosen group (so we can identify "external" parents)
-    const ourTables = new Set((ourGroup.tables || []).map(t => t.fullName));
-
-    // Walk edges: for each edge whose `from` is in our group, the `to` is
-    // a parent we depend on. If that parent maps to a DIFFERENT group, log it.
-    // We collect parent tables grouped by their owning group.
-    const depMap = new Map(); // groupId -> { groupName, icon, parentTables: Map<fullName, expectedRows> }
-    for (const edge of sch.edges) {
-      if (!ourTables.has(edge.from)) continue;
-      const parentGroupId = tableToGroup.get(edge.to);
-      if (!parentGroupId || parentGroupId === groupId) continue; // self-references ignored
-
-      const parentGroup = groups.find(g => g.id === parentGroupId);
-      if (!parentGroup) continue;
-      const parentTable = (parentGroup.tables || []).find(t => t.fullName === edge.to);
-      if (!parentTable) continue;
-
-      if (!depMap.has(parentGroupId)) {
-        depMap.set(parentGroupId, {
-          groupId: parentGroupId,
-          groupName: parentGroup.name,
-          icon: parentGroup.icon,
-          parentTables: new Map()
-        });
-      }
-      const bucket = depMap.get(parentGroupId);
-      // Dedupe parents (multiple FK edges to the same parent table count once)
-      if (!bucket.parentTables.has(parentTable.fullName)) {
-        bucket.parentTables.set(parentTable.fullName, {
-          schema: parentTable.schema,
-          name:   parentTable.name,
-          expectedRows: parentTable.rows || 0
-        });
-      }
-    }
-
-    // Convert to the array shape the backend expects
-    return [...depMap.values()].map(b => ({
-      groupId:   b.groupId,
-      groupName: b.groupName,
-      icon:      b.icon,
-      parentTables: [...b.parentTables.values()]
-    }));
-  }
-
-  async function loadDependencies(groupId) {
-    if (!groupId) return;
-    if (state.dependencyCache[groupId] && state.dependencyCache[groupId] !== 'loading') return;
-    if (state.dependencyCache[groupId] === 'loading') return;
-
-    const depGroups = computeDependencyGroups(groupId);
-    if (depGroups.length === 0) {
-      // No external FK dependencies — record as empty result so the UI
-      // can render "no dependencies, this group stands alone".
-      state.dependencyCache[groupId] = { dependencies: [], overallRecommendation: 'no-deps' };
-      if (state.activeGroupId === groupId) renderSetup();
+  // Generate (or regenerate) a target plan. Caches the result in state.plan.
+  // Calls the planner with the user's TARGET connection — the planner reads
+  // sys.foreign_keys to produce a load-order graph for the entire schema.
+  async function loadOrCreatePlan(force) {
+    if (!force && state.plan && state.plan.planId) return;
+    if (!state.conns.target) {
+      state.planError = 'Target connection not configured.';
+      renderSetup();
       return;
     }
+    state.plan = 'pending';
+    state.planError = null;
+    renderSetup();
 
-    // Pull the target connection from the browser's Connections store —
-    // same pattern as loadSourceSchema.
-    let body = { dependencyGroups: depGroups };
+    let body = {};
+    body.projectId = getActiveProjectId();
     try {
       const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
         ? (CygenixConnections.get() || {}) : {};
-      // Honour tgtConnMode rather than guessing from field presence.
       const tgtMode = c.tgtConnMode === 'azure' ? 'azure' : 'direct';
-      if (tgtMode === 'azure' && c.tgtFnUrl) {
-        body.tgtFnUrl = c.tgtFnUrl;
-        if (c.tgtFnKey) body.tgtFnKey = c.tgtFnKey;
-      } else if (tgtMode === 'direct' && c.tgtConnString) {
+      if (tgtMode === 'direct' && c.tgtConnString) {
         body.tgtConnString = c.tgtConnString;
+      } else {
+        // Plan only supports direct conn strings today; flag for the user.
+        state.plan = null;
+        state.planError = 'Target plan requires a direct connection string. Azure-function-mode targets are not yet supported by the planner.';
+        renderSetup();
+        return;
       }
-      body.tgtConnMode = tgtMode;
     } catch (e) {
-      console.warn('[AgentiveMigration] could not read target connection:', e.message);
-    }
-
-    if (!body.tgtFnUrl && !body.tgtConnString) {
-      state.dependencyCache[groupId] = {
-        dependencies: depGroups.map(d => ({
-          groupId: d.groupId, groupName: d.groupName, icon: d.icon,
-          parentTableCount: d.parentTables.length,
-          expectedRows: d.parentTables.reduce((s, t) => s + (t.expectedRows || 0), 0),
-          targetRows: 0, tablesMissing: 0, tablesEmpty: d.parentTables.length, tablesPopulated: 0,
-          fillRatio: 0, recommendation: 'bring-along'
-        })),
-        overallRecommendation: 'no-target',
-        targetUnreachable: true
-      };
-      if (state.activeGroupId === groupId) renderSetup();
+      state.plan = null;
+      state.planError = 'Could not read target connection: ' + e.message;
+      renderSetup();
       return;
     }
 
-    state.dependencyCache[groupId] = 'loading';
-    if (state.activeGroupId === groupId) renderSetup();
-
     try {
-      const data = await api('/agent/check-dependencies', {
+      const plan = await api('/agent/plan', {
         method: 'POST',
         body: JSON.stringify(body)
       });
-      state.dependencyCache[groupId] = data;
-      // Pre-select the recommended choice if user hasn't picked yet
-      if (!state.dependencyChoice[groupId] && data.overallRecommendation && data.overallRecommendation !== 'no-deps') {
-        const rec = data.overallRecommendation;
-        // Map "no-target" or "target-unreachable" to bring-along default
-        state.dependencyChoice[groupId] = (rec === 'no-target' || rec === 'target-unreachable') ? 'bring-along' : rec;
+      if (!plan || !plan.planId) {
+        state.plan = null;
+        state.planError = 'Planner did not return a plan id.';
+        renderSetup();
+        return;
       }
-    } catch (e) {
-      state.dependencyCache[groupId] = { error: e.message || 'Could not check dependencies' };
-    } finally {
-      if (state.activeGroupId === groupId) renderSetup();
-    }
-  }
-
-  function renderDependencyPanel() {
-    const groupId = state.activeGroupId;
-    if (!groupId) return '';
-
-    const cache = state.dependencyCache[groupId];
-
-    if (cache === undefined || cache === 'loading') {
-      return `<div class="criteria-loading"><div class="spinner"></div>Checking which other groups this data depends on…</div>`;
-    }
-
-    if (cache && cache.error) {
-      return `<div class="criteria-error">Couldn't check dependencies: ${escapeHtml(cache.error)}</div>`;
-    }
-
-    const deps = (cache && Array.isArray(cache.dependencies)) ? cache.dependencies : [];
-    if (deps.length === 0) {
-      return `<div class="criteria-empty">This group's tables don't reference any other groups — no dependencies to handle.</div>`;
-    }
-
-    const targetUnreachable = !!cache.targetUnreachable || cache.overallRecommendation === 'target-unreachable';
-    const choice = state.dependencyChoice[groupId] || 'bring-along';
-
-    const depsList = deps.map(d => {
-      const ratio = Math.max(0, Math.min(1, d.fillRatio || 0));
-      const pct = Math.round(ratio * 100);
-      let summary;
-      if (targetUnreachable) {
-        summary = `Target not reachable yet — assume empty`;
-      } else if (d.expectedRows === 0) {
-        summary = `Target check skipped (no source rows)`;
-      } else {
-        summary = `Target has ${formatRowsShort(d.targetRows)} of ${formatRowsShort(d.expectedRows)} expected (${pct}%)`;
-      }
-      const fillBar = `<div class="dep-fill"><div class="dep-fill-bar" style="width:${pct}%"></div></div>`;
-      return `
-        <div class="dep-row">
-          <div class="dep-icon">${escapeHtml(d.icon)}</div>
-          <div class="dep-body">
-            <div class="dep-name">${escapeHtml(d.groupName)} <span class="dep-meta">· ${d.parentTableCount} parent table${d.parentTableCount === 1 ? '' : 's'}</span></div>
-            <div class="dep-summary">${escapeHtml(summary)}</div>
-            ${targetUnreachable || d.expectedRows === 0 ? '' : fillBar}
-          </div>
-        </div>`;
-    }).join('');
-
-    const recommendation = cache.overallRecommendation || 'bring-along';
-    const recHint = targetUnreachable
-      ? `Target wasn't reachable — assuming empty, recommended: bring along.`
-      : recommendation === 'bring-along'
-        ? `Target looks empty for these — recommended: bring along.`
-        : recommendation === 'assume-present'
-          ? `Target already has these — recommended: assume present.`
-          : `Mixed state in target — recommended: let agent decide.`;
-
-    const radio = (val, label, desc) => `
-      <label class="dep-choice ${choice === val ? 'active' : ''}">
-        <input type="radio" name="dep-choice" value="${val}" ${choice === val ? 'checked' : ''}>
-        <span class="dep-choice-body">
-          <span class="dep-choice-label">${escapeHtml(label)}</span>
-          <span class="dep-choice-desc">${escapeHtml(desc)}</span>
-        </span>
-      </label>`;
-
-    return `
-      <div class="dep-list">${depsList}</div>
-      <div class="dep-rec-hint">${escapeHtml(recHint)}</div>
-      <div class="dep-choices">
-        ${radio('bring-along', 'Bring them along', 'Migrate the parent tables as part of this run, before the chosen group.')}
-        ${radio('assume-present', 'Assume already in target', 'Skip the parents — assume the target already has the records this group references.')}
-        ${radio('let-agent-decide', 'Let the agent decide', 'The agent will inspect each parent in target and choose per-group.')}
-      </div>`;
-  }
-
-  function wireDependencyPanel() {
-    const groupId = state.activeGroupId;
-    if (!groupId) return;
-    document.querySelectorAll('input[name="dep-choice"]').forEach(input => {
-      input.addEventListener('change', () => {
-        if (input.checked) {
-          state.dependencyChoice[groupId] = input.value;
-          rebuildPromptFromGroup();
-          renderSetup();
+      state.plan = plan;
+      // Fetch each level's table list so we can populate buckets. Levels
+      // come from agent_plan_levels. We pull them all up front since they're
+      // already cached server-side and we need the full list for buckets.
+      const levelCount = (plan.overview && plan.overview.summary && plan.overview.summary.totalLevels) || 0;
+      const levelDocs = [];
+      for (let i = 0; i < levelCount; i++) {
+        try {
+          const lvl = await api(`/agent/plan/${plan.planId}/level/${i}`);
+          levelDocs.push(lvl);
+        } catch (e) {
+          // A level fetch failure shouldn't kill the whole flow; just skip
+          // that level — its tables won't appear in any bucket but the
+          // overall plan/cards still work.
+          console.warn(`Could not fetch plan level ${i}:`, e.message);
         }
-      });
-    });
+      }
+      state.buckets = buildBuckets(plan, levelDocs);
+      renderSetup();
+    } catch (e) {
+      state.plan = null;
+      state.planError = e.message || 'Plan generation failed.';
+      renderSetup();
+    }
   }
 
+  // Build the 5 buckets from the plan's levels. Each bucket gets the set of
+  // non-noise tables that fall in its level range, sorted by load level.
+  function buildBuckets(plan, levelDocs) {
+    const buckets = BUCKET_DEFS.map(def => ({
+      key:         def.key,
+      label:       def.label,
+      description: def.description,
+      range:       def.range,
+      tables:      [],
+      totalRows:   0
+    }));
+    for (const lvl of levelDocs) {
+      if (!lvl || !Array.isArray(lvl.tables)) continue;
+      const bucket = buckets.find(b => lvl.level >= b.range[0] && lvl.level <= b.range[1]);
+      if (!bucket) continue;
+      for (const t of lvl.tables) {
+        if (t.isNoise) continue;     // hide noise from bucket cards
+        bucket.tables.push({
+          fullName: t.fullName,
+          schema:   t.schema,
+          name:     t.name,
+          rows:     t.rows || 0,
+          level:    lvl.level
+        });
+        bucket.totalRows += (t.rows || 0);
+      }
+    }
+    return buckets;
+  }
 
-  // Called eagerly when a group is selected. Caches per-group within the
-  // session so re-selecting an already-loaded group is instant.
-  async function loadCriteriaSuggestions(groupId) {
-    if (!groupId) return;
-    if (state.criteriaCache[groupId] && state.criteriaCache[groupId] !== 'loading') return; // already loaded
-    if (state.criteriaCache[groupId] === 'loading') return; // in flight
+  function togglePickBucket(bucketKey) {
+    if (state.pickedBuckets.has(bucketKey)) {
+      state.pickedBuckets.delete(bucketKey);
+    } else {
+      state.pickedBuckets.add(bucketKey);
+    }
+    // Saved-scope link is invalidated as soon as the picks diverge from it.
+    state.savedScope = null;
+    renderSetup();
+  }
 
-    const group = getAvailableGroups().find(g => g.id === groupId);
-    if (!group) return;
+  // Collect every table currently picked across all selected buckets.
+  // These become the scope's root tables when the user saves.
+  function collectPickedTables() {
+    const set = new Set();
+    for (const b of state.buckets) {
+      if (!state.pickedBuckets.has(b.key)) continue;
+      for (const t of b.tables) set.add(t.fullName);
+    }
+    return [...set];
+  }
 
-    // Build a compact payload — only tables that have column data attached
-    // (the backend included columns for the top 30 tables of each group).
-    const tablesWithCols = (group.tables || []).filter(t => Array.isArray(t.columns) && t.columns.length > 0);
-    if (tablesWithCols.length === 0) {
-      state.criteriaCache[groupId] = { suggestions: [] };
-      if (state.activeGroupId === groupId) renderSetup();
+  async function saveScope(name) {
+    const cleanName = (name || '').trim();
+    if (!cleanName) { alert('Please enter a name for this scope.'); return; }
+    if (!state.plan || !state.plan.planId) { alert('No plan loaded.'); return; }
+    const rootTables = collectPickedTables();
+    if (rootTables.length === 0) {
+      alert('Pick at least one bucket before saving the scope.');
       return;
     }
 
-    state.criteriaCache[groupId] = 'loading';
-    if (state.activeGroupId === groupId) renderSetup();
+    // Step 1: create / update the scope
+    const created = await api('/agent/scope', {
+      method: 'POST',
+      body: JSON.stringify({
+        projectId:   getActiveProjectId() || 'default',
+        name:        cleanName,
+        description: 'Built from buckets: ' + [...state.pickedBuckets].join(', '),
+        rootTables
+      })
+    });
+    if (!created || !created.scope) { alert('Save failed.'); return; }
 
+    // Step 2: expand FK closure against the current plan
+    const expanded = await api('/agent/scope/expand', {
+      method: 'POST',
+      body: JSON.stringify({
+        scopeId: created.scope.scopeId,
+        planId:  state.plan.planId,
+        includeChildren: false
+      })
+    });
+    if (!expanded || !expanded.scope) { alert('Scope save succeeded but expansion failed.'); return; }
+    state.savedScope = expanded.scope;
+    await loadScopeList();
+    renderSetup();
+  }
+
+  async function loadScopeList() {
     try {
-      // Pull the source connection from the browser's Connections store so
-      // the function can sample real distinct values for status-style
-      // columns. Sampling is best-effort on the backend — falls back to
-      // type-only suggestions if sampling fails.
-      const reqBody = {
-        groupId:   group.id,
-        groupName: group.name,
-        groupDesc: group.description || '',
-        tables:    tablesWithCols.map(t => ({ name: t.name, columns: t.columns }))
-      };
-      try {
-        const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
-          ? (CygenixConnections.get() || {}) : {};
-        const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
-        if (srcMode === 'azure' && c.srcFnUrl) {
-          reqBody.srcFnUrl = c.srcFnUrl;
-          if (c.srcFnKey) reqBody.srcFnKey = c.srcFnKey;
-        } else if (srcMode === 'direct' && c.srcConnString) {
-          reqBody.srcConnString = c.srcConnString;
-        }
-        reqBody.srcConnMode = srcMode;
-      } catch { /* sampling will be skipped */ }
-      const data = await api('/agent/suggest-criteria', {
-        method: 'POST',
-        body: JSON.stringify(reqBody)
-      });
-      state.criteriaCache[groupId] = { suggestions: Array.isArray(data.suggestions) ? data.suggestions : [] };
+      const projId = getActiveProjectId();
+      const r = await api('/agent/scope?projectId=' + encodeURIComponent(projId || ''));
+      state.scopeList = (r && r.scopes) || [];
     } catch (e) {
-      state.criteriaCache[groupId] = { error: e.message || 'Could not load suggestions' };
-    } finally {
-      if (state.activeGroupId === groupId) renderSetup();
+      console.warn('Could not load scope list:', e.message);
+      state.scopeList = [];
     }
   }
 
-  // Render the criteria panel for the currently-active group.
-  // States: loading (spinner) | error | empty (no suggestions) | populated (chips)
-  function renderCriteriaPanel() {
-    const groupId = state.activeGroupId;
-    if (!groupId) return '';
-
-    const cache = state.criteriaCache[groupId];
-
-    if (cache === 'loading' || cache === undefined) {
-      return `<div class="criteria-loading"><div class="spinner"></div>Looking at the columns and suggesting filters…</div>`;
+  async function selectScope(scopeId) {
+    if (!scopeId) {
+      // Clear any selection — go back to building from buckets.
+      state.savedScope = null;
+      state.pickedBuckets = new Set();
+      renderSetup();
+      return;
     }
-
-    if (cache && cache.error) {
-      return `<div class="criteria-error">Couldn't load suggestions: ${escapeHtml(cache.error)}</div>
-              <div class="tighten-row">
-                <div class="tighten-label">Refine further <span class="hint">— optional WHERE-clause-style filter, applied to all tables in scope</span></div>
-                <textarea class="tighten-input" id="am-tighten" placeholder="e.g.  status = 'open' AND closed_date IS NULL">${escapeHtml(state.tightenText[groupId] || '')}</textarea>
-              </div>`;
-    }
-
-    const suggestions = (cache && cache.suggestions) || [];
-    const sel = state.selectedCriteria[groupId] || {};
-
-    let chipsHtml;
-    if (suggestions.length === 0) {
-      chipsHtml = `<div class="criteria-empty">No specific filters suggested for this group. You can use the free-text refinement below.</div>`;
-    } else {
-      chipsHtml = `<div class="criteria-list">${suggestions.map(s => renderCriterion(s, sel[s.id])).join('')}</div>`;
-    }
-
-    return chipsHtml + `
-      <div class="tighten-row">
-        <div class="tighten-label">Refine further <span class="hint">— optional WHERE-clause-style filter, applied to all tables in scope</span></div>
-        <textarea class="tighten-input" id="am-tighten" placeholder="e.g.  status = 'open' AND closed_date IS NULL">${escapeHtml(state.tightenText[groupId] || '')}</textarea>
-      </div>`;
-  }
-
-  function renderCriterion(s, current) {
-    const enabled = !!(current && current.enabled);
-    const value = current && current.value;
-    const evidenceHtml = (s.evidence || []).length
-      ? `<div class="criterion-evidence">${s.evidence.map(e => `<span class="ev">${escapeHtml(e)}</span>`).join('')}</div>`
-      : '';
-
-    let controlsHtml = '';
-    if (s.type === 'date-range') {
-      const def = s.default || {};
-      const v = value || def;
-      // The backend may return plain-English defaults like "2 years ago".
-      // Convert to ISO date strings on first render.
-      const fromIso = toIsoDate(v.from);
-      const toIso = toIsoDate(v.to);
-      controlsHtml = `
-        <div class="criterion-controls">
-          <div class="row">
-            <label for="cri-${escapeHtml(s.id)}-from">From</label>
-            <input type="date" id="cri-${escapeHtml(s.id)}-from" data-cri="${escapeHtml(s.id)}" data-field="from" value="${escapeHtml(fromIso)}">
-            <label for="cri-${escapeHtml(s.id)}-to">to</label>
-            <input type="date" id="cri-${escapeHtml(s.id)}-to" data-cri="${escapeHtml(s.id)}" data-field="to" value="${escapeHtml(toIso)}">
-          </div>
-        </div>`;
-    } else if (s.type === 'boolean') {
-      const v = value === undefined ? !!s.default : !!value;
-      controlsHtml = `
-        <div class="criterion-controls">
-          <div class="row criterion-bool-row">
-            Apply this filter as <strong>${v ? 'YES' : 'NO'}</strong>
-            <button type="button" class="enum-opt ${v ? '' : 'selected'}" data-cri="${escapeHtml(s.id)}" data-bool="false">No</button>
-            <button type="button" class="enum-opt ${v ? 'selected' : ''}" data-cri="${escapeHtml(s.id)}" data-bool="true">Yes</button>
-          </div>
-        </div>`;
-    } else if (s.type === 'enum') {
-      const def = s.default || {};
-      const opts = Array.isArray(def.options) ? def.options : [];
-      const selectedOpts = (value && Array.isArray(value.selected)) ? value.selected : (def.selected || []);
-      controlsHtml = `
-        <div class="criterion-controls">
-          <div class="row enum-options">
-            ${opts.map(o => `<button type="button" class="enum-opt ${selectedOpts.includes(o) ? 'selected' : ''}" data-cri="${escapeHtml(s.id)}" data-enum="${escapeHtml(o)}">${escapeHtml(o)}</button>`).join('')}
-          </div>
-        </div>`;
-    } else { // text
-      const v = value === undefined ? (s.default || '') : value;
-      controlsHtml = `
-        <div class="criterion-controls">
-          <div class="row">
-            <input type="text" data-cri="${escapeHtml(s.id)}" data-field="text" value="${escapeHtml(v)}" placeholder="Custom value">
-          </div>
-        </div>`;
-    }
-
-    return `
-      <div class="criterion ${enabled ? 'active' : ''}" data-cri-id="${escapeHtml(s.id)}">
-        <div class="criterion-head">
-          <button type="button" class="criterion-toggle" data-cri-toggle="${escapeHtml(s.id)}" aria-label="Toggle ${escapeHtml(s.label)}">${enabled ? '✓' : ''}</button>
-          <div class="criterion-body">
-            <div class="criterion-label">${escapeHtml(s.label)}</div>
-            ${s.reason ? `<div class="criterion-reason">${escapeHtml(s.reason)}</div>` : ''}
-            ${evidenceHtml}
-          </div>
-        </div>
-        ${controlsHtml}
-      </div>`;
-  }
-
-  // Convert a plain-English date hint ("2 years ago", "today") into an ISO date.
-  // If input is already YYYY-MM-DD, pass through.
-  function toIsoDate(input) {
-    if (!input) return '';
-    if (typeof input === 'string' && /^\d{4}-\d{2}-\d{2}/.test(input)) return input.slice(0, 10);
-    const now = new Date();
-    const s = String(input).toLowerCase().trim();
-    if (s === 'today' || s === 'now') return now.toISOString().slice(0, 10);
-    const yearsAgoMatch = s.match(/(\d+)\s*years?\s*ago/);
-    if (yearsAgoMatch) {
-      const d = new Date(now); d.setFullYear(d.getFullYear() - Number(yearsAgoMatch[1]));
-      return d.toISOString().slice(0, 10);
-    }
-    const monthsAgoMatch = s.match(/(\d+)\s*months?\s*ago/);
-    if (monthsAgoMatch) {
-      const d = new Date(now); d.setMonth(d.getMonth() - Number(monthsAgoMatch[1]));
-      return d.toISOString().slice(0, 10);
-    }
-    return '';
-  }
-
-  // After renderSetup, wire up the criterion toggles, controls, and tighten textarea.
-  function wireCriteriaPanel() {
-    const groupId = state.activeGroupId;
-    if (!groupId) return;
-    if (!state.selectedCriteria[groupId]) state.selectedCriteria[groupId] = {};
-    const sel = state.selectedCriteria[groupId];
-
-    // Toggle a criterion on/off
-    document.querySelectorAll('[data-cri-toggle]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.criToggle;
-        const cur = sel[id] || { enabled: false, value: undefined };
-        cur.enabled = !cur.enabled;
-        if (cur.enabled && cur.value === undefined) {
-          // Initialise value from the suggestion default
-          const sug = ((state.criteriaCache[groupId] || {}).suggestions || []).find(x => x.id === id);
-          if (sug) cur.value = cloneDefault(sug);
-        }
-        sel[id] = cur;
-        rebuildPromptFromGroup();
-        renderSetup();
-      });
-    });
-
-    // Date inputs
-    document.querySelectorAll('input[type="date"][data-cri]').forEach(inp => {
-      inp.addEventListener('change', () => {
-        const id = inp.dataset.cri;
-        const field = inp.dataset.field;
-        if (!sel[id]) sel[id] = { enabled: true, value: {} };
-        if (typeof sel[id].value !== 'object' || sel[id].value === null) sel[id].value = {};
-        sel[id].value[field] = inp.value;
-        sel[id].enabled = true;
-        rebuildPromptFromGroup();
-        // Don't full re-render; just update the relevant header chip state if needed
-        const card = document.querySelector(`[data-cri-id="${CSS.escape(id)}"]`);
-        if (card) card.classList.add('active');
-        const tog = document.querySelector(`[data-cri-toggle="${CSS.escape(id)}"]`);
-        if (tog) tog.textContent = '✓';
-      });
-    });
-
-    // Boolean toggles
-    document.querySelectorAll('[data-bool]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.cri;
-        const v = btn.dataset.bool === 'true';
-        sel[id] = { enabled: true, value: v };
-        rebuildPromptFromGroup();
-        renderSetup();
-      });
-    });
-
-    // Enum option pills (multi-select)
-    document.querySelectorAll('[data-enum]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.cri;
-        const opt = btn.dataset.enum;
-        if (!sel[id]) sel[id] = { enabled: true, value: { selected: [] } };
-        if (!sel[id].value || !Array.isArray(sel[id].value.selected)) sel[id].value = { selected: [] };
-        const idx = sel[id].value.selected.indexOf(opt);
-        if (idx >= 0) sel[id].value.selected.splice(idx, 1);
-        else sel[id].value.selected.push(opt);
-        sel[id].enabled = sel[id].value.selected.length > 0;
-        rebuildPromptFromGroup();
-        renderSetup();
-      });
-    });
-
-    // Text inputs
-    document.querySelectorAll('input[type="text"][data-cri]').forEach(inp => {
-      inp.addEventListener('input', () => {
-        const id = inp.dataset.cri;
-        sel[id] = { enabled: !!inp.value, value: inp.value };
-        rebuildPromptFromGroup();
-      });
-    });
-
-    // Tighten textarea — debounced
-    const tighten = document.getElementById('am-tighten');
-    if (tighten) {
-      let t;
-      tighten.addEventListener('input', () => {
-        state.tightenText[groupId] = tighten.value;
-        clearTimeout(t);
-        t = setTimeout(rebuildPromptFromGroup, 250);
-      });
+    try {
+      const scope = await api('/agent/scope/' + encodeURIComponent(scopeId));
+      if (!scope || !scope.scopeId) return;
+      state.savedScope = scope;
+      // Reverse-engineer which buckets the saved scope's roots belong to so
+      // the cards visually reflect the loaded scope.
+      const tableToBucket = new Map();
+      for (const b of state.buckets) {
+        for (const t of b.tables) tableToBucket.set(t.fullName, b.key);
+      }
+      state.pickedBuckets = new Set();
+      for (const t of (scope.rootTables || [])) {
+        const k = tableToBucket.get(t);
+        if (k) state.pickedBuckets.add(k);
+      }
+      renderSetup();
+    } catch (e) {
+      console.warn('Could not load scope:', e.message);
     }
   }
 
-  function cloneDefault(suggestion) {
-    if (!suggestion || suggestion.default == null) return undefined;
-    try { return JSON.parse(JSON.stringify(suggestion.default)); } catch { return suggestion.default; }
-  }
-
-  // Rebuild the agent prompt from the active group + selected criteria + tighten text.
-  // Doesn't re-render the whole page; just updates the textarea value if the user
-  // hasn't manually edited it.
-  function rebuildPromptFromGroup() {
-    if (state.activeAction !== 'migrate-group' || !state.activeGroupId) return;
-    if (state.userEditedPrompt) return; // respect manual edits
-    const ta = document.getElementById('am-goal');
-    if (!ta) return;
-    const group = getAvailableGroups().find(g => g.id === state.activeGroupId);
-    if (!group) return;
-    ta.value = buildPromptForGroup(group);
-  }
-
-  // Legacy "map-schema" action card — kept for backward compat. Currently
-  // not rendered anywhere by renderSetup (the carousel replaced it), but
-  // the function and its handlers stay so we don't break older state shapes.
-  function renderActionCards() {
-    const schemas = getAvailableSchemas();
-    const isActive = state.activeAction === 'map-schema';
-    const isReady = schemas.length > 0; // We have real schema names
-
-    // Build dropdown — only when we have real schemas
-    let schemaSelect = '';
-    if (isReady) {
-      const options = schemas.map(s => {
-        const sel = s.name === state.selectedSchema ? ' selected' : '';
-        return `<option value="${escapeHtml(s.name)}"${sel}>${escapeHtml(s.name)} (${s.tableCount} table${s.tableCount === 1 ? '' : 's'})</option>`;
-      }).join('');
-      schemaSelect = `
-        <div class="action-card-controls">
-          <label for="am-schema-select">Choose a schema</label>
-          <select id="am-schema-select">${options}</select>
-        </div>`;
-    } else {
-      schemaSelect = `
-        <div class="action-card-controls">
-          <label>Choose a schema</label>
-          <div style="font-size:11px;color:var(--text3);font-style:italic">Schemas appear once the source is introspected.</div>
-        </div>`;
-    }
-
-    return `
-      <button class="action-card${isActive ? ' active' : ''}" id="am-action-map-schema" ${isReady ? '' : 'disabled style="opacity:.55;cursor:not-allowed"'}>
-        <div class="action-card-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <ellipse cx="12" cy="5" rx="9" ry="3"/>
-            <path d="M3 5v14a9 3 0 0 0 18 0V5"/>
-            <path d="M3 12a9 3 0 0 0 18 0"/>
-          </svg>
-          Map one schema
-        </div>
-        <div class="action-card-desc">Focus on a single source schema. The agent proposes table and column mappings, preserves foreign keys, and flags PII before mapping.</div>
-        <div class="action-card-meta">Estimated cost: ~$0.20–$0.60 per schema</div>
-        ${schemaSelect}
-      </button>`;
-  }
-
-  // ── Views ─────────────────────────────────────────────────────
+  // ── Setup view rendering ──────────────────────────────────────────────
   function renderDisabled() {
     state.view = 'disabled';
-    setTopbarStatus('Feature disabled');
+    setTopbarStatus('Not enabled');
     stage.innerHTML = `
-      <div class="disabled-state">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-             stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--text3)">
-          <circle cx="12" cy="12" r="10"/>
-          <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-        </svg>
-        <h3>Agentive Migration is not enabled</h3>
-        <p>An administrator needs to enable AI features for this tenant, and you'll need to opt in from your user settings.</p>
+      <div class="card">
+        <h3 style="margin-top:0">Agentive Migration is not enabled for this account</h3>
+        <p style="color:var(--text2);font-size:13px;line-height:1.55">
+          Agentive Migration is currently in early access. If you'd like to try it, please contact Cygenix support.
+        </p>
       </div>`;
   }
 
   function renderLoading(msg) {
     state.view = 'loading';
-    setTopbarStatus(msg || 'Loading…');
+    setTopbarStatus(msg || 'Loading');
     stage.innerHTML = `
-      <div class="card" style="display:flex;align-items:center;gap:0.7rem;justify-content:center">
-        <div class="spinner"></div>
-        <span style="color:var(--text2);font-size:12.5px">${escapeHtml(msg || 'Loading…')}</span>
+      <div class="card" style="text-align:center;padding:2.5rem">
+        <div class="spinner" style="margin:0 auto 1rem"></div>
+        <div style="color:var(--text2);font-size:13px">${escapeHtml(msg || 'Loading…')}</div>
       </div>`;
   }
 
@@ -1835,10 +962,182 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     state.view = 'error';
     setTopbarStatus('Error');
     stage.innerHTML = `
-      <div class="error-card">
-        <h3>Something went wrong</h3>
-        <p>${escapeHtml(msg)}</p>
-        <button class="btn btn-sm" onclick="window.location.reload()">Reload page</button>
+      <div class="card">
+        <h3 style="margin-top:0;color:var(--red)">Something went wrong</h3>
+        <p style="color:var(--text2);font-size:13px;line-height:1.55">${escapeHtml(msg || '')}</p>
+        <div class="actions"><button class="btn btn-sm" onclick="location.reload()">Reload page</button></div>
+      </div>`;
+  }
+
+  // Render the connection summary (source → target) using the existing
+  // conn-flow style. Reused from the original page.
+  function renderConnectionSummary() {
+    const src = state.conns.source;
+    const tgt = state.conns.target;
+    const srcCard = src
+      ? `<div class="conn-card"><div class="conn-role"><span class="conn-dot"></span>Source</div><div class="conn-label">${escapeHtml(src.label)}</div></div>`
+      : `<div class="conn-card conn-card-missing"><div class="conn-role"><span class="conn-dot"></span>Source</div><div class="conn-label">Not configured</div></div>`;
+    const tgtCard = tgt
+      ? `<div class="conn-card"><div class="conn-role"><span class="conn-dot"></span>Target</div><div class="conn-label">${escapeHtml(tgt.label)}</div></div>`
+      : `<div class="conn-card conn-card-missing"><div class="conn-role"><span class="conn-dot"></span>Target</div><div class="conn-label">Not configured</div></div>`;
+    return `
+      <div class="card">
+        <div class="conn-flow">
+          ${srcCard}
+          <div class="conn-arrow">→</div>
+          ${tgtCard}
+        </div>
+        <div style="margin-top:0.85rem;font-size:11.5px;color:var(--text3);line-height:1.55">
+          Cygenix migrates from your project's source to its target. Configure these in the
+          <a href="/connections.html" style="color:var(--accent);text-decoration:none">Connections page</a>.
+        </div>
+      </div>`;
+  }
+
+  function renderPlanSection() {
+    if (!state.plan || state.plan === 'pending') {
+      if (state.plan === 'pending') {
+        return `<div class="card">
+          <div style="display:flex;align-items:center;gap:0.85rem">
+            <div class="spinner"></div>
+            <div>
+              <div style="font-weight:600">Reading the target schema…</div>
+              <div style="font-size:11.5px;color:var(--text3);margin-top:2px">Building load-order plan from declared foreign keys.</div>
+            </div>
+          </div>
+        </div>`;
+      }
+      const errBlock = state.planError
+        ? `<div class="notice" style="margin-top:0.85rem"><strong>Plan generation failed.</strong> ${escapeHtml(state.planError)}</div>`
+        : '';
+      const canGenerate = !!state.conns.target;
+      return `<div class="card">
+        <div style="display:flex;align-items:center;gap:0.85rem;justify-content:space-between">
+          <div>
+            <div style="font-weight:600">No target plan yet</div>
+            <div style="font-size:11.5px;color:var(--text3);margin-top:2px">Cygenix needs to read your target's foreign-key graph to plan the migration.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="am-generate-plan-btn" ${canGenerate ? '' : 'disabled'}>Generate plan</button>
+        </div>
+        ${errBlock}
+      </div>`;
+    }
+    const ov = state.plan.overview || {};
+    const sum = ov.summary || {};
+    return `<div class="card">
+      <div style="display:flex;align-items:center;gap:0.85rem;justify-content:space-between">
+        <div>
+          <div style="font-weight:600">Plan ready</div>
+          <div style="font-size:11.5px;color:var(--text3);margin-top:2px;font-family:var(--mono)">
+            ${escapeHtml(state.plan.planId)} · ${sum.totalTables || 0} tables · ${sum.totalLevels || 0} levels · ${sum.noiseTableCount || 0} noise filtered
+          </div>
+        </div>
+        <button class="btn btn-sm" id="am-regenerate-plan-btn">Regenerate</button>
+      </div>
+    </div>`;
+  }
+
+  function renderBucketCards() {
+    if (!Array.isArray(state.buckets) || state.buckets.length === 0) {
+      return '';
+    }
+    const cardsHtml = state.buckets.map(b => {
+      const picked = state.pickedBuckets.has(b.key);
+      const tableCount = b.tables.length;
+      const previewNames = b.tables.slice(0, 5).map(t => t.name);
+      const previewHtml = previewNames.map(n => `<div style="font-size:11.5px;color:var(--text2);font-family:var(--mono)">${escapeHtml(n)}</div>`).join('');
+      const moreHtml = tableCount > 5
+        ? `<div style="font-size:10.5px;color:var(--text3);margin-top:0.2rem">+${tableCount - 5} more</div>`
+        : '';
+      const buttonLabel = picked ? '✓ In scope — remove' : '+ Add to scope';
+      const cardClass = 'action-card' + (picked ? ' active' : '');
+      return `
+        <div class="${cardClass}" data-bucket="${escapeHtml(b.key)}" role="button" tabindex="0" style="min-width:220px;max-width:240px;flex-shrink:0;display:flex;flex-direction:column">
+          <div class="action-card-title">${escapeHtml(b.label)}</div>
+          <div class="action-card-desc">${escapeHtml(b.description)}</div>
+          <div class="action-card-meta">${tableCount} table${tableCount === 1 ? '' : 's'} · ${formatRows(b.totalRows)} rows</div>
+          <div style="margin-top:0.6rem;display:flex;flex-direction:column;gap:0.2rem;min-height:90px">
+            ${tableCount === 0 ? '<div style="font-size:11px;color:var(--text3);font-style:italic">(no tables in this bucket)</div>' : previewHtml + moreHtml}
+          </div>
+          <button class="btn btn-sm ${picked ? 'btn-primary' : ''}" style="margin-top:0.85rem" data-bucket-btn="${escapeHtml(b.key)}" ${tableCount === 0 ? 'disabled' : ''}>${escapeHtml(buttonLabel)}</button>
+        </div>`;
+    }).join('');
+    return `
+      <div class="card">
+        <div class="panel-title" style="margin-bottom:0.85rem">Pick a group of tables to migrate</div>
+        <div class="carousel-track-wrap">
+          <div class="carousel-track">${cardsHtml}</div>
+        </div>
+      </div>`;
+  }
+
+  function renderScopePanel() {
+    if (!Array.isArray(state.buckets) || state.buckets.length === 0) return '';
+    const pickedCount = state.pickedBuckets.size;
+    const pickedTables = collectPickedTables();
+    const tableCount = pickedTables.length;
+
+    const scopeListOptions = (state.scopeList || []).map(s =>
+      `<option value="${escapeHtml(s.scopeId)}">${escapeHtml(s.name)} (${s.rootCount || 0} roots${s.expandedCount ? ', ' + s.expandedCount + ' expanded' : ''})</option>`
+    ).join('');
+
+    const savedBanner = state.savedScope
+      ? `<div class="notice" style="margin-top:0.85rem">
+          <strong>Scope saved:</strong> "${escapeHtml(state.savedScope.name)}" —
+          ${(state.savedScope.rootTables || []).length} root tables,
+          ${(state.savedScope.expandedTables || []).length} FK dependencies pulled in.
+          Ready to migrate.
+        </div>`
+      : '';
+
+    return `
+      <div class="card">
+        <div class="panel-title">Working scope</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div>
+            <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem">Build from cards</label>
+            <div style="padding:0.7rem 0.9rem;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);font-size:12.5px;color:var(--text2);min-height:54px">
+              ${pickedCount === 0
+                ? '<span style="color:var(--text3);font-style:italic">No buckets picked yet</span>'
+                : `<strong style="color:var(--text)">${pickedCount}</strong> bucket${pickedCount === 1 ? '' : 's'} picked · ~${formatRows(tableCount)} root tables`}
+            </div>
+            <div style="margin-top:0.6rem;display:flex;gap:0.4rem">
+              <input type="text" class="form-input" id="am-scope-name" placeholder="Name this scope (e.g. Master Files)" style="flex:1;font-size:12.5px" value="${state.savedScope ? escapeHtml(state.savedScope.name) : ''}">
+              <button class="btn btn-primary btn-sm" id="am-save-scope-btn" ${pickedCount === 0 ? 'disabled' : ''}>Save scope</button>
+            </div>
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.35rem">Or load an existing scope</label>
+            <select class="form-input" id="am-load-scope" style="font-size:12.5px">
+              <option value="">— Choose a saved scope —</option>
+              ${scopeListOptions}
+            </select>
+            <div style="font-size:10.5px;color:var(--text3);margin-top:0.4rem;line-height:1.5">
+              Reusable scopes let you migrate in stages: master files first, transactions later. Each saved scope can be re-run any time.
+            </div>
+          </div>
+        </div>
+        ${savedBanner}
+      </div>`;
+  }
+
+  function renderGoalSection() {
+    const bothConfigured = state.conns.source && state.conns.target;
+    const haveScope = !!state.savedScope;
+    const canStart = bothConfigured && haveScope;
+    const placeholder = haveScope
+      ? `Propose mappings for the scope "${state.savedScope.name}". Stay focused on these tables.`
+      : `Save a scope above first, then describe what the agent should do.`;
+    return `
+      <div class="card">
+        <div class="field">
+          <label>What should the agent do?</label>
+          <textarea id="am-goal" class="form-textarea" placeholder="${escapeHtml(placeholder)}" ${canStart ? '' : 'disabled'}>${haveScope ? `Propose mappings for the scope "${escapeHtml(state.savedScope.name)}".` : ''}</textarea>
+          <div class="hint">The agent reads the scoped target tables, introspects the source, and proposes source-to-target column mappings. You review and approve before anything is committed.</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary btn-sm" id="am-start-btn" ${canStart ? '' : 'disabled'}>▶ Start migration</button>
+        </div>
       </div>`;
   }
 
@@ -1846,237 +1145,81 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     state.view = 'setup';
     setTopbarStatus('Ready');
 
-    const { source, target } = state.conns;
-    const bothConfigured = !!(source && target);
+    if (!state.featureEnabled) { renderDisabled(); return; }
 
-    const sourceCard = source ? `
-      <div class="conn-card">
-        <div class="conn-role"><span class="conn-dot"></span>Source</div>
-        <div class="conn-label">${escapeHtml(source.label)}</div>
-      </div>` : `
-      <div class="conn-card conn-card-missing">
-        <div class="conn-role"><span class="conn-dot"></span>Source</div>
-        <div class="conn-label">Not configured</div>
-      </div>`;
+    const bothConfigured = state.conns.source && state.conns.target;
+    const haveBuckets = Array.isArray(state.buckets) && state.buckets.length > 0;
 
-    const targetCard = target ? `
-      <div class="conn-card">
-        <div class="conn-role"><span class="conn-dot"></span>Target</div>
-        <div class="conn-label">${escapeHtml(target.label)}</div>
-      </div>` : `
-      <div class="conn-card conn-card-missing">
-        <div class="conn-role"><span class="conn-dot"></span>Target</div>
-        <div class="conn-label">Not configured</div>
-      </div>`;
-
-    const missingNotice = bothConfigured ? '' : `
-      <div class="notice">
-        <strong>Connections not fully configured.</strong>
-        The agent needs both a source and a target before it can run.
-        <a href="/dashboard.html#connections">Set them up in Connections →</a>
-      </div>`;
-
-    // Compute current prompt source label
-    let promptSourceLabel = 'Pick a group above, or type your own instruction.';
-    let showClear = false;
-    if (state.activeAction === 'migrate-group' && state.activeGroupId) {
-      const groups = getAvailableGroups();
-      const grp = groups.find(g => g.id === state.activeGroupId);
-      const grpName = grp ? grp.name : 'group';
-      promptSourceLabel = state.userEditedPrompt
-        ? `Edited from: ${grpName}`
-        : `Filled from: ${grpName}`;
-      showClear = true;
-    } else if (state.activeAction === 'map-schema') {
-      promptSourceLabel = state.userEditedPrompt
-        ? 'Edited from: Map one schema'
-        : 'Filled from: Map one schema';
-      showClear = true;
-    } else if (state.userEditedPrompt) {
-      promptSourceLabel = 'Custom instruction';
-      showClear = true;
-    }
-
-    stage.innerHTML = `
-      <div class="card" style="padding:1.25rem 1.5rem">
-        <div class="field" style="margin-bottom:0">
-          <label>Migration direction</label>
-          <div class="conn-flow">
-            ${sourceCard}
-            <div class="conn-arrow" aria-hidden="true">→</div>
-            ${targetCard}
-          </div>
-          <div class="hint">Cygenix migrates from your project's source to its target. Configure these in the Connections page.</div>
-        </div>
-        ${missingNotice}
-      </div>
-
-      <div class="panel" style="margin-bottom:1rem">
-        <div class="panel-title">Pick a group of tables to migrate</div>
-        ${renderGroupCarousel()}
-      </div>
-
-      ${state.activeGroupId ? `
-      <div class="panel" style="margin-bottom:1rem">
-        <div class="panel-title">Dependencies for "${escapeHtml((getAvailableGroups().find(g => g.id === state.activeGroupId) || {}).name || 'this group')}"</div>
-        ${renderDependencyPanel()}
-      </div>
-      ` : ''}
-
-      ${state.activeGroupId ? `
-      <div class="panel" style="margin-bottom:1rem">
-        <div class="panel-title">Refine criteria for "${escapeHtml((getAvailableGroups().find(g => g.id === state.activeGroupId) || {}).name || 'this group')}"</div>
-        ${renderCriteriaPanel()}
-      </div>
-      ` : ''}
-
-      <div class="card">
-        <div class="field">
-          <div class="prompt-source">
-            <span>${escapeHtml(promptSourceLabel)}</span>
-            ${showClear ? '<button type="button" class="clear-btn" id="am-clear-prompt-btn">Clear</button>' : ''}
-          </div>
-          <textarea id="am-goal" class="form-textarea" placeholder="Or write your own instruction — e.g. 'Propose a mapping for the sales schema. Exclude any PII columns and ask me before including columns that look sensitive.'" ${bothConfigured ? '' : 'disabled'}></textarea>
-          <div class="hint">Editing this overrides the action card above. The agent uses whatever is in this box when you press Start.</div>
-        </div>
-
-        <div class="field">
-          <label>Budget cap</label>
-          <div class="budget-row">
-            <strong>$2.00</strong>
-            <span>maximum spend per run</span>
-            <span style="margin-left:auto;font-size:11px;color:var(--text3)">Hard ceiling — the agent stops if reached.</span>
-          </div>
-        </div>
-
-        <div class="actions">
-          <button class="btn btn-primary btn-sm" id="am-start-btn" ${bothConfigured ? '' : 'disabled'}>▶ Start agent</button>
-        </div>
-      </div>`;
-
-    // Wire up the textarea — populate from active action/group if there is one
-    const ta = document.getElementById('am-goal');
-    if (ta && !state.userEditedPrompt) {
-      if (state.activeAction === 'migrate-group' && state.activeGroupId) {
-        const groups = getAvailableGroups();
-        const grp = groups.find(g => g.id === state.activeGroupId);
-        if (grp) ta.value = buildPromptForGroup(grp);
-      } else if (state.activeAction === 'map-schema') {
-        ta.value = buildPromptForAction(state.activeAction, state.selectedSchema);
+    let body = '';
+    body += renderConnectionSummary();
+    if (bothConfigured) {
+      body += renderPlanSection();
+      if (haveBuckets) {
+        body += renderBucketCards();
+        body += renderScopePanel();
       }
+      body += renderGoalSection();
+    } else {
+      body += `<div class="notice"><strong>Configure source and target connections</strong> on the
+        <a href="/connections.html" style="color:var(--accent);text-decoration:none">Connections page</a>
+        to begin. Cygenix will introspect your target's foreign-key graph and propose a load order.</div>`;
     }
 
-    // Wire carousel scroll buttons + card click handlers
-    wireCarousel();
+    stage.innerHTML = body;
 
-    // Wire the dependency panel radio choices
-    wireDependencyPanel();
+    // Wire buttons
+    const genBtn = document.getElementById('am-generate-plan-btn');
+    if (genBtn) genBtn.addEventListener('click', () => loadOrCreatePlan(false));
 
-    // Wire the criteria panel (toggles, controls, tighten textarea)
-    wireCriteriaPanel();
+    const regenBtn = document.getElementById('am-regenerate-plan-btn');
+    if (regenBtn) regenBtn.addEventListener('click', () => {
+      state.plan = null;
+      state.buckets = [];
+      state.pickedBuckets = new Set();
+      state.savedScope = null;
+      loadOrCreatePlan(true);
+    });
 
-    // Action card click (legacy "map-schema" — kept for backward compat but
-    // hidden by current renderSetup which now uses the carousel instead)
-    const actionCard = document.getElementById('am-action-map-schema');
-    if (actionCard) {
-      actionCard.addEventListener('click', (e) => {
-        if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
-        if (actionCard.disabled) return;
-        state.activeAction = 'map-schema';
-        state.userEditedPrompt = false;
-        if (!state.selectedSchema) {
-          const schemas = getAvailableSchemas();
-          if (schemas.length > 0) state.selectedSchema = schemas[0].name;
-        }
-        renderSetup();
+    // Card click handlers (toggle bucket)
+    document.querySelectorAll('[data-bucket]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        // Don't double-fire when the button inside is clicked
+        if (e.target.closest('[data-bucket-btn]')) return;
+        togglePickBucket(el.getAttribute('data-bucket'));
       });
-    }
-
-    // Schema dropdown change
-    const schemaSelectEl = document.getElementById('am-schema-select');
-    if (schemaSelectEl) {
-      schemaSelectEl.addEventListener('click', (e) => e.stopPropagation());
-      schemaSelectEl.addEventListener('change', (e) => {
-        state.selectedSchema = e.target.value;
-        if (state.activeAction === 'map-schema' && !state.userEditedPrompt) {
-          const ta2 = document.getElementById('am-goal');
-          if (ta2) ta2.value = buildPromptForAction('map-schema', state.selectedSchema);
-        }
-      });
-    }
-
-    // Clear prompt
-    const clearBtn = document.getElementById('am-clear-prompt-btn');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', (e) => {
+    });
+    document.querySelectorAll('[data-bucket-btn]').forEach(el => {
+      el.addEventListener('click', (e) => {
         e.stopPropagation();
-        state.activeAction = null;
-        state.activeGroupId = null;
-        state.userEditedPrompt = false;
-        const ta2 = document.getElementById('am-goal');
-        if (ta2) ta2.value = '';
-        renderSetup();
+        togglePickBucket(el.getAttribute('data-bucket-btn'));
       });
-    }
+    });
 
-    // Detect manual edits
-    if (ta) {
-      ta.addEventListener('input', () => {
-        state.userEditedPrompt = true;
-        const sourceEl = document.querySelector('.prompt-source span');
-        if (sourceEl) {
-          if (state.activeAction === 'migrate-group' && state.activeGroupId) {
-            const groups = getAvailableGroups();
-            const grp = groups.find(g => g.id === state.activeGroupId);
-            sourceEl.textContent = grp ? `Edited from: ${grp.name}` : 'Custom instruction';
-          } else if (state.activeAction === 'map-schema') {
-            sourceEl.textContent = 'Edited from: Map one schema';
-          } else {
-            sourceEl.textContent = 'Custom instruction';
-          }
-        }
-        // Show the clear button if not already visible
-        if (!document.getElementById('am-clear-prompt-btn')) {
-          const sp = document.querySelector('.prompt-source');
-          if (sp) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'clear-btn';
-            btn.id = 'am-clear-prompt-btn';
-            btn.textContent = 'Clear';
-            btn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              state.activeAction = null;
-              state.activeGroupId = null;
-              state.userEditedPrompt = false;
-              ta.value = '';
-              renderSetup();
-            });
-            sp.appendChild(btn);
-          }
-        }
-      });
-    }
+    // Save-scope and load-scope
+    const saveBtn = document.getElementById('am-save-scope-btn');
+    if (saveBtn) saveBtn.addEventListener('click', () => {
+      const nameEl = document.getElementById('am-scope-name');
+      saveScope(nameEl ? nameEl.value : '');
+    });
+    const loadSel = document.getElementById('am-load-scope');
+    if (loadSel) loadSel.addEventListener('change', (e) => {
+      selectScope(e.target.value);
+    });
 
-    // Retry schema introspection
-    const retryBtn = document.getElementById('am-retry-schema-btn');
-    if (retryBtn) {
-      retryBtn.addEventListener('click', () => {
-        state.sourceSchema = null;
-        state.sourceSchemaError = null;
-        loadSourceSchema();
-      });
-    }
-
-    // Start button
+    // Start migration
     const startBtn = document.getElementById('am-start-btn');
     if (startBtn) startBtn.addEventListener('click', startRun);
   }
 
   async function startRun() {
-    const goal = document.getElementById('am-goal').value.trim();
+    const goalEl = document.getElementById('am-goal');
+    const goal = goalEl ? goalEl.value.trim() : '';
     if (!state.conns.source || !state.conns.target) {
       alert('Both source and target connections must be configured first.');
+      return;
+    }
+    if (!state.savedScope) {
+      alert('Save a scope before starting the migration.');
       return;
     }
     if (goal.length < 10) {
@@ -2084,21 +1227,6 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
       return;
     }
     stopConnectionWatcher();
-
-    // ── Pre-flight verify ────────────────────────────────────────────
-    // Confirm the tables and columns we're about to instruct the agent
-    // about actually exist in source. Catches schema drift / hallucinated
-    // names before the agent burns any tokens.
-    if (state.activeAction === 'migrate-group' && state.activeGroupId) {
-      renderLoading('Verifying tables and columns…');
-      const verifyResult = await runPreflightVerify(state.activeGroupId);
-      if (verifyResult && !verifyResult.ok) {
-        renderVerifyMismatch(verifyResult);
-        startConnectionWatcher();
-        return;
-      }
-    }
-
     renderLoading('Starting agent…');
     try {
       const result = await api('/agent/migrate', {
@@ -2118,155 +1246,6 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     }
   }
 
-  // ── Pre-flight verify (NEW) ────────────────────────────────────────
-  // Build the expected-tables/columns payload from the active group +
-  // selected criteria, then ask the source DB whether they all exist.
-  async function runPreflightVerify(groupId) {
-    const group = getAvailableGroups().find(g => g.id === groupId);
-    if (!group) return null;
-
-    // Build the list of tables to verify
-    const tables = (group.tables || []).map(t => ({
-      schema: t.schema || 'dbo',
-      name:   t.name
-    }));
-
-    // Column verification was removed: criteria columns (e.g. mtstatus,
-    // mtopendt) only exist on a subset of the group's tables — that's
-    // expected, not an error. The agent applies each criterion only to
-    // tables that actually have the column. Re-checking every column on
-    // every table produced 30+ false-positive "missing" entries, scaring
-    // the user with a mismatch screen for what is actually correct
-    // behaviour. The verify pre-flight now focuses on what it can usefully
-    // catch: table-name drift (the original "arcs_ext_matter" problem).
-    const columns = [];
-
-    if (tables.length === 0 && columns.length === 0) return { ok: true };
-
-    // Pull source connection
-    const reqBody = { expected: { tables, columns } };
-    try {
-      const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
-        ? (CygenixConnections.get() || {}) : {};
-      const srcMode = c.srcConnMode === 'azure' ? 'azure' : 'direct';
-      if (srcMode === 'azure' && c.srcFnUrl) {
-        reqBody.srcFnUrl = c.srcFnUrl;
-        if (c.srcFnKey) reqBody.srcFnKey = c.srcFnKey;
-      } else if (srcMode === 'direct' && c.srcConnString) {
-        reqBody.srcConnString = c.srcConnString;
-      }
-      reqBody.srcConnMode = srcMode;
-    } catch { /* fall through to error path */ }
-    if (!reqBody.srcFnUrl && !reqBody.srcConnString) {
-      // Can't verify without a source connection — let the run proceed and
-      // surface any errors via the agent's normal flow.
-      return { ok: true, skipped: true };
-    }
-
-    try {
-      const data = await api('/agent/verify-targets', {
-        method: 'POST',
-        body: JSON.stringify(reqBody)
-      });
-      return data;
-    } catch (e) {
-      // Verify endpoint failure isn't a hard block — log and proceed so
-      // the user isn't stuck if the verify function is down.
-      console.warn('[AgentiveMigration] verify failed, proceeding anyway:', e.message);
-      return { ok: true, skipped: true, verifyError: e.message };
-    }
-  }
-
-  // Render a friendly mismatch screen with did-you-mean suggestions
-  function renderVerifyMismatch(result) {
-    state.view = 'verify-mismatch';
-    setTopbarStatus('Pre-flight check failed');
-
-    const tablesMissing = result.tablesMissing || [];
-    const columnsMissing = (result.columnsMissing || []).slice(0, 50); // cap display
-    const suggestions = result.suggestions || [];
-
-    // Group columnsMissing by table to keep the list scannable
-    const colsByTable = {};
-    for (const c of columnsMissing) {
-      const parts = c.split('.');
-      const table = parts.slice(0, 2).join('.');
-      const col = parts.slice(2).join('.');
-      if (!colsByTable[table]) colsByTable[table] = [];
-      colsByTable[table].push(col);
-    }
-
-    // Build did-you-mean lookup
-    const dymByAsked = {};
-    for (const s of suggestions) {
-      dymByAsked[`${s.kind}:${s.table || ''}:${s.asked}`] = s.didYouMean;
-    }
-
-    let body = '';
-    if (tablesMissing.length > 0) {
-      body += `<div style="margin-bottom:1rem">
-        <div class="section-label">Tables not found in source (${tablesMissing.length})</div>
-        ${tablesMissing.slice(0, 30).map(t => {
-          const dym = dymByAsked[`table::${t}`];
-          return `<div class="decision">
-            <div class="decision-label"><code>${escapeHtml(t)}</code></div>
-            ${dym ? `<div class="decision-reasoning">Did you mean <code>${escapeHtml(dym)}</code>?</div>` : ''}
-          </div>`;
-        }).join('')}
-      </div>`;
-    }
-    const colTables = Object.keys(colsByTable);
-    if (colTables.length > 0) {
-      body += `<div style="margin-bottom:1rem">
-        <div class="section-label">Columns not found (${columnsMissing.length})</div>
-        ${colTables.slice(0, 15).map(table => {
-          const cols = colsByTable[table];
-          return `<div class="decision">
-            <div class="decision-label"><code>${escapeHtml(table)}</code> is missing: ${cols.slice(0, 8).map(c => `<code>${escapeHtml(c)}</code>`).join(', ')}${cols.length > 8 ? ` (+${cols.length - 8} more)` : ''}</div>
-            ${cols.map(c => {
-              const dym = dymByAsked[`column:${table}:${c}`];
-              return dym ? `<div class="decision-reasoning"><code>${escapeHtml(c)}</code> → did you mean <code>${escapeHtml(dym)}</code>?</div>` : '';
-            }).filter(Boolean).join('')}
-          </div>`;
-        }).join('')}
-      </div>`;
-    }
-
-    stage.innerHTML = `
-      <div class="error-card">
-        <h3>Some tables or columns don't exist in source</h3>
-        <p>The pre-flight check found mismatches between what we'd ask the agent to do and what's actually in the source database. Fixing these now saves the agent from running and failing.</p>
-        ${body}
-        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem">
-          <button class="btn btn-sm" id="am-verify-back-btn">← Back to setup</button>
-          <button class="btn btn-primary btn-sm" id="am-verify-runanyway-btn">Run anyway</button>
-        </div>
-      </div>`;
-
-    document.getElementById('am-verify-back-btn').addEventListener('click', () => {
-      state.conns = readConnections();
-      renderSetup();
-      startConnectionWatcher();
-    });
-    document.getElementById('am-verify-runanyway-btn').addEventListener('click', async () => {
-      // Bypass verify and go straight to /agent/migrate
-      const goal = document.getElementById('am-goal') ? document.getElementById('am-goal').value.trim() : '';
-      renderLoading('Starting agent…');
-      try {
-        const result = await api('/agent/migrate', {
-          method: 'POST',
-          body: JSON.stringify(buildAgentMigrateBody(goal)),
-        });
-        state.currentRunId = result.runId;
-        state.lastSeq = 0;
-        saveActiveRun(result.runId);
-        startPolling();
-      } catch (e) {
-        if (e instanceof ApiNotImplementedError) renderBackendPending();
-        else renderError(e.message);
-      }
-    });
-  }
 
   function renderBackendPending() {
     state.view = 'pending';
@@ -2505,6 +1484,12 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     // Empty string is acceptable; the agent silently runs without memory in
     // that case (same behaviour as before this feature existed).
     out.projectId = getActiveProjectId();
+    // Scope id — when present, the agent anchors its run on the scope's
+    // effective table list and writes a "loaded tables" memory entry on
+    // successful approval (see agent-scope-wiring doc).
+    if (state.savedScope && state.savedScope.scopeId) {
+      out.scopeId = state.savedScope.scopeId;
+    }
     try {
       const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get)
         ? (CygenixConnections.get() || {}) : {};
@@ -2710,13 +1695,18 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
       clearActiveRun();
       state.currentRunId = null;
       state.conns = readConnections();
-      state.sourceSchema = null;
-      state.activeAction = null;
-      state.activeGroupId = null;
-      state.userEditedPrompt = false;
+      // Reset scope-related state so the user can build a fresh scope (or
+      // re-select an existing one). The plan persists across runs because
+      // it's tied to the target schema, not the run.
+      state.pickedBuckets = new Set();
+      state.savedScope = null;
       renderSetup();
       startConnectionWatcher();
-      if (state.conns.source) loadSourceSchema();
+      // Refresh the scope list — a new run may have written a "loaded"
+      // memory entry that the next session benefits from.
+      loadScopeList().then(() => {
+        if (state.view === 'setup') renderSetup();
+      });
     });
   }
 
@@ -2813,8 +1803,12 @@ Preserve any foreign-key relationships within the group.${piiNote} Pause for app
     renderSetup();
     startConnectionWatcher();
 
-    // Kick off source schema introspection if we have a source
-    if (state.conns.source) loadSourceSchema();
+    // Load saved scopes for this project so they appear in the dropdown.
+    // The list is read-only; saving/expanding happens explicitly when the
+    // user clicks the relevant buttons. Best-effort.
+    loadScopeList().then(() => {
+      if (state.view === 'setup') renderSetup();
+    });
   }
 
   if (document.readyState === 'loading') {
