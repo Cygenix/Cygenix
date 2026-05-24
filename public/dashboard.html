@@ -6928,9 +6928,9 @@ function _pkgRenderProgressList(){
   const list = document.getElementById('pkg-progress-list');
   list.innerHTML = _pkg.queue.map(j => `
     <div data-pkrow="${j.id}" style="display:flex;align-items:flex-start;gap:0.5rem;padding:2px 0">
-      <span class="pkg-icon" style="width:14px;text-align:center;color:var(--text3)">·</span>
-      <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(j.name||'(unnamed)').replace(/</g,'&lt;')}</span>
-      <span class="pkg-msg" style="color:var(--text3);font-size:11px"></span>
+      <span class="pkg-icon" style="width:14px;text-align:center;color:var(--text3);flex-shrink:0">·</span>
+      <span style="flex:0 0 auto;color:var(--text2);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(j.name||'(unnamed)').replace(/</g,'&lt;')}</span>
+      <span class="pkg-msg" style="flex:1;color:var(--text3);font-size:11px;word-break:break-word;white-space:normal"></span>
     </div>
   `).join('');
   document.getElementById('pkg-progress-wrap').style.display = 'block';
@@ -7008,9 +7008,12 @@ async function startExportPackage(){
       _pkg.results.push({ jobName: job.name, ok: true, sizeKb: Math.round(sql.length/1024) });
       _pkgUpdateRow(job.id, 'ok', `built (${Math.round(sql.length/1024).toLocaleString()} KB)`);
     } catch (e){
+      // Surface the full error message in the visible message column, not
+      // just a generic "Error". The first 200 chars of the SQL exception
+      // text is almost always enough to diagnose.
       const msg = (e?.message || String(e)).slice(0, 300);
       _pkg.results.push({ jobName: job.name, ok: false, message: msg });
-      _pkgUpdateRow(job.id, 'fail', msg.slice(0, 200));
+      _pkgUpdateRow(job.id, 'fail', msg);
     }
   }
 
