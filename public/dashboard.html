@@ -5299,8 +5299,20 @@ function closeBulkGenerateModal(){
 function _bulkGenCleanupIframe(){
   if (_bulkGen.current){
     if (_bulkGen.current.timeoutId) clearTimeout(_bulkGen.current.timeoutId);
-    if (_bulkGen.current.iframe && _bulkGen.current.iframe.parentNode){
-      _bulkGen.current.iframe.parentNode.removeChild(_bulkGen.current.iframe);
+    const ifr = _bulkGen.current.iframe;
+    if (ifr && ifr.parentNode){
+      // Navigate the iframe to about:blank BEFORE removing it. This forces
+      // Chrome to discard the loaded page's globals (srcSchema with thousands
+      // of tables, tgtSchema, MSAL session refs, etc.) immediately, instead
+      // of waiting for the next GC cycle. Without this, the previous iframe's
+      // 30+ MB of schema arrays can briefly overlap with the next iframe's
+      // load — enough to OOM-crash a memory-pressured tab.
+      try { ifr.src = 'about:blank'; } catch {}
+      // Microtask delay so the navigation fires before removal; otherwise
+      // some browsers skip the unload event entirely.
+      setTimeout(() => {
+        try { if (ifr.parentNode) ifr.parentNode.removeChild(ifr); } catch {}
+      }, 0);
     }
     _bulkGen.current = null;
   }
@@ -5352,6 +5364,18 @@ async function startBulkGenerate(){
   document.getElementById('bulk-gen-cancel-btn').textContent = 'Cancel';
   _bulkGenRenderProgressList();
 
+  // Replace the iframe host with a fresh DOM node before the run. Long-lived
+  // hosts can accumulate detached references (drag listeners, focus handlers,
+  // postMessage closures) from previous bulk runs. A clean node guarantees no
+  // cross-run baggage. The original host stays in the DOM at its old position
+  // but with no children — cheap and listener-free.
+  (function refreshHost(){
+    const oldHost = document.getElementById('bulk-gen-iframe-host');
+    if (!oldHost) return;
+    const fresh = oldHost.cloneNode(false);  // no children, no listeners
+    oldHost.parentNode.replaceChild(fresh, oldHost);
+  })();
+
   // Single shared postMessage listener for the lifetime of the run
   const onMsg = (ev) => {
     // Same-origin only — we don't accept results from foreign frames
@@ -5373,6 +5397,14 @@ async function startBulkGenerate(){
     _bulkGenUpdateRow(job.id, 'running', 'starting…');
 
     await _bulkGenRunOne(job);
+
+    // Inter-iframe pause: lets the previous iframe's about:blank navigation
+    // settle and gives Chrome's GC a clear window to reclaim the schema arrays
+    // before the next iframe starts loading its own. Skip on the last job —
+    // no point waiting if the loop's about to exit.
+    if (i < _bulkGen.queue.length - 1 && !_bulkGen.cancelled){
+      await new Promise(r => setTimeout(r, 1000));
+    }
   }
 
   window.removeEventListener('message', onMsg);
@@ -5420,8 +5452,12 @@ function _bulkGenRunOne(job){
     const host = document.getElementById('bulk-gen-iframe-host');
     const iframe = document.createElement('iframe');
     iframe.src = `/object_mapping.html?edit=${encodeURIComponent(job.id)}&autosave=1`;
-    iframe.style.width  = '1024px';
-    iframe.style.height = '768px';
+    // Small dimensions to minimise layout/paint cost. The autosave block
+    // doesn't depend on visibility — schema fetches, mapping restoration,
+    // and saveAsJob all run regardless of iframe size. Keeping this small
+    // shaves memory off every iframe lifecycle.
+    iframe.style.width  = '64px';
+    iframe.style.height = '64px';
     iframe.style.border = '0';
     host.appendChild(iframe);
 
