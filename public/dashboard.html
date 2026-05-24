@@ -5716,10 +5716,13 @@ async function _validateProbeTopology(srcConn, tgtConn){
         action: 'execute',
         sql: "SELECT CAST(@@SERVERNAME AS NVARCHAR(255)) AS srv, CAST(DB_NAME() AS NVARCHAR(255)) AS db;"
       });
-      const row = res?.rows?.[0] || {};
+      // Response shape varies by backend: the Netlify db-connect proxy returns
+      // results under `recordset`, the direct Azure-Function path under `rows`.
+      // Read whichever is present.
+      const row = res?.recordset?.[0] || res?.rows?.[0] || {};
       return {
-        server: String(row.srv || row.SRV || Object.values(row)[0] || '').trim(),
-        db:     String(row.db  || row.DB  || Object.values(row)[1] || '').trim()
+        server: String(row.srv || row.SRV || row.server || Object.values(row)[0] || '').trim(),
+        db:     String(row.db  || row.DB  || row.database || Object.values(row)[1] || '').trim()
       };
     } catch (e) {
       return { server: '', db: '', error: e.message || String(e) };
