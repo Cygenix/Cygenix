@@ -534,6 +534,7 @@ body.cyg-collapsed{padding-left:54px}
               </div>
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                 <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
+                <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
                 <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table (common Agentive cleanup)">🧹 Clean dead source refs</button>
                 <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
               </div>
@@ -558,6 +559,7 @@ body.cyg-collapsed{padding-left:54px}
               </div>
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                 <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
+                <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
                 <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table (common Agentive cleanup)">🧹 Clean dead source refs</button>
                 <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
               </div>
@@ -611,6 +613,7 @@ body.cyg-collapsed{padding-left:54px}
           </div>
           <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap" id="otm-actions" style="display:none">
             <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()">⚡ Generate cursor SQL</button>
+            <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
             <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table">🧹 Clean dead source refs</button>
             <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
           </div>
@@ -2254,6 +2257,207 @@ function applyDateCasts(){
   showStatus('Applied DATE_CAST to '+cands.length+' row'+(cands.length===1?'':'s')+(editJobId?' and saved':''),'info');
 }
 
+// ── Auto-fix (Agentive) — combined defensive sweep ────────────────────────
+//
+// The Agentive auto-mapper produces a column map that's *structurally*
+// correct (column → column) but *runtime-fragile*: source values are
+// frequently NVARCHAR(MAX) holding mixed-format dates, empty strings where
+// the target expects a typed value, and occasionally invalid GUIDs. The
+// expectation for an Agentive-driven workflow is "auto-map and run" — not
+// "auto-map then chase down 30 conversion errors by hand."
+//
+// This utility does five passes in one operation, with a single combined
+// preview before applying anything:
+//
+//   1. Clean dead source refs — clear srcCol on rows pointing at
+//      non-existent source columns (Agentive sometimes invents names).
+//   2. Date casts — wrap date/datetime targets in TRY_CONVERT / range-clamp
+//      for SMALLDATETIME. (Same as the 📅 button.)
+//   3. SAFE_GUID — uniqueidentifier targets get ISNULL+TRY_CAST+NEWID()
+//      wrapping. Bad/empty GUIDs become a fresh GUID (lenient).
+//   4. SAFE_NUMERIC — int/bit/decimal/money targets get ISNULL+TRY_CAST+0
+//      wrapping when source is a char type.
+//   5. SAFE_TRUNC — char-target with smaller length than char-source gets
+//      LEFT() truncation so insert doesn't fail on overflow.
+//
+// Warnings collected during the scan (e.g. "32 rows have non-empty source
+// values that aren't valid GUIDs and will be replaced with NEWID()") are
+// surfaced in the preview so you can decide whether to bail.
+function autoFixAgentive(){
+  if(!srcTable){ showStatus('Load a source table first','err'); return; }
+
+  // -- Build lookups --
+  const validSrcNames = new Set();
+  const srcTypes = new Map();
+  for (const c of (srcTable.columns||[])){
+    const nm = typeof c==='string'?c:c.name;
+    validSrcNames.add(nm);
+    if (typeof c === 'object') srcTypes.set(nm, c.type||'');
+  }
+  try {
+    const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+    for (const c of joinCols){ validSrcNames.add(c.name); srcTypes.set(c.name, c.type||''); }
+  } catch {}
+
+  // -- Plan: collect proposed changes per pass --
+  const plan = {
+    deadRefs:      [],   // {ref, scope, tgtCol, oldSrc}
+    dateCasts:     [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType, why}
+    safeGuid:      [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType}
+    safeNumeric:   [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType}
+    safeTrunc:     [],   // {ref, scope, tgtCol, srcCol, srcLen, tgtLen, tgtType}
+    warnings:      []    // free-text strings shown above the preview
+  };
+
+  function planForMapping(m, tgtCol, tgtType, scope){
+    // Pass 1: dead refs (clearing wins over wrapping — no point wrapping a
+    // dead reference)
+    if (!m.fromJoin && !m.literalValue && m.srcCol && !validSrcNames.has(m.srcCol)){
+      plan.deadRefs.push({ ref: m, scope, tgtCol: m.tgtCol, oldSrc: m.srcCol });
+      return;
+    }
+    if (!m.srcCol || m.literalValue) return;
+
+    const srcType = srcTypes.get(m.srcCol) || '';
+    const srcIsChar = isCharType(srcType);
+    const srcIsDate = isDateType(srcType);
+    const tgtIsSmall = /^SMALLDATETIME\b/i.test(tgtType.toUpperCase());
+
+    // Pass 2: dates
+    if (isDateType(tgtType)){
+      const already = (m.transform||'').toUpperCase() === 'DATE_CAST';
+      if (!already){
+        let why = null;
+        if (srcIsChar) why = 'string → date (TRY_CONVERT)';
+        else if (!srcIsDate) why = 'non-date source → date (defensive)';
+        else if (tgtIsSmall) why = 'range clamp (SMALLDATETIME 1900-2079)';
+        if (why){
+          plan.dateCasts.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcType: srcType||'(?)', tgtType, why });
+        }
+      }
+      return;  // don't double-wrap a date target with SAFE_*
+    }
+
+    // Pass 3: uniqueidentifier
+    if (isGuidType(tgtType) && srcIsChar){
+      const already = (m.transform||'').toUpperCase() === 'SAFE_GUID';
+      if (!already) plan.safeGuid.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcType, tgtType });
+      return;
+    }
+
+    // Pass 4: numeric / bit
+    if (isNumericType(tgtType) && srcIsChar){
+      const already = (m.transform||'').toUpperCase() === 'SAFE_NUMERIC';
+      if (!already) plan.safeNumeric.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcType, tgtType });
+      return;
+    }
+
+    // Pass 5: char-to-char truncation. Apply ONLY if target has a fixed
+    // length AND source is wider (MAX is treated as infinity). We don't
+    // want to wrap every char→char with LEFT() — that defeats the point of
+    // varchar storage.
+    if (isCharType(tgtType) && srcIsChar){
+      const tgtLen = parseTypeLen(tgtType);
+      const srcLen = parseTypeLen(srcType);
+      if (tgtLen !== Infinity && srcLen > tgtLen){
+        const already = (m.transform||'').toUpperCase() === 'SAFE_TRUNC';
+        if (!already) plan.safeTrunc.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcLen: (srcLen===Infinity?'MAX':srcLen), tgtLen, tgtType });
+      }
+    }
+  }
+
+  // -- Walk every mapping (single OR otm) --
+  if (mode === 'single'){
+    for (const m of columnMapping){
+      const tgtType = (tgtTable?.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
+      planForMapping(m, m.tgtCol, tgtType, '');
+    }
+  } else {
+    for (const tt of (targetTables||[])){
+      for (const m of (tt.mappings||[])){
+        const tgtType = (tt.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
+        planForMapping(m, m.tgtCol, tgtType, tt.fullName||tt.name||'');
+      }
+    }
+  }
+
+  // -- Compute the warning string for the lenient GUID policy --
+  // We can't actually inspect source row values from here (that needs a
+  // round-trip to the DB). What we CAN say is: "for any non-empty source
+  // value that isn't a valid GUID, your insert would have failed before
+  // — under SAFE_GUID it becomes a fresh GUID instead." Surface this so
+  // the user knows the policy isn't strict.
+  if (plan.safeGuid.length){
+    plan.warnings.push(
+      plan.safeGuid.length+' uniqueidentifier column'+(plan.safeGuid.length===1?'':'s')+
+      ' will be wrapped with TRY_CAST + NEWID(). Empty source values are filled with a fresh GUID. ' +
+      'Non-empty but malformed values (e.g. "abc") are ALSO replaced with a fresh GUID — you will not see those errors. ' +
+      'If FK integrity matters, fix bad source GUIDs before migrating.'
+    );
+  }
+  if (plan.safeNumeric.length){
+    plan.warnings.push(
+      plan.safeNumeric.length+' numeric column'+(plan.safeNumeric.length===1?'':'s')+
+      ' will be wrapped with TRY_CAST + 0. Empty and malformed source values both become 0.'
+    );
+  }
+
+  const total = plan.deadRefs.length + plan.dateCasts.length + plan.safeGuid.length + plan.safeNumeric.length + plan.safeTrunc.length;
+  if (!total){
+    showStatus('Nothing to auto-fix — mappings look clean','info');
+    return;
+  }
+
+  // -- Build preview text --
+  function block(title, rows, fmt){
+    if (!rows.length) return '';
+    const head = '═══ '+title+' ('+rows.length+') ═══';
+    const sample = rows.slice(0, 8).map(fmt).join('\n');
+    const more = rows.length > 8 ? '\n  …and '+(rows.length-8)+' more' : '';
+    return head + '\n' + sample + more;
+  }
+  const preview = [
+    plan.warnings.length ? '⚠  '+plan.warnings.join('\n⚠  ')+'\n' : '',
+    block('Clean dead source refs', plan.deadRefs,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} ← ${d.oldSrc}  (clear srcCol)`),
+    block('Fix date casts', plan.dateCasts,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}) ← ${d.srcCol} (${d.srcType})  — ${d.why}`),
+    block('Safe GUID wrap', plan.safeGuid,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (UNIQUEIDENTIFIER) ← ${d.srcCol} (${d.srcType})`),
+    block('Safe numeric wrap', plan.safeNumeric,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}) ← ${d.srcCol} (${d.srcType})`),
+    block('Safe truncation', plan.safeTrunc,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}, len=${d.tgtLen}) ← ${d.srcCol} (len=${d.srcLen})`)
+  ].filter(Boolean).join('\n\n');
+
+  const ok = confirm(
+    'Auto-fix will apply '+total+' change'+(total===1?'':'s')+' across this mapping:\n\n' +
+    preview + '\n\nApply all of the above?'
+  );
+  if (!ok) return;
+
+  // -- Apply --
+  let counts = { dead: 0, date: 0, guid: 0, num: 0, trunc: 0 };
+  for (const d of plan.deadRefs){    d.ref.srcCol = ''; d.ref.match = ''; counts.dead++; }
+  for (const d of plan.dateCasts){   d.ref.transform = 'DATE_CAST';    counts.date++; }
+  for (const d of plan.safeGuid){    d.ref.transform = 'SAFE_GUID';    counts.guid++; }
+  for (const d of plan.safeNumeric){ d.ref.transform = 'SAFE_NUMERIC'; counts.num++; }
+  for (const d of plan.safeTrunc){   d.ref.transform = 'SAFE_TRUNC';   counts.trunc++; }
+
+  if (mode === 'single') renderMappingTable();
+  else if (typeof renderOTMCards === 'function') renderOTMCards();
+  tryAutoGenSQL();
+  if (typeof persistMappingToSavedJob === 'function') persistMappingToSavedJob();
+
+  const summary = [];
+  if (counts.dead)  summary.push(counts.dead+' dead refs cleared');
+  if (counts.date)  summary.push(counts.date+' date casts applied');
+  if (counts.guid)  summary.push(counts.guid+' GUID wraps applied');
+  if (counts.num)   summary.push(counts.num+' numeric wraps applied');
+  if (counts.trunc) summary.push(counts.trunc+' truncation wraps applied');
+  showStatus('Auto-fix: '+summary.join(' · ')+(editJobId?' and saved':''), 'info');
+}
+
 function toggleUnmappedCols(){
   _hidingUnmapped = !_hidingUnmapped;
   const btn = $('btn-toggle-unmapped');
@@ -2322,9 +2526,49 @@ function buildDateCastExpr(srcExpr, tgtType){
   return cast;
 }
 
+// Build a safety-wrapped cast expression for the "Auto-fix (Agentive)"
+// utility. The Agentive output produces mappings where:
+//   • Source columns are typically NVARCHAR(MAX) (CSV / staging area shape).
+//   • Target columns are strongly-typed (UNIQUEIDENTIFIER, INT, DECIMAL, …).
+//   • Some source values are empty strings, NULL, or malformed.
+//
+// A bare INSERT in this shape fails with "Conversion failed" / "Cannot
+// insert NULL" / "String or binary data would be truncated". This helper
+// generates a defensive expression per kind that handles those failure
+// modes silently so the migration can complete.
+//
+//   SAFE_GUID    : ISNULL(TRY_CAST(NULLIF(LTRIM(RTRIM(src)),'') AS UNIQUEIDENTIFIER), NEWID())
+//                  — empties + bad GUIDs both become a fresh GUID (lenient).
+//   SAFE_NUMERIC : ISNULL(TRY_CAST(NULLIF(LTRIM(RTRIM(src)),'') AS <tgtType>), 0)
+//                  — empties + bad numerics become 0.
+//   SAFE_TRUNC   : LEFT(src, <tgtLen>)
+//                  — string longer than target length is truncated to fit.
+function buildSafeCastExpr(kind, srcExpr, tgtType){
+  const trimmed = 'LTRIM(RTRIM('+srcExpr+'))';
+  const nullified = 'NULLIF('+trimmed+",'')";
+  if (kind === 'SAFE_GUID'){
+    return 'ISNULL(TRY_CAST('+nullified+' AS UNIQUEIDENTIFIER), NEWID())';
+  }
+  if (kind === 'SAFE_NUMERIC'){
+    const t = (tgtType||'INT').trim();
+    return 'ISNULL(TRY_CAST('+nullified+' AS '+t+'), 0)';
+  }
+  if (kind === 'SAFE_TRUNC'){
+    // Parse target length: VARCHAR(50) → 50. MAX or no-length → no-op.
+    const m = (tgtType||'').match(/\(\s*(\d+)\s*\)/);
+    if (!m) return srcExpr;
+    return 'LEFT('+srcExpr+', '+m[1]+')';
+  }
+  return srcExpr;
+}
+
 function parseTypeLen(t){ const m=(t||'').match(/\((MAX|\d+)\)/i); if(!m) return Infinity; return m[1].toUpperCase()==='MAX'?Infinity:parseInt(m[1]); }
 function isCharType(t){ return /^(N?VARCHAR|N?CHAR|TEXT|NTEXT)/i.test(t||''); }
 function isDateType(t){ return /^(DATE|TIME|DATETIME(2)?|SMALLDATETIME|DATETIMEOFFSET)\b/i.test((t||'').trim()); }
+function isGuidType(t){ return /^UNIQUEIDENTIFIER\b/i.test((t||'').trim()); }
+// Integer + decimal + money + bit families — anything where empty NVARCHAR
+// at the source causes a runtime cast error.
+function isNumericType(t){ return /^(TINYINT|SMALLINT|INT|BIGINT|BIT|DECIMAL|NUMERIC|MONEY|SMALLMONEY|FLOAT|REAL)\b/i.test((t||'').trim()); }
 
 function renderMappingTable(){
   if(!tgtTable) return;
@@ -2436,7 +2680,7 @@ function renderMappingTable(){
         ${identityBadgeHtml}
       </td>
       <td><select class="map-select" ${disAttr} style="width:80px${identityLocked?';cursor:not-allowed':''}" onchange="updateTransform(${i},this.value)">
-        ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
+        ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST','SAFE_GUID','SAFE_NUMERIC','SAFE_TRUNC'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
       </select></td>
       <td>
         <input class="map-select" style="width:120px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
@@ -2595,6 +2839,9 @@ function generateSingleSQL(silent){
       case 'LOWER': srcExpr='LOWER('+srcExpr+')'; break;
       case 'CAST': srcExpr='CAST('+srcExpr+' AS '+(tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'NVARCHAR(255)')+')'; break;
       case 'DATE_CAST': srcExpr=buildDateCastExpr(srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'DATETIME2'); break;
+      case 'SAFE_GUID':    srcExpr=buildSafeCastExpr('SAFE_GUID',    srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'UNIQUEIDENTIFIER'); break;
+      case 'SAFE_NUMERIC': srcExpr=buildSafeCastExpr('SAFE_NUMERIC', srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'INT'); break;
+      case 'SAFE_TRUNC':   srcExpr=buildSafeCastExpr('SAFE_TRUNC',   srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'NVARCHAR(255)'); break;
     }
     // Auto-truncate: wrap in LEFT() when source char type is wider than target
     if((m.transform||'NONE')==='NONE'||m.transform==='TRIM'){
@@ -2893,7 +3140,7 @@ function renderOTMCards(){
                 ${identityBadgeHtml}
               </td>
               <td><select class="map-select" ${disAttr} style="width:75px${identityLocked?';cursor:not-allowed':''}" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
-                ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
+                ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST','SAFE_GUID','SAFE_NUMERIC','SAFE_TRUNC'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
               </select></td>
               <td><input class="map-select" style="width:110px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
                 ${disAttr}
@@ -3325,6 +3572,9 @@ function generateOTMSQL(){
           case 'LOWER': return '  LOWER('+baseExpr+')';
           case 'CAST': return '  CAST('+baseExpr+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
           case 'DATE_CAST': return '  '+buildDateCastExpr(baseExpr, tgtCol?.type||'DATETIME2');
+          case 'SAFE_GUID':    return '  '+buildSafeCastExpr('SAFE_GUID',    baseExpr, tgtCol?.type||'UNIQUEIDENTIFIER');
+          case 'SAFE_NUMERIC': return '  '+buildSafeCastExpr('SAFE_NUMERIC', baseExpr, tgtCol?.type||'INT');
+          case 'SAFE_TRUNC':   return '  '+buildSafeCastExpr('SAFE_TRUNC',   baseExpr, tgtCol?.type||'NVARCHAR(MAX)');
           default: if(truncLen) return '  LEFT('+baseExpr+', '+truncLen+')'; return '  '+baseExpr;
         }
       }),
