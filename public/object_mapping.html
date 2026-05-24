@@ -2043,6 +2043,16 @@ function persistMappingToSavedJob(){
       warnings: _lastTruncWarnings ? _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen) : (existing.warnings||[])
     });
     localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,100)));
+    // Schedule an auto-version snapshot. De-bounced 3s in the parent
+    // window. If we're in an iframe, the parent's CygenixSync owns the
+    // version-create call; we hop to it via window.parent. If the parent
+    // doesn't have the function (older deployed build), fail silently —
+    // the job is already in localStorage, version-control is an add-on
+    // safety net, not the path of correctness.
+    try {
+      const fn = (window.parent && window.parent.scheduleAutoVersion) || window.scheduleAutoVersion;
+      if (typeof fn === 'function') fn(editJobId, 'mapping/SQL saved');
+    } catch {}
   }catch(e){ /* non-fatal */ }
 }
 
@@ -3826,6 +3836,13 @@ function saveAsJob(){
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
+    // Schedule auto-version snapshot in the parent (or self if not in
+    // an iframe). De-bounced + content-hashed in the parent; safe to call
+    // every save.
+    try {
+      const fn = (window.parent && window.parent.scheduleAutoVersion) || window.scheduleAutoVersion;
+      if (typeof fn === 'function') fn(newId, editJobId ? 'edited' : 'created');
+    } catch {}
     // Track the saved job for subsequent in-editor edits (e.g. Remove unused)
     // so they can write back to the same record instead of being lost.
     const wasNew = !editJobId;
@@ -3872,6 +3889,11 @@ function saveAsJob(){
     if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
     else jobs.unshift(job);
     localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
+    // Schedule auto-version snapshot (same pattern as single-map save).
+    try {
+      const fn = (window.parent && window.parent.scheduleAutoVersion) || window.scheduleAutoVersion;
+      if (typeof fn === 'function') fn(newId, editJobId ? 'OTM edited' : 'OTM created');
+    } catch {}
     const wasNew = !editJobId;
     editJobId = newId;
     if(wasNew){
@@ -4227,6 +4249,11 @@ function renderLoadMapList(){
   const projectFilter=($('load-map-project-filter')?.value)||'__all__';
 
   let filtered=jobs.filter(j=>{
+    // Soft-delete: never show deleted jobs in the load-map picker. The
+    // dashboard's "Show deleted" view is the canonical place to recover
+    // them — exposing them here would let the analyst accidentally
+    // re-open a deleted job and re-save it as live, defeating the trash.
+    if (j._deleted) return false;
     // Project filter
     if (projectFilter==='__none__'){
       if (j.projectId) return false;
@@ -4326,11 +4353,16 @@ function deleteSavedJob(jobId){
   const jobs=_getAllSavedJobs();
   const job=jobs.find(j=>j.id===jobId);
   if(!job) return;
-  if(!confirm('Delete saved map "'+(job.name||'(unnamed)')+'"?\n\nThis cannot be undone.')) return;
-  const remaining=jobs.filter(j=>j.id!==jobId);
-  localStorage.setItem('cygenix_jobs',JSON.stringify(remaining));
-  showStatus('Deleted map: '+(job.name||'(unnamed)'),'info');
-  // If the deleted job was the one currently being edited, clear edit mode
+  if(!confirm('Move saved map "'+(job.name||'(unnamed)')+'" to Trash?\n\nYou can restore it from the dashboard via "Show deleted" next to + New Migration.')) return;
+  // Soft-delete: flag, don't remove. Mirrors the dashboard's deleteJob
+  // behaviour so both UIs are consistent. The job remains in cygenix_jobs
+  // with _deleted=true; the load-map list filters it out.
+  const idx = jobs.findIndex(j => j && j.id === jobId);
+  if (idx < 0) return;
+  jobs[idx]._deleted = true;
+  jobs[idx]._deletedAt = new Date().toISOString();
+  localStorage.setItem('cygenix_jobs',JSON.stringify(jobs));
+  showStatus('Moved to Trash: '+(job.name||'(unnamed)'),'info');
   if(editJobId===jobId){
     clearEditMode();
   }

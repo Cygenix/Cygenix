@@ -1528,6 +1528,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column">📋 Setup Check</button>
           <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
           <button class="btn btn-ghost" onclick="openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed.">📦 Export Package</button>
+          <button class="btn btn-ghost" id="show-deleted-btn" onclick="toggleShowDeleted()" title="Toggle between active jobs and the Trash (soft-deleted jobs). Restore or permanently delete from the Trash view.">🗑 Show deleted</button>
           <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
         </div>
       </div>
@@ -3714,10 +3715,90 @@ const BATCH_SIZE = 100; // rows per INSERT batch
 function getApiKey() { return sessionStorage.getItem('cygenix_api_key') || ''; }
 function setApiKey(k) { sessionStorage.setItem('cygenix_api_key', k.trim()); }
 
-// Load persisted jobs from localStorage on startup
+// Load persisted jobs from localStorage on startup. Also runs a one-shot
+// migration on legacy jobs: any job without `version` or `lastModified`
+// fields gets sensible defaults seeded in. This way the version chip in
+// the table renders for ALL rows from day one, not just new saves.
+//
+// IMPORTANT: this migration is read-only on first call — we don't write
+// back to localStorage here because that would trigger CygenixSync to
+// push to Cosmos, and we don't want to pollute every key with a metadata
+// "save". The fields appear on the in-memory copy. The next real save
+// (via safeMutateJob etc.) will persist the seeded defaults naturally.
+let _legacyMigrationRun = false;
 function loadPersistedJobs() {
-  try { return JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch { return []; }
+  try {
+    const raw = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    if (!_legacyMigrationRun){
+      let mutated = false;
+      for (const j of raw){
+        if (!j) continue;
+        if (typeof j.version !== 'number'){ j.version = 1; mutated = true; }
+        if (!j.lastModified){ j.lastModified = j.created || new Date().toISOString(); mutated = true; }
+      }
+      // Write the migrated shape back so subsequent loads don't re-migrate.
+      // This is the only place we write a wholesale cygenix_jobs that didn't
+      // originate from an explicit user action, and it runs only once per
+      // page load. If mutated is false (nothing to upgrade), we don't write
+      // — keeps the writes minimal so we don't trigger spurious Cosmos pushes.
+      if (mutated){
+        try { localStorage.setItem('cygenix_jobs', JSON.stringify(raw)); } catch {}
+      }
+      _legacyMigrationRun = true;
+    }
+    return raw;
+  } catch { return []; }
 }
+
+// ── Suspicious-shrink guard ────────────────────────────────────────────────
+//
+// Defensive observer for the cygenix_jobs key. If anything writes a smaller
+// (non-empty → non-zero shrink, OR active count drops) job list compared to
+// what's currently in localStorage, log a console warning with the stack so
+// future repeats of the May-2026 data loss incident are debuggable.
+//
+// We DON'T block the write — too brittle, and the user has legitimate
+// pathways to shrink (hard-delete from Trash). We just leave a trail.
+//
+// Soft-delete is the structural defence; this is the audit trail.
+(function installShrinkGuard(){
+  if (typeof Storage === 'undefined' || !window.localStorage) return;
+  const orig = Storage.prototype.setItem;
+  // Only install once even on hot-reload
+  if (orig._cygenixShrinkGuardInstalled) return;
+  const guarded = function(key, value){
+    try {
+      if (key === 'cygenix_jobs' && typeof value === 'string'){
+        const before = (function(){
+          try { return JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); }
+          catch { return []; }
+        })();
+        let after = [];
+        try { after = JSON.parse(value); } catch {}
+        if (Array.isArray(before) && Array.isArray(after)){
+          const beforeActive = before.filter(j => j && !j._deleted).length;
+          const afterActive  = after.filter(j => j && !j._deleted).length;
+          // Threshold: warn on any drop of 2+ active jobs in a single write.
+          // 1-job drops are normal (deleteJob, etc). 2+ in one write is the
+          // signature of the Agentive batch wipe.
+          if (beforeActive - afterActive >= 2){
+            try {
+              console.warn(
+                '[Cygenix] cygenix_jobs shrink detected: ' +
+                beforeActive + ' active → ' + afterActive + ' active. ' +
+                'If this was not a deliberate batch delete, restore from "Show deleted" or Version History.'
+              );
+              console.warn('[Cygenix] shrink stack:', new Error('shrink-guard trace').stack);
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+    return orig.apply(this, arguments);
+  };
+  guarded._cygenixShrinkGuardInstalled = true;
+  Storage.prototype.setItem = guarded;
+})();
 function persistJobs() {
   try {
     // Store last 20 jobs, strip large SQL to keep storage under limits
@@ -4701,6 +4782,10 @@ ${buildWasisSummary(wasisRules, wasisApplicationLog)}`;
 
     state.jobs.unshift(job);
     persistJobs();
+    // Schedule the first auto-version snapshot. This produces the v1
+    // entry in Cosmos's job_versions container so the job has a recovery
+    // point from the moment it's created, not from the first edit.
+    if (typeof scheduleAutoVersion === 'function') scheduleAutoVersion(job.id, 'job created');
     state.totalFilesProcessed += state.files.length;
     addAudit(`Job "${jobName}" complete — ${allTables.length} tables, ${totalRows.toLocaleString()} rows, ${Math.ceil(migrationSQL.length/1024)}KB SQL generated`);
     updateStats();
@@ -6969,6 +7054,17 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
     '-- Staging:    ' + stagingName + '   (' + (mode==='physical'?'physical table, dropped at end':'global temp, visible to other sessions, auto-drops on last disconnect') + ')',
     '-- Generated:  ' + new Date().toISOString(),
     '-- Run on any SQL Server. No Cygenix or source connection required.',
+    '--',
+    '-- IMPORTANT — DRY-RUN BY DEFAULT:',
+    '--   Section 4 wraps the migration INSERT in BEGIN TRAN. The flag',
+    '--   @Commit at the top of Section 4 controls whether the transaction',
+    '--   COMMITs or ROLLBACKs at the end:',
+    '--       @Commit = 0  → dry-run (rolls back; nothing persists to target)',
+    '--       @Commit = 1  → real load (commits to target)',
+    '--   Default is 0 so re-running this file is safe. Flip to 1 when you',
+    '--   have validated the dry-run output and are ready to persist.',
+    '--   Identity values are consumed even on rollback — the first commit',
+    '--   will not start at 1 if you ran dry-run first.',
     sepLine,
     ''
   ].join('\n');
@@ -7004,10 +7100,50 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
   // Allow GC of the row array
   rows.length = 0;
 
-  // Section 5: migration with rewritten source references
+  // Section 4: migration with rewritten source references, wrapped in a
+  // dry-run-by-default BEGIN TRAN.
+  //
+  // Semantics:
+  //   • @Commit defaults to 0 → ROLLBACK at the end. Nothing persists.
+  //   • Analyst flips to 1 → COMMIT. Real load.
+  //   • Any T-SQL error inside the TRY auto-rolls back via XACT_ABORT ON.
+  //   • The migration SQL may itself contain BEGIN TRAN/COMMIT/ROLLBACK
+  //     (OTM scripts do this); nested transactions share the outermost
+  //     decision, so an inner COMMIT bumps @@TRANCOUNT but doesn't make
+  //     anything permanent — our outer ROLLBACK still wipes it. An inner
+  //     ROLLBACK, however, rolls back everything to the outermost level
+  //     and sets @@TRANCOUNT = 0, which can cause "no transaction to
+  //     commit" errors at the outer COMMIT. SQL Server's nested-TRAN
+  //     semantics are well known to be sharp; we add IF @@TRANCOUNT > 0
+  //     guards on both branches to handle either case cleanly.
+  const migrationBody = _pkgRewriteMigration(job.insertSQL || job.migrationSQL || '', srcTable, srcDb, stagingName);
   const migration =
-    sepLine + '\n-- Section 4: Migration (source ref rewritten to '+stagingName+')\n' + sepLine + '\n' +
-    _pkgRewriteMigration(job.insertSQL || job.migrationSQL || '', srcTable, srcDb, stagingName) + '\n';
+    sepLine + '\n-- Section 4: Migration (dry-run by default — set @Commit=1 to persist)\n' +
+    '-- Source refs rewritten to ' + stagingName + '\n' + sepLine + '\n' +
+    'DECLARE @Commit BIT = 0;  -- ← FLIP TO 1 TO ACTUALLY LOAD INTO TARGET\n' +
+    '\n' +
+    'SET XACT_ABORT ON;\n' +
+    'SET NOCOUNT ON;\n' +
+    'BEGIN TRY\n' +
+    '  BEGIN TRAN;\n' +
+    '\n' +
+    migrationBody + '\n' +
+    '\n' +
+    '  IF @Commit = 1\n' +
+    '  BEGIN\n' +
+    '    IF @@TRANCOUNT > 0 COMMIT TRAN;\n' +
+    "    PRINT 'CYGENIX: @Commit=1 → COMMITTED. Rows persisted to target.';\n" +
+    '  END\n' +
+    '  ELSE\n' +
+    '  BEGIN\n' +
+    '    IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
+    "    PRINT 'CYGENIX: @Commit=0 → ROLLED BACK (dry-run). Set @Commit=1 and re-run to persist.';\n" +
+    '  END\n' +
+    'END TRY\n' +
+    'BEGIN CATCH\n' +
+    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
+    '  THROW;\n' +
+    'END CATCH;\n';
 
   // Section 6: cleanup
   const cleanup = mode === 'physical'
@@ -7183,13 +7319,45 @@ function jobsTableHTML(jobs) {
     '<th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
     '<th>Exec Status</th><th>Last Run</th><th>Actions</th>' +
     '</tr></thead><tbody>' +
-    jobs.map((j, idx) => `<tr id="job-row-${j.id}" data-job-id="${j.id}" ondragover="onJobRowDragOver(event)" ondragleave="onJobRowDragLeave(event)" ondrop="onJobRowDrop(event,'${j.id}')" ondragend="onJobRowDragEnd(event)">
+    jobs.map((j, idx) => {
+      // Version + last-modified chip text. Falls back gracefully when a job
+      // pre-dates auto-versioning (no j.version yet) by showing just the
+      // created date.
+      const v = (typeof j.version === 'number' && j.version > 0) ? ('v'+j.version) : '';
+      const lm = j.lastModified || j.created || null;
+      const lmStr = lm ? new Date(lm).toLocaleString('en-GB', {day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+      // Combined chip — small, accent colour, sits next to the type badge.
+      // Renders as "v3 · 24/05/26, 14:32" when both are present.
+      const versionChip = (v || lmStr)
+        ? `<span style="font-size:9px;padding:1px 6px;margin-left:4px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono);font-weight:500" title="Auto-versioned on each meaningful change. Click 🕐 to see full history.">${v}${v&&lmStr?' · ':''}${lmStr}</span>`
+        : '';
+      // Conditional action buttons. Soft-deleted rows show Restore + Hard
+      // Delete only — everything else is hidden because edit/generate
+      // operations on a deleted row don't make sense.
+      const isDel = !!j._deleted;
+      const actions = isDel ? `
+          <button class="btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.25)" onclick="restoreJob('${j.id}')" title="Restore from Trash">↩ Restore</button>
+          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="hardDeleteJob('${j.id}')" title="Permanent delete">🗑 Delete forever</button>
+        ` : `
+          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
+          <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
+          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
+          <button class="btn btn-teal" onclick="downloadJobSQL('${j.id}','schema')" title="Download schema SQL">⬇ Schema</button>
+          <button class="btn btn-primary" onclick="downloadJobSQL('${j.id}','migration')" title="Download migration SQL">⬇ Migration</button>
+          <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
+          <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename">✎</button>
+          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Move to Trash">✕</button>
+        `;
+      const rowStyle = isDel ? 'opacity:0.6;background:rgba(240,70,70,0.04)' : '';
+      return `<tr id="job-row-${j.id}" data-job-id="${j.id}" style="${rowStyle}" ondragover="onJobRowDragOver(event)" ondragleave="onJobRowDragLeave(event)" ondrop="onJobRowDrop(event,'${j.id}')" ondragend="onJobRowDragEnd(event)">
       <td class="job-drag-cell" style="text-align:center;color:var(--text3);user-select:none" title="Drag to reorder"><span class="job-drag-handle" draggable="true" ondragstart="onJobRowDragStart(event,'${j.id}')" style="cursor:grab;font-size:14px;line-height:1;display:inline-block;padding:2px 4px">⠿</span></td>
       <td style="text-align:center"><input type="checkbox" class="job-select-cb" data-job-id="${j.id}" onchange="onJobSelectToggle()" style="cursor:pointer" ${selectedJobIds.has(j.id)?'checked':''}></td>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${idx+1}</td>
       <td>
         <span class="job-name" id="job-name-${j.id}" ondblclick="startRenameJob('${j.id}')" title="${escapeAttr(j.name)} — double-click to rename">${j.name}</span>
         ${j.jobType==='one-to-many'?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--teal-bg);color:var(--teal);font-family:var(--mono)">1→M</span>':j.jobType==='sql'?' <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--accent-glow);color:var(--accent);font-family:var(--mono)">SQL</span>':''}
+        ${versionChip}
+        ${isDel ? ` <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--red-bg);color:var(--red);font-family:var(--mono)" title="Deleted ${j._deletedAt? new Date(j._deletedAt).toLocaleString('en-GB'):''}">DELETED</span>` : ''}
         <span class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</span>
       </td>
       <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
@@ -7199,17 +7367,9 @@ function jobsTableHTML(jobs) {
       <td>${jobStatusBadge(j)}</td>
       <td>${lastRunText(j)}</td>
       <td>
-        <div class="jobs-actions">
-          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
-          <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
-          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
-          <button class="btn btn-teal" onclick="downloadJobSQL('${j.id}','schema')" title="Download schema SQL">⬇ Schema</button>
-          <button class="btn btn-primary" onclick="downloadJobSQL('${j.id}','migration')" title="Download migration SQL">⬇ Migration</button>
-          <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
-          <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename">✎</button>
-          <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Delete">✕</button>
-        </div>
-      </td></tr>`).join('') + '</tbody></table>';
+        <div class="jobs-actions">${actions}</div>
+      </td></tr>`;
+    }).join('') + '</tbody></table>';
 }
 
 // ── Row reordering (drag-and-drop) ────────────────────────────────────────
@@ -7352,10 +7512,14 @@ function confirmRenameJob(jobId) {
   if (!input) return;
   const newName = input.value.trim();
   if (!newName) { cancelRenameJob(jobId); return; }
-  const job = state.jobs.find(j => j.id === jobId);
-  if (job) {
-    job.name = newName;
-    saveJobs();
+  // Atomic mutation. Also updates the in-memory state.jobs for immediate
+  // render, then schedules a version-create so the rename produces a
+  // recoverable snapshot.
+  const ok = safeMutateJob(jobId, j => { j.name = newName; });
+  if (ok){
+    const inMem = state.jobs.find(j => j.id === jobId);
+    if (inMem) inMem.name = newName;
+    if (typeof scheduleAutoVersion === 'function') scheduleAutoVersion(jobId, 'renamed');
     showToast('Job renamed to "' + newName + '"');
   }
   renderAllJobs();
@@ -7370,15 +7534,218 @@ function cancelRenameJob(jobId) {
 function deleteJob(jobId) {
   const job = state.jobs.find(j => j.id === jobId);
   if (!job) return;
-  if (!confirm('Delete job "' + job.name + '"? This cannot be undone.')) return;
-  state.jobs = state.jobs.filter(j => j.id !== jobId);
-  saveJobs();
+  if (!confirm('Move job "' + job.name + '" to Trash? You can restore it from "Show deleted" next to + New Migration.')) return;
+  // SOFT delete — keep the row, flag it. This is the core safety net:
+  // never silently remove a job from the array. Hard-deletes only happen
+  // from the "View deleted" panel with a second confirm.
+  safeMutateJob(jobId, j => { j._deleted = true; j._deletedAt = new Date().toISOString(); });
+  // Snapshot the deletion as a version-create so the user has a recovery
+  // point if they hard-delete later and regret it.
+  if (typeof scheduleAutoVersion === 'function') scheduleAutoVersion(jobId, 'soft-deleted');
+  state.jobs = loadPersistedJobs();
   renderAllJobs();
   renderDashboard();
-  showToast('Job deleted');
+  showToast('Job moved to Trash');
 }
 
+// Permanent delete — only callable from the "Show deleted" panel. Two
+// confirms because the row is gone for good (apart from version-control
+// snapshots in Cosmos, which the user has to recover from manually).
+function hardDeleteJob(jobId){
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) return;
+  if (!confirm('PERMANENTLY delete "' + job.name + '"? Version history in Cosmos remains, but the job will not appear in the dashboard again.')) return;
+  if (!confirm('Are you sure? This cannot be undone from the UI.')) return;
+  safeRemoveJob(jobId);
+  state.jobs = loadPersistedJobs();
+  renderAllJobs();
+  renderDashboard();
+  showToast('Job permanently deleted');
+}
+
+// Restore a soft-deleted job. Clears the _deleted flag.
+function restoreJob(jobId){
+  safeMutateJob(jobId, j => { delete j._deleted; delete j._deletedAt; });
+  state.jobs = loadPersistedJobs();
+  renderAllJobs();
+  renderDashboard();
+  showToast('Job restored');
+}
+
+// Toggle the "Show deleted" view. Backed by a single global flag that
+// renderAllJobs reads when it filters out _deleted rows.
+let _showDeletedJobs = false;
+function toggleShowDeleted(){
+  _showDeletedJobs = !_showDeletedJobs;
+  renderAllJobs();
+  // Update the dropdown's label so the user can see the active state.
+  const btn = document.getElementById('show-deleted-btn');
+  if (btn) btn.textContent = _showDeletedJobs ? '↩ Hide deleted' : '🗑 Show deleted';
+}
+
+// ── safeMutateJob / safeRemoveJob / safeUpsertJob ──────────────────────────
+//
+// All writes to cygenix_jobs go through these helpers. They are the only
+// places that touch the array. Each one does an ATOMIC read-modify-write
+// with ID-based lookup so concurrent saves can't silently lose entries.
+//
+// The original 9-job wipe almost certainly came from a non-atomic save:
+// reader saw an empty/stale array, modifier added one job, writer replaced
+// the entire array with the modified one. The race window between read
+// and write was wide because Cygenix-sync could pull a stale Cosmos copy
+// in the middle. Single-entry mutations via these helpers close that gap.
+//
+// IMPORTANT: never call localStorage.setItem('cygenix_jobs', …) outside
+// these helpers. The CygenixSync.setItem patch propagates to Cosmos —
+// a bad write here = a bad write to the cloud.
+function safeMutateJob(jobId, mutator){
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const idx = jobs.findIndex(j => j && j.id === jobId);
+    if (idx < 0) return false;
+    mutator(jobs[idx]);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+    return true;
+  } catch (e) { return false; }
+}
+
+function safeRemoveJob(jobId){
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const next = jobs.filter(j => !(j && j.id === jobId));
+    if (next.length === jobs.length) return false;  // not found
+    localStorage.setItem('cygenix_jobs', JSON.stringify(next));
+    return true;
+  } catch (e) { return false; }
+}
+
+// Add OR update a job by ID. Used by all bulk-create paths. The key
+// safety property: if the job already exists, we MERGE the new fields
+// into the existing record instead of overwriting it. This protects
+// against an Agentive batch flow that "creates" a job whose ID already
+// exists from a previous run — we want to preserve fields the previous
+// run captured (e.g. version, lastModified) and only update what's new.
+function safeUpsertJob(job){
+  if (!job || !job.id){ return false; }
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const idx = jobs.findIndex(j => j && j.id === job.id);
+    if (idx >= 0){
+      jobs[idx] = Object.assign({}, jobs[idx], job);
+    } else {
+      jobs.unshift(job);
+    }
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+    return true;
+  } catch (e) { return false; }
+}
+
+// ── Auto-versioning ────────────────────────────────────────────────────────
+//
+// When a job's meaningful content changes, fire a version-create call to
+// Cosmos so a snapshot is preserved. "Meaningful" = mapping, schemaSQL,
+// insertSQL, name, sourceTable, targetTable. We don't version on execution
+// status, lastRun, drag-reorder, etc.
+//
+// De-bounced per-jobId so a burst of edits in object_mapping.html doesn't
+// produce 20 versions. Content-hashed so a save without real changes
+// is silent (no version, no Cosmos round-trip).
+const _autoVersionDebounce = new Map();    // jobId → setTimeout handle
+const _autoVersionLastHash = new Map();    // jobId → last seen hash
+const VERSION_DEBOUNCE_MS = 3000;
+
+async function _hashJob(j){
+  // Stable JSON of meaningful fields only. Order matters for the hash; we
+  // pick fields explicitly so accidental additions to the job shape don't
+  // invalidate the hash.
+  const stable = JSON.stringify({
+    name:        j.name || '',
+    sourceTable: j.sourceTable || j.source || '',
+    targetTable: j.targetTable || j.target || '',
+    schemaSQL:   j.schemaSQL   || '',
+    insertSQL:   j.insertSQL   || j.migrationSQL || '',
+    columnMapping: j.columnMapping || []
+  });
+  // Web Crypto API — produces SHA-256 hex. Matches backend's hash field shape.
+  try {
+    const buf = new TextEncoder().encode(stable);
+    const out = await crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(out)).map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch { return stable.length + ':' + (stable.charCodeAt(0)||0); }  // weak fallback
+}
+
+function scheduleAutoVersion(jobId, note){
+  if (!jobId) return;
+  // Clear any pending de-bounce for this jobId
+  const existing = _autoVersionDebounce.get(jobId);
+  if (existing) clearTimeout(existing);
+  // Schedule the actual version-create call
+  const handle = setTimeout(() => {
+    _autoVersionDebounce.delete(jobId);
+    _doAutoVersion(jobId, note);
+  }, VERSION_DEBOUNCE_MS);
+  _autoVersionDebounce.set(jobId, handle);
+}
+
+async function _doAutoVersion(jobId, note){
+  try {
+    if (typeof CygenixSync === 'undefined') return;
+    const userId = CygenixSync.getUserId && CygenixSync.getUserId();
+    if (!userId) return;
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const job = jobs.find(j => j && j.id === jobId);
+    if (!job) return;
+    const hash = await _hashJob(job);
+    if (_autoVersionLastHash.get(jobId) === hash) return;  // no-op — content unchanged
+    const url = CygenixSync.apiBase + '/version-create' + (CygenixSync.funcCode ? '?code='+CygenixSync.funcCode : '');
+    const body = {
+      jobId,
+      userId,
+      label: 'auto',
+      note: note || 'auto-save',
+      hash,
+      payload: job
+    };
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify(body)
+    });
+    if (!r.ok) return;
+    const result = await r.json().catch(() => null);
+    _autoVersionLastHash.set(jobId, hash);
+    // Update the in-job version + lastModified fields locally so the badge
+    // renders correctly without needing a re-fetch.
+    const newVersion = result?.version || ((job.version || 0) + 1);
+    safeMutateJob(jobId, j => {
+      j.version = newVersion;
+      j.lastModified = new Date().toISOString();
+    });
+    // Refresh the table only — don't disrupt other state.
+    if (typeof renderAllJobs === 'function') renderAllJobs();
+  } catch {
+    // Auto-version failures are deliberately silent. We don't want a
+    // network blip to break the user's workflow; the next save will
+    // retry. The user's data is already safely in cygenix_jobs locally
+    // before we ever attempt this.
+  }
+}
+
+window.safeMutateJob   = safeMutateJob;
+window.safeRemoveJob   = safeRemoveJob;
+window.safeUpsertJob   = safeUpsertJob;
+window.restoreJob      = restoreJob;
+window.hardDeleteJob   = hardDeleteJob;
+window.toggleShowDeleted = toggleShowDeleted;
+window.scheduleAutoVersion = scheduleAutoVersion;
+
 function saveJobs() {
+  // Kept for backward compatibility but discouraged for new code. Use
+  // safeMutateJob / safeUpsertJob for per-job changes instead. This still
+  // does a full-array write, which is the dangerous pattern we want to
+  // retire. Any caller that absolutely needs a full re-serialise (e.g.
+  // drag-reorder, where positional order is the change being saved) is
+  // legitimate; everything else should migrate.
   try { localStorage.setItem('cygenix_jobs', JSON.stringify(state.jobs)); } catch {}
 }
 
@@ -8701,6 +9068,16 @@ function renderAllJobs() {
     shown = state.jobs.filter(j => !j.projectId);
   } else {
     shown = state.jobs.filter(j => j.projectId === filterValue);
+  }
+
+  // Soft-delete filter. By default we hide _deleted jobs from every project
+  // view. When the user clicks "Show deleted" we flip to showing ONLY the
+  // deleted ones — gives them a focused recovery view without polluting
+  // the normal job list.
+  if (_showDeletedJobs){
+    shown = shown.filter(j => j._deleted);
+  } else {
+    shown = shown.filter(j => !j._deleted);
   }
 
   // Count display
