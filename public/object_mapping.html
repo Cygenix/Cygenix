@@ -534,6 +534,8 @@ body.cyg-collapsed{padding-left:54px}
               </div>
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                 <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
+                <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table (common Agentive cleanup)">🧹 Clean dead source refs</button>
+                <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
               </div>
             </div>
 
@@ -556,6 +558,8 @@ body.cyg-collapsed{padding-left:54px}
               </div>
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                 <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
+                <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table (common Agentive cleanup)">🧹 Clean dead source refs</button>
+                <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
               </div>
             </div>
             <div id="single-empty" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
@@ -607,6 +611,8 @@ body.cyg-collapsed{padding-left:54px}
           </div>
           <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap" id="otm-actions" style="display:none">
             <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()">⚡ Generate cursor SQL</button>
+            <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table">🧹 Clean dead source refs</button>
+            <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
           </div>
         </div>
       </div>
@@ -2072,6 +2078,182 @@ function undoRemoveUnmappedCols(){
 
 let _hidingUnmapped = false;
 
+// ── Utility: clear srcCol on rows that reference a non-existent source column
+//
+// Agentive's auto-mapper occasionally produces rows where srcCol points at a
+// column name that doesn't exist on the source table (e.g. it invented a
+// plausible-sounding name or referenced an older schema). These rows survive
+// Generate SQL but produce "Invalid column name" errors at runtime. This
+// utility scans every mapping row and clears srcCol where it can't be
+// resolved. It does NOT delete the row — the target column may still be
+// useful (e.g. you might want to map it manually, or set a literal value
+// later). Joined columns and literal-only rows are left untouched.
+function removeDeadSourceMappings(){
+  if(!srcTable){ showStatus('Load a source table first','err'); return; }
+
+  // Build set of valid source col names — include both raw table columns and
+  // any join columns currently configured.
+  const validNames = new Set();
+  for (const c of (srcTable.columns||[])){
+    validNames.add(typeof c==='string'?c:c.name);
+  }
+  try {
+    const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+    for (const c of joinCols) validNames.add(c.name);
+  } catch {}
+
+  // Scan based on current mode. Returns {rows: [{tgt, oldSrc, scope}], count}
+  function scan(){
+    const out = [];
+    if (mode === 'single'){
+      for (const m of columnMapping){
+        if (m.fromJoin) continue;  // join refs are validated by the join builder
+        if (m.literalValue) continue;
+        if (!m.srcCol) continue;   // already empty
+        if (!validNames.has(m.srcCol)){
+          out.push({ tgtCol: m.tgtCol || '(no target)', oldSrc: m.srcCol, scope: '' });
+        }
+      }
+    } else {
+      for (const tt of (targetTables||[])){
+        for (const m of (tt.mappings||[])){
+          if (m.fromJoin) continue;
+          if (m.literalValue) continue;
+          if (!m.srcCol) continue;
+          if (!validNames.has(m.srcCol)){
+            out.push({ tgtCol: m.tgtCol || '(no target)', oldSrc: m.srcCol, scope: tt.fullName||tt.name||'' });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  const dead = scan();
+  if(!dead.length){ showStatus('No dead source references found','info'); return; }
+
+  // Show the user what we're about to do, then confirm.
+  const preview = dead.slice(0, 12).map(d =>
+    `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} ← ${d.oldSrc}`
+  ).join('\n');
+  const more = dead.length > 12 ? `\n  …and ${dead.length-12} more` : '';
+  const ok = confirm(
+    `Found ${dead.length} mapping${dead.length===1?'':'s'} pointing at source columns that don't exist:\n\n` +
+    preview + more + '\n\n' +
+    'Clear the source column on these rows? (Target rows are kept so you can re-map.)'
+  );
+  if(!ok) return;
+
+  // Apply
+  let cleared = 0;
+  if (mode === 'single'){
+    for (const m of columnMapping){
+      if (m.fromJoin || m.literalValue || !m.srcCol) continue;
+      if (!validNames.has(m.srcCol)){ m.srcCol = ''; m.match = ''; cleared++; }
+    }
+    renderMappingTable();
+  } else {
+    for (const tt of (targetTables||[])){
+      for (const m of (tt.mappings||[])){
+        if (m.fromJoin || m.literalValue || !m.srcCol) continue;
+        if (!validNames.has(m.srcCol)){ m.srcCol = ''; m.match = ''; cleared++; }
+      }
+    }
+    if (typeof renderOTMCards === 'function') renderOTMCards();
+  }
+  tryAutoGenSQL();
+  if (typeof persistMappingToSavedJob === 'function') persistMappingToSavedJob();
+  showStatus('Cleared srcCol on '+cleared+' row'+(cleared===1?'':'s')+(editJobId?' and saved':''),'info');
+}
+
+// ── Utility: set transform=DATE_CAST on rows where target is a date type
+//
+// Why this exists: source columns are often NVARCHAR holding date strings,
+// or DATETIME holding values outside the target's range (the classic
+// 0001-01-01 / 9999-12-31 sentinels, or values < 1900 going into a
+// SMALLDATETIME column). A bare INSERT then fails with "out of range"
+// errors. The DATE_CAST transform wraps the source expression in
+// TRY_CONVERT (returning NULL on parse failure) and, for SMALLDATETIME,
+// clamps out-of-range values to NULL via a CASE.
+//
+// We deliberately ONLY touch rows where the *target* is a date type. We
+// don't touch rows where target is a date but the source is also already
+// the same date type with no realistic risk (e.g. both DATETIME2) — those
+// the user can opt into manually if they want defensive casting everywhere.
+function applyDateCasts(){
+  if(!srcTable){ showStatus('Load a source table first','err'); return; }
+
+  // Index of source-col types for risk-classification
+  const srcTypes = new Map();
+  for (const c of (srcTable.columns||[])){
+    if (typeof c === 'object') srcTypes.set(c.name, c.type||'');
+  }
+
+  // Returns list of candidate rows. "Risk" classification:
+  //   • char→date    : always wrap (highest risk)
+  //   • date→smaller : always wrap (range mismatch — e.g. DATETIME → SMALLDATETIME)
+  //   • date→same    : leave alone (already safe)
+  function scan(){
+    const out = [];
+    function consider(m, tgtType, scope){
+      if (!m.srcCol || m.literalValue) return;
+      if (!isDateType(tgtType)) return;
+      const srcT = srcTypes.get(m.srcCol) || '';
+      // Always wrap if source is char OR target is SMALLDATETIME (range risk)
+      // OR source isn't a date at all (covers INT/numeric edge cases).
+      const tgtUp = (tgtType||'').toUpperCase();
+      const srcIsDate = isDateType(srcT);
+      const srcIsChar = isCharType(srcT);
+      const tgtIsSmall = /^SMALLDATETIME\b/i.test(tgtUp);
+      let why = null;
+      if (srcIsChar) why = 'string → date (TRY_CONVERT)';
+      else if (!srcIsDate) why = 'non-date source → date (defensive)';
+      else if (tgtIsSmall) why = 'range clamp (SMALLDATETIME 1900-2079)';
+      // Skip same-family date→date (no real risk)
+      if (!why) return;
+      // Skip if already DATE_CAST
+      if ((m.transform||'').toUpperCase() === 'DATE_CAST') return;
+      out.push({ tgtCol: m.tgtCol, srcCol: m.srcCol, srcType: srcT||'(unknown)', tgtType: tgtType, why, scope, ref: m });
+    }
+    if (mode === 'single'){
+      for (const m of columnMapping){
+        const tgtType = (tgtTable?.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
+        consider(m, tgtType, '');
+      }
+    } else {
+      for (const tt of (targetTables||[])){
+        for (const m of (tt.mappings||[])){
+          const tgtType = (tt.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
+          consider(m, tgtType, tt.fullName||tt.name||'');
+        }
+      }
+    }
+    return out;
+  }
+
+  const cands = scan();
+  if(!cands.length){ showStatus('No date columns need casting','info'); return; }
+
+  const preview = cands.slice(0, 12).map(c =>
+    `  • ${c.scope?'['+c.scope+'] ':''}${c.tgtCol} (${c.tgtType}) ← ${c.srcCol} (${c.srcType})  —  ${c.why}`
+  ).join('\n');
+  const more = cands.length > 12 ? `\n  …and ${cands.length-12} more` : '';
+  const ok = confirm(
+    `Found ${cands.length} date column${cands.length===1?'':'s'} that should be cast safely:\n\n` +
+    preview + more + '\n\n' +
+    'Apply DATE_CAST transform to these rows? Bad values will become NULL instead of erroring at insert time.'
+  );
+  if(!ok) return;
+
+  for (const c of cands){ c.ref.transform = 'DATE_CAST'; }
+
+  if (mode === 'single') renderMappingTable();
+  else if (typeof renderOTMCards === 'function') renderOTMCards();
+  tryAutoGenSQL();
+  if (typeof persistMappingToSavedJob === 'function') persistMappingToSavedJob();
+  showStatus('Applied DATE_CAST to '+cands.length+' row'+(cands.length===1?'':'s')+(editJobId?' and saved':''),'info');
+}
+
 function toggleUnmappedCols(){
   _hidingUnmapped = !_hidingUnmapped;
   const btn = $('btn-toggle-unmapped');
@@ -2118,8 +2300,31 @@ function autoMap(src, tgt){
 }
 
 // Parse numeric length from SQL type e.g. NVARCHAR(50)->50, NVARCHAR(MAX)->Infinity
+// Build a safe date-cast expression for the "Fix date casts" utility.
+// Strategy:
+//   • TRY_CONVERT returns NULL on parse failure instead of erroring — this
+//     is the difference between a clean migration and SQL Server bombing out
+//     mid-batch on a single bad value (the classic Agentive symptom: source
+//     is NVARCHAR with mixed-format dates or empty strings).
+//   • SMALLDATETIME has a hard range of 1900-01-01..2079-06-06 — values
+//     outside this range raise the "out of range" error even on insert.
+//     We clamp by NULLing them out so the row still loads.
+//   • Format style 121 is ODBC canonical (yyyy-mm-dd hh:mi:ss.mmm) — the
+//     least ambiguous parse path for varchar inputs that may already be
+//     ISO-ish or culture-specific.
+function buildDateCastExpr(srcExpr, tgtType){
+  const t = (tgtType||'DATETIME2').toUpperCase().split('(')[0].trim();
+  const cast = 'TRY_CONVERT('+tgtType+','+srcExpr+',121)';
+  if (t === 'SMALLDATETIME'){
+    // Clamp out-of-range to NULL so the insert doesn't blow up.
+    return 'CASE WHEN TRY_CONVERT(DATETIME2,'+srcExpr+',121) NOT BETWEEN \'1900-01-01\' AND \'2079-06-06\' THEN NULL ELSE '+cast+' END';
+  }
+  return cast;
+}
+
 function parseTypeLen(t){ const m=(t||'').match(/\((MAX|\d+)\)/i); if(!m) return Infinity; return m[1].toUpperCase()==='MAX'?Infinity:parseInt(m[1]); }
 function isCharType(t){ return /^(N?VARCHAR|N?CHAR|TEXT|NTEXT)/i.test(t||''); }
+function isDateType(t){ return /^(DATE|TIME|DATETIME(2)?|SMALLDATETIME|DATETIMEOFFSET)\b/i.test((t||'').trim()); }
 
 function renderMappingTable(){
   if(!tgtTable) return;
@@ -2231,7 +2436,7 @@ function renderMappingTable(){
         ${identityBadgeHtml}
       </td>
       <td><select class="map-select" ${disAttr} style="width:80px${identityLocked?';cursor:not-allowed':''}" onchange="updateTransform(${i},this.value)">
-        ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
+        ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
       </select></td>
       <td>
         <input class="map-select" style="width:120px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
@@ -2389,6 +2594,7 @@ function generateSingleSQL(silent){
       case 'UPPER': srcExpr='UPPER('+srcExpr+')'; break;
       case 'LOWER': srcExpr='LOWER('+srcExpr+')'; break;
       case 'CAST': srcExpr='CAST('+srcExpr+' AS '+(tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'NVARCHAR(255)')+')'; break;
+      case 'DATE_CAST': srcExpr=buildDateCastExpr(srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'DATETIME2'); break;
     }
     // Auto-truncate: wrap in LEFT() when source char type is wider than target
     if((m.transform||'NONE')==='NONE'||m.transform==='TRIM'){
@@ -2687,7 +2893,7 @@ function renderOTMCards(){
                 ${identityBadgeHtml}
               </td>
               <td><select class="map-select" ${disAttr} style="width:75px${identityLocked?';cursor:not-allowed':''}" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
-                ${['NONE','TRIM','UPPER','LOWER','CAST'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
+                ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
               </select></td>
               <td><input class="map-select" style="width:110px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
                 ${disAttr}
@@ -3118,6 +3324,7 @@ function generateOTMSQL(){
           case 'UPPER': return '  UPPER('+baseExpr+')';
           case 'LOWER': return '  LOWER('+baseExpr+')';
           case 'CAST': return '  CAST('+baseExpr+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
+          case 'DATE_CAST': return '  '+buildDateCastExpr(baseExpr, tgtCol?.type||'DATETIME2');
           default: if(truncLen) return '  LEFT('+baseExpr+', '+truncLen+')'; return '  '+baseExpr;
         }
       }),
