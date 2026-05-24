@@ -5702,14 +5702,82 @@ function _validateUpdateRow(jobId, status, message){
   }
 }
 
+// ── Topology helpers for cross-DB validation ──────────────────────────────
+// The generated migration SQL uses bare 2-part names ([dbo].[Tbl]) for both
+// source and target — designed to run in a single-server context. Our two
+// connections might point at different databases on the same server (common)
+// or at different servers entirely (also valid). Validation has to bridge
+// that, so we probe both connections first and pick the right strategy.
+async function _validateProbeTopology(srcConn, tgtConn){
+  async function probe(conn){
+    if (!conn) return { server: '', db: '' };
+    try {
+      const res = await impDbCall(conn, {
+        action: 'execute',
+        sql: "SELECT CAST(@@SERVERNAME AS NVARCHAR(255)) AS srv, CAST(DB_NAME() AS NVARCHAR(255)) AS db;"
+      });
+      const row = res?.rows?.[0] || {};
+      return {
+        server: String(row.srv || row.SRV || Object.values(row)[0] || '').trim(),
+        db:     String(row.db  || row.DB  || Object.values(row)[1] || '').trim()
+      };
+    } catch (e) {
+      return { server: '', db: '', error: e.message || String(e) };
+    }
+  }
+  const [src, tgt] = await Promise.all([probe(srcConn), probe(tgtConn)]);
+  // sameServer is meaningful only when both reads succeed AND both servers
+  // are non-empty. An empty string match would falsely conclude "same".
+  const sameServer = !!(src.server && tgt.server && src.server.toLowerCase() === tgt.server.toLowerCase());
+  return { sameServer, src, tgt };
+}
+
+// Rewrite the bare 2-part source-table references in the generated SQL to
+// 3-part [srcDb].[schema].[name] so the validation can run on the target
+// connection and still resolve the source table via cross-database access
+// (works when both DBs live on the same SQL Server instance, which is the
+// common Cygenix Kennedys-style topology).
+//
+// We do a targeted, word-bounded replacement of the EXACT 2-part literal
+// the generator emits. We deliberately don't try to parse the SQL — false
+// positives on a coincidentally-named target table would be far worse than
+// missing an edge case. If the user has joins to other source-side tables,
+// those have their own references and would need similar treatment — for
+// now we cover only the primary source table, which is what the failure
+// mode in the field shows ('Invalid object name dbo.Client_DM').
+function _validateRewriteForCrossDb(sql, sourceTableFull, srcDb){
+  if (!srcDb || !sourceTableFull) return sql;
+  // Build the bare and qualified forms. sourceTableFull is "schema.name".
+  const parts = String(sourceTableFull).split('.');
+  if (parts.length !== 2) return sql;
+  const schema = parts[0];
+  const name   = parts[1];
+  // The generator quotes with square brackets — match that exact form.
+  // Escape special regex chars in case schema/table names contain them.
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const bare = `\\[${esc(schema)}\\]\\.\\[${esc(name)}\\]`;
+  const qualified = `[${srcDb}].[${schema}].[${name}]`;
+  // Don't rewrite if it's already 3-part somewhere in the SQL — defensive.
+  const alreadyQualified = new RegExp(`\\[[^\\]]+\\]\\.\\[${esc(schema)}\\]\\.\\[${esc(name)}\\]`, 'i');
+  if (alreadyQualified.test(sql)) return sql;
+  const re = new RegExp(bare, 'gi');
+  return sql.replace(re, qualified);
+}
+
 async function startValidate(){
   if (_validate.running) return;
   if (!_validate.queue.length) return;
 
-  // Resolve target connection once. Without it nothing can run.
+  // Need both connections: target to RUN against, source to PROBE for db
+  // name (and as fallback for cross-server data movement).
   const tgtConn = (typeof impGetConn === 'function') ? impGetConn('tgt') : '';
+  const srcConn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
   if (!tgtConn){
     alert('No target database connection configured. Set one in Dashboard → Connections.');
+    return;
+  }
+  if (!srcConn){
+    alert('No source database connection configured. The validator needs to discover the source database name to qualify cross-database references. Set the source in Dashboard → Connections.');
     return;
   }
 
@@ -5718,21 +5786,75 @@ async function startValidate(){
   _validate.running = true;
   _validate.cancelled = false;
   document.getElementById('validate-start-btn').disabled = true;
-  document.getElementById('validate-start-btn').textContent = 'Running…';
+  document.getElementById('validate-start-btn').textContent = 'Probing…';
   _validateRenderList();
+  document.getElementById('validate-status').textContent = 'Checking source/target topology…';
+
+  // Probe topology once for the whole run
+  let topo;
+  try {
+    topo = await _validateProbeTopology(srcConn, tgtConn);
+  } catch (e){
+    document.getElementById('validate-status').innerHTML =
+      `<span style="color:var(--red)">Could not probe connections: ${(e.message||e).toString().slice(0,200)}</span>`;
+    document.getElementById('validate-start-btn').textContent = 'Failed';
+    document.getElementById('validate-cancel-btn').textContent = 'Close';
+    _validate.running = false;
+    return;
+  }
+  if (topo.src.error || topo.tgt.error){
+    const errs = [];
+    if (topo.src.error) errs.push('Source: ' + topo.src.error);
+    if (topo.tgt.error) errs.push('Target: ' + topo.tgt.error);
+    document.getElementById('validate-status').innerHTML =
+      `<span style="color:var(--red)">Topology probe failed — ${errs.join(' · ').slice(0,300)}</span>`;
+    document.getElementById('validate-start-btn').textContent = 'Failed';
+    document.getElementById('validate-cancel-btn').textContent = 'Close';
+    _validate.running = false;
+    return;
+  }
+
+  document.getElementById('validate-start-btn').textContent = 'Running…';
+
+  // Pick a mode. "same-server" = run wrapped SQL on target, with source refs
+  // rewritten to 3-part. "cross-server" = not implemented in this build —
+  // fail with clear guidance so the user can set up a linked server or
+  // request the literal-values fallback if that's not viable.
+  const mode = topo.sameServer ? 'same-server' : 'cross-server';
+  const banner = (mode === 'same-server')
+    ? `Same-server topology (${topo.src.server || '?'}) — source [${topo.src.db}] qualified into target connection.`
+    : `Different servers detected (src: ${topo.src.server || '?'}, tgt: ${topo.tgt.server || '?'}). Validation will be skipped — set up a linked server or run validation manually for now.`;
+
+  document.getElementById('validate-status').textContent = banner;
+
+  if (mode !== 'same-server'){
+    // Mark every queued job as skipped with a clear reason.
+    for (const j of _validate.queue){
+      _validateUpdateRow(j.id, 'fail', 'Skipped — different-server topology not yet supported');
+      _validate.results.push({ jobName: j.name, ok: false, message: 'Skipped — different-server topology' });
+    }
+    document.getElementById('validate-start-btn').textContent = 'Done';
+    document.getElementById('validate-cancel-btn').textContent = 'Close';
+    _validate.running = false;
+    if (typeof showToast === 'function') showToast('Validate skipped: cross-server topology');
+    return;
+  }
 
   for (let i = 0; i < _validate.queue.length; i++){
     if (_validate.cancelled) break;
     const job = _validate.queue[i];
     document.getElementById('validate-status').textContent =
-      `Validating ${i+1} of ${_validate.queue.length}: ${job.name}`;
+      `Validating ${i+1} of ${_validate.queue.length}: ${job.name} · ${banner}`;
     _validateUpdateRow(job.id, 'running', 'running…');
 
-    const sql = job.insertSQL || job.migrationSQL || '';
-    const wrapped = buildValidationSQL(sql, sampleSize);
+    const rawSql = job.insertSQL || job.migrationSQL || '';
+    // Rewrite source 2-part → 3-part using the discovered source db name.
+    // The job stores the source table as "schema.name" in sourceTable/source.
+    const srcTableFull = job.sourceTable || job.source || '';
+    const rewritten = _validateRewriteForCrossDb(rawSql, srcTableFull, topo.src.db);
+    const wrapped = buildValidationSQL(rewritten, sampleSize);
 
     try {
-      // Fresh AbortController per job so Cancel only kills the current request.
       _validate.abortController = new AbortController();
       const res = await impDbCall(tgtConn, { action: 'execute', sql: wrapped });
       if (res && res.error){
@@ -5759,18 +5881,21 @@ async function startValidate(){
   document.getElementById('validate-status').innerHTML =
     `<span style="color:var(--green)">${okN} passed</span> · ` +
     `<span style="color:var(--red)">${failN} failed</span> · ` +
-    `<span style="color:var(--text3)">${skipN} skipped</span>${tail}`;
+    `<span style="color:var(--text3)">${skipN} skipped</span>${tail} · ` +
+    `<span style="color:var(--text3)">${mode}</span>`;
   document.getElementById('validate-start-btn').textContent = 'Done';
   document.getElementById('validate-cancel-btn').textContent = 'Close';
 
   if (typeof showToast === 'function') showToast(`Validate: ${okN} pass, ${failN} fail, ${skipN} skip${tail}`);
-  if (typeof addAudit === 'function') addAudit(`Validate: ${okN} passed, ${failN} failed, ${skipN} skipped${tail} (sample ${sampleSize})`);
+  if (typeof addAudit === 'function') addAudit(`Validate: ${okN} passed, ${failN} failed, ${skipN} skipped${tail} (sample ${sampleSize}, ${mode})`);
 }
 
 window.openValidateModal  = openValidateModal;
 window.closeValidateModal = closeValidateModal;
 window.startValidate      = startValidate;
 window.buildValidationSQL = buildValidationSQL;  // exposed for unit-testing from console
+window._validateProbeTopology    = _validateProbeTopology;
+window._validateRewriteForCrossDb = _validateRewriteForCrossDb;
 
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
