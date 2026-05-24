@@ -569,11 +569,21 @@ const TOOLS = [
       properties: {
         summary: {
           type: 'string',
-          description: '2-4 sentences explaining what was proposed and why. The user reads this first.',
+          description: `2-4 sentences explaining what was proposed and why. The user reads this first.
+
+STRICT RULES — the summary must accurately reflect what you actually emitted as propose_table_mapping calls. Violating these is misleading and will be flagged:
+
+1. Describe ONLY the pairs you actually called propose_table_mapping for. Do not describe pairs you analysed, looked at, or intended to map but did not emit a propose_table_mapping call for. Phrases like "basic structure confirmed", "structure understood", or any similar wording for a pair you did not emit are forbidden — if you did not emit propose_table_mapping for it, do not list it in the summary.
+
+2. State the count honestly. If you proposed N out of M scoped pairs, say "Proposed N of M scoped pairs" — never overstate. If N < M, briefly say why you stopped (budget, complexity, user input needed) and put the names of the unproposed pairs in decisionsForUser, NOT in the summary as if they were proposals.
+
+3. If you stopped early on purpose (typical when budget guidance says to ask the user which to prioritise), say so plainly: "Stopped after N pairs to ask which of the remaining M-N to prioritise next." Do NOT phrase this as "the remaining pairs require additional budget" — that reads as failure rather than a deliberate checkpoint.
+
+4. Before writing the summary, mentally count your propose_table_mapping calls and make sure the count and names in your summary match exactly.`,
         },
         decisionsForUser: {
           type: 'array',
-          description: 'Optional list of decisions the user should weigh in on before approving (e.g. "Should historical orders before 2020 be migrated?").',
+          description: 'Optional list of decisions the user should weigh in on before approving (e.g. "Should historical orders before 2020 be migrated?"). If you stopped early with unproposed pairs, list them HERE (e.g. {question: "Which remaining pairs should I tackle next?", context: "Unproposed: Client_DM→Client, Site_DM→Site, ..."}) — not in the summary.',
           items: {
             type: 'object',
             required: ['question', 'context'],
@@ -927,6 +937,68 @@ function tool_finalize_proposal(input, proposalState) {
   proposalState.summary = summary;
   proposalState.decisionsForUser = Array.isArray(decisionsForUser) ? decisionsForUser : [];
   proposalState.risks = Array.isArray(risks) ? risks : [];
+
+  // ── Summary honesty check (non-fatal) ────────────────────────────────────
+  // The model has historically described pairs in the summary that it did
+  // not actually emit via propose_table_mapping (e.g. "Phone → Phone (basic
+  // structure confirmed)"). Detect this by checking whether any scoped pair
+  // that the model did NOT propose has its bare table name mentioned in the
+  // summary. If so, log a warning and record it on proposalState so the UI
+  // can flag the gap. We do NOT reject the finalize — that would burn turns
+  // and likely fail again. The UI will show the discrepancy.
+  try {
+    const scoped = Array.isArray(proposalState.scopedPairs) ? proposalState.scopedPairs : [];
+    if (scoped.length > 0) {
+      // Build a set of proposed sourceTable/targetTable bare names (after the
+      // last dot, e.g. "dbo.Address_DM" -> "Address_DM"). Case-insensitive.
+      const bare = (qual) => String(qual || '').split('.').pop().toLowerCase();
+      const proposedNames = new Set();
+      for (const p of proposalState.proposals) {
+        proposedNames.add(bare(p.sourceTable));
+        proposedNames.add(bare(p.targetTable));
+      }
+      const summaryLC = summary.toLowerCase();
+      const mentionedButNotProposed = [];
+      for (const sp of scoped) {
+        const srcBare = bare(sp.source);
+        const tgtBare = bare(sp.target);
+        // Skip if this pair WAS proposed (either name is in the proposed set)
+        if (proposedNames.has(srcBare) || proposedNames.has(tgtBare)) continue;
+        // Skip very short names that would false-positive (e.g. "ID", "DM")
+        if (srcBare.length < 4 && tgtBare.length < 4) continue;
+        // Check if either bare name appears as a word in the summary. Use a
+        // word-boundary-ish check to avoid matching substrings inside larger
+        // identifiers.
+        const wordHit = (n) => n.length >= 4 && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}\\b`, 'i').test(summary);
+        if (wordHit(srcBare) || wordHit(tgtBare)) {
+          mentionedButNotProposed.push(`${sp.source} → ${sp.target}`);
+        }
+      }
+      if (mentionedButNotProposed.length > 0) {
+        proposalState.summaryWarnings.push({
+          kind: 'summary_mentions_unproposed',
+          message: `Summary appears to describe pair(s) not actually emitted as propose_table_mapping: ${mentionedButNotProposed.join('; ')}`,
+          pairs: mentionedButNotProposed,
+        });
+      }
+      // Also record the basic gap (scoped vs proposed counts) — UI uses this
+      // regardless of whether the summary mentions unproposed pairs.
+      const proposedPairKeys = new Set(
+        proposalState.proposals.map(p => `${bare(p.sourceTable)}|${bare(p.targetTable)}`)
+      );
+      const unproposed = scoped.filter(sp => !proposedPairKeys.has(`${bare(sp.source)}|${bare(sp.target)}`));
+      proposalState.unproposedScopedPairs = unproposed.map(sp => ({ source: sp.source, target: sp.target }));
+      proposalState.scopedPairCount = scoped.length;
+    } else {
+      proposalState.unproposedScopedPairs = [];
+      proposalState.scopedPairCount = 0;
+    }
+  } catch (e) {
+    // Validator must never break finalize. Swallow and move on.
+    proposalState.unproposedScopedPairs = proposalState.unproposedScopedPairs || [];
+    proposalState.scopedPairCount = proposalState.scopedPairCount || 0;
+  }
+
   return {
     accepted: true,
     finalized: true,
@@ -1124,6 +1196,13 @@ async function runAgentLoop(run, conns, ctx) {
     summary: '',
     decisionsForUser: [],
     risks: [],
+    // Scoped pairs (if this is a scope-driven run) — used by tool_finalize_proposal
+    // to sanity-check the summary against what the model actually emitted.
+    // Empty array on unscoped runs (validator is a no-op in that case).
+    scopedPairs: scope && Array.isArray(scope.sourceTargetPairs) ? scope.sourceTargetPairs : [],
+    // Populated by tool_finalize_proposal if the summary mentions unproposed
+    // pair names. Non-fatal; surfaced in the approval payload for the UI.
+    summaryWarnings: [],
   };
 
   // Conversation builds up across turns. Start with the user's initial message.
@@ -1389,6 +1468,22 @@ async function liveProduceProposal(run, conns, ctx) {
 
   const { finalText, proposalState } = result;
 
+  // Log any summary-honesty issues the finalize validator caught. These are
+  // non-fatal — we surface them in the UI so the user sees the gap, but the
+  // run still completes normally.
+  if (Array.isArray(proposalState.summaryWarnings) && proposalState.summaryWarnings.length > 0) {
+    for (const w of proposalState.summaryWarnings) {
+      ctx.log(`[agent] run ${run.id} summary warning: ${w.message}`);
+    }
+  }
+  if (typeof proposalState.scopedPairCount === 'number' && proposalState.scopedPairCount > 0) {
+    const proposed = proposalState.proposals.length;
+    const total = proposalState.scopedPairCount;
+    if (proposed < total) {
+      ctx.log(`[agent] run ${run.id} early-stopped: proposed ${proposed} of ${total} scoped pairs`);
+    }
+  }
+
   // Build the approval payload. If the agent finalized properly, we have
   // structured proposedJobs. Otherwise we have just a text summary and no
   // structured data — the user can still approve (saving zero jobs) or reject.
@@ -1402,6 +1497,12 @@ async function liveProduceProposal(run, conns, ctx) {
       risks: proposalState.risks || [],
       finalized: proposalState.finalized,
       proposedJobs: proposalState.proposals || [],
+      // Scope-aware coverage info for the review UI. scopedPairCount=0 means
+      // this was an unscoped run (or scope had no pairs) and the UI should
+      // not show a coverage indicator.
+      scopedPairCount: proposalState.scopedPairCount || 0,
+      unproposedScopedPairs: proposalState.unproposedScopedPairs || [],
+      summaryWarnings: proposalState.summaryWarnings || [],
     },
   };
   await writeRun(run);
@@ -1520,6 +1621,8 @@ ${pairLines}${extra}
 **Do not propose new source→target pairs unless essential.** Your job for this run is column-level mapping WITHIN each confirmed pair: which source column feeds which target column, what transformations are needed (CAST, LOOKUP, SPLIT, etc.), and where the source data is missing or malformed. Skip the discovery phase — the pairs are already established.
 
 **Budget guidance.** Realistically, complete column-level mapping for ~2–4 pairs per run is what the per-run budget supports. If after completing the first pair or two you can see that the remaining budget is insufficient to do all ${pairs.length} pair${pairs.length === 1 ? '' : 's'} thoroughly, STOP and surface a decisionForUser asking which remaining pairs to prioritise (or to run a separate scope for them). Producing 2 thorough mappings is far better than 4 partial ones.
+
+**Stopping early is fine — but be honest about it.** When you stop early, the summary you pass to finalize_proposal must reflect ONLY the pairs you actually emitted propose_table_mapping for. Do NOT list unproposed pairs in the summary as if you had mapped them, even briefly (e.g. do not write "Phone → Phone (basic structure confirmed)" if you did not actually call propose_table_mapping for Phone). Put the names of unproposed pairs in decisionsForUser instead, asking the user which to tackle next. Frame the stop as a deliberate checkpoint ("Stopped after N pairs to confirm priorities"), not as a failure ("the rest require additional budget").
 
 If a pair is genuinely wrong (e.g. the source table contains data that clearly belongs in a different target), surface it as a decisionForUser rather than silently substituting another pair.`;
     }
