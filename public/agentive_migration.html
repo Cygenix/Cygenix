@@ -2650,6 +2650,12 @@ body.cyg-collapsed .topbar{left:54px}
     const risks = Array.isArray(payload.risks) ? payload.risks : [];
     const finalized = !!payload.finalized;
 
+    // Scope-coverage fields (added by the server when the run was scope-driven).
+    // scopedPairCount=0 means unscoped run — show no coverage indicator.
+    const scopedPairCount = Number(payload.scopedPairCount) || 0;
+    const unproposedScopedPairs = Array.isArray(payload.unproposedScopedPairs) ? payload.unproposedScopedPairs : [];
+    const summaryWarnings = Array.isArray(payload.summaryWarnings) ? payload.summaryWarnings : [];
+
     const totalCols = proposedJobs.reduce((acc, j) => acc + (Array.isArray(j.columnMapping) ? j.columnMapping.length : 0), 0);
 
     const noJobsNotice = (proposedJobs.length === 0) ? `
@@ -2661,6 +2667,43 @@ body.cyg-collapsed .topbar{left:54px}
       </div>
     ` : '';
 
+    // Coverage gap notice — only shown for scoped runs where the agent
+    // proposed fewer pairs than the scope contained. Lists the unproposed
+    // pair names so the user knows what's missing regardless of what the
+    // summary text says.
+    let coverageNotice = '';
+    if (scopedPairCount > 0 && proposedJobs.length < scopedPairCount && unproposedScopedPairs.length > 0) {
+      const previewCap = 8;
+      const previewPairs = unproposedScopedPairs.slice(0, previewCap)
+        .map(p => `${escapeHtml(p.source)} → ${escapeHtml(p.target)}`)
+        .join(', ');
+      const extra = unproposedScopedPairs.length > previewCap
+        ? `, and ${unproposedScopedPairs.length - previewCap} more`
+        : '';
+      coverageNotice = `
+        <div class="notice" style="margin:0 0 1rem 0">
+          <strong>${proposedJobs.length} of ${scopedPairCount} scoped pairs were mapped in this run.</strong>
+          The remaining ${unproposedScopedPairs.length} pair${unproposedScopedPairs.length === 1 ? '' : 's'} were not proposed: ${previewPairs}${extra}.
+          Approve what's here, then start a new run on a narrower scope to cover the rest.
+        </div>
+      `;
+    }
+
+    // Summary-honesty warning — fires when the finalize validator detected
+    // that the summary mentions a scoped pair the agent did not actually
+    // propose. Shown in addition to the coverage notice.
+    let summaryWarningNotice = '';
+    if (summaryWarnings.length > 0) {
+      const msgs = summaryWarnings.map(w => escapeHtml(w.message || '')).join('<br>');
+      summaryWarningNotice = `
+        <div class="notice" style="margin:0 0 1rem 0;background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.35)">
+          <strong>Summary may be inaccurate.</strong>
+          The summary appears to describe pair(s) that were not actually emitted as mapping jobs. Trust the "Proposed mapping jobs" list below over the summary text.
+          <div style="margin-top:6px;font-size:11.5px;color:var(--text2)">${msgs}</div>
+        </div>
+      `;
+    }
+
     stage.innerHTML = `
       <div class="approval-banner">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -2668,8 +2711,11 @@ body.cyg-collapsed .topbar{left:54px}
           <path d="M12 9v4"/><path d="M12 17h.01"/>
           <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
         </svg>
-        <span>The agent proposed <strong>${proposedJobs.length}</strong> mapping${proposedJobs.length === 1 ? '' : 's'} (${totalCols} column${totalCols === 1 ? '' : 's'} total). Review before saving.</span>
+        <span>The agent proposed <strong>${proposedJobs.length}</strong> mapping${proposedJobs.length === 1 ? '' : 's'} (${totalCols} column${totalCols === 1 ? '' : 's'} total)${scopedPairCount > 0 ? ` of ${scopedPairCount} scoped pair${scopedPairCount === 1 ? '' : 's'}` : ''}. Review before saving.</span>
       </div>
+
+      ${coverageNotice}
+      ${summaryWarningNotice}
 
       <div class="card">
         <div class="section-label">Summary</div>
