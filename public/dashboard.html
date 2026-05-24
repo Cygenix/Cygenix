@@ -1525,6 +1525,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
           <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)">⚡ Generate SQL</button>
           <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">✓ Validate</button>
+          <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column">📋 Setup Check</button>
           <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
           <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
         </div>
@@ -1642,6 +1643,51 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="modal-actions">
           <button class="btn btn-ghost" id="validate-cancel-btn" onclick="closeValidateModal()">Cancel</button>
           <button class="btn btn-primary" id="validate-start-btn" onclick="startValidate()">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETUP CHECK MODAL -->
+    <div class="modal-overlay" id="setup-check-modal">
+      <div class="modal" style="width:760px">
+        <div class="modal-title">Setup Check</div>
+        <div class="modal-sub" id="setup-check-scope">
+          For each selected job, finds source fields where the target column name matches a target table name (a "setup"). Reports rows where the source value is empty OR doesn't exist as a Code in the target setup table.
+        </div>
+
+        <div class="form-row" style="margin-bottom:0.75rem">
+          <label class="form-label" style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+            <input type="checkbox" id="setup-check-empty-too" checked>
+            Include empty/NULL source values
+          </label>
+          <span style="font-size:11px;color:var(--text3);margin-left:0.5rem">Uncheck to only show rows whose value exists but isn't a valid Code.</span>
+        </div>
+        <div class="form-row" style="margin-bottom:0.75rem">
+          <label class="form-label">Top N bad values per field</label>
+          <select id="setup-check-topn" class="form-input" style="width:140px">
+            <option value="50">Top 50</option>
+            <option value="100" selected>Top 100</option>
+            <option value="500">Top 500</option>
+          </select>
+          <span style="font-size:11px;color:var(--text3);margin-left:0.5rem">Caps the result set per field. Higher = more visibility, more memory.</span>
+        </div>
+
+        <!-- Phase 1: discovery + progress -->
+        <div id="setup-check-progress-wrap" style="display:none;max-height:36vh;overflow-y:auto;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);padding:0.5rem">
+          <div id="setup-check-progress-list" style="font-family:var(--mono);font-size:12px;line-height:1.65"></div>
+        </div>
+
+        <!-- Phase 2: results report -->
+        <div id="setup-check-results-wrap" style="display:none;max-height:48vh;overflow-y:auto;margin-top:0.75rem">
+          <div id="setup-check-results"></div>
+        </div>
+
+        <div id="setup-check-status" style="display:none;margin-top:0.75rem;font-size:12px;color:var(--text3);font-family:var(--mono)"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="setup-check-cancel-btn" onclick="closeSetupCheckModal()">Cancel</button>
+          <button class="btn btn-ghost" id="setup-check-export-btn" onclick="exportSetupCheckReport()" style="display:none">⬇ Export CSV</button>
+          <button class="btn btn-primary" id="setup-check-start-btn" onclick="startSetupCheck()">Start</button>
         </div>
       </div>
     </div>
@@ -5899,6 +5945,466 @@ window.startValidate      = startValidate;
 window.buildValidationSQL = buildValidationSQL;  // exposed for unit-testing from console
 window._validateProbeTopology    = _validateProbeTopology;
 window._validateRewriteForCrossDb = _validateRewriteForCrossDb;
+
+// ── Setup Check (lookup-table integrity report) ───────────────────────────
+//
+// A "setup" in this system's domain language is a target reference / lookup
+// table: e.g. dbo.CliStatusType holds the valid statuses, and dbo.Client.
+// CliStatusType is a column that FK-references it by Code. The convention
+// for identifying setup fields is: a target column name that exactly
+// matches some target table name.
+//
+// This report walks every selected job and, for every column mapping where
+// tgtCol matches a target table name, runs a single SQL diff:
+//
+//   SELECT s.<srcCol> AS bad_value, COUNT(*) AS row_count
+//   FROM [srcDb].[dbo].[srcTable] s
+//   LEFT JOIN [tgtDb].[dbo].[setupTable] t ON t.[Code] = s.<srcCol>
+//   WHERE t.[Code] IS NULL OR LTRIM(RTRIM(ISNULL(s.<srcCol>,''))) = ''
+//   GROUP BY s.<srcCol>
+//   ORDER BY COUNT(*) DESC
+//   OFFSET 0 ROWS FETCH NEXT @topN ROWS ONLY;
+//
+// Memory model:
+//   • One query per setup field, sequential. Source DB isn't hammered.
+//   • Each query GROUP BYs and caps to topN — result set is tens to low-
+//     hundreds of rows, never millions. We never pull source row data.
+//   • Results held in JS only long enough to render + persist; nothing
+//     leaks through closures.
+//   • Saved to Cosmos under cygenix_setup_reports as a single keyed entry
+//     (last run per project). Old runs are overwritten — keeps the key
+//     under the 5MB Cosmos limit and avoids unbounded growth.
+//
+// Same topology constraint as Validate: source and target must be on the
+// same SQL Server instance (we use 3-part qualified names; cross-server
+// would need a linked server, which we don't auto-detect yet).
+
+const _setupCheck = {
+  running: false,
+  cancelled: false,
+  jobs: [],       // queue of jobs to scan
+  topo: null,     // { sameServer, src:{server,db}, tgt:{server,db} }
+  tgtTableSet: null,  // Set<lowercase-tablename>
+  fields: [],     // queue of {jobId, jobName, srcTable, srcCol, tgtCol, setupTable}
+  results: [],    // per-field results: {...field, badValues:[{value,count}], totalBad, error?}
+  abortController: null
+};
+
+function openSetupCheckModal(){
+  const { jobs, source } = getJobsForExport();   // reuses Export's selection
+  const scopeEl = document.getElementById('setup-check-scope');
+  const startBtn = document.getElementById('setup-check-start-btn');
+
+  // Reset state
+  _setupCheck.running = false;
+  _setupCheck.cancelled = false;
+  _setupCheck.jobs = [];
+  _setupCheck.fields = [];
+  _setupCheck.results = [];
+  _setupCheck.tgtTableSet = null;
+  document.getElementById('setup-check-progress-wrap').style.display = 'none';
+  document.getElementById('setup-check-progress-list').innerHTML = '';
+  document.getElementById('setup-check-results-wrap').style.display = 'none';
+  document.getElementById('setup-check-results').innerHTML = '';
+  document.getElementById('setup-check-status').style.display = 'none';
+  document.getElementById('setup-check-status').textContent = '';
+  document.getElementById('setup-check-export-btn').style.display = 'none';
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start';
+  document.getElementById('setup-check-cancel-btn').textContent = 'Cancel';
+
+  if (!jobs.length){
+    if (scopeEl) scopeEl.textContent = 'No jobs available for setup check.';
+    startBtn.disabled = true;
+    document.getElementById('setup-check-modal').classList.add('open');
+    return;
+  }
+
+  // Filter: need a columnMapping to scan, and a source table.
+  const runnable = jobs.filter(j =>
+    Array.isArray(j.columnMapping) && j.columnMapping.length > 0 &&
+    (j.sourceTable || j.source)
+  );
+  _setupCheck.jobs = runnable;
+
+  if (scopeEl){
+    const scopeLabel = source === 'selection'
+      ? `${jobs.length} selected job${jobs.length===1?'':'s'}`
+      : `all ${jobs.length} job${jobs.length===1?'':'s'} in the current filter (nothing ticked)`;
+    scopeEl.textContent = `Scanning ${runnable.length}/${jobs.length} (skipping jobs with no mapping). ` +
+      `For each, finds tgtCol names that match a target table — those are setup fields.`;
+  }
+  if (runnable.length === 0){
+    startBtn.disabled = true;
+    startBtn.textContent = 'Nothing to scan';
+  }
+  document.getElementById('setup-check-modal').classList.add('open');
+}
+
+function closeSetupCheckModal(){
+  if (_setupCheck.running){
+    _setupCheck.cancelled = true;
+    document.getElementById('setup-check-status').textContent = 'Cancelling…';
+    try { _setupCheck.abortController?.abort(); } catch {}
+    return;
+  }
+  document.getElementById('setup-check-modal').classList.remove('open');
+}
+
+// Fetch the target DB's table-name list once. Lightweight query — we only
+// need names, not columns. Returns a Set<lowercase-tablename> for fast
+// lookups during the per-job scan.
+async function _setupFetchTargetTables(tgtConn){
+  const sql = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'";
+  const res = await impDbCall(tgtConn, { action: 'execute', sql });
+  const rows = res?.recordset || res?.rows || [];
+  const set = new Set();
+  for (const r of rows){
+    const name = r?.TABLE_NAME || r?.table_name || Object.values(r||{})[0];
+    if (name) set.add(String(name).toLowerCase());
+  }
+  return set;
+}
+
+// Quote a SQL Server identifier safely (strip ] characters).
+function _sqlIdent(s){ return '['+String(s||'').replace(/]/g,'')+']'; }
+
+// Build the diff SQL for one setup field. Source table is qualified with
+// the source DB; setup table is qualified with the target DB. Both live on
+// the same instance per the topology probe — cross-database query works.
+function _setupDiffSQL(srcDb, tgtDb, srcTable, srcCol, setupTable, includeEmpty, topN){
+  // srcTable may be schema-qualified ("dbo.Client_DM"). Split into parts.
+  const srcParts = String(srcTable).split('.');
+  const srcSchema = srcParts.length === 2 ? srcParts[0] : 'dbo';
+  const srcName   = srcParts.length === 2 ? srcParts[1] : srcParts[0];
+  const srcRef = _sqlIdent(srcDb)+'.'+_sqlIdent(srcSchema)+'.'+_sqlIdent(srcName);
+  const tgtRef = _sqlIdent(tgtDb)+'.[dbo].'+_sqlIdent(setupTable);
+  const srcColRef = _sqlIdent(srcCol);
+  // Empty-or-invalid predicate
+  const wherePred = includeEmpty
+    ? "(t.[Code] IS NULL OR LTRIM(RTRIM(ISNULL(CAST(s."+srcColRef+" AS NVARCHAR(MAX)),''))) = '')"
+    : "(t.[Code] IS NULL AND LTRIM(RTRIM(ISNULL(CAST(s."+srcColRef+" AS NVARCHAR(MAX)),''))) <> '')";
+  return [
+    "SELECT TOP "+topN+" CAST(s."+srcColRef+" AS NVARCHAR(255)) AS bad_value, COUNT(*) AS row_count",
+    "FROM "+srcRef+" s",
+    "LEFT JOIN "+tgtRef+" t ON t.[Code] = CAST(s."+srcColRef+" AS NVARCHAR(255))",
+    "WHERE "+wherePred,
+    "GROUP BY CAST(s."+srcColRef+" AS NVARCHAR(255))",
+    "ORDER BY COUNT(*) DESC;"
+  ].join('\n');
+}
+
+async function startSetupCheck(){
+  if (_setupCheck.running) return;
+  if (!_setupCheck.jobs.length) return;
+
+  const srcConn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
+  const tgtConn = (typeof impGetConn === 'function') ? impGetConn('tgt') : '';
+  if (!srcConn || !tgtConn){
+    alert('Both source and target connections must be configured (Dashboard → Connections).');
+    return;
+  }
+
+  const includeEmpty = document.getElementById('setup-check-empty-too').checked;
+  const topN = parseInt(document.getElementById('setup-check-topn').value, 10) || 100;
+
+  _setupCheck.running = true;
+  _setupCheck.cancelled = false;
+  document.getElementById('setup-check-start-btn').disabled = true;
+  document.getElementById('setup-check-start-btn').textContent = 'Probing…';
+  document.getElementById('setup-check-status').style.display = 'block';
+  document.getElementById('setup-check-status').textContent = 'Probing topology + loading target table list…';
+  document.getElementById('setup-check-progress-wrap').style.display = 'block';
+  document.getElementById('setup-check-progress-list').innerHTML = '';
+
+  // Step 1: topology probe (re-use validate's prober)
+  let topo;
+  try { topo = await _validateProbeTopology(srcConn, tgtConn); }
+  catch (e){
+    document.getElementById('setup-check-status').innerHTML =
+      `<span style="color:var(--red)">Topology probe failed: ${(e.message||e).toString().slice(0,200)}</span>`;
+    document.getElementById('setup-check-start-btn').textContent = 'Failed';
+    document.getElementById('setup-check-cancel-btn').textContent = 'Close';
+    _setupCheck.running = false;
+    return;
+  }
+  if (!topo.sameServer){
+    document.getElementById('setup-check-status').innerHTML =
+      `<span style="color:var(--red)">Different-server topology (src=${topo.src.server||'?'}, tgt=${topo.tgt.server||'?'}) — Setup Check needs source and target on the same SQL Server instance to do cross-DB joins.</span>`;
+    document.getElementById('setup-check-start-btn').textContent = 'Skipped';
+    document.getElementById('setup-check-cancel-btn').textContent = 'Close';
+    _setupCheck.running = false;
+    return;
+  }
+  _setupCheck.topo = topo;
+
+  // Step 2: target table list (one cheap query, cached for this run)
+  let tgtTableSet;
+  try { tgtTableSet = await _setupFetchTargetTables(tgtConn); }
+  catch (e){
+    document.getElementById('setup-check-status').innerHTML =
+      `<span style="color:var(--red)">Could not load target table list: ${(e.message||e).toString().slice(0,200)}</span>`;
+    document.getElementById('setup-check-start-btn').textContent = 'Failed';
+    document.getElementById('setup-check-cancel-btn').textContent = 'Close';
+    _setupCheck.running = false;
+    return;
+  }
+  _setupCheck.tgtTableSet = tgtTableSet;
+  if (!tgtTableSet.size){
+    document.getElementById('setup-check-status').innerHTML =
+      `<span style="color:var(--red)">Target DB returned 0 tables — check permissions.</span>`;
+    document.getElementById('setup-check-start-btn').textContent = 'Failed';
+    document.getElementById('setup-check-cancel-btn').textContent = 'Close';
+    _setupCheck.running = false;
+    return;
+  }
+
+  // Step 3: build the per-field queue. A "setup field" is a column mapping
+  // where tgtCol (case-insensitive) is the name of a target table.
+  const fields = [];
+  for (const j of _setupCheck.jobs){
+    const srcTable = j.sourceTable || j.source || '';
+    if (!srcTable) continue;
+    for (const m of (j.columnMapping || [])){
+      if (!m.srcCol || !m.tgtCol) continue;
+      // Skip literal-value rows (no real source column to scan)
+      if (m.literalValue) continue;
+      const tgtLower = m.tgtCol.toLowerCase();
+      if (tgtTableSet.has(tgtLower)){
+        fields.push({
+          jobId: j.id, jobName: j.name,
+          srcTable,
+          srcCol: m.srcCol,
+          tgtCol: m.tgtCol,
+          setupTable: m.tgtCol  // by definition — name matches
+        });
+      }
+    }
+  }
+  _setupCheck.fields = fields;
+
+  if (!fields.length){
+    document.getElementById('setup-check-status').innerHTML =
+      `<span style="color:var(--text3)">No setup fields found in the selected jobs (no tgtCol matches any target table name).</span>`;
+    document.getElementById('setup-check-start-btn').textContent = 'Done';
+    document.getElementById('setup-check-cancel-btn').textContent = 'Close';
+    _setupCheck.running = false;
+    return;
+  }
+
+  // Render progress list
+  const listEl = document.getElementById('setup-check-progress-list');
+  listEl.innerHTML = fields.map((f,i) => `
+    <div data-sfrow="${i}" style="display:flex;align-items:flex-start;gap:0.5rem;padding:2px 0">
+      <span class="sf-icon" style="width:14px;text-align:center;color:var(--text3)">·</span>
+      <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        <span style="color:var(--text3)">${(f.jobName||'').replace(/</g,'&lt;')}</span>
+        <span style="color:var(--text3)">·</span>
+        ${(f.srcCol||'').replace(/</g,'&lt;')}
+        <span style="color:var(--text3)">→</span>
+        ${(f.setupTable||'').replace(/</g,'&lt;')}
+      </span>
+      <span class="sf-msg" style="color:var(--text3);font-size:11px"></span>
+    </div>
+  `).join('');
+
+  document.getElementById('setup-check-start-btn').textContent = 'Running…';
+
+  // Step 4: run each diff query sequentially
+  for (let i = 0; i < fields.length; i++){
+    if (_setupCheck.cancelled) break;
+    const f = fields[i];
+    document.getElementById('setup-check-status').textContent =
+      `Checking ${i+1} of ${fields.length}: ${f.jobName} · ${f.srcCol} → ${f.setupTable}`;
+    _setupCheckUpdateRow(i, 'running', '…');
+
+    const sql = _setupDiffSQL(topo.src.db, topo.tgt.db, f.srcTable, f.srcCol, f.setupTable, includeEmpty, topN);
+    try {
+      _setupCheck.abortController = new AbortController();
+      const res = await impDbCall(srcConn, { action: 'execute', sql });
+      const rows = res?.recordset || res?.rows || [];
+      const badValues = rows.map(r => ({
+        value: r.bad_value === null || r.bad_value === undefined ? '(NULL)' : String(r.bad_value),
+        count: Number(r.row_count) || 0
+      }));
+      const totalBad = badValues.reduce((s,v) => s + v.count, 0);
+      _setupCheck.results.push({ ...f, badValues, totalBad });
+      _setupCheckUpdateRow(i,
+        totalBad > 0 ? 'fail' : 'ok',
+        totalBad > 0 ? `${totalBad.toLocaleString()} bad row${totalBad===1?'':'s'}, ${badValues.length} distinct` : 'clean'
+      );
+    } catch (e){
+      const msg = (e?.message || String(e)).slice(0, 300);
+      _setupCheck.results.push({ ...f, badValues: [], totalBad: 0, error: msg });
+      _setupCheckUpdateRow(i, 'err', 'error: ' + msg.slice(0,80));
+    }
+  }
+
+  _setupCheck.running = false;
+  _setupCheck.abortController = null;
+
+  _setupCheckRenderResults();
+  _setupCheckPersist();
+
+  const cleanN  = _setupCheck.results.filter(r => !r.error && r.totalBad === 0).length;
+  const dirtyN  = _setupCheck.results.filter(r => !r.error && r.totalBad > 0).length;
+  const errN    = _setupCheck.results.filter(r => r.error).length;
+  const tail    = _setupCheck.cancelled ? ' (cancelled)' : '';
+  document.getElementById('setup-check-status').innerHTML =
+    `<span style="color:var(--green)">${cleanN} clean</span> · ` +
+    `<span style="color:var(--amber)">${dirtyN} have bad values</span> · ` +
+    `<span style="color:var(--red)">${errN} errored</span>${tail}`;
+  document.getElementById('setup-check-start-btn').textContent = 'Done';
+  document.getElementById('setup-check-cancel-btn').textContent = 'Close';
+  document.getElementById('setup-check-export-btn').style.display = (dirtyN+errN) > 0 ? '' : 'none';
+
+  if (typeof showToast === 'function') showToast(`Setup Check: ${cleanN} clean, ${dirtyN} dirty, ${errN} err${tail}`);
+  if (typeof addAudit === 'function') addAudit(`Setup Check: ${cleanN} clean, ${dirtyN} dirty, ${errN} errored${tail} across ${fields.length} setup fields`);
+}
+
+function _setupCheckUpdateRow(idx, status, message){
+  const row = document.querySelector(`[data-sfrow="${idx}"]`);
+  if (!row) return;
+  const icon = status === 'running' ? '⏳'
+             : status === 'ok'      ? '✓'
+             : status === 'fail'    ? '✕'
+             : status === 'err'     ? '!'
+             : '·';
+  const colour = status === 'running' ? 'var(--accent)'
+               : status === 'ok'      ? 'var(--green)'
+               : status === 'fail'    ? 'var(--amber)'
+               : status === 'err'     ? 'var(--red)'
+               : 'var(--text3)';
+  const ic = row.querySelector('.sf-icon');
+  ic.textContent = icon; ic.style.color = colour;
+  const msg = row.querySelector('.sf-msg');
+  msg.textContent = ' — ' + (message||'');
+  msg.style.color = colour;
+}
+
+function _setupCheckRenderResults(){
+  // Group results by job for readable display.
+  const byJob = new Map();
+  for (const r of _setupCheck.results){
+    if (!byJob.has(r.jobId)) byJob.set(r.jobId, { jobName: r.jobName, fields: [] });
+    byJob.get(r.jobId).fields.push(r);
+  }
+
+  const html = Array.from(byJob.values()).map(g => {
+    const dirtyFields = g.fields.filter(f => !f.error && f.totalBad > 0);
+    const cleanCount = g.fields.filter(f => !f.error && f.totalBad === 0).length;
+    const errCount = g.fields.filter(f => f.error).length;
+    const totalBadInJob = dirtyFields.reduce((s,f) => s + f.totalBad, 0);
+
+    const fieldsHtml = g.fields.map(f => {
+      if (f.error){
+        return `<div style="margin:0.3rem 0 0.3rem 1rem;color:var(--red);font-size:11px;font-family:var(--mono)">
+          <strong>${f.srcCol} → ${f.setupTable}</strong>: ${f.error.replace(/</g,'&lt;')}
+        </div>`;
+      }
+      if (f.totalBad === 0){
+        return `<div style="margin:0.3rem 0 0.3rem 1rem;color:var(--green);font-size:11px;font-family:var(--mono)">
+          ✓ <strong>${f.srcCol} → ${f.setupTable}</strong>: clean
+        </div>`;
+      }
+      // Bad values table
+      const valuesHtml = f.badValues.map(v => `
+        <tr>
+          <td style="padding:1px 0.5rem;font-family:var(--mono);font-size:11px;color:var(--amber)">${v.value === '(NULL)' ? '<em style="color:var(--text3)">(NULL or empty)</em>' : v.value.replace(/</g,'&lt;')}</td>
+          <td style="padding:1px 0.5rem;font-family:var(--mono);font-size:11px;color:var(--text2);text-align:right">${v.count.toLocaleString()}</td>
+        </tr>
+      `).join('');
+      return `<details style="margin:0.4rem 0 0.4rem 1rem">
+        <summary style="cursor:pointer;color:var(--amber);font-size:12px;font-family:var(--mono)">
+          ✕ <strong>${f.srcCol} → ${f.setupTable}</strong>
+          <span style="color:var(--text3)">— ${f.totalBad.toLocaleString()} bad row${f.totalBad===1?'':'s'}, ${f.badValues.length} distinct value${f.badValues.length===1?'':'s'}</span>
+        </summary>
+        <table style="margin-top:0.4rem;width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="padding:1px 0.5rem;text-align:left;font-size:10px;color:var(--text3);text-transform:uppercase">Bad value</th>
+            <th style="padding:1px 0.5rem;text-align:right;font-size:10px;color:var(--text3);text-transform:uppercase">Rows</th>
+          </tr></thead>
+          <tbody>${valuesHtml}</tbody>
+        </table>
+      </details>`;
+    }).join('');
+
+    const headerColour = totalBadInJob>0 ? 'var(--amber)' : (errCount>0 ? 'var(--red)' : 'var(--green)');
+    return `<div style="margin-bottom:1rem;border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;background:var(--bg3)">
+      <div style="font-size:13px;font-weight:600;color:${headerColour}">
+        ${g.jobName}
+        <span style="font-size:11px;color:var(--text3);font-weight:normal">
+          — ${g.fields.length} setup field${g.fields.length===1?'':'s'}
+          ${totalBadInJob > 0 ? `· <strong style="color:var(--amber)">${totalBadInJob.toLocaleString()} bad row${totalBadInJob===1?'':'s'}</strong>` : ''}
+          ${cleanCount > 0 ? `· ${cleanCount} clean` : ''}
+          ${errCount > 0 ? `· <strong style="color:var(--red)">${errCount} error${errCount===1?'':'s'}</strong>` : ''}
+        </span>
+      </div>
+      ${fieldsHtml}
+    </div>`;
+  }).join('');
+
+  document.getElementById('setup-check-results').innerHTML = html;
+  document.getElementById('setup-check-results-wrap').style.display = 'block';
+}
+
+// Persist last run to Cosmos. One key per project, overwritten each run —
+// keeps the key bounded under the 5MB cap.
+function _setupCheckPersist(){
+  try {
+    let activeId = '';
+    try { activeId = JSON.parse(sessionStorage.getItem('cygenix_active_project')||'null')?.id || ''; } catch {}
+    const key = 'cygenix_setup_reports';
+    let store = {};
+    try { store = JSON.parse(localStorage.getItem(key)||'{}'); } catch { store = {}; }
+    store[activeId || '_no_project'] = {
+      runAt: new Date().toISOString(),
+      topo: _setupCheck.topo ? { srcDb: _setupCheck.topo.src.db, tgtDb: _setupCheck.topo.tgt.db, server: _setupCheck.topo.src.server } : null,
+      fieldCount: _setupCheck.results.length,
+      results: _setupCheck.results.map(r => ({
+        jobId: r.jobId, jobName: r.jobName, srcCol: r.srcCol, tgtCol: r.tgtCol, setupTable: r.setupTable,
+        totalBad: r.totalBad,
+        badValues: (r.badValues||[]).slice(0, 100),  // cap stored values to 100/field
+        error: r.error
+      }))
+    };
+    localStorage.setItem(key, JSON.stringify(store));
+  } catch(e){ /* persistence failure shouldn't block the user — they have the report on screen */ }
+}
+
+function exportSetupCheckReport(){
+  // CSV export of the per-value detail across all fields.
+  const rows = [['Job','SourceTable','SourceCol','SetupTable','BadValue','RowCount','Error']];
+  for (const r of _setupCheck.results){
+    if (r.error){
+      rows.push([r.jobName, r.srcTable, r.srcCol, r.setupTable, '', '', r.error]);
+      continue;
+    }
+    if (!r.badValues || !r.badValues.length){
+      rows.push([r.jobName, r.srcTable, r.srcCol, r.setupTable, '(clean)', '0', '']);
+      continue;
+    }
+    for (const v of r.badValues){
+      rows.push([r.jobName, r.srcTable, r.srcCol, r.setupTable, v.value, String(v.count), '']);
+    }
+  }
+  const esc = s => '"' + String(s||'').replace(/"/g,'""') + '"';
+  const csv = rows.map(row => row.map(esc).join(',')).join('\r\n');
+  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  if (typeof triggerDownload === 'function'){
+    triggerDownload(csv, `setup_check_${stamp}.csv`);
+  } else {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv'}));
+    a.download = `setup_check_${stamp}.csv`;
+    a.click();
+  }
+}
+
+window.openSetupCheckModal  = openSetupCheckModal;
+window.closeSetupCheckModal = closeSetupCheckModal;
+window.startSetupCheck      = startSetupCheck;
+window.exportSetupCheckReport = exportSetupCheckReport;
 
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
