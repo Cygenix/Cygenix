@@ -6715,15 +6715,80 @@ function _pkgRebuildType(r){
   return t;
 }
 
-// Pull every source row. cross-database SELECT * from the source connection,
-// using 3-part name to be explicit about the source DB even though we're
-// already connected to it. Returns the recordset directly.
-async function _pkgFetchSourceRows(srcConn, srcTable){
+// Pull every source row, paged. The Netlify db-connect proxy caps response
+// payloads at 6 MB — a single SELECT * against a wide source table easily
+// blows past that and you get a confusing 502 "ResponseSizeTooLarge". We
+// page with OFFSET / FETCH NEXT to keep each response well under the cap.
+//
+// Page size is a balancing act: too small means many round-trips and high
+// total time; too large means a single page can blow the cap. 500 rows /
+// page is conservative for very wide tables (105+ columns) without being
+// painfully slow for normal ones.
+//
+// We need a deterministic ORDER BY for OFFSET to be stable. SQL Server
+// requires it. There may not be a clustered key on the source (a CSV
+// import table often won't have one). We fall back to a synthetic
+// (SELECT NULL) which works in modern SQL Server but skips the index path;
+// fine for an export.
+async function _pkgFetchSourceRows(srcConn, srcTable, progressCb){
   const parts = _pkgSplitFullName(srcTable);
   const ref = '['+parts.schema.replace(/]/g,'')+'].['+parts.name.replace(/]/g,'')+']';
-  const sql = "SELECT * FROM " + ref + ";";
-  const res = await impDbCall(srcConn, { action: 'execute', sql });
-  return res?.recordset || res?.rows || [];
+
+  // Discover a stable order key — prefer the first column, fallback to
+  // (SELECT NULL). One cheap probe.
+  let orderBy = '(SELECT NULL)';
+  try {
+    const probe = await impDbCall(srcConn, {
+      action: 'execute',
+      sql:  "SELECT TOP 1 COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS " +
+            "WHERE TABLE_SCHEMA='"+parts.schema.replace(/'/g,"''")+"' " +
+            "  AND TABLE_NAME='"+parts.name.replace(/'/g,"''")+"' " +
+            "ORDER BY ORDINAL_POSITION"
+    });
+    const rs = probe?.recordset || probe?.rows || [];
+    const firstCol = rs[0]?.COLUMN_NAME || rs[0]?.column_name;
+    if (firstCol) orderBy = '['+firstCol.replace(/]/g,'')+']';
+  } catch {/* fall through to (SELECT NULL) */}
+
+  const all = [];
+  let offset = 0;
+  // Adaptive page size. Start at 500 and halve on ResponseSizeTooLarge.
+  // Floors at 25 — below that, the table is exotic enough to need a
+  // dedicated tool (BCP, SSIS) and we surface a clear message.
+  let pageSize = 500;
+  const MIN_PAGE = 25;
+  // Safety upper bound — if a table somehow has >5M rows we want to bail
+  // with a clear message rather than burn the heap silently.
+  const MAX_TOTAL = 5_000_000;
+  while (true){
+    const sql =
+      "SELECT * FROM " + ref + " " +
+      "ORDER BY " + orderBy + " " +
+      "OFFSET " + offset + " ROWS FETCH NEXT " + pageSize + " ROWS ONLY;";
+    let rows;
+    try {
+      const res = await impDbCall(srcConn, { action: 'execute', sql });
+      rows = res?.recordset || res?.rows || [];
+    } catch (e) {
+      // Adaptive shrink on Lambda's 6 MB cap. Halve and retry the SAME
+      // offset so we don't drop rows. Other errors propagate.
+      const em = (e?.message || String(e));
+      if (/ResponseSizeTooLarge|payload size/i.test(em) && pageSize > MIN_PAGE){
+        pageSize = Math.max(MIN_PAGE, Math.floor(pageSize / 2));
+        continue;
+      }
+      throw e;
+    }
+    if (!rows.length) break;
+    for (const r of rows) all.push(r);
+    if (progressCb) progressCb(all.length);
+    if (rows.length < pageSize) break;       // last partial page
+    offset += pageSize;
+    if (all.length >= MAX_TOTAL){
+      throw new Error('Aborted at '+all.length.toLocaleString()+' rows (safety cap) — table too large for in-browser export. Use SQL Server\'s native BCP / SSIS for very large exports.');
+    }
+  }
+  return all;
 }
 
 // Format a single JS value into a SQL literal of the given type. This is
@@ -6900,7 +6965,12 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
 
   document.getElementById('pkg-status').textContent =
     'Pulling source rows for ' + srcTable + '…';
-  const rows = await _pkgFetchSourceRows(srcConn, srcTable);
+  const rows = await _pkgFetchSourceRows(srcConn, srcTable, function(n){
+    // Live progress while paging: shows the user that we're making progress
+    // and (crucially) gives a runtime feel of how slow large tables will be.
+    document.getElementById('pkg-status').textContent =
+      'Pulling source rows for ' + srcTable + ' — '+n.toLocaleString()+' so far…';
+  });
 
   const dataSection =
     sepLine + '\n-- Section 3: Source data ('+rows.length.toLocaleString()+' rows)\n' + sepLine + '\n' +
@@ -15509,7 +15579,11 @@ async function impDbCall(conn, body){
     ? await fetch(conn, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), signal:AbortSignal.timeout(60000) })
     : await fetch('/.netlify/functions/db-connect', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...body, connectionString: conn}), signal:AbortSignal.timeout(60000) });
   const data = await res.json().catch(() => ({ error:'Non-JSON response' }));
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  // Netlify wraps function errors as { errorType, errorMessage } — the
+  // original error-extraction only checked `error`, which left users
+  // staring at a bare "Error" string when the Function bailed. Read all
+  // three shapes so the user actually sees what went wrong.
+  if (!res.ok) throw new Error(data.error || data.errorMessage || data.message || res.statusText || ('HTTP '+res.status));
   return data;
 }
 
