@@ -384,6 +384,10 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .job-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:0.5rem}
 .jobs-actions{display:flex;gap:4px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
 .jobs-actions .btn{padding:3px 8px;font-size:11px;line-height:1.4}
+.job-drag-handle{color:var(--text3);transition:color 0.12s}
+.job-drag-handle:hover{color:var(--accent);cursor:grab}
+.job-drag-handle:active{cursor:grabbing}
+.jobs-table tr.job-row-drag-over td{border-top:2px solid var(--accent);background:var(--accent-glow)}
 
 /* MODAL */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:200;align-items:center;justify-content:center}
@@ -5468,12 +5472,14 @@ function jobsTableHTML(jobs) {
   }
 
   return '<table class="jobs-table"><thead><tr>' +
+    '<th style="width:22px" title="Drag rows to reorder"></th>' +
     '<th style="width:28px"><input type="checkbox" id="jobs-select-all" onchange="toggleAllJobsSelection(this.checked)" style="cursor:pointer"></th>' +
     '<th style="width:40px">#</th>' +
     '<th>Job Name</th><th>Source</th><th>Target</th><th>Tables</th><th>Rows</th>' +
     '<th>Exec Status</th><th>Last Run</th><th>Actions</th>' +
     '</tr></thead><tbody>' +
-    jobs.map((j, idx) => `<tr id="job-row-${j.id}" data-job-id="${j.id}">
+    jobs.map((j, idx) => `<tr id="job-row-${j.id}" data-job-id="${j.id}" ondragover="onJobRowDragOver(event)" ondragleave="onJobRowDragLeave(event)" ondrop="onJobRowDrop(event,'${j.id}')" ondragend="onJobRowDragEnd(event)">
+      <td class="job-drag-cell" style="text-align:center;color:var(--text3);user-select:none" title="Drag to reorder"><span class="job-drag-handle" draggable="true" ondragstart="onJobRowDragStart(event,'${j.id}')" style="cursor:grab;font-size:14px;line-height:1;display:inline-block;padding:2px 4px">⠿</span></td>
       <td style="text-align:center"><input type="checkbox" class="job-select-cb" data-job-id="${j.id}" onchange="onJobSelectToggle()" style="cursor:pointer" ${selectedJobIds.has(j.id)?'checked':''}></td>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">${idx+1}</td>
       <td>
@@ -5500,6 +5506,97 @@ function jobsTableHTML(jobs) {
         </div>
       </td></tr>`).join('') + '</tbody></table>';
 }
+
+// ── Row reordering (drag-and-drop) ────────────────────────────────────────
+// Single-source-of-truth caveat: this writes order into state.jobs and
+// localStorage, NOT into project-builder. If you also sequence the same
+// jobs in project-builder, the two orderings can drift apart. Export
+// Scripts (and any other consumer that reads state.jobs in array order)
+// will use whichever order was last saved here.
+//
+// Reorder semantics on a filtered view: only the visible rows' positions
+// in state.jobs change. Hidden jobs stay where they are. Concretely, when
+// you drop A onto B and both are visible, we splice A into the position
+// B currently occupies in state.jobs — leaving every non-visible job
+// untouched.
+let _draggedJobId = null;
+
+function onJobRowDragStart(ev, jobId){
+  _draggedJobId = jobId;
+  // Some browsers require data on the event to allow drop.
+  try { ev.dataTransfer.setData('text/plain', jobId); } catch {}
+  try { ev.dataTransfer.effectAllowed = 'move'; } catch {}
+  // Dim the source row so the user can see what they're carrying.
+  const row = document.getElementById('job-row-' + jobId);
+  if (row) row.style.opacity = '0.45';
+  // Stop the event bubbling from the inner handle re-firing dragstart on
+  // the parent <tr> (which would call this twice). Harmless but noisy.
+  ev.stopPropagation();
+}
+
+function onJobRowDragOver(ev){
+  if (!_draggedJobId) return;
+  ev.preventDefault();          // allow drop
+  ev.dataTransfer.dropEffect = 'move';
+  const row = ev.currentTarget;
+  if (row && row.dataset.jobId !== _draggedJobId){
+    row.classList.add('job-row-drag-over');
+  }
+}
+
+function onJobRowDragLeave(ev){
+  const row = ev.currentTarget;
+  if (row) row.classList.remove('job-row-drag-over');
+}
+
+function onJobRowDrop(ev, targetJobId){
+  ev.preventDefault();
+  ev.stopPropagation();
+  const row = ev.currentTarget;
+  if (row) row.classList.remove('job-row-drag-over');
+  if (!_draggedJobId || _draggedJobId === targetJobId) return;
+  reorderJobsInState(_draggedJobId, targetJobId);
+  _draggedJobId = null;
+}
+
+function onJobRowDragEnd(ev){
+  // Always clear opacity + the drag-over class everywhere, even if drop
+  // happened outside any row (the browser still fires dragend).
+  document.querySelectorAll('#all-jobs tr').forEach(r => {
+    r.style.opacity = '';
+    r.classList.remove('job-row-drag-over');
+  });
+  _draggedJobId = null;
+}
+
+function reorderJobsInState(sourceId, targetId){
+  const arr = state.jobs;
+  const srcIdx = arr.findIndex(j => j.id === sourceId);
+  const tgtIdx = arr.findIndex(j => j.id === targetId);
+  if (srcIdx < 0 || tgtIdx < 0 || srcIdx === tgtIdx) return;
+  const [moved] = arr.splice(srcIdx, 1);
+  // After removal, tgtIdx may need to shift down by 1 if source was above target
+  const insertAt = srcIdx < tgtIdx ? tgtIdx - 1 : tgtIdx;
+  // Drop "after" if dragging downward, "before" if dragging upward — feels
+  // most natural for a row-grid. We approximate by inserting at insertAt
+  // when going up (above target) and insertAt+1 when going down (below target).
+  const finalIdx = srcIdx < tgtIdx ? insertAt + 1 : insertAt;
+  arr.splice(finalIdx, 0, moved);
+
+  // Persist. Direct setItem because saveJobs() is fine but this is clearer
+  // about intent (and triggers the Cosmos sync hook the same way).
+  try { localStorage.setItem('cygenix_jobs', JSON.stringify(arr)); } catch {}
+
+  if (typeof showToast === 'function') showToast('Job order updated');
+  if (typeof addAudit === 'function') addAudit(`Reordered job "${moved.name}"`);
+  renderAllJobs();
+}
+
+window.onJobRowDragStart = onJobRowDragStart;
+window.onJobRowDragOver  = onJobRowDragOver;
+window.onJobRowDragLeave = onJobRowDragLeave;
+window.onJobRowDrop      = onJobRowDrop;
+window.onJobRowDragEnd   = onJobRowDragEnd;
 
 function editJob(jobId) {
   const job = state.jobs.find(j => j.id === jobId);
