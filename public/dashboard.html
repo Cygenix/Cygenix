@@ -1527,6 +1527,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">✓ Validate</button>
           <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column">📋 Setup Check</button>
           <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
+          <button class="btn btn-ghost" onclick="openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed.">📦 Export Package</button>
           <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
         </div>
       </div>
@@ -1688,6 +1689,43 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn btn-ghost" id="setup-check-cancel-btn" onclick="closeSetupCheckModal()">Cancel</button>
           <button class="btn btn-ghost" id="setup-check-export-btn" onclick="exportSetupCheckReport()" style="display:none">⬇ Export CSV</button>
           <button class="btn btn-primary" id="setup-check-start-btn" onclick="startSetupCheck()">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- EXPORT PACKAGE MODAL -->
+    <div class="modal-overlay" id="export-package-modal">
+      <div class="modal" style="width:680px">
+        <div class="modal-title">Export Deployable Package</div>
+        <div class="modal-sub" id="pkg-scope">Self-contained .sql files per job: target schema + source staging + source data + migration. Runs on any SQL Server.</div>
+
+        <div class="form-row">
+          <label class="form-label">Staging table mode</label>
+          <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:13px">
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer">
+              <input type="radio" name="pkg-mode" value="temp" checked style="margin-top:3px">
+              <span><strong>Temp table (#&lt;table&gt;)</strong><br><span style="color:var(--text3);font-size:11px">Session-scoped. Disappears when the script ends. Whole file runs as one batch (no GO separators). Recommended for prod targets.</span></span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer">
+              <input type="radio" name="pkg-mode" value="physical" style="margin-top:3px">
+              <span><strong>Physical table (dbo.X_Cygenix_&lt;table&gt;)</strong><br><span style="color:var(--text3);font-size:11px">Persisted to disk. Survives between batches (GO separators allowed). Auto-dropped at end of script. Useful for big imports or debugging.</span></span>
+            </label>
+          </div>
+        </div>
+
+        <div id="pkg-warn" class="alert alert-amber" style="margin-bottom:1rem">
+          <strong>This may be slow.</strong> Each job runs SELECT * against the source table and inlines every row into the .sql file. For tables with millions of rows the file can be hundreds of MB. Pulls happen sequentially with no row cap.
+        </div>
+
+        <div id="pkg-progress-wrap" style="display:none;max-height:42vh;overflow-y:auto;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);padding:0.5rem">
+          <div id="pkg-progress-list" style="font-family:var(--mono);font-size:12px;line-height:1.65"></div>
+        </div>
+
+        <div id="pkg-status" style="display:none;margin-top:0.75rem;font-size:12px;color:var(--text3);font-family:var(--mono)"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="pkg-cancel-btn" onclick="closeExportPackageModal()">Cancel</button>
+          <button class="btn btn-primary" id="pkg-start-btn" onclick="startExportPackage()">Start</button>
         </div>
       </div>
     </div>
@@ -6505,6 +6543,517 @@ window.openSetupCheckModal  = openSetupCheckModal;
 window.closeSetupCheckModal = closeSetupCheckModal;
 window.startSetupCheck      = startSetupCheck;
 window.exportSetupCheckReport = exportSetupCheckReport;
+
+// ── Export Deployable Package ─────────────────────────────────────────────
+//
+// For each selected job, produces a SINGLE .sql file containing everything a
+// DBA needs to replay the migration on any SQL Server, with NO Cygenix and
+// NO source-database access:
+//
+//   Section 1: target CREATE TABLE (from j.schemaSQL)
+//   Section 2: staging-table CREATE (built from live source schema)
+//   Section 3: all source rows as multi-row INSERTs (batched at 1000/batch)
+//   Section 4: rewritten migration script (source refs pointed at staging)
+//   Section 5: cleanup DROP (physical mode only)
+//
+// Mode is picked once at the start and applied to every job in the run:
+//   • temp     → "#<table>", one batch, no GO separators (whole script in
+//                one shot). Disappears when the connection drops.
+//   • physical → "dbo.X_Cygenix_<table>", GO between sections, explicit
+//                DROP at the end. Cleanly persisted/cleaned, supports
+//                bigger imports.
+//
+// Multi-job runs produce a ZIP. Single-job runs produce a bare .sql.
+//
+// Memory honesty: rows are pulled in full into memory before we stringify
+// them. For tables with millions of rows this can briefly use hundreds of
+// MB of heap. Sequential processing means only one job's data sits in
+// memory at a time, and we null out the array after writing.
+
+const _pkg = {
+  running: false,
+  cancelled: false,
+  queue: [],
+  results: [],
+  current: null,
+  abortController: null
+};
+
+function openExportPackageModal(){
+  const { jobs, source } = getJobsForExport();
+  const scopeEl = document.getElementById('pkg-scope');
+  const startBtn = document.getElementById('pkg-start-btn');
+
+  // Reset state
+  _pkg.running = false;
+  _pkg.cancelled = false;
+  _pkg.queue = [];
+  _pkg.results = [];
+  document.getElementById('pkg-progress-wrap').style.display = 'none';
+  document.getElementById('pkg-progress-list').innerHTML = '';
+  document.getElementById('pkg-status').style.display = 'none';
+  document.getElementById('pkg-status').textContent = '';
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start';
+  document.getElementById('pkg-cancel-btn').textContent = 'Cancel';
+
+  if (!jobs.length){
+    if (scopeEl) scopeEl.textContent = 'No jobs available to export.';
+    startBtn.disabled = true;
+    document.getElementById('export-package-modal').classList.add('open');
+    return;
+  }
+
+  // Runnable filter: must have target schema + migration SQL + source table.
+  const runnable = [];
+  const skipped = [];
+  for (const j of jobs){
+    const schema = j.schemaSQL || '';
+    const mig = j.insertSQL || j.migrationSQL || '';
+    const srcTable = j.sourceTable || j.source || '';
+    if (!schema){ skipped.push({ name: j.name, reason: 'no target schema' }); continue; }
+    if (!mig)   { skipped.push({ name: j.name, reason: 'no migration SQL' });  continue; }
+    if (!srcTable){ skipped.push({ name: j.name, reason: 'no source table' }); continue; }
+    if (j.jobType === 'sql'){ skipped.push({ name: j.name, reason: 'raw-SQL job' }); continue; }
+    runnable.push(j);
+  }
+  _pkg.queue = runnable;
+  _pkg.skipped = skipped;
+
+  if (scopeEl){
+    const scopeLabel = source === 'selection'
+      ? `${jobs.length} selected job${jobs.length===1?'':'s'}`
+      : `all ${jobs.length} job${jobs.length===1?'':'s'} in the current filter`;
+    scopeEl.textContent =
+      `Will export ${runnable.length}/${jobs.length} job${jobs.length===1?'':'s'} from ${scopeLabel}. ` +
+      (skipped.length ? skipped.length + ' skipped.' : '');
+  }
+  if (runnable.length === 0){
+    startBtn.disabled = true;
+    startBtn.textContent = 'Nothing to export';
+  }
+  document.getElementById('export-package-modal').classList.add('open');
+}
+
+function closeExportPackageModal(){
+  if (_pkg.running){
+    _pkg.cancelled = true;
+    document.getElementById('pkg-status').textContent = 'Cancelling…';
+    try { _pkg.abortController?.abort(); } catch {}
+    return;
+  }
+  document.getElementById('export-package-modal').classList.remove('open');
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function _pkgSplitFullName(full){
+  // "schema.table" → {schema, name}, fallback to dbo if unqualified.
+  const parts = String(full||'').split('.');
+  if (parts.length === 2) return { schema: parts[0], name: parts[1] };
+  return { schema: 'dbo', name: parts[0] };
+}
+
+function _pkgStagingName(srcTableName, mode){
+  // mode = 'temp' → #Client_DM ;  'physical' → dbo.X_Cygenix_Client_DM
+  // Strip non-identifier chars from the input table name defensively.
+  const safe = String(srcTableName||'').replace(/[^A-Za-z0-9_]/g, '');
+  return mode === 'physical' ? '[dbo].[X_Cygenix_'+safe+']' : '[#'+safe+']';
+}
+
+// Fetch the source table's columns + types via INFORMATION_SCHEMA. We need
+// type-with-precision so we can rebuild CREATE TABLE faithfully.
+async function _pkgFetchSourceSchema(srcConn, srcTable){
+  const parts = _pkgSplitFullName(srcTable);
+  const sql =
+    "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, " +
+    "DATETIME_PRECISION, IS_NULLABLE, ORDINAL_POSITION " +
+    "FROM INFORMATION_SCHEMA.COLUMNS " +
+    "WHERE TABLE_SCHEMA = '"+parts.schema.replace(/'/g,"''")+"' " +
+    "  AND TABLE_NAME = '"+parts.name.replace(/'/g,"''")+"' " +
+    "ORDER BY ORDINAL_POSITION;";
+  const res = await impDbCall(srcConn, { action: 'execute', sql });
+  const rows = res?.recordset || res?.rows || [];
+  return rows.map(r => ({
+    name: r.COLUMN_NAME || r.column_name,
+    type: _pkgRebuildType(r),
+    nullable: (r.IS_NULLABLE || r.is_nullable) === 'YES'
+  }));
+}
+
+// Rebuild a SQL type spec like "NVARCHAR(50)" or "DECIMAL(18,2)" from the
+// pieces INFORMATION_SCHEMA returns. SQL Server stores VARCHAR(MAX) as
+// CHARACTER_MAXIMUM_LENGTH = -1, which we render as MAX.
+function _pkgRebuildType(r){
+  const t = (r.DATA_TYPE || r.data_type || '').toUpperCase();
+  const cml = r.CHARACTER_MAXIMUM_LENGTH ?? r.character_maximum_length;
+  const np  = r.NUMERIC_PRECISION        ?? r.numeric_precision;
+  const ns  = r.NUMERIC_SCALE            ?? r.numeric_scale;
+  const dtp = r.DATETIME_PRECISION       ?? r.datetime_precision;
+
+  // Char families take a length
+  if (/^(N?VARCHAR|N?CHAR)$/i.test(t)){
+    const len = cml === -1 ? 'MAX' : (cml ?? '255');
+    return t + '(' + len + ')';
+  }
+  // Decimal/numeric take precision+scale
+  if (/^(DECIMAL|NUMERIC)$/i.test(t)){
+    if (np != null && ns != null) return t + '(' + np + ',' + ns + ')';
+    return t;
+  }
+  // datetime2 / datetimeoffset / time take precision
+  if (/^(DATETIME2|DATETIMEOFFSET|TIME)$/i.test(t) && dtp != null){
+    return t + '(' + dtp + ')';
+  }
+  // Binary/varbinary take length
+  if (/^(BINARY|VARBINARY)$/i.test(t)){
+    const len = cml === -1 ? 'MAX' : (cml ?? '255');
+    return t + '(' + len + ')';
+  }
+  // Everything else: no parameters (INT, BIT, UNIQUEIDENTIFIER, DATETIME,
+  // SMALLDATETIME, DATE, MONEY, FLOAT, REAL, XML, TEXT, NTEXT, IMAGE…)
+  return t;
+}
+
+// Pull every source row. cross-database SELECT * from the source connection,
+// using 3-part name to be explicit about the source DB even though we're
+// already connected to it. Returns the recordset directly.
+async function _pkgFetchSourceRows(srcConn, srcTable){
+  const parts = _pkgSplitFullName(srcTable);
+  const ref = '['+parts.schema.replace(/]/g,'')+'].['+parts.name.replace(/]/g,'')+']';
+  const sql = "SELECT * FROM " + ref + ";";
+  const res = await impDbCall(srcConn, { action: 'execute', sql });
+  return res?.recordset || res?.rows || [];
+}
+
+// Format a single JS value into a SQL literal of the given type. This is
+// the critical correctness helper — get it wrong and every package fails
+// to load. Per-type rules:
+//
+//   NULL                       → NULL (no quotes)
+//   BIT                        → 0 / 1 (no quotes)
+//   INT/TINYINT/SMALLINT/BIGINT → bare number
+//   DECIMAL/NUMERIC/MONEY/FLOAT/REAL → bare number
+//   UNIQUEIDENTIFIER           → '<guid-string>'
+//   DATE/DATETIME/DATETIME2/...→ '2024-01-15T13:45:22.123' (ISO 8601)
+//   BINARY/VARBINARY           → 0xDEADBEEF (no quotes)
+//   N?VARCHAR/N?CHAR/TEXT/NTEXT/XML → N'escaped string'
+//
+// Strings ALWAYS get the N prefix; cheap insurance against losing
+// non-ASCII characters in client/legal data (the "O'Brien" / é problem).
+function _pkgFormatSqlLiteral(value, type){
+  if (value === null || value === undefined) return 'NULL';
+  const t = String(type||'').toUpperCase().split('(')[0].trim();
+
+  // Bit: JS may return as 0/1, true/false, or '0'/'1' depending on driver
+  if (t === 'BIT'){
+    if (value === true || value === 1 || value === '1') return '1';
+    return '0';
+  }
+
+  // Numerics: no quotes. Could be JS number, string, or Decimal-like object.
+  if (/^(TINYINT|SMALLINT|INT|BIGINT|DECIMAL|NUMERIC|MONEY|SMALLMONEY|FLOAT|REAL)$/i.test(t)){
+    // tedious returns BigInt for BIGINT > 2^53 — convert to string safely
+    if (typeof value === 'bigint') return value.toString();
+    if (typeof value === 'number') return String(value);
+    return String(value).trim();
+  }
+
+  // GUID. JS Date drivers return as plain string. Quoted, no N prefix needed.
+  if (t === 'UNIQUEIDENTIFIER'){
+    const s = String(value).replace(/'/g, "''");
+    return "'" + s + "'";
+  }
+
+  // Date/time family. JS Date object OR string. Output ISO-8601, which
+  // SQL Server parses unambiguously via implicit conversion.
+  if (/^(DATE|TIME|DATETIME|DATETIME2|SMALLDATETIME|DATETIMEOFFSET)$/i.test(t)){
+    if (value instanceof Date){
+      // Strip the trailing Z so SQL Server interprets as local; we don't
+      // know the source's TZ intent. ISO-8601 without Z is the safest bet.
+      const iso = value.toISOString().replace(/Z$/, '');
+      return "'" + iso + "'";
+    }
+    return "'" + String(value).replace(/'/g, "''") + "'";
+  }
+
+  // Binary: tedious returns Buffer; the proxy may have JSON-serialised as
+  // base64 string or as a hex string with leading "0x". Handle both.
+  if (/^(BINARY|VARBINARY|IMAGE|TIMESTAMP|ROWVERSION)$/i.test(t)){
+    if (value && typeof value === 'object' && value.type === 'Buffer' && Array.isArray(value.data)){
+      let hex = '0x';
+      for (const b of value.data) hex += b.toString(16).padStart(2,'0').toUpperCase();
+      return hex;
+    }
+    const s = String(value);
+    if (/^0x[0-9a-fA-F]*$/.test(s)) return s;
+    // Treat anything else as already-hex content
+    return '0x' + s.replace(/[^0-9a-fA-F]/g,'');
+  }
+
+  // Default: string. NVARCHAR-safe quoting, single-quote escape.
+  const s = String(value).replace(/'/g, "''");
+  return "N'" + s + "'";
+}
+
+// Build the staging CREATE TABLE from a source schema. Caller passes the
+// staging name as built by _pkgStagingName (already bracketed). For temp
+// tables that name starts with [#…], which SQL Server treats correctly as
+// a temp table.
+function _pkgBuildCreateStaging(srcSchema, stagingName){
+  const cols = srcSchema.map(c => '  ['+c.name+'] '+c.type+' '+(c.nullable?'NULL':'NOT NULL'));
+  return 'CREATE TABLE ' + stagingName + ' (\n' + cols.join(',\n') + '\n);';
+}
+
+// Build batched multi-row INSERT statements. SQL Server's hard limit is
+// 1000 rows per VALUES clause. We chunk accordingly. mode determines
+// whether GO separators are emitted between batches (physical) or not
+// (temp — must run as one batch so the temp table is visible).
+function _pkgBuildInsertBatches(stagingName, srcSchema, rows, mode){
+  if (!rows.length) return '-- (source table is empty)\n';
+  const BATCH = 1000;
+  const colList = srcSchema.map(c => '['+c.name+']').join(', ');
+  const out = [];
+  for (let i = 0; i < rows.length; i += BATCH){
+    const slice = rows.slice(i, i + BATCH);
+    const valuesBlocks = slice.map(r => {
+      const cells = srcSchema.map(c => _pkgFormatSqlLiteral(r[c.name], c.type));
+      return '  (' + cells.join(', ') + ')';
+    }).join(',\n');
+    out.push('INSERT INTO ' + stagingName + ' (' + colList + ') VALUES\n' + valuesBlocks + ';');
+    // GO separator between batches in physical mode for cleaner log
+    // partitioning. In temp mode we must keep it one batch.
+    if (mode === 'physical' && (i + BATCH) < rows.length) out.push('GO');
+  }
+  return out.join('\n');
+}
+
+// Rewrite the migration SQL's source references to point at the staging
+// table. The job's stored SQL uses 2-part names like [dbo].[Client_DM];
+// after our validate fix it may also have been generated with 3-part
+// [Agentive].[dbo].[Client_DM]. Replace both forms with the staging name.
+//
+// We intentionally only target the source table's specific names — we do
+// NOT do a generic global rewrite (target references like [dbo].[Client]
+// must stay untouched).
+function _pkgRewriteMigration(insertSQL, sourceTableFull, srcDb, stagingName){
+  if (!insertSQL) return '';
+  const parts = _pkgSplitFullName(sourceTableFull);
+  const schema = parts.schema;
+  const name   = parts.name;
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  let sql = insertSQL;
+
+  // 3-part form [<srcDb>].[<schema>].[<name>]
+  if (srcDb){
+    const r3 = new RegExp('\\['+esc(srcDb)+'\\]\\.\\['+esc(schema)+'\\]\\.\\['+esc(name)+'\\]', 'gi');
+    sql = sql.replace(r3, stagingName);
+  }
+  // 2-part form [<schema>].[<name>] — replace AFTER 3-part so we don't
+  // double-rewrite. Use a negative lookbehind to avoid swallowing 3-part
+  // references that happen to share a suffix (e.g. another DB's same name).
+  // JS regex supports lookbehind in modern browsers; if older support is
+  // ever needed, swap for a two-pass marker approach.
+  const r2 = new RegExp('(?<!\\]\\.)\\['+esc(schema)+'\\]\\.\\['+esc(name)+'\\]', 'gi');
+  sql = sql.replace(r2, stagingName);
+
+  return sql;
+}
+
+// Build a single job's full deployable .sql package. Returns a string.
+async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
+  const srcTable = job.sourceTable || job.source || '';
+  const parts = _pkgSplitFullName(srcTable);
+  const stagingName = _pkgStagingName(parts.name, mode);
+  const goSep = mode === 'physical' ? '\nGO\n' : '\n';
+  const sepLine = '-- ' + '='.repeat(70);
+
+  // Section 1: banner
+  const banner = [
+    sepLine,
+    '-- CYGENIX DEPLOYABLE PACKAGE',
+    '-- Job:        ' + (job.name || job.id),
+    '-- Source:     ' + srcTable + (srcDb ? '  (db: '+srcDb+')' : ''),
+    '-- Target:     ' + (job.targetTable || job.target || ''),
+    '-- Staging:    ' + stagingName + '   (' + (mode==='physical'?'physical table, dropped at end':'temp table, session-scoped') + ')',
+    '-- Generated:  ' + new Date().toISOString(),
+    '-- Run on any SQL Server. No Cygenix or source connection required.',
+    sepLine,
+    ''
+  ].join('\n');
+
+  // Section 2: target CREATE TABLE (from the saved job)
+  const targetSchema =
+    sepLine + '\n-- Section 1: Target table schema\n' + sepLine + '\n' +
+    (job.schemaSQL || '-- (no schemaSQL saved)') + '\n';
+
+  // Section 3: source staging schema + section 4: data
+  document.getElementById('pkg-status').textContent =
+    'Fetching source schema for ' + srcTable + '…';
+  const srcSchema = await _pkgFetchSourceSchema(srcConn, srcTable);
+  if (!srcSchema.length) throw new Error('No columns returned for source table ' + srcTable);
+
+  const stagingCreate =
+    sepLine + '\n-- Section 2: Source staging table ('+(mode==='physical'?'physical':'temp')+')\n' + sepLine + '\n' +
+    _pkgBuildCreateStaging(srcSchema, stagingName) + '\n';
+
+  document.getElementById('pkg-status').textContent =
+    'Pulling source rows for ' + srcTable + '…';
+  const rows = await _pkgFetchSourceRows(srcConn, srcTable);
+
+  const dataSection =
+    sepLine + '\n-- Section 3: Source data ('+rows.length.toLocaleString()+' rows)\n' + sepLine + '\n' +
+    _pkgBuildInsertBatches(stagingName, srcSchema, rows, mode) + '\n';
+
+  // Allow GC of the row array
+  rows.length = 0;
+
+  // Section 5: migration with rewritten source references
+  const migration =
+    sepLine + '\n-- Section 4: Migration (source ref rewritten to '+stagingName+')\n' + sepLine + '\n' +
+    _pkgRewriteMigration(job.insertSQL || job.migrationSQL || '', srcTable, srcDb, stagingName) + '\n';
+
+  // Section 6: cleanup
+  const cleanup = mode === 'physical'
+    ? sepLine + '\n-- Section 5: Cleanup\n' + sepLine + '\nDROP TABLE ' + stagingName + ';\n'
+    : '';
+
+  return [banner, targetSchema, stagingCreate, dataSection, migration, cleanup]
+    .filter(Boolean).join(goSep);
+}
+
+// ── Progress list helpers ─────────────────────────────────────────────────
+function _pkgRenderProgressList(){
+  const list = document.getElementById('pkg-progress-list');
+  list.innerHTML = _pkg.queue.map(j => `
+    <div data-pkrow="${j.id}" style="display:flex;align-items:flex-start;gap:0.5rem;padding:2px 0">
+      <span class="pkg-icon" style="width:14px;text-align:center;color:var(--text3)">·</span>
+      <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(j.name||'(unnamed)').replace(/</g,'&lt;')}</span>
+      <span class="pkg-msg" style="color:var(--text3);font-size:11px"></span>
+    </div>
+  `).join('');
+  document.getElementById('pkg-progress-wrap').style.display = 'block';
+  document.getElementById('pkg-status').style.display = 'block';
+}
+
+function _pkgUpdateRow(jobId, status, message){
+  const row = document.querySelector(`[data-pkrow="${jobId}"]`);
+  if (!row) return;
+  const icon = status === 'running' ? '⏳'
+             : status === 'ok'      ? '✓'
+             : status === 'fail'    ? '✕'
+             : '·';
+  const colour = status === 'running' ? 'var(--accent)'
+               : status === 'ok'      ? 'var(--green)'
+               : status === 'fail'    ? 'var(--red)'
+               : 'var(--text3)';
+  const ic = row.querySelector('.pkg-icon');
+  ic.textContent = icon; ic.style.color = colour;
+  if (message){
+    const m = row.querySelector('.pkg-msg');
+    m.textContent = ' — ' + message;
+    m.style.color = colour;
+    m.title = message;
+  }
+}
+
+// ── Main orchestrator ─────────────────────────────────────────────────────
+async function startExportPackage(){
+  if (_pkg.running) return;
+  if (!_pkg.queue.length) return;
+
+  const srcConn = (typeof impGetConn === 'function') ? impGetConn('src') : '';
+  if (!srcConn){
+    alert('No source database connection configured. The export needs to read live source-row data. Set the source in Dashboard → Connections.');
+    return;
+  }
+  const tgtConn = (typeof impGetConn === 'function') ? impGetConn('tgt') : '';
+  // Probe topology only to get srcDb (used by the migration rewriter to
+  // strip 3-part qualifiers). If tgtConn is missing we still try with a
+  // null srcDb — the 2-part rewrite path covers the common case.
+  let srcDb = '';
+  if (tgtConn){
+    try {
+      const topo = await _validateProbeTopology(srcConn, tgtConn);
+      srcDb = topo.src.db || '';
+    } catch (e) { /* non-fatal */ }
+  }
+
+  // Read selected mode
+  const modeRadios = document.querySelectorAll('input[name="pkg-mode"]');
+  let mode = 'temp';
+  for (const r of modeRadios) if (r.checked) mode = r.value;
+
+  _pkg.running = true;
+  _pkg.cancelled = false;
+  document.getElementById('pkg-start-btn').disabled = true;
+  document.getElementById('pkg-start-btn').textContent = 'Running…';
+  _pkgRenderProgressList();
+
+  const fileMap = new Map();  // jobName → sql text, for ZIP packaging
+  for (let i = 0; i < _pkg.queue.length; i++){
+    if (_pkg.cancelled) break;
+    const job = _pkg.queue[i];
+    document.getElementById('pkg-status').textContent =
+      `Building ${i+1} of ${_pkg.queue.length}: ${job.name}`;
+    _pkgUpdateRow(job.id, 'running', 'fetching…');
+
+    try {
+      _pkg.abortController = new AbortController();
+      const sql = await _pkgBuildJobPackage(job, mode, srcConn, srcDb);
+      const safe = (job.name||job.id).replace(/[^a-z0-9]/gi, '_');
+      const fname = safe + '_package.sql';
+      fileMap.set(fname, sql);
+      _pkg.results.push({ jobName: job.name, ok: true, sizeKb: Math.round(sql.length/1024) });
+      _pkgUpdateRow(job.id, 'ok', `built (${Math.round(sql.length/1024).toLocaleString()} KB)`);
+    } catch (e){
+      const msg = (e?.message || String(e)).slice(0, 300);
+      _pkg.results.push({ jobName: job.name, ok: false, message: msg });
+      _pkgUpdateRow(job.id, 'fail', msg.slice(0, 200));
+    }
+  }
+
+  _pkg.running = false;
+  _pkg.abortController = null;
+
+  // Single file: download bare. Multiple: ZIP.
+  if (fileMap.size === 1){
+    const [fname, content] = fileMap.entries().next().value;
+    triggerDownload(content, fname);
+  } else if (fileMap.size > 1){
+    try {
+      const JSZip = await _loadJSZip();
+      const zip = new JSZip();
+      for (const [fname, content] of fileMap.entries()) zip.file(fname, content);
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'cygenix_packages_' + stamp + '.zip';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    } catch (e){
+      document.getElementById('pkg-status').innerHTML =
+        `<span style="color:var(--red)">ZIP packaging failed: ${(e.message||e).toString().slice(0,200)}</span>`;
+    }
+  }
+
+  const okN   = _pkg.results.filter(r => r.ok).length;
+  const failN = _pkg.results.filter(r => !r.ok).length;
+  const tail  = _pkg.cancelled ? ' (cancelled)' : '';
+  document.getElementById('pkg-status').innerHTML =
+    `<span style="color:var(--green)">${okN} built</span> · ` +
+    `<span style="color:var(--red)">${failN} failed</span>${tail}`;
+  document.getElementById('pkg-start-btn').textContent = 'Done';
+  document.getElementById('pkg-cancel-btn').textContent = 'Close';
+  if (typeof showToast === 'function') showToast(`Package export: ${okN} built, ${failN} failed${tail}`);
+  if (typeof addAudit === 'function') addAudit(`Export Package: ${okN} built, ${failN} failed${tail} (${mode} staging)`);
+}
+
+window.openExportPackageModal  = openExportPackageModal;
+window.closeExportPackageModal = closeExportPackageModal;
+window.startExportPackage      = startExportPackage;
 
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
