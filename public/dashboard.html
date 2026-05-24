@@ -1704,7 +1704,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:13px">
             <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer">
               <input type="radio" name="pkg-mode" value="temp" checked style="margin-top:3px">
-              <span><strong>Temp table (#&lt;table&gt;)</strong><br><span style="color:var(--text3);font-size:11px">Session-scoped. Disappears when the script ends. Whole file runs as one batch (no GO separators). Recommended for prod targets.</span></span>
+              <span><strong>Global temp table (##&lt;table&gt;)</strong><br><span style="color:var(--text3);font-size:11px">Visible from other tabs/sessions so an analyst can SELECT from the staging table while the migration runs. Auto-drops when the last referencing session closes. Whole file runs as one batch (no GO separators). Recommended for prod targets.</span></span>
             </label>
             <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer">
               <input type="radio" name="pkg-mode" value="physical" style="margin-top:3px">
@@ -6655,10 +6655,26 @@ function _pkgSplitFullName(full){
 }
 
 function _pkgStagingName(srcTableName, mode){
-  // mode = 'temp' → #Client_DM ;  'physical' → dbo.X_Cygenix_Client_DM
-  // Strip non-identifier chars from the input table name defensively.
+  // mode = 'temp' → ##Client_DM  ; 'physical' → dbo.X_Cygenix_Client_DM
+  //
+  // Global temp tables (##) are used instead of local (#) so the analyst
+  // running the package in SSMS can open a SECOND tab and SELECT from the
+  // staged data while the migration runs (or after it errors). Local #
+  // temp tables are session-scoped — only the script's own connection can
+  // see them, which defeats the inspection workflow.
+  //
+  // Tradeoffs of ##:
+  //   • Lifetime — ## persists until the LAST session referencing it
+  //     disconnects. We mitigate by emitting a defensive DROP IF EXISTS
+  //     before the CREATE so re-runs work cleanly.
+  //   • Name collisions — ##Client_DM is server-global. If two analysts
+  //     run the same package concurrently they'll collide on the CREATE.
+  //     Acceptable risk for the inspection workflow; rename the package
+  //     manually if it bites.
+  //   • Permissions — defaults to everyone on the server, which is fine
+  //     for ephemeral inspection data.
   const safe = String(srcTableName||'').replace(/[^A-Za-z0-9_]/g, '');
-  return mode === 'physical' ? '[dbo].[X_Cygenix_'+safe+']' : '[#'+safe+']';
+  return mode === 'physical' ? '[dbo].[X_Cygenix_'+safe+']' : '[##'+safe+']';
 }
 
 // Fetch the source table's columns + types via INFORMATION_SCHEMA. We need
@@ -6863,11 +6879,20 @@ function _pkgFormatSqlLiteral(value, type){
 
 // Build the staging CREATE TABLE from a source schema. Caller passes the
 // staging name as built by _pkgStagingName (already bracketed). For temp
-// tables that name starts with [#…], which SQL Server treats correctly as
-// a temp table.
+// tables that name starts with [##…], which SQL Server treats correctly as
+// a global temp table.
+//
+// Global temps persist until the last session referencing them disconnects.
+// A re-run of the same script would then fail with "There is already an
+// object…". We pre-emptively DROP IF EXISTS using OBJECT_ID against tempdb
+// — the canonical idiom for global-temp existence checks.
 function _pkgBuildCreateStaging(srcSchema, stagingName){
   const cols = srcSchema.map(c => '  ['+c.name+'] '+c.type+' '+(c.nullable?'NULL':'NOT NULL'));
-  return 'CREATE TABLE ' + stagingName + ' (\n' + cols.join(',\n') + '\n);';
+  const isGlobalTemp = stagingName.startsWith('[##');
+  const dropGuard = isGlobalTemp
+    ? "IF OBJECT_ID('tempdb.." + stagingName.replace(/^\[|\]$/g,'') + "') IS NOT NULL DROP TABLE " + stagingName + ";\n"
+    : '';
+  return dropGuard + 'CREATE TABLE ' + stagingName + ' (\n' + cols.join(',\n') + '\n);';
 }
 
 // Build batched multi-row INSERT statements. SQL Server's hard limit is
@@ -6941,7 +6966,7 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
     '-- Job:        ' + (job.name || job.id),
     '-- Source:     ' + srcTable + (srcDb ? '  (db: '+srcDb+')' : ''),
     '-- Target:     ' + (job.targetTable || job.target || ''),
-    '-- Staging:    ' + stagingName + '   (' + (mode==='physical'?'physical table, dropped at end':'temp table, session-scoped') + ')',
+    '-- Staging:    ' + stagingName + '   (' + (mode==='physical'?'physical table, dropped at end':'global temp, visible to other sessions, auto-drops on last disconnect') + ')',
     '-- Generated:  ' + new Date().toISOString(),
     '-- Run on any SQL Server. No Cygenix or source connection required.',
     sepLine,
