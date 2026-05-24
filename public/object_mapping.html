@@ -2585,14 +2585,26 @@ function autoMap(src, tgt){
 //   • Format style 121 is ODBC canonical (yyyy-mm-dd hh:mi:ss.mmm) — the
 //     least ambiguous parse path for varchar inputs that may already be
 //     ISO-ish or culture-specific.
-function buildDateCastExpr(srcExpr, tgtType){
+function buildDateCastExpr(srcExpr, tgtType, tgtNotNull){
   const t = (tgtType||'DATETIME2').toUpperCase().split('(')[0].trim();
   const cast = 'TRY_CONVERT('+tgtType+','+srcExpr+',121)';
+  let expr;
   if (t === 'SMALLDATETIME'){
     // Clamp out-of-range to NULL so the insert doesn't blow up.
-    return 'CASE WHEN TRY_CONVERT(DATETIME2,'+srcExpr+',121) NOT BETWEEN \'1900-01-01\' AND \'2079-06-06\' THEN NULL ELSE '+cast+' END';
+    expr = 'CASE WHEN TRY_CONVERT(DATETIME2,'+srcExpr+',121) NOT BETWEEN \'1900-01-01\' AND \'2079-06-06\' THEN NULL ELSE '+cast+' END';
+  } else {
+    expr = cast;
   }
-  return cast;
+  // NOT NULL target safeguard. TRY_CONVERT returns NULL on parse failure;
+  // the SMALLDATETIME clamp also produces NULL for out-of-range values.
+  // Either path will fail a NOT NULL insert. Wrap with ISNULL(..., GETDATE())
+  // so the row still loads. GETDATE() is a fabricated value — flagged in
+  // the Auto-fix preview's warning text. Caller passes tgtNotNull=true only
+  // when the target column declares NOT NULL.
+  if (tgtNotNull){
+    expr = 'ISNULL('+expr+', GETDATE())';
+  }
+  return expr;
 }
 
 // Build a safety-wrapped cast expression for the "Auto-fix (Agentive)"
@@ -2612,21 +2624,26 @@ function buildDateCastExpr(srcExpr, tgtType){
 //                  — empties + bad numerics become 0.
 //   SAFE_TRUNC   : LEFT(src, <tgtLen>)
 //                  — string longer than target length is truncated to fit.
-function buildSafeCastExpr(kind, srcExpr, tgtType){
+function buildSafeCastExpr(kind, srcExpr, tgtType, tgtNotNull){
   const trimmed = 'LTRIM(RTRIM('+srcExpr+'))';
   const nullified = 'NULLIF('+trimmed+",'')";
   if (kind === 'SAFE_GUID'){
+    // ISNULL+NEWID() already produces non-null output. No extra guard needed.
     return 'ISNULL(TRY_CAST('+nullified+' AS UNIQUEIDENTIFIER), NEWID())';
   }
   if (kind === 'SAFE_NUMERIC'){
+    // ISNULL+0 already produces non-null output. No extra guard needed.
     const t = (tgtType||'INT').trim();
     return 'ISNULL(TRY_CAST('+nullified+' AS '+t+'), 0)';
   }
   if (kind === 'SAFE_TRUNC'){
     // Parse target length: VARCHAR(50) → 50. MAX or no-length → no-op.
     const m = (tgtType||'').match(/\(\s*(\d+)\s*\)/);
-    if (!m) return srcExpr;
-    return 'LEFT('+srcExpr+', '+m[1]+')';
+    if (!m) return tgtNotNull ? 'ISNULL('+srcExpr+", '')" : srcExpr;
+    const truncExpr = 'LEFT('+srcExpr+', '+m[1]+')';
+    // LEFT(NULL, n) → NULL. NOT NULL char target needs a non-null guarantee,
+    // so wrap with ISNULL(..., '') when caller flagged it.
+    return tgtNotNull ? 'ISNULL('+truncExpr+", '')" : truncExpr;
   }
   return srcExpr;
 }
@@ -2902,15 +2919,21 @@ function generateSingleSQL(silent){
       // Bare [colName] — the FROM clause already specifies the 3-part table reference.
       srcExpr='['+m.srcCol+']';
     }
+    // Look up target column def once so we can pass its NOT NULL flag into
+    // the cast builders. nullable === false is the NOT NULL signal here
+    // (matches the convention used elsewhere in this file).
+    const _tgtDef = tgtTable.columns.find(c=>c.name===m.tgtCol);
+    const _tgtType = _tgtDef?.type || '';
+    const _tgtNotNull = _tgtDef ? _tgtDef.nullable === false : false;
     switch((m.transform||'NONE').toUpperCase()){
       case 'TRIM': srcExpr='LTRIM(RTRIM('+srcExpr+'))'; break;
       case 'UPPER': srcExpr='UPPER('+srcExpr+')'; break;
       case 'LOWER': srcExpr='LOWER('+srcExpr+')'; break;
-      case 'CAST': srcExpr='CAST('+srcExpr+' AS '+(tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'NVARCHAR(255)')+')'; break;
-      case 'DATE_CAST': srcExpr=buildDateCastExpr(srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'DATETIME2'); break;
-      case 'SAFE_GUID':    srcExpr=buildSafeCastExpr('SAFE_GUID',    srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'UNIQUEIDENTIFIER'); break;
-      case 'SAFE_NUMERIC': srcExpr=buildSafeCastExpr('SAFE_NUMERIC', srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'INT'); break;
-      case 'SAFE_TRUNC':   srcExpr=buildSafeCastExpr('SAFE_TRUNC',   srcExpr, tgtTable.columns.find(c=>c.name===m.tgtCol)?.type||'NVARCHAR(255)'); break;
+      case 'CAST': srcExpr='CAST('+srcExpr+' AS '+(_tgtType||'NVARCHAR(255)')+')'; break;
+      case 'DATE_CAST': srcExpr=buildDateCastExpr(srcExpr, _tgtType||'DATETIME2', _tgtNotNull); break;
+      case 'SAFE_GUID':    srcExpr=buildSafeCastExpr('SAFE_GUID',    srcExpr, _tgtType||'UNIQUEIDENTIFIER', _tgtNotNull); break;
+      case 'SAFE_NUMERIC': srcExpr=buildSafeCastExpr('SAFE_NUMERIC', srcExpr, _tgtType||'INT',              _tgtNotNull); break;
+      case 'SAFE_TRUNC':   srcExpr=buildSafeCastExpr('SAFE_TRUNC',   srcExpr, _tgtType||'NVARCHAR(255)',    _tgtNotNull); break;
     }
     // Auto-truncate: wrap in LEFT() when source char type is wider than target
     if((m.transform||'NONE')==='NONE'||m.transform==='TRIM'){
@@ -3635,15 +3658,20 @@ function generateOTMSQL(){
             }
           });
         }
+        // tgtCol is the target column def in scope here (looked up above).
+        // nullable === false is the NOT NULL signal — matches the rest of
+        // the file. We thread it into the cast builders so they wrap the
+        // result in an outer ISNULL when the target column rejects NULLs.
+        const _tgtNotNull = tgtCol ? tgtCol.nullable === false : false;
         switch((m.transform||'NONE').toUpperCase()){
           case 'TRIM': return '  TRIM('+baseExpr+')';
           case 'UPPER': return '  UPPER('+baseExpr+')';
           case 'LOWER': return '  LOWER('+baseExpr+')';
           case 'CAST': return '  CAST('+baseExpr+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
-          case 'DATE_CAST': return '  '+buildDateCastExpr(baseExpr, tgtCol?.type||'DATETIME2');
-          case 'SAFE_GUID':    return '  '+buildSafeCastExpr('SAFE_GUID',    baseExpr, tgtCol?.type||'UNIQUEIDENTIFIER');
-          case 'SAFE_NUMERIC': return '  '+buildSafeCastExpr('SAFE_NUMERIC', baseExpr, tgtCol?.type||'INT');
-          case 'SAFE_TRUNC':   return '  '+buildSafeCastExpr('SAFE_TRUNC',   baseExpr, tgtCol?.type||'NVARCHAR(MAX)');
+          case 'DATE_CAST': return '  '+buildDateCastExpr(baseExpr, tgtCol?.type||'DATETIME2',  _tgtNotNull);
+          case 'SAFE_GUID':    return '  '+buildSafeCastExpr('SAFE_GUID',    baseExpr, tgtCol?.type||'UNIQUEIDENTIFIER', _tgtNotNull);
+          case 'SAFE_NUMERIC': return '  '+buildSafeCastExpr('SAFE_NUMERIC', baseExpr, tgtCol?.type||'INT',              _tgtNotNull);
+          case 'SAFE_TRUNC':   return '  '+buildSafeCastExpr('SAFE_TRUNC',   baseExpr, tgtCol?.type||'NVARCHAR(MAX)',    _tgtNotNull);
           default: if(truncLen) return '  LEFT('+baseExpr+', '+truncLen+')'; return '  '+baseExpr;
         }
       }),
