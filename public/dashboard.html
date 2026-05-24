@@ -6072,7 +6072,16 @@ function _sqlIdent(s){ return '['+String(s||'').replace(/]/g,'')+']'; }
 // Build the diff SQL for one setup field. Source table is qualified with
 // the source DB; setup table is qualified with the target DB. Both live on
 // the same instance per the topology probe — cross-database query works.
-function _setupDiffSQL(srcDb, tgtDb, srcTable, srcCol, setupTable, includeEmpty, topN){
+//
+// joinKey is the column on the setup table to compare against (default 'Code'
+// — overridden when _setupResolveJoinKey discovers a different convention).
+//
+// COLLATE DATABASE_DEFAULT on both sides of the comparison is required when
+// source DB and target DB declare different collations. Without it SQL
+// Server raises "Cannot resolve the collation conflict between …". The
+// DATABASE_DEFAULT pseudo-collation evaluates to whichever the current
+// connection's default is, which neutralises the mismatch for the comparison.
+function _setupDiffSQL(srcDb, tgtDb, srcTable, srcCol, setupTable, joinKey, includeEmpty, topN){
   // srcTable may be schema-qualified ("dbo.Client_DM"). Split into parts.
   const srcParts = String(srcTable).split('.');
   const srcSchema = srcParts.length === 2 ? srcParts[0] : 'dbo';
@@ -6080,18 +6089,66 @@ function _setupDiffSQL(srcDb, tgtDb, srcTable, srcCol, setupTable, includeEmpty,
   const srcRef = _sqlIdent(srcDb)+'.'+_sqlIdent(srcSchema)+'.'+_sqlIdent(srcName);
   const tgtRef = _sqlIdent(tgtDb)+'.[dbo].'+_sqlIdent(setupTable);
   const srcColRef = _sqlIdent(srcCol);
-  // Empty-or-invalid predicate
+  const keyCol = _sqlIdent(joinKey || 'Code');
+  // Cast both sides to NVARCHAR(255) for type safety AND apply DATABASE_DEFAULT
+  // collation so cross-DB collation differences don't error.
+  const srcExpr = 'CAST(s.'+srcColRef+" AS NVARCHAR(255)) COLLATE DATABASE_DEFAULT";
+  const tgtExpr = 'CAST(t.'+keyCol+" AS NVARCHAR(255)) COLLATE DATABASE_DEFAULT";
   const wherePred = includeEmpty
-    ? "(t.[Code] IS NULL OR LTRIM(RTRIM(ISNULL(CAST(s."+srcColRef+" AS NVARCHAR(MAX)),''))) = '')"
-    : "(t.[Code] IS NULL AND LTRIM(RTRIM(ISNULL(CAST(s."+srcColRef+" AS NVARCHAR(MAX)),''))) <> '')";
+    ? "(t."+keyCol+" IS NULL OR LTRIM(RTRIM(ISNULL(CAST(s."+srcColRef+" AS NVARCHAR(MAX)),''))) = '')"
+    : "(t."+keyCol+" IS NULL AND LTRIM(RTRIM(ISNULL(CAST(s."+srcColRef+" AS NVARCHAR(MAX)),''))) <> '')";
   return [
     "SELECT TOP "+topN+" CAST(s."+srcColRef+" AS NVARCHAR(255)) AS bad_value, COUNT(*) AS row_count",
     "FROM "+srcRef+" s",
-    "LEFT JOIN "+tgtRef+" t ON t.[Code] = CAST(s."+srcColRef+" AS NVARCHAR(255))",
+    "LEFT JOIN "+tgtRef+" t ON "+tgtExpr+" = "+srcExpr,
     "WHERE "+wherePred,
     "GROUP BY CAST(s."+srcColRef+" AS NVARCHAR(255))",
     "ORDER BY COUNT(*) DESC;"
   ].join('\n');
+}
+
+// Discover which column on a setup table to join against. Tries the common
+// 3E conventions in order and returns the first match found. Caches per
+// table so we don't hammer the target DB for repeated lookups.
+//
+// Conventions tried (in order):
+//   1. 'Code'             — the dominant 3E convention
+//   2. '<TableName>Code'  — e.g. Entity.EntityCode, Language.LanguageCode
+//   3. '<TableName>'      — table named after its own key column
+//   4. Primary key column — fallback for non-standard tables
+const _setupKeyCache = new Map();  // table.toLowerCase() → resolved column name OR null
+async function _setupResolveJoinKey(tgtConn, tgtDb, setupTable){
+  const cacheKey = String(setupTable).toLowerCase();
+  if (_setupKeyCache.has(cacheKey)) return _setupKeyCache.get(cacheKey);
+
+  // Single query asks: which of our candidate names exists as a column on
+  // this table? Returns the matches in priority order via the ORDER BY.
+  const candidates = ['Code', setupTable + 'Code', setupTable];
+  const candidateList = candidates.map(c => "'"+c.replace(/'/g,"''")+"'").join(',');
+  const sql =
+    "SELECT c.name AS col_name " +
+    "FROM "+_sqlIdent(tgtDb)+".sys.columns c " +
+    "INNER JOIN "+_sqlIdent(tgtDb)+".sys.tables t ON t.object_id = c.object_id " +
+    "INNER JOIN "+_sqlIdent(tgtDb)+".sys.schemas s ON s.schema_id = t.schema_id " +
+    "WHERE s.name = 'dbo' AND t.name = '"+String(setupTable).replace(/'/g,"''")+"' " +
+    "AND c.name IN ("+candidateList+");";
+  try {
+    const res = await impDbCall(tgtConn, { action: 'execute', sql });
+    const rows = res?.recordset || res?.rows || [];
+    const found = new Set(rows.map(r => String(r.col_name||r.COL_NAME||Object.values(r)[0]).toLowerCase()));
+    // Resolve in priority order
+    for (const cand of candidates){
+      if (found.has(cand.toLowerCase())){
+        _setupKeyCache.set(cacheKey, cand);
+        return cand;
+      }
+    }
+  } catch (e){
+    // Probe failure shouldn't kill the whole run; caller treats null as
+    // "no key — skip this setup with a clear error".
+  }
+  _setupKeyCache.set(cacheKey, null);
+  return null;
 }
 
 async function startSetupCheck(){
@@ -6216,9 +6273,27 @@ async function startSetupCheck(){
     const f = fields[i];
     document.getElementById('setup-check-status').textContent =
       `Checking ${i+1} of ${fields.length}: ${f.jobName} · ${f.srcCol} → ${f.setupTable}`;
-    _setupCheckUpdateRow(i, 'running', '…');
+    _setupCheckUpdateRow(i, 'running', 'resolving key…');
 
-    const sql = _setupDiffSQL(topo.src.db, topo.tgt.db, f.srcTable, f.srcCol, f.setupTable, includeEmpty, topN);
+    // Resolve the setup's join key (Code / <Table>Code / <Table>). Cached
+    // per-table for the run, so the second job referencing the same setup
+    // is free.
+    let joinKey;
+    try {
+      joinKey = await _setupResolveJoinKey(tgtConn, topo.tgt.db, f.setupTable);
+    } catch (e) {
+      joinKey = null;
+    }
+    if (!joinKey){
+      const msg = `No recognised key column on ${f.setupTable} (tried Code, ${f.setupTable}Code, ${f.setupTable})`;
+      _setupCheck.results.push({ ...f, badValues: [], totalBad: 0, error: msg, joinKey: null });
+      _setupCheckUpdateRow(i, 'err', 'no key column');
+      continue;
+    }
+    f.joinKey = joinKey;
+
+    _setupCheckUpdateRow(i, 'running', 'querying ('+joinKey+')…');
+    const sql = _setupDiffSQL(topo.src.db, topo.tgt.db, f.srcTable, f.srcCol, f.setupTable, joinKey, includeEmpty, topN);
     try {
       _setupCheck.abortController = new AbortController();
       const res = await impDbCall(srcConn, { action: 'execute', sql });
@@ -6228,14 +6303,14 @@ async function startSetupCheck(){
         count: Number(r.row_count) || 0
       }));
       const totalBad = badValues.reduce((s,v) => s + v.count, 0);
-      _setupCheck.results.push({ ...f, badValues, totalBad });
+      _setupCheck.results.push({ ...f, badValues, totalBad, joinKey });
       _setupCheckUpdateRow(i,
         totalBad > 0 ? 'fail' : 'ok',
-        totalBad > 0 ? `${totalBad.toLocaleString()} bad row${totalBad===1?'':'s'}, ${badValues.length} distinct` : 'clean'
+        totalBad > 0 ? `${totalBad.toLocaleString()} bad row${totalBad===1?'':'s'}, ${badValues.length} distinct (key=${joinKey})` : `clean (key=${joinKey})`
       );
     } catch (e){
       const msg = (e?.message || String(e)).slice(0, 300);
-      _setupCheck.results.push({ ...f, badValues: [], totalBad: 0, error: msg });
+      _setupCheck.results.push({ ...f, badValues: [], totalBad: 0, error: msg, joinKey });
       _setupCheckUpdateRow(i, 'err', 'error: ' + msg.slice(0,80));
     }
   }
@@ -6316,7 +6391,7 @@ function _setupCheckRenderResults(){
       `).join('');
       return `<details style="margin:0.4rem 0 0.4rem 1rem">
         <summary style="cursor:pointer;color:var(--amber);font-size:12px;font-family:var(--mono)">
-          ✕ <strong>${f.srcCol} → ${f.setupTable}</strong>
+          ✕ <strong>${f.srcCol} → ${f.setupTable}.${f.joinKey||'Code'}</strong>
           <span style="color:var(--text3)">— ${f.totalBad.toLocaleString()} bad row${f.totalBad===1?'':'s'}, ${f.badValues.length} distinct value${f.badValues.length===1?'':'s'}</span>
         </summary>
         <table style="margin-top:0.4rem;width:100%;border-collapse:collapse">
@@ -6363,6 +6438,7 @@ function _setupCheckPersist(){
       fieldCount: _setupCheck.results.length,
       results: _setupCheck.results.map(r => ({
         jobId: r.jobId, jobName: r.jobName, srcCol: r.srcCol, tgtCol: r.tgtCol, setupTable: r.setupTable,
+        joinKey: r.joinKey || null,
         totalBad: r.totalBad,
         badValues: (r.badValues||[]).slice(0, 100),  // cap stored values to 100/field
         error: r.error
