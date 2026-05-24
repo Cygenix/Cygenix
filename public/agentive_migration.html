@@ -2039,9 +2039,9 @@ body.cyg-collapsed .topbar{left:54px}
         </div>`
       : '';
 
-    const overWarn = pairCount > 10
+    const overWarn = pairCount > 15
       ? `<div class="notice" style="margin-top:0.85rem;background:var(--amber-bg);border-color:rgba(245,158,11,0.4)">
-          <strong>${pairCount} pairs picked.</strong> The agent's budget realistically covers ~5–10 source-target pairs per run. Consider splitting this into smaller scopes (e.g. master files first, transactions later).
+          <strong>${pairCount} pairs picked.</strong> The agent's budget comfortably covers ~10–15 source-target pairs per run. With ${pairCount} pairs, the run may not finish all of them. Consider splitting (e.g. master files first, transactions later) for predictable runs.
         </div>`
       : '';
 
@@ -2407,7 +2407,8 @@ body.cyg-collapsed .topbar{left:54px}
     setTopbarStatus('Running');
 
     const usage = run.tokenUsage || { input: 0, output: 0, costUSD: 0 };
-    const cap = (run.budgetCap && run.budgetCap.maxCostUSD) || 2.0;
+    const cap = (run.budgetCap && run.budgetCap.maxCostUSD) || 10.0;
+    const turnCap = (run.budgetCap && run.budgetCap.maxTurns) || 24;
     const pct = Math.min(100, Math.round((usage.costUSD / cap) * 100));
     const entries = messagesToLogEntries(messages);
 
@@ -2435,7 +2436,7 @@ body.cyg-collapsed .topbar{left:54px}
         </div>
         <div style="display:flex;align-items:center;gap:0.85rem;flex-wrap:wrap;justify-content:flex-end">
           <div class="status-meta" title="Elapsed time since run started">⏱ ${elapsedStr}</div>
-          <div class="status-meta" title="Model round-trips so far (cap: 12)">Turn ${turnCount}/12</div>
+          <div class="status-meta" title="Model round-trips so far (cap: ${turnCap})">Turn ${turnCount}/${turnCap}</div>
           ${proposalCount > 0 ? `<div class="status-meta">${proposalCount} proposal${proposalCount === 1 ? '' : 's'}</div>` : ''}
           <div class="cost-meter">
             <strong>$${usage.costUSD.toFixed(3)}</strong>
@@ -2656,6 +2657,16 @@ body.cyg-collapsed .topbar{left:54px}
     const unproposedScopedPairs = Array.isArray(payload.unproposedScopedPairs) ? payload.unproposedScopedPairs : [];
     const summaryWarnings = Array.isArray(payload.summaryWarnings) ? payload.summaryWarnings : [];
 
+    // Final cost for this run. tokenUsage is updated by the server after
+    // every turn and persisted to Cosmos, so by the time we render this
+    // page it holds the run's total. costUSD is 0 only if the run never
+    // made a real Anthropic call (e.g. stub mode); show nothing in that
+    // case rather than "$0.00", which would look like a bug.
+    const runCostUSD = (run.tokenUsage && typeof run.tokenUsage.costUSD === 'number') ? run.tokenUsage.costUSD : 0;
+    const costText = runCostUSD > 0
+      ? (runCostUSD < 0.01 ? '<$0.01' : `$${runCostUSD.toFixed(2)}`)
+      : '';
+
     const totalCols = proposedJobs.reduce((acc, j) => acc + (Array.isArray(j.columnMapping) ? j.columnMapping.length : 0), 0);
 
     const noJobsNotice = (proposedJobs.length === 0) ? `
@@ -2682,9 +2693,9 @@ body.cyg-collapsed .topbar{left:54px}
         : '';
       coverageNotice = `
         <div class="notice" style="margin:0 0 1rem 0">
-          <strong>${proposedJobs.length} of ${scopedPairCount} scoped pairs were mapped in this run.</strong>
-          The remaining ${unproposedScopedPairs.length} pair${unproposedScopedPairs.length === 1 ? '' : 's'} were not proposed: ${previewPairs}${extra}.
-          Approve what's here, then start a new run on a narrower scope to cover the rest.
+          <strong>${proposedJobs.length} of ${scopedPairCount} scoped pairs were mapped.</strong>
+          The agent did not finish the full scope this run. Unmapped: ${previewPairs}${extra}.
+          Approve what's here, then run again — the agent should pick up the remaining pairs. If this keeps happening on the same pairs, they may be unusually large or have a structural issue worth checking.
         </div>
       `;
     }
@@ -2711,7 +2722,8 @@ body.cyg-collapsed .topbar{left:54px}
           <path d="M12 9v4"/><path d="M12 17h.01"/>
           <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
         </svg>
-        <span>The agent proposed <strong>${proposedJobs.length}</strong> mapping${proposedJobs.length === 1 ? '' : 's'} (${totalCols} column${totalCols === 1 ? '' : 's'} total)${scopedPairCount > 0 ? ` of ${scopedPairCount} scoped pair${scopedPairCount === 1 ? '' : 's'}` : ''}. Review before saving.</span>
+        <span style="flex:1">The agent proposed <strong>${proposedJobs.length}</strong> mapping${proposedJobs.length === 1 ? '' : 's'} (${totalCols} column${totalCols === 1 ? '' : 's'} total)${scopedPairCount > 0 ? ` of ${scopedPairCount} scoped pair${scopedPairCount === 1 ? '' : 's'}` : ''}. Review before saving.</span>
+        ${costText ? `<span title="Total Anthropic API cost for this run" style="font-family:var(--mono);font-size:12px;color:var(--text2);padding:3px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);white-space:nowrap">Run cost: <strong style="color:var(--text)">${costText}</strong></span>` : ''}
       </div>
 
       ${coverageNotice}
@@ -2842,6 +2854,14 @@ body.cyg-collapsed .topbar{left:54px}
     const firstJobId = result.firstJobId;
     const jobCount = result.jobCount || 0;
 
+    // Final run cost — same logic as the approval screen. tokenUsage was
+    // persisted by the server on every turn so it's still here after
+    // approval and after the page is reloaded.
+    const runCostUSD = (run.tokenUsage && typeof run.tokenUsage.costUSD === 'number') ? run.tokenUsage.costUSD : 0;
+    const costText = runCostUSD > 0
+      ? (runCostUSD < 0.01 ? '<$0.01' : `$${runCostUSD.toFixed(2)}`)
+      : '';
+
     stage.innerHTML = `
       <div class="card completed">
         <div class="success-icon">
@@ -2852,6 +2872,7 @@ body.cyg-collapsed .topbar{left:54px}
         </div>
         <h2>${jobCount > 0 ? `Saved ${jobCount} mapping job${jobCount === 1 ? '' : 's'}` : 'Run complete'}</h2>
         <p>${escapeHtml(result.summary || 'The run is finished.')}</p>
+        ${costText ? `<p style="font-size:12px;color:var(--text2);margin-top:-0.4rem">Run cost: <strong style="color:var(--text);font-family:var(--mono)">${costText}</strong></p>` : ''}
         <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap">
           ${firstJobId ? `<a class="btn btn-primary btn-sm" href="/object_mapping.html?edit=${encodeURIComponent(firstJobId)}">Open first job in Object Mapping</a>` : ''}
           ${jobCount > 1 ? `<a class="btn btn-sm" href="/dashboard.html#jobs">View all jobs</a>` : ''}
