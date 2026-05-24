@@ -79,14 +79,21 @@ function shortId(prefix) {
 function isStubMode() { return process.env.AGENT_STUB_MODE === '1'; }
 
 // ── Agent loop limits ───────────────────────────────────────────────────────
-const MAX_TURNS = 12;                     // hard ceiling on model round-trips
+// Sizing rationale: each confirmed source→target pair typically needs 1–2
+// turns (describe_tables on source + target, then propose_table_mapping).
+// A scope of 10 pairs therefore needs ~10–20 turns. We set MAX_TURNS=24 to
+// cover that comfortably, with headroom for occasional re-introspection or
+// recovery. RUN_BUDGET_USD=$10 gives Sonnet 4.5 enough room for ~10 wide
+// pairs without forcing early wrap-up; observed cost on a 25-column pair
+// is roughly $0.50–1.00, so $10 covers 10–20 pairs in practice.
+const MAX_TURNS = 24;                     // hard ceiling on model round-trips
 const MAX_TOOL_RESULT_BYTES = 15_000;     // truncate if a tool returns more
 const MAX_TABLES_PER_LIST = 50;           // cap list_tables output
 const MAX_DESCRIBE_TABLES = 20;           // describe_tables takes at most N
 const SAMPLE_ROWS_DEFAULT = 5;
 const SAMPLE_ROWS_MAX = 10;
 const SAMPLE_COLS_MAX = 12;
-const RUN_BUDGET_USD = 5.0;               // hard cost cap per run
+const RUN_BUDGET_USD = 10.0;              // hard cost cap per run
 const MODEL_MAX_TOKENS = 4096;            // bound output size per turn (large enough for a full propose_table_mapping on wide tables)
 const TOKEN_BUDGET_PER_CALL = 25_000;     // soft input cap (under 30K rate limit)
 
@@ -266,7 +273,7 @@ function newRunDoc({ userId, goal, conns, projectId, scopeId }) {
     pendingApproval: null,
     result: null,
     tokenUsage: { input: 0, output: 0, costUSD: 0 },
-    budgetCap:  { maxTokens: 200_000, maxCostUSD: RUN_BUDGET_USD },
+    budgetCap:  { maxTokens: 200_000, maxCostUSD: RUN_BUDGET_USD, maxTurns: MAX_TURNS },
     mode: isStubMode() ? 'stub' : 'live',
   };
 }
@@ -577,7 +584,7 @@ STRICT RULES — the summary must accurately reflect what you actually emitted a
 
 2. State the count honestly. If you proposed N out of M scoped pairs, say "Proposed N of M scoped pairs" — never overstate. If N < M, briefly say why you stopped (budget, complexity, user input needed) and put the names of the unproposed pairs in decisionsForUser, NOT in the summary as if they were proposals.
 
-3. If you stopped early on purpose (typical when budget guidance says to ask the user which to prioritise), say so plainly: "Stopped after N pairs to ask which of the remaining M-N to prioritise next." Do NOT phrase this as "the remaining pairs require additional budget" — that reads as failure rather than a deliberate checkpoint.
+3. The default expectation is full coverage of scoped pairs. If for any reason you did NOT cover all of them (genuine blocker, ran out of turns, ambiguity needing user input), say so plainly and specifically: "Mapped N of M scoped pairs; stopped because <specific reason>." Put the unproposed pair names in decisionsForUser, not in the summary. Do NOT use vague phrases like "the remaining pairs require additional budget" — be concrete about what blocked you.
 
 4. Before writing the summary, mentally count your propose_table_mapping calls and make sure the count and names in your summary match exactly.`,
         },
@@ -1620,9 +1627,13 @@ ${pairLines}${extra}
 
 **Do not propose new source→target pairs unless essential.** Your job for this run is column-level mapping WITHIN each confirmed pair: which source column feeds which target column, what transformations are needed (CAST, LOOKUP, SPLIT, etc.), and where the source data is missing or malformed. Skip the discovery phase — the pairs are already established.
 
-**Budget guidance.** Realistically, complete column-level mapping for ~2–4 pairs per run is what the per-run budget supports. If after completing the first pair or two you can see that the remaining budget is insufficient to do all ${pairs.length} pair${pairs.length === 1 ? '' : 's'} thoroughly, STOP and surface a decisionForUser asking which remaining pairs to prioritise (or to run a separate scope for them). Producing 2 thorough mappings is far better than 4 partial ones.
+**Budget guidance.** Your per-run budget (${MAX_TURNS} turns, $${RUN_BUDGET_USD} cost cap) is sized to cover ALL ${pairs.length} confirmed pair${pairs.length === 1 ? '' : 's'} in this scope. The expectation for this run is FULL COVERAGE: emit propose_table_mapping for every confirmed pair. Do NOT stop early after 2-3 pairs to "ask which to prioritise" — that's outdated guidance. The pairs are already confirmed; your job is to map every one of them.
 
-**Stopping early is fine — but be honest about it.** When you stop early, the summary you pass to finalize_proposal must reflect ONLY the pairs you actually emitted propose_table_mapping for. Do NOT list unproposed pairs in the summary as if you had mapped them, even briefly (e.g. do not write "Phone → Phone (basic structure confirmed)" if you did not actually call propose_table_mapping for Phone). Put the names of unproposed pairs in decisionsForUser instead, asking the user which to tackle next. Frame the stop as a deliberate checkpoint ("Stopped after N pairs to confirm priorities"), not as a failure ("the rest require additional budget").
+**Pace yourself.** A typical pair needs 1–2 turns (describe_tables on source + target, then propose_table_mapping). To stay on budget across ${pairs.length} pair${pairs.length === 1 ? '' : 's'}: batch describe_tables calls together when possible (you can describe multiple source tables and multiple target tables in one tool call each), keep your reasoning text terse between tool calls, and don't re-introspect tables you've already seen.
+
+**Only stop early if something is genuinely blocked.** Acceptable reasons to stop before completing all pairs: (a) you're approaching the turn or cost cap and the system has told you so via a wrap-up message; (b) a specific pair has a genuine ambiguity that needs user input to resolve (in which case propose all the OTHER pairs you can, then surface the ambiguous one in decisionsForUser); (c) introspection revealed a confirmed pair is structurally wrong (e.g. tables don't exist). "I think the user might want to prioritise" is NOT an acceptable reason — they already prioritised by confirming the pairs.
+
+**Summary honesty (still applies).** When you call finalize_proposal, the summary must describe ONLY pairs you actually emitted propose_table_mapping for. Do NOT list unproposed pairs in the summary as if you had mapped them (e.g. do not write "Phone → Phone (basic structure confirmed)" if you did not actually emit propose_table_mapping for Phone). If you stopped early for one of the acceptable reasons above, put the unproposed pair names in decisionsForUser, not in the summary prose.
 
 If a pair is genuinely wrong (e.g. the source table contains data that clearly belongs in a different target), surface it as a decisionForUser rather than silently substituting another pair.`;
     }
