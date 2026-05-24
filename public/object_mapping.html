@@ -2299,6 +2299,27 @@ function autoFixAgentive(){
     for (const c of joinCols){ validSrcNames.add(c.name); srcTypes.set(c.name, c.type||''); }
   } catch {}
 
+  // Pick a SQL literal for an unmapped NOT NULL column. Returned value is
+  // the raw SQL text to put into m.literalValue (so the existing SELECT
+  // generator emits "<value> AS [col]" — e.g. NEWID() AS [ClientGUID]).
+  // Returns null when we don't have a safe default for that type — caller
+  // surfaces those as "skipped, please map manually".
+  function defaultLiteralForType(tgtType){
+    if (!tgtType) return null;
+    if (isGuidType(tgtType))    return { value: 'NEWID()',  kind: 'NEWID' };
+    if (isDateType(tgtType))    return { value: 'GETDATE()', kind: 'GETDATE' };
+    if (isNumericType(tgtType)) return { value: '0',         kind: '0' };
+    // Char family — empty string literal. We MUST store the SQL syntax
+    // (with the quotes), not a JS empty string — the generator concatenates
+    // literalValue directly into the SELECT.
+    if (isCharType(tgtType))    return { value: "''",        kind: "''" };
+    // Binary family — empty binary. 0x is the standard SQL empty-binary literal.
+    if (/^(BINARY|VARBINARY)\b/i.test(tgtType)) return { value: '0x', kind: '0x' };
+    // xml — empty xml document
+    if (/^XML\b/i.test(tgtType)) return { value: "''", kind: "''" };
+    return null;
+  }
+
   // -- Plan: collect proposed changes per pass --
   const plan = {
     deadRefs:      [],   // {ref, scope, tgtCol, oldSrc}
@@ -2306,10 +2327,31 @@ function autoFixAgentive(){
     safeGuid:      [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType}
     safeNumeric:   [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType}
     safeTrunc:     [],   // {ref, scope, tgtCol, srcCol, srcLen, tgtLen, tgtType}
+    notNullFill:   [],   // {ref, scope, tgtCol, tgtType, literal, kind}
+    notNullSkip:   [],   // {scope, tgtCol, tgtType, reason} — informational only
     warnings:      []    // free-text strings shown above the preview
   };
 
-  function planForMapping(m, tgtCol, tgtType, scope){
+  function planForMapping(m, tgtCol, tgtType, scope, tgtDef){
+    // Pass 0: NOT NULL default-fill — only for rows that are entirely unmapped
+    // (no srcCol, no literalValue) AND target is NOT NULL AND not identity.
+    // SQL Server fills identity columns automatically, so we leave them.
+    // This pass runs FIRST so that subsequent passes (which guard on
+    // !m.literalValue) don't re-touch a row we just filled with a literal.
+    if (!m.srcCol && !m.literalValue && !m.fromJoin &&
+        tgtDef && tgtDef.nullable === false && !tgtDef.isIdentity){
+      const lit = defaultLiteralForType(tgtType);
+      if (lit){
+        plan.notNullFill.push({ ref: m, scope, tgtCol, tgtType, literal: lit.value, kind: lit.kind });
+      } else {
+        // No safe default for this type (e.g. unrecognised user-defined
+        // type, sql_variant, hierarchyid). Surface as an informational skip
+        // so the user knows we can't auto-handle it.
+        plan.notNullSkip.push({ scope, tgtCol, tgtType, reason: 'no safe default for this type' });
+      }
+      return;  // filled rows are done — don't run dead-ref/date/etc. on them
+    }
+
     // Pass 1: dead refs (clearing wins over wrapping — no point wrapping a
     // dead reference)
     if (!m.fromJoin && !m.literalValue && m.srcCol && !validSrcNames.has(m.srcCol)){
@@ -2369,14 +2411,16 @@ function autoFixAgentive(){
   // -- Walk every mapping (single OR otm) --
   if (mode === 'single'){
     for (const m of columnMapping){
-      const tgtType = (tgtTable?.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
-      planForMapping(m, m.tgtCol, tgtType, '');
+      const tgtDef = (tgtTable?.columns||[]).find(c => c.name === m.tgtCol);
+      const tgtType = tgtDef?.type || '';
+      planForMapping(m, m.tgtCol, tgtType, '', tgtDef);
     }
   } else {
     for (const tt of (targetTables||[])){
       for (const m of (tt.mappings||[])){
-        const tgtType = (tt.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
-        planForMapping(m, m.tgtCol, tgtType, tt.fullName||tt.name||'');
+        const tgtDef = (tt.columns||[]).find(c => c.name === m.tgtCol);
+        const tgtType = tgtDef?.type || '';
+        planForMapping(m, m.tgtCol, tgtType, tt.fullName||tt.name||'', tgtDef);
       }
     }
   }
@@ -2401,8 +2445,28 @@ function autoFixAgentive(){
       ' will be wrapped with TRY_CAST + 0. Empty and malformed source values both become 0.'
     );
   }
+  if (plan.notNullFill.length){
+    // Group by literal kind so the warning is informative without listing
+    // every single column — the per-row preview below covers detail.
+    const byKind = {};
+    for (const f of plan.notNullFill){ byKind[f.kind] = (byKind[f.kind]||0)+1; }
+    const breakdown = Object.entries(byKind).map(([k,n]) => n+'× '+k).join(', ');
+    plan.warnings.push(
+      plan.notNullFill.length+' unmapped NOT NULL column'+(plan.notNullFill.length===1?'':'s')+
+      ' will be filled with synthetic defaults ('+breakdown+'). ' +
+      'These values are FABRICATED — they have no relation to your source data. ' +
+      'If any of these columns are audit-sensitive (dates on financial/billing tables, business keys, status flags), ' +
+      'map them manually before migrating instead of accepting the default.'
+    );
+  }
+  if (plan.notNullSkip.length){
+    plan.warnings.push(
+      plan.notNullSkip.length+' unmapped NOT NULL column'+(plan.notNullSkip.length===1?'':'s')+
+      ' had no safe default for their type and will be left alone — the insert will still fail on those columns until you map them manually.'
+    );
+  }
 
-  const total = plan.deadRefs.length + plan.dateCasts.length + plan.safeGuid.length + plan.safeNumeric.length + plan.safeTrunc.length;
+  const total = plan.deadRefs.length + plan.dateCasts.length + plan.safeGuid.length + plan.safeNumeric.length + plan.safeTrunc.length + plan.notNullFill.length;
   if (!total){
     showStatus('Nothing to auto-fix — mappings look clean','info');
     return;
@@ -2427,7 +2491,9 @@ function autoFixAgentive(){
     block('Safe numeric wrap', plan.safeNumeric,
       d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}) ← ${d.srcCol} (${d.srcType})`),
     block('Safe truncation', plan.safeTrunc,
-      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}, len=${d.tgtLen}) ← ${d.srcCol} (len=${d.srcLen})`)
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}, len=${d.tgtLen}) ← ${d.srcCol} (len=${d.srcLen})`),
+    block('Default-fill NOT NULL unmapped', plan.notNullFill,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType})  ←  ${d.literal}  [synthetic]`)
   ].filter(Boolean).join('\n\n');
 
   const ok = confirm(
@@ -2437,12 +2503,20 @@ function autoFixAgentive(){
   if (!ok) return;
 
   // -- Apply --
-  let counts = { dead: 0, date: 0, guid: 0, num: 0, trunc: 0 };
+  let counts = { dead: 0, date: 0, guid: 0, num: 0, trunc: 0, fill: 0 };
   for (const d of plan.deadRefs){    d.ref.srcCol = ''; d.ref.match = ''; counts.dead++; }
   for (const d of plan.dateCasts){   d.ref.transform = 'DATE_CAST';    counts.date++; }
   for (const d of plan.safeGuid){    d.ref.transform = 'SAFE_GUID';    counts.guid++; }
   for (const d of plan.safeNumeric){ d.ref.transform = 'SAFE_NUMERIC'; counts.num++; }
   for (const d of plan.safeTrunc){   d.ref.transform = 'SAFE_TRUNC';   counts.trunc++; }
+  for (const d of plan.notNullFill){
+    // Write the literal exactly as the user would have typed it in the
+    // "Fixed value" cell — the generator already knows how to emit it.
+    d.ref.literalValue = d.literal;
+    d.ref.transform    = 'LITERAL';
+    d.ref.match        = 'LITERAL';
+    counts.fill++;
+  }
 
   if (mode === 'single') renderMappingTable();
   else if (typeof renderOTMCards === 'function') renderOTMCards();
@@ -2455,6 +2529,7 @@ function autoFixAgentive(){
   if (counts.guid)  summary.push(counts.guid+' GUID wraps applied');
   if (counts.num)   summary.push(counts.num+' numeric wraps applied');
   if (counts.trunc) summary.push(counts.trunc+' truncation wraps applied');
+  if (counts.fill)  summary.push(counts.fill+' NOT NULL columns default-filled');
   showStatus('Auto-fix: '+summary.join(' · ')+(editJobId?' and saved':''), 'info');
 }
 
