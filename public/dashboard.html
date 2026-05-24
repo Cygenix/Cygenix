@@ -5756,7 +5756,7 @@ function _validateUpdateRow(jobId, status, message){
 // that, so we probe both connections first and pick the right strategy.
 async function _validateProbeTopology(srcConn, tgtConn){
   async function probe(conn){
-    if (!conn) return { server: '', db: '' };
+    if (!conn) return { server: '', db: '', error: 'no connection configured' };
     try {
       const res = await impDbCall(conn, {
         action: 'execute',
@@ -5765,11 +5765,20 @@ async function _validateProbeTopology(srcConn, tgtConn){
       // Response shape varies by backend: the Netlify db-connect proxy returns
       // results under `recordset`, the direct Azure-Function path under `rows`.
       // Read whichever is present.
-      const row = res?.recordset?.[0] || res?.rows?.[0] || {};
-      return {
-        server: String(row.srv || row.SRV || row.server || Object.values(row)[0] || '').trim(),
-        db:     String(row.db  || row.DB  || row.database || Object.values(row)[1] || '').trim()
-      };
+      const rs = res?.recordset || res?.rows || [];
+      const row = rs[0] || {};
+      const server = String(row.srv || row.SRV || row.server || Object.values(row)[0] || '').trim();
+      const db     = String(row.db  || row.DB  || row.database || Object.values(row)[1] || '').trim();
+      // Empty result is a silent failure mode worth surfacing — without it
+      // we'd misclassify as "different server" downstream. The caller can
+      // show this to the user instead of guessing at the cause.
+      if (!server && !db){
+        const hint = res?.error ? String(res.error) :
+                     (rs.length === 0 ? 'probe query returned no rows' :
+                      'probe query returned a row with no recognised columns ('+Object.keys(row).join(',')+')');
+        return { server: '', db: '', error: hint };
+      }
+      return { server, db };
     } catch (e) {
       return { server: '', db: '', error: e.message || String(e) };
     }
@@ -6180,6 +6189,21 @@ async function startSetupCheck(){
   catch (e){
     document.getElementById('setup-check-status').innerHTML =
       `<span style="color:var(--red)">Topology probe failed: ${(e.message||e).toString().slice(0,200)}</span>`;
+    document.getElementById('setup-check-start-btn').textContent = 'Failed';
+    document.getElementById('setup-check-cancel-btn').textContent = 'Close';
+    _setupCheck.running = false;
+    return;
+  }
+  // Surface probe-level errors BEFORE checking sameServer — without this,
+  // a silent probe failure (no rows, missing column, auth quirk) would be
+  // misclassified as "different-server topology" and we'd show a wrong
+  // explanation. Validate's flow has the same guard; this matches it.
+  if (topo.src.error || topo.tgt.error){
+    const errs = [];
+    if (topo.src.error) errs.push('Source: ' + topo.src.error);
+    if (topo.tgt.error) errs.push('Target: ' + topo.tgt.error);
+    document.getElementById('setup-check-status').innerHTML =
+      `<span style="color:var(--red)">Topology probe failed — ${errs.join(' · ').slice(0,400)}</span>`;
     document.getElementById('setup-check-start-btn').textContent = 'Failed';
     document.getElementById('setup-check-cancel-btn').textContent = 'Close';
     _setupCheck.running = false;
