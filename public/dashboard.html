@@ -1524,6 +1524,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="panel-title">All Migration Jobs</div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
           <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)">⚡ Generate SQL</button>
+          <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">✓ Validate</button>
           <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
           <button class="btn btn-primary" onclick="showView('new-job')">+ New Migration</button>
         </div>
@@ -1607,6 +1608,40 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <div class="modal-actions">
           <button class="btn btn-ghost" id="bulk-gen-cancel-btn" onclick="closeBulkGenerateModal()">Cancel</button>
           <button class="btn btn-primary" id="bulk-gen-start-btn" onclick="startBulkGenerate()">Start</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- VALIDATE MODAL -->
+    <div class="modal-overlay" id="validate-modal">
+      <div class="modal" style="width:680px">
+        <div class="modal-title">Validate — Dry-run INSERT</div>
+        <div class="modal-sub" id="validate-scope">Wraps each job's INSERT in a transaction that always rolls back. Catches range, NOT NULL, FK and parse errors before a real migration run.</div>
+
+        <div id="validate-warn" class="alert alert-amber" style="margin-bottom:1rem">
+          <strong>Heads up:</strong> validation does a real INSERT (then rolls back). On the target it will: consume identity values up to the sample size, briefly hold table locks, write to the transaction log, and fire any INSERT triggers. Don't run during production hours on production targets.
+        </div>
+
+        <div class="form-row" style="margin-bottom:0.75rem">
+          <label class="form-label">Sample size (rows from source)</label>
+          <select id="validate-sample-size" class="form-input" style="width:140px">
+            <option value="10">TOP 10</option>
+            <option value="100" selected>TOP 100</option>
+            <option value="1000">TOP 1000</option>
+          </select>
+          <span style="font-size:11px;color:var(--text3);margin-left:0.5rem">Bigger samples catch more edge-case data but cost more identity slots and log space.</span>
+        </div>
+
+        <!-- Per-job progress list (shown once Start is clicked) -->
+        <div id="validate-progress-wrap" style="display:none;max-height:42vh;overflow-y:auto;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);padding:0.5rem">
+          <div id="validate-progress-list" style="font-family:var(--mono);font-size:12px;line-height:1.65"></div>
+        </div>
+
+        <div id="validate-status" style="display:none;margin-top:0.75rem;font-size:12px;color:var(--text3);font-family:var(--mono)"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="validate-cancel-btn" onclick="closeValidateModal()">Cancel</button>
+          <button class="btn btn-primary" id="validate-start-btn" onclick="startValidate()">Start</button>
         </div>
       </div>
     </div>
@@ -5483,6 +5518,259 @@ function _bulkGenFinishCurrent(ok, message){
 window.openBulkGenerateModal  = openBulkGenerateModal;
 window.closeBulkGenerateModal = closeBulkGenerateModal;
 window.startBulkGenerate      = startBulkGenerate;
+
+// ── Validate (dry-run INSERT against target with ROLLBACK) ────────────────
+// Same selection rules as Export Scripts: ticked rows first, otherwise the
+// current Project filter. Sequential — runs jobs one at a time against the
+// target DB via impDbCall, the same primitive used by the data-import flow.
+//
+// What the wrapper SQL does, in order:
+//   1. SET XACT_ABORT ON so any T-SQL error rolls back the transaction
+//      automatically (rather than leaving an orphan).
+//   2. BEGIN TRY / BEGIN TRAN — opens a transaction we WILL roll back.
+//   3. The job's original INSERT, with TOP N injected into its SELECT so we
+//      only attempt the first N source rows.
+//   4. ROLLBACK TRAN — even on success. We're validating, not migrating.
+//   5. CATCH block: re-ROLLBACK defensively then THROW so the driver sees
+//      the real SQL Server error and we can surface it in the modal.
+//
+// Caveats (also shown in the modal):
+//   • Identity columns burn ID values even on rollback. A TOP 100 validate
+//     bumps the next real INSERT's IDs by 100.
+//   • Triggers fire inside the transaction. Audit triggers that write to
+//     other tables get rolled back along with everything else; queue/email
+//     triggers that hit external systems via service broker DO NOT.
+//   • Transaction log writes still happen and are released on rollback.
+//     On a tight log file this can briefly grow it.
+//   • FK references must exist in the target right now — if your migration
+//     loads parents and children in the same run, validating a child
+//     standalone will fail FK checks that would have passed in the real run.
+function buildValidationSQL(originalSQL, sampleSize){
+  const n = Math.max(1, parseInt(sampleSize, 10) || 100);
+  // Inject TOP N into the first SELECT. We control the generated SQL's
+  // shape (single-map: `INSERT … SELECT …`; OTM: `DECLARE cur CURSOR FOR
+  // SELECT …`). Either way the first SELECT is the row source we want to
+  // limit. Use case-insensitive replace, ONLY the first match.
+  // Guard: if SELECT already has TOP, leave it alone.
+  let injected = originalSQL;
+  const m = /\bSELECT\b/i.exec(injected);
+  if (m){
+    // Look at the next ~30 chars after SELECT — if there's already a TOP,
+    // don't add another. Otherwise inject ' TOP ' + n right after SELECT.
+    const after = injected.substr(m.index + m[0].length, 30);
+    if (!/^\s+TOP\b/i.test(after)){
+      injected = injected.slice(0, m.index + m[0].length) + ' TOP ' + n + injected.slice(m.index + m[0].length);
+    }
+  }
+  return [
+    '-- =====================================================================',
+    '-- CYGENIX VALIDATE — dry-run, always rolls back. No rows persist.',
+    '-- =====================================================================',
+    'SET XACT_ABORT ON;',
+    'SET NOCOUNT ON;',
+    'BEGIN TRY',
+    '  BEGIN TRAN;',
+    '',
+    injected,
+    '',
+    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+    "  PRINT 'CYGENIX_VALIDATION_OK';",
+    'END TRY',
+    'BEGIN CATCH',
+    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;',
+    '  THROW;',
+    'END CATCH;'
+  ].join('\n');
+}
+
+const _validate = {
+  running: false,
+  cancelled: false,
+  queue: [],
+  skipped: [],
+  results: [],
+  current: null,
+  abortController: null
+};
+
+function openValidateModal(){
+  const { jobs, source } = getJobsForExport();   // reuses Export's selection
+  const scopeEl = document.getElementById('validate-scope');
+  const startBtn = document.getElementById('validate-start-btn');
+
+  // Reset state
+  _validate.running = false;
+  _validate.cancelled = false;
+  _validate.queue = [];
+  _validate.skipped = [];
+  _validate.results = [];
+  document.getElementById('validate-progress-wrap').style.display = 'none';
+  document.getElementById('validate-progress-list').innerHTML = '';
+  document.getElementById('validate-status').style.display = 'none';
+  document.getElementById('validate-status').textContent = '';
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start';
+  document.getElementById('validate-cancel-btn').textContent = 'Cancel';
+
+  if (!jobs.length){
+    if (scopeEl) scopeEl.textContent = 'No jobs available to validate.';
+    startBtn.disabled = true;
+    document.getElementById('validate-modal').classList.add('open');
+    return;
+  }
+
+  // Runnable filter: must have generated SQL. Raw-SQL jobs are skipped (their
+  // SQL may be arbitrary — wrapping in a tran could break it).
+  const runnable = [];
+  for (const j of jobs){
+    const sql = j.insertSQL || j.migrationSQL || '';
+    if (!sql){
+      _validate.skipped.push({ jobName: j.name, reason: 'No generated SQL — run Generate first' });
+      continue;
+    }
+    if (j.jobType === 'sql'){
+      _validate.skipped.push({ jobName: j.name, reason: 'Raw-SQL job — run manually in SQL Editor' });
+      continue;
+    }
+    runnable.push(j);
+  }
+  _validate.queue = runnable;
+
+  const totalIn = jobs.length;
+  const skipN = _validate.skipped.length;
+  const runN  = runnable.length;
+  if (scopeEl){
+    const scopeLabel = source === 'selection'
+      ? `${totalIn} selected job${totalIn===1?'':'s'}`
+      : `all ${totalIn} job${totalIn===1?'':'s'} in the current filter (nothing ticked)`;
+    scopeEl.textContent = `Will validate on ${scopeLabel}. ${runN} runnable, ${skipN} skipped.`;
+  }
+
+  if (runN === 0){
+    startBtn.disabled = true;
+    startBtn.textContent = 'Nothing to validate';
+  }
+
+  document.getElementById('validate-modal').classList.add('open');
+}
+
+function closeValidateModal(){
+  // Cancel an in-flight run if active.
+  if (_validate.running){
+    _validate.cancelled = true;
+    document.getElementById('validate-status').textContent = 'Cancelling…';
+    // Abort the in-flight fetch so the loop unblocks.
+    try { _validate.abortController?.abort(); } catch {}
+    return;
+  }
+  document.getElementById('validate-modal').classList.remove('open');
+}
+
+function _validateRenderList(){
+  const wrap = document.getElementById('validate-progress-wrap');
+  const list = document.getElementById('validate-progress-list');
+  wrap.style.display = 'block';
+  list.innerHTML = _validate.queue.map(j => `
+    <div data-vrow="${j.id}" style="display:flex;align-items:flex-start;gap:0.5rem;padding:2px 0">
+      <span class="v-icon" style="width:14px;text-align:center;color:var(--text3)">·</span>
+      <span style="flex:1;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(j.name||'(unnamed)').replace(/</g,'&lt;')}</span>
+      <span class="v-msg" style="color:var(--text3);font-size:11px"></span>
+    </div>
+  `).join('');
+  document.getElementById('validate-status').style.display = 'block';
+}
+
+function _validateUpdateRow(jobId, status, message){
+  const row = document.querySelector(`[data-vrow="${jobId}"]`);
+  if (!row) return;
+  const icon = status === 'running' ? '⏳'
+             : status === 'ok'      ? '✓'
+             : status === 'fail'    ? '✕'
+             : '·';
+  const colour = status === 'running' ? 'var(--accent)'
+               : status === 'ok'      ? 'var(--green)'
+               : status === 'fail'    ? 'var(--red)'
+               : 'var(--text3)';
+  const ic = row.querySelector('.v-icon');
+  ic.textContent = icon; ic.style.color = colour;
+  if (message){
+    const m = row.querySelector('.v-msg');
+    m.textContent = ' — ' + message;
+    m.style.color = colour;
+    // For long error messages, show full text on hover.
+    m.title = message;
+  }
+}
+
+async function startValidate(){
+  if (_validate.running) return;
+  if (!_validate.queue.length) return;
+
+  // Resolve target connection once. Without it nothing can run.
+  const tgtConn = (typeof impGetConn === 'function') ? impGetConn('tgt') : '';
+  if (!tgtConn){
+    alert('No target database connection configured. Set one in Dashboard → Connections.');
+    return;
+  }
+
+  const sampleSize = parseInt(document.getElementById('validate-sample-size').value, 10) || 100;
+
+  _validate.running = true;
+  _validate.cancelled = false;
+  document.getElementById('validate-start-btn').disabled = true;
+  document.getElementById('validate-start-btn').textContent = 'Running…';
+  _validateRenderList();
+
+  for (let i = 0; i < _validate.queue.length; i++){
+    if (_validate.cancelled) break;
+    const job = _validate.queue[i];
+    document.getElementById('validate-status').textContent =
+      `Validating ${i+1} of ${_validate.queue.length}: ${job.name}`;
+    _validateUpdateRow(job.id, 'running', 'running…');
+
+    const sql = job.insertSQL || job.migrationSQL || '';
+    const wrapped = buildValidationSQL(sql, sampleSize);
+
+    try {
+      // Fresh AbortController per job so Cancel only kills the current request.
+      _validate.abortController = new AbortController();
+      const res = await impDbCall(tgtConn, { action: 'execute', sql: wrapped });
+      if (res && res.error){
+        _validate.results.push({ jobName: job.name, ok: false, message: String(res.error).slice(0, 400) });
+        _validateUpdateRow(job.id, 'fail', String(res.error).slice(0, 200));
+      } else {
+        _validate.results.push({ jobName: job.name, ok: true, message: 'OK' });
+        _validateUpdateRow(job.id, 'ok', `OK (${sampleSize} rows, rolled back)`);
+      }
+    } catch (e){
+      const msg = (e && (e.name === 'AbortError') ? 'Cancelled' : (e?.message || String(e))).slice(0, 400);
+      _validate.results.push({ jobName: job.name, ok: false, message: msg });
+      _validateUpdateRow(job.id, 'fail', msg.slice(0, 200));
+    }
+  }
+
+  _validate.running = false;
+  _validate.abortController = null;
+
+  const okN   = _validate.results.filter(r => r.ok).length;
+  const failN = _validate.results.filter(r => !r.ok).length;
+  const skipN = _validate.skipped.length;
+  const tail  = _validate.cancelled ? ' (cancelled)' : '';
+  document.getElementById('validate-status').innerHTML =
+    `<span style="color:var(--green)">${okN} passed</span> · ` +
+    `<span style="color:var(--red)">${failN} failed</span> · ` +
+    `<span style="color:var(--text3)">${skipN} skipped</span>${tail}`;
+  document.getElementById('validate-start-btn').textContent = 'Done';
+  document.getElementById('validate-cancel-btn').textContent = 'Close';
+
+  if (typeof showToast === 'function') showToast(`Validate: ${okN} pass, ${failN} fail, ${skipN} skip${tail}`);
+  if (typeof addAudit === 'function') addAudit(`Validate: ${okN} passed, ${failN} failed, ${skipN} skipped${tail} (sample ${sampleSize})`);
+}
+
+window.openValidateModal  = openValidateModal;
+window.closeValidateModal = closeValidateModal;
+window.startValidate      = startValidate;
+window.buildValidationSQL = buildValidationSQL;  // exposed for unit-testing from console
 
 function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
