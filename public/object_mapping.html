@@ -535,8 +535,6 @@ body.cyg-collapsed{padding-left:54px}
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                 <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
                 <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
-                <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table (common Agentive cleanup)">🧹 Clean dead source refs</button>
-                <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
               </div>
             </div>
 
@@ -560,8 +558,6 @@ body.cyg-collapsed{padding-left:54px}
               <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap">
                 <button class="btn btn-primary btn-sm" onclick="generateSingleSQL()">⚡ Generate SQL</button>
                 <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
-                <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table (common Agentive cleanup)">🧹 Clean dead source refs</button>
-                <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
               </div>
             </div>
             <div id="single-empty" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
@@ -614,8 +610,6 @@ body.cyg-collapsed{padding-left:54px}
           <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);display:flex;gap:0.5rem;flex-wrap:wrap" id="otm-actions" style="display:none">
             <button class="btn btn-primary btn-sm" onclick="generateOTMSQL()">⚡ Generate cursor SQL</button>
             <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
-            <button class="btn btn-ghost btn-sm" onclick="removeDeadSourceMappings()" title="Clear srcCol on rows pointing at columns that don't exist on the source table">🧹 Clean dead source refs</button>
-            <button class="btn btn-ghost btn-sm" onclick="applyDateCasts()" title="Set DATE_CAST on rows where target is a date column — uses TRY_CONVERT to avoid out-of-range insert errors">📅 Fix date casts</button>
           </div>
         </div>
       </div>
