@@ -1023,6 +1023,79 @@ function enforceSize(obj) {
   };
 }
 
+// ── Context trim: drop stale describe_tables results ────────────────────────
+//
+// After a successful propose_table_mapping, the schema details for those
+// tables (potentially tens of kilobytes per wide table) are no longer needed
+// in context — the model has already used them to produce the proposal.
+// Walking back through `messages` and replacing those bulky tool_result
+// payloads with a tiny placeholder frees significant headroom for the next
+// pair, which is the difference between completing 2 pairs and 10 on a wide
+// scope.
+//
+// The trim preserves message structure (every tool_use still has a matching
+// tool_result) so the Anthropic API stays happy. We modify the messages
+// array in place rather than the persisted log — the Cosmos message
+// history is the audit trail and must remain complete.
+//
+// The placeholder explicitly tells the model the data is recoverable via
+// describe_tables, in case a later pair genuinely needs to re-examine one
+// of these columns (e.g. for a foreign-key type check). Re-fetching costs
+// one turn, which is fine — the model will only do it when needed.
+//
+// Why match by tool_use_id and table name (both):
+//  - tool_use_id is the safe link (tool_use ↔ tool_result pairs)
+//  - the table list lets us trim only the entries for tables that have
+//    been mapped, not the whole describe_tables result (which might have
+//    described multiple tables, only some of which are now mapped)
+function trimStaleDescribeResults(messages, mappedTables) {
+  if (!mappedTables || mappedTables.size === 0) return 0;
+  // Build a map of tool_use_id -> describe_tables input, so we can find
+  // matching tool_result blocks and know which tables they covered.
+  const describeCallsById = new Map();
+  for (const msg of messages) {
+    if (msg.role !== 'assistant' || !Array.isArray(msg.content)) continue;
+    for (const block of msg.content) {
+      if (block.type === 'tool_use' && block.name === 'describe_tables') {
+        describeCallsById.set(block.id, block.input || {});
+      }
+    }
+  }
+  if (describeCallsById.size === 0) return 0;
+
+  let trimmedBytes = 0;
+  for (const msg of messages) {
+    if (msg.role !== 'user' || !Array.isArray(msg.content)) continue;
+    for (let i = 0; i < msg.content.length; i++) {
+      const block = msg.content[i];
+      if (block.type !== 'tool_result') continue;
+      const call = describeCallsById.get(block.tool_use_id);
+      if (!call) continue;
+      const tablesInCall = Array.isArray(call.tables) ? call.tables : [];
+      if (tablesInCall.length === 0) continue;
+      // If every table in this describe_tables call has been mapped, the
+      // whole result is now dead weight — replace it. If only some were
+      // mapped, leave it alone (a partial trim would mislead the model
+      // about which tables it has seen).
+      const allMapped = tablesInCall.every(t => mappedTables.has(t.toLowerCase()));
+      if (!allMapped) continue;
+      // Only trim if the content actually has meaningful size — skip already-
+      // trimmed placeholders to keep the operation idempotent across turns.
+      const currentContent = typeof block.content === 'string' ? block.content : JSON.stringify(block.content);
+      if (currentContent.length < 400) continue;
+      trimmedBytes += currentContent.length;
+      const side = call.side || 'unknown';
+      const tableList = tablesInCall.join(', ');
+      msg.content[i] = {
+        type: 'tool_result',
+        tool_use_id: block.tool_use_id,
+        content: `[trimmed: ${side} describe of ${tableList} — already mapped; re-call describe_tables if needed]`,
+      };
+    }
+  }
+  return trimmedBytes;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SYSTEM PROMPT
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1342,6 +1415,24 @@ async function runAgentLoop(run, conns, ctx) {
     if (proposalState.finalized) {
       ctx.log(`[agent] run ${run.id} finalized with ${proposalState.proposals.length} proposals`);
       return { finalText: proposalState.summary, proposalState };
+    }
+
+    // ── Context trim ───────────────────────────────────────────────────────
+    // Schemas of tables that have just been mapped are dead weight in the
+    // context. Trim them before the next turn's token-budget check fires,
+    // otherwise on wide-table scopes (e.g. 115-column Client_DM) the model
+    // wraps up after just 2-3 pairs even though it has plenty of turn and
+    // cost budget left.
+    const mappedTables = new Set();
+    for (const p of proposalState.proposals) {
+      if (p.sourceTable) mappedTables.add(String(p.sourceTable).toLowerCase());
+      if (p.targetTable) mappedTables.add(String(p.targetTable).toLowerCase());
+    }
+    if (mappedTables.size > 0) {
+      const trimmed = trimStaleDescribeResults(messages, mappedTables);
+      if (trimmed > 0) {
+        ctx.log(`[agent] run ${run.id} trimmed ${trimmed} bytes of stale describe_tables payloads from context (${mappedTables.size} mapped tables)`);
+      }
     }
   }
 
