@@ -74,12 +74,48 @@ const CygenixSync = (() => {
   // Extract userId — MSAL-first (authoritative post-migration), with legacy
   // fallbacks for back-compat. Critical that this returns a stable value: the
   // init() flow uses it to decide whether to wipe localStorage as part of the
-  // user-switch protection, so instability here can cause data loss.
+  // user-switch protection, so instability here can cause data loss. The
+  // userId is also used as the Cosmos partition key, so any drift between
+  // machines for the same human user causes their data to split across
+  // partitions and silently appear empty on one of them.
+  //
+  // Identity resolution policy (post 25-May-2026 fix):
+  //   - Lead with the OIDC `preferred_username` claim from the id_token.
+  //     This is the standard OIDC field for the user's principal name (the
+  //     email, in our tenant) and is stable across machines and IdPs.
+  //   - MSAL's `account.username` field is NOT reliable under Entra External
+  //     ID with federated IdPs (e.g. Google SSO). For federated sign-ins,
+  //     MSAL frequently populates `username` with the user's object ID in
+  //     UPN form: `{oid}@{tenant}.onmicrosoft.com`. That is a stable
+  //     identifier but a DIFFERENT STRING from the email — which means the
+  //     same user ends up reading/writing different Cosmos partitions
+  //     depending on which machine they signed in from. Bug observed on
+  //     25-May-2026: account showed `demo@cygenix.onmicrosoft.com` on the
+  //     normal machine, `36f15260-…@cygenix.onmicrosoft.com` on a fresh
+  //     machine, producing two partitions for one user.
+  //   - We therefore explicitly reject anything that looks like the GUID
+  //     form (`{8-4-4-4-12 hex}@…`) when falling back to `username`.
+  function isGuidUpn(id) {
+    // Matches {8}-{4}-{4}-{4}-{12} hex anywhere before the @ — covers the
+    // Entra OID-as-UPN case without false-positiving genuine emails.
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@/i.test(id || '');
+  }
+  function pickEmail(...candidates) {
+    for (const raw of candidates) {
+      if (!raw) continue;
+      const id = String(raw).trim().toLowerCase();
+      if (!id) continue;
+      if (isGuidUpn(id)) continue;     // reject {oid}@tenant form
+      if (!id.includes('@')) continue; // must look like an email/UPN
+      return id;
+    }
+    return null;
+  }
   function getUserId() {
     // Method 1: MSAL account cache (authoritative after Entra sign-in).
-    //   Nothing in the app currently populates cygenix_entra_account, so
-    //   before this fallback existed, the function was falling all the way
-    //   through to JWT decode — which failed on URL-safe base64.
+    //   Order matters: idTokenClaims.preferred_username / email come from
+    //   the actual JWT payload and are reliable. account.username is a
+    //   last-resort fallback because of the OID-as-UPN behaviour above.
     try {
       if (typeof msal !== 'undefined') {
         const msalApp = new msal.PublicClientApplication({
@@ -93,7 +129,13 @@ const CygenixSync = (() => {
         const accounts = msalApp.getAllAccounts() || [];
         if (accounts.length) {
           const a = accounts[0];
-          const id = (a.username || a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '').trim().toLowerCase();
+          const c = a.idTokenClaims || {};
+          const id = pickEmail(
+            c.preferred_username,
+            c.email,
+            c.upn,
+            a.username                  // last resort — may be {oid}@tenant
+          );
           if (id) return id;
         }
       }
@@ -105,7 +147,7 @@ const CygenixSync = (() => {
                     || localStorage.getItem('cygenix_entra_account');
       if (entraRaw) {
         const u = JSON.parse(entraRaw);
-        const id = (u.email || u.userId || '').trim().toLowerCase();
+        const id = pickEmail(u.email, u.userId);
         if (id) return id;
       }
     } catch {}
@@ -114,13 +156,13 @@ const CygenixSync = (() => {
       const raw = sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user');
       if (raw) {
         const u = JSON.parse(raw);
-        const email = u.email || u.user?.email;
-        if (email) return email.trim().toLowerCase();
+        const email = pickEmail(u.email, u.user?.email);
+        if (email) return email;
         const at = u.access_token;
         if (at && at.split('.').length === 3) {
           const claims = decodeJwt(at);
-          if (claims?.email) return claims.email.trim().toLowerCase();
-          if (claims?.sub && claims.sub.includes('@')) return claims.sub.trim().toLowerCase();
+          const id = pickEmail(claims?.email, claims?.preferred_username, claims?.sub);
+          if (id) return id;
         }
       }
     } catch {}
@@ -131,9 +173,8 @@ const CygenixSync = (() => {
       const token = sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token');
       if (token && token.split('.').length === 3) {
         const claims = decodeJwt(token);
-        if (claims?.email) return claims.email.trim().toLowerCase();
-        if (claims?.preferred_username) return claims.preferred_username.trim().toLowerCase();
-        if (claims?.sub && claims.sub.includes('@')) return claims.sub.trim().toLowerCase();
+        const id = pickEmail(claims?.preferred_username, claims?.email, claims?.upn, claims?.sub);
+        if (id) return id;
       }
     } catch {}
     return null;
