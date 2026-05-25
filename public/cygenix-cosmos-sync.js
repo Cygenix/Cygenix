@@ -24,6 +24,17 @@ const CygenixSync = (() => {
     // projects.html and the dashboard Projects card it's now the source of
     // truth for the user's project list, so include it in sync.
     'cygenix_projects',
+    // Active project blob (legacy single-project model, still used as the
+    // "currently-open project" state across the app). Object, not array, so
+    // mergeField's non-array short-circuit makes this local-wins by default
+    // — correct for a user-edited working blob. Added 25-May-2026 after we
+    // found the active project state was local-only: any machine switch
+    // showed jobs without their parent project context.
+    'cygenix_conv_project',
+    // Project history snapshots (array of recent project blobs). Local-wins
+    // via 'replace' strategy below so deletions/trims propagate. Same fix
+    // batch as cygenix_conv_project — previously local-only.
+    'cygenix_last_snapshots',
   ];
 
   const FIELD_MAP = {
@@ -35,6 +46,13 @@ const CygenixSync = (() => {
     issues:'cygenix_issues', inventory:'cygenix_inventory',
     sys_params:'cygenix_sys_params',
     projects:'cygenix_projects',
+    // Added 25-May-2026. Cloud field names kept snake_case to match the
+    // existing convention (jobs/project_settings/etc.); these are passed
+    // verbatim to the Azure Function /api/data/save endpoint which is
+    // expected to be field-agnostic. If save succeeds but these don't
+    // round-trip back on load, the backend needs a matching schema update.
+    conv_project:   'cygenix_conv_project',
+    last_snapshots: 'cygenix_last_snapshots',
   };
 
   // Per-field merge strategy. Two options:
@@ -66,6 +84,9 @@ const CygenixSync = (() => {
     sql_scripts:        'replace',
     issues:             'replace',
     inventory:          'replace',
+    last_snapshots:     'replace',
+    // conv_project is an OBJECT not array — mergeField short-circuits on
+    // non-arrays and returns local. No strategy needed (would be ignored).
   };
   function strategyFor(field) {
     return MERGE_STRATEGY[field] || 'replace';
@@ -494,6 +515,87 @@ const CygenixSync = (() => {
     }
   }
 
+  // ── Local backup/restore helpers ────────────────────────────────────────
+  // Console-callable: CygenixSync.exportBackup() / CygenixSync.importBackup(json)
+  //
+  // Why these exist: every cross-machine sync conversation comes down to
+  // "if the cloud writes the wrong thing first, the local state is the only
+  // surviving copy". These give the user a one-liner to capture or restore
+  // that local state without having to remember the right localStorage
+  // incantations under stress.
+  //
+  // exportBackup() downloads a JSON file containing every cygenix_* key
+  // currently in localStorage. Not just SYNC_KEYS — captures everything
+  // including local-only diagnostics, prefs, etc.
+  //
+  // importBackup(jsonOrObject) restores keys from a previously-exported
+  // backup. Uses _orig so the auto-save doesn't fire mid-restore. Caller
+  // is expected to reload the page afterwards to re-render views. Existing
+  // keys not present in the backup are LEFT ALONE — restore is additive,
+  // not destructive. If you want to wipe-then-restore, clear localStorage
+  // first then import.
+  function exportBackup() {
+    const dump = {};
+    Object.keys(localStorage).filter(k => k.startsWith('cygenix_')).forEach(k => {
+      dump[k] = localStorage.getItem(k);
+    });
+    const meta = {
+      _backup_meta: {
+        exportedAt: new Date().toISOString(),
+        user: localStorage.getItem('cygenix_active_user') || '(unknown)',
+        keyCount: Object.keys(dump).length,
+        appVersion: 'cygenix-cosmos-sync.js v1.2 (25-May-2026)'
+      }
+    };
+    const payload = JSON.stringify({ ...meta, ...dump }, null, 2);
+    try {
+      const blob = new Blob([payload], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cygenix_backup_' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('[CygenixSync] exportBackup download failed:', e.message);
+      return payload; // return the raw JSON so the user can copy it manually
+    }
+    console.log('[CygenixSync] Exported', Object.keys(dump).length, 'keys');
+    return { ok: true, keys: Object.keys(dump).length };
+  }
+
+  function importBackup(input) {
+    let obj;
+    if (typeof input === 'string') {
+      try { obj = JSON.parse(input); }
+      catch (e) { console.error('[CygenixSync] importBackup: invalid JSON:', e.message); return { ok: false, error: 'invalid-json' }; }
+    } else if (input && typeof input === 'object') {
+      obj = input;
+    } else {
+      console.error('[CygenixSync] importBackup: expected JSON string or object');
+      return { ok: false, error: 'bad-input' };
+    }
+    const keys = Object.keys(obj).filter(k => k.startsWith('cygenix_'));
+    if (!keys.length) {
+      console.error('[CygenixSync] importBackup: no cygenix_* keys found in backup');
+      return { ok: false, error: 'no-keys' };
+    }
+    let restored = 0;
+    for (const k of keys) {
+      try {
+        const v = obj[k];
+        if (typeof v === 'string') { _orig(k, v); restored++; }
+        else if (v !== null && v !== undefined) { _orig(k, JSON.stringify(v)); restored++; }
+      } catch (e) {
+        console.warn('[CygenixSync] importBackup: failed to restore', k, e.message);
+      }
+    }
+    console.log('[CygenixSync] Restored', restored, 'keys. Reload the page to re-render views.');
+    return { ok: true, restored };
+  }
+
   // Auto-save on localStorage writes. _orig is hoisted to the top of the
   // module so save() can use it too without re-triggering the auto-save.
   localStorage.setItem = function(k, v) {
@@ -515,6 +617,25 @@ const CygenixSync = (() => {
     }
     _done = true;
     console.log('[CygenixSync] User:', userId);
+
+    // Detect first-run-on-this-machine BEFORE we touch cygenix_active_user.
+    // If no active user was previously stored, this browser has never
+    // completed an init for this user — meaning any local SYNC_KEYS values
+    // are either: (a) leftover from a different account that signed in
+    // here, (b) seed/empty arrays from page init code, or (c) data the user
+    // genuinely entered locally before signing in. (a) and (b) must not
+    // clobber cloud. (c) is rare and recoverable via the local backup
+    // helpers below. So on first-run we skip the post-init debounced save:
+    // cloud stays authoritative until the user makes a real edit, at which
+    // point the localStorage.setItem hook fires save() the normal way.
+    //
+    // Added 25-May-2026 alongside the conv_project/last_snapshots additions
+    // to SYNC_KEYS. Without this guard, the 3s post-init save can overwrite
+    // a 'replace'-strategy field (e.g. cygenix_projects) in Cosmos with a
+    // stale 2-entry local copy from a previous botched sign-in on this
+    // machine — which is exactly the data-loss scenario that motivated the
+    // whole 25-May debugging session.
+    const isFirstRunOnMachine = !localStorage.getItem('cygenix_active_user');
 
     // ── Check if localStorage belongs to a DIFFERENT user ──────────────────
     // Normalise both sides before comparing — a casing or whitespace mismatch
@@ -613,8 +734,18 @@ const CygenixSync = (() => {
     // Push any local-only data back up (merge on the server preserves
     // cloud-only fields, so this is safe). Debounced so multiple pages
     // loading in quick succession don't each fire their own save.
-    if (_saveTimer) clearTimeout(_saveTimer);
-    _saveTimer = setTimeout(save, 3000);
+    //
+    // EXCEPT on first-run on this machine — see isFirstRunOnMachine above.
+    // Skipping the kick means cloud-authoritative behaviour until the user
+    // makes a real edit. Their first edit triggers save() the normal way
+    // via the localStorage.setItem monkey-patch, at which point local
+    // values genuinely reflect user intent and are safe to push up.
+    if (isFirstRunOnMachine) {
+      console.log('[CygenixSync] First run on this machine — skipping post-init auto-save. Cloud is authoritative until you make an edit.');
+    } else {
+      if (_saveTimer) clearTimeout(_saveTimer);
+      _saveTimer = setTimeout(save, 3000);
+    }
   }
 
   // Start after a short delay to let auth complete
@@ -622,6 +753,8 @@ const CygenixSync = (() => {
 
   return {
     init, save, saveNow, load, forceLoad, ensureKey, ensureUser, ping, getSubscription, getUserId,
+    // Console-callable backup/restore helpers — see definitions above.
+    exportBackup, importBackup,
     // Exposed for other modules (e.g. cygenix-project-summary.js) that need to
     // call the Function with the same auth as the rest of the dashboard.
     // Keep this the SINGLE source of truth — never duplicate the function key
