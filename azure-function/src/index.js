@@ -688,7 +688,17 @@ app.http('data', {
             'saved_connections',
             'performance', 'validation_sources', 'wasis_rules',
             'sql_scripts', 'issues', 'inventory', 'sys_params',
-            'projects'   // multi-project array (cygenix_projects)
+            'projects',         // multi-project array (cygenix_projects)
+            // Added 25-May-2026 alongside the corresponding frontend changes
+            // in cygenix-cosmos-sync.js v1.2. conv_project is the active
+            // project blob (singular, OBJECT not array) that the legacy
+            // single-project conversion model still uses as "currently open
+            // project" state. last_snapshots is the project history (array).
+            // Both were local-only until this batch — meaning the active
+            // working state didn't survive a machine switch, even though
+            // jobs did. See the 25-May-2026 debugging session for context.
+            'conv_project',     // singular active project blob (cygenix_conv_project)
+            'last_snapshots',   // project history array (cygenix_last_snapshots)
           ];
 
           // Only overwrite fields explicitly present in the payload
