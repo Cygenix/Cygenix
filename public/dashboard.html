@@ -7342,8 +7342,6 @@ function jobsTableHTML(jobs) {
           <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
           <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
           ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
-          <button class="btn btn-teal" onclick="downloadJobSQL('${j.id}','schema')" title="Download schema SQL">⬇ Schema</button>
-          <button class="btn btn-primary" onclick="downloadJobSQL('${j.id}','migration')" title="Download migration SQL">⬇ Migration</button>
           <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
           <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename">✎</button>
           <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Move to Trash">✕</button>
