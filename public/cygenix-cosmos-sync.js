@@ -327,8 +327,19 @@ const CygenixSync = (() => {
   // This wraps each branch with a specific failure tag.
   async function saveDetailed() {
     if (!getUserId()) return { ok: false, error: 'not-signed-in' };
-    const payload = await buildMergedPayload();
-    if (!payload || !Object.keys(payload).length) {
+    // v1.3 change (26-May-2026): pure local→cloud upload — see save() above
+    // for the full rationale. Mirrors save() exactly, but returns a structured
+    // result so saveNow() callers can distinguish failure modes.
+    const payload = {};
+    for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
+      try {
+        const v = localStorage.getItem(localKey);
+        if (v !== null) payload[cloudField] = JSON.parse(v);
+      } catch (e) {
+        console.warn('[CygenixSync] saveDetailed: skipping unparseable', localKey, e.message);
+      }
+    }
+    if (!Object.keys(payload).length) {
       return { ok: false, error: 'no-local-data' };
     }
     let r;
@@ -338,25 +349,10 @@ const CygenixSync = (() => {
       return { ok: false, error: 'call-threw: ' + (e.message || e) };
     }
     if (!r) {
-      // callApi returned null — already logged the HTTP status or network
-      // error to console with the [CygenixSync] prefix. Surface that to UI
-      // with enough detail that the user can search the console.
       return { ok: false, error: 'call-failed (check console for [CygenixSync])' };
     }
     if (!r.saved) {
-      // Server responded but explicitly didn't save. Surface its reason
-      // verbatim if it gave one, so we don't lose the diagnostic detail.
       return { ok: false, error: 'server-rejected: ' + JSON.stringify(r) };
-    }
-    // Success — mirror cloud back to localStorage so the UI sees any
-    // cloud-only records that the merge brought in. Same writeback as save().
-    try {
-      for (const [field, val] of Object.entries(payload)) {
-        const key = FIELD_MAP[field];
-        if (key) _orig(key, JSON.stringify(val));
-      }
-    } catch (e) {
-      console.warn('[CygenixSync] post-save localStorage update failed:', e.message);
     }
     console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
     return { ok: true, updatedAt: r.updatedAt };
@@ -364,27 +360,35 @@ const CygenixSync = (() => {
 
   async function save() {
     if (!getUserId()) return null;
-    const payload = await buildMergedPayload();
-    if (!payload || !Object.keys(payload).length) return null;
-    const r = await callApi('save','POST',payload);
-    if (r?.saved) console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
-    // After saving the merged result, sync localStorage with what we just
-    // pushed so the user sees the cloud-only records too. Without this, the
-    // localStorage stays at its old value until next page load.
-    if (r?.saved) {
+    // v1.3 change (26-May-2026): pure local→cloud upload. No load-then-merge,
+    // no writeback to local. Whatever is in local for each FIELD_MAP key gets
+    // sent to Cosmos verbatim. Cloud's existing values for those fields are
+    // replaced wholesale by the backend's `merged[key] = body[key]` logic.
+    //
+    // Rationale: yesterday's debugging session (25-May-2026) showed that the
+    // load-then-merge-then-writeback flow was the primary source of data
+    // pollution across machines. Any stale machine that opened the page would
+    // pull cloud, merge its stale local with cloud's correct values, and
+    // write the union back — both to Cosmos and to local. The result was a
+    // monotonically growing pollution set: every machine's stale data
+    // accumulated in Cosmos and propagated to every other machine.
+    //
+    // The new contract: local is the truth. If you want to delete jobs,
+    // delete them locally and the next save will remove them from Cosmos.
+    // If you want cloud to be authoritative on a fresh page load, init()
+    // now always calls forceLoad() first — see init() below.
+    const payload = {};
+    for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
       try {
-        for (const [field, val] of Object.entries(payload)) {
-          const key = FIELD_MAP[field];
-          if (key) {
-            // Use the underlying setItem to avoid re-triggering the auto-save
-            // that called us in the first place (would loop).
-            _orig(key, JSON.stringify(val));
-          }
-        }
+        const v = localStorage.getItem(localKey);
+        if (v !== null) payload[cloudField] = JSON.parse(v);
       } catch (e) {
-        console.warn('[CygenixSync] post-save localStorage update failed:', e.message);
+        console.warn('[CygenixSync] save: skipping unparseable', localKey, e.message);
       }
     }
+    if (!Object.keys(payload).length) return null;
+    const r = await callApi('save', 'POST', payload);
+    if (r?.saved) console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
     return r;
   }
 
@@ -596,6 +600,172 @@ const CygenixSync = (() => {
     return { ok: true, restored };
   }
 
+  // ── Recovery helpers ─────────────────────────────────────────────────────
+  // Console-callable: CygenixSync.resetToCloud() / CygenixSync.nuke(opts)
+  //
+  // These exist for the multi-machine pollution recovery scenario that arose
+  // on 25-May-2026. The v1.3 init() rewrite (cloud-authoritative on every
+  // page load) prevents new pollution, but a one-off cleanup is needed to
+  // remove the accumulated junk from prior sessions.
+  //
+  // resetToCloud(): wipes all sync-key local storage, then forces a fresh
+  //   cloud load. Use this on a machine that has stale local state to bring
+  //   it back into agreement with cloud. Equivalent to a hard-refresh under
+  //   the v1.3 init contract, but doesn't require a page reload.
+  //
+  // nuke(opts): WIPES COSMOS for the current user, replacing it with a
+  //   minimal clean state. Use ONCE from any single machine to clean up the
+  //   user's Cosmos partition. After nuke, every other machine will pick up
+  //   the clean state automatically on its next page load.
+  //
+  //   Required opts:
+  //     opts.confirm === 'YES'  — must be literally this string. Guard
+  //                                against accidentally calling nuke() from
+  //                                muscle memory or copy-paste.
+  //
+  //   Optional opts:
+  //     opts.keepProject = {id, name, client, ...}  — project to keep as
+  //                                                    the sole active one.
+  //                                                    Defaults to whatever
+  //                                                    cygenix_conv_project
+  //                                                    currently is locally.
+  async function resetToCloud() {
+    if (!getUserId()) {
+      console.error('[CygenixSync] resetToCloud: not signed in');
+      return { ok: false, error: 'not-signed-in' };
+    }
+    console.log('[CygenixSync] resetToCloud: wiping local sync keys...');
+    SYNC_KEYS.forEach(k => localStorage.removeItem(k));
+    localStorage.removeItem('cygenix_active_project_id');
+
+    const cloud = await callApi('load', 'GET');
+    if (!cloud) {
+      console.warn('[CygenixSync] resetToCloud: callApi returned null, local is now empty');
+      return { ok: false, error: 'load-failed', local_now_empty: true };
+    }
+    let n = 0;
+    for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
+      const v = cloud[cloudField];
+      if (v !== undefined && v !== null) {
+        try { _orig(localKey, JSON.stringify(v)); n++; } catch {}
+      }
+    }
+    console.log('[CygenixSync] resetToCloud: loaded', n, 'keys from cloud');
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
+        detail: { filled: n, source: 'resetToCloud' }
+      }));
+    } catch {}
+    console.log('[CygenixSync] resetToCloud: done. Reload page or refresh views to see new state.');
+    return { ok: true, loaded: n };
+  }
+
+  async function nuke(opts) {
+    if (!opts || opts.confirm !== 'YES') {
+      console.error('[CygenixSync] nuke: requires opts.confirm === "YES". Aborting.');
+      console.error('[CygenixSync] Example: CygenixSync.nuke({confirm: "YES"})');
+      return { ok: false, error: 'confirmation-required' };
+    }
+    if (!getUserId()) {
+      console.error('[CygenixSync] nuke: not signed in');
+      return { ok: false, error: 'not-signed-in' };
+    }
+
+    // Determine which project to keep. Default: current local conv_project.
+    let keepProject = opts.keepProject;
+    if (!keepProject) {
+      try {
+        const local = JSON.parse(localStorage.getItem('cygenix_conv_project') || '{}');
+        if (local && local.id && local.name) keepProject = local;
+      } catch {}
+    }
+    if (!keepProject || !keepProject.id || !keepProject.name) {
+      console.error('[CygenixSync] nuke: no usable project to keep. Pass opts.keepProject = {id, name, client, ...}.');
+      return { ok: false, error: 'no-keep-project' };
+    }
+
+    const now = new Date().toISOString();
+    const projectRecord = {
+      id:           keepProject.id,
+      name:         keepProject.name,
+      client:       keepProject.client      || '',
+      ref:          keepProject.ref         || '',
+      analyst:      keepProject.analyst     || '',
+      pm:           keepProject.pm          || '',
+      contact:      keepProject.contact     || '',
+      description:  keepProject.description || '',
+      type:         keepProject.type        || 'other',
+      srcSystem:    keepProject.srcSystem   || '',
+      tgtSystem:    keepProject.tgtSystem   || '',
+      phase:        keepProject.phase       || 'active',
+      status:       keepProject.status      || 'active',
+      start:        keepProject.start       || now.slice(0,10),
+      end:          keepProject.end         || '',
+      rows:         keepProject.rows        || '',
+      notes:        keepProject.notes       || '',
+      statusManual: true,
+      created:      keepProject.created     || now,
+      modified:     now,
+      dbHistory:    keepProject.dbHistory   || [],
+      groups:       keepProject.groups      || [],
+    };
+    const projectsList = [{
+      id:       projectRecord.id,
+      name:     projectRecord.name,
+      client:   projectRecord.client,
+      status:   projectRecord.status,
+      created:  projectRecord.created,
+      modified: projectRecord.modified,
+    }];
+
+    console.log('[CygenixSync] nuke: wiping Cosmos for user', getUserId());
+    console.log('[CygenixSync] nuke: keeping project', projectRecord.id, projectRecord.name);
+
+    // Build the clean payload — every SYNCABLE field reset to empty/clean.
+    const cleanPayload = {
+      jobs:               [],
+      project_settings:   {},
+      project_plan:       {},
+      connections:        {},
+      saved_connections:  [],
+      performance:        {},
+      validation_sources: [],
+      wasis_rules:        [],
+      sql_scripts:        [],
+      issues:             [],
+      inventory:          {},
+      sys_params:         {},
+      projects:           projectsList,
+      conv_project:       projectRecord,
+      last_snapshots:     {},
+    };
+
+    const r = await callApi('save', 'POST', cleanPayload);
+    if (!r || !r.saved) {
+      console.error('[CygenixSync] nuke: save failed:', r);
+      return { ok: false, error: 'save-failed', response: r };
+    }
+    console.log('[CygenixSync] nuke: Cosmos wiped clean. Saved at', r.updatedAt);
+
+    // Also reset local on this machine so the UI updates immediately.
+    for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
+      const v = cleanPayload[cloudField];
+      if (v !== undefined) {
+        try { _orig(localKey, JSON.stringify(v)); } catch {}
+      }
+    }
+    _orig('cygenix_active_project_id', projectRecord.id);
+
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
+        detail: { filled: Object.keys(cleanPayload).length, source: 'nuke' }
+      }));
+    } catch {}
+
+    console.log('[CygenixSync] nuke: done. Reload page to fully re-render. Other machines will catch up on next page load.');
+    return { ok: true, updatedAt: r.updatedAt, project: projectRecord };
+  }
+
   // Auto-save on localStorage writes. _orig is hoisted to the top of the
   // module so save() can use it too without re-triggering the auto-save.
   localStorage.setItem = function(k, v) {
@@ -618,30 +788,13 @@ const CygenixSync = (() => {
     _done = true;
     console.log('[CygenixSync] User:', userId);
 
-    // Detect first-run-on-this-machine BEFORE we touch cygenix_active_user.
-    // If no active user was previously stored, this browser has never
-    // completed an init for this user — meaning any local SYNC_KEYS values
-    // are either: (a) leftover from a different account that signed in
-    // here, (b) seed/empty arrays from page init code, or (c) data the user
-    // genuinely entered locally before signing in. (a) and (b) must not
-    // clobber cloud. (c) is rare and recoverable via the local backup
-    // helpers below. So on first-run we skip the post-init debounced save:
-    // cloud stays authoritative until the user makes a real edit, at which
-    // point the localStorage.setItem hook fires save() the normal way.
-    //
-    // Added 25-May-2026 alongside the conv_project/last_snapshots additions
-    // to SYNC_KEYS. Without this guard, the 3s post-init save can overwrite
-    // a 'replace'-strategy field (e.g. cygenix_projects) in Cosmos with a
-    // stale 2-entry local copy from a previous botched sign-in on this
-    // machine — which is exactly the data-loss scenario that motivated the
-    // whole 25-May debugging session.
-    const isFirstRunOnMachine = !localStorage.getItem('cygenix_active_user');
-
     // ── Check if localStorage belongs to a DIFFERENT user ──────────────────
-    // Normalise both sides before comparing — a casing or whitespace mismatch
-    // here was previously enough to trigger a full local wipe. If they really
-    // differ, snapshot the old data into sessionStorage first so the user has
-    // a recovery path within the same tab session.
+    // If a different user signs in on this machine, snapshot the old user's
+    // data to sessionStorage (in-tab recovery only) and clear local sync
+    // keys before loading the new user's data from cloud.
+    //
+    // Normalise both sides — a casing or whitespace mismatch here was
+    // previously enough to trigger a full local wipe.
     const storedUserId = (localStorage.getItem('cygenix_active_user') || '').trim().toLowerCase();
     const currentUserId = userId.trim().toLowerCase();
     if (storedUserId && storedUserId !== currentUserId) {
@@ -677,75 +830,61 @@ const CygenixSync = (() => {
     //
     // No page reload needed. Views that read localStorage after this point
     // will see the filled-in values; views that already rendered should
-    // re-read via their existing load hooks — see the cygenix-sync-loaded
-    // event dispatched below.
+    // v1.3 change (26-May-2026): cloud-authoritative init. Always pull the
+    // full cloud state for sync keys and overwrite local. No gap-fill, no
+    // "local wins" — local is for in-session edits only.
+    //
+    // Why: yesterday's session showed that any stale machine opening Cygenix
+    // would re-pollute Cosmos. The old gap-fill logic ("if local has data,
+    // skip cloud") meant stale local survived page loads, and the post-init
+    // auto-save then merged that stale local into Cosmos, polluting every
+    // other machine. New rule: cloud wins on page load. Period.
+    //
+    // Trade-off: a user who edits locally in tab A, doesn't wait for the
+    // debounced save, and immediately hard-refreshes tab A will lose the
+    // unsaved edit (cloud will overwrite). That window is ~3 seconds and
+    // is an acceptable cost to stop the multi-machine pollution.
     const cloud = await callApi('load', 'GET');
-    let filled = 0;
+    let n = 0;
     if (cloud && typeof cloud === 'object') {
       for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
         const cloudVal = cloud[cloudField];
-        if (cloudVal === undefined || cloudVal === null) continue;
-
-        // Treat empty-array localStorage values as "missing" for gap-fill.
-        // Helpers like CygenixWasis initialise their own storage to "[]"
-        // before the sync runs, which previously tripped the "local wins"
-        // branch and caused cloud data (e.g. wasis rules from another
-        // browser session) to never be pulled down. Only the empty-array
-        // shape is treated as missing — empty objects, empty strings, and
-        // other "empty-ish" values are left alone because they're less
-        // common here and broadening the check risks clobbering user data.
-        const localRaw = localStorage.getItem(localKey);
-        let localIsMissing = localRaw === null;
-        if (!localIsMissing) {
-          try {
-            const parsed = JSON.parse(localRaw);
-            if (Array.isArray(parsed) && parsed.length === 0) {
-              localIsMissing = true;
-            }
-          } catch {
-            // Unparseable local value — leave it alone, don't overwrite.
-          }
+        if (cloudVal === undefined || cloudVal === null) {
+          // Cloud has nothing for this field — also clear local, otherwise
+          // a stale local value sits forever. The exception is during
+          // first-ever sign-in when cloud is empty across the board; in
+          // that case we'd be clearing legitimately local-only data. We
+          // detect that via Object.keys(cloud).length: if cloud is wholly
+          // empty (no fields at all), don't clear anything.
+          if (Object.keys(cloud).length === 0) continue;
+          try { _orig(localKey, JSON.stringify(Array.isArray(cloud[cloudField]) ? [] : null)); } catch {}
+          continue;
         }
-        if (!localIsMissing) continue; // local wins
-
         try {
-          localStorage.setItem(localKey, JSON.stringify(cloudVal));
-          filled++;
+          // Use _orig to avoid re-triggering the auto-save debounce — we
+          // don't want page load to schedule a save of cloud-just-written
+          // data back to the cloud.
+          _orig(localKey, JSON.stringify(cloudVal));
+          n++;
         } catch (e) {
-          console.warn('[CygenixSync] Failed to fill', localKey, e.message);
+          console.warn('[CygenixSync] init: failed to load', localKey, e.message);
         }
       }
     }
-    if (filled > 0) {
-      console.log('[CygenixSync] Filled', filled, 'missing keys from Cosmos DB');
-      // Notify any views already rendered that they should re-read
-      // localStorage. Views that aren't listening will pick up the values
-      // naturally on their next load. Keeps this non-breaking for any page
-      // that doesn't know about the event.
-      try {
-        window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
-          detail: { filled, source: 'init' }
-        }));
-      } catch {}
-    } else {
-      console.log('[CygenixSync] No cloud gaps to fill');
-    }
+    console.log('[CygenixSync] Loaded', n, 'keys from Cosmos DB (cloud-authoritative)');
 
-    // Push any local-only data back up (merge on the server preserves
-    // cloud-only fields, so this is safe). Debounced so multiple pages
-    // loading in quick succession don't each fire their own save.
-    //
-    // EXCEPT on first-run on this machine — see isFirstRunOnMachine above.
-    // Skipping the kick means cloud-authoritative behaviour until the user
-    // makes a real edit. Their first edit triggers save() the normal way
-    // via the localStorage.setItem monkey-patch, at which point local
-    // values genuinely reflect user intent and are safe to push up.
-    if (isFirstRunOnMachine) {
-      console.log('[CygenixSync] First run on this machine — skipping post-init auto-save. Cloud is authoritative until you make an edit.');
-    } else {
-      if (_saveTimer) clearTimeout(_saveTimer);
-      _saveTimer = setTimeout(save, 3000);
-    }
+    // Notify views that they should re-read localStorage. The dispatched
+    // event is the same one used by the legacy gap-fill path so any handler
+    // listening for it keeps working.
+    try {
+      window.dispatchEvent(new CustomEvent('cygenix-sync-loaded', {
+        detail: { filled: n, source: 'init-v1.3' }
+      }));
+    } catch {}
+
+    // v1.3 change: NO post-init save kick. Saves only fire from genuine
+    // user edits via the localStorage.setItem monkey-patch. This eliminates
+    // the "page load polluted Cosmos" failure mode.
   }
 
   // Start after a short delay to let auth complete
@@ -755,6 +894,8 @@ const CygenixSync = (() => {
     init, save, saveNow, load, forceLoad, ensureKey, ensureUser, ping, getSubscription, getUserId,
     // Console-callable backup/restore helpers — see definitions above.
     exportBackup, importBackup,
+    // v1.3 recovery helpers — see definitions above.
+    resetToCloud, nuke,
     // Exposed for other modules (e.g. cygenix-project-summary.js) that need to
     // call the Function with the same auth as the rest of the dashboard.
     // Keep this the SINGLE source of truth — never duplicate the function key
