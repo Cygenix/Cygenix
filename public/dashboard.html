@@ -1650,6 +1650,70 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       </div>
     </div>
 
+    <!-- QUICK EDIT JOB MODAL -->
+    <!-- Lets you edit a job's data fields (name, source/target table, conn role,
+         notes) without going into Object Mapping. Useful when Object Mapping
+         won't open the job because of bad data — e.g. when sourceTable equals
+         targetTable. Saves directly to cygenix_jobs in localStorage; the sync
+         hook propagates to Cosmos within a few seconds. -->
+    <div class="modal-overlay" id="quick-edit-job-modal">
+      <div class="modal" style="width:620px">
+        <div class="modal-title">Quick Edit Job</div>
+        <div class="modal-sub">
+          Edit the job's stored fields directly. Use this when Object Mapping can't open the job (e.g. source = target),
+          or to fix table names without re-running the mapping. SQL and column mappings are left untouched —
+          use SQL Editor or Object Mapping for those.
+        </div>
+
+        <input type="hidden" id="qej-job-id">
+
+        <div class="form-row" style="margin-bottom:0.6rem">
+          <label class="form-label" style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Job ID</label>
+          <div id="qej-job-id-display" style="font-family:var(--mono);font-size:11px;color:var(--text3);padding:6px 10px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r)"></div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:0.6rem">
+          <label class="form-label">Name</label>
+          <input id="qej-name" class="form-input" style="width:100%" placeholder="Job name">
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.6rem">
+          <div class="form-row" style="margin:0">
+            <label class="form-label">Source table</label>
+            <input id="qej-source-table" class="form-input" style="width:100%;font-family:var(--mono)" placeholder="dbo.Entity_DM">
+            <span style="font-size:10px;color:var(--text3)">Schema-qualified, e.g. <code>dbo.Entity_DM</code></span>
+          </div>
+          <div class="form-row" style="margin:0">
+            <label class="form-label">Target table</label>
+            <input id="qej-target-table" class="form-input" style="width:100%;font-family:var(--mono)" placeholder="dbo.Entity">
+            <span style="font-size:10px;color:var(--text3)">Schema-qualified, e.g. <code>dbo.Entity</code></span>
+          </div>
+        </div>
+
+        <div class="form-row" style="margin-bottom:0.6rem">
+          <label class="form-label">Connection role</label>
+          <select id="qej-conn-on" class="form-input" style="width:200px">
+            <option value="target">target</option>
+            <option value="source">source</option>
+            <option value="">(none)</option>
+          </select>
+          <span style="font-size:10px;color:var(--text3);margin-left:0.5rem">Where this job runs — usually <code>target</code></span>
+        </div>
+
+        <div class="form-row" style="margin-bottom:0.6rem">
+          <label class="form-label">Notes</label>
+          <textarea id="qej-notes" class="form-input" style="width:100%;min-height:60px;font-family:var(--mono);font-size:11px" placeholder="Optional free-text notes"></textarea>
+        </div>
+
+        <div id="qej-warning" class="alert alert-amber" style="margin-bottom:0.6rem;font-size:12px;display:none"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="closeQuickEditJob()">Cancel</button>
+          <button class="btn btn-primary" id="qej-save-btn" onclick="saveQuickEditJob()">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- SETUP CHECK MODAL -->
     <div class="modal-overlay" id="setup-check-modal">
       <div class="modal" style="width:760px">
@@ -7369,6 +7433,7 @@ function jobsTableHTML(jobs) {
           <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="hardDeleteJob('${j.id}')" title="Permanent delete">🗑 Delete forever</button>
         ` : `
           <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
+          <button class="btn btn-ghost" onclick="openQuickEditJob('${j.id}')" style="color:var(--amber);border-color:rgba(251,191,36,0.25)" title="Quick edit fields (name, source/target table, connection) — use when Object Mapping won't open the job">🛠</button>
           <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
           ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
           <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
@@ -7503,6 +7568,151 @@ function editJob(jobId) {
       window.location.href = '/object_mapping.html?edit=' + encodeURIComponent(jobId);
   }
 }
+
+// ── Quick Edit Job ────────────────────────────────────────────────────────
+// Opens a modal that lets you edit a job's stored fields directly. This is
+// the escape hatch for when Object Mapping won't open the job — typically
+// because some field is in a bad state that the mapping page validates
+// before loading (e.g. sourceTable === targetTable from a bad Agentive
+// generation). The fix here is to mutate cygenix_jobs in place; the sync
+// hook propagates to Cosmos.
+//
+// Editable fields: name, sourceTable, targetTable, connOn, notes.
+// Deliberately NOT editable here: jobType (consequential, change route via
+// re-creating the job), id/created (never), insertSQL/columnMapping (use
+// SQL Editor and Object Mapping respectively — those are the right tools).
+//
+// Field-variant note: jobs in cygenix_jobs use a mix of field names across
+// generations of the schema. sourceTable/source/srcTable and
+// targetTable/target/tgtTable all coexist on some jobs. We update every
+// variant we find populated so a stale field doesn't surface later.
+function openQuickEditJob(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) {
+    if (typeof showToast === 'function') showToast('Job not found.');
+    return;
+  }
+  // Pick whichever source/target field is populated, preferring the
+  // "Table" form (most modern). Empty falls back to '' for the input.
+  const srcTable = job.sourceTable || job.source || job.srcTable || '';
+  const tgtTable = job.targetTable || job.target || job.tgtTable || '';
+  document.getElementById('qej-job-id').value = jobId;
+  document.getElementById('qej-job-id-display').textContent = jobId;
+  document.getElementById('qej-name').value = job.name || '';
+  document.getElementById('qej-source-table').value = srcTable;
+  document.getElementById('qej-target-table').value = tgtTable;
+  document.getElementById('qej-conn-on').value = job.connOn || 'target';
+  document.getElementById('qej-notes').value = job.notes || '';
+
+  // Inline warning when source === target (the common Agentive bug).
+  // The user can still save (maybe they're mid-edit), but they should see
+  // a heads-up that this state breaks Object Mapping.
+  const warn = document.getElementById('qej-warning');
+  if (srcTable && tgtTable && srcTable.toLowerCase() === tgtTable.toLowerCase()) {
+    warn.innerHTML = '<strong>Heads up:</strong> source and target table are identical (<code>'+ escP(srcTable) +'</code>). Object Mapping won\'t open jobs in this state. Fix the source — usually a <code>_DM</code>, <code>_SRC</code> or staging suffix on the source side.';
+    warn.style.display = 'block';
+  } else {
+    warn.style.display = 'none';
+  }
+
+  document.getElementById('quick-edit-job-modal').classList.add('open');
+}
+
+function closeQuickEditJob() {
+  document.getElementById('quick-edit-job-modal').classList.remove('open');
+}
+
+function saveQuickEditJob() {
+  const jobId = document.getElementById('qej-job-id').value;
+  if (!jobId) return;
+  const job = state.jobs.find(j => j.id === jobId);
+  if (!job) {
+    if (typeof showToast === 'function') showToast('Job not found.');
+    closeQuickEditJob();
+    return;
+  }
+  const newName    = document.getElementById('qej-name').value.trim();
+  const newSrc     = document.getElementById('qej-source-table').value.trim();
+  const newTgt     = document.getElementById('qej-target-table').value.trim();
+  const newConnOn  = document.getElementById('qej-conn-on').value;
+  const newNotes   = document.getElementById('qej-notes').value;
+
+  if (!newName) {
+    if (typeof showToast === 'function') showToast('Name cannot be empty.');
+    return;
+  }
+
+  // Track what actually changed for the audit log
+  const changes = [];
+  if (newName !== (job.name || '')) {
+    changes.push('name: "'+(job.name||'')+'" → "'+newName+'"');
+    job.name = newName;
+  }
+  // Source table — update every variant that's already populated, OR set
+  // sourceTable if none of them were defined (so a new job gets the modern
+  // field name).
+  const oldSrc = job.sourceTable || job.source || job.srcTable || '';
+  if (newSrc !== oldSrc) {
+    changes.push('source: "'+oldSrc+'" → "'+newSrc+'"');
+    if (job.sourceTable !== undefined) job.sourceTable = newSrc;
+    if (job.source      !== undefined) job.source      = newSrc;
+    if (job.srcTable    !== undefined) job.srcTable    = newSrc;
+    if (job.sourceTable === undefined && job.source === undefined && job.srcTable === undefined) {
+      job.sourceTable = newSrc;
+    }
+  }
+  // Target table — same field-variant treatment as source.
+  const oldTgt = job.targetTable || job.target || job.tgtTable || '';
+  if (newTgt !== oldTgt) {
+    changes.push('target: "'+oldTgt+'" → "'+newTgt+'"');
+    if (job.targetTable !== undefined) job.targetTable = newTgt;
+    if (job.target      !== undefined) job.target      = newTgt;
+    if (job.tgtTable    !== undefined) job.tgtTable    = newTgt;
+    if (job.targetTable === undefined && job.target === undefined && job.tgtTable === undefined) {
+      job.targetTable = newTgt;
+    }
+  }
+  if (newConnOn !== (job.connOn || '')) {
+    changes.push('connOn: "'+(job.connOn||'')+'" → "'+newConnOn+'"');
+    job.connOn = newConnOn || undefined;
+  }
+  if (newNotes !== (job.notes || '')) {
+    // Don't audit the full notes diff — it's free-text, can be huge
+    changes.push('notes updated');
+    job.notes = newNotes;
+  }
+
+  if (changes.length === 0) {
+    if (typeof showToast === 'function') showToast('No changes.');
+    closeQuickEditJob();
+    return;
+  }
+
+  // Bump version + lastModified to match the codebase convention used by
+  // loadPersistedJobs() and the version history machinery. Without this,
+  // CygenixHistory wouldn't pick up the edit.
+  job.version      = (typeof job.version === 'number' ? job.version : 0) + 1;
+  job.lastModified = new Date().toISOString();
+
+  // Persist the whole array (do NOT use persistJobs() — it truncates to 20
+  // and strips SQL). Direct setItem also triggers the Cosmos sync hook.
+  try {
+    localStorage.setItem('cygenix_jobs', JSON.stringify(state.jobs));
+  } catch (e) {
+    if (typeof showToast === 'function') showToast('Save failed: ' + e.message);
+    return;
+  }
+
+  if (typeof addAudit === 'function') addAudit('Quick-edited job "'+job.name+'": ' + changes.join('; '));
+  if (typeof showToast === 'function') showToast('Saved — ' + changes.length + ' change' + (changes.length===1?'':'s'));
+
+  closeQuickEditJob();
+  renderAllJobs();
+}
+
+window.openQuickEditJob  = openQuickEditJob;
+window.closeQuickEditJob = closeQuickEditJob;
+window.saveQuickEditJob  = saveQuickEditJob;
 
 function renameJob(btn) {
   const jobId = btn.getAttribute('data-jobid');
