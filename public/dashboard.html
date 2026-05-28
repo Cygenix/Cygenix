@@ -1526,6 +1526,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)">⚡ Generate SQL</button>
           <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">✓ Validate</button>
           <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column">📋 Setup Check</button>
+          <button class="btn btn-ghost" onclick="openSelectedInSqlEditor()" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open the single selected job in the SQL Editor. Requires exactly one job to be ticked.">🖊 Edit in SQL Editor</button>
           <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
           <button class="btn btn-ghost" onclick="openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed.">📦 Export Package</button>
           <button class="btn btn-ghost" id="show-deleted-btn" onclick="toggleShowDeleted()" title="Toggle between active jobs and the Trash (soft-deleted jobs). Restore or permanently delete from the Trash view.">🗑 Show deleted</button>
@@ -5384,6 +5385,34 @@ async function runExportScripts(){
 window.openExportScriptsModal  = openExportScriptsModal;
 window.closeExportScriptsModal = closeExportScriptsModal;
 window.runExportScripts        = runExportScripts;
+
+// ── Edit in SQL Editor (single selection) ─────────────────────────────────
+// Opens /sql-editor.html?edit=<jobId> with the selected job pre-loaded.
+// Same destination as the per-row 🖊 button on the jobs table — this version
+// just provides a toolbar entry-point for when the user has clicked a row's
+// checkbox rather than the per-row icon.
+//
+// Selection contract:
+//   - Exactly 1 ticked row → navigate immediately
+//   - 0 ticked rows → toast "select a job first"
+//   - 2+ ticked rows → toast "the editor only opens one job at a time"
+//
+// We don't fall through to project-filter scope here (unlike Validate /
+// Export Scripts) because opening N tabs of SQL Editor doesn't make sense;
+// the editor is a single-job tool.
+function openSelectedInSqlEditor() {
+  const ids = Array.from(selectedJobIds);
+  if (ids.length === 0) {
+    if (typeof showToast === 'function') showToast('Tick one job first, then click Edit in SQL Editor.');
+    return;
+  }
+  if (ids.length > 1) {
+    if (typeof showToast === 'function') showToast('SQL Editor opens one job at a time. Tick exactly one.');
+    return;
+  }
+  window.location.href = '/sql-editor.html?edit=' + encodeURIComponent(ids[0]);
+}
+window.openSelectedInSqlEditor = openSelectedInSqlEditor;
 
 // ── Bulk Generate SQL (hidden-iframe runner) ──────────────────────────────
 // Strictly sequential — one iframe at a time, destroyed between jobs — to
