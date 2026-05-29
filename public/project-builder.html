@@ -31,6 +31,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
 <script src="/cygenix-auth-token.js"></script>
 <script src="/cygenix-saved-conn-secrets.js"></script>
+<!-- Cosmos sync — the monkey-patch on localStorage.setItem schedules a save
+     to Cosmos 3 seconds after any cygenix_* key is written. Must be loaded
+     here (before any script that writes to cygenix_projects, cygenix_conv_project,
+     etc.) or the page-builder's saveProject() calls will be local-only and any
+     other synced page (dashboard, sql-editor) will overwrite them via the
+     v1.3 cloud-authoritative init on next load.
+     Order matters: must come AFTER cygenix-saved-conn-secrets.js (which the
+     dashboard's own warning at line 12762 confirms is required).
+     Added 28-May-2026 after debugging session traced silent save-loss to
+     this missing include. -->
+<script src="/cygenix-cosmos-sync.js"></script>
 <script src="/cygenix-params.js"></script>
 <script src="/project-manager.js"></script>
 <style>
