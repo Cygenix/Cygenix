@@ -1526,7 +1526,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <button class="btn btn-ghost" onclick="openBulkGenerateModal()" title="Generate SQL for selected jobs (runs object_mapping in background — no tab switching)">⚡ Generate SQL</button>
           <button class="btn btn-ghost" onclick="openValidateModal()" title="Dry-run TOP 100 INSERT inside a transaction (rolls back) — catches range, NOT NULL, FK and parse errors before a real migration">✓ Validate</button>
           <button class="btn btn-ghost" onclick="openSetupCheckModal()" title="For setup-classified source fields (target column name matches a target table name), report rows where the value is empty or missing from the target setup table's Code column">📋 Setup Check</button>
-          <button class="btn btn-ghost" onclick="openSelectedInSqlEditor()" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open the single selected job in the SQL Editor. Requires exactly one job to be ticked.">🖊 Edit in SQL Editor</button>
           <button class="btn btn-ghost" onclick="openExportScriptsModal()" title="Export selected jobs' scripts as one or more .sql files">⬇ Export Scripts</button>
           <button class="btn btn-ghost" onclick="openExportPackageModal()" title="Export each selected job as a self-contained .sql package: target schema + source staging table + source data + migration. Runs on any SQL Server with no Cygenix needed.">📦 Export Package</button>
           <button class="btn btn-ghost" id="show-deleted-btn" onclick="toggleShowDeleted()" title="Toggle between active jobs and the Trash (soft-deleted jobs). Restore or permanently delete from the Trash view.">🗑 Show deleted</button>
@@ -1650,70 +1649,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       </div>
     </div>
 
-    <!-- QUICK EDIT JOB MODAL -->
-    <!-- Lets you edit a job's data fields (name, source/target table, conn role,
-         notes) without going into Object Mapping. Useful when Object Mapping
-         won't open the job because of bad data — e.g. when sourceTable equals
-         targetTable. Saves directly to cygenix_jobs in localStorage; the sync
-         hook propagates to Cosmos within a few seconds. -->
-    <div class="modal-overlay" id="quick-edit-job-modal">
-      <div class="modal" style="width:620px">
-        <div class="modal-title">Quick Edit Job</div>
-        <div class="modal-sub">
-          Edit the job's stored fields directly. Use this when Object Mapping can't open the job (e.g. source = target),
-          or to fix table names without re-running the mapping. SQL and column mappings are left untouched —
-          use SQL Editor or Object Mapping for those.
-        </div>
-
-        <input type="hidden" id="qej-job-id">
-
-        <div class="form-row" style="margin-bottom:0.6rem">
-          <label class="form-label" style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">Job ID</label>
-          <div id="qej-job-id-display" style="font-family:var(--mono);font-size:11px;color:var(--text3);padding:6px 10px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r)"></div>
-        </div>
-
-        <div class="form-row" style="margin-bottom:0.6rem">
-          <label class="form-label">Name</label>
-          <input id="qej-name" class="form-input" style="width:100%" placeholder="Job name">
-        </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:0.6rem">
-          <div class="form-row" style="margin:0">
-            <label class="form-label">Source table</label>
-            <input id="qej-source-table" class="form-input" style="width:100%;font-family:var(--mono)" placeholder="dbo.Entity_DM">
-            <span style="font-size:10px;color:var(--text3)">Schema-qualified, e.g. <code>dbo.Entity_DM</code></span>
-          </div>
-          <div class="form-row" style="margin:0">
-            <label class="form-label">Target table</label>
-            <input id="qej-target-table" class="form-input" style="width:100%;font-family:var(--mono)" placeholder="dbo.Entity">
-            <span style="font-size:10px;color:var(--text3)">Schema-qualified, e.g. <code>dbo.Entity</code></span>
-          </div>
-        </div>
-
-        <div class="form-row" style="margin-bottom:0.6rem">
-          <label class="form-label">Connection role</label>
-          <select id="qej-conn-on" class="form-input" style="width:200px">
-            <option value="target">target</option>
-            <option value="source">source</option>
-            <option value="">(none)</option>
-          </select>
-          <span style="font-size:10px;color:var(--text3);margin-left:0.5rem">Where this job runs — usually <code>target</code></span>
-        </div>
-
-        <div class="form-row" style="margin-bottom:0.6rem">
-          <label class="form-label">Notes</label>
-          <textarea id="qej-notes" class="form-input" style="width:100%;min-height:60px;font-family:var(--mono);font-size:11px" placeholder="Optional free-text notes"></textarea>
-        </div>
-
-        <div id="qej-warning" class="alert alert-amber" style="margin-bottom:0.6rem;font-size:12px;display:none"></div>
-
-        <div class="modal-actions">
-          <button class="btn btn-ghost" onclick="closeQuickEditJob()">Cancel</button>
-          <button class="btn btn-primary" id="qej-save-btn" onclick="saveQuickEditJob()">Save</button>
-        </div>
-      </div>
-    </div>
-
     <!-- SETUP CHECK MODAL -->
     <div class="modal-overlay" id="setup-check-modal">
       <div class="modal" style="width:760px">
@@ -1777,6 +1712,21 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <span><strong>Physical table (dbo.X_Cygenix_&lt;table&gt;)</strong><br><span style="color:var(--text3);font-size:11px">Persisted to disk. Survives between batches (GO separators allowed). Auto-dropped at end of script. Useful for big imports or debugging.</span></span>
             </label>
           </div>
+        </div>
+
+        <!-- Minimal output toggle.
+             Off (default): full safety package — banner with @Commit explanation,
+             BEGIN TRY / BEGIN TRAN / COMMIT-or-ROLLBACK wrap around the
+             migration, and the auto-appended verify-count SELECTs.
+             On: stripped-down output — bare INSERT (no transaction wrap,
+             no verify counts, abbreviated banner). For hand-curated jobs
+             that have already been validated and just need to be deployed. -->
+        <div class="form-row">
+          <label class="form-label">Output style</label>
+          <label style="display:flex;align-items:flex-start;gap:0.5rem;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="pkg-minimal" style="margin-top:3px">
+            <span><strong>Minimal output</strong><br><span style="color:var(--text3);font-size:11px">Strip the dry-run BEGIN TRY / BEGIN TRAN wrap and the trailing <code>SELECT COUNT(*)</code> verify lines. Useful when you've already validated the SQL and want a clean data dump + bare INSERT only. The banner, schema, staging table, source data, and migration SQL all stay — only the safety scaffolding is removed.</span></span>
+          </label>
         </div>
 
         <div id="pkg-warn" class="alert alert-amber" style="margin-bottom:1rem">
@@ -5450,34 +5400,6 @@ window.openExportScriptsModal  = openExportScriptsModal;
 window.closeExportScriptsModal = closeExportScriptsModal;
 window.runExportScripts        = runExportScripts;
 
-// ── Edit in SQL Editor (single selection) ─────────────────────────────────
-// Opens /sql-editor.html?edit=<jobId> with the selected job pre-loaded.
-// Same destination as the per-row 🖊 button on the jobs table — this version
-// just provides a toolbar entry-point for when the user has clicked a row's
-// checkbox rather than the per-row icon.
-//
-// Selection contract:
-//   - Exactly 1 ticked row → navigate immediately
-//   - 0 ticked rows → toast "select a job first"
-//   - 2+ ticked rows → toast "the editor only opens one job at a time"
-//
-// We don't fall through to project-filter scope here (unlike Validate /
-// Export Scripts) because opening N tabs of SQL Editor doesn't make sense;
-// the editor is a single-job tool.
-function openSelectedInSqlEditor() {
-  const ids = Array.from(selectedJobIds);
-  if (ids.length === 0) {
-    if (typeof showToast === 'function') showToast('Tick one job first, then click Edit in SQL Editor.');
-    return;
-  }
-  if (ids.length > 1) {
-    if (typeof showToast === 'function') showToast('SQL Editor opens one job at a time. Tick exactly one.');
-    return;
-  }
-  window.location.href = '/sql-editor.html?edit=' + encodeURIComponent(ids[0]);
-}
-window.openSelectedInSqlEditor = openSelectedInSqlEditor;
-
 // ── Bulk Generate SQL (hidden-iframe runner) ──────────────────────────────
 // Strictly sequential — one iframe at a time, destroyed between jobs — to
 // avoid Cosmos sync races on the shared cygenix_jobs key.
@@ -7130,7 +7052,16 @@ function _pkgRewriteMigration(insertSQL, sourceTableFull, srcDb, stagingName){
 }
 
 // Build a single job's full deployable .sql package. Returns a string.
-async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
+//
+// opts.minimal (default false):
+//   When true, strips the dry-run BEGIN TRY/BEGIN TRAN wrap from Section 4
+//   AND removes the trailing `SELECT COUNT(*)` verify lines that
+//   object_mapping.html appends to every generated job's insertSQL. Banner
+//   is also shortened (no @Commit explanation). Used for hand-curated jobs
+//   that have already been validated end-to-end and just need a clean
+//   deployable artifact. Added 29-May-2026.
+async function _pkgBuildJobPackage(job, mode, srcConn, srcDb, opts){
+  const minimal = !!(opts && opts.minimal);
   const srcTable = job.sourceTable || job.source || '';
   const parts = _pkgSplitFullName(srcTable);
   const stagingName = _pkgStagingName(parts.name, mode);
@@ -7138,29 +7069,47 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
   const sepLine = '-- ' + '='.repeat(70);
 
   // Section 1: banner
-  const banner = [
-    sepLine,
-    '-- CYGENIX DEPLOYABLE PACKAGE',
-    '-- Job:        ' + (job.name || job.id),
-    '-- Source:     ' + srcTable + (srcDb ? '  (db: '+srcDb+')' : ''),
-    '-- Target:     ' + (job.targetTable || job.target || ''),
-    '-- Staging:    ' + stagingName + '   (' + (mode==='physical'?'physical table, dropped at end':'global temp, visible to other sessions, auto-drops on last disconnect') + ')',
-    '-- Generated:  ' + new Date().toISOString(),
-    '-- Run on any SQL Server. No Cygenix or source connection required.',
-    '--',
-    '-- IMPORTANT — DRY-RUN BY DEFAULT:',
-    '--   Section 4 wraps the migration INSERT in BEGIN TRAN. The flag',
-    '--   @Commit at the top of Section 4 controls whether the transaction',
-    '--   COMMITs or ROLLBACKs at the end:',
-    '--       @Commit = 0  → dry-run (rolls back; nothing persists to target)',
-    '--       @Commit = 1  → real load (commits to target)',
-    '--   Default is 0 so re-running this file is safe. Flip to 1 when you',
-    '--   have validated the dry-run output and are ready to persist.',
-    '--   Identity values are consumed even on rollback — the first commit',
-    '--   will not start at 1 if you ran dry-run first.',
-    sepLine,
-    ''
-  ].join('\n');
+  // Two variants — the full version explains the @Commit dry-run flag, the
+  // minimal version drops that since the wrap isn't present.
+  const banner = minimal
+    ? [
+        sepLine,
+        '-- CYGENIX DEPLOYABLE PACKAGE (minimal output)',
+        '-- Job:        ' + (job.name || job.id),
+        '-- Source:     ' + srcTable + (srcDb ? '  (db: '+srcDb+')' : ''),
+        '-- Target:     ' + (job.targetTable || job.target || ''),
+        '-- Staging:    ' + stagingName + '   (' + (mode==='physical'?'physical table, dropped at end':'global temp, visible to other sessions, auto-drops on last disconnect') + ')',
+        '-- Generated:  ' + new Date().toISOString(),
+        '-- Run on any SQL Server. No Cygenix or source connection required.',
+        '--',
+        '-- Minimal output: no dry-run wrap, no verify counts. The INSERT',
+        '-- runs immediately when this file executes. Make sure you mean it.',
+        sepLine,
+        ''
+      ].join('\n')
+    : [
+        sepLine,
+        '-- CYGENIX DEPLOYABLE PACKAGE',
+        '-- Job:        ' + (job.name || job.id),
+        '-- Source:     ' + srcTable + (srcDb ? '  (db: '+srcDb+')' : ''),
+        '-- Target:     ' + (job.targetTable || job.target || ''),
+        '-- Staging:    ' + stagingName + '   (' + (mode==='physical'?'physical table, dropped at end':'global temp, visible to other sessions, auto-drops on last disconnect') + ')',
+        '-- Generated:  ' + new Date().toISOString(),
+        '-- Run on any SQL Server. No Cygenix or source connection required.',
+        '--',
+        '-- IMPORTANT — DRY-RUN BY DEFAULT:',
+        '--   Section 4 wraps the migration INSERT in BEGIN TRAN. The flag',
+        '--   @Commit at the top of Section 4 controls whether the transaction',
+        '--   COMMITs or ROLLBACKs at the end:',
+        '--       @Commit = 0  → dry-run (rolls back; nothing persists to target)',
+        '--       @Commit = 1  → real load (commits to target)',
+        '--   Default is 0 so re-running this file is safe. Flip to 1 when you',
+        '--   have validated the dry-run output and are ready to persist.',
+        '--   Identity values are consumed even on rollback — the first commit',
+        '--   will not start at 1 if you ran dry-run first.',
+        sepLine,
+        ''
+      ].join('\n');
 
   // Section 2: target CREATE TABLE (from the saved job)
   const targetSchema =
@@ -7193,9 +7142,9 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
   // Allow GC of the row array
   rows.length = 0;
 
-  // Section 4: migration with rewritten source references, wrapped in a
-  // dry-run-by-default BEGIN TRAN.
+  // Section 4: migration with rewritten source references.
   //
+  // In default mode, wraps the migration in a dry-run-by-default BEGIN TRAN.
   // Semantics:
   //   • @Commit defaults to 0 → ROLLBACK at the end. Nothing persists.
   //   • Analyst flips to 1 → COMMIT. Real load.
@@ -7209,34 +7158,59 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb){
   //     commit" errors at the outer COMMIT. SQL Server's nested-TRAN
   //     semantics are well known to be sharp; we add IF @@TRANCOUNT > 0
   //     guards on both branches to handle either case cleanly.
-  const migrationBody = _pkgRewriteMigration(job.insertSQL || job.migrationSQL || '', srcTable, srcDb, stagingName);
-  const migration =
-    sepLine + '\n-- Section 4: Migration (dry-run by default — set @Commit=1 to persist)\n' +
-    '-- Source refs rewritten to ' + stagingName + '\n' + sepLine + '\n' +
-    'DECLARE @Commit BIT = 0;  -- ← FLIP TO 1 TO ACTUALLY LOAD INTO TARGET\n' +
-    '\n' +
-    'SET XACT_ABORT ON;\n' +
-    'SET NOCOUNT ON;\n' +
-    'BEGIN TRY\n' +
-    '  BEGIN TRAN;\n' +
-    '\n' +
-    migrationBody + '\n' +
-    '\n' +
-    '  IF @Commit = 1\n' +
-    '  BEGIN\n' +
-    '    IF @@TRANCOUNT > 0 COMMIT TRAN;\n' +
-    "    PRINT 'CYGENIX: @Commit=1 → COMMITTED. Rows persisted to target.';\n" +
-    '  END\n' +
-    '  ELSE\n' +
-    '  BEGIN\n' +
-    '    IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
-    "    PRINT 'CYGENIX: @Commit=0 → ROLLED BACK (dry-run). Set @Commit=1 and re-run to persist.';\n" +
-    '  END\n' +
-    'END TRY\n' +
-    'BEGIN CATCH\n' +
-    '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
-    '  THROW;\n' +
-    'END CATCH;\n';
+  //
+  // In minimal mode, the wrap is dropped and the verify-count SELECTs that
+  // object_mapping.html appends to insertSQL are stripped, leaving just the
+  // bare INSERT.
+  let migrationBody = _pkgRewriteMigration(job.insertSQL || job.migrationSQL || '', srcTable, srcDb, stagingName);
+
+  if (minimal){
+    // Strip the auto-appended verify block. object_mapping.html appends:
+    //   -- Verify:
+    //   SELECT COUNT(*) AS [migrated_rows] FROM ...;
+    //   SELECT COUNT(*) AS [source_rows]   FROM ...;
+    // We anchor on "-- Verify:" so we don't accidentally swallow a user's
+    // own SELECT COUNT elsewhere. If "-- Verify:" isn't present, leave the
+    // SQL alone — the user may have hand-edited it and removed the comment.
+    const verifyMarker = migrationBody.lastIndexOf('-- Verify:');
+    if (verifyMarker !== -1){
+      migrationBody = migrationBody.slice(0, verifyMarker).replace(/\s+$/, '') + '\n';
+    }
+  }
+
+  const migration = minimal
+    ? sepLine + '\n-- Section 4: Migration (bare INSERT)\n' +
+      '-- Source refs rewritten to ' + stagingName + '\n' + sepLine + '\n' +
+      'SET XACT_ABORT ON;\n' +
+      'SET NOCOUNT ON;\n' +
+      '\n' +
+      migrationBody + '\n'
+    : sepLine + '\n-- Section 4: Migration (dry-run by default — set @Commit=1 to persist)\n' +
+      '-- Source refs rewritten to ' + stagingName + '\n' + sepLine + '\n' +
+      'DECLARE @Commit BIT = 0;  -- ← FLIP TO 1 TO ACTUALLY LOAD INTO TARGET\n' +
+      '\n' +
+      'SET XACT_ABORT ON;\n' +
+      'SET NOCOUNT ON;\n' +
+      'BEGIN TRY\n' +
+      '  BEGIN TRAN;\n' +
+      '\n' +
+      migrationBody + '\n' +
+      '\n' +
+      '  IF @Commit = 1\n' +
+      '  BEGIN\n' +
+      '    IF @@TRANCOUNT > 0 COMMIT TRAN;\n' +
+      "    PRINT 'CYGENIX: @Commit=1 → COMMITTED. Rows persisted to target.';\n" +
+      '  END\n' +
+      '  ELSE\n' +
+      '  BEGIN\n' +
+      '    IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
+      "    PRINT 'CYGENIX: @Commit=0 → ROLLED BACK (dry-run). Set @Commit=1 and re-run to persist.';\n" +
+      '  END\n' +
+      'END TRY\n' +
+      'BEGIN CATCH\n' +
+      '  IF @@TRANCOUNT > 0 ROLLBACK TRAN;\n' +
+      '  THROW;\n' +
+      'END CATCH;\n';
 
   // Section 6: cleanup
   const cleanup = mode === 'physical'
@@ -7308,6 +7282,8 @@ async function startExportPackage(){
   const modeRadios = document.querySelectorAll('input[name="pkg-mode"]');
   let mode = 'temp';
   for (const r of modeRadios) if (r.checked) mode = r.value;
+  // Read minimal toggle (false by default — preserves existing behaviour)
+  const minimal = !!document.getElementById('pkg-minimal')?.checked;
 
   _pkg.running = true;
   _pkg.cancelled = false;
@@ -7325,7 +7301,7 @@ async function startExportPackage(){
 
     try {
       _pkg.abortController = new AbortController();
-      const sql = await _pkgBuildJobPackage(job, mode, srcConn, srcDb);
+      const sql = await _pkgBuildJobPackage(job, mode, srcConn, srcDb, { minimal });
       const safe = (job.name||job.id).replace(/[^a-z0-9]/gi, '_');
       const fname = safe + '_package.sql';
       fileMap.set(fname, sql);
@@ -7433,7 +7409,6 @@ function jobsTableHTML(jobs) {
           <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="hardDeleteJob('${j.id}')" title="Permanent delete">🗑 Delete forever</button>
         ` : `
           <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
-          <button class="btn btn-ghost" onclick="openQuickEditJob('${j.id}')" style="color:var(--amber);border-color:rgba(251,191,36,0.25)" title="Quick edit fields (name, source/target table, connection) — use when Object Mapping won't open the job">🛠</button>
           <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
           ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
           <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
@@ -7568,151 +7543,6 @@ function editJob(jobId) {
       window.location.href = '/object_mapping.html?edit=' + encodeURIComponent(jobId);
   }
 }
-
-// ── Quick Edit Job ────────────────────────────────────────────────────────
-// Opens a modal that lets you edit a job's stored fields directly. This is
-// the escape hatch for when Object Mapping won't open the job — typically
-// because some field is in a bad state that the mapping page validates
-// before loading (e.g. sourceTable === targetTable from a bad Agentive
-// generation). The fix here is to mutate cygenix_jobs in place; the sync
-// hook propagates to Cosmos.
-//
-// Editable fields: name, sourceTable, targetTable, connOn, notes.
-// Deliberately NOT editable here: jobType (consequential, change route via
-// re-creating the job), id/created (never), insertSQL/columnMapping (use
-// SQL Editor and Object Mapping respectively — those are the right tools).
-//
-// Field-variant note: jobs in cygenix_jobs use a mix of field names across
-// generations of the schema. sourceTable/source/srcTable and
-// targetTable/target/tgtTable all coexist on some jobs. We update every
-// variant we find populated so a stale field doesn't surface later.
-function openQuickEditJob(jobId) {
-  const job = state.jobs.find(j => j.id === jobId);
-  if (!job) {
-    if (typeof showToast === 'function') showToast('Job not found.');
-    return;
-  }
-  // Pick whichever source/target field is populated, preferring the
-  // "Table" form (most modern). Empty falls back to '' for the input.
-  const srcTable = job.sourceTable || job.source || job.srcTable || '';
-  const tgtTable = job.targetTable || job.target || job.tgtTable || '';
-  document.getElementById('qej-job-id').value = jobId;
-  document.getElementById('qej-job-id-display').textContent = jobId;
-  document.getElementById('qej-name').value = job.name || '';
-  document.getElementById('qej-source-table').value = srcTable;
-  document.getElementById('qej-target-table').value = tgtTable;
-  document.getElementById('qej-conn-on').value = job.connOn || 'target';
-  document.getElementById('qej-notes').value = job.notes || '';
-
-  // Inline warning when source === target (the common Agentive bug).
-  // The user can still save (maybe they're mid-edit), but they should see
-  // a heads-up that this state breaks Object Mapping.
-  const warn = document.getElementById('qej-warning');
-  if (srcTable && tgtTable && srcTable.toLowerCase() === tgtTable.toLowerCase()) {
-    warn.innerHTML = '<strong>Heads up:</strong> source and target table are identical (<code>'+ escP(srcTable) +'</code>). Object Mapping won\'t open jobs in this state. Fix the source — usually a <code>_DM</code>, <code>_SRC</code> or staging suffix on the source side.';
-    warn.style.display = 'block';
-  } else {
-    warn.style.display = 'none';
-  }
-
-  document.getElementById('quick-edit-job-modal').classList.add('open');
-}
-
-function closeQuickEditJob() {
-  document.getElementById('quick-edit-job-modal').classList.remove('open');
-}
-
-function saveQuickEditJob() {
-  const jobId = document.getElementById('qej-job-id').value;
-  if (!jobId) return;
-  const job = state.jobs.find(j => j.id === jobId);
-  if (!job) {
-    if (typeof showToast === 'function') showToast('Job not found.');
-    closeQuickEditJob();
-    return;
-  }
-  const newName    = document.getElementById('qej-name').value.trim();
-  const newSrc     = document.getElementById('qej-source-table').value.trim();
-  const newTgt     = document.getElementById('qej-target-table').value.trim();
-  const newConnOn  = document.getElementById('qej-conn-on').value;
-  const newNotes   = document.getElementById('qej-notes').value;
-
-  if (!newName) {
-    if (typeof showToast === 'function') showToast('Name cannot be empty.');
-    return;
-  }
-
-  // Track what actually changed for the audit log
-  const changes = [];
-  if (newName !== (job.name || '')) {
-    changes.push('name: "'+(job.name||'')+'" → "'+newName+'"');
-    job.name = newName;
-  }
-  // Source table — update every variant that's already populated, OR set
-  // sourceTable if none of them were defined (so a new job gets the modern
-  // field name).
-  const oldSrc = job.sourceTable || job.source || job.srcTable || '';
-  if (newSrc !== oldSrc) {
-    changes.push('source: "'+oldSrc+'" → "'+newSrc+'"');
-    if (job.sourceTable !== undefined) job.sourceTable = newSrc;
-    if (job.source      !== undefined) job.source      = newSrc;
-    if (job.srcTable    !== undefined) job.srcTable    = newSrc;
-    if (job.sourceTable === undefined && job.source === undefined && job.srcTable === undefined) {
-      job.sourceTable = newSrc;
-    }
-  }
-  // Target table — same field-variant treatment as source.
-  const oldTgt = job.targetTable || job.target || job.tgtTable || '';
-  if (newTgt !== oldTgt) {
-    changes.push('target: "'+oldTgt+'" → "'+newTgt+'"');
-    if (job.targetTable !== undefined) job.targetTable = newTgt;
-    if (job.target      !== undefined) job.target      = newTgt;
-    if (job.tgtTable    !== undefined) job.tgtTable    = newTgt;
-    if (job.targetTable === undefined && job.target === undefined && job.tgtTable === undefined) {
-      job.targetTable = newTgt;
-    }
-  }
-  if (newConnOn !== (job.connOn || '')) {
-    changes.push('connOn: "'+(job.connOn||'')+'" → "'+newConnOn+'"');
-    job.connOn = newConnOn || undefined;
-  }
-  if (newNotes !== (job.notes || '')) {
-    // Don't audit the full notes diff — it's free-text, can be huge
-    changes.push('notes updated');
-    job.notes = newNotes;
-  }
-
-  if (changes.length === 0) {
-    if (typeof showToast === 'function') showToast('No changes.');
-    closeQuickEditJob();
-    return;
-  }
-
-  // Bump version + lastModified to match the codebase convention used by
-  // loadPersistedJobs() and the version history machinery. Without this,
-  // CygenixHistory wouldn't pick up the edit.
-  job.version      = (typeof job.version === 'number' ? job.version : 0) + 1;
-  job.lastModified = new Date().toISOString();
-
-  // Persist the whole array (do NOT use persistJobs() — it truncates to 20
-  // and strips SQL). Direct setItem also triggers the Cosmos sync hook.
-  try {
-    localStorage.setItem('cygenix_jobs', JSON.stringify(state.jobs));
-  } catch (e) {
-    if (typeof showToast === 'function') showToast('Save failed: ' + e.message);
-    return;
-  }
-
-  if (typeof addAudit === 'function') addAudit('Quick-edited job "'+job.name+'": ' + changes.join('; '));
-  if (typeof showToast === 'function') showToast('Saved — ' + changes.length + ' change' + (changes.length===1?'':'s'));
-
-  closeQuickEditJob();
-  renderAllJobs();
-}
-
-window.openQuickEditJob  = openQuickEditJob;
-window.closeQuickEditJob = closeQuickEditJob;
-window.saveQuickEditJob  = saveQuickEditJob;
 
 function renameJob(btn) {
   const jobId = btn.getAttribute('data-jobid');
