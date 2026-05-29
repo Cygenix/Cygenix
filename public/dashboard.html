@@ -6868,14 +6868,32 @@ async function _pkgFetchSourceRows(srcConn, srcTable, progressCb){
 
   const all = [];
   let offset = 0;
-  // Adaptive page size. Start at 500 and halve on ResponseSizeTooLarge.
-  // Floors at 25 — below that, the table is exotic enough to need a
-  // dedicated tool (BCP, SSIS) and we surface a clear message.
+  // Adaptive page size. Start at 500 and halve on any proxy/transport
+  // failure that suggests the response was too big for the intermediary
+  // to handle. Floors at 25 — below that, the table is exotic enough
+  // to need a dedicated tool (BCP, SSIS) and we surface a clear message.
   let pageSize = 500;
   const MIN_PAGE = 25;
   // Safety upper bound — if a table somehow has >5M rows we want to bail
   // with a clear message rather than burn the heap silently.
   const MAX_TOTAL = 5_000_000;
+  // Errors we treat as "proxy choked on payload size — halve and retry".
+  // The first two are explicit size complaints from AWS Lambda / Azure
+  // Function infrastructure. The rest are observed symptoms when a proxy
+  // (Netlify Function, Azure Front Door, the browser fetch) bails on an
+  // overlarge response without a structured error:
+  //   - "Non-JSON response": proxy returned HTML (502/504/timeout page)
+  //     and the JSON parser in impDbCall (line 16050) substituted this
+  //     marker. Without matching it here, Export Package aborts hard at
+  //     the first too-big page instead of shrinking — observed on
+  //     site_to_site export, ~1,000 rows in. Added 29-May-2026.
+  //   - "Bad Gateway" / "Gateway Timeout" / HTTP 502/504: same family,
+  //     proxy intermediary failed. Worth retrying smaller.
+  //   - "timeout": browser-side AbortSignal fired (60s in impDbCall).
+  //     A smaller page should fit inside the timeout.
+  //   - "Failed to fetch" / "NetworkError": transient connectivity blip;
+  //     a smaller retry is likely to succeed.
+  const SHRINKABLE_ERROR_RE = /ResponseSizeTooLarge|payload size|Non-JSON response|Bad Gateway|Gateway Timeout|HTTP 50[24]|timeout|Failed to fetch|NetworkError/i;
   while (true){
     const sql =
       "SELECT * FROM " + ref + " " +
@@ -6886,12 +6904,31 @@ async function _pkgFetchSourceRows(srcConn, srcTable, progressCb){
       const res = await impDbCall(srcConn, { action: 'execute', sql });
       rows = res?.recordset || res?.rows || [];
     } catch (e) {
-      // Adaptive shrink on Lambda's 6 MB cap. Halve and retry the SAME
-      // offset so we don't drop rows. Other errors propagate.
+      // Adaptive shrink. Halve and retry the SAME offset so we don't
+      // drop rows. Sleep briefly first — if the proxy is stressed,
+      // hammering it with an immediate retry just makes things worse.
+      // Once we've shrunk to MIN_PAGE, give up with a clear message
+      // so the user knows it isn't transient and points them at BCP.
       const em = (e?.message || String(e));
-      if (/ResponseSizeTooLarge|payload size/i.test(em) && pageSize > MIN_PAGE){
-        pageSize = Math.max(MIN_PAGE, Math.floor(pageSize / 2));
+      if (SHRINKABLE_ERROR_RE.test(em) && pageSize > MIN_PAGE){
+        const newSize = Math.max(MIN_PAGE, Math.floor(pageSize / 2));
+        if (progressCb) progressCb(all.length, 'shrinking page size: ' + pageSize + ' → ' + newSize + ' (' + em.slice(0, 80) + ')');
+        pageSize = newSize;
+        // 500ms backoff. Lets a stressed proxy recover and avoids retry
+        // storms when the issue is intermittent gateway flakiness.
+        await new Promise(r => setTimeout(r, 500));
         continue;
+      }
+      // At MIN_PAGE and still failing — recoverable shrink path is
+      // exhausted. Re-throw with a clearer message so the user knows
+      // what to do next.
+      if (SHRINKABLE_ERROR_RE.test(em) && pageSize <= MIN_PAGE){
+        throw new Error(
+          'Stalled at ' + all.length.toLocaleString() + ' rows after shrinking to ' +
+          MIN_PAGE + '-row pages. The proxy still rejected the response (' + em.slice(0, 120) +
+          '). Most likely cause: very wide rows (large NVARCHAR / XML / VARBINARY columns). ' +
+          'Use SQL Server\'s native BCP or SSIS for tables this large or wide.'
+        );
       }
       throw e;
     }
@@ -7128,11 +7165,16 @@ async function _pkgBuildJobPackage(job, mode, srcConn, srcDb, opts){
 
   document.getElementById('pkg-status').textContent =
     'Pulling source rows for ' + srcTable + '…';
-  const rows = await _pkgFetchSourceRows(srcConn, srcTable, function(n){
+  const rows = await _pkgFetchSourceRows(srcConn, srcTable, function(n, message){
     // Live progress while paging: shows the user that we're making progress
     // and (crucially) gives a runtime feel of how slow large tables will be.
-    document.getElementById('pkg-status').textContent =
-      'Pulling source rows for ' + srcTable + ' — '+n.toLocaleString()+' so far…';
+    // The optional `message` argument is set when the fetcher hits a
+    // shrinkable error and is halving page size — surface it so the user
+    // knows we're not stuck, just adapting.
+    const base = 'Pulling source rows for ' + srcTable + ' — '+n.toLocaleString()+' so far';
+    document.getElementById('pkg-status').textContent = message
+      ? base + ' · ' + message
+      : base + '…';
   });
 
   const dataSection =
