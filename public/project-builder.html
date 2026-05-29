@@ -5372,7 +5372,26 @@ function fmtVal(v) {
   if (typeof v==='boolean') return v?'1':'0';
   if (typeof v==='number') return String(v);
   const s=String(v);
-  if (/^-?\d+(\.\d+)?$/.test(s)) return s;
+  // NOTE (29-May-2026): the previous "auto-numeric for string-typed values"
+  // branch was here:
+  //
+  //   if (/^-?\d+(\.\d+)?$/.test(s)) return s;
+  //
+  // It emitted bare numeric literals when a string source value looked
+  // numeric, e.g. '1012' → 1012. That caused multi-row INSERTs to fail
+  // when the same target column had both numeric-looking and non-numeric
+  // values across rows: SQL Server's table value constructor unifies the
+  // column type using precedence (INT > NVARCHAR), then chokes converting
+  // the non-numeric rows. Observed against te_3e_conv.dbo.Entity.LoadNumber
+  // (NVARCHAR(64)) when a mixed batch contained both '1012' and
+  // 'Prospect Client' — error: "Conversion failed when converting the
+  // nvarchar value 'Prospect Client' to data type int."
+  //
+  // Source values that are genuinely numeric (INT/BIGINT/DECIMAL columns
+  // from the source connector) arrive as typeof === 'number' and emit
+  // bare via the line above, so we don't need to second-guess strings.
+  // Strings always emit as N'…' — SQL Server happily coerces N'1012' to
+  // an INT-typed target column, so this is safe in both directions.
   // SQL-expression allowlist: emit bare for known functions like newid(),
   // getdate(), etc. so SQL Server evaluates them at insert time instead of
   // receiving them as literal strings.
