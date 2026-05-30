@@ -6057,6 +6057,24 @@ async function startValidate(){
     // The job stores the source table as "schema.name" in sourceTable/source.
     const srcTableFull = job.sourceTable || job.source || '';
     const rewritten = _validateRewriteForCrossDb(rawSql, srcTableFull, topo.src.db);
+
+    // If the rewrite changed the SQL, save it back to the job permanently
+    // so future runs don't need rewriting and the SQL editor shows the correct SQL.
+    if (rewritten !== rawSql) {
+      try {
+        const allJobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+        const idx = allJobs.findIndex(j => j.id === job.id);
+        if (idx !== -1) {
+          allJobs[idx].insertSQL = rewritten;
+          job.insertSQL = rewritten; // update in-memory too
+          localStorage.setItem('cygenix_jobs', JSON.stringify(allJobs));
+          if (state && Array.isArray(state.jobs)) {
+            const si = state.jobs.findIndex(j => j.id === job.id);
+            if (si !== -1) state.jobs[si].insertSQL = rewritten;
+          }
+        }
+      } catch(saveErr) { console.warn('Could not save rewritten SQL:', saveErr.message); }
+    }
     const wrapped = buildValidationSQL(rewritten, sampleSize);
 
     try {
