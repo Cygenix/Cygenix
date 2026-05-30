@@ -5196,7 +5196,7 @@ function bulkMoveJobsToProject(){
   const destLabel = (destValue === '__unassigned')
     ? 'Unassigned'
     : (JSON.parse(localStorage.getItem('cygenix_projects')||'[]').find(p => p.id===destValue)?.name || destValue);
-  if (!confirm(`Move ${selectedJobIds.size} job(s) to "${destLabel}"?`)) return;
+  // confirm removed — toast provides sufficient feedback
 
   try {
     const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
@@ -11524,6 +11524,10 @@ window.addEventListener('storage', (e) => {
   if (!e || !e.key) return;
   if (e.key === 'cygenix_saved_connections' || e.key === 'cygenix_projects'){
     try { renderProjectStatus(); } catch {}
+  }
+  if (e.key === 'cygenix_projects') {
+    try { refreshJobsMoveTargetDropdown(); } catch {}
+    try { renderDashboardProjects(); } catch {}
   }
 });
 
