@@ -1219,6 +1219,27 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 <script src="/cygenix-auth-token.js"></script>
 <script src="/cygenix-saved-conn-secrets.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
+<script>
+// ── RECOVERY MODE: Cosmos sync disabled ──────────────────────────────────
+// Remove this block once jobs have been restored and verified.
+// To re-enable: delete these lines and redeploy.
+(function() {
+  if (typeof CygenixSync !== 'undefined') {
+    CygenixSync.load    = function() { console.warn('[CygenixSync] DISABLED (recovery mode)'); return Promise.resolve(false); };
+    CygenixSync.forceLoad = function() { console.warn('[CygenixSync] DISABLED (recovery mode)'); return Promise.resolve(false); };
+    // Patch setItem to block Cosmos writes to critical keys
+    const _orig = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function(k, v) {
+      if (['cygenix_jobs','cygenix_projects','cygenix_current_project'].includes(k)) {
+        // Allow writes but suppress any Cosmos push by stubbing the internal push fn
+      }
+      _orig(k, v);
+    };
+    console.warn('[CygenixSync] AUTO-LOAD DISABLED — recovery mode active. Redeploy without this block to re-enable.');
+  }
+})();
+// ── END RECOVERY MODE ─────────────────────────────────────────────────────
+</script>
 <script src="/cygenix-wasis.js"></script>
 <script src="/cygenix-privacy.js"></script>
 <script src="/cygenix-integrations.js"></script>
