@@ -1814,6 +1814,15 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         <button class="btn btn-primary btn-sm" onclick="saveAppPreferences()">💾 Save preferences</button>
       </div>
 
+      <!-- ─── QUICK BACKUP BANNER ─── -->
+      <div style="background:rgba(79,142,255,0.08);border:0.5px solid rgba(79,142,255,0.3);border-radius:var(--r);padding:0.85rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:2px">💾 Quick backup</div>
+          <div style="font-size:11px;color:var(--text2)" id="quick-backup-last-run">Download a full backup of all your jobs, projects, connections and rules.</div>
+        </div>
+        <button class="btn btn-primary" onclick="quickBackupNow()" style="white-space:nowrap;flex-shrink:0">⬇ Download backup now</button>
+      </div>
+
       <!-- ─── API KEY & CREDIT ─── -->
       <div class="panel" style="margin-bottom:1.25rem">
         <div class="panel-header" style="margin-bottom:0.85rem">
@@ -17022,11 +17031,19 @@ setTimeout(() => {
 <script>
 // ── Backup & Restore ───────────────────────────────────────────────────────────
 const BACKUP_KEYS = [
-  'cygenix_project_settings','cygenix_project_connections',
-  'cygenix_jobs','cygenix_wasis_rules','cygenix_inventory',
+  'cygenix_jobs','cygenix_projects','cygenix_current_project','cygenix_active_project_id',
+  'cygenix_project_settings','cygenix_project_connections','cygenix_saved_connections',
+  'cygenix_wasis_rules','cygenix_inventory','cygenix_sql_scripts','cygenix_issues',
+  'cygenix_validation_sources','cygenix_sys_params','cygenix_conv_project',
   'cygenix_api_key','cygenix_project_name','cygenix_analyst_name','cygenix_client_name',
-  'cygenix_active_project'
+  'cygenix_active_project','cygenix_app_prefs'
 ];
+
+function quickBackupNow() {
+  backupAll();
+  const el = document.getElementById('quick-backup-last-run');
+  if (el) el.textContent = 'Last backup: ' + new Date().toLocaleString('en-GB');
+}
 
 function backupAll() {
   const data = { version: '1.0', created: new Date().toISOString(), data: {} };
@@ -17102,7 +17119,17 @@ function showBackupHistory() {
   } catch { el.textContent = 'Could not load history.'; }
 }
 
-function initBackupView() { showBackupHistory(); }
+function initBackupView() {
+  showBackupHistory();
+  // Update quick backup banner with last backup time
+  try {
+    const hist = JSON.parse(localStorage.getItem('cygenix_backup_history')||'[]');
+    const el = document.getElementById('quick-backup-last-run');
+    if (el && hist.length) {
+      el.textContent = 'Last backup: ' + new Date(hist[0].date).toLocaleString('en-GB') + ' (' + hist[0].keys + ' items)';
+    }
+  } catch {}
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PRIVACY & SECURITY VIEW
