@@ -393,19 +393,27 @@ const CygenixSync = (() => {
   }
 
   async function load() {
-    // ── RECOVERY MODE: load disabled ─────────────────────────────────────
-    // Remove this block and restore the original load() once jobs have been
-    // restored and verified. See dashboard.html recovery mode comment.
-    console.warn('[CygenixSync] RECOVERY MODE: load() disabled — Cosmos will not overwrite localStorage');
-    return false;
-    // ── END RECOVERY MODE ─────────────────────────────────────────────────
+    const data = await callApi('load','GET');
+    if (!data || !Object.keys(data).length) { console.log('[CygenixSync] No cloud data yet'); return false; }
+    let n = 0;
+    Object.entries(FIELD_MAP).forEach(([f,k]) => {
+      const v = data[f];
+      if (v !== undefined && v !== null) { try { localStorage.setItem(k, JSON.stringify(v)); n++; } catch {} }
+    });
+    console.log('[CygenixSync] Loaded', n, 'keys from Cosmos DB');
+    return n > 0;
   }
 
   async function forceLoad() {
-    // ── RECOVERY MODE: forceLoad disabled ────────────────────────────────
-    console.warn('[CygenixSync] RECOVERY MODE: forceLoad() disabled — Cosmos will not overwrite localStorage');
-    return false;
-    // ── END RECOVERY MODE ─────────────────────────────────────────────────
+    const data = await callApi('load','GET');
+    if (!data) return false;
+    let n = 0;
+    Object.entries(FIELD_MAP).forEach(([f,k]) => {
+      const v = data[f];
+      if (v !== undefined && v !== null) { try { localStorage.setItem(k, JSON.stringify(v)); n++; } catch {} }
+    });
+    console.log('[CygenixSync] Force-loaded', n, 'keys from Cosmos DB');
+    return n > 0;
   }
 
   async function ensureUser() {
