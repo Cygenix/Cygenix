@@ -1911,7 +1911,6 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div class="panel-title">💾 Backup &amp; Restore</div>
             <div class="panel-sub">Export all project data to a JSON file, or restore from a previous backup</div>
           </div>
-          <button class="btn btn-primary btn-sm" onclick="backupAll()">⬇ Download backup</button>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem">
@@ -7482,6 +7481,7 @@ function jobsTableHTML(jobs) {
           ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
           <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
           <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename">✎</button>
+          <button class="btn btn-ghost" onclick="startEditSource('${j.id}')" title="Edit source table">⛁</button>
           <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Move to Trash">✕</button>
         `;
       const rowStyle = isDel ? 'opacity:0.6;background:rgba(240,70,70,0.04)' : '';
@@ -7496,7 +7496,7 @@ function jobsTableHTML(jobs) {
         ${isDel ? ` <span style="font-size:9px;padding:1px 5px;border-radius:4px;background:var(--red-bg);color:var(--red);font-family:var(--mono)" title="Deleted ${j._deletedAt? new Date(j._deletedAt).toLocaleString('en-GB'):''}">DELETED</span>` : ''}
         <span class="job-meta">${new Date(j.created).toLocaleDateString('en-GB')}</span>
       </td>
-      <td><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">${j.source||'—'}</span></td>
+      <td><span class="job-source" id="job-source-${j.id}" ondblclick="startEditSource('${j.id}')" style="font-size:11px;color:var(--text3);font-family:var(--mono);cursor:text" title="${escapeAttr(j.sourceTable||j.source||'')} — double-click to edit source table">${j.sourceTable||j.source||'—'}</span></td>
       <td><span style="font-size:12px;color:var(--text2)">${j.target||'—'}</span></td>
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.tables?.length||j.files?.length||'—'}</span></td>
       <td><span style="font-family:var(--mono);font-size:12px;color:var(--text2)">${j.totalRows?.toLocaleString()||'—'}</span></td>
@@ -7665,6 +7665,65 @@ function cancelRenameJob(jobId) {
   const job = state.jobs.find(j => j.id === jobId);
   const nameEl = document.getElementById('job-name-' + jobId);
   if (nameEl && job) nameEl.innerHTML = job.name;
+}
+
+// ── Inline source-table editing ───────────────────────────────────────────
+// Double-click the source cell to correct the source table. This exists
+// because the Agentive runner can propose a source table that doesn't exist
+// in the source DB (or a stale/duplicate name), which makes Export Package
+// fail when _pkgFetchSourceSchema can't find the table. There was no UI to
+// fix it, so this restores that.
+//
+// CRITICAL: jobs are read everywhere as `job.sourceTable || job.source`
+// (Export Package, Validate, Setup Check, cross-DB rewrite). Agent-created
+// jobs populate `source`; older jobs may use `sourceTable`. If we write only
+// one field the other can shadow it (sourceTable wins the || so a stale
+// sourceTable would mask a corrected source). So we write BOTH fields to the
+// same value — that is the regression that got lost before.
+function startEditSource(jobId) {
+  const row = document.querySelector('[data-job-id="' + jobId + '"]');
+  let el = row ? row.querySelector('.job-source') : document.getElementById('job-source-' + jobId);
+  if (!el) return;
+  const job = state.jobs.find(j => j.id === jobId);
+  const current = job ? (job.sourceTable || job.source || '') : el.textContent.trim();
+  const input = document.createElement('input');
+  input.id    = 'source-input-' + jobId;
+  input.value = current === '—' ? '' : current;
+  input.placeholder = 'dbo.TableName';
+  input.style.cssText = 'background:var(--bg3);border:0.5px solid var(--accent);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--text);font-family:var(--mono);width:100%;outline:none';
+  input.addEventListener('keydown', e => handleEditSourceKey(e, jobId));
+  input.addEventListener('blur',    () => confirmEditSource(jobId));
+  el.innerHTML = '';
+  el.appendChild(input);
+  input.focus(); input.select();
+}
+
+function handleEditSourceKey(e, jobId) {
+  if (e.key === 'Enter')  { e.preventDefault(); confirmEditSource(jobId); }
+  if (e.key === 'Escape') { e.preventDefault(); cancelEditSource(jobId); }
+}
+
+function confirmEditSource(jobId) {
+  const input = document.getElementById('source-input-' + jobId)
+    || document.querySelector('[data-job-id="' + jobId + '"] .job-source input');
+  if (!input) return;
+  const newSource = input.value.trim();
+  if (!newSource) { cancelEditSource(jobId); return; }
+  // Write BOTH fields so no stale value can shadow the correction.
+  const ok = safeMutateJob(jobId, j => { j.sourceTable = newSource; j.source = newSource; });
+  if (ok){
+    const inMem = state.jobs.find(j => j.id === jobId);
+    if (inMem) { inMem.sourceTable = newSource; inMem.source = newSource; }
+    if (typeof scheduleAutoVersion === 'function') scheduleAutoVersion(jobId, 'source table edited');
+    showToast('Source table set to "' + newSource + '"');
+  }
+  renderAllJobs();
+}
+
+function cancelEditSource(jobId) {
+  const job = state.jobs.find(j => j.id === jobId);
+  const el = document.getElementById('job-source-' + jobId);
+  if (el && job) el.innerHTML = (job.sourceTable || job.source || '—');
 }
 
 function deleteJob(jobId) {
