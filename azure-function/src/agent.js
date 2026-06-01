@@ -1,6 +1,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // agent.js — Agentive Migration backend
 // ─────────────────────────────────────────────────────────────────────────────
+// DEPLOY MARKER: 2026-06-01-jobs-wipe-fix — connection write-through now
+// read-modify-write (see saveProposedJobs note + line ~1810). If this marker
+// is NOT in the live code, the fix did not deploy (Flex Consumption stale
+// content hash). Bump the date to force a redeploy.
+// ─────────────────────────────────────────────────────────────────────────────
 // Endpoints:
 //   POST /api/agent/migrate              — Create a new agent run
 //   GET  /api/agent/run/{runId}          — Read run state + messages
@@ -1806,14 +1811,39 @@ app.http('agent_migrate', {
       };
       // Best-effort write-through to Cosmos. Failure here is not fatal —
       // the run still proceeds with the body-supplied values.
+      //
+      // CRITICAL — read-modify-write, never a bare upsert. Cosmos upsert is a
+      // WHOLE-DOCUMENT REPLACE, not a field-level merge. Upserting
+      // { id, userId, connections, updatedAt } here would delete every other
+      // field on the projects doc — jobs, project_settings, wasis_rules,
+      // sql_scripts, etc. — because they're absent from the payload. This
+      // fires at the START of every agent run (whenever source+target conns
+      // are supplied in the body, which the frontend does on every fresh
+      // run), so a bare upsert silently wiped the user's entire job list the
+      // moment they started an Agentive conversion. Same failure class as the
+      // 21-Apr-2026 incident documented in index.js's `save` handler.
+      //
+      // Fix: read the existing doc first, overlay ONLY connections, write the
+      // merged result back. Field omission must never mean deletion.
       try {
-        await getCosmosContainer('projects').items.upsert({
+        const projects = getCosmosContainer('projects');
+        let existing = {};
+        try {
+          const { resource } = await projects.item(userId, userId).read();
+          existing = resource || {};
+        } catch (readErr) {
+          if (readErr.code !== 404) throw readErr;
+          // 404 = brand-new user with no projects doc yet; start from empty.
+        }
+        const merged = {
+          ...existing,
           id: userId,
           userId,
           connections: conns,
-          updatedAt: nowIso()
-        });
-        ctx.log(`[agent] connections refreshed in Cosmos for ${userId} (srcMode=${conns.srcConnMode}, tgtMode=${conns.tgtConnMode})`);
+          updatedAt: nowIso(),
+        };
+        await projects.items.upsert(merged);
+        ctx.log(`[agent] connections refreshed in Cosmos for ${userId} (srcMode=${conns.srcConnMode}, tgtMode=${conns.tgtConnMode}); preserved ${Object.keys(existing).length} existing field(s)`);
       } catch (e) {
         ctx.log(`[agent] cosmos connection upsert failed (non-fatal): ${e.message}`);
       }
