@@ -296,15 +296,50 @@
 
       body.cyg-collapsed{ --cyg-sidebar-w:${WIDTH_CLOSED}px; }
       body:not(.cyg-collapsed){ --cyg-sidebar-w:${WIDTH_OPEN}px; }
+
+      /* Pinned footer — Accessibility control lives here (always visible). */
+      .cyg-sidebar-foot{
+        flex-shrink:0;
+        border-top:1px solid var(--border);
+        padding:0.4rem 0.5rem;
+      }
+      .cyg-a11y-btn{
+        display:flex;align-items:center;gap:9px;width:100%;
+        padding:0.42rem 0.75rem;border:none;background:none;cursor:pointer;
+        font:inherit;font-size:12.5px;color:var(--text2);border-radius:8px;
+        text-align:left;transition:color 0.12s,background 0.12s;
+      }
+      .cyg-a11y-btn:hover{ color:var(--accent); background:var(--hover-tint); }
+      .cyg-a11y-btn .cyg-nav-icon{ width:16px;height:16px;flex-shrink:0; }
+      .cyg-sidebar.collapsed .cyg-a11y-btn{ justify-content:center;padding:0.5rem 0; }
+      .cyg-sidebar.collapsed .cyg-a11y-btn .cyg-nav-item-label{ display:none; }
     `;
     document.head.appendChild(style);
+  }
+
+  // Make sure the accessibility engine (panel + API) is loaded on the page.
+  function ensureA11y(){
+    if (window.CygenixA11y || document.getElementById('cygenix-a11y-js')) return;
+    const s = document.createElement('script');
+    s.id = 'cygenix-a11y-js'; s.src = '/cygenix-a11y.js';
+    document.head.appendChild(s);
+  }
+
+  function buildFooter(){
+    const icon = svg('<circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="4.6" r="0.95" fill="currentColor"/><path d="M4.3 6.1c1.2.6 2.4.8 3.7.8s2.5-.2 3.7-.8M8 6.9V10m0 0l-1.5 2.3M8 10l1.5 2.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>');
+    return `<div class="cyg-sidebar-foot">
+      <button type="button" class="cyg-a11y-btn a11y-trigger" aria-label="Accessibility options" aria-expanded="false"
+              onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">
+        ${icon}<span class="cyg-nav-item-label">Accessibility</span>
+      </button>
+    </div>`;
   }
 
   // ── HTML build ──────────────────────────────────────────────────────────
   function buildHTML(activeKey){
     const head = `<div class="cyg-sidebar-head"><button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Toggle sidebar">❮</button></div>`;
     const body = NAV.map(sec => buildSection(sec, activeKey)).join('');
-    return head + `<div class="cyg-sidebar-scroll">${body}</div>`;
+    return head + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter();
   }
 
   function buildSection(sec, activeKey){
@@ -437,6 +472,7 @@
 
     wireItemClicks(aside);
     startBadgeUpdater();
+    ensureA11y();
   }
 
   // ── Live status badges ──────────────────────────────────────────────────

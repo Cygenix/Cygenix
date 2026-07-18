@@ -261,6 +261,12 @@
 </div>
 
 <div class="cyg-sidebar-footer">
+  <button type="button" class="cyg-nav-item a11y-trigger" style="width:100%;background:none;border:none;text-align:left;cursor:pointer;font:inherit"
+          aria-label="Accessibility options" aria-expanded="false"
+          onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">
+    <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="4.6" r="0.95" fill="currentColor"/><path d="M4.3 6.1c1.2.6 2.4.8 3.7.8s2.5-.2 3.7-.8M8 6.9V10m0 0l-1.5 2.3M8 10l1.5 2.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+    Accessibility
+  </button>
   <div class="cyg-conn-bar">
     <span class="cyg-conn-dot" id="cyg-src-dot" style="background:${srcOk?'#22c97a':'#f04646'}"></span>
     <span style="overflow:hidden;text-overflow:ellipsis;max-width:80px">${srcOk?'Src ✓':'Src —'}</span>
@@ -309,6 +315,14 @@
 
     // Push content right
     document.body.classList.add('cyg-nav-active');
+
+    // Ensure the accessibility engine (panel + API) is available for the
+    // Accessibility button in the footer.
+    if (!window.CygenixA11y && !document.getElementById('cygenix-a11y-js')) {
+      const a = document.createElement('script');
+      a.id = 'cygenix-a11y-js'; a.src = '/cygenix-a11y.js';
+      document.head.appendChild(a);
+    }
 
     // Handle cyg_goto — navigate to dashboard sub-view
     const goto = sessionStorage.getItem('cyg_goto');

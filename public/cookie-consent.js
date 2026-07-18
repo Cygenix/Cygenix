@@ -188,11 +188,11 @@
     btn.innerHTML = '🍪';
     btn.onclick = openPanel;
     btn.style.cssText = `
-      position:fixed;bottom:1.25rem;left:1.25rem;z-index:8888;
+      position:fixed;bottom:1.25rem;right:1.25rem;z-index:8888;
       width:36px;height:36px;border-radius:50%;
       background:var(--bg3);border:0.5px solid var(--border2);
       font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;
-      transition:border-color 0.15s;box-shadow:0 2px 8px rgba(0,0,0,0.4)
+      transition:border-color 0.15s;box-shadow:var(--shadow-soft,0 2px 8px rgba(0,0,0,0.2))
     `;
     btn.onmouseover = () => btn.style.borderColor = 'rgba(61,126,255,0.4)';
     btn.onmouseout  = () => btn.style.borderColor = 'var(--border2)';
