@@ -118,3 +118,81 @@ html[data-theme="financial"] #user-menu,
 html[data-theme="financial"] .rc-chips-menu{
   box-shadow:var(--shadow-strong);
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * Redwood — Oracle-inspired enterprise palette (the site's default look)
+ * ───────────────────────────────────────────────────────────────────────
+ * Warm off-white workspace, white panels, a single restrained Oracle
+ * "Redwood" red-clay accent (#C74634), warm neutral greys and a dark
+ * masthead. No gradients, no glow, no animation — the goal is a calm,
+ * corporate, trustworthy feel in the spirit of Oracle Cloud / Redwood.
+ *
+ * IMPLEMENTATION NOTE — why the doubled attribute selector:
+ *   Each app page ships its own inline  html[data-theme="light"]{…}
+ *   palette in a <style> block that loads AFTER this stylesheet. At equal
+ *   specificity the inline block would win on source order. Repeating the
+ *   attribute — [data-theme="light"][data-theme="light"] — raises the
+ *   specificity to (0,2,1), just above the inline (0,1,1), so these
+ *   Redwood values win everywhere WITHOUT editing 22 pages' palettes.
+ *   Every existing light-mode structural rule (.topbar, .form-input,
+ *   table headers, modals …) already keys off  data-theme="light"  and
+ *   simply consumes these re-tuned variables.
+ *
+ * The default theme was switched from 'dark' to 'light' in each page's
+ * pre-paint script, so this Redwood light palette is what users see first.
+ * ═══════════════════════════════════════════════════════════════════════ */
+html[data-theme="light"][data-theme="light"]{
+  /* Workspace surfaces — warm, paper-like neutrals (never pure cold grey) */
+  --bg:#F6F4F1;        /* main workspace — warm off-white */
+  --bg2:#FFFFFF;       /* cards, panels, sidebar */
+  --bg3:#F1EEEA;       /* sub-panel / hover surface */
+  --bg4:#E7E2DC;       /* inset / pressed / chips */
+
+  /* Borders — warm taupe hairlines, flat (no glow rings) */
+  --border:rgba(60,50,40,0.12);
+  --border2:rgba(60,50,40,0.20);
+
+  /* Text — warm near-black charcoal, Oracle Redwood neutral ramp */
+  --text:#1F1D1B;
+  --text2:#5A544E;
+  --text3:#8C857D;
+
+  /* Accent — Oracle Redwood red-clay. One accent, used sparingly. */
+  --accent:#C74634;
+  --accent2:#A5372A;                         /* darker — hover / pressed */
+  --accent-glow:rgba(199,70,52,0.14);        /* soft focus ring only */
+
+  /* Status colours — muted, professional (no neon) */
+  --green:#3F7D4E;   --green-bg:rgba(63,125,78,0.10);
+  --amber:#B26A00;   --amber-bg:rgba(178,106,0,0.10);
+  --red:#C0392B;     --red-bg:rgba(192,57,43,0.10);
+  --purple:#6B4E8E;  --purple-bg:rgba(107,78,142,0.10);
+  --teal:#0F6E6C;    --teal-bg:rgba(15,110,108,0.10);
+
+  /* Typography — corporate system stacks. Serif for display headings
+   * (editorial, Oracle-like), clean sans elsewhere. Drops the quirky
+   * 'Syne' display face that read as startup/AI. */
+  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+  --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+
+  /* Masthead — dark warm brown, Redwood-style, with light text */
+  --topbar-bg:#2B2724;
+  --topbar-text:#F5F2EE;
+
+  /* Tints, scrims, shadows — warm, soft, flat (short throw, low alpha) */
+  --hover-tint:rgba(60,50,40,0.04);
+  --code-tint:rgba(60,50,40,0.06);
+  --modal-scrim:rgba(35,28,22,0.42);
+  --shadow-strong:0 12px 40px rgba(60,50,40,0.16);
+  --shadow-soft:0 2px 10px rgba(60,50,40,0.08);
+}
+
+/* Logo accent mark stays Redwood red on the dark masthead */
+html[data-theme="light"][data-theme="light"] .topbar .logo span{ color:var(--accent); }
+
+/* Focus ring — warm red halo on the darker accent border */
+html[data-theme="light"][data-theme="light"] .form-input:focus{
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px var(--accent-glow);
+}

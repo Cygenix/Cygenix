@@ -17,13 +17,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -48,12 +48,12 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
@@ -81,8 +81,8 @@ body.cyg-collapsed{padding-left:54px}
 .btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);background:var(--bg3)}
 .btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
 .btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
-.btn-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3)}
-.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3)}
+.btn-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.3)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3)}
 .btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
 .btn-sm{padding:0.25rem 0.625rem;font-size:11px}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
@@ -90,7 +90,7 @@ body.cyg-collapsed{padding-left:54px}
 /* ── Mode toggle ── */
 .mode-toggle{display:flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:3px;gap:3px}
 .mode-btn{flex:1;text-align:center;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
-.mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(61,126,255,0.25)}
+.mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(199,70,52,0.25)}
 
 /* ── Connection banner ── */
 .conn-banner{display:flex;align-items:center;gap:0.75rem;padding:0.625rem 1rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:1rem;flex-wrap:wrap}
@@ -100,7 +100,7 @@ body.cyg-collapsed{padding-left:54px}
 .conn-dot.idle{background:var(--text3)}
 .conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
 .conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif)}
-.conn-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.3)}
+.conn-btn:hover{color:var(--accent);border-color:rgba(199,70,52,0.3)}
 
 /* ── Source column list ── */
 .src-col-list{display:flex;flex-direction:column;gap:2px;overflow-y:auto;max-height:220px}
@@ -142,17 +142,17 @@ body.cyg-collapsed{padding-left:54px}
 .status-bar.visible{display:block}
 .status-ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
 .status-err{background:var(--red-bg);border-color:rgba(240,70,70,0.25);color:var(--red)}
-.status-info{background:var(--accent-glow);border-color:rgba(61,126,255,0.2);color:var(--accent)}
+.status-info{background:var(--accent-glow);border-color:rgba(199,70,52,0.2);color:var(--accent)}
 
 /* ── Size buttons ── */
 .size-btn{background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer}
-.size-btn.active{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
+.size-btn.active{background:var(--accent-glow);border-color:rgba(199,70,52,0.3);color:var(--accent)}
 
 /* ── Badge ── */
 .badge{display:inline-block;font-size:10px;padding:1px 7px;border-radius:100px;font-weight:500}
 .badge-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.2)}
 .badge-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.2)}
-.badge-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.2)}
+.badge-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.2)}
 .badge-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.2)}
 
 /* ── Join builder ── */
@@ -165,7 +165,7 @@ body.cyg-collapsed{padding-left:54px}
 .modal-head{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .modal-body{flex:1;overflow-y:auto;padding:1.25rem}
 .where-chat{display:flex;flex-direction:column;gap:0.5rem;min-height:120px;max-height:260px;overflow-y:auto;background:var(--bg3);border-radius:var(--r);padding:0.75rem;margin-bottom:0.75rem}
-.where-msg-user{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;align-self:flex-end;max-width:90%;color:var(--text)}
+.where-msg-user{background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;align-self:flex-end;max-width:90%;color:var(--text)}
 .where-msg-assistant{font-size:12px;color:var(--text2);font-family:var(--mono);white-space:pre-wrap;line-height:1.6}
 
 /* Page header */
@@ -399,7 +399,7 @@ body.cyg-collapsed{padding-left:54px}
             <!-- Create-table affordance: appears when the typed name doesn't exist in the schema cache
                  AND a TARGET table is selected (so we have columns to create from).
                  Deliberately unobtrusive — a small button under the input rather than blocking UI. -->
-            <div id="src-create-hint" style="display:none;margin-top:6px;padding:6px 10px;background:rgba(79,142,255,0.08);border:0.5px solid rgba(79,142,255,0.25);border-radius:var(--r);font-size:11.5px;color:var(--text2);display:none;align-items:center;gap:8px;flex-wrap:wrap">
+            <div id="src-create-hint" style="display:none;margin-top:6px;padding:6px 10px;background:rgba(199,70,52,0.08);border:0.5px solid rgba(199,70,52,0.25);border-radius:var(--r);font-size:11.5px;color:var(--text2);display:none;align-items:center;gap:8px;flex-wrap:wrap">
               <span>Doesn't exist.</span>
               <button class="btn btn-primary btn-sm" onclick="ddlOpenModal('src')" style="font-size:11px;padding:2px 8px">+ Create from target schema</button>
             </div>
@@ -439,7 +439,7 @@ body.cyg-collapsed{padding-left:54px}
           <div>
             <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
               WHERE clause (optional)
-              <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)">🤖 AI help</button>
+              <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)">🤖 AI help</button>
             </label>
             <input id="src-where" class="form-input" style="font-family:var(--mono)" placeholder="e.g. active = 1 AND status = 'O'">
           </div>
@@ -472,7 +472,7 @@ body.cyg-collapsed{padding-left:54px}
             <div style="display:flex;gap:0.5rem;align-items:center">
               <span class="badge badge-green" id="map-stats" style="display:none"></span>
               <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()">🤖 Re-map</button>
-              <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(45,212,191,0.3)">+ Joined col</button>
+              <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(23,130,124,0.3)">+ Joined col</button>
             </div>
           </div>
           <div class="panel-body">
@@ -2724,7 +2724,7 @@ function renderMappingTable(){
     } else if (identityLocked) {
       rowStyle = 'background:rgba(255,255,255,0.02);opacity:0.55';
     } else if (hasFixed) {
-      rowStyle = 'background:rgba(45,212,191,0.04)';
+      rowStyle = 'background:rgba(23,130,124,0.04)';
     } else if (willTruncate) {
       rowStyle = 'background:rgba(245,158,11,0.04)';
     }
@@ -2739,7 +2739,7 @@ function renderMappingTable(){
     // it's right next to the column type info — minimal layout change.
     const identityBadgeHtml = isIdentity
       ? `<div style="margin-top:3px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-           <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(167,139,250,0.25)">IDENTITY</span>
+           <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(107,78,142,0.25)">IDENTITY</span>
            <label style="font-size:10px;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px"
                   title="Allow override for this identity column. When ticked, this column is included in the INSERT and SET IDENTITY_INSERT ON is set on the target.">
              <input type="checkbox" ${identityOverride?'checked':''}
@@ -3106,8 +3106,8 @@ function renderOTMCards(){
         <span class="tgt-card-title">${esc(tt.fullName)}</span>
         <span style="font-size:10px;color:var(--text3);margin-left:4px">${mappedCount} mapped</span>
         <div style="margin-left:auto;display:flex;gap:0.4rem">
-          ${joinCols.length?`<button onclick="showOTMJoinColPicker(${ti})" style="background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer">+ Joined col</button>`:''}
-          <button onclick="aiMapOTM(${ti})" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--purple);cursor:pointer" id="ai-map-btn-${ti}">🤖 AI map</button>
+          ${joinCols.length?`<button onclick="showOTMJoinColPicker(${ti})" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer">+ Joined col</button>`:''}
+          <button onclick="aiMapOTM(${ti})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--purple);cursor:pointer" id="ai-map-btn-${ti}">🤖 AI map</button>
           <button onclick="moveTgt(${ti},-1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===0?'disabled':''}>↑</button>
           <button onclick="moveTgt(${ti},1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===targetTables.length-1?'disabled':''}>↓</button>
           <button onclick="removeTgt(${ti})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:2px 4px">✕</button>
@@ -3199,7 +3199,7 @@ function renderOTMCards(){
             } else if (identityLocked) {
               rowStyle = 'background:rgba(255,255,255,0.02);opacity:0.55';
             } else if (hasFixed) {
-              rowStyle = 'background:rgba(45,212,191,0.04)';
+              rowStyle = 'background:rgba(23,130,124,0.04)';
             } else if (willTrunc) {
               rowStyle = 'background:rgba(245,158,11,0.04)';
             }
@@ -3209,7 +3209,7 @@ function renderOTMCards(){
 
             const identityBadgeHtml = isIdentity
               ? `<div style="margin-top:3px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-                   <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(167,139,250,0.25)">IDENTITY</span>
+                   <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(107,78,142,0.25)">IDENTITY</span>
                    <label style="font-size:10px;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px"
                           title="Allow override for this identity column. When ticked, this column is included in this table's INSERT and SET IDENTITY_INSERT ON wraps the statement.">
                      <input type="checkbox" ${identityOverride?'checked':''}
@@ -4312,7 +4312,7 @@ function renderLoadMapList(){
     const projLabel = j.projectId
       ? esc(projectNameById[j.projectId] || j.projectId)
       : '(no project)';
-    return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);${isCurrent?'background:rgba(61,126,255,0.06)':''}">
+    return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);${isCurrent?'background:rgba(199,70,52,0.06)':''}">
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px;flex-wrap:wrap">
           <span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
@@ -4523,7 +4523,7 @@ function renderJoinBuilder(containerId,allTables,baseTable){
   container.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
       <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Source JOINs <span style="color:var(--teal)">${joins.length?'('+joins.length+')':''}</span></div>
-      <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
+      <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
     </div>
     ${joins.length===0?`<div style="font-size:11px;color:var(--text3)">No JOINs — using ${baseTable?baseTable.name:''} only</div>`:''}
     ${joins.map((j,i)=>`
@@ -4545,7 +4545,7 @@ function renderJoinBuilder(containerId,allTables,baseTable){
           <input id="join-on-${i}" value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
             placeholder="e.g. [dbo].[client].[clnum] = [dbo].[matter].[mclient]"
             class="join-on-input">
-          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)" title="AI ON clause">🤖 AI</button>
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)" title="AI ON clause">🤖 AI</button>
         </div>
         ${j.table?`<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols?j.cols.length+' columns available':'Loading…'}</div>`:''}
       </div>`).join('')}`;

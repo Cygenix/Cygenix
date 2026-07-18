@@ -14,13 +14,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -33,12 +33,12 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
@@ -51,7 +51,7 @@ body.cyg-collapsed{padding-left:54px}
 .logo span{color:var(--accent)}
 .topbar-right{display:flex;align-items:center;gap:0.75rem}
 .user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
-.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
 
 /* LAYOUT */
 .page{max-width:min(1400px,calc(100vw - 230px - 32px));margin:0 auto;padding:2rem 1.5rem;box-sizing:border-box}
@@ -61,7 +61,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:0.5rem 1rem;border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.15s;text-decoration:none}
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
 .btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
-.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)}.btn-purple:hover{background:rgba(167,139,250,0.15)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25)}.btn-purple:hover{background:rgba(107,78,142,0.15)}
 .btn-sm{padding:0.3rem 0.75rem;font-size:12px}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
 
@@ -86,7 +86,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 /* INSIGHT CARDS */
 .insight-card{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);margin-bottom:1.25rem;overflow:hidden}
 .insight-header{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.875rem;background:var(--bg3)}
-.insight-icon{width:38px;height:38px;border-radius:var(--r);background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.insight-icon{width:38px;height:38px;border-radius:var(--r);background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
 .insight-table-name{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--teal)}
 .insight-meta{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px}
 .insight-body{padding:1.25rem}
@@ -149,13 +149,13 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .sample-table tr:last-child td{border-bottom:none}
 .sample-table tr:hover td{background:rgba(255,255,255,0.02)}
 .example-pill{background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:3px 10px;font-size:11px;color:var(--text2);cursor:pointer;font-family:var(--serif);transition:all 0.12s;white-space:nowrap}
-.example-pill:hover{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
-.qa-msg-user{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);align-self:flex-end;max-width:90%}
+.example-pill:hover{background:var(--accent-glow);border-color:rgba(199,70,52,0.3);color:var(--accent)}
+.qa-msg-user{background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);align-self:flex-end;max-width:90%}
 .qa-msg-assistant{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;font-size:12px;color:var(--text2);line-height:1.7;white-space:pre-wrap}
 
 /* MIGRATION MAP CARD */
 .map-card{background:var(--bg2);border:0.5px solid var(--teal-bg);border-radius:var(--r-lg);margin-bottom:1.25rem;overflow:hidden}
-.map-header{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.875rem;background:rgba(45,212,191,0.04)}
+.map-header{padding:1rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.875rem;background:rgba(23,130,124,0.04)}
 .map-body{padding:1.25rem}
 .match-row{display:flex;align-items:center;gap:0.75rem;padding:0.5rem 0;border-bottom:0.5px solid var(--border)}
 .match-row:last-child{border-bottom:none}
@@ -179,22 +179,22 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .search-result-item{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);cursor:pointer;transition:background 0.15s}
 .search-result-item:hover{background:var(--bg3)}
 .search-result-item:last-child{border-bottom:none}
-.search-hit{background:rgba(167,139,250,0.25);color:var(--purple);border-radius:2px;padding:0 2px}
+.search-hit{background:rgba(107,78,142,0.25);color:var(--purple);border-radius:2px;padding:0 2px}
 .search-result-table{font-size:10px;font-family:var(--mono);color:var(--teal);margin-bottom:3px}
 .search-result-row{font-size:11px;color:var(--text2);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .search-empty{padding:1.25rem;text-align:center;font-size:12px;color:var(--text3)}
 
 /* SELECTED COUNT BADGE */
-.sel-badge{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);border-radius:100px;font-size:10px;padding:1px 8px;font-family:var(--mono)}
+.sel-badge{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3);border-radius:100px;font-size:10px;padding:1px 8px;font-family:var(--mono)}
 
 /* DATA PROFILING ─────────────────────────────────────────────────────────── */
-.dp-panel{background:linear-gradient(180deg,var(--bg2),var(--bg2)),linear-gradient(135deg,rgba(167,139,250,0.05),rgba(45,212,191,0.05));border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem;position:relative;overflow:hidden}
+.dp-panel{background:linear-gradient(180deg,var(--bg2),var(--bg2)),linear-gradient(135deg,rgba(107,78,142,0.05),rgba(23,130,124,0.05));border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem;position:relative;overflow:hidden}
 .dp-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--purple),var(--teal));opacity:0.6}
 .dp-status-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:100px;background:var(--bg3);border:0.5px solid var(--border2);color:var(--text3)}
 .dp-status-pill.fresh{color:var(--green);background:var(--green-bg);border-color:rgba(34,201,122,0.25)}
 .dp-status-pill.stale{color:var(--amber);background:var(--amber-bg);border-color:rgba(245,158,11,0.25)}
 .dp-status-pill.none{color:var(--text3)}
-.dp-status-pill.building{color:var(--purple);background:var(--purple-bg);border-color:rgba(167,139,250,0.3)}
+.dp-status-pill.building{color:var(--purple);background:var(--purple-bg);border-color:rgba(107,78,142,0.3)}
 .dp-stage-list{display:flex;flex-direction:column;gap:0.4rem;margin-top:0.75rem;font-family:var(--mono);font-size:11px}
 .dp-stage{display:flex;align-items:center;gap:0.6rem;color:var(--text3);padding:0.2rem 0}
 .dp-stage.active{color:var(--purple)}
@@ -246,7 +246,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .dp-empty-refs{font-size:11px;color:var(--text3);font-style:italic;padding:0.4rem 0}
 
 /* SWIMLANES (Compare Profiles view) ───────────────────────────────────────── */
-.dp-swimlanes-panel{background:linear-gradient(180deg,var(--bg2),var(--bg2)),linear-gradient(135deg,rgba(167,139,250,0.04),rgba(45,212,191,0.04));border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem;position:relative;overflow:hidden}
+.dp-swimlanes-panel{background:linear-gradient(180deg,var(--bg2),var(--bg2)),linear-gradient(135deg,rgba(107,78,142,0.04),rgba(23,130,124,0.04));border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:1.25rem;margin-bottom:1.25rem;position:relative;overflow:hidden}
 .dp-swimlanes-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--teal),var(--purple));opacity:0.5}
 .dp-swim-grid{display:grid;grid-template-columns:140px 1fr 1fr;gap:0.5rem;align-items:start;font-size:11px}
 .dp-swim-header{display:contents;font-size:10px;text-transform:uppercase;letter-spacing:0.07em;color:var(--text3);font-family:var(--mono)}
@@ -329,7 +329,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
       <button class="btn btn-ghost btn-sm" onclick="exportToWord()" title="Export analysis to Word">📝 Word</button>
     </div>
     <button class="btn btn-purple btn-sm" onclick="runInsights()" id="run-btn" disabled>🔍 Analyse source tables</button>
-    <button class="btn btn-sm" onclick="runMigrationMapping()" id="mapping-btn-top" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none">🗺 Full migration picture</button>
+    <button class="btn btn-sm" onclick="runMigrationMapping()" id="mapping-btn-top" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.3);display:none">🗺 Full migration picture</button>
     <div class="user-pill" onclick="signOut()">
       <div class="avatar" id="user-avatar">?</div>
       <span id="user-name" style="font-size:12px;color:var(--text2)">Loading…</span>
@@ -391,7 +391,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
         <button class="btn btn-sm" id="dp-schedule-src-btn" onclick="dpCreateTask('source')" disabled
                 style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)" title="Package this profile build as a task you can schedule from Task Agent (cron or on-demand)">📦 Create task</button>
         <button class="btn btn-sm" id="dp-build-tgt-btn" onclick="dpStartBuild('target')"
-                style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none" disabled>🧬 Profile target</button>
+                style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.3);display:none" disabled>🧬 Profile target</button>
         <button class="btn btn-sm" id="dp-schedule-tgt-btn" onclick="dpCreateTask('target')"
                 style="background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2);display:none" disabled title="Package this profile build as a task you can schedule from Task Agent (cron or on-demand)">📦 Create task</button>
       </div>
@@ -428,7 +428,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
         <span id="dp-result-count"></span>
         <div style="display:flex;gap:0.4rem;align-items:center">
           <button class="btn btn-sm" id="dp-compare-btn" onclick="dpCompareProfiles()"
-                  style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);font-size:11px" title="Group source and target tables by business subject area">🧭 Compare Profiles</button>
+                  style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3);font-size:11px" title="Group source and target tables by business subject area">🧭 Compare Profiles</button>
           <button class="btn btn-ghost btn-sm" onclick="dpConfirmRebuild()" style="font-size:11px">🔄 Re-build</button>
         </div>
       </div>
@@ -468,7 +468,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
   <div class="dp-drawer-overlay" id="dp-drawer-overlay" onclick="dpCloseDrawer()"></div>
   <aside class="dp-drawer" id="dp-drawer" aria-hidden="true">
     <div class="dp-drawer-header">
-      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">📄</div>
+      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">📄</div>
       <div style="flex:1;min-width:0">
         <div id="dp-drawer-title" style="font-family:var(--mono);font-size:14px;font-weight:600;color:var(--teal);overflow:hidden;text-overflow:ellipsis">…</div>
         <div id="dp-drawer-subtitle" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">…</div>
@@ -526,7 +526,7 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
     <div class="table-grid" id="table-grid"></div>
     <div style="margin-top:0.875rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
       <button class="btn btn-purple btn-sm" onclick="runInsights()" id="run-btn-2" disabled>🔍 Analyse source tables</button>
-      <button class="btn btn-sm" onclick="runMigrationMapping()" id="mapping-btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.3);display:none">🗺 Full migration picture</button>
+      <button class="btn btn-sm" onclick="runMigrationMapping()" id="mapping-btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.3);display:none">🗺 Full migration picture</button>
       <span style="font-size:12px;color:var(--text3)" id="analyse-hint">Select at least one table to analyse</span>
     </div>
   </div>
@@ -719,7 +719,7 @@ async function askSchemaQuestion() {
     if (mentioned.length > 0 && mentioned.length <= 20) {
       const selectBtn = document.createElement('button');
       selectBtn.textContent = '📋 Select these ' + mentioned.length + ' table(s) for analysis';
-      selectBtn.style.cssText = 'margin-top:0.5rem;display:block;background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);padding:4px 12px;font-size:11px;color:var(--purple);cursor:pointer;font-family:var(--serif)';
+      selectBtn.style.cssText = 'margin-top:0.5rem;display:block;background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:var(--r);padding:4px 12px;font-size:11px;color:var(--purple);cursor:pointer;font-family:var(--serif)';
       selectBtn.onclick = function() {
         mentioned.forEach(function(t){ selectedIds.add(t.id); });
         renderTablePicker();
@@ -1265,7 +1265,7 @@ async function runMigrationMapping(){
   mapDiv.className = 'map-card';
   mapDiv.innerHTML = `
     <div class="map-header">
-      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">🗺</div>
+      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">🗺</div>
       <div>
         <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--teal)">Full Migration Picture</div>
         <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">Claude AI comparing source → target schemas…</div>
@@ -1390,8 +1390,8 @@ function renderMigrationMap(map, card){
       <div style="flex:1;font-size:11px;color:var(--text3);padding-left:0.5rem">${esc(m.notes||'')}</div>
       ${m.targetTable && m.confidence !== 'none' ? `
         <button onclick="saveJobFromMapping(${mi})" id="savejob-${mi}"
-          style="flex-shrink:0;background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:9px;font-family:var(--serif);cursor:pointer;white-space:nowrap;transition:all 0.15s"
-          onmouseover="this.style.background='rgba(167,139,250,0.2)'" onmouseout="this.style.background='var(--purple-bg)'"
+          style="flex-shrink:0;background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:9px;font-family:var(--serif);cursor:pointer;white-space:nowrap;transition:all 0.15s"
+          onmouseover="this.style.background='rgba(107,78,142,0.2)'" onmouseout="this.style.background='var(--purple-bg)'"
           title="Save as migration job">💾 Save job</button>` : ''}
     </div>`).join('');
 
@@ -1427,7 +1427,7 @@ function renderMigrationMap(map, card){
 
   card.innerHTML = `
     <div class="map-header">
-      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">🗺</div>
+      <div style="width:38px;height:38px;border-radius:var(--r);background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">🗺</div>
       <div style="flex:1">
         <div style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--teal)">Full Migration Picture</div>
         <div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:2px">${esc(srcSchema?.database||'Source')} → ${esc(tgtSchema?.database||'Target')} · ${(map.tableMappings||[]).length} table mappings</div>
@@ -3031,7 +3031,7 @@ function dpRenderResults() {
   tabs.innerHTML = haveBoth
     ? ['source','target'].map(r => {
         const active = r === dpActiveRole;
-        return `<button onclick="dpSwitchRole('${r}')" style="background:${active?'var(--purple-bg)':'var(--bg3)'};color:${active?'var(--purple)':'var(--text2)'};border:0.5px solid ${active?'rgba(167,139,250,0.4)':'var(--border2)'};border-radius:var(--r);padding:0.35rem 0.875rem;font-size:11px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">${r}: ${dpState[r].profile.overview.database}</button>`;
+        return `<button onclick="dpSwitchRole('${r}')" style="background:${active?'var(--purple-bg)':'var(--bg3)'};color:${active?'var(--purple)':'var(--text2)'};border:0.5px solid ${active?'rgba(107,78,142,0.4)':'var(--border2)'};border-radius:var(--r);padding:0.35rem 0.875rem;font-size:11px;cursor:pointer;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em">${r}: ${dpState[r].profile.overview.database}</button>`;
       }).join('')
     : '';
 

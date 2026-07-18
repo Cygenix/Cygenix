@@ -19,13 +19,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -48,12 +48,12 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
+  --accent:#C74634;--accent2:#A5372A;--accent-glow:rgba(199,70,52,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --serif:'Syne',system-ui,sans-serif;
   --mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
@@ -90,12 +90,12 @@ html[data-theme="light"]{
   --text:#1a2332;
   --text2:#4b5563;
   --text3:#6b7280;
-  --accent-glow:rgba(61,126,255,0.10);
+  --accent-glow:rgba(199,70,52,0.10);
   --green-bg:rgba(34,201,122,0.12);
   --amber-bg:rgba(245,158,11,0.12);
   --red-bg:rgba(240,70,70,0.10);
-  --purple-bg:rgba(167,139,250,0.14);
-  --teal-bg:rgba(45,212,191,0.14);
+  --purple-bg:rgba(107,78,142,0.14);
+  --teal-bg:rgba(23,130,124,0.14);
   /* Topbar deliberately stays dark to match the Boomi reference. */
   --topbar-bg:#13161d;
   --topbar-text:#e8eaf0;
@@ -168,7 +168,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .conn-badge{font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono);border:0.5px solid}
 .conn-badge.ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
 .conn-badge.err{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
-.conn-badge.checking{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
+.conn-badge.checking{background:var(--accent-glow);border-color:rgba(199,70,52,0.3);color:var(--accent)}
 .avatar{width:30px;height:30px;border-radius:50%;background:var(--bg4);border:0.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:var(--text2)}
 .back-link{font-size:12px;color:var(--text3);text-decoration:none;display:flex;align-items:center;gap:5px;transition:color 0.15s}
 .back-link:hover{color:var(--text2)}
@@ -193,7 +193,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dash-proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:0.85rem}
 .dash-proj-card{background:var(--bg3);border:0.5px solid var(--border);border-radius:10px;padding:1rem;display:flex;flex-direction:column;gap:0.65rem;cursor:pointer;transition:all 0.15s}
 .dash-proj-card:hover{border-color:var(--border2);background:var(--bg4);transform:translateY(-1px)}
-.dash-proj-card.active-project{border-color:rgba(61,126,255,0.4)}
+.dash-proj-card.active-project{border-color:rgba(199,70,52,0.4)}
 .dash-proj-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem}
 .dash-proj-name{font-size:13px;font-weight:600;line-height:1.3;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dash-proj-client{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:1px}
@@ -204,7 +204,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 
 /* status badges (shared with projects.html visual language) */
 .dash-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:9px;font-weight:500;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.05em;border:0.5px solid;flex-shrink:0;align-self:flex-start}
-.dash-status-active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.35)}
+.dash-status-active{background:var(--accent-glow);color:var(--accent);border-color:rgba(199,70,52,0.35)}
 .dash-status-inactive{background:var(--bg4);color:var(--text3);border-color:var(--border2)}
 .dash-status-complete{background:rgba(34,201,122,0.08);color:var(--green);border-color:rgba(34,201,122,0.35)}
 .dash-status-draft{background:var(--bg4);color:var(--text2);border-color:var(--border2)}
@@ -230,9 +230,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .file-item{display:flex;align-items:center;justify-content:space-between;padding:0.6rem 0.75rem;background:var(--bg3);border-radius:var(--r);margin-bottom:0.4rem;border:0.5px solid var(--border)}
 .file-info{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 .file-ext{font-size:10px;font-weight:500;font-family:var(--mono);padding:2px 6px;border-radius:4px;flex-shrink:0}
-.ext-sql{background:rgba(61,126,255,0.15);color:var(--accent)}
+.ext-sql{background:rgba(199,70,52,0.15);color:var(--accent)}
 .ext-bak{background:rgba(245,158,11,0.15);color:var(--amber)}
-.ext-mdb,.ext-acc{background:rgba(167,139,250,0.15);color:var(--purple)}
+.ext-mdb,.ext-acc{background:rgba(107,78,142,0.15);color:var(--purple)}
 .ext-default{background:var(--bg4);color:var(--text3)}
 .file-name{font-size:12px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .file-size{font-size:11px;color:var(--text3);font-family:var(--mono);flex-shrink:0;margin-left:0.5rem}
@@ -271,8 +271,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
 .btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}
 .btn-ghost:hover{color:var(--text);background:rgba(255,255,255,0.04)}
-.btn-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.25)}
-.btn-teal:hover{background:rgba(45,212,191,0.2)}
+.btn-teal{background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.25)}
+.btn-teal:hover{background:rgba(23,130,124,0.2)}
 .btn-sm{padding:0.3rem 0.75rem;font-size:11px}
 .btn-full{width:100%;padding:0.7rem;justify-content:center}
 
@@ -295,7 +295,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .step-tab{flex:1;display:flex;align-items:center;justify-content:center;gap:0.5rem;padding:0.6rem 0.75rem;cursor:pointer;color:var(--text3);font-size:12px;font-family:var(--serif);border-right:0.5px solid var(--border);transition:all 0.15s;background:transparent}
 .step-tab:last-child{border-right:0}
 .step-tab:hover{color:var(--text2);background:var(--bg3)}
-.step-tab.active{color:var(--accent);background:rgba(79,142,255,0.08);font-weight:600}
+.step-tab.active{color:var(--accent);background:rgba(199,70,52,0.08);font-weight:600}
 .step-tab .step-num{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bg3);color:var(--text3);font-size:10.5px;font-weight:600;font-family:var(--mono);flex-shrink:0}
 .step-tab.active .step-num{background:var(--accent);color:#fff}
 .step-view{display:none}
@@ -318,9 +318,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .inv-type-pill{font-size:10px;padding:2px 8px;border-radius:100px;font-weight:500;margin-bottom:0.5rem;display:inline-block}
 .doc-type-artifact{background:rgba(236,72,153,0.15);color:#ec4899}
 .doc-type-wasis{background:rgba(245,158,11,0.15);color:var(--amber)}
-.doc-type-dictionary{background:rgba(61,126,255,0.15);color:var(--accent)}
-.doc-type-schema{background:rgba(45,212,191,0.15);color:var(--teal)}
-.doc-type-rules{background:rgba(167,139,250,0.15);color:var(--purple)}
+.doc-type-dictionary{background:rgba(199,70,52,0.15);color:var(--accent)}
+.doc-type-schema{background:rgba(23,130,124,0.15);color:var(--teal)}
+.doc-type-rules{background:rgba(107,78,142,0.15);color:var(--purple)}
 .doc-type-signoff{background:rgba(34,201,122,0.15);color:var(--green)}
 .doc-type-notes{background:rgba(255,255,255,0.08);color:var(--text2)}
 .doc-type-other{background:rgba(255,255,255,0.05);color:var(--text3)}
@@ -339,7 +339,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .inv-folder[data-unassigned="true"] .inv-folder-title{color:var(--text3);font-style:italic}
 .inv-folder-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0.75rem}
 /* Move-to-project popover shown off the 'Move' action button on each doc card */
-.inv-doc-project-chip{display:inline-block;font-size:10px;color:var(--accent);background:var(--accent-glow);padding:1px 7px;border-radius:100px;margin-left:6px;font-family:var(--mono);border:0.5px solid rgba(61,126,255,0.25)}
+.inv-doc-project-chip{display:inline-block;font-size:10px;color:var(--accent);background:var(--accent-glow);padding:1px 7px;border-radius:100px;margin-left:6px;font-family:var(--mono);border:0.5px solid rgba(199,70,52,0.25)}
 
 /* PREVIEW MODAL */
 .preview-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;align-items:center;justify-content:center}
@@ -365,7 +365,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .conn-dot.idle{background:var(--text3)}
 .conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
 .conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif)}
-.conn-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.3)}
+.conn-btn:hover{color:var(--accent);border-color:rgba(199,70,52,0.3)}
 .notes-area{background:var(--bg3);border-radius:var(--r);padding:1rem;font-size:13px;color:var(--text2);line-height:1.8;white-space:pre-wrap;min-height:200px}
 .code-block .kw{color:#79b8ff}
 .code-block .cm{color:#555a6a;font-style:italic}
@@ -454,7 +454,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-privacy-security .ps-mode-grid{display:grid;grid-template-columns:repeat(3, 1fr);gap:0.75rem}
 #view-privacy-security .ps-mode-card{background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:1rem;cursor:pointer;transition:all 0.15s;position:relative}
 #view-privacy-security .ps-mode-card:hover{border-color:var(--accent)}
-#view-privacy-security .ps-mode-card.active{border-color:var(--accent);background:rgba(61,126,255,0.08);box-shadow:0 0 0 2px rgba(61,126,255,0.2)}
+#view-privacy-security .ps-mode-card.active{border-color:var(--accent);background:rgba(199,70,52,0.08);box-shadow:0 0 0 2px rgba(199,70,52,0.2)}
 #view-privacy-security .ps-mode-title{font-size:13px;font-weight:600;margin-bottom:0.35rem;display:flex;align-items:center;gap:6px}
 #view-privacy-security .ps-mode-card.active .ps-mode-title::after{content:"✓";margin-left:auto;color:var(--accent)}
 #view-privacy-security .ps-mode-body{font-size:11.5px;color:var(--text2);line-height:1.55}
@@ -484,7 +484,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-privacy-security .ps-log-head{padding:0.5rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg3);display:grid;grid-template-columns:150px 130px 70px 1fr;gap:0.75rem;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text3);font-weight:600}
 #view-privacy-security .ps-log-table{padding:0 1rem}
 
-#view-privacy-security .ps-transport{background:rgba(45,212,191,0.06);border:0.5px solid rgba(45,212,191,0.25);border-radius:8px;padding:0.75rem 0.9rem;font-size:11.5px;color:var(--text2);line-height:1.6;margin-top:0.5rem}
+#view-privacy-security .ps-transport{background:rgba(23,130,124,0.06);border:0.5px solid rgba(23,130,124,0.25);border-radius:8px;padding:0.75rem 0.9rem;font-size:11.5px;color:var(--text2);line-height:1.6;margin-top:0.5rem}
 #view-privacy-security .ps-transport strong{color:var(--teal)}
 #view-privacy-security .ps-transport code{font-family:var(--mono);background:var(--bg3);padding:1px 4px;border-radius:3px}
 
@@ -546,7 +546,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   font-family:var(--serif);font-size:11px;color:var(--text2);
   cursor:pointer;transition:border-color 0.15s,background 0.15s,color 0.15s;
 }
-#view-connections .sconn-chip:hover{ border-color:var(--accent);color:var(--text);background:rgba(79,142,255,0.06); }
+#view-connections .sconn-chip:hover{ border-color:var(--accent);color:var(--text);background:rgba(199,70,52,0.06); }
 #view-connections .sconn-chip .sconn-dialect{ font-family:var(--mono);font-size:9px;opacity:0.6; }
 #view-connections .sconn-chip .sconn-actions{
   display:flex;gap:2px;margin-left:0.25rem;opacity:0.5;transition:opacity 0.15s;
@@ -579,7 +579,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   transition:border-color 0.15s,background 0.15s;
 }
 #view-connections .imp-drop:hover,
-#view-connections .imp-drop.drag-over{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
+#view-connections .imp-drop.drag-over{ border-color:var(--accent);background:rgba(199,70,52,0.04); }
 
 #view-connections .imp-schema-table{
   width:100%;border-collapse:collapse;font-size:12px;
@@ -598,9 +598,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   display:inline-block;padding:1px 7px;border-radius:4px;
   font-size:10px;font-weight:500;letter-spacing:0.02em;
 }
-#view-connections .imp-type-int{ background:rgba(79,142,255,0.12);color:#6ea4ff; }
-#view-connections .imp-type-decimal{ background:rgba(45,212,191,0.12);color:#2dd4bf; }
-#view-connections .imp-type-date{ background:rgba(167,139,250,0.12);color:#a78bfa; }
+#view-connections .imp-type-int{ background:rgba(199,70,52,0.12);color:#6ea4ff; }
+#view-connections .imp-type-decimal{ background:rgba(23,130,124,0.12);color:#17827C; }
+#view-connections .imp-type-date{ background:rgba(107,78,142,0.12);color:#6B4E8E; }
 #view-connections .imp-type-bool{ background:rgba(245,158,11,0.12);color:#f59e0b; }
 #view-connections .imp-type-string{ background:rgba(255,255,255,0.06);color:var(--text2); }
 
@@ -616,7 +616,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .blob-type-chip:hover{ color:var(--text2);border-color:var(--text3); }
 #view-connections .blob-type-chip-active{
   background:var(--accent-glow);color:var(--accent);
-  border-color:rgba(61,126,255,0.35);
+  border-color:rgba(199,70,52,0.35);
 }
 
 /* Overwrite-exists modal (and sheet picker, and validation failure) — reuses the preview-modal-overlay pattern */
@@ -629,7 +629,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #imp-exists-modal h3, #imp-sheet-modal h3, #imp-validate-modal h3{ margin:0 0 0.5rem;font-size:15px;font-weight:600; }
 #imp-exists-modal p, #imp-sheet-modal p, #imp-validate-modal p{ margin:0 0 1rem;font-size:13px;color:var(--text2);line-height:1.5; }
 #imp-exists-modal .imp-exists-row, #imp-sheet-modal .imp-exists-row, #imp-validate-modal .imp-exists-row{ display:flex;align-items:flex-start;gap:0.75rem;padding:0.75rem;border:0.5px solid var(--border2);border-radius:var(--r);margin-bottom:0.5rem;cursor:pointer;transition:border-color 0.15s,background 0.15s; }
-#imp-exists-modal .imp-exists-row:hover, #imp-sheet-modal .imp-exists-row:hover, #imp-validate-modal .imp-exists-row:hover{ border-color:var(--accent);background:rgba(79,142,255,0.04); }
+#imp-exists-modal .imp-exists-row:hover, #imp-sheet-modal .imp-exists-row:hover, #imp-validate-modal .imp-exists-row:hover{ border-color:var(--accent);background:rgba(199,70,52,0.04); }
 #imp-exists-modal .imp-exists-row strong, #imp-sheet-modal .imp-exists-row strong, #imp-validate-modal .imp-exists-row strong{ display:block;font-size:13px;margin-bottom:2px; }
 #imp-exists-modal .imp-exists-row span, #imp-sheet-modal .imp-exists-row span, #imp-validate-modal .imp-exists-row span{ font-size:11.5px;color:var(--text3);line-height:1.4; }
 #imp-exists-modal .imp-exists-row.danger strong{ color:var(--red); }
@@ -663,7 +663,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 .ring-wrap::before{
   content:'';position:absolute;inset:0;
-  background-image:radial-gradient(circle at 30% 40%, rgba(79,142,255,0.04), transparent 50%);
+  background-image:radial-gradient(circle at 30% 40%, rgba(199,70,52,0.04), transparent 50%);
   pointer-events:none;
 }
 .ring-svg-col{ position:relative;z-index:1; }
@@ -714,7 +714,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .pipeline-wrap::before{
   /* subtle background grid, echo of index.html hero grid */
   content:'';position:absolute;inset:0;
-  background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);
+  background-image:linear-gradient(rgba(199,70,52,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(199,70,52,0.03) 1px,transparent 1px);
   background-size:32px 32px;pointer-events:none;opacity:0.6;
 }
 .pipeline{
@@ -737,7 +737,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   70%{ opacity:1; r:6; }
   to{ opacity:1; r:4; }
 }
-.pipe-lines circle{ filter:drop-shadow(0 0 4px rgba(45,212,191,0.6)); }
+.pipe-lines circle{ filter:drop-shadow(0 0 4px rgba(23,130,124,0.6)); }
 .pipe-lines .pulse{
   stroke-dasharray:8 12;
   stroke-dashoffset:0;
@@ -765,7 +765,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   transition:transform 0.18s ease,border-color 0.18s ease,background 0.18s ease;
   position:relative;
 }
-.pipe-card:hover{ border-color:var(--accent); background:var(--bg2); transform:translateY(-3px); box-shadow:0 6px 22px rgba(79,142,255,0.12); }
+.pipe-card:hover{ border-color:var(--accent); background:var(--bg2); transform:translateY(-3px); box-shadow:0 6px 22px rgba(199,70,52,0.12); }
 .pipe-card .pipe-dot{
   position:absolute;top:8px;right:8px;
   width:7px;height:7px;border-radius:50%;
@@ -780,8 +780,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   display:flex;align-items:center;justify-content:center;
   width:38px;height:38px;margin:0 auto 0.5rem;
   border-radius:10px;
-  background:linear-gradient(135deg,rgba(79,142,255,0.10),rgba(45,212,191,0.08));
-  border:0.5px solid rgba(79,142,255,0.2);
+  background:linear-gradient(135deg,rgba(199,70,52,0.10),rgba(23,130,124,0.08));
+  border:0.5px solid rgba(199,70,52,0.2);
 }
 .pipe-card-icon svg{ width:18px;height:18px;color:var(--accent); }
 .pipe-card.status-warn .pipe-card-icon{ background:linear-gradient(135deg,rgba(245,158,11,0.12),rgba(245,158,11,0.06));border-color:rgba(245,158,11,0.3); }
@@ -792,12 +792,11 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .pipe-metric{
   font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;
   line-height:1;
-  background:linear-gradient(135deg,var(--accent),var(--teal));
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  color:var(--accent);-webkit-text-fill-color:var(--accent);background:none;
   margin-bottom:0.15rem;
 }
-.pipe-card.status-warn .pipe-metric{ background:linear-gradient(135deg,var(--amber),#f59e0b); -webkit-background-clip:text;background-clip:text; }
-.pipe-card.status-err .pipe-metric{ background:linear-gradient(135deg,var(--red),#f04646); -webkit-background-clip:text;background-clip:text; }
+.pipe-card.status-warn .pipe-metric{ color:var(--amber); -webkit-text-fill-color:var(--amber); background:none; }
+.pipe-card.status-err .pipe-metric{ color:var(--red); -webkit-text-fill-color:var(--red); background:none; }
 .pipe-card.status-idle .pipe-metric{ color:var(--text3); background:none; -webkit-text-fill-color:var(--text3); }
 
 .pipe-metric-unit{ font-size:10px;font-weight:500;color:var(--text3);margin-left:2px; }
@@ -822,7 +821,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 }
 .ps-wrap::before{
   content:'';position:absolute;inset:0;
-  background-image:linear-gradient(rgba(79,142,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(79,142,255,0.03) 1px,transparent 1px);
+  background-image:linear-gradient(rgba(199,70,52,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(199,70,52,0.03) 1px,transparent 1px);
   background-size:32px 32px;pointer-events:none;opacity:0.5;
 }
 .ps-inner{position:relative;z-index:1;}
@@ -845,7 +844,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   font-size:9.5px;padding:2px 8px;border-radius:999px;
   background:var(--accent-glow);color:var(--accent);
   font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;
-  border:0.5px solid rgba(79,142,255,0.3);
+  border:0.5px solid rgba(199,70,52,0.3);
 }
 .ps-proj-meta{
   font-size:11.5px;color:var(--text3);font-family:var(--mono);
@@ -901,8 +900,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
   font-size:9.5px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;
   text-align:center;
 }
-.ps-db-role.src{background:rgba(79,142,255,0.12);color:var(--accent);border:0.5px solid rgba(79,142,255,0.3);}
-.ps-db-role.tgt{background:rgba(167,139,250,0.12);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3);}
+.ps-db-role.src{background:rgba(199,70,52,0.12);color:var(--accent);border:0.5px solid rgba(199,70,52,0.3);}
+.ps-db-role.tgt{background:rgba(107,78,142,0.12);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3);}
 .ps-db-server{color:var(--text);font-weight:500;}
 /* Friendly name takes the same visual weight as the server, but uses the
    accent colour so it reads as 'identified' rather than raw infrastructure. */
@@ -947,8 +946,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .ps-card-icon{
   width:26px;height:26px;border-radius:7px;
   display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(135deg,rgba(79,142,255,0.10),rgba(45,212,191,0.08));
-  border:0.5px solid rgba(79,142,255,0.2);
+  background:linear-gradient(135deg,rgba(199,70,52,0.10),rgba(23,130,124,0.08));
+  border:0.5px solid rgba(199,70,52,0.2);
 }
 .ps-card-icon svg{width:13px;height:13px;color:var(--accent);}
 .ps-card.status-ok    .ps-card-icon{background:linear-gradient(135deg,rgba(34,201,122,0.12),rgba(34,201,122,0.06));border-color:rgba(34,201,122,0.3);}
@@ -987,7 +986,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .ps-pill-warn  {background:var(--amber-bg);color:var(--amber);border-color:rgba(245,158,11,0.3);}
 .ps-pill-err   {background:var(--red-bg);  color:var(--red);  border-color:rgba(240,70,70,0.3);}
 .ps-pill-idle  {background:var(--bg3);     color:var(--text3);}
-.ps-pill-info  {background:var(--accent-glow);color:var(--accent);border-color:rgba(79,142,255,0.3);}
+.ps-pill-info  {background:var(--accent-glow);color:var(--accent);border-color:rgba(199,70,52,0.3);}
 
 .ps-failed-list{
   margin:0.4rem 0 0;padding:0;list-style:none;
@@ -1007,8 +1006,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 /* AI summary — full-width below the grid */
 .ps-ai{
   margin-top:1rem;
-  background:linear-gradient(135deg,rgba(167,139,250,0.06),rgba(79,142,255,0.04));
-  border:0.5px solid rgba(167,139,250,0.25);
+  background:linear-gradient(135deg,rgba(107,78,142,0.06),rgba(199,70,52,0.04));
+  border:0.5px solid rgba(107,78,142,0.25);
   border-radius:10px;padding:1rem 1.1rem;
   position:relative;
 }
@@ -1139,13 +1138,13 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dg-input:focus{border-color:var(--accent)}
 .dg-select{font-family:var(--serif);font-size:11px;padding:3px 22px 3px 7px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3) url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3e%3cpath d='M1 1l4 4 4-4' stroke='%23555a6a' stroke-width='1.3' fill='none' stroke-linecap='round'/%3e%3c/svg%3e") no-repeat right 7px center;color:var(--text);outline:none;appearance:none;cursor:pointer;transition:border-color 0.15s}
 .dg-select:focus{border-color:var(--accent)}
-.dg-chip{display:inline-flex;align-items:center;gap:3px;background:var(--accent-glow);color:var(--accent);font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:100px;border:0.5px solid rgba(61,126,255,0.25)}
+.dg-chip{display:inline-flex;align-items:center;gap:3px;background:var(--accent-glow);color:var(--accent);font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:100px;border:0.5px solid rgba(199,70,52,0.25)}
 .dg-chip-x{cursor:pointer;opacity:0.6;font-weight:500;padding:0 2px}
 .dg-chip-x:hover{opacity:1}
 .dg-btn{font-family:var(--serif);font-size:10px;padding:3px 9px;border:0.5px solid var(--border2);border-radius:var(--r);background:var(--bg3);color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px;transition:all 0.15s}
 .dg-btn:hover{background:var(--bg4);color:var(--text);border-color:var(--border2)}
 .dg-btn.active{background:var(--accent-glow);color:var(--accent);border-color:var(--accent)}
-.dg-btn-add{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3);font-weight:500}
+.dg-btn-add{background:var(--accent-glow);color:var(--accent);border-color:rgba(199,70,52,0.3);font-weight:500}
 .dg-btn-add:hover{background:var(--accent);color:#fff}
 .dg-spacer{flex:1}
 .dg-meta{font-size:10px;color:var(--text3);font-family:var(--mono);white-space:nowrap}
@@ -1162,7 +1161,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .dg-table tfoot td{background:var(--accent-glow);border-top:1px solid var(--accent);font-weight:500;font-family:var(--mono);font-size:11px;color:var(--accent);padding:0.5rem 0.6rem}
 .dg-table tr.group-header td{background:var(--bg4);font-weight:500;font-size:11px;color:var(--text);border-top:0.5px solid var(--border2)}
 .dg-table tr.group-header .group-count{color:var(--text3);font-weight:400;margin-left:6px;font-size:10px}
-.dg-table td.calc-col{background:rgba(61,126,255,0.04);font-family:var(--mono)}
+.dg-table td.calc-col{background:rgba(199,70,52,0.04);font-family:var(--mono)}
 .dg-badge{display:inline-flex;align-items:center;font-size:10px;padding:2px 7px;border-radius:100px;font-weight:500}
 .dg-badge-green{background:rgba(34,201,122,0.15);color:#22c97a}
 .dg-badge-red{background:rgba(240,70,70,0.15);color:#f04646}
@@ -1196,7 +1195,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .rc-table select:focus,.rc-table input:focus{border-color:var(--accent)}
 .rc-row-del{background:transparent;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;transition:all 0.15s;line-height:1}
 .rc-row-del:hover{background:rgba(239,68,68,0.15);color:#f04646}
-.rc-add-row{margin-top:0.75rem;background:var(--accent-glow);color:var(--accent);border:0.5px dashed rgba(61,126,255,0.4);border-radius:var(--r);padding:0.5rem 0.9rem;font-size:12px;cursor:pointer;font-family:var(--serif);width:100%;transition:all 0.15s}
+.rc-add-row{margin-top:0.75rem;background:var(--accent-glow);color:var(--accent);border:0.5px dashed rgba(199,70,52,0.4);border-radius:var(--r);padding:0.5rem 0.9rem;font-size:12px;cursor:pointer;font-family:var(--serif);width:100%;transition:all 0.15s}
 .rc-add-row:hover{background:var(--accent);color:#fff;border-style:solid;border-color:var(--accent)}
 .rc-empty{padding:1rem;text-align:center;color:var(--text3);font-size:12px;border:0.5px dashed var(--border2);border-radius:var(--r);background:var(--bg3)}
 
@@ -1204,7 +1203,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .rc-chips-field{display:flex;flex-wrap:wrap;gap:3px;align-items:center;min-height:28px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;padding:2px 6px;cursor:pointer;font-size:11px;color:var(--text);transition:border-color 0.15s;position:relative}
 .rc-chips-field:hover{border-color:var(--border2)}
 .rc-chips-field.open{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
-.rc-chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-glow);color:var(--accent);border-radius:100px;padding:1px 6px 1px 8px;font-family:var(--mono);font-size:10px;border:0.5px solid rgba(61,126,255,0.25)}
+.rc-chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-glow);color:var(--accent);border-radius:100px;padding:1px 6px 1px 8px;font-family:var(--mono);font-size:10px;border:0.5px solid rgba(199,70,52,0.25)}
 .rc-chip-x{cursor:pointer;opacity:0.6;font-weight:500;padding:0 2px;margin-left:1px}
 .rc-chip-x:hover{opacity:1;color:var(--text)}
 .rc-chips-placeholder{color:var(--text3);font-size:11px;padding:2px 2px}
@@ -1242,7 +1241,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <button id="sync-btn" onclick="syncFromCloud()" title="Pull latest data from cloud" style="display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:3px 10px;font-size:11px;color:var(--text3);cursor:pointer;font-family:var(--serif);transition:all 0.15s" onmouseover="this.style.color='var(--teal)';this.style.borderColor='var(--teal)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border2)'">↻ Sync</button>
       <div id="project-name-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:3px 10px;background:var(--bg3);border-radius:100px;border:0.5px solid var(--border);display:none"></div>
       <div class="user-pill" id="user-pill" onclick="toggleUserMenu()" style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer;position:relative">
-        <div class="avatar" id="user-avatar" style="background:var(--accent-glow);border-color:rgba(61,126,255,0.4);color:var(--accent)">?</div>
+        <div class="avatar" id="user-avatar" style="background:var(--accent-glow);border-color:rgba(199,70,52,0.4);color:var(--accent)">?</div>
         <span style="font-size:12px;color:var(--text2)" id="user-name">Loading…</span>
         <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);padding:0.5rem;min-width:180px;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,0.4)">
           <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem 0.25rem" id="user-email-menu"></div>
@@ -1352,7 +1351,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
            active project so the user always knows which one they're working
            on. Click "Edit details" to jump to /projects.html. Hidden when no
            project is active. Rendered by renderActiveProjectSummary(). -->
-      <div class="panel" id="dashboard-active-summary" style="display:none;margin-bottom:1.75rem;border-color:rgba(61,126,255,0.4)">
+      <div class="panel" id="dashboard-active-summary" style="display:none;margin-bottom:1.75rem;border-color:rgba(199,70,52,0.4)">
         <div class="panel-header" style="margin-bottom:0.85rem">
           <div style="display:flex;align-items:center;gap:0.65rem">
             <span style="font-size:9px;padding:2px 8px;border-radius:100px;background:var(--accent);color:#fff;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em">active</span>
@@ -1815,7 +1814,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       </div>
 
       <!-- ─── QUICK BACKUP BANNER ─── -->
-      <div style="background:rgba(79,142,255,0.08);border:0.5px solid rgba(79,142,255,0.3);border-radius:var(--r);padding:0.85rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
+      <div style="background:rgba(199,70,52,0.08);border:0.5px solid rgba(199,70,52,0.3);border-radius:var(--r);padding:0.85rem 1rem;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:1rem">
         <div>
           <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:2px">💾 Quick backup</div>
           <div style="font-size:11px;color:var(--text2)" id="quick-backup-last-run">Download a full backup of all your jobs, projects, connections and rules.</div>
@@ -2342,8 +2341,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div class="panel-sub">Configure source and target database connections once — all pages inherit these settings automatically</div>
           <div style="margin-top:0.5rem;font-size:11px;color:var(--text3);display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
             <span style="color:var(--text2);font-weight:500">Supported:</span>
-            <span style="background:rgba(79,142,255,0.12);color:#6ea4ff;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">SQL&nbsp;Server</span>
-            <span style="background:rgba(45,212,191,0.12);color:#2dd4bf;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">PostgreSQL</span>
+            <span style="background:rgba(199,70,52,0.12);color:#6ea4ff;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">SQL&nbsp;Server</span>
+            <span style="background:rgba(23,130,124,0.12);color:#17827C;padding:2px 8px;border-radius:100px;font-family:var(--mono);font-size:10px;font-weight:500">PostgreSQL</span>
           </div>
         </div>
         <div style="display:flex;gap:0.75rem;align-items:center">
@@ -2847,7 +2846,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           </div>
           <!-- Discovery status banner — shows current activity and a spinner while
                discovery is in flight. Empty/hidden when idle. -->
-          <div id="sm-discover-status" style="display:none;margin-top:0.75rem;padding:8px 12px;background:rgba(79,142,255,0.06);border:0.5px solid rgba(79,142,255,0.25);border-radius:var(--r);font-size:11.5px;color:var(--text2);align-items:center;gap:0.6rem"></div>
+          <div id="sm-discover-status" style="display:none;margin-top:0.75rem;padding:8px 12px;background:rgba(199,70,52,0.06);border:0.5px solid rgba(199,70,52,0.25);border-radius:var(--r);font-size:11.5px;color:var(--text2);align-items:center;gap:0.6rem"></div>
         </div>
 
         <!-- Logins sub-panel -->
@@ -7473,13 +7472,13 @@ function jobsTableHTML(jobs) {
       // operations on a deleted row don't make sense.
       const isDel = !!j._deleted;
       const actions = isDel ? `
-          <button class="btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(45,212,191,0.25)" onclick="restoreJob('${j.id}')" title="Restore from Trash">↩ Restore</button>
+          <button class="btn" style="background:var(--teal-bg);color:var(--teal);border:0.5px solid rgba(23,130,124,0.25)" onclick="restoreJob('${j.id}')" title="Restore from Trash">↩ Restore</button>
           <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="hardDeleteJob('${j.id}')" title="Permanent delete">🗑 Delete forever</button>
         ` : `
-          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(167,139,250,0.25)" title="Edit">✏</button>
+          <button class="btn btn-ghost" onclick="editJob('${j.id}')" style="color:var(--purple);border-color:rgba(107,78,142,0.25)" title="Edit">✏</button>
           <button class="btn btn-ghost" onclick="CygenixHistory.open('${j.id}')" style="color:var(--accent);border-color:var(--accent-glow)" title="Version history">🕐</button>
-          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(45,212,191,0.25)" title="Open SQL in editor">🖊</button>` : ''}
-          <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
+          ${(j.insertSQL||j.migrationSQL) ? `<button class="btn btn-ghost" onclick="window.location.href='/sql-editor.html?job=${j.id}'" style="color:var(--teal);border-color:rgba(23,130,124,0.25)" title="Open SQL in editor">🖊</button>` : ''}
+          <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25)" onclick="openReport('${j.id}')" title="Report">Report</button>
           <button class="btn btn-ghost" onclick="renameJob(this)" data-jobid="${j.id}" title="Rename">✎</button>
           <button class="btn btn-ghost" onclick="startEditSource('${j.id}')" title="Edit source table">⛁</button>
           <button class="btn" style="background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)" onclick="deleteJob('${j.id}')" title="Move to Trash">✕</button>
@@ -7983,9 +7982,9 @@ function renderRing(){
 
   const segments = [
     { key:'complete', label:'Complete',     count: buckets.complete, color:'#22c97a' },
-    { key:'ready',    label:'SQL Ready',    count: buckets.ready,    color:'#4f8eff' },
+    { key:'ready',    label:'SQL Ready',    count: buckets.ready,    color:'#C74634' },
     { key:'failed',   label:'Failed',       count: buckets.failed,   color:'#f04646' },
-    { key:'pending',  label:'Pending',      count: buckets.pending,  color:'#a78bfa' },
+    { key:'pending',  label:'Pending',      count: buckets.pending,  color:'#6B4E8E' },
   ];
 
   // Empty state — zero jobs total. Still show the ring as a muted full circle
@@ -8187,14 +8186,14 @@ function renderPipeline(){
       <svg class="pipe-lines" id="pipe-lines" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="pipeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#4f8eff" stop-opacity="0.85"/>
-            <stop offset="50%" stop-color="#2dd4bf" stop-opacity="0.85"/>
-            <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.85"/>
+            <stop offset="0%" stop-color="#C74634" stop-opacity="0.85"/>
+            <stop offset="50%" stop-color="#17827C" stop-opacity="0.85"/>
+            <stop offset="100%" stop-color="#6B4E8E" stop-opacity="0.85"/>
           </linearGradient>
           <linearGradient id="pipeGradBright" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#4f8eff"/>
-            <stop offset="50%" stop-color="#2dd4bf"/>
-            <stop offset="100%" stop-color="#a78bfa"/>
+            <stop offset="0%" stop-color="#C74634"/>
+            <stop offset="50%" stop-color="#17827C"/>
+            <stop offset="100%" stop-color="#6B4E8E"/>
           </linearGradient>
         </defs>
         <path id="pipe-path-base" d="" stroke="url(#pipeGrad)"/>
@@ -8250,7 +8249,7 @@ function drawPipelineLine(){
 
   // Remove any existing anchor dots, then draw a small dot at each node point
   svg.querySelectorAll('.pipe-anchor').forEach(n => n.remove());
-  const anchorColor = '#2dd4bf';
+  const anchorColor = '#17827C';
   points.forEach((p, i) => {
     const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     c.setAttribute('cx', p.x);
@@ -9641,9 +9640,9 @@ function toggleUserMenu() {
     if (!el) return;
     el.textContent = label;
     if (isHighlight) {
-      el.style.background = 'var(--accent-glow,rgba(61,126,255,0.15))';
-      el.style.borderColor = 'rgba(61,126,255,0.4)';
-      el.style.color = 'var(--accent,#3d7eff)';
+      el.style.background = 'var(--accent-glow,rgba(199,70,52,0.15))';
+      el.style.borderColor = 'rgba(199,70,52,0.4)';
+      el.style.color = 'var(--accent,#C74634)';
     }
   }
 
@@ -10045,7 +10044,7 @@ async function renderReportsList() {
       + '<div style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0">'
       +   errBadge
       +   '<button class="btn btn-sm" style="background:transparent;color:var(--text2);border:0.5px solid var(--border2);font-size:12px;padding:0.45rem 0.9rem" onclick="openReportSettings(\'' + r.id + '\')" title="Reconciliation settings for this report\'s jobs">⚙ Settings</button>'
-      +   '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25);font-size:12px;padding:0.45rem 1.1rem" onclick="openSavedReport(\'' + r.id + '\')">View</button>'
+      +   '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25);font-size:12px;padding:0.45rem 1.1rem" onclick="openSavedReport(\'' + r.id + '\')">View</button>'
       +   '<button class="btn btn-sm" style="background:transparent;color:var(--red);border:0.5px solid rgba(239,68,68,0.25);font-size:12px;padding:0.45rem 0.9rem" onclick="deleteSavedReport(\'' + r.id + '\', \'' + name.replace(/'/g,"\\'") + '\')" title="Delete this report">✕</button>'
       + '</div>'
       + '</div>';
@@ -10494,7 +10493,7 @@ function runGlobalSearch() {
           ).join('') +
         '</td>' +
         '<td style="padding:0.7rem 0.75rem;vertical-align:top;text-align:right">' +
-          '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25);font-size:12px;padding:0.35rem 0.85rem" onclick="' + r.gotoAction + '">' + escapeHtml(r.gotoLabel) + ' →</button>' +
+          '<button class="btn btn-sm" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25);font-size:12px;padding:0.35rem 0.85rem" onclick="' + r.gotoAction + '">' + escapeHtml(r.gotoLabel) + ' →</button>' +
         '</td>' +
       '</tr>'
     ).join('') +
@@ -12279,7 +12278,7 @@ async function presSaveConfig() {
 <div id="onboarding-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:1.5rem;backdrop-filter:blur(4px)">
   <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:16px;width:100%;max-width:540px;box-shadow:0 24px 64px rgba(0,0,0,0.5);overflow:hidden">
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1a2a4a 0%,#0d1a35 100%);padding:2rem 2rem 1.5rem;text-align:center;position:relative">
+    <div style="background:linear-gradient(135deg,#3A322D 0%,#241F1C 100%);padding:2rem 2rem 1.5rem;text-align:center;position:relative">
       <div style="font-size:2.5rem;margin-bottom:0.5rem">🚀</div>
       <div style="font-size:1.2rem;font-weight:700;color:#fff;margin-bottom:0.35rem;letter-spacing:-0.02em">Welcome to Cygenix</div>
       <div style="font-size:13px;color:rgba(255,255,255,0.6)">AI-powered SQL database migration — let's get you started</div>
@@ -12716,7 +12715,7 @@ function setSrcMode(mode) {
     if (!el) return;
     el.style.background = active ? 'var(--accent-glow)' : 'transparent';
     el.style.color = active ? 'var(--accent)' : 'var(--text2)';
-    el.style.border = active ? '0.5px solid rgba(61,126,255,0.3)' : '0.5px solid var(--border2)';
+    el.style.border = active ? '0.5px solid rgba(199,70,52,0.3)' : '0.5px solid var(--border2)';
   };
   styles('src-mode-direct', mode==='direct');
   styles('src-mode-azure',  mode==='azure');
@@ -12730,7 +12729,7 @@ function setTgtMode(mode) {
     if (!el) return;
     el.style.background = active ? 'var(--accent-glow)' : 'transparent';
     el.style.color = active ? 'var(--accent)' : 'var(--text2)';
-    el.style.border = active ? '0.5px solid rgba(61,126,255,0.3)' : '0.5px solid var(--border2)';
+    el.style.border = active ? '0.5px solid rgba(199,70,52,0.3)' : '0.5px solid var(--border2)';
   };
   styles('tgt-mode-direct', mode==='direct');
   styles('tgt-mode-azure',  mode==='azure');
@@ -14524,7 +14523,7 @@ function blobSourceRenderSaved(){
       +       escP(e.accountName) + ' / ' + escP(e.containerName) + ' &nbsp;·&nbsp; ' + expiryHtml
       +     '</div>'
       +   '</div>'
-      +   '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="blobSourceOpenBrowser(\'' + e.id + '\')">📂 Browse files</button>'
+      +   '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.35)" onclick="blobSourceOpenBrowser(\'' + e.id + '\')">📂 Browse files</button>'
       +   '<button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="blobSourceDelete(\'' + e.id + '\')" title="Remove this saved source">✕</button>'
       + '</div>';
   }).join('');
@@ -14706,7 +14705,7 @@ function blobSourceRenderFiles(){
     // into PowerShell/Terminal to download direct from Azure).
     const enc = encodeURIComponent(b.name);
     const importBtn = (usable && !tooBig)
-      ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="blobSourceImportFile(\'' + enc + '\')">⬆ Import</button>'
+      ? '<button class="btn btn-sm" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.35)" onclick="blobSourceImportFile(\'' + enc + '\')">⬆ Import</button>'
       : '';
     const downloadBtn = !tooBig
       ? '<button class="btn btn-ghost btn-sm" onclick="blobSourceDownloadFile(\'' + enc + '\')" title="Download to your machine">⬇ Download</button>'

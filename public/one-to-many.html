@@ -14,13 +14,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -33,12 +33,12 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
@@ -50,7 +50,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
 .btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
 .btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text)}
-.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25)}
 .btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.25)}
 .btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.25)}
 .btn-sm{padding:0.3rem 0.75rem;font-size:12px}
@@ -82,7 +82,7 @@ select.form-input option{background:var(--bg3)}
 /* Target table cards */
 .tgt-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);margin-bottom:1rem;overflow:hidden}
 .tgt-card-head{padding:0.875rem 1.25rem;background:var(--bg3);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.75rem}
-.tgt-card-num{width:24px;height:24px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--accent);font-family:var(--mono);flex-shrink:0}
+.tgt-card-num{width:24px;height:24px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--accent);font-family:var(--mono);flex-shrink:0}
 .tgt-card-name{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--teal);flex:1}
 .tgt-card-body{padding:1rem}
 
@@ -99,7 +99,7 @@ select.map-select:focus{border-color:var(--accent)}
 .fk-arrow{text-align:center;color:var(--amber);font-size:12px}
 
 /* PK config */
-.pk-row{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r)}
+.pk-row{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r)}
 
 /* Searchable dropdown */
 .search-wrap{position:relative}
@@ -223,7 +223,7 @@ select.map-select:focus{border-color:var(--accent)}
                 <button onclick="event.stopPropagation();setSrcPanelSize('sm')" id="src-size-sm" title="Small"
                   style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">S</button>
                 <button onclick="event.stopPropagation();setSrcPanelSize('md')" id="src-size-md" title="Medium"
-                  style="background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.3);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--accent);cursor:pointer">M</button>
+                  style="background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.3);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--accent);cursor:pointer">M</button>
                 <button onclick="event.stopPropagation();setSrcPanelSize('lg')" id="src-size-lg" title="Large"
                   style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">L</button>
                 <button onclick="event.stopPropagation();setSrcPanelSize('xl')" id="src-size-xl" title="Full"
@@ -254,7 +254,7 @@ select.map-select:focus{border-color:var(--accent)}
             <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
               Source row filter (WHERE clause, optional)
               <button onclick="buildWhereWithClaude('src-where', srcTable, srcTable&&srcTable.columns, 'otm-api-key')"
-                style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)"
+                style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)"
                 title="Ask Claude AI to write the WHERE clause">🤖 AI help</button>
             </label>
             <input id="src-where" class="form-input" placeholder="e.g. active = 1 AND country = 'UK'">
@@ -781,7 +781,7 @@ function renderTargetCards(){
           <div style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap">
             <button class="btn btn-purple btn-sm" onclick="aiMapColumns(${ti})" id="ai-map-btn-${ti}" style="font-size:11px;padding:2px 10px">&#x1F916; AI Map</button>
             <button class="btn btn-ghost btn-sm" onclick="addMapping(${ti})" style="font-size:11px;padding:2px 8px">+ Add row</button>
-            <button class="btn btn-ghost btn-sm" onclick="addJoinedColMapping(${ti})" id="join-add-btn-${ti}" style="font-size:11px;padding:2px 8px;color:var(--teal);border-color:rgba(45,212,191,0.3);display:none" title="Add a column from a joined table">+ Joined col</button>
+            <button class="btn btn-ghost btn-sm" onclick="addJoinedColMapping(${ti})" id="join-add-btn-${ti}" style="font-size:11px;padding:2px 8px;color:var(--teal);border-color:rgba(23,130,124,0.3);display:none" title="Add a column from a joined table">+ Joined col</button>
           </div>
         </div>
         <div id="ai-map-status-${ti}" style="font-size:11px;font-family:var(--mono);margin-bottom:0.4rem;display:none"></div>
@@ -849,7 +849,7 @@ function addJoinedColMapping(ti) {
           <div style="display:flex;flex-wrap:wrap;gap:0.3rem">
             ${cols.map(c => `
               <button onclick="confirmAddJoinCol(${ti},'${c.name}','${tbl}');document.getElementById('${modalId}').remove()"
-                style="background:var(--bg3);border:0.5px solid rgba(45,212,191,0.25);border-radius:4px;padding:3px 9px;font-size:11px;font-family:var(--mono);color:var(--teal);cursor:pointer" 
+                style="background:var(--bg3);border:0.5px solid rgba(23,130,124,0.25);border-radius:4px;padding:3px 9px;font-size:11px;font-family:var(--mono);color:var(--teal);cursor:pointer" 
                 title="${c.type||''}">
                 + ${c.name}${c.type ? ' <span style=\'color:var(--text3);font-size:9px\'>'+c.type+'</span>' : ''}
               </button>`).join('')}
@@ -1367,7 +1367,7 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
 
     // Show a banner indicating edit mode
     const banner = document.createElement('div');
-    banner.style.cssText='margin-bottom:1rem;padding:0.6rem 1rem;background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);font-size:12px;color:var(--purple);display:flex;align-items:center;justify-content:space-between';
+    banner.style.cssText='margin-bottom:1rem;padding:0.6rem 1rem;background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:var(--r);font-size:12px;color:var(--purple);display:flex;align-items:center;justify-content:space-between';
     banner.innerHTML='<span>✏ Editing job: <strong>'+job.name+'</strong> — connect to DBs then generate SQL to update</span><button onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px">✕</button>';
     const page = document.querySelector('.page');
     if (page) page.insertBefore(banner, page.firstChild);
@@ -1448,7 +1448,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
           👋 Describe the filter you need in plain English and I'll write the T-SQL WHERE clause.<br>
           <span style="color:var(--text3);font-size:11px">e.g. "Only active clients in the UK" · "Records created after 2020" · "Where status is not null"</span>
         </div>
-        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
+        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
       </div>
 
       <!-- Current WHERE value -->
@@ -1464,7 +1464,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
       <!-- Input -->
       <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);flex-shrink:0;display:flex;gap:0.5rem">
         <textarea id="where-prompt" rows="2" style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:6px 10px;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;resize:none" placeholder="Describe your filter in plain English…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}');}"></textarea>
-        <button onclick="sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}')" id="where-send-btn" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);padding:6px 14px;font-size:12px;color:var(--purple);cursor:pointer;align-self:flex-end;font-family:var(--serif)">Send</button>
+        <button onclick="sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}')" id="where-send-btn" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:var(--r);padding:6px 14px;font-size:12px;color:var(--purple);cursor:pointer;align-self:flex-end;font-family:var(--serif)">Send</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -1540,7 +1540,7 @@ function addWhereChatMsg(text, role) {
   if (role === 'assistant') {
     const applyBtn = document.createElement('button');
     applyBtn.textContent = '↑ Use this';
-    applyBtn.style.cssText = 'margin-top:0.5rem;display:block;background:rgba(45,212,191,0.12);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 10px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)';
+    applyBtn.style.cssText = 'margin-top:0.5rem;display:block;background:rgba(23,130,124,0.12);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 10px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)';
     applyBtn.onclick = () => {
       const box = document.getElementById('where-result-box');
       if (box) box.value = text.replace(/^WHERE\s+/i, '').replace(/;$/, '').trim();
@@ -1686,7 +1686,7 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
         Source joins <span style="color:var(--teal)">${joins.length ? '(' + joins.length + ')' : ''}</span>
       </div>
       <div style="display:flex;gap:0.4rem">
-        <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
+        <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
       </div>
     </div>
     ${joins.length === 0 ? `<div style="font-size:12px;color:var(--text3);padding:0.4rem 0">No joins — query uses ${baseTable ? baseTable.name || baseTable.fullName : 'source table'} only</div>` : ''}
@@ -1712,7 +1712,7 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
           <input id="join-on-${i}" value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
             placeholder="e.g. [dbo].[client].[clnum] = [dbo].[contact].[clnum]"
             style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--teal);font-family:var(--mono);outline:none">
-          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause">🤖 AI</button>
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause">🤖 AI</button>
         </div>
         ${j.table ? `<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols ? j.cols.length + ' columns available' : 'Loading columns…'}</div>` : ''}
       </div>
@@ -1879,7 +1879,7 @@ function setSrcPanelSize(size) {
     if (!b) return;
     if (s === size) {
       b.style.background = 'var(--accent-glow)';
-      b.style.borderColor = 'rgba(61,126,255,0.3)';
+      b.style.borderColor = 'rgba(199,70,52,0.3)';
       b.style.color = 'var(--accent)';
     } else {
       b.style.background = 'var(--bg3)';
