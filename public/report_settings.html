@@ -14,13 +14,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -32,7 +32,7 @@
 :root{
   --bg:#f8f9fb;--surface:#ffffff;--border:#e2e6ee;--border2:#c8cedd;
   --text:#111827;--text2:#4b5563;--text3:#9ca3af;
-  --accent:#1a56e8;--accent-light:#eff4ff;
+  --accent:#C74634;--accent-light:#eff4ff;
   --green:#059669;--green-light:#ecfdf5;
   --red:#dc2626;--red-light:#fef2f2;
   --amber:#d97706;--amber-light:#fffbeb;
@@ -43,12 +43,12 @@
 body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
 .toolbar{background:#0d0f14;padding:0.75rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .toolbar-logo{font-family:var(--serif);color:#fff;font-size:1rem}
-.toolbar-logo span{color:#3d7eff}
+.toolbar-logo span{color:#C74634}
 .toolbar-actions{display:flex;gap:0.75rem;flex-wrap:wrap}
 .btn{padding:0.5rem 1.25rem;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--sans);transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
 .btn:disabled{opacity:0.5;cursor:wait}
-.btn-primary{background:#3d7eff;color:#fff}
-.btn-primary:hover:not(:disabled){background:#2563eb}
+.btn-primary{background:#C74634;color:#fff}
+.btn-primary:hover:not(:disabled){background:#A5372A}
 .btn-ghost{background:rgba(255,255,255,0.1);color:#e8eaf0;border:0.5px solid rgba(255,255,255,0.15)}
 .btn-ghost:hover:not(:disabled){background:rgba(255,255,255,0.15)}
 .btn-secondary{background:#fff;color:var(--text);border:0.5px solid var(--border2)}

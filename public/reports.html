@@ -22,16 +22,16 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
-  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
-  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
-  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --bg:#F6F4F1;--bg2:#FFFFFF;--bg3:#F1EEEA;--bg4:#E7E2DC;
+  --border:rgba(60,50,40,0.12);--border2:rgba(60,50,40,0.20);
+  --text:#1F1D1B;--text2:#5A544E;--text3:#8C857D;
+  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
+  --green:#3F7D4E;--green-bg:rgba(63,125,78,0.10);
+  --amber:#B26A00;--amber-bg:rgba(178,106,0,0.10);
+  --red:#C0392B;--red-bg:rgba(192,57,43,0.10);
+  --teal:#0F6E6C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
@@ -62,7 +62,7 @@ body.cyg-collapsed{padding-left:54px}
 .btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);background:var(--bg3)}
 .btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
 .btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
-.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3)}
 .btn-sm{padding:0.25rem 0.625rem;font-size:11px}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
 
@@ -76,7 +76,7 @@ body.cyg-collapsed{padding-left:54px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
 .conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif);text-decoration:none}
-.conn-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.3)}
+.conn-btn:hover{color:var(--accent);border-color:rgba(199,70,52,0.3)}
 
 /* ── Tab bar ── */
 .cx-tabs{display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
@@ -108,7 +108,7 @@ body.cyg-collapsed{padding-left:54px}
 .rb-rail-list{display:flex;flex-direction:column;gap:2px}
 .rb-rail-item{display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:0.5rem 0.625rem;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text2);border:0.5px solid transparent;transition:all 0.12s}
 .rb-rail-item:hover{background:var(--bg3);color:var(--text)}
-.rb-rail-item.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(61,126,255,0.3)}
+.rb-rail-item.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(199,70,52,0.3)}
 .rb-rail-item-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rb-rail-item-meta{font-size:10px;color:var(--text3);font-family:var(--mono);flex-shrink:0}
 .rb-rail-empty{padding:1rem 0.5rem;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
@@ -185,7 +185,7 @@ body.cyg-collapsed{padding-left:54px}
 .ds-chev.open{transform:rotate(90deg)}
 
 /* Visual-builder rows (tables / joins / selects / group / where) */
-.ds-row{display:grid;grid-template-columns:auto 1fr auto;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:0.5px dashed rgba(255,255,255,0.04)}
+.ds-row{display:grid;grid-template-columns:auto 1fr auto;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:0.5px dashed rgba(60,50,40,0.04)}
 .ds-row:last-child{border-bottom:none}
 .ds-row-label{font-size:10px;color:var(--text3);font-family:var(--mono);min-width:80px}
 .ds-row-fields{display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;flex:1;min-width:0}
@@ -194,7 +194,7 @@ body.cyg-collapsed{padding-left:54px}
 .ds-input:focus,.ds-select:focus{border-color:var(--accent)}
 .ds-input.ds-input-wide{min-width:240px;flex:1}
 .ds-add-btn{background:transparent;color:var(--text3);border:0.5px dashed var(--border2);border-radius:6px;padding:0.3rem 0.7rem;font-size:11px;font-family:var(--serif);cursor:pointer;transition:all 0.12s}
-.ds-add-btn:hover{color:var(--accent);border-color:rgba(61,126,255,0.4)}
+.ds-add-btn:hover{color:var(--accent);border-color:rgba(199,70,52,0.4)}
 .ds-rm-btn{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:14px;padding:0 0.4rem;line-height:1}
 .ds-rm-btn:hover{color:var(--red)}
 
@@ -211,10 +211,10 @@ body.cyg-collapsed{padding-left:54px}
   cursor:pointer;transition:all 0.12s;
 }
 .ds-kind-btn:last-child{border-right:none}
-.ds-kind-btn:hover{color:var(--text2);background:rgba(255,255,255,0.03)}
+.ds-kind-btn:hover{color:var(--text2);background:rgba(60,50,40,0.03)}
 .ds-kind-btn.active{
   color:var(--accent);
-  background:rgba(61,126,255,0.10);
+  background:rgba(199,70,52,0.10);
 }
 
 /* Raw-SQL textarea */
@@ -398,7 +398,7 @@ body.cyg-collapsed{padding-left:54px}
 .pv-row-subtotal td{background:var(--bg3);color:var(--text);font-weight:600;font-size:11px;border-top:0.5px solid var(--border)}
 .pv-row-subtotal .pv-subtotal-label{color:var(--text2);font-style:italic;font-weight:500}
 /* Grand total row */
-.pv-row-grand td{background:var(--accent-glow);color:var(--accent);font-weight:600;font-size:11px;border-top:0.5px solid rgba(61,126,255,0.3);border-bottom:0.5px solid rgba(61,126,255,0.3)}
+.pv-row-grand td{background:var(--accent-glow);color:var(--accent);font-weight:600;font-size:11px;border-top:0.5px solid rgba(199,70,52,0.3);border-bottom:0.5px solid rgba(199,70,52,0.3)}
 .pv-row-grand .pv-grand-label{font-weight:700}
 /* Indent for nested groups */
 .pv-indent-1{padding-left:18px !important}
@@ -470,7 +470,7 @@ body.cyg-collapsed{padding-left:54px}
 .pv-pdf-capture .pv-table td{border-bottom:0.5px solid #f3f4f6 !important;color:#1f2937 !important}
 .pv-pdf-capture .pv-row-group-head td{background:#e5e7eb !important;color:#1f2937 !important;font-weight:600 !important}
 .pv-pdf-capture .pv-row-subtotal td{background:#f3f4f6 !important;color:#374151 !important;font-weight:600 !important}
-.pv-pdf-capture .pv-row-grand td{background:#3d7eff !important;color:#ffffff !important;font-weight:600 !important;border-color:#1e40af !important}
+.pv-pdf-capture .pv-row-grand td{background:#C74634 !important;color:#ffffff !important;font-weight:600 !important;border-color:#1e40af !important}
 .pv-pdf-capture .pv-row-grand .pv-grand-label{color:#ffffff !important}
 .pv-pdf-capture .pv-empty-rows{color:#6b7280 !important}
 .pv-pdf-capture .pv-section-error{background:#fef2f2 !important;color:#991b1b !important;border-color:#fecaca !important}
@@ -498,9 +498,9 @@ body.cyg-collapsed{padding-left:54px}
       <div class="page-sub">Build paginated tabular and visual reports against migration jobs or any saved connection. Define datasets, parameters, layouts, and export to Excel. Reports save to your account and can be re-run with different parameters.</div>
       <div class="page-tags">
         <span style="color:var(--text2);font-weight:500">Layouts:</span>
-        <span class="page-tag" style="background:rgba(79,142,255,0.12);color:#6ea4ff">Table</span>
-        <span class="page-tag" style="background:rgba(45,212,191,0.12);color:#2dd4bf">Matrix</span>
-        <span class="page-tag" style="background:rgba(167,139,250,0.12);color:#a78bfa">Charts</span>
+        <span class="page-tag" style="background:rgba(199,70,52,0.12);color:#C74634">Table</span>
+        <span class="page-tag" style="background:rgba(23,130,124,0.12);color:#17827C">Matrix</span>
+        <span class="page-tag" style="background:rgba(107,78,142,0.12);color:#6B4E8E">Charts</span>
       </div>
     </div>
     <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
@@ -5245,7 +5245,7 @@ async function pvActivateCharts(){
 
 function pvChartJsConfig(tree){
   const labels = tree.points.map(p => pvFormatGroupValue(p.category));
-  const palette = ['#3d7eff', '#22c97a', '#f59e0b', '#a78bfa', '#2dd4bf', '#f04646', '#ec4899', '#06b6d4'];
+  const palette = ['#C74634', '#22c97a', '#f59e0b', '#6B4E8E', '#17827C', '#f04646', '#ec4899', '#06b6d4'];
   const datasets = tree.series.map((sr, i) => ({
     label: sr.label || sr.field,
     data: tree.points.map(p => {
@@ -5288,8 +5288,8 @@ function pvChartJsConfig(tree){
         tooltip: { backgroundColor: '#13161d', titleColor: '#e8eaf0', bodyColor: '#e8eaf0', borderColor: '#8b90a0', borderWidth: 1 }
       },
       scales: tree.variant === 'pie' ? {} : {
-        x: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-        y: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+        x: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(60,50,40,0.05)' } },
+        y: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(60,50,40,0.05)' }, beginAtZero: true }
       }
     }
   };

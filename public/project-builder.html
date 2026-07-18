@@ -15,13 +15,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -50,12 +50,12 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
@@ -66,7 +66,7 @@ body.cyg-collapsed{padding-left:54px}
 .logo span{color:var(--accent)}
 .topbar-right{display:flex;align-items:center;gap:1rem}
 .user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
-.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
 .app-wrap{display:block;height:calc(100vh - 52px);overflow:hidden}
 .layout{display:grid;grid-template-columns:300px 1fr;height:100%;overflow:hidden;transition:grid-template-columns 0.2s ease}
 .layout.jobs-collapsed{grid-template-columns:40px 1fr}
@@ -161,7 +161,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 .nav-label{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.75rem 1.25rem 0.35rem;display:block}
 .nav-item{display:flex;align-items:center;gap:10px;padding:0.45rem 1.25rem;font-size:12px;color:var(--text2);cursor:pointer;transition:all 0.15s;border-left:2px solid transparent;text-decoration:none}
 .nav-item:hover{color:var(--text);background:rgba(255,255,255,0.03)}
-.nav-item.active{color:var(--accent);background:rgba(61,126,255,0.08);border-left-color:var(--accent)}
+.nav-item.active{color:var(--accent);background:rgba(199,70,52,0.08);border-left-color:var(--accent)}
 .nav-icon{width:14px;height:14px;opacity:0.6;flex-shrink:0}
 .nav-sub-label{font-size:10px;font-weight:600;color:var(--text3);padding:0.4rem 1.25rem 0.2rem 1.5rem;text-transform:uppercase;letter-spacing:0.07em;display:flex;align-items:center;gap:0.4rem;cursor:pointer;user-select:none}
 .nav-sub-label .chevron{font-size:8px;transition:transform 0.2s}
@@ -1610,7 +1610,7 @@ function renderSteps() {
               <button class="btn btn-sm" onclick="runSingleStep(${gi},${si})" id="${runBtnId}"
                 style="background:rgba(34,201,122,0.12);color:var(--green);border:0.5px solid rgba(34,201,122,0.25);padding:3px 8px">▶ Run</button>
               ${step.rollbackSupported && (step.rowsInserted || 0) > 0 ? `<button class="btn btn-ghost btn-sm" onclick="rollbackStep(${gi},${si})" title="Roll back the last run for this job — delete the ${(step.rowsInserted||0).toLocaleString()} rows it loaded into the target." style="padding:3px 8px;color:var(--amber);border-color:rgba(245,158,11,0.25)">↶ Rollback</button>` : ''}
-              <button class="btn btn-ghost btn-sm" onclick="editStepJob(${gi},${si})" title="${editTitle}" style="padding:3px 8px;color:var(--purple);border-color:rgba(167,139,250,0.25)" ${editDisabled?'disabled':''}>✏ Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="editStepJob(${gi},${si})" title="${editTitle}" style="padding:3px 8px;color:var(--purple);border-color:rgba(107,78,142,0.25)" ${editDisabled?'disabled':''}>✏ Edit</button>
               <button class="btn btn-ghost btn-sm" onclick="deleteStep(${gi},${si})" style="color:var(--red);padding:3px 8px">✕</button>
               ${step.log ? `<button class="btn btn-ghost btn-sm" onclick="toggleLog(${gi},${si})" style="padding:3px 8px">Log</button>` : ''}
             </div>
@@ -3754,7 +3754,7 @@ async function runProject() {
   // Show report button + Save-to-Cosmos button. Save is user-requested (not
   // auto) — see saveReportToCloud() below for the POST to reports.js.
   document.getElementById('exec-btns').innerHTML =
-    `<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(167,139,250,0.3)">📄 View Conversion Report</button>
+    `<button class="btn btn-primary btn-sm" onclick="window.open('/report.html','_blank')" style="background:var(--purple);border-color:rgba(107,78,142,0.3)">📄 View Conversion Report</button>
      <button class="btn btn-sm" id="save-report-btn" onclick="saveReportToCloud()" style="background:transparent;border:0.5px solid var(--border2);color:var(--text);margin-left:0.5rem">💾 Save Report</button>`;
 }
 

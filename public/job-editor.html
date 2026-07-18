@@ -9,16 +9,16 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
-  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
-  --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
-  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
-  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
-  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
-  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --bg:#F6F4F1;--bg2:#FFFFFF;--bg3:#F1EEEA;--bg4:#E7E2DC;
+  --border:rgba(60,50,40,0.12);--border2:rgba(60,50,40,0.20);
+  --text:#1F1D1B;--text2:#5A544E;--text3:#8C857D;
+  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
+  --green:#3F7D4E;--green-bg:rgba(63,125,78,0.10);
+  --amber:#B26A00;--amber-bg:rgba(178,106,0,0.10);
+  --red:#C0392B;--red-bg:rgba(192,57,43,0.10);
+  --teal:#0F6E6C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
 body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
@@ -37,7 +37,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{opacity:0.9}
 .btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}.btn-green:hover{background:rgba(34,201,122,0.15)}
 .btn-ghost{background:transparent;color:var(--text2);border:0.5px solid var(--border2)}.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
-.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.25)}.btn-purple:hover{background:rgba(167,139,250,0.15)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.25)}.btn-purple:hover{background:rgba(107,78,142,0.15)}
 .btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.25)}
 .btn-sm{padding:0.3rem 0.75rem;font-size:12px}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
@@ -56,7 +56,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .map-table th{font-size:9px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;padding:0.5rem 0.75rem;text-align:left;background:var(--bg3);border-bottom:0.5px solid var(--border);white-space:nowrap}
 .map-table td{padding:0.5rem 0.75rem;border-bottom:0.5px solid var(--border);vertical-align:middle}
 .map-table tr:last-child td{border-bottom:none}
-.map-table tr:hover td{background:rgba(255,255,255,0.015)}
+.map-table tr:hover td{background:rgba(60,50,40,0.015)}
 .map-table select{background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;width:100%}
 .map-table select:focus{border-color:var(--accent)}
 .col-name{font-family:var(--mono);font-size:11px;color:var(--teal);font-weight:500}
@@ -127,7 +127,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
           <div id="job-status-display" style="font-size:12px;color:var(--text2);padding:0.4rem 0">—</div>
         </div>
       </div>
-      <div id="insight-notes" style="display:none;margin-top:0.75rem;padding:0.625rem 0.875rem;background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"></div>
+      <div id="insight-notes" style="display:none;margin-top:0.75rem;padding:0.625rem 0.875rem;background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"></div>
     </div>
 
     <div id="status-bar" class="status-bar"></div>

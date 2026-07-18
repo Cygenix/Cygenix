@@ -16,13 +16,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -48,12 +48,12 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent-glow:rgba(61,126,255,0.15);
+  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
   --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
@@ -77,7 +77,7 @@ select.form-input option{background:var(--bg3)}
 .btn-green{background:var(--green-bg);color:var(--green);border:0.5px solid rgba(34,201,122,0.3)}
 .btn-amber{background:var(--amber-bg);color:var(--amber);border:0.5px solid rgba(245,158,11,0.3)}
 .btn-red{background:var(--red-bg);color:var(--red);border:0.5px solid rgba(240,70,70,0.3)}
-.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.3)}
+.btn-purple{background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.3)}
 .btn-sm{padding:0.25rem 0.6rem;font-size:11px}
 .btn:disabled{opacity:0.4;cursor:not-allowed}
 .badge{font-size:10px;padding:2px 7px;border-radius:100px;font-family:var(--mono);font-weight:500;white-space:nowrap}
@@ -111,8 +111,8 @@ select.form-input option{background:var(--bg3)}
 .log-box{font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:var(--r);padding:0.75rem;max-height:220px;overflow-y:auto;line-height:1.8;white-space:pre-wrap}
 /* Column pills */
 .col-pill{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:100px;background:var(--bg4);border:0.5px solid var(--border2);color:var(--text2);cursor:pointer;transition:all 0.12s;white-space:nowrap}
-.col-pill.selected{background:var(--accent-glow);border-color:rgba(61,126,255,0.4);color:var(--accent)}
-.col-pill.sql-col{background:var(--teal-bg);border-color:rgba(45,212,191,0.4);color:var(--teal)}
+.col-pill.selected{background:var(--accent-glow);border-color:rgba(199,70,52,0.4);color:var(--accent)}
+.col-pill.sql-col{background:var(--teal-bg);border-color:rgba(23,130,124,0.4);color:var(--teal)}
 /* Search drop */
 .search-wrap{position:relative}
 .search-drop{position:absolute;z-index:200;left:0;right:0;top:calc(100%+2px);background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:240px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5)}
@@ -837,7 +837,7 @@ function renderSources(){
     // anchor for the Scripts panel below — the user always knows which
     // source's results they're seeing because only one is "Active" at a time.
     const statusPills = src.loaded ? `
-      <span class="badge" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.3)">● Active</span>
+      <span class="badge" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.3)">● Active</span>
       <span class="tag">${total} scripts</span>
       ${pass?`<span class="badge badge-pass">${pass} pass</span>`:''}
       ${fail?`<span class="badge badge-fail">${fail} fail</span>`:''}

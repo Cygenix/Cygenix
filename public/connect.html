@@ -14,13 +14,13 @@
 (function(){
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
-    var t = p.theme || 'dark';
+    var t = p.theme || 'light';
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }
     document.documentElement.setAttribute('data-theme', t);
   } catch (_) {
-    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 })();
 </script>
@@ -33,12 +33,12 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#3d7eff;--accent2:#2563eb;--accent-glow:rgba(61,126,255,0.15);
+  --accent:#C74634;--accent2:#A5372A;--accent-glow:rgba(199,70,52,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
-  --purple:#a78bfa;--purple-bg:rgba(167,139,250,0.1);
-  --teal:#2dd4bf;--teal-bg:rgba(45,212,191,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --serif:'Syne',system-ui,sans-serif;
   --mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
@@ -53,7 +53,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .conn-badge{font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono);border:0.5px solid}
 .conn-badge.ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
 .conn-badge.err{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
-.conn-badge.checking{background:var(--accent-glow);border-color:rgba(61,126,255,0.3);color:var(--accent)}
+.conn-badge.checking{background:var(--accent-glow);border-color:rgba(199,70,52,0.3);color:var(--accent)}
 
 .main{max-width:1200px;margin:0 auto;padding:2rem 1.5rem}
 
@@ -65,7 +65,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .table-drop-item{padding:0.45rem 0.75rem;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.5rem}
 .table-drop-item:last-child{border-bottom:none}
 .table-drop-item:hover,.table-drop-item.kb-active{background:var(--accent-glow);color:var(--accent)}
-.table-drop-item.selected{color:var(--teal);background:rgba(45,212,191,0.07)}
+.table-drop-item.selected{color:var(--teal);background:rgba(23,130,124,0.07)}
 .table-drop-rows{font-size:9px;color:var(--text3);flex-shrink:0;font-family:var(--mono)}
 .table-drop-empty{padding:0.75rem;font-size:12px;color:var(--text3);text-align:center}
 .step-tab{flex:1;padding:0.9rem 1rem;text-align:center;font-size:12px;font-weight:500;color:var(--text3);cursor:pointer;transition:all 0.15s;border-right:0.5px solid var(--border);position:relative}
@@ -108,7 +108,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 .status-box.visible{display:block}
 .status-ok{background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.2);color:var(--green)}
 .status-err{background:var(--red-bg);border:0.5px solid rgba(240,70,70,0.2);color:var(--red)}
-.status-info{background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);color:var(--accent)}
+.status-info{background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);color:var(--accent)}
 
 /* SCHEMA TREE */
 .schema-tree{border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;max-height:420px;overflow-y:auto}
@@ -186,7 +186,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
     <div class="conn-badge checking" id="db-badge">Not connected</div>
     <div id="project-name-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:3px 10px;background:var(--bg3);border-radius:100px;border:0.5px solid var(--border);display:none"></div>
     <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer;position:relative" onclick="toggleUserMenu()" id="user-pill">
-      <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)" id="user-avatar">?</div>
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)" id="user-avatar">?</div>
       <span style="font-size:12px;color:var(--text2)" id="user-name">Loading…</span>
       <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:12px;padding:0.5rem;min-width:180px;z-index:200">
         <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem" id="user-email-menu"></div>
@@ -399,7 +399,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
           <div style="display:flex;align-items:center;gap:0.5rem;flex:1;min-width:180px">
             <span style="font-size:12px;color:var(--text2);flex-shrink:0">WHERE</span>
             <input id="src-where-filter" class="form-input" style="flex:1;font-family:var(--mono);font-size:11px" placeholder="e.g. active = 1 AND country = 'UK'">
-            <button onclick="openConnectWhereAI()" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);padding:4px 10px;font-size:11px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI WHERE builder">🤖 AI help</button>
+            <button onclick="openConnectWhereAI()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:var(--r);padding:4px 10px;font-size:11px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI WHERE builder">🤖 AI help</button>
           </div>
           <div style="font-size:11px;color:var(--text3)" id="src-row-hint">Rows will be fetched when you generate preview SQL</div>
         </div>
@@ -411,7 +411,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
       </div>
 
       <!-- Restored session notice -->
-      <div id="src-restored-notice" style="display:none;background:rgba(61,126,255,0.08);border:0.5px solid rgba(61,126,255,0.25);border-radius:var(--r);padding:0.75rem;margin-bottom:1rem;font-size:12px;color:var(--accent)">
+      <div id="src-restored-notice" style="display:none;background:rgba(199,70,52,0.08);border:0.5px solid rgba(199,70,52,0.25);border-radius:var(--r);padding:0.75rem;margin-bottom:1rem;font-size:12px;color:var(--accent)">
         📂 Mapping restored from saved session. Source data will be fetched live when you generate SQL.
       </div>
 
@@ -421,7 +421,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
           <div class="panel-sub" style="margin-bottom:0">Claude has mapped source columns to target columns. Review and adjust.</div>
         </div>
         <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
-          <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(45,212,191,0.3)">+ Joined column</button>
+          <button class="btn btn-ghost btn-sm" id="add-join-col-btn" onclick="showJoinColPicker()" style="display:none;color:var(--teal);border-color:rgba(23,130,124,0.3)">+ Joined column</button>
           <button class="btn btn-ghost btn-sm" onclick="remapWithClaude()" id="remap-btn">Re-map with Claude</button>
           <div class="badge badge-green" id="map-stats"></div>
         </div>
@@ -564,8 +564,8 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
       <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
         <button class="btn btn-ghost" onclick="goStep(4)">← Back to preview</button>
         <button class="btn btn-primary" onclick="saveJobAndFinish('dashboard')">💾 Save &amp; go to Dashboard</button>
-        <button class="btn" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(61,126,255,0.35)" onclick="saveJobAndFinish('another')">💾 Save &amp; map another table</button>
-        <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(167,139,250,0.35)" onclick="saveJobAndFinish('project')">💾 Save &amp; open Conversion Project</button>
+        <button class="btn" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.35)" onclick="saveJobAndFinish('another')">💾 Save &amp; map another table</button>
+        <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.35)" onclick="saveJobAndFinish('project')">💾 Save &amp; open Conversion Project</button>
       </div>
 
       <div id="finish-status" style="display:none;margin-top:1.25rem;padding:0.75rem 1rem;background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.3);border-radius:var(--r);font-size:13px;color:var(--green)"></div>
@@ -2217,7 +2217,7 @@ async function executeNow(){
     'Errors: <strong style="color:' + (errors>0?'var(--red)':'var(--green)') + '">' + errors + '</strong><br>' +
     (rollbackInfo ? '<span style="font-size:11px;color:var(--text3)">Rollback log: <span style="font-family:var(--mono)">' + logTable + '</span></span><br>' : '') +
     '<br>' + (errors > 0 ? 'Check the log above for failed batches.' : 'All rows inserted successfully.') +
-    '<br><br><button onclick="openMigrationReport()" style="background:rgba(167,139,250,0.15);color:#a78bfa;border:0.5px solid rgba(167,139,250,0.3);border-radius:8px;padding:0.5rem 1.1rem;font-size:13px;cursor:pointer;font-family:inherit">📄 View Conversion Report</button>';
+    '<br><br><button onclick="openMigrationReport()" style="background:rgba(107,78,142,0.15);color:#6B4E8E;border:0.5px solid rgba(107,78,142,0.3);border-radius:8px;padding:0.5rem 1.1rem;font-size:13px;cursor:pointer;font-family:inherit">📄 View Conversion Report</button>';
 
   if (rollbackInfo) {
     $('rollback-panel').style.display = 'block';
@@ -3248,7 +3248,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
           👋 Describe the filter you need in plain English and I'll write the T-SQL WHERE clause.<br>
           <span style="color:var(--text3);font-size:11px">e.g. "Only active clients in the UK" · "Records created after 2020" · "Where status is not null"</span>
         </div>
-        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(61,126,255,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
+        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
       </div>
 
       <!-- Current WHERE value -->
@@ -3264,7 +3264,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
       <!-- Input -->
       <div style="padding:0.75rem 1.25rem;border-top:0.5px solid var(--border);flex-shrink:0;display:flex;gap:0.5rem">
         <textarea id="where-prompt" rows="2" style="flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:6px 10px;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;resize:none" placeholder="Describe your filter in plain English…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}');}"></textarea>
-        <button onclick="sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}')" id="where-send-btn" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:var(--r);padding:6px 14px;font-size:12px;color:var(--purple);cursor:pointer;align-self:flex-end;font-family:var(--serif)">Send</button>
+        <button onclick="sendWherePrompt('${tableName}','${cols.join('|')}','${apiKey}')" id="where-send-btn" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:var(--r);padding:6px 14px;font-size:12px;color:var(--purple);cursor:pointer;align-self:flex-end;font-family:var(--serif)">Send</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -3340,7 +3340,7 @@ function addWhereChatMsg(text, role) {
   if (role === 'assistant') {
     const applyBtn = document.createElement('button');
     applyBtn.textContent = '↑ Use this';
-    applyBtn.style.cssText = 'margin-top:0.5rem;display:block;background:rgba(45,212,191,0.12);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 10px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)';
+    applyBtn.style.cssText = 'margin-top:0.5rem;display:block;background:rgba(23,130,124,0.12);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 10px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)';
     applyBtn.onclick = () => {
       const box = document.getElementById('where-result-box');
       if (box) box.value = text.replace(/^WHERE\s+/i, '').replace(/;$/, '').trim();
@@ -3427,7 +3427,7 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
         Source joins <span style="color:var(--teal)">${joins.length ? '(' + joins.length + ')' : ''}</span>
       </div>
       <div style="display:flex;gap:0.4rem">
-        <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(45,212,191,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
+        <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
       </div>
     </div>
     ${joins.length === 0 ? `<div style="font-size:12px;color:var(--text3);padding:0.4rem 0">No joins — query uses ${baseTable ? baseTable.name || baseTable.fullName : 'source table'} only</div>` : ''}
@@ -3453,7 +3453,7 @@ function renderJoinBuilder(containerId, allTables, baseTable) {
           <input value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
             placeholder="e.g. [dbo].[client].[clnum] = [dbo].[contact].[clnum]"
             style="flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--teal);font-family:var(--mono);outline:none">
-          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(167,139,250,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause">🤖 AI</button>
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);white-space:nowrap" title="Claude AI help for ON clause">🤖 AI</button>
         </div>
         ${j.table ? `<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols ? j.cols.length + ' columns available' : 'Loading columns…'}</div>` : ''}
       </div>
@@ -3602,7 +3602,7 @@ function showJoinColPicker() {
               const name = typeof c === 'string' ? c : c.name;
               const type = typeof c === 'string' ? '' : (c.type || '');
               return `<button onclick="addJoinColToMapping('${name}','${tbl}','${type}')"
-                style="background:var(--bg3);border:0.5px solid rgba(45,212,191,0.25);border-radius:4px;padding:3px 9px;font-size:11px;font-family:var(--mono);color:var(--teal);cursor:pointer">
+                style="background:var(--bg3);border:0.5px solid rgba(23,130,124,0.25);border-radius:4px;padding:3px 9px;font-size:11px;font-family:var(--mono);color:var(--teal);cursor:pointer">
                 + ${name}${type ? '<span style=\'color:var(--text3);font-size:9px;margin-left:3px\'>' + type + '</span>' : ''}
               </button>`;
             }).join('')}
