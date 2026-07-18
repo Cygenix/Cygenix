@@ -50,9 +50,16 @@
     'html.a11y-hc .nav-cta,html.a11y-hc .btn-primary,html.a11y-hc .nav-links a,html.a11y-hc .cyg-nav-item,html.a11y-hc .cyg-a11y-btn{text-decoration:none}',
     'html.a11y-hc .nav-links a:hover,html.a11y-hc a.footer-link{text-decoration:underline}',
 
+    /* Text-size zoom is applied to <html>. When active, let the window scroll so
+       nothing is trapped off-screen, and cap the fixed sidebar to the visible
+       viewport so its footer (the Accessibility button) stays reachable. */
+    'html.a11y-zoomed{ overflow:auto !important; }',
+    'html.a11y-zoomed body{ overflow:auto !important; }',
+    'html.a11y-zoomed .cyg-sidebar{ height:calc(100vh / var(--a11y-zoom,1)) !important; bottom:auto !important; }',
+
     '#a11y-panel{position:fixed;left:12px;bottom:64px;z-index:10050;width:220px;background:var(--bg2,#fff);',
     '  color:var(--text,#111);border:1px solid var(--border2,rgba(0,0,0,0.2));border-radius:12px;',
-    '  box-shadow:0 12px 40px rgba(0,0,0,0.22);padding:0.85rem;font-family:var(--sans,var(--serif,system-ui),sans-serif);zoom:1}',
+    '  box-shadow:0 12px 40px rgba(0,0,0,0.22);padding:0.85rem;font-family:var(--sans,var(--serif,system-ui),sans-serif)}',
     '#a11y-panel[hidden]{display:none}',
     '#a11y-panel .a11y-h{font-size:13px;font-weight:700;color:var(--text,#111);margin-bottom:0.7rem;display:flex;align-items:center;gap:0.4rem}',
     '#a11y-panel .a11y-h svg{width:17px;height:17px;flex-shrink:0;color:var(--accent,#C74634)}',
@@ -110,8 +117,24 @@
   }
 
   // ── Behaviour ─────────────────────────────────────────────────────────────
+  // Zoom the <html> root (not <body>): the root is the window's scroll
+  // container, so overflow becomes scrollable instead of being clipped by an
+  // app shell's `overflow:hidden`. A CSS rule keeps the fixed sidebar fitting
+  // the visible viewport so its footer (Accessibility button) stays reachable.
+  function applyZoom() {
+    var root = document.documentElement;
+    if (state.size === 1) {
+      root.style.zoom = '';
+      root.style.removeProperty('--a11y-zoom');
+      root.classList.remove('a11y-zoomed');
+    } else {
+      root.style.zoom = String(state.size);
+      root.style.setProperty('--a11y-zoom', String(state.size));
+      root.classList.add('a11y-zoomed');
+    }
+  }
   function apply() {
-    document.body.style.zoom = state.size === 1 ? '' : String(state.size);
+    applyZoom();
     document.documentElement.classList.toggle('a11y-hc', state.contrast);
     var val = document.getElementById('a11y-size-val');
     if (val) val.textContent = Math.round(state.size * 100) + '%';
@@ -146,7 +169,7 @@
   window.CygenixA11y = { open: function () { toggle(true); }, close: function () { toggle(false); }, toggle: function () { toggle(); } };
 
   // Apply saved prefs immediately (zoom + contrast) even before the panel mounts.
-  if (document.body) { document.body.style.zoom = state.size === 1 ? '' : String(state.size); }
+  applyZoom();
   document.documentElement.classList.toggle('a11y-hc', state.contrast);
   mount();
 })();
