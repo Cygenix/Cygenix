@@ -18,6 +18,13 @@
   try {
     var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
     var t = p.theme || 'light';
+    // One-time migration to the Oracle light default: upgrade the old
+    // 'dark' default to light. Users can re-pick any theme in Settings.
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
     if (t === 'auto') {
       t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
     }

@@ -318,7 +318,10 @@
 
   function buildItem(item, activeKey){
     const isActive = item.key === activeKey ? ' active' : '';
-    const styleAttr = item.color ? ` style="--item-color:${item.color}; --accent:${item.color};"` : '';
+    // Oracle look: monochrome nav icons (neutral grey), red only on the
+    // active item. We intentionally ignore the per-item accent colour so the
+    // sidebar reads as one calm, professional column rather than a rainbow.
+    const styleAttr = '';
     const badgeHtml = item.badgeId
       ? `<span class="cyg-nav-badge" id="${item.badgeId}" aria-live="polite"></span>`
       : '';
