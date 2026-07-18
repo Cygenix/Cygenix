@@ -192,11 +192,13 @@ body.fullscreen .script-panel { display:none }
 #monaco-host{flex:1;min-width:0;height:100%;position:relative}
 #monaco-host .monaco-editor,
 #monaco-host .monaco-editor .overflow-guard{border-radius:0}
-/* Match Monaco chrome to our dark theme */
+/* Match the Monaco editor surface to the app theme. --bg2 is white in the
+   light (Oracle) theme and the dark panel colour in dark mode, so the editor
+   reads as a clean white sheet in light mode. */
 #monaco-host .monaco-editor .margin,
 #monaco-host .monaco-editor,
 #monaco-host .monaco-editor-background,
-#monaco-host .monaco-editor .monaco-editor-background{background:var(--bg)!important}
+#monaco-host .monaco-editor .monaco-editor-background{background:var(--bg2)!important}
 #monaco-host .monaco-editor .line-numbers{color:var(--text3)!important}
 #monaco-host .monaco-editor .current-line ~ .line-numbers{color:var(--text)!important}
 #monaco-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-family:var(--mono);font-size:12px;background:var(--bg);z-index:5}
@@ -863,16 +865,65 @@ function initMonaco(){
     }
   });
 
+  // ── Light theme — high-contrast tokens on a white sheet (Oracle look) ────────
+  // Dark, clearly-readable identifiers (the [Bracketed] column names) with a
+  // classic, professional SQL palette. This is the default in light mode.
+  monaco.editor.defineTheme('cygenix-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: '',                     foreground: '1a1d21' },   // fallback: dark
+      { token: 'keyword.sql',          foreground: '0033b3', fontStyle: 'bold' },
+      { token: 'operator.sql',         foreground: '5c2699' },
+      { token: 'string.sql',           foreground: '0a7c42' },
+      { token: 'number.sql',           foreground: '9a5b00' },
+      { token: 'comment.sql',          foreground: '6e7781', fontStyle: 'italic' },
+      { token: 'predefined.sql',       foreground: '0e7490' },   // functions
+      { token: 'identifier.sql',       foreground: '1a1d21' },   // column names — dark & readable
+      { token: 'delimiter.sql',        foreground: '57606a' },
+      { token: 'delimiter.square.sql', foreground: '57606a' }    // the [ ] brackets
+    ],
+    colors: {
+      'editor.background':              '#ffffff',
+      'editor.foreground':              '#1a1d21',
+      'editorLineNumber.foreground':    '#b0b8c0',
+      'editorLineNumber.activeForeground':'#1a1d21',
+      'editor.selectionBackground':     '#C7463426',
+      'editor.inactiveSelectionBackground':'#C7463414',
+      'editor.lineHighlightBackground': '#f6f7f9',
+      'editorCursor.foreground':        '#C74634',
+      'editorIndentGuide.background':   '#e6e9ec',
+      'editorIndentGuide.activeBackground':'#C7463455',
+      'editorBracketMatch.background':  '#C7463422',
+      'editorBracketMatch.border':      '#C74634',
+      'editorWidget.background':        '#ffffff',
+      'editorWidget.border':            '#d0d7de',
+      'editorSuggestWidget.background': '#ffffff',
+      'editorSuggestWidget.border':     '#d0d7de',
+      'editorSuggestWidget.selectedBackground':'#C7463418',
+      'editorSuggestWidget.highlightForeground':'#C74634',
+      'editorHoverWidget.background':   '#ffffff',
+      'editorHoverWidget.border':       '#d0d7de',
+      'scrollbarSlider.background':     '#00000020',
+      'scrollbarSlider.hoverBackground':'#00000033',
+      'scrollbarSlider.activeBackground':'#C7463466'
+    }
+  });
+
   // ── Create the editor ────────────────────────────────────────────────────────
   const ta = document.getElementById('sql-editor');
   const initial = window.__cygMonaco.pendingValue || '';
 
+  // Match the editor theme to the app theme (light is the Oracle default).
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const editorTheme = isDark ? 'cygenix-dark' : 'cygenix-light';
+
   const editor = monaco.editor.create(host, {
     value: initial,
     language: 'sql',
-    theme: 'cygenix-dark',
+    theme: editorTheme,
     fontFamily: "'IBM Plex Mono', monospace",
-    fontSize: 13,
+    fontSize: 13.5,
     lineHeight: 22,
     minimap: { enabled: false },
     scrollBeyondLastLine: false,
