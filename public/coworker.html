@@ -202,7 +202,9 @@
       </div>
       <input id="art-name" class="art-name" value="Untitled script" spellcheck="false">
       <div class="canvas-acts">
-        <button class="tb-btn" onclick="saveArtifact()">💾 Save</button>
+        <button class="tb-btn" id="folder-btn" onclick="openFolder()" title="Connect a local working folder">📂 Folder</button>
+        <button class="tb-btn" onclick="saveArtifact()" title="Save (to folder if connected, else browser Library)">💾 Save</button>
+        <button class="tb-btn" id="tosql-btn" onclick="sendToSqlEditor()" title="Open this script in the SQL Editor">→ SQL Editor</button>
         <button class="tb-btn" onclick="copyArtifact()">⧉ Copy</button>
         <button class="tb-btn" onclick="downloadArtifact()">⭳ Download</button>
         <button class="tb-btn" onclick="clearArtifact()">✕ Clear</button>
@@ -211,7 +213,7 @@
     <textarea id="art" placeholder="Your working script appears here. Ask the co-worker to draft one, or start typing — then use “Apply to workspace” on any code the co-worker returns."></textarea>
     <div class="canvas-foot">
       <span id="art-meta">SQL · 0 lines</span>
-      <span>Saved items live in your browser · Library ↑</span>
+      <span id="art-loc">Saved items live in your browser · Library ↑</span>
     </div>
   </section>
 </div>
@@ -220,6 +222,19 @@
   <div class="modal">
     <div class="modal-h"><b>Saved items</b><button onclick="closeLibrary()">✕</button></div>
     <div class="lib" id="lib-list"></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="files-modal" onclick="if(event.target===this)closeFilesModal()">
+  <div class="modal">
+    <div class="modal-h"><b>Working folder</b><button onclick="closeFilesModal()">✕</button></div>
+    <div id="files-toolbar" style="padding:0.6rem 0.9rem;border-bottom:1px solid var(--border);display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
+      <span id="files-folder" style="font-size:12px;color:var(--text2);flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis"></span>
+      <button class="tb-btn" onclick="connectFolder()">Change folder</button>
+      <button class="tb-btn" onclick="saveCurrentToFolder()">💾 Save current here</button>
+      <button class="tb-btn" onclick="disconnectFolder()">Disconnect</button>
+    </div>
+    <div class="lib" id="files-list"></div>
   </div>
 </div>
 
@@ -265,6 +280,7 @@
     } catch(_){}
     ctx.artifactType = artifact.type;
     ctx.artifactContent = artifact.content;
+    if (currentFile) ctx.openFile = currentFile.name;
     return ctx;
   }
 
@@ -436,15 +452,145 @@
     setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   };
 
-  // ── Library (saved artifacts) ────────────────────────────────
+  // ── Library (browser-saved artifacts) ────────────────────────
   function readLib(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY)||'[]'); }catch(_){ return []; } }
   function writeLib(a){ try{ localStorage.setItem(LIB_KEY, JSON.stringify(a.slice(0,200))); }catch(_){} }
+  function saveToLibrary(){
+    const lib = readLib();
+    lib.unshift({ id:'a'+Date.now(), type:artifact.type, name:nameEl.value||('Untitled '+artifact.type), content:artifact.content, ts:Date.now() });
+    writeLib(lib); toast('Saved to Library');
+  }
+  // Smart save: write to the connected working folder if there is one,
+  // otherwise fall back to the browser Library.
   window.saveArtifact = function(){
     if(!artifact.content.trim()){ toast('Nothing to save yet'); return; }
-    const lib = readLib();
-    const id = 'a'+Date.now();
-    lib.unshift({ id, type:artifact.type, name:nameEl.value||('Untitled '+artifact.type), content:artifact.content, ts:Date.now() });
-    writeLib(lib); toast('Saved to Library');
+    if(dirHandle){ saveCurrentToFolder(); return; }
+    saveToLibrary();
+  };
+
+  // ── Local working folder (File System Access API) ────────────
+  // Lets the co-worker open, edit and save real files in a folder the user
+  // picks on their machine. Chromium browsers only; graceful fallback below.
+  let dirHandle=null, currentFile=null, folderFiles=[];
+  const TEXT_EXT=/\.(sql|md|markdown|txt|text|json|csv|tsv|ya?ml|xml|html?|js|ts|py|ps1|sh|ini|log|cfg|conf)$/i;
+  const fsSupported = () => 'showDirectoryPicker' in window;
+  function trunc(s,n){ return s.length>n ? s.slice(0,n-1)+'…' : s; }
+
+  // Persist the directory handle across visits via a tiny IndexedDB kv store.
+  function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('cygenix_coworker',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+  async function idbSet(k,v){ const db=await idb(); return new Promise((res,rej)=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').put(v,k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+  async function idbGet(k){ const db=await idb(); return new Promise((res,rej)=>{ const tx=db.transaction('kv','readonly'); const rq=tx.objectStore('kv').get(k); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); }
+  async function idbDel(k){ const db=await idb(); return new Promise((res,rej)=>{ const tx=db.transaction('kv','readwrite'); tx.objectStore('kv').delete(k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+
+  async function ensurePerm(h){ if(!h) return false; const o={mode:'readwrite'}; try{ if((await h.queryPermission(o))==='granted') return true; return (await h.requestPermission(o))==='granted'; }catch(_){ return false; } }
+
+  window.openFolder = async function(){            // the toolbar 📂 Folder button
+    if(!fsSupported()){ openFilesModal(); return; }
+    if(!dirHandle){ await connectFolder(); return; }
+    if(!(await ensurePerm(dirHandle))){ toast('Folder permission needed'); return; }
+    await listFiles(); openFilesModal();
+  };
+  window.connectFolder = async function(){
+    if(!fsSupported()){ openFilesModal(); return; }
+    try{
+      const h=await window.showDirectoryPicker({mode:'readwrite',id:'cygenix-coworker'});
+      dirHandle=h; currentFile=null; try{ await idbSet('workingDir',h); }catch(_){}
+      await listFiles(); updateFolderUI(); openFilesModal(); toast('Connected: '+h.name);
+    }catch(e){ if(e && e.name!=='AbortError') toast('Could not open folder'); }
+  };
+  window.disconnectFolder = async function(){
+    dirHandle=null; currentFile=null; folderFiles=[]; try{ await idbDel('workingDir'); }catch(_){}
+    updateFolderUI(); renderFilesModal(); toast('Folder disconnected');
+  };
+
+  async function listFiles(){
+    folderFiles=[];
+    if(!dirHandle) return;
+    try{
+      for await (const [name,handle] of dirHandle.entries()){
+        if(handle.kind==='file' && TEXT_EXT.test(name)) folderFiles.push({name,handle});
+      }
+      folderFiles.sort((a,b)=>a.name.localeCompare(b.name));
+    }catch(_){}
+  }
+  async function openFileFromFolder(f){
+    try{
+      const text=await (await f.handle.getFile()).text();
+      const isDoc=!/\.sql$/i.test(f.name);
+      setType(isDoc?'document':'script', true);
+      artifact.content=text; artEl.value=text; artifact.name=f.name; nameEl.value=f.name;
+      currentFile={handle:f.handle,name:f.name};
+      updateMeta(); updateFolderUI(); saveState(); closeFilesModal(); toast('Opened '+f.name);
+    }catch(_){ toast('Could not open file'); }
+  }
+  window.saveCurrentToFolder = async function(){
+    if(!artifact.content.trim()){ toast('Nothing to save yet'); return; }
+    if(!dirHandle){ await connectFolder(); if(!dirHandle) return; }
+    if(!(await ensurePerm(dirHandle))){ toast('Folder permission needed'); return; }
+    try{
+      let handle = currentFile && currentFile.handle, fname = currentFile && currentFile.name;
+      if(!handle){
+        let base=(nameEl.value||'untitled').trim().replace(/[\\/:*?"<>|]+/g,'_');
+        if(!/\.[a-z0-9]+$/i.test(base)) base += (artifact.type==='script'?'.sql':'.md');
+        handle=await dirHandle.getFileHandle(base,{create:true});
+        currentFile={handle,name:base}; fname=base; nameEl.value=base; artifact.name=base;
+      }
+      const w=await handle.createWritable(); await w.write(artifact.content); await w.close();
+      await listFiles(); updateFolderUI(); renderFilesModal(); saveState(); toast('Saved to '+fname);
+    }catch(e){ toast('Save failed: '+((e&&e.message)||'error')); }
+  };
+
+  function updateFolderUI(){
+    const b=$('folder-btn');
+    if(b){
+      b.textContent = dirHandle ? '📂 '+trunc(dirHandle.name,14) : '📂 Folder';
+      b.title = dirHandle ? ('Working folder: '+dirHandle.name) : 'Connect a local working folder';
+      b.style.color = dirHandle ? 'var(--accent)' : '';
+      b.style.borderColor = dirHandle ? 'var(--accent)' : '';
+    }
+    const loc=$('art-loc');
+    if(loc){
+      if(currentFile) loc.textContent='📄 '+currentFile.name+' · Save writes to this file';
+      else if(dirHandle) loc.textContent='📂 '+dirHandle.name+' · Save creates a file here';
+      else loc.textContent='Saved items live in your browser · Library ↑';
+    }
+  }
+  window.openFilesModal = function(){ renderFilesModal(); $('files-modal').classList.add('open'); };
+  window.closeFilesModal = function(){ $('files-modal').classList.remove('open'); };
+  function renderFilesModal(){
+    const folderLbl=$('files-folder'), list=$('files-list'), tb=$('files-toolbar');
+    if(!fsSupported()){
+      if(tb) tb.style.display='none';
+      list.innerHTML='<div class="lib-empty">A local working folder needs a Chromium browser (Chrome or Edge). In other browsers, use 💾 Save (browser Library) and ⭳ Download instead.</div>';
+      return;
+    }
+    if(tb) tb.style.display='flex';
+    if(!dirHandle){
+      folderLbl.textContent='No folder connected.';
+      list.innerHTML='<div class="lib-empty">Connect a local folder to open and save scripts &amp; documents on your machine.<br><br><button class="tb-btn" onclick="connectFolder()">📂 Choose folder…</button></div>';
+      return;
+    }
+    folderLbl.textContent='📂 '+dirHandle.name+' · '+folderFiles.length+' file'+(folderFiles.length===1?'':'s');
+    if(!folderFiles.length){ list.innerHTML='<div class="lib-empty">No text files here yet. Use “Save current here” to create one.</div>'; return; }
+    list.innerHTML='';
+    folderFiles.forEach(f=>{
+      const ext=(f.name.split('.').pop()||'').toUpperCase().slice(0,4);
+      const row=document.createElement('div'); row.className='lib-item';
+      row.innerHTML='<span class="li-t"></span><span class="li-n"></span>';
+      row.querySelector('.li-t').textContent=ext;
+      const n=row.querySelector('.li-n'); n.textContent=f.name;
+      if(currentFile && currentFile.name===f.name){ n.style.color='var(--accent)'; n.style.fontWeight='600'; }
+      row.onclick=()=>openFileFromFolder(f);
+      list.appendChild(row);
+    });
+  }
+
+  // ── Hand off the current script to the SQL Editor ────────────
+  window.sendToSqlEditor = function(){
+    if(!artifact.content.trim()){ toast('Nothing to send'); return; }
+    if(artifact.type==='document' && !confirm('Open the current content in the SQL Editor?')) return;
+    try{ localStorage.setItem('cygenix_sql_editor_draft', artifact.content); }catch(_){}
+    window.location.href='/sql-editor.html';
   };
   window.openLibrary = function(){
     const lib = readLib(); const list=$('lib-list'); list.innerHTML='';
@@ -499,8 +645,22 @@
   nameEl.value = artifact.name || (artifact.type==='script'?'Untitled script':'Untitled document');
   artEl.value = artifact.content || '';
   updateMeta();
+  updateFolderUI();
   renderAll();
   autosize(input);
+
+  // Reconnect a previously-chosen working folder if the browser still grants
+  // us permission (otherwise it stays available behind a click on 📂 Folder).
+  (async function restoreFolder(){
+    try{
+      if(!fsSupported()) return;
+      const h=await idbGet('workingDir');
+      if(!h) return;
+      dirHandle=h;
+      if((await h.queryPermission({mode:'readwrite'}))==='granted'){ await listFiles(); }
+      updateFolderUI();
+    }catch(_){}
+  })();
 })();
 </script>
 </body>
