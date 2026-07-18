@@ -5,6 +5,9 @@
 [[edge_functions]]
   path = "/api/analyse"
   function = "analyse"
+[[edge_functions]]
+  path = "/api/coworker"
+  function = "coworker"
 [[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health"

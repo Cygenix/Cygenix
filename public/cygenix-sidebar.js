@@ -65,6 +65,7 @@
       { key:'object-mapping',     label:'Object Mapping',     href:'/object_mapping.html',     color:'var(--teal)',   icon: iconArrows() },
       { key:'sql-editor',         label:'SQL Editor',         href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
       { key:'agentive-migration', label:'Agentive Migration', href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
+      { key:'coworker',           label:'Co-Worker',          href:'/coworker.html',           color:'var(--accent)', icon: svg('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-3 2.5V10.5H2.5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 6.4h5M5.5 8.2h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>') },
     ]},
     { section: 'Data Analysis', group:'analysis', items: [
       { key:'data-quality',      label:'Data Quality Review', href:'/data-quality.html',  color:'var(--green)',  icon: iconQuality() },

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/cygenix-theme.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Cygenix Co-Worker — an AI teammate that develops migration scripts, edits documents and customises conversions.">
+<title>Cygenix – Co-Worker</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+  body.cyg-collapsed{padding-left:54px}
+
+  .topbar{position:fixed;top:0;right:0;left:230px;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 1.25rem;border-bottom:1px solid var(--border);background:var(--bg2);z-index:100;gap:0.75rem;transition:left 0.2s ease}
+  body.cyg-collapsed .topbar{left:54px}
+  .topbar-title{font-size:13px;color:var(--accent);font-weight:600;flex-shrink:0;display:flex;align-items:center;gap:0.5rem}
+  .topbar-title svg{width:16px;height:16px}
+  .topbar-pill{font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--accent-glow);color:var(--accent);border:1px solid var(--border2)}
+  .ctx-chip{font-size:11px;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:999px;padding:3px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+  .tb-btn{font:inherit;font-size:12px;font-weight:500;color:var(--text2);background:var(--bg2);border:1px solid var(--border2);border-radius:7px;padding:5px 11px;cursor:pointer;transition:all .12s}
+  .tb-btn:hover{color:var(--text);border-color:var(--text3)}
+
+  .work{margin-top:52px;height:calc(100vh - 52px);display:flex;min-width:0}
+
+  /* ── Chat pane ─────────────────────────────────────────────── */
+  .chat{width:46%;min-width:360px;display:flex;flex-direction:column;border-right:1px solid var(--border);background:var(--bg)}
+  .chat-scroll{flex:1;overflow-y:auto;padding:1.25rem 1.25rem 0.5rem}
+  .msg{display:flex;gap:0.7rem;margin-bottom:1.15rem;max-width:100%}
+  .msg-av{width:26px;height:26px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .msg.user .msg-av{background:var(--bg4);color:var(--text2)}
+  .msg.ai .msg-av{background:var(--accent);color:#fff}
+  .msg-body{font-size:13.5px;line-height:1.62;color:var(--text);min-width:0;flex:1;padding-top:2px}
+  .msg-body p{margin:0 0 0.6rem}
+  .msg-body ul,.msg-body ol{margin:0 0 0.6rem 1.1rem}
+  .msg-body li{margin:2px 0}
+  .msg-body code.inl{background:var(--code-tint);border-radius:4px;padding:1px 5px;font-family:var(--mono);font-size:12px}
+  .msg-body strong{font-weight:700}
+  .msg-body a{color:var(--accent);text-decoration:none}
+  .msg-body a:hover{text-decoration:underline}
+  .code-block{border:1px solid var(--border2);border-radius:9px;overflow:hidden;margin:0.5rem 0 0.75rem;background:var(--bg2)}
+  .code-head{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;background:var(--bg3);border-bottom:1px solid var(--border)}
+  .code-lang{font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;color:var(--text3)}
+  .code-acts{display:flex;gap:0.35rem}
+  .code-btn{font:inherit;font-size:11px;font-weight:600;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);border-radius:6px;padding:2px 8px;cursor:pointer}
+  .code-btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .code-btn:hover{filter:brightness(0.97)}
+  .code-block pre{margin:0;padding:0.7rem 0.85rem;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.55;color:var(--text);white-space:pre}
+  .typing{display:flex;gap:4px;padding:4px 0}
+  .typing span{width:6px;height:6px;border-radius:50%;background:var(--text3);animation:tb 1s infinite}
+  .typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+  @keyframes tb{0%,60%,100%{opacity:.3}30%{opacity:1}}
+
+  .composer{border-top:1px solid var(--border);padding:0.75rem 1rem 0.9rem;background:var(--bg2)}
+  .composer-row{display:flex;gap:0.6rem;align-items:flex-end}
+  .composer textarea{flex:1;resize:none;font:inherit;font-size:13.5px;color:var(--text);background:var(--bg);border:1px solid var(--border2);border-radius:10px;padding:0.6rem 0.75rem;max-height:160px;line-height:1.5;font-family:var(--serif)}
+  .composer textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+  .send-btn{flex-shrink:0;width:40px;height:40px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .send-btn:disabled{opacity:.45;cursor:not-allowed}
+  .quick{display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.6rem}
+  .quick button{font:inherit;font-size:11.5px;color:var(--text2);background:var(--bg3);border:1px solid var(--border);border-radius:999px;padding:4px 11px;cursor:pointer}
+  .quick button:hover{color:var(--accent);border-color:var(--accent)}
+
+  .welcome{text-align:center;max-width:420px;margin:2.5rem auto 0;color:var(--text2)}
+  .welcome h2{font-size:1.35rem;font-weight:700;color:var(--text);margin-bottom:0.5rem}
+  .welcome p{font-size:13px;line-height:1.6;margin-bottom:1.25rem}
+  .cap{display:flex;gap:0.6rem;text-align:left;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:0.7rem 0.85rem;margin-bottom:0.55rem}
+  .cap .ic{font-size:16px;flex-shrink:0}
+  .cap b{font-size:12.5px;color:var(--text)}
+  .cap span{font-size:12px;color:var(--text2);display:block;margin-top:1px}
+
+  /* ── Canvas pane ───────────────────────────────────────────── */
+  .canvas{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg2)}
+  .canvas-head{display:flex;align-items:center;gap:0.6rem;padding:0.55rem 0.85rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .tabs{display:flex;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:2px}
+  .tabs button{font:inherit;font-size:12px;font-weight:600;color:var(--text2);background:none;border:none;padding:4px 12px;border-radius:6px;cursor:pointer}
+  .tabs button.on{background:var(--bg2);color:var(--accent);box-shadow:var(--shadow-soft)}
+  .art-name{font:inherit;font-size:12.5px;color:var(--text);background:transparent;border:1px solid transparent;border-radius:6px;padding:3px 6px;min-width:120px;flex:1}
+  .art-name:hover,.art-name:focus{border-color:var(--border2);outline:none;background:var(--bg)}
+  .canvas-acts{display:flex;gap:0.35rem;margin-left:auto}
+  .canvas textarea{flex:1;width:100%;resize:none;border:none;outline:none;padding:1rem 1.15rem;font-size:13px;line-height:1.65;color:var(--text);background:var(--bg2)}
+  .canvas.script textarea{font-family:var(--mono);font-size:12.5px;white-space:pre;tab-size:2}
+  .canvas.document textarea{font-family:var(--serif)}
+  .canvas-foot{border-top:1px solid var(--border);padding:5px 0.85rem;font-size:11px;color:var(--text3);display:flex;justify-content:space-between}
+
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg2);font-size:12.5px;padding:8px 16px;border-radius:8px;opacity:0;transition:all .25s;z-index:400;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* Library modal */
+  .modal-bg{position:fixed;inset:0;background:var(--modal-scrim);z-index:300;display:none;align-items:center;justify-content:center;padding:1.5rem}
+  .modal-bg.open{display:flex}
+  .modal{background:var(--bg2);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:460px;max-height:80vh;display:flex;flex-direction:column;box-shadow:var(--shadow-strong)}
+  .modal-h{display:flex;align-items:center;justify-content:space-between;padding:1rem 1.15rem;border-bottom:1px solid var(--border)}
+  .modal-h b{font-size:14px}
+  .modal-h button{background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer}
+  .lib{overflow-y:auto;padding:0.5rem}
+  .lib-item{display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0.7rem;border-radius:8px;cursor:pointer}
+  .lib-item:hover{background:var(--hover-tint)}
+  .lib-item .li-t{font-size:8px;font-family:var(--mono);text-transform:uppercase;padding:2px 6px;border-radius:4px;background:var(--bg4);color:var(--text2)}
+  .lib-item .li-n{flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lib-item .li-x{color:var(--text3);border:none;background:none;cursor:pointer;font-size:14px}
+  .lib-empty{padding:1.5rem;text-align:center;color:var(--text3);font-size:12.5px}
+
+  @media (max-width:900px){
+    .work{flex-direction:column}
+    .chat{width:100%;min-width:0;height:55%;border-right:none;border-bottom:1px solid var(--border)}
+    .canvas{height:45%}
+  }
+</style>
+</head>
+<body>
+
+<div id="cyg-sidebar-mount" data-active="coworker"></div>
+<script src="/cygenix-sidebar.js"></script>
+<script>
+// Mirror the injected sidebar's collapsed/expanded width onto the body so the
+// page's padding-left tracks it (same approach as the SQL Editor page).
+(function mirrorSidebarWidth(){
+  function findEl(){
+    return [document.getElementById('cyg-sidebar'),document.querySelector('.cyg-sidebar'),document.getElementById('cyg-sidebar-mount')]
+      .filter(Boolean).find(el=>el.offsetWidth>0) || document.getElementById('cyg-sidebar-mount');
+  }
+  function sync(w){ document.body.classList.toggle('cyg-collapsed', w>0 && w<=80); }
+  function attach(){
+    const el=findEl(); if(!el){setTimeout(attach,50);return;}
+    requestAnimationFrame(()=>sync(el.offsetWidth));
+    if(typeof ResizeObserver!=='undefined'){ new ResizeObserver(es=>{for(const e of es)sync(e.contentRect.width);}).observe(el); }
+    else { setInterval(()=>sync(el.offsetWidth),200); }
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',attach); else attach();
+})();
+</script>
+
+<div class="topbar">
+  <div style="display:flex;align-items:center;gap:0.6rem;flex:1;min-width:0">
+    <span class="topbar-title">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M8 1.6a2.1 2.1 0 0 1 2.1 2.1v.3a2.1 2.1 0 0 1 1.8 3.5 2.1 2.1 0 0 1-1.8 3.4v.3A2.1 2.1 0 1 1 5.9 11v-.3A2.1 2.1 0 0 1 4.1 7.5 2.1 2.1 0 0 1 5.9 4v-.3A2.1 2.1 0 0 1 8 1.6Z" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/><path d="M8 6.2v3.6M6.2 8h3.6" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+      Co-Worker
+    </span>
+    <span class="topbar-pill">Beta</span>
+    <span id="ctx-chip" class="ctx-chip" style="display:none"></span>
+  </div>
+  <div style="display:flex;gap:0.45rem;align-items:center;flex-shrink:0">
+    <button class="tb-btn" onclick="openLibrary()">📁 Library</button>
+    <button class="tb-btn" onclick="newChat()">✚ New chat</button>
+    <a class="tb-btn" href="/dashboard.html" style="text-decoration:none">← Dashboard</a>
+  </div>
+</div>
+
+<div class="work">
+  <!-- Chat -->
+  <section class="chat">
+    <div class="chat-scroll" id="chat-scroll">
+      <div class="welcome" id="welcome">
+        <h2>Your migration co-worker</h2>
+        <p>An AI teammate that helps you build and refine the moving parts of a migration. Ask in plain English — anything it produces can be dropped straight into the workspace on the right.</p>
+        <div class="cap"><span class="ic">🧑‍💻</span><div><b>Develop scripts</b><span>Write & refine migration SQL, transforms and glue code.</span></div></div>
+        <div class="cap"><span class="ic">📝</span><div><b>Edit documents</b><span>Draft runbooks, mapping specs and handover notes.</span></div></div>
+        <div class="cap"><span class="ic">⚙️</span><div><b>Customise conversions</b><span>Shape column mappings, value translations & validation rules.</span></div></div>
+      </div>
+    </div>
+    <div class="composer">
+      <div class="quick" id="quick">
+        <button onclick="seed('script')">🧑‍💻 Develop a script</button>
+        <button onclick="seed('document')">📝 Draft a document</button>
+        <button onclick="seed('convert')">⚙️ Customise a conversion</button>
+      </div>
+      <div class="composer-row">
+        <textarea id="input" rows="1" placeholder="Ask your co-worker…  (Enter to send, Shift+Enter for a new line)"></textarea>
+        <button class="send-btn" id="send" onclick="send()" title="Send">➤</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Canvas -->
+  <section class="canvas script" id="canvas">
+    <div class="canvas-head">
+      <div class="tabs">
+        <button id="tab-script" class="on" onclick="setType('script')">🧑‍💻 Script</button>
+        <button id="tab-document" onclick="setType('document')">📝 Document</button>
+      </div>
+      <input id="art-name" class="art-name" value="Untitled script" spellcheck="false">
+      <div class="canvas-acts">
+        <button class="tb-btn" onclick="saveArtifact()">💾 Save</button>
+        <button class="tb-btn" onclick="copyArtifact()">⧉ Copy</button>
+        <button class="tb-btn" onclick="downloadArtifact()">⭳ Download</button>
+        <button class="tb-btn" onclick="clearArtifact()">✕ Clear</button>
+      </div>
+    </div>
+    <textarea id="art" placeholder="Your working script appears here. Ask the co-worker to draft one, or start typing — then use “Apply to workspace” on any code the co-worker returns."></textarea>
+    <div class="canvas-foot">
+      <span id="art-meta">SQL · 0 lines</span>
+      <span>Saved items live in your browser · Library ↑</span>
+    </div>
+  </section>
+</div>
+
+<div class="modal-bg" id="lib-modal" onclick="if(event.target===this)closeLibrary()">
+  <div class="modal">
+    <div class="modal-h"><b>Saved items</b><button onclick="closeLibrary()">✕</button></div>
+    <div class="lib" id="lib-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/cookie-consent.js"></script>
+<script>
+(function(){
+  'use strict';
+  const SESSION_KEY = 'cygenix_coworker_session_v1';
+  const LIB_KEY     = 'cygenix_coworker_artifacts_v1';
+
+  let messages = [];                                   // {role, content}
+  let artifact = { type:'script', name:'Untitled script', content:'' };
+  let busy = false;
+
+  const $ = id => document.getElementById(id);
+  const scroll = $('chat-scroll');
+
+  // ── Persistence ──────────────────────────────────────────────
+  function saveState(){
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({ messages, artifact }));
+    } catch(_){}
+  }
+  function loadState(){
+    try {
+      const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      if (s && Array.isArray(s.messages)) { messages = s.messages; }
+      if (s && s.artifact && typeof s.artifact.content === 'string') { artifact = s.artifact; }
+    } catch(_){}
+  }
+
+  // ── Context for the model ────────────────────────────────────
+  function gatherContext(){
+    const ctx = {};
+    try {
+      const p = JSON.parse(sessionStorage.getItem('cygenix_active_project') || 'null');
+      if (p) ctx.project = {
+        name: p.name || p.projectName, client: p.client || p.clientName,
+        source: p.source || p.sourceSystem, target: p.target || p.targetSystem
+      };
+    } catch(_){}
+    ctx.artifactType = artifact.type;
+    ctx.artifactContent = artifact.content;
+    return ctx;
+  }
+
+  // ── Markdown-lite renderer (safe: escapes everything) ────────
+  function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function inline(s){
+    return esc(s)
+      .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+      .replace(/`([^`]+)`/g,'<code class="inl">$1</code>')
+      .replace(/\[([^\]]+)\]\((https?:[^)]+|\/[^)]*)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+  // Turn a text segment (no code fences) into simple HTML paragraphs/lists.
+  function renderText(seg){
+    const out = [];
+    const lines = seg.replace(/\n{3,}/g,'\n\n').split('\n');
+    let list = null;
+    const flush = () => { if (list){ out.push('<'+list.tag+'>'+list.items.join('')+'</'+list.tag+'>'); list=null; } };
+    let para = [];
+    const flushP = () => { if (para.length){ out.push('<p>'+inline(para.join(' '))+'</p>'); para=[]; } };
+    for (const raw of lines){
+      const line = raw.replace(/\s+$/,'');
+      const ul = line.match(/^\s*[-*]\s+(.*)/);
+      const ol = line.match(/^\s*\d+\.\s+(.*)/);
+      if (ul){ flushP(); if(!list||list.tag!=='ul'){flush();list={tag:'ul',items:[]};} list.items.push('<li>'+inline(ul[1])+'</li>'); }
+      else if (ol){ flushP(); if(!list||list.tag!=='ol'){flush();list={tag:'ol',items:[]};} list.items.push('<li>'+inline(ol[1])+'</li>'); }
+      else if (!line.trim()){ flush(); flushP(); }
+      else { flush(); para.push(line); }
+    }
+    flush(); flushP();
+    return out.join('');
+  }
+  // Build a message body node, splitting out ```fenced``` code blocks.
+  function renderBody(text){
+    const wrap = document.createElement('div');
+    wrap.className = 'msg-body';
+    const re = /```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```/g;
+    let last = 0, m;
+    while ((m = re.exec(text))){
+      if (m.index > last){ const t=document.createElement('div'); t.innerHTML=renderText(text.slice(last,m.index)); wrap.appendChild(t); }
+      wrap.appendChild(codeBlock(m[1]||'text', m[2].replace(/\n$/,'')));
+      last = re.lastIndex;
+    }
+    if (last < text.length){ const t=document.createElement('div'); t.innerHTML=renderText(text.slice(last)); wrap.appendChild(t); }
+    if (!wrap.childNodes.length){ wrap.innerHTML = renderText(text); }
+    return wrap;
+  }
+  function codeBlock(lang, code){
+    const block = document.createElement('div'); block.className='code-block';
+    const head = document.createElement('div'); head.className='code-head';
+    const l = document.createElement('span'); l.className='code-lang'; l.textContent=lang;
+    const acts = document.createElement('div'); acts.className='code-acts';
+    const apply = document.createElement('button'); apply.className='code-btn primary'; apply.textContent='Apply to workspace';
+    apply.onclick = () => applyToCanvas(lang, code);
+    const cp = document.createElement('button'); cp.className='code-btn'; cp.textContent='Copy';
+    cp.onclick = () => { navigator.clipboard.writeText(code).then(()=>toast('Copied')); };
+    acts.appendChild(apply); acts.appendChild(cp);
+    head.appendChild(l); head.appendChild(acts);
+    const pre = document.createElement('pre'); pre.textContent = code;
+    block.appendChild(head); block.appendChild(pre);
+    return block;
+  }
+
+  // ── Chat rendering ───────────────────────────────────────────
+  function addMsgEl(role, text){
+    const el = document.createElement('div'); el.className = 'msg ' + (role==='user'?'user':'ai');
+    const av = document.createElement('div'); av.className='msg-av'; av.textContent = role==='user'?'You':'C';
+    el.appendChild(av); el.appendChild(renderBody(text));
+    scroll.appendChild(el); return el;
+  }
+  function renderAll(){
+    scroll.querySelectorAll('.msg').forEach(n=>n.remove());
+    if (messages.length){ const w=$('welcome'); if(w) w.style.display='none'; }
+    messages.forEach(m => addMsgEl(m.role, m.content));
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  // ── Send ─────────────────────────────────────────────────────
+  async function send(){
+    const input = $('input');
+    const text = input.value.trim();
+    if (!text || busy) return;
+    const w=$('welcome'); if(w) w.style.display='none';
+    messages.push({ role:'user', content:text });
+    addMsgEl('user', text);
+    input.value=''; autosize(input);
+    scroll.scrollTop = scroll.scrollHeight;
+    saveState();
+
+    busy = true; $('send').disabled = true;
+    const typing = document.createElement('div'); typing.className='msg ai';
+    typing.innerHTML = '<div class="msg-av">C</div><div class="msg-body"><div class="typing"><span></span><span></span><span></span></div></div>';
+    scroll.appendChild(typing); scroll.scrollTop = scroll.scrollHeight;
+
+    try {
+      const r = await fetch('/api/coworker', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ messages, context: gatherContext() })
+      });
+      const data = await r.json();
+      typing.remove();
+      if (!r.ok || data.error){
+        const em = 'Sorry — I couldn\'t reach the assistant.\n\n`' + (data.error||('HTTP '+r.status)) + '`\n\nIf this persists, check the ANTHROPIC_API_KEY is set (see **Diagnostics**).';
+        messages.push({ role:'assistant', content:em }); addMsgEl('assistant', em);
+      } else {
+        messages.push({ role:'assistant', content:data.reply }); addMsgEl('assistant', data.reply);
+      }
+    } catch(err){
+      typing.remove();
+      const em = 'Network error: `' + err.message + '`';
+      messages.push({ role:'assistant', content:em }); addMsgEl('assistant', em);
+    } finally {
+      busy=false; $('send').disabled=false; saveState();
+      scroll.scrollTop = scroll.scrollHeight;
+    }
+  }
+  window.send = send;
+
+  // ── Quick-start seeds ────────────────────────────────────────
+  const SEEDS = {
+    script:  'Help me develop a migration script. I want to ',
+    document:'Help me draft a document. It should cover ',
+    convert: 'I need to customise a conversion. The mapping/transformation I want is: '
+  };
+  window.seed = function(k){ const i=$('input'); i.value = SEEDS[k]||''; i.focus(); autosize(i); };
+
+  // ── Canvas / artifact ────────────────────────────────────────
+  const canvas=$('canvas'), artEl=$('art'), nameEl=$('art-name');
+  function setType(t, keep){
+    artifact.type = t;
+    canvas.classList.toggle('script', t==='script');
+    canvas.classList.toggle('document', t==='document');
+    $('tab-script').classList.toggle('on', t==='script');
+    $('tab-document').classList.toggle('on', t==='document');
+    artEl.placeholder = t==='script'
+      ? 'Your working script appears here…'
+      : 'Your working document appears here…';
+    if (!keep && !artifact.content){
+      nameEl.value = t==='script' ? 'Untitled script' : 'Untitled document';
+    }
+    updateMeta(); saveState();
+  }
+  window.setType = t => setType(t);
+  function updateMeta(){
+    const lines = artifact.content ? artifact.content.split('\n').length : 0;
+    $('art-meta').textContent = (artifact.type==='script'?'SQL · ':'Document · ') + lines + ' line' + (lines===1?'':'s');
+  }
+  function applyToCanvas(lang, code){
+    const isDoc = /^(md|markdown|text|txt|doc)$/i.test(lang);
+    setType(isDoc ? 'document' : 'script', true);
+    artifact.content = code;
+    artEl.value = code;
+    if (nameEl.value.startsWith('Untitled')) nameEl.value = (isDoc?'Document':'Script') + ' — ' + new Date().toLocaleDateString();
+    updateMeta(); saveState(); toast('Applied to workspace');
+    artEl.scrollTop = 0;
+  }
+  window.applyToCanvas = applyToCanvas;
+
+  artEl.addEventListener('input', ()=>{ artifact.content = artEl.value; updateMeta(); saveState(); });
+  nameEl.addEventListener('input', ()=>{ artifact.name = nameEl.value; saveState(); });
+
+  window.clearArtifact = function(){ artifact.content=''; artEl.value=''; updateMeta(); saveState(); };
+  window.copyArtifact = function(){ if(!artifact.content){toast('Nothing to copy');return;} navigator.clipboard.writeText(artifact.content).then(()=>toast('Copied to clipboard')); };
+  window.downloadArtifact = function(){
+    if(!artifact.content){toast('Nothing to download');return;}
+    const ext = artifact.type==='script' ? 'sql' : 'md';
+    const safe = (nameEl.value||'artifact').replace(/[^a-z0-9._-]+/gi,'_');
+    const blob = new Blob([artifact.content], {type:'text/plain'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=safe+'.'+ext; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  };
+
+  // ── Library (saved artifacts) ────────────────────────────────
+  function readLib(){ try{ return JSON.parse(localStorage.getItem(LIB_KEY)||'[]'); }catch(_){ return []; } }
+  function writeLib(a){ try{ localStorage.setItem(LIB_KEY, JSON.stringify(a.slice(0,200))); }catch(_){} }
+  window.saveArtifact = function(){
+    if(!artifact.content.trim()){ toast('Nothing to save yet'); return; }
+    const lib = readLib();
+    const id = 'a'+Date.now();
+    lib.unshift({ id, type:artifact.type, name:nameEl.value||('Untitled '+artifact.type), content:artifact.content, ts:Date.now() });
+    writeLib(lib); toast('Saved to Library');
+  };
+  window.openLibrary = function(){
+    const lib = readLib(); const list=$('lib-list'); list.innerHTML='';
+    if(!lib.length){ list.innerHTML='<div class="lib-empty">No saved items yet. Use 💾 Save on a script or document.</div>'; }
+    else lib.forEach(it=>{
+      const row=document.createElement('div'); row.className='lib-item';
+      row.innerHTML = '<span class="li-t">'+(it.type==='script'?'SQL':'DOC')+'</span><span class="li-n"></span><button class="li-x" title="Delete">🗑</button>';
+      row.querySelector('.li-n').textContent = it.name;
+      row.querySelector('.li-n').onclick = ()=>{ loadArtifact(it); closeLibrary(); };
+      row.querySelector('.li-t').onclick = ()=>{ loadArtifact(it); closeLibrary(); };
+      row.querySelector('.li-x').onclick = (e)=>{ e.stopPropagation(); writeLib(readLib().filter(x=>x.id!==it.id)); openLibrary(); };
+      list.appendChild(row);
+    });
+    $('lib-modal').classList.add('open');
+  };
+  window.closeLibrary = ()=> $('lib-modal').classList.remove('open');
+  function loadArtifact(it){
+    setType(it.type, true); artifact.content=it.content; artifact.name=it.name;
+    artEl.value=it.content; nameEl.value=it.name; updateMeta(); saveState(); toast('Loaded “'+it.name+'”');
+  }
+
+  // ── New chat ─────────────────────────────────────────────────
+  window.newChat = function(){
+    if (messages.length && !confirm('Start a new chat? The workspace on the right is kept; the conversation is cleared.')) return;
+    messages=[]; renderAll(); const w=$('welcome'); if(w) w.style.display='';
+    saveState();
+  };
+
+  // ── Composer behaviour ───────────────────────────────────────
+  function autosize(t){ t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,160)+'px'; }
+  const input=$('input');
+  input.addEventListener('input', ()=>autosize(input));
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+
+  // ── Context chip ─────────────────────────────────────────────
+  (function chip(){
+    try {
+      const p = JSON.parse(sessionStorage.getItem('cygenix_active_project')||'null');
+      const name = p && (p.name||p.projectName);
+      if (name){ const c=$('ctx-chip'); c.style.display=''; c.textContent='● '+name; }
+    } catch(_){}
+  })();
+
+  // ── Toast ────────────────────────────────────────────────────
+  let toT;
+  function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toT); toT=setTimeout(()=>t.classList.remove('show'),1800); }
+  window.toast = toast;
+
+  // ── Boot ─────────────────────────────────────────────────────
+  loadState();
+  setType(artifact.type, true);
+  nameEl.value = artifact.name || (artifact.type==='script'?'Untitled script':'Untitled document');
+  artEl.value = artifact.content || '';
+  updateMeta();
+  renderAll();
+  autosize(input);
+})();
+</script>
+</body>
+</html>

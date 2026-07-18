@@ -166,6 +166,10 @@
       <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6l3 2-3 2M9 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       SQL Editor
     </a>
+    <a class="${isActive('coworker.html')}" href="/coworker.html">
+      <svg viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-3 2.5V10.5H2.5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 6.4h5M5.5 8.2h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      Co-Worker
+    </a>
   </div>
 
   <!-- Analysis sub-menu -->
