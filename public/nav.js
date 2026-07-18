@@ -10,37 +10,37 @@
   .cyg-nav-overlay.open{display:block}
   .cyg-sidebar{
     position:fixed;top:0;left:0;bottom:0;width:220px;
-    background:#13161d;border-right:0.5px solid rgba(255,255,255,0.07);
+    background:var(--bg2);border-right:0.5px solid var(--border);
     z-index:199;display:flex;flex-direction:column;overflow:hidden;
     transition:transform 0.25s ease;
-    font-family:'Syne',system-ui,sans-serif;
+    font-family:var(--serif);
     -webkit-font-smoothing:antialiased;
   }
   .cyg-sidebar.hidden{transform:translateX(-220px)}
   body.nav-open .cyg-sidebar{transform:translateX(0)}
   .cyg-sidebar-inner{flex:1;overflow-y:auto;padding:0.75rem 0 1rem;overscroll-behavior:contain}
   .cyg-sidebar-inner::-webkit-scrollbar{width:3px}
-  .cyg-sidebar-inner::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:2px}
-  .cyg-nav-logo{padding:0.75rem 1.25rem 0.5rem;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid rgba(255,255,255,0.07);flex-shrink:0}
-  .cyg-nav-logo a{font-size:1.05rem;font-weight:700;color:#e8eaf0;text-decoration:none;letter-spacing:-0.02em}
-  .cyg-nav-logo a span{color:#3d7eff}
+  .cyg-sidebar-inner::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+  .cyg-nav-logo{padding:0.75rem 1.25rem 0.5rem;display:flex;align-items:center;justify-content:space-between;border-bottom:0.5px solid var(--border);flex-shrink:0}
+  .cyg-nav-logo a{font-size:1.05rem;font-weight:700;color:var(--text);text-decoration:none;letter-spacing:-0.02em}
+  .cyg-nav-logo a span{color:var(--accent)}
   .cyg-nav-section{margin-bottom:0.25rem}
-  .cyg-nav-label{font-size:9px;font-weight:600;color:#555a6a;text-transform:uppercase;letter-spacing:0.1em;padding:0.75rem 1.25rem 0.25rem;display:block}
-  .cyg-nav-item{display:flex;align-items:center;gap:9px;padding:0.42rem 1.25rem;font-size:12.5px;color:#8b90a0;cursor:pointer;transition:all 0.12s;border-left:2px solid transparent;text-decoration:none;white-space:nowrap;overflow:hidden}
-  .cyg-nav-item:hover{color:#e8eaf0;background:rgba(255,255,255,0.03)}
-  .cyg-nav-item.active{color:#3d7eff;background:rgba(61,126,255,0.08);border-left-color:#3d7eff}
+  .cyg-nav-label{font-size:9px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;padding:0.75rem 1.25rem 0.25rem;display:block}
+  .cyg-nav-item{display:flex;align-items:center;gap:9px;padding:0.42rem 1.25rem;font-size:12.5px;color:var(--text2);cursor:pointer;transition:all 0.12s;border-left:2px solid transparent;text-decoration:none;white-space:nowrap;overflow:hidden}
+  .cyg-nav-item:hover{color:var(--text);background:var(--hover-tint)}
+  .cyg-nav-item.active{color:var(--accent);background:var(--accent-glow);border-left-color:var(--accent)}
   .cyg-nav-item svg{width:13px;height:13px;opacity:0.65;flex-shrink:0}
   .cyg-nav-item.active svg{opacity:1}
-  .cyg-nav-count{margin-left:auto;background:#1a1e28;color:#555a6a;font-size:9px;padding:1px 5px;border-radius:100px;font-family:'IBM Plex Mono',monospace}
-  .cyg-sub-label{font-size:9px;font-weight:600;color:#555a6a;padding:0.5rem 1.25rem 0.2rem 1.1rem;text-transform:uppercase;letter-spacing:0.08em;display:flex;align-items:center;gap:0.35rem;cursor:pointer;user-select:none;transition:color 0.12s}
-  .cyg-sub-label:hover{color:#8b90a0}
-  .cyg-sub-label .cyg-chev{font-size:7px;transition:transform 0.2s;margin-left:auto;color:#555a6a}
+  .cyg-nav-count{margin-left:auto;background:var(--bg3);color:var(--text3);font-size:9px;padding:1px 5px;border-radius:100px;font-family:'IBM Plex Mono',monospace}
+  .cyg-sub-label{font-size:9px;font-weight:600;color:var(--text3);padding:0.5rem 1.25rem 0.2rem 1.1rem;text-transform:uppercase;letter-spacing:0.08em;display:flex;align-items:center;gap:0.35rem;cursor:pointer;user-select:none;transition:color 0.12s}
+  .cyg-sub-label:hover{color:var(--text2)}
+  .cyg-sub-label .cyg-chev{font-size:7px;transition:transform 0.2s;margin-left:auto;color:var(--text3)}
   .cyg-sub-label.open .cyg-chev{transform:rotate(90deg)}
   .cyg-sub{overflow:hidden;transition:max-height 0.22s ease}
   .cyg-sub.collapsed{max-height:0!important}
   .cyg-sub .cyg-nav-item{padding-left:2.1rem;font-size:12px}
-  .cyg-sidebar-footer{padding:0.75rem 0;border-top:0.5px solid rgba(255,255,255,0.07);flex-shrink:0}
-  .cyg-conn-bar{padding:0.4rem 1rem;display:flex;align-items:center;gap:0.4rem;font-size:10px;font-family:'IBM Plex Mono',monospace;color:#555a6a;flex-wrap:wrap;row-gap:2px}
+  .cyg-sidebar-footer{padding:0.75rem 0;border-top:0.5px solid var(--border);flex-shrink:0}
+  .cyg-conn-bar{padding:0.4rem 1rem;display:flex;align-items:center;gap:0.4rem;font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--text3);flex-wrap:wrap;row-gap:2px}
   .cyg-conn-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;background:#f04646}
   /* Push page content right of nav */
   body.cyg-nav-active{padding-left:220px}
@@ -120,19 +120,19 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${configCollapsed}" id="cyg-sub-configure" style="max-height:${configOpen?'200px':'0'}">
-    <a class="${isActive('dashboard.html#project-settings')||page==='dashboard.html'?'cyg-nav-item':'cyg-nav-item'}" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','project-settings')" style="color:#f59e0b">
+    <a class="${isActive('dashboard.html#project-settings')||page==='dashboard.html'?'cyg-nav-item':'cyg-nav-item'}" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','project-settings')">
       <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 6h6M5 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Project Settings
     </a>
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="color:#22c97a">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="4" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="8" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Connections ${connDot}
     </a>
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','backup')" style="color:#a78bfa">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','backup')">
       <svg viewBox="0 0 16 16" fill="none"><path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="11" width="12" height="3" rx="1" stroke="currentColor" stroke-width="1.1"/></svg>
       Backup &amp; Restore
     </a>
-    <a class="${isActive('performance.html')}" href="/performance.html" style="color:#2dd4bf">
+    <a class="${isActive('performance.html')}" href="/performance.html">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 12 L5 7 L8 9 L11 4 L14 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="14" cy="6" r="1.5" fill="currentColor"/></svg>
       Performance
     </a>
@@ -145,7 +145,7 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${planCollapsed}" id="cyg-sub-plan" style="max-height:${planOpen?'120px':'0'}">
-    <a class="${isActive('project-plan.html')}" href="/project-plan.html" style="color:#22c97a">
+    <a class="${isActive('project-plan.html')}" href="/project-plan.html">
       <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M11 8l1.5 1.5L15 7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Project Planner
     </a>
@@ -158,11 +158,11 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${mappingCollapsed}" id="cyg-sub-mapping" style="max-height:${mappingOpen?'200px':'0'}">
-    <a class="${isActive('object_mapping.html')}" href="/object_mapping.html" style="color:#2dd4bf">
+    <a class="${isActive('object_mapping.html')}" href="/object_mapping.html">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 4h5M2 8h5M2 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M9 4h5M9 8h5M9 12h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M7 4l2 4-2 4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Object Mapping
     </a>
-    <a class="${isActive('sql-editor.html')}" href="/sql-editor.html" style="color:#2dd4bf">
+    <a class="${isActive('sql-editor.html')}" href="/sql-editor.html">
       <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6l3 2-3 2M9 10h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       SQL Editor
     </a>
@@ -175,18 +175,18 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${analysisCollapsed}" id="cyg-sub-analysis" style="max-height:${analysisOpen?'160px':'0'}">
-    <a class="${isActive('insights.html')}" href="/insights.html" style="color:#a78bfa">
+    <a class="${isActive('insights.html')}" href="/insights.html">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M3 14c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Data Insights
     </a>
-    <a class="${isActive('validation.html')}" href="/validation.html" style="color:#f59e0b">
+    <a class="${isActive('validation.html')}" href="/validation.html">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Validation
     </a>
   </div>
 
-  <a class="${isActive('project-builder.html')}" href="/project-builder.html" style="color:#a78bfa">
-    <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="#13161d" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <a class="${isActive('project-builder.html')}" href="/project-builder.html">
+    <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M4 6h8M4 9h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="12" cy="10" r="2.5" fill="var(--bg2)" stroke="currentColor" stroke-width="1.1"/><path d="M11.3 10l.5.5.9-.9" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>
     Execute Jobs
   </a>
   <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','jobs')">
@@ -210,11 +210,11 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${reportsCollapsed}" id="cyg-sub-reports" style="max-height:${reportsOpen?'160px':'0'}">
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','reports')" style="color:#a78bfa">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','reports')">
       <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1" width="12" height="14" rx="2" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Conversion Report
     </a>
-    <a class="${isActive('issues.html')}" href="/issues.html" style="color:#f04646">
+    <a class="${isActive('issues.html')}" href="/issues.html">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v4M8 11v.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       Issue Management
     </a>
@@ -233,23 +233,23 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${moreCollapsed}" id="cyg-sub-more" style="max-height:${moreOpen?'240px':'0'}">
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','audit')" style="color:#8b90a0">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','audit')">
       <svg viewBox="0 0 16 16" fill="none"><rect x="2" y="1.5" width="12" height="13" rx="1.5" stroke="currentColor" stroke-width="1.2"/><path d="M5 5.5h6M5 8h6M5 10.5h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Audit Log
     </a>
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','supported')" style="color:#8b90a0">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','supported')">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       Supported Formats
     </a>
-    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','diagnostics')" style="color:#8b90a0">
+    <a class="cyg-nav-item" href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','diagnostics')">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Diagnostics
     </a>
-    <a class="${isActive('help.html')}" href="/help.html" target="_blank" style="color:#3d7eff">
+    <a class="${isActive('help.html')}" href="/help.html" target="_blank">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/></svg>
       Help &amp; Guide
     </a>
-    <a class="${isActive('demo.html')}" href="/demo.html" target="_blank" style="color:#f59e0b">
+    <a class="${isActive('demo.html')}" href="/demo.html" target="_blank">
       <svg viewBox="0 0 16 16" fill="none"><polygon points="5,3 13,8 5,13" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" fill="none"/></svg>
       Demo Reel
     </a>

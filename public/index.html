@@ -34,15 +34,15 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   /* Oracle Redwood — warm, light, enterprise. See cygenix-theme.css. */
-  --bg:#F6F4F1;--bg2:#FFFFFF;--bg3:#F1EEEA;--bg4:#E7E2DC;
-  --border:rgba(60,50,40,0.12);--border2:rgba(60,50,40,0.20);
-  --text:#1F1D1B;--text2:#5A544E;--text3:#8C857D;
+  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
+  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
+  --text:#1A1D21;--text2:#565B63;--text3:#868C94;
   --accent:#C74634;--accent2:#A5372A;--glow:rgba(199,70,52,0.10);
   --green:#3F7D4E;--green-g:rgba(63,125,78,0.12);
   --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
   --red:#C0392B;--red-g:rgba(192,57,43,0.12);
   --teal:#0F6E6C;--purple:#6B4E8E;
-  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
   --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
 }
@@ -183,7 +183,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .feature-points{list-style:none;display:flex;flex-direction:column;gap:0.6rem}
 .feature-points li{font-size:13px;color:var(--text2);display:flex;align-items:flex-start;gap:0.6rem;line-height:1.6}
 .feature-points li::before{content:'→';color:var(--accent);flex-shrink:0;font-family:var(--mono);margin-top:1px}
-.mock{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(60,50,40,0.14);position:relative}
+.mock{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(22,26,32,0.14);position:relative}
 .mock-topbar{background:var(--bg3);border-bottom:0.5px solid var(--border);padding:0.6rem 1rem;display:flex;align-items:center;gap:0.6rem}
 .mock-dot{width:8px;height:8px;border-radius:50%}
 .mock-body{padding:1rem;font-size:11px}
@@ -251,9 +251,9 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 
 /* About modal — opens from footer link. Same visual language as the rest
    of the page (border, glow, mono accents). Click outside or Esc closes. */
-.about-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem;background:rgba(35,28,22,0.42);animation:aboutFade 0.25s ease both}
+.about-modal{position:fixed;inset:0;z-index:200;display:none;align-items:center;justify-content:center;padding:1.5rem;background:rgba(15,20,28,0.42);animation:aboutFade 0.25s ease both}
 .about-modal.open{display:flex}
-.about-card{position:relative;max-width:600px;width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:2.5rem 2.25rem 2rem;box-shadow:0 12px 40px rgba(60,50,40,0.16);max-height:85vh;overflow-y:auto;animation:aboutRise 0.3s ease both}
+.about-card{position:relative;max-width:600px;width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:2.5rem 2.25rem 2rem;box-shadow:0 12px 40px rgba(22,26,32,0.16);max-height:85vh;overflow-y:auto;animation:aboutRise 0.3s ease both}
 .about-card::before{content:'';position:absolute;inset:0;background:none;pointer-events:none;border-radius:14px}
 .about-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:0.05em;color:var(--accent);margin-bottom:0.75rem;text-transform:uppercase;position:relative}
 .about-name{font-size:1.6rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:1.25rem;position:relative}
@@ -394,7 +394,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
      the ✕ button. Contact details and pricing intentionally simple — no form
      submission; we direct users to email/phone so inquiries route straight to
      a human without needing a form-handler backend. -->
-<div id="contact-modal" style="display:none;position:fixed;inset:0;background:rgba(35,28,22,0.42);z-index:200;align-items:center;justify-content:center;padding:2rem"
+<div id="contact-modal" style="display:none;position:fixed;inset:0;background:rgba(15,20,28,0.42);z-index:200;align-items:center;justify-content:center;padding:2rem"
      onclick="if(event.target===this)closeContactModal()">
   <div style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;width:min(520px,100%);padding:2.25rem 2rem;position:relative">
     <button onclick="closeContactModal()" aria-label="Close"
@@ -1110,7 +1110,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
           <div style="flex:1;text-align:center;font-family:var(--mono);font-size:9px;color:var(--text3)">Reporting · Executive Project Summary · auto-generated</div>
           <div style="font-size:9px;background:var(--glow);color:var(--accent);padding:2px 8px;border-radius:100px;font-family:var(--mono)">✨ Regenerate</div>
         </div>
-        <div class="mock-body" style="padding:1.1rem 1.25rem;background:#fafafa;color:#1a1a1a;font-family:'Bricolage Grotesque',sans-serif">
+        <div class="mock-body" style="padding:1.1rem 1.25rem;background:#fafafa;color:#1a1a1a;font-family:'Helvetica Neue',Arial,sans-serif">
           <div style="font-size:8px;color:#6b7280;letter-spacing:0.1em;font-family:var(--mono);text-transform:uppercase;margin-bottom:4px">Project Status Report · 2 May 2026</div>
           <div style="font-size:15px;font-weight:700;color:#0f172a;letter-spacing:-0.02em;margin-bottom:0.5rem">ERP Data Migration — Phase 3 of 4</div>
           <div style="display:flex;gap:0.4rem;margin-bottom:0.7rem">

@@ -18,15 +18,15 @@
    palette, this page should follow without an edit. ── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F6F4F1;--bg2:#FFFFFF;--bg3:#F1EEEA;--bg4:#E7E2DC;
-  --border:rgba(60,50,40,0.12);--border2:rgba(60,50,40,0.20);
-  --text:#1F1D1B;--text2:#5A544E;--text3:#8C857D;
+  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
+  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
+  --text:#1A1D21;--text2:#565B63;--text3:#868C94;
   --accent:#C74634;--accent2:#A5372A;--glow:rgba(199,70,52,0.10);
   --green:#3F7D4E;--green-g:rgba(63,125,78,0.12);
   --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
   --red:#C0392B;--red-g:rgba(192,57,43,0.12);
   --teal:#0F6E6C;--purple:#6B4E8E;
-  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
   --mono:'IBM Plex Mono',monospace;
 }
 html{scroll-behavior:smooth}
@@ -34,7 +34,7 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);overflow-x:
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(199,70,52,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(199,70,52,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
 
 /* Top nav — minimal version of the public nav: just logo + sign-out. */
-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:rgba(8,11,18,0.85);border-bottom:0.5px solid var(--border)}
+nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:var(--bg2);border-bottom:0.5px solid var(--border)}
 .nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
 .nav-logo span{color:var(--accent)}
 .nav-signout{font-family:var(--mono);font-size:11px;color:var(--text2);text-decoration:none;letter-spacing:0.05em;text-transform:uppercase;padding:6px 12px;border:0.5px solid var(--border2);border-radius:6px;transition:all 0.2s;cursor:pointer;background:transparent}

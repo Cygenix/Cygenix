@@ -593,7 +593,7 @@
       const checked = SM.selectedLoginIds.has(l.principal_id) ? 'checked' : '';
       const typeBadge =
         l.kind === 'sql'      ? '<span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">SQL</span>' :
-        l.kind === 'win'      ? '<span style="background:rgba(45,212,191,0.15);color:#2dd4bf;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">WIN</span>' :
+        l.kind === 'win'      ? '<span style="background:rgba(45,212,191,0.15);color:var(--teal);padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">WIN</span>' :
         l.kind === 'wingroup' ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">WIN GRP</span>' :
                                 '<span style="color:var(--text3);font-size:11px">' + escHtml(l.type_desc) + '</span>';
       const stateBits = [];
@@ -1688,7 +1688,7 @@
       const checked = SM.selectedLinkedServerNames.has(ls.name) ? 'checked' : '';
       const nameKey = escHtml(ls.name).replace(/'/g, '&#39;');
       const authBadge =
-        ls.credMode === 'self'    ? '<span style="background:rgba(45,212,191,0.15);color:#2dd4bf;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">PASS-THROUGH</span>' :
+        ls.credMode === 'self'    ? '<span style="background:rgba(45,212,191,0.15);color:var(--teal);padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">PASS-THROUGH</span>' :
         ls.credMode === 'stored'  ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">STORED LOGIN</span>' :
         ls.credMode === 'not-allowed' ? '<span style="background:rgba(248,113,113,0.15);color:#f87171;padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:10px">UNMAPPED</span>' :
                                     '<span style="color:var(--text3);font-size:11px">NO DEFAULT</span>';
@@ -2639,7 +2639,7 @@
     const symbol = r.status === 'created' ? '✓' : r.status === 'skipped' ? '–' : '✕';
     const catBadge =
       r.category === 'login'          ? '<span style="background:rgba(79,142,255,0.15);color:#6ea4ff;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">login</span>' :
-      r.category === 'operator'       ? '<span style="background:rgba(45,212,191,0.15);color:#2dd4bf;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">op</span>' :
+      r.category === 'operator'       ? '<span style="background:rgba(45,212,191,0.15);color:var(--teal);padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">op</span>' :
       r.category === 'category'       ? '<span style="background:rgba(167,139,250,0.15);color:#a78bfa;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">cat</span>' :
       r.category === 'job'            ? '<span style="background:rgba(245,158,11,0.15);color:#f59e0b;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">job</span>' :
       r.category === 'ssis-bootstrap' ? '<span style="background:rgba(236,72,153,0.15);color:#ec4899;padding:1px 6px;border-radius:3px;font-size:10px;text-transform:uppercase">boot</span>' :

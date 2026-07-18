@@ -121,44 +121,46 @@ html[data-theme="financial"] .rc-chips-menu{
 
 
 /* ═══════════════════════════════════════════════════════════════════════
- * Redwood — Oracle-inspired enterprise palette (the site's default look)
+ * Oracle — clean enterprise palette modelled on oracle.com / Redwood.
  * ───────────────────────────────────────────────────────────────────────
- * Warm off-white workspace, white panels, a single restrained Oracle
- * "Redwood" red-clay accent (#C74634), warm neutral greys and a dark
- * masthead. No gradients, no glow, no animation — the goal is a calm,
- * corporate, trustworthy feel in the spirit of Oracle Cloud / Redwood.
+ * Cool white surfaces, a light grey workspace, a single Oracle red accent
+ * (#C74634), a WHITE masthead like oracle.com, clean neutral sans-serif
+ * type, softly-rounded white cards with a subtle shadow. No gradients, no
+ * glow, no animation, no rainbow icons — sleek, quiet, corporate.
  *
  * IMPLEMENTATION NOTE — why the doubled attribute selector:
  *   Each app page ships its own inline  html[data-theme="light"]{…}
  *   palette in a <style> block that loads AFTER this stylesheet. At equal
  *   specificity the inline block would win on source order. Repeating the
  *   attribute — [data-theme="light"][data-theme="light"] — raises the
- *   specificity to (0,2,1), just above the inline (0,1,1), so these
- *   Redwood values win everywhere WITHOUT editing 22 pages' palettes.
- *   Every existing light-mode structural rule (.topbar, .form-input,
- *   table headers, modals …) already keys off  data-theme="light"  and
- *   simply consumes these re-tuned variables.
+ *   specificity to (0,2,1), just above the inline (0,1,1), so these values
+ *   win everywhere WITHOUT editing 22 pages' palettes. Every existing
+ *   light-mode structural rule (.topbar, .form-input, table headers,
+ *   modals …) already keys off  data-theme="light"  and simply consumes
+ *   these re-tuned variables.
  *
  * The default theme was switched from 'dark' to 'light' in each page's
- * pre-paint script, so this Redwood light palette is what users see first.
+ * pre-paint script (with a one-time migration of the old 'dark' default),
+ * so this Oracle light palette is what users see first.
  * ═══════════════════════════════════════════════════════════════════════ */
 html[data-theme="light"][data-theme="light"]{
-  /* Workspace surfaces — warm, paper-like neutrals (never pure cold grey) */
-  --bg:#F6F4F1;        /* main workspace — warm off-white */
+  /* Surfaces — cool, clean, oracle.com-style. Light grey workspace, white
+   * cards. Not warm/cream — Oracle reads cool and neutral. */
+  --bg:#F3F4F5;        /* main workspace — cool light grey */
   --bg2:#FFFFFF;       /* cards, panels, sidebar */
-  --bg3:#F1EEEA;       /* sub-panel / hover surface */
-  --bg4:#E7E2DC;       /* inset / pressed / chips */
+  --bg3:#ECEEF0;       /* sub-panel / hover surface */
+  --bg4:#E1E4E7;       /* inset / pressed / chips */
 
-  /* Borders — warm taupe hairlines, flat (no glow rings) */
-  --border:rgba(60,50,40,0.12);
-  --border2:rgba(60,50,40,0.20);
+  /* Borders — cool grey hairlines, flat */
+  --border:rgba(22,26,32,0.10);
+  --border2:rgba(22,26,32,0.16);
 
-  /* Text — warm near-black charcoal, Oracle Redwood neutral ramp */
-  --text:#1F1D1B;
-  --text2:#5A544E;
-  --text3:#8C857D;
+  /* Text — cool near-black neutral ramp */
+  --text:#1A1D21;
+  --text2:#565B63;
+  --text3:#868C94;
 
-  /* Accent — Oracle Redwood red-clay. One accent, used sparingly. */
+  /* Accent — Oracle red. One accent, used sparingly. */
   --accent:#C74634;
   --accent2:#A5372A;                         /* darker — hover / pressed */
   --accent-glow:rgba(199,70,52,0.14);        /* soft focus ring only */
@@ -170,29 +172,57 @@ html[data-theme="light"][data-theme="light"]{
   --purple:#6B4E8E;  --purple-bg:rgba(107,78,142,0.10);
   --teal:#0F6E6C;    --teal-bg:rgba(15,110,108,0.10);
 
-  /* Typography — corporate system stacks. Serif for display headings
-   * (editorial, Oracle-like), clean sans elsewhere. Drops the quirky
-   * 'Syne' display face that read as startup/AI. */
-  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;
+  /* Typography — clean neutral sans everywhere (Oracle is all-sans, not
+   * serif). --serif is remapped to the sans stack so every heading that
+   * referenced it now renders in the same clean face. */
+  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
+  --sans:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
 
-  /* Masthead — dark warm brown, Redwood-style, with light text */
-  --topbar-bg:#2B2724;
-  --topbar-text:#F5F2EE;
+  /* Masthead — WHITE, like oracle.com's header, with dark text. */
+  --topbar-bg:#FFFFFF;
+  --topbar-text:#1A1D21;
 
-  /* Tints, scrims, shadows — warm, soft, flat (short throw, low alpha) */
-  --hover-tint:rgba(60,50,40,0.04);
-  --code-tint:rgba(60,50,40,0.06);
-  --modal-scrim:rgba(35,28,22,0.42);
-  --shadow-strong:0 12px 40px rgba(60,50,40,0.16);
-  --shadow-soft:0 2px 10px rgba(60,50,40,0.08);
+  /* Softer, rounder cards — Oracle uses ~10-16px radii + a light shadow. */
+  --r:10px;
+  --r-lg:16px;
+
+  /* Tints, scrims, shadows — cool, soft, subtle (short throw, low alpha) */
+  --hover-tint:rgba(22,26,32,0.04);
+  --code-tint:rgba(22,26,32,0.06);
+  --modal-scrim:rgba(15,20,28,0.42);
+  --shadow-strong:0 10px 34px rgba(22,26,32,0.14);
+  --shadow-soft:0 1px 3px rgba(22,26,32,0.09),0 1px 2px rgba(22,26,32,0.06);
 }
 
-/* Logo accent mark stays Redwood red on the dark masthead */
+/* ── White masthead overrides ──────────────────────────────────────────
+ * The base light-mode rules assume a DARK topbar and hard-code white text
+ * (rgba(255,255,255,…)) for the console label, back-link and avatar. On the
+ * new white masthead those would be invisible, so re-point them to the dark
+ * neutral ramp. */
+html[data-theme="light"][data-theme="light"] .topbar{ border-bottom-color:var(--border); }
+html[data-theme="light"][data-theme="light"] .topbar .logo{ color:var(--topbar-text); }
 html[data-theme="light"][data-theme="light"] .topbar .logo span{ color:var(--accent); }
+html[data-theme="light"][data-theme="light"] .topbar .logo-console{ color:var(--text3); }
+html[data-theme="light"][data-theme="light"] .topbar .back-link{ color:var(--text2); }
+html[data-theme="light"][data-theme="light"] .topbar .back-link:hover{ color:var(--text); }
+html[data-theme="light"][data-theme="light"] .topbar .avatar{
+  background:var(--bg3); border-color:var(--border2); color:var(--text);
+}
 
-/* Focus ring — warm red halo on the darker accent border */
+/* Focus ring — red halo on the darker accent border */
 html[data-theme="light"][data-theme="light"] .form-input:focus{
   border-color:var(--accent);
   box-shadow:0 0 0 3px var(--accent-glow);
+}
+
+/* Card polish — give the app's panels/cards Oracle's soft lift + round.
+ * These class names cover the common card surfaces across the app. */
+html[data-theme="light"][data-theme="light"] .card,
+html[data-theme="light"][data-theme="light"] .panel,
+html[data-theme="light"][data-theme="light"] .stat-card,
+html[data-theme="light"][data-theme="light"] .dash-card,
+html[data-theme="light"][data-theme="light"] .kpi-card,
+html[data-theme="light"][data-theme="light"] .proj-card{
+  box-shadow:var(--shadow-soft);
 }

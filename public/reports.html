@@ -22,16 +22,16 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F6F4F1;--bg2:#FFFFFF;--bg3:#F1EEEA;--bg4:#E7E2DC;
-  --border:rgba(60,50,40,0.12);--border2:rgba(60,50,40,0.20);
-  --text:#1F1D1B;--text2:#5A544E;--text3:#8C857D;
+  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
+  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
+  --text:#1A1D21;--text2:#565B63;--text3:#868C94;
   --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
   --green:#3F7D4E;--green-bg:rgba(63,125,78,0.10);
   --amber:#B26A00;--amber-bg:rgba(178,106,0,0.10);
   --red:#C0392B;--red-bg:rgba(192,57,43,0.10);
   --teal:#0F6E6C;--teal-bg:rgba(23,130,124,0.1);
   --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:Georgia,'Iowan Old Style','Times New Roman',serif;--mono:'IBM Plex Mono',monospace;
+  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
@@ -185,7 +185,7 @@ body.cyg-collapsed{padding-left:54px}
 .ds-chev.open{transform:rotate(90deg)}
 
 /* Visual-builder rows (tables / joins / selects / group / where) */
-.ds-row{display:grid;grid-template-columns:auto 1fr auto;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:0.5px dashed rgba(60,50,40,0.04)}
+.ds-row{display:grid;grid-template-columns:auto 1fr auto;gap:0.5rem;align-items:center;padding:0.4rem 0;border-bottom:0.5px dashed rgba(22,26,32,0.04)}
 .ds-row:last-child{border-bottom:none}
 .ds-row-label{font-size:10px;color:var(--text3);font-family:var(--mono);min-width:80px}
 .ds-row-fields{display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;flex:1;min-width:0}
@@ -211,7 +211,7 @@ body.cyg-collapsed{padding-left:54px}
   cursor:pointer;transition:all 0.12s;
 }
 .ds-kind-btn:last-child{border-right:none}
-.ds-kind-btn:hover{color:var(--text2);background:rgba(60,50,40,0.03)}
+.ds-kind-btn:hover{color:var(--text2);background:rgba(22,26,32,0.03)}
 .ds-kind-btn.active{
   color:var(--accent);
   background:rgba(199,70,52,0.10);
@@ -5288,8 +5288,8 @@ function pvChartJsConfig(tree){
         tooltip: { backgroundColor: '#13161d', titleColor: '#e8eaf0', bodyColor: '#e8eaf0', borderColor: '#8b90a0', borderWidth: 1 }
       },
       scales: tree.variant === 'pie' ? {} : {
-        x: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(60,50,40,0.05)' } },
-        y: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(60,50,40,0.05)' }, beginAtZero: true }
+        x: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(22,26,32,0.05)' } },
+        y: { ticks: { color: '#8b90a0', font: { size: 10 } }, grid: { color: 'rgba(22,26,32,0.05)' }, beginAtZero: true }
       }
     }
   };
