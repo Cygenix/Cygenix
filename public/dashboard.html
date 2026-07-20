@@ -63,7 +63,7 @@
   --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',monospace;
-  --r:8px;--r-lg:12px;
+  --r:10px;--r-lg:14px;
   /* Topbar uses its own pair of vars so it stays dark in light mode (Boomi-style),
      while the rest of the UI flips to light backgrounds. In dark mode they're the
      same as --bg2 / --text. */
@@ -103,9 +103,9 @@ html[data-theme="light"]{
   --red-bg:rgba(240,70,70,0.10);
   --purple-bg:rgba(107,78,142,0.14);
   --teal-bg:rgba(23,130,124,0.14);
-  /* Topbar deliberately stays dark to match the Boomi reference. */
-  --topbar-bg:#13161d;
-  --topbar-text:#e8eaf0;
+  /* Topbar is white in light mode to match the Cygenix Console template. */
+  --topbar-bg:#ffffff;
+  --topbar-text:#191c24;
   /* Flip overlay tints so hovers and inline code remain visible. */
   --hover-tint:rgba(15,23,42,0.04);
   --code-tint:rgba(15,23,42,0.06);
@@ -142,15 +142,16 @@ html[data-theme="light"] .rc-chips-menu{box-shadow:var(--shadow-strong)}
 html[data-theme="light"] .jobs-table th,
 html[data-theme="light"] .wasis-table th{background:var(--bg3);color:var(--text2)}
 
-/* Topbar wiring: use the dedicated topbar vars so it can stay dark in light
-   mode. Defined here (not on the .topbar rule below) so we don't have to
-   touch the existing rule and risk breaking dark mode. */
-html[data-theme="light"] .topbar{background:var(--topbar-bg);color:var(--topbar-text);border-bottom-color:rgba(255,255,255,0.08)}
+/* Topbar wiring: white masthead in light mode (Cygenix Console template).
+   Uses the dedicated topbar vars, with the previously hard-coded white
+   overlays retargeted to light-surface colours so text stays legible on the
+   white bar. Dark mode is untouched. */
+html[data-theme="light"] .topbar{background:var(--topbar-bg);color:var(--topbar-text);border-bottom-color:#e4e7ee}
 html[data-theme="light"] .topbar .logo{color:var(--topbar-text)}
-html[data-theme="light"] .topbar .logo-console{color:rgba(255,255,255,0.5)}
-html[data-theme="light"] .topbar .back-link{color:rgba(255,255,255,0.55)}
-html[data-theme="light"] .topbar .back-link:hover{color:rgba(255,255,255,0.85)}
-html[data-theme="light"] .topbar .avatar{background:rgba(255,255,255,0.08);border-color:rgba(255,255,255,0.15);color:rgba(255,255,255,0.85)}
+html[data-theme="light"] .topbar .logo-console{color:#8a8f9e}
+html[data-theme="light"] .topbar .back-link{color:#7a8090}
+html[data-theme="light"] .topbar .back-link:hover{color:#191c24}
+html[data-theme="light"] .topbar .avatar{background:#f4f5f8;border-color:#e4e7ee;color:#42475a}
 
 /* Form inputs get a subtle inner background in light mode so they read as
    inputs rather than blending into the white panel. */
