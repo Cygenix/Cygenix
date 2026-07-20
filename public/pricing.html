@@ -17,24 +17,24 @@
 <meta name="twitter:description" content="Four tiers, transparent pricing, no per-document fees. Start free for 14 days.">
 <title>Pricing – Cygenix</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bricolage+Grotesque:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
   --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
   --text:#1A1D21;--text2:#565B63;--text3:#868C94;
-  --accent:#C74634;--accent2:#A5372A;--glow:rgba(199,70,52,0.10);
+  --accent:#4A5BD6;--accent2:#3D4EC4;--glow:rgba(74,91,214,0.10);
   --green:#3F7D4E;--green-g:rgba(63,125,78,0.12);
   --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
   --red:#C0392B;--red-g:rgba(192,57,43,0.12);
   --teal:#0F6E6C;--purple:#6B4E8E;
-  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',monospace;
 }
 html{scroll-behavior:smooth}
 body{font-family:var(--serif);background:var(--bg);color:var(--text);overflow-x:hidden;-webkit-font-smoothing:antialiased}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(199,70,52,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(199,70,52,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(74,91,214,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(74,91,214,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
 
 /* Nav — copied verbatim from index.html for visual consistency */
 nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:var(--bg2);border-bottom:0.5px solid var(--border)}
@@ -69,7 +69,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 
 /* Hero */
 .pricing-hero{padding:9rem 2rem 3rem;text-align:center;position:relative;z-index:1}
-.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--glow);border:0.5px solid rgba(199,70,52,0.3);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:500;color:var(--accent);font-family:var(--mono);letter-spacing:0.05em;margin-bottom:1.5rem}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:var(--glow);border:0.5px solid rgba(74,91,214,0.3);border-radius:100px;padding:5px 14px;font-size:11px;font-weight:500;color:var(--accent);font-family:var(--mono);letter-spacing:0.05em;margin-bottom:1.5rem}
 .hero-badge::before{content:'◆';font-size:8px}
 .pricing-hero h1{font-size:clamp(2.4rem,5.5vw,4.2rem);font-weight:800;letter-spacing:-0.04em;line-height:1.05;margin-bottom:1.25rem;max-width:880px;margin-left:auto;margin-right:auto}
 .pricing-hero h1 .grad{color:var(--accent)}
@@ -78,7 +78,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 /* Billing toggle */
 .billing-toggle{display:inline-flex;align-items:center;gap:0.4rem;background:var(--bg2);border:0.5px solid var(--border2);border-radius:100px;padding:4px;margin-bottom:0.75rem}
 .billing-toggle button{background:transparent;border:none;color:var(--text2);font-family:var(--serif);font-size:13px;font-weight:500;padding:0.5rem 1.2rem;border-radius:100px;cursor:pointer;transition:all 0.2s}
-.billing-toggle button.active{background:var(--accent);color:#fff;box-shadow:0 0 20px rgba(199,70,52,0.25)}
+.billing-toggle button.active{background:var(--accent);color:#fff;box-shadow:0 0 20px rgba(74,91,214,0.25)}
 .billing-toggle button:not(.active):hover{color:var(--text)}
 .save-pill{font-size:10px;font-family:var(--mono);color:var(--green);background:var(--green-g);padding:2px 7px;border-radius:100px;margin-left:4px;vertical-align:middle;letter-spacing:0.05em}
 .toggle-hint{font-size:11px;font-family:var(--mono);color:var(--text3);letter-spacing:0.05em;margin-bottom:3rem}
@@ -86,8 +86,8 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 /* Pricing grid */
 .pricing-grid{max-width:1280px;margin:0 auto;padding:0 2rem 4rem;display:grid;grid-template-columns:repeat(4,1fr);gap:1.25rem;position:relative;z-index:1}
 .tier{background:var(--bg2);border:0.5px solid var(--border2);border-radius:14px;padding:1.75rem 1.5rem;display:flex;flex-direction:column;position:relative;transition:border-color 0.2s,transform 0.2s,box-shadow 0.2s;cursor:pointer}
-.tier:hover:not(.featured){border-color:rgba(199,70,52,0.45)}
-.tier.featured{border-color:var(--accent);box-shadow:0 0 0 0.5px var(--accent),0 20px 60px rgba(199,70,52,0.12)}
+.tier:hover:not(.featured){border-color:rgba(74,91,214,0.45)}
+.tier.featured{border-color:var(--accent);box-shadow:0 0 0 0.5px var(--accent),0 20px 60px rgba(74,91,214,0.12)}
 .tier-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;font-size:10px;font-family:var(--mono);font-weight:600;letter-spacing:0.08em;padding:3px 12px;border-radius:100px;white-space:nowrap;display:none}
 .tier.featured .tier-badge{display:block}
 .tier-name{font-size:13px;font-family:var(--mono);color:var(--accent);letter-spacing:0.1em;text-transform:uppercase;font-weight:500;margin-bottom:0.5rem}
@@ -99,8 +99,8 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .tier-price-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:1.5rem;min-height:16px}
 .tier-price.custom .amount{font-size:2rem}
 .tier-cta{display:block;text-align:center;padding:0.7rem 1rem;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;cursor:pointer;border:none;font-family:var(--serif);transition:all 0.2s;width:100%;margin-bottom:1.5rem}
-.tier-cta.primary{background:var(--accent);color:#fff;box-shadow:0 0 20px rgba(199,70,52,0.25)}
-.tier-cta.primary:hover{background:var(--accent2);box-shadow:0 0 30px rgba(199,70,52,0.4);transform:translateY(-1px)}
+.tier-cta.primary{background:var(--accent);color:#fff;box-shadow:0 0 20px rgba(74,91,214,0.25)}
+.tier-cta.primary:hover{background:var(--accent2);box-shadow:0 0 30px rgba(74,91,214,0.4);transform:translateY(-1px)}
 .tier-cta.secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}
 .tier-cta.secondary:hover{border-color:var(--accent);color:var(--accent)}
 .tier-features{list-style:none;display:flex;flex-direction:column;gap:0.65rem;margin-bottom:1.25rem}
@@ -144,7 +144,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 /* FAQ */
 .faq-list{display:flex;flex-direction:column;gap:0.75rem;max-width:800px;margin:0 auto}
 .faq-item{background:var(--bg2);border:0.5px solid var(--border2);border-radius:10px;overflow:hidden;transition:border-color 0.2s}
-.faq-item:hover{border-color:rgba(199,70,52,0.25)}
+.faq-item:hover{border-color:rgba(74,91,214,0.25)}
 .faq-q{width:100%;background:transparent;border:none;color:var(--text);font-family:var(--serif);font-size:15px;font-weight:600;padding:1.1rem 1.25rem;text-align:left;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:1rem;letter-spacing:-0.01em}
 .faq-q:hover{color:var(--accent)}
 .faq-q .plus{font-family:var(--mono);font-weight:300;font-size:18px;color:var(--accent);transition:transform 0.2s;flex-shrink:0}
@@ -158,8 +158,8 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .cta-sub{font-size:15px;color:var(--text2);line-height:1.7;max-width:560px;margin:0 auto 2rem}
 .cta-btns{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
 .btn-hero{padding:0.75rem 1.75rem;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;border:none;font-family:var(--serif);transition:all 0.2s}
-.btn-primary{background:var(--accent);color:#fff;box-shadow:0 0 30px rgba(199,70,52,0.3)}
-.btn-primary:hover{background:var(--accent2);box-shadow:0 0 40px rgba(199,70,52,0.5);transform:translateY(-1px)}
+.btn-primary{background:var(--accent);color:#fff;box-shadow:0 0 30px rgba(74,91,214,0.3)}
+.btn-primary:hover{background:var(--accent2);box-shadow:0 0 40px rgba(74,91,214,0.5);transform:translateY(-1px)}
 .btn-secondary{background:transparent;color:var(--text);border:0.5px solid var(--border2)}
 .btn-secondary:hover{border-color:var(--accent);color:var(--accent)}
 

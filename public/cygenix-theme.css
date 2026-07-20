@@ -124,7 +124,7 @@ html[data-theme="financial"] .rc-chips-menu{
  * Oracle — clean enterprise palette modelled on oracle.com / Redwood.
  * ───────────────────────────────────────────────────────────────────────
  * Cool white surfaces, a light grey workspace, a single Oracle red accent
- * (#C74634), a WHITE masthead like oracle.com, clean neutral sans-serif
+ * (#4A5BD6), a WHITE masthead like oracle.com, clean neutral sans-serif
  * type, softly-rounded white cards with a subtle shadow. No gradients, no
  * glow, no animation, no rainbow icons — sleek, quiet, corporate.
  *
@@ -161,9 +161,9 @@ html[data-theme="light"][data-theme="light"]{
   --text3:#868C94;
 
   /* Accent — Oracle red. One accent, used sparingly. */
-  --accent:#C74634;
-  --accent2:#A5372A;                         /* darker — hover / pressed */
-  --accent-glow:rgba(199,70,52,0.14);        /* soft focus ring only */
+  --accent:#4A5BD6;
+  --accent2:#3D4EC4;                         /* darker — hover / pressed */
+  --accent-glow:rgba(74,91,214,0.14);        /* soft focus ring only */
 
   /* Status colours — muted, professional (no neon) */
   --green:#3F7D4E;   --green-bg:rgba(63,125,78,0.10);

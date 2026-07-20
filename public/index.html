@@ -29,7 +29,7 @@
 <meta name="twitter:description" content="See what Cygenix can do — AI column mapping, validation, project planning and more.">
 <title>Cygenix – AI-Powered SQL Database Migration Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bricolage+Grotesque:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -37,13 +37,13 @@
   --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
   --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
   --text:#1A1D21;--text2:#565B63;--text3:#868C94;
-  --accent:#C74634;--accent2:#A5372A;--glow:rgba(199,70,52,0.10);
+  --accent:#4A5BD6;--accent2:#3D4EC4;--glow:rgba(74,91,214,0.10);
   --green:#3F7D4E;--green-g:rgba(63,125,78,0.12);
   --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
   --red:#C0392B;--red-g:rgba(192,57,43,0.12);
   --teal:#0F6E6C;--purple:#6B4E8E;
-  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
-  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+  --sans:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
 }
 html{scroll-behavior:smooth}
@@ -75,8 +75,8 @@ body::before{
   content:'';
   position:fixed;
   inset:-15%;                 /* extra overflow for larger transform amplitude */
-  background-image:linear-gradient(rgba(199,70,52,0.04) 1px,transparent 1px),
-                   linear-gradient(90deg,rgba(199,70,52,0.04) 1px,transparent 1px);
+  background-image:linear-gradient(rgba(74,91,214,0.04) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(74,91,214,0.04) 1px,transparent 1px);
   background-size:60px 60px;
   pointer-events:none;
   z-index:0;
@@ -87,8 +87,8 @@ body::after{
   content:'';
   position:fixed;
   inset:-15%;
-  background-image:linear-gradient(rgba(199,70,52,0.025) 1px,transparent 1px),
-                   linear-gradient(90deg,rgba(199,70,52,0.025) 1px,transparent 1px);
+  background-image:linear-gradient(rgba(74,91,214,0.025) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(74,91,214,0.025) 1px,transparent 1px);
   background-size:60px 60px;
   pointer-events:none;
   z-index:0;
@@ -106,8 +106,8 @@ body::after{
   pointer-events:none;
   z-index:0;
   background:radial-gradient(ellipse 50vw 40vh at 50% 50%,
-              rgba(199,70,52,0.18) 0%,
-              rgba(199,70,52,0.10) 25%,
+              rgba(74,91,214,0.18) 0%,
+              rgba(74,91,214,0.10) 25%,
               rgba(23,130,124,0.06) 45%,
               transparent 70%);
   will-change:transform;
@@ -215,7 +215,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .vm-pill[data-side="src"]:active{cursor:grabbing}
 .vm-pill[data-side="src"]:hover{border-color:var(--accent);color:var(--text)}
 .vm-pill.dragging{opacity:0.45}
-.vm-pill.drag-over{border-color:var(--accent);background:rgba(199,70,52,0.15);transform:scale(1.03)}
+.vm-pill.drag-over{border-color:var(--accent);background:rgba(74,91,214,0.15);transform:scale(1.03)}
 .vm-pill .vm-type{font-size:8.5px;color:var(--text3);background:var(--bg2);padding:1px 4px;border-radius:3px;flex-shrink:0}
 .vm-pill.match-HIGH{border-color:rgba(34,201,122,0.45);background:rgba(34,201,122,0.07)}
 .vm-pill.match-MED{border-color:rgba(245,158,11,0.45);background:rgba(245,158,11,0.07)}
@@ -242,7 +242,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:cen
 .animate-on-scroll{opacity:0;transform:translateY(30px);transition:opacity 0.7s ease,transform 0.7s ease}
 .animate-on-scroll.visible{opacity:1;transform:translateY(0)}
 .orb{display:none}
-.orb1{width:400px;height:400px;background:rgba(199,70,52,0.15);top:-100px;right:-100px;animation:orbFloat 8s ease-in-out infinite}
+.orb1{width:400px;height:400px;background:rgba(74,91,214,0.15);top:-100px;right:-100px;animation:orbFloat 8s ease-in-out infinite}
 .orb2{width:300px;height:300px;background:rgba(107,78,142,0.1);bottom:100px;left:-80px;animation:orbFloat 10s ease-in-out infinite reverse}
 @keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(20px,30px)}}
 footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-size:12px;color:var(--text3);position:relative;z-index:1}
@@ -279,7 +279,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 @media(max-width:768px){.feature-block,.feature-block.reverse{grid-template-columns:1fr;gap:2rem;direction:ltr}.features-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap;gap:0.5rem}.flow-arrow{display:none}nav .nav-links{display:none}.dual-mode{grid-template-columns:1fr !important}.kpi-grid{grid-template-columns:repeat(2,1fr) !important}#reporting > .container > div[style*="grid-template-columns"]{grid-template-columns:1fr !important;gap:2rem !important}#task-agent > .container > div[style*="grid-template-columns"]{grid-template-columns:1fr !important;gap:2rem !important}}
 /* Scheduler */
 .sched-row{display:flex;align-items:center;gap:0.5rem;padding:0.5rem 0.6rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;margin-bottom:0.35rem}
-.sched-row.next-up{border-color:rgba(199,70,52,0.3);background:rgba(199,70,52,0.04)}
+.sched-row.next-up{border-color:rgba(74,91,214,0.3);background:rgba(74,91,214,0.04)}
 .sched-time{font-family:var(--mono);font-size:9px;color:var(--text);font-weight:600;background:var(--bg);border-radius:4px;padding:3px 7px;flex-shrink:0;text-align:center;min-width:64px;line-height:1.2}
 .sched-time .d{font-size:8px;color:var(--text3);font-weight:500}
 .sched-body{flex:1;min-width:0}
@@ -304,8 +304,8 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
 .kpi-up{color:var(--green)}.kpi-down{color:var(--red)}.kpi-flat{color:var(--text3)}
 .bar-chart{display:flex;align-items:flex-end;gap:4px;height:80px;padding:0.4rem 0.5rem;background:var(--bg3);border-radius:6px;border:0.5px solid var(--border)}
 .bar{flex:1;background:linear-gradient(180deg,var(--accent),var(--accent2));border-radius:3px 3px 0 0;position:relative;min-height:4px;animation:barGrow 0.7s cubic-bezier(0.2,0.8,0.2,1) both}
-.bar.bar-teal{background:linear-gradient(180deg,var(--teal),#A5372A)}
-.bar.bar-purple{background:linear-gradient(180deg,var(--purple),#A5372A)}
+.bar.bar-teal{background:linear-gradient(180deg,var(--teal),#3D4EC4)}
+.bar.bar-purple{background:linear-gradient(180deg,var(--purple),#3D4EC4)}
 .bar.bar-green{background:linear-gradient(180deg,var(--green),#0a8f5d)}
 .bar-label{position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);font-size:7px;font-family:var(--mono);color:var(--text3);white-space:nowrap}
 @keyframes barGrow{from{transform:scaleY(0);transform-origin:bottom}to{transform:scaleY(1);transform-origin:bottom}}
@@ -679,19 +679,19 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
             <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">1 Verify ✓</div>
             <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">2 Discover ✓</div>
             <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3);border-right:0.5px solid var(--border2);background:var(--bg3)">3 Preview ✓</div>
-            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--accent);border-right:0.5px solid var(--border2);background:rgba(199,70,52,0.12);font-weight:700">4 Execute</div>
+            <div style="flex:1;padding:5px 4px;text-align:center;color:var(--accent);border-right:0.5px solid var(--border2);background:rgba(74,91,214,0.12);font-weight:700">4 Execute</div>
             <div style="flex:1;padding:5px 4px;text-align:center;color:var(--text3)">5 Audit</div>
           </div>
           <!-- Live execute feed mock — one row per category showing the badges that actually appear in the live UI -->
           <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
             <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(199,70,52,0.15);color:#C74634;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
+            <span style="background:rgba(74,91,214,0.15);color:#4A5BD6;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
             <span style="flex:1">app_service</span>
             <span style="color:var(--green);font-size:8px">CREATED</span>
           </div>
           <div style="display:flex;align-items:center;gap:0.5rem;padding:4px 8px;border-bottom:0.5px solid var(--border2);font-size:9px;font-family:var(--mono)">
             <span style="color:var(--green);width:10px">✓</span>
-            <span style="background:rgba(199,70,52,0.15);color:#C74634;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
+            <span style="background:rgba(74,91,214,0.15);color:#4A5BD6;padding:1px 5px;border-radius:3px;font-size:8px">LOGIN</span>
             <span style="flex:1">reporting_user</span>
             <span style="color:var(--green);font-size:8px">CREATED</span>
           </div>
@@ -959,7 +959,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:0.6rem">
           <div style="background:var(--green-g);color:var(--green);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">✓ Connect</div>
           <div style="background:var(--green-g);color:var(--green);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">✓ Map</div>
-          <div style="background:var(--glow);color:var(--accent);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center;border:0.5px solid rgba(199,70,52,0.4)">⟳ Load</div>
+          <div style="background:var(--glow);color:var(--accent);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center;border:0.5px solid rgba(74,91,214,0.4)">⟳ Load</div>
           <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Validate</div>
           <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Reconcile</div>
           <div style="background:var(--bg3);color:var(--text3);font-size:8px;font-family:var(--mono);padding:5px 6px;border-radius:4px;text-align:center">Report</div>
@@ -1005,7 +1005,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="mock-body">
           <!-- Tab strip -->
           <div style="display:flex;gap:0.3rem;margin-bottom:0.6rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.3)">📊 BI Dashboard</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)">📊 BI Dashboard</div>
             <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📄 Exec Summary</div>
             <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📑 Conversion Report</div>
             <div style="margin-left:auto;font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--bg3);color:var(--text2);border:0.5px solid var(--border2)">+ Add chart</div>
@@ -1059,8 +1059,8 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
                 <svg viewBox="0 0 200 90" preserveAspectRatio="none">
                   <defs>
                     <linearGradient id="lcGrad" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="0%" stop-color="#C74634" stop-opacity="0.5"/>
-                      <stop offset="100%" stop-color="#C74634" stop-opacity="0"/>
+                      <stop offset="0%" stop-color="#4A5BD6" stop-opacity="0.5"/>
+                      <stop offset="100%" stop-color="#4A5BD6" stop-opacity="0"/>
                     </linearGradient>
                   </defs>
                   <line x1="0" y1="22" x2="200" y2="22" stroke="rgba(255,255,255,0.04)" stroke-width="0.5"/>
@@ -1181,7 +1181,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
             <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">What does <span style="font-family:var(--mono);background:var(--bg);padding:1px 5px;border-radius:3px;color:var(--teal);font-size:10px">dbo.Transaction</span> do?</div>
           </div>
           <div style="display:flex;gap:0.5rem;margin-bottom:0.9rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(199,70,52,0.3)">✨</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)">✨</div>
             <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
               <div style="font-size:11px;color:var(--text);line-height:1.55;margin-bottom:0.4rem"><strong style="color:var(--accent)">Transaction</strong> stores financial transaction header records — one row per outgoing payment. Each row captures who was paid, the amount, the originating account and the posting period. It links to <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">TransactionDetail</span> for line-level breakdowns and <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">Counterparty</span> for the recipient.</div>
               <div style="display:flex;gap:0.3rem;flex-wrap:wrap;margin-top:0.5rem">
@@ -1199,7 +1199,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
             <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">Which tables hold financial data?</div>
           </div>
           <div style="display:flex;gap:0.5rem;margin-bottom:0.9rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(199,70,52,0.3)">✨</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)">✨</div>
             <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
               <div style="font-size:11px;color:var(--text);line-height:1.55;margin-bottom:0.5rem">Found <strong style="color:var(--accent)">14 tables</strong> with financial data, grouped into three clusters:</div>
               <div style="display:flex;flex-direction:column;gap:0.35rem">
@@ -1225,7 +1225,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
             <div style="flex:1;background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.45rem 0.65rem;font-size:11px;color:var(--text);line-height:1.4">Where is the system configuration held?</div>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:flex-start">
-            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(199,70,52,0.3)">✨</div>
+            <div style="width:22px;height:22px;border-radius:50%;background:var(--glow);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;border:0.5px solid rgba(74,91,214,0.3)">✨</div>
             <div style="flex:1;background:var(--bg);border:0.5px solid var(--border2);border-radius:6px;padding:0.55rem 0.7rem">
               <div style="font-size:11px;color:var(--text);line-height:1.55"><span style="font-family:var(--mono);font-size:10px;color:var(--teal)">SystemSetting</span> holds key-value runtime settings (78 entries). <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">FeatureFlag</span> stores per-module flags. Lookup codes live in <span style="font-family:var(--mono);font-size:10px;color:var(--teal)">LookupCode</span> and its 23 child tables (e.g. <span style="font-family:var(--mono);font-size:10px;color:var(--text2)">CurrencyCode</span>, <span style="font-family:var(--mono);font-size:10px;color:var(--text2)">StatusCode</span>).</div>
             </div>
@@ -1258,7 +1258,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div class="mock-body">
           <!-- Tabs -->
           <div style="display:flex;gap:0.3rem;margin-bottom:0.7rem;border-bottom:0.5px solid var(--border);padding-bottom:0.4rem">
-            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.3)">⏰ Upcoming</div>
+            <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;background:var(--glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3)">⏰ Upcoming</div>
             <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">📜 Run history</div>
             <div style="font-size:9px;font-family:var(--mono);padding:3px 9px;border-radius:4px;color:var(--text3)">⚙ All jobs</div>
           </div>
@@ -1358,7 +1358,7 @@ footer{padding:2rem;text-align:center;border-top:0.5px solid var(--border);font-
         <div style="font-size:10px;font-family:var(--mono);color:var(--accent);margin-bottom:0.3rem">Medium DB</div>
         <div style="font-size:9px;color:var(--text3)">2,000 rows/page<br>2 threads<br>Balanced</div>
       </div>
-      <div style="background:var(--bg2);border:0.5px solid rgba(199,70,52,0.4);border-radius:8px;padding:0.875rem;text-align:center;background:var(--bg3)">
+      <div style="background:var(--bg2);border:0.5px solid rgba(74,91,214,0.4);border-radius:8px;padding:0.875rem;text-align:center;background:var(--bg3)">
         <div style="font-size:10px;font-family:var(--mono);color:var(--amber);margin-bottom:0.3rem">Large DB</div>
         <div style="font-size:9px;color:var(--text3)">5,000 rows/page<br>4 threads<br>NOLOCK</div>
       </div>

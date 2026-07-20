@@ -33,30 +33,30 @@
 </script>
 <title>Cygenix – Migration Report</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500&family=IBM+Plex+Monofamily=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* ── Screen styles ──────────────────────────────────────────────────────────── */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#f8f9fb;--surface:#ffffff;--border:#e2e6ee;--border2:#c8cedd;
   --text:#111827;--text2:#4b5563;--text3:#9ca3af;
-  --accent:#C74634;--accent-light:#eff4ff;
+  --accent:#4A5BD6;--accent-light:#eff4ff;
   --green:#059669;--green-light:#ecfdf5;
   --red:#dc2626;--red-light:#fef2f2;
   --amber:#d97706;--amber-light:#fffbeb;
-  --serif:'DM Serif Display',Georgia,serif;
-  --sans:'DM Sans',system-ui,sans-serif;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+  --sans:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',monospace;
 }
 body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
 /* ── Toolbar (screen only) ──────────────────────────────────────────────────── */
 .toolbar{background:#0d0f14;padding:0.75rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .toolbar-logo{font-family:var(--serif);color:#fff;font-size:1rem}
-.toolbar-logo span{color:#C74634}
+.toolbar-logo span{color:#4A5BD6}
 .toolbar-actions{display:flex;gap:0.75rem}
 .btn{padding:0.5rem 1.25rem;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:var(--sans);transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
-.btn-primary{background:#C74634;color:#fff}
-.btn-primary:hover{background:#A5372A}
+.btn-primary{background:#4A5BD6;color:#fff}
+.btn-primary:hover{background:#3D4EC4}
 .btn-ghost{background:rgba(255,255,255,0.1);color:#e8eaf0;border:0.5px solid rgba(255,255,255,0.15)}
 .btn-ghost:hover{background:rgba(255,255,255,0.15)}
 /* ── Report container ───────────────────────────────────────────────────────── */
@@ -64,8 +64,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
 .report{background:var(--surface);border:0.5px solid var(--border);border-radius:16px;overflow:hidden}
 /* ── Header ─────────────────────────────────────────────────────────────────── */
 .report-header{background:linear-gradient(135deg,#0f1117 0%,#1a2040 100%);padding:2.5rem 2.5rem 2rem;color:#fff;position:relative;overflow:hidden}
-.report-header::after{content:'';position:absolute;right:-60px;top:-60px;width:240px;height:240px;border-radius:50%;background:rgba(199,70,52,0.08)}
-.report-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(199,70,52,0.2);border:0.5px solid rgba(199,70,52,0.4);border-radius:100px;padding:4px 12px;font-size:11px;font-weight:500;color:#93b4ff;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:1.25rem}
+.report-header::after{content:'';position:absolute;right:-60px;top:-60px;width:240px;height:240px;border-radius:50%;background:rgba(74,91,214,0.08)}
+.report-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(74,91,214,0.2);border:0.5px solid rgba(74,91,214,0.4);border-radius:100px;padding:4px 12px;font-size:11px;font-weight:500;color:#93b4ff;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:1.25rem}
 .report-title{font-family:var(--serif);font-size:2rem;line-height:1.2;margin-bottom:0.5rem}
 .report-subtitle{font-size:14px;color:rgba(255,255,255,0.55);margin-bottom:2rem}
 .report-meta-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
@@ -2182,7 +2182,7 @@ function renderCharts(d, tables) {
       charts.push(renderDonutChart({
         title: 'Column mapping coverage',
         segments: [
-          { label: 'Mapped',  value: mapped,  color: '#C74634' },
+          { label: 'Mapped',  value: mapped,  color: '#4A5BD6' },
           { label: 'Skipped', value: skipped, color: '#9ca3af' },
         ].filter(s => s.value > 0),
       }));
@@ -2210,7 +2210,7 @@ function renderBarChart({ title, data, primaryLabel, secondaryLabel }) {
       <g>
         <text x="${labelW - 6}" y="${y + barH/2 + 4}" font-size="10" font-family="'IBM Plex Mono',monospace" text-anchor="end" fill="#4b5563">${DataGrid.esc(label)}</text>
         <rect x="${labelW}" y="${y + 3}" width="${wSec}" height="${barH - 6}" fill="#e2e6ee" rx="2"/>
-        <rect x="${labelW}" y="${y}" width="${wPrim}" height="${barH}" fill="#C74634" rx="2"/>
+        <rect x="${labelW}" y="${y}" width="${wPrim}" height="${barH}" fill="#4A5BD6" rx="2"/>
         <text x="${labelW + wPrim + 4}" y="${y + barH/2 + 4}" font-size="10" font-family="'IBM Plex Mono',monospace" fill="#111827">${(row.value||0).toLocaleString()}</text>
       </g>`;
   }).join('');
@@ -2219,7 +2219,7 @@ function renderBarChart({ title, data, primaryLabel, secondaryLabel }) {
       <div class="chart-title">${DataGrid.esc(title)}</div>
       <svg width="100%" viewBox="0 0 ${w} ${h}" style="max-width:100%;height:auto">${bars}</svg>
       <div class="chart-legend">
-        <span class="chart-legend-item"><span class="chart-legend-swatch" style="background:#C74634"></span>${DataGrid.esc(primaryLabel)}</span>
+        <span class="chart-legend-item"><span class="chart-legend-swatch" style="background:#4A5BD6"></span>${DataGrid.esc(primaryLabel)}</span>
         <span class="chart-legend-item"><span class="chart-legend-swatch" style="background:#e2e6ee"></span>${DataGrid.esc(secondaryLabel)}</span>
       </div>
     </div>`;
@@ -2345,7 +2345,7 @@ function doExport() {
     const duration = secs < 60 ? secs+'s' : Math.floor(secs/60)+'m '+secs%60+'s';
 
     // ── Style palette ─────────────────────────────────────────────────────────
-    // Matches the HTML report: accent #C74634, green #059669, red #DC2626,
+    // Matches the HTML report: accent #4A5BD6, green #059669, red #DC2626,
     // amber #D97706. Colour codes are ARGB (FF = fully opaque).
     const BORDER_THIN   = { style: 'thin',   color: { rgb: 'E2E6EE' } };
     const BORDER_MEDIUM = { style: 'medium', color: { rgb: '1A56E8' } };

@@ -33,20 +33,20 @@
 </script>
 <title>Cygenix – Target DB Mapper</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#C74634;--accent2:#A5372A;--accent-glow:rgba(199,70,52,0.15);
+  --accent:#4A5BD6;--accent2:#3D4EC4;--accent-glow:rgba(74,91,214,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
   --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
   --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
-  --serif:'Syne',system-ui,sans-serif;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
@@ -60,7 +60,7 @@ body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--te
 .conn-badge{font-size:11px;padding:3px 10px;border-radius:100px;font-family:var(--mono);border:0.5px solid}
 .conn-badge.ok{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
 .conn-badge.err{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
-.conn-badge.checking{background:var(--accent-glow);border-color:rgba(199,70,52,0.3);color:var(--accent)}
+.conn-badge.checking{background:var(--accent-glow);border-color:rgba(74,91,214,0.3);color:var(--accent)}
 
 .main{max-width:1200px;margin:0 auto;padding:2rem 1.5rem}
 
@@ -115,7 +115,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 .status-box.visible{display:block}
 .status-ok{background:var(--green-bg);border:0.5px solid rgba(34,201,122,0.2);color:var(--green)}
 .status-err{background:var(--red-bg);border:0.5px solid rgba(240,70,70,0.2);color:var(--red)}
-.status-info{background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);color:var(--accent)}
+.status-info{background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);color:var(--accent)}
 
 /* SCHEMA TREE */
 .schema-tree{border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;max-height:420px;overflow-y:auto}
@@ -193,7 +193,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
     <div class="conn-badge checking" id="db-badge">Not connected</div>
     <div id="project-name-badge" style="font-size:11px;color:var(--text3);font-family:var(--mono);padding:3px 10px;background:var(--bg3);border-radius:100px;border:0.5px solid var(--border);display:none"></div>
     <div style="display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer;position:relative" onclick="toggleUserMenu()" id="user-pill">
-      <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)" id="user-avatar">?</div>
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)" id="user-avatar">?</div>
       <span style="font-size:12px;color:var(--text2)" id="user-name">Loading…</span>
       <div id="user-menu" style="display:none;position:absolute;top:calc(100% + 8px);right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:12px;padding:0.5rem;min-width:180px;z-index:200">
         <div style="font-size:11px;color:var(--text3);padding:0.4rem 0.5rem" id="user-email-menu"></div>
@@ -418,7 +418,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
       </div>
 
       <!-- Restored session notice -->
-      <div id="src-restored-notice" style="display:none;background:rgba(199,70,52,0.08);border:0.5px solid rgba(199,70,52,0.25);border-radius:var(--r);padding:0.75rem;margin-bottom:1rem;font-size:12px;color:var(--accent)">
+      <div id="src-restored-notice" style="display:none;background:rgba(74,91,214,0.08);border:0.5px solid rgba(74,91,214,0.25);border-radius:var(--r);padding:0.75rem;margin-bottom:1rem;font-size:12px;color:var(--accent)">
         📂 Mapping restored from saved session. Source data will be fetched live when you generate SQL.
       </div>
 
@@ -571,7 +571,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
       <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:center">
         <button class="btn btn-ghost" onclick="goStep(4)">← Back to preview</button>
         <button class="btn btn-primary" onclick="saveJobAndFinish('dashboard')">💾 Save &amp; go to Dashboard</button>
-        <button class="btn" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.35)" onclick="saveJobAndFinish('another')">💾 Save &amp; map another table</button>
+        <button class="btn" style="background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.35)" onclick="saveJobAndFinish('another')">💾 Save &amp; map another table</button>
         <button class="btn" style="background:var(--purple-bg);color:var(--purple);border:0.5px solid rgba(107,78,142,0.35)" onclick="saveJobAndFinish('project')">💾 Save &amp; open Conversion Project</button>
       </div>
 
@@ -3255,7 +3255,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
           👋 Describe the filter you need in plain English and I'll write the T-SQL WHERE clause.<br>
           <span style="color:var(--text3);font-size:11px">e.g. "Only active clients in the UK" · "Records created after 2020" · "Where status is not null"</span>
         </div>
-        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
+        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
       </div>
 
       <!-- Current WHERE value -->

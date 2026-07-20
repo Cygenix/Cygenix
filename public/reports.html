@@ -18,14 +18,14 @@
 <meta name="twitter:description" content="Build paginated tabular and visual reports against migration jobs and saved connections.">
 <title>Cygenix – Report Builder</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
   --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
   --text:#1A1D21;--text2:#565B63;--text3:#868C94;
-  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
   --green:#3F7D4E;--green-bg:rgba(63,125,78,0.10);
   --amber:#B26A00;--amber-bg:rgba(178,106,0,0.10);
   --red:#C0392B;--red-bg:rgba(192,57,43,0.10);
@@ -76,7 +76,7 @@ body.cyg-collapsed{padding-left:54px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 .conn-label{font-size:11px;font-family:var(--mono);color:var(--text2)}
 .conn-btn{font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text3);font-family:var(--serif);text-decoration:none}
-.conn-btn:hover{color:var(--accent);border-color:rgba(199,70,52,0.3)}
+.conn-btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.3)}
 
 /* ── Tab bar ── */
 .cx-tabs{display:flex;gap:0;margin-bottom:1.25rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
@@ -108,7 +108,7 @@ body.cyg-collapsed{padding-left:54px}
 .rb-rail-list{display:flex;flex-direction:column;gap:2px}
 .rb-rail-item{display:flex;align-items:center;justify-content:space-between;gap:0.5rem;padding:0.5rem 0.625rem;border-radius:6px;cursor:pointer;font-size:12px;color:var(--text2);border:0.5px solid transparent;transition:all 0.12s}
 .rb-rail-item:hover{background:var(--bg3);color:var(--text)}
-.rb-rail-item.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(199,70,52,0.3)}
+.rb-rail-item.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(74,91,214,0.3)}
 .rb-rail-item-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rb-rail-item-meta{font-size:10px;color:var(--text3);font-family:var(--mono);flex-shrink:0}
 .rb-rail-empty{padding:1rem 0.5rem;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
@@ -194,7 +194,7 @@ body.cyg-collapsed{padding-left:54px}
 .ds-input:focus,.ds-select:focus{border-color:var(--accent)}
 .ds-input.ds-input-wide{min-width:240px;flex:1}
 .ds-add-btn{background:transparent;color:var(--text3);border:0.5px dashed var(--border2);border-radius:6px;padding:0.3rem 0.7rem;font-size:11px;font-family:var(--serif);cursor:pointer;transition:all 0.12s}
-.ds-add-btn:hover{color:var(--accent);border-color:rgba(199,70,52,0.4)}
+.ds-add-btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.4)}
 .ds-rm-btn{background:transparent;color:var(--text3);border:none;cursor:pointer;font-size:14px;padding:0 0.4rem;line-height:1}
 .ds-rm-btn:hover{color:var(--red)}
 
@@ -214,7 +214,7 @@ body.cyg-collapsed{padding-left:54px}
 .ds-kind-btn:hover{color:var(--text2);background:rgba(22,26,32,0.03)}
 .ds-kind-btn.active{
   color:var(--accent);
-  background:rgba(199,70,52,0.10);
+  background:rgba(74,91,214,0.10);
 }
 
 /* Raw-SQL textarea */
@@ -398,7 +398,7 @@ body.cyg-collapsed{padding-left:54px}
 .pv-row-subtotal td{background:var(--bg3);color:var(--text);font-weight:600;font-size:11px;border-top:0.5px solid var(--border)}
 .pv-row-subtotal .pv-subtotal-label{color:var(--text2);font-style:italic;font-weight:500}
 /* Grand total row */
-.pv-row-grand td{background:var(--accent-glow);color:var(--accent);font-weight:600;font-size:11px;border-top:0.5px solid rgba(199,70,52,0.3);border-bottom:0.5px solid rgba(199,70,52,0.3)}
+.pv-row-grand td{background:var(--accent-glow);color:var(--accent);font-weight:600;font-size:11px;border-top:0.5px solid rgba(74,91,214,0.3);border-bottom:0.5px solid rgba(74,91,214,0.3)}
 .pv-row-grand .pv-grand-label{font-weight:700}
 /* Indent for nested groups */
 .pv-indent-1{padding-left:18px !important}
@@ -470,7 +470,7 @@ body.cyg-collapsed{padding-left:54px}
 .pv-pdf-capture .pv-table td{border-bottom:0.5px solid #f3f4f6 !important;color:#1f2937 !important}
 .pv-pdf-capture .pv-row-group-head td{background:#e5e7eb !important;color:#1f2937 !important;font-weight:600 !important}
 .pv-pdf-capture .pv-row-subtotal td{background:#f3f4f6 !important;color:#374151 !important;font-weight:600 !important}
-.pv-pdf-capture .pv-row-grand td{background:#C74634 !important;color:#ffffff !important;font-weight:600 !important;border-color:#1e40af !important}
+.pv-pdf-capture .pv-row-grand td{background:#4A5BD6 !important;color:#ffffff !important;font-weight:600 !important;border-color:#1e40af !important}
 .pv-pdf-capture .pv-row-grand .pv-grand-label{color:#ffffff !important}
 .pv-pdf-capture .pv-empty-rows{color:#6b7280 !important}
 .pv-pdf-capture .pv-section-error{background:#fef2f2 !important;color:#991b1b !important;border-color:#fecaca !important}
@@ -498,7 +498,7 @@ body.cyg-collapsed{padding-left:54px}
       <div class="page-sub">Build paginated tabular and visual reports against migration jobs or any saved connection. Define datasets, parameters, layouts, and export to Excel. Reports save to your account and can be re-run with different parameters.</div>
       <div class="page-tags">
         <span style="color:var(--text2);font-weight:500">Layouts:</span>
-        <span class="page-tag" style="background:rgba(199,70,52,0.12);color:#C74634">Table</span>
+        <span class="page-tag" style="background:rgba(74,91,214,0.12);color:#4A5BD6">Table</span>
         <span class="page-tag" style="background:rgba(23,130,124,0.12);color:#17827C">Matrix</span>
         <span class="page-tag" style="background:rgba(107,78,142,0.12);color:#6B4E8E">Charts</span>
       </div>
@@ -5245,7 +5245,7 @@ async function pvActivateCharts(){
 
 function pvChartJsConfig(tree){
   const labels = tree.points.map(p => pvFormatGroupValue(p.category));
-  const palette = ['#C74634', '#22c97a', '#f59e0b', '#6B4E8E', '#17827C', '#f04646', '#ec4899', '#06b6d4'];
+  const palette = ['#4A5BD6', '#22c97a', '#f59e0b', '#6B4E8E', '#17827C', '#f04646', '#ec4899', '#06b6d4'];
   const datasets = tree.series.map((sr, i) => ({
     label: sr.label || sr.field,
     data: tree.points.map(p => {

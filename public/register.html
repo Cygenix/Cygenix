@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<meta name="theme-color" content="#FFFFFF">
+<meta name="theme-color" content="#12141c">
 <meta name="description" content="Register your interest in Cygenix — AI-powered SQL database migration. Join the private preview waitlist.">
 <meta property="og:title" content="Register interest – Cygenix">
 <meta property="og:description" content="Join the Cygenix private preview waitlist. AI-powered SQL database migration.">
@@ -13,170 +13,206 @@
 <meta property="og:type" content="website">
 <title>Register interest – Cygenix</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bricolage+Grotesque:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" />
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#F3F4F5;--bg2:#FFFFFF;--bg3:#ECEEF0;--bg4:#E1E4E7;
-  --border:rgba(22,26,32,0.12);--border2:rgba(22,26,32,0.20);
-  --text:#1A1D21;--text2:#565B63;--text3:#868C94;
-  --accent:#C74634;--accent2:#A5372A;--glow:rgba(199,70,52,0.10);
-  --green:#3F7D4E;--green-g:rgba(63,125,78,0.12);
-  --amber:#B26A00;--amber-g:rgba(178,106,0,0.12);
-  --red:#C0392B;--red-g:rgba(192,57,43,0.12);
-  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
+  --ink:#12141c;--bg:#eef0f4;--panel:#ffffff;
+  --bg3:#f7f8fa;--bg4:#eef0f4;
+  --border:#dfe2ea;--border2:#e4e7ee;
+  --text:#191c24;--text2:#42475a;--text3:#7a8090;--faint:#9aa0af;
+  --accent:#4A5BD6;--accent2:#3D4EC4;--glow:rgba(74,91,214,0.10);
+  --green:#2f7d4e;--green-g:rgba(47,125,78,0.12);
+  --red:#c0392b;--red-g:rgba(192,57,43,0.10);
+  --sans:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',monospace;
 }
 html{scroll-behavior:smooth}
-body{font-family:var(--serif);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh}
-body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(199,70,52,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(199,70,52,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);-webkit-font-smoothing:antialiased;min-height:100vh}
+.msr{font-family:'Material Symbols Rounded';font-weight:normal;line-height:1;display:inline-block;white-space:nowrap;-webkit-font-feature-settings:'liga';vertical-align:middle}
+.wrap{min-height:100vh;display:grid;grid-template-columns:1.05fr 1fr}
 
-nav{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:space-between;padding:0 2.5rem;height:60px;background:var(--bg2);border-bottom:0.5px solid var(--border)}
-.nav-logo{font-size:1.3rem;font-weight:700;letter-spacing:-0.02em;color:var(--text);text-decoration:none}
-.nav-logo span{color:var(--accent)}
-.nav-cta{background:var(--accent);color:#fff;padding:0.45rem 1.1rem;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;transition:all 0.2s}
-.nav-cta:hover{background:var(--accent2)}
+/* ── Brand panel ─────────────────────────────────────────────── */
+.brand{position:relative;overflow:hidden;background:var(--ink);color:#fff;padding:48px;display:flex;flex-direction:column}
+.brand::before{content:'';position:absolute;inset:0;background:radial-gradient(760px 420px at 20% -10%, rgba(74,91,214,0.40), transparent 60%),radial-gradient(620px 360px at 110% 110%, rgba(58,166,182,0.28), transparent 60%)}
+.brand::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:52px 52px;-webkit-mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%)}
+.brand-inner{position:relative;display:flex;flex-direction:column;height:100%}
+.brand-logo{display:flex;align-items:center;gap:11px;color:#fff;text-decoration:none}
+.mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,#5a6ef0,#4a5bd6 55%,#3aa6b6);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -4px rgba(74,91,214,.6);font-family:var(--mono);font-weight:600;font-size:18px}
+.brand-logo b{font-size:18px;font-weight:700;letter-spacing:-0.015em}
+.brand-body{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:440px}
+.brand-body .eyebrow{display:inline-flex;align-items:center;gap:8px;align-self:flex-start;font-size:11px;font-family:var(--mono);font-weight:500;letter-spacing:0.12em;text-transform:uppercase;color:#a9b4f5;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);padding:5px 12px;border-radius:100px;margin-bottom:22px}
+.brand-body h1{font-size:38px;line-height:1.1;font-weight:700;letter-spacing:-0.03em;margin-bottom:18px}
+.brand-body p{font-size:16px;line-height:1.55;color:rgba(255,255,255,0.6);margin-bottom:34px}
+.benefits{display:flex;flex-direction:column;gap:16px}
+.benefit{display:flex;align-items:center;gap:12px;font-size:14.5px;color:rgba(255,255,255,0.82)}
+.benefit .msr{font-size:20px;color:#7fd4de}
 
-.wrap{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:7rem 1.5rem 4rem}
-.badge{display:inline-block;font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem;padding:4px 10px;border:0.5px solid var(--accent);border-radius:100px;background:var(--glow)}
-h1{font-size:clamp(2rem,5vw,3rem);font-weight:700;letter-spacing:-0.03em;line-height:1.1;margin-bottom:0.75rem}
-.sub{font-size:15px;color:var(--text2);line-height:1.6;margin-bottom:2.5rem;max-width:520px}
+/* ── Form panel ──────────────────────────────────────────────── */
+.form-panel{display:flex;flex-direction:column;padding:40px;overflow-y:auto}
+.form-top{display:flex;justify-content:flex-end;margin-bottom:8px}
+.form-top a{color:var(--accent);text-decoration:none;font-weight:600;font-size:13.5px}
+.form-top a:hover{color:var(--accent2)}
+.wrap-inner{width:100%;max-width:460px;margin:auto;animation:fade .4s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.badge{display:inline-block;font-size:10px;font-family:var(--mono);font-weight:500;color:var(--accent);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:1rem;padding:4px 10px;border:1px solid var(--accent);border-radius:100px;background:var(--glow)}
+h1.title{font-size:clamp(1.9rem,4vw,2.4rem);font-weight:700;letter-spacing:-0.03em;line-height:1.1;margin-bottom:0.6rem}
+.sub{font-size:14.5px;color:var(--text3);line-height:1.6;margin-bottom:1.75rem;max-width:520px}
 
-form{background:var(--bg2);border:0.5px solid var(--border);border-radius:14px;padding:2rem;display:grid;gap:1.25rem}
-.field{display:grid;gap:0.5rem}
-.label{font-size:11px;font-family:var(--mono);font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.08em;display:flex;align-items:center;gap:0.5rem}
-.label .req{color:var(--accent);font-size:10px}
-.label .opt{color:var(--text3);font-size:10px;font-style:italic}
-input,select,textarea{width:100%;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:0.75rem 0.9rem;font-family:var(--serif);font-size:14px;color:var(--text);transition:border-color 0.15s,background 0.15s;outline:none}
-input:focus,select:focus,textarea:focus{border-color:var(--accent);background:var(--bg4)}
-textarea{min-height:90px;resize:vertical;font-family:var(--serif);line-height:1.5}
+form{background:var(--panel);border:1px solid var(--border2);border-radius:14px;padding:1.75rem;display:grid;gap:1.1rem}
+.field{display:grid;gap:0.45rem}
+.label{font-size:12.5px;font-weight:600;color:var(--text2);display:flex;align-items:center;gap:0.5rem}
+.label .req{color:var(--accent);font-size:10px;font-weight:600}
+.label .opt{color:var(--faint);font-size:10px}
+input,select,textarea{width:100%;background:#fff;border:1px solid var(--border);border-radius:10px;padding:0 0.9rem;height:44px;font-family:var(--sans);font-size:14px;color:var(--text);transition:border-color 0.15s,box-shadow 0.15s;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(74,91,214,0.12)}
+textarea{min-height:90px;height:auto;padding:0.7rem 0.9rem;resize:vertical;line-height:1.5}
 select{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M2 4l4 4 4-4' stroke='%238892a8' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 0.9rem center;padding-right:2.25rem}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:1.1rem}
 @media(max-width:520px){.row2{grid-template-columns:1fr}}
-
 .hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
-
-.actions{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:0.5rem}
-.submit{background:var(--accent);color:#fff;padding:0.75rem 1.5rem;border-radius:8px;font-size:14px;font-weight:600;font-family:var(--serif);border:none;cursor:pointer;transition:background 0.2s;display:inline-flex;align-items:center;gap:0.5rem}
+.actions{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:0.3rem}
+.submit{background:var(--accent);color:#fff;padding:0 1.5rem;height:46px;border-radius:10px;font-size:14px;font-weight:600;font-family:var(--sans);border:none;cursor:pointer;transition:background 0.2s;display:inline-flex;align-items:center;gap:0.5rem;box-shadow:0 6px 16px -6px rgba(74,91,214,.55)}
 .submit:hover:not(:disabled){background:var(--accent2)}
 .submit:disabled{opacity:0.5;cursor:not-allowed}
-.privacy{font-size:11px;color:var(--text3);line-height:1.5;max-width:280px}
-.privacy a{color:var(--text2);text-decoration:underline;text-decoration-color:var(--text3)}
+.privacy{font-size:11px;color:var(--faint);line-height:1.5;max-width:280px}
+.privacy a{color:var(--text3);text-decoration:underline}
 .privacy a:hover{color:var(--text)}
-
-.note{font-size:12px;color:var(--text3);margin-top:1rem;text-align:center}
-.note a{color:var(--accent);text-decoration:none}
+.note{font-size:12.5px;color:var(--text3);margin-top:1rem;text-align:center}
+.note a{color:var(--accent);text-decoration:none;font-weight:600}
 .note a:hover{text-decoration:underline}
-
-.msg{padding:1rem 1.25rem;border-radius:8px;font-size:13px;line-height:1.5;margin-bottom:1rem;display:none}
+.msg{padding:1rem 1.25rem;border-radius:10px;font-size:13px;line-height:1.5;margin-bottom:1rem;display:none}
 .msg.show{display:block}
-.msg.error{background:var(--red-g);border:0.5px solid var(--red);color:var(--red)}
-
-.success{display:none;background:var(--bg2);border:0.5px solid var(--green);border-radius:14px;padding:2.5rem 2rem;text-align:center}
+.msg.error{background:var(--red-g);border:1px solid rgba(192,57,43,0.3);color:#b23640}
+.success{display:none;background:var(--panel);border:1px solid var(--green);border-radius:14px;padding:2.5rem 2rem;text-align:center}
 .success.show{display:block}
-.success-icon{width:56px;height:56px;border-radius:50%;background:var(--green-g);border:0.5px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;color:var(--green);font-size:26px}
+.success-icon{width:56px;height:56px;border-radius:50%;background:var(--green-g);border:1px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 1.25rem;color:var(--green);font-size:26px}
 .success h2{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.5rem}
 .success p{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:1.5rem}
-.success a{color:var(--accent);text-decoration:none;font-size:13px;font-weight:500}
+.success a{color:var(--accent);text-decoration:none;font-size:13px;font-weight:600}
 .success a:hover{text-decoration:underline}
-
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+@media (max-width:860px){
+  .wrap{grid-template-columns:1fr}
+  .brand{display:none}
+  .form-panel{padding:28px 20px}
+}
 </style>
 </head>
 <body>
-
-<nav>
-  <a href="/" class="nav-logo">Cyge<span>nix</span></a>
-  <a href="/login.html" class="nav-cta">Log in →</a>
-</nav>
-
 <div class="wrap">
-
-  <div id="form-view">
-    <div class="badge">Private Preview</div>
-    <h1>Register your interest.</h1>
-    <p class="sub">Cygenix is currently in private preview. Tell us a little about you and we'll be in touch when a spot opens up.</p>
-
-    <div id="error-msg" class="msg error"></div>
-
-    <form id="waitlist-form" novalidate>
-      <!-- Honeypot: bots fill this, humans can't see it -->
-      <div class="hp" aria-hidden="true">
-        <label for="website">Website</label>
-        <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
-      </div>
-
-      <div class="row2">
-        <div class="field">
-          <label class="label" for="name">Name <span class="req">Required</span></label>
-          <input type="text" id="name" name="name" autocomplete="name" required maxlength="100">
-        </div>
-        <div class="field">
-          <label class="label" for="email">Email <span class="req">Required</span></label>
-          <input type="email" id="email" name="email" autocomplete="email" required maxlength="254">
+  <!-- BRAND PANEL -->
+  <div class="brand">
+    <div class="brand-inner">
+      <a class="brand-logo" href="/"><span class="mark">C</span><b>Cygenix</b></a>
+      <div class="brand-body">
+        <span class="eyebrow">Private Preview</span>
+        <h1>Start migrating with total confidence.</h1>
+        <p>Join the teams mapping, validating and delivering database migrations from the browser — with a full audit trail behind every job.</p>
+        <div class="benefits">
+          <div class="benefit"><span class="msr">check_circle</span>AI-drafted column mapping in minutes</div>
+          <div class="benefit"><span class="msr">check_circle</span>Reversible dry-run validation on every job</div>
+          <div class="benefit"><span class="msr">check_circle</span>Governance controls &amp; full access log</div>
         </div>
       </div>
-
-      <div class="field">
-        <label class="label" for="company">Company <span class="opt">Optional</span></label>
-        <input type="text" id="company" name="company" autocomplete="organization" maxlength="150">
-      </div>
-
-      <div class="row2">
-        <div class="field">
-          <label class="label" for="role">Role <span class="opt">Optional</span></label>
-          <input type="text" id="role" name="role" autocomplete="organization-title" maxlength="100" placeholder="e.g. Data Engineer, CTO">
-        </div>
-        <div class="field">
-          <label class="label" for="teamSize">Team size <span class="opt">Optional</span></label>
-          <select id="teamSize" name="teamSize">
-            <option value="">Select…</option>
-            <option value="1">Just me</option>
-            <option value="2-10">2–10</option>
-            <option value="11-50">11–50</option>
-            <option value="51-200">51–200</option>
-            <option value="200+">200+</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="field">
-        <label class="label" for="useCase">What are you migrating? <span class="opt">Optional</span></label>
-        <textarea id="useCase" name="useCase" maxlength="1000" placeholder="A few words about your source, target, scale, or timeline helps us prioritise."></textarea>
-      </div>
-
-      <div class="field">
-        <label class="label" for="source">How did you hear about us? <span class="opt">Optional</span></label>
-        <select id="source" name="source">
-          <option value="">Select…</option>
-          <option value="search">Google / search</option>
-          <option value="linkedin">LinkedIn</option>
-          <option value="referral">Referral from a colleague</option>
-          <option value="event">Event or conference</option>
-          <option value="article">Article or blog post</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-
-      <div class="actions">
-        <p class="privacy">We'll only use this to contact you about Cygenix. See our <a href="/privacy.html">privacy policy</a>.</p>
-        <button type="submit" class="submit" id="submit-btn">
-          <span id="submit-label">Register interest →</span>
-        </button>
-      </div>
-    </form>
-
-    <p class="note">Already have access? <a href="/login.html">Log in</a></p>
+    </div>
   </div>
 
-  <div id="success-view" class="success">
-    <div class="success-icon">✓</div>
-    <h2>You're on the list.</h2>
-    <p>Thanks — we'll be in touch as soon as a spot opens up. If you have something urgent, email <a href="mailto:curtis.morris@cygenix.co.uk">curtis.morris@cygenix.co.uk</a>.</p>
-    <a href="/">← Back to home</a>
-  </div>
+  <!-- FORM PANEL -->
+  <div class="form-panel">
+    <div class="form-top"><a href="/login.html">Log in →</a></div>
+    <div class="wrap-inner">
 
+      <div id="form-view">
+        <div class="badge">Private Preview</div>
+        <h1 class="title">Register your interest.</h1>
+        <p class="sub">Cygenix is currently in private preview. Tell us a little about you and we'll be in touch when a spot opens up.</p>
+
+        <div id="error-msg" class="msg error"></div>
+
+        <form id="waitlist-form" novalidate>
+          <!-- Honeypot: bots fill this, humans can't see it -->
+          <div class="hp" aria-hidden="true">
+            <label for="website">Website</label>
+            <input type="text" id="website" name="website" tabindex="-1" autocomplete="off">
+          </div>
+
+          <div class="row2">
+            <div class="field">
+              <label class="label" for="name">Name <span class="req">Required</span></label>
+              <input type="text" id="name" name="name" autocomplete="name" required maxlength="100">
+            </div>
+            <div class="field">
+              <label class="label" for="email">Email <span class="req">Required</span></label>
+              <input type="email" id="email" name="email" autocomplete="email" required maxlength="254">
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="company">Company <span class="opt">Optional</span></label>
+            <input type="text" id="company" name="company" autocomplete="organization" maxlength="150">
+          </div>
+
+          <div class="row2">
+            <div class="field">
+              <label class="label" for="role">Role <span class="opt">Optional</span></label>
+              <input type="text" id="role" name="role" autocomplete="organization-title" maxlength="100" placeholder="e.g. Data Engineer, CTO">
+            </div>
+            <div class="field">
+              <label class="label" for="teamSize">Team size <span class="opt">Optional</span></label>
+              <select id="teamSize" name="teamSize">
+                <option value="">Select…</option>
+                <option value="1">Just me</option>
+                <option value="2-10">2–10</option>
+                <option value="11-50">11–50</option>
+                <option value="51-200">51–200</option>
+                <option value="200+">200+</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="useCase">What are you migrating? <span class="opt">Optional</span></label>
+            <textarea id="useCase" name="useCase" maxlength="1000" placeholder="A few words about your source, target, scale, or timeline helps us prioritise."></textarea>
+          </div>
+
+          <div class="field">
+            <label class="label" for="source">How did you hear about us? <span class="opt">Optional</span></label>
+            <select id="source" name="source">
+              <option value="">Select…</option>
+              <option value="search">Google / search</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="referral">Referral from a colleague</option>
+              <option value="event">Event or conference</option>
+              <option value="article">Article or blog post</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div class="actions">
+            <p class="privacy">We'll only use this to contact you about Cygenix. See our <a href="/privacy.html">privacy policy</a>.</p>
+            <button type="submit" class="submit" id="submit-btn">
+              <span id="submit-label">Register interest →</span>
+            </button>
+          </div>
+        </form>
+
+        <p class="note">Already have access? <a href="/login.html">Log in</a></p>
+      </div>
+
+      <div id="success-view" class="success">
+        <div class="success-icon">✓</div>
+        <h2>You're on the list.</h2>
+        <p>Thanks — we'll be in touch as soon as a spot opens up. If you have something urgent, email <a href="mailto:curtis.morris@cygenix.co.uk">curtis.morris@cygenix.co.uk</a>.</p>
+        <a href="/">← Back to home</a>
+      </div>
+
+    </div>
+  </div>
 </div>
 
 <script>

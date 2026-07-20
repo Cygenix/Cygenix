@@ -33,20 +33,20 @@
 </script>
 <title>Cygenix – One-to-Many Mapper</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
   --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
 body{padding-left:0;font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased}
@@ -89,7 +89,7 @@ select.form-input option{background:var(--bg3)}
 /* Target table cards */
 .tgt-card{background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);margin-bottom:1rem;overflow:hidden}
 .tgt-card-head{padding:0.875rem 1.25rem;background:var(--bg3);border-bottom:0.5px solid var(--border);display:flex;align-items:center;gap:0.75rem}
-.tgt-card-num{width:24px;height:24px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--accent);font-family:var(--mono);flex-shrink:0}
+.tgt-card-num{width:24px;height:24px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--accent);font-family:var(--mono);flex-shrink:0}
 .tgt-card-name{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--teal);flex:1}
 .tgt-card-body{padding:1rem}
 
@@ -106,7 +106,7 @@ select.map-select:focus{border-color:var(--accent)}
 .fk-arrow{text-align:center;color:var(--amber);font-size:12px}
 
 /* PK config */
-.pk-row{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r)}
+.pk-row{display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;margin-bottom:0.75rem;padding:0.5rem;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);border-radius:var(--r)}
 
 /* Searchable dropdown */
 .search-wrap{position:relative}
@@ -230,7 +230,7 @@ select.map-select:focus{border-color:var(--accent)}
                 <button onclick="event.stopPropagation();setSrcPanelSize('sm')" id="src-size-sm" title="Small"
                   style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">S</button>
                 <button onclick="event.stopPropagation();setSrcPanelSize('md')" id="src-size-md" title="Medium"
-                  style="background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.3);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--accent);cursor:pointer">M</button>
+                  style="background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--accent);cursor:pointer">M</button>
                 <button onclick="event.stopPropagation();setSrcPanelSize('lg')" id="src-size-lg" title="Large"
                   style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:3px;padding:1px 6px;font-size:10px;color:var(--text3);cursor:pointer">L</button>
                 <button onclick="event.stopPropagation();setSrcPanelSize('xl')" id="src-size-xl" title="Full"
@@ -1455,7 +1455,7 @@ function showWhereModal(targetInputId, tableName, cols, apiKey, existing) {
           👋 Describe the filter you need in plain English and I'll write the T-SQL WHERE clause.<br>
           <span style="color:var(--text3);font-size:11px">e.g. "Only active clients in the UK" · "Records created after 2020" · "Where status is not null"</span>
         </div>
-        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
+        ${existing ? `<div style="padding:0.5rem 0.875rem;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);border-radius:var(--r);font-size:12px;color:var(--text2)"><span style="font-size:10px;color:var(--text3)">Current filter: </span><code style="font-family:var(--mono);color:var(--teal)">${existing}</code></div>` : ''}
       </div>
 
       <!-- Current WHERE value -->
@@ -1886,7 +1886,7 @@ function setSrcPanelSize(size) {
     if (!b) return;
     if (s === size) {
       b.style.background = 'var(--accent-glow)';
-      b.style.borderColor = 'rgba(199,70,52,0.3)';
+      b.style.borderColor = 'rgba(74,91,214,0.3)';
       b.style.color = 'var(--accent)';
     } else {
       b.style.background = 'var(--bg3)';
