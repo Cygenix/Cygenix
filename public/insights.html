@@ -33,20 +33,20 @@
 </script>
 <title>Cygenix – Data Insights</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
   --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
@@ -58,7 +58,7 @@ body.cyg-collapsed{padding-left:54px}
 .logo span{color:var(--accent)}
 .topbar-right{display:flex;align-items:center;gap:0.75rem}
 .user-pill{display:flex;align-items:center;gap:8px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:4px 12px 4px 4px;cursor:pointer}
-.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
+.avatar{width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.4);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--accent)}
 
 /* LAYOUT */
 .page{max-width:min(1400px,calc(100vw - 230px - 32px));margin:0 auto;padding:2rem 1.5rem;box-sizing:border-box}
@@ -156,8 +156,8 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 .sample-table tr:last-child td{border-bottom:none}
 .sample-table tr:hover td{background:rgba(255,255,255,0.02)}
 .example-pill{background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:3px 10px;font-size:11px;color:var(--text2);cursor:pointer;font-family:var(--serif);transition:all 0.12s;white-space:nowrap}
-.example-pill:hover{background:var(--accent-glow);border-color:rgba(199,70,52,0.3);color:var(--accent)}
-.qa-msg-user{background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);align-self:flex-end;max-width:90%}
+.example-pill:hover{background:var(--accent-glow);border-color:rgba(74,91,214,0.3);color:var(--accent)}
+.qa-msg-user{background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);align-self:flex-end;max-width:90%}
 .qa-msg-assistant{background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.75rem;font-size:12px;color:var(--text2);line-height:1.7;white-space:pre-wrap}
 
 /* MIGRATION MAP CARD */

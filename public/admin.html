@@ -35,18 +35,18 @@
 </script>
 <title>Cygenix – Admin</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/cygenix-cosmos-sync.js"></script>
 <style>
 :root{
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#C74634;--accent2:#A5372A;--accent-glow:rgba(199,70,52,0.15);
+  --accent:#4A5BD6;--accent2:#3D4EC4;--accent-glow:rgba(74,91,214,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.08);
   --red:#f04646;--red-bg:rgba(240,70,70,0.08);
   --amber:#f5a623;--amber-bg:rgba(245,166,35,0.08);
-  --serif:'Syne',system-ui,sans-serif;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
   --mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
@@ -101,7 +101,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
 /* ── Badges ── */
 .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:100px;font-size:10px;font-weight:500;font-family:var(--mono);border:0.5px solid}
 .badge-active{background:var(--green-bg);border-color:rgba(34,201,122,0.3);color:var(--green)}
-.badge-trial{background:var(--accent-glow);border-color:rgba(199,70,52,0.3);color:var(--accent)}
+.badge-trial{background:var(--accent-glow);border-color:rgba(74,91,214,0.3);color:var(--accent)}
 .badge-suspended{background:var(--red-bg);border-color:rgba(240,70,70,0.3);color:var(--red)}
 .badge-pending{background:var(--amber-bg);border-color:rgba(245,166,35,0.3);color:var(--amber)}
 .badge-paid{background:rgba(34,201,122,0.12);border-color:rgba(34,201,122,0.4);color:var(--green)}
@@ -163,7 +163,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
 .section-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
 
 /* ── Netlify Identity note ── */
-.netlify-note{background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);border-radius:var(--r);padding:0.875rem 1rem;font-size:12px;color:var(--text2);margin-bottom:1.5rem;line-height:1.6}
+.netlify-note{background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);border-radius:var(--r);padding:0.875rem 1rem;font-size:12px;color:var(--text2);margin-bottom:1.5rem;line-height:1.6}
 .netlify-note a{color:var(--accent);text-decoration:none}
 .netlify-note a:hover{text-decoration:underline}
 
@@ -352,21 +352,21 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
         <div class="panel-header"><div class="panel-title">How to invite a user — 3 steps</div></div>
         <div style="padding:1.5rem;display:flex;flex-direction:column;gap:1rem">
           <div style="display:flex;gap:12px;align-items:flex-start">
-            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">1</div>
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">1</div>
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Open Netlify Identity</div>
               <div style="font-size:12px;color:var(--text2)">Click <strong>Open Netlify Identity ↗</strong> above, or go to app.netlify.com → your site → Identity tab</div>
             </div>
           </div>
           <div style="display:flex;gap:12px;align-items:flex-start">
-            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">2</div>
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">2</div>
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Click "Invite users"</div>
               <div style="font-size:12px;color:var(--text2)">Enter the user's email address. You can invite multiple at once by entering one per line.</div>
             </div>
           </div>
           <div style="display:flex;gap:12px;align-items:flex-start">
-            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">3</div>
+            <div style="width:26px;height:26px;border-radius:50%;background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.3);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--accent);font-family:var(--mono);flex-shrink:0">3</div>
             <div>
               <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">User receives invite email</div>
               <div style="font-size:12px;color:var(--text2)">They get an email from Netlify with a link to set their password. Once done, they can log in at <strong>cygenix.co.uk/login.html</strong>. Their record will appear in the Users tab here after first login.</div>
@@ -390,7 +390,7 @@ tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
               <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Anyone can create a free account. Good for public beta.</div>
               <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Open</div>
             </div>
-            <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid rgba(199,70,52,0.3);background:var(--accent-glow);flex:1;min-width:200px">
+            <div style="padding:12px 16px;border-radius:var(--r);border:0.5px solid rgba(74,91,214,0.3);background:var(--accent-glow);flex:1;min-width:200px">
               <div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:4px">🔒 Invite only</div>
               <div style="font-size:12px;color:var(--text2);margin-bottom:8px">Only invited users can register. Best for controlled testing.</div>
               <div style="font-size:11px;font-family:var(--mono);color:var(--text3)">Netlify → Identity → Registration → Invite only</div>

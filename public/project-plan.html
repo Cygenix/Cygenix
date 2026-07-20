@@ -46,7 +46,7 @@
 <meta name="twitter:description" content="Plan, track and deliver your migration project.">
 <title>Cygenix – Project Plan</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js"></script>
 <script src="/cygenix-sidebar.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
@@ -56,13 +56,13 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
   --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
@@ -112,7 +112,7 @@ select.form-input option{background:var(--bg3)}
 .cal-month-grid{display:grid;grid-template-columns:repeat(7,1fr);border-left:0.5px solid var(--border);border-top:0.5px solid var(--border)}
 .cal-month-cell{border-right:0.5px solid var(--border);border-bottom:0.5px solid var(--border);min-height:90px;padding:4px;position:relative;cursor:pointer;transition:background 0.1s}
 .cal-month-cell:hover{background:rgba(255,255,255,0.02)}
-.cal-month-cell.today-cell{background:rgba(199,70,52,0.06)}
+.cal-month-cell.today-cell{background:rgba(74,91,214,0.06)}
 .cal-month-cell.other-month-cell{opacity:0.45}
 .cal-day-num{font-size:11px;font-family:var(--mono);color:var(--text3);margin-bottom:3px}
 .cal-day-num.today-num{background:var(--accent);color:#fff;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
@@ -1225,7 +1225,7 @@ function showJobRunSummary(ev){
   }, 0);
 
   modal.innerHTML = `
-    <div style="background:#13161d;border:0.5px solid rgba(255,255,255,0.12);border-radius:12px;width:100%;max-width:540px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;font-family:'Syne',system-ui,sans-serif">
+    <div style="background:#13161d;border:0.5px solid rgba(255,255,255,0.12);border-radius:12px;width:100%;max-width:540px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif">
       <div style="padding:1.25rem 1.5rem;border-bottom:0.5px solid rgba(255,255,255,0.07);display:flex;align-items:flex-start;justify-content:space-between;gap:1rem">
         <div>
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">

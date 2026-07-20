@@ -30,6 +30,9 @@
   const FLAGS_KEY     = 'cygenix_feature_flags';
   const MOUNT_ID      = 'cyg-sidebar-mount';
   const ICON_BY_KEY   = {}; // populated from NAV_ITEMS
+  // Keep these in lockstep with the hard-coded content offsets on app pages
+  // (padding-left / left:230px when open, 54px when collapsed). Changing them
+  // here without updating every page's offset would misalign the content.
   const WIDTH_OPEN    = 230;
   const WIDTH_CLOSED  = 54;
 
@@ -181,104 +184,128 @@
     const style = document.createElement('style');
     style.id = 'cyg-sidebar-styles';
     style.textContent = `
+      /* ── Cygenix redesigned console sidebar ────────────────────────────
+         Ink-dark rail, independent of the workspace theme so it reads the
+         same in light and dark. Brand mark up top, grouped nav, indigo
+         active rail, collapsible to an icon-only strip. */
       .cyg-sidebar{
-        background:var(--bg2);
-        border-right:0.5px solid var(--border);
-        padding:0.5rem 0 1rem;
+        --cyg-ink:#14161f;
+        --cyg-fg:rgba(255,255,255,0.62);
+        --cyg-fg-strong:#ffffff;
+        --cyg-muted:rgba(255,255,255,0.32);
+        background:var(--cyg-ink);
+        border-right:1px solid rgba(255,255,255,0.06);
+        padding:0 0 0.5rem;
         width:${WIDTH_OPEN}px;
         display:flex;
         flex-direction:column;
         overflow:hidden;
-        transition:width 0.2s ease;
+        transition:width 0.22s cubic-bezier(.4,0,.2,1);
         position:fixed;
         top:0;
         left:0;
         bottom:0;
         height:100vh;
         z-index:90;
+        font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+        -webkit-font-smoothing:antialiased;
       }
       .cyg-sidebar.collapsed{ width:${WIDTH_CLOSED}px; }
 
+      /* Brand header */
       .cyg-sidebar-head{
         display:flex;
         align-items:center;
-        justify-content:flex-end;
-        padding:0.25rem 0.6rem 0.5rem;
+        gap:8px;
+        height:64px;
+        min-height:64px;
+        padding:0 10px 0 14px;
         flex-shrink:0;
+        overflow:hidden;
       }
+      .cyg-sidebar.collapsed .cyg-sidebar-head{ justify-content:center;padding:0; }
+      .cyg-brand{ display:flex;align-items:center;gap:10px;min-width:0;flex:1;overflow:hidden;text-decoration:none; }
+      .cyg-brand-mark{
+        width:34px;height:34px;min-width:34px;border-radius:9px;
+        background:linear-gradient(140deg,#5a6ef0,#4a5bd6 55%,#3aa6b6);
+        display:flex;align-items:center;justify-content:center;
+        box-shadow:0 4px 14px -4px rgba(74,91,214,0.6);
+        font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:18px;color:#fff;
+      }
+      .cyg-brand-word{ display:flex;flex-direction:column;line-height:1.15;overflow:hidden; }
+      .cyg-brand-word b{ font-size:16px;font-weight:700;letter-spacing:-0.01em;color:var(--cyg-fg-strong); }
+      .cyg-brand-word span{ font-size:10px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyg-muted);white-space:nowrap; }
+      .cyg-sidebar.collapsed .cyg-brand-word{ display:none; }
+
       .cyg-sidebar-toggle{
-        background:none;border:none;cursor:pointer;
-        color:var(--text3);
-        padding:4px 7px;border-radius:6px;
-        font-size:15px;line-height:1;
+        margin-left:auto;
+        background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.09);cursor:pointer;
+        color:rgba(255,255,255,0.6);
+        width:28px;height:28px;border-radius:8px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:13px;line-height:1;
         transition:color 0.15s,background 0.15s;
       }
-      .cyg-sidebar-toggle:hover{ color:var(--text); background:var(--bg3); }
-      .cyg-sidebar.collapsed .cyg-sidebar-head{ justify-content:center; }
+      .cyg-sidebar-toggle:hover{ color:#fff; background:rgba(255,255,255,0.12); }
+      .cyg-sidebar.collapsed .cyg-sidebar-toggle{ display:none; }
 
       .cyg-sidebar-scroll{
         flex:1 1 auto;
         overflow-y:auto;
         overflow-x:hidden;
+        padding:2px 12px 12px;
         scrollbar-width:thin;
-        scrollbar-color:var(--border2) transparent;
+        scrollbar-color:rgba(255,255,255,0.14) transparent;
       }
       .cyg-sidebar-scroll::-webkit-scrollbar{ width:6px; }
-      .cyg-sidebar-scroll::-webkit-scrollbar-thumb{ background:var(--border2); border-radius:3px; }
+      .cyg-sidebar-scroll::-webkit-scrollbar-thumb{ background:rgba(255,255,255,0.14); border-radius:3px; }
       .cyg-sidebar-scroll::-webkit-scrollbar-track{ background:transparent; }
 
-      .cyg-nav-section{ margin-bottom:1.25rem; }
+      .cyg-nav-section{ margin-top:14px; }
+      .cyg-nav-section:first-child{ margin-top:6px; }
       .cyg-nav-label{
-        font-size:10px;font-weight:500;color:var(--text3);
-        text-transform:uppercase;letter-spacing:0.1em;
-        padding:0 1.25rem;margin-bottom:0.35rem;
+        font-size:10px;font-weight:600;color:var(--cyg-muted);
+        text-transform:uppercase;letter-spacing:0.09em;
+        padding:0 12px 7px;
       }
-      .cyg-nav-sub-label{
-        font-size:10px;font-weight:600;color:var(--text3);
-        padding:0.4rem 1.25rem 0.2rem 1.5rem;
-        text-transform:uppercase;letter-spacing:0.07em;
-        display:flex;align-items:center;gap:0.4rem;
-        cursor:pointer;user-select:none;transition:color 0.15s;
-      }
-      .cyg-nav-sub-label:hover{ color:var(--text2); }
-      .cyg-nav-sub-label .cyg-chevron{ font-size:8px;transition:transform 0.2s;color:var(--text3); }
-      .cyg-nav-sub-label.open .cyg-chevron{ transform:rotate(90deg); }
-      .cyg-nav-sub{ overflow:hidden;transition:max-height 0.25s ease;max-height:300px; }
-      .cyg-nav-sub.collapsed{ max-height:0 !important; }
-      .cyg-nav-sub .cyg-nav-item{ padding-left:2rem;font-size:12px; }
 
       .cyg-nav-item{
-        display:flex;align-items:center;gap:10px;
-        padding:0.5rem 1.25rem;
-        font-size:13px;color:var(--item-color,var(--text2));
+        display:flex;align-items:center;gap:13px;
+        padding:9px 12px;
+        margin:2px 0;
+        border-radius:9px;
+        font-size:13.5px;font-weight:500;color:var(--cyg-fg);
         cursor:pointer;
         transition:color 0.15s,background 0.15s;
-        border-left:2px solid transparent;
+        position:relative;
         user-select:none;
         white-space:nowrap;
       }
-      .cyg-nav-item:hover{ color:var(--text); background:rgba(255,255,255,0.03); }
-      .cyg-nav-item.active{ color:var(--accent); background:var(--accent-glow); border-left-color:var(--accent); }
-      .cyg-nav-icon{ width:16px;height:16px;opacity:0.85;flex-shrink:0;color:var(--item-color,var(--text2)); }
-      .cyg-nav-item:hover .cyg-nav-icon{ opacity:1;color:var(--item-color,var(--text2)); }
-      .cyg-nav-item.active .cyg-nav-icon{ opacity:1;color:var(--accent); }
+      .cyg-nav-item:hover{ color:#fff; background:rgba(255,255,255,0.09); }
+      .cyg-nav-item.active{ color:var(--cyg-fg-strong); background:rgba(255,255,255,0.10); font-weight:600; }
+      .cyg-nav-item.active::before{
+        content:'';position:absolute;left:-12px;top:50%;transform:translateY(-50%);
+        width:3px;height:20px;border-radius:0 3px 3px 0;background:var(--accent);
+      }
+      .cyg-nav-icon{ width:18px;height:18px;opacity:0.9;flex-shrink:0;color:currentColor; }
+      .cyg-nav-item:hover .cyg-nav-icon{ opacity:1; }
+      .cyg-nav-item.active .cyg-nav-icon{ opacity:1;color:#fff; }
 
       .cyg-sidebar.collapsed .cyg-nav-label,
-      .cyg-sidebar.collapsed .cyg-nav-sub-label,
       .cyg-sidebar.collapsed .cyg-nav-item-label{ display:none; }
-      .cyg-sidebar.collapsed .cyg-nav-item{ justify-content:center;padding:0.5rem 0; }
+      .cyg-sidebar.collapsed .cyg-nav-item{ justify-content:center;padding:9px 0;gap:0; }
+      .cyg-sidebar.collapsed .cyg-nav-item.active::before{ left:-12px; }
 
       /* Notification badge — small red pill with count, anchored to the right */
-      .cyg-nav-item{ position:relative; }
       .cyg-nav-badge{
         margin-left:auto;
-        min-width:18px;height:18px;
+        min-width:19px;height:19px;
         padding:0 5px;
-        border-radius:9px;
-        background:var(--red,#ef4444);
+        border-radius:10px;
+        background:var(--red,#e5484d);
         color:#fff;
-        font-size:10px;font-weight:600;
-        line-height:18px;
+        font-size:10.5px;font-weight:600;
+        line-height:19px;
         text-align:center;
         display:none;
         flex-shrink:0;
@@ -287,7 +314,7 @@
       /* Collapsed sidebar: show as a small dot in the top-right corner of the icon */
       .cyg-sidebar.collapsed .cyg-nav-badge{
         position:absolute;
-        top:6px;right:10px;
+        top:5px;right:16px;
         margin:0;padding:0;
         min-width:8px;width:8px;height:8px;
         border-radius:50%;
@@ -297,21 +324,40 @@
       body.cyg-collapsed{ --cyg-sidebar-w:${WIDTH_CLOSED}px; }
       body:not(.cyg-collapsed){ --cyg-sidebar-w:${WIDTH_OPEN}px; }
 
-      /* Pinned footer — Accessibility control lives here (always visible). */
+      /* Pinned footer — user chip + accessibility control (always visible). */
       .cyg-sidebar-foot{
         flex-shrink:0;
-        border-top:1px solid var(--border);
-        padding:0.4rem 0.5rem;
+        border-top:1px solid rgba(255,255,255,0.07);
+        padding:10px 12px;
+        display:flex;flex-direction:column;gap:4px;
       }
+      .cyg-user-chip{
+        display:flex;align-items:center;gap:11px;
+        padding:8px;border-radius:10px;cursor:pointer;
+        transition:background 0.15s;text-decoration:none;
+      }
+      .cyg-user-chip:hover{ background:rgba(255,255,255,0.07); }
+      .cyg-user-av{
+        width:32px;height:32px;min-width:32px;border-radius:8px;
+        background:#4a5bd6;
+        display:flex;align-items:center;justify-content:center;
+        font-size:12.5px;font-weight:600;color:#fff;
+      }
+      .cyg-user-meta{ display:flex;flex-direction:column;line-height:1.25;overflow:hidden;flex:1;min-width:0; }
+      .cyg-user-meta b{ font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+      .cyg-user-meta span{ font-size:10.5px;color:rgba(255,255,255,0.42);white-space:nowrap; }
+      .cyg-sidebar.collapsed .cyg-user-meta{ display:none; }
+      .cyg-sidebar.collapsed .cyg-user-chip{ justify-content:center;padding:8px 0; }
+
       .cyg-a11y-btn{
-        display:flex;align-items:center;gap:9px;width:100%;
-        padding:0.42rem 0.75rem;border:none;background:none;cursor:pointer;
-        font:inherit;font-size:12.5px;color:var(--text2);border-radius:8px;
+        display:flex;align-items:center;gap:11px;width:100%;
+        padding:8px 10px;border:none;background:none;cursor:pointer;
+        font:inherit;font-size:12.5px;color:rgba(255,255,255,0.6);border-radius:9px;
         text-align:left;transition:color 0.12s,background 0.12s;
       }
-      .cyg-a11y-btn:hover{ color:var(--accent); background:var(--hover-tint); }
-      .cyg-a11y-btn .cyg-nav-icon{ width:16px;height:16px;flex-shrink:0; }
-      .cyg-sidebar.collapsed .cyg-a11y-btn{ justify-content:center;padding:0.5rem 0; }
+      .cyg-a11y-btn:hover{ color:#fff; background:rgba(255,255,255,0.07); }
+      .cyg-a11y-btn .cyg-nav-icon{ width:18px;height:18px;flex-shrink:0; }
+      .cyg-sidebar.collapsed .cyg-a11y-btn{ justify-content:center;padding:9px 0; }
       .cyg-sidebar.collapsed .cyg-a11y-btn .cyg-nav-item-label{ display:none; }
     `;
     document.head.appendChild(style);
@@ -328,6 +374,10 @@
   function buildFooter(){
     const icon = svg('<circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="4.6" r="0.95" fill="currentColor"/><path d="M4.3 6.1c1.2.6 2.4.8 3.7.8s2.5-.2 3.7-.8M8 6.9V10m0 0l-1.5 2.3M8 10l1.5 2.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>');
     return `<div class="cyg-sidebar-foot">
+      <a class="cyg-user-chip" href="/dashboard.html#goto=project-settings" title="Account">
+        <span class="cyg-user-av" id="cyg-user-av">CY</span>
+        <span class="cyg-user-meta"><b id="cyg-user-name">Account</b><span id="cyg-user-sub">Migration Console</span></span>
+      </a>
       <button type="button" class="cyg-a11y-btn a11y-trigger" aria-label="Accessibility options" aria-expanded="false"
               onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">
         ${icon}<span class="cyg-nav-item-label">Accessibility</span>
@@ -337,9 +387,39 @@
 
   // ── HTML build ──────────────────────────────────────────────────────────
   function buildHTML(activeKey){
-    const head = `<div class="cyg-sidebar-head"><button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Toggle sidebar">❮</button></div>`;
+    const head = `<div class="cyg-sidebar-head">
+      <a class="cyg-brand" href="/dashboard.html" aria-label="Cygenix — Migration Console">
+        <span class="cyg-brand-mark">C</span>
+        <span class="cyg-brand-word"><b>Cygenix</b><span>Migration Console</span></span>
+      </a>
+      <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar">❮</button>
+    </div>`;
     const body = NAV.map(sec => buildSection(sec, activeKey)).join('');
     return head + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter();
+  }
+
+  // Read the signed-in user (stored by auth flow as cygenix_user) and fill the
+  // footer chip. Falls back to a neutral label so the chip never shows blanks.
+  function populateUser(root){
+    const nameEl = root.querySelector('#cyg-user-name');
+    const subEl  = root.querySelector('#cyg-user-sub');
+    const avEl   = root.querySelector('#cyg-user-av');
+    if (!nameEl) return;
+    let name = 'Account', email = '', plan = 'Migration Console';
+    try {
+      const raw = sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user')
+                || localStorage.getItem('cygenix_active_user');
+      if (raw){
+        const u = JSON.parse(raw);
+        name  = (u.user_metadata && u.user_metadata.full_name) || (u.email ? u.email.split('@')[0] : name);
+        email = u.email || '';
+        if (u.plan || (u.user_metadata && u.user_metadata.plan)) plan = u.plan || u.user_metadata.plan;
+      }
+    } catch {}
+    const initials = name.trim().split(/\s+/).map(w => w[0]).join('').slice(0,2).toUpperCase() || 'CY';
+    nameEl.textContent = name;
+    if (subEl) subEl.textContent = email || plan;
+    if (avEl) avEl.textContent = initials;
   }
 
   function buildSection(sec, activeKey){
@@ -471,6 +551,7 @@
     if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
 
     wireItemClicks(aside);
+    populateUser(aside);
     startBadgeUpdater();
     ensureA11y();
   }
@@ -616,6 +697,7 @@
       const toggle = replacement.querySelector('#cyg-sidebar-toggle');
       if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
       wireItemClicks(replacement);
+      populateUser(replacement);
       refreshProjectPlanBadge();
     }
   };

@@ -46,7 +46,7 @@
 <meta name="twitter:description" content="Write, run and manage SQL scripts with AI assistance.">
 <title>Cygenix – SQL Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
 <style>
@@ -55,13 +55,13 @@
   --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
   --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
   --text:#e8eaf0;--text2:#8b90a0;--text3:#555a6a;
-  --accent:#C74634;--accent-glow:rgba(199,70,52,0.15);
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
   --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
   --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
   --red:#f04646;--red-bg:rgba(240,70,70,0.1);
   --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
-  --serif:'Syne',system-ui,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:8px;--r-lg:12px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);height:100vh;overflow:hidden;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
@@ -82,7 +82,7 @@ body.cyg-collapsed .topbar{left:54px}
 .script-list{flex:1;overflow-y:auto;padding:0.5rem}
 .script-item{padding:0.6rem 0.75rem;border-radius:var(--r);cursor:pointer;transition:background 0.12s;border:0.5px solid transparent;margin-bottom:3px}
 .script-item:hover{background:var(--bg3)}
-.script-item.active{background:var(--accent-glow);border-color:rgba(199,70,52,0.2)}
+.script-item.active{background:var(--accent-glow);border-color:rgba(74,91,214,0.2)}
 .script-name{font-size:12px;color:var(--text2);font-weight:500;margin-bottom:2px}
 .script-meta{font-size:10px;color:var(--text3);font-family:var(--mono)}
 .script-conn{font-size:9px;padding:1px 5px;border-radius:4px;font-family:var(--mono)}
@@ -142,11 +142,11 @@ body.cyg-collapsed .topbar{left:54px}
 /* AI pane */
 .ai-messages{flex:1;overflow-y:auto;padding:0.75rem;display:flex;flex-direction:column;gap:0.75rem}
 .ai-msg{padding:0.75rem;border-radius:var(--r);font-size:12px;line-height:1.6}
-.ai-msg.user{background:var(--accent-glow);border:0.5px solid rgba(199,70,52,0.2);align-self:flex-end;max-width:85%}
+.ai-msg.user{background:var(--accent-glow);border:0.5px solid rgba(74,91,214,0.2);align-self:flex-end;max-width:85%}
 .ai-msg.assistant{background:var(--bg3);border:0.5px solid var(--border2);align-self:flex-start;max-width:95%}
 .ai-msg.assistant code{font-family:var(--mono);font-size:11px;color:var(--teal)}
 .ai-msg pre{background:var(--bg);border-radius:4px;padding:0.5rem;overflow-x:auto;margin-top:0.5rem;font-family:var(--mono);font-size:11px;color:var(--teal)}
-.ai-msg pre .apply-btn{display:block;margin-top:0.5rem;padding:3px 10px;background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(199,70,52,0.3);border-radius:4px;font-size:10px;cursor:pointer;font-family:var(--serif);width:fit-content}
+.ai-msg pre .apply-btn{display:block;margin-top:0.5rem;padding:3px 10px;background:var(--accent-glow);color:var(--accent);border:0.5px solid rgba(74,91,214,0.3);border-radius:4px;font-size:10px;cursor:pointer;font-family:var(--serif);width:fit-content}
 .ai-input-wrap{padding:0.75rem;border-top:0.5px solid var(--border);flex-shrink:0;display:flex;gap:0.5rem}
 .ai-input{flex:1;background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;font-size:12px;color:var(--text);font-family:var(--serif);outline:none;resize:none}
 .ai-input:focus{border-color:var(--accent)}
@@ -182,7 +182,7 @@ body.fullscreen .script-panel { display:none }
 .find-bar-btn:hover{color:var(--text);border-color:var(--text3)}
 .find-count{font-size:10px;color:var(--text3);font-family:var(--mono);min-width:40px;text-align:center}
 .highlight-match{background:rgba(245,158,11,0.35);border-radius:1px}
-.highlight-current{background:rgba(199,70,52,0.45);border-radius:1px}
+.highlight-current{background:rgba(74,91,214,0.45);border-radius:1px}
 
 /* ── LINE NUMBERS ──────────────────────────────────────────────────────────── */
 .editor-wrap-inner{display:flex;flex:1;overflow:hidden;position:relative;flex-direction:row}
@@ -220,7 +220,7 @@ body.fullscreen .script-panel { display:none }
 .results-toolbar{display:flex;align-items:center;gap:0.4rem;padding:0 0.5rem}
 .results-toolbar-btn{background:none;border:0.5px solid var(--border2);border-radius:4px;color:var(--text3);cursor:pointer;padding:2px 7px;font-size:10px;font-family:var(--serif);transition:all 0.12s;display:flex;align-items:center;gap:3px}
 .results-toolbar-btn:hover{color:var(--text);border-color:var(--text3)}
-.results-toolbar-btn.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(199,70,52,0.3)}
+.results-toolbar-btn.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(74,91,214,0.3)}
 
 /* ── MODAL (matches Cygenix dashboard pattern) ─────────────────────────────── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:1000;align-items:center;justify-content:center;padding:1rem}
@@ -290,7 +290,7 @@ body.fullscreen .script-panel { display:none }
 .panel-rail-dock{display:none;flex-direction:column;gap:6px;padding:8px 4px;align-items:center}
 .rail-btn{background:var(--bg3);border:0.5px solid var(--border2);color:var(--text2);width:28px;height:28px;border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;line-height:1;transition:all 0.12s;padding:0}
 .rail-btn:hover{color:var(--text);border-color:var(--text3);background:var(--bg2)}
-.rail-btn.active{background:var(--accent-glow);border-color:rgba(199,70,52,0.35);color:var(--accent)}
+.rail-btn.active{background:var(--accent-glow);border-color:rgba(74,91,214,0.35);color:var(--accent)}
 
 .lib-section{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);padding:0.6rem 0.25rem 0.3rem}
 .lib-item{position:relative;background:var(--bg3);border:0.5px solid var(--border2);border-radius:5px;padding:8px 10px;margin-bottom:4px;cursor:pointer;transition:all 0.12s}
@@ -371,7 +371,7 @@ body.fullscreen .script-panel { display:none }
 .ob-col-pk{color:var(--amber);font-size:9px}
 .ob-col-nullable{color:var(--text3);font-size:9px}
 
-.panel-toggle.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(199,70,52,0.3)}
+.panel-toggle.active{background:var(--accent-glow);color:var(--accent);border-color:rgba(74,91,214,0.3)}
 
 </style>
 </head>
@@ -844,24 +844,24 @@ function initMonaco(){
       'editor.foreground':              '#e8eaf0',
       'editorLineNumber.foreground':    '#555a6a',
       'editorLineNumber.activeForeground':'#8b90a0',
-      'editor.selectionBackground':     '#C7463440',
+      'editor.selectionBackground':     '#4A5BD640',
       'editor.lineHighlightBackground': '#13161d',
-      'editorCursor.foreground':        '#C74634',
+      'editorCursor.foreground':        '#4A5BD6',
       'editorIndentGuide.background':   '#1a1e28',
-      'editorIndentGuide.activeBackground':'#C7463440',
-      'editorBracketMatch.background':  '#C7463430',
-      'editorBracketMatch.border':      '#C74634',
+      'editorIndentGuide.activeBackground':'#4A5BD640',
+      'editorBracketMatch.background':  '#4A5BD630',
+      'editorBracketMatch.border':      '#4A5BD6',
       'editorWidget.background':        '#13161d',
       'editorWidget.border':            '#ffffff1f',
       'editorSuggestWidget.background': '#13161d',
       'editorSuggestWidget.border':     '#ffffff1f',
-      'editorSuggestWidget.selectedBackground':'#C7463426',
-      'editorSuggestWidget.highlightForeground':'#C74634',
+      'editorSuggestWidget.selectedBackground':'#4A5BD626',
+      'editorSuggestWidget.highlightForeground':'#4A5BD6',
       'editorHoverWidget.background':   '#13161d',
       'editorHoverWidget.border':       '#ffffff1f',
       'scrollbarSlider.background':     '#ffffff14',
       'scrollbarSlider.hoverBackground':'#ffffff26',
-      'scrollbarSlider.activeBackground':'#C7463459'
+      'scrollbarSlider.activeBackground':'#4A5BD659'
     }
   });
 
@@ -888,25 +888,25 @@ function initMonaco(){
       'editor.foreground':              '#1a1d21',
       'editorLineNumber.foreground':    '#b0b8c0',
       'editorLineNumber.activeForeground':'#1a1d21',
-      'editor.selectionBackground':     '#C7463426',
-      'editor.inactiveSelectionBackground':'#C7463414',
+      'editor.selectionBackground':     '#4A5BD626',
+      'editor.inactiveSelectionBackground':'#4A5BD614',
       'editor.lineHighlightBackground': '#f6f7f9',
-      'editorCursor.foreground':        '#C74634',
+      'editorCursor.foreground':        '#4A5BD6',
       'editorIndentGuide.background':   '#e6e9ec',
-      'editorIndentGuide.activeBackground':'#C7463455',
-      'editorBracketMatch.background':  '#C7463422',
-      'editorBracketMatch.border':      '#C74634',
+      'editorIndentGuide.activeBackground':'#4A5BD655',
+      'editorBracketMatch.background':  '#4A5BD622',
+      'editorBracketMatch.border':      '#4A5BD6',
       'editorWidget.background':        '#ffffff',
       'editorWidget.border':            '#d0d7de',
       'editorSuggestWidget.background': '#ffffff',
       'editorSuggestWidget.border':     '#d0d7de',
-      'editorSuggestWidget.selectedBackground':'#C7463418',
-      'editorSuggestWidget.highlightForeground':'#C74634',
+      'editorSuggestWidget.selectedBackground':'#4A5BD618',
+      'editorSuggestWidget.highlightForeground':'#4A5BD6',
       'editorHoverWidget.background':   '#ffffff',
       'editorHoverWidget.border':       '#d0d7de',
       'scrollbarSlider.background':     '#00000020',
       'scrollbarSlider.hoverBackground':'#00000033',
-      'scrollbarSlider.activeBackground':'#C7463466'
+      'scrollbarSlider.activeBackground':'#4A5BD666'
     }
   });
 
