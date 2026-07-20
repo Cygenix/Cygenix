@@ -224,6 +224,10 @@
         overflow:hidden;
       }
       .cyg-sidebar.collapsed .cyg-sidebar-head{ justify-content:center;padding:0; }
+      /* When collapsed, the brand steps aside so the expand toggle is the
+         single, always-visible control in the header (otherwise there is no
+         way to re-open the menu). */
+      .cyg-sidebar.collapsed .cyg-brand{ display:none; }
       .cyg-brand{ display:flex;align-items:center;gap:10px;min-width:0;flex:1;overflow:hidden;text-decoration:none; }
       .cyg-brand-mark{
         width:34px;height:34px;min-width:34px;border-radius:9px;
@@ -247,7 +251,9 @@
         transition:color 0.15s,background 0.15s;
       }
       .cyg-sidebar-toggle:hover{ color:#fff; background:rgba(255,255,255,0.12); }
-      .cyg-sidebar.collapsed .cyg-sidebar-toggle{ display:none; }
+      /* Stay visible & centered when collapsed so the menu can always be
+         re-expanded (the arrow flips to ❯ via JS). */
+      .cyg-sidebar.collapsed .cyg-sidebar-toggle{ margin-left:0;width:32px;height:32px;font-size:14px; }
 
       .cyg-sidebar-scroll{
         flex:1 1 auto;
