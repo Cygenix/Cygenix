@@ -99,6 +99,7 @@
       { key:'help',              label:'Help Guide',      action:'open-help',         color:'var(--accent)', icon: iconHelp() },
     ]},
     { section: null, items: [
+      { key:'accessibility',     label:'Accessibility',      action:'accessibility',      color:'var(--text3)',  icon: iconA11y(), navClass:'a11y-trigger' },
       { key:'cookie-prefs',      label:'Cookie preferences', action:'cookie-preferences', color:'var(--text3)',  icon: iconCookie() },
     ]},
   ];
@@ -149,6 +150,10 @@
   function iconInfo(){         return svg('<circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.2"/><path d="M8 7v5M8 5v1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'); }
   function iconPulse(){        return svg('<path d="M2 8h3l2-5 3 10 2-5h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconHelp(){         return svg('<circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M6.5 6c0-1 .75-1.5 1.5-1.5s1.5.5 1.5 1.5c0 .75-.5 1.25-1.5 1.5V9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="8" cy="11" r="0.6" fill="currentColor"/>'); }
+  // Accessibility "person" mark — matches the footer trigger it replaces.
+  function iconA11y(){         return svg('<circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="4.6" r="0.95" fill="currentColor"/><path d="M4.3 6.1c1.2.6 2.4.8 3.7.8s2.5-.2 3.7-.8M8 6.9V10m0 0l-1.5 2.3M8 10l1.5 2.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
+  // Hard-drive glyph for the permanent Drive shortcut at the top of the rail.
+  function iconDrive(){        return svg('<rect x="1.8" y="4.6" width="12.4" height="6.8" rx="1.4" stroke="currentColor" stroke-width="1.2"/><path d="M4 8h4.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="11.4" cy="8" r="0.95" fill="currentColor"/>'); }
 
   // ── State ───────────────────────────────────────────────────────────────
   function isCollapsed(){
@@ -379,16 +384,23 @@
       .cyg-sidebar.collapsed .cyg-user-meta{ display:none; }
       .cyg-sidebar.collapsed .cyg-user-chip{ justify-content:center;padding:8px 0; }
 
-      .cyg-a11y-btn{
-        display:flex;align-items:center;gap:11px;width:100%;
-        padding:8px 10px;border:none;background:none;cursor:pointer;
-        font:inherit;font-size:12.5px;color:rgba(255,255,255,0.6);border-radius:9px;
-        text-align:left;transition:color 0.12s,background 0.12s;
+      /* Permanent Drive shortcut — pinned under the brand header. */
+      .cyg-drive-area{ flex-shrink:0;padding:6px 12px 2px; }
+      .cyg-drive-btn{
+        display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;
+        padding:11px 13px;border-radius:11px;
+        border:1px solid rgba(255,255,255,0.12);
+        background:rgba(255,255,255,0.04);
+        color:var(--cyg-fg-strong);
+        font-size:14px;font-weight:600;letter-spacing:-0.01em;
+        text-decoration:none;cursor:pointer;
+        transition:background 0.15s,border-color 0.15s;
       }
-      .cyg-a11y-btn:hover{ color:#fff; background:rgba(255,255,255,0.07); }
-      .cyg-a11y-btn .cyg-nav-icon{ width:18px;height:18px;flex-shrink:0; }
-      .cyg-sidebar.collapsed .cyg-a11y-btn{ justify-content:center;padding:9px 0; }
-      .cyg-sidebar.collapsed .cyg-a11y-btn .cyg-nav-item-label{ display:none; }
+      .cyg-drive-btn:hover{ background:rgba(255,255,255,0.10);border-color:rgba(255,255,255,0.22); }
+      .cyg-drive-btn .cyg-nav-icon{ width:18px;height:18px;flex-shrink:0;opacity:0.95; }
+      .cyg-sidebar.collapsed .cyg-drive-area{ padding:6px 0 2px; }
+      .cyg-sidebar.collapsed .cyg-drive-btn{ justify-content:center;padding:11px 0;gap:0; }
+      .cyg-sidebar.collapsed .cyg-drive-btn .cyg-nav-item-label{ display:none; }
     `;
     document.head.appendChild(style);
   }
@@ -402,7 +414,6 @@
   }
 
   function buildFooter(){
-    const icon = svg('<circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="4.6" r="0.95" fill="currentColor"/><path d="M4.3 6.1c1.2.6 2.4.8 3.7.8s2.5-.2 3.7-.8M8 6.9V10m0 0l-1.5 2.3M8 10l1.5 2.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>');
     const chev = svg('<path d="M5 6.5l3-3 3 3M5 9.5l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
     return `<div class="cyg-sidebar-foot">
       <button type="button" class="cyg-user-chip" id="cyg-user-chip" aria-haspopup="menu" aria-expanded="false" title="Account">
@@ -410,10 +421,17 @@
         <span class="cyg-user-meta"><b id="cyg-user-name">Account</b><span id="cyg-user-sub">Migration Console</span></span>
         <span class="cyg-user-chev">${chev}</span>
       </button>
-      <button type="button" class="cyg-a11y-btn a11y-trigger" aria-label="Accessibility options" aria-expanded="false"
-              onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">
-        ${icon}<span class="cyg-nav-item-label">Accessibility</span>
-      </button>
+    </div>`;
+  }
+
+  // Permanent Drive shortcut, pinned at the very top of the rail (under the
+  // brand header). Always opens the Co-Worker's virtual Drive, from anywhere
+  // in the app, via the /coworker.html#drive deep link.
+  function buildDriveButton(){
+    return `<div class="cyg-drive-area">
+      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/coworker.html#drive" title="Open the Co-Worker Drive">
+        ${iconDrive()}<span class="cyg-nav-item-label">Drive</span>
+      </a>
     </div>`;
   }
 
@@ -427,7 +445,7 @@
       <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar">❮</button>
     </div>`;
     const body = NAV.map(sec => buildSection(sec, activeKey)).join('');
-    return head + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter();
+    return head + buildDriveButton() + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter();
   }
 
   // Read the signed-in user (stored by auth flow as cygenix_user) and fill the
@@ -568,6 +586,21 @@
     });
   }
 
+  // The Drive button is a plain link to /coworker.html#drive, which works from
+  // any other page. But when we're ALREADY on the co-worker page, changing the
+  // hash alone won't re-fire the deep link — so open the Drive directly.
+  function wireDriveButton(root){
+    const btn = root.querySelector('#cyg-drive-btn');
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      const onCoworker = /\/coworker\.html?$/.test(location.pathname);
+      if (onCoworker && typeof window.openDrive === 'function'){
+        e.preventDefault();
+        window.openDrive();
+      }
+    });
+  }
+
   function buildSection(sec, activeKey){
     const visibleItems = (sec.items || []).filter(isItemVisible);
     if (!visibleItems.length) return '';
@@ -587,10 +620,14 @@
     const badgeHtml = item.badgeId
       ? `<span class="cyg-nav-badge" id="${item.badgeId}" aria-live="polite"></span>`
       : '';
+    // Optional extra class (e.g. `a11y-trigger` so the accessibility panel's
+    // outside-click handler recognises this item as its own toggle).
+    const extraCls  = item.navClass ? ' ' + item.navClass : '';
+    const extraAttr = item.action === 'accessibility' ? ' aria-haspopup="dialog" aria-expanded="false"' : '';
     return `
-      <div class="cyg-nav-item${isActive}"
+      <div class="cyg-nav-item${isActive}${extraCls}"
            data-key="${item.key}"
-           tabindex="0"${styleAttr}>
+           tabindex="0"${styleAttr}${extraAttr}>
         ${item.icon || ''}
         <span class="cyg-nav-item-label">${escapeHtml(item.label)}</span>
         ${badgeHtml}
@@ -648,6 +685,12 @@
       window.open('/help.html', '_blank');
       return;
     }
+    if (item.action === 'accessibility'){
+      // The a11y engine is loaded on mount via ensureA11y(); toggle its panel.
+      if (window.CygenixA11y){ window.CygenixA11y.toggle(); }
+      else { ensureA11y(); setTimeout(() => { if (window.CygenixA11y) window.CygenixA11y.toggle(); }, 150); }
+      return;
+    }
     if (item.view){
       if (onDashboard && typeof window.showView === 'function'){
         window.showView(item.view);
@@ -699,6 +742,7 @@
     wireItemClicks(aside);
     populateUser(aside);
     wireUserChip(aside);
+    wireDriveButton(aside);
     hideTopbarUserPill();
     startBadgeUpdater();
     ensureA11y();
@@ -847,6 +891,7 @@
       wireItemClicks(replacement);
       populateUser(replacement);
       wireUserChip(replacement);
+      wireDriveButton(replacement);
       hideTopbarUserPill();
       refreshProjectPlanBadge();
     }
