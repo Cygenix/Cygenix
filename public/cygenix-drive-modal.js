@@ -103,11 +103,13 @@
       .cygdm-bg.min .cygdm-modal{pointer-events:auto;width:340px;max-width:82vw;height:auto;max-height:none}
       .cygdm-bg.min .cygdm-bar,.cygdm-bg.min .cygdm-map,.cygdm-bg.min .cygdm-body,.cygdm-bg.min .cygdm-foot{display:none!important}
       .cygdm-bg.min .cygdm-h{cursor:pointer}
-      /* While dragging a file out, let the scrim go transparent and become
-         click-through so the drop lands on the page (editor) behind. The
-         floating window stays visible but non-interactive during the drag. */
-      .cygdm-bg.dragging{background:transparent;pointer-events:none}
-      .cygdm-bg.dragging .cygdm-modal{opacity:.55;transition:opacity .12s}
+      /* While dragging a file out: dim the scrim and window so the editor
+         behind is easy to see. We deliberately DON'T set pointer-events:none
+         on the overlay (that would break the native drag, since the dragged
+         row lives inside it). The host page catches the drop at the document
+         level instead, so a drop anywhere — even on this overlay — works. */
+      .cygdm-bg.dragging{background:transparent}
+      .cygdm-bg.dragging .cygdm-modal{opacity:.5;transition:opacity .12s}
       .cygdm-row[draggable="true"]{cursor:grab}
 
       .cygdm-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:.9rem 1.05rem;border-bottom:1px solid var(--border,#eceef2)}
