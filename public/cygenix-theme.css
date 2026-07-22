@@ -228,3 +228,12 @@ html[data-theme="light"][data-theme="light"] .kpi-card,
 html[data-theme="light"][data-theme="light"] .proj-card{
   box-shadow:var(--shadow-soft);
 }
+
+/* ── Account menu moved to the sidebar ──────────────────────────────────
+ * The top-right topbar user pill is retired on every page that renders the
+ * shared sidebar — its dropdown (email · My projects · Subscription · Sign
+ * out) now opens from the sidebar footer chip. Scoped with :has() so pages
+ * WITHOUT a sidebar keep their own topbar pill. !important beats the pill's
+ * inline display:flex and any script that toggles it. */
+body:has(aside.cyg-sidebar) #user-pill,
+body:has(aside.cyg-sidebar) .user-pill{ display:none !important; }

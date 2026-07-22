@@ -338,11 +338,35 @@
         display:flex;flex-direction:column;gap:4px;
       }
       .cyg-user-chip{
-        display:flex;align-items:center;gap:11px;
-        padding:8px;border-radius:10px;cursor:pointer;
+        display:flex;align-items:center;gap:11px;width:100%;
+        padding:8px;border:none;background:none;border-radius:10px;cursor:pointer;
+        font:inherit;text-align:left;
         transition:background 0.15s;text-decoration:none;
       }
       .cyg-user-chip:hover{ background:rgba(255,255,255,0.07); }
+      .cyg-user-chev{ margin-left:auto;display:flex;color:rgba(255,255,255,0.4);flex-shrink:0; }
+      .cyg-user-chev svg{ width:16px;height:16px; }
+      .cyg-sidebar.collapsed .cyg-user-chev{ display:none; }
+
+      /* Account menu — light popover, appended to <body> so it escapes the
+         sidebar's overflow:hidden and can open above the footer chip. */
+      .cyg-user-menu{
+        position:fixed;z-index:1000;min-width:222px;
+        background:#fff;border:1px solid #e4e7ee;border-radius:12px;
+        box-shadow:0 14px 36px -10px rgba(20,24,40,0.38);
+        padding:6px;display:none;
+        font-family:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;
+      }
+      .cyg-user-menu.open{ display:block;animation:cygMenuIn .12s ease; }
+      @keyframes cygMenuIn{ from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+      .cyg-user-menu-email{ padding:9px 10px 7px;font-size:12px;color:#7a8090;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+      .cyg-user-menu-sep{ height:1px;background:#f0f1f5;margin:4px 2px; }
+      .cyg-user-menu-item{ display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;
+        padding:9px 10px;border:none;background:none;cursor:pointer;font:inherit;font-size:13px;
+        color:#2a2e3a;border-radius:8px;text-align:left;text-decoration:none; }
+      .cyg-user-menu-item:hover{ background:#f4f5f8;color:#2a2e3a; }
+      .cyg-user-menu-item.danger{ color:#c0392b; }
+      .cyg-user-menu-item.danger:hover{ background:rgba(192,57,43,0.08);color:#c0392b; }
       .cyg-user-av{
         width:32px;height:32px;min-width:32px;border-radius:8px;
         background:#4a5bd6;
@@ -379,11 +403,13 @@
 
   function buildFooter(){
     const icon = svg('<circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="4.6" r="0.95" fill="currentColor"/><path d="M4.3 6.1c1.2.6 2.4.8 3.7.8s2.5-.2 3.7-.8M8 6.9V10m0 0l-1.5 2.3M8 10l1.5 2.3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>');
+    const chev = svg('<path d="M5 6.5l3-3 3 3M5 9.5l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
     return `<div class="cyg-sidebar-foot">
-      <a class="cyg-user-chip" href="/dashboard.html#goto=project-settings" title="Account">
+      <button type="button" class="cyg-user-chip" id="cyg-user-chip" aria-haspopup="menu" aria-expanded="false" title="Account">
         <span class="cyg-user-av" id="cyg-user-av">CY</span>
         <span class="cyg-user-meta"><b id="cyg-user-name">Account</b><span id="cyg-user-sub">Migration Console</span></span>
-      </a>
+        <span class="cyg-user-chev">${chev}</span>
+      </button>
       <button type="button" class="cyg-a11y-btn a11y-trigger" aria-label="Accessibility options" aria-expanded="false"
               onclick="event.stopPropagation(); if(window.CygenixA11y){window.CygenixA11y.toggle();}">
         ${icon}<span class="cyg-nav-item-label">Accessibility</span>
@@ -426,6 +452,120 @@
     nameEl.textContent = name;
     if (subEl) subEl.textContent = email || plan;
     if (avEl) avEl.textContent = initials;
+  }
+
+  // ── Account menu (moved here from the old top-right topbar pill) ──────────
+  // Built once and appended to <body> so it can sit above the footer chip
+  // without being clipped by the sidebar's overflow:hidden.
+  function buildUserMenu(){
+    let menu = document.getElementById('cyg-user-menu');
+    if (menu) return menu;
+    menu = document.createElement('div');
+    menu.className = 'cyg-user-menu';
+    menu.id = 'cyg-user-menu';
+    menu.setAttribute('role', 'menu');
+    menu.innerHTML =
+      '<div class="cyg-user-menu-email" id="cyg-user-menu-email"></div>' +
+      '<div class="cyg-user-menu-sep"></div>' +
+      '<a class="cyg-user-menu-item" role="menuitem" href="/projects.html">My projects</a>' +
+      '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-sub">Subscription</button>' +
+      '<div class="cyg-user-menu-sep"></div>' +
+      '<button class="cyg-user-menu-item danger" role="menuitem" type="button" id="cyg-user-menu-signout">Sign out</button>';
+    document.body.appendChild(menu);
+    menu.querySelector('#cyg-user-menu-sub').addEventListener('click', (e) => {
+      e.preventDefault(); closeUserMenu();
+      if (typeof window.openBillingPortal === 'function') { try { window.openBillingPortal(e.currentTarget); return; } catch(_){} }
+      window.location.href = '/pick-plan.html';
+    });
+    menu.querySelector('#cyg-user-menu-signout').addEventListener('click', (e) => {
+      e.preventDefault(); closeUserMenu(); sidebarSignOut();
+    });
+    return menu;
+  }
+
+  function positionUserMenu(menu, chip){
+    const r = chip.getBoundingClientRect();
+    menu.style.left   = Math.max(8, r.left) + 'px';
+    menu.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+    menu.style.top    = 'auto';
+    menu.style.maxWidth = Math.max(180, window.innerWidth - r.left - 16) + 'px';
+  }
+
+  function openUserMenu(chip){
+    const menu = buildUserMenu();
+    const sub = document.getElementById('cyg-user-sub');
+    const emailEl = menu.querySelector('#cyg-user-menu-email');
+    if (emailEl) emailEl.textContent = (sub && sub.textContent) || 'Account';
+    positionUserMenu(menu, chip);
+    menu.classList.add('open');
+    chip.setAttribute('aria-expanded', 'true');
+    setTimeout(() => document.addEventListener('click', outsideUserMenu), 0);
+    window.addEventListener('resize', repositionUserMenu);
+  }
+
+  function closeUserMenu(){
+    const menu = document.getElementById('cyg-user-menu');
+    if (menu) menu.classList.remove('open');
+    const chip = document.getElementById('cyg-user-chip');
+    if (chip) chip.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', outsideUserMenu);
+    window.removeEventListener('resize', repositionUserMenu);
+  }
+
+  function outsideUserMenu(e){
+    const menu = document.getElementById('cyg-user-menu');
+    const chip = document.getElementById('cyg-user-chip');
+    if (!menu) return;
+    if (menu.contains(e.target) || (chip && chip.contains(e.target))) return;
+    closeUserMenu();
+  }
+  function repositionUserMenu(){
+    const menu = document.getElementById('cyg-user-menu');
+    const chip = document.getElementById('cyg-user-chip');
+    if (menu && chip && menu.classList.contains('open')) positionUserMenu(menu, chip);
+  }
+  function toggleUserMenu(chip){
+    const menu = document.getElementById('cyg-user-menu');
+    if (menu && menu.classList.contains('open')) closeUserMenu();
+    else openUserMenu(chip);
+  }
+
+  // Self-contained sign-out so it works on every page (most pages don't load
+  // the MSAL library). Delegates to a page-provided window.signOut() when one
+  // exists (e.g. dashboard's MSAL logout), otherwise clears session + redirects
+  // through the Entra logout endpoint — mirrors dashboard's own fallback path.
+  function sidebarSignOut(){
+    if (typeof window.signOut === 'function'){ try { window.signOut(); return; } catch(_){} }
+    try { sessionStorage.setItem('cygenix_just_signed_out', '1'); } catch(_){}
+    ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project',
+     'cygenix_entra_account','cygenix_active_user'].forEach(k => {
+      try { sessionStorage.removeItem(k); localStorage.removeItem(k); } catch(_){}
+    });
+    const CLIENT_ID = 'f3478996-b2b5-4b21-9a23-a6b97a0e5b13';
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.includes('msal') || k.includes(CLIENT_ID) || k[0] === '{') localStorage.removeItem(k);
+      });
+    } catch(_){}
+    window.location.href =
+      'https://cygenix.ciamlogin.com/fc8dfc7a-645f-4a5c-8f59-6762f97c803f/oauth2/v2.0/logout'
+      + '?post_logout_redirect_uri=' + encodeURIComponent(window.location.origin + '/login.html');
+  }
+
+  // Hide the legacy top-right user pill on pages where the sidebar renders —
+  // its menu now lives on the sidebar chip. Pages without a sidebar keep their
+  // own pill untouched.
+  function hideTopbarUserPill(){
+    document.querySelectorAll('#user-pill, .user-pill').forEach(el => { el.style.display = 'none'; });
+  }
+
+  function wireUserChip(root){
+    const chip = root.querySelector('#cyg-user-chip');
+    if (!chip) return;
+    chip.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      toggleUserMenu(chip);
+    });
   }
 
   function buildSection(sec, activeKey){
@@ -558,6 +698,8 @@
 
     wireItemClicks(aside);
     populateUser(aside);
+    wireUserChip(aside);
+    hideTopbarUserPill();
     startBadgeUpdater();
     ensureA11y();
   }
@@ -704,6 +846,8 @@
       if (toggle) toggle.textContent = collapsed ? '❯' : '❮';
       wireItemClicks(replacement);
       populateUser(replacement);
+      wireUserChip(replacement);
+      hideTopbarUserPill();
       refreshProjectPlanBadge();
     }
   };
