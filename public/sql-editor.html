@@ -49,6 +49,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js"></script>
 <script src="/cygenix-cosmos-sync.js"></script>
+<script src="/cygenix-drive.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -1230,11 +1231,35 @@ let queryHistory = [];
 // Track currently loaded job
 var currentJobId = null;
 
-function loadScripts() {
-  try { scripts = JSON.parse(localStorage.getItem(SCRIPTS_KEY)||'[]'); } catch { scripts=[]; }
+// Scripts now live in the shared Co-Worker Drive (real .sql files under a
+// "SQL Editor" folder) so they're managed in one place alongside the co-worker.
+// We keep an in-memory `scripts` cache (so rendering/loadScript stay sync) and
+// a localStorage mirror as an offline/resilience fallback.
+async function loadScripts() {
+  try {
+    if (window.CygenixDrive) {
+      // One-time import of any pre-existing localStorage scripts into the Drive.
+      if (!localStorage.getItem(SCRIPTS_KEY + '_drive_migrated')) {
+        let legacy = [];
+        try { legacy = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || '[]'); } catch {}
+        for (const s of legacy) { if (s && s.id) { try { await CygenixDrive.upsertScript(s); } catch (_) {} } }
+        try { localStorage.setItem(SCRIPTS_KEY + '_drive_migrated', '1'); } catch {}
+      }
+      scripts = await CygenixDrive.listScripts();
+    } else {
+      scripts = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || '[]');
+    }
+  } catch (e) {
+    try { scripts = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || '[]'); } catch { scripts = []; }
+  }
+  try { renderLibrary(); } catch (_) {}
 }
 function saveScripts() {
+  // Mirror to localStorage (fast, synchronous safety net)…
   try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(scripts)); } catch {}
+  // …and persist to the Drive (source of truth). Fire-and-forget: the in-memory
+  // `scripts` array is already updated, and the UI renders from that.
+  if (window.CygenixDrive) { try { CygenixDrive.syncScripts(scripts.slice()).catch(() => {}); } catch (_) {} }
 }
 
 function renderScriptList() { renderLibrary(); }
@@ -3076,6 +3101,7 @@ function renderLibItem(kind, item) {
     actions = ''
       + '<button class="lib-action-btn"          onclick="event.stopPropagation();loadJobSQL(\''+item.id+'\')"        title="Open this job in the editor">Open</button>'
       + '<button class="lib-action-btn primary"  onclick="event.stopPropagation();ejectJobToScript(\''+item.id+'\')"  title="Copy SQL out as a fresh script">Eject to Script</button>'
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();saveJobToDrive(\''+item.id+'\')"    title="Save this job&#39;s SQL to the Co-Worker Drive">To Drive</button>'
       + '<button class="lib-action-btn danger"   onclick="event.stopPropagation();deleteJobConfirm(\''+item.id+'\')"  title="Delete">Delete</button>';
   }
 
@@ -3378,6 +3404,20 @@ function getJobsWithSQL() {
     return jobs.filter(function(j){ return j.insertSQL || j.migrationSQL || j.sql; });
   } catch(e) { return []; }
 }
+
+// Save a migration job's generated SQL into the shared Co-Worker Drive
+// (under "SQL Editor › Jobs"). Non-destructive — the job itself is untouched.
+async function saveJobToDrive(id) {
+  const j = getJobsWithSQL().find(function(x){ return x.id === id; });
+  const sql = j && (j.insertSQL || j.migrationSQL || j.sql);
+  if (!sql || !sql.trim()) { alert('This job has no SQL to save yet.'); return; }
+  if (!window.CygenixDrive) { alert('The Co-Worker Drive is unavailable in this browser.'); return; }
+  try {
+    await CygenixDrive.saveJobToDrive(j.name || ('job_' + id), sql, { jobId: id, name: j.name || '', target: j.target || '' });
+    if (typeof setExecStatus === 'function') { setExecStatus('✓ Saved "' + (j.name || id) + '" to Drive (SQL Editor › Jobs)', 'var(--green)'); setTimeout(function(){ setExecStatus('',''); }, 3500); }
+  } catch (e) { alert('Could not save to Drive: ' + ((e && e.message) || e)); }
+}
+window.saveJobToDrive = saveJobToDrive;
 
 // Compatibility — legacy callers
 function renderJobsList() { renderLibrary(); }
