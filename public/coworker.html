@@ -150,6 +150,11 @@
   .drive-storage{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--text3);cursor:default}
   .drive-storage svg{flex-shrink:0}
   .drive-storage b{color:var(--text2);font-weight:600}
+  .drive-map{align-items:center;gap:0.5rem;padding:0.45rem 0.9rem;background:var(--accent-glow);border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);flex-wrap:wrap}
+  .drive-map .dm-ic{color:var(--accent);font-size:14px;flex-shrink:0}
+  .drive-map .dm-txt{flex:1;min-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .drive-map .dm-txt b{color:var(--text)}
+  .drive-map .tb-btn{padding:3px 9px;font-size:11.5px}
 
   @media (max-width:900px){
     .work{flex-direction:column}
@@ -282,8 +287,10 @@
       <button class="tb-btn" onclick="driveNewFolder()" title="Create a folder here">＋ Folder</button>
       <button class="tb-btn" onclick="drivePickFiles()" title="Upload files here">⬆ Files</button>
       <button class="tb-btn" onclick="drivePickFolder()" title="Upload a whole folder (keeps its structure)">⬆ Folder</button>
+      <button class="tb-btn" id="drive-sync-btn" onclick="driveSyncButton()" title="Map &amp; sync the Drive with a folder on your computer">⇄ Sync folder</button>
       <input type="search" class="drive-search" id="drive-search" placeholder="Search drive…" oninput="driveSearchInput(this.value)" spellcheck="false">
     </div>
+    <div class="drive-map" id="drive-map" style="display:none"></div>
     <div class="drive-body" id="drive-body"></div>
     <div class="drive-foot">
       <span id="drive-foot-l"></span>
@@ -742,11 +749,11 @@
     while(kids.some(k=>k.kind==='folder'&&k.name.toLowerCase()===final.toLowerCase())){ final=name+' ('+(i++)+')'; }
     const node={id:uid(),parentId:parentId||'',name:final,kind:'folder',mtime:Date.now()}; await dput(node); return node;
   }
-  async function driveAddFile(parentId, name, blob, mime){
+  async function driveAddFile(parentId, name, blob, mime, mtime){
     const kids=await dchildren(parentId); const dot=name.lastIndexOf('.');
     const base=dot>0?name.slice(0,dot):name, ext=dot>0?name.slice(dot):''; let final=name, i=2;
     while(kids.some(k=>k.kind==='file'&&k.name.toLowerCase()===final.toLowerCase())){ final=base+' ('+(i++)+')'+ext; }
-    const node={id:uid(),parentId:parentId||'',name:final,kind:'file',size:blob.size,mime:mime||blob.type||'',mtime:Date.now(),content:blob};
+    const node={id:uid(),parentId:parentId||'',name:final,kind:'file',size:blob.size,mime:mime||blob.type||'',mtime:mtime||Date.now(),content:blob};
     await dput(node); return node;
   }
   async function driveEnsureFolderPath(parentId, segments){ let cur=parentId||'';
@@ -781,7 +788,7 @@
   }
 
   // ── Drive UI ─────────────────────────────────────────────────
-  window.openDrive  = function(){ driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); renderStorage(); $('drive-modal').classList.add('open'); };
+  window.openDrive  = function(){ driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); renderStorage(); renderMapBanner(); $('drive-modal').classList.add('open'); };
   window.closeDrive = function(){ $('drive-modal').classList.remove('open'); };
   window.driveSearchInput = function(v){ driveSearchQ=(v||'').trim().toLowerCase(); renderDrive(); };
   window.driveNavigate = function(id){ driveCwd=id||''; driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); };
@@ -905,11 +912,125 @@
   $('drive-file-input').addEventListener('change', async e=>{ if(e.target.files&&e.target.files.length) await driveUploadFiles(e.target.files); e.target.value=''; });
   $('drive-folder-input').addEventListener('change', async e=>{ if(e.target.files&&e.target.files.length) await driveUploadFiles(e.target.files); e.target.value=''; });
 
+  // ══════════════════════════════════════════════════════════════════════
+  //  Map & sync the Drive with a local folder (File System Access API).
+  //  Two-way, newest-wins merge. Nothing is deleted on either side — files are
+  //  created or updated only, so a delete never propagates and loses data.
+  //  Chromium browsers only; degrades to a message elsewhere. Reuses the
+  //  ensurePerm / idb* helpers + fsSupported() from the local-folder feature.
+  // ══════════════════════════════════════════════════════════════════════
+  let driveMapHandle=null, driveMapMeta={lastSync:0}, driveSyncing=false;
+
+  function renderMapBanner(){
+    const el=$('drive-map'); const btn=$('drive-sync-btn'); if(!el) return;
+    if(!driveMapHandle){ el.style.display='none'; el.innerHTML=''; if(btn) btn.textContent='⇄ Sync folder'; return; }
+    if(btn) btn.textContent='⇄ Sync now';
+    const when = driveMapMeta.lastSync ? new Date(driveMapMeta.lastSync).toLocaleString() : 'not yet';
+    el.style.display='flex';
+    el.innerHTML =
+      '<span class="dm-ic">⇄</span>' +
+      '<span class="dm-txt">Synced with <b>'+esc(driveMapHandle.name)+'</b> · last sync '+esc(when)+'</span>' +
+      '<button class="tb-btn" onclick="driveSyncNow()">Sync now</button>' +
+      '<button class="tb-btn" onclick="driveUnmap()">Unmap</button>';
+  }
+
+  window.driveSyncButton = async function(){
+    if(!fsSupported()){ toast('Folder sync needs Chrome or Edge'); return; }
+    if(!driveMapHandle){ await driveMapFolder(); return; }
+    await driveSyncNow();
+  };
+  window.driveMapFolder = async function(){
+    if(!fsSupported()){ toast('Folder sync needs a Chromium browser (Chrome or Edge)'); return; }
+    try{
+      const h=await window.showDirectoryPicker({mode:'readwrite',id:'cygenix-drive-sync'});
+      driveMapHandle=h; try{ await idbSet('driveMapDir',h); }catch(_){}
+      renderMapBanner(); toast('Mapped to '+h.name);
+      if(confirm('Sync now?\n\nThis merges files both ways between the Drive and “'+h.name+'” — newest version wins. Nothing is deleted on either side.')) await driveSyncNow();
+    }catch(e){ if(e && e.name!=='AbortError') toast('Could not open that folder'); }
+  };
+  window.driveUnmap = async function(){
+    driveMapHandle=null; driveMapMeta={lastSync:0};
+    try{ await idbDel('driveMapDir'); await idbDel('driveMapMeta'); }catch(_){}
+    renderMapBanner(); toast('Folder unmapped (files kept on both sides)');
+  };
+
+  async function walkDisk(dirHandle, prefix, out){
+    for await (const [name,handle] of dirHandle.entries()){
+      const path=(prefix?prefix+'/':'')+name;
+      if(handle.kind==='directory'){ out.folders.push(path); await walkDisk(handle, path, out); }
+      else { let f; try{ f=await handle.getFile(); }catch(_){ continue; } out.files.push({ path, name, handle, lastModified:f.lastModified||0, file:f }); }
+    }
+  }
+  async function ensureDiskDir(root, segs){ let cur=root; for(const s of segs){ if(!s) continue; cur=await cur.getDirectoryHandle(s,{create:true}); } return cur; }
+
+  async function driveBuildIndex(){
+    const all=await dall(); const byId={}; all.forEach(n=>byId[n.id]=n);
+    const pathOf=(n)=>{ const parts=[n.name]; let p=n.parentId,g=0; while(p&&byId[p]&&g++<50){ parts.unshift(byId[p].name); p=byId[p].parentId; } return parts.join('/'); };
+    const filesByPath=new Map();
+    all.forEach(n=>{ if(n.kind==='file') filesByPath.set(pathOf(n), n); });
+    return { filesByPath };
+  }
+
+  window.driveSyncNow = async function(){
+    if(!driveMapHandle){ toast('No folder mapped'); return; }
+    if(driveSyncing) return;
+    if(!(await ensurePerm(driveMapHandle))){ toast('Folder permission needed'); return; }
+    driveSyncing=true; toast('Syncing…');
+    try{
+      const disk={folders:[],files:[]}; await walkDisk(driveMapHandle,'',disk);
+      const diskByPath=new Map(); disk.files.forEach(f=>diskByPath.set(f.path,f));
+      let idx=await driveBuildIndex();
+      let pulled=0, pushed=0, updated=0;
+      const TOL=1500;   // ms tolerance so equal files don't ping-pong
+
+      // Pull / reconcile: disk → drive
+      for(const df of disk.files){
+        const dn=idx.filesByPath.get(df.path);
+        if(!dn){
+          const segs=df.path.split('/'); const fname=segs.pop();
+          const folderId=segs.length ? await driveEnsureFolderPath('', segs) : '';
+          await driveAddFile(folderId, fname, df.file, df.file.type, df.lastModified); pulled++;
+        } else if(df.lastModified > (dn.mtime||0)+TOL){
+          dn.content=df.file; dn.size=df.file.size; dn.mime=df.file.type||dn.mime; dn.mtime=df.lastModified; await dput(dn); updated++;
+        }
+      }
+      // Push: drive → disk (create or overwrite when the drive copy is newer/only)
+      idx=await driveBuildIndex();
+      for(const [path,dn] of idx.filesByPath){
+        const df=diskByPath.get(path); const driveM=dn.mtime||0;
+        if(!df || driveM > (df.lastModified||0)+TOL){
+          const segs=path.split('/'); const fname=segs.pop();
+          const dir=segs.length ? await ensureDiskDir(driveMapHandle, segs) : driveMapHandle;
+          const fh=await dir.getFileHandle(fname,{create:true});
+          const w=await fh.createWritable(); await w.write(dn.content); await w.close();
+          try{ const nf=await fh.getFile(); dn.mtime=nf.lastModified; await dput(dn); }catch(_){}   // align timestamps
+          pushed++;
+        }
+      }
+      driveMapMeta={lastSync:Date.now()}; try{ await idbSet('driveMapMeta',driveMapMeta); }catch(_){}
+      renderMapBanner(); renderDrive();
+      toast('Synced · '+pulled+' in, '+pushed+' out'+(updated?(', '+updated+' updated'):''));
+    }catch(e){ toast('Sync failed: '+((e&&e.message)||'error')); }
+    finally{ driveSyncing=false; }
+  };
+
+  async function driveRestoreMap(){
+    try{
+      if(!fsSupported()) return;
+      const h=await idbGet('driveMapDir'); if(!h) return;
+      driveMapHandle=h;
+      const m=await idbGet('driveMapMeta'); if(m) driveMapMeta=m;
+      renderMapBanner();
+    }catch(_){}
+  }
+
   // Public API — lets the co-worker / other code use the drive as a workspace.
   window.CygenixDrive = {
     list: dchildren, all: dall, get: dget, summary: driveSummary,
     createFolder: driveCreateFolder, addFile: driveAddFile, remove: driveRemove,
-    rename: driveRename, cwd: ()=>driveCwd, open: openDrive
+    rename: driveRename, cwd: ()=>driveCwd, open: openDrive,
+    mapFolder: () => window.driveMapFolder(), sync: () => window.driveSyncNow(),
+    isMapped: () => !!driveMapHandle
   };
 
   // ── Boot ─────────────────────────────────────────────────────
@@ -937,6 +1058,11 @@
       updateFolderUI();
     }catch(_){}
   })();
+
+  // Restore a previously-mapped Drive-sync folder (shows its status banner;
+  // the actual sync waits behind a click so we never touch the disk unasked).
+  driveRestoreMap();
+
 })();
 </script>
 </body>
