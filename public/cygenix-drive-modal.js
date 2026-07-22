@@ -103,6 +103,12 @@
       .cygdm-bg.min .cygdm-modal{pointer-events:auto;width:340px;max-width:82vw;height:auto;max-height:none}
       .cygdm-bg.min .cygdm-bar,.cygdm-bg.min .cygdm-map,.cygdm-bg.min .cygdm-body,.cygdm-bg.min .cygdm-foot{display:none!important}
       .cygdm-bg.min .cygdm-h{cursor:pointer}
+      /* While dragging a file out, let the scrim go transparent and become
+         click-through so the drop lands on the page (editor) behind. The
+         floating window stays visible but non-interactive during the drag. */
+      .cygdm-bg.dragging{background:transparent;pointer-events:none}
+      .cygdm-bg.dragging .cygdm-modal{opacity:.55;transition:opacity .12s}
+      .cygdm-row[draggable="true"]{cursor:grab}
 
       .cygdm-h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:.9rem 1.05rem;border-bottom:1px solid var(--border,#eceef2)}
       .cygdm-h b{font-size:14px;color:var(--text,#1a1d21);display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -258,6 +264,20 @@
     } else {
       row.onclick = e => { if (e.target.closest('.cygdm-acts')) return; downloadFile(n); };
       const dl = document.createElement('button'); dl.title = 'Download'; dl.textContent = '⭳'; dl.onclick = e => { e.stopPropagation(); downloadFile(n); }; acts.appendChild(dl);
+      // Draggable so the file can be dropped straight into a host editor (e.g.
+      // the SQL Editor). The overlay goes click-through during the drag so the
+      // drop lands on the page behind it.
+      row.draggable = true;
+      row.title = 'Drag into the editor to open';
+      row.addEventListener('dragstart', e => {
+        try {
+          e.dataTransfer.setData('application/x-cygenix-drive-file', JSON.stringify({ id: n.id, name: n.name }));
+          e.dataTransfer.setData('text/plain', n.name);
+          e.dataTransfer.effectAllowed = 'copy';
+        } catch (_) {}
+        if ($bg) $bg.classList.add('dragging');
+      });
+      row.addEventListener('dragend', () => { if ($bg) $bg.classList.remove('dragging'); });
     }
     const rn = document.createElement('button'); rn.title = 'Rename'; rn.textContent = '✎';
     rn.onclick = async e => { e.stopPropagation(); const nn = prompt('Rename to:', n.name); if (nn == null) return; await driveRename(n.id, nn); renderDrive(); }; acts.appendChild(rn);
