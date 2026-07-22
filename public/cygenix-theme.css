@@ -177,8 +177,8 @@ html[data-theme="light"][data-theme="light"]{
   /* Typography — clean neutral sans everywhere (Oracle is all-sans, not
    * serif). --serif is remapped to the sans stack so every heading that
    * referenced it now renders in the same clean face. */
-  --serif:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
-  --sans:'Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
+  --sans:'IBM Plex Sans','Helvetica Neue',Arial,'Segoe UI',Roboto,system-ui,sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
 
   /* Masthead — WHITE, like oracle.com's header, with dark text. */
