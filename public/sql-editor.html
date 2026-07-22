@@ -4289,27 +4289,35 @@ updateStatus();
 // name}); we read that file's text from the shared Drive and load it, linking
 // it so "Save as Script" writes back to the same file.
 (function wireDriveDrop() {
-  const zone = document.getElementById('editor-upper');
-  if (!zone) return;
   const MIME = 'application/x-cygenix-drive-file';
+  const zone = () => document.getElementById('editor-upper');
   const hasDrivePayload = (dt) => dt && Array.from(dt.types || []).indexOf(MIME) !== -1;
-  function over(e) { if (!hasDrivePayload(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; zone.classList.add('drive-drop'); }
-  function leave(e) { if (e.target === zone) zone.classList.remove('drive-drop'); }
-  async function drop(e) {
+  // Listen on the DOCUMENT (capture phase) so the drop is caught wherever it
+  // lands — including on the Drive overlay, which sits above the editor. A drop
+  // only fires if dragover called preventDefault, so we do that globally for
+  // our payload. This avoids depending on the editor being the exact target or
+  // on the overlay being click-through (which breaks the native drag).
+  document.addEventListener('dragover', (e) => {
     if (!hasDrivePayload(e.dataTransfer)) return;
-    e.preventDefault(); e.stopPropagation(); zone.classList.remove('drive-drop');
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'copy'; } catch (_) {}
+    const z = zone(); if (z) z.classList.add('drive-drop');
+  }, true);
+  document.addEventListener('dragend', () => { const z = zone(); if (z) z.classList.remove('drive-drop'); }, true);
+  document.addEventListener('drop', async (e) => {
+    if (!hasDrivePayload(e.dataTransfer)) return;
+    e.preventDefault(); e.stopPropagation();
+    const z = zone(); if (z) z.classList.remove('drive-drop');
     let payload; try { payload = JSON.parse(e.dataTransfer.getData(MIME)); } catch (_) { return; }
     if (!payload || !payload.id || !window.CygenixDrive) return;
     try {
       const sql = await CygenixDrive.readText(payload.id);
       const name = (payload.name || 'Drive file').replace(/\.sql$/i, '');
       applySqlToEditor(sql, name, payload.id);
+      // Close the Drive overlay so the freshly-loaded SQL is visible.
+      if (window.CygenixDriveModal && CygenixDriveModal.close) CygenixDriveModal.close();
     } catch (_) { setExecStatus('Could not open that file', 'var(--red)'); }
-  }
-  // Capture phase so we intercept before Monaco's own drop handling.
-  zone.addEventListener('dragover', over, true);
-  zone.addEventListener('dragleave', leave, true);
-  zone.addEventListener('drop', drop, true);
+  }, true);
 })();
 
 // Check URL params — support both ?job=id (direct) and ?edit=id (from dashboard editJob)
