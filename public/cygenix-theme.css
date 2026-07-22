@@ -155,10 +155,12 @@ html[data-theme="light"][data-theme="light"]{
   --border:rgba(22,26,32,0.10);
   --border2:rgba(22,26,32,0.16);
 
-  /* Text — cool near-black neutral ramp */
+  /* Text — cool near-black neutral ramp.
+   * text2/text3 deliberately kept DARK (not light grey) so secondary text and
+   * card labels stay high-contrast and easy to read on the white workspace. */
   --text:#1A1D21;
-  --text2:#565B63;
-  --text3:#868C94;
+  --text2:#2A2F38;
+  --text3:#363D49;
 
   /* Accent — Oracle red. One accent, used sparingly. */
   --accent:#4A5BD6;
