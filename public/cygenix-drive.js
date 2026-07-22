@@ -104,9 +104,51 @@
     for (const k of kids) { if (k.kind === 'file' && k.meta && k.meta.scriptId && !ids.has(k.meta.scriptId)) await del(k.id); }
     for (const s of arr) await upsertScript(s);
   }
+  const jobsFolderId = () => ensureFolderPath('', [SCRIPTS_FOLDER, 'Jobs']);
   async function saveJobToDrive(name, sql, meta) {
-    const fid = await ensureFolderPath('', [SCRIPTS_FOLDER, 'Jobs']);
+    const fid = await jobsFolderId();
     return addFile(fid, safeName(name) + '.sql', new Blob([sql || ''], { type: 'text/plain' }), 'text/plain', { meta: meta || {} });
+  }
+
+  // Keep the "SQL Editor › Jobs" folder in step with the migration-jobs list.
+  // jobs: [{ jobId, name, sql, target? }]. Files are keyed by meta.jobId; a
+  // content rewrite only happens when the size changes (cheap churn guard).
+  async function syncJobs(jobs) {
+    jobs = jobs || [];
+    const fid = await jobsFolderId();
+    const kids = await children(fid);
+    const byJob = {};
+    kids.forEach(k => { if (k.kind === 'file' && k.meta && k.meta.jobId) byJob[k.meta.jobId] = k; });
+    const ids = new Set(jobs.map(j => j.jobId));
+    for (const j of jobs) {
+      const content = new Blob([j.sql || ''], { type: 'text/plain' });
+      const meta = { jobId: j.jobId, name: j.name || '', target: j.target || '', updated: new Date().toISOString() };
+      const node = byJob[j.jobId];
+      if (node) {
+        if (node.size !== content.size) { node.content = content; node.size = content.size; node.meta = meta; node.mtime = Date.now(); await put(node); }
+        else if (!node.meta || node.meta.name !== meta.name) { node.meta = meta; await put(node); }
+      } else {
+        await addFile(fid, safeName(j.name || ('job_' + j.jobId)) + '.sql', content, 'text/plain', { meta });
+      }
+    }
+    for (const k of kids) { if (k.kind === 'file' && k.meta && k.meta.jobId && !ids.has(k.meta.jobId)) await del(k.id); }
+  }
+
+  // Every .sql file under the "SQL Editor" folder (recursively — includes the
+  // Jobs subfolder), most-recent first. Used by the editor's "Open from Drive".
+  async function listSqlFiles() {
+    const fid = await scriptsFolderId();
+    const out = [];
+    async function walk(pid, prefix) {
+      const kids = await children(pid);
+      for (const k of kids) {
+        if (k.kind === 'folder') await walk(k.id, prefix + k.name + '/');
+        else if (/\.sql$/i.test(k.name)) out.push({ id: k.id, name: k.name, path: prefix + k.name, meta: k.meta || null, mtime: k.mtime });
+      }
+    }
+    await walk(fid, SCRIPTS_FOLDER + '/');
+    out.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+    return out;
   }
 
   window.CygenixDrive = {
@@ -114,6 +156,7 @@
     all, get, children, put, del, uid, safeName,
     createFolder, ensureFolderPath, addFile, remove, rename, readText,
     // SQL Editor conveniences
-    scriptsFolderId, upsertScript, listScripts, syncScripts, saveJobToDrive
+    scriptsFolderId, jobsFolderId, upsertScript, listScripts, syncScripts,
+    saveJobToDrive, syncJobs, listSqlFiles
   };
 })();

@@ -473,6 +473,9 @@ body.fullscreen .script-panel { display:none }
         <button onclick="fileMenuAction('open')"     role="menuitem"><span>📂</span> Open from file…</button>
         <button onclick="fileMenuAction('save')"     role="menuitem"><span>💾</span> Save to file…</button>
         <div class="file-menu-sep"></div>
+        <button onclick="fileMenuAction('open-drive')" role="menuitem"><span>🗂</span> Open from Drive…</button>
+        <button onclick="fileMenuAction('save-drive')" role="menuitem"><span>🗂</span> Save to Drive…</button>
+        <div class="file-menu-sep"></div>
         <button onclick="fileMenuAction('promote')"  role="menuitem"><span>➕</span> Promote to new job…</button>
         <div class="file-menu-sep"></div>
         <button onclick="fileMenuAction('export-csv')"  role="menuitem"><span>⬇</span> Export results as CSV</button>
@@ -3359,6 +3362,8 @@ function fileMenuAction(action) {
     case 'new':         newScript(); break;
     case 'open':        document.getElementById('load-sql-file').click(); break;
     case 'save':        saveCurrentToFile(); break;
+    case 'open-drive':  openFromDrive(); break;
+    case 'save-drive':  saveCurrentToDrive(); break;
     case 'promote':     contextualPromote(); break;
     case 'export-csv':  if (typeof exportResults === 'function') exportResults('csv');  break;
     case 'export-xlsx': if (typeof exportResults === 'function') exportResults('xlsx'); break;
@@ -3379,6 +3384,81 @@ function saveCurrentToFile() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   setExecStatus('✓ Saved file: ' + name + '.sql', 'var(--green)');
   setTimeout(() => setExecStatus('',''), 3000);
+}
+
+// ── Co-Worker Drive: open / save from the File menu ──────────────────────────
+// Put the current editor SQL into the Drive as a .sql file (SQL Editor folder).
+async function saveCurrentToDrive() {
+  const sql = document.getElementById('sql-editor').value;
+  if (!sql.trim()) { alert('Nothing to save — editor is empty.'); return; }
+  if (!window.CygenixDrive) { alert('The Co-Worker Drive is unavailable in this browser.'); return; }
+  const def = (document.getElementById('script-name').value.trim() || (typeof editorCtx !== 'undefined' && editorCtx.name) || 'script');
+  const name = prompt('Save to the Co-Worker Drive as:', def);
+  if (name == null) return;
+  try {
+    const fid = await CygenixDrive.scriptsFolderId();
+    await CygenixDrive.addFile(fid, CygenixDrive.safeName(name) + '.sql', new Blob([sql], { type: 'text/plain' }), 'text/plain', { meta: { source: 'sql-editor', savedAt: new Date().toISOString() } });
+    setExecStatus('✓ Saved to Drive: ' + name + '.sql', 'var(--green)'); setTimeout(() => setExecStatus('', ''), 3000);
+  } catch (e) { alert('Could not save to Drive: ' + ((e && e.message) || e)); }
+}
+
+// Browse the Drive's .sql files (scripts + jobs) and load one into the editor.
+async function openFromDrive() {
+  if (!window.CygenixDrive) { alert('The Co-Worker Drive is unavailable in this browser.'); return; }
+  let files = [];
+  try { files = await CygenixDrive.listSqlFiles(); } catch (_) {}
+  openDrivePicker(files);
+}
+
+function openDrivePicker(files) {
+  let ov = document.getElementById('drive-picker');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'drive-picker';
+  ov.style.cssText = 'position:fixed;inset:0;background:var(--modal-scrim,rgba(0,0,0,.5));z-index:3000;display:flex;align-items:center;justify-content:center;padding:1.5rem';
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  const rows = (files && files.length) ? files.map(f => {
+    const isJob = /\/Jobs\//.test(f.path);
+    const folder = f.path.replace(/\/[^/]*$/, '');
+    return '<div class="dp-row" data-id="' + f.id + '" tabindex="0" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;border-radius:8px;cursor:pointer">'
+      + '<span style="font-size:9px;font-family:var(--mono);text-transform:uppercase;background:' + (isJob ? 'rgba(74,91,214,.14)' : 'var(--bg4)') + ';color:' + (isJob ? 'var(--accent)' : 'var(--text2)') + ';padding:2px 6px;border-radius:4px">' + (isJob ? 'JOB' : 'SQL') + '</span>'
+      + '<span class="dp-name" style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.name) + '</span>'
+      + '<span style="font-size:11px;color:var(--text3);white-space:nowrap">' + esc(folder) + '</span></div>';
+  }).join('') : '<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive…”, or use “To Drive” on a job.</div>';
+  ov.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:540px;max-height:76vh;display:flex;flex-direction:column;box-shadow:var(--shadow-strong)">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px">🗂 Open from Co-Worker Drive</b><button id="dp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+    + '<div id="dp-list" style="overflow-y:auto;padding:.5rem">' + rows + '</div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#dp-close').addEventListener('click', () => ov.remove());
+  ov.querySelectorAll('.dp-row').forEach(r => {
+    r.addEventListener('mouseenter', () => r.style.background = 'var(--hover-tint)');
+    r.addEventListener('mouseleave', () => r.style.background = '');
+    const open = async () => {
+      const id = r.dataset.id;
+      try { const sql = await CygenixDrive.readText(id); applySqlToEditor(sql, r.querySelector('.dp-name').textContent.replace(/\.sql$/i, '')); }
+      catch (_) { alert('Could not open that file.'); }
+      ov.remove();
+    };
+    r.addEventListener('click', open);
+    r.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
+  });
+}
+
+// Load SQL text into the editor (Monaco-aware), as an unsaved draft.
+function applySqlToEditor(sql, name) {
+  try {
+    if (window.__cygMonaco && window.__cygMonaco.editor) window.__cygMonaco.editor.setValue(sql);
+    else if (window.__cygMonaco) window.__cygMonaco.pendingValue = sql;
+  } catch (_) {}
+  const ta = document.getElementById('sql-editor'); if (ta) ta.value = sql;
+  const nm = document.getElementById('script-name'); if (nm && name) nm.value = name;
+  currentScript = null; currentJobId = null;
+  try { updateLineNumbers(); } catch (_) {}
+  try { setEditorContext('draft', null, name || 'From Drive'); } catch (_) {}
+  try { updateStatus(); } catch (_) {}
+  try { clearResults(); } catch (_) {}
+  try { renderLibrary(); } catch (_) {}
+  setExecStatus('✓ Opened from Drive: ' + (name || 'file'), 'var(--green)'); setTimeout(() => setExecStatus('', ''), 3000);
 }
 
 // "Promote to new job…" from the File menu — same as the contextual button,
@@ -4179,6 +4259,15 @@ function reconcileJobSQLFields() {
 // ── Init ───────────────────────────────────────────────────────────────────────
 reconcileJobSQLFields();
 loadScripts();
+// Mirror migration jobs into the shared Co-Worker Drive ("SQL Editor › Jobs")
+// so they can be opened from the Drive just like saved scripts.
+if (window.CygenixDrive) {
+  try {
+    CygenixDrive.syncJobs(getJobsWithSQL().map(function(j){
+      return { jobId: j.id, name: j.name || ('Job ' + j.id), sql: j.insertSQL || j.migrationSQL || j.sql, target: j.target || '' };
+    })).catch(function(){});
+  } catch (_) {}
+}
 setEditorContext('draft', null, 'New script');
 renderLibrary();
 updateConnLabel();
