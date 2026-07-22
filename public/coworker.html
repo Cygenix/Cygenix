@@ -125,6 +125,29 @@
   .lib-item .li-x{color:var(--text3);border:none;background:none;cursor:pointer;font-size:14px}
   .lib-empty{padding:1.5rem;text-align:center;color:var(--text3);font-size:12.5px}
 
+  /* ── Virtual Drive ─────────────────────────────────────────── */
+  .modal.drive-modal{max-width:760px;height:82vh;max-height:82vh}
+  .drive-bar{display:flex;gap:0.45rem;align-items:center;padding:0.6rem 0.9rem;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .drive-crumbs{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--text2);flex:1;min-width:130px;flex-wrap:wrap}
+  .drive-crumbs a{color:var(--accent);cursor:pointer;text-decoration:none}
+  .drive-crumbs a:hover{text-decoration:underline}
+  .drive-crumbs .sep{color:var(--text3)}
+  .drive-search{font:inherit;font-size:12.5px;color:var(--text);background:var(--bg);border:1px solid var(--border2);border-radius:7px;padding:5px 9px;min-width:150px}
+  .drive-search:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+  .drive-body{flex:1;overflow-y:auto;padding:0.4rem;position:relative}
+  .drive-body.drag{outline:2px dashed var(--accent);outline-offset:-8px;background:var(--accent-glow)}
+  .drive-row{display:flex;align-items:center;gap:0.65rem;padding:0.5rem 0.6rem;border-radius:8px;cursor:pointer}
+  .drive-row:hover{background:var(--hover-tint)}
+  .drive-ic{width:28px;height:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:15px;border-radius:6px;background:var(--bg3)}
+  .drive-nm{flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .drive-meta{font-size:11px;color:var(--text3);flex-shrink:0}
+  .drive-acts{display:flex;gap:0.15rem;flex-shrink:0;opacity:0;transition:opacity .1s}
+  .drive-row:hover .drive-acts,.drive-row:focus-within .drive-acts{opacity:1}
+  .drive-acts button{background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:3px 5px;border-radius:5px;line-height:1}
+  .drive-acts button:hover{color:var(--accent);background:var(--bg3)}
+  .drive-empty{padding:2.2rem 1rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.7}
+  .drive-foot{border-top:1px solid var(--border);padding:6px 0.9rem;font-size:11px;color:var(--text3);display:flex;justify-content:space-between;gap:0.5rem;flex-wrap:wrap}
+
   @media (max-width:900px){
     .work{flex-direction:column}
     .chat{width:100%;min-width:0;height:55%;border-right:none;border-bottom:1px solid var(--border)}
@@ -165,6 +188,7 @@
     <span id="ctx-chip" class="ctx-chip" style="display:none"></span>
   </div>
   <div style="display:flex;gap:0.45rem;align-items:center;flex-shrink:0">
+    <button class="tb-btn" onclick="openDrive()" title="The Co-Worker's virtual drive — upload files, make folders, search">🗂 Drive</button>
     <button class="tb-btn" onclick="openLibrary()">📁 Library</button>
     <button class="tb-btn" onclick="newChat()">✚ New chat</button>
     <a class="tb-btn" href="/dashboard.html" style="text-decoration:none">← Dashboard</a>
@@ -181,6 +205,7 @@
         <div class="cap"><span class="ic">🧑‍💻</span><div><b>Develop scripts</b><span>Write & refine migration SQL, transforms and glue code.</span></div></div>
         <div class="cap"><span class="ic">📝</span><div><b>Edit documents</b><span>Draft runbooks, mapping specs and handover notes.</span></div></div>
         <div class="cap"><span class="ic">⚙️</span><div><b>Customise conversions</b><span>Shape column mappings, value translations & validation rules.</span></div></div>
+        <div class="cap"><span class="ic">🗂</span><div><b>Its own drive</b><span>Upload files &amp; folders to the <a href="#" onclick="openDrive();return false">Drive</a> — the co-worker uses it as its workspace.</span></div></div>
       </div>
     </div>
     <div class="composer">
@@ -207,6 +232,7 @@
       <div class="canvas-acts">
         <button class="tb-btn" id="folder-btn" onclick="openFolder()" title="Connect a local working folder">📂 Folder</button>
         <button class="tb-btn" onclick="saveArtifact()" title="Save (to folder if connected, else browser Library)">💾 Save</button>
+        <button class="tb-btn" onclick="saveArtifactToDrive()" title="Save this into the Co-Worker Drive">🗂 To Drive</button>
         <button class="tb-btn" id="tosql-btn" onclick="sendToSqlEditor()" title="Open this script in the SQL Editor">→ SQL Editor</button>
         <button class="tb-btn" onclick="copyArtifact()">⧉ Copy</button>
         <button class="tb-btn" onclick="downloadArtifact()">⭳ Download</button>
@@ -241,6 +267,27 @@
   </div>
 </div>
 
+<!-- Virtual Drive — the co-worker's workspace (files/folders persisted in this browser via IndexedDB) -->
+<div class="modal-bg" id="drive-modal" onclick="if(event.target===this)closeDrive()">
+  <div class="modal drive-modal">
+    <div class="modal-h">
+      <b>🗂 Drive — Co-Worker workspace</b>
+      <button onclick="closeDrive()">✕</button>
+    </div>
+    <div class="drive-bar">
+      <div class="drive-crumbs" id="drive-crumbs"></div>
+      <button class="tb-btn" onclick="driveNewFolder()" title="Create a folder here">＋ Folder</button>
+      <button class="tb-btn" onclick="drivePickFiles()" title="Upload files here">⬆ Files</button>
+      <button class="tb-btn" onclick="drivePickFolder()" title="Upload a whole folder (keeps its structure)">⬆ Folder</button>
+      <input type="search" class="drive-search" id="drive-search" placeholder="Search drive…" oninput="driveSearchInput(this.value)" spellcheck="false">
+    </div>
+    <div class="drive-body" id="drive-body"></div>
+    <div class="drive-foot"><span id="drive-foot-l"></span><span>Private to this browser · the co-worker reads &amp; writes here</span></div>
+    <input type="file" id="drive-file-input" multiple style="display:none">
+    <input type="file" id="drive-folder-input" webkitdirectory style="display:none">
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="/cookie-consent.js"></script>
@@ -272,7 +319,7 @@
   }
 
   // ── Context for the model ────────────────────────────────────
-  function gatherContext(){
+  async function gatherContext(){
     const ctx = {};
     try {
       const p = JSON.parse(sessionStorage.getItem('cygenix_active_project') || 'null');
@@ -284,6 +331,9 @@
     ctx.artifactType = artifact.type;
     ctx.artifactContent = artifact.content;
     if (currentFile) ctx.openFile = currentFile.name;
+    // The virtual Drive is the co-worker's workspace — surface its contents so
+    // the model knows which files/folders it has to work with.
+    try { ctx.drive = await driveSummary(); } catch(_){}
     return ctx;
   }
 
@@ -380,7 +430,7 @@
     try {
       const r = await fetch('/api/coworker', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ messages, context: gatherContext() })
+        body: JSON.stringify({ messages, context: await gatherContext() })
       });
       const data = await r.json();
       typing.remove();
@@ -642,6 +692,185 @@
   function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toT); toT=setTimeout(()=>t.classList.remove('show'),1800); }
   window.toast = toast;
 
+  // ══════════════════════════════════════════════════════════════════════
+  //  Virtual Drive — the co-worker's own workspace.
+  //  Files & folders are stored privately in this browser (IndexedDB), so it
+  //  works in every browser (unlike the local-folder connect above), survives
+  //  reloads, and can hold real uploaded files. The co-worker reads this drive
+  //  as its artifacts / development location (see gatherContext → ctx.drive).
+  //  Node: { id, parentId('' = root), name, kind:'folder'|'file',
+  //          size, mime, mtime, content:Blob (files only) }
+  // ══════════════════════════════════════════════════════════════════════
+  const DRIVE_DB = 'cygenix_coworker_drive';
+  function ddb(){
+    return new Promise((res,rej)=>{
+      const r = indexedDB.open(DRIVE_DB, 1);
+      r.onupgradeneeded = () => { const s = r.result.createObjectStore('nodes', { keyPath:'id' }); s.createIndex('parentId','parentId',{unique:false}); };
+      r.onsuccess = () => res(r.result);
+      r.onerror   = () => rej(r.error);
+    });
+  }
+  function dput(node){ return ddb().then(db=>new Promise((res,rej)=>{ const tx=db.transaction('nodes','readwrite'); tx.objectStore('nodes').put(node); tx.oncomplete=()=>res(node); tx.onerror=()=>rej(tx.error); })); }
+  function dget(id){ return ddb().then(db=>new Promise((res,rej)=>{ const rq=db.transaction('nodes','readonly').objectStore('nodes').get(id); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); })); }
+  function ddel(id){ return ddb().then(db=>new Promise((res,rej)=>{ const tx=db.transaction('nodes','readwrite'); tx.objectStore('nodes').delete(id); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
+  function dall(){ return ddb().then(db=>new Promise((res,rej)=>{ const rq=db.transaction('nodes','readonly').objectStore('nodes').getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); })); }
+  function dchildren(parentId){ return ddb().then(db=>new Promise((res,rej)=>{ const rq=db.transaction('nodes','readonly').objectStore('nodes').index('parentId').getAll(parentId||''); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); })); }
+
+  function uid(){ try{ if(crypto&&crypto.randomUUID) return crypto.randomUUID(); }catch(_){} return 'n'+Date.now()+Math.random().toString(16).slice(2); }
+  const DRIVE_TEXT_EXT = /\.(sql|md|markdown|txt|text|json|csv|tsv|ya?ml|xml|html?|js|ts|py|ps1|sh|ini|log|cfg|conf)$/i;
+  function fmtSize(n){ if(n==null) return ''; if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
+  function fileIcon(name){ const e=(name.split('.').pop()||'').toLowerCase();
+    if(e==='sql') return '🗄'; if(/^(md|markdown|txt|text|doc|rtf)$/.test(e)) return '📄';
+    if(/^(csv|tsv|xls|xlsx)$/.test(e)) return '📊'; if(/^(json|xml|ya?ml|ini|cfg|conf)$/.test(e)) return '🔧';
+    if(/^(png|jpe?g|gif|svg|webp|bmp)$/.test(e)) return '🖼'; if(/^(zip|bak|gz|7z|rar|tar)$/.test(e)) return '🗜'; return '📎'; }
+
+  let driveCwd = '';        // current folder id ('' = root)
+  let driveSearchQ = '';
+  let driveOpenFileId = null;
+
+  async function driveFolderPath(id){ const parts=[]; let cur=id; let guard=0;
+    while(cur && guard++<50){ const n=await dget(cur); if(!n) break; parts.unshift(n); cur=n.parentId||''; } return parts; }
+  async function driveCreateFolder(parentId, name){
+    name=(name||'New folder').trim().replace(/[\\/]+/g,'-'); if(!name) return null;
+    const kids=await dchildren(parentId); let final=name, i=2;
+    while(kids.some(k=>k.kind==='folder'&&k.name.toLowerCase()===final.toLowerCase())){ final=name+' ('+(i++)+')'; }
+    const node={id:uid(),parentId:parentId||'',name:final,kind:'folder',mtime:Date.now()}; await dput(node); return node;
+  }
+  async function driveAddFile(parentId, name, blob, mime){
+    const kids=await dchildren(parentId); const dot=name.lastIndexOf('.');
+    const base=dot>0?name.slice(0,dot):name, ext=dot>0?name.slice(dot):''; let final=name, i=2;
+    while(kids.some(k=>k.kind==='file'&&k.name.toLowerCase()===final.toLowerCase())){ final=base+' ('+(i++)+')'+ext; }
+    const node={id:uid(),parentId:parentId||'',name:final,kind:'file',size:blob.size,mime:mime||blob.type||'',mtime:Date.now(),content:blob};
+    await dput(node); return node;
+  }
+  async function driveEnsureFolderPath(parentId, segments){ let cur=parentId||'';
+    for(const seg of segments){ if(!seg) continue; const kids=await dchildren(cur); let f=kids.find(k=>k.kind==='folder'&&k.name===seg); if(!f) f=await driveCreateFolder(cur,seg); cur=f.id; } return cur; }
+  async function driveRemove(id){ const n=await dget(id); if(!n) return;
+    if(n.kind==='folder'){ const kids=await dchildren(id); for(const k of kids) await driveRemove(k.id); } await ddel(id); }
+  async function driveRename(id, name){ const n=await dget(id); if(!n) return; name=(name||'').trim(); if(!name) return; n.name=name; n.mtime=Date.now(); await dput(n); }
+
+  async function driveUploadFiles(fileList){
+    let count=0;
+    for(const file of fileList){
+      const rel=file.webkitRelativePath||'';
+      let target=driveCwd;
+      if(rel && rel.includes('/')){ const segs=rel.split('/'); segs.pop(); target=await driveEnsureFolderPath(driveCwd, segs); }
+      await driveAddFile(target, file.name, file, file.type); count++;
+    }
+    if(count) toast('Uploaded '+count+' file'+(count===1?'':'s')+' to Drive');
+    renderDrive();
+  }
+
+  // Compact tree summary handed to the model so it "sees" its workspace.
+  async function driveSummary(){
+    const all=await dall(); const byId={}; all.forEach(n=>byId[n.id]=n);
+    const pathOf=(n)=>{ const parts=[n.name]; let p=n.parentId, g=0; while(p&&byId[p]&&g++<50){ parts.unshift(byId[p].name); p=byId[p].parentId; } return '/'+parts.join('/'); };
+    const files=all.filter(n=>n.kind==='file');
+    return {
+      fileCount: files.length,
+      files: files.slice(0,200).map(n=>({ path:pathOf(n), size:n.size })),
+      folders: all.filter(n=>n.kind==='folder').slice(0,100).map(pathOf),
+      openFile: (driveOpenFileId && byId[driveOpenFileId]) ? pathOf(byId[driveOpenFileId]) : null
+    };
+  }
+
+  // ── Drive UI ─────────────────────────────────────────────────
+  window.openDrive  = function(){ driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); $('drive-modal').classList.add('open'); };
+  window.closeDrive = function(){ $('drive-modal').classList.remove('open'); };
+  window.driveSearchInput = function(v){ driveSearchQ=(v||'').trim().toLowerCase(); renderDrive(); };
+  window.driveNavigate = function(id){ driveCwd=id||''; driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); };
+  window.driveNewFolder = async function(){ const name=prompt('New folder name:','New folder'); if(name==null) return; await driveCreateFolder(driveCwd, name); renderDrive(); };
+  window.drivePickFiles = function(){ $('drive-file-input').click(); };
+  window.drivePickFolder = function(){ $('drive-folder-input').click(); };
+
+  function driveRowEl(n){
+    const row=document.createElement('div'); row.className='drive-row';
+    const isFolder=n.kind==='folder';
+    const ic=document.createElement('div'); ic.className='drive-ic'; ic.textContent=isFolder?'📁':fileIcon(n.name);
+    const nm=document.createElement('div'); nm.className='drive-nm'; nm.textContent=n.name;
+    const meta=document.createElement('div'); meta.className='drive-meta'; meta.textContent=isFolder?'folder':fmtSize(n.size);
+    const acts=document.createElement('div'); acts.className='drive-acts';
+    if(isFolder){
+      row.onclick=(e)=>{ if(e.target.closest('.drive-acts'))return; driveNavigate(n.id); };
+    } else {
+      const isText=DRIVE_TEXT_EXT.test(n.name);
+      row.onclick=(e)=>{ if(e.target.closest('.drive-acts'))return; isText?openDriveFile(n):downloadDriveFile(n); };
+      if(isText){ const b=document.createElement('button'); b.title='Open in workspace'; b.textContent='↧'; b.onclick=(e)=>{e.stopPropagation();openDriveFile(n);}; acts.appendChild(b); }
+      const dl=document.createElement('button'); dl.title='Download'; dl.textContent='⭳'; dl.onclick=(e)=>{e.stopPropagation();downloadDriveFile(n);}; acts.appendChild(dl);
+    }
+    const rn=document.createElement('button'); rn.title='Rename'; rn.textContent='✎';
+    rn.onclick=async(e)=>{ e.stopPropagation(); const nn=prompt('Rename to:',n.name); if(nn==null)return; await driveRename(n.id,nn); renderDrive(); }; acts.appendChild(rn);
+    const del=document.createElement('button'); del.title='Delete'; del.textContent='🗑';
+    del.onclick=async(e)=>{ e.stopPropagation(); if(!confirm('Delete “'+n.name+'”'+(isFolder?' and everything inside it':'')+'?'))return; await driveRemove(n.id); if(driveCwd===n.id) driveCwd=n.parentId||''; renderDrive(); }; acts.appendChild(del);
+    row.appendChild(ic); row.appendChild(nm); row.appendChild(meta); row.appendChild(acts);
+    return row;
+  }
+
+  async function renderDrive(){
+    const body=$('drive-body'), crumbs=$('drive-crumbs'), footL=$('drive-foot-l');
+    if(!body) return;
+    const path = driveCwd ? await driveFolderPath(driveCwd) : [];
+    let cr='<a onclick="driveNavigate(\'\')">🗂 Home</a>';
+    for(const f of path){ cr+='<span class="sep">/</span><a onclick="driveNavigate(\''+f.id+'\')">'+esc(f.name)+'</a>'; }
+    if(driveSearchQ) cr+='<span class="sep">/</span><span style="color:var(--text3)">search “'+esc(driveSearchQ)+'”</span>';
+    crumbs.innerHTML=cr;
+
+    let items;
+    if(driveSearchQ){ items=(await dall()).filter(n=>n.name.toLowerCase().includes(driveSearchQ)); }
+    else { items=await dchildren(driveCwd); }
+    items.sort((a,b)=> a.kind===b.kind ? a.name.localeCompare(b.name) : (a.kind==='folder'?-1:1));
+
+    if(!items.length){
+      body.innerHTML='<div class="drive-empty">'+(driveSearchQ
+        ? 'No files or folders match “'+esc(driveSearchQ)+'”.'
+        : 'This folder is empty.<br>Drag files in, or use <b>⬆ Files</b> / <b>⬆ Folder</b> / <b>＋ Folder</b>.<br><br>Anything you put here becomes the co-worker\'s workspace — it can read and build on these files.')+'</div>';
+    } else {
+      body.innerHTML=''; items.forEach(n=>body.appendChild(driveRowEl(n)));
+    }
+    if(footL) footL.textContent = items.length+' item'+(items.length===1?'':'s');
+  }
+
+  async function openDriveFile(n){
+    try{
+      const text=await n.content.text();
+      const isDoc=!/\.sql$/i.test(n.name);
+      setType(isDoc?'document':'script', true);
+      artifact.content=text; artEl.value=text; artifact.name=n.name; nameEl.value=n.name;
+      driveOpenFileId=n.id; currentFile=null;
+      updateMeta(); saveState(); closeDrive(); toast('Opened “'+n.name+'” from Drive');
+    }catch(_){ toast('Could not open that file'); }
+  }
+  function downloadDriveFile(n){ const a=document.createElement('a'); a.href=URL.createObjectURL(n.content); a.download=n.name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
+
+  // Save the current canvas artifact into the Drive (current folder).
+  window.saveArtifactToDrive = async function(){
+    if(!artifact.content.trim()){ toast('Nothing to save yet'); return; }
+    let base=(nameEl.value||'untitled').trim().replace(/[\\/:*?"<>|]+/g,'_');
+    if(!/\.[a-z0-9]+$/i.test(base)) base += (artifact.type==='script'?'.sql':'.md');
+    const blob=new Blob([artifact.content], {type:'text/plain'});
+    const node=await driveAddFile(driveCwd, base, blob, 'text/plain');
+    driveOpenFileId=node.id;
+    toast('Saved “'+node.name+'” to Drive');
+    if($('drive-modal').classList.contains('open')) renderDrive();
+  };
+
+  // Drag-and-drop uploads onto the drive body
+  (function driveDnd(){
+    const body=$('drive-body'); if(!body) return;
+    ['dragenter','dragover'].forEach(ev=>body.addEventListener(ev, e=>{ e.preventDefault(); body.classList.add('drag'); }));
+    body.addEventListener('dragleave', e=>{ if(e.target===body) body.classList.remove('drag'); });
+    body.addEventListener('drop', async e=>{ e.preventDefault(); body.classList.remove('drag'); const f=e.dataTransfer&&e.dataTransfer.files; if(f&&f.length) await driveUploadFiles(f); });
+  })();
+  $('drive-file-input').addEventListener('change', async e=>{ if(e.target.files&&e.target.files.length) await driveUploadFiles(e.target.files); e.target.value=''; });
+  $('drive-folder-input').addEventListener('change', async e=>{ if(e.target.files&&e.target.files.length) await driveUploadFiles(e.target.files); e.target.value=''; });
+
+  // Public API — lets the co-worker / other code use the drive as a workspace.
+  window.CygenixDrive = {
+    list: dchildren, all: dall, get: dget, summary: driveSummary,
+    createFolder: driveCreateFolder, addFile: driveAddFile, remove: driveRemove,
+    rename: driveRename, cwd: ()=>driveCwd, open: openDrive
+  };
+
   // ── Boot ─────────────────────────────────────────────────────
   loadState();
   setType(artifact.type, true);
@@ -651,6 +880,9 @@
   updateFolderUI();
   renderAll();
   autosize(input);
+
+  // Deep link: /coworker.html#drive opens the Drive straight away.
+  if (location.hash === '#drive') setTimeout(openDrive, 60);
 
   // Reconnect a previously-chosen working folder if the browser still grants
   // us permission (otherwise it stays available behind a click on 📂 Folder).

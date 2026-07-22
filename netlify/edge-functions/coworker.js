@@ -111,6 +111,22 @@ function buildSystem(ctx) {
       '--- END CURRENT ' + String(ctx.artifactType).toUpperCase() + ' ---',
     );
   }
+
+  // The virtual Drive is the co-worker's workspace / development location.
+  const d = ctx.drive;
+  if (d && ((d.fileCount || 0) > 0 || (Array.isArray(d.folders) && d.folders.length))) {
+    lines.push(
+      '',
+      'The user has a virtual Drive that is YOUR workspace and development location. The files below are the project artifacts you can build on and refer to by path. (You only see a file\'s contents once the user opens it into the workspace — but you always know these paths exist.)'
+    );
+    const folders = (d.folders || []).slice(0, 60);
+    if (folders.length) lines.push('- Folders: ' + folders.map(f => String(f).slice(0, 120)).join(', '));
+    const files = (d.files || []).slice(0, 120);
+    if (files.length) lines.push('- Files: ' + files.map(f => String(f && f.path).slice(0, 120)).join(', '));
+    if (d.openFile) lines.push(`- Currently open in the workspace (from the Drive): ${String(d.openFile).slice(0, 160)}`);
+    lines.push('When you produce a file the user should keep, tell them they can save it to the Drive (the "🗂 To Drive" button), and suggest a sensible Drive folder/path to organise it.');
+  }
+
   return lines.join('\n');
 }
 
