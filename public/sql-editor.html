@@ -93,7 +93,9 @@ body.cyg-collapsed .topbar{left:54px}
 /* EDITOR pane */
 .editor-pane{display:flex;flex-direction:column;overflow:hidden;background:var(--bg);flex:1;min-width:200px}
 .editor-toolbar{padding:0.6rem 1rem;border-bottom:0.5px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex-shrink:0}
-.editor-upper{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:120px}
+.editor-upper{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:120px;position:relative}
+/* Highlight the editor as a drop target while dragging a file in from the Drive */
+.editor-upper.drive-drop::after{content:'⬇ Drop to load into the editor';position:absolute;inset:6px;z-index:60;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:var(--accent);background:var(--accent-glow);border:2px dashed var(--accent);border-radius:var(--r);pointer-events:none}
 .editor-wrap{position:relative;flex:1;overflow:hidden;display:flex;flex-direction:column}
 #sql-editor{width:100%;flex:1;background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.7;border:none;outline:none;resize:none;padding:1rem 1.25rem;tab-size:2;overflow-x:hidden;min-height:0}
 .editor-status{padding:0.35rem 1rem;background:var(--bg3);border-top:0.5px solid var(--border);font-size:10px;font-family:var(--mono);color:var(--text3);flex-shrink:0;display:flex;gap:1rem}
@@ -1190,6 +1192,10 @@ function registerSqlCompletions(){
 const SCRIPTS_KEY = 'cygenix_sql_scripts';
 let scripts = [];
 let currentScript = null;
+// When the editor content came from a specific Co-Worker Drive file (dragged
+// in, or opened via "Open from Drive…"), this holds { id, name } of that Drive
+// node. "Save as Script" then writes straight back to that same file.
+let currentDriveFile = null;
 let queryHistory = [];
 
 // API key is read from localStorage directly when needed (askClaude). The
@@ -1238,6 +1244,7 @@ function newScript() {
   const id = 'script_'+Date.now();
   currentScript = null;     // not yet saved — saveScript() will assign on first save
   currentJobId  = null;
+  currentDriveFile = null;  // fresh draft — not linked to any Drive file
   document.getElementById('sql-editor').value = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
   document.getElementById('script-desc').value = '';
   updateLineNumbers();
@@ -1252,6 +1259,7 @@ function loadScript(id) {
   if (!s) return;
   currentScript = id;
   currentJobId  = null;
+  currentDriveFile = null;  // a saved script, not a linked Drive file
   document.getElementById('sql-editor').value = s.sql;
   updateLineNumbers();
   document.getElementById('conn-select').value = s.conn||'source';
@@ -3161,16 +3169,43 @@ function setEditorContext(type, id, name) {
   }
 }
 
-// Smart Save — routes to script vs job vs new-script-from-draft based on context
+// Smart Save — routes to script vs job vs Drive-file vs new-script-from-draft
 function saveCurrent() {
   if (editorCtx.type === 'job') {
     if (typeof saveBackToJob === 'function') saveBackToJob();
     return;
   }
+  // If the content was dragged in / opened from a specific Drive file, save
+  // straight back to that same file rather than creating a new script.
+  if (currentDriveFile && window.CygenixDrive) { saveBackToDriveFile(); return; }
   // For drafts AND for editing an existing script, both go through saveScript()
   // which already handles "create new script if currentScript is null" vs
   // "update existing script if currentScript is set".
   if (typeof saveScript === 'function') saveScript();
+}
+
+// Write the current editor SQL back into the linked Co-Worker Drive file,
+// updating that exact node in place (same name, same folder).
+async function saveBackToDriveFile() {
+  const sql = document.getElementById('sql-editor').value;
+  if (!sql.trim()) { alert('Write some SQL first.'); return; }
+  try {
+    const node = await CygenixDrive.get(currentDriveFile.id);
+    if (!node) {
+      // The file was moved or deleted in the Drive — fall back to a new script.
+      currentDriveFile = null;
+      if (typeof saveScript === 'function') saveScript();
+      return;
+    }
+    node.content = new Blob([sql], { type: 'text/plain' });
+    node.size = node.content.size; node.mime = 'text/plain'; node.mtime = Date.now();
+    await CygenixDrive.put(node);
+    currentDriveFile.name = node.name;
+    setExecStatus('✓ Saved to Drive: ' + node.name, 'var(--green)');
+    const savedEl = document.getElementById('status-saved');
+    if (savedEl) { savedEl.textContent = 'Saved'; savedEl.style.color = 'var(--green)'; }
+    setTimeout(() => setExecStatus('', ''), 3000);
+  } catch (e) { alert('Could not save to Drive: ' + ((e && e.message) || e)); }
 }
 
 // Promote-to-Job / Eject-to-Script depending on what's loaded
@@ -3402,7 +3437,7 @@ function openDrivePicker(files) {
     r.addEventListener('mouseleave', () => r.style.background = '');
     const open = async () => {
       const id = r.dataset.id;
-      try { const sql = await CygenixDrive.readText(id); applySqlToEditor(sql, r.querySelector('.dp-name').textContent.replace(/\.sql$/i, '')); }
+      try { const sql = await CygenixDrive.readText(id); applySqlToEditor(sql, r.querySelector('.dp-name').textContent.replace(/\.sql$/i, ''), id); }
       catch (_) { alert('Could not open that file.'); }
       ov.remove();
     };
@@ -3411,8 +3446,9 @@ function openDrivePicker(files) {
   });
 }
 
-// Load SQL text into the editor (Monaco-aware), as an unsaved draft.
-function applySqlToEditor(sql, name) {
+// Load SQL text into the editor (Monaco-aware). When `driveId` is given the
+// content is linked to that Drive file, so "Save as Script" writes back to it.
+function applySqlToEditor(sql, name, driveId) {
   try {
     if (window.__cygMonaco && window.__cygMonaco.editor) window.__cygMonaco.editor.setValue(sql);
     else if (window.__cygMonaco) window.__cygMonaco.pendingValue = sql;
@@ -3420,8 +3456,15 @@ function applySqlToEditor(sql, name) {
   const ta = document.getElementById('sql-editor'); if (ta) ta.value = sql;
   const nm = document.getElementById('script-name'); if (nm && name) nm.value = name;
   currentScript = null; currentJobId = null;
+  currentDriveFile = driveId ? { id: driveId, name: name || 'Drive file' } : null;
   try { updateLineNumbers(); } catch (_) {}
   try { setEditorContext('draft', null, name || 'From Drive'); } catch (_) {}
+  // When linked to a Drive file, make the save button say so — it saves back
+  // to that exact file rather than creating a new script.
+  if (currentDriveFile) {
+    const sb = document.getElementById('save-btn');
+    if (sb) { sb.textContent = '💾 Save to Drive'; sb.title = 'Save changes back to “' + (name || 'file') + '” in the Co-Worker Drive'; }
+  }
   try { updateStatus(); } catch (_) {}
   try { clearResults(); } catch (_) {}
   try { renderLibrary(); } catch (_) {}
@@ -4240,6 +4283,34 @@ renderLibrary();
 updateConnLabel();
 updateLineNumbers();
 updateStatus();
+
+// Drag a .sql file from the Co-Worker Drive overlay straight into the editor.
+// The Drive rows expose an "application/x-cygenix-drive-file" payload ({id,
+// name}); we read that file's text from the shared Drive and load it, linking
+// it so "Save as Script" writes back to the same file.
+(function wireDriveDrop() {
+  const zone = document.getElementById('editor-upper');
+  if (!zone) return;
+  const MIME = 'application/x-cygenix-drive-file';
+  const hasDrivePayload = (dt) => dt && Array.from(dt.types || []).indexOf(MIME) !== -1;
+  function over(e) { if (!hasDrivePayload(e.dataTransfer)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; zone.classList.add('drive-drop'); }
+  function leave(e) { if (e.target === zone) zone.classList.remove('drive-drop'); }
+  async function drop(e) {
+    if (!hasDrivePayload(e.dataTransfer)) return;
+    e.preventDefault(); e.stopPropagation(); zone.classList.remove('drive-drop');
+    let payload; try { payload = JSON.parse(e.dataTransfer.getData(MIME)); } catch (_) { return; }
+    if (!payload || !payload.id || !window.CygenixDrive) return;
+    try {
+      const sql = await CygenixDrive.readText(payload.id);
+      const name = (payload.name || 'Drive file').replace(/\.sql$/i, '');
+      applySqlToEditor(sql, name, payload.id);
+    } catch (_) { setExecStatus('Could not open that file', 'var(--red)'); }
+  }
+  // Capture phase so we intercept before Monaco's own drop handling.
+  zone.addEventListener('dragover', over, true);
+  zone.addEventListener('dragleave', leave, true);
+  zone.addEventListener('drop', drop, true);
+})();
 
 // Check URL params — support both ?job=id (direct) and ?edit=id (from dashboard editJob)
 (function() {
