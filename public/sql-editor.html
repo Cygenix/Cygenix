@@ -490,39 +490,8 @@ body.fullscreen .script-panel { display:none }
 
 <div class="editor-layout">
 
-  <!-- Script library + Jobs panel -->
-  <div class="script-panel" id="script-panel">
-    <!-- Collapse / expand toggle. Stays visible in both states; chevron
-         rotates 180° when the panel is collapsed. -->
-    <div class="panel-toggle-bar">
-      <button class="panel-toggle-btn" id="panel-toggle-btn" onclick="toggleScriptPanel()" title="Collapse / expand">
-        <span class="chev">◀</span>
-      </button>
-    </div>
-
-    <!-- Rail dock: visible only when panel is collapsed. Icon shortcuts that
-         expand the panel and set the filter at the same time. -->
-    <div class="panel-rail-dock">
-      <button class="rail-btn" data-rail="all"     onclick="expandScriptPanel('all')"     title="All — scripts and jobs">📋</button>
-      <button class="rail-btn" data-rail="scripts" onclick="expandScriptPanel('scripts')" title="Scripts only">📜</button>
-      <button class="rail-btn" data-rail="jobs"    onclick="expandScriptPanel('jobs')"    title="Migration jobs only">⚙</button>
-    </div>
-
-    <!-- Filter dropdown + search (single row, replaces old pill bar) -->
-    <div class="lib-head">
-      <select class="lib-filter-select" id="lib-filter-select" onchange="setLibFilter(this.value)" title="Filter the library">
-        <option value="all">All</option>
-        <option value="scripts">Scripts</option>
-        <option value="jobs">Jobs</option>
-      </select>
-      <input id="lib-search" class="form-input lib-search" placeholder="Search…" oninput="renderLibrary()">
-    </div>
-
-    <!-- Unified list — Scripts and Jobs render together with type pills -->
-    <div class="lib-list" id="lib-list">
-      <div class="lib-empty">Loading…</div>
-    </div>
-  </div>
+  <!-- Script library + Jobs panel removed — scripts and jobs are now managed
+       through the Co-Worker Drive (File ▸ Open from Drive… / Save to Drive…). -->
 
   <!-- ════════════════════════════════════════════════════════════════════════
        OBJECT BROWSER PANEL — Tables, Views, Columns from connected DBs.
@@ -542,8 +511,6 @@ body.fullscreen .script-panel { display:none }
   <!-- Object Browser column resize handle (shown only when browser visible) -->
   <div class="col-resize-handle" id="col-resize-ob" style="display:none" title="Drag to resize"></div>
 
-  <!-- Left col resize handle -->
-  <div class="col-resize-handle" id="col-resize-left" title="Drag to resize"></div>
 
   <!-- Editor + Results (stacked vertically) -->
   <div class="editor-pane" id="editor-pane">
