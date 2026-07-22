@@ -151,6 +151,7 @@
       .cygdm-mapb .dm-ic{color:var(--accent,#4a5bd6);font-size:14px;flex-shrink:0}
       .cygdm-mapb .dm-txt{flex:1;min-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .cygdm-mapb .dm-txt b{color:var(--text,#1a1d21)}
+      .cygdm-mapb .dm-path{font-family:var(--mono,monospace);color:var(--text,#1a1d21);background:var(--bg,#fff);border:1px solid var(--border2,#dfe3ea);border-radius:5px;padding:1px 7px;font-size:11.5px;white-space:nowrap}
       .cygdm-mapb .cygdm-btn{padding:3px 9px;font-size:11.5px}
 
       .cygdm-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text,#1a1d21);color:var(--bg2,#fff);font-size:12.5px;padding:8px 16px;border-radius:8px;opacity:0;transition:all .25s;z-index:4100;pointer-events:none}
@@ -352,7 +353,7 @@
     $map.style.display = 'flex';
     $map.innerHTML =
       '<span class="dm-ic">⇄</span>' +
-      '<span class="dm-txt">Synced with <b>' + esc(mapHandle.name) + '</b> · last sync ' + esc(when) + '</span>' +
+      '<span class="dm-txt">Synced with <span class="dm-path" title="Local sync folder. Browsers only reveal the folder name, not its full disk path.">📁 ' + esc(mapHandle.name) + '</span> · last sync ' + esc(when) + '</span>' +
       '<button class="cygdm-btn" id="cygdm-syncnow">Sync now</button>' +
       '<button class="cygdm-btn" id="cygdm-unmap">Unmap</button>';
     $map.querySelector('#cygdm-syncnow').addEventListener('click', syncNow);
