@@ -413,6 +413,21 @@
     document.head.appendChild(s);
   }
 
+  // Make sure the shared Drive overlay module is loaded, then run `cb`. This
+  // lets the Drive button open the Co-Worker Drive on top of ANY page instead
+  // of navigating away. coworker.html has its own richer Drive, so we never
+  // need the overlay there (see wireDriveButton).
+  function ensureDriveModal(cb){
+    if (window.CygenixDriveModal){ if (cb) cb(); return; }
+    let s = document.getElementById('cygenix-drive-modal-js');
+    if (!s){
+      s = document.createElement('script');
+      s.id = 'cygenix-drive-modal-js'; s.src = '/cygenix-drive-modal.js';
+      document.head.appendChild(s);
+    }
+    if (cb) s.addEventListener('load', cb, { once: true });
+  }
+
   function buildFooter(){
     const chev = svg('<path d="M5 6.5l3-3 3 3M5 9.5l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
     return `<div class="cyg-sidebar-foot">
@@ -586,18 +601,28 @@
     });
   }
 
-  // The Drive button is a plain link to /coworker.html#drive, which works from
-  // any other page. But when we're ALREADY on the co-worker page, changing the
-  // hash alone won't re-fire the deep link — so open the Drive directly.
+  // Open the Co-Worker Drive as an OVERLAY on top of the current page, rather
+  // than navigating to coworker.html. On the co-worker page itself we use its
+  // own native Drive (richer — it wires into the workspace canvas); everywhere
+  // else we use the shared overlay module. The href stays as a no-JS fallback.
   function wireDriveButton(root){
     const btn = root.querySelector('#cyg-drive-btn');
     if (!btn) return;
     btn.addEventListener('click', (e) => {
       const onCoworker = /\/coworker\.html?$/.test(location.pathname);
       if (onCoworker && typeof window.openDrive === 'function'){
-        e.preventDefault();
-        window.openDrive();
+        e.preventDefault(); window.openDrive(); return;
       }
+      if (window.CygenixDriveModal){
+        e.preventDefault(); window.CygenixDriveModal.open(); return;
+      }
+      // Module not loaded yet — load it, then open. Falls back to navigating
+      // to coworker.html#drive only if the module fails to load.
+      e.preventDefault();
+      ensureDriveModal(() => {
+        if (window.CygenixDriveModal) window.CygenixDriveModal.open();
+        else window.location.href = '/coworker.html#drive';
+      });
     });
   }
 
@@ -746,6 +771,9 @@
     hideTopbarUserPill();
     startBadgeUpdater();
     ensureA11y();
+    // Preload the Drive overlay so the first click is instant (skip the
+    // co-worker page, which ships its own native Drive).
+    if (!/\/coworker\.html?$/.test(location.pathname)) ensureDriveModal();
   }
 
   // ── Live status badges ──────────────────────────────────────────────────
