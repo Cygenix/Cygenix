@@ -24,3 +24,28 @@
 
 [functions."scheduled-runner"]
   schedule = "* * * * *"
+
+# ── Caching ──────────────────────────────────────────────────────────────────
+# Shared scripts/styles are re-used across every page, so let the browser serve
+# them straight from cache during a burst of navigation instead of revalidating
+# each one. The window is short (and stale-while-revalidate refreshes in the
+# background) so a new deploy is picked up within a minute or two.
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=30, stale-while-revalidate=120"
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=30, stale-while-revalidate=120"
+# The favicon rarely changes and is requested on every page.
+[[headers]]
+  for = "/favicon.svg"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+# HTML must always be revalidated so navigations get the latest page (and any
+# prefetch stores the current version).
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
