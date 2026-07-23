@@ -925,6 +925,64 @@
     }
   };
 
+  // ── Instant navigation ────────────────────────────────────────────────────
+  // These pages are large static HTML documents (the dashboard is ~1MB), so a
+  // normal click pays the full download + parse cost every time. We warm the
+  // browser cache for a page the moment the user shows intent (hovers/taps a
+  // link), so the actual click has little or nothing left to fetch — navigation
+  // feels near-instant. We PREFETCH (cache the HTML) rather than PRERENDER
+  // (execute it) so no page's on-load logic runs early. Fully progressive:
+  // browsers without either feature simply navigate as before.
+  function setupInstantNav(){
+    try {
+      if (window.__cygInstantNav) return; window.__cygInstantNav = true;
+      // Don't prefetch links to auth flows, the API, file downloads, external
+      // sites, new tabs, or anything explicitly opted out with data-no-prefetch.
+      var SKIP = /^\/(api|\.netlify)\//i;
+      var SKIP_EXT = /\.(zip|sql|csv|tsv|pdf|xlsx?|json|bak|gz)$/i;
+
+      // Modern path: the Speculation Rules API (Chrome/Edge) prefetches on
+      // hover intent, with the browser managing concurrency and eviction.
+      if (typeof HTMLScriptElement !== 'undefined' && HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules')) {
+        var rules = { prefetch: [{
+          source: 'document',
+          eagerness: 'moderate',
+          where: { and: [
+            { href_matches: '/*' },
+            { not: { href_matches: '/api/*' } },
+            { not: { href_matches: '/.netlify/*' } },
+            { not: { selector_matches: '[data-no-prefetch]' } },
+            { not: { selector_matches: '[target="_blank"]' } },
+            { not: { selector_matches: '[download]' } }
+          ] }
+        }] };
+        var sr = document.createElement('script');
+        sr.type = 'speculationrules';
+        sr.textContent = JSON.stringify(rules);
+        (document.head || document.documentElement).appendChild(sr);
+        return;
+      }
+
+      // Fallback (Safari/Firefox): add <link rel="prefetch"> on hover / touch.
+      var seen = {};
+      function warm(e){
+        var a = e.target && e.target.closest && e.target.closest('a[href]');
+        if (!a || a.target === '_blank' || a.hasAttribute('download') || a.hasAttribute('data-no-prefetch')) return;
+        var url; try { url = new URL(a.href, location.href); } catch (_) { return; }
+        if (url.origin !== location.origin) return;
+        if (url.pathname === location.pathname) return;
+        if (SKIP.test(url.pathname) || SKIP_EXT.test(url.pathname)) return;
+        if (seen[url.href]) return; seen[url.href] = 1;
+        var l = document.createElement('link');
+        l.rel = 'prefetch'; l.as = 'document'; l.href = url.href;
+        (document.head || document.documentElement).appendChild(l);
+      }
+      document.addEventListener('pointerover', warm, { passive: true });
+      document.addEventListener('touchstart', warm, { passive: true });
+    } catch (_) {}
+  }
+  setupInstantNav();
+
   // Auto-mount on DOMContentLoaded (or immediately if already past)
   if (document.readyState === 'loading'){
     document.addEventListener('DOMContentLoaded', mount);
