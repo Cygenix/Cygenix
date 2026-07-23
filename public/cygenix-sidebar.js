@@ -236,11 +236,11 @@
       .cyg-brand{ display:flex;align-items:center;gap:10px;min-width:0;flex:1;overflow:hidden;text-decoration:none; }
       .cyg-brand-mark{
         width:34px;height:34px;min-width:34px;border-radius:9px;
-        background:linear-gradient(140deg,#5a6ef0,#4a5bd6 55%,#3aa6b6);
+        background:linear-gradient(140deg,#6d5df2,#4a7cf3);
         display:flex;align-items:center;justify-content:center;
         box-shadow:0 4px 14px -4px rgba(74,91,214,0.6);
-        font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:18px;color:#fff;
       }
+      .cyg-brand-mark svg{ width:21px;height:21px;display:block; }
       .cyg-brand-word{ display:flex;flex-direction:column;line-height:1.15;overflow:hidden; }
       .cyg-brand-word b{ font-size:16px;font-weight:700;letter-spacing:-0.01em;color:var(--cyg-fg-strong); }
       .cyg-brand-word span{ font-size:10px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;color:var(--cyg-muted);white-space:nowrap; }
@@ -454,7 +454,7 @@
   function buildHTML(activeKey){
     const head = `<div class="cyg-sidebar-head">
       <a class="cyg-brand" href="/dashboard.html" aria-label="Cygenix — Migration Console">
-        <span class="cyg-brand-mark">C</span>
+        <span class="cyg-brand-mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span>
         <span class="cyg-brand-word"><b>Cygenix</b><span>Migration Console</span></span>
       </a>
       <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar">❮</button>

@@ -30,7 +30,8 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 .brand::after{content:'';position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:52px 52px;-webkit-mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%);mask-image:radial-gradient(circle at 30% 40%,#000,transparent 78%)}
 .brand-inner{position:relative;display:flex;flex-direction:column;height:100%}
 .brand-logo{display:flex;align-items:center;gap:11px;color:#fff;text-decoration:none}
-.mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,#5a6ef0,#4a5bd6 55%,#3aa6b6);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -4px rgba(74,91,214,.6);font-family:var(--mono);font-weight:600;font-size:18px}
+.mark{width:34px;height:34px;border-radius:9px;background:linear-gradient(140deg,#6d5df2,#4a7cf3);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px -4px rgba(74,91,214,.6)}
+.mark svg{width:21px;height:21px;display:block}
 .brand-logo b{font-size:18px;font-weight:700;letter-spacing:-0.015em}
 .brand-body{flex:1;display:flex;flex-direction:column;justify-content:center;max-width:440px}
 .brand-body h1{font-size:38px;line-height:1.1;font-weight:700;letter-spacing:-0.03em;margin-bottom:18px}
@@ -82,7 +83,7 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
   <!-- BRAND PANEL -->
   <div class="brand">
     <div class="brand-inner">
-      <a class="brand-logo" href="/"><span class="mark">C</span><b>Cygenix</b></a>
+      <a class="brand-logo" href="/"><span class="mark"><svg viewBox="0 0 32 32" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 10.5 14 16 9 21.5" stroke="#fff" stroke-opacity=".45"/><path d="M13 10.5 18 16 13 21.5" stroke="#fff" stroke-opacity=".72"/><path d="M17 10.5 22 16 17 21.5" stroke="#fff"/></svg></span><b>Cygenix</b></a>
       <div class="brand-body">
         <h1>The migration console teams trust in production.</h1>
         <p>Map, validate and deliver database migrations with a full audit trail — powered by a schema-aware AI engine.</p>
