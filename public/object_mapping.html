@@ -334,6 +334,7 @@ body.cyg-collapsed{padding-left:54px}
 </script>
 <script src="/cygenix-api.js"></script>
 <script src="/cygenix-history.js"></script>
+<script src="/cygenix-drive.js"></script>
 
 <div id="cyg-sidebar-mount" data-active="object-mapping"></div>
 <script src="/cygenix-sidebar.js"></script>
@@ -357,6 +358,7 @@ body.cyg-collapsed{padding-left:54px}
       </div>
       <button class="btn btn-green btn-sm" onclick="newMap()" title="Start a new map (will prompt to save current work)">✨ New map</button>
       <button class="btn btn-teal btn-sm" onclick="openLoadMapModal()" title="Load an existing saved map">📂 Load map</button>
+      <button class="btn btn-ghost btn-sm" onclick="openScriptFromDrive()" title="Open a saved SQL script from the Drive">🗂 Open from Drive</button>
       <button class="btn btn-ghost btn-sm" onclick="resetAll()" title="Start fresh">↺ Reset</button>
       <input id="job-name-input" class="form-input" style="width:200px;font-family:var(--serif);font-size:12px" placeholder="Job name (optional)" maxlength="120" />
       <button class="btn btn-ghost btn-sm" id="open-history-btn" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">🕐 History</button>
@@ -629,9 +631,10 @@ body.cyg-collapsed{padding-left:54px}
             <button class="btn btn-ghost btn-sm" onclick="removeUnmappedCols()" title="Remove all rows that have no source column and no fixed value">✂ Remove unused</button>
             <button class="btn btn-ghost btn-sm" id="undo-remove-btn" onclick="undoRemoveUnmappedCols()" style="display:none;color:var(--amber)">↩ Undo remove</button>
             <button class="btn btn-ghost btn-sm" onclick="copySQL()">📋 Copy</button>
+            <button class="btn btn-ghost btn-sm" onclick="saveScriptToDrive()" title="Save this SQL as a script in the Drive">🗂 Save to Drive</button>
             <button class="btn btn-ghost btn-sm" onclick="downloadSQL()">⬇ Download</button>
             <button class="btn btn-ghost btn-sm" id="open-history-btn-2" onclick="if(editJobId){CygenixHistory.open(editJobId)}else{alert('Save the job first to start a version history.')}" title="Version history for this job">🕐 History</button>
-            <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn">💾 Save as job</button>
+            <button class="btn btn-green btn-sm" onclick="saveAsJob()" id="sql-save-btn" title="Save as a job — mirrored to the Drive (SQL Editor / Jobs)">💾 Save as job</button>
           </div>
         </div>
         <div class="panel-body">
@@ -1174,6 +1177,11 @@ function ddlShowResult(msg, kind) {
 
   // Check for edit mode
   checkEditMode();
+
+  // Make the Drive the canonical home for jobs from the moment the page loads:
+  // mirror any jobs already in localStorage into "SQL Editor / Jobs" once the
+  // Drive library is ready. Deferred + best-effort so it never blocks startup.
+  setTimeout(() => { try { if (typeof mirrorJobsToDrive === 'function') mirrorJobsToDrive(); } catch (_) {} }, 1200);
 
   // If there's no ?edit=<id> param (i.e. the user didn't arrive via Load Map),
   // try restoring an in-progress WIP draft saved by _wipDraftSave on previous
@@ -3787,6 +3795,84 @@ function downloadSQL(){
   a.download=name; a.click();
 }
 
+// ── Co-Worker Drive: scripts save/open ────────────────────────────────────────
+// The Drive is the default home for scripts. "Save to Drive" writes the SQL that
+// is currently shown as a real .sql file under the "SQL Editor" folder; "Open
+// from Drive" browses those .sql files (scripts + job SQL) and loads one back
+// into the Generated SQL panel.
+async function saveScriptToDrive(){
+  const txt=($('sql-output')?.textContent||generatedSQL.insert||'').trim();
+  if(!txt){ alert('Generate SQL first.'); return; }
+  if(!window.CygenixDrive){ alert('The Drive is unavailable in this browser.'); return; }
+  const def=(($('job-name-input')?.value||'').trim()) ||
+    ((srcTable?.name||'migration')+'_to_'+(mode==='single'?(tgtTable?.name||'target'):targetTables.map(t=>t.name).join('_')));
+  const name=prompt('Save script to the Drive as:', def);
+  if(name==null) return;
+  try{
+    const fid=await CygenixDrive.scriptsFolderId();
+    await CygenixDrive.addFile(fid, CygenixDrive.safeName(name)+'.sql',
+      new Blob([txt],{type:'text/plain'}), 'text/plain',
+      { meta:{ source:'object-mapping', savedAt:new Date().toISOString() } });
+    showStatus('✓ Saved to Drive: '+name+'.sql','info');
+  }catch(e){ alert('Could not save to Drive: '+((e&&e.message)||e)); }
+}
+
+async function openScriptFromDrive(){
+  if(!window.CygenixDrive){ alert('The Drive is unavailable in this browser.'); return; }
+  let files=[];
+  try{ files=await CygenixDrive.listSqlFiles(); }catch(_){}
+  openDriveScriptPicker(files);
+}
+
+function openDriveScriptPicker(files){
+  const escp=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let ov=document.getElementById('drive-script-picker');
+  if(ov) ov.remove();
+  ov=document.createElement('div');
+  ov.id='drive-script-picker';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:6000;display:flex;align-items:center;justify-content:center;padding:1.5rem';
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  const rows=(files&&files.length)?files.map(f=>{
+    const isJob=/\/Jobs\//.test(f.path);
+    const folder=f.path.replace(/\/[^/]*$/,'');
+    return '<div class="dsp-row" data-id="'+f.id+'" tabindex="0" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;border-radius:8px;cursor:pointer">'
+      +'<span style="font-size:9px;font-family:var(--mono);text-transform:uppercase;background:'+(isJob?'rgba(74,91,214,.14)':'var(--bg4)')+';color:'+(isJob?'var(--accent)':'var(--text2)')+';padding:2px 6px;border-radius:4px">'+(isJob?'JOB':'SQL')+'</span>'
+      +'<span class="dsp-name" style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escp(f.name)+'</span>'
+      +'<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+escp(folder)+'</span></div>';
+  }).join(''):'<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive”, or save a job.</div>';
+  ov.innerHTML='<div style="background:var(--bg2,#fff);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:540px;max-height:76vh;display:flex;flex-direction:column;box-shadow:0 20px 60px -20px rgba(0,0,0,.5)">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px">🗂 Open from Drive</b><button id="dsp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+    +'<div id="dsp-list" style="overflow-y:auto;padding:.5rem">'+rows+'</div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#dsp-close').addEventListener('click',()=>ov.remove());
+  ov.querySelectorAll('.dsp-row').forEach(r=>{
+    r.addEventListener('mouseenter',()=>r.style.background='var(--bg3)');
+    r.addEventListener('mouseleave',()=>r.style.background='');
+    const open=async()=>{
+      const id=r.dataset.id;
+      try{
+        const sql=await CygenixDrive.readText(id);
+        applyDriveScript(sql, r.querySelector('.dsp-name').textContent.replace(/\.sql$/i,''));
+      }catch(_){ alert('Could not open that file.'); }
+      ov.remove();
+    };
+    r.addEventListener('click',open);
+    r.addEventListener('keydown',e=>{ if(e.key==='Enter') open(); });
+  });
+}
+
+// Load a .sql script from the Drive into the Generated SQL panel so it can be
+// reviewed, copied, downloaded or re-saved.
+function applyDriveScript(sql, name){
+  generatedSQL={ insert:sql||'', schema:'', verify:'' };
+  $('tab-schema').style.display='none';
+  $('tab-verify').style.display='none';
+  showSQLOutput(generatedSQL.insert, [], true);
+  const sb=$('sql-save-btn'); if(sb) sb.disabled=false;
+  const tsb=$('save-job-btn'); if(tsb) tsb.disabled=false;
+  showStatus('✓ Loaded from Drive: '+(name||'script'),'info');
+}
+
 // ── Save as job ───────────────────────────────────────────────────────────────
 // Returns a unique job name. If `requested` is empty, uses `autoName`.
 // If the chosen name already exists in `jobs` (ignoring the job being edited),
@@ -3929,6 +4015,27 @@ function saveAsJob(){
   } catch (e) {
     console.warn('Auto-snapshot skipped:', e);
   }
+
+  // Mirror the job set into the Co-Worker Drive so it stays the canonical home
+  // for jobs (real .sql files under "SQL Editor / Jobs"). Fire-and-forget — a
+  // Drive failure never blocks a successful localStorage save.
+  mirrorJobsToDrive();
+}
+
+// Push the current jobs list into the Drive's "SQL Editor / Jobs" folder.
+// syncJobs keys files by jobId and prunes any whose job was deleted, so the
+// folder always mirrors localStorage's cygenix_jobs. Best-effort.
+function mirrorJobsToDrive(){
+  try {
+    if (!window.CygenixDrive) return;
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    CygenixDrive.syncJobs(jobs.map(j => ({
+      jobId: j.id,
+      name: j.name || '',
+      sql: j.insertSQL || '',
+      target: j.target || j.targetTable || ''
+    }))).catch(() => {});
+  } catch (_) {}
 }
 
 // ── Edit mode — load saved job ────────────────────────────────────────────────
