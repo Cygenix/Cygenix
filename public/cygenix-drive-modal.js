@@ -70,6 +70,34 @@
   async function driveEnsureFolderPath(parentId, segs) { let cur = parentId || ''; for (const s of segs) { if (!s) continue; const kids = await dchildren(cur); let f = kids.find(k => k.kind === 'folder' && k.name === s); if (!f) f = await driveCreateFolder(cur, s); cur = f.id; } return cur; }
   async function driveRemove(id) { const n = await dget(id); if (!n) return; if (n.kind === 'folder') { const kids = await dchildren(id); for (const k of kids) await driveRemove(k.id); } await ddel(id); }
   async function driveRename(id, name) { const n = await dget(id); if (!n) return; name = (name || '').trim(); if (!name) return; n.name = name; n.mtime = Date.now(); await dput(n); }
+  // True if `targetId` is `folderId` itself or nested somewhere under it — used
+  // to stop a folder being moved into its own subtree (which would orphan it).
+  async function isInsideFolder(folderId, targetId) {
+    let cur = targetId, g = 0;
+    while (cur && g++ < 100) { if (cur === folderId) return true; const n = await dget(cur); if (!n) break; cur = n.parentId || ''; }
+    return false;
+  }
+  // Move one node into a new parent folder ('' = Home). Guards against no-ops
+  // and folder cycles, and de-duplicates the name inside the destination.
+  async function driveMove(id, newParentId) {
+    const n = await dget(id); if (!n) return { ok: false };
+    newParentId = newParentId || '';
+    if ((n.parentId || '') === newParentId) return { ok: true, noop: true };
+    if (n.kind === 'folder' && (id === newParentId || await isInsideFolder(id, newParentId))) return { ok: false, reason: 'cycle' };
+    const kids = await dchildren(newParentId);
+    const dot = n.name.lastIndexOf('.');
+    const base = (n.kind === 'file' && dot > 0) ? n.name.slice(0, dot) : n.name;
+    const ext  = (n.kind === 'file' && dot > 0) ? n.name.slice(dot) : '';
+    let nm = n.name, i = 2;
+    while (kids.some(k => k.id !== id && k.kind === n.kind && k.name.toLowerCase() === nm.toLowerCase())) nm = base + ' (' + (i++) + ')' + ext;
+    n.name = nm; n.parentId = newParentId; n.mtime = Date.now(); await dput(n);
+    return { ok: true };
+  }
+  async function moveNodesTo(ids, newParentId) {
+    let moved = 0, skipped = 0;
+    for (const id of (ids || [])) { const r = await driveMove(id, newParentId); if (r.ok && !r.noop) moved++; else if (!r.ok) skipped++; }
+    return { moved, skipped };
+  }
   async function driveUploadFiles(fileList) {
     let count = 0;
     for (const file of fileList) {
@@ -84,6 +112,11 @@
   // ── State ─────────────────────────────────────────────────────────────────
   let cwd = '', searchQ = '', mapHandle = null, mapMeta = { lastSync: 0 }, syncing = false, built = false;
   let $bg, $modal, $crumbs, $body, $footL, $storage, $map, $syncBtn, $fileInput, $folderInput, $maxBtn, $toast, toastT;
+  // Multi-select + drag-to-move state
+  let selected = new Set();   // node ids currently ticked
+  let dragIds = null;         // node ids being dragged (for move-into-folder)
+  let lastIndex = -1;         // anchor row index for shift-click range select
+  let currentItems = [];      // the rows currently rendered, in display order
 
   function toast(msg) { if (!$toast) return; $toast.textContent = msg; $toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $toast.classList.remove('show'), 1800); }
 
@@ -156,6 +189,23 @@
 
       .cygdm-toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text,#1a1d21);color:var(--bg2,#fff);font-size:12.5px;padding:8px 16px;border-radius:8px;opacity:0;transition:all .25s;z-index:4100;pointer-events:none}
       .cygdm-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+      /* Multi-select + move-to-folder */
+      .cygdm-cb{width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:var(--accent,#4a5bd6);margin:0 1px 0 2px}
+      .cygdm-row.sel{background:var(--accent-glow,rgba(74,91,214,.14))}
+      .cygdm-row.drop-into{outline:2px dashed var(--accent,#4a5bd6);outline-offset:-3px;background:var(--accent-glow,rgba(74,91,214,.12))}
+      .cygdm-crumbs a.crumb-drop{background:var(--accent-glow,rgba(74,91,214,.2));border-radius:5px;text-decoration:underline;padding:0 3px}
+      .cygdm-selbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:.4rem;padding:.45rem .55rem;margin:0 0 .35rem;background:var(--bg3,#f4f5f8);border:1px solid var(--border2,#dfe3ea);border-radius:8px;flex-wrap:wrap}
+      .cygdm-selcount{font-size:12px;font-weight:600;color:var(--text,#1a1d21);margin-right:auto;padding-left:4px}
+      .cygdm-btn.cygdm-danger{color:var(--red,#c0392b)}
+      .cygdm-btn.cygdm-danger:hover{border-color:var(--red,#c0392b);background:var(--red-g,rgba(192,57,43,.08))}
+      .cygdm-mp{position:fixed;inset:0;z-index:4200;display:flex;align-items:center;justify-content:center;background:rgba(15,18,26,.45);padding:1.5rem;font-family:var(--sans,'IBM Plex Sans','Helvetica Neue',Arial,sans-serif)}
+      .cygdm-mp-card{background:var(--bg2,#fff);border:1px solid var(--border2,#dfe3ea);border-radius:12px;width:100%;max-width:440px;max-height:70vh;display:flex;flex-direction:column;box-shadow:var(--shadow-strong,0 24px 60px -12px rgba(20,24,40,.4));overflow:hidden}
+      .cygdm-mp-h{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:.8rem 1rem;border-bottom:1px solid var(--border,#eceef2);font-size:14px;font-weight:600;color:var(--text,#1a1d21)}
+      .cygdm-mp-h button{background:none;border:none;color:var(--text3,#7a8090);font-size:16px;cursor:pointer;line-height:1}
+      .cygdm-mp-list{overflow-y:auto;padding:.4rem}
+      .cygdm-mp-row{display:flex;align-items:center;gap:.5rem;padding:.5rem .6rem;border-radius:7px;cursor:pointer;font-size:13px;color:var(--text,#1a1d21);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .cygdm-mp-row:hover{background:var(--hover-tint,rgba(0,0,0,.06))}
     `;
     document.head.appendChild(st);
   }
@@ -228,11 +278,25 @@
 
     // Crumb navigation (delegated)
     $crumbs.addEventListener('click', e => { const a = e.target.closest('a[data-id]'); if (!a) return; navigate(a.getAttribute('data-id')); });
+    // Crumbs are also drop targets — drag a row onto “Home” or any ancestor to
+    // move it up out of the current folder.
+    $crumbs.addEventListener('dragover', e => { const a = e.target.closest('a[data-id]'); if (!a || !dragIds) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; a.classList.add('crumb-drop'); });
+    $crumbs.addEventListener('dragleave', e => { const a = e.target.closest('a[data-id]'); if (a) a.classList.remove('crumb-drop'); });
+    $crumbs.addEventListener('drop', async e => {
+      const a = e.target.closest('a[data-id]'); if (!a || !dragIds) return;
+      e.preventDefault(); e.stopPropagation(); a.classList.remove('crumb-drop');
+      const pid = a.getAttribute('data-id') || '';
+      const ids = dragIds.filter(id => id !== pid); dragIds = null;
+      const { moved, skipped } = await moveNodesTo(ids, pid);
+      clearSelection(); renderDrive();
+      if (moved || skipped) toast('Moved ' + moved + ' item' + (moved === 1 ? '' : 's') + (skipped ? (', ' + skipped + ' skipped') : ''));
+    });
 
-    // Drag-and-drop uploads
-    ['dragenter', 'dragover'].forEach(ev => $body.addEventListener(ev, e => { e.preventDefault(); $body.classList.add('drag'); }));
+    // Drag-and-drop uploads (external files only — an internal move sets dragIds
+    // and is handled by the folder rows / breadcrumbs, so skip it here).
+    ['dragenter', 'dragover'].forEach(ev => $body.addEventListener(ev, e => { if (dragIds) return; e.preventDefault(); $body.classList.add('drag'); }));
     $body.addEventListener('dragleave', e => { if (e.target === $body) $body.classList.remove('drag'); });
-    $body.addEventListener('drop', async e => { e.preventDefault(); $body.classList.remove('drag'); const f = e.dataTransfer && e.dataTransfer.files; if (f && f.length) await driveUploadFiles(f); });
+    $body.addEventListener('drop', async e => { if (dragIds) return; e.preventDefault(); $body.classList.remove('drag'); const f = e.dataTransfer && e.dataTransfer.files; if (f && f.length) await driveUploadFiles(f); });
 
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && $bg.classList.contains('open') && !$bg.classList.contains('min')) close(); });
 
@@ -253,41 +317,134 @@
   }
 
   // ── Rendering ─────────────────────────────────────────────────────────────
-  function navigate(id) { cwd = id || ''; searchQ = ''; const s = $bg.querySelector('#cygdm-search'); if (s) s.value = ''; renderDrive(); }
+  function navigate(id) { cwd = id || ''; searchQ = ''; clearSelection(); const s = $bg.querySelector('#cygdm-search'); if (s) s.value = ''; renderDrive(); }
+  function clearSelection() { selected.clear(); lastIndex = -1; }
 
-  function rowEl(n) {
-    const row = document.createElement('div'); row.className = 'cygdm-row';
+  function rowEl(n, index) {
+    const row = document.createElement('div'); row.className = 'cygdm-row' + (selected.has(n.id) ? ' sel' : '');
     const isFolder = n.kind === 'folder';
+
+    // Selection checkbox. Shift-click extends a range from the last-ticked row.
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'cygdm-cb'; cb.checked = selected.has(n.id);
+    cb.title = 'Select';
+    cb.addEventListener('click', e => {
+      e.stopPropagation();
+      if (e.shiftKey && lastIndex > -1 && currentItems.length) {
+        const a = Math.min(lastIndex, index), b = Math.max(lastIndex, index);
+        for (let i = a; i <= b; i++) if (currentItems[i]) selected.add(currentItems[i].id);
+      } else {
+        if (cb.checked) selected.add(n.id); else selected.delete(n.id);
+      }
+      lastIndex = index; renderDrive();
+    });
+
     const ic = document.createElement('div'); ic.className = 'cygdm-ic'; ic.textContent = isFolder ? '📁' : fileIcon(n.name);
     const nm = document.createElement('div'); nm.className = 'cygdm-nm'; nm.textContent = n.name;
     const meta = document.createElement('div'); meta.className = 'cygdm-meta'; meta.textContent = isFolder ? 'folder' : fmtSize(n.size);
     const acts = document.createElement('div'); acts.className = 'cygdm-acts';
+
     if (isFolder) {
-      row.onclick = e => { if (e.target.closest('.cygdm-acts')) return; navigate(n.id); };
+      row.onclick = e => { if (e.target.closest('.cygdm-acts') || e.target.closest('.cygdm-cb')) return; navigate(n.id); };
+      // Folders are drop targets — drop file(s)/folder(s) here to move them in.
+      row.addEventListener('dragover', e => { if (!dragIds || dragIds.includes(n.id)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; row.classList.add('drop-into'); });
+      row.addEventListener('dragleave', () => row.classList.remove('drop-into'));
+      row.addEventListener('drop', async e => {
+        if (!dragIds) return;
+        e.preventDefault(); e.stopPropagation(); row.classList.remove('drop-into');
+        const ids = dragIds.filter(id => id !== n.id); dragIds = null;
+        const { moved, skipped } = await moveNodesTo(ids, n.id);
+        clearSelection(); renderDrive();
+        if (moved || skipped) toast('Moved ' + moved + ' item' + (moved === 1 ? '' : 's') + ' to ' + n.name + (skipped ? (', ' + skipped + ' skipped') : ''));
+      });
     } else {
-      row.onclick = e => { if (e.target.closest('.cygdm-acts')) return; downloadFile(n); };
+      row.onclick = e => { if (e.target.closest('.cygdm-acts') || e.target.closest('.cygdm-cb')) return; downloadFile(n); };
       const dl = document.createElement('button'); dl.title = 'Download'; dl.textContent = '⭳'; dl.onclick = e => { e.stopPropagation(); downloadFile(n); }; acts.appendChild(dl);
-      // Draggable so the file can be dropped straight into a host editor (e.g.
-      // the SQL Editor). The overlay goes click-through during the drag so the
-      // drop lands on the page behind it.
-      row.draggable = true;
-      row.title = 'Drag into the editor to open';
-      row.addEventListener('dragstart', e => {
-        try {
+    }
+
+    // Every row is draggable: a single file drag still drops into a host editor
+    // (e.g. the SQL Editor); any drag can also be dropped onto a folder row or a
+    // breadcrumb to MOVE it. Multi-selected rows drag as a group.
+    row.draggable = true;
+    row.title = isFolder ? 'Drag onto another folder to move it' : 'Drag into the editor to open, or onto a folder to move it';
+    row.addEventListener('dragstart', e => {
+      dragIds = (selected.has(n.id) && selected.size > 1) ? [...selected] : [n.id];
+      const singleFileOut = dragIds.length === 1 && !isFolder;
+      try {
+        if (singleFileOut) {
           e.dataTransfer.setData('application/x-cygenix-drive-file', JSON.stringify({ id: n.id, name: n.name }));
           e.dataTransfer.setData('text/plain', n.name);
-          e.dataTransfer.effectAllowed = 'copy';
-        } catch (_) {}
-        if ($bg) $bg.classList.add('dragging');
-      });
-      row.addEventListener('dragend', () => { if ($bg) $bg.classList.remove('dragging'); });
-    }
+        }
+        e.dataTransfer.effectAllowed = singleFileOut ? 'copyMove' : 'move';
+      } catch (_) {}
+      // Only dim for a single-file drag-out (drop lands on the page behind).
+      if ($bg && singleFileOut) $bg.classList.add('dragging');
+    });
+    row.addEventListener('dragend', () => { if ($bg) $bg.classList.remove('dragging'); dragIds = null; if ($body) $body.querySelectorAll('.drop-into').forEach(r => r.classList.remove('drop-into')); });
+
+    const mv = document.createElement('button'); mv.title = 'Move to folder…'; mv.textContent = '📂';
+    mv.onclick = e => { e.stopPropagation(); openMovePicker([n.id]); }; acts.appendChild(mv);
     const rn = document.createElement('button'); rn.title = 'Rename'; rn.textContent = '✎';
     rn.onclick = async e => { e.stopPropagation(); const nn = prompt('Rename to:', n.name); if (nn == null) return; await driveRename(n.id, nn); renderDrive(); }; acts.appendChild(rn);
     const del = document.createElement('button'); del.title = 'Delete'; del.textContent = '🗑';
-    del.onclick = async e => { e.stopPropagation(); if (!confirm('Delete “' + n.name + '”' + (isFolder ? ' and everything inside it' : '') + '?')) return; await driveRemove(n.id); if (cwd === n.id) cwd = n.parentId || ''; renderDrive(); }; acts.appendChild(del);
-    row.appendChild(ic); row.appendChild(nm); row.appendChild(meta); row.appendChild(acts);
+    del.onclick = async e => { e.stopPropagation(); if (!confirm('Delete “' + n.name + '”' + (isFolder ? ' and everything inside it' : '') + '?')) return; await driveRemove(n.id); selected.delete(n.id); if (cwd === n.id) cwd = n.parentId || ''; renderDrive(); }; acts.appendChild(del);
+
+    row.appendChild(cb); row.appendChild(ic); row.appendChild(nm); row.appendChild(meta); row.appendChild(acts);
     return row;
+  }
+
+  // Sticky bar shown while ≥1 row is ticked: bulk move / delete / select-all.
+  function selectionBar() {
+    const bar = document.createElement('div'); bar.className = 'cygdm-selbar';
+    const allOn = currentItems.length > 0 && currentItems.every(n => selected.has(n.id));
+    bar.innerHTML =
+      '<span class="cygdm-selcount">' + selected.size + ' selected</span>' +
+      '<button class="cygdm-btn" data-act="all">' + (allOn ? 'Deselect all' : 'Select all') + '</button>' +
+      '<button class="cygdm-btn" data-act="move">📂 Move to…</button>' +
+      '<button class="cygdm-btn cygdm-danger" data-act="del">🗑 Delete</button>' +
+      '<button class="cygdm-btn" data-act="clear">Clear</button>';
+    bar.querySelector('[data-act="all"]').onclick = () => { if (allOn) clearSelection(); else currentItems.forEach(n => selected.add(n.id)); renderDrive(); };
+    bar.querySelector('[data-act="move"]').onclick = () => openMovePicker([...selected]);
+    bar.querySelector('[data-act="del"]').onclick = deleteSelected;
+    bar.querySelector('[data-act="clear"]').onclick = () => { clearSelection(); renderDrive(); };
+    return bar;
+  }
+
+  async function deleteSelected() {
+    const ids = [...selected]; if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' item' + (ids.length === 1 ? '' : 's') + '? Folders are removed with everything inside them.')) return;
+    for (const id of ids) { await driveRemove(id); if (cwd === id) cwd = ''; }
+    clearSelection(); renderDrive(); toast('Deleted ' + ids.length + ' item' + (ids.length === 1 ? '' : 's'));
+  }
+
+  // Folder picker overlay for "Move to…". Lists every folder (as a path) plus
+  // Home, excluding the items being moved and their own subtrees.
+  async function openMovePicker(ids) {
+    if (!ids || !ids.length) return;
+    const idset = new Set(ids);
+    const all = await dall(); const byId = {}; all.forEach(n => byId[n.id] = n);
+    const isUnderMoved = fid => { let cur = fid, g = 0; while (cur && g++ < 100) { if (idset.has(cur)) return true; const n = byId[cur]; if (!n) break; cur = n.parentId || ''; } return false; };
+    const pathOf = n => { const parts = [n.name]; let p = n.parentId, g = 0; while (p && byId[p] && g++ < 50) { parts.unshift(byId[p].name); p = byId[p].parentId; } return parts.join(' / '); };
+    const targets = [{ id: '', label: '🗂 Home' }].concat(
+      all.filter(n => n.kind === 'folder' && !isUnderMoved(n.id))
+         .map(f => ({ id: f.id, label: '📁 ' + pathOf(f) }))
+         .sort((a, b) => a.label.localeCompare(b.label))
+    );
+    const ov = document.createElement('div'); ov.className = 'cygdm-mp';
+    ov.innerHTML =
+      '<div class="cygdm-mp-card">' +
+        '<div class="cygdm-mp-h"><span>Move ' + ids.length + ' item' + (ids.length === 1 ? '' : 's') + ' to…</span><button title="Cancel">✕</button></div>' +
+        '<div class="cygdm-mp-list">' + targets.map(t => '<div class="cygdm-mp-row" data-id="' + esc(t.id) + '">' + esc(t.label) + '</div>').join('') + '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    const done = () => ov.remove();
+    ov.addEventListener('click', e => { if (e.target === ov) done(); });
+    ov.querySelector('.cygdm-mp-h button').addEventListener('click', done);
+    ov.querySelectorAll('.cygdm-mp-row').forEach(r => r.addEventListener('click', async () => {
+      const pid = r.getAttribute('data-id') || '';
+      const { moved, skipped } = await moveNodesTo(ids, pid);
+      done(); clearSelection(); renderDrive();
+      toast('Moved ' + moved + ' item' + (moved === 1 ? '' : 's') + (skipped ? (', ' + skipped + ' skipped') : ''));
+    }));
   }
 
   async function renderDrive() {
@@ -302,15 +459,20 @@
     if (searchQ) items = (await dall()).filter(n => n.name.toLowerCase().includes(searchQ));
     else items = await dchildren(cwd);
     items.sort((a, b) => a.kind === b.kind ? a.name.localeCompare(b.name) : (a.kind === 'folder' ? -1 : 1));
+    currentItems = items;
+    // Drop any ticked ids that are no longer in view (deleted / navigated away).
+    if (selected.size) { const live = new Set(items.map(n => n.id)); selected = new Set([...selected].filter(id => live.has(id))); }
 
     if (!items.length) {
       $body.innerHTML = '<div class="cygdm-empty">' + (searchQ
         ? 'No files or folders match “' + esc(searchQ) + '”.'
         : 'This folder is empty.<br>Drag files in, or use <b>⬆ Files</b> / <b>⬆ Folder</b> / <b>＋ Folder</b>.<br><br>Anything you put here becomes the co-worker\'s workspace — it can read and build on these files.') + '</div>';
     } else {
-      $body.innerHTML = ''; items.forEach(n => $body.appendChild(rowEl(n)));
+      $body.innerHTML = '';
+      if (selected.size) $body.appendChild(selectionBar());
+      items.forEach((n, i) => $body.appendChild(rowEl(n, i)));
     }
-    if ($footL) $footL.textContent = items.length + ' item' + (items.length === 1 ? '' : 's');
+    if ($footL) $footL.textContent = items.length + ' item' + (items.length === 1 ? '' : 's') + (selected.size ? (' · ' + selected.size + ' selected') : '');
     renderStorage();
   }
 
@@ -437,7 +599,7 @@
   // ── Public API ────────────────────────────────────────────────────────────
   function open() {
     build();
-    searchQ = ''; const s = $bg.querySelector('#cygdm-search'); if (s) s.value = '';
+    searchQ = ''; clearSelection(); const s = $bg.querySelector('#cygdm-search'); if (s) s.value = '';
     $bg.classList.remove('min'); // always come back into view
     renderDrive(); renderStorage(); renderMapBanner();
     $bg.classList.add('open');
