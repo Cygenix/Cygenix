@@ -19,6 +19,30 @@ require('./project-memory');
 require('./agent-dependency-planner');
 require('./agent-scope');
 
+// ── Process-level safety net ─────────────────────────────────────────────────
+// Node 15+ terminates the worker on unhandled promise rejections by default,
+// and Node 22 tightened several EventEmitter error paths that used to be
+// warnings. Without these listeners, an async error emitted by the mssql
+// pool (or any dependency) after a request handler has already returned can
+// take down the whole Node worker, leaving Azure to return an empty 500 to
+// the client — which is precisely the "Non-JSON (500)" symptom that broke
+// DDL execution. Logging and swallowing them keeps the worker alive so the
+// next request still gets a proper JSON response.
+//
+// If you ever see one of these fire in the logs, it points at a promise or
+// EventEmitter somewhere that should have its own try/catch — but the safety
+// net stops that missing catch from being a production outage.
+process.on('unhandledRejection', (reason) => {
+  const msg   = reason && reason.message ? reason.message : String(reason);
+  const stack = reason && reason.stack   ? reason.stack   : null;
+  console.error('[cygenix-db-api] UNHANDLED REJECTION:', msg, stack || '');
+});
+process.on('uncaughtException', (err) => {
+  const msg   = err && err.message ? err.message : String(err);
+  const stack = err && err.stack   ? err.stack   : null;
+  console.error('[cygenix-db-api] UNCAUGHT EXCEPTION:', msg, stack || '');
+});
+
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
 function getCosmosContainer(containerName) {
@@ -132,6 +156,20 @@ app.http('db', {
         }
       });
       ctx.log('Connected!');
+
+      // The mssql package's connection pool is an EventEmitter. If the pool
+      // enters a bad state (e.g. an in-flight statement errors mid-token-stream,
+      // or the underlying tedious connection is torn down asynchronously) it
+      // can emit an 'error' event AFTER the query promise has already resolved
+      // or rejected. With no listener attached, that event becomes an
+      // unhandled EventEmitter error, which in Node 22+ terminates the worker
+      // before the handler can send its response — Azure then returns an
+      // empty 500. Attaching this listener converts that fatal event into a
+      // logged warning and keeps the worker alive.
+      pool.on('error', (poolErr) => {
+        const msg = poolErr && poolErr.message ? poolErr.message : String(poolErr);
+        ctx.log.warn('[cygenix-db-api] Pool async error (swallowed):', msg);
+      });
 
       let result;
       switch (action) {
@@ -356,10 +394,23 @@ app.http('db', {
           result = { success: false, error: `Unknown action: ${action}` };
       }
 
-      // Try to close the pool, but never let a close-time hiccup mask the
-      // actual response. If close fails we just log it — the connection will
-      // be reaped by the platform anyway.
-      try { await pool.close(); } catch (closeErr) { ctx.log.warn('pool.close() failed:', closeErr?.message || closeErr); }
+      // NOTE: previously we called `await pool.close()` here after every
+      // request. That turned out to be the trigger for the "Non-JSON (500)"
+      // regression on DDL statements: mssql's sql.connect() returns a
+      // singleton pool, and closing it while it's still holding token-stream
+      // state (which DDL leaves behind more often than SELECT) causes the
+      // underlying tedious connection to emit an async 'error' event on the
+      // EventEmitter. In Node 22+ that unhandled emitter error terminates
+      // the worker, and Azure returns an empty 500 to the client with no
+      // body — bypassing every one of our try/catch blocks below.
+      //
+      // The fix is to leave the pool open. It's a singleton, so subsequent
+      // requests on the same worker reuse it (which is actually the intended
+      // mssql pattern for serverless), and Azure Functions reaps the whole
+      // process on scale-down anyway. The pool.on('error', ...) listener we
+      // attach up in the connect block catches any async errors that would
+      // otherwise be unhandled.
+      // try { await pool.close(); } catch (closeErr) { ctx.log.warn('pool.close() failed:', closeErr?.message || closeErr); }
 
       // Defensive serialisation: if `result` contains anything JSON.stringify
       // can't handle (rare — would mean SQL Server returned an exotic type
