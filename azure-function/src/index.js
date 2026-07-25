@@ -175,7 +175,20 @@ app.http('db', {
       switch (action) {
         case 'test': {
           const r = await pool.request().query('SELECT @@VERSION AS version, DB_NAME() AS dbname, SUSER_SNAME() AS sysuser');
-          result = { success: true, version: r.recordset[0].version.split('\n')[0].trim(), database: r.recordset[0].dbname, user: r.recordset[0].sysuser };
+          result = {
+            success: true,
+            version: r.recordset[0].version.split('\n')[0].trim(),
+            database: r.recordset[0].dbname,
+            user: r.recordset[0].sysuser,
+            // ── DIAGNOSTIC MARKER ────────────────────────────────────────
+            // If you see codeVersion in the response, the new instrumented
+            // build is live on Azure. If it's missing, the deploy hasn't
+            // reached the Function App yet and we're still hitting the
+            // pre-fix code.
+            codeVersion: 'diag-2026-07-24-a',
+            nodeVersion: process.version,
+            uptimeSec:   Math.round(process.uptime())
+          };
           break;
         }
         case 'schema': {
@@ -282,37 +295,49 @@ app.http('db', {
           break;
         }
         case 'execute': {
-          // SQL execution is the single biggest failure surface in this
-          // function — it's where a user-supplied INSERT against an arbitrary
-          // target meets a real database. We wrap it in its own try/catch so
-          // we can capture mssql-driver-specific error fields (number, line,
-          // state, etc.) that the outer catch would lose, and so a SQL
-          // Server error never leaks out as a generic "Non-JSON HTTP 500".
-          //
-          // What we expose on failure:
-          //   error      — err.message (or fallback if missing)
-          //   sqlNumber  — SQL Server error number (e.g. 515 = NULL violation,
-          //                547 = FK constraint, 208 = invalid object name,
-          //                2627 = unique violation, 8152 = string truncation)
-          //   sqlState   — error severity / state combo
-          //   sqlLine    — line in the user's SQL that triggered the error
-          //   sqlProc    — procedure name (empty for ad-hoc batches)
-          //   sqlServer  — server name from the driver
-          //   sqlClass   — error class (severity bucket)
-          //   sqlPrev    — chained pre-cursor errors when SQL Server raises
-          //                multiple errors (e.g. transaction rolled back +
-          //                root cause); these usually carry the *real* cause
-          //   sqlPreview — first 400 chars of the SQL that failed, so the
-          //                Function log lines up with what the client sent
+          // ── DIAGNOSTIC STAGE TRACKER ─────────────────────────────────────
+          // If any response comes back with `_diag_stages` populated, we can
+          // see exactly how far execution got before it died. If the client
+          // still sees an empty 500 even with this instrumentation, that
+          // means the Node worker is being killed at the OS level (SIGKILL,
+          // OOM, host reset) between stages — no JS handler can catch that,
+          // and the problem is Azure infrastructure, not this code.
+          const _diag_stages = { entered: Date.now() };
           try {
             const sqlText = (body && typeof body.sql === 'string') ? body.sql : '';
+            _diag_stages.parsedBody = Date.now();
             if (!sqlText) {
-              result = { success: false, error: 'execute called without a `sql` field in the request body' };
+              result = { success: false, error: 'execute called without a `sql` field in the request body', _diag_stages };
               break;
             }
-            const r = await pool.request().query(sqlText);
-            result = { success: true, rowsAffected: r.rowsAffected?.[0] || 0, recordset: r.recordset || [] };
+
+            const request = pool.request();
+            _diag_stages.gotRequest = Date.now();
+
+            // Attach a listener BEFORE the query fires. In mssql the async
+            // 'error' event can be emitted on the Request object (not the
+            // pool) when the token stream from SQL Server ends abnormally,
+            // e.g. mid-batch on a permission-denied for CREATE TABLE. With
+            // no listener attached, this becomes an unhandled EventEmitter
+            // error and terminates the Node worker in Node 15+.
+            request.on('error', (reqErr) => {
+              const rmsg = reqErr && reqErr.message ? reqErr.message : String(reqErr);
+              ctx.log.error('[cygenix-db-api DIAG] Request async error (swallowed):', rmsg);
+            });
+            _diag_stages.attachedListener = Date.now();
+
+            const r = await request.query(sqlText);
+            _diag_stages.queryReturned = Date.now();
+
+            result = {
+              success: true,
+              rowsAffected: r.rowsAffected?.[0] || 0,
+              recordset: r.recordset || [],
+              codeVersion: 'diag-2026-07-24-a',
+              _diag_stages
+            };
           } catch (sqlErr) {
+            _diag_stages.caughtInner = Date.now();
             // Some mssql errors carry a `precedingErrors` array with the
             // root-cause error before the wrapper. Surface them all so we
             // don't have to debug blind.
@@ -348,7 +373,11 @@ app.http('db', {
               sqlServer:  sqlErr?.serverName || '',
               sqlClass:   sqlErr?.class,
               sqlPrev:    precedingErrors,
-              sqlPreview: sqlPreview
+              sqlPreview: sqlPreview,
+              codeVersion: 'diag-2026-07-24-a',
+              _diag_stages,
+              _errName:    sqlErr?.name || 'Error',
+              _errCode:    sqlErr?.code || null
             };
           }
           break;
