@@ -2543,25 +2543,60 @@ const StagingArea = (function(){
       d => d.replace(/\$\{T\}/g, stagingBareName.replace(/[^a-zA-Z0-9_]/g, '_'))
     );
 
-    const createSQL =
-      "IF NOT EXISTS (SELECT 1 FROM sys.tables t " +
-      "  JOIN sys.schemas s ON s.schema_id = t.schema_id " +
-      "  WHERE s.name = N'" + SCHEMA_NAME + "' AND t.name = N'" + stagingBareName + "')\n" +
-      "BEGIN\n" +
-      "  CREATE TABLE " + stagingFull + " (\n    " +
-      [...dataColDdl, ...auditDdl].join(',\n    ') +
-      "\n  );\n" +
-      "  CREATE INDEX IX_" + stagingBareName.replace(/[^a-zA-Z0-9_]/g, '_') +
-        "_run_status ON " + stagingFull + " ([dm_run_id], [dm_load_status]);\n" +
-      "END";
-
+    // Use SELECT-then-CREATE pattern (matching ensureSchema above) instead
+    // of a compound IF NOT EXISTS ... BEGIN CREATE TABLE ...; CREATE INDEX
+    // ...; END block. The compound form is one statement to SQL Server's
+    // parser, but on the Azure Function path certain DDL errors (duplicate
+    // object, permission denied) surface as empty HTTP 500 responses
+    // instead of clean JSON errors because they escape through an async
+    // path the backend's try/catch doesn't cover. Splitting the check from
+    // the creation makes each dbCall independently debuggable, and each
+    // returns a proper JSON error on failure. Idempotent: if the staging
+    // table already exists we issue no DDL at all.
+    let tableExists = false;
     try {
-      await dbCall(tgtConn, { action: 'execute', sql: createSQL });
+      const r = await dbCall(tgtConn, {
+        action: 'execute',
+        sql:
+          "SELECT 1 AS found FROM sys.tables t " +
+          "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+          "WHERE s.name = N'" + SCHEMA_NAME + "' AND t.name = N'" + stagingBareName + "'"
+      });
+      const row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]);
+      tableExists = !!(row && (row.found === 1 || row.found === true));
     } catch (e) {
       throw classifyDbError(e,
-        'create staging table ' + stagingFull,
-        'CREATE TABLE permission in the [' + SCHEMA_NAME + '] schema'
+        'check whether staging table ' + stagingFull + ' exists',
+        'SELECT on sys.tables'
       );
+    }
+
+    if (!tableExists){
+      const createTableSQL =
+        "CREATE TABLE " + stagingFull + " (\n    " +
+        [...dataColDdl, ...auditDdl].join(',\n    ') +
+        "\n  )";
+      try {
+        await dbCall(tgtConn, { action: 'execute', sql: createTableSQL });
+      } catch (e) {
+        throw classifyDbError(e,
+          'create staging table ' + stagingFull,
+          'CREATE TABLE permission in the [' + SCHEMA_NAME + '] schema'
+        );
+      }
+
+      const createIndexSQL =
+        "CREATE INDEX IX_" + stagingBareName.replace(/[^a-zA-Z0-9_]/g, '_') +
+        "_run_status ON " + stagingFull + " ([dm_run_id], [dm_load_status])";
+      try {
+        await dbCall(tgtConn, { action: 'execute', sql: createIndexSQL });
+      } catch (e) {
+        // Non-fatal: the table exists, only the index is missing. The next
+        // ensureTable call will find the table and can retry the index.
+        // We swallow this so a single missing index doesn't block the
+        // whole migration — the index is a load-time optimisation, not a
+        // correctness requirement.
+      }
     }
 
     // ── Schema migration for pre-existing staging tables ──────────────
