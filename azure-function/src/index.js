@@ -19,30 +19,6 @@ require('./project-memory');
 require('./agent-dependency-planner');
 require('./agent-scope');
 
-// ── Process-level safety net ─────────────────────────────────────────────────
-// Node 15+ terminates the worker on unhandled promise rejections by default,
-// and Node 22 tightened several EventEmitter error paths that used to be
-// warnings. Without these listeners, an async error emitted by the mssql
-// pool (or any dependency) after a request handler has already returned can
-// take down the whole Node worker, leaving Azure to return an empty 500 to
-// the client — which is precisely the "Non-JSON (500)" symptom that broke
-// DDL execution. Logging and swallowing them keeps the worker alive so the
-// next request still gets a proper JSON response.
-//
-// If you ever see one of these fire in the logs, it points at a promise or
-// EventEmitter somewhere that should have its own try/catch — but the safety
-// net stops that missing catch from being a production outage.
-process.on('unhandledRejection', (reason) => {
-  const msg   = reason && reason.message ? reason.message : String(reason);
-  const stack = reason && reason.stack   ? reason.stack   : null;
-  console.error('[cygenix-db-api] UNHANDLED REJECTION:', msg, stack || '');
-});
-process.on('uncaughtException', (err) => {
-  const msg   = err && err.message ? err.message : String(err);
-  const stack = err && err.stack   ? err.stack   : null;
-  console.error('[cygenix-db-api] UNCAUGHT EXCEPTION:', msg, stack || '');
-});
-
 // ── Cosmos DB client (lazy singleton, key-based auth) ────────────────────────
 let _cosmos = null;
 function getCosmosContainer(containerName) {
@@ -157,20 +133,6 @@ app.http('db', {
       });
       ctx.log('Connected!');
 
-      // The mssql package's connection pool is an EventEmitter. If the pool
-      // enters a bad state (e.g. an in-flight statement errors mid-token-stream,
-      // or the underlying tedious connection is torn down asynchronously) it
-      // can emit an 'error' event AFTER the query promise has already resolved
-      // or rejected. With no listener attached, that event becomes an
-      // unhandled EventEmitter error, which in Node 22+ terminates the worker
-      // before the handler can send its response — Azure then returns an
-      // empty 500. Attaching this listener converts that fatal event into a
-      // logged warning and keeps the worker alive.
-      pool.on('error', (poolErr) => {
-        const msg = poolErr && poolErr.message ? poolErr.message : String(poolErr);
-        ctx.log.warn('[cygenix-db-api] Pool async error (swallowed):', msg);
-      });
-
       let result;
       switch (action) {
         case 'test': {
@@ -278,6 +240,77 @@ app.http('db', {
             views:      Object.values(views),
             procedures,
             functions
+          };
+          break;
+        }
+        case 'schema-columns': {
+          // Targeted column introspection for a SINGLE table. This exists so
+          // clients can lazy-load columns per table without paying the cost
+          // (or blowing past Netlify's 6 MB response cap) of the full
+          // `schema` action.
+          //
+          // Request:  { action: 'schema-columns', schemaName, tableName }
+          // Response: { success: true, table: { schema, name, columns:[...],
+          //             primaryKeys:[...], foreignKeys:[...] } }
+          //
+          // The `table` shape here matches ONE entry from the `tables` array
+          // returned by the full `schema` action — so callers that already
+          // know how to consume `schema` need no changes beyond replacing
+          // `res.tables.find(...)` with `res.table`.
+          const schemaName = body?.schemaName;
+          const tableName  = body?.tableName;
+          if (!schemaName || !tableName) {
+            result = { success: false, error: 'schema-columns requires both schemaName and tableName in the request body' };
+            break;
+          }
+
+          // Parameterised — never string-concat user input into T-SQL.
+          const [colsR, pkR, fkR] = await Promise.all([
+            pool.request()
+              .input('schema', sql.NVarChar(128), schemaName)
+              .input('table',  sql.NVarChar(128), tableName)
+              .query(`SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE, c.ORDINAL_POSITION, COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsIdentity') AS is_identity FROM INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA=@schema AND c.TABLE_NAME=@table ORDER BY c.ORDINAL_POSITION`),
+            pool.request()
+              .input('schema', sql.NVarChar(128), schemaName)
+              .input('table',  sql.NVarChar(128), tableName)
+              .query(`SELECT kcu.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME=kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA=kcu.TABLE_SCHEMA WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY' AND tc.TABLE_SCHEMA=@schema AND tc.TABLE_NAME=@table ORDER BY kcu.ORDINAL_POSITION`),
+            pool.request()
+              .input('schema', sql.NVarChar(128), schemaName)
+              .input('table',  sql.NVarChar(128), tableName)
+              .query(`SELECT fk.name AS fk_name, cp.name AS column_name, SCHEMA_NAME(tr.schema_id) AS ref_schema, tr.name AS ref_table, cr.name AS ref_column FROM sys.foreign_keys fk JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id=fk.object_id JOIN sys.tables tp ON tp.object_id=fk.parent_object_id JOIN sys.columns cp ON cp.object_id=fkc.parent_object_id AND cp.column_id=fkc.parent_column_id JOIN sys.tables tr ON tr.object_id=fk.referenced_object_id JOIN sys.columns cr ON cr.object_id=fkc.referenced_object_id AND cr.column_id=fkc.referenced_column_id WHERE SCHEMA_NAME(tp.schema_id)=@schema AND tp.name=@table`)
+          ]);
+
+          const columns = colsR.recordset.map(c => {
+            let type = (c.DATA_TYPE || '').toUpperCase();
+            if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
+            else if (c.NUMERIC_PRECISION != null && c.NUMERIC_SCALE != null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+            return {
+              name:       c.COLUMN_NAME,
+              type,
+              nullable:   c.IS_NULLABLE === 'YES',
+              isIdentity: c.is_identity === 1,
+              ordinal:    c.ORDINAL_POSITION
+            };
+          });
+
+          const primaryKeys = pkR.recordset.map(r => r.COLUMN_NAME);
+          const foreignKeys = fkR.recordset.map(r => ({
+            name:      r.fk_name,
+            column:    r.column_name,
+            refSchema: r.ref_schema,
+            refTable:  r.ref_table,
+            refColumn: r.ref_column
+          }));
+
+          result = {
+            success: true,
+            table: {
+              schema:      schemaName,
+              name:        tableName,
+              columns,
+              primaryKeys,
+              foreignKeys
+            }
           };
           break;
         }
@@ -394,23 +427,10 @@ app.http('db', {
           result = { success: false, error: `Unknown action: ${action}` };
       }
 
-      // NOTE: previously we called `await pool.close()` here after every
-      // request. That turned out to be the trigger for the "Non-JSON (500)"
-      // regression on DDL statements: mssql's sql.connect() returns a
-      // singleton pool, and closing it while it's still holding token-stream
-      // state (which DDL leaves behind more often than SELECT) causes the
-      // underlying tedious connection to emit an async 'error' event on the
-      // EventEmitter. In Node 22+ that unhandled emitter error terminates
-      // the worker, and Azure returns an empty 500 to the client with no
-      // body — bypassing every one of our try/catch blocks below.
-      //
-      // The fix is to leave the pool open. It's a singleton, so subsequent
-      // requests on the same worker reuse it (which is actually the intended
-      // mssql pattern for serverless), and Azure Functions reaps the whole
-      // process on scale-down anyway. The pool.on('error', ...) listener we
-      // attach up in the connect block catches any async errors that would
-      // otherwise be unhandled.
-      // try { await pool.close(); } catch (closeErr) { ctx.log.warn('pool.close() failed:', closeErr?.message || closeErr); }
+      // Try to close the pool, but never let a close-time hiccup mask the
+      // actual response. If close fails we just log it — the connection will
+      // be reaped by the platform anyway.
+      try { await pool.close(); } catch (closeErr) { ctx.log.warn('pool.close() failed:', closeErr?.message || closeErr); }
 
       // Defensive serialisation: if `result` contains anything JSON.stringify
       // can't handle (rare — would mean SQL Server returned an exotic type
