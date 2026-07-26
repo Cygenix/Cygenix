@@ -281,6 +281,70 @@ app.http('db', {
           };
           break;
         }
+        case 'schema-columns': {
+          // Targeted column introspection for a SINGLE table. Lazy-load
+          // alternative to the full `schema` action, which can exceed
+          // Netlify's 6 MB response cap for large databases.
+          //
+          // Request:  { action: 'schema-columns', schemaName, tableName }
+          // Response: { success: true, table: { schema, name, columns,
+          //             primaryKeys, foreignKeys } }
+          const schemaName = body && body.schemaName;
+          const tableName  = body && body.tableName;
+          if (!schemaName || !tableName) {
+            result = { success: false, error: 'schema-columns requires both schemaName and tableName in the request body' };
+            break;
+          }
+
+          const [colsR, pkR, fkR] = await Promise.all([
+            pool.request()
+              .input('schema', sql.NVarChar(128), schemaName)
+              .input('table',  sql.NVarChar(128), tableName)
+              .query(`SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE, c.ORDINAL_POSITION, COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsIdentity') AS is_identity FROM INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA=@schema AND c.TABLE_NAME=@table ORDER BY c.ORDINAL_POSITION`),
+            pool.request()
+              .input('schema', sql.NVarChar(128), schemaName)
+              .input('table',  sql.NVarChar(128), tableName)
+              .query(`SELECT kcu.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME=kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA=kcu.TABLE_SCHEMA WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY' AND tc.TABLE_SCHEMA=@schema AND tc.TABLE_NAME=@table ORDER BY kcu.ORDINAL_POSITION`),
+            pool.request()
+              .input('schema', sql.NVarChar(128), schemaName)
+              .input('table',  sql.NVarChar(128), tableName)
+              .query(`SELECT fk.name AS fk_name, cp.name AS column_name, SCHEMA_NAME(tr.schema_id) AS ref_schema, tr.name AS ref_table, cr.name AS ref_column FROM sys.foreign_keys fk JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id=fk.object_id JOIN sys.tables tp ON tp.object_id=fk.parent_object_id JOIN sys.columns cp ON cp.object_id=fkc.parent_object_id AND cp.column_id=fkc.parent_column_id JOIN sys.tables tr ON tr.object_id=fk.referenced_object_id JOIN sys.columns cr ON cr.object_id=fkc.referenced_object_id AND cr.column_id=fkc.referenced_column_id WHERE SCHEMA_NAME(tp.schema_id)=@schema AND tp.name=@table`)
+          ]);
+
+          const columns = colsR.recordset.map(c => {
+            let type = (c.DATA_TYPE || '').toUpperCase();
+            if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
+            else if (c.NUMERIC_PRECISION != null && c.NUMERIC_SCALE != null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+            return {
+              name:       c.COLUMN_NAME,
+              type,
+              nullable:   c.IS_NULLABLE === 'YES',
+              isIdentity: c.is_identity === 1,
+              ordinal:    c.ORDINAL_POSITION
+            };
+          });
+
+          const primaryKeys = pkR.recordset.map(r => r.COLUMN_NAME);
+          const foreignKeys = fkR.recordset.map(r => ({
+            name:      r.fk_name,
+            column:    r.column_name,
+            refSchema: r.ref_schema,
+            refTable:  r.ref_table,
+            refColumn: r.ref_column
+          }));
+
+          result = {
+            success: true,
+            table: {
+              schema:      schemaName,
+              name:        tableName,
+              columns,
+              primaryKeys,
+              foreignKeys
+            }
+          };
+          break;
+        }
         case 'execute': {
           // SQL execution is the single biggest failure surface in this
           // function — it's where a user-supplied INSERT against an arbitrary
