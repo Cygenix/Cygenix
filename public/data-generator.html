@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- Site-wide theme overrides — must load BEFORE the theme pre-paint script
+     below so its CSS variables are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-theme.css">
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<title>Cygenix – Data Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
+<script src="/cygenix-auth-token.js"></script>
+<script src="/cygenix-saved-conn-secrets.js"></script>
+<script src="/cygenix-cosmos-sync.js"></script>
+<script src="/cygenix-params.js"></script>
+<script src="/project-manager.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c55e;--amber:#f59e0b;--red:#ef4444;--teal:#17827C;
+  --mono:'IBM Plex Mono',monospace;
+  --font:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+}
+html,body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.5;min-height:100vh}
+body{display:flex}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:inherit;color:var(--text);background:var(--bg2);border:0.5px solid var(--border);padding:0.5rem 0.75rem;border-radius:6px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+input[type=number]{font-family:var(--mono)}
+code,.mono{font-family:var(--mono)}
+
+/* Layout: sidebar comes from cygenix-sidebar.js; we get a main content area */
+#dg-main{flex:1;min-width:0;padding:1.5rem 2rem;max-width:1400px}
+
+/* Page header */
+.dg-h1{font-size:22px;font-weight:600;letter-spacing:-0.01em;margin-bottom:0.25rem}
+.dg-sub{font-size:12px;color:var(--text2);margin-bottom:1.5rem}
+.dg-h1 .brand{color:var(--accent)}
+.dg-h1 .brand-alt{color:#8b90a0}
+
+/* Connection banner */
+.dg-banner{background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1.25rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem}
+.dg-banner .b-title{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;font-weight:500;margin-bottom:0.25rem}
+.dg-banner .b-value{font-family:var(--mono);font-size:12px;color:var(--text)}
+.dg-banner .b-status{font-size:11px}
+.dg-banner .b-status.ok{color:var(--green)}
+.dg-banner .b-status.err{color:var(--red)}
+.dg-banner .b-status.warn{color:var(--amber)}
+
+/* Panels */
+.dg-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:8px;padding:1.25rem;margin-bottom:1.25rem}
+.dg-panel-title{font-size:14px;font-weight:600;margin-bottom:0.25rem;display:flex;align-items:center;gap:0.5rem}
+.dg-panel-sub{font-size:11px;color:var(--text2);margin-bottom:1rem}
+
+/* Table config accordion */
+.dg-table-config{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;margin-bottom:0.75rem;overflow:hidden}
+.dg-table-header{padding:0.75rem 1rem;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none}
+.dg-table-header:hover{background:var(--bg4)}
+.dg-table-name{font-family:var(--mono);font-size:13px;font-weight:500}
+.dg-table-name .fkbadge{background:rgba(74,91,214,0.15);color:#8fa3ff;padding:1px 6px;border-radius:100px;font-size:9px;margin-left:6px;font-family:var(--font);font-weight:500;text-transform:uppercase;letter-spacing:0.05em}
+.dg-table-summary{font-size:11px;color:var(--text2)}
+.dg-table-body{padding:1rem;border-top:0.5px solid var(--border);display:none}
+.dg-table-body.open{display:block}
+.dg-caret{font-size:10px;color:var(--text2);transition:transform 0.15s}
+.dg-caret.open{transform:rotate(90deg)}
+
+/* Column editor */
+.dg-cols{width:100%;font-size:12px;border-collapse:collapse}
+.dg-cols th{text-align:left;color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;font-weight:500;padding:0.4rem 0.5rem;border-bottom:0.5px solid var(--border)}
+.dg-cols td{padding:0.3rem 0.5rem;border-bottom:0.5px solid rgba(255,255,255,0.03)}
+.dg-cols input[type=text]{width:100%;padding:0.3rem 0.5rem;font-family:var(--mono);font-size:11px}
+.dg-cols input[type=checkbox]{cursor:pointer}
+.dg-cols .col-pk{color:var(--amber);font-family:var(--mono);font-size:10px;font-weight:500}
+.dg-cols .col-fk{color:#8fa3ff;font-family:var(--mono);font-size:10px;font-weight:500}
+.dg-cols button.col-del{color:var(--red);font-size:11px;padding:2px 8px}
+.dg-cols button.col-del:hover{background:rgba(239,68,68,0.1);border-radius:4px}
+
+.dg-add-col{margin-top:0.5rem;font-size:11px;color:var(--accent);padding:0.3rem 0.6rem;border:0.5px dashed var(--border2);border-radius:4px}
+.dg-add-col:hover{border-color:var(--accent);background:var(--accent-glow)}
+
+/* Row-count row */
+.dg-rowcount{margin-top:0.75rem;padding-top:0.75rem;border-top:0.5px solid var(--border);display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap}
+.dg-rowcount label{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:0.05em;margin-right:0.5rem}
+.dg-rowcount .preset{font-size:11px;padding:0.3rem 0.7rem;background:var(--bg4);border:0.5px solid var(--border);border-radius:100px;color:var(--text)}
+.dg-rowcount .preset:hover{background:var(--bg3);border-color:var(--accent)}
+.dg-rowcount .preset.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.dg-rowcount input[type=number]{width:130px;padding:0.3rem 0.7rem;font-family:var(--mono);font-size:12px}
+.dg-rowcount .rc-est{font-size:11px;color:var(--text2);font-family:var(--mono)}
+
+/* Buttons */
+.dg-btn{padding:0.55rem 1rem;border-radius:6px;font-size:12px;font-weight:500;border:0.5px solid transparent;display:inline-flex;align-items:center;gap:0.4rem}
+.dg-btn-primary{background:var(--accent);color:#fff}
+.dg-btn-primary:hover:not(:disabled){background:#5567e0}
+.dg-btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+.dg-btn-ghost{background:var(--bg3);color:var(--text);border-color:var(--border)}
+.dg-btn-ghost:hover:not(:disabled){background:var(--bg4)}
+.dg-btn-danger{background:transparent;color:var(--red);border-color:rgba(239,68,68,0.3)}
+.dg-btn-danger:hover:not(:disabled){background:rgba(239,68,68,0.1);border-color:var(--red)}
+
+.dg-actions{display:flex;gap:0.75rem;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:0.5rem}
+
+/* Preview */
+.dg-preview{background:var(--bg3);border:0.5px solid var(--border);border-radius:6px;padding:0.75rem;overflow:auto;max-height:280px;font-family:var(--mono);font-size:11px}
+.dg-preview table{border-collapse:collapse;width:100%}
+.dg-preview th{text-align:left;color:var(--text2);font-weight:500;font-size:10px;padding:0.3rem 0.6rem;border-bottom:0.5px solid var(--border);white-space:nowrap}
+.dg-preview td{padding:0.25rem 0.6rem;color:var(--text);border-bottom:0.5px solid rgba(255,255,255,0.03);white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+
+.dg-preview-tabs{display:flex;gap:0;margin-bottom:0.5rem;border-bottom:0.5px solid var(--border)}
+.dg-preview-tab{padding:0.4rem 0.8rem;font-family:var(--mono);font-size:11px;color:var(--text2);border-bottom:2px solid transparent}
+.dg-preview-tab:hover{color:var(--text)}
+.dg-preview-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* Log panel */
+.dg-log{background:var(--bg);border:0.5px solid var(--border);border-radius:6px;padding:0.75rem;font-family:var(--mono);font-size:11px;max-height:320px;overflow:auto;line-height:1.6}
+.dg-log-line{color:var(--text2)}
+.dg-log-line.ok{color:var(--green)}
+.dg-log-line.err{color:var(--red)}
+.dg-log-line.info{color:var(--accent)}
+.dg-log-line.warn{color:var(--amber)}
+.dg-log-line .ts{color:var(--text3);margin-right:0.5rem}
+
+.dg-progress{height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin-top:0.5rem}
+.dg-progress-bar{height:100%;background:var(--accent);transition:width 0.15s}
+</style>
+</head>
+<body>
+
+<!-- Sidebar is injected by cygenix-sidebar.js -->
+
+<div id="dg-main">
+
+  <div class="dg-h1"><span class="brand">Cygenix</span> <span class="brand-alt">Data Generator</span></div>
+  <div class="dg-sub">Populate a source database with realistic demo data for migration demonstrations. Writes to <strong>dbo</strong> on the current <strong>source</strong> connection.</div>
+
+  <!-- Connection banner -->
+  <div class="dg-banner">
+    <div>
+      <div class="b-title">Source connection</div>
+      <div id="dg-src-info" class="b-value">Loading…</div>
+    </div>
+    <div>
+      <div class="b-title">Status</div>
+      <div id="dg-src-status" class="b-status">Not yet tested</div>
+    </div>
+    <button id="dg-test-btn" class="dg-btn dg-btn-ghost" onclick="dgTestConnection()">🔍 Test connection</button>
+  </div>
+
+  <!-- Table configuration -->
+  <div class="dg-panel">
+    <div class="dg-panel-title">📋 Tables to generate</div>
+    <div class="dg-panel-sub">Click a table to edit its columns. Row-count controls appear at the bottom of each table's expanded view.</div>
+    <div id="dg-tables"></div>
+  </div>
+
+  <!-- Preview -->
+  <div class="dg-panel">
+    <div class="dg-panel-title">👁 Preview <span style="font-weight:400;color:var(--text2);font-size:11px;margin-left:0.5rem">first 5 rows per table — updates when you edit columns or row counts</span></div>
+    <div id="dg-preview-tabs" class="dg-preview-tabs"></div>
+    <div id="dg-preview-content" class="dg-preview"></div>
+  </div>
+
+  <!-- Actions -->
+  <div class="dg-panel">
+    <div class="dg-actions">
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+        <button id="dg-generate-btn" class="dg-btn dg-btn-primary" onclick="dgGenerate()">▶ Generate data</button>
+        <button id="dg-preview-btn" class="dg-btn dg-btn-ghost" onclick="dgRefreshPreview()">🔄 Refresh preview</button>
+      </div>
+      <button id="dg-drop-btn" class="dg-btn dg-btn-danger" onclick="dgDropAll()">🗑 Drop all demo tables</button>
+    </div>
+    <div id="dg-progress-wrap" style="display:none;margin-top:1rem">
+      <div style="font-size:11px;color:var(--text2);display:flex;justify-content:space-between">
+        <span id="dg-progress-label">Working…</span>
+        <span id="dg-progress-pct" class="mono">0%</span>
+      </div>
+      <div class="dg-progress"><div id="dg-progress-bar" class="dg-progress-bar" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="dg-panel">
+    <div class="dg-panel-title">📜 Activity log</div>
+    <div id="dg-log" class="dg-log"><div class="dg-log-line">Ready. Configure tables above, then click Generate.</div></div>
+  </div>
+
+</div>
+
+<script src="/connections.js"></script>
+<script src="/cygenix-sidebar.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Cygenix Data Generator
+//
+// Populates the source database with realistic demo data across four related
+// tables (customers, addresses, products, orders) so the migration workflow
+// can be demonstrated end-to-end without exposing any real customer data.
+//
+// Design principles:
+//   1. Predictable — hardcoded schemas and data pools, no AI calls, no
+//      network dependencies during generation. A demo can't afford surprises.
+//   2. Safe against the DDL async-crash bug — uses SELECT-then-CREATE for
+//      every DDL, never a compound BEGIN/END block. Same pattern that fixes
+//      the migration crash on project-builder.html.
+//   3. Client-assigned integer PKs so we can build FK relationships without
+//      round-tripping to the server for identity values. Every FK column
+//      references a row we know we've inserted.
+//   4. Batched INSERTs (500 rows/batch) so a large row count doesn't blow up
+//      the request payload or the mssql driver.
+//   5. Progress feedback per batch so long runs aren't a silent black box.
+// ═══════════════════════════════════════════════════════════════════════════
+
+(function(){
+'use strict';
+
+// ── Schema definitions ─────────────────────────────────────────────────────
+// Each table is an ordered list of columns plus a list of FK relationships.
+// The order matters for two reasons:
+//   1. Column order in the DDL and in INSERTs must line up.
+//   2. Table order is the insert order — parents before children.
+//
+// Column shape: { name, type, nullable, isPk?, isFk? }
+// FK shape:     { column, refTable, refColumn }
+//
+// Types are SQL Server types written verbatim into DDL. NVARCHAR includes
+// its length. INT/BIT/DATETIME need no length.
+const DEFAULT_SCHEMA = {
+  customers: {
+    order: 1,
+    label: 'customers',
+    columns: [
+      { name: 'id',         type: 'INT',            nullable: false, isPk: true },
+      { name: 'name',       type: 'NVARCHAR(200)',  nullable: false },
+      { name: 'email',      type: 'NVARCHAR(255)',  nullable: false },
+      { name: 'phone',      type: 'NVARCHAR(50)',   nullable: true  },
+      { name: 'created_at', type: 'DATETIME',       nullable: false }
+    ],
+    fks: []
+  },
+  addresses: {
+    order: 2,
+    label: 'addresses',
+    columns: [
+      { name: 'id',           type: 'INT',            nullable: false, isPk: true },
+      { name: 'customer_id',  type: 'INT',            nullable: false, isFk: 'customers.id' },
+      { name: 'line1',        type: 'NVARCHAR(200)',  nullable: false },
+      { name: 'line2',        type: 'NVARCHAR(200)',  nullable: true  },
+      { name: 'city',         type: 'NVARCHAR(100)',  nullable: false },
+      { name: 'postcode',     type: 'NVARCHAR(20)',   nullable: false },
+      { name: 'country',      type: 'NVARCHAR(50)',   nullable: false },
+      { name: 'is_primary',   type: 'BIT',            nullable: false }
+    ],
+    fks: [{ column: 'customer_id', refTable: 'customers', refColumn: 'id' }]
+  },
+  products: {
+    order: 3,
+    label: 'products',
+    columns: [
+      { name: 'id',           type: 'INT',            nullable: false, isPk: true },
+      { name: 'sku',          type: 'NVARCHAR(50)',   nullable: false },
+      { name: 'name',         type: 'NVARCHAR(200)',  nullable: false },
+      { name: 'description',  type: 'NVARCHAR(500)',  nullable: true  },
+      { name: 'price_pence',  type: 'INT',            nullable: false },
+      { name: 'stock',        type: 'INT',            nullable: false }
+    ],
+    fks: []
+  },
+  orders: {
+    order: 4,
+    label: 'orders',
+    columns: [
+      { name: 'id',           type: 'INT',            nullable: false, isPk: true },
+      { name: 'customer_id',  type: 'INT',            nullable: false, isFk: 'customers.id' },
+      { name: 'product_id',   type: 'INT',            nullable: false, isFk: 'products.id' },
+      { name: 'quantity',     type: 'INT',            nullable: false },
+      { name: 'order_date',   type: 'DATETIME',       nullable: false },
+      { name: 'status',       type: 'NVARCHAR(50)',   nullable: false },
+      { name: 'total_pence',  type: 'INT',            nullable: false }
+    ],
+    fks: [
+      { column: 'customer_id', refTable: 'customers', refColumn: 'id' },
+      { column: 'product_id',  refTable: 'products',  refColumn: 'id' }
+    ]
+  }
+};
+
+// Live schema state — starts as a deep copy of DEFAULT_SCHEMA and gets
+// mutated when the user edits columns or row counts.
+let SCHEMA = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
+
+// Row counts per table. Users edit these via preset buttons or the custom
+// input on each accordion body.
+const ROW_COUNTS = {
+  customers: 100,
+  addresses: 200,
+  products:  50,
+  orders:    500
+};
+
+const PRESETS = [10, 100, 1000, 10000, 100000];
+const BATCH_SIZE = 500;
+
+// ── Data pools ─────────────────────────────────────────────────────────────
+// Curated to look plausible in a UK business demo. No offensive placeholders,
+// no real-looking PII, no famous names that would jar a prospect.
+const FIRST_NAMES = [
+  'James','Oliver','Harry','Jack','George','Charlie','Noah','Thomas','Oscar','William',
+  'Henry','Leo','Alfie','Freddie','Arthur','Alexander','Edward','Jacob','Ethan','Samuel',
+  'Emily','Olivia','Amelia','Isla','Ava','Mia','Grace','Sophia','Ella','Lily',
+  'Charlotte','Chloe','Freya','Ruby','Sophie','Evie','Rose','Ivy','Poppy','Millie',
+  'Priya','Aisha','Fatima','Zara','Hannah','Rachel','Sarah','Nicola','Emma','Kate'
+];
+
+const LAST_NAMES = [
+  'Smith','Jones','Taylor','Williams','Brown','Davies','Evans','Wilson','Thomas','Roberts',
+  'Johnson','Lewis','Walker','Robinson','Wood','Thompson','White','Watson','Jackson','Wright',
+  'Green','Harris','Cooper','King','Lee','Martin','Clarke','James','Morgan','Hughes',
+  'Edwards','Hill','Moore','Clark','Harrison','Scott','Young','Morris','Hall','Ward',
+  'Patel','Singh','Kaur','Chowdhury','Ahmed','Khan','Baker','Adams','Nelson','Carter'
+];
+
+const EMAIL_DOMAINS = [
+  'gmail.com','outlook.com','yahoo.co.uk','btinternet.com','sky.com','hotmail.co.uk',
+  'protonmail.com','icloud.com','me.com','virginmedia.com'
+];
+
+const CITIES_UK = [
+  'London','Manchester','Birmingham','Leeds','Glasgow','Sheffield','Liverpool','Edinburgh',
+  'Bristol','Cardiff','Nottingham','Newcastle','Leicester','Belfast','Southampton',
+  'Oxford','Cambridge','York','Bath','Reading','Brighton','Guildford','Milton Keynes',
+  'Cheltenham','Norwich','Aberdeen','Dundee','Swansea','Portsmouth','Plymouth'
+];
+
+const STREETS = [
+  'High Street','Church Lane','Station Road','Park Road','The Green','Church Road',
+  'Victoria Road','Green Lane','Manor Road','Kings Road','Queens Road','New Road',
+  'Grange Road','Mill Lane','Windsor Road','School Lane','York Road','West Street',
+  'The Avenue','North Road','South Street','Chapel Lane','Grove Road','St Johns Road',
+  'Broadway','King Street','Queen Street','Elm Grove','Oak Avenue','Cedar Close',
+  'Willow Way','Beech Road','Ash Grove','Birch Close','Maple Drive','Pine Walk',
+  'Rowan Avenue','Hazel Grove','Holly Close','Ivy Lane','Jasmine Court','Lavender Close',
+  'Rose Gardens','Lilac Way','Poppy Fields','Daisy Meadow','Bluebell Wood','Cherry Tree Lane',
+  'Fairview','Hilltop','Sunny Bank'
+];
+
+const COUNTRIES = ['United Kingdom','United Kingdom','United Kingdom','United Kingdom','United Kingdom','Ireland','France','Germany','Netherlands','Spain'];
+
+const PRODUCT_NAMES = [
+  'Ergonomic Office Chair','Wireless Mouse','Mechanical Keyboard','27" 4K Monitor',
+  'Standing Desk Converter','USB-C Docking Station','Noise-Cancelling Headphones',
+  'HD Webcam','Laser Printer','Wireless Router','External SSD 1TB','Laptop Stand',
+  'Whiteboard 900x1200','Desk Lamp LED','Filing Cabinet 3-Drawer','Bookshelf Oak',
+  'Conference Phone','Projector 1080p','Paper Shredder','Coffee Machine',
+  'Kettle 1.7L','Microwave 20L','Water Cooler','First Aid Kit','Fire Extinguisher',
+  'Whiteboard Markers Pack','A4 Copier Paper Ream','Sticky Notes 76x76','Ballpoint Pens Pack',
+  'Highlighter Set','Ring Binder A4','Lever Arch File','Document Wallet','Envelope C5 Pack',
+  'Stapler Heavy Duty','Hole Punch 3-Hole','Paper Clips Box','Scissors 200mm','Tape Dispenser',
+  'Correction Fluid'
+];
+
+const ORDER_STATUSES = ['pending','processing','shipped','delivered','cancelled'];
+// Weighted distribution — most orders are delivered, a few pending/cancelled
+const ORDER_STATUS_WEIGHTS = ['pending','processing','processing','shipped','shipped','shipped','delivered','delivered','delivered','delivered','delivered','delivered','delivered','cancelled'];
+
+// ── Deterministic PRNG ─────────────────────────────────────────────────────
+// Using Math.random() would mean each generation produces different data.
+// For demo predictability we seed a mulberry32 PRNG so a given row-count
+// combo always produces the same values (useful for rehearsing a specific
+// demo where you've noted particular customer/order examples).
+let PRNG_STATE = 0x12345678;
+function seedPRNG(seed){ PRNG_STATE = seed >>> 0; }
+function rnd(){
+  PRNG_STATE = (PRNG_STATE + 0x6D2B79F5) >>> 0;
+  let t = PRNG_STATE;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function rndInt(min, max){ return Math.floor(rnd() * (max - min + 1)) + min; }
+function pick(arr){ return arr[Math.floor(rnd() * arr.length)]; }
+
+// ── Value generators per column semantic ───────────────────────────────────
+// A column's name determines what kind of value to generate. This is a
+// simple heuristic: match by column name (case-insensitive) with fallbacks
+// by type. For the fixed schema this is deterministic and covers every
+// column; for user-added columns it picks a sensible default from the type.
+function generateValueFor(tableName, colName, colType, rowIndex, ctx){
+  const n = colName.toLowerCase();
+  const t = (colType || '').toUpperCase();
+
+  // PK columns are always the 1-indexed row number. Client-assigned integer
+  // IDs let us wire up FKs deterministically without round-tripping to SQL.
+  if (n === 'id') return rowIndex + 1;
+
+  // FK columns — pick a random valid parent row. ctx has the row counts of
+  // parent tables so we know what range is valid.
+  if (n === 'customer_id') return rndInt(1, Math.max(1, ctx.customers || 1));
+  if (n === 'product_id')  return rndInt(1, Math.max(1, ctx.products  || 1));
+
+  // Domain-specific column names — realistic values per column.
+  if (n === 'name' && tableName === 'customers'){
+    return pick(FIRST_NAMES) + ' ' + pick(LAST_NAMES);
+  }
+  if (n === 'name' && tableName === 'products'){
+    return pick(PRODUCT_NAMES);
+  }
+  if (n === 'name'){
+    // Generic fallback for any user-added 'name' column
+    return pick(FIRST_NAMES) + ' ' + pick(LAST_NAMES);
+  }
+
+  if (n === 'email'){
+    const first = pick(FIRST_NAMES).toLowerCase();
+    const last  = pick(LAST_NAMES).toLowerCase();
+    const sep   = pick(['.','_','']);
+    const num   = rnd() < 0.4 ? rndInt(1, 999) : '';
+    return first + sep + last + num + '@' + pick(EMAIL_DOMAINS);
+  }
+
+  if (n === 'phone'){
+    // UK-flavoured mobile numbers, mostly 07xxx format
+    return '07' + rndInt(100,999) + ' ' + rndInt(100000, 999999);
+  }
+
+  if (n === 'created_at' || n === 'order_date' || t === 'DATETIME'){
+    // A date within the last 3 years for created_at, last 12 months for orders
+    const monthsBack = (n === 'order_date') ? 12 : 36;
+    const now = Date.now();
+    const t0  = now - monthsBack * 30 * 24 * 3600 * 1000;
+    const ts  = t0 + Math.floor(rnd() * (now - t0));
+    const d   = new Date(ts);
+    return d.toISOString().slice(0, 19).replace('T', ' ');
+  }
+
+  if (n === 'line1'){
+    return rndInt(1, 300) + ' ' + pick(STREETS);
+  }
+  if (n === 'line2'){
+    // Roughly 40% of addresses have a line 2
+    if (rnd() < 0.4) return pick(['Flat ' + rndInt(1,30), 'Apt ' + rndInt(1,20), 'Unit ' + rndInt(1,50), rndInt(1,20) + 'A', 'The Annex']);
+    return null;
+  }
+  if (n === 'city'){
+    return pick(CITIES_UK);
+  }
+  if (n === 'postcode'){
+    // Approximate UK postcode: 2 letters, 1-2 digits, space, 1 digit, 2 letters
+    const letters = 'ABCDEFGHJKLMNOPQRSTUVWXYZ';
+    const a = letters[Math.floor(rnd()*letters.length)] + letters[Math.floor(rnd()*letters.length)];
+    const b = rndInt(1, 99);
+    const c = rndInt(0, 9);
+    const d = letters[Math.floor(rnd()*letters.length)] + letters[Math.floor(rnd()*letters.length)];
+    return a + b + ' ' + c + d;
+  }
+  if (n === 'country'){
+    return pick(COUNTRIES);
+  }
+  if (n === 'is_primary' || t === 'BIT'){
+    return rnd() < 0.35 ? 1 : 0;
+  }
+
+  if (n === 'sku'){
+    const cat = pick(['OFF','ELE','FUR','KIT','STA']);
+    return cat + '-' + String(rowIndex + 1).padStart(4, '0');
+  }
+  if (n === 'description'){
+    return 'Quality ' + pick(['premium','professional','standard','budget','deluxe']) + ' item — ' + pick(['fast delivery','in stock','best seller','new arrival','clearance']);
+  }
+  if (n === 'price_pence'){
+    // £5 to £500 in pence
+    return rndInt(500, 50000);
+  }
+  if (n === 'stock'){
+    return rndInt(0, 200);
+  }
+  if (n === 'quantity'){
+    return rndInt(1, 10);
+  }
+  if (n === 'status'){
+    return pick(ORDER_STATUS_WEIGHTS);
+  }
+  if (n === 'total_pence'){
+    // Derived from a plausible price × quantity range
+    return rndInt(500, 200000);
+  }
+
+  // Generic type-based fallbacks for user-added columns
+  if (t === 'INT') return rndInt(0, 1000);
+  if (t.startsWith('NVARCHAR') || t.startsWith('VARCHAR')){
+    // Extract the length from the type string, default to 50
+    const m = t.match(/\((\d+)\)/);
+    const maxLen = m ? Math.min(parseInt(m[1], 10), 50) : 20;
+    const chars = 'abcdefghijklmnopqrstuvwxyz';
+    let s = '';
+    const wanted = rndInt(3, Math.max(4, maxLen - 5));
+    for (let i = 0; i < wanted; i++) s += chars[Math.floor(rnd()*26)];
+    return s;
+  }
+  if (t === 'DATETIME'){
+    return new Date().toISOString().slice(0, 19).replace('T', ' ');
+  }
+  if (t === 'BIT') return rnd() < 0.5 ? 1 : 0;
+
+  return null;
+}
+
+// ── SQL literal escaping ──────────────────────────────────────────────────
+// We build INSERT statements as concatenated SQL rather than parameterised
+// binds because the /api/db execute action takes a plain SQL string. For
+// generator-controlled values this is safe — nothing is user-input from a
+// web form. Strings escape single quotes by doubling them (SQL standard).
+function sqlLit(v, type){
+  if (v === null || v === undefined) return 'NULL';
+  const t = (type || '').toUpperCase();
+  if (t === 'INT' || t === 'BIGINT' || t === 'BIT'){
+    // Coerce to a bare number; anything non-numeric becomes NULL rather
+    // than injecting arbitrary text into the SQL
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 'NULL';
+    return String(Math.trunc(n));
+  }
+  if (t === 'DATETIME' || t === 'DATE'){
+    return "'" + String(v).replace(/'/g, "''") + "'";
+  }
+  // Default: NVARCHAR/VARCHAR — quote and escape
+  const s = String(v).replace(/'/g, "''");
+  return "N'" + s + "'";
+}
+
+// ── DDL builders ───────────────────────────────────────────────────────────
+function buildCreateTableDdl(tableName){
+  const t = SCHEMA[tableName];
+  const cols = t.columns.map(c => {
+    let ddl = '[' + c.name + '] ' + c.type + (c.nullable ? ' NULL' : ' NOT NULL');
+    if (c.isPk) ddl += ' PRIMARY KEY';
+    return '  ' + ddl;
+  });
+  // Add table-level FK constraints. These reference tables generated in the
+  // same run so ordering matters — but since we always run in SCHEMA.order
+  // sequence (customers → addresses → products → orders), parents always
+  // exist before children try to reference them.
+  const fks = t.fks.map(fk =>
+    "  CONSTRAINT [FK_" + tableName + "_" + fk.column + "] FOREIGN KEY ([" + fk.column + "]) REFERENCES [dbo].[" + fk.refTable + "]([" + fk.refColumn + "])"
+  );
+  return 'CREATE TABLE [dbo].[' + tableName + '] (\n' + cols.concat(fks).join(',\n') + '\n)';
+}
+
+function buildDropTableSql(tableName){
+  // Plain DROP TABLE — no IF EXISTS wrapper (compound DDL blocks are what
+  // triggered the async crash earlier today). Caller checks existence first.
+  return 'DROP TABLE [dbo].[' + tableName + ']';
+}
+
+// Build a batched INSERT for up to BATCH_SIZE rows.
+//   INSERT INTO [dbo].[customers] (id,name,email,phone,created_at) VALUES
+//     (1,N'James Smith',N'james@x.com',N'07... ...','2024-01-01 12:00:00'),
+//     (2,...),
+//     ...;
+function buildInsertBatch(tableName, rows){
+  const t = SCHEMA[tableName];
+  const colList = '(' + t.columns.map(c => '[' + c.name + ']').join(',') + ')';
+  const values = rows.map(row => '(' + t.columns.map(c => sqlLit(row[c.name], c.type)).join(',') + ')');
+  return 'INSERT INTO [dbo].[' + tableName + '] ' + colList + ' VALUES\n' + values.join(',\n');
+}
+
+// ── DB call layer ──────────────────────────────────────────────────────────
+// Reuse the same fetch pattern as project-builder.html's dbCall. It handles
+// both direct connection strings (via Netlify proxy) and Azure Function URLs.
+async function dbCall(conn, body){
+  // Follow project-builder's isFn heuristic — if conn is an http(s) URL,
+  // hit it directly (it's an Azure Function). Otherwise route through the
+  // Netlify function that carries a raw connection string.
+  const isFn = /^https?:\/\//i.test(conn || '');
+  const url = isFn ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn ? body : Object.assign({ conn }, body);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 120000);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    const data = await res.json().catch(() => ({ error: 'Non-JSON (' + res.status + ')' }));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    if (data && data.success === false){
+      // Backend delivered a proper JSON error — surface it verbatim so
+      // callers can classify and display it.
+      throw new Error(data.error || 'Backend reported success:false');
+    }
+    return data;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Read the source connection string / URL from the shared CygenixConnections
+// store. Returns null if the user hasn't configured a source yet.
+function readSourceConn(){
+  try {
+    const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get && CygenixConnections.get()) || {};
+    // Two modes: 'direct' connection string OR Azure Function URL
+    if (c.srcFnUrl){
+      return c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl;
+    }
+    return c.srcConnString || '';
+  } catch (_){
+    return '';
+  }
+}
+
+// Human-readable description of the source for the banner
+function readSourceLabel(){
+  try {
+    const c = (typeof CygenixConnections !== 'undefined' && CygenixConnections.get && CygenixConnections.get()) || {};
+    if (c.srcFnUrl) return 'Azure Function · ' + c.srcFnUrl;
+    if (c.srcConnString){
+      // Strip password from the display for safety
+      return c.srcConnString.replace(/:[^@]*@/, ':***@').slice(0, 90);
+    }
+    return '(no source connection configured — Dashboard → Connections)';
+  } catch (_){
+    return '(unable to read connection)';
+  }
+}
+
+// ── Logging ────────────────────────────────────────────────────────────────
+function logLine(msg, cls){
+  const el = document.getElementById('dg-log');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.className = 'dg-log-line' + (cls ? ' ' + cls : '');
+  const ts = new Date().toTimeString().slice(0, 8);
+  line.innerHTML = '<span class="ts">' + ts + '</span>' + escapeHtml(msg);
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog(){
+  const el = document.getElementById('dg-log');
+  if (el) el.innerHTML = '';
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, ch => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[ch]));
+}
+
+// ── Progress bar ───────────────────────────────────────────────────────────
+function showProgress(label){
+  document.getElementById('dg-progress-wrap').style.display = 'block';
+  document.getElementById('dg-progress-label').textContent = label;
+  updateProgress(0);
+}
+function updateProgress(pct){
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  document.getElementById('dg-progress-bar').style.width = p + '%';
+  document.getElementById('dg-progress-pct').textContent = p + '%';
+}
+function hideProgress(){
+  document.getElementById('dg-progress-wrap').style.display = 'none';
+}
+
+// ── UI: banner ─────────────────────────────────────────────────────────────
+function refreshBanner(){
+  document.getElementById('dg-src-info').textContent = readSourceLabel();
+  const conn = readSourceConn();
+  const stat = document.getElementById('dg-src-status');
+  if (!conn){
+    stat.textContent = '⚠ Not configured';
+    stat.className = 'b-status warn';
+  } else if (stat.textContent === 'Not yet tested' || stat.className.indexOf('warn') >= 0){
+    stat.textContent = 'Configured — click Test';
+    stat.className = 'b-status';
+  }
+}
+
+async function dgTestConnection(){
+  const conn = readSourceConn();
+  const stat = document.getElementById('dg-src-status');
+  const btn  = document.getElementById('dg-test-btn');
+  if (!conn){
+    stat.textContent = '⚠ No source connection — set one in Dashboard → Connections';
+    stat.className = 'b-status warn';
+    return;
+  }
+  btn.disabled = true;
+  stat.textContent = 'Testing…';
+  stat.className = 'b-status';
+  try {
+    const r = await dbCall(conn, { action: 'test' });
+    stat.textContent = '✓ Connected — ' + (r.database || 'db') + ' as ' + (r.user || 'user');
+    stat.className = 'b-status ok';
+    logLine('Source connection OK: ' + (r.database || '?') + ' / user ' + (r.user || '?'), 'ok');
+  } catch (e){
+    stat.textContent = '✗ ' + (e.message || 'Connection failed');
+    stat.className = 'b-status err';
+    logLine('Source test failed: ' + (e.message || e), 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.dgTestConnection = dgTestConnection;
+
+// ── UI: table configuration accordion ──────────────────────────────────────
+function renderTables(){
+  const root = document.getElementById('dg-tables');
+  root.innerHTML = '';
+  const names = Object.keys(SCHEMA).sort((a, b) => SCHEMA[a].order - SCHEMA[b].order);
+
+  for (const tableName of names){
+    const t = SCHEMA[tableName];
+    const wrap = document.createElement('div');
+    wrap.className = 'dg-table-config';
+
+    const rowCount = ROW_COUNTS[tableName] || 0;
+    const fkBadge = t.fks.length
+      ? ' <span class="fkbadge">FK → ' + t.fks.map(f => f.refTable).join(', ') + '</span>'
+      : '';
+
+    wrap.innerHTML =
+      '<div class="dg-table-header" onclick="dgToggleTable(\'' + tableName + '\')">' +
+        '<div>' +
+          '<span class="dg-caret" id="dg-caret-' + tableName + '">▶</span> ' +
+          '<span class="dg-table-name">dbo.' + tableName + fkBadge + '</span>' +
+        '</div>' +
+        '<div class="dg-table-summary">' +
+          t.columns.length + ' cols · ' +
+          '<span id="dg-count-' + tableName + '">' + rowCount.toLocaleString() + '</span> rows' +
+        '</div>' +
+      '</div>' +
+      '<div class="dg-table-body" id="dg-body-' + tableName + '">' +
+        renderColumnEditor(tableName) +
+        renderRowCountControls(tableName) +
+      '</div>';
+    root.appendChild(wrap);
+  }
+}
+
+function renderColumnEditor(tableName){
+  const t = SCHEMA[tableName];
+  let html = '<table class="dg-cols">' +
+    '<thead><tr>' +
+      '<th style="width:30px"></th>' +
+      '<th>Column</th>' +
+      '<th style="width:180px">Type</th>' +
+      '<th style="width:70px;text-align:center">NULL</th>' +
+      '<th style="width:40px"></th>' +
+    '</tr></thead><tbody>';
+
+  for (let i = 0; i < t.columns.length; i++){
+    const c = t.columns[i];
+    const badge = c.isPk ? '<span class="col-pk">PK</span>'
+                : c.isFk ? '<span class="col-fk">FK</span>'
+                : '';
+    html +=
+      '<tr>' +
+        '<td>' + badge + '</td>' +
+        '<td><input type="text" value="' + escapeHtml(c.name) + '" oninput="dgSetColName(\'' + tableName + '\',' + i + ',this.value)"></td>' +
+        '<td><input type="text" value="' + escapeHtml(c.type) + '" oninput="dgSetColType(\'' + tableName + '\',' + i + ',this.value)"></td>' +
+        '<td style="text-align:center"><input type="checkbox"' + (c.nullable ? ' checked' : '') +
+          (c.isPk ? ' disabled title="PK cannot be nullable"' : '') +
+          ' onchange="dgSetColNullable(\'' + tableName + '\',' + i + ',this.checked)"></td>' +
+        '<td>' +
+          (c.isPk || c.isFk ? '' :
+            '<button class="col-del" onclick="dgDeleteCol(\'' + tableName + '\',' + i + ')" title="Delete column">✕</button>') +
+        '</td>' +
+      '</tr>';
+  }
+  html += '</tbody></table>' +
+    '<button class="dg-add-col" onclick="dgAddColumn(\'' + tableName + '\')">+ add column</button>';
+  return html;
+}
+
+function renderRowCountControls(tableName){
+  const count = ROW_COUNTS[tableName] || 0;
+  let html = '<div class="dg-rowcount">' +
+    '<label>Rows</label>';
+  for (const p of PRESETS){
+    const active = (count === p) ? ' active' : '';
+    html += '<button class="preset' + active + '" onclick="dgSetRowCount(\'' + tableName + '\',' + p + ')">' + p.toLocaleString() + '</button>';
+  }
+  html += '<input type="number" min="0" step="1" value="' + count +
+    '" oninput="dgSetRowCount(\'' + tableName + '\', parseInt(this.value,10)||0)" placeholder="custom">';
+  html += '<span class="rc-est" id="dg-est-' + tableName + '">' + estimateFor(count) + '</span>';
+  html += '</div>';
+  return html;
+}
+
+function estimateFor(count){
+  if (count <= 0) return '';
+  const batches = Math.ceil(count / BATCH_SIZE);
+  // Very rough: each batch is one HTTP round-trip. Assume 150ms per round trip
+  // as a middle-of-the-road estimate — real numbers depend on network + SQL.
+  const sec = Math.max(1, Math.round(batches * 0.15));
+  return '≈ ' + batches.toLocaleString() + ' batch' + (batches === 1 ? '' : 'es') + ', ' + sec + 's';
+}
+
+// ── UI: mutation handlers ──────────────────────────────────────────────────
+function dgToggleTable(tableName){
+  const body  = document.getElementById('dg-body-' + tableName);
+  const caret = document.getElementById('dg-caret-' + tableName);
+  const open  = body.classList.toggle('open');
+  caret.classList.toggle('open', open);
+}
+window.dgToggleTable = dgToggleTable;
+
+function dgSetColName(tableName, i, v){
+  SCHEMA[tableName].columns[i].name = v.trim();
+  refreshPreviewDebounced();
+}
+window.dgSetColName = dgSetColName;
+
+function dgSetColType(tableName, i, v){
+  SCHEMA[tableName].columns[i].type = v.trim();
+  refreshPreviewDebounced();
+}
+window.dgSetColType = dgSetColType;
+
+function dgSetColNullable(tableName, i, v){
+  SCHEMA[tableName].columns[i].nullable = !!v;
+}
+window.dgSetColNullable = dgSetColNullable;
+
+function dgDeleteCol(tableName, i){
+  const c = SCHEMA[tableName].columns[i];
+  if (c.isPk || c.isFk){
+    logLine('Cannot delete PK or FK column — it\'s structural.', 'warn');
+    return;
+  }
+  SCHEMA[tableName].columns.splice(i, 1);
+  renderTables();
+  refreshPreviewDebounced();
+}
+window.dgDeleteCol = dgDeleteCol;
+
+function dgAddColumn(tableName){
+  const suffix = SCHEMA[tableName].columns.length + 1;
+  SCHEMA[tableName].columns.push({
+    name:     'col' + suffix,
+    type:     'NVARCHAR(100)',
+    nullable: true
+  });
+  renderTables();
+  // Re-open the table since renderTables re-renders everything closed
+  dgToggleTable(tableName);
+  refreshPreviewDebounced();
+}
+window.dgAddColumn = dgAddColumn;
+
+function dgSetRowCount(tableName, n){
+  const clean = Math.max(0, Math.floor(Number(n) || 0));
+  ROW_COUNTS[tableName] = clean;
+  // Update just the summary count without re-rendering the whole editor
+  const cs = document.getElementById('dg-count-' + tableName);
+  if (cs) cs.textContent = clean.toLocaleString();
+  const est = document.getElementById('dg-est-' + tableName);
+  if (est) est.textContent = estimateFor(clean);
+  // Update the preset button active states without full re-render
+  const bodyEl = document.getElementById('dg-body-' + tableName);
+  if (bodyEl){
+    const presetBtns = bodyEl.querySelectorAll('.preset');
+    let idx = 0;
+    for (const p of PRESETS){
+      if (presetBtns[idx]) presetBtns[idx].classList.toggle('active', clean === p);
+      idx++;
+    }
+  }
+  refreshPreviewDebounced();
+}
+window.dgSetRowCount = dgSetRowCount;
+
+// ── Preview ────────────────────────────────────────────────────────────────
+let previewTab = 'customers';
+let previewDebounceTimer = null;
+
+function refreshPreviewDebounced(){
+  clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(refreshPreview, 250);
+}
+
+function refreshPreview(){
+  // Render tabs
+  const tabsEl = document.getElementById('dg-preview-tabs');
+  tabsEl.innerHTML = '';
+  const names = Object.keys(SCHEMA).sort((a, b) => SCHEMA[a].order - SCHEMA[b].order);
+  for (const name of names){
+    const tab = document.createElement('button');
+    tab.className = 'dg-preview-tab' + (name === previewTab ? ' active' : '');
+    tab.textContent = 'dbo.' + name;
+    tab.onclick = () => { previewTab = name; refreshPreview(); };
+    tabsEl.appendChild(tab);
+  }
+
+  // Render sample rows for the currently selected tab
+  const table = SCHEMA[previewTab];
+  const rowCount = Math.min(5, ROW_COUNTS[previewTab] || 5);
+  seedPRNG(0xC00FEEEE);  // fixed seed so preview stays stable across edits
+  const ctx = Object.assign({}, ROW_COUNTS);
+  // For preview, pretend every parent has 100 rows so FKs don't collapse to 1
+  ctx.customers = Math.max(ctx.customers || 0, 100);
+  ctx.products  = Math.max(ctx.products  || 0, 100);
+
+  const rows = [];
+  for (let i = 0; i < rowCount; i++){
+    const row = {};
+    for (const c of table.columns){
+      row[c.name] = generateValueFor(previewTab, c.name, c.type, i, ctx);
+    }
+    rows.push(row);
+  }
+
+  let html = '<table><thead><tr>';
+  for (const c of table.columns){
+    html += '<th>' + escapeHtml(c.name) + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  for (const row of rows){
+    html += '<tr>';
+    for (const c of table.columns){
+      const v = row[c.name];
+      html += '<td>' + (v === null ? '<span style="color:var(--text3)">NULL</span>' : escapeHtml(String(v))) + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  if (rows.length === 0) html = '<div style="padding:1rem;color:var(--text2)">Row count is 0 — no preview.</div>';
+  document.getElementById('dg-preview-content').innerHTML = html;
+}
+window.dgRefreshPreview = refreshPreview;
+
+// ── Generate flow ──────────────────────────────────────────────────────────
+async function dgGenerate(){
+  const conn = readSourceConn();
+  if (!conn){
+    logLine('Cannot generate: no source connection configured. Set one in Dashboard → Connections.', 'err');
+    return;
+  }
+
+  // Validate FK integrity: children can't be generated if parents have 0 rows
+  if ((ROW_COUNTS.addresses || 0) > 0 && (ROW_COUNTS.customers || 0) === 0){
+    logLine('addresses references customers but customers row count is 0. Increase customers or set addresses to 0.', 'err');
+    return;
+  }
+  if ((ROW_COUNTS.orders || 0) > 0){
+    if ((ROW_COUNTS.customers || 0) === 0){
+      logLine('orders references customers but customers row count is 0.', 'err');
+      return;
+    }
+    if ((ROW_COUNTS.products || 0) === 0){
+      logLine('orders references products but products row count is 0.', 'err');
+      return;
+    }
+  }
+
+  const btn = document.getElementById('dg-generate-btn');
+  btn.disabled = true;
+  clearLog();
+  logLine('Starting data generation…', 'info');
+
+  // Seed the PRNG fresh each run — same seed = same data, but running twice
+  // still produces the same data (predictable for demos).
+  seedPRNG(0xCAFEF00D);
+
+  try {
+    // Ensure every enabled table exists — SELECT-then-CREATE pattern per
+    // table so a DDL failure returns a clean JSON error instead of crashing
+    // the Function (the mssql/tedious async-error path we've been dodging
+    // all session). Any FK constraints are declared at CREATE TABLE time,
+    // and parent tables are always created before children thanks to the
+    // SCHEMA.order sort.
+    const tableNames = Object.keys(SCHEMA).sort((a, b) => SCHEMA[a].order - SCHEMA[b].order);
+    for (const tableName of tableNames){
+      if ((ROW_COUNTS[tableName] || 0) === 0){
+        logLine('Skipping ' + tableName + ' (row count is 0)', 'warn');
+        continue;
+      }
+      await ensureTable(conn, tableName);
+    }
+
+    // Insert data — same order. Each table's rows are generated in memory
+    // in batches of BATCH_SIZE and shipped straight to the DB, so a 500K
+    // row run never holds more than 500 rows in memory at once.
+    for (const tableName of tableNames){
+      const count = ROW_COUNTS[tableName] || 0;
+      if (count === 0) continue;
+      await insertRowsBatched(conn, tableName, count);
+    }
+
+    logLine('✓ Generation complete', 'ok');
+  } catch (e){
+    logLine('✗ ' + (e.message || String(e)), 'err');
+  } finally {
+    btn.disabled = false;
+    hideProgress();
+  }
+}
+window.dgGenerate = dgGenerate;
+
+// Ensure a single demo table exists on the source. Same SELECT-then-CREATE
+// pattern proven to work in project-builder.html's ensureTable fix.
+async function ensureTable(conn, tableName){
+  // Does the table exist?
+  let exists = false;
+  try {
+    const r = await dbCall(conn, {
+      action: 'execute',
+      sql: "SELECT 1 AS found FROM sys.tables t " +
+           "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+           "WHERE s.name = N'dbo' AND t.name = N'" + tableName + "'"
+    });
+    const row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]);
+    exists = !!(row && (row.found === 1 || row.found === true));
+  } catch (e){
+    throw new Error('Could not check whether dbo.' + tableName + ' exists: ' + (e.message || e));
+  }
+
+  if (exists){
+    logLine('dbo.' + tableName + ' already exists — will INSERT into it', 'info');
+    return;
+  }
+
+  const ddl = buildCreateTableDdl(tableName);
+  try {
+    await dbCall(conn, { action: 'execute', sql: ddl });
+    logLine('✓ Created dbo.' + tableName, 'ok');
+  } catch (e){
+    throw new Error('Could not create dbo.' + tableName + ': ' + (e.message || e));
+  }
+}
+
+// Insert rows for one table, generating in batches so memory stays flat
+// no matter how many rows the user asked for.
+async function insertRowsBatched(conn, tableName, totalCount){
+  const batches = Math.ceil(totalCount / BATCH_SIZE);
+  logLine('Inserting ' + totalCount.toLocaleString() + ' rows into dbo.' + tableName + ' (' + batches + ' batches)', 'info');
+  showProgress('Inserting into ' + tableName);
+
+  const ctx = {
+    customers: ROW_COUNTS.customers || 0,
+    products:  ROW_COUNTS.products  || 0
+  };
+
+  let inserted = 0;
+  for (let b = 0; b < batches; b++){
+    const startIdx = b * BATCH_SIZE;
+    const endIdx   = Math.min(startIdx + BATCH_SIZE, totalCount);
+
+    // Build this batch of rows in memory
+    const batch = [];
+    for (let i = startIdx; i < endIdx; i++){
+      const row = {};
+      for (const c of SCHEMA[tableName].columns){
+        row[c.name] = generateValueFor(tableName, c.name, c.type, i, ctx);
+      }
+      batch.push(row);
+    }
+
+    const sql = buildInsertBatch(tableName, batch);
+    try {
+      await dbCall(conn, { action: 'execute', sql });
+    } catch (e){
+      throw new Error('INSERT into ' + tableName + ' failed at batch ' + (b + 1) + ' of ' + batches + ': ' + (e.message || e));
+    }
+
+    inserted += batch.length;
+    updateProgress((inserted / totalCount) * 100);
+    // Yield to the browser event loop so the progress bar actually paints
+    // between batches. Without this the UI freezes on large runs.
+    if (b % 5 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+
+  logLine('✓ Inserted ' + inserted.toLocaleString() + ' rows into dbo.' + tableName, 'ok');
+}
+
+// ── Drop flow ──────────────────────────────────────────────────────────────
+async function dgDropAll(){
+  const conn = readSourceConn();
+  if (!conn){
+    logLine('Cannot drop: no source connection configured.', 'err');
+    return;
+  }
+  if (!confirm('Drop all four demo tables (customers, addresses, products, orders) from the source? This cannot be undone.')){
+    return;
+  }
+
+  const btn = document.getElementById('dg-drop-btn');
+  btn.disabled = true;
+  clearLog();
+  logLine('Dropping demo tables…', 'info');
+
+  // Reverse order so child tables (with FK constraints) come off first
+  const tableNames = Object.keys(SCHEMA).sort((a, b) => SCHEMA[b].order - SCHEMA[a].order);
+  try {
+    for (const tableName of tableNames){
+      // Check existence first so we don't emit a DDL error for a missing
+      // table (which would trigger the async-crash path).
+      let exists = false;
+      try {
+        const r = await dbCall(conn, {
+          action: 'execute',
+          sql: "SELECT 1 AS found FROM sys.tables t " +
+               "JOIN sys.schemas s ON s.schema_id = t.schema_id " +
+               "WHERE s.name = N'dbo' AND t.name = N'" + tableName + "'"
+        });
+        const row = (r.recordset && r.recordset[0]) || (r.rows && r.rows[0]);
+        exists = !!(row && (row.found === 1 || row.found === true));
+      } catch (e){
+        logLine('Could not check ' + tableName + ': ' + (e.message || e), 'warn');
+        continue;
+      }
+      if (!exists){
+        logLine('dbo.' + tableName + ' not present — skipping', 'warn');
+        continue;
+      }
+      try {
+        await dbCall(conn, { action: 'execute', sql: buildDropTableSql(tableName) });
+        logLine('✓ Dropped dbo.' + tableName, 'ok');
+      } catch (e){
+        logLine('Failed to drop dbo.' + tableName + ': ' + (e.message || e), 'err');
+      }
+    }
+    logLine('Done.', 'ok');
+  } finally {
+    btn.disabled = false;
+  }
+}
+window.dgDropAll = dgDropAll;
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function(){
+  renderTables();
+  refreshBanner();
+  refreshPreview();
+  // Open the first table by default so the user immediately sees something
+  // to interact with
+  const first = Object.keys(SCHEMA).sort((a, b) => SCHEMA[a].order - SCHEMA[b].order)[0];
+  if (first) dgToggleTable(first);
+});
+
+})();
+</script>
+
+</body>
+</html>
