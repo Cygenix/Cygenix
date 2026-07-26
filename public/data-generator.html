@@ -157,7 +157,7 @@ code,.mono{font-family:var(--mono)}
 <div id="dg-main">
 
   <div class="dg-h1"><span class="brand">Cygenix</span> <span class="brand-alt">Data Generator</span></div>
-  <div class="dg-sub">Populate a source database with realistic demo data for migration demonstrations. Writes to <strong>dbo</strong> on the current <strong>source</strong> connection.</div>
+  <div class="dg-sub">Populate a source database with realistic demo data for migration demonstrations. Writes to <strong>dbo</strong> on the current <strong>source</strong> connection. Add custom tables and columns — types auto-infer from the column name. Optional AI-improve for tuned demos.</div>
 
   <!-- Connection banner -->
   <div class="dg-banner">
@@ -174,8 +174,16 @@ code,.mono{font-family:var(--mono)}
 
   <!-- Table configuration -->
   <div class="dg-panel">
-    <div class="dg-panel-title">📋 Tables to generate</div>
-    <div class="dg-panel-sub">Click a table to edit its columns. Row-count controls appear at the bottom of each table's expanded view.</div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;margin-bottom:0.75rem">
+      <div>
+        <div class="dg-panel-title" style="margin-bottom:0.25rem">📋 Tables to generate</div>
+        <div class="dg-panel-sub" style="margin-bottom:0">Click a table to edit its columns. Row-count controls appear at the bottom of each table's expanded view.</div>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-shrink:0">
+        <button class="dg-btn dg-btn-ghost" style="padding:0.4rem 0.8rem;font-size:11px" onclick="dgAddTable()">+ Add table</button>
+        <button class="dg-btn dg-btn-ghost" style="padding:0.4rem 0.8rem;font-size:11px" onclick="dgRestorePresets()" title="Restore any preset tables (customers/addresses/products/orders) that were deleted, without touching your other tables">↩ Restore presets</button>
+      </div>
+    </div>
     <div id="dg-tables"></div>
   </div>
 
@@ -311,6 +319,130 @@ const DEFAULT_SCHEMA = {
   }
 };
 
+// ── Type inference from column name ────────────────────────────────────────
+// When the user adds a column, we guess a sensible SQL type from its name.
+// The same rules drive value generation for arbitrary user-added columns so
+// e.g. a new column called `mobile_number` gets NVARCHAR(50) + UK mobile
+// value generator with no further input from the user.
+//
+// Rules are ordered — first match wins. Each rule has a name pattern (regex
+// tested against the LOWERCASE column name), the SQL type to propose, and a
+// generator key that generateValueFor will use to produce values. The
+// generator key is a semantic hint, not a column name — 'phoneNumber' means
+// "generate a phone-number-shaped string" regardless of the actual column
+// name.
+const TYPE_RULES = [
+  // Primary key / identity — anything ending in _id or literally 'id'
+  { pattern: /^(id|_id)$/,                        type: 'INT',            gen: 'pk' },
+  // FK columns — <parent>_id. The generator resolves the parent at runtime
+  // from the table's fks[] array; if there's no matching FK we fall back
+  // to a plain small integer.
+  { pattern: /_id$/,                              type: 'INT',            gen: 'fkOrInt' },
+  // Timestamps — created_at, updated_at, birth_date, dob, order_date, etc.
+  { pattern: /_at$|^(dob|birth_date|date_.*|.*_date|order_date|created|updated|modified)$/,
+                                                  type: 'DATETIME',       gen: 'datetime' },
+  // Booleans — is_active, has_children, foo_flag, active_flag
+  { pattern: /^(is_|has_|can_|should_).*|.*_flag$|^active$|^enabled$/,
+                                                  type: 'BIT',            gen: 'bit' },
+  // Money — anything with price, cost, amount, total, or a _pence suffix
+  { pattern: /(price|cost|amount|total|value|balance|fee).*|.*_pence$/,
+                                                  type: 'INT',            gen: 'moneyPence' },
+  // Small integers — quantities, counts, stock, age
+  { pattern: /(quantity|qty|count|stock|age|score|rating|rank)/,
+                                                  type: 'INT',            gen: 'smallInt' },
+  // Realistic strings by semantic
+  { pattern: /email|e_mail|mail/,                 type: 'NVARCHAR(255)',  gen: 'email' },
+  { pattern: /phone|mobile|tel|fax/,              type: 'NVARCHAR(50)',   gen: 'phone' },
+  { pattern: /postcode|postal|zipcode|zip/,       type: 'NVARCHAR(20)',   gen: 'postcode' },
+  { pattern: /country/,                           type: 'NVARCHAR(50)',   gen: 'country' },
+  { pattern: /^(city|town)$|_city$/,              type: 'NVARCHAR(100)',  gen: 'city' },
+  { pattern: /address_?line|line[12]$|street/,    type: 'NVARCHAR(200)',  gen: 'street' },
+  { pattern: /url|website|site|link/,             type: 'NVARCHAR(500)',  gen: 'url' },
+  { pattern: /^(name|full_name|contact_name)$|_name$/,
+                                                  type: 'NVARCHAR(200)',  gen: 'personName' },
+  { pattern: /^(title|label|heading)$|_title$/,   type: 'NVARCHAR(200)',  gen: 'title' },
+  { pattern: /description|notes|comments|remarks|summary|details/,
+                                                  type: 'NVARCHAR(500)',  gen: 'description' },
+  { pattern: /^(status|state|stage)$|_status$/,   type: 'NVARCHAR(50)',   gen: 'status' },
+  { pattern: /^(sku|code|ref|reference)$|_ref$|_sku$|_code$/,
+                                                  type: 'NVARCHAR(50)',   gen: 'sku' },
+  { pattern: /company|organisation|organization|firm|business/,
+                                                  type: 'NVARCHAR(200)',  gen: 'company' }
+];
+
+// Infer type + generator hint for a column name. Falls back to a generic
+// short NVARCHAR with pattern-based text generation if no rule matches.
+function inferColumnMeta(colName){
+  const n = (colName || '').toLowerCase().trim();
+  for (const rule of TYPE_RULES){
+    if (rule.pattern.test(n)) return { type: rule.type, gen: rule.gen };
+  }
+  return { type: 'NVARCHAR(100)', gen: 'shortText' };
+}
+
+// Look up whether a column is an FK on its table and return the parent
+// table name if so. Used by both the value generator (to pick a valid
+// parent ID range) and the UI (to display FK badges on user-added tables).
+function fkParentOf(tableName, colName){
+  const t = SCHEMA[tableName];
+  if (!t || !Array.isArray(t.fks)) return null;
+  const fk = t.fks.find(f => f.column === colName);
+  return fk ? fk.refTable : null;
+}
+
+// Value generators keyed by the `gen` field of TYPE_RULES. Each takes the
+// column context (row index, parent counts) and returns a plausible value.
+// Kept in one lookup so it's easy to add rules — pattern + type + generator
+// all colocated.
+const GENERATORS = {
+  pk:         (i)             => i + 1,
+  fkOrInt:    (i, ctx)        => ctx.__fkParentCount ? rndInt(1, Math.max(1, ctx.__fkParentCount)) : rndInt(1, 1000),
+  smallInt:   ()              => rndInt(0, 200),
+  moneyPence: ()              => rndInt(500, 200000),
+  bit:        ()              => rnd() < 0.35 ? 1 : 0,
+  datetime:   ()              => {
+    // Roughly last 3 years
+    const now = Date.now();
+    const t0  = now - 36 * 30 * 24 * 3600 * 1000;
+    const ts  = t0 + Math.floor(rnd() * (now - t0));
+    return new Date(ts).toISOString().slice(0, 19).replace('T', ' ');
+  },
+  email:      () => {
+    const first = pick(FIRST_NAMES).toLowerCase();
+    const last  = pick(LAST_NAMES).toLowerCase();
+    const sep   = pick(['.','_','']);
+    const num   = rnd() < 0.4 ? rndInt(1, 999) : '';
+    return first + sep + last + num + '@' + pick(EMAIL_DOMAINS);
+  },
+  phone:      () => '07' + rndInt(100,999) + ' ' + rndInt(100000, 999999),
+  postcode:   () => {
+    const letters = 'ABCDEFGHJKLMNOPQRSTUVWXYZ';
+    const a = letters[Math.floor(rnd()*letters.length)] + letters[Math.floor(rnd()*letters.length)];
+    const b = rndInt(1, 99);
+    const c = rndInt(0, 9);
+    const d = letters[Math.floor(rnd()*letters.length)] + letters[Math.floor(rnd()*letters.length)];
+    return a + b + ' ' + c + d;
+  },
+  country:    () => pick(COUNTRIES),
+  city:       () => pick(CITIES_UK),
+  street:     () => rndInt(1, 300) + ' ' + pick(STREETS),
+  url:        () => 'https://' + pick(['example','acme','globex','contoso','initech','umbrella']).toLowerCase() + '.com/' + pick(['about','products','pricing','contact','docs']),
+  personName: () => pick(FIRST_NAMES) + ' ' + pick(LAST_NAMES),
+  title:      () => pick(['Draft','Interim','Final','Revised','Approved','Pending review']) + ' ' + pick(['report','memo','proposal','summary','update']),
+  description:() => 'Quality ' + pick(['premium','professional','standard','budget','deluxe']) + ' item — ' + pick(['fast delivery','in stock','best seller','new arrival','clearance']),
+  status:     () => pick(ORDER_STATUS_WEIGHTS),
+  sku:        (i) => pick(['OFF','ELE','FUR','KIT','STA','GEN','ACC']) + '-' + String(i + 1).padStart(4, '0'),
+  company:    () => pick(LAST_NAMES) + ' ' + pick(['& Sons','& Partners','Group','Holdings','Consulting','Solutions','Services','Ltd','Trading','Enterprises']),
+  shortText:  () => {
+    // Random 4-10 char lowercase — the fallback for unrecognised column names
+    const chars = 'abcdefghijklmnopqrstuvwxyz';
+    const len = rndInt(4, 10);
+    let s = '';
+    for (let i = 0; i < len; i++) s += chars[Math.floor(rnd()*26)];
+    return s;
+  }
+};
+
 // Live schema state — starts as a deep copy of DEFAULT_SCHEMA and gets
 // mutated when the user edits columns or row counts.
 let SCHEMA = JSON.parse(JSON.stringify(DEFAULT_SCHEMA));
@@ -407,114 +539,81 @@ function rndInt(min, max){ return Math.floor(rnd() * (max - min + 1)) + min; }
 function pick(arr){ return arr[Math.floor(rnd() * arr.length)]; }
 
 // ── Value generators per column semantic ───────────────────────────────────
-// A column's name determines what kind of value to generate. This is a
-// simple heuristic: match by column name (case-insensitive) with fallbacks
-// by type. For the fixed schema this is deterministic and covers every
-// column; for user-added columns it picks a sensible default from the type.
+// Precedence at generation time:
+//   1. AI pool (if the user clicked "Improve with AI" on this table, we
+//      have hand-crafted values from Claude in SCHEMA[t]._aiPools[col])
+//   2. Hardcoded semantics for the four preset tables — kept for backward
+//      compatibility with the tuned demo pools
+//   3. Pattern inference from the column name (works for arbitrary
+//      user-added columns)
+//   4. Type-only fallback for anything genuinely unrecognisable
 function generateValueFor(tableName, colName, colType, rowIndex, ctx){
+  // 1. AI pool — user prep step overrides everything else
+  const aiPool = SCHEMA[tableName] && SCHEMA[tableName]._aiPools && SCHEMA[tableName]._aiPools[colName];
+  if (Array.isArray(aiPool) && aiPool.length){
+    return aiPool[Math.floor(rnd() * aiPool.length)];
+  }
+
   const n = colName.toLowerCase();
   const t = (colType || '').toUpperCase();
 
-  // PK columns are always the 1-indexed row number. Client-assigned integer
-  // IDs let us wire up FKs deterministically without round-tripping to SQL.
+  // 2. Hardcoded semantics for the preset tables. These stay tuned to the
+  // realistic demo pools even after the pattern-inference layer was added.
+  // PK column
   if (n === 'id') return rowIndex + 1;
 
-  // FK columns — pick a random valid parent row. ctx has the row counts of
-  // parent tables so we know what range is valid.
+  // FK columns on the preset schema. For user-added tables the fkOrInt
+  // generator resolves parents dynamically below.
   if (n === 'customer_id') return rndInt(1, Math.max(1, ctx.customers || 1));
   if (n === 'product_id')  return rndInt(1, Math.max(1, ctx.products  || 1));
 
-  // Domain-specific column names — realistic values per column.
-  if (n === 'name' && tableName === 'customers'){
-    return pick(FIRST_NAMES) + ' ' + pick(LAST_NAMES);
-  }
-  if (n === 'name' && tableName === 'products'){
-    return pick(PRODUCT_NAMES);
-  }
-  if (n === 'name'){
-    // Generic fallback for any user-added 'name' column
-    return pick(FIRST_NAMES) + ' ' + pick(LAST_NAMES);
-  }
-
-  if (n === 'email'){
-    const first = pick(FIRST_NAMES).toLowerCase();
-    const last  = pick(LAST_NAMES).toLowerCase();
-    const sep   = pick(['.','_','']);
-    const num   = rnd() < 0.4 ? rndInt(1, 999) : '';
-    return first + sep + last + num + '@' + pick(EMAIL_DOMAINS);
-  }
-
-  if (n === 'phone'){
-    // UK-flavoured mobile numbers, mostly 07xxx format
-    return '07' + rndInt(100,999) + ' ' + rndInt(100000, 999999);
-  }
-
-  if (n === 'created_at' || n === 'order_date' || t === 'DATETIME'){
-    // A date within the last 3 years for created_at, last 12 months for orders
+  if (n === 'name' && tableName === 'customers') return GENERATORS.personName();
+  if (n === 'name' && tableName === 'products')  return pick(PRODUCT_NAMES);
+  if (n === 'email')       return GENERATORS.email();
+  if (n === 'phone')       return GENERATORS.phone();
+  if (n === 'created_at' || n === 'order_date') {
     const monthsBack = (n === 'order_date') ? 12 : 36;
     const now = Date.now();
     const t0  = now - monthsBack * 30 * 24 * 3600 * 1000;
     const ts  = t0 + Math.floor(rnd() * (now - t0));
-    const d   = new Date(ts);
-    return d.toISOString().slice(0, 19).replace('T', ' ');
+    return new Date(ts).toISOString().slice(0, 19).replace('T', ' ');
   }
-
-  if (n === 'line1'){
-    return rndInt(1, 300) + ' ' + pick(STREETS);
-  }
+  if (n === 'line1')       return GENERATORS.street();
   if (n === 'line2'){
-    // Roughly 40% of addresses have a line 2
     if (rnd() < 0.4) return pick(['Flat ' + rndInt(1,30), 'Apt ' + rndInt(1,20), 'Unit ' + rndInt(1,50), rndInt(1,20) + 'A', 'The Annex']);
     return null;
   }
-  if (n === 'city'){
-    return pick(CITIES_UK);
-  }
-  if (n === 'postcode'){
-    // Approximate UK postcode: 2 letters, 1-2 digits, space, 1 digit, 2 letters
-    const letters = 'ABCDEFGHJKLMNOPQRSTUVWXYZ';
-    const a = letters[Math.floor(rnd()*letters.length)] + letters[Math.floor(rnd()*letters.length)];
-    const b = rndInt(1, 99);
-    const c = rndInt(0, 9);
-    const d = letters[Math.floor(rnd()*letters.length)] + letters[Math.floor(rnd()*letters.length)];
-    return a + b + ' ' + c + d;
-  }
-  if (n === 'country'){
-    return pick(COUNTRIES);
-  }
-  if (n === 'is_primary' || t === 'BIT'){
-    return rnd() < 0.35 ? 1 : 0;
+  if (n === 'city')        return GENERATORS.city();
+  if (n === 'postcode')    return GENERATORS.postcode();
+  if (n === 'country')     return GENERATORS.country();
+  if (n === 'is_primary')  return rnd() < 0.35 ? 1 : 0;
+  if (n === 'sku')         return GENERATORS.sku(rowIndex);
+  if (n === 'description') return GENERATORS.description();
+  if (n === 'price_pence') return rndInt(500, 50000);
+  if (n === 'stock')       return rndInt(0, 200);
+  if (n === 'quantity')    return rndInt(1, 10);
+  if (n === 'status')      return GENERATORS.status();
+  if (n === 'total_pence') return rndInt(500, 200000);
+
+  // 3. Pattern inference — pick the generator by column name
+  const meta = inferColumnMeta(colName);
+  const genFn = GENERATORS[meta.gen];
+  if (genFn){
+    // If this is an FK column on a user-added table, look up the parent
+    // count so fkOrInt draws from the right range.
+    if (meta.gen === 'fkOrInt' || meta.gen === 'pk'){
+      const parent = fkParentOf(tableName, colName);
+      const ctx2 = Object.assign({}, ctx, {
+        __fkParentCount: parent ? (ROW_COUNTS[parent] || 0) : 0
+      });
+      return genFn(rowIndex, ctx2);
+    }
+    return genFn(rowIndex, ctx);
   }
 
-  if (n === 'sku'){
-    const cat = pick(['OFF','ELE','FUR','KIT','STA']);
-    return cat + '-' + String(rowIndex + 1).padStart(4, '0');
-  }
-  if (n === 'description'){
-    return 'Quality ' + pick(['premium','professional','standard','budget','deluxe']) + ' item — ' + pick(['fast delivery','in stock','best seller','new arrival','clearance']);
-  }
-  if (n === 'price_pence'){
-    // £5 to £500 in pence
-    return rndInt(500, 50000);
-  }
-  if (n === 'stock'){
-    return rndInt(0, 200);
-  }
-  if (n === 'quantity'){
-    return rndInt(1, 10);
-  }
-  if (n === 'status'){
-    return pick(ORDER_STATUS_WEIGHTS);
-  }
-  if (n === 'total_pence'){
-    // Derived from a plausible price × quantity range
-    return rndInt(500, 200000);
-  }
-
-  // Generic type-based fallbacks for user-added columns
+  // 4. Type-only fallback for anything the pattern layer didn't match
   if (t === 'INT') return rndInt(0, 1000);
   if (t.startsWith('NVARCHAR') || t.startsWith('VARCHAR')){
-    // Extract the length from the type string, default to 50
     const m = t.match(/\((\d+)\)/);
     const maxLen = m ? Math.min(parseInt(m[1], 10), 50) : 20;
     const chars = 'abcdefghijklmnopqrstuvwxyz';
@@ -523,9 +622,7 @@ function generateValueFor(tableName, colName, colType, rowIndex, ctx){
     for (let i = 0; i < wanted; i++) s += chars[Math.floor(rnd()*26)];
     return s;
   }
-  if (t === 'DATETIME'){
-    return new Date().toISOString().slice(0, 19).replace('T', ' ');
-  }
+  if (t === 'DATETIME') return GENERATORS.datetime();
   if (t === 'BIT') return rnd() < 0.5 ? 1 : 0;
 
   return null;
@@ -747,14 +844,18 @@ function renderTables(){
       : '';
 
     wrap.innerHTML =
-      '<div class="dg-table-header" onclick="dgToggleTable(\'' + tableName + '\')">' +
-        '<div>' +
+      '<div class="dg-table-header">' +
+        '<div style="cursor:pointer;flex:1;display:flex;align-items:center;gap:0.4rem" onclick="dgToggleTable(\'' + tableName + '\')">' +
           '<span class="dg-caret" id="dg-caret-' + tableName + '">▶</span> ' +
           '<span class="dg-table-name">dbo.' + tableName + fkBadge + '</span>' +
         '</div>' +
         '<div class="dg-table-summary">' +
           t.columns.length + ' cols · ' +
           '<span id="dg-count-' + tableName + '">' + rowCount.toLocaleString() + '</span> rows' +
+        '</div>' +
+        '<div style="display:flex;gap:0.4rem;margin-left:0.75rem">' +
+          '<button class="dg-btn dg-btn-ghost" style="padding:0.25rem 0.55rem;font-size:10.5px" onclick="event.stopPropagation();dgImproveWithAI(\'' + tableName + '\')" title="Ask Claude for realistic sample values for this table\'s columns. Runs once at prep time, cached for the demo.">✨ AI</button>' +
+          '<button class="dg-btn dg-btn-danger" style="padding:0.25rem 0.55rem;font-size:10.5px" onclick="event.stopPropagation();dgDeleteTable(\'' + tableName + '\')" title="Delete this table from the schema (does not touch the database)">✕</button>' +
         '</div>' +
       '</div>' +
       '<div class="dg-table-body" id="dg-body-' + tableName + '">' +
@@ -778,8 +879,13 @@ function renderColumnEditor(tableName){
 
   for (let i = 0; i < t.columns.length; i++){
     const c = t.columns[i];
+    // A column is "structural" if it's the PK or if any FK constraint on
+    // this table names it. Structural columns can't be renamed/retyped/
+    // nullable-toggled or deleted without breaking the schema.
+    const fkParent = fkParentOf(tableName, c.name);
+    const isFk = !!fkParent || !!c.isFk;
     const badge = c.isPk ? '<span class="col-pk">PK</span>'
-                : c.isFk ? '<span class="col-fk">FK</span>'
+                : isFk   ? '<span class="col-fk" title="→ dbo.' + (fkParent || (c.isFk || '').split('.')[0]) + '">FK</span>'
                 : '';
     html +=
       '<tr>' +
@@ -790,7 +896,7 @@ function renderColumnEditor(tableName){
           (c.isPk ? ' disabled title="PK cannot be nullable"' : '') +
           ' onchange="dgSetColNullable(\'' + tableName + '\',' + i + ',this.checked)"></td>' +
         '<td>' +
-          (c.isPk || c.isFk ? '' :
+          (c.isPk || isFk ? '' :
             '<button class="col-del" onclick="dgDeleteCol(\'' + tableName + '\',' + i + ')" title="Delete column">✕</button>') +
         '</td>' +
       '</tr>';
@@ -852,9 +958,14 @@ window.dgSetColNullable = dgSetColNullable;
 
 function dgDeleteCol(tableName, i){
   const c = SCHEMA[tableName].columns[i];
-  if (c.isPk || c.isFk){
+  if (!c) return;
+  if (c.isPk || c.isFk || fkParentOf(tableName, c.name)){
     logLine('Cannot delete PK or FK column — it\'s structural.', 'warn');
     return;
+  }
+  // Also drop from any _aiPools cache so a stale key doesn't sit around
+  if (SCHEMA[tableName]._aiPools){
+    delete SCHEMA[tableName]._aiPools[c.name];
   }
   SCHEMA[tableName].columns.splice(i, 1);
   renderTables();
@@ -863,18 +974,278 @@ function dgDeleteCol(tableName, i){
 window.dgDeleteCol = dgDeleteCol;
 
 function dgAddColumn(tableName){
-  const suffix = SCHEMA[tableName].columns.length + 1;
-  SCHEMA[tableName].columns.push({
-    name:     'col' + suffix,
-    type:     'NVARCHAR(100)',
-    nullable: true
-  });
+  // Prompt for column name — type is inferred from the name via TYPE_RULES.
+  const rawName = window.prompt(
+    'New column name for dbo.' + tableName + '\n\n' +
+    'Type is auto-inferred from the name. Examples:\n' +
+    '  • email          → NVARCHAR(255), realistic emails\n' +
+    '  • phone_number   → NVARCHAR(50), UK mobile\n' +
+    '  • birth_date     → DATETIME\n' +
+    '  • is_active      → BIT\n' +
+    '  • price_pence    → INT in the money range\n' +
+    '  • customer_id    → FK to another table (you\'ll be asked which)\n\n' +
+    'Column name:'
+  );
+  if (rawName === null) return;
+  const cleaned = String(rawName).trim().replace(/[^a-zA-Z0-9_]/g, '_');
+  if (!cleaned){ logLine('Column name cannot be empty', 'warn'); return; }
+  if (SCHEMA[tableName].columns.some(c => c.name.toLowerCase() === cleaned.toLowerCase())){
+    logLine('A column named ' + cleaned + ' already exists on dbo.' + tableName, 'warn');
+    return;
+  }
+
+  const meta = inferColumnMeta(cleaned);
+  const newCol = { name: cleaned, type: meta.type, nullable: true };
+
+  // If the name looks like an FK (`_id` suffix on a non-'id' name) offer
+  // the user a chance to point it at an existing table. Skips the prompt
+  // if there are no OTHER tables to reference.
+  if (meta.gen === 'fkOrInt'){
+    const otherTables = Object.keys(SCHEMA).filter(n => n !== tableName);
+    if (otherTables.length){
+      const list = otherTables.map((n, i) => (i + 1) + '. ' + n).join('\n');
+      const answer = window.prompt(
+        'The column "' + cleaned + '" looks like a foreign key.\n' +
+        'Pick a parent table (or leave blank / cancel for a plain INT):\n\n' + list,
+        ''
+      );
+      if (answer !== null && answer.trim()){
+        // Accept either the number or the name
+        let parent = null;
+        const num = parseInt(answer.trim(), 10);
+        if (Number.isFinite(num) && num >= 1 && num <= otherTables.length){
+          parent = otherTables[num - 1];
+        } else if (otherTables.indexOf(answer.trim()) >= 0){
+          parent = answer.trim();
+        }
+        if (parent){
+          newCol.nullable = false;
+          SCHEMA[tableName].fks = SCHEMA[tableName].fks || [];
+          SCHEMA[tableName].fks.push({ column: cleaned, refTable: parent, refColumn: 'id' });
+          logLine('Added FK: dbo.' + tableName + '.' + cleaned + ' → dbo.' + parent + '.id', 'info');
+        } else {
+          logLine('No matching parent — column added as plain INT (no FK constraint)', 'warn');
+        }
+      }
+    }
+  }
+
+  SCHEMA[tableName].columns.push(newCol);
+  logLine('Added column dbo.' + tableName + '.' + cleaned + ' (' + newCol.type + ')', 'ok');
   renderTables();
-  // Re-open the table since renderTables re-renders everything closed
   dgToggleTable(tableName);
   refreshPreviewDebounced();
 }
 window.dgAddColumn = dgAddColumn;
+
+// ── Table CRUD ─────────────────────────────────────────────────────────────
+
+function dgAddTable(){
+  const rawName = window.prompt(
+    'New table name (schema is always dbo).\n\n' +
+    'You\'ll get an empty table with a single "id" INT PRIMARY KEY column.\n' +
+    'Add more columns from the accordion body once it appears.\n\n' +
+    'Table name:'
+  );
+  if (rawName === null) return;
+  const cleaned = String(rawName).trim().replace(/[^a-zA-Z0-9_]/g, '_');
+  if (!cleaned){ logLine('Table name cannot be empty', 'warn'); return; }
+  if (SCHEMA[cleaned]){
+    logLine('A table named ' + cleaned + ' already exists', 'warn');
+    return;
+  }
+  // Order: put new tables at the end so parent-before-child insert order
+  // is preserved for the presets. User can add FK columns that reference
+  // earlier tables; if they reference later tables the FK will fail at
+  // CREATE TABLE time (SQL Server enforces reference targets exist).
+  const maxOrder = Object.values(SCHEMA).reduce((m, t) => Math.max(m, t.order || 0), 0);
+  SCHEMA[cleaned] = {
+    order: maxOrder + 1,
+    label: cleaned,
+    columns: [
+      { name: 'id', type: 'INT', nullable: false, isPk: true }
+    ],
+    fks:      [],
+    _aiPools: {}
+  };
+  ROW_COUNTS[cleaned] = 100;
+  logLine('Added table dbo.' + cleaned + ' with default id column', 'ok');
+  renderTables();
+  dgToggleTable(cleaned);
+  refreshPreviewDebounced();
+}
+window.dgAddTable = dgAddTable;
+
+function dgDeleteTable(tableName){
+  if (!SCHEMA[tableName]) return;
+  // Find any FK constraints in OTHER tables that reference this one — we'll
+  // have to drop them too, so warn the user.
+  const dependents = [];
+  for (const other of Object.keys(SCHEMA)){
+    if (other === tableName) continue;
+    const t = SCHEMA[other];
+    if (Array.isArray(t.fks)){
+      for (const fk of t.fks){
+        if (fk.refTable === tableName){
+          dependents.push('dbo.' + other + '.' + fk.column);
+        }
+      }
+    }
+  }
+  let msg = 'Delete dbo.' + tableName + ' from the schema? (this doesn\'t touch the database — use Drop All to remove tables from SQL Server)';
+  if (dependents.length){
+    msg += '\n\nThe following FK constraints will also be removed from other tables:\n  ' + dependents.join('\n  ');
+  }
+  if (!window.confirm(msg)) return;
+
+  // Remove the table itself
+  delete SCHEMA[tableName];
+  delete ROW_COUNTS[tableName];
+
+  // Strip any dangling FKs from remaining tables
+  for (const other of Object.keys(SCHEMA)){
+    const t = SCHEMA[other];
+    if (Array.isArray(t.fks)){
+      t.fks = t.fks.filter(fk => fk.refTable !== tableName);
+    }
+  }
+
+  // Reset preview tab if it was pointing at the deleted table
+  if (previewTab === tableName){
+    previewTab = Object.keys(SCHEMA).sort((a, b) => SCHEMA[a].order - SCHEMA[b].order)[0] || '';
+  }
+
+  logLine('Removed dbo.' + tableName + ' from schema (' + dependents.length + ' FK constraint(s) also dropped)', 'ok');
+  renderTables();
+  refreshPreview();
+}
+window.dgDeleteTable = dgDeleteTable;
+
+function dgRestorePresets(){
+  const restored = [];
+  for (const name of Object.keys(DEFAULT_SCHEMA)){
+    if (!SCHEMA[name]){
+      // Deep-copy the preset back in
+      SCHEMA[name] = JSON.parse(JSON.stringify(DEFAULT_SCHEMA[name]));
+      SCHEMA[name]._aiPools = {};
+      // Sensible default row count so the user doesn't have to set it
+      ROW_COUNTS[name] = { customers: 100, addresses: 200, products: 50, orders: 500 }[name] || 100;
+      restored.push(name);
+    }
+  }
+  if (!restored.length){
+    logLine('All preset tables are already present — nothing to restore', 'info');
+    return;
+  }
+  logLine('Restored preset tables: ' + restored.join(', '), 'ok');
+  renderTables();
+  refreshPreview();
+}
+window.dgRestorePresets = dgRestorePresets;
+
+// ── AI improve: ask Claude for realistic pools of sample values ────────────
+// Runs at demo prep time, not during Generate. Results are cached into
+// SCHEMA[tableName]._aiPools[colName] as arrays of literals; the value
+// generator then picks from those arrays instead of using pattern rules.
+//
+// Uses the same direct-browser-to-Anthropic pattern as dashboard.html —
+// API key lives in sessionStorage as cygenix_api_key. If the key isn't set
+// we prompt the user for it on first use (same UX as the analysis flow).
+async function dgImproveWithAI(tableName){
+  const t = SCHEMA[tableName];
+  if (!t){ return; }
+
+  let apiKey = sessionStorage.getItem('cygenix_api_key') || '';
+  if (!apiKey){
+    apiKey = window.prompt(
+      'Enter your Anthropic API key to use the AI improvement feature.\n' +
+      'Get one at console.anthropic.com. Cygenix stores it in this browser tab only — it is not sent to Cygenix servers.\n\n' +
+      'sk-ant-...'
+    );
+    if (!apiKey){ logLine('AI improve cancelled — no API key provided', 'warn'); return; }
+    apiKey = apiKey.trim();
+    sessionStorage.setItem('cygenix_api_key', apiKey);
+  }
+
+  // Only send the DATA columns (skip PKs and FKs — those are structural
+  // and the generator handles them deterministically from row indices).
+  const dataCols = t.columns.filter(c => {
+    if (c.isPk) return false;
+    if (fkParentOf(tableName, c.name)) return false;
+    return true;
+  });
+  if (!dataCols.length){
+    logLine('dbo.' + tableName + ' has no non-key data columns to improve', 'warn');
+    return;
+  }
+
+  const colDescList = dataCols.map(c => '  "' + c.name + '" (' + c.type + ')').join(',\n');
+  const prompt =
+    'You are generating realistic sample data for a database demo table.\n\n' +
+    'Table name: ' + tableName + '\n' +
+    'Data columns:\n' + colDescList + '\n\n' +
+    'For each column, produce EXACTLY 20 realistic values appropriate to the table\'s domain, ' +
+    'the column\'s meaning, and its SQL type. UK-flavoured names, addresses and phone numbers where relevant. ' +
+    'INT columns must be plain numbers. NVARCHAR values must fit within the declared length. BIT is 0 or 1. ' +
+    'DATETIME values in "YYYY-MM-DD HH:MM:SS" format. No NULLs. No prose.\n\n' +
+    'Return ONLY a single JSON object. Keys are the column names, values are arrays of 20 sample values. ' +
+    'No markdown fences, no commentary — just the JSON.';
+
+  const btn = document.querySelector('button[onclick*="dgImproveWithAI(\'' + tableName + '\')"]');
+  if (btn){ btn.disabled = true; btn.textContent = '✨ …'; }
+  logLine('Asking Claude for sample values for dbo.' + tableName + '…', 'info');
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type':                              'application/json',
+        'x-api-key':                                 apiKey,
+        'anthropic-version':                         '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model:      'claude-sonnet-4-20250514',
+        max_tokens: 4096,
+        messages:   [{ role: 'user', content: prompt }]
+      })
+    });
+
+    if (!res.ok){
+      const errText = await res.text();
+      throw new Error('Claude API ' + res.status + ': ' + errText.slice(0, 200));
+    }
+    const data = await res.json();
+    const text = (data.content || []).map(b => b.text || '').join('');
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Claude did not return JSON — response was: ' + text.slice(0, 200));
+    const pools = JSON.parse(jsonMatch[0]);
+
+    // Filter down to the columns we actually asked about, and coerce every
+    // pool to an array of primitives. Reject empty pools with a warning.
+    const cleaned = {};
+    let colsImproved = 0;
+    for (const c of dataCols){
+      const raw = pools[c.name];
+      if (Array.isArray(raw) && raw.length){
+        cleaned[c.name] = raw.map(v => v === null || v === undefined ? '' : v);
+        colsImproved++;
+      }
+    }
+    if (colsImproved === 0){
+      throw new Error('Claude returned no usable columns');
+    }
+
+    t._aiPools = Object.assign(t._aiPools || {}, cleaned);
+    logLine('✓ AI-improved ' + colsImproved + ' column(s) on dbo.' + tableName + ' — regenerating preview', 'ok');
+    refreshPreview();
+  } catch (e){
+    logLine('AI improve failed: ' + (e.message || e), 'err');
+  } finally {
+    if (btn){ btn.disabled = false; btn.textContent = '✨ AI'; }
+  }
+}
+window.dgImproveWithAI = dgImproveWithAI;
 
 function dgSetRowCount(tableName, n){
   const clean = Math.max(0, Math.floor(Number(n) || 0));
@@ -924,10 +1295,13 @@ function refreshPreview(){
   const table = SCHEMA[previewTab];
   const rowCount = Math.min(5, ROW_COUNTS[previewTab] || 5);
   seedPRNG(0xC00FEEEE);  // fixed seed so preview stays stable across edits
+  // Give preview a healthy floor so FKs don't collapse to always-1. Applied
+  // to every table in the schema (presets AND user-added) so any FK column
+  // sees a plausible range.
   const ctx = Object.assign({}, ROW_COUNTS);
-  // For preview, pretend every parent has 100 rows so FKs don't collapse to 1
-  ctx.customers = Math.max(ctx.customers || 0, 100);
-  ctx.products  = Math.max(ctx.products  || 0, 100);
+  for (const k of Object.keys(SCHEMA)){
+    ctx[k] = Math.max(ctx[k] || 0, 100);
+  }
 
   const rows = [];
   for (let i = 0; i < rowCount; i++){
@@ -965,19 +1339,23 @@ async function dgGenerate(){
     return;
   }
 
-  // Validate FK integrity: children can't be generated if parents have 0 rows
-  if ((ROW_COUNTS.addresses || 0) > 0 && (ROW_COUNTS.customers || 0) === 0){
-    logLine('addresses references customers but customers row count is 0. Increase customers or set addresses to 0.', 'err');
-    return;
-  }
-  if ((ROW_COUNTS.orders || 0) > 0){
-    if ((ROW_COUNTS.customers || 0) === 0){
-      logLine('orders references customers but customers row count is 0.', 'err');
-      return;
-    }
-    if ((ROW_COUNTS.products || 0) === 0){
-      logLine('orders references products but products row count is 0.', 'err');
-      return;
+  // Validate FK integrity: children can't be generated if parents have 0 rows.
+  // Works for any FK on any table — presets AND user-added.
+  for (const tname of Object.keys(SCHEMA)){
+    const t = SCHEMA[tname];
+    if ((ROW_COUNTS[tname] || 0) === 0) continue;      // this child has no rows to insert anyway
+    if (!Array.isArray(t.fks)) continue;
+    for (const fk of t.fks){
+      const parentCount = ROW_COUNTS[fk.refTable] || 0;
+      if (parentCount === 0){
+        logLine(
+          'dbo.' + tname + '.' + fk.column + ' references dbo.' + fk.refTable +
+          ' but ' + fk.refTable + ' row count is 0. Either give ' + fk.refTable +
+          ' rows or set ' + tname + ' to 0.',
+          'err'
+        );
+        return;
+      }
     }
   }
 
@@ -1064,10 +1442,9 @@ async function insertRowsBatched(conn, tableName, totalCount){
   logLine('Inserting ' + totalCount.toLocaleString() + ' rows into dbo.' + tableName + ' (' + batches + ' batches)', 'info');
   showProgress('Inserting into ' + tableName);
 
-  const ctx = {
-    customers: ROW_COUNTS.customers || 0,
-    products:  ROW_COUNTS.products  || 0
-  };
+  // Full row-count map so any FK column (preset OR user-added) can look up
+  // its parent's population and pick a valid ID.
+  const ctx = Object.assign({}, ROW_COUNTS);
 
   let inserted = 0;
   for (let b = 0; b < batches; b++){
@@ -1108,7 +1485,12 @@ async function dgDropAll(){
     logLine('Cannot drop: no source connection configured.', 'err');
     return;
   }
-  if (!confirm('Drop all four demo tables (customers, addresses, products, orders) from the source? This cannot be undone.')){
+  const tableList = Object.keys(SCHEMA).sort((a, b) => SCHEMA[a].order - SCHEMA[b].order);
+  if (!tableList.length){
+    logLine('No tables in schema to drop', 'warn');
+    return;
+  }
+  if (!confirm('Drop the following tables from dbo on the source? This cannot be undone.\n\n  ' + tableList.map(n => 'dbo.' + n).join('\n  '))){
     return;
   }
 
