@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- CODE_CHANGES_V3 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -47,7 +48,7 @@
   --font:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
 }
 html,body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.5;min-height:100vh}
-body{display:flex}
+body{padding-left:230px;transition:padding-left 0.2s ease}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 button{font-family:inherit;font-size:inherit;color:inherit;background:none;border:none;cursor:pointer}
@@ -56,8 +57,17 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);
 input[type=number]{font-family:var(--mono)}
 code,.mono{font-family:var(--mono)}
 
-/* Layout: sidebar comes from cygenix-sidebar.js; we get a main content area */
-#dg-main{flex:1;min-width:0;padding:1.5rem 2rem;max-width:1400px}
+/* Topbar — matches dashboard.html's pattern so the page reads as part of
+   the same app rather than a standalone. Sticky on scroll. */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 1.5rem;height:52px;border-bottom:0.5px solid var(--border);background:var(--bg2);position:sticky;top:0;z-index:100}
+.topbar .logo{text-decoration:none;font-family:var(--font);font-weight:700;letter-spacing:-0.01em;font-size:15px;color:var(--text)}
+.topbar .logo span{color:var(--accent)}
+.topbar .logo-console{font-size:11px;color:var(--text3);font-weight:400;margin-left:6px;font-family:var(--mono)}
+
+/* Main content area — Cygenix pages have the sidebar as a fixed
+   position:fixed left column, so main content just uses normal flow within
+   the padded body. */
+#dg-main{padding:1.5rem 2rem;max-width:1400px}
 
 /* Page header */
 .dg-h1{font-size:22px;font-weight:600;letter-spacing:-0.01em;margin-bottom:0.25rem}
@@ -152,7 +162,18 @@ code,.mono{font-family:var(--mono)}
 </head>
 <body>
 
-<!-- Sidebar is injected by cygenix-sidebar.js -->
+<!-- Topbar — same visual pattern as dashboard.html so the page feels like
+     it's part of the app rather than a detached HTML file. -->
+<div class="topbar">
+  <a href="/dashboard.html" class="logo">Cyge<span>nix</span><span class="logo-console">Data Generator</span></a>
+</div>
+
+<!-- SIDEBAR — rendered by /cygenix-sidebar.js. data-active doesn't match a
+     known sidebar entry (since this page isn't in the main nav), which just
+     means nothing in the sidebar highlights. Users navigate to this page
+     via the "Data Generator" tab on Dashboard → Connections. -->
+<div id="cyg-sidebar-mount" data-active="connections"></div>
+<script src="/cygenix-sidebar.js"></script>
 
 <div id="dg-main">
 
@@ -221,7 +242,6 @@ code,.mono{font-family:var(--mono)}
 </div>
 
 <script src="/connections.js"></script>
-<script src="/cygenix-sidebar.js"></script>
 
 <script>
 // ═══════════════════════════════════════════════════════════════════════════
@@ -693,10 +713,13 @@ function buildInsertBatch(tableName, rows){
 async function dbCall(conn, body){
   // Follow project-builder's isFn heuristic — if conn is an http(s) URL,
   // hit it directly (it's an Azure Function). Otherwise route through the
-  // Netlify function that carries a raw connection string.
+  // Netlify function that carries a raw connection string. The Netlify
+  // function expects the connection under `connectionString`, NOT `conn`
+  // — using the wrong field name is what triggered the "connectionString
+  // is required" error users saw during initial rollout.
   const isFn = /^https?:\/\//i.test(conn || '');
   const url = isFn ? conn : '/.netlify/functions/db-connect';
-  const payload = isFn ? body : Object.assign({ conn }, body);
+  const payload = isFn ? body : Object.assign({ connectionString: conn }, body);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 120000);
