@@ -4459,6 +4459,10 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
           await StagingArea.reloadReset(tgtConn, stagingFullPlanned);
           runCtx.resetTables.add(stagingFullPlanned);
         }
+        // If you see this line in the migration log, the CODE_CHANGES_V3
+        // build is the one actually running. If you don't, the deploy
+        // didn't land — the file on Netlify is still the older version.
+        add('[CODE_CHANGES_V3] Ensuring staging table with SELECT-then-CREATE pattern for ' + stagingFullPlanned);
         const ensureResult = await StagingArea.ensureTable(tgtConn, step.tgtTable, mapping);
         stagingFull = ensureResult.stagingFull;
         identityColumns = ensureResult.identityColumns || new Set();
