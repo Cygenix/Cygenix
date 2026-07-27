@@ -314,7 +314,14 @@ app.http('db', {
           const columns = colsR.recordset.map(c => {
             let type = (c.DATA_TYPE || '').toUpperCase();
             if (c.CHARACTER_MAXIMUM_LENGTH) type += `(${c.CHARACTER_MAXIMUM_LENGTH===-1?'MAX':c.CHARACTER_MAXIMUM_LENGTH})`;
-            else if (c.NUMERIC_PRECISION != null && c.NUMERIC_SCALE != null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
+            // CODE_CHANGES_V3: Only DECIMAL/NUMERIC accept (precision,scale)
+            // in T-SQL. INT, BIT, BIGINT, SMALLINT, TINYINT etc. do NOT —
+            // INFORMATION_SCHEMA returns precision=10, scale=0 for INT so
+            // the unguarded append produced `INT(10,0)`, which is invalid
+            // syntax. That string then flowed into CREATE TABLE, SQL Server
+            // rejected it, and the Azure Function's async-crash bug turned
+            // the SQL error into an empty HTTP 500. Regex guard = fix.
+            else if (/^(DECIMAL|NUMERIC|DEC)$/.test(type) && c.NUMERIC_PRECISION != null && c.NUMERIC_SCALE != null) type += `(${c.NUMERIC_PRECISION},${c.NUMERIC_SCALE})`;
             return {
               name:       c.COLUMN_NAME,
               type,
