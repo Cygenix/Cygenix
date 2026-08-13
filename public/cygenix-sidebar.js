@@ -993,4 +993,42 @@
   } else {
     mount();
   }
+
+  // ── Background Drive sync ─────────────────────────────────────────────────
+  // The Drive lives behind the sidebar button on every page, so its cloud
+  // sync belongs at the same scope: load it once the page is idle so files
+  // added on another machine are already pulled by the time the user opens
+  // the Drive, and so CygenixDriveSync.diagnose() is available everywhere.
+  //
+  // Idle + after load, never during first paint. Loads the token helper
+  // first on the pages that don't carry it; both scripts self-guard against
+  // double-loading, so pages with static tags are unaffected.
+  function loadDriveSyncWhenIdle(){
+    function inject(id, src, done){
+      if (document.getElementById(id)) { if (done) done(); return; }
+      var s = document.createElement('script');
+      s.id = id; s.src = src;
+      if (done) { s.addEventListener('load', done, { once:true }); s.addEventListener('error', done, { once:true }); }
+      (document.head || document.documentElement).appendChild(s);
+    }
+    function go(){
+      try {
+        if (window.CygenixDriveSync) return;
+        if (typeof window.getCygenixIdToken === 'function') {
+          inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js');
+        } else {
+          inject('cygenix-auth-token-js', '/cygenix-auth-token.js', function(){
+            inject('cygenix-drive-sync-js', '/cygenix-drive-sync.js');
+          });
+        }
+      } catch (_) {}
+    }
+    var start = function(){
+      if (window.requestIdleCallback) window.requestIdleCallback(go, { timeout: 4000 });
+      else setTimeout(go, 2000);
+    };
+    if (document.readyState === 'complete') start();
+    else window.addEventListener('load', start, { once:true });
+  }
+  loadDriveSyncWhenIdle();
 })();
