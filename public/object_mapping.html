@@ -1304,7 +1304,10 @@ async function connectTgt(){
       foreignKeys: paginated ? null : (t.foreignKeys||[]),
     }));
     window._joinAllTables = window._joinAllTables || [];
-    setBanner('tgt','ok','Target: '+(res.database||parseDbName(tgtConn))+' · '+tgtAllTables.length+' tables');
+    // Fall back to a word rather than an empty string — when neither the
+    // response nor the connection string yields a database name the banner
+    // read "Target: · 7 tables", which looks like a missing value.
+    setBanner('tgt','ok','Target: '+(res.database||parseDbName(tgtConn)||'connected')+' · '+tgtAllTables.length+' tables');
   } catch(e){
     setBanner('tgt','err','Target: '+e.message);
   }
@@ -2822,7 +2825,38 @@ function renderMappingTable(){
 }
 
 // ── Single SQL generation ─────────────────────────────────────────────────────
+// Inline, persistent explanation of why Generate SQL produced nothing.
+// Rendered just above the SQL output box and cleared on the next successful
+// generation, so the blocked state is visible on the page rather than only in
+// a dialog the user may have dismissed or had suppressed by the browser.
+function showGenerateBlockBanner(cols){
+  const box = document.getElementById('sql-output');
+  if (!box || !box.parentNode) return;
+  let el = document.getElementById('om-generate-block');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'om-generate-block';
+    el.style.cssText = 'margin:0.75rem 0;padding:0.75rem 0.9rem;border-radius:8px;'
+      + 'border:1px solid var(--red);background:var(--red-g,rgba(192,57,43,0.10));'
+      + 'color:var(--red);font-size:12px;line-height:1.6';
+    box.parentNode.insertBefore(el, box);
+  }
+  const shown = cols.slice(0, 8).map(n => '<code>' + n + '</code>').join(', ');
+  const more  = cols.length > 8 ? ' …and ' + (cols.length - 8) + ' more' : '';
+  el.innerHTML =
+    '<b>SQL not generated — ' + cols.length + ' required column' + (cols.length===1?'':'s') + ' unmapped.</b><br>'
+    + 'These target columns are NOT NULL but have no source column and no fixed value: ' + shown + more + '.<br>'
+    + 'Map a source column or set a fixed value on each (they are outlined in red in the table above), then click Generate SQL again.';
+  el.style.display = 'block';
+  try { el.scrollIntoView({ behavior:'smooth', block:'nearest' }); } catch(_) {}
+}
+function clearGenerateBlockBanner(){
+  const el = document.getElementById('om-generate-block');
+  if (el) el.style.display = 'none';
+}
+
 function generateSingleSQL(silent){
+  clearGenerateBlockBanner();
   if(!srcTable){ if(!silent) alert('Select a source table.'); return; }
   if(!tgtTable){ if(!silent) alert('Select a target table.'); return; }
   // A row is only a real mapping if it has a target column AND either a source
@@ -2866,6 +2900,11 @@ function generateSingleSQL(silent){
     if (!silent) {
       const list = unmappedRequired.slice(0, 8).map(n => '  • ' + n).join('\n');
       const more = unmappedRequired.length > 8 ? `\n  …and ${unmappedRequired.length - 8} more` : '';
+      // Persistent on-screen banner as well as the dialog. A modal alone left
+      // no trace once dismissed — and browsers offer "prevent this page from
+      // creating additional dialogs" after a few, at which point the click
+      // genuinely does nothing visible and the button still looks ready.
+      showGenerateBlockBanner(unmappedRequired);
       alert(
         'Cannot generate SQL — ' + unmappedRequired.length +
         ' NOT NULL target column' + (unmappedRequired.length===1?'':'s') +

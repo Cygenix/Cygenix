@@ -1530,6 +1530,12 @@
           break;
         }
 
+        // Keep the header in step with the loop. It was set to "Fetching
+        // schema…" once before the loop and never updated, so it still said
+        // that while check 4 of 8 was running.
+        const _def = (CHECKS || []).find(c => c.id === checkId);
+        setProgressMeta('Running check ' + (i + 1) + ' of ' + enabledIds.length
+          + (_def && _def.name ? ' — ' + _def.name : ''));
         updateProgressRow(checkId, 'running', 'running…');
         try {
           const r = await runOneCheck(checkId, schema);
