@@ -111,7 +111,7 @@
 
   // ── State ─────────────────────────────────────────────────────────────────
   let cwd = '', searchQ = '', mapHandle = null, mapMeta = { lastSync: 0 }, syncing = false, built = false;
-  let $bg, $modal, $crumbs, $body, $footL, $storage, $map, $syncBtn, $fileInput, $folderInput, $maxBtn, $toast, toastT;
+  let $bg, $modal, $crumbs, $body, $footL, $storage, $cloud, $map, $syncBtn, $cloudBtn, $fileInput, $folderInput, $maxBtn, $toast, toastT;
   // Multi-select + drag-to-move state
   let selected = new Set();   // node ids currently ticked
   let dragIds = null;         // node ids being dragged (for move-into-folder)
@@ -176,6 +176,9 @@
       .cygdm-empty{padding:2.2rem 1rem;text-align:center;color:var(--text3,#7a8090);font-size:12.5px;line-height:1.7}
 
       .cygdm-foot{border-top:1px solid var(--border,#eceef2);padding:6px .9rem;font-size:11px;color:var(--text3,#7a8090);display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap}
+      .cygdm-cloud{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text3,#7a8090);margin-left:auto;margin-right:.75rem}
+      .cygdm-cloud.err{color:var(--red,#c0392b)}
+      .cygdm-cloud.busy{opacity:.75}
       .cygdm-storage{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--text3,#7a8090);cursor:default}
       .cygdm-storage svg{flex-shrink:0}
       .cygdm-storage b{color:var(--text2,#2a2f38);font-weight:600}
@@ -231,12 +234,14 @@
           <button class="cygdm-btn" id="cygdm-upfiles" title="Upload files here">⬆ Files</button>
           <button class="cygdm-btn" id="cygdm-upfolder" title="Upload a whole folder (keeps its structure)">⬆ Folder</button>
           <button class="cygdm-btn" id="cygdm-sync" title="Map &amp; sync the Drive with a folder on your computer">⇄ Sync folder</button>
+          <button class="cygdm-btn" id="cygdm-cloudsync" title="Sync this Drive with your account so it's available on any computer">☁ Sync to cloud</button>
           <input type="search" class="cygdm-search" id="cygdm-search" placeholder="Search drive…" spellcheck="false">
         </div>
         <div class="cygdm-mapb" id="cygdm-map" style="display:none"></div>
         <div class="cygdm-body" id="cygdm-body"></div>
         <div class="cygdm-foot">
           <span id="cygdm-footl"></span>
+          <span class="cygdm-cloud" id="cygdm-cloud" title="Your Drive is stored with your account, so it's available on any computer you sign in to."></span>
           <span class="cygdm-storage" id="cygdm-storage" title="Storage for this site in your browser (includes the Drive)"></span>
         </div>
         <input type="file" id="cygdm-fileinput" multiple style="display:none">
@@ -250,8 +255,10 @@
     $body        = $bg.querySelector('#cygdm-body');
     $footL       = $bg.querySelector('#cygdm-footl');
     $storage     = $bg.querySelector('#cygdm-storage');
+    $cloud       = $bg.querySelector('#cygdm-cloud');
     $map         = $bg.querySelector('#cygdm-map');
     $syncBtn     = $bg.querySelector('#cygdm-sync');
+    $cloudBtn    = $bg.querySelector('#cygdm-cloudsync');
     $fileInput   = $bg.querySelector('#cygdm-fileinput');
     $folderInput = $bg.querySelector('#cygdm-folderinput');
     $maxBtn      = $bg.querySelector('#cygdm-max');
@@ -272,6 +279,11 @@
     $bg.querySelector('#cygdm-upfiles').addEventListener('click', () => $fileInput.click());
     $bg.querySelector('#cygdm-upfolder').addEventListener('click', () => $folderInput.click());
     $syncBtn.addEventListener('click', syncButton);
+    if ($cloudBtn) $cloudBtn.addEventListener('click', async () => {
+      if (!window.CygenixDriveSync) { toast('Cloud sync is unavailable on this page'); return; }
+      await window.CygenixDriveSync.sync({ force: true });
+      renderDrive(); renderStorage();
+    });
     $bg.querySelector('#cygdm-search').addEventListener('input', e => { searchQ = (e.target.value || '').trim().toLowerCase(); renderDrive(); });
     $fileInput.addEventListener('change', async e => { if (e.target.files && e.target.files.length) await driveUploadFiles(e.target.files); e.target.value = ''; });
     $folderInput.addEventListener('change', async e => { if (e.target.files && e.target.files.length) await driveUploadFiles(e.target.files); e.target.value = ''; });
@@ -506,6 +518,30 @@
     try { const b = (await dall()).reduce((s, n) => s + (n.kind === 'file' ? (n.size || 0) : 0), 0); paintStorage($storage, usage, quota, b); } catch (_) {}
   }
 
+  // ── Cloud sync status (cygenix-drive-sync.js) ─────────────────────────────
+  // Distinct from the local-folder mapping below: this is the per-account
+  // copy that makes the Drive appear on any machine the user signs in to.
+  function renderCloud() {
+    if (!$cloud) return;
+    if (!window.CygenixDriveSync) {
+      $cloud.textContent = ''; $cloud.className = 'cygdm-cloud'; return;
+    }
+    const s = window.CygenixDriveSync.status();
+    let label, cls = 'cygdm-cloud';
+    if (s.state === 'syncing')          { label = '☁ Syncing…';                cls += ' busy'; }
+    else if (s.state === 'error')       { label = '☁ ' + (s.message || 'Sync failed'); cls += ' err'; }
+    else if (s.state === 'signed-out')  { label = '☁ Sign in to sync'; }
+    else                                { label = '☁ ' + (s.message || 'Synced to your account'); }
+    $cloud.textContent = label;
+    $cloud.className = cls;
+  }
+
+  // Re-render on sync state changes; refresh the file list when files moved.
+  window.addEventListener('cygenix:drive-sync', () => { renderCloud(); });
+  window.addEventListener('cygenix:drive-changed', () => {
+    if ($bg && $bg.classList.contains('open')) { renderDrive(); renderStorage(); }
+  });
+
   // ── Map & sync with a local folder (File System Access API) ───────────────
   function renderMapBanner() {
     if (!$map) return;
@@ -601,9 +637,12 @@
     build();
     searchQ = ''; clearSelection(); const s = $bg.querySelector('#cygdm-search'); if (s) s.value = '';
     $bg.classList.remove('min'); // always come back into view
-    renderDrive(); renderStorage(); renderMapBanner();
+    renderDrive(); renderStorage(); renderMapBanner(); renderCloud();
     $bg.classList.add('open');
     restoreMap();
+    // Opening the Drive is the moment the user expects to see what's on their
+    // account — pull anything added from another machine.
+    if (window.CygenixDriveSync) window.CygenixDriveSync.sync();
   }
   function close() { if ($bg) { $bg.classList.remove('open', 'min', 'max'); if ($maxBtn) { $maxBtn.textContent = '⤢'; $maxBtn.title = 'Maximize'; } } }
 
