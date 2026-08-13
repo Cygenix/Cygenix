@@ -65,6 +65,11 @@ async function verifyAuthHeader(event) {
       audience: CLIENT_ID,
       issuer:   VALID_ISSUERS,
       algorithms: ['RS256'],
+      // Tolerate small clock differences between the user's machine and the
+      // function host. Without this, a workstation a minute fast rejects
+      // freshly issued tokens with "jwt expired" and the user cannot use the
+      // app at all. 60s is the usual allowance and costs nothing securitywise.
+      clockTolerance: 60,
     }, (e, payload) => {
       if (e) return reject(e);
       resolve(payload);

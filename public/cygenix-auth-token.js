@@ -199,17 +199,51 @@
     return app;
   }
 
+  // True when a JWT is missing, undecodable, or at/past its exp claim.
+  // The 30s margin keeps us from shipping a token that expires in flight.
+  function jwtExpired(tok) {
+    const claims = decodeJwtPayload(tok);
+    if (!claims || !claims.exp) return true;
+    return (claims.exp * 1000) <= (Date.now() + 30000);
+  }
+
   let _renewing = null;   // de-dupes concurrent renewals across call sites
-  function renewIdToken() {
-    if (_renewing) return _renewing;
+  // force = true skips the cheap cached attempt and goes straight to the token
+  // endpoint. Used when the SERVER has rejected a token the client believed
+  // was fine, so the client can recover without the user signing in again.
+  function renewIdToken(force) {
+    if (_renewing && !force) return _renewing;
     _renewing = (async () => {
       try {
         const app = await getMsalApp();
         if (!app) { dbg('renew: MSAL unavailable'); return ''; }
         const accounts = app.getAllAccounts() || [];
         if (!accounts.length) { dbg('renew: no MSAL account cached'); return ''; }
-        const res = await app.acquireTokenSilent({ scopes: MSAL_SCOPES, account: accounts[0] });
-        const tok = (res && res.idToken) || '';
+
+        // acquireTokenSilent serves a CACHED result while the ACCESS token is
+        // still valid — and that cached result carries the old ID token, which
+        // may already be expired. Renewing that way returns the same dead
+        // token and the server answers "jwt expired". So: try the cheap call
+        // first, then force a real round trip to the token endpoint if what
+        // came back is not actually usable.
+        let res = force
+          ? await app.acquireTokenSilent({ scopes: MSAL_SCOPES, account: accounts[0], forceRefresh: true })
+          : await app.acquireTokenSilent({ scopes: MSAL_SCOPES, account: accounts[0] });
+        let tok = (res && res.idToken) || '';
+        if (jwtExpired(tok)) {
+          dbg('renew: cached ID token is stale — forcing a refresh');
+          res = await app.acquireTokenSilent({ scopes: MSAL_SCOPES, account: accounts[0], forceRefresh: true });
+          tok = (res && res.idToken) || '';
+        }
+        // Never hand back a token we can already see is expired: doing so just
+        // moves the failure to the server and hides the real cause.
+        if (jwtExpired(tok)) {
+          dbg('renew: still expired after forceRefresh — interactive sign-in required');
+          try {
+            window.dispatchEvent(new CustomEvent('cygenix:auth-expired', { detail: { reason: 'renewal-returned-expired-token' } }));
+          } catch {}
+          return '';
+        }
         if (tok) {
           dbg('renew: acquired a fresh ID token');
           // Keep the legacy keys other modules read in step with the renewal.
@@ -247,6 +281,11 @@
     if (cached) return cached;
     return await renewIdToken();
   };
+
+  // Force a fresh token from the token endpoint, ignoring every cache. Call
+  // this after a server 401 so a rejected token can be replaced without
+  // making the user sign in again.
+  window.renewCygenixIdToken = function renewCygenixIdToken() { return renewIdToken(true); };
 
   // Convenience wrapper for fetch — adds Authorization header automatically.
   // Use this anywhere you want to call a Cygenix API endpoint that requires

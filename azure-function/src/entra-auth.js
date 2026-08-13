@@ -60,6 +60,9 @@ function verifyJwt(token) {
       audience: CLIENT_ID,
       issuer:   VALID_ISSUERS,
       algorithms: ['RS256'],
+      // Tolerate small clock differences between the user's machine and the
+      // function host — see netlify/functions/lib/entra-auth.js.
+      clockTolerance: 60,
     }, (e, payload) => e ? reject(e) : resolve(payload));
   });
 }
