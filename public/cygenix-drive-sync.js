@@ -360,17 +360,24 @@
     } catch { return false; }
   }
 
+  // The periodic tick must run a FULL sync, not just react to local edits.
+  // Gating it on localChangedSinceBase() meant a machine that matched its own
+  // baseline stopped talking to the server entirely — so it never learned
+  // about files another machine had uploaded, and the Drive only refreshed on
+  // a page reload or reopening the modal. Pulling costs one small manifest
+  // request, so poll unconditionally; localChangedSinceBase() is kept to sync
+  // promptly after a local edit rather than waiting out the interval.
   async function maybeSync() {
     if (document.hidden || !idToken()) return;
-    if (await localChangedSinceBase()) sync();
+    if (await localChangedSinceBase()) sync({ force: true });   // local edit — go now
+    else sync();                                               // otherwise poll for remote changes
   }
 
   // First sync shortly after load — after auth has settled, and late enough
   // not to compete with first paint.
   setTimeout(() => { if (idToken()) sync({ force: true }); }, 2500);
 
-  // Pick up other machines' changes when the user returns to the tab, and
-  // push anything edited here.
+  // Poll for other machines' changes, and push anything edited here.
   setInterval(maybeSync, POLL_MS);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) maybeSync(); });
 
@@ -406,8 +413,10 @@
       try {
         const d = await api('diag');
         out.endpoint = 'reachable';
+        out.serverStore = d.store;          // compare across machines: must match
         out.serverBlobStore = d.blobStore;
         out.serverNodeCount = d.nodeCount;
+        out.serverSample = d.sample;        // what actually reached the cloud
         if (d.blobError) out.serverBlobError = d.blobError;
       } catch (e) {
         out.endpoint = 'FAILED: ' + e.message;

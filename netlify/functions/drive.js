@@ -143,12 +143,22 @@ exports.handler = async function (event) {
     // names, no store credentials — just whether storage works and how many
     // nodes the account holds.
     if (action === 'diag') {
-      const out = { authenticated: true, blobStore: 'unknown', nodeCount: null, maxContentBytes: MAX_CONTENT_BYTES };
+      const out = {
+        authenticated: true,
+        // Which store this token maps to. Derived from the caller's own user
+        // id, so it is not sensitive — and it is the fastest way to confirm
+        // that two machines are actually talking to the SAME Drive rather
+        // than two stores under different accounts.
+        store: safeStoreName(userId),
+        blobStore: 'unknown', nodeCount: null, maxContentBytes: MAX_CONTENT_BYTES,
+      };
       try {
         const m = await readManifest(store);
         out.blobStore = 'ok';
         out.nodeCount = Object.keys(m.nodes || {}).length;
         out.manifestExists = !m.empty;
+        // Names make it obvious at a glance whose folders reached the cloud.
+        out.sample = Object.values(m.nodes || {}).slice(0, 10).map(n => n.kind + ':' + n.name);
       } catch (e) {
         out.blobStore = 'error';
         out.blobError = e.message;
@@ -169,8 +179,9 @@ exports.handler = async function (event) {
         manifest.nodes[n.id] = n;
         count++;
       }
-      manifest.updatedAt = new Date().toISOString();
-      await store.setJSON('manifest', manifest);
+      // Write a clean object — never persist readManifest's `empty` sentinel,
+      // which would make a populated manifest keep reporting itself as absent.
+      await store.setJSON('manifest', { nodes: manifest.nodes, updatedAt: new Date().toISOString() });
       return ok({ ok: true, count });
     }
 
@@ -216,8 +227,7 @@ exports.handler = async function (event) {
         // entry) — never fail the whole request over one.
         try { await store.delete('c/' + id); } catch { /* ignore */ }
       }
-      manifest.updatedAt = new Date().toISOString();
-      await store.setJSON('manifest', manifest);
+      await store.setJSON('manifest', { nodes: manifest.nodes, updatedAt: new Date().toISOString() });
       return ok({ ok: true, deleted });
     }
 
