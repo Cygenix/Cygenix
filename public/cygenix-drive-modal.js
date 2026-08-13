@@ -120,6 +120,45 @@
 
   function toast(msg) { if (!$toast) return; $toast.textContent = msg; $toast.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => $toast.classList.remove('show'), 1800); }
 
+  // ── Dependencies, loaded on demand ────────────────────────────────────────
+  // The sidebar injects THIS module into any page when the Drive button is
+  // clicked, so the Drive can appear on pages that have no Drive <script>
+  // tags at all. Its dependencies therefore have to travel with it rather
+  // than being declared per page — otherwise cloud sync is simply absent
+  // wherever the user actually opens the Drive from.
+  //   cygenix-auth-token.js  → supplies getCygenixIdToken() for the API call
+  //   cygenix-drive-sync.js  → the sync engine itself
+  // Both self-guard against double-loading, so pages carrying static tags are
+  // unaffected.
+  function loadScriptOnce(id, src) {
+    return new Promise((resolve) => {
+      let s = document.getElementById(id);
+      if (s) {
+        if (s.dataset.loaded === '1') resolve();
+        else s.addEventListener('load', () => resolve(), { once: true });
+        s.addEventListener('error', () => resolve(), { once: true });
+        return;
+      }
+      s = document.createElement('script');
+      s.id = id; s.src = src;
+      s.addEventListener('load',  () => { s.dataset.loaded = '1'; resolve(); }, { once: true });
+      s.addEventListener('error', () => resolve(), { once: true });   // never block the UI
+      document.head.appendChild(s);
+    });
+  }
+
+  let _syncReady = null;
+  function ensureDriveSync() {
+    if (window.CygenixDriveSync) return Promise.resolve(true);
+    if (_syncReady) return _syncReady;
+    _syncReady = (typeof window.getCygenixIdToken === 'function'
+        ? Promise.resolve()
+        : loadScriptOnce('cygenix-auth-token-js', '/cygenix-auth-token.js'))
+      .then(() => loadScriptOnce('cygenix-drive-sync-js', '/cygenix-drive-sync.js'))
+      .then(() => !!window.CygenixDriveSync);
+    return _syncReady;
+  }
+
   // ── Styles ────────────────────────────────────────────────────────────────
   function injectStyles() {
     if (document.getElementById('cygdm-styles')) return;
@@ -280,7 +319,8 @@
     $bg.querySelector('#cygdm-upfolder').addEventListener('click', () => $folderInput.click());
     $syncBtn.addEventListener('click', syncButton);
     if ($cloudBtn) $cloudBtn.addEventListener('click', async () => {
-      if (!window.CygenixDriveSync) { toast('Cloud sync is unavailable on this page'); return; }
+      const ready = await ensureDriveSync();
+      if (!ready) { alert('Could not load the Drive sync engine (/cygenix-drive-sync.js). Check the browser console for a load error.'); return; }
       const r = await window.CygenixDriveSync.sync({ force: true });
       renderDrive(); renderStorage();
       // An explicit click deserves an explicit answer — a silent no-op here
@@ -652,8 +692,12 @@
     $bg.classList.add('open');
     restoreMap();
     // Opening the Drive is the moment the user expects to see what's on their
-    // account — pull anything added from another machine.
-    if (window.CygenixDriveSync) window.CygenixDriveSync.sync();
+    // account — load the sync engine if this page didn't carry it, then pull
+    // anything added from another machine.
+    ensureDriveSync().then(ok => {
+      renderCloud();
+      if (ok) window.CygenixDriveSync.sync();
+    });
   }
   function close() { if ($bg) { $bg.classList.remove('open', 'min', 'max'); if ($maxBtn) { $maxBtn.textContent = '⤢'; $maxBtn.title = 'Maximize'; } } }
 
