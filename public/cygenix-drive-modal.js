@@ -281,8 +281,19 @@
     $syncBtn.addEventListener('click', syncButton);
     if ($cloudBtn) $cloudBtn.addEventListener('click', async () => {
       if (!window.CygenixDriveSync) { toast('Cloud sync is unavailable on this page'); return; }
-      await window.CygenixDriveSync.sync({ force: true });
+      const r = await window.CygenixDriveSync.sync({ force: true });
       renderDrive(); renderStorage();
+      // An explicit click deserves an explicit answer — a silent no-op here
+      // is what made a failing sync look like a working one.
+      if (r && r.error)                  alert('Drive cloud sync failed:\n\n' + r.error + '\n\nRun CygenixDriveSync.diagnose() in the browser console for details.');
+      else if (r && r.skipped === 'not-signed-in') alert('Sign in to sync your Drive to your account.');
+      else if (r) {
+        let m = `Drive synced.\n\n${r.uploaded||0} uploaded, ${r.downloaded||0} downloaded`;
+        if (r.deletedLocal || r.deletedRemote) m += `\n${r.deletedLocal||0} removed here, ${r.deletedRemote||0} removed from the cloud`;
+        if (r.skippedLarge && r.skippedLarge.length) m += `\n\nToo large to sync (over the cloud limit):\n· ` + r.skippedLarge.join('\n· ');
+        toast('Drive synced — ' + (r.uploaded||0) + ' up, ' + (r.downloaded||0) + ' down');
+        if (r.skippedLarge && r.skippedLarge.length) alert(m);
+      }
     });
     $bg.querySelector('#cygdm-search').addEventListener('input', e => { searchQ = (e.target.value || '').trim().toLowerCase(); renderDrive(); });
     $fileInput.addEventListener('change', async e => { if (e.target.files && e.target.files.length) await driveUploadFiles(e.target.files); e.target.value = ''; });

@@ -47,6 +47,33 @@ function safeStoreName(userId) {
   return 'drive-' + String(userId).replace(/[^a-zA-Z0-9]/g, '').slice(0, 48);
 }
 
+// Open the user's blob store.
+//
+// Inside a Netlify Function, Blobs is auto-configured from the request
+// context — getStore(name) just works with no credentials. Only fall back to
+// explicit siteID/token (needed outside that context) when the ambient call
+// fails. Requiring the env vars up front, as projects.js does, turns a
+// missing NETLIFY_API_TOKEN into a hard 500 for a feature that never needed
+// it — which is exactly how the Drive sync silently failed.
+function openStore(userId) {
+  const name = safeStoreName(userId);
+  try {
+    return getStore(name);
+  } catch (ambientErr) {
+    const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+    const token  = process.env.NETLIFY_API_TOKEN;
+    if (!siteID || !token) {
+      const e = new Error(
+        'Blob storage unavailable: ambient Netlify Blobs failed (' + ambientErr.message +
+        ') and no NETLIFY_SITE_ID / NETLIFY_API_TOKEN fallback is configured'
+      );
+      e.statusCode = 503;
+      throw e;
+    }
+    return getStore({ name, siteID, token });
+  }
+}
+
 // Only these fields are persisted — never trust a client to set anything else
 // into the manifest.
 function sanitizeNode(n) {
@@ -84,11 +111,6 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST')    return fail('Method not allowed', 405);
 
-  const siteID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
-  const token  = process.env.NETLIFY_API_TOKEN;
-  if (!siteID) return fail('NETLIFY_SITE_ID not set');
-  if (!token)  return fail('NETLIFY_API_TOKEN not set');
-
   let userId;
   try {
     const authed = await verifyAuthHeader(event);
@@ -104,9 +126,9 @@ exports.handler = async function (event) {
 
   let store;
   try {
-    store = getStore({ name: safeStoreName(userId), siteID, token });
+    store = openStore(userId);
   } catch (e) {
-    return fail('Storage init failed: ' + e.message);
+    return fail('Storage init failed: ' + e.message, e.statusCode || 500);
   }
 
   const action = String(body.action || '');
@@ -114,6 +136,24 @@ exports.handler = async function (event) {
   try {
     if (action === 'manifest') {
       return ok({ manifest: await readManifest(store), maxContentBytes: MAX_CONTENT_BYTES });
+    }
+
+    // Read-only self-check for diagnosing sync problems from the browser
+    // console. Deliberately reveals nothing sensitive: no tokens, no file
+    // names, no store credentials — just whether storage works and how many
+    // nodes the account holds.
+    if (action === 'diag') {
+      const out = { authenticated: true, blobStore: 'unknown', nodeCount: null, maxContentBytes: MAX_CONTENT_BYTES };
+      try {
+        const m = await readManifest(store);
+        out.blobStore = 'ok';
+        out.nodeCount = Object.keys(m.nodes || {}).length;
+        out.manifestExists = !m.empty;
+      } catch (e) {
+        out.blobStore = 'error';
+        out.blobError = e.message;
+      }
+      return ok(out);
     }
 
     if (action === 'put-meta') {
@@ -142,7 +182,11 @@ exports.handler = async function (event) {
       if (buf.length > MAX_CONTENT_BYTES) {
         return fail(`File exceeds the ${Math.round(MAX_CONTENT_BYTES / 1048576)} MB cloud-sync limit`, 413);
       }
-      await store.set('c/' + id, buf, {
+      // Pass a plain ArrayBuffer rather than the Node Buffer — the Blobs SDK
+      // documents string/ArrayBuffer/Blob/stream, and a Buffer is only
+      // incidentally a Uint8Array.
+      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+      await store.set('c/' + id, ab, {
         metadata: { mime: String(body.mime || '').slice(0, 120) },
       });
       return ok({ ok: true, size: buf.length });
