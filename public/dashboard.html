@@ -2588,7 +2588,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           The Microsoft MSDASQL ↔ psqlODBC path silently fails on many SQL Server installs (Msg 7303/7399 with no error detail) even when the driver and network work. SQL Server → SQL Server linked servers work fine. For pulling Postgres data into your conversion database, use
           <a href="#" onclick="showView('connections');switchConnTab('import');return false" style="color:var(--accent);text-decoration:none">Data import</a>
           or
-          <a href="#" onclick="window.location.href='/project-builder.html';return false" style="color:var(--accent);text-decoration:none">Project Builder</a>
+          <a href="#" onclick="window.location.href='/project-builder.html';return false" style="color:var(--accent);text-decoration:none">Execute</a>
           — both reach Postgres directly via Cygenix's proxy, no MSDASQL.
         </div>
 
@@ -3263,7 +3263,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       </div>
 
       <div style="display:flex;gap:0.75rem;margin-bottom:1rem;align-items:center;flex-wrap:wrap">
-        <input type="text" id="search-input" placeholder="Search by name, table, column, SQL, filename…"
+        <input type="text" id="search-input" placeholder="Search your jobs, maps, projects, artifacts and reports…"
           oninput="runGlobalSearch()" style="flex:1;min-width:260px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.7rem 0.9rem;font-size:13px;color:var(--text);outline:none">
         <select id="search-scope" onchange="runGlobalSearch()" style="background:var(--bg2);border:0.5px solid var(--border2);color:var(--text);padding:0.55rem 0.75rem;border-radius:var(--r);font-size:12px">
           <option value="all">All sources</option>
@@ -10474,7 +10474,20 @@ function runGlobalSearch() {
   }
 
   if (!rows.length) {
-    res.innerHTML = '<div class="empty-state" style="padding:2rem"><h3>No matches</h3><p>Nothing matched "' + escapeHtml(qRaw) + '". Try a shorter or different term.</p></div>';
+    // Say what IS searched. The old placeholder promised "name, table,
+    // column, SQL, filename", which reads as though it searches the connected
+    // database — it doesn't. Table and column names are only found where they
+    // appear in a saved job or map, so searching for a table that no job
+    // references (e.g. one just created by the Data Generator) correctly
+    // returns nothing, and the user had no way to know why.
+    res.innerHTML = '<div class="empty-state" style="padding:2rem">' +
+      '<h3>No matches</h3>' +
+      '<p>Nothing matched "' + escapeHtml(qRaw) + '".</p>' +
+      '<p style="color:var(--text3);font-size:12px;margin-top:0.75rem;line-height:1.7">' +
+      'Search looks through your saved work — job and map names, their source/target tables, mapped column names, generated SQL, project names, artifact filenames and saved reports.<br>' +
+      'It does <b>not</b> query the connected databases, so a table that no job or map refers to yet won\'t appear here. ' +
+      'To browse live schema, use <b>Object Mapping</b> or the <b>SQL Editor</b>.' +
+      '</p></div>';
     return;
   }
 
@@ -10523,8 +10536,27 @@ function _matchField(v, q) {
 // Highlight each case-insensitive occurrence of the query inside an escaped
 // string. We escape first, then splice in <mark> so user-controlled source
 // content can't inject HTML through the search results.
+// Strip credentials out of anything the search is about to display.
+// Saved jobs and reports store full connection strings and Azure Function
+// URLs, so search results were printing the function key in full — the same
+// key the Connections page deliberately masks. Every displayed value goes
+// through _highlight, so masking here covers names, subtitles and match
+// snippets in one place.
+function _maskSecrets(text) {
+  return String(text == null ? '' : text)
+    // Azure Function key: ?code=… / &code=…
+    .replace(/([?&]code=)[^&\s"']+/gi, '$1***')
+    // Connection-string secrets: Password=… / Pwd=… / AccountKey=… / SAS sig=…
+    .replace(/\b(password|pwd|accountkey)\s*=\s*[^;&\s"']+/gi, '$1=***')
+    .replace(/([?&]sig=)[^&\s"']+/gi, '$1***')
+    // Credentials embedded in a URL: scheme://user:secret@host
+    .replace(/(:\/\/[^:/\s]+):[^@/\s]+@/g, '$1:***@')
+    // Bearer tokens pasted into notes or SQL comments
+    .replace(/\b(bearer\s+)[A-Za-z0-9._~+/-]{12,}=*/gi, '$1***');
+}
+
 function _highlight(text, q) {
-  const esc = escapeHtml(String(text == null ? '' : text));
+  const esc = escapeHtml(_maskSecrets(text));
   if (!q) return esc;
   const escQ = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return esc.replace(new RegExp('(' + escQ + ')', 'gi'),
