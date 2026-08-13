@@ -119,7 +119,7 @@
     return '';
   }
 
-  async function api(action, payload) {
+  async function api(action, payload, _retried) {
     // Async getter: renews silently when the cached token has expired, which
     // is the normal state after an hour in the same session.
     const token = (typeof window.getCygenixIdTokenAsync === 'function')
@@ -133,6 +133,15 @@
       signal: AbortSignal.timeout(60000),
     });
     const data = await r.json().catch(() => ({ error: 'Non-JSON response (' + r.status + ')' }));
+
+    // The server rejected the token even though the client thought it was
+    // usable (stale MSAL cache, clock skew). Force a genuine refresh and try
+    // once more before surfacing an error the user can't act on.
+    if (r.status === 401 && !_retried && typeof window.renewCygenixIdToken === 'function') {
+      console.warn('[drive-sync] server rejected the token (' + (data.error || '401') + ') — forcing a refresh and retrying');
+      const fresh = await window.renewCygenixIdToken();
+      if (fresh) return api(action, payload, true);
+    }
     if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
     return data;
   }
