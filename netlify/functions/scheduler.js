@@ -539,7 +539,14 @@ async function runNow(userId, body, containers, event) {
     const to  = setTimeout(() => ctl.abort(), 8_000);
     const res = await fetch(bgUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+        // Server-to-server auth for the Azure runner. Set DISPATCH_KEY to
+        // the same value in Netlify env and the Function App settings; the
+        // runner enforces it once REQUIRE_TOKEN_AUTH is on over there.
+        ...(process.env.DISPATCH_KEY ? { 'x-dispatch-key': process.env.DISPATCH_KEY } : {}),
+      },
       body: JSON.stringify(dispatchBody),
       signal: ctl.signal,
     });

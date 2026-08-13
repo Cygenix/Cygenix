@@ -212,7 +212,12 @@ async function fireSchedule(containers, schedule, now) {
     const to  = setTimeout(() => ctl.abort(), 8_000);
     const res = await fetch(bgUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': schedule.userId },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': schedule.userId,
+        // Server-to-server auth for the Azure runner (see scheduler.js).
+        ...(process.env.DISPATCH_KEY ? { 'x-dispatch-key': process.env.DISPATCH_KEY } : {}),
+      },
       body: JSON.stringify(dispatchBody),
       signal: ctl.signal,
     });

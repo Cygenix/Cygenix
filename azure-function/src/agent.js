@@ -34,6 +34,7 @@
 
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
+const { enforceAuth } = require('./entra-auth');
 
 // ── Cosmos client (lazy singleton) ──────────────────────────────────────────
 let _cosmos = null;
@@ -813,7 +814,7 @@ async function tool_sample_table({ side, table, columns, n }, conns, runId) {
   // requires permission and isn't supported on views.
   const rows = await runQuery(pool, `
     SELECT TOP ${numRows} ${colList}
-    FROM [${sch}].[${tbl}]
+    FROM [${sch.replace(/\]/g, ']]')}].[${tbl.replace(/\]/g, ']]')}]
   `);
 
   // Truncate any cell that's huge (binary, big text)
@@ -1766,6 +1767,9 @@ app.http('agent_migrate', {
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
 
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
+
     const userId = getUserId(req);
     if (!userId) return err(401, 'x-user-id header is required');
 
@@ -1958,6 +1962,9 @@ app.http('agent_run_read', {
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
 
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
+
     const userId = getUserId(req);
     if (!userId) return err(401, 'x-user-id header is required');
 
@@ -1984,6 +1991,9 @@ app.http('agent_run_respond', {
   route: 'agent/run/{runId}/respond',
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
 
     const userId = getUserId(req);
     if (!userId) return err(401, 'x-user-id header is required');
@@ -2161,6 +2171,9 @@ app.http('agent_run_cancel', {
   route: 'agent/run/{runId}/cancel',
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
 
     const userId = getUserId(req);
     if (!userId) return err(401, 'x-user-id header is required');

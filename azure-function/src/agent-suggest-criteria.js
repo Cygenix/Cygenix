@@ -109,6 +109,18 @@ function compressTablesForPrompt(tables) {
   }));
 }
 
+// Quote a possibly schema-qualified identifier: each dot-separated part is
+// wrapped in brackets with internal ] doubled — 'dbo.Users' → '[dbo].[Users]'.
+// Idempotent: parts already bracket-wrapped (e.g. '[dbo].[Users]') are
+// unwrapped first, so re-quoting never double-brackets.
+function quoteIdent(name) {
+  return String(name || '').split('.').map(p => {
+    let s = String(p);
+    if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1).replace(/\]\]/g, ']');
+    return '[' + s.replace(/\]/g, ']]') + ']';
+  }).join('.');
+}
+
 // ── Connection helpers (mirror agent-source-schema) ─────────────────────
 function parseMssqlUrl(connString) {
   let u;
@@ -137,14 +149,14 @@ async function connectSource(srcConnStr, srcFnUrl, ctx) {
   if (srcConnStr) {
     const cfg = parseMssqlUrl(srcConnStr);
     ctx.log(`[suggest-criteria] sampling via direct: ${cfg.database}@${cfg.server}`);
-    return sql.connect(cfg);
+    return new sql.ConnectionPool(cfg).connect();
   }
   if (srcFnUrl) {
     const { DefaultAzureCredential } = require('@azure/identity');
     ctx.log('[suggest-criteria] sampling via Managed Identity');
     const credential = new DefaultAzureCredential();
     const tokenResp  = await credential.getToken('https://database.windows.net/.default');
-    return sql.connect({
+    return new sql.ConnectionPool({
       server:   process.env.SQL_SERVER,
       database: process.env.SQL_DATABASE,
       options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
@@ -152,7 +164,7 @@ async function connectSource(srcConnStr, srcFnUrl, ctx) {
         type: 'azure-active-directory-access-token',
         options: { token: tokenResp.token }
       }
-    });
+    }).connect();
   }
   return null;
 }
@@ -189,7 +201,11 @@ async function sampleColumns(pool, picks, ctx) {
     await Promise.all(slice.map(async (p) => {
       try {
         // SELECT TOP 5 distinct values, ignoring NULL/empty.
-        const tableName = `[dbo].[${p.table.replace(/]/g, ']]')}]`;
+        // Bare names (from sys.tables t.name) default to dbo, matching the
+        // previous hard-coded schema; dotted names are treated as qualified.
+        const tableName = String(p.table).includes('.')
+          ? quoteIdent(p.table)
+          : quoteIdent(`dbo.${p.table}`);
         const colName = `[${p.column.replace(/]/g, ']]')}]`;
         const r = await pool.request().query(`
           SELECT TOP 5 ${colName} AS v

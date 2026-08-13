@@ -26,11 +26,12 @@
 //     unconfirmed proposals in its own run state, not here.
 
 const { app } = require('@azure/functions');
+const { enforceAuth } = require('./entra-auth');
 
 // ── CORS (matches existing modules in this project) ──────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type':                 'application/json'
 };
@@ -424,6 +425,9 @@ app.http('project-memory', {
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 204, headers: CORS, body: '' };
 
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
+
     try {
       if (req.method === 'GET')    return await handleGet(req, ctx);
       if (req.method === 'POST')   return await handlePost(req, ctx);
@@ -431,10 +435,10 @@ app.http('project-memory', {
       return err(405, `method ${req.method} not allowed`);
     } catch (e) {
       // Catch-all so an unhandled throw still returns a structured error.
-      // In-band debugging: include stack since App Insights / Live Log /
-      // Kudu are not available on this Flex Consumption plan.
+      // Stack goes to the server log only — returning it to clients leaks
+      // internal paths and code structure.
       ctx.log(`[project-memory] uncaught: ${e.message}\n${e.stack || ''}`);
-      return err(500, e.message, (e.stack || '').split('\n').slice(0, 6).join('\n'));
+      return err(500, e.message);
     }
   }
 });

@@ -883,7 +883,7 @@ async function connectTargetDirect(connString, ctx) {
   const sql = require('mssql');
   const cfg = parseMssqlUrl(connString);
   ctx.log(`[planner] target connect: ${cfg.database}@${cfg.server}`);
-  const pool = await sql.connect(cfg);
+  const pool = await new sql.ConnectionPool(cfg).connect();
   return { pool, label: describeTarget(cfg) };
 }
 

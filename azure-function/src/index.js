@@ -61,10 +61,13 @@ function getCosmosContainer(containerName) {
 // ── Shared CORS headers ───────────────────────────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type': 'application/json'
 };
+
+// ── Token-based auth (see entra-auth.js for the rollout plan) ────────────────
+const { enforceAuth } = require('./entra-auth');
 
 const ok  = (body)       => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
 const err = (code, msg)  => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
@@ -124,12 +127,15 @@ app.http('db', {
   handler: async (req, ctx) => {
     const headers = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Content-Type': 'application/json'
     };
 
     if (req.method === 'OPTIONS') return { status: 200, headers, body: '' };
+
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
 
     try {
       const { DefaultAzureCredential } = require('@azure/identity');
@@ -457,7 +463,15 @@ app.http('db', {
         }
         case 'rowcounts': {
           const counts={};
-          for (const t of body.tables) { try { const safe=t.replace(/[^a-zA-Z0-9_.\[\]]/g,''); const r=await pool.request().query(`SELECT COUNT(*) AS cnt FROM ${safe}`); counts[t]=r.recordset[0].cnt; } catch(e){counts[t]={error:e.message};} }
+          // Quote a possibly schema-qualified identifier: strip one level of
+          // existing brackets per dot-separated part, then re-wrap with
+          // internal ] doubled — only a well-formed identifier reaches SQL.
+          const quoteIdent = (name) => String(name || '').split('.').map(p => {
+            let s = String(p);
+            if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1).replace(/\]\]/g, ']');
+            return '[' + s.replace(/\]/g, ']]') + ']';
+          }).join('.');
+          for (const t of body.tables) { try { const safe=quoteIdent(t); const r=await pool.request().query(`SELECT COUNT(*) AS cnt FROM ${safe}`); counts[t]=r.recordset[0].cnt; } catch(e){counts[t]={error:e.message};} }
           result = { success:true, counts };
           break;
         }
@@ -515,21 +529,18 @@ app.http('db', {
       // Defensive: even the catch needs to be bullet-proof. JSON.stringify
       // shouldn't fail on this shape, but if it does we fall back to a
       // hand-crafted JSON literal so the client never sees a non-JSON 500.
+      // The stack and env-presence details stay in the server log (above) —
+      // returning them to clients handed out internal paths and config
+      // reconnaissance on every 500.
       let body;
       try {
         body = JSON.stringify({
           error:     errMsg,
-          stack:     errStack,
           // SQL-driver fields, if this happens to be a SQL error that
           // escaped the inner catch (defence in depth):
           sqlNumber: err?.number,
           sqlState:  err?.state,
           sqlLine:   err?.lineNumber,
-          env: {
-            SQL_SERVER:      process.env.SQL_SERVER    || 'NOT SET',
-            SQL_DATABASE:    process.env.SQL_DATABASE  || 'NOT SET',
-            AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID ? 'SET' : 'NOT SET'
-          }
         });
       } catch {
         body = '{"error":"Unhandled server error (fallback)"}';
@@ -549,6 +560,9 @@ app.http('data', {
   handler: async (req, ctx) => {
 
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
 
     // Validate environment
     if (!process.env.COSMOS_ENDPOINT || !process.env.COSMOS_KEY) {
@@ -929,13 +943,24 @@ app.http('data', {
           } catch (e) {
             if (e.code !== 404) throw e;
           }
+          // Whitelist, same rationale as the `save` handler: spreading the
+          // raw body let any caller write {role:'admin'} or
+          // {tier:'pro',tier_status:'active'} onto their own record and walk
+          // straight through requireAdmin and every paywall check.
+          // role/tier/stripe fields are only ever written server-side
+          // (stripe-webhook, admin tooling with its own gate).
+          const UPDATABLE = ['name', 'email', 'status', 'company'];
           const updated = {
             ...existing,
-            ...body,
             id:        userId,
             userId,
             updatedAt: new Date().toISOString()
           };
+          for (const key of UPDATABLE) {
+            if (Object.prototype.hasOwnProperty.call(body, key)) updated[key] = body[key];
+          }
+          const ignored = Object.keys(body).filter(k => !UPDATABLE.includes(k));
+          if (ignored.length) ctx.log(`user-update: ignored non-updatable fields [${ignored.join(', ')}] for ${userId}`);
           await container.items.upsert(updated);
           return ok(updated);
         }
@@ -2712,7 +2737,10 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           if (parsed.protocol !== 'https:') {
             return err(400, 'sasUrl must use https');
           }
-          if (!/\.blob\./.test(parsed.hostname.toLowerCase())) {
+          // Exact-suffix check, not a substring: '.blob.' matched hostnames
+          // like x.blob.core.windows.net.attacker.com, letting callers point
+          // this server-side fetch at arbitrary hosts (SSRF).
+          if (!parsed.hostname.toLowerCase().endsWith('.blob.core.windows.net')) {
             return err(400, 'sasUrl hostname does not look like Azure Blob Storage');
           }
           const segs = parsed.pathname.split('/').filter(Boolean);
@@ -2800,7 +2828,8 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           try { parsed = new URL(sasUrl); }
           catch { return err(400, 'sasUrl is not a valid URL'); }
           if (parsed.protocol !== 'https:') return err(400, 'sasUrl must use https');
-          if (!/\.blob\./.test(parsed.hostname.toLowerCase())) {
+          // Exact-suffix check, not a substring — see blob-list above (SSRF).
+          if (!parsed.hostname.toLowerCase().endsWith('.blob.core.windows.net')) {
             return err(400, 'sasUrl hostname does not look like Azure Blob Storage');
           }
           const segs = parsed.pathname.split('/').filter(Boolean);
@@ -2992,6 +3021,9 @@ app.http('narrative', {
   handler: async (req, ctx) => {
 
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
 
     try {
       const apiKey = process.env.ANTHROPIC_API_KEY;

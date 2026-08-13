@@ -183,8 +183,17 @@
   // /.netlify/functions/* or /api/* gets the Authorization header attached
   // automatically (unless the caller already set one).
   //
-  // Same-origin only, deliberately: adding an Authorization header to
-  // cross-origin calls would change their CORS preflight requirements.
+  // Same-origin by default: adding an Authorization header to cross-origin
+  // calls changes their CORS preflight requirements. The Azure Function App
+  // is opt-in via SEND_TOKEN_TO_AZURE — flip it to true ONLY AFTER the
+  // Function App has deployed the entra-auth changes (its CORS allowlist
+  // must include Authorization first, or every preflight to it will fail).
+  // Rollout: 1) deploy everything with this false; 2) confirm the Azure app
+  // is live (its /api responses allow Authorization); 3) flip to true and
+  // redeploy the site; 4) once logs show no legacy-header warnings, set
+  // REQUIRE_TOKEN_AUTH=true on the Function App.
+  const SEND_TOKEN_TO_AZURE = false;
+  const AZURE_API = /^https:\/\/cygenix-db-api-[^/]+\.azurewebsites\.net\//i;
   const AUTH_PATH = /^\/(\.netlify\/functions|api)\//;
   const _origFetch = window.fetch.bind(window);
   window.fetch = function (input, init) {
@@ -195,7 +204,7 @@
       const path = url.startsWith('/') ? url
                  : url.startsWith(window.location.origin) ? url.slice(window.location.origin.length)
                  : '';
-      if (AUTH_PATH.test(path)) {
+      if (AUTH_PATH.test(path) || (SEND_TOKEN_TO_AZURE && AZURE_API.test(url))) {
         const opts = init || {};
         const headers = new Headers(opts.headers || (input instanceof Request ? input.headers : undefined));
         if (!headers.has('Authorization')) {
