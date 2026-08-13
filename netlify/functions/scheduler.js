@@ -43,7 +43,7 @@
 // existing `projects` container.
 
 const { CosmosClient } = require('@azure/cosmos');
-const sql = require('mssql');
+const { verifyAuthHeader } = require('./lib/entra-auth');
 
 // ── Cosmos client (lazy, module-scoped so it's reused across invocations) ──
 let _cosmosClient = null;
@@ -78,7 +78,7 @@ function jsonResponse(statusCode, body) {
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+      'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization',
       'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
     },
     body: JSON.stringify(body),
@@ -101,55 +101,11 @@ function isMissingResource(err) {
       || /Resource Not Found/i.test(msg);
 }
 
-// Tiny cron next-run calculator. Supports standard 5-field expressions with
-// numeric values, '*', and '*/n' increments. No day-of-week names, no ranges,
-// no comma lists — keep this dependency-free. If the cron string uses
-// unsupported syntax, returns null so the caller can store a null nextRunAt
-// and let the trigger layer (phase 3) deal with it via a proper parser there.
-function computeNextRun(cronExpr, fromDate) {
-  try {
-    const parts = String(cronExpr || '').trim().split(/\s+/);
-    if (parts.length !== 5) return null;
-    const [miStr, hStr, domStr, moStr, dowStr] = parts;
-    const parseField = (s, min, max) => {
-      if (s === '*') return null;                                   // wildcard
-      const m = /^\*\/(\d+)$/.exec(s);
-      if (m) {
-        const step = parseInt(m[1], 10);
-        if (!step) return null;
-        const out = [];
-        for (let v = min; v <= max; v += step) out.push(v);
-        return out;
-      }
-      if (/^\d+$/.test(s)) {
-        const v = parseInt(s, 10);
-        if (v < min || v > max) return null;
-        return [v];
-      }
-      return null;
-    };
-    const mins  = parseField(miStr, 0, 59);
-    const hours = parseField(hStr, 0, 23);
-    const doms  = parseField(domStr, 1, 31);
-    const mos   = parseField(moStr, 1, 12);
-    const dows  = parseField(dowStr, 0, 6);
-
-    // Search forward minute-by-minute up to 60 days. Cheap and avoids edge-case
-    // bugs in clever DST/month-rollover math.
-    const start = new Date(fromDate.getTime() + 60_000); // start from next minute
-    start.setSeconds(0, 0);
-    const limit = new Date(start.getTime() + 60 * 24 * 60 * 60_000);
-    for (let t = start; t < limit; t = new Date(t.getTime() + 60_000)) {
-      if (mins  && !mins.includes(t.getMinutes())) continue;
-      if (hours && !hours.includes(t.getHours())) continue;
-      if (doms  && !doms.includes(t.getDate())) continue;
-      if (mos   && !mos.includes(t.getMonth() + 1)) continue;
-      if (dows  && !dows.includes(t.getDay())) continue;
-      return t.toISOString();
-    }
-    return null;
-  } catch { return null; }
-}
+// Cron next-run calculation lives in lib/cron.js, shared with
+// scheduled-runner.js so the two can't drift apart again. It supports
+// ranges, comma lists, steps and day/month names, and returns null (rather
+// than silently treating a field as a wildcard) for unsupported syntax.
+const { computeNextRun } = require('./lib/cron');
 
 // Pretty cron summary for the schedules table.
 function humaniseCron(cronExpr) {
@@ -465,29 +421,6 @@ async function versionDelete(userId, body, containers) {
 function isHttpUrl(s)    { return /^https?:\/\//i.test(s || ''); }
 function isMssqlConn(s)  { return /^mssql:\/\//i.test(s || ''); }
 
-// Parse a mssql:// URL into an mssql driver config. Mirrors the parsing in
-// netlify/functions/db-connect.js so behaviour stays consistent across both
-// execution paths.
-function parseMssqlUrl(connStr) {
-  // Format: mssql://user:pass@host:port/database?encrypt=true&trustServerCertificate=true
-  const u = new URL(connStr);
-  const params = u.searchParams;
-  return {
-    user:     decodeURIComponent(u.username || ''),
-    password: decodeURIComponent(u.password || ''),
-    server:   u.hostname,
-    port:     u.port ? parseInt(u.port, 10) : 1433,
-    database: u.pathname.replace(/^\//, ''),
-    options: {
-      encrypt:               params.get('encrypt') !== 'false',
-      trustServerCertificate: params.get('trustServerCertificate') === 'true',
-      enableArithAbort:      true,
-    },
-    requestTimeout: 120_000,
-    connectionTimeout: 30_000,
-  };
-}
-
 async function runNow(userId, body, containers, event) {
   const { id } = body || {};
   if (!id) return { __err: 'id required' };
@@ -604,13 +537,24 @@ async function runNow(userId, body, containers, event) {
     // Short timeout: we just need the 202 ack, not the work to finish.
     const ctl = new AbortController();
     const to  = setTimeout(() => ctl.abort(), 8_000);
-    await fetch(bgUrl, {
+    const res = await fetch(bgUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+        // Server-to-server auth for the Azure runner. Set DISPATCH_KEY to
+        // the same value in Netlify env and the Function App settings; the
+        // runner enforces it once REQUIRE_TOKEN_AUTH is on over there.
+        ...(process.env.DISPATCH_KEY ? { 'x-dispatch-key': process.env.DISPATCH_KEY } : {}),
+      },
       body: JSON.stringify(dispatchBody),
       signal: ctl.signal,
     });
     clearTimeout(to);
+    // A non-2xx ack (404/500/503 — deploy in progress, cold-start failure)
+    // means the runner never started; without this check the run stayed
+    // 'queued' forever with no failure surfaced in Run History.
+    if (!res.ok) throw new Error(`Runner endpoint responded ${res.status}`);
   } catch (e) {
     // If the dispatch itself failed (DNS, network, abort), mark the run
     // failed synchronously so the dashboard's poll sees a stable state.
@@ -643,9 +587,17 @@ exports.handler = async (event) => {
     return errorResponse(405, 'Method not allowed');
   }
 
-  // userId from header — frontend sets this on every Task Agent call.
-  const userId = (event.headers && (event.headers['x-user-id'] || event.headers['X-User-Id'])) || '';
-  if (!userId) return errorResponse(401, 'x-user-id header required (sign in first)');
+  // Identity from a VERIFIED Entra token only. The old x-user-id header was
+  // client-supplied and let anyone read another user's schedules — which
+  // include stored connection strings — by guessing their email.
+  let userId;
+  try {
+    const authed = await verifyAuthHeader(event);
+    userId = authed.email;
+    if (!userId) throw new Error('Token contains no email claim');
+  } catch (e) {
+    return errorResponse(401, 'Auth error: ' + e.message);
+  }
 
   // Body
   let body = {};
@@ -692,6 +644,9 @@ exports.handler = async (event) => {
         { detail: e.message }
       );
     }
-    return errorResponse(500, e.message, { stack: e.stack });
+    // Log the stack server-side only — returning it to clients leaks
+    // internal paths and code structure.
+    console.error('[scheduler]', e.stack || e.message);
+    return errorResponse(500, e.message);
   }
 };

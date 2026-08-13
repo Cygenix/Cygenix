@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/auth-gate.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -47,8 +48,8 @@
 <meta name="twitter:description" content="AI column mapping for SQL database migrations.">
 <title>Cygenix – Object Mapping</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -253,10 +254,10 @@ body.cyg-collapsed{padding-left:54px}
 </style>
 </head>
 <body>
-<script src="/connections.js"></script>
-<script src="/cygenix-params.js"></script>
-<script src="/cygenix-wasis.js"></script>
-<script src="/cygenix-privacy.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/cygenix-params.js" defer></script>
+<script src="/cygenix-wasis.js" defer></script>
+<script src="/cygenix-privacy.js" defer></script>
 <script>
 // ──────────────────────────────────────────────────────────────────────────
 // AUTOSAVE FETCH GUARD — must run BEFORE cygenix-cosmos-sync.js loads.
@@ -308,12 +309,15 @@ body.cyg-collapsed{padding-left:54px}
   } catch(e){ /* never block page load over this */ }
 })();
 </script>
-<script src="/cygenix-cosmos-sync.js"></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
 <script>
 // Belt-and-braces second layer: even with the fetch guard, also patch the
 // public pull methods so any explicit call (e.g. by checkEditMode's
 // ensureKey) is a no-op for cygenix_jobs. Other keys remain functional.
-(function(){
+// Runs at DCL: cygenix-cosmos-sync.js is deferred, so CygenixSync doesn't
+// exist yet at parse time — but its auto-init fires at DCL+800ms, so DCL
+// is still early enough to patch before any pull happens.
+document.addEventListener('DOMContentLoaded', function(){
   try {
     const params = new URLSearchParams(location.search);
     if (params.get('autosave') !== '1') return;
@@ -330,14 +334,14 @@ body.cyg-collapsed{padding-left:54px}
     wrap('ensureKey'); wrap('load'); wrap('forceLoad');
     window._cygenixAutosavePullGuardActive = true;
   } catch(e){}
-})();
+});
 </script>
-<script src="/cygenix-api.js"></script>
-<script src="/cygenix-history.js"></script>
-<script src="/cygenix-drive.js"></script>
+<script src="/cygenix-api.js" defer></script>
+<script src="/cygenix-history.js" defer></script>
+<script src="/cygenix-drive.js" defer></script>
 
 <div id="cyg-sidebar-mount" data-active="object-mapping"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 
 <div class="page">
   <!-- Page header -->
@@ -1139,7 +1143,10 @@ function ddlShowResult(msg, kind) {
 }
 
 // ── Connections (auto-load from CygenixConnections) ────────────────────────
-(function init(){
+// DOMContentLoaded, not an immediate IIFE: the shared scripts are deferred
+// (they no longer block first paint), and deferred scripts are guaranteed to
+// have run — with globals like CygenixConnections defined — before DCL.
+document.addEventListener('DOMContentLoaded', function init(){
   const c = CygenixConnections.get();
   // Source: same shape as target — Azure Function URL takes priority over
   // direct connection string. Without this, source-Azure mode rendered as
@@ -1194,7 +1201,7 @@ function ddlShowResult(msg, kind) {
   if(!_hasEditParam){
     setTimeout(() => { if(typeof _wipDraftRestore==='function') _wipDraftRestore(); }, 0);
   }
-})();
+});
 
 async function dbCall(conn, body){
   const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
@@ -5204,7 +5211,7 @@ window.addEventListener('cygenix:job-reverted', (e) => {
   });
 })();
 </script>
-<script src="/cookie-consent.js"></script>
-<script src="/cygenix-cookie-cleanup.js"></script>
+<script src="/cookie-consent.js" defer></script>
+<script src="/cygenix-cookie-cleanup.js" defer></script>
 </body>
 </html>

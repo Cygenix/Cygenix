@@ -34,9 +34,10 @@
 </script>
 <title>Cygenix – System Parameters</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
-<script src="/cygenix-params.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
+<script src="/cygenix-params.js" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -555,7 +556,9 @@ function parseCSV(text){
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
-load();
+// DCL, not immediate: cygenix-params.js is deferred, and load() dereferences
+// CygenixParams — at parse time that threw and the table never rendered.
+document.addEventListener('DOMContentLoaded', load);
 </script>
 
 </body>

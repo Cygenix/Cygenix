@@ -69,9 +69,38 @@ var CygenixConnections = (function () {
   // but the structural shape is identical, so older GUID-keyed entries
   // simply become orphaned. migrateLegacyBlob() below handles one-time
   // rescue of data stored under the old GUID key.
+  // Reject the Entra OID-as-UPN form ({guid}@tenant...) that federated /
+  // Google sign-ins put in account.username — keying by it diverges from
+  // cosmos-sync's getUserId() (which uses the real email) and makes saved
+  // connections "vanish" for those users.
+  function _isGuidUpn(id) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}@/i.test(id || '');
+  }
+  function _pickEmail(...candidates) {
+    for (const raw of candidates) {
+      if (!raw) continue;
+      const id = String(raw).trim().toLowerCase();
+      if (!id || _isGuidUpn(id) || !id.includes('@')) continue;
+      return id;
+    }
+    return '';
+  }
+
+  // Memoised — identity only changes on sign-in/out (which reloads the page),
+  // and this getter is on the hot path of every get()/save() call. The
+  // uncached version constructed a new msal.PublicClientApplication (a full
+  // MSAL cache parse) per call.
+  let _userTagCache = '';
   function currentUserTag() {
+    if (_userTagCache) return _userTagCache;
+    _userTagCache = _resolveUserTag();
+    return _userTagCache;
+  }
+
+  function _resolveUserTag() {
     // Method 1: MSAL library loaded as a global (works when pages include
-    // msal-browser, e.g. login.html).
+    // msal-browser, e.g. login.html). Claim order matches cosmos-sync's
+    // getUserId(): token claims first, account.username as last resort.
     try {
       if (typeof msal !== 'undefined') {
         const msalApp = new msal.PublicClientApplication({
@@ -85,7 +114,8 @@ var CygenixConnections = (function () {
         const accounts = msalApp.getAllAccounts() || [];
         if (accounts.length) {
           const a = accounts[0];
-          const id = (a.username || a.idTokenClaims?.email || a.idTokenClaims?.preferred_username || '').trim().toLowerCase();
+          const c = a.idTokenClaims || {};
+          const id = _pickEmail(c.preferred_username, c.email, c.upn, a.username);
           if (id) return id;
         }
       }
@@ -97,7 +127,7 @@ var CygenixConnections = (function () {
                     || localStorage.getItem('cygenix_entra_account');
       if (entraRaw) {
         const u = JSON.parse(entraRaw);
-        const id = (u.email || u.userId || '').trim().toLowerCase();
+        const id = _pickEmail(u.email, u.userId);
         if (id) return id;
       }
     } catch {}
@@ -152,7 +182,9 @@ var CygenixConnections = (function () {
     if (blob[email]) return;
     // If there's exactly one top-level key and it's a GUID-shaped value,
     // migrate it under the user's email.
-    const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // Bare GUIDs (pre-2026-04-23 keying) AND GUID-UPNs ({guid}@tenant...,
+    // written until currentUserTag learned to reject them) both migrate.
+    const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(@|$)/i;
     const guidKeys = topKeys.filter(k => GUID_RE.test(k));
     if (guidKeys.length === 1) {
       blob[email] = blob[guidKeys[0]];

@@ -7,10 +7,12 @@
 // scripts, edit documents and customise conversion logic. It is deliberately a
 // thin proxy to Claude: all the UI/state lives in /public/coworker.html.
 
+import { verifyRequestAuth } from './_lib/verify-entra.js';
+
 export default async function handler(request, context) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 
@@ -19,6 +21,14 @@ export default async function handler(request, context) {
   }
   if (request.method !== 'POST') {
     return json({ error: 'Method not allowed' }, 405, corsHeaders);
+  }
+
+  // Signed-in users only — this endpoint spends the site's Anthropic API
+  // budget. The front-end attaches the token via cygenix-auth-token.js.
+  try {
+    await verifyRequestAuth(request);
+  } catch (e) {
+    return json({ error: 'Auth error: ' + e.message }, 401, corsHeaders);
   }
 
   const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/auth-gate.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -46,10 +47,11 @@
 <meta name="twitter:description" content="Write, run and manage SQL scripts with AI assistance.">
 <title>Cygenix – SQL Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="/connections.js"></script>
-<script src="/cygenix-cosmos-sync.js"></script>
-<script src="/cygenix-drive.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
+<script src="/cygenix-drive.js" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -381,7 +383,7 @@ body.fullscreen .script-panel { display:none }
 <body>
 
 <div id="cyg-sidebar-mount" data-active="sql-editor"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 <script>
 // ── Sidebar width mirror ──────────────────────────────────────────────────────
 // cygenix-sidebar.js manages its own collapse state and width, but this page's
@@ -4267,6 +4269,10 @@ function reconcileJobSQLFields() {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────────
+// DCL, not top-level: the shared scripts are deferred, and the CygenixDrive
+// checks below silently skipped Drive-backed script loading when run before
+// the deferred script had executed.
+document.addEventListener('DOMContentLoaded', () => {
 reconcileJobSQLFields();
 loadScripts();
 // Mirror migration jobs into the shared Co-Worker Drive ("SQL Editor › Jobs")
@@ -4283,6 +4289,7 @@ renderLibrary();
 updateConnLabel();
 updateLineNumbers();
 updateStatus();
+});
 
 // Drag a .sql file from the Co-Worker Drive overlay straight into the editor.
 // The Drive rows expose an "application/x-cygenix-drive-file" payload ({id,
@@ -4552,7 +4559,7 @@ window.__cygOpenWithSqlActive = false;
   window.cygenixClearSqlDraft = clearDraft;
 })();
 </script>
-<script src="/cookie-consent.js"></script>
-<script src="/cygenix-cookie-cleanup.js"></script>
+<script src="/cookie-consent.js" defer></script>
+<script src="/cygenix-cookie-cleanup.js" defer></script>
 </body>
 </html>

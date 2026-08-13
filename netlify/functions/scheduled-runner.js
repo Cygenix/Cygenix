@@ -63,51 +63,10 @@ function getContainers() {
   return _containers;
 }
 
-// ── Local copy of computeNextRun (kept in sync with scheduler.js) ───────
-// Searches forward minute-by-minute up to 60 days. Cheap, avoids DST and
-// month-rollover edge cases. If the cron is malformed or no occurrence
-// found in 60 days, returns null and we skip the schedule.
-function computeNextRun(cronExpr, fromDate) {
-  try {
-    const parts = String(cronExpr || '').trim().split(/\s+/);
-    if (parts.length !== 5) return null;
-    const [miStr, hStr, domStr, moStr, dowStr] = parts;
-    const parseField = (s, min, max) => {
-      if (s === '*') return null;
-      const m = /^\*\/(\d+)$/.exec(s);
-      if (m) {
-        const step = parseInt(m[1], 10);
-        if (!step) return null;
-        const out = [];
-        for (let v = min; v <= max; v += step) out.push(v);
-        return out;
-      }
-      if (/^\d+$/.test(s)) {
-        const v = parseInt(s, 10);
-        if (v < min || v > max) return null;
-        return [v];
-      }
-      return null;
-    };
-    const mins  = parseField(miStr, 0, 59);
-    const hours = parseField(hStr, 0, 23);
-    const doms  = parseField(domStr, 1, 31);
-    const mos   = parseField(moStr, 1, 12);
-    const dows  = parseField(dowStr, 0, 6);
-    const start = new Date(fromDate.getTime() + 60_000);
-    start.setSeconds(0, 0);
-    const limit = new Date(start.getTime() + 60 * 24 * 60 * 60_000);
-    for (let t = start; t < limit; t = new Date(t.getTime() + 60_000)) {
-      if (mins  && !mins.includes(t.getMinutes())) continue;
-      if (hours && !hours.includes(t.getHours())) continue;
-      if (doms  && !doms.includes(t.getDate())) continue;
-      if (mos   && !mos.includes(t.getMonth() + 1)) continue;
-      if (dows  && !dows.includes(t.getDay())) continue;
-      return t.toISOString();
-    }
-    return null;
-  } catch { return null; }
-}
+// Cron next-run calculation is shared with scheduler.js via lib/cron.js —
+// the previous local copy had drifted and silently treated ranges/lists as
+// wildcards, over-firing schedules like "0 9 * * 1-5".
+const { computeNextRun } = require('./lib/cron');
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 const isHttpUrl    = s => /^https?:\/\//i.test(s || '');
@@ -251,13 +210,22 @@ async function fireSchedule(containers, schedule, now) {
   try {
     const ctl = new AbortController();
     const to  = setTimeout(() => ctl.abort(), 8_000);
-    await fetch(bgUrl, {
+    const res = await fetch(bgUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': schedule.userId },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': schedule.userId,
+        // Server-to-server auth for the Azure runner (see scheduler.js).
+        ...(process.env.DISPATCH_KEY ? { 'x-dispatch-key': process.env.DISPATCH_KEY } : {}),
+      },
       body: JSON.stringify(dispatchBody),
       signal: ctl.signal,
     });
     clearTimeout(to);
+    // A non-2xx ack means the runner never started — without this check the
+    // run stayed 'queued' forever (nextRunAt is already bumped) and the
+    // failure never surfaced in Run History.
+    if (!res.ok) throw new Error(`Runner endpoint responded ${res.status}`);
   } catch (e) {
     // Dispatch failed — mark the run record failed synchronously so
     // the dashboard's run history shows a stable state instead of a

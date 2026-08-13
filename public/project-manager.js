@@ -6,11 +6,30 @@
 
   const FN = '/.netlify/functions/projects';
 
-  function getToken()   { return sessionStorage.getItem('cygenix_token') || null; }
-  function getUser()    { try { return JSON.parse(sessionStorage.getItem('cygenix_user')); } catch { return null; } }
-  function isExpired()  { return Date.now() > parseInt(sessionStorage.getItem('cygenix_expires') || '0'); }
+  // Check localStorage as well as sessionStorage: sessionStorage is per-tab,
+  // so the old sessionStorage-only reads bounced validly signed-in users to
+  // login whenever they opened this page in a NEW tab (and cleared their
+  // legacy session keys on the way out).
+  function getToken()   { return sessionStorage.getItem('cygenix_token') || localStorage.getItem('cygenix_token') || null; }
+  function getUser()    {
+    try { return JSON.parse(sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user')); }
+    catch { return null; }
+  }
+  function isExpired()  {
+    const exp = parseInt(sessionStorage.getItem('cygenix_expires') || localStorage.getItem('cygenix_expires') || '0');
+    if (exp) return Date.now() > exp;
+    // No legacy expiry stamp — fall back to the Entra account record.
+    try {
+      const acc = JSON.parse(localStorage.getItem('cygenix_entra_account') || 'null');
+      if (acc && acc.exp) return Date.now() > acc.exp;
+    } catch {}
+    return true;
+  }
   function clearSession() {
-    ['cygenix_token','cygenix_user','cygenix_expires'].forEach(k => sessionStorage.removeItem(k));
+    ['cygenix_token','cygenix_user','cygenix_expires'].forEach(k => {
+      sessionStorage.removeItem(k);
+      localStorage.removeItem(k);
+    });
   }
 
   // Redirect to login if not authenticated

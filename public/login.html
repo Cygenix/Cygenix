@@ -139,9 +139,9 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:1
 </div>
 
 <!-- MSAL.js from CDN -->
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
-<script src="/cookie-consent.js"></script>
-<script src="/cygenix-cookie-cleanup.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js" defer></script>
+<script src="/cookie-consent.js" defer></script>
+<script src="/cygenix-cookie-cleanup.js" defer></script>
 <script>
 // ── Entra External ID config ─────────────────────────────────────────────────
 const ENTRA = {
@@ -287,6 +287,9 @@ function saveSession(authResult) {
   const token = authResult.idToken || authResult.accessToken;
   localStorage.setItem('cygenix_token',   token);
   sessionStorage.setItem('cygenix_token', token);
+  // Both storages — sessionStorage is per-tab, and pages that check expiry
+  // (project-manager.js) must work in new tabs too.
+  localStorage.setItem('cygenix_expires',   String(exp));
   sessionStorage.setItem('cygenix_expires', String(exp));
   const userJson = JSON.stringify({
     email, name,

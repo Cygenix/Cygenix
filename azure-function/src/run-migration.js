@@ -78,6 +78,7 @@ const CORS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',
 };
+const { checkDispatchKey } = require('./entra-auth');
 const accepted = (body) => ({ status: 202, headers: CORS, body: JSON.stringify(body) });
 const err      = (code, msg) => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
 
@@ -104,6 +105,18 @@ function parseMssqlUrl(connStr) {
 }
 const isHttpUrl   = s => /^https?:\/\//i.test(s || '');
 const isMssqlConn = s => /^mssql:\/\//i.test(s || '');
+
+// Quote a possibly schema-qualified identifier: each dot-separated part is
+// wrapped in brackets with internal ] doubled — 'dbo.Users' → '[dbo].[Users]'.
+// Idempotent: parts already bracket-wrapped (e.g. '[dbo].[Users]') are
+// unwrapped first, so re-quoting never double-brackets.
+function quoteIdent(name) {
+  return String(name || '').split('.').map(p => {
+    let s = String(p);
+    if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1).replace(/\]\]/g, ']');
+    return '[' + s.replace(/\]/g, ']]') + ']';
+  }).join('.');
+}
 
 // ── Per-row transform helpers (ported verbatim) ───────────────────────────
 const SQL_EXPRESSION_ALLOWLIST = [
@@ -239,7 +252,7 @@ function buildBatchInsert(tgtTable, mapping, batch, step, identityCols) {
     return '(' + vals.join(', ') + ')';
   });
 
-  return 'INSERT INTO ' + tgtTable +
+  return 'INSERT INTO ' + quoteIdent(tgtTable) +
          ' (' + colList + ')\nVALUES\n' + valueRows.join(',\n');
 }
 
@@ -305,14 +318,14 @@ async function execMigrationSingleShot(step, tgtPool, log) {
   const insertSQL = step.insertSQL;
   let rowsBefore = null, rowsAfter = null;
   try {
-    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsBefore = cr.recordset?.[0]?.cnt ?? null;
   } catch (e) { log.push('rowsBefore unavailable: ' + e.message); }
 
   const res = await tgtPool.request().query(insertSQL);
 
   try {
-    const cr2 = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr2 = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsAfter = cr2.recordset?.[0]?.cnt ?? null;
   } catch (e) { log.push('rowsAfter unavailable: ' + e.message); }
 
@@ -341,7 +354,7 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
   const PAGE_SIZE    = 500;
   const INSERT_BATCH = 100;
 
-  let srcSelectSQL = 'SELECT * FROM ' + step.srcTable;
+  let srcSelectSQL = 'SELECT * FROM ' + quoteIdent(step.srcTable);
   const wh = (step.srcWhere || '').trim().replace(/^WHERE\s+/i, '');
   if (wh) { srcSelectSQL += ' WHERE ' + wh; log.push('WHERE: ' + wh); }
 
@@ -362,7 +375,7 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
 
   let rowsBefore = null;
   try {
-    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsBefore = cr.recordset?.[0]?.cnt ?? null;
   } catch (e) { log.push('rowsBefore unavailable: ' + e.message); }
 
@@ -409,7 +422,7 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
 
   let rowsAfter = null;
   try {
-    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsAfter = cr.recordset?.[0]?.cnt ?? null;
   } catch {}
 
@@ -1066,6 +1079,12 @@ app.http('run-migration', {
     if (request.method === 'OPTIONS') {
       return { status: 204, headers: CORS };
     }
+
+    // Server-to-server endpoint: when REQUIRE_TOKEN_AUTH is on, the caller
+    // (Netlify scheduler) must present the shared DISPATCH_KEY — otherwise
+    // anyone who can guess run/schedule IDs can trigger real migrations.
+    const dispatch = checkDispatchKey(request, ctx);
+    if (!dispatch.ok) return dispatch.response;
 
     let body;
     try { body = await request.json(); }

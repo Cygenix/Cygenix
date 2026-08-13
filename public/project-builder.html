@@ -35,10 +35,11 @@
 </script>
 <title>Cygenix – Conversion Project</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
-<script src="/cygenix-auth-token.js"></script>
-<script src="/cygenix-saved-conn-secrets.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
+<script src="/cygenix-auth-token.js" defer></script>
+<script src="/cygenix-saved-conn-secrets.js" defer></script>
 <!-- Cosmos sync — the monkey-patch on localStorage.setItem schedules a save
      to Cosmos 3 seconds after any cygenix_* key is written. Must be loaded
      here (before any script that writes to cygenix_projects, cygenix_conv_project,
@@ -49,9 +50,9 @@
      dashboard's own warning at line 12762 confirms is required).
      Added 28-May-2026 after debugging session traced silent save-loss to
      this missing include. -->
-<script src="/cygenix-cosmos-sync.js"></script>
-<script src="/cygenix-params.js"></script>
-<script src="/project-manager.js"></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
+<script src="/cygenix-params.js" defer></script>
+<script src="/project-manager.js" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -211,12 +212,12 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 .step-card.disabled .step-name,.step-card.disabled .step-meta{text-decoration:line-through;text-decoration-color:var(--text3)}
 .group-card.all-disabled .group-header{opacity:0.7}
 </style>
-<script src="/connections.js"></script>
+<script src="/connections.js" defer></script>
 </head>
 <body>
 
 <div id="cyg-sidebar-mount" data-active="project-builder"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 
 <div class="topbar">
   <a href="/dashboard.html" class="logo">Cyge<span>nix</span> <span style="font-size:11px;color:var(--purple);font-weight:500;font-family:var(--mono)">Execute Migration</span></a>

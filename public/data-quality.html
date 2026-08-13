@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <script src="/auth-gate.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -38,6 +39,7 @@
   </script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <!--
@@ -71,10 +73,10 @@
   -->
 
   <!-- Shared connections helper (gives us CygenixConnections.srcConn / tgtConn) -->
-  <script src="/connections.js"></script>
+  <script src="/connections.js" defer></script>
 
   <!-- SheetJS for client-side Excel export. Same CDN pattern other pages use. -->
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
 
   <style>
   /* ─────────────────────────────────────────────────────────────────────────
@@ -1279,7 +1281,7 @@
   </main>
 
   <!-- Sidebar (auto-mounts on DOMContentLoaded) -->
-  <script src="/cygenix-sidebar.js"></script>
+  <script src="/cygenix-sidebar.js" defer></script>
 
   <!-- Toast -->
   <div id="toast"></div>

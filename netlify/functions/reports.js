@@ -39,29 +39,11 @@
 //   "jwks-rsa":     "^3.1.0"
 
 const { CosmosClient } = require('@azure/cosmos');
-const jwt              = require('jsonwebtoken');
-const jwksClient       = require('jwks-rsa');
+const { verifyAuthHeader: verifyEntraAuth } = require('./lib/entra-auth');
 
 const DATABASE_NAME  = 'cygenix';
 const CONTAINER_NAME = 'project_reports';
 const MAX_PER_USER   = 10;
-
-const TENANT_ID       = process.env.ENTRA_TENANT_ID       || 'fc8dfc7a-645f-4a5c-8f59-6762f97c803f';
-const CLIENT_ID       = process.env.ENTRA_CLIENT_ID       || 'f3478996-b2b5-4b21-9a23-a6b97a0e5b13';
-const AUTHORITY_HOST  = process.env.ENTRA_AUTHORITY_HOST  || 'cygenix.ciamlogin.com';
-
-// JWKS endpoint — Entra publishes its public signing keys here. The library
-// caches keys (default 10 min) so we hit this URL infrequently.
-const JWKS_URI = `https://${AUTHORITY_HOST}/${TENANT_ID}/discovery/v2.0/keys`;
-
-// Acceptable issuers — Entra External ID can issue tokens with several
-// valid issuer values depending on the user flow and federation. We accept
-// the standard CIAM patterns.
-const VALID_ISSUERS = [
-  `https://${AUTHORITY_HOST}/${TENANT_ID}/v2.0`,
-  `https://${TENANT_ID}.ciamlogin.com/${TENANT_ID}/v2.0`,
-  `https://login.microsoftonline.com/${TENANT_ID}/v2.0`,
-];
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -74,68 +56,13 @@ function ok(data)              { return { statusCode: 200, headers: CORS, body: 
 function err(msg, code = 500)  { return { statusCode: code, headers: CORS, body: JSON.stringify({ error: msg }) }; }
 
 // ──────────────────────────────────────────────────────────────────────────
-// JWT verification
+// JWT verification — shared implementation in lib/entra-auth.js (extracted
+// from this file; projects.js and scheduler.js now use the same code).
 // ──────────────────────────────────────────────────────────────────────────
-//
-// Module-level JWKS client — caches signing keys across warm invocations
-// to avoid hammering Entra's discovery endpoint. Keys rotate roughly every
-// 24h and the library auto-refreshes.
-const _jwks = jwksClient({
-  jwksUri: JWKS_URI,
-  cache: true,
-  cacheMaxEntries: 5,
-  cacheMaxAge: 10 * 60 * 1000,    // 10 minutes
-  rateLimit: true,
-  jwksRequestsPerMinute: 10,
-});
-
-function getSigningKey(header, callback) {
-  _jwks.getSigningKey(header.kid, (e, key) => {
-    if (e) return callback(e);
-    callback(null, key.getPublicKey());
-  });
-}
-
-// Verify the Authorization header. Returns { email, name, oid } on success
-// or throws an Error with a clear message on failure.
 async function verifyAuthHeader(event) {
-  const h = event.headers || {};
-  // Header keys in Netlify are lowercased, but be defensive.
-  const raw = h.authorization || h.Authorization || '';
-  if (!raw) throw new Error('Missing Authorization header');
-
-  const m = /^Bearer\s+(.+)$/i.exec(raw.trim());
-  if (!m) throw new Error('Authorization header must be "Bearer <token>"');
-  const token = m[1].trim();
-
-  const decoded = await new Promise((resolve, reject) => {
-    jwt.verify(token, getSigningKey, {
-      audience: CLIENT_ID,
-      issuer:   VALID_ISSUERS,
-      algorithms: ['RS256'],
-    }, (e, payload) => {
-      if (e) return reject(e);
-      resolve(payload);
-    });
-  });
-
-  // Extract email — Entra puts it in different claims depending on the IdP.
-  // For Google SSO logins, `email` claim is populated; for direct sign-ups
-  // `preferred_username` is usually the email. Fall back through both.
-  const email = String(
-    decoded.email ||
-    decoded.preferred_username ||
-    decoded.upn ||
-    ''
-  ).trim().toLowerCase();
-
-  if (!email) throw new Error('Token contains no email claim');
-
-  return {
-    email,
-    name: decoded.name || '',
-    oid:  decoded.oid  || decoded.sub || '',
-  };
+  const authed = await verifyEntraAuth(event);
+  if (!authed.email) throw new Error('Token contains no email claim');
+  return authed;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -302,14 +229,9 @@ exports.handler = async function (event) {
     if (action === 'save-presentation') return await handleSavePresentation(authed.email, body);
     return err('Unknown action: ' + action, 400);
   } catch (e) {
-    // In-band debugging — Application Insights not available on this plan.
-    return {
-      statusCode: 500,
-      headers: CORS,
-      body: JSON.stringify({
-        error: e.message || 'Server error',
-        stack: e.stack || '',
-      }),
-    };
+    // Log the stack server-side (Netlify function logs) — returning it to
+    // clients leaks internal paths and code structure.
+    console.error('[reports]', e.stack || e.message);
+    return err(e.message || 'Server error', 500);
   }
 };

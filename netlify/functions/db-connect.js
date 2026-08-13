@@ -38,6 +38,7 @@
 
 const mssql = require('mssql');
 const { Client: PgClient } = require('pg');
+const { verifyAuthHeader } = require('./lib/entra-auth');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-formatting helpers (shared across MSSQL + Postgres schema endpoints)
@@ -72,7 +73,7 @@ function typeNeedsPrecisionOnly(type){
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json',
 };
@@ -98,6 +99,16 @@ function detectDialect(cs) {
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') return err('Method not allowed', null, 405);
+
+  // This endpoint connects to arbitrary databases with caller-supplied SQL —
+  // unauthenticated, it is an open SQL relay anyone on the internet can use.
+  // Require a signed-in Cygenix user (verified Entra token). The front-end
+  // attaches the token automatically via cygenix-auth-token.js.
+  try {
+    await verifyAuthHeader(event);
+  } catch (e) {
+    return err('Auth error: ' + e.message, 'Sign in and retry — the browser attaches your session token automatically.', 401);
+  }
 
   let body;
   try { body = JSON.parse(event.body || '{}'); }
@@ -136,7 +147,10 @@ async function handleMssql(action, connectionString, database, body) {
 
   let pool;
   try {
-    pool = await mssql.connect(config);
+    // A dedicated pool, NOT mssql.connect(): the latter returns the driver's
+    // process-global pool and silently ignores a different config on a warm
+    // container — two users' requests could end up on the same connection.
+    pool = await new mssql.ConnectionPool(config).connect();
   } catch (e) {
     return err('Could not connect: ' + e.message, getMssqlHint(e.message));
   }

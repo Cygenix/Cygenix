@@ -19,6 +19,7 @@
   .hdr { color: #4A5BD6; margin-top: 1rem; font-weight: bold; }
   .warn { color: #f59e0b; }
 </style>
+<script src="/cygenix-auth-token.js" defer></script>
 </head>
 <body>
 <h1>Cygenix — Connection Diagnostics</h1>
@@ -138,7 +139,7 @@ async function run() {
       }
     } else if (r.status === 404) {
       err('Analyse function NOT FOUND (404)');
-      warn('Fix: netlify/functions/analyse.js must be in your GitHub repo');
+      warn('Fix: netlify/edge-functions/analyse.js must be in your GitHub repo');
     } else if (r.status === 500) {
       err('Analyse function error (500)');
       inf('Response: ' + txt.slice(0, 400));

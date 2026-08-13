@@ -95,6 +95,19 @@ function substituteParams(sqlText, params) {
 // ─────────────────────────────────────────────────────────────────────────────
 function buildAzureExecutor(fnUrl, fnKey) {
   if (!fnUrl) throw new Error('azure-mode executor requires fnUrl');
+  // Server-side fetch to a caller-supplied URL: require https and block
+  // obviously-internal targets so this can't be used to probe localhost /
+  // link-local metadata endpoints (SSRF). Users' own Function Apps are
+  // always public https hosts, so this costs legitimate use nothing.
+  {
+    let u;
+    try { u = new URL(fnUrl); } catch { throw new Error('azure-mode fnUrl is not a valid URL'); }
+    if (u.protocol !== 'https:') throw new Error('azure-mode fnUrl must use https');
+    const h = u.hostname.toLowerCase();
+    if (h === 'localhost' || /^127\.|^10\.|^192\.168\.|^169\.254\.|^172\.(1[6-9]|2\d|3[01])\./.test(h) || h === '[::1]') {
+      throw new Error('azure-mode fnUrl must be a public host');
+    }
+  }
   // Append code= if a key was provided AND the URL doesn't already carry
   // one. The Connections page sometimes stores the key separately for
   // display purposes; the agent expects to see it in the URL when

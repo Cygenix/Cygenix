@@ -290,8 +290,10 @@
   window.cygToggleSub = cygToggleSub;
 
   function injectNav() {
-    // Skip login, index, dashboard and project-builder (these have their own built-in sidebars)
-    const skipPages = ['login.html','index.html','','dashboard.html','project-builder.html','dashboard'];
+    // Skip login, index, dashboard and project-builder (these have their own
+    // built-in sidebars), and agentive_migration (it loads cygenix-sidebar.js
+    // — injecting here produced two overlapping sidebars).
+    const skipPages = ['login.html','index.html','','dashboard.html','project-builder.html','dashboard','agentive_migration.html'];
     if (skipPages.includes(page) || page === '' || document.getElementById('cyg-sidebar')) return;
 
     // Inject CSS

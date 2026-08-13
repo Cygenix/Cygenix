@@ -38,10 +38,11 @@ function getCosmosContainer(containerName) {
 // ─── CORS / response helpers (match index.js) ────────────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Content-Type': 'application/json'
 };
+const { enforceAuth } = require('./entra-auth');
 const ok  = (body)      => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
 const err = (code, msg) => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
 
@@ -184,7 +185,7 @@ async function runSqlWithManagedIdentity(sqlText, ctx) {
   const credential = new DefaultAzureCredential();
   const tokenResp = await credential.getToken('https://database.windows.net/.default');
 
-  const pool = await sql.connect({
+  const pool = await new sql.ConnectionPool({
     server: process.env.SQL_SERVER,
     database: process.env.SQL_DATABASE,
     options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
@@ -192,7 +193,7 @@ async function runSqlWithManagedIdentity(sqlText, ctx) {
       type: 'azure-active-directory-access-token',
       options: { token: tokenResp.token }
     }
-  });
+  }).connect();
 
   try {
     const r = await pool.request().query(sqlText);
@@ -354,6 +355,9 @@ app.http('schedules', {
     if (!process.env.COSMOS_ENDPOINT || !process.env.COSMOS_KEY) {
       return err(500, 'Cosmos DB not configured');
     }
+
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) return auth.response;
 
     const userId = getUserId(req);
     if (!userId) return err(401, 'x-user-id header is required');
@@ -585,7 +589,11 @@ function stripMeta(r) {
 // NCRONTAB format (Azure Functions): {second} {minute} {hour} {day} {month} {dayOfWeek}
 // "0 */1 * * * *" = every minute at the :00 second mark
 const TICK_SCHEDULE = '0 */1 * * * *';
-const LEASE_MS = 90 * 1000;
+// Must comfortably exceed the longest realistic synchronous run: at 90s, a
+// 2-minute migration was re-claimed by the next tick mid-run and executed
+// TWICE (double-applied inserts). 15 min matches the background runner's cap;
+// a crashed worker's lease still expires and the schedule recovers.
+const LEASE_MS = 15 * 60 * 1000;
 
 app.timer('schedulerTick', {
   schedule: TICK_SCHEDULE,
@@ -639,13 +647,18 @@ app.timer('schedulerTick', {
         ctx.log.error(`schedulerTick: executor threw for ${s.id}:`, e.message);
       }
 
-      // Clear lease + chain marker
+      // Clear lease + chain marker. Etag-guarded: if the lease expired
+      // mid-run and another tick re-claimed this schedule, the stale worker
+      // must not clobber the new claimant's lease — the 412 is silently
+      // accepted and the current claimant owns the row.
       try {
         const { resource: fresh } = await getCosmosContainer('schedules').item(s.id, s.userId).read();
         if (fresh) {
           fresh._chainParentRunId = null;
           fresh.claimedUntil = null;
-          await getCosmosContainer('schedules').item(s.id, s.userId).replace(fresh);
+          await getCosmosContainer('schedules').item(s.id, s.userId).replace(fresh, {
+            accessCondition: { type: 'IfMatch', condition: fresh._etag },
+          });
         }
       } catch {}
     }

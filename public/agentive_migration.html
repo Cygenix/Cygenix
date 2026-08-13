@@ -46,10 +46,11 @@
 <meta name="twitter:description" content="Let Cygenix introspect your databases and propose a complete migration mapping with reasoning for every decision.">
 <title>Cygenix – Agentive Migration</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="/connections.js"></script>
-<script src="/nav.js"></script>
-<script src="/cygenix-cosmos-sync.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/nav.js" defer></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -383,7 +384,7 @@ body.cyg-collapsed .topbar{left:54px}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="agentive-migration"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 <script>
 // Sidebar width mirror — same pattern as sql-editor.html
 (function mirrorSidebarWidth(){

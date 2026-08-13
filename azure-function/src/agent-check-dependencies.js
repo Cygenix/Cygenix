@@ -62,9 +62,11 @@ const CORS = {
 };
 
 const ok  = (body)             => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
-const err = (code, msg, stack) => ({
+// Third arg (stack) is accepted for call-site compatibility but no longer
+// returned to clients — internal paths stay in the server logs.
+const err = (code, msg, _stack) => ({
   status: code, headers: CORS,
-  body: JSON.stringify({ error: msg, ...(stack ? { stack } : {}) })
+  body: JSON.stringify({ error: msg })
 });
 
 // ── Connection-string parser (matches agent-source-schema.js) ────────────
@@ -99,7 +101,8 @@ async function connectDirect(connString, ctx) {
   const sql = require('mssql');
   const cfg = parseMssqlUrl(connString);
   ctx.log(`[check-dependencies] direct connect: ${cfg.database}@${cfg.server}`);
-  return sql.connect(cfg);
+  // Dedicated per-call pool — sql.connect() would reuse the process-global pool.
+  return new sql.ConnectionPool(cfg).connect();
 }
 
 async function connectViaManagedIdentity(ctx) {
@@ -109,7 +112,8 @@ async function connectViaManagedIdentity(ctx) {
     process.env.SQL_SERVER + '/' + process.env.SQL_DATABASE);
   const credential = new DefaultAzureCredential();
   const tokenResp  = await credential.getToken('https://database.windows.net/.default');
-  return sql.connect({
+  // Dedicated per-call pool — sql.connect() would reuse the process-global pool.
+  return new sql.ConnectionPool({
     server:   process.env.SQL_SERVER,
     database: process.env.SQL_DATABASE,
     options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
@@ -117,7 +121,7 @@ async function connectViaManagedIdentity(ctx) {
       type: 'azure-active-directory-access-token',
       options: { token: tokenResp.token }
     }
-  });
+  }).connect();
 }
 
 // ── Recommendation logic ─────────────────────────────────────────────────

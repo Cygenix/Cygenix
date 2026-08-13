@@ -137,6 +137,30 @@
     return;
   }
 
+  // ── whoami cache ─────────────────────────────────────────────────────────
+  // The tier verdict changes rarely (plan purchase / cancellation), but this
+  // gate used to block EVERY page navigation on a cross-origin whoami call —
+  // including multi-second Azure cold starts — with the body hidden the whole
+  // time. Cache a passing verdict per-user for 5 minutes so only the first
+  // page load in a burst of navigation pays the round trip. Failing verdicts
+  // are never cached (a user who just bought a plan gets re-checked).
+  const WHOAMI_CACHE_KEY = 'cygenix_whoami_ok';
+  const WHOAMI_TTL_MS = 5 * 60 * 1000;
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(WHOAMI_CACHE_KEY) || 'null');
+    if (cached && cached.userId === userId && (Date.now() - cached.t) < WHOAMI_TTL_MS) {
+      clearTimeout(failsafeTimer);
+      const s = document.getElementById('cygenix-tier-gate-style');
+      if (s) s.remove();
+      return;
+    }
+  } catch {}
+  function cachePass() {
+    try {
+      sessionStorage.setItem(WHOAMI_CACHE_KEY, JSON.stringify({ userId, t: Date.now() }));
+    } catch {}
+  }
+
   const API_BASE  = 'https://cygenix-db-api-e4fng7a4edhydzc4.uksouth-01.azurewebsites.net/api/data';
   const FUNC_CODE = 'WjSmoWxgtNdGnO_I5nKIspRUQqKCR1knsXgVmJr3dyYuAzFu-or-5Q==';
 
@@ -159,6 +183,7 @@
       // Admin and demo users bypass tier checks entirely.
       if (data.role === 'admin' || data.role === 'demo') {
         if (s) s.remove();
+        cachePass();
         return;
       }
 
@@ -166,6 +191,7 @@
       const goodStatuses = ['trialing', 'active', 'past_due'];
       if (data.tier && goodStatuses.includes(data.tier_status)) {
         if (s) s.remove();
+        cachePass();
         return;
       }
 

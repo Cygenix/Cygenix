@@ -54,10 +54,11 @@ function getCosmosContainer(containerName) {
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
-  'Access-Control-Allow-Headers': 'Content-Type, x-user-id',
+  'Access-Control-Allow-Headers': 'Content-Type, x-user-id, Authorization',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Content-Type': 'application/json'
 };
+const { enforceAuth, checkDispatchKey } = require('./entra-auth');
 const ok  = (body)      => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
 const err = (code, msg) => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
 
@@ -94,6 +95,15 @@ app.http('profile-build', {
   route: 'profile-build',
   handler: async (req, ctx) => {
     if (req.method === 'OPTIONS') return { status: 200, headers: CORS, body: '' };
+
+    // Callable two ways: by the browser (Insights page — Entra token,
+    // verified when present) and by the Netlify scheduler (dispatch key).
+    // When REQUIRE_TOKEN_AUTH is on, one of the two must pass.
+    const auth = await enforceAuth(req, ctx);
+    if (!auth.ok) {
+      const dispatch = checkDispatchKey(req, ctx);
+      if (!dispatch.ok) return auth.response;
+    }
 
     const userId = req.headers.get('x-user-id') || req.query.get('userId');
     if (!userId) return err(401, 'x-user-id header is required');

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/auth-gate.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -167,7 +168,7 @@
 <body>
 
 <div id="cyg-sidebar-mount" data-active="coworker"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 <script>
 // Mirror the injected sidebar's collapsed/expanded width onto the body so the
 // page's padding-left tracks it (same approach as the SQL Editor page).
@@ -304,7 +305,7 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="/cookie-consent.js"></script>
+<script src="/cookie-consent.js" defer></script>
 <script>
 (function(){
   'use strict';

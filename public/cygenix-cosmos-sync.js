@@ -132,7 +132,17 @@ const CygenixSync = (() => {
     }
     return null;
   }
+  // Memoised — identity only changes on sign-in/out (which reloads the page),
+  // and this is called from the localStorage.setItem monkey-patch on every
+  // sync-key write. The uncached version constructed a fresh
+  // msal.PublicClientApplication (a full MSAL cache parse) per call.
+  let _userIdCache = null;
   function getUserId() {
+    if (_userIdCache) return _userIdCache;
+    _userIdCache = _resolveUserId();
+    return _userIdCache;
+  }
+  function _resolveUserId() {
     // Method 1: MSAL account cache (authoritative after Entra sign-in).
     //   Order matters: idTokenClaims.preferred_username / email come from
     //   the actual JWT payload and are reliable. account.username is a
@@ -857,7 +867,12 @@ const CygenixSync = (() => {
           // detect that via Object.keys(cloud).length: if cloud is wholly
           // empty (no fields at all), don't clear anything.
           if (Object.keys(cloud).length === 0) continue;
-          try { _orig(localKey, JSON.stringify(Array.isArray(cloud[cloudField]) ? [] : null)); } catch {}
+          // Remove the key outright. The old code wrote the literal string
+          // "null" for every field (cloudVal is null here, so the
+          // Array.isArray branch could never hit), which made downstream
+          // JSON.parse(getItem(k) || '[]') return null instead of [] and
+          // broke jobs-count / JSON-export consumers.
+          try { localStorage.removeItem(localKey); } catch {}
           continue;
         }
         try {

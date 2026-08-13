@@ -455,7 +455,8 @@ async function connectViaManagedIdentity(ctx) {
   const credential = new DefaultAzureCredential();
   const tokenResp  = await credential.getToken('https://database.windows.net/.default');
 
-  const pool = await sql.connect({
+  // Dedicated per-call pool — sql.connect() would reuse the process-global pool.
+  const pool = await new sql.ConnectionPool({
     server:   process.env.SQL_SERVER,
     database: process.env.SQL_DATABASE,
     options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
@@ -463,7 +464,7 @@ async function connectViaManagedIdentity(ctx) {
       type: 'azure-active-directory-access-token',
       options: { token: tokenResp.token }
     }
-  });
+  }).connect();
 
   return {
     pool,
@@ -476,7 +477,8 @@ async function connectViaConnString(connString, ctx) {
   const sql = require('mssql');
   const cfg = parseMssqlUrl(connString);
   ctx.log(`[agent-source-schema] direct connect: ${cfg.database}@${cfg.server}`);
-  const pool = await sql.connect(cfg);
+  // Dedicated per-call pool — sql.connect() would reuse the process-global pool.
+  const pool = await new sql.ConnectionPool(cfg).connect();
   return { pool, label: describeConnString(connString) };
 }
 

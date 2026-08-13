@@ -77,6 +77,18 @@ function parseMssqlUrl(connStr) {
 const isHttpUrl    = s => /^https?:\/\//i.test(s || '');
 const isMssqlConn  = s => /^mssql:\/\//i.test(s || '');
 
+// Quote a possibly schema-qualified identifier: each dot-separated part is
+// wrapped in brackets with internal ] doubled — 'dbo.Users' → '[dbo].[Users]'.
+// Idempotent: parts already bracket-wrapped (e.g. '[dbo].[Users]') are
+// unwrapped first, so re-quoting never double-brackets.
+function quoteIdent(name) {
+  return String(name || '').split('.').map(p => {
+    let s = String(p);
+    if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1).replace(/\]\]/g, ']');
+    return '[' + s.replace(/\]/g, ']]') + ']';
+  }).join('.');
+}
+
 // ── Per-row transform helpers, ported from project-builder.html ────────────
 // Mirrors fmtVal / applyMappingTransform / applyStepWasis / isSqlExpression
 // so scheduled runs produce identical output to manual "Run selected" on
@@ -236,7 +248,7 @@ function buildBatchInsert(tgtTable, mapping, batch, step, identityCols) {
     return '(' + vals.join(', ') + ')';
   });
 
-  return 'INSERT INTO ' + tgtTable +
+  return 'INSERT INTO ' + quoteIdent(tgtTable) +
          ' (' + colList + ')\nVALUES\n' + valueRows.join(',\n');
 }
 
@@ -311,14 +323,14 @@ async function execMigrationSingleShot(step, tgtPool, log) {
   // in the generated script suppresses rowsAffected on the driver).
   let rowsBefore = null, rowsAfter = null;
   try {
-    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsBefore = cr.recordset?.[0]?.cnt ?? null;
   } catch (e) { log.push('rowsBefore unavailable: ' + e.message); }
 
   const res = await tgtPool.request().query(insertSQL);
 
   try {
-    const cr2 = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr2 = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsAfter = cr2.recordset?.[0]?.cnt ?? null;
   } catch (e) { log.push('rowsAfter unavailable: ' + e.message); }
 
@@ -348,7 +360,7 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
   const INSERT_BATCH = 100;
 
   // Build source SELECT honouring srcWhere
-  let srcSelectSQL = 'SELECT * FROM ' + step.srcTable;
+  let srcSelectSQL = 'SELECT * FROM ' + quoteIdent(step.srcTable);
   const wh = (step.srcWhere || '').trim().replace(/^WHERE\s+/i, '');
   if (wh) { srcSelectSQL += ' WHERE ' + wh; log.push('WHERE: ' + wh); }
 
@@ -371,7 +383,7 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
   // Target rowsBefore for delta-based rowsAffected
   let rowsBefore = null;
   try {
-    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsBefore = cr.recordset?.[0]?.cnt ?? null;
   } catch (e) { log.push('rowsBefore unavailable: ' + e.message); }
 
@@ -423,7 +435,7 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
   // rowsAfter for delta
   let rowsAfter = null;
   try {
-    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + step.tgtTable);
+    const cr = await tgtPool.request().query('SELECT COUNT(*) AS cnt FROM ' + quoteIdent(step.tgtTable));
     rowsAfter = cr.recordset?.[0]?.cnt ?? null;
   } catch {}
 
