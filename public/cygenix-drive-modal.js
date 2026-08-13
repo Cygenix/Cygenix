@@ -111,7 +111,7 @@
 
   // ── State ─────────────────────────────────────────────────────────────────
   let cwd = '', searchQ = '', mapHandle = null, mapMeta = { lastSync: 0 }, syncing = false, built = false;
-  let $bg, $modal, $crumbs, $body, $footL, $storage, $cloud, $map, $syncBtn, $cloudBtn, $fileInput, $folderInput, $maxBtn, $toast, toastT;
+  let $bg, $modal, $crumbs, $body, $footL, $storage, $cloud, $map, $syncBtn, $cloudBtn, $selAllBtn, $fileInput, $folderInput, $maxBtn, $toast, toastT;
   // Multi-select + drag-to-move state
   let selected = new Set();   // node ids currently ticked
   let dragIds = null;         // node ids being dragged (for move-into-folder)
@@ -269,6 +269,7 @@
         </div>
         <div class="cygdm-bar">
           <div class="cygdm-crumbs" id="cygdm-crumbs"></div>
+          <button class="cygdm-btn" id="cygdm-selectall" title="Select every item in this folder">☑ Select all</button>
           <button class="cygdm-btn" id="cygdm-newfolder" title="Create a folder here">＋ Folder</button>
           <button class="cygdm-btn" id="cygdm-upfiles" title="Upload files here">⬆ Files</button>
           <button class="cygdm-btn" id="cygdm-upfolder" title="Upload a whole folder (keeps its structure)">⬆ Folder</button>
@@ -298,6 +299,7 @@
     $map         = $bg.querySelector('#cygdm-map');
     $syncBtn     = $bg.querySelector('#cygdm-sync');
     $cloudBtn    = $bg.querySelector('#cygdm-cloudsync');
+    $selAllBtn   = $bg.querySelector('#cygdm-selectall');
     $fileInput   = $bg.querySelector('#cygdm-fileinput');
     $folderInput = $bg.querySelector('#cygdm-folderinput');
     $maxBtn      = $bg.querySelector('#cygdm-max');
@@ -314,6 +316,18 @@
     });
 
     // Toolbar
+    if ($selAllBtn) $selAllBtn.addEventListener('click', toggleSelectAll);
+    // Ctrl/Cmd-A selects everything in view — the shortcut people reach for
+    // before looking for a button. Bound on document (not the overlay) because
+    // the overlay only receives key events once something inside it has focus,
+    // and the Drive is usually opened without clicking into it.
+    document.addEventListener('keydown', (e) => {
+      if (!$bg || !$bg.classList.contains('open') || $bg.classList.contains('min')) return;
+      if (!(e.ctrlKey || e.metaKey) || (e.key !== 'a' && e.key !== 'A')) return;
+      if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;   // let text selection work
+      e.preventDefault();
+      if (currentItems.length) { currentItems.forEach(n => selected.add(n.id)); renderDrive(); }
+    });
     $bg.querySelector('#cygdm-newfolder').addEventListener('click', async () => { const name = prompt('New folder name:', 'New folder'); if (name == null) return; await driveCreateFolder(cwd, name); renderDrive(); });
     $bg.querySelector('#cygdm-upfiles').addEventListener('click', () => $fileInput.click());
     $bg.querySelector('#cygdm-upfolder').addEventListener('click', () => $folderInput.click());
@@ -455,17 +469,42 @@
     return row;
   }
 
+  // Select-all state for the CURRENT view (respects the open folder and any
+  // active search), so "all" always means "everything you can see".
+  function allVisibleSelected() {
+    return currentItems.length > 0 && currentItems.every(n => selected.has(n.id));
+  }
+  function toggleSelectAll() {
+    if (allVisibleSelected()) clearSelection();
+    else currentItems.forEach(n => selected.add(n.id));
+    renderDrive();
+  }
+  // The toolbar button doubles as the deselect control once everything is
+  // ticked — the selection bar's copy only exists after a first manual tick,
+  // so on its own it left no way to select all from a clean slate.
+  function renderSelectAllBtn() {
+    if (!$selAllBtn) return;
+    const none = currentItems.length === 0;
+    $selAllBtn.disabled = none;
+    $selAllBtn.style.opacity = none ? '0.45' : '';
+    const all = allVisibleSelected();
+    $selAllBtn.textContent = all ? '☐ Deselect all' : '☑ Select all';
+    $selAllBtn.title = none
+      ? 'Nothing here to select'
+      : (all ? 'Clear the current selection' : 'Select every item in this folder');
+  }
+
   // Sticky bar shown while ≥1 row is ticked: bulk move / delete / select-all.
   function selectionBar() {
     const bar = document.createElement('div'); bar.className = 'cygdm-selbar';
-    const allOn = currentItems.length > 0 && currentItems.every(n => selected.has(n.id));
+    const allOn = allVisibleSelected();
     bar.innerHTML =
       '<span class="cygdm-selcount">' + selected.size + ' selected</span>' +
       '<button class="cygdm-btn" data-act="all">' + (allOn ? 'Deselect all' : 'Select all') + '</button>' +
       '<button class="cygdm-btn" data-act="move">📂 Move to…</button>' +
       '<button class="cygdm-btn cygdm-danger" data-act="del">🗑 Delete</button>' +
       '<button class="cygdm-btn" data-act="clear">Clear</button>';
-    bar.querySelector('[data-act="all"]').onclick = () => { if (allOn) clearSelection(); else currentItems.forEach(n => selected.add(n.id)); renderDrive(); };
+    bar.querySelector('[data-act="all"]').onclick = toggleSelectAll;
     bar.querySelector('[data-act="move"]').onclick = () => openMovePicker([...selected]);
     bar.querySelector('[data-act="del"]').onclick = deleteSelected;
     bar.querySelector('[data-act="clear"]').onclick = () => { clearSelection(); renderDrive(); };
@@ -536,6 +575,7 @@
       items.forEach((n, i) => $body.appendChild(rowEl(n, i)));
     }
     if ($footL) $footL.textContent = items.length + ' item' + (items.length === 1 ? '' : 's') + (selected.size ? (' · ' + selected.size + ' selected') : '');
+    renderSelectAllBtn();
     renderStorage();
   }
 
