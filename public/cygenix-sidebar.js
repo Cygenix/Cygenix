@@ -48,60 +48,78 @@
   //
   // `requiresAiEnabled` (optional) hides the item when AI features are disabled
   // for this tenant or user.
+  // ── Structure (2026-08 navigation review) ───────────────────────────────
+  // One organising axis — the migration lifecycle: Connect → Map & Build →
+  // Run → Validate → Report & Govern. Duplicate clusters (jobs, quality,
+  // reports, monitoring, settings) collapse into a parent with sub-items, so
+  // every existing destination keeps its page and its key; only grouping,
+  // order and labels change. Utilities are docked in a footer (see
+  // FOOTER_NAV) and cookie preferences live in the account menu, so the
+  // workflow rail fits without scrolling.
+  //
+  // Parents with `children` are pure expanders (no href/view/action). All
+  // child keys are unchanged from the old flat rail, so pages' data-active
+  // attributes and dashboard badge/view wiring keep working.
   const NAV = [
-    { section: 'Migrate', items: [
-      { key:'dashboard', label:'Dashboard', view:'dashboard', icon: iconDashboard() },
-      { key:'search',    label:'Search',    view:'search',    icon: iconSearch() },
-    ]},
-    { section: 'Configure', group:'configure', items: [
-      { key:'project-settings',  label:'Settings',           view:'project-settings',   color:'var(--amber)',  icon: iconSettings() },
-      { key:'connections',       label:'Connections',       view:'connections',        color:'var(--green)',  icon: iconPlug() },
-      { key:'performance',       label:'Performance',       href:'/performance.html',  color:'var(--teal)',   icon: iconChart() },
-      { key:'system-parameters', label:'System Parameters', view:'system-parameters',  color:'var(--accent)', icon: iconParams() },
-      { key:'privacy-security',  label:'Governance',        view:'privacy-security',   color:'var(--red)',    icon: iconShield() },
-      { key:'integrations',      label:'Integrations',      view:'integrations',       color:'var(--teal)',   icon: iconIntegrations() },
-    ]},
-    { section: 'Plan', group:'plan', items: [
-      { key:'project-plan',      label:'Project Planner',   href:'/project-plan.html', color:'var(--green)',  icon: iconCalendar(), badgeId:'cyg-badge-project-plan' },
-    ]},
-    { section: 'Develop', group:'develop', items: [
-      { key:'object-mapping',     label:'Object Mapping',     href:'/object_mapping.html',     color:'var(--teal)',   icon: iconArrows() },
-      { key:'sql-editor',         label:'SQL Editor',         href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
-      { key:'agentive-migration', label:'Agentive Migration', href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
-      { key:'coworker',           label:'Co-Worker',          href:'/coworker.html',           color:'var(--accent)', icon: svg('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-3 2.5V10.5H2.5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 6.4h5M5.5 8.2h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>') },
-    ]},
-    { section: 'Data Analysis', group:'analysis', items: [
-      { key:'data-quality',      label:'Data Quality Review', href:'/data-quality.html',  color:'var(--green)',  icon: iconQuality() },
-      { key:'insights',          label:'Data Insights',       href:'/insights.html',      color:'var(--purple)', icon: iconInsights() },
-      { key:'data-cleansing',    label:'Data Cleansing',      href:'/data-cleansing.html',color:'var(--teal)',   icon: iconClean() },
-      { key:'validation',        label:'Validation',          href:'/validation.html',    color:'var(--amber)',  icon: iconCheck() },
-    ]},
-    { section: 'Projects', group:'projects', items: [
-      { key:'jobs',              label:'All Jobs',          view:'jobs',                icon: iconList() },
-      { key:'project-builder',   label:'Execute',           href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
-    ]},
-    { section: 'Advanced', group:'advanced', items: [
-      { key:'server-migration',  label:'Server Migration',  view:'server-migration',   color:'var(--accent)', icon: iconServerMigration() },
-    ]},
     { section: null, items: [
-      { key:'inventory',         label:'Project Artifacts',         view:'inventory',           icon: iconGrid() },
-      { key:'task-agent',        label:'Task Agent',        view:'task-agent',          color:'var(--yellow)', icon: iconClock() },
+      { key:'dashboard', label:'Home',   view:'dashboard', icon: iconDashboard() },
+      { key:'search',    label:'Search', view:'search',    icon: iconSearch() },
     ]},
-    { section: 'Reporting', group:'reports', items: [
-      { key:'report-builder',             label:'Report Builder',            href:'/reports.html',              color:'var(--amber)',  icon: iconReportBuilder() },
-      { key:'reports',                    label:'Conversion Report',         view:'reports',                    color:'var(--purple)', icon: iconReport() },
-      { key:'project-summary-document',   label:'Project Summary Document',  view:'project-summary-document',   color:'var(--purple)', icon: iconDocument() },
+    { section: 'Connect', group:'connect', items: [
+      { key:'connections',  label:'Connections',  view:'connections',  color:'var(--green)', icon: iconPlug() },
+      { key:'integrations', label:'Integrations', view:'integrations', color:'var(--teal)',  icon: iconIntegrations() },
+      { key:'settings-group', label:'Settings', icon: iconSettings(), children: [
+        { key:'project-settings',  label:'General',           view:'project-settings',  color:'var(--amber)',  icon: iconSettings() },
+        { key:'system-parameters', label:'System Parameters', view:'system-parameters', color:'var(--accent)', icon: iconParams() },
+      ]},
     ]},
-    { section: 'More', group:'more', items: [
-      { key:'audit',             label:'Audit Log',         view:'audit',               color:'var(--text2)', icon: iconAuditLog() },
-      { key:'supported',         label:'Supported Formats', view:'supported',           color:'var(--text2)', icon: iconInfo() },
-      { key:'diagnostics',       label:'Diagnostics',       view:'diagnostics',         color:'var(--text2)', icon: iconPulse() },
-      { key:'help',              label:'Help Guide',      action:'open-help',         color:'var(--accent)', icon: iconHelp() },
+    { section: 'Map & Build', group:'build', items: [
+      { key:'object-mapping',     label:'Object Mapping', href:'/object_mapping.html',     color:'var(--teal)',   icon: iconArrows() },
+      { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
+      { key:'agentive-migration', label:'AI Assist',      href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
+      { key:'coworker',           label:'AI Workspace',   href:'/coworker.html',           color:'var(--accent)', icon: svg('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-3 2.5V10.5H2.5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 6.4h5M5.5 8.2h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>') },
     ]},
-    { section: null, items: [
-      { key:'accessibility',     label:'Accessibility',      action:'accessibility',      color:'var(--text3)',  icon: iconA11y(), navClass:'a11y-trigger' },
-      { key:'cookie-prefs',      label:'Cookie preferences', action:'cookie-preferences', color:'var(--text3)',  icon: iconCookie() },
+    { section: 'Run', group:'run', items: [
+      { key:'jobs-group', label:'Jobs', icon: iconPlay(), children: [
+        { key:'jobs',            label:'All Jobs', view:'jobs',                  icon: iconList() },
+        { key:'project-builder', label:'Execute',  href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
+      ]},
+      { key:'plan-group', label:'Planner & Schedules', icon: iconCalendar(), children: [
+        { key:'project-plan', label:'Project Planner', href:'/project-plan.html', color:'var(--green)',  icon: iconCalendar(), badgeId:'cyg-badge-project-plan' },
+        { key:'task-agent',   label:'Schedules',       view:'task-agent',         color:'var(--yellow)', icon: iconClock() },
+      ]},
+      { key:'server-migration', label:'Server Migration', view:'server-migration', color:'var(--accent)', icon: iconServerMigration() },
     ]},
+    { section: 'Validate', group:'validate', items: [
+      { key:'quality-group', label:'Data Quality', icon: iconQuality(), children: [
+        { key:'data-quality',   label:'Quality Review', href:'/data-quality.html',   color:'var(--green)', icon: iconQuality() },
+        { key:'data-cleansing', label:'Cleansing',      href:'/data-cleansing.html', color:'var(--teal)',  icon: iconClean() },
+        { key:'validation',     label:'Validation',     href:'/validation.html',     color:'var(--amber)', icon: iconCheck() },
+      ]},
+      { key:'insights', label:'Data Insights', href:'/insights.html', color:'var(--purple)', icon: iconInsights() },
+    ]},
+    { section: 'Report & Govern', group:'govern', items: [
+      { key:'reports-group', label:'Reports', icon: iconReport(), children: [
+        { key:'report-builder',           label:'Report Builder',    href:'/reports.html',            color:'var(--amber)',  icon: iconReportBuilder() },
+        { key:'reports',                  label:'Conversion Report', view:'reports',                  color:'var(--purple)', icon: iconReport() },
+        { key:'project-summary-document', label:'Project Summary',   view:'project-summary-document', color:'var(--purple)', icon: iconDocument() },
+      ]},
+      { key:'inventory',        label:'Project Artifacts', view:'inventory',        icon: iconGrid() },
+      { key:'privacy-security', label:'Governance',        view:'privacy-security', color:'var(--red)',   icon: iconShield() },
+      { key:'audit',            label:'Audit Log',         view:'audit',            color:'var(--text2)', icon: iconAuditLog() },
+      { key:'monitoring-group', label:'Monitoring', icon: iconChart(), children: [
+        { key:'performance', label:'Performance', href:'/performance.html', color:'var(--teal)',  icon: iconChart() },
+        { key:'diagnostics', label:'Diagnostics', view:'diagnostics',       color:'var(--text2)', icon: iconPulse() },
+      ]},
+    ]},
+  ];
+
+  // Utilities docked below the workflow rail, above the account chip.
+  // Cookie preferences moved into the account menu (see buildUserMenu).
+  const FOOTER_NAV = [
+    { key:'help',          label:'Help Guide',        action:'open-help', color:'var(--accent)', icon: iconHelp() },
+    { key:'supported',     label:'Supported Formats', view:'supported',   color:'var(--text2)',  icon: iconInfo() },
+    { key:'accessibility', label:'Accessibility',     action:'accessibility', color:'var(--text3)', icon: iconA11y(), navClass:'a11y-trigger' },
   ];
 
   // ── Icons (returns SVG string) ──────────────────────────────────────────
@@ -385,6 +403,44 @@
       .cyg-sidebar.collapsed .cyg-user-chip{ justify-content:center;padding:8px 0; }
 
       /* Permanent Drive shortcut — pinned under the brand header. */
+      /* ── Expandable groups (nav redesign) ─────────────────────────── */
+      .cyg-nav-parent .cyg-nav-chev{
+        margin-left:auto;font-size:10px;color:var(--cyg-fg-dim,#8b90a0);
+        transition:transform 0.15s;
+      }
+      .cyg-nav-parent.child-active{ color:var(--cyg-fg-strong,#fff); }
+      .cyg-nav-children{ display:none; }
+      .cyg-nav-children.open{ display:block; }
+      .cyg-nav-child{
+        padding-left:38px;font-size:13px;
+      }
+      .cyg-nav-child::before{
+        content:'';position:absolute;left:22px;top:0;bottom:0;width:1px;
+        background:rgba(255,255,255,0.10);
+      }
+      .cyg-sidebar.collapsed .cyg-nav-children{ display:none !important; }
+      .cyg-sidebar.collapsed .cyg-nav-parent .cyg-nav-chev{ display:none; }
+      /* ── Docked footer utilities ──────────────────────────────────── */
+      .cyg-foot-utils{ padding:4px 8px 6px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:6px; }
+      .cyg-foot-utils .cyg-nav-item{ font-size:12.5px;padding:7px 10px;color:var(--cyg-fg-dim,#9aa0ae); }
+      .cyg-sidebar.collapsed .cyg-foot-utils .cyg-nav-item{ justify-content:center;padding:8px 0;gap:0; }
+      /* ── Project switcher ─────────────────────────────────────────── */
+      .cyg-proj-area{ flex-shrink:0;padding:8px 12px 0; }
+      .cyg-proj-btn{
+        display:flex;align-items:center;gap:9px;width:100%;
+        background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.12);
+        border-radius:9px;padding:8px 10px;
+        font-size:12.5px;font-weight:500;color:var(--cyg-fg,#cbd0dc);
+        cursor:pointer;text-align:left;font-family:inherit;
+      }
+      .cyg-proj-btn:hover{ background:rgba(255,255,255,0.09); }
+      .cyg-proj-btn .cyg-nav-item-label{ flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+      .cyg-proj-chev{ color:var(--cyg-fg-dim,#8b90a0);font-size:10px; }
+      .cyg-proj-ic{ font-size:12px; }
+      .cyg-sidebar.collapsed .cyg-proj-area{ padding:8px 6px 0; }
+      .cyg-sidebar.collapsed .cyg-proj-btn{ justify-content:center;padding:8px 0;gap:0; }
+      .cyg-sidebar.collapsed .cyg-proj-btn .cyg-nav-item-label,
+      .cyg-sidebar.collapsed .cyg-proj-btn .cyg-proj-chev{ display:none; }
       .cyg-drive-area{ flex-shrink:0;padding:6px 12px 2px; }
       .cyg-drive-btn{
         display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;
@@ -428,9 +484,13 @@
     if (cb) s.addEventListener('load', cb, { once: true });
   }
 
-  function buildFooter(){
+  function buildFooter(activeKey){
     const chev = svg('<path d="M5 6.5l3-3 3 3M5 9.5l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
+    // Docked utilities (nav review): Help / Formats / Accessibility live here,
+    // out of the workflow rail; cookies moved into the account menu below.
+    const utils = FOOTER_NAV.filter(isItemVisible).map(it => buildItem(it, activeKey)).join('');
     return `<div class="cyg-sidebar-foot">
+      <div class="cyg-foot-utils">${utils}</div>
       <button type="button" class="cyg-user-chip" id="cyg-user-chip" aria-haspopup="menu" aria-expanded="false" title="Account">
         <span class="cyg-user-av" id="cyg-user-av">CY</span>
         <span class="cyg-user-meta"><b id="cyg-user-name">Account</b><span id="cyg-user-sub">Migration Console</span></span>
@@ -439,15 +499,85 @@
     </div>`;
   }
 
-  // Permanent Drive shortcut, pinned at the very top of the rail (under the
-  // brand header). Always opens the Co-Worker's virtual Drive, from anywhere
-  // in the app, via the /coworker.html#drive deep link.
+  // Permanent Files shortcut, pinned at the very top of the rail (under the
+  // brand header). Opens the shared virtual Drive from anywhere in the app.
+  // Labelled "Files" (nav review): "Drive" collided with the Co-Worker page
+  // and read as a branded term; this is literally where your files live.
   function buildDriveButton(){
     return `<div class="cyg-drive-area">
-      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/coworker.html#drive" title="Open the Co-Worker Drive">
-        ${iconDrive()}<span class="cyg-nav-item-label">Drive</span>
+      <a class="cyg-drive-btn" id="cyg-drive-btn" href="/coworker.html#drive" title="Your files — the shared Drive, available on every machine you sign in on">
+        ${iconDrive()}<span class="cyg-nav-item-label">Files</span>
       </a>
     </div>`;
+  }
+
+  // ── Project switcher (nav review) ───────────────────────────────────────
+  // Pinned context: which project am I acting on? Reads the same
+  // cygenix_projects / cygenix_active_project_id keys the dashboard and
+  // projects.html use. Selecting a project sets the active id and reloads so
+  // every page picks up the new context; "All projects…" goes to the manager.
+  function activeProjectName(){
+    try {
+      const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+      const id = localStorage.getItem('cygenix_active_project_id') || '';
+      const p = projects.find(x => x && x.id === id) || projects[0];
+      return p && p.name ? p.name : '';
+    } catch { return ''; }
+  }
+  function buildProjectSwitcher(){
+    const name = activeProjectName();
+    return `<div class="cyg-proj-area">
+      <button type="button" class="cyg-proj-btn" id="cyg-proj-btn" aria-haspopup="menu" aria-expanded="false"
+              title="Active project — everything below acts on this project">
+        <span class="cyg-proj-ic">🏢</span>
+        <span class="cyg-nav-item-label" id="cyg-proj-name">${escapeHtml(name || 'No project selected')}</span>
+        <span class="cyg-proj-chev">▾</span>
+      </button>
+    </div>`;
+  }
+  function wireProjectSwitcher(root){
+    const btn = root.querySelector('#cyg-proj-btn');
+    if (!btn) return;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      let menu = document.getElementById('cyg-proj-menu');
+      if (menu && menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+      if (!menu){
+        menu = document.createElement('div');
+        menu.id = 'cyg-proj-menu';
+        menu.className = 'cyg-user-menu';   // same look as the account menu
+        document.body.appendChild(menu);
+      }
+      let projects = [];
+      try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch {}
+      const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+      menu.innerHTML =
+        (projects.length
+          ? projects.map(p =>
+              `<button class="cyg-user-menu-item" type="button" data-proj="${escapeHtml(p.id)}">` +
+              `${escapeHtml(p.name || '(unnamed project)')}${p.id === activeId ? ' ✓' : ''}</button>`
+            ).join('')
+          : '<div class="cyg-user-menu-email">No projects yet</div>') +
+        '<div class="cyg-user-menu-sep"></div>' +
+        '<a class="cyg-user-menu-item" href="/projects.html">All projects…</a>';
+      const r = btn.getBoundingClientRect();
+      menu.style.left = Math.max(8, r.left) + 'px';
+      menu.style.top = (r.bottom + 6) + 'px';
+      menu.style.bottom = 'auto';
+      menu.classList.add('open');
+      menu.querySelectorAll('[data-proj]').forEach(el => {
+        el.addEventListener('click', () => {
+          try { localStorage.setItem('cygenix_active_project_id', el.dataset.proj); } catch {}
+          menu.classList.remove('open');
+          // Reload so every page (not just the dashboard) re-reads project context.
+          window.location.reload();
+        });
+      });
+      setTimeout(() => {
+        const close = (ev) => { if (!menu.contains(ev.target) && ev.target !== btn){ menu.classList.remove('open'); document.removeEventListener('click', close); } };
+        document.addEventListener('click', close);
+      }, 0);
+    });
   }
 
   // ── HTML build ──────────────────────────────────────────────────────────
@@ -460,7 +590,8 @@
       <button id="cyg-sidebar-toggle" class="cyg-sidebar-toggle" aria-label="Collapse sidebar">❮</button>
     </div>`;
     const body = NAV.map(sec => buildSection(sec, activeKey)).join('');
-    return head + buildDriveButton() + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter();
+    return head + buildProjectSwitcher() + buildDriveButton()
+      + `<div class="cyg-sidebar-scroll">${body}</div>` + buildFooter(activeKey);
   }
 
   // Read the signed-in user (stored by auth flow as cygenix_user) and fill the
@@ -506,9 +637,14 @@
       '<div class="cyg-user-menu-sep"></div>' +
       '<a class="cyg-user-menu-item" role="menuitem" href="/projects.html">My projects</a>' +
       '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-sub">Subscription</button>' +
+      '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-cookies">Cookie preferences</button>' +
       '<div class="cyg-user-menu-sep"></div>' +
       '<button class="cyg-user-menu-item danger" role="menuitem" type="button" id="cyg-user-menu-signout">Sign out</button>';
     document.body.appendChild(menu);
+    menu.querySelector('#cyg-user-menu-cookies').addEventListener('click', (e) => {
+      e.preventDefault(); closeUserMenu();
+      if (typeof window.openCookiePreferences === 'function') window.openCookiePreferences();
+    });
     menu.querySelector('#cyg-user-menu-sub').addEventListener('click', (e) => {
       e.preventDefault(); closeUserMenu();
       if (typeof window.openBillingPortal === 'function') { try { window.openBillingPortal(e.currentTarget); return; } catch(_){} }
@@ -636,12 +772,50 @@
     const labelHtml = sec.section
       ? `<div class="cyg-nav-label">${sec.section}</div>`
       : '';
-    const itemsHtml = visibleItems.map(it => buildItem(it, activeKey)).join('');
+    const itemsHtml = visibleItems.map(it =>
+      it.children ? buildParent(it, activeKey) : buildItem(it, activeKey)
+    ).join('');
     return `<div class="cyg-nav-section">${labelHtml}${itemsHtml}</div>`;
   }
 
-  function buildItem(item, activeKey){
+  // ── Expandable groups (secondary navigation) ────────────────────────────
+  // Parents render a chevron and toggle their children open/closed; the open
+  // set persists per browser. A group holding the active page is always
+  // forced open so the current location is never hidden.
+  const OPEN_KEY = 'cygenix_sidebar_open_groups';
+  function getOpenGroups(){
+    try { const a = JSON.parse(localStorage.getItem(OPEN_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+    catch { return []; }
+  }
+  function setGroupOpen(key, open){
+    const set = new Set(getOpenGroups());
+    if (open) set.add(key); else set.delete(key);
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify([...set])); } catch {}
+  }
+
+  function buildParent(item, activeKey){
+    const kids = (item.children || []).filter(isItemVisible);
+    if (!kids.length) return '';
+    const childActive = kids.some(k => k.key === activeKey);
+    const open = childActive || getOpenGroups().includes(item.key);
+    const chev = `<span class="cyg-nav-chev">${open ? '▾' : '▸'}</span>`;
+    const kidsHtml = kids.map(k => buildItem(k, activeKey, true)).join('');
+    return `
+      <div class="cyg-nav-item cyg-nav-parent${childActive ? ' child-active' : ''}"
+           data-parent="${item.key}" tabindex="0"
+           aria-expanded="${open ? 'true' : 'false'}">
+        ${item.icon || ''}
+        <span class="cyg-nav-item-label">${escapeHtml(item.label)}</span>
+        ${chev}
+      </div>
+      <div class="cyg-nav-children${open ? ' open' : ''}" data-children="${item.key}">
+        ${kidsHtml}
+      </div>`;
+  }
+
+  function buildItem(item, activeKey, isChild){
     const isActive = item.key === activeKey ? ' active' : '';
+    const childCls = isChild ? ' cyg-nav-child' : '';
     // Oracle look: monochrome nav icons (neutral grey), red only on the
     // active item. We intentionally ignore the per-item accent colour so the
     // sidebar reads as one calm, professional column rather than a rainbow.
@@ -654,7 +828,7 @@
     const extraCls  = item.navClass ? ' ' + item.navClass : '';
     const extraAttr = item.action === 'accessibility' ? ' aria-haspopup="dialog" aria-expanded="false"' : '';
     return `
-      <div class="cyg-nav-item${isActive}${extraCls}"
+      <div class="cyg-nav-item${isActive}${extraCls}${childCls}"
            data-key="${item.key}"
            tabindex="0"${styleAttr}${extraAttr}>
         ${item.icon || ''}
@@ -671,6 +845,27 @@
   function wireItemClicks(sidebarEl){
     sidebarEl.querySelectorAll('.cyg-nav-item').forEach(el => {
       el.addEventListener('click', () => {
+        // Group parents toggle their children rather than navigating.
+        const parentKey = el.dataset.parent;
+        if (parentKey){
+          // In the collapsed rail there is nowhere to show children —
+          // expand the rail first so the toggle has a visible effect.
+          if (sidebarEl.classList.contains('collapsed')){
+            sidebarEl.classList.remove('collapsed');
+            setCollapsed(false);
+            document.body.classList.remove('cyg-collapsed');
+            const t = sidebarEl.querySelector('#cyg-sidebar-toggle');
+            if (t) t.textContent = '❮';
+          }
+          const kids = sidebarEl.querySelector(`.cyg-nav-children[data-children="${parentKey}"]`);
+          const nowOpen = kids ? !kids.classList.contains('open') : true;
+          if (kids) kids.classList.toggle('open', nowOpen);
+          el.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+          const chev = el.querySelector('.cyg-nav-chev');
+          if (chev) chev.textContent = nowOpen ? '▾' : '▸';
+          setGroupOpen(parentKey, nowOpen);
+          return;
+        }
         const key = el.dataset.key;
         const item = findItem(key);
         if (item) handleClick(item);
@@ -697,8 +892,14 @@
 
   function findItem(key){
     for (const sec of NAV){
-      for (const it of sec.items){ if (it.key === key) return it; }
+      for (const it of sec.items){
+        if (it.key === key) return it;
+        if (it.children){
+          for (const c of it.children){ if (c.key === key) return c; }
+        }
+      }
     }
+    for (const it of FOOTER_NAV){ if (it.key === key) return it; }
     return null;
   }
 
@@ -746,6 +947,21 @@
     sidebar.querySelectorAll('.cyg-nav-item').forEach(el => {
       el.classList.toggle('active', el.dataset.key === key);
     });
+    // If the newly-active item is inside a group, force that group open and
+    // flag its parent — the current location must never be hidden.
+    sidebar.querySelectorAll('.cyg-nav-parent').forEach(p => p.classList.remove('child-active'));
+    const activeEl = sidebar.querySelector(`.cyg-nav-item[data-key="${key}"]`);
+    const kidsWrap = activeEl && activeEl.closest('.cyg-nav-children');
+    if (kidsWrap){
+      kidsWrap.classList.add('open');
+      const parent = sidebar.querySelector(`.cyg-nav-parent[data-parent="${kidsWrap.dataset.children}"]`);
+      if (parent){
+        parent.classList.add('child-active');
+        parent.setAttribute('aria-expanded', 'true');
+        const chev = parent.querySelector('.cyg-nav-chev');
+        if (chev) chev.textContent = '▾';
+      }
+    }
   }
 
   // ── Mount ───────────────────────────────────────────────────────────────
@@ -772,6 +988,7 @@
     populateUser(aside);
     wireUserChip(aside);
     wireDriveButton(aside);
+    wireProjectSwitcher(aside);
     hideTopbarUserPill();
     startBadgeUpdater();
     ensureA11y();
@@ -896,6 +1113,9 @@
     mount,
     setActive: updateActive,
     isCollapsed,
+    // Exposed for structural tests (tests/sidebar-nav.test.js): the nav tree
+    // and footer as data, so key coverage can be asserted without a DOM.
+    __nav: NAV, __footerNav: FOOTER_NAV, __findItem: findItem,
     setCollapsed: (on) => {
       const el = document.querySelector('.cyg-sidebar');
       if (el) el.classList.toggle('collapsed', !!on);

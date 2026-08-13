@@ -107,7 +107,7 @@
 <div class="cyg-sidebar-inner">
 
 <div class="cyg-nav-section">
-  <span class="cyg-nav-label">Migrate</span>
+  <span class="cyg-nav-label">Workspace</span>
   <a class="${isActive('dashboard.html')}" href="/dashboard.html">
     <svg viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="1" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="1" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/><rect x="9" y="9" width="6" height="6" rx="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
     Dashboard
@@ -116,7 +116,7 @@
   <!-- Configure sub-menu -->
   <div class="cyg-sub-label ${configOpen}" id="cyg-lbl-configure" onclick="cygToggleSub('configure')">
     <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M2.5 9.5l.7-.7M8.8 3.2l.7-.7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><circle cx="6" cy="6" r="2" stroke="currentColor" stroke-width="1.1"/></svg>
-    Configure
+    Connect
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${configCollapsed}" id="cyg-sub-configure" style="max-height:${configOpen?'200px':'0'}">
@@ -154,7 +154,7 @@
   <!-- Develop sub-menu -->
   <div class="cyg-sub-label ${mappingOpen}" id="cyg-lbl-mapping" onclick="cygToggleSub('mapping')">
     <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><path d="M1 3h4M1 6h4M1 9h4M7 3h4M7 6h4M7 9h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-    Develop
+    Map &amp; Build
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${mappingCollapsed}" id="cyg-sub-mapping" style="max-height:${mappingOpen?'200px':'0'}">
@@ -168,14 +168,14 @@
     </a>
     <a class="${isActive('coworker.html')}" href="/coworker.html">
       <svg viewBox="0 0 16 16" fill="none"><path d="M2.5 3.5h11a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-3 2.5V10.5H2.5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 6.4h5M5.5 8.2h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-      Co-Worker
+      AI Workspace
     </a>
   </div>
 
   <!-- Analysis sub-menu -->
   <div class="cyg-sub-label ${analysisOpen}" id="cyg-lbl-analysis" onclick="cygToggleSub('analysis')">
     <svg viewBox="0 0 12 12" fill="none" style="width:9px;height:9px"><path d="M1 9l3-3 2 2 3-4 2 2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    Analysis
+    Validate
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${analysisCollapsed}" id="cyg-sub-analysis" style="max-height:${analysisOpen?'160px':'0'}">
@@ -205,7 +205,7 @@
 </div>
 
 <div class="cyg-nav-section">
-  <span class="cyg-nav-label">Outputs</span>
+  <span class="cyg-nav-label">Report &amp; Govern</span>
 
   <!-- Reports sub-menu -->
   <div class="cyg-sub-label ${reportsOpen}" id="cyg-lbl-reports" onclick="cygToggleSub('reports')">
