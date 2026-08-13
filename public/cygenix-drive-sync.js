@@ -120,7 +120,11 @@
   }
 
   async function api(action, payload) {
-    const token = idToken();
+    // Async getter: renews silently when the cached token has expired, which
+    // is the normal state after an hour in the same session.
+    const token = (typeof window.getCygenixIdTokenAsync === 'function')
+      ? await window.getCygenixIdTokenAsync()
+      : idToken();
     if (!token) throw new Error('not-signed-in');
     const r = await fetch(API, {
       method: 'POST',
@@ -204,9 +208,14 @@
   }
 
   // ── The sync itself ───────────────────────────────────────────────────────
+  // "Signed in" must not mean "holds an unexpired cached token" — after an
+  // hour it never does, and gating on that stopped sync from even attempting
+  // the silent renewal that would have fixed it.
+  function signedIn() { return !!idToken() || !!currentUserTag(); }
+
   async function doSync(opts) {
     opts = opts || {};
-    if (!idToken()) { setStatus('signed-out', 'Sign in to sync your Drive'); return { skipped: 'not-signed-in' }; }
+    if (!signedIn()) { setStatus('signed-out', 'Sign in to sync your Drive'); return { skipped: 'not-signed-in' }; }
 
     setStatus('syncing', 'Syncing Drive…');
 
@@ -368,14 +377,14 @@
   // request, so poll unconditionally; localChangedSinceBase() is kept to sync
   // promptly after a local edit rather than waiting out the interval.
   async function maybeSync() {
-    if (document.hidden || !idToken()) return;
+    if (document.hidden || !signedIn()) return;
     if (await localChangedSinceBase()) sync({ force: true });   // local edit — go now
     else sync();                                               // otherwise poll for remote changes
   }
 
   // First sync shortly after load — after auth has settled, and late enough
   // not to compete with first paint.
-  setTimeout(() => { if (idToken()) sync({ force: true }); }, 2500);
+  setTimeout(() => { if (signedIn()) sync({ force: true }); }, 2500);
 
   // Poll for other machines' changes, and push anything edited here.
   setInterval(maybeSync, POLL_MS);
@@ -383,7 +392,7 @@
 
   // Best-effort flush of pending local edits when leaving the page.
   window.addEventListener('pagehide', () => {
-    if (!_syncing && idToken()) { try { sync(); } catch {} }
+    if (!_syncing && signedIn()) { try { sync(); } catch {} }
   });
 
   // ── Diagnostics ───────────────────────────────────────────────────────────
@@ -396,7 +405,16 @@
     const out = {};
     out.syncScriptLoaded = true;
     out.tokenHelperPresent = (typeof window.getCygenixIdToken === 'function');
-    const tok = idToken();
+    out.renewalSupported   = (typeof window.getCygenixIdTokenAsync === 'function');
+    const cached = idToken();
+    out.cachedTokenValid = !!cached;
+    // The cached token expires hourly; what matters is whether a usable token
+    // can be OBTAINED, renewing silently if needed.
+    let tok = cached;
+    if (!tok && out.renewalSupported) {
+      try { tok = await window.getCygenixIdTokenAsync(); out.renewedToken = !!tok; }
+      catch (e) { out.renewError = e && e.message; }
+    }
     out.tokenAvailable = !!tok;
     out.tokenLength = tok ? tok.length : 0;
     out.user = currentUserTag() || '(none)';
@@ -408,7 +426,7 @@
     out.baselineEntries = Object.keys(loadBase()).length;
 
     if (!tok) {
-      out.endpoint = 'not tested — no auth token, so sync never runs. Sign out and back in.';
+      out.endpoint = 'not tested — no token could be obtained (cached token expired AND silent renewal failed). Sign out and back in.';
     } else {
       try {
         const d = await api('diag');

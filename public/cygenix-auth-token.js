@@ -149,6 +149,105 @@
     return bestToken;
   };
 
+  // ── Silent token renewal ─────────────────────────────────────────────────
+  // Entra ID tokens expire after about an hour. getCygenixIdToken() only READS
+  // the MSAL cache, so once the cached token expires it returns '' — and every
+  // API call then goes out unauthenticated and 401s, even though the user is
+  // still signed in and MSAL holds a valid refresh token. Symptom: the app
+  // works for an hour, then quietly stops talking to its own backend.
+  //
+  // Fix: when the cached token is missing or expired, renew it through MSAL's
+  // acquireTokenSilent (which uses the refresh token, no user interaction).
+  // msal-browser is loaded from the CDN only if the page doesn't already have
+  // it, and only at the moment a renewal is actually needed — so the common
+  // path (valid cached token) still costs nothing.
+  const MSAL_CDN   = 'https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js';
+  const MSAL_CFG   = {
+    auth: {
+      clientId:  'f3478996-b2b5-4b21-9a23-a6b97a0e5b13',
+      authority: 'https://cygenix.ciamlogin.com/',
+      knownAuthorities: ['cygenix.ciamlogin.com'],
+      redirectUri: window.location.origin + '/login.html',
+      navigateToLoginRequestUrl: false,
+    },
+    cache: { cacheLocation: 'localStorage', storeAuthStateInCookie: false },
+    system: { allowNativeBroker: false },
+  };
+  const MSAL_SCOPES = ['openid', 'profile', 'email'];
+
+  function loadMsal() {
+    if (typeof window.msal !== 'undefined') return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let s = document.getElementById('cygenix-msal-js');
+      if (!s) {
+        s = document.createElement('script');
+        s.id = 'cygenix-msal-js'; s.src = MSAL_CDN;
+        document.head.appendChild(s);
+      }
+      s.addEventListener('load',  () => resolve(typeof window.msal !== 'undefined'), { once: true });
+      s.addEventListener('error', () => resolve(false), { once: true });
+    });
+  }
+
+  let _msalApp = null;
+  async function getMsalApp() {
+    if (_msalApp) return _msalApp;
+    if (!(await loadMsal())) return null;
+    const app = new window.msal.PublicClientApplication(MSAL_CFG);
+    if (typeof app.initialize === 'function') await app.initialize();   // required in msal-browser v3
+    _msalApp = app;
+    return app;
+  }
+
+  let _renewing = null;   // de-dupes concurrent renewals across call sites
+  function renewIdToken() {
+    if (_renewing) return _renewing;
+    _renewing = (async () => {
+      try {
+        const app = await getMsalApp();
+        if (!app) { dbg('renew: MSAL unavailable'); return ''; }
+        const accounts = app.getAllAccounts() || [];
+        if (!accounts.length) { dbg('renew: no MSAL account cached'); return ''; }
+        const res = await app.acquireTokenSilent({ scopes: MSAL_SCOPES, account: accounts[0] });
+        const tok = (res && res.idToken) || '';
+        if (tok) {
+          dbg('renew: acquired a fresh ID token');
+          // Keep the legacy keys other modules read in step with the renewal.
+          try {
+            const claims = res.idTokenClaims || {};
+            const exp = claims.exp ? claims.exp * 1000 : (Date.now() + 3600000);
+            localStorage.setItem('cygenix_token', tok);
+            sessionStorage.setItem('cygenix_token', tok);
+            localStorage.setItem('cygenix_expires', String(exp));
+            sessionStorage.setItem('cygenix_expires', String(exp));
+          } catch {}
+        }
+        return tok;
+      } catch (e) {
+        // InteractionRequiredAuthError means the refresh token is gone too —
+        // the user genuinely has to sign in again. Surface it rather than
+        // failing silently, but never redirect from here: that would yank a
+        // user out of a page mid-task on one unlucky background call.
+        dbg('renew failed:', e && e.message);
+        try {
+          window.dispatchEvent(new CustomEvent('cygenix:auth-expired', { detail: { error: e && e.message } }));
+        } catch {}
+        return '';
+      } finally {
+        setTimeout(() => { _renewing = null; }, 0);
+      }
+    })();
+    return _renewing;
+  }
+
+  // Async counterpart to getCygenixIdToken(): returns a cached token if it is
+  // still valid, otherwise renews silently. Prefer this anywhere you can await.
+  window.getCygenixIdTokenAsync = async function getCygenixIdTokenAsync() {
+    const cached = window.getCygenixIdToken();
+    if (cached) return cached;
+    return await renewIdToken();
+  };
+
   // Convenience wrapper for fetch — adds Authorization header automatically.
   // Use this anywhere you want to call a Cygenix API endpoint that requires
   // authentication. Falls back to a normal fetch if no token is found, so
@@ -163,15 +262,15 @@
   //     headers: { 'Content-Type': 'application/json' },
   //     body: JSON.stringify({ action: 'list' }),
   //   });
-  window.cygenixFetch = function cygenixFetch(url, opts) {
+  window.cygenixFetch = async function cygenixFetch(url, opts) {
     const o = opts || {};
     const headers = Object.assign({}, o.headers || {});
-    const token = window.getCygenixIdToken();
+    const token = await window.getCygenixIdTokenAsync();   // renews if expired
     if (token) {
       headers['Authorization'] = 'Bearer ' + token;
       dbg('fetch', url, '→ Authorization header attached');
     } else {
-      dbg('fetch', url, '→ NO TOKEN FOUND, request will fail with 401');
+      dbg('fetch', url, '→ NO TOKEN AVAILABLE (renewal failed), request will 401');
     }
     return fetch(url, Object.assign({}, o, { headers }));
   };
@@ -207,11 +306,21 @@
       if (AUTH_PATH.test(path) || (SEND_TOKEN_TO_AZURE && AZURE_API.test(url))) {
         const opts = init || {};
         const headers = new Headers(opts.headers || (input instanceof Request ? input.headers : undefined));
-        if (!headers.has('Authorization')) {
-          const token = window.getCygenixIdToken();
-          if (token) headers.set('Authorization', 'Bearer ' + token);
+        if (headers.has('Authorization')) return _origFetch(input, Object.assign({}, opts, { headers }));
+
+        // Fast path: a valid cached token keeps this synchronous in spirit.
+        const cached = window.getCygenixIdToken();
+        if (cached) {
+          headers.set('Authorization', 'Bearer ' + cached);
+          return _origFetch(input, Object.assign({}, opts, { headers }));
         }
-        return _origFetch(input, Object.assign({}, opts, { headers }));
+        // Expired or missing — renew before sending, rather than firing off a
+        // request we know will 401. fetch already returns a promise, so
+        // awaiting here is invisible to callers.
+        return window.getCygenixIdTokenAsync().then((tok) => {
+          if (tok) headers.set('Authorization', 'Bearer ' + tok);
+          return _origFetch(input, Object.assign({}, opts, { headers }));
+        });
       }
     } catch (e) { /* fall through to the untouched fetch on any surprise */ }
     return _origFetch(input, init);
