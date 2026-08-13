@@ -114,12 +114,17 @@
     ]},
   ];
 
-  // Utilities docked below the workflow rail, above the account chip.
-  // Cookie preferences moved into the account menu (see buildUserMenu).
-  const FOOTER_NAV = [
-    { key:'help',          label:'Help Guide',        action:'open-help', color:'var(--accent)', icon: iconHelp() },
-    { key:'supported',     label:'Supported Formats', view:'supported',   color:'var(--text2)',  icon: iconInfo() },
-    { key:'accessibility', label:'Accessibility',     action:'accessibility', color:'var(--text3)', icon: iconA11y(), navClass:'a11y-trigger' },
+  // Utility destinations that live in the ACCOUNT MENU rather than the rail
+  // (with Cookie preferences and Subscription), keeping the workflow rail to
+  // workflow only. Rendered by buildUserMenu; still reachable through
+  // findItem so keys resolve for tests and setActive.
+  //
+  // `navClass:'a11y-trigger'` must survive the move: cygenix-a11y.js's
+  // outside-click handler skips elements matching it, otherwise the same
+  // click that opens the panel would immediately close it again.
+  const ACCOUNT_NAV = [
+    { key:'help',          label:'Help Guide',    action:'open-help',     color:'var(--accent)', icon: iconHelp() },
+    { key:'accessibility', label:'Accessibility', action:'accessibility', color:'var(--text3)',  icon: iconA11y(), navClass:'a11y-trigger' },
   ];
 
   // ── Icons (returns SVG string) ──────────────────────────────────────────
@@ -420,10 +425,6 @@
       }
       .cyg-sidebar.collapsed .cyg-nav-children{ display:none !important; }
       .cyg-sidebar.collapsed .cyg-nav-parent .cyg-nav-chev{ display:none; }
-      /* ── Docked footer utilities ──────────────────────────────────── */
-      .cyg-foot-utils{ padding:4px 8px 6px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:6px; }
-      .cyg-foot-utils .cyg-nav-item{ font-size:12.5px;padding:7px 10px;color:var(--cyg-fg-dim,#9aa0ae); }
-      .cyg-sidebar.collapsed .cyg-foot-utils .cyg-nav-item{ justify-content:center;padding:8px 0;gap:0; }
       /* ── Project switcher ─────────────────────────────────────────── */
       .cyg-proj-area{ flex-shrink:0;padding:8px 12px 0; }
       .cyg-proj-btn{
@@ -484,14 +485,13 @@
     if (cb) s.addEventListener('load', cb, { once: true });
   }
 
-  function buildFooter(activeKey){
+  function buildFooter(){
     const chev = svg('<path d="M5 6.5l3-3 3 3M5 9.5l3 3 3-3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>');
-    // Docked utilities (nav review): Help / Formats / Accessibility live here,
-    // out of the workflow rail; cookies moved into the account menu below.
-    const utils = FOOTER_NAV.filter(isItemVisible).map(it => buildItem(it, activeKey)).join('');
+    // Utilities (Help, Accessibility, Cookies) live in the account menu — the
+    // rail below the workflow groups is now just the account chip.
     return `<div class="cyg-sidebar-foot">
-      <div class="cyg-foot-utils">${utils}</div>
       <button type="button" class="cyg-user-chip" id="cyg-user-chip" aria-haspopup="menu" aria-expanded="false" title="Account">
+
         <span class="cyg-user-av" id="cyg-user-av">CY</span>
         <span class="cyg-user-meta"><b id="cyg-user-name">Account</b><span id="cyg-user-sub">Migration Console</span></span>
         <span class="cyg-user-chev">${chev}</span>
@@ -637,10 +637,29 @@
       '<div class="cyg-user-menu-sep"></div>' +
       '<a class="cyg-user-menu-item" role="menuitem" href="/projects.html">My projects</a>' +
       '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-sub">Subscription</button>' +
+      '<div class="cyg-user-menu-sep"></div>' +
+      // Help / Accessibility, moved out of the rail. Rendered from
+      // ACCOUNT_NAV so the item definitions (and the a11y-trigger class the
+      // accessibility panel depends on) stay in one place.
+      ACCOUNT_NAV.filter(isItemVisible).map(it =>
+        `<button class="cyg-user-menu-item${it.navClass ? ' ' + it.navClass : ''}" role="menuitem" type="button"` +
+        `${it.action === 'accessibility' ? ' aria-haspopup="dialog" aria-expanded="false"' : ''}` +
+        ` data-acct-key="${it.key}">${escapeHtml(it.label)}</button>`
+      ).join('') +
       '<button class="cyg-user-menu-item" role="menuitem" type="button" id="cyg-user-menu-cookies">Cookie preferences</button>' +
       '<div class="cyg-user-menu-sep"></div>' +
       '<button class="cyg-user-menu-item danger" role="menuitem" type="button" id="cyg-user-menu-signout">Sign out</button>';
     document.body.appendChild(menu);
+    menu.querySelectorAll('[data-acct-key]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        const item = findItem(el.dataset.acctKey);
+        // Close the menu BEFORE acting: the accessibility panel anchors to the
+        // viewport and would otherwise open behind an already-open menu.
+        closeUserMenu();
+        if (item) handleClick(item);
+      });
+    });
     menu.querySelector('#cyg-user-menu-cookies').addEventListener('click', (e) => {
       e.preventDefault(); closeUserMenu();
       if (typeof window.openCookiePreferences === 'function') window.openCookiePreferences();
@@ -899,7 +918,7 @@
         }
       }
     }
-    for (const it of FOOTER_NAV){ if (it.key === key) return it; }
+    for (const it of ACCOUNT_NAV){ if (it.key === key) return it; }
     return null;
   }
 
@@ -1115,7 +1134,7 @@
     isCollapsed,
     // Exposed for structural tests (tests/sidebar-nav.test.js): the nav tree
     // and footer as data, so key coverage can be asserted without a DOM.
-    __nav: NAV, __footerNav: FOOTER_NAV, __findItem: findItem,
+    __nav: NAV, __accountNav: ACCOUNT_NAV, __findItem: findItem,
     setCollapsed: (on) => {
       const el = document.querySelector('.cyg-sidebar');
       if (el) el.classList.toggle('collapsed', !!on);

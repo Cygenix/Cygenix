@@ -33,17 +33,19 @@ const check = (label, ok, extra) => {
 };
 
 console.log('Sidebar navigation — structure\n');
-check('sidebar module loads and exports the nav tree', !!(SB && SB.__nav && SB.__footerNav));
+check('sidebar module loads and exports the nav tree', !!(SB && SB.__nav && SB.__accountNav));
 
-const NAV = SB.__nav, FOOT = SB.__footerNav;
+const NAV = SB.__nav, ACCT = SB.__accountNav;
 
 // 1. Every key that existed before the restructure must still resolve —
 //    pages mount with these in data-active, and dashboard code targets them.
+//    'supported' is deliberately absent: the Supported Formats menu option
+//    was removed on request.
 const LEGACY_KEYS = ['dashboard','search','project-settings','connections','performance',
   'system-parameters','privacy-security','integrations','project-plan','object-mapping',
   'sql-editor','agentive-migration','coworker','data-quality','insights','data-cleansing',
   'validation','jobs','project-builder','server-migration','inventory','task-agent',
-  'report-builder','reports','project-summary-document','audit','supported','diagnostics',
+  'report-builder','reports','project-summary-document','audit','diagnostics',
   'help','accessibility'];
 const missing = LEGACY_KEYS.filter(k => !SB.__findItem(k));
 check('every pre-redesign key still resolves (' + LEGACY_KEYS.length + ')', missing.length === 0,
@@ -55,7 +57,7 @@ for (const sec of NAV) for (const it of sec.items) {
   allKeys.push(it.key);
   if (it.children) for (const c of it.children) allKeys.push(c.key);
 }
-FOOT.forEach(it => allKeys.push(it.key));
+ACCT.forEach(it => allKeys.push(it.key));
 const dupes = allKeys.filter((k, i) => allKeys.indexOf(k) !== i);
 check('no duplicate keys', dupes.length === 0, 'dupes: ' + dupes.join(', '));
 
@@ -77,7 +79,7 @@ const leafCheck = (it) => {
 for (const sec of NAV) for (const it of sec.items) {
   if (it.children) it.children.forEach(leafCheck); else leafCheck(it);
 }
-FOOT.forEach(leafCheck);
+ACCT.forEach(leafCheck);
 check('every leaf has exactly one destination', badLeaves.length === 0, badLeaves.join(', '));
 
 // 5. Lifecycle order per the review: Connect → Map & Build → Run → Validate
@@ -96,7 +98,30 @@ for (const sec of NAV) for (const it of sec.items) {
 check('"AI Assist" replaces "Agentive Migration"',
   labels.includes('AI Assist') && !labels.includes('Agentive Migration'));
 check('cookie preferences moved out of the rail',
-  !labels.includes('Cookie preferences') && !FOOT.some(i => i.key === 'cookie-prefs'));
+  !labels.includes('Cookie preferences') && !ACCT.some(i => i.key === 'cookie-prefs'));
+
+// 6b. Supported Formats removed from the menu entirely (requested).
+check('Supported Formats is gone from nav and account menu',
+  !SB.__findItem('supported') && !labels.includes('Supported Formats'));
+
+// 6c. Help + Accessibility live in the account menu, not the rail.
+const acctKeys = ACCT.map(i => i.key);
+check('Help and Accessibility are in the account menu',
+  acctKeys.includes('help') && acctKeys.includes('accessibility'));
+check('Help and Accessibility are NOT in the workflow rail',
+  !allNavKeys().includes('help') && !allNavKeys().includes('accessibility'));
+// The accessibility panel's outside-click handler skips `.a11y-trigger`;
+// losing that class in the move would make the panel close as it opens.
+check('accessibility item keeps its a11y-trigger class',
+  (ACCT.find(i => i.key === 'accessibility') || {}).navClass === 'a11y-trigger');
+
+function allNavKeys(){
+  const out = [];
+  for (const sec of NAV) for (const it of sec.items){
+    out.push(it.key); (it.children || []).forEach(c => out.push(c.key));
+  }
+  return out;
+}
 
 // 7. Jobs promoted: the Run section must come before Validate and contain jobs.
 const runIdx = NAV.findIndex(s => s.section === 'Run');
