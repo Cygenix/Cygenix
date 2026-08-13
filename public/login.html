@@ -287,6 +287,9 @@ function saveSession(authResult) {
   const token = authResult.idToken || authResult.accessToken;
   localStorage.setItem('cygenix_token',   token);
   sessionStorage.setItem('cygenix_token', token);
+  // Both storages — sessionStorage is per-tab, and pages that check expiry
+  // (project-manager.js) must work in new tabs too.
+  localStorage.setItem('cygenix_expires',   String(exp));
   sessionStorage.setItem('cygenix_expires', String(exp));
   const userJson = JSON.stringify({
     email, name,

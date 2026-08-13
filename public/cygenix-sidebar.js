@@ -472,13 +472,17 @@
     if (!nameEl) return;
     let name = 'Account', email = '', plan = 'Migration Console';
     try {
-      const raw = sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user')
-                || localStorage.getItem('cygenix_active_user');
+      const raw = sessionStorage.getItem('cygenix_user') || localStorage.getItem('cygenix_user');
       if (raw){
         const u = JSON.parse(raw);
         name  = (u.user_metadata && u.user_metadata.full_name) || (u.email ? u.email.split('@')[0] : name);
         email = u.email || '';
         if (u.plan || (u.user_metadata && u.user_metadata.plan)) plan = u.plan || u.user_metadata.plan;
+      } else {
+        // cygenix_active_user holds a PLAIN email string, not JSON — the old
+        // code JSON.parse'd it, always threw, and showed "Account" instead.
+        const activeEmail = (localStorage.getItem('cygenix_active_user') || '').trim();
+        if (activeEmail) { email = activeEmail; name = activeEmail.split('@')[0]; }
       }
     } catch {}
     const initials = name.trim().split(/\s+/).map(w => w[0]).join('').slice(0,2).toUpperCase() || 'CY';

@@ -331,9 +331,11 @@
       else          jobs.unshift(reverted);
       writeJobs(jobs);
 
-      // 4. Push to Cosmos if available.
-      if (window.CygenixSync && typeof window.CygenixSync.pushKey === 'function') {
-        try { await window.CygenixSync.pushKey(STORAGE_KEY); } catch (_) {}
+      // 4. Push to Cosmos if available. (This used to call pushKey(), which
+      //    doesn't exist on CygenixSync — the push was a silent no-op and a
+      //    reload within the debounce window lost the revert.)
+      if (window.CygenixSync && typeof window.CygenixSync.saveNow === 'function') {
+        try { await window.CygenixSync.saveNow(); } catch (_) {}
       }
 
       // 5. Notify host page so it can refresh whatever it's showing.
