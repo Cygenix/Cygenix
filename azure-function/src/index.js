@@ -67,7 +67,7 @@ const CORS = {
 };
 
 // ── Token-based auth (see entra-auth.js for the rollout plan) ────────────────
-const { enforceAuth } = require('./entra-auth');
+const { enforceAuth, logWarn, logErr } = require('./entra-auth');
 
 const ok  = (body)       => ({ status: 200, headers: CORS, body: JSON.stringify(body) });
 const err = (code, msg)  => ({ status: code, headers: CORS, body: JSON.stringify({ error: msg }) });
@@ -174,7 +174,7 @@ app.http('db', {
       // logged warning and keeps the worker alive.
       pool.on('error', (poolErr) => {
         const msg = poolErr && poolErr.message ? poolErr.message : String(poolErr);
-        ctx.log.warn('[cygenix-db-api] Pool async error (swallowed):', msg);
+        logWarn(ctx, '[cygenix-db-api] Pool async error (swallowed):', msg);
       });
 
       let result;
@@ -407,7 +407,7 @@ app.http('db', {
               ? body.sql.slice(0, 400) + (body.sql.length > 400 ? ' …(truncated)' : '')
               : '';
 
-            ctx.log.error('SQL EXECUTE ERROR:', sqlErr?.message || String(sqlErr),
+            logErr(ctx, 'SQL EXECUTE ERROR:', sqlErr?.message || String(sqlErr),
               '| number=', sqlErr?.number,
               '| line=',   sqlErr?.lineNumber,
               '| state=',  sqlErr?.state);
@@ -495,7 +495,7 @@ app.http('db', {
       // process on scale-down anyway. The pool.on('error', ...) listener we
       // attach up in the connect block catches any async errors that would
       // otherwise be unhandled.
-      // try { await pool.close(); } catch (closeErr) { ctx.log.warn('pool.close() failed:', closeErr?.message || closeErr); }
+      // try { await pool.close(); } catch (closeErr) { logWarn(ctx, 'pool.close() failed:', closeErr?.message || closeErr); }
 
       // Defensive serialisation: if `result` contains anything JSON.stringify
       // can't handle (rare — would mean SQL Server returned an exotic type
@@ -507,7 +507,7 @@ app.http('db', {
       try {
         responseBody = JSON.stringify(result);
       } catch (stringifyErr) {
-        ctx.log.error('Result JSON.stringify failed:', stringifyErr?.message || stringifyErr);
+        logErr(ctx, 'Result JSON.stringify failed:', stringifyErr?.message || stringifyErr);
         responseBody = JSON.stringify({
           success: false,
           error:   'Internal: response could not be serialised — ' + (stringifyErr?.message || String(stringifyErr))
@@ -524,7 +524,7 @@ app.http('db', {
       // that genuinely deserves a 500.
       const errMsg   = err?.message || String(err) || 'Unknown error';
       const errStack = err?.stack ? err.stack.split('\n').slice(0, 5).join(' | ') : null;
-      ctx.log.error('CAUGHT ERROR:', errMsg, errStack);
+      logErr(ctx, 'CAUGHT ERROR:', errMsg, errStack);
 
       // Defensive: even the catch needs to be bullet-proof. JSON.stringify
       // shouldn't fail on this shape, but if it does we fall back to a
@@ -566,7 +566,7 @@ app.http('data', {
 
     // Validate environment
     if (!process.env.COSMOS_ENDPOINT || !process.env.COSMOS_KEY) {
-      ctx.log.error('COSMOS_ENDPOINT or COSMOS_KEY not set');
+      logErr(ctx, 'COSMOS_ENDPOINT or COSMOS_KEY not set');
       return err(500, 'Cosmos DB not configured — check COSMOS_ENDPOINT and COSMOS_KEY in Function environment variables');
     }
 
@@ -1097,7 +1097,7 @@ app.http('data', {
             await getCosmosContainer('waitlist').items.create(doc);
             ctx.log('Waitlist submission stored:', email);
           } catch (e) {
-            ctx.log.error('Waitlist write failed:', e.message);
+            logErr(ctx, 'Waitlist write failed:', e.message);
             return err(500, 'Could not record your submission. Please email curtis.morris@cygenix.co.uk directly.');
           }
 
@@ -1970,7 +1970,7 @@ app.http('data', {
             stage = 'env-check';
             const apiKey = process.env.ANTHROPIC_API_KEY;
             if (!apiKey) {
-              ctx.log.error('ANTHROPIC_API_KEY not configured');
+              logErr(ctx, 'ANTHROPIC_API_KEY not configured');
               return err(500, 'stage=env-check: ANTHROPIC_API_KEY missing');
             }
 
@@ -2126,7 +2126,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
             } catch (fetchErr) {
               clearTimeout(timeoutId);
               const cause = fetchErr.name === 'AbortError' ? 'timeout-90s' : fetchErr.message;
-              ctx.log.error(`anthropic-call failed: ${cause}`);
+              logErr(ctx, `anthropic-call failed: ${cause}`);
               return err(504, `stage=anthropic-call: ${cause}`);
             }
             clearTimeout(timeoutId);
@@ -2135,7 +2135,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
             if (!resp.ok) {
               let errText = '';
               try { errText = await resp.text(); } catch {}
-              ctx.log.error(`Anthropic API ${resp.status}:`, errText.slice(0, 500));
+              logErr(ctx, `Anthropic API ${resp.status}:`, errText.slice(0, 500));
               return err(502, `stage=check-response: anthropic returned ${resp.status} — ${errText.slice(0, 200)}`);
             }
 
@@ -2147,7 +2147,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
             const text = (data.content || [])
               .filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
             if (!text) {
-              ctx.log.error('Empty model response. stop_reason:', data.stop_reason, 'usage:', JSON.stringify(data.usage));
+              logErr(ctx, 'Empty model response. stop_reason:', data.stop_reason, 'usage:', JSON.stringify(data.usage));
               return err(502, 'stage=parse-response: empty model response');
             }
 
@@ -2163,7 +2163,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
               cleaned = cleaned.slice(firstBracket, lastBracket + 1);
               suggestions = JSON.parse(cleaned);
             } catch (e) {
-              ctx.log.error('Failed to parse LLM JSON:', e.message, 'raw start:', text.slice(0, 200));
+              logErr(ctx, 'Failed to parse LLM JSON:', e.message, 'raw start:', text.slice(0, 200));
               return err(502, `stage=extract-json: ${e.message}`);
             }
             if (!Array.isArray(suggestions)) return err(502, 'stage=extract-json: not an array');
@@ -2205,7 +2205,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
           } catch (innerErr) {
             // Catches anything we didn't explicitly handle. The stage variable
             // tells us where it died.
-            ctx.log.error(`quality-suggest-rels CRASHED at stage=${stage}:`, innerErr.message, innerErr.stack?.split('\n').slice(0, 3).join(' | '));
+            logErr(ctx, `quality-suggest-rels CRASHED at stage=${stage}:`, innerErr.message, innerErr.stack?.split('\n').slice(0, 3).join(' | '));
             return err(500, `stage=${stage}: ${innerErr.message}`);
           }
         }
@@ -2295,7 +2295,7 @@ Keep "reasoning" SHORT (max 12 words). Don't restate the mapping; just say WHY (
               await container.items.upsert(doc);
               results.push({ id: doc.id, ok: true });
             } catch (e) {
-              ctx.log.error(`profile-save failed for ${doc?.id}:`, e.message);
+              logErr(ctx, `profile-save failed for ${doc?.id}:`, e.message);
               errors.push({ id: doc?.id || '(unknown)', error: e.message });
             }
           }
@@ -2649,7 +2649,7 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
               else throw new Error('Unparseable Claude response');
             }
           } catch (e) {
-            ctx.log.error('profile-classify-subjects Claude call failed:', e.message);
+            logErr(ctx, 'profile-classify-subjects Claude call failed:', e.message);
             return err(502, 'Claude classify failed: ' + e.message);
           }
 
@@ -2759,7 +2759,7 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           try {
             resp = await fetch(listUrl, { method: 'GET' });
           } catch (e) {
-            ctx.log.error('blob-list fetch failed:', e.message);
+            logErr(ctx, 'blob-list fetch failed:', e.message);
             return err(502, 'Upstream fetch failed: ' + (e.message || String(e)));
           }
 
@@ -2877,7 +2877,7 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
           try {
             resp = await fetch(downloadUrl, { method: 'GET' });
           } catch (e) {
-            ctx.log.error('blob-download fetch failed:', e.message);
+            logErr(ctx, 'blob-download fetch failed:', e.message);
             return err(502, 'Upstream fetch failed: ' + (e.message || String(e)));
           }
 
@@ -2937,7 +2937,7 @@ Respond with ONLY a JSON array — one object per table in the same order. No ma
       }
 
     } catch (e) {
-      ctx.log.error('Cosmos error:', e.message, e.code, e.stack?.split('\n').slice(0,3).join(' | '));
+      logErr(ctx, 'Cosmos error:', e.message, e.code, e.stack?.split('\n').slice(0,3).join(' | '));
       return err(500, `Cosmos error: ${e.message}`);
     }
   }
@@ -3028,7 +3028,7 @@ app.http('narrative', {
     try {
       const apiKey = process.env.ANTHROPIC_API_KEY;
       if (!apiKey) {
-        ctx.log.error('ANTHROPIC_API_KEY not configured');
+        logErr(ctx, 'ANTHROPIC_API_KEY not configured');
         return err(500, 'Server not configured — ANTHROPIC_API_KEY missing');
       }
 
@@ -3062,7 +3062,7 @@ app.http('narrative', {
 
       if (!resp.ok) {
         const errText = await resp.text();
-        ctx.log.error('Anthropic API error', resp.status, errText);
+        logErr(ctx, 'Anthropic API error', resp.status, errText);
         return err(502, `Upstream error (${resp.status})`);
       }
 
@@ -3074,14 +3074,14 @@ app.http('narrative', {
         .trim();
 
       if (!narrative) {
-        ctx.log.error('Empty narrative in Anthropic response');
+        logErr(ctx, 'Empty narrative in Anthropic response');
         return err(502, 'Empty response from model');
       }
 
       return ok({ narrative });
 
     } catch (e) {
-      ctx.log.error('Narrative generation failed:', e.message, e.stack?.split('\n').slice(0,3).join(' | '));
+      logErr(ctx, 'Narrative generation failed:', e.message, e.stack?.split('\n').slice(0,3).join(' | '));
       return err(500, `Narrative error: ${e.message}`);
     }
   }
@@ -3140,7 +3140,7 @@ app.http('create-checkout-session', {
     try {
       // ── 1. Validate environment ──────────────────────────────────────────
       if (!process.env.STRIPE_SECRET_KEY) {
-        ctx.log.error('STRIPE_SECRET_KEY not configured');
+        logErr(ctx, 'STRIPE_SECRET_KEY not configured');
         return err(500, 'Server is not configured: STRIPE_SECRET_KEY missing.');
       }
 
@@ -3187,7 +3187,7 @@ app.http('create-checkout-session', {
       const envVarName = STRIPE_PRICE_ENV_MAP[`${tier}:${billing}`];
       const priceId    = process.env[envVarName];
       if (!priceId) {
-        ctx.log.error(`${envVarName} not configured`);
+        logErr(ctx, `${envVarName} not configured`);
         return err(500, `Server is not configured: ${envVarName} missing.`);
       }
       // Sanity-check that whoever set the env var pasted a Price ID and not

@@ -67,6 +67,21 @@ function verifyJwt(token) {
   });
 }
 
+// Logging shim. The Azure Functions v4 programming model exposes
+// ctx.warn()/ctx.error() on InvocationContext, while the v3 style is
+// ctx.log.warn(). Calling the wrong one throws a TypeError — and because
+// this module runs BEFORE a handler's own try/catch, that surfaces as a bare
+// 500 with an empty body on every request rather than as a logging failure.
+// Never let logging break a request.
+function logWarn(ctx, ...args) {
+  try {
+    if (ctx && typeof ctx.warn === 'function')                 ctx.warn(...args);
+    else if (ctx && ctx.log && typeof ctx.log.warn === 'function') ctx.log.warn(...args);
+    else if (ctx && typeof ctx.log === 'function')             ctx.log('[warn]', ...args);
+    else console.warn(...args);
+  } catch { /* logging must never affect the response */ }
+}
+
 function requireTokenAuth() {
   return process.env.REQUIRE_TOKEN_AUTH === 'true';
 }
@@ -92,6 +107,20 @@ function authFailure(message) {
 // On success with a verified token, x-user-id is overwritten with the
 // verified email, so existing getUserId() call sites need no changes.
 async function enforceAuth(req, ctx) {
+  try {
+    return await _enforceAuth(req, ctx);
+  } catch (e) {
+    // This runs before every handler's own try/catch, so an unexpected throw
+    // here becomes a bare 500 on EVERY request rather than a scoped failure.
+    // In log-only mode, fail back to the pre-existing behaviour instead; when
+    // enforcement is on, a broken auth path must deny rather than allow.
+    logWarn(ctx, '[auth] enforceAuth threw unexpectedly:', e && e.message);
+    if (requireTokenAuth()) return authFailure('Authentication unavailable');
+    return { ok: true };
+  }
+}
+
+async function _enforceAuth(req, ctx) {
   if (req.method === 'OPTIONS') return { ok: true };
 
   const raw = req.headers.get('authorization') || '';
@@ -107,14 +136,14 @@ async function enforceAuth(req, ctx) {
       try { req.headers.set('x-user-id', email); } catch { /* immutable headers — getVerified below */ }
       return { ok: true, email, claims };
     } catch (e) {
-      ctx.log.warn('[auth] token verification failed:', e.message);
+      logWarn(ctx, '[auth] token verification failed:', e.message);
       if (requireTokenAuth()) return authFailure('Invalid token: ' + e.message);
       // log-only mode: fall through to the legacy header
     }
   } else if (requireTokenAuth()) {
     return authFailure('Authorization Bearer token required');
   } else if (req.headers.get('x-user-id')) {
-    ctx.log.warn('[auth] no Bearer token on request; trusting legacy x-user-id header (REQUIRE_TOKEN_AUTH is off)');
+    logWarn(ctx, '[auth] no Bearer token on request; trusting legacy x-user-id header (REQUIRE_TOKEN_AUTH is off)');
   }
   return { ok: true };
 }
@@ -127,7 +156,7 @@ function checkDispatchKey(req, ctx) {
   if (!requireTokenAuth()) return { ok: true };
   const expected = process.env.DISPATCH_KEY || '';
   if (!expected) {
-    ctx.log.warn('[auth] REQUIRE_TOKEN_AUTH is on but DISPATCH_KEY is not set — dispatch endpoints are unprotected');
+    logWarn(ctx, '[auth] REQUIRE_TOKEN_AUTH is on but DISPATCH_KEY is not set — dispatch endpoints are unprotected');
     return { ok: true };
   }
   const got = req.headers.get('x-dispatch-key') || '';
@@ -135,4 +164,13 @@ function checkDispatchKey(req, ctx) {
   return authFailure('Valid x-dispatch-key required');
 }
 
-module.exports = { enforceAuth, checkDispatchKey, requireTokenAuth };
+function logErr(ctx, ...args) {
+  try {
+    if (ctx && typeof ctx.error === 'function')                     ctx.error(...args);
+    else if (ctx && ctx.log && typeof ctx.log.error === 'function') ctx.log.error(...args);
+    else if (ctx && typeof ctx.log === 'function')                  ctx.log('[error]', ...args);
+    else console.error(...args);
+  } catch { /* logging must never affect the response */ }
+}
+
+module.exports = { enforceAuth, checkDispatchKey, requireTokenAuth, logWarn, logErr };
