@@ -379,8 +379,49 @@
     if (!_syncing && idToken()) { try { sync(); } catch {} }
   });
 
+  // ── Diagnostics ───────────────────────────────────────────────────────────
+  // Run CygenixDriveSync.diagnose() in the browser console on any machine
+  // where the Drive isn't syncing. Prints a readable report covering every
+  // stage that can fail: the script loading, the token helper, whether a
+  // token is actually available, whether the endpoint is deployed and
+  // reachable, whether auth passes, and whether blob storage works.
+  async function diagnose() {
+    const out = {};
+    out.syncScriptLoaded = true;
+    out.tokenHelperPresent = (typeof window.getCygenixIdToken === 'function');
+    const tok = idToken();
+    out.tokenAvailable = !!tok;
+    out.tokenLength = tok ? tok.length : 0;
+    out.user = currentUserTag() || '(none)';
+    try {
+      const nodes = await idbAll();
+      out.localNodes = nodes.length;
+      out.localFolders = nodes.filter(n => n.kind === 'folder').length;
+    } catch (e) { out.localError = e.message; }
+    out.baselineEntries = Object.keys(loadBase()).length;
+
+    if (!tok) {
+      out.endpoint = 'not tested — no auth token, so sync never runs. Sign out and back in.';
+    } else {
+      try {
+        const d = await api('diag');
+        out.endpoint = 'reachable';
+        out.serverBlobStore = d.blobStore;
+        out.serverNodeCount = d.nodeCount;
+        if (d.blobError) out.serverBlobError = d.blobError;
+      } catch (e) {
+        out.endpoint = 'FAILED: ' + e.message;
+      }
+    }
+    out.lastStatus = _status;
+    out.lastResult = _lastResult;
+    console.log('[drive-sync] diagnostics:\n' + JSON.stringify(out, null, 2));
+    return out;
+  }
+
   window.CygenixDriveSync = {
     sync,
+    diagnose,
     status: () => _status,
     get lastResult() { return _lastResult; },
     onChange: (fn) => window.addEventListener('cygenix:drive-sync', fn),
