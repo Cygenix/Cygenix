@@ -1429,6 +1429,14 @@ function isDML(sql) {
   return /^\s*(INSERT|UPDATE|DELETE|MERGE|EXEC|EXECUTE|CREATE|ALTER|DROP|TRUNCATE|DECLARE|BEGIN|SET\s+\w|USE\s+\[)/i.test(trimmed);
 }
 
+// Statements that MODIFY data or schema. Narrower than isDML(), which also
+// counts DECLARE/BEGIN/SET/USE and read-only EXECs — those must not trigger
+// the source-write warning or it would fire on ordinary scripts.
+function isWriteStatement(sql) {
+  const trimmed = sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim();
+  return /^\s*(INSERT|UPDATE|DELETE|MERGE|DROP|TRUNCATE|ALTER)\b/i.test(trimmed);
+}
+
 // Track job execution — updates job record with run history for calendar
 function trackJobExecution(jobId, rowsAffected, ms, sql) {
   try {
@@ -1463,6 +1471,25 @@ async function runSQL() {
   const sql = sel || editor.value.trim();
   if (!sql) { alert('Write some SQL first.'); return; }
 
+  // Guard against writing to the SOURCE database by accident. The Run
+  // connection defaults to "Source DB", and a loaded migration script is
+  // usually a write against the TARGET — so an INSERT/UPDATE/DELETE can land
+  // on the source without any prompt. During a migration the source is the
+  // one database that must not be modified, so confirm before proceeding.
+  const connSel = document.getElementById('conn-select');
+  if (connSel && connSel.value === 'source' && isWriteStatement(sql)) {
+    const verb = (sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim().match(/^\s*(\w+)/) || [,'This'])[1].toUpperCase();
+    if (!confirm(
+      'You are about to run a ' + verb + ' against the SOURCE database.\n\n' +
+      'Migration scripts normally write to the TARGET. Running this on the source will modify your source data.\n\n' +
+      'Switch the connection dropdown to "Target DB" if that is what you meant.\n\n' +
+      'Run against the SOURCE anyway?'
+    )) {
+      setExecStatus('Cancelled — connection is set to Source DB', 'var(--amber)');
+      return;
+    }
+  }
+
   const btn = document.getElementById('run-btn');
   btn.disabled=true; btn.textContent='Running…';
   setExecStatus('Executing…', 'var(--amber)');
@@ -1495,7 +1522,10 @@ async function runSQL() {
     addHistory({sql, rows:0, ms:Date.now()-t0, ts:new Date().toISOString(), ok:false, err:e.message});
   } finally {
     btn.disabled=false; btn.textContent='▶ Run';
-    switchRightTab('results');
+    // switchBottomTab, not the old switchRightTab: the rename left this call
+    // behind, and the ReferenceError it threw aborted the rest of this block —
+    // so autoExpandResultsPane() below never ran and results stayed hidden.
+    switchBottomTab('results');
     // Auto-expand the results panel if it's collapsed, so the user sees the
     // outcome (rows / DML message / error) without needing to drag it open.
     autoExpandResultsPane();
@@ -1732,7 +1762,7 @@ function renderHistory() {
 }
 function loadFromHistory(i) {
   const h = queryHistory[i];
-  if (h) { document.getElementById('sql-editor').value=h.sql; updateStatus(); switchRightTab('results'); }
+  if (h) { document.getElementById('sql-editor').value=h.sql; updateStatus(); switchBottomTab('results'); }
 }
 
 // ── Claude AI ──────────────────────────────────────────────────────────────────

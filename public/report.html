@@ -465,7 +465,10 @@ body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15
   <!-- DECLARATION -->
   <div class="section">
     <div class="section-title">Declaration</div>
-    <p style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem">
+    <!-- Wording is set at render time from the run's actual outcome — see the
+         Declaration block in the render code. The text below is the success
+         wording and is replaced when the run failed. -->
+    <p id="declaration-text" style="font-size:13px;color:var(--text2);line-height:1.8;margin-bottom:1.5rem">
       This report confirms that the data migration described above was carried out using the Cygenix AI Migration Platform.
       The migration was performed in accordance with the column mappings detailed in this report.
       All row counts have been verified against the target database where an active connection was established.
@@ -759,7 +762,18 @@ function renderReport(d) {
   set('src-wasis',  wasisCount ? wasisCount + ' rule' + (wasisCount === 1 ? '' : 's')
                                   + ' across ' + (d.wasisColCount||0) + ' column' + ((d.wasisColCount||0) === 1 ? '' : 's') : 'None');
   set('src-rows',   fmt(totalRows));
-  set('src-cols',   fmt(d.columnMapping?.length || d.columnsMapped));
+  // "Columns mapped" must report columns that actually have a source, not the
+  // total row count of the mapping table — otherwise a target with 260 columns
+  // and 6 sourced ones reads as 260 mapped.
+  const _cmRows = Array.isArray(d.columnMapping) ? d.columnMapping : null;
+  if (_cmRows) {
+    const _mapped = _cmRows.filter(m => m.srcCol && m.tgtCol).length;
+    set('src-cols', _mapped === _cmRows.length
+      ? fmt(_mapped)
+      : fmt(_mapped) + ' of ' + fmt(_cmRows.length) + ' target columns');
+  } else {
+    set('src-cols', fmt(d.columnsMapped));
+  }
   // Target
   set('tgt-server',   d.targetServer || '—');
   set('tgt-database', d.targetDatabase || '—');
@@ -797,8 +811,21 @@ function renderReport(d) {
   const srcFallback = d.sourceTable ||
     (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
     d.sourceFile || '—';
+  // Match each result row back to the migration step that produced it, so the
+  // summary shows the ACTUAL source table per target. Previously every row
+  // fell back to one global srcFallback, which is why this table claimed a
+  // single source (e.g. dbo.addresses_src) for all four targets while the
+  // Execution Steps section — which reads per-step srcTable — showed the
+  // correct, differing sources.
+  const normTable = s => String(s || '').toLowerCase().replace(/[\[\]]/g, '').replace(/^dbo\./, '').trim();
+  function sourceForTarget(tgtName) {
+    if (!tgtName) return null;
+    const want = normTable(tgtName);
+    const hit = (migrationSteps || []).find(s => s.tgtTable && normTable(s.tgtTable) === want);
+    return hit ? hit.srcTable : null;
+  }
   const resultsRows = tables.map(t => ({
-    source:       t.sourceName || srcFallback,
+    source:       t.sourceName || sourceForTarget(t.name) || srcFallback,
     table:        t.name,
     sourceRows:   t.sourceRows || 0,
     inserted:     t.insertedRows || 0,
@@ -995,7 +1022,11 @@ function renderReport(d) {
     tgtCol:     m.tgtCol || '',
     tgtType:    m.tgtType || '',
     transform:  m.transform || 'NONE',
-    mapped:     m.tgtCol ? 1 : 0,
+    // A column counts as mapped only when BOTH ends exist. The old test was
+    // `m.tgtCol ? 1 : 0` — but the mapping table is keyed on target columns,
+    // so every row passed it and coverage always read 100%, even where the
+    // large majority of targets had no source column at all.
+    mapped:     (m.srcCol && m.tgtCol) ? 1 : 0,
   }));
   const mappingConfig = (reportConfig && reportConfig.grids && reportConfig.grids.mapping) || {};
   window._grids.mapping = new DataGrid({
@@ -1086,15 +1117,49 @@ function renderReport(d) {
     $('warnings-list').innerHTML = warnings.map(w =>
       `<div class="warning-item">${w}</div>`).join('');
   }
-  // Verification
+  // ── Verification ────────────────────────────────────────────────────────
+  // A failed run must never be certified as verified. The old check was
+  // `d.rowsAfter != null ? 'Yes'`, which is true when rowsAfter is 0 — so an
+  // aborted run that inserted nothing reported "Row count verified: Yes" and
+  // "Difference: 0 (exact match)", because 0 - 0 === 0. On a document headed
+  // "prepared for client delivery" that is a real liability.
+  const failedSteps  = (d.steps || []).filter(s => s.status === 'failed').length;
+  const nothingMoved = totalRows > 0 && inserted === 0;
+  const runFailed    = errors > 0 || failedSteps > 0 || nothingMoved;
+
   set('v-expected', fmt(totalRows));
   set('v-actual',   fmt(d.rowsAfter));
-  set('v-rowcount', d.rowsAfter != null ? 'Yes' : 'Not verified');
+  set('v-rowcount',
+    runFailed            ? 'No — the migration did not complete successfully'
+    : d.rowsAfter != null ? 'Yes'
+    : 'Not verified');
   const diff = d.rowsAfter != null ? (d.rowsAfter - inserted) : null;
-  set('v-diff',     diff != null ? (diff === 0 ? '0 (exact match)' : diff.toLocaleString()) : '—');
-  set('v-integrity', errors === 0 ? 'Passed' : `${errors} error(s) — see results table`);
+  set('v-diff',
+    diff == null   ? '—'
+    // "exact match" is only meaningful when rows actually moved. Suppress it
+    // on a failed run, where 0 vs 0 is agreement about nothing happening.
+    : (diff === 0 && !runFailed) ? '0 (exact match)'
+    : (diff === 0 && runFailed)  ? '0 — no rows were migrated'
+    : diff.toLocaleString());
+  set('v-integrity', errors === 0 ? (runFailed ? 'Not completed' : 'Passed') : `${errors} error(s) — see results table`);
   set('v-date',     fmtDate(d.completedAt || now));
-  // Declaration
+
+  // Declaration — the wording must match the actual outcome. Certifying that
+  // "all row counts have been verified" after a failed run is exactly the
+  // claim that makes this document a liability.
+  const decl = document.getElementById('declaration-text');
+  if (decl) {
+    decl.textContent = runFailed
+      ? 'This report records an ATTEMPTED data migration carried out using the Cygenix AI Migration Platform. '
+        + 'The run did not complete successfully — see the results table and failed step logs above for details. '
+        + 'Row counts have NOT been verified and this report must not be treated as confirmation that data was migrated. '
+        + 'This report is generated automatically from migration telemetry and is accurate as of the date shown.'
+      : 'This report confirms that the data migration described above was carried out using the Cygenix AI Migration Platform. '
+        + 'The migration was performed in accordance with the column mappings detailed in this report. '
+        + 'All row counts have been verified against the target database where an active connection was established. '
+        + 'This report is generated automatically from migration telemetry and is accurate as of the date shown.';
+    decl.style.color = runFailed ? 'var(--red)' : '';
+  }
   set('sig-user', d.userName || d.userEmail || '—');
   set('sig-date',  fmtDate(d.completedAt || now));
   // Footer
