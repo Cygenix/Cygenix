@@ -33,6 +33,7 @@
 </script>
 <title>Cygenix – One-to-Many Mapper</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -135,9 +136,9 @@ select.map-select:focus{border-color:var(--accent)}
 .badge-amber{background:var(--amber-bg);color:var(--amber)}
 .badge-purple{background:var(--purple-bg);color:var(--purple)}
 </style>
-<script src="/connections.js"></script>
-<script src="/nav.js"></script>
-<script src="/cygenix-auth-token.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/nav.js" defer></script>
+<script src="/cygenix-auth-token.js" defer></script>
 </head>
 <body>
 
@@ -180,7 +181,9 @@ select.map-select:focus{border-color:var(--accent)}
   <a href="/dashboard.html" onclick="sessionStorage.setItem('cyg_goto','connections')" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Edit →</a>
 </div>
 <script>
-(function initBanner(){
+// DCL, not immediate: connections.js is deferred, so at parse time the
+// typeof guard would always bail and the banner would never populate.
+document.addEventListener('DOMContentLoaded', function initBanner(){
   if(typeof CygenixConnections==="undefined") return;
   const c=CygenixConnections.get();
   const srcOk=!!c.srcConnString, tgtOk=!!(c.tgtFnUrl||c.tgtConnString);
@@ -192,7 +195,7 @@ select.map-select:focus{border-color:var(--accent)}
   setDot("banner-tgt-dot",tgtOk);
   const tgtRaw=c.tgtFnUrl||c.tgtConnString||"";
   setText("banner-tgt-label",tgtOk?"Target: "+trim(mask(tgtRaw)):"Target: not configured");
-})();
+});
 </script>
 <div class="page">
   <div style="margin-bottom:1.25rem">
@@ -1384,12 +1387,14 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
   }
 })();
 
-// Auto-connect on load if connections are already configured
-(function autoConnect(){
+// Auto-connect on load if connections are already configured.
+// DCL, not immediate: connections.js is deferred and its global is only
+// guaranteed once DOMContentLoaded fires.
+document.addEventListener('DOMContentLoaded', function autoConnect(){
   const c = CygenixConnections.get();
   if (c.srcConnString) setTimeout(connectSrc, 300);
   if (c.tgtFnUrl || c.tgtConnString) setTimeout(connectTgt, 600);
-})();
+});
 
 // ── Claude AI WHERE clause helper ─────────────────────────────────────────────
 async function buildWhereWithClaude(targetInputId, srcTableObj, columnsArr, apiKeyInputId) {

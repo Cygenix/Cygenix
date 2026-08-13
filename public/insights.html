@@ -33,6 +33,7 @@
 </script>
 <title>Cygenix – Data Insights</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -282,13 +283,13 @@ body.cyg-collapsed .page{max-width:min(1400px,calc(100vw - 54px - 32px))}
 }
 
 </style>
-<script src="/connections.js"></script>
-<script src="/cygenix-auth-token.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/cygenix-auth-token.js" defer></script>
 </head>
 <body>
 
 <div id="cyg-sidebar-mount" data-active="insights"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
@@ -569,7 +570,9 @@ let migrationMap = null; // last migration map result
 let _paginatedSchemaSupported = null;   // null=unknown, true/false=detected
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
-(function(){
+// DCL, not immediate: connections.js is deferred, so the schema auto-load at
+// the end of this block needs its global to exist — guaranteed by DCL.
+document.addEventListener('DOMContentLoaded', function(){
   if (!sessionStorage.getItem('cygenix_token')) { window.location.href='/login.html'; return; }
   try {
     const u = JSON.parse(sessionStorage.getItem('cygenix_user')||'{}');
@@ -590,7 +593,7 @@ let _paginatedSchemaSupported = null;   // null=unknown, true/false=detected
   // is missing the status banner directs the user to the Connections page.
   loadSchemasFromCygenixConnections();
   checkReady();
-})();
+});
 
 function signOut(){
   ['cygenix_token','cygenix_user','cygenix_expires','cygenix_active_project'].forEach(k=>sessionStorage.removeItem(k));

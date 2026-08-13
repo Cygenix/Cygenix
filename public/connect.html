@@ -33,6 +33,7 @@
 </script>
 <title>Cygenix – Target DB Mapper</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -175,9 +176,9 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
 
 @media(max-width:768px){.two-col,.three-col{grid-template-columns:1fr}}
 </style>
-<script src="/connections.js"></script>
-<script src="/nav.js"></script>
-<script src="/cygenix-auth-token.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/nav.js" defer></script>
+<script src="/cygenix-auth-token.js" defer></script>
 </head>
 <body>
 
@@ -270,7 +271,9 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   <a href="/dashboard.html" style="margin-left:auto;font-size:11px;color:var(--accent);text-decoration:none;font-family:var(--serif)">⚙ Edit connections →</a>
 </div>
 <script>
-(function initBanner(){
+// DCL, not immediate: connections.js is deferred, so at parse time the
+// typeof guard would always bail and the banner would never populate.
+document.addEventListener('DOMContentLoaded', function initBanner(){
   if(typeof CygenixConnections==='undefined') return;
   const c = CygenixConnections.get();
   const srcOk = !!c.srcConnString;
@@ -285,7 +288,7 @@ textarea.form-input{font-family:var(--mono);font-size:12px;resize:vertical;min-h
   const tgtRaw=c.tgtFnUrl||c.tgtConnString||'';
   setText('banner-tgt-label', tgtOk ? 'Target: '+trim(mask(tgtRaw)) : 'Target: not configured — set in Dashboard → Configure');
   if(!srcOk||!tgtOk){ const b=document.getElementById('conn-banner'); if(b) b.style.borderBottom='0.5px solid rgba(240,70,70,0.4)'; }
-})();
+});
 </script>
     <div class="panel" style="margin-top:1rem">
       <div class="section-header">
@@ -3101,7 +3104,9 @@ async function doConnectTgt() {
 }
 
 // ── Force global connections from configuration page (same as one-to-many) ────
-(function forceGlobalConnections() {
+// DCL, not immediate: connections.js is deferred and its global is only
+// guaranteed once DOMContentLoaded fires.
+document.addEventListener('DOMContentLoaded', function forceGlobalConnections() {
   const c = CygenixConnections.get() || {};
   const srcCs  = c.srcConnString || '';
   const tgtFn  = c.tgtFnUrl || '';
@@ -3121,7 +3126,7 @@ async function doConnectTgt() {
 
   // Still allow resume, but after global connections are applied
   setTimeout(checkForResumableSession, 100);
-})();
+});
 
 // ── Resume / dismiss session ──────────────────────────────────────────────────
 function checkForResumableSession() {

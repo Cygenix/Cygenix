@@ -49,6 +49,7 @@
 <meta name="twitter:description" content="AI-powered SQL database migration platform. Map columns, validate data and execute migrations from your browser.">
 <title>Cygenix – Migration Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -1223,19 +1224,19 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .rc-chips-menu-item input{pointer-events:none;margin:0}
 .rc-chips-menu-empty{padding:10px;font-size:11px;color:var(--text3);text-align:center;font-style:italic}
 </style>
-<script src="/connections.js"></script>
-<script src="/cygenix-auth-token.js"></script>
-<script src="/cygenix-saved-conn-secrets.js"></script>
-<script src="/cygenix-cosmos-sync.js"></script>
-<script src="/cygenix-wasis.js"></script>
-<script src="/cygenix-privacy.js"></script>
-<script src="/cygenix-integrations.js"></script>
-<script src="/cygenix-params.js"></script>
-<script src="/cygenix-api.js"></script>
-<script src="/cygenix-history.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/cygenix-auth-token.js" defer></script>
+<script src="/cygenix-saved-conn-secrets.js" defer></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
+<script src="/cygenix-wasis.js" defer></script>
+<script src="/cygenix-privacy.js" defer></script>
+<script src="/cygenix-integrations.js" defer></script>
+<script src="/cygenix-params.js" defer></script>
+<script src="/cygenix-api.js" defer></script>
+<script src="/cygenix-history.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.27.0/lib/msal-browser.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
 </head>
 <body>
 <div class="app">
@@ -1272,7 +1273,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
        initial showView in startup code. Updated dynamically via
        CygenixSidebar.setActive(v) on each showView call. -->
   <div id="cyg-sidebar-mount" data-active="dashboard"></div>
-  <script src="/cygenix-sidebar.js"></script>
+  <script src="/cygenix-sidebar.js" defer></script>
   <script src="/server-migration.js" defer></script>
   <script>
     // Rename the "Inventory" sidebar item to "Project Artifacts" without
@@ -11571,6 +11572,10 @@ async function syncFromCloud(){
 // throwing silently. Now each step is independent; one breaking
 // doesn't take the rest with it. Errors get logged so we still see
 // what failed.
+// Run at DOMContentLoaded, not top-level: the shared scripts in <head> are
+// now `defer`red (they used to block first paint), and deferred scripts run
+// before DOMContentLoaded — so their globals are guaranteed here.
+document.addEventListener('DOMContentLoaded', () => {
 try { $('today-date').textContent = 'SQL Migration workspace · ' + new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}); } catch(e){ console.error('[init] today-date:', e); }
 try { window.sconnSecretsMigrationOnce && window.sconnSecretsMigrationOnce(); } catch(e){ console.error('[init] sconn-migration:', e); }
 try { renderDashboard();           } catch(e){ console.error('[init] renderDashboard:', e); }
@@ -11579,6 +11584,7 @@ try { initUserAndProject();        } catch(e){ console.error('[init] initUserAnd
 try { renderInventory();           } catch(e){ console.error('[init] renderInventory:', e); }
 try { updateInvCount();            } catch(e){ console.error('[init] updateInvCount:', e); }
 try { updateWasisBanner();         } catch(e){ console.error('[init] updateWasisBanner:', e); }
+});
 
 // Safety net: re-run initUserAndProject after the page has fully
 // settled. We've seen cases where the synchronous init-time call
@@ -12349,8 +12355,8 @@ async function presSaveConfig() {
 </div>
 <!-- end .app -->
 
-<script src="/cookie-consent.js"></script>
-<script src="/cygenix-cookie-cleanup.js"></script>
+<script src="/cookie-consent.js" defer></script>
+<script src="/cygenix-cookie-cleanup.js" defer></script>
 </body>
 </html>
 <script>
@@ -13053,6 +13059,11 @@ window.sconnSecretsMigrationOnce = sconnSecretsMigrationOnce;
 // across script-block boundaries. Wrapped in try/catch so any failure
 // stays isolated. Idempotent (gated by the localStorage flag inside
 // the function) so it's safe to call multiple times.
+// DOMContentLoaded so the deferred CygenixSavedConnSecrets helper is
+// guaranteed loaded — invoked at top level, the internal
+// `if (!window.CygenixSavedConnSecrets) return;` guard would silently
+// skip the one-time migration forever.
+document.addEventListener('DOMContentLoaded', () => {
 try {
   sconnSecretsMigrationOnce();
   // After migration, saved-connection data may have changed shape
@@ -13066,6 +13077,7 @@ try {
     try { renderProjectStatus(); } catch(e){ /* benign */ }
   }
 } catch(e){ console.error('[init epilogue] sconn-migration:', e); }
+});
 
 // Shortened preview string for display — never shows passwords.
 function sconnPreview(entry){
@@ -20037,4 +20049,4 @@ function ta_closeRunModal() {
   document.getElementById('ta-run-modal').classList.remove('open');
 }
 </script>
-<script src="/cygenix-project-summary.js"></script>
+<script src="/cygenix-project-summary.js" defer></script>

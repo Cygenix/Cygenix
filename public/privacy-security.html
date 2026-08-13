@@ -34,9 +34,10 @@
 </script>
 <title>Cygenix – Privacy & Security</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js"></script>
-<script src="/cygenix-privacy.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-authentication-library-for-js/3.27.0/msal-browser.min.js" defer></script>
+<script src="/cygenix-privacy.js" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -309,8 +310,14 @@ async function signOut(){
   }
 }
 
-const P = window.CygenixPrivacy;
-if (!P) { alert('Privacy helper failed to load — please reload'); throw new Error('no privacy helper'); }
+// cygenix-privacy.js is deferred, so resolve its global lazily — reading it
+// at parse time alerted 'Privacy helper failed to load' and killed the page.
+let P = window.CygenixPrivacy;
+function requireP(){
+  if (!P) P = window.CygenixPrivacy;
+  if (!P) { alert('Privacy helper failed to load — please reload'); throw new Error('no privacy helper'); }
+  return P;
+}
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -414,11 +421,14 @@ function showToast(msg){
   setTimeout(() => t.classList.remove('show'), 1800);
 }
 
-// Initial render
-renderMode();
-renderRedact();
-renderExclusions();
-renderLog();
+// Initial render — at DCL so the deferred privacy helper is guaranteed loaded.
+document.addEventListener('DOMContentLoaded', () => {
+  requireP();
+  renderMode();
+  renderRedact();
+  renderExclusions();
+  renderLog();
+});
 </script>
 
 </body>

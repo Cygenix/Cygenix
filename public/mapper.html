@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/auth-gate.js"></script>
-<script src="/cygenix-auth-token.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -47,8 +47,8 @@
 <meta name="twitter:description" content="AI column mapping for SQL database migrations.">
 <title>Cygenix – Mapper</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -190,9 +190,9 @@ body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:
 </style>
 </head>
 <body>
-<script src="/connections.js"></script>
-<script src="/nav.js"></script>
-<script src="/cygenix-cosmos-sync.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/nav.js" defer></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
 
 <div class="page">
   <!-- Page header -->
@@ -545,7 +545,10 @@ function showStatus(msg, type='info'){
 function todayStr(){ return new Date().toLocaleDateString('en-GB'); }
 
 // ── Connections (auto-load from CygenixConnections) ────────────────────────
-(function init(){
+// DOMContentLoaded, not an immediate IIFE: the shared scripts are deferred
+// (they no longer block first paint), and deferred scripts are guaranteed
+// to have run — with globals like CygenixConnections defined — before DCL.
+document.addEventListener('DOMContentLoaded', function init(){
   const c = CygenixConnections.get();
   srcConn = c.srcConnString || '';
   tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
@@ -563,7 +566,7 @@ function todayStr(){ return new Date().toLocaleDateString('en-GB'); }
 
   // Check for edit mode
   checkEditMode();
-})();
+});
 
 async function dbCall(conn, body){
   const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';

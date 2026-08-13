@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/auth-gate.js"></script>
-<script src="/cygenix-auth-token.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -47,8 +47,8 @@
 <meta name="twitter:description" content="Financial reconciliation and balance metrics for SQL database migrations.">
 <title>Cygenix – Balancing &amp; Metrics</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://identity.netlify.com/v1/netlify-identity-widget.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -325,14 +325,14 @@ body.cyg-collapsed{padding-left:54px}
 </style>
 </head>
 <body>
-<script src="/connections.js"></script>
-<script src="/cygenix-params.js"></script>
-<script src="/cygenix-cosmos-sync.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/cygenix-params.js" defer></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
 
 <!-- Sidebar — `data-active="balancing"` matches the NAV key in
      /cygenix-sidebar.js so this item gets highlighted. -->
 <div id="cyg-sidebar-mount" data-active="balancing"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 
 <div class="page">
 
@@ -809,7 +809,9 @@ document.addEventListener('click', function(e){
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────
-(function init(){
+// DCL, not immediate: connections.js is deferred, so at parse time the
+// typeof guard would always trip and show 'helper not loaded' banners.
+document.addEventListener('DOMContentLoaded', function init(){
   if (typeof CygenixConnections === 'undefined') {
     setBanner('src', 'err', 'Source: connection helper not loaded');
     setBanner('tgt', 'err', 'Target: connection helper not loaded');
@@ -827,7 +829,7 @@ document.addEventListener('click', function(e){
   balRender();
   loadSchema('src');
   loadSchema('tgt');
-})();
+});
 
 async function loadSchema(side){
   const conn = side === 'src' ? srcConn : tgtConn;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <script src="/auth-gate.js"></script>
-<script src="/cygenix-auth-token.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <!-- Site-wide theme overrides (Financial palette + future themes).
@@ -47,9 +47,10 @@
 <meta name="twitter:description" content="Run validation scripts against any database table.">
 <title>Cygenix – Data Validation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="/connections.js"></script>
-<script src="/cygenix-cosmos-sync.js"></script>
+<script src="/connections.js" defer></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -135,7 +136,7 @@ select.form-input option{background:var(--bg3)}
 <body>
 
 <div id="cyg-sidebar-mount" data-active="validation"></div>
-<script src="/cygenix-sidebar.js"></script>
+<script src="/cygenix-sidebar.js" defer></script>
 <script>
 // Mirror the sidebar's collapsed state onto body.cyg-collapsed so the
 // padding rule above adjusts when the user collapses the sidebar.
