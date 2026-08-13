@@ -1,0 +1,13 @@
+# IDE
+.vs/
+*.suo
+*.user
+
+# Dependencies
+node_modules/
+
+# Local dev
+.netlify/
+*.log
+.env
+.env.*
