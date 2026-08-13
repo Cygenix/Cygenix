@@ -1,5 +1,6 @@
 // netlify/functions/projects.js
 const { getStore } = require('@netlify/blobs');
+const { verifyAuthHeader } = require('./lib/entra-auth');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -10,13 +11,6 @@ const CORS = {
 
 function ok(data)            { return { statusCode: 200,  headers: CORS, body: JSON.stringify(data) }; }
 function fail(msg, code=500) { return { statusCode: code, headers: CORS, body: JSON.stringify({ error: msg }) }; }
-
-function decodeJWT(token) {
-  try {
-    const payload = Buffer.from(token.split('.')[1], 'base64').toString('utf8');
-    return JSON.parse(payload);
-  } catch (e) { throw new Error('Could not decode token: ' + e.message); }
-}
 
 function safeStoreName(userId) {
   return 'proj-' + userId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 48);
@@ -31,17 +25,15 @@ exports.handler = async function (event) {
   if (!siteID) return fail('NETLIFY_SITE_ID not set');
   if (!token)  return fail('NETLIFY_API_TOKEN not set');
 
-  const authHeader = event.headers.authorization || event.headers.Authorization || '';
-  const jwtToken = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!jwtToken) return fail('Authorization header missing', 401);
-
+  // Verify the token signature against Entra's JWKS — identity comes from
+  // verified claims only. The store is keyed by the token's `sub`, the same
+  // claim the old (unverified) decode used, so existing stores still match.
   let userId, userEmail;
   try {
-    const decoded = decodeJWT(jwtToken);
-    if (!decoded.sub) throw new Error('No user ID in token');
-    if (decoded.exp && decoded.exp < Math.floor(Date.now() / 1000)) return fail('Session expired', 401);
-    userId    = decoded.sub;
-    userEmail = decoded.email || '';
+    const authed = await verifyAuthHeader(event);
+    if (!authed.sub) throw new Error('No user ID in token');
+    userId    = authed.sub;
+    userEmail = authed.email;
   } catch (e) {
     return fail('Auth error: ' + e.message, 401);
   }
@@ -61,18 +53,20 @@ exports.handler = async function (event) {
   try {
     if (method === 'GET' && !projectId) {
       const { blobs } = await store.list();
-      const projects = [];
-      for (const blob of blobs) {
+      // Fetch summaries in parallel — the previous serial loop paid one
+      // round-trip per project and could hit the function timeout at ~100.
+      const projects = (await Promise.all(blobs.map(async (blob) => {
         try {
           const data = await store.get(blob.key, { type: 'json' });
-          if (data) projects.push({
+          if (!data) return null;
+          return {
             id: blob.key, name: data.name || 'Untitled',
             status: data.status || 'in-progress', updatedAt: data.updatedAt || '',
             sourceFile: data.sourceFile || null, targetDb: data.targetDb || null,
             totalRows: data.totalRows || 0,
-          });
-        } catch {}
-      }
+          };
+        } catch { return null; }
+      }))).filter(Boolean);
       projects.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
       return ok({ projects });
     }

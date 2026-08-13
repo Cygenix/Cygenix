@@ -3,10 +3,12 @@
 // They have NO timeout limit on the free plan — perfect for Claude API calls.
 // Uses ES module syntax (not CommonJS).
 
+import { verifyRequestAuth } from './_lib/verify-entra.js';
+
 export default async function handler(request, context) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 
@@ -17,6 +19,17 @@ export default async function handler(request, context) {
   if (request.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Signed-in users only — this endpoint spends the site's Anthropic API
+  // budget. The front-end attaches the token via cygenix-auth-token.js.
+  try {
+    await verifyRequestAuth(request);
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'Auth error: ' + e.message }), {
+      status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }

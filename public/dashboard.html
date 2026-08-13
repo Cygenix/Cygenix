@@ -19034,11 +19034,17 @@ async function ta_apiCall(action, body) {
   const email = currentCygenixEmail();
   if (!email) throw new Error('Please sign in first.');
 
+  // The scheduler endpoint now authenticates via the verified Entra token —
+  // the x-user-id header is kept only as a transitional hint for logging.
+  const idToken = (typeof getCygenixIdToken === 'function') ? getCygenixIdToken() : '';
+  if (!idToken) throw new Error('Session expired — please sign in again.');
+
   const payload = { action, ...(body || {}) };
   const r = await fetch(ta_apiBase(), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + idToken,
       'x-user-id':    email,
     },
     body: JSON.stringify(payload),
