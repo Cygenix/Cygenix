@@ -148,6 +148,9 @@
   .drive-acts button:hover{color:var(--accent);background:var(--bg3)}
   .drive-empty{padding:2.2rem 1rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.7}
   .drive-foot{border-top:1px solid var(--border);padding:6px 0.9rem;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap}
+  .drive-cloud{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--text3);margin-left:auto;margin-right:.75rem}
+  .drive-cloud.err{color:var(--red)}
+  .drive-cloud.busy{opacity:.75}
   .drive-storage{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--text3);cursor:default}
   .drive-storage svg{flex-shrink:0}
   .drive-storage b{color:var(--text2);font-weight:600}
@@ -164,6 +167,7 @@
     .canvas{height:45%}
   }
 </style>
+<script src="/cygenix-drive-sync.js" defer></script>
 </head>
 <body>
 
@@ -290,12 +294,14 @@
       <button class="tb-btn" onclick="drivePickFiles()" title="Upload files here">⬆ Files</button>
       <button class="tb-btn" onclick="drivePickFolder()" title="Upload a whole folder (keeps its structure)">⬆ Folder</button>
       <button class="tb-btn" id="drive-sync-btn" onclick="driveSyncButton()" title="Map &amp; sync the Drive with a folder on your computer">⇄ Sync folder</button>
+      <button class="tb-btn" id="drive-cloud-btn" onclick="driveCloudSync()" title="Sync this Drive with your account so it's available on any computer">☁ Sync to cloud</button>
       <input type="search" class="drive-search" id="drive-search" placeholder="Search drive…" oninput="driveSearchInput(this.value)" spellcheck="false">
     </div>
     <div class="drive-map" id="drive-map" style="display:none"></div>
     <div class="drive-body" id="drive-body"></div>
     <div class="drive-foot">
       <span id="drive-foot-l"></span>
+      <span class="drive-cloud" id="drive-cloud" title="Your Drive is stored with your account, so it's available on any computer you sign in to."></span>
       <span class="drive-storage" id="drive-storage" title="Storage for this site in your browser (includes the Drive)"></span>
     </div>
     <input type="file" id="drive-file-input" multiple style="display:none">
@@ -790,7 +796,36 @@
   }
 
   // ── Drive UI ─────────────────────────────────────────────────
-  window.openDrive  = function(){ driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); renderStorage(); renderMapBanner(); $('drive-modal').classList.add('open'); };
+  window.openDrive  = function(){ driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); renderStorage(); renderMapBanner(); renderCloudStatus(); $('drive-modal').classList.add('open');
+    // Opening the Drive is when the user expects to see what's on their
+    // account — pull anything added from another machine.
+    if (window.CygenixDriveSync) window.CygenixDriveSync.sync();
+  };
+
+  // ── Cloud sync (cygenix-drive-sync.js) ───────────────────────────────────
+  // Separate from the local-folder mapping: this is the per-account copy that
+  // makes the Drive appear on every machine the user signs in to.
+  function renderCloudStatus(){
+    const el=$('drive-cloud'); if(!el) return;
+    if(!window.CygenixDriveSync){ el.textContent=''; el.className='drive-cloud'; return; }
+    const s=window.CygenixDriveSync.status();
+    let label, cls='drive-cloud';
+    if(s.state==='syncing')          { label='☁ Syncing…'; cls+=' busy'; }
+    else if(s.state==='error')       { label='☁ '+(s.message||'Sync failed'); cls+=' err'; }
+    else if(s.state==='signed-out')  { label='☁ Sign in to sync'; }
+    else                             { label='☁ '+(s.message||'Synced to your account'); }
+    el.textContent=label; el.className=cls;
+  }
+  window.driveCloudSync = async function(){
+    if(!window.CygenixDriveSync){ alert('Cloud sync is unavailable on this page.'); return; }
+    await window.CygenixDriveSync.sync({ force:true });
+    renderDrive(); renderStorage();
+  };
+  window.addEventListener('cygenix:drive-sync', renderCloudStatus);
+  window.addEventListener('cygenix:drive-changed', () => {
+    const m=$('drive-modal');
+    if(m && m.classList.contains('open')){ renderDrive(); renderStorage(); }
+  });
   window.closeDrive = function(){ $('drive-modal').classList.remove('open'); };
   window.driveSearchInput = function(v){ driveSearchQ=(v||'').trim().toLowerCase(); renderDrive(); };
   window.driveNavigate = function(id){ driveCwd=id||''; driveSearchQ=''; const s=$('drive-search'); if(s)s.value=''; renderDrive(); };
