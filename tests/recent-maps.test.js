@@ -7,8 +7,10 @@ const fs = require('fs');
 const vm = require('vm');
 
 const html = fs.readFileSync(__dirname + '/../public/object_mapping.html', 'utf8');
+// Extract through deleteSavedJob so the card's ✕ path is covered too — that
+// also proves RM_PIN_KEY and deleteSavedJob share a scope at runtime.
 const start = html.indexOf('// ── Recent maps grid ─');
-const end   = html.indexOf('function loadMapById(jobId){');
+const end   = html.indexOf('// ── Wasis ─');
 if (start < 0 || end < 0 || end < start) {
   console.log('FAIL: could not locate the recent-maps block in object_mapping.html');
   process.exit(1);
@@ -17,6 +19,8 @@ const code = html.slice(start, end);
 
 // ── stubs ────────────────────────────────────────────────────────────────
 let JOBS = [];
+let CONFIRMED = true;              // what confirm() returns
+let STATUS = [];                   // showStatus() calls
 const els = {};
 const mkEl = (id) => (els[id] = els[id] || {
   id, value: '', textContent: '', innerHTML: '', style: {},
@@ -34,6 +38,12 @@ const sandbox = {
         c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
   _getAllSavedJobs: () => JOBS,
   editJobId: null,
+  confirm: () => CONFIRMED,
+  showStatus: (msg) => STATUS.push(msg),
+  clearEditMode: () => { sandbox.editJobId = null; },
+  renderLoadMapList: () => {},
+  location: { href: 'https://x/object_mapping.html' },
+  URL,
   Date, JSON, Math, Number, String, Array, Set, isNaN, parseInt,
 };
 vm.createContext(sandbox);
@@ -147,7 +157,49 @@ check('rmWhen: hours',     sandbox.rmWhen(iso(180)) === '3 hours ago');
 check('rmWhen: yesterday', sandbox.rmWhen(iso(60 * 30)) === 'yesterday');
 check('rmWhen: no date is blank', sandbox.rmWhen('') === '');
 
-// 9. Names are escaped — map names are user input and land in innerHTML.
+// 9. Delete from the card. Must go to Trash (recoverable), not vanish.
+store['cygenix_jobs'] = '[]';
+sandbox.localStorage.setItem = (k, v) => { store[k] = String(v); if (k === 'cygenix_jobs') JOBS = JSON.parse(v); };
+const stopped = { called: false };
+const fakeEv = { stopPropagation(){ stopped.called = true; } };
+
+JOBS = [
+  { id:'keep', name:'Keep me',   source:'A', target:'B', created: iso(1), columnMapping:[] },
+  { id:'junk', name:'Junk map',  source:'C', target:'D', created: iso(2), columnMapping:[] },
+];
+sandbox.renderRecentMaps('');
+check('card offers a delete control', gridHtml().includes('rm-del') &&
+  gridHtml().includes("rmDelete(event,'junk')"));
+
+CONFIRMED = false;
+sandbox.rmDelete(fakeEv, 'junk');
+check('delete stops the click from opening the map', stopped.called);
+check('declining the confirm keeps the map', JOBS.find(j => j.id === 'junk')._deleted !== true);
+
+CONFIRMED = true;
+sandbox.rmDelete(fakeEv, 'junk');
+const junk = JOBS.find(j => j.id === 'junk');
+check('confirming soft-deletes to Trash (recoverable, not erased)',
+  junk && junk._deleted === true && !!junk._deletedAt);
+check('the other map is untouched', JOBS.find(j => j.id === 'keep')._deleted !== true);
+sandbox.renderRecentMaps('');
+check('deleted map disappears from the grid immediately',
+  !gridHtml().includes('Junk map') && gridHtml().includes('Keep me'));
+
+// Deleting a pinned map must not leave an orphan pin behind.
+store['cygenix_pinned_maps'] = JSON.stringify(['keep']);
+CONFIRMED = true;
+sandbox.rmDelete(fakeEv, 'keep');
+check('deleting a pinned map clears its pin',
+  !JSON.parse(store['cygenix_pinned_maps']).includes('keep'));
+
+// Deleting the map you are currently editing clears edit mode.
+JOBS = [{ id:'open', name:'Open map', source:'A', target:'B', created: iso(1), columnMapping:[] }];
+sandbox.editJobId = 'open';
+sandbox.rmDelete(fakeEv, 'open');
+check('deleting the currently-open map clears edit mode', sandbox.editJobId === null);
+
+// 10. Names are escaped — map names are user input and land in innerHTML.
 JOBS = [{ id:'x', name:'<img src=x onerror=alert(1)>', source:'A', target:'B',
           created: iso(1), columnMapping:[] }];
 sandbox.renderRecentMaps('');
