@@ -427,7 +427,8 @@ document.addEventListener('DOMContentLoaded', function(){
   <div class="edit-banner" id="edit-banner" style="display:none">
     <span>✏️ Editing saved job:</span>
     <strong id="edit-job-name"></strong>
-    <button class="btn btn-ghost btn-sm" onclick="clearEditMode()" style="margin-left:auto">✕ Cancel edit</button>
+    <button class="btn btn-ghost btn-sm" onclick="cancelEdit()" style="margin-left:auto"
+            title="Stop editing and go back to your maps">✕ Cancel edit</button>
   </div>
 
   <!-- Connection banner (read-only — connections are configured on the Dashboard → Connections page) -->
@@ -4313,6 +4314,51 @@ async function restoreJobMapping(job,isOTM){
     }
   }
   showStatus('Editing: "'+job.name+'" — change anything then save','info');
+  // Snapshot the just-restored state so "Cancel edit" can tell whether the
+  // user actually changed anything. Without this we'd either nag on every
+  // cancel or silently discard real work.
+  _editLoadSig = _mapSignature();
+}
+
+// Cheap fingerprint of the current mapping. Compared against the snapshot
+// taken at load time to decide whether cancelling would discard anything.
+let _editLoadSig = null;
+function _mapSignature(){
+  try {
+    return JSON.stringify({
+      s: srcTable ? (srcTable.fullName || srcTable.name || '') : '',
+      t: tgtTable ? (tgtTable.fullName || tgtTable.name || '') : '',
+      w: ($('src-where')||{}).value || '',
+      m: (columnMapping||[]).map(m => [m.srcCol||'', m.tgtCol||'', m.transform||'', m.literalValue||'']),
+      o: (targetTables||[]).map(t => [t.name||'', (t.mappings||[]).map(m => [m.srcCol||'', m.tgtCol||''])]),
+    });
+  } catch { return null; }
+}
+
+// "✕ Cancel edit" — stop editing and go back to the recent-maps picker, so
+// another map can be chosen without a page reload or a trip through Reset.
+// Previously this only detached the ?edit= link and hid the banner, leaving
+// the map on screen with no way back to the grid.
+//
+// The saved map itself is never touched — cancelling only drops edits made
+// since it was opened, so we prompt only when there actually are some.
+function cancelEdit(){
+  const changed = _editLoadSig !== null && _mapSignature() !== _editLoadSig;
+  if (changed && !confirm(
+    'Close this map and go back to your maps?\n\n' +
+    'Changes you have made since opening it will be discarded. ' +
+    'The saved map itself is not affected.'
+  )) return;
+
+  const name = ($('edit-job-name')||{}).textContent || '';
+  _editLoadSig = null;
+  // clearMapState() empties the canvas, re-renders the recent-maps grid and
+  // calls clearEditMode() — which also strips ?edit= so a refresh doesn't
+  // reopen the map we just closed.
+  clearMapState();
+  showStatus(name ? 'Closed "'+name+'" — pick another map below' : 'Pick a map below to edit','info');
+  // Bring the grid into view; on a long page the canvas can be below the fold.
+  try { $('single-empty')?.scrollIntoView({behavior:'smooth',block:'center'}); } catch(_){}
 }
 
 function clearEditMode(){

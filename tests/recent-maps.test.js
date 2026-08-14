@@ -264,5 +264,67 @@ JOBS = [{ id:'x', name:'<img src=x onerror=alert(1)>', source:'A', target:'B',
 sandbox.renderRecentMaps('');
 check('map names are HTML-escaped', !gridHtml().includes('<img src=x'));
 
+// ── Cancel edit returns to the picker ────────────────────────────────────
+// Separate extraction: cancelEdit() lives beside clearEditMode, above the
+// recent-maps block.
+{
+  const cstart = html.indexOf('// Cheap fingerprint of the current mapping');
+  const cend   = html.indexOf('function clearEditMode(){');
+  if (cstart < 0 || cend < 0 || cend < cstart) {
+    check('could locate cancelEdit in the page', false);
+  } else {
+    let cleared = 0, confirms = 0, answer = true, statuses = [];
+    const cs = {
+      console, JSON, String, Array,
+      srcTable: { fullName: 'dbo.CUST' }, tgtTable: { fullName: 'dbo.contacts' },
+      columnMapping: [{ srcCol:'id', tgtCol:'contact_id' }],
+      targetTables: [],
+      $: (id) => ({ id, value:'', textContent: id==='edit-job-name' ? 'Customer master' : '',
+                    scrollIntoView(){} }),
+      confirm: () => { confirms++; return answer; },
+      clearMapState: () => { cleared++; },
+      showStatus: (m) => statuses.push(m),
+    };
+    vm.createContext(cs);
+    vm.runInContext(html.slice(cstart, cend), cs);
+
+    // `let` bindings are lexical and are NOT exposed as properties of the vm
+    // context, so the snapshot has to be set from inside it — otherwise the
+    // code under test keeps reading its own (null) variable and every cancel
+    // looks unchanged.
+    const snapshot = () => vm.runInContext('_editLoadSig = _mapSignature();', cs);
+
+    // Nothing changed since load → close straight away, no nagging.
+    snapshot();
+    cs.cancelEdit();
+    check('cancel with no changes closes without prompting', confirms === 0 && cleared === 1);
+    check('cancel returns to the picker (clears the canvas)', cleared === 1);
+    check('cancel says which map was closed',
+      statuses.some(s => /Closed "Customer master"/.test(s) && /pick another map/i.test(s)));
+
+    // Edited since load → must warn before discarding.
+    snapshot();
+    cs.columnMapping.push({ srcCol:'email', tgtCol:'email' });   // an edit
+    cleared = 0; confirms = 0; answer = false;
+    cs.cancelEdit();
+    check('cancel after an edit asks first', confirms === 1);
+    check('declining that prompt keeps the map open', cleared === 0);
+
+    answer = true;
+    cs.cancelEdit();
+    check('accepting the prompt closes the map', cleared === 1);
+
+    // The signature must actually notice the kinds of edits people make.
+    const sig0 = snapshot();
+    check('an unchanged map produces an identical signature', cs._mapSignature() === sig0);
+    cs.columnMapping[0].transform = 'UPPER';
+    check('changing a transform is detected', cs._mapSignature() !== sig0);
+    cs.columnMapping[0].transform = '';
+    cs.$ = (id) => ({ id, value: id==='src-where' ? "active = 1" : '',
+                      textContent: id==='edit-job-name' ? 'Customer master' : '', scrollIntoView(){} });
+    check('changing the WHERE clause is detected', cs._mapSignature() !== sig0);
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
