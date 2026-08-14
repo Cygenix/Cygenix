@@ -199,7 +199,66 @@ sandbox.editJobId = 'open';
 sandbox.rmDelete(fakeEv, 'open');
 check('deleting the currently-open map clears edit mode', sandbox.editJobId === null);
 
-// 10. Names are escaped — map names are user input and land in innerHTML.
+// 10. Delete without confirming — the toggle and the Shift shortcut.
+//     Both skip the QUESTION only; the delete must still be soft.
+let confirmCalls = 0;
+sandbox.confirm = () => { confirmCalls++; return CONFIRMED; };
+
+// (a) preference off → still prompts
+delete store[ 'cygenix_rm_skip_delete_confirm' ];
+JOBS = [{ id:'a1', name:'A', source:'S', target:'T', created: iso(1), columnMapping:[] }];
+confirmCalls = 0; CONFIRMED = true;
+sandbox.rmDelete({ stopPropagation(){} }, 'a1');
+check('with the preference off, deleting still asks', confirmCalls === 1);
+
+// (b) preference on → no prompt, still soft-deleted
+sandbox.rmSetSkipConfirm(true);
+check('preference persists to localStorage', store['cygenix_rm_skip_delete_confirm'] === '1');
+JOBS = [{ id:'a2', name:'B', source:'S', target:'T', created: iso(1), columnMapping:[] }];
+confirmCalls = 0;
+sandbox.rmDelete({ stopPropagation(){} }, 'a2');
+check('with the preference on, no confirmation is shown', confirmCalls === 0);
+check('...and the map is still SOFT-deleted (recoverable)',
+  JOBS.find(j=>j.id==='a2')._deleted === true && !!JOBS.find(j=>j.id==='a2')._deletedAt);
+check('...and the status says how to get it back',
+  STATUS.some(s => /Show deleted/.test(s)));
+
+// (c) Shift+click skips the prompt even with the preference off
+sandbox.rmSetSkipConfirm(false);
+JOBS = [{ id:'a3', name:'C', source:'S', target:'T', created: iso(1), columnMapping:[] }];
+confirmCalls = 0;
+sandbox.rmDelete({ stopPropagation(){}, shiftKey: true }, 'a3');
+check('Shift+click skips the prompt', confirmCalls === 0);
+check('...and still soft-deletes', JOBS.find(j=>j.id==='a3')._deleted === true);
+
+// (d) a plain click with the preference off is unaffected by the shortcut
+JOBS = [{ id:'a4', name:'D', source:'S', target:'T', created: iso(1), columnMapping:[] }];
+confirmCalls = 0; CONFIRMED = false;
+sandbox.rmDelete({ stopPropagation(){}, shiftKey: false }, 'a4');
+check('plain click still asks, and declining keeps the map',
+  confirmCalls === 1 && JOBS.find(j=>j.id==='a4')._deleted !== true);
+CONFIRMED = true;
+
+// 11. Thumbnails are coloured, and the colour is tied to the map's identity.
+JOBS = [
+  { id:'colour-1', name:'One', source:'S', target:'T', created: iso(1), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+  { id:'colour-2', name:'Two', source:'S', target:'T', created: iso(2), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+];
+sandbox.renderRecentMaps('');
+g = gridHtml();
+check('thumbnails use colour, not grey', g.includes('hsl(') && !g.includes('var(--text3)"'));
+check('each card carries its own accent colour', g.includes('--rm-accent:hsl('));
+check('links are drawn with a source→target gradient', g.includes('linearGradient') && g.includes('url(#rm'));
+// Gradient ids must be unique per card or every thumbnail inherits the first.
+const ids = (g.match(/<linearGradient id="([^"]+)"/g) || []).map(s => s.match(/id="([^"]+)"/)[1]);
+check('gradient ids are unique across cards', new Set(ids).size === ids.length, ids.join(','));
+// Colour derives from the id, so reordering (pin/filter) must not recolour.
+const c1 = sandbox.rmAccent('colour-1');
+sandbox.renderRecentMaps('two');           // different order/subset
+check('a map keeps its colour when the grid reorders', sandbox.rmAccent('colour-1') === c1);
+check('different maps get different colours', sandbox.rmAccent('colour-1') !== sandbox.rmAccent('colour-2'));
+
+// 12. Names are escaped — map names are user input and land in innerHTML.
 JOBS = [{ id:'x', name:'<img src=x onerror=alert(1)>', source:'A', target:'B',
           created: iso(1), columnMapping:[] }];
 sandbox.renderRecentMaps('');
