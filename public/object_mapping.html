@@ -73,6 +73,45 @@ body.cyg-collapsed{padding-left:54px}
 .main-grid{display:grid;grid-template-columns:300px 1fr;gap:1.5rem;align-items:start}
 
 /* ── Panels ── */
+/* ── Recent maps grid (empty-canvas shortcuts) ─────────────────────────────
+   Thumbnails of saved maps so an analyst can reopen one in a click instead of
+   going through the Load-map modal. Lives inside #single-empty, so it is only
+   ever on screen while the canvas is otherwise empty. */
+.rm-head{display:flex;align-items:baseline;justify-content:space-between;gap:0.75rem;margin-bottom:2px}
+.rm-title{margin:0;font-size:14.5px;font-weight:600;letter-spacing:-0.005em;color:var(--text)}
+.rm-all{font-size:11.5px;color:var(--teal);cursor:pointer;font-weight:500}
+.rm-all:hover{text-decoration:underline}
+.rm-sub{margin:0 0 0.9rem;font-size:11.5px;color:var(--text3)}
+.rm-filter{width:220px;max-width:100%;padding:7px 10px;border:0.5px solid var(--border2);border-radius:var(--r);
+  font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg2);margin-bottom:0.9rem;outline:none}
+.rm-filter:focus{border-color:var(--accent)}
+.rm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:14px}
+.rm-card{border:0.5px solid var(--border);border-radius:var(--r-lg);background:var(--bg2);overflow:hidden;cursor:pointer;
+  transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;position:relative;text-align:left}
+.rm-card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(22,26,32,.13);border-color:var(--accent)}
+.rm-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.rm-card.current{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.rm-thumb{height:104px;background:linear-gradient(180deg,var(--bg3),var(--bg4));border-bottom:0.5px solid var(--border);position:relative}
+.rm-thumb svg{width:100%;height:100%;display:block}
+.rm-body{padding:11px 12px 12px}
+.rm-name{font-size:13px;font-weight:600;letter-spacing:-0.005em;margin-bottom:4px;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rm-path{font-family:var(--mono);font-size:10.5px;color:var(--text3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;margin-bottom:9px}
+.rm-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.rm-chip{font-size:10px;padding:2.5px 7px;border-radius:999px;background:var(--bg3);color:var(--text3);white-space:nowrap}
+.rm-chip.warn{background:var(--amber-g,rgba(178,106,0,0.12));color:var(--amber)}
+.rm-when{font-size:10.5px;color:var(--text3);white-space:nowrap}
+.rm-pin{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:6px;background:var(--bg2);
+  border:0.5px solid var(--border);display:grid;place-items:center;font-size:10px;color:var(--text3);
+  opacity:0;transition:opacity .14s;cursor:pointer;z-index:2}
+.rm-card:hover .rm-pin,.rm-card:focus-within .rm-pin{opacity:1}
+.rm-card.pinned .rm-pin{opacity:1;color:var(--amber);border-color:var(--amber);background:var(--amber-g,rgba(178,106,0,0.12))}
+.rm-new{border:1.5px dashed var(--border2);background:var(--bg3);display:grid;place-items:center;height:186px;
+  align-self:start;color:var(--text3);font-size:12.5px;font-weight:500;cursor:pointer;border-radius:var(--r-lg);
+  transition:.14s;text-align:center}
+.rm-new:hover{border-color:var(--accent);color:var(--accent);background:var(--bg2)}
+.rm-new .plus{font-size:22px;display:block;margin-bottom:6px;font-weight:400}
 .panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1rem}
 .panel-head{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.75rem}
 .panel-title{font-size:13px;font-weight:600;color:var(--text)}
@@ -574,8 +613,24 @@ document.addEventListener('DOMContentLoaded', function(){
                 <button class="btn btn-ghost btn-sm" onclick="autoFixAgentive()" title="Run all defensive passes on this mapping in one go: clean dead refs, date casts, GUID/numeric/truncation wraps. Recommended after an Agentive auto-map.">🛠 Auto-fix (Agentive)</button>
               </div>
             </div>
-            <div id="single-empty" style="text-align:center;padding:2rem;color:var(--text3);font-size:12px">
-              Select source and target tables to build the column mapping
+            <!-- Empty canvas: recent maps. Occupies this space only while no
+                 mapping is loaded, so it costs no working screen area — the
+                 grid disappears the moment a map is open. -->
+            <div id="single-empty" style="padding:1.25rem 1rem 1.5rem">
+              <div id="recent-maps-wrap">
+                <div class="rm-head">
+                  <h3 class="rm-title">Recent maps</h3>
+                  <span class="rm-all" id="rm-browse-all" onclick="openLoadMapModal()">Browse all →</span>
+                </div>
+                <p class="rm-sub">Pick up where you left off, or choose source and target tables above to start fresh.</p>
+                <input class="rm-filter" id="rm-filter" placeholder="🔍 Filter recent maps…"
+                       oninput="renderRecentMaps(this.value)" autocomplete="off">
+                <div class="rm-grid" id="rm-grid"></div>
+              </div>
+              <!-- Shown instead of the grid when the user has no saved maps -->
+              <div id="recent-maps-none" style="display:none;text-align:center;padding:2rem;color:var(--text3);font-size:12px">
+                Select source and target tables to build the column mapping
+              </div>
             </div>
           </div>
         </div>
@@ -1148,6 +1203,10 @@ function ddlShowResult(msg, kind) {
 // (they no longer block first paint), and deferred scripts are guaranteed to
 // have run — with globals like CygenixConnections defined — before DCL.
 document.addEventListener('DOMContentLoaded', function init(){
+  // Recent-maps grid on the empty canvas. Rendered from localStorage only, so
+  // it paints immediately — no connection or network round trip needed.
+  try { renderRecentMaps(''); } catch(e){ console.warn('[recent-maps]', e); }
+
   const c = CygenixConnections.get();
   // Source: same shape as target — Azure Function URL takes priority over
   // direct connection string. Without this, source-Azure mode rendered as
@@ -4251,7 +4310,7 @@ function resetAll(){
   $('src-table-input').value=''; $('tgt-table-input').value=''; $('otm-tgt-input').value='';
   $('src-col-wrap').style.display='none'; $('src-col-count').style.display='none';
   $('join-panel').style.display='none'; window._joinState=[];
-  $('mapping-wrap').style.display='none'; $('single-empty').style.display='block';
+  $('mapping-wrap').style.display='none'; $('single-empty').style.display='block'; if(typeof renderRecentMaps==='function') renderRecentMaps('');
   $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
   $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
   clearEditMode();
@@ -4268,7 +4327,7 @@ function clearMapState(){
   $('src-table-input').value=''; $('tgt-table-input').value=''; $('otm-tgt-input').value='';
   $('src-col-wrap').style.display='none'; $('src-col-count').style.display='none';
   $('join-panel').style.display='none'; window._joinState=[];
-  $('mapping-wrap').style.display='none'; $('single-empty').style.display='block';
+  $('mapping-wrap').style.display='none'; $('single-empty').style.display='block'; if(typeof renderRecentMaps==='function') renderRecentMaps('');
   $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
   $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
   clearEditMode();
@@ -4494,6 +4553,163 @@ function renderLoadMapList(){
       <button class="btn btn-ghost btn-sm" onclick="deleteSavedJob('${esc(j.id)}')" title="Delete this saved map" style="color:var(--red);border-color:rgba(240,70,70,0.3)">✕</button>
     </div>`;
   }).join('');
+}
+
+// ── Recent maps grid ─────────────────────────────────────────────────────────
+// Thumbnails of saved maps on the empty canvas, so reopening one is a single
+// click rather than a trip through the Load-map modal. Rendered only while
+// #single-empty is visible — once a map is loaded the grid is gone and costs
+// no screen space. The Load-map modal remains the full browser/search.
+const RM_PIN_KEY = 'cygenix_pinned_maps';
+const RM_MAX = 11;                 // + the "new map" tile fills a tidy grid
+const RM_COLORS = ['var(--teal)','var(--purple)','var(--accent)','var(--green)','var(--amber)','#3a6ea5'];
+
+function rmPinned(){
+  try { const a = JSON.parse(localStorage.getItem(RM_PIN_KEY)||'[]'); return Array.isArray(a)?a:[]; }
+  catch { return []; }
+}
+function rmTogglePin(ev, jobId){
+  ev.stopPropagation();            // don't open the map when pinning it
+  const set = new Set(rmPinned());
+  if (set.has(jobId)) set.delete(jobId); else set.add(jobId);
+  try { localStorage.setItem(RM_PIN_KEY, JSON.stringify([...set])); } catch {}
+  renderRecentMaps(($('rm-filter')||{}).value||'');
+}
+
+// Relative time, so "when" reads at a glance.
+function rmWhen(iso){
+  if(!iso) return '';
+  const t = Date.parse(iso); if(isNaN(t)) return '';
+  const mins = Math.floor((Date.now()-t)/60000);
+  if (mins < 1)    return 'just now';
+  if (mins < 60)   return mins+' min ago';
+  const hrs = Math.floor(mins/60);
+  if (hrs < 24)    return hrs+' hour'+(hrs===1?'':'s')+' ago';
+  const days = Math.floor(hrs/24);
+  if (days === 1)  return 'yesterday';
+  if (days < 7)    return days+' days ago';
+  return new Date(t).toLocaleDateString(undefined,{day:'numeric',month:'short'});
+}
+
+// Thumbnail: a miniature of the map's ACTUAL column links, not a stock image.
+// Rows are drawn from the real mapping (capped for legibility) and each line
+// joins the source row to the target row it feeds, so two different maps look
+// visibly different and a familiar one is recognisable at a glance.
+function rmThumb(job, color){
+  const isOTM = job.jobType==='one-to-many' || job.oneToManyConfig;
+  let pairs = [];
+  if (isOTM){
+    (job.tables||[]).forEach((t,ti) => {
+      (t.mappings||[]).filter(m=>m.tgtCol).forEach((m,mi) => pairs.push([mi, ti*2+mi]));
+    });
+  } else {
+    (job.columnMapping||[]).filter(m=>m.tgtCol).forEach((m,i) => pairs.push([i,i]));
+  }
+  const n = Math.max(3, Math.min(7, pairs.length || 3));
+  const lh=13, gap=4, top=14, H=top*2+n*(lh+gap);
+  const rows=[], lines=[];
+  for(let i=0;i<n;i++){
+    const y = top+i*(lh+gap);
+    // widths vary with the row index so the shape reads as "data", not bars
+    rows.push(`<rect x="14" y="${y}" width="58" height="${lh}" rx="3.5" fill="var(--bg2)" stroke="var(--border2)"/>`);
+    rows.push(`<rect x="19" y="${y+4.5}" width="${26+((i*11)%22)}" height="4" rx="2" fill="var(--text3)" opacity="0.45"/>`);
+    rows.push(`<rect x="128" y="${y}" width="58" height="${lh}" rx="3.5" fill="var(--bg2)" stroke="var(--border2)"/>`);
+    rows.push(`<rect x="133" y="${y+4.5}" width="${24+((i*13)%24)}" height="4" rx="2" fill="var(--text3)" opacity="0.45"/>`);
+  }
+  for(let i=0;i<n;i++){
+    const y1 = top+i*(lh+gap)+lh/2;
+    const j  = pairs.length ? (pairs[i % pairs.length][1] % n) : i;
+    const y2 = top+j*(lh+gap)+lh/2;
+    lines.push(`<path d="M72 ${y1} C 95 ${y1}, 105 ${y2}, 128 ${y2}" fill="none" stroke="${color}" stroke-width="1.4" opacity="0.72"/>`);
+    lines.push(`<circle cx="72" cy="${y1}" r="2" fill="${color}"/><circle cx="128" cy="${y2}" r="2" fill="${color}"/>`);
+  }
+  return `<svg viewBox="0 0 200 ${H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${lines.join('')}${rows.join('')}</svg>`;
+}
+
+function renderRecentMaps(filter){
+  const grid = $('rm-grid'); if(!grid) return;
+  const wrap = $('recent-maps-wrap'), none = $('recent-maps-none');
+  const jobs = _getAllSavedJobs().filter(j => !j._deleted);
+
+  // No saved maps at all — fall back to the original guidance text.
+  if (!jobs.length){
+    if (wrap) wrap.style.display='none';
+    if (none) none.style.display='block';
+    return;
+  }
+  if (wrap) wrap.style.display='';
+  if (none) none.style.display='none';
+
+  const q = String(filter||'').trim().toLowerCase();
+  const pins = new Set(rmPinned());
+  let list = jobs.filter(j => {
+    if(!q) return true;
+    return ((j.name||'')+' '+(j.source||j.sourceTable||'')+' '+(j.target||j.targetTable||''))
+      .toLowerCase().includes(q);
+  });
+  // Pinned first, then newest. Same ordering rule as the Load-map modal's sort.
+  list.sort((a,b)=>{
+    const pa=pins.has(a.id)?1:0, pb=pins.has(b.id)?1:0;
+    if(pa!==pb) return pb-pa;
+    return (b.created?Date.parse(b.created):0) - (a.created?Date.parse(a.created):0);
+  });
+  const shown = list.slice(0, RM_MAX);
+
+  const all = $('rm-browse-all');
+  if (all) all.textContent = 'Browse all ' + jobs.length + ' →';
+
+  grid.innerHTML = shown.map((j, idx) => {
+    const isOTM = j.jobType==='one-to-many' || j.oneToManyConfig;
+    const color = RM_COLORS[idx % RM_COLORS.length];
+    const src = esc(j.source||j.sourceTable||'—');
+    const tgt = isOTM
+      ? ((j.tables||[]).length + ' target tables')
+      : esc(j.target||j.targetTable||'—');
+    // Honest counts derived from the saved mapping — no invented "validated".
+    const mapped = isOTM
+      ? (j.tables||[]).reduce((n,t)=>n+((t.mappings||[]).filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length),0)
+      : (j.columnMapping||[]).filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length;
+    const unmapped = isOTM
+      ? (j.tables||[]).reduce((n,t)=>n+((t.mappings||[]).filter(m=>m.tgtCol&&!m.srcCol&&!m.literalValue).length),0)
+      : (j.columnMapping||[]).filter(m=>m.tgtCol&&!m.srcCol&&!m.literalValue).length;
+    const chip = unmapped
+      ? `<span class="rm-chip warn" title="${unmapped} target column(s) have no source or fixed value">${unmapped} unmapped</span>`
+      : `<span class="rm-chip">${mapped} column${mapped===1?'':'s'}</span>`;
+    const isCurrent = (typeof editJobId!=='undefined' && editJobId===j.id);
+    const pinned = pins.has(j.id);
+    return `<div class="rm-card${pinned?' pinned':''}${isCurrent?' current':''}" tabindex="0" role="button"
+         aria-label="Open map ${esc(j.name||'unnamed')}"
+         onclick="loadMapById('${esc(j.id)}')"
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();loadMapById('${esc(j.id)}')}">
+      <div class="rm-pin" title="${pinned?'Unpin':'Pin to the top'}"
+           onclick="rmTogglePin(event,'${esc(j.id)}')">${pinned?'★':'☆'}</div>
+      <div class="rm-thumb">${rmThumb(j, color)}</div>
+      <div class="rm-body">
+        <div class="rm-name">${esc(j.name||'(unnamed map)')}</div>
+        <div class="rm-path">${src} → ${tgt}</div>
+        <div class="rm-foot">
+          ${chip}
+          <span class="rm-when">${isCurrent?'currently open':esc(rmWhen(j.created))}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('')
+  + (q ? '' : `<div class="rm-new" tabindex="0" role="button" onclick="rmStartNew()"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();rmStartNew()}">
+        <div><span class="plus">＋</span>Start a new map</div>
+      </div>`);
+
+  if (q && !shown.length){
+    grid.innerHTML = '<div style="grid-column:1/-1;padding:1.5rem;text-align:center;color:var(--text3);font-size:12px">'
+      + 'No recent maps match “' + esc(String(filter)) + '”.</div>';
+  }
+}
+
+// "Start a new map" from the empty canvas: the source table picker is the
+// first real step, so send the user straight there.
+function rmStartNew(){
+  const el = $('src-table-input');
+  if (el){ el.focus(); try { el.scrollIntoView({behavior:'smooth',block:'center'}); } catch(_){} }
 }
 
 function loadMapById(jobId){
