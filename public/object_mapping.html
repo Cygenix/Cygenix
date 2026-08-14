@@ -82,16 +82,25 @@ body.cyg-collapsed{padding-left:54px}
 .rm-all{font-size:11.5px;color:var(--teal);cursor:pointer;font-weight:500}
 .rm-all:hover{text-decoration:underline}
 .rm-sub{margin:0 0 0.9rem;font-size:11.5px;color:var(--text3)}
+.rm-controls{display:flex;align-items:center;gap:0.9rem;flex-wrap:wrap;margin-bottom:0.9rem}
 .rm-filter{width:220px;max-width:100%;padding:7px 10px;border:0.5px solid var(--border2);border-radius:var(--r);
-  font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg2);margin-bottom:0.9rem;outline:none}
+  font-family:var(--mono);font-size:11.5px;color:var(--text);background:var(--bg2);outline:none}
 .rm-filter:focus{border-color:var(--accent)}
+.rm-skip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--text3);cursor:pointer;user-select:none}
+.rm-skip input{cursor:pointer;accent-color:var(--accent);margin:0}
+.rm-skip:hover{color:var(--text2)}
 .rm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(212px,1fr));gap:14px}
 .rm-card{border:0.5px solid var(--border);border-radius:var(--r-lg);background:var(--bg2);overflow:hidden;cursor:pointer;
   transition:transform .14s ease,box-shadow .14s ease,border-color .14s ease;position:relative;text-align:left}
-.rm-card:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(22,26,32,.13);border-color:var(--accent)}
-.rm-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.rm-card.current{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-.rm-thumb{height:104px;background:linear-gradient(180deg,var(--bg3),var(--bg4));border-bottom:0.5px solid var(--border);position:relative}
+/* A 3px rule in the map's own colour ties the tile to its thumbnail. */
+.rm-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;
+  background:var(--rm-accent,var(--accent));opacity:.85;z-index:1}
+.rm-card:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(22,26,32,.16);
+  border-color:var(--rm-accent,var(--accent))}
+.rm-card:hover::before{opacity:1}
+.rm-card:focus-visible{outline:2px solid var(--rm-accent,var(--accent));outline-offset:2px}
+.rm-card.current{border-color:var(--rm-accent,var(--accent));box-shadow:0 0 0 1px var(--rm-accent,var(--accent))}
+.rm-thumb{height:104px;border-bottom:0.5px solid var(--border);position:relative;background:var(--bg2)}
 .rm-thumb svg{width:100%;height:100%;display:block}
 .rm-body{padding:11px 12px 12px}
 .rm-name{font-size:13px;font-weight:600;letter-spacing:-0.005em;margin-bottom:4px;color:var(--text);
@@ -627,8 +636,14 @@ document.addEventListener('DOMContentLoaded', function(){
                   <span class="rm-all" id="rm-browse-all" onclick="openLoadMapModal()">Browse all →</span>
                 </div>
                 <p class="rm-sub">Pick up where you left off, or choose source and target tables above to start fresh.</p>
-                <input class="rm-filter" id="rm-filter" placeholder="🔍 Filter recent maps…"
-                       oninput="renderRecentMaps(this.value)" autocomplete="off">
+                <div class="rm-controls">
+                  <input class="rm-filter" id="rm-filter" placeholder="🔍 Filter recent maps…"
+                         oninput="renderRecentMaps(this.value)" autocomplete="off">
+                  <label class="rm-skip" title="Skip the confirmation when deleting a map from a tile. Deletes still go to Trash and can be restored from Dashboard → Show deleted.">
+                    <input type="checkbox" id="rm-skip-confirm" onchange="rmSetSkipConfirm(this.checked)">
+                    Delete without confirming
+                  </label>
+                </div>
                 <div class="rm-grid" id="rm-grid"></div>
               </div>
               <!-- Shown instead of the grid when the user has no saved maps -->
@@ -4566,19 +4581,55 @@ function renderLoadMapList(){
 // no screen space. The Load-map modal remains the full browser/search.
 const RM_PIN_KEY = 'cygenix_pinned_maps';
 const RM_MAX = 11;                 // + the "new map" tile fills a tidy grid
-const RM_COLORS = ['var(--teal)','var(--purple)','var(--accent)','var(--green)','var(--amber)','#3a6ea5'];
+// Curated hue pairs rather than a raw hash → any hue, which would land on
+// muddy olives and browns. Each entry is [source hue, target hue] a little
+// apart on the wheel, so every thumbnail reads as a two-tone flow.
+// Base hues sit ~45° apart so neighbouring cards never look like the same
+// colour; the target hue is +30° from the source for a two-tone flow. Yellow-
+// green (60-95°) is skipped — it goes muddy at these alphas.
+const RM_HUES = [
+  [205, 235],  // blue      → indigo
+  [250, 280],  // indigo    → violet
+  [292, 322],  // violet    → magenta
+  [334,   4],  // pink      → red
+  [ 18,  40],  // orange    → amber
+  [152, 178],  // green     → teal
+  [178, 200],  // teal      → cyan
+  [116, 146],  // lime-green→ green
+];
+// Colour is derived from the map's ID, not its position, so a map keeps the
+// same colour as the grid reorders (pinning, filtering, new saves). That is
+// what lets colour work as a recognition cue rather than decoration.
+function rmHues(id){
+  const s = String(id||'');
+  let h = 0;
+  for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
+  return RM_HUES[h % RM_HUES.length];
+}
 
 function rmPinned(){
   try { const a = JSON.parse(localStorage.getItem(RM_PIN_KEY)||'[]'); return Array.isArray(a)?a:[]; }
   catch { return []; }
 }
 // Delete straight from the grid. Delegates to deleteSavedJob so the Trash
-// semantics stay identical to the Load-map modal: it confirms, soft-deletes
-// (recoverable from the dashboard's "Show deleted"), and clears edit mode if
-// the map being removed is the one currently open.
+// semantics stay identical to the Load-map modal: soft-delete, recoverable
+// from the dashboard's "Show deleted", and edit mode cleared if the map being
+// removed is the one currently open.
+//
+// Skipping the prompt is safe precisely BECAUSE the delete is soft — nothing
+// is destroyed, so the worst case is a trip to Trash to restore it. Two ways
+// to skip: the persisted "Delete without confirming" toggle in the grid
+// header, or holding Shift while clicking ✕ for a one-off.
+const RM_SKIP_CONFIRM_KEY = 'cygenix_rm_skip_delete_confirm';
+function rmSkipConfirm(){
+  try { return localStorage.getItem(RM_SKIP_CONFIRM_KEY) === '1'; } catch { return false; }
+}
+function rmSetSkipConfirm(on){
+  try { localStorage.setItem(RM_SKIP_CONFIRM_KEY, on ? '1' : '0'); } catch {}
+}
 function rmDelete(ev, jobId){
   ev.stopPropagation();            // don't open the map we're deleting
-  deleteSavedJob(jobId);
+  deleteSavedJob(jobId, rmSkipConfirm() || ev.shiftKey);
 }
 
 function rmTogglePin(ev, jobId){
@@ -4608,7 +4659,7 @@ function rmWhen(iso){
 // Rows are drawn from the real mapping (capped for legibility) and each line
 // joins the source row to the target row it feeds, so two different maps look
 // visibly different and a familiar one is recognisable at a glance.
-function rmThumb(job, color){
+function rmThumb(job){
   const isOTM = job.jobType==='one-to-many' || job.oneToManyConfig;
   let pairs = [];
   if (isOTM){
@@ -4620,24 +4671,54 @@ function rmThumb(job, color){
   }
   const n = Math.max(3, Math.min(7, pairs.length || 3));
   const lh=13, gap=4, top=14, H=top*2+n*(lh+gap);
+  const [hs, ht] = rmHues(job.id);
+  // Unique gradient ids per card — duplicated ids inside one document make
+  // every thumbnail render with the first card's gradient.
+  const uid = 'rm' + String(job.id||'x').replace(/[^a-zA-Z0-9]/g,'') ;
+  // Colours are given as HSL with alpha so they sit correctly on either the
+  // light or dark theme without needing two palettes.
+  const src  = (l,a) => `hsl(${hs} 72% ${l}% / ${a})`;
+  const tgt  = (l,a) => `hsl(${ht} 72% ${l}% / ${a})`;
+
   const rows=[], lines=[];
   for(let i=0;i<n;i++){
     const y = top+i*(lh+gap);
     // widths vary with the row index so the shape reads as "data", not bars
-    rows.push(`<rect x="14" y="${y}" width="58" height="${lh}" rx="3.5" fill="var(--bg2)" stroke="var(--border2)"/>`);
-    rows.push(`<rect x="19" y="${y+4.5}" width="${26+((i*11)%22)}" height="4" rx="2" fill="var(--text3)" opacity="0.45"/>`);
-    rows.push(`<rect x="128" y="${y}" width="58" height="${lh}" rx="3.5" fill="var(--bg2)" stroke="var(--border2)"/>`);
-    rows.push(`<rect x="133" y="${y+4.5}" width="${24+((i*13)%24)}" height="4" rx="2" fill="var(--text3)" opacity="0.45"/>`);
+    rows.push(`<rect x="14" y="${y}" width="58" height="${lh}" rx="3.5" fill="${src(55,0.16)}" stroke="${src(50,0.42)}" stroke-width="0.9"/>`);
+    rows.push(`<rect x="19" y="${y+4.5}" width="${26+((i*11)%22)}" height="4" rx="2" fill="${src(48,0.72)}"/>`);
+    rows.push(`<rect x="128" y="${y}" width="58" height="${lh}" rx="3.5" fill="${tgt(55,0.16)}" stroke="${tgt(50,0.42)}" stroke-width="0.9"/>`);
+    rows.push(`<rect x="133" y="${y+4.5}" width="${24+((i*13)%24)}" height="4" rx="2" fill="${tgt(48,0.72)}"/>`);
   }
   for(let i=0;i<n;i++){
     const y1 = top+i*(lh+gap)+lh/2;
     const j  = pairs.length ? (pairs[i % pairs.length][1] % n) : i;
     const y2 = top+j*(lh+gap)+lh/2;
-    lines.push(`<path d="M72 ${y1} C 95 ${y1}, 105 ${y2}, 128 ${y2}" fill="none" stroke="${color}" stroke-width="1.4" opacity="0.72"/>`);
-    lines.push(`<circle cx="72" cy="${y1}" r="2" fill="${color}"/><circle cx="128" cy="${y2}" r="2" fill="${color}"/>`);
+    lines.push(`<path d="M72 ${y1} C 95 ${y1}, 105 ${y2}, 128 ${y2}" fill="none" stroke="url(#${uid}f)" stroke-width="1.6" stroke-linecap="round" opacity="0.9"/>`);
+    lines.push(`<circle cx="72" cy="${y1}" r="2.3" fill="${src(50,0.95)}"/><circle cx="128" cy="${y2}" r="2.3" fill="${tgt(50,0.95)}"/>`);
   }
-  return `<svg viewBox="0 0 200 ${H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">${lines.join('')}${rows.join('')}</svg>`;
+  return `<svg viewBox="0 0 200 ${H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <defs>
+      <!-- userSpaceOnUse, NOT the default objectBoundingBox: most links are
+           perfectly horizontal (row i → row i), giving the path a zero-height
+           bounding box, which makes a bounding-box gradient degenerate and
+           the stroke vanish entirely. Explicit user-space coords always paint. -->
+      <linearGradient id="${uid}f" gradientUnits="userSpaceOnUse" x1="72" y1="0" x2="128" y2="0">
+        <stop offset="0" stop-color="${src(52,1)}"/>
+        <stop offset="1" stop-color="${tgt(52,1)}"/>
+      </linearGradient>
+      <linearGradient id="${uid}b" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="200" y2="${H}">
+        <stop offset="0" stop-color="${src(55,0.10)}"/>
+        <stop offset="1" stop-color="${tgt(55,0.10)}"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="200" height="${H}" fill="url(#${uid}b)"/>
+    ${rows.join('')}${lines.join('')}
+  </svg>`;
 }
+
+// The card's accent (top rule, hover ring) uses the same source hue, so the
+// tile and its thumbnail read as one object.
+function rmAccent(id){ return `hsl(${rmHues(id)[0]} 72% 50%)`; }
 
 function renderRecentMaps(filter){
   const grid = $('rm-grid'); if(!grid) return;
@@ -4670,10 +4751,14 @@ function renderRecentMaps(filter){
 
   const all = $('rm-browse-all');
   if (all) all.textContent = 'Browse all ' + jobs.length + ' →';
+  // Reflect the stored preference — the checkbox is markup, so it starts
+  // unticked on every page load until told otherwise.
+  const skipBox = $('rm-skip-confirm');
+  if (skipBox) skipBox.checked = rmSkipConfirm();
 
   grid.innerHTML = shown.map((j, idx) => {
     const isOTM = j.jobType==='one-to-many' || j.oneToManyConfig;
-    const color = RM_COLORS[idx % RM_COLORS.length];
+    const accent = rmAccent(j.id);
     const src = esc(j.source||j.sourceTable||'—');
     const tgt = isOTM
       ? ((j.tables||[]).length + ' target tables')
@@ -4691,14 +4776,16 @@ function renderRecentMaps(filter){
     const isCurrent = (typeof editJobId!=='undefined' && editJobId===j.id);
     const pinned = pins.has(j.id);
     return `<div class="rm-card${pinned?' pinned':''}${isCurrent?' current':''}" tabindex="0" role="button"
+         style="--rm-accent:${accent}"
          aria-label="Open map ${esc(j.name||'unnamed')}"
          onclick="loadMapById('${esc(j.id)}')"
          onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();loadMapById('${esc(j.id)}')}">
       <div class="rm-pin" title="${pinned?'Unpin':'Pin to the top'}"
            onclick="rmTogglePin(event,'${esc(j.id)}')">${pinned?'★':'☆'}</div>
-      <div class="rm-del" title="Move to Trash" aria-label="Delete map ${esc(j.name||'unnamed')}"
+      <div class="rm-del" title="Move to Trash${rmSkipConfirm()?' (no confirmation — restore from Dashboard → Show deleted)':' · hold Shift to skip the prompt'}"
+           aria-label="Delete map ${esc(j.name||'unnamed')}"
            onclick="rmDelete(event,'${esc(j.id)}')">✕</div>
-      <div class="rm-thumb">${rmThumb(j, color)}</div>
+      <div class="rm-thumb">${rmThumb(j)}</div>
       <div class="rm-body">
         <div class="rm-name">${esc(j.name||'(unnamed map)')}</div>
         <div class="rm-path">${src} → ${tgt}</div>
@@ -4741,11 +4828,13 @@ function loadMapById(jobId){
   location.href = url.toString();
 }
 
-function deleteSavedJob(jobId){
+// skipConfirm: bypass the prompt (grid toggle or Shift+click). Only ever
+// skips the QUESTION — the delete itself stays soft either way.
+function deleteSavedJob(jobId, skipConfirm){
   const jobs=_getAllSavedJobs();
   const job=jobs.find(j=>j.id===jobId);
   if(!job) return;
-  if(!confirm('Move saved map "'+(job.name||'(unnamed)')+'" to Trash?\n\nYou can restore it from the dashboard via "Show deleted" next to + New Migration.')) return;
+  if(!skipConfirm && !confirm('Move saved map "'+(job.name||'(unnamed)')+'" to Trash?\n\nYou can restore it from the dashboard via "Show deleted" next to + New Migration.\n\nTip: hold Shift when clicking ✕ on a map tile to skip this prompt.')) return;
   // Soft-delete: flag, don't remove. Mirrors the dashboard's deleteJob
   // behaviour so both UIs are consistent. The job remains in cygenix_jobs
   // with _deleted=true; the load-map list filters it out.
@@ -4754,7 +4843,11 @@ function deleteSavedJob(jobId){
   jobs[idx]._deleted = true;
   jobs[idx]._deletedAt = new Date().toISOString();
   localStorage.setItem('cygenix_jobs',JSON.stringify(jobs));
-  showStatus('Moved to Trash: '+(job.name||'(unnamed)'),'info');
+  // When the prompt was skipped, the status line is the only feedback the
+  // user gets — so it must say where the map went and how to get it back.
+  showStatus(skipConfirm
+    ? 'Moved to Trash: '+(job.name||'(unnamed)')+' — restore from Dashboard → Show deleted'
+    : 'Moved to Trash: '+(job.name||'(unnamed)'), 'info');
   // Drop any pin — otherwise restoring the map later brings back a pin the
   // user can no longer see or clear from the grid.
   try {
