@@ -37,6 +37,7 @@ const sandbox = {
   esc: (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
         c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
   _getAllSavedJobs: () => JOBS,
+  _getProjectList: () => [{ id:'p-demo', name:'Demo' }, { id:'p-dentons', name:'Dentons ROW' }],
   editJobId: null,
   confirm: () => CONFIRMED,
   showStatus: (msg) => STATUS.push(msg),
@@ -258,7 +259,66 @@ sandbox.renderRecentMaps('two');           // different order/subset
 check('a map keeps its colour when the grid reorders', sandbox.rmAccent('colour-1') === c1);
 check('different maps get different colours', sandbox.rmAccent('colour-1') !== sandbox.rmAccent('colour-2'));
 
-// 12. Names are escaped — map names are user input and land in innerHTML.
+// 12. Scoping to the active project. Maps built under another project were
+//     built against another schema — their tables usually don't exist here.
+const PROJ_KEY = 'cygenix_active_project_id';
+JOBS = [
+  { id:'d1', name:'Cases',            projectId:'p-demo',    source:'dbo.Cases',    target:'dbo.cases',    created: iso(1), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+  { id:'d2', name:'Addresses',        projectId:'p-demo',    source:'dbo.addresses',target:'dbo.addresses',created: iso(2), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+  { id:'x1', name:'timekeeper_dm',    projectId:'p-dentons', source:'dbo.Timekeeper_DM', target:'dbo.Timekeeper', created: iso(3), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+  { id:'x2', name:'tkprrate_to_adj',  projectId:'p-dentons', source:'dbo.TkprRate_DM',   target:'dbo.TkprRate',   created: iso(4), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+  { id:'u1', name:'Legacy unassigned',                       source:'dbo.Old',      target:'dbo.New',      created: iso(5), columnMapping:[{srcCol:'a',tgtCol:'b'}] },
+];
+
+store[PROJ_KEY] = 'p-demo';
+sandbox.renderRecentMaps('');
+g = gridHtml();
+check('maps from another project are hidden',
+  !g.includes('timekeeper_dm') && !g.includes('tkprrate_to_adj'));
+check('maps from the active project are shown',
+  g.includes('Cases') && g.includes('Addresses'));
+check('maps with no project recorded are kept (not stranded)',
+  g.includes('Legacy unassigned'));
+check('the header names the active project',
+  /Demo/.test(mkEl('rm-scope').textContent));
+check('the hidden maps are accounted for, not silently dropped',
+  /2 maps from other projects are hidden/.test(mkEl('rm-sub').textContent));
+check('"Browse all" still counts every map across projects',
+  /Browse all 5 /.test(mkEl('rm-browse-all').textContent));
+
+// Switching project switches the grid.
+store[PROJ_KEY] = 'p-dentons';
+sandbox.renderRecentMaps('');
+g = gridHtml();
+check('switching project shows that project\'s maps instead',
+  g.includes('timekeeper_dm') && !g.includes('Cases'));
+
+// No active project → nothing to scope by, so show everything.
+delete store[PROJ_KEY];
+sandbox.renderRecentMaps('');
+g = gridHtml();
+check('with no active project, all maps are shown',
+  g.includes('Cases') && g.includes('timekeeper_dm'));
+check('...and no project scope is claimed in the header',
+  mkEl('rm-scope').textContent === '');
+
+// An unassigned map is always shown, so a project is only truly empty when
+// every other map belongs to a named, different project.
+store[PROJ_KEY] = 'p-empty';
+sandbox.renderRecentMaps('');
+check('an unassigned map keeps a project from looking empty',
+  gridHtml().includes('Legacy unassigned'));
+
+JOBS = JOBS.filter(j => j.projectId);        // drop the unassigned one
+sandbox.renderRecentMaps('');
+check('a project with none of its own says so, not "you have no maps"',
+  /No maps saved in this project/.test(mkEl('recent-maps-none').innerHTML) &&
+  /exist in other projects/.test(mkEl('recent-maps-none').innerHTML));
+check('...and does not fall back to the bare guidance text',
+  !/^Select source and target tables to build/.test(mkEl('recent-maps-none').innerHTML));
+delete store[PROJ_KEY];
+
+// 13. Names are escaped — map names are user input and land in innerHTML.
 JOBS = [{ id:'x', name:'<img src=x onerror=alert(1)>', source:'A', target:'B',
           created: iso(1), columnMapping:[] }];
 sandbox.renderRecentMaps('');
