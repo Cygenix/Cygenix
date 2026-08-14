@@ -1015,19 +1015,92 @@ function renderReport(d) {
   }
   // Column mapping — mounted as an interactive DataGrid
   const tgtTableName = d.targetTable || (d.tables?.[0]?.name) || '—';
-  const mappingData = (d.columnMapping || []).map(m => ({
-    srcTable:   m.srcTable || srcFallback,
-    srcCol:     m.srcCol || '',
-    tgtTable:   m.tgtTable || tgtTableName,
-    tgtCol:     m.tgtCol || '',
-    tgtType:    m.tgtType || '',
-    transform:  m.transform || 'NONE',
-    // A column counts as mapped only when BOTH ends exist. The old test was
-    // `m.tgtCol ? 1 : 0` — but the mapping table is keyed on target columns,
-    // so every row passed it and coverage always read 100%, even where the
-    // large majority of targets had no source column at all.
-    mapped:     (m.srcCol && m.tgtCol) ? 1 : 0,
-  }));
+  // ── Mapping logic: fixed values, parameters and Was/Is ──────────────────
+  // The grid previously showed only source → target and the transform, so a
+  // target fed by a fixed value or a @@parameter looked identical to one that
+  // was simply unmapped, and Was/Is substitutions were invisible here (they
+  // only appeared as a headline count). A reviewer could not tell from this
+  // table where a target column's value actually comes from.
+
+  // token → resolved value, from the run's own parameter audit.
+  const paramByToken = {};
+  (Array.isArray(d.paramUsage) ? d.paramUsage : []).forEach(p => {
+    const k = String(p.paramToken || '').toLowerCase();
+    if (k && p.resolved != null && p.resolved !== '') paramByToken[k] = String(p.resolved);
+  });
+
+  // Was/Is rules saved with the job. Matching mirrors CygenixWasis.rulesFor:
+  // srcTable/srcField are lower-cased, and '' means "applies to everything".
+  const wasisRules = Array.isArray(d.wasisRules) ? d.wasisRules : [];
+  // A row may carry its OWN resolved Was/Is rules (the runner records which
+  // rules actually applied to that column). Prefer that over re-deriving from
+  // the global list — it reflects what really happened during the run.
+  function wasisForRow(m){
+    if (typeof m.wasisCount === 'number' && m.wasisCount > 0) return m.wasisCount;
+    if (Array.isArray(m.wasisRules) && m.wasisRules.length) return m.wasisRules.length;
+    return wasisFor(m.srcTable || srcFallback, m.srcCol);
+  }
+  function wasisFor(srcTable, srcCol){
+    if (!wasisRules.length || !srcCol) return 0;
+    const t = String(srcTable || '').toLowerCase();
+    const f = String(srcCol   || '').toLowerCase();
+    // Rules are stored against the bare table name in some jobs and the
+    // schema-qualified one in others — compare on both.
+    const tShort = t.replace(/^.*\./, '');
+    return wasisRules.filter(r => {
+      const rt = String(r.srcTable || '').toLowerCase();
+      const rf = String(r.srcField || '').toLowerCase();
+      return (rt === '' || rt === t || rt === tShort) && (rf === '' || rf === f);
+    }).length;
+  }
+
+  // Human-readable statement of what actually feeds the target column.
+  function mappingLogic(m){
+    const lit = (m.literalValue !== undefined && m.literalValue !== null) ? String(m.literalValue) : '';
+    if (lit !== ''){
+      // Resolve any @@parameter tokens so the report shows the value that
+      // was really written, not just the token.
+      const tokens = lit.match(/@@\w+/g) || [];
+      const resolved = tokens
+        .map(tk => paramByToken[tk.toLowerCase()] ? tk + ' → ' + paramByToken[tk.toLowerCase()] : null)
+        .filter(Boolean);
+      return resolved.length ? lit + '  (' + resolved.join(', ') + ')' : lit;
+    }
+    if (m.srcCol) return '[' + m.srcCol + ']';
+    return '';                       // genuinely unmapped
+  }
+
+  const mappingData = (d.columnMapping || []).map(m => {
+    const srcT = m.srcTable || srcFallback;
+    const nWasis = wasisForRow(m);
+    const lit = (m.literalValue !== undefined && m.literalValue !== null) ? String(m.literalValue) : '';
+    const isParam = /@@\w+/.test(lit);
+    return {
+      srcTable:   srcT,
+      srcCol:     m.srcCol || '',
+      tgtTable:   m.tgtTable || tgtTableName,
+      tgtCol:     m.tgtCol || '',
+      tgtType:    m.tgtType || '',
+      transform:  m.transform || 'NONE',
+      logic:      mappingLogic(m),
+      fixedValue: lit,
+      // "Parameter" / "Fixed value" / "Source column" / "Not mapped" — lets a
+      // reviewer filter or pivot the mapping by how each column is fed.
+      valueFrom:  isParam ? 'Parameter'
+                : lit     ? 'Fixed value'
+                : m.srcCol ? 'Source column'
+                : 'Not mapped',
+      wasis:      nWasis ? (nWasis + ' rule' + (nWasis === 1 ? '' : 's')) : '',
+      wasisCount: nWasis,
+      // A column counts as mapped only when BOTH ends exist. The old test was
+      // `m.tgtCol ? 1 : 0` — but the mapping table is keyed on target columns,
+      // so every row passed it and coverage always read 100%, even where the
+      // large majority of targets had no source column at all.
+      // A fixed value or parameter feeds the target just as a source column
+      // does, so it counts as mapped too.
+      mapped:     (m.tgtCol && (m.srcCol || lit !== '')) ? 1 : 0,
+    };
+  });
   const mappingConfig = (reportConfig && reportConfig.grids && reportConfig.grids.mapping) || {};
   window._grids.mapping = new DataGrid({
     mount: document.getElementById('grid-mapping'),
@@ -1042,6 +1115,23 @@ function renderReport(d) {
       { key: 'tgtType',   label: 'Type',          type: 'text', mono: true, size: 11, muted: true },
       { key: 'transform', label: 'Transform',     type: 'text', mono: true, size: 11,
         render: v => v && v !== 'NONE' ? '<span class="col-transform">' + v + '</span>' : '<span style="color:var(--text3)">—</span>' },
+      // What actually feeds the target column: the source column, a fixed
+      // value, or a parameter shown with the value it resolved to.
+      { key: 'logic',     label: 'Mapping logic', type: 'text', mono: true, size: 11,
+        render: v => v
+          ? String(v).replace(/(@@\w+)/g, '<span style="color:var(--accent);font-weight:600">$1</span>')
+                     .replace(/→/g, '<span style="color:var(--text3)">→</span>')
+          : '<span style="color:var(--amber)">not mapped</span>' },
+      { key: 'valueFrom', label: 'Value from',    type: 'text', size: 11,
+        render: v => v === 'Not mapped'
+          ? '<span style="color:var(--amber)">' + v + '</span>'
+          : '<span style="color:var(--text2)">' + (v || '') + '</span>' },
+      { key: 'wasis',     label: 'Was/Is',        type: 'text', size: 11,
+        render: v => v
+          ? '<span style="color:var(--teal);font-weight:500">' + v + '</span>'
+          : '<span style="color:var(--text3)">—</span>' },
+      { key: 'fixedValue',  label: 'Fixed value', type: 'text', mono: true, size: 11, muted: true, hidden: true },
+      { key: 'wasisCount',  label: 'Was/Is rules', type: 'number', align: 'right', hidden: true },
       { key: 'mapped',    label: 'Mapped',        type: 'number', align: 'right', hidden: true },
     ],
     rows: mappingData,
@@ -2870,18 +2960,26 @@ function doExport() {
         (d.sourceSystem && d.sourceSystem !== 'Source Database' && d.sourceSystem !== 'Source file' && d.sourceSystem !== 'Database export' ? d.sourceSystem : null) ||
         d.sourceFile || '—';
       const tgtTableName = d.targetTable || (d.tables?.[0]?.name) || '—';
+      // Fallback path (no grid mounted). Kept in step with the grid columns so
+      // a fixed value or parameter is never silently dropped from the export.
       const mapData = [
-        ['Source table', 'Source column', 'Target table', 'Target column', 'Target type', 'Transform']
-      ].concat(d.columnMapping.map(m => [
-        m.srcTable || srcTableName, m.srcCol || '',
-        m.tgtTable || tgtTableName, m.tgtCol || '',
-        m.tgtType || '', m.transform || 'NONE'
-      ]));
+        ['Source table', 'Source column', 'Target table', 'Target column', 'Target type', 'Transform', 'Mapping logic', 'Value from', 'Was/Is']
+      ].concat(d.columnMapping.map(m => {
+        const lit = (m.literalValue !== undefined && m.literalValue !== null) ? String(m.literalValue) : '';
+        return [
+          m.srcTable || srcTableName, m.srcCol || '',
+          m.tgtTable || tgtTableName, m.tgtCol || '',
+          m.tgtType || '', m.transform || 'NONE',
+          lit !== '' ? lit : (m.srcCol ? '[' + m.srcCol + ']' : ''),
+          /@@\w+/.test(lit) ? 'Parameter' : lit ? 'Fixed value' : m.srcCol ? 'Source column' : 'Not mapped',
+          '',
+        ];
+      }));
       const wsMap = XLSX.utils.aoa_to_sheet(mapData);
-      wsMap['!cols'] = [{wch:30},{wch:28},{wch:30},{wch:28},{wch:18},{wch:14}];
+      wsMap['!cols'] = [{wch:30},{wch:28},{wch:30},{wch:28},{wch:18},{wch:14},{wch:34},{wch:16},{wch:14}];
       wsMap['!rows'] = mapData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
-      styleRange(wsMap, 0, 0, 0, 5, STYLE.tableHeader);
-      if (mapData.length > 1) styleRange(wsMap, 1, mapData.length-1, 0, 5, STYLE.value);
+      styleRange(wsMap, 0, 0, 0, mapData[0].length - 1, STYLE.tableHeader);
+      if (mapData.length > 1) styleRange(wsMap, 1, mapData.length-1, 0, mapData[0].length - 1, STYLE.value);
       wsMap['!freeze'] = { xSplit: 0, ySplit: 1 };
       XLSX.utils.book_append_sheet(wb, wsMap, 'Column Mapping');
     }

@@ -9924,6 +9924,11 @@ function openReport(jobId) {
     tables:         tableResults.map(t => ({ ...t, sourceName: srcTableName })),
     columnMapping:  (job.columnMapping || []).map(m => ({
       srcCol: m.srcCol || '', tgtCol: m.tgtCol || '',
+      // Table names and the fixed value were being dropped here, so the
+      // report could not show WHERE a target column's value came from — a
+      // fixed value or @@parameter looked identical to an unmapped column.
+      srcTable: m.srcTable || '', tgtTable: m.tgtTable || '',
+      literalValue: (m.literalValue !== undefined && m.literalValue !== null) ? m.literalValue : '',
       tgtType: m.tgtType || '', transform: m.transform || 'NONE',
       transformExpr: m.transformExpr || null,
       wasisRules: m.wasisRules || null, wasisCount: m.wasisCount || null
