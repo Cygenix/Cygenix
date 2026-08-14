@@ -4878,6 +4878,14 @@ function buildProjectReport(steps, passed, failed, srcConn, tgtConn) {
         tgtType:   m.tgtType  || '',
         transform: m.transform || 'NONE',
         transformExpr: m.transformExpr || null,
+        // The fixed value / @@parameter feeding this target column. Rebuilding
+        // the row without it made a hard-coded column indistinguishable from a
+        // plain copy in the report: CaseNo, pinned to 'Fixed Param' in the
+        // editor, was reported as "[CaseNo] · Source column".
+        literalValue: (m.literalValue !== undefined && m.literalValue !== null) ? m.literalValue : '',
+        // Legacy alias — applyMappingTransform honours both, so the report has
+        // to see both or an older map's fixed value goes missing.
+        fixedValue: (m.fixedValue !== undefined && m.fixedValue !== null) ? m.fixedValue : '',
         wasisRules: m.wasisRules || null,
         wasisCount: m.wasisCount || (Array.isArray(m.wasisRules) ? m.wasisRules.length : 0)
       });
