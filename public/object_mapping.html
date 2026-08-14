@@ -79,6 +79,7 @@ body.cyg-collapsed{padding-left:54px}
    ever on screen while the canvas is otherwise empty. */
 .rm-head{display:flex;align-items:baseline;justify-content:space-between;gap:0.75rem;margin-bottom:2px}
 .rm-title{margin:0;font-size:14.5px;font-weight:600;letter-spacing:-0.005em;color:var(--text)}
+.rm-scope{font-weight:500;color:var(--text3);font-size:12.5px;margin-left:7px}
 .rm-all{font-size:11.5px;color:var(--teal);cursor:pointer;font-weight:500}
 .rm-all:hover{text-decoration:underline}
 .rm-sub{margin:0 0 0.9rem;font-size:11.5px;color:var(--text3)}
@@ -633,10 +634,10 @@ document.addEventListener('DOMContentLoaded', function(){
             <div id="single-empty" style="padding:1.25rem 1rem 1.5rem">
               <div id="recent-maps-wrap">
                 <div class="rm-head">
-                  <h3 class="rm-title">Recent maps</h3>
+                  <h3 class="rm-title">Recent maps<span id="rm-scope" class="rm-scope"></span></h3>
                   <span class="rm-all" id="rm-browse-all" onclick="openLoadMapModal()">Browse all →</span>
                 </div>
-                <p class="rm-sub">Pick up where you left off, or choose source and target tables above to start fresh.</p>
+                <p class="rm-sub" id="rm-sub">Pick up where you left off, or choose source and target tables above to start fresh.</p>
                 <div class="rm-controls">
                   <input class="rm-filter" id="rm-filter" placeholder="🔍 Filter recent maps…"
                          oninput="renderRecentMaps(this.value)" autocomplete="off">
@@ -4769,12 +4770,52 @@ function rmAccent(id){ return `hsl(${rmHues(id)[0]} 72% 50%)`; }
 function renderRecentMaps(filter){
   const grid = $('rm-grid'); if(!grid) return;
   const wrap = $('recent-maps-wrap'), none = $('recent-maps-none');
-  const jobs = _getAllSavedJobs().filter(j => !j._deleted);
+  const allJobs = _getAllSavedJobs().filter(j => !j._deleted);
 
-  // No saved maps at all — fall back to the original guidance text.
+  // ── Scope to the active project ────────────────────────────────────────
+  // Maps saved under a DIFFERENT project were built against that project's
+  // schema, so their source/target tables usually don't exist here — opening
+  // one from this canvas can only fail. The Load-map modal already defaults
+  // to the active project; this grid was showing everything.
+  //
+  // Maps with no projectId recorded are KEPT: they either predate the field
+  // or were saved with no project active, so hiding them would strand work
+  // with no way to reach it from the canvas.
+  const activeProjectId = (localStorage.getItem('cygenix_active_project_id')||'').trim();
+  const jobs = activeProjectId
+    ? allJobs.filter(j => !j.projectId || j.projectId === activeProjectId)
+    : allJobs;
+  const hidden = allJobs.length - jobs.length;
+
+  // Name the scope so it's obvious which project's maps these are.
+  const scopeEl = $('rm-scope');
+  if (scopeEl){
+    let pname = '';
+    if (activeProjectId){
+      try { pname = (_getProjectList().find(p => p.id === activeProjectId)||{}).name || ''; } catch {}
+    }
+    scopeEl.textContent = pname ? '· ' + pname : '';
+  }
+  const subEl = $('rm-sub');
+  if (subEl){
+    subEl.textContent = 'Pick up where you left off, or choose source and target tables above to start fresh.'
+      + (hidden ? '  ' + hidden + ' map' + (hidden===1?'':'s') + ' from other projects '
+                + (hidden===1?'is':'are') + ' hidden — use Browse all to see everything.' : '');
+  }
+
+  // Nothing to show for this project. Distinguish "you have no maps" from
+  // "your maps are all in other projects" — the second is not an empty state
+  // and telling the user it is would be misleading.
   if (!jobs.length){
     if (wrap) wrap.style.display='none';
-    if (none) none.style.display='block';
+    if (none){
+      none.style.display='block';
+      none.innerHTML = allJobs.length
+        ? 'No maps saved in this project yet — select source and target tables above to build one.<br>'
+          + '<span style="color:var(--text3)">' + allJobs.length + ' map' + (allJobs.length===1?'':'s')
+          + ' exist in other projects — <span class="rm-all" onclick="openLoadMapModal()">Browse all →</span></span>'
+        : 'Select source and target tables to build the column mapping';
+    }
     return;
   }
   if (wrap) wrap.style.display='';
@@ -4796,7 +4837,9 @@ function renderRecentMaps(filter){
   const shown = list.slice(0, RM_MAX);
 
   const all = $('rm-browse-all');
-  if (all) all.textContent = 'Browse all ' + jobs.length + ' →';
+  // Counts the FULL set — "Browse all" opens the modal, which can reach maps
+  // in every project, not just the ones scoped into this grid.
+  if (all) all.textContent = 'Browse all ' + allJobs.length + ' →';
   // Reflect the stored preference — the checkbox is markup, so it starts
   // unticked on every page load until told otherwise.
   const skipBox = $('rm-skip-confirm');
