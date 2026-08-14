@@ -127,5 +127,29 @@ rows = build({ columnMapping: [{ srcCol:'', tgtCol:'x', literalValue:'@@unknown'
 check('an unresolved parameter is still shown as a parameter',
   rows[0].logic === '@@unknown' && rows[0].valueFrom === 'Parameter');
 
+// ── Legacy `fixedValue` field ────────────────────────────────────────────
+// The editor writes literalValue, but the runner's transform pipeline also
+// honours fixedValue. A map carrying only the legacy field must not report
+// as an unmapped column.
+rows = build({ columnMapping: [{ srcCol:'', tgtCol:'CaseNo', fixedValue:"'Fixed Param'" }] }).mappingData;
+check('a legacy fixedValue is shown in the mapping logic',
+  rows[0].logic === "'Fixed Param'", rows[0].logic);
+check('a legacy fixedValue is classified as a fixed value',
+  rows[0].valueFrom === 'Fixed value', rows[0].valueFrom);
+check('a legacy fixedValue counts as mapped', rows[0].mapped === 1);
+
+rows = build({
+  columnMapping: [{ srcCol:'', tgtCol:'CaseDescription', fixedValue:'@@date' }],
+  paramUsage: [{ paramToken:'@@date', resolved:"'''20260101'''" }],
+}).mappingData;
+check('a legacy fixedValue holding a parameter still resolves',
+  /@@date/.test(rows[0].logic) && /20260101/.test(rows[0].logic) &&
+  rows[0].valueFrom === 'Parameter', rows[0].logic);
+
+// literalValue wins when both are present — it is what the editor writes now.
+rows = build({ columnMapping: [{ srcCol:'', tgtCol:'x', literalValue:"'new'", fixedValue:"'old'" }] }).mappingData;
+check('literalValue takes precedence over the legacy field',
+  rows[0].logic === "'new'", rows[0].logic);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

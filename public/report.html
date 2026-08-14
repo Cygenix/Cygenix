@@ -1054,9 +1054,19 @@ function renderReport(d) {
     }).length;
   }
 
+  // The fixed value feeding a column. The editor writes `literalValue`, but
+  // older maps (and the runner's own transform pipeline) also honour
+  // `fixedValue`, so read both or an older map's hard-coded column silently
+  // reports as unmapped.
+  function literalOf(m){
+    if (m.literalValue !== undefined && m.literalValue !== null && m.literalValue !== '') return String(m.literalValue);
+    if (m.fixedValue   !== undefined && m.fixedValue   !== null && m.fixedValue   !== '') return String(m.fixedValue);
+    return '';
+  }
+
   // Human-readable statement of what actually feeds the target column.
   function mappingLogic(m){
-    const lit = (m.literalValue !== undefined && m.literalValue !== null) ? String(m.literalValue) : '';
+    const lit = literalOf(m);
     if (lit !== ''){
       // Resolve any @@parameter tokens so the report shows the value that
       // was really written, not just the token.
@@ -1073,7 +1083,7 @@ function renderReport(d) {
   const mappingData = (d.columnMapping || []).map(m => {
     const srcT = m.srcTable || srcFallback;
     const nWasis = wasisForRow(m);
-    const lit = (m.literalValue !== undefined && m.literalValue !== null) ? String(m.literalValue) : '';
+    const lit = literalOf(m);
     const isParam = /@@\w+/.test(lit);
     return {
       srcTable:   srcT,
