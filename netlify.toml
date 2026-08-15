@@ -22,6 +22,12 @@
   status = 200
   force = true
 
+[functions]
+  # nodemailer resolves its transports and its punycode/iconv data at runtime,
+  # which esbuild cannot follow — bundling it produces a function that throws
+  # on the first sendMail. Shipping it as a plain node_module instead.
+  external_node_modules = ["nodemailer"]
+
 [functions."scheduled-runner"]
   schedule = "* * * * *"
 
