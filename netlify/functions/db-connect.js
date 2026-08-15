@@ -39,6 +39,7 @@
 const mssql = require('mssql');
 const { Client: PgClient } = require('pg');
 const { verifyAuthHeader } = require('./lib/entra-auth');
+const { applyEntraAuth } = require('./lib/sql-entra');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-formatting helpers (shared across MSSQL + Postgres schema endpoints)
@@ -141,7 +142,21 @@ async function handleMssql(action, connectionString, database, body) {
     config = parseMssqlConnectionString(connectionString, database);
   } catch (e) {
     return err('Invalid connection string: ' + e.message,
-      'Supported formats:\n  ADO.NET: Server=host;Database=db;User Id=user;Password=pass;\n  URL: mssql://user:pass@host:1433/database?encrypt=true&trustServerCertificate=true',
+      'Supported formats:\n  ADO.NET: Server=host;Database=db;User Id=user;Password=pass;\n  URL: mssql://user:pass@host:1433/database?encrypt=true&trustServerCertificate=true\n  Entra: Server=host;Database=db;Authentication=Active Directory Service Principal;User Id=<clientId>;Password=<secret>;Tenant Id=<guid>;',
+      400);
+  }
+
+  // Swap username/password for an Entra token when the string asks for it.
+  // A no-op for SQL-auth strings, so that path is unchanged.
+  try {
+    config = await applyEntraAuth(config, connectionString);
+  } catch (e) {
+    return err('Entra authentication failed: ' + e.message,
+      'This runtime has no managed identity, so "Active Directory Default" only works here if '
+      + 'AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_CLIENT_SECRET are set in the Netlify environment. '
+      + 'Otherwise use "Active Directory Service Principal" and put the client id, secret and tenant '
+      + 'in the connection string. Scheduled runs are unaffected — those execute in Azure, where the '
+      + 'app\'s own managed identity is available.',
       400);
   }
 
