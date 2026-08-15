@@ -153,7 +153,11 @@ function oneShotNextRun(s) {
     // which is not what "run at 14:25 yesterday" means.
     if (!isNaN(d.getTime())) return d.getTime() > Date.now() ? d.toISOString() : null;
   }
+<<<<<<< HEAD
   return s && s.cron ? computeNextRun(s.cron, new Date(), s.timezone) : null;
+=======
+  return s && s.cron ? computeNextRun(s.cron, new Date()) : null;
+>>>>>>> origin/main
 }
 
 async function createSchedule(userId, body, containers) {
