@@ -70,7 +70,50 @@ body.cyg-collapsed{padding-left:54px}
 
 /* ── Layout ── */
 .page{padding:1.5rem 2rem;max-width:100%}
-.main-grid{display:grid;grid-template-columns:300px 1fr;gap:1.5rem;align-items:start}
+/* Left column is resizable and collapsible. It was a fixed 300px, which is
+   tight for long table names and the WHERE/GROUP BY rows, and there was no way
+   to reclaim the space for the mapping grid once the source table was picked.
+   --om-left-w is set on the element by the splitter and restored from
+   localStorage on load. */
+.main-grid{
+  display:grid;
+  grid-template-columns:var(--om-left-w,300px) 12px 1fr;
+  gap:0.75rem;
+  align-items:start;
+}
+.main-grid.left-collapsed{ grid-template-columns:0 12px 1fr; }
+/* Hidden rather than removed: the panels keep their state and scroll
+   positions, and nothing inside has to re-render on expand. */
+.main-grid.left-collapsed > .om-left{ visibility:hidden;overflow:hidden;height:0 }
+
+.om-split{
+  align-self:stretch;position:relative;min-height:120px;
+  cursor:col-resize;border-radius:100px;
+  background:transparent;transition:background 0.15s;
+  touch-action:none;
+}
+.om-split:hover,.om-split.dragging{ background:var(--accent-glow) }
+/* The grab line — visible on hover so the splitter is discoverable without
+   adding a permanent divider to the page. */
+.om-split::before{
+  content:'';position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;
+  background:var(--border2);opacity:0;transition:opacity 0.15s;border-radius:2px;
+}
+.om-split:hover::before,.om-split.dragging::before{ opacity:1;background:var(--accent) }
+.om-split-btn{
+  position:absolute;top:8px;left:50%;transform:translateX(-50%);
+  width:20px;height:26px;padding:0;display:flex;align-items:center;justify-content:center;
+  background:var(--bg2);border:0.5px solid var(--border2);border-radius:5px;
+  color:var(--text3);font-size:10px;line-height:1;cursor:pointer;z-index:2;
+}
+.om-split-btn:hover{ border-color:var(--accent);color:var(--accent);background:var(--bg3) }
+@media(max-width:900px){
+  /* Stack instead: a splitter is meaningless in one column, and a collapsed
+     left panel would be unreachable. */
+  .main-grid,.main-grid.left-collapsed{ grid-template-columns:1fr;gap:1.5rem }
+  .main-grid.left-collapsed > .om-left{ visibility:visible;overflow:visible;height:auto }
+  .om-split{ display:none }
+}
 
 /* ── Panels ── */
 /* ── Recent maps grid (empty-canvas shortcuts) ─────────────────────────────
@@ -474,11 +517,11 @@ document.addEventListener('DOMContentLoaded', function(){
   <!-- Status -->
   <div class="status-bar" id="status-bar"></div>
 
-  <!-- Two-column main grid -->
-  <div class="main-grid">
+  <!-- Two-column main grid, split by a drag handle -->
+  <div class="main-grid" id="om-grid">
 
     <!-- ── LEFT: Source panel ── -->
-    <div>
+    <div class="om-left">
       <!-- Source table picker -->
       <div class="panel">
         <div class="panel-head" onclick="toggleSrcPanel()" style="cursor:pointer;user-select:none" title="Click to collapse">
@@ -554,7 +597,11 @@ document.addEventListener('DOMContentLoaded', function(){
             <div id="groupby-rows"></div>
             <button class="btn btn-ghost btn-sm" onclick="addGroupBy()" style="width:100%;margin-top:0.3rem;justify-content:center">+ Add GROUP BY column</button>
             <div id="groupby-note" style="display:none;font-size:10px;margin-top:0.35rem;line-height:1.45"></div>
-            <datalist id="src-col-list"></datalist>
+            <!-- gb- prefix: #src-col-list is already the source COLUMN list div
+                 in the picker above. Sharing the id made getElementById return
+                 that div, so rendering these rows replaced the user's source
+                 columns with <option> tags. -->
+            <datalist id="gb-col-list"></datalist>
             <input id="src-groupby" type="hidden">
           </div>
           <!-- Row limit (single mode) -->
@@ -573,6 +620,14 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ── Splitter: drag to resize, click the pill to collapse ── -->
+    <div class="om-split" id="om-split" onmousedown="omSplitStart(event)" ontouchstart="omSplitStart(event)"
+         ondblclick="omResetLeft()" title="Drag to resize · Double-click to reset">
+      <button class="om-split-btn" id="om-split-btn" onclick="omToggleLeft()"
+              onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"
+              title="Collapse the source panel">‹</button>
     </div>
 
     <!-- ── RIGHT: Target panel ── -->
@@ -1283,6 +1338,9 @@ document.addEventListener('DOMContentLoaded', function init(){
 
   const ak = localStorage.getItem('cygenix_api_key')||'';
   if(ak) $('api-key').value = ak;
+
+  // Restore the source panel's width / collapsed state from the last visit.
+  omInitSplitter();
 
   // Paint one empty WHERE row so the Options panel looks the same as before
   // for a fresh map. checkEditMode overwrites both lists when loading a job.
@@ -3267,6 +3325,112 @@ function tryAutoGenSQL(){
 }
 
 // ══════════════════════════════════════════════════════════════════════════
+// LEFT COLUMN SPLITTER
+// ══════════════════════════════════════════════════════════════════════════
+// The source panel was a fixed 300px. Long schema-qualified table names got
+// clipped in the picker, the WHERE and GROUP BY rows had barely any room to
+// type in, and once the source table was chosen there was no way to give that
+// space back to the mapping grid. It now drags to resize and collapses to
+// nothing, and both are remembered.
+const OM_LEFT_W_KEY   = 'cygenix_om_left_width';
+const OM_LEFT_COL_KEY = 'cygenix_om_left_collapsed';
+const OM_LEFT_MIN = 220;   // narrower than this and the column list is unusable
+const OM_LEFT_MAX = 620;
+const OM_LEFT_DEFAULT = 300;
+
+function omClampLeft(px){
+  const n = Number(px);
+  if(!isFinite(n)) return OM_LEFT_DEFAULT;
+  return Math.max(OM_LEFT_MIN, Math.min(OM_LEFT_MAX, Math.round(n)));
+}
+
+function omApplyLeft(px, persist){
+  const grid = $('om-grid');
+  if(!grid) return;
+  const w = omClampLeft(px);
+  grid.style.setProperty('--om-left-w', w + 'px');
+  if(persist){ try { localStorage.setItem(OM_LEFT_W_KEY, String(w)); } catch {} }
+}
+
+function omSetCollapsed(on, persist){
+  const grid = $('om-grid');
+  const btn  = $('om-split-btn');
+  if(!grid) return;
+  grid.classList.toggle('left-collapsed', !!on);
+  if(btn){
+    btn.textContent = on ? '›' : '‹';
+    btn.title = on ? 'Show the source panel' : 'Collapse the source panel';
+  }
+  if(persist){ try { localStorage.setItem(OM_LEFT_COL_KEY, on ? '1' : '0'); } catch {} }
+}
+
+function omToggleLeft(){
+  const grid = $('om-grid');
+  if(!grid) return;
+  omSetCollapsed(!grid.classList.contains('left-collapsed'), true);
+}
+
+function omResetLeft(){
+  omApplyLeft(OM_LEFT_DEFAULT, true);
+  omSetCollapsed(false, true);
+}
+
+// Pointer position works for both mouse and touch, so one handler covers a
+// trackpad drag and a stylus on a tablet.
+function omPointerX(e){
+  if(e.touches && e.touches.length) return e.touches[0].clientX;
+  return e.clientX;
+}
+
+function omSplitStart(e){
+  const grid = $('om-grid');
+  const split = $('om-split');
+  if(!grid) return;
+  // Dragging out of a collapsed state should bring the panel back rather than
+  // resizing something invisible.
+  if(grid.classList.contains('left-collapsed')) omSetCollapsed(false, true);
+  e.preventDefault();
+  if(split) split.classList.add('dragging');
+  const gridLeft = grid.getBoundingClientRect().left;
+
+  const move = ev => {
+    // Width measured from the grid's left edge, so it stays correct when the
+    // page is scrolled sideways or the sidebar changes width.
+    omApplyLeft(omPointerX(ev) - gridLeft, false);
+  };
+  const up = ev => {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    document.removeEventListener('touchmove', move);
+    document.removeEventListener('touchend', up);
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    if(split) split.classList.remove('dragging');
+    // Persist once, at the end — not on every mousemove.
+    const cur = getComputedStyle(grid).getPropertyValue('--om-left-w');
+    omApplyLeft(parseInt(cur, 10) || OM_LEFT_DEFAULT, true);
+  };
+  // Suppress text selection and keep the resize cursor for the whole drag,
+  // including while the pointer is outside the 12px handle.
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'col-resize';
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+  document.addEventListener('touchmove', move, { passive:false });
+  document.addEventListener('touchend', up);
+}
+
+function omInitSplitter(){
+  let w = null, c = null;
+  try {
+    w = localStorage.getItem(OM_LEFT_W_KEY);
+    c = localStorage.getItem(OM_LEFT_COL_KEY);
+  } catch {}
+  if(w) omApplyLeft(w, false);
+  omSetCollapsed(c === '1', false);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // WHERE CONDITIONS + GROUP BY
 // ══════════════════════════════════════════════════════════════════════════
 // The Options panel used to offer a single free-text WHERE box, so anything
@@ -3365,13 +3529,13 @@ function renderGroupByRows(){
   host.innerHTML = groupByCols.map((v, i) => `
     <div class="cond-row">
       <span class="cond-first">${i === 0 ? 'GROUP BY' : ','}</span>
-      <input class="cond-text" value="${escAttr(v || '')}" list="src-col-list"
+      <input class="cond-text" value="${escAttr(v || '')}" list="gb-col-list"
              placeholder="column or expression"
              oninput="setGroupBy(${i},this.value)">
       <button class="cond-del" onclick="delGroupBy(${i})" title="Remove">✕</button>
     </div>`).join('');
   // Offer the source table's columns for autocomplete.
-  const dl = $('src-col-list');
+  const dl = $('gb-col-list');
   if (dl) {
     dl.innerHTML = ((srcTable && srcTable.columns) || [])
       .map(c => typeof c === 'string' ? c : c.name)
