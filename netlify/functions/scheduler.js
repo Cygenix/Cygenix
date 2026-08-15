@@ -132,9 +132,33 @@ async function listSchedules(userId, _body, containers) {
   return { schedules: resources };
 }
 
+// When does this schedule next fire?
+//
+// For a repeating schedule the cron is the whole answer. For a one-shot it is
+// not: a cron has five fields and none is a year, so "25 14 15 8 *" means
+// 14:25 on 15 August in every year. computeNextRun only searches 60 days
+// ahead, so once that date has passed it finds the occurrence a year later,
+// is unable to reach it, and returns null — and a null nextRunAt is excluded
+// by the runner's query, so the schedule silently stops being able to fire at
+// all. Editing such a schedule re-saved that null, which is how a one-shot
+// could be "saved for today" and never run.
+//
+// runOnceAt carries the instant, so a one-shot needs no searching. Schedules
+// created before this field existed fall back to the cron.
+function oneShotNextRun(s) {
+  if (s && s.oneShot && s.runOnceAt) {
+    const d = new Date(s.runOnceAt);
+    // A one-shot in the past has no next run — same as a fired one. Returning
+    // it unchanged would make the runner fire it immediately on the next tick,
+    // which is not what "run at 14:25 yesterday" means.
+    if (!isNaN(d.getTime())) return d.getTime() > Date.now() ? d.toISOString() : null;
+  }
+  return s && s.cron ? computeNextRun(s.cron, new Date()) : null;
+}
+
 async function createSchedule(userId, body, containers) {
   const { name, jobId, jobVersionId, cron, timezone, chainAfter, enabled,
-          srcConn, tgtConn, oneShot } = body || {};
+          srcConn, tgtConn, oneShot, runOnceAt } = body || {};
   if (!name)         return { __err: 'name required' };
   if (!jobId)        return { __err: 'jobId required' };
   if (!jobVersionId) return { __err: 'jobVersionId required' };
@@ -181,9 +205,13 @@ async function createSchedule(userId, body, containers) {
     timezone:    timezone || null,
     chainAfter:  chainAfter || null,
     oneShot:     !!oneShot,  // one-off schedules auto-disable after firing
+    // The instant a one-shot should fire. A cron has no year field, so for a
+    // single-occurrence schedule the expression alone is ambiguous — see
+    // oneShotNextRun below.
+    runOnceAt:   runOnceAt || null,
     enabled:     enabled !== false,
     humanReadable: cron ? humaniseCron(cron) : null,
-    nextRunAt:   cron ? computeNextRun(cron, new Date()) : null,
+    nextRunAt:   oneShotNextRun({ oneShot, runOnceAt, cron }),
     lastRunAt:   null,
     lastRunStatus: null,
     createdAt:   nowIso(),
@@ -203,10 +231,14 @@ async function updateSchedule(userId, body, containers) {
   if (existing.userId !== userId) return { __err: 'forbidden', __status: 403 };
 
   const merged = { ...existing, ...patch, updatedAt: nowIso() };
-  // Recompute denormalised fields if their inputs changed.
-  if (Object.prototype.hasOwnProperty.call(patch, 'cron')) {
-    merged.humanReadable = patch.cron ? humaniseCron(patch.cron) : null;
-    merged.nextRunAt     = patch.cron ? computeNextRun(patch.cron, new Date()) : null;
+  // Recompute denormalised fields if their inputs changed. runOnceAt counts as
+  // an input: editing only the date of a one-shot leaves the cron identical
+  // (it carries no year), so keying solely off `cron` would keep the old
+  // nextRunAt and the edit would appear to do nothing.
+  if (Object.prototype.hasOwnProperty.call(patch, 'cron') ||
+      Object.prototype.hasOwnProperty.call(patch, 'runOnceAt')) {
+    merged.humanReadable = merged.cron ? humaniseCron(merged.cron) : null;
+    merged.nextRunAt     = oneShotNextRun(merged);
   }
   if (Object.prototype.hasOwnProperty.call(patch, 'jobVersionId') && patch.jobVersionId) {
     try {
@@ -650,3 +682,8 @@ exports.handler = async (event) => {
     return errorResponse(500, e.message);
   }
 };
+
+// Exported for tests. Netlify only looks for `handler`, so this is inert in
+// production — but the one-shot next-run rule is the thing that decides
+// whether a schedule can fire at all, and it needs asserting directly.
+module.exports.oneShotNextRun = oneShotNextRun;
