@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script src="/auth-gate.js"></script>
+<script src="/cygenix-auth-token.js" defer></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!-- Site-wide theme overrides (Financial palette + future themes).
+     Must load BEFORE the pre-paint script below so its CSS variables
+     are available the moment data-theme is set. -->
+<link rel="stylesheet" href="/cygenix-theme.css">
+<link rel="stylesheet" href="/cygenix-history.css">
+<!-- Theme pre-paint: reads the user's saved theme and applies it to <html>
+     BEFORE any content renders, preventing a flash of the wrong theme.
+     Reads from cygenix_app_prefs (same key the Settings page writes to). -->
+<script>
+(function(){
+  try {
+    var p = JSON.parse(localStorage.getItem('cygenix_app_prefs') || '{}');
+    var t = p.theme || 'light';
+    // One-time migration to the Oracle light default: upgrade the old
+    // 'dark' default to light. Users can re-pick any theme in Settings.
+    if (!p.themeOracleMigrated) {
+      if (t === 'dark') { t = 'light'; p.theme = 'light'; }
+      p.themeOracleMigrated = true;
+      try { localStorage.setItem('cygenix_app_prefs', JSON.stringify(p)); } catch(_e){}
+    }
+    if (t === 'auto') {
+      t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+    document.documentElement.setAttribute('data-theme', t);
+  } catch (_) {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
+</script>
+<meta name="theme-color" content="#FFFFFF">
+<meta name="description" content="Explore the target schema and see what your saved maps actually cover.">
+<meta property="og:title" content="Cygenix – Schema Explorer">
+<meta property="og:description" content="Explore the target schema and see what your saved maps actually cover.">
+<meta property="og:url" content="https://cygenix.co.uk/schema_explorer.html">
+<meta property="og:site_name" content="Cygenix">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://cygenix.co.uk/og-image.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Cygenix – Schema Explorer">
+<meta name="twitter:description" content="Explore the target schema and see what your saved maps actually cover.">
+<title>Cygenix – Schema Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0f14;--bg2:#13161d;--bg3:#1a1e28;--bg4:#222733;
+  --border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);
+  --text:#e8eaf0;--text2:#8b90a0;--text3:#363D49;
+  --accent:#4A5BD6;--accent-glow:rgba(74,91,214,0.15);
+  --green:#22c97a;--green-bg:rgba(34,201,122,0.1);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,0.1);
+  --red:#f04646;--red-bg:rgba(240,70,70,0.1);
+  --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
+  --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
+  --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  --r:10px;--r-lg:14px;
+}
+body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
+body.cyg-collapsed{padding-left:54px}
+.page{padding:1.5rem 2rem;max-width:100%}
+
+/* ── Header ── */
+.se-head{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+.se-title{font-size:20px;font-weight:600;margin-bottom:0.25rem}
+.se-sub{font-size:12.5px;color:var(--text2);line-height:1.6}
+.se-head-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
+
+/* ── Tab bar — same control as Object Mapping's mode switch ── */
+.mode-bar{display:flex;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;margin-bottom:1rem;max-width:420px}
+.mode-btn{flex:1;text-align:center;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
+.mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
+
+.btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
+.btn:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.btn:disabled{opacity:0.45;cursor:default}
+.btn.on{color:var(--accent);border-color:rgba(74,91,214,0.45);background:var(--accent-glow)}
+.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-primary:hover{color:#fff;opacity:0.9}
+
+.panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden}
+.panel-header{display:flex;align-items:center;gap:0.6rem;padding:0.7rem 0.9rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.panel-title{font-size:12px;font-weight:600;letter-spacing:0.02em}
+.panel-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.muted{font-size:12px;color:var(--text3);padding:1rem;line-height:1.6}
+
+/* Empty states. Both views must degrade to one of these rather than throw. */
+.se-empty{padding:2.5rem 1.5rem;text-align:center;color:var(--text3)}
+.se-empty-icon{font-size:26px;opacity:0.5;margin-bottom:0.6rem}
+.se-empty-title{font-size:13.5px;color:var(--text2);font-weight:500;margin-bottom:0.35rem}
+.se-empty-body{font-size:12px;line-height:1.65;max-width:460px;margin:0 auto}
+.se-empty-body a{color:var(--accent);text-decoration:none}
+
+/* ══ VIEW 1 — SCHEMA MAP ═════════════════════════════════════════════ */
+.sm-grid{display:grid;grid-template-columns:260px 1fr 300px;gap:0.75rem;align-items:start}
+.sm-grid.no-inspector{grid-template-columns:260px 1fr}
+@media(max-width:1100px){.sm-grid,.sm-grid.no-inspector{grid-template-columns:1fr}}
+
+.sm-tree{max-height:calc(100vh - 250px);overflow:auto}
+.sm-filter{width:100%;padding:6px 9px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--serif);font-size:12px}
+.sm-filter:focus{outline:none;border-color:var(--accent)}
+.sm-schema{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.9rem 0.25rem}
+.sm-tnode{display:flex;align-items:center;gap:0.4rem;padding:4px 0.9rem;font-size:12px;cursor:pointer;color:var(--text2)}
+.sm-tnode:hover{background:var(--accent-glow);color:var(--text)}
+.sm-tnode.on{color:var(--accent);font-weight:500}
+.sm-tnode-rows{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--text3)}
+.sm-cnode{padding:2px 0.9rem 2px 2rem;font-size:11px;font-family:var(--mono);color:var(--text3);cursor:pointer}
+.sm-cnode:hover{color:var(--accent)}
+.sm-cnode mark,.sm-tnode mark{background:var(--amber-bg);color:var(--amber);border-radius:2px;padding:0 1px}
+
+/* The ERD. Boxes are positioned HTML inside a transformed layer so text stays
+   crisp and selectable; edges are SVG underneath the same transform. */
+.sm-canvas-wrap{position:relative;height:calc(100vh - 250px);min-height:420px;overflow:hidden;background:var(--bg);border-radius:var(--r)}
+.sm-toolbar{position:absolute;top:8px;left:8px;right:8px;z-index:6;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;pointer-events:none}
+.sm-toolbar>*{pointer-events:auto}
+.sm-viewport{position:absolute;inset:0;cursor:grab}
+.sm-viewport.panning{cursor:grabbing}
+.sm-layer{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
+.sm-edges{position:absolute;top:0;left:0;overflow:visible;pointer-events:none}
+.sm-edge{stroke:var(--border2);stroke-width:1.2;fill:none}
+.sm-edge.hot{stroke:var(--accent);stroke-width:2}
+.sm-edge.path{stroke:var(--amber);stroke-width:2.4}
+.sm-edge-dot{fill:var(--border2)}
+.sm-edge.hot+.sm-edge-dot{fill:var(--accent)}
+
+.sm-box{position:absolute;width:210px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.18);overflow:hidden}
+.sm-box.dim{opacity:0.22}
+.sm-box.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+.sm-box-head{display:flex;align-items:center;gap:0.4rem;padding:6px 8px;cursor:grab;background:var(--bg3);border-bottom:0.5px solid var(--border);font-size:11.5px;font-weight:600}
+.sm-box-head:active{cursor:grabbing}
+.sm-box-swatch{width:7px;height:7px;border-radius:2px;flex:none}
+.sm-box-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sm-box-rows{margin-left:auto;font-size:9.5px;font-family:var(--mono);color:var(--text3);font-weight:400}
+.sm-col{display:flex;align-items:center;gap:0.35rem;padding:2px 8px;font-size:10.5px;font-family:var(--mono);color:var(--text2);line-height:1.5}
+.sm-col-key{color:var(--amber);width:9px;flex:none;font-size:9px}
+.sm-col-fk{color:var(--teal)}
+.sm-col-type{margin-left:auto;color:var(--text3);font-size:9.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:78px}
+.sm-box-more{padding:2px 8px 5px;font-size:9.5px;color:var(--text3);font-family:var(--mono)}
+
+.sm-mini{position:absolute;right:10px;bottom:10px;width:170px;height:120px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;z-index:6;opacity:0.94}
+.sm-mini-box{position:absolute;background:var(--text3);border-radius:1px}
+.sm-mini-view{position:absolute;border:1px solid var(--accent);background:var(--accent-glow);pointer-events:none}
+
+.sm-insp{max-height:calc(100vh - 250px);overflow:auto}
+.sm-insp-tabs{display:flex;gap:0.2rem;padding:0.5rem 0.6rem 0;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.sm-insp-tab{font-size:11px;padding:4px 8px;border-radius:5px 5px 0 0;cursor:pointer;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
+.sm-insp-tab.active{color:var(--accent);background:var(--bg3)}
+.sm-insp-body{padding:0.7rem 0.85rem;font-size:11.5px;line-height:1.6}
+.sm-kv{display:flex;gap:0.5rem;padding:2px 0;font-family:var(--mono);font-size:10.5px}
+.sm-kv b{color:var(--text2);font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sm-kv span{margin-left:auto;color:var(--text3);white-space:nowrap}
+.sm-pre{background:var(--bg);border:0.5px solid var(--border);border-radius:6px;padding:0.5rem;font-family:var(--mono);font-size:10.5px;white-space:pre;overflow:auto;max-height:320px;color:var(--text2)}
+.sm-tablewrap{overflow:auto;max-height:300px;border:0.5px solid var(--border);border-radius:6px}
+.sm-tablewrap table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:100%}
+.sm-tablewrap th{position:sticky;top:0;background:var(--bg3);color:var(--text2);text-align:left;padding:4px 6px;font-weight:500;white-space:nowrap;border-bottom:0.5px solid var(--border)}
+.sm-tablewrap td{padding:3px 6px;color:var(--text3);white-space:nowrap;border-bottom:0.5px solid var(--border)}
+
+/* ⌘K palette */
+.se-palette{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;align-items:flex-start;justify-content:center;z-index:900;padding-top:12vh}
+.se-palette.show{display:flex}
+.se-palette-box{width:min(560px,92vw);background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r-lg);overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,0.45)}
+.se-palette-input{width:100%;padding:0.85rem 1rem;background:transparent;border:none;border-bottom:0.5px solid var(--border);color:var(--text);font-size:14px;font-family:var(--serif)}
+.se-palette-input:focus{outline:none}
+.se-palette-list{max-height:52vh;overflow:auto}
+.se-palette-item{display:flex;align-items:center;gap:0.5rem;padding:7px 1rem;font-size:12px;cursor:pointer;color:var(--text2)}
+.se-palette-item.on{background:var(--accent-glow);color:var(--accent)}
+.se-palette-kind{font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em}
+.se-palette-sub{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--text3)}
+
+/* ══ VIEW 2 — COVERAGE MAP ═══════════════════════════════════════════ */
+.cv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:1rem}
+.cv-kpi{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.8rem 0.95rem}
+.cv-kpi-num{font-size:22px;font-weight:600;line-height:1.1}
+.cv-kpi-lab{font-size:10.5px;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:0.05em}
+.cv-kpi-note{font-size:10.5px;color:var(--text2);margin-top:5px;line-height:1.45}
+
+.cv-ribbons{position:relative;overflow:auto;padding:0.5rem 0}
+.cv-ribbon-row{cursor:pointer}
+.cv-ribbon{fill-opacity:0.32;stroke-width:0.5;transition:fill-opacity 0.12s}
+.cv-ribbon-row:hover .cv-ribbon{fill-opacity:0.62}
+.cv-node{fill:var(--bg3);stroke:var(--border2);stroke-width:0.5}
+.cv-node-label{font-family:var(--mono);font-size:10px;fill:var(--text2)}
+.cv-node-label.tgt{text-anchor:end}
+.cv-axis{font-family:var(--serif);font-size:10px;fill:var(--text3);letter-spacing:0.06em;text-transform:uppercase}
+
+.cv-waves{display:flex;gap:0.6rem;overflow-x:auto;padding:0.75rem 0.9rem}
+.cv-wave{min-width:170px;background:var(--bg3);border:0.5px solid var(--border);border-radius:8px;padding:0.55rem 0.65rem;flex:none}
+.cv-wave-head{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.35rem}
+.cv-wave-item{font-size:11px;font-family:var(--mono);color:var(--text2);padding:2px 0;overflow:hidden;text-overflow:ellipsis}
+.cv-wave-item.unmapped{color:var(--text3)}
+
+.cv-check{display:flex;gap:0.6rem;align-items:flex-start;padding:0.6rem 0.9rem;border-top:0.5px solid var(--border);font-size:12px;line-height:1.55}
+.cv-check:first-child{border-top:0}
+.cv-check-dot{width:7px;height:7px;border-radius:50%;flex:none;margin-top:5px}
+.cv-check b{font-weight:500;color:var(--text)}
+.cv-check-detail{color:var(--text3);font-size:11px;margin-top:2px}
+
+/* Drawer for one map's columns and its generated SQL. */
+.cv-drawer{position:fixed;top:0;right:0;bottom:0;width:min(620px,94vw);background:var(--bg2);border-left:0.5px solid var(--border2);z-index:850;transform:translateX(100%);transition:transform 0.18s ease;display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,0.3)}
+.cv-drawer.show{transform:translateX(0)}
+.cv-drawer-head{display:flex;align-items:center;gap:0.6rem;padding:0.85rem 1rem;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
+.cv-drawer-body{overflow:auto;padding:0.85rem 1rem;flex:1}
+.cv-maprow{display:grid;grid-template-columns:1fr 16px 1fr auto;gap:0.5rem;align-items:center;padding:4px 0;border-top:0.5px solid var(--border);font-family:var(--mono);font-size:11px}
+.cv-maprow:first-child{border-top:0}
+.cv-maprow-src{color:var(--text2);overflow:hidden;text-overflow:ellipsis}
+.cv-maprow-src.fixed{color:var(--purple);font-style:italic}
+.cv-maprow-tgt{color:var(--text2);overflow:hidden;text-overflow:ellipsis}
+.cv-maprow-arrow{color:var(--text3);text-align:center}
+.cv-badge{font-size:9px;font-family:var(--mono);padding:1px 6px;border-radius:100px;white-space:nowrap}
+.cv-badge.hi{background:var(--green-bg);color:var(--green)}
+.cv-badge.mid{background:var(--amber-bg);color:var(--amber)}
+.cv-badge.lo{background:var(--red-bg);color:var(--red)}
+.cv-badge.fix{background:var(--purple-bg);color:var(--purple)}
+.cv-scrim{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:840;display:none}
+.cv-scrim.show{display:block}
+
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style>
+</head>
+<body>
+<script src="/connections.js" defer></script>
+<script src="/cygenix-cosmos-sync.js" defer></script>
+<script src="/cygenix-api.js" defer></script>
+<script src="/cygenix-schema-graph.js" defer></script>
+
+<div id="cyg-sidebar-mount" data-active="schema-explorer"></div>
+<script src="/cygenix-sidebar.js" defer></script>
+
+<div class="page">
+  <div class="se-head">
+    <div>
+      <div class="se-title">🗺 Schema Explorer</div>
+      <div class="se-sub">Explore the target schema and see what your saved maps actually cover.</div>
+    </div>
+    <div class="se-head-actions">
+      <button class="btn" id="se-reload" onclick="seReloadSchema()" title="Schema queries are slow on wide databases, so the result is cached. This refetches it.">↻ Reload schema</button>
+      <button class="btn" onclick="sePaletteOpen()" title="Search every table and column">🔍 Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
+    </div>
+  </div>
+
+  <div class="mode-bar" role="tablist" aria-label="Schema Explorer views">
+    <button class="mode-btn active" id="se-tab-schema" role="tab" aria-selected="true"
+            aria-controls="se-view-schema" onclick="seSwitchTab('schema')">◈ Schema map</button>
+    <button class="mode-btn" id="se-tab-coverage" role="tab" aria-selected="false"
+            aria-controls="se-view-coverage" onclick="seSwitchTab('coverage')">⊞ Coverage map</button>
+  </div>
+
+  <!-- ══ VIEW 1 — SCHEMA MAP ══════════════════════════════════════════ -->
+  <div id="se-view-schema" role="tabpanel" aria-labelledby="se-tab-schema">
+    <div class="sm-grid" id="sm-grid">
+      <div class="panel sm-tree">
+        <div class="panel-header" style="gap:0.4rem">
+          <input class="sm-filter" id="sm-filter" type="text" placeholder="Filter tables and columns…"
+                 aria-label="Filter tables and columns" oninput="smRenderTree()">
+        </div>
+        <div id="sm-tree-body"></div>
+      </div>
+
+      <div class="panel" style="padding:0">
+        <div class="sm-canvas-wrap" id="sm-canvas-wrap">
+          <div class="sm-toolbar">
+            <button class="btn" id="sm-side-tgt" onclick="smSetSide('tgt')">Target</button>
+            <button class="btn" id="sm-side-src" onclick="smSetSide('src')">Source</button>
+            <span style="width:8px"></span>
+            <button class="btn" onclick="smZoom(1.2)" aria-label="Zoom in">+</button>
+            <button class="btn" onclick="smZoom(1/1.2)" aria-label="Zoom out">−</button>
+            <button class="btn" onclick="smFit()">Fit</button>
+            <button class="btn" onclick="smAutoLayout(true)">Auto-layout</button>
+            <span style="width:8px"></span>
+            <button class="btn" id="sm-focus-0" onclick="smSetFocus(null)">All</button>
+            <button class="btn" id="sm-focus-1" onclick="smSetFocus(1)">1 hop</button>
+            <button class="btn" id="sm-focus-2" onclick="smSetFocus(2)">2 hops</button>
+            <span style="width:8px"></span>
+            <button class="btn" id="sm-join-btn" onclick="smJoinToggle()" title="Pick two tables and get the shortest join path">⤳ Join path</button>
+            <span id="sm-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+          </div>
+          <div class="sm-viewport" id="sm-viewport" tabindex="0" role="application"
+               aria-label="Schema diagram. Use the toolbar buttons to zoom, fit and lay out; use the tree or search to select a table.">
+            <svg class="sm-edges" id="sm-edges"></svg>
+            <div class="sm-layer" id="sm-layer"></div>
+          </div>
+          <div class="sm-mini" id="sm-mini" title="Minimap — click to jump"></div>
+          <div id="sm-empty" class="se-empty" style="display:none;position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center"></div>
+        </div>
+      </div>
+
+      <div class="panel sm-insp" id="sm-insp">
+        <div class="panel-header"><div><div class="panel-title" id="sm-insp-title">Inspector</div><div class="panel-sub" id="sm-insp-sub">Pick a table</div></div></div>
+        <div class="sm-insp-tabs" role="tablist" aria-label="Table detail">
+          <button class="sm-insp-tab active" data-it="columns" onclick="smInspTab('columns')" role="tab">Columns</button>
+          <button class="sm-insp-tab" data-it="sample" onclick="smInspTab('sample')" role="tab">Sample</button>
+          <button class="sm-insp-tab" data-it="rels" onclick="smInspTab('rels')" role="tab">Relationships</button>
+          <button class="sm-insp-tab" data-it="ddl" onclick="smInspTab('ddl')" role="tab">DDL</button>
+        </div>
+        <div class="sm-insp-body" id="sm-insp-body"><div class="muted" style="padding:0">Select a table in the tree or the diagram.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ VIEW 2 — COVERAGE MAP ════════════════════════════════════════ -->
+  <div id="se-view-coverage" role="tabpanel" aria-labelledby="se-tab-coverage" style="display:none">
+    <div id="cv-kpis" class="cv-kpis"></div>
+
+    <div class="panel" style="margin-bottom:1rem">
+      <div class="panel-header">
+        <div><div class="panel-title">Source → target coverage</div>
+        <div class="panel-sub">One ribbon per saved map. Thickness is the number of mapped columns; colour is the worst match confidence in that map.</div></div>
+        <button class="btn" style="margin-left:auto" onclick="cvRender()">↻ Refresh</button>
+      </div>
+      <div id="cv-ribbons" class="cv-ribbons"></div>
+    </div>
+
+    <div class="panel" style="margin-bottom:1rem">
+      <div class="panel-header">
+        <div><div class="panel-title">Load order</div>
+        <div class="panel-sub">Foreign keys decide what has to exist first. Tables in the same wave have no dependency on each other and can run together.</div></div>
+        <div style="margin-left:auto;display:flex;gap:0.4rem">
+          <button class="btn" onclick="cvExportComposite()">⬇ Composite job</button>
+          <button class="btn btn-primary" onclick="cvSaveComposite()">💾 Save as job</button>
+        </div>
+      </div>
+      <div id="cv-waves"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header"><div><div class="panel-title">Pre-flight checks</div>
+      <div class="panel-sub">Run these before a migration, not after it.</div></div></div>
+      <div id="cv-checks"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ⌘K palette: every table and every column, both sides. -->
+<div class="se-palette" id="se-palette" role="dialog" aria-modal="true" aria-label="Search tables and columns">
+  <div class="se-palette-box">
+    <input class="se-palette-input" id="se-palette-input" type="text" placeholder="Search tables and columns…"
+           oninput="sePaletteFilter()" onkeydown="sePaletteKey(event)" aria-controls="se-palette-list">
+    <div class="se-palette-list" id="se-palette-list" role="listbox"></div>
+  </div>
+</div>
+
+<div class="cv-scrim" id="cv-scrim" onclick="cvCloseDrawer()"></div>
+<div class="cv-drawer" id="cv-drawer" role="dialog" aria-modal="true" aria-labelledby="cv-drawer-title">
+  <div class="cv-drawer-head">
+    <div style="min-width:0">
+      <div class="panel-title" id="cv-drawer-title">Map</div>
+      <div class="panel-sub" id="cv-drawer-sub"></div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:0.4rem">
+      <button class="btn" id="cv-drawer-open" onclick="cvOpenInMapping()">Open in Object Mapping</button>
+      <button class="btn" onclick="cvCloseDrawer()" aria-label="Close">✕</button>
+    </div>
+  </div>
+  <div class="cv-drawer-body" id="cv-drawer-body"></div>
+</div>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// Schema Explorer
+//
+// Two views over the same two inputs, both read through
+// cygenix-schema-graph.js so the schema is fetched once rather than per tab:
+//
+//   Schema map    — the target (or source) database as an ERD.
+//   Coverage map  — what the project's saved maps actually write, and in what
+//                   order the foreign keys say they have to be written.
+//
+// Everything here is read-only. The only database traffic is the schema
+// actions and a TOP-n SELECT for the sample tab.
+// ═══════════════════════════════════════════════════════════════════════════
+'use strict';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const num = n => (typeof n === 'number' ? n : 0).toLocaleString();
+
+// Highlight a filter match without letting the needle inject markup.
+function mark(text, needle){
+  const s = String(text == null ? '' : text);
+  if (!needle) return esc(s);
+  const i = s.toLowerCase().indexOf(needle.toLowerCase());
+  if (i < 0) return esc(s);
+  return esc(s.slice(0, i)) + '<mark>' + esc(s.slice(i, i + needle.length)) + '</mark>' + esc(s.slice(i + needle.length));
+}
+
+// The prototype shipped five schema hues of its own. These are the console's,
+// assigned round-robin per schema so a multi-schema database still reads as
+// grouped without introducing a colour the rest of the app does not use.
+const SCHEMA_COLOURS = ['var(--accent)','var(--teal)','var(--purple)','var(--amber)','var(--green)'];
+const schemaColour = (() => {
+  const seen = {};
+  let n = 0;
+  return (s) => {
+    if (seen[s] === undefined) seen[s] = n++;
+    return SCHEMA_COLOURS[seen[s] % SCHEMA_COLOURS.length];
+  };
+})();
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+const TAB_KEY = 'cygenix_schemaexp_tab';
+let seTab = 'schema';
+
+function seSwitchTab(tab){
+  seTab = (tab === 'coverage') ? 'coverage' : 'schema';
+  try { localStorage.setItem(TAB_KEY, seTab); } catch {}
+  const onSchema = seTab === 'schema';
+  $('se-view-schema').style.display   = onSchema ? '' : 'none';
+  $('se-view-coverage').style.display = onSchema ? 'none' : '';
+  $('se-tab-schema').classList.toggle('active', onSchema);
+  $('se-tab-coverage').classList.toggle('active', !onSchema);
+  $('se-tab-schema').setAttribute('aria-selected', String(onSchema));
+  $('se-tab-coverage').setAttribute('aria-selected', String(!onSchema));
+  if (onSchema) { smEnsureLoaded(); smFitIfUnplaced(); }
+  else cvRender();
+}
+
+// ═══ VIEW 1 — SCHEMA MAP ═════════════════════════════════════════════════
+const SM = {
+  side: 'tgt',            // the brief's default
+  graph: null,
+  loading: false,
+  pos: {},                // key → {x,y} in world space
+  view: { x: 40, y: 60, k: 0.85 },
+  selected: null,
+  focusDepth: null,       // null = show all
+  inspTab: 'columns',
+  joinMode: false,
+  joinPick: [],
+  joinResult: null,
+};
+
+const BOX_W = 210, ROW_H = 15, HEAD_H = 25, MAX_ROWS = 9;
+
+function boxHeight(node){
+  const cols = node.columns ? node.columns.length : Math.max(node.fkColumns.length + node.refColumns.length, 3);
+  return HEAD_H + Math.min(cols, MAX_ROWS) * ROW_H + (cols > MAX_ROWS ? 14 : 4);
+}
+
+async function smEnsureLoaded(force){
+  if (SM.loading) return;
+  SM.loading = true;
+  smStatus('Loading schema…');
+  try {
+    SM.graph = force
+      ? await CygenixSchemaGraph.reload(SM.side)
+      : await CygenixSchemaGraph.load(SM.side);
+  } catch (e) {
+    SM.graph = { ok:false, reason:(e && e.message) || 'Could not load', tables:[], edges:[], byKey:{}, adj:{} };
+  }
+  SM.loading = false;
+  SM.pos = {};
+  SM.selected = null;
+  SM.joinResult = null;
+  smStatus('');
+  smRenderTree();
+  smAutoLayout(false);
+  smRenderCanvas();
+  smRenderInspector();
+  smUpdateSideButtons();
+  // Columns make the boxes real: the FK anchors and the DDL tab both need
+  // them. Fetched in the background, bounded, redrawing as they land.
+  if (SM.graph.ok && SM.graph.tables.length){
+    const keys = SM.graph.tables.slice(0, 60).map(t => t.key);
+    CygenixSchemaGraph.columnsFor(SM.side, keys, () => smScheduleRedraw());
+  }
+}
+
+let _redrawTimer = null;
+function smScheduleRedraw(){
+  if (_redrawTimer) return;
+  _redrawTimer = setTimeout(() => { _redrawTimer = null; smRenderCanvas(); smRenderTree(); }, 120);
+}
+
+function smStatus(msg){ const el = $('sm-status'); if (el) el.textContent = msg || ''; }
+
+function smSetSide(side){
+  if (SM.side === side) return;
+  SM.side = side;
+  smEnsureLoaded();
+}
+function smUpdateSideButtons(){
+  $('sm-side-tgt').classList.toggle('on', SM.side === 'tgt');
+  $('sm-side-src').classList.toggle('on', SM.side === 'src');
+  [['sm-focus-0', null], ['sm-focus-1', 1], ['sm-focus-2', 2]].forEach(([id, d]) =>
+    $(id).classList.toggle('on', SM.focusDepth === d));
+}
+
+function seReloadSchema(){
+  if (seTab === 'schema') smEnsureLoaded(true);
+  else { CygenixSchemaGraph.reload(SM.side).then(() => cvRender()); }
+}
+
+// ── Left tree ─────────────────────────────────────────────────────────────
+function smRenderTree(){
+  const host = $('sm-tree-body');
+  if (!host) return;
+  const g = SM.graph;
+  if (!g || !g.ok){
+    host.innerHTML = '<div class="muted">' + esc((g && g.reason) || 'No schema loaded.') + '</div>';
+    return;
+  }
+  const q = ($('sm-filter').value || '').trim();
+  const bySchema = {};
+  for (const t of g.tables){
+    // Match on the table name OR any of its columns — a user hunting for
+    // "postcode" should find the table that has one.
+    const tableHit = !q || t.name.toLowerCase().includes(q.toLowerCase());
+    const colHits = (!q || tableHit) ? [] : (t.columns || []).filter(c => c.name.toLowerCase().includes(q.toLowerCase()));
+    if (q && !tableHit && !colHits.length) continue;
+    (bySchema[t.schema] = bySchema[t.schema] || []).push({ t, colHits });
+  }
+  const schemas = Object.keys(bySchema).sort();
+  if (!schemas.length){
+    host.innerHTML = '<div class="muted">Nothing matches “' + esc(q) + '”.</div>';
+    return;
+  }
+  host.innerHTML = schemas.map(s => {
+    const rows = bySchema[s].map(({ t, colHits }) => {
+      const sel = SM.selected === t.key ? ' on' : '';
+      return '<div class="sm-tnode' + sel + '" tabindex="0" role="button"'
+        + ' onclick="smSelect(\'' + esc(t.key) + '\',true)"'
+        + ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();smSelect(\'' + esc(t.key) + '\',true)}">'
+        + '<span class="sm-box-swatch" style="background:' + schemaColour(t.schema) + '"></span>'
+        + '<span>' + mark(t.name, q) + '</span>'
+        + '<span class="sm-tnode-rows">' + num(t.rowCount) + '</span></div>'
+        + colHits.slice(0, 8).map(c =>
+            '<div class="sm-cnode" tabindex="0" role="button" onclick="smSelect(\'' + esc(t.key) + '\',true)"'
+            + ' onkeydown="if(event.key===\'Enter\'){smSelect(\'' + esc(t.key) + '\',true)}">'
+            + mark(c.name, q) + '</div>').join('');
+    }).join('');
+    return '<div class="sm-schema">' + esc(s) + '</div>' + rows;
+  }).join('');
+}
+
+// ── Auto-layout ───────────────────────────────────────────────────────────
+// Layered by FK depth: a table nothing references sits in the first column,
+// its dependants in the next. Within a layer, tables are stacked in name
+// order. It is deterministic, which matters more here than elegance — the
+// same schema must lay out the same way every time the page opens.
+function smAutoLayout(animate){
+  const g = SM.graph;
+  if (!g || !g.ok) return;
+  const order = CygenixSchemaGraph.loadOrder(g);
+  const layers = order.waves.slice();
+  if (order.cyclic.length) layers.push(order.cyclic);   // cycles get their own column
+
+  const COL_W = BOX_W + 90, GAP_Y = 22;
+  let x = 0;
+  SM.pos = {};
+  for (const layer of layers){
+    let y = 0;
+    for (const key of layer){
+      SM.pos[key] = { x, y };
+      const node = g.byKey[key];
+      y += (node ? boxHeight(node) : 90) + GAP_Y;
+    }
+    x += COL_W;
+  }
+  // Anything the sort never reached (it should not happen, but an empty
+  // adjacency would) still needs somewhere to be.
+  let stray = 0;
+  for (const t of g.tables){
+    if (!SM.pos[t.key]){ SM.pos[t.key] = { x, y: stray }; stray += boxHeight(t) + GAP_Y; }
+  }
+  if (animate){ smFit(); }
+  smRenderCanvas();
+}
+
+let _fitted = false;
+function smFitIfUnplaced(){ if (!_fitted && SM.graph && SM.graph.ok){ smFit(); _fitted = true; } }
+
+function smBounds(){
+  const keys = Object.keys(SM.pos);
+  if (!keys.length) return { x:0, y:0, w:1, h:1 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const k of keys){
+    const p = SM.pos[k], node = SM.graph.byKey[k];
+    const h = node ? boxHeight(node) : 90;
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + BOX_W); maxY = Math.max(maxY, p.y + h);
+  }
+  return { x:minX, y:minY, w:Math.max(maxX-minX,1), h:Math.max(maxY-minY,1) };
+}
+
+function smFit(){
+  const wrap = $('sm-canvas-wrap');
+  if (!wrap || !SM.graph || !SM.graph.ok) return;
+  const b = smBounds();
+  const pad = 50;
+  const k = Math.min((wrap.clientWidth - pad*2) / b.w, (wrap.clientHeight - pad*2) / b.h, 1.4);
+  SM.view.k = Math.max(0.08, k);
+  SM.view.x = pad - b.x * SM.view.k + Math.max(0, (wrap.clientWidth - pad*2 - b.w*SM.view.k)/2);
+  SM.view.y = pad - b.y * SM.view.k;
+  smApplyView();
+}
+
+function smZoom(f, cx, cy){
+  const wrap = $('sm-canvas-wrap');
+  const px = cx == null ? wrap.clientWidth/2 : cx;
+  const py = cy == null ? wrap.clientHeight/2 : cy;
+  const k0 = SM.view.k;
+  const k1 = Math.max(0.08, Math.min(3, k0 * f));
+  // Keep the point under the cursor fixed while the scale changes.
+  SM.view.x = px - (px - SM.view.x) * (k1 / k0);
+  SM.view.y = py - (py - SM.view.y) * (k1 / k0);
+  SM.view.k = k1;
+  smApplyView();
+}
+
+function smApplyView(){
+  const t = 'translate(' + SM.view.x + 'px,' + SM.view.y + 'px) scale(' + SM.view.k + ')';
+  const layer = $('sm-layer'); if (layer) layer.style.transform = t;
+  const g = document.getElementById('sm-edges-g');
+  if (g) g.setAttribute('transform',
+    'translate(' + SM.view.x + ',' + SM.view.y + ') scale(' + SM.view.k + ')');
+  smRenderMinimap();
+}
+
+// ── Canvas render ─────────────────────────────────────────────────────────
+function smRenderCanvas(){
+  const layer = $('sm-layer'), svg = $('sm-edges'), empty = $('sm-empty');
+  if (!layer || !svg) return;
+  const g = SM.graph;
+
+  if (!g || !g.ok || !g.tables.length){
+    layer.innerHTML = ''; svg.innerHTML = '';
+    empty.style.display = 'flex';
+    const why = g && g.reason ? esc(g.reason) : 'No tables to draw.';
+    const noConn = !g || !g.ok;
+    empty.innerHTML = '<div class="se-empty-icon">🗺</div>'
+      + '<div class="se-empty-title">' + (noConn ? 'No schema to explore yet' : 'This database has no tables') + '</div>'
+      + '<div class="se-empty-body">' + why
+      + (noConn ? '<br><a href="/dashboard.html#goto=connections">Configure a connection</a> and come back.' : '')
+      + '</div>';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const visible = smVisibleSet();
+  const wrap = $('sm-canvas-wrap');
+  svg.setAttribute('width', wrap.clientWidth);
+  svg.setAttribute('height', wrap.clientHeight);
+
+  // Boxes
+  layer.innerHTML = g.tables.map(t => {
+    const p = SM.pos[t.key] || { x:0, y:0 };
+    const dim = visible && !visible.has(t.key) ? ' dim' : '';
+    const sel = SM.selected === t.key ? ' sel' : '';
+    const cols = t.columns || [];
+    const shown = cols.length ? cols.slice(0, MAX_ROWS) : [];
+    // Before the columns arrive the FK columns are still known from the edge
+    // list, so the box is never an empty rectangle.
+    const placeholder = !cols.length
+      ? t.fkColumns.concat(t.refColumns).slice(0, MAX_ROWS).map(n => ({ name:n, type:'', _fk:true }))
+      : [];
+    const rows = (shown.length ? shown : placeholder).map(c => {
+      const isPk = (t.primaryKeys || []).indexOf(c.name) >= 0;
+      const isFk = t.fkColumns.indexOf(c.name) >= 0;
+      return '<div class="sm-col" data-col="' + esc(c.name) + '">'
+        + '<span class="sm-col-key">' + (isPk ? '🔑' : (isFk ? '↗' : '')) + '</span>'
+        + '<span class="' + (isFk ? 'sm-col-fk' : '') + '">' + esc(c.name) + '</span>'
+        + (c.type ? '<span class="sm-col-type">' + esc(c.type) + '</span>' : '')
+        + '</div>';
+    }).join('');
+    const more = cols.length > MAX_ROWS ? '<div class="sm-box-more">+' + (cols.length - MAX_ROWS) + ' more</div>' : '';
+    return '<div class="sm-box' + dim + sel + '" data-key="' + esc(t.key) + '"'
+      + ' style="left:' + p.x + 'px;top:' + p.y + 'px">'
+      + '<div class="sm-box-head" data-drag="' + esc(t.key) + '" title="' + esc(t.key) + '">'
+      + '<span class="sm-box-swatch" style="background:' + schemaColour(t.schema) + '"></span>'
+      + '<span class="sm-box-name">' + esc(t.name) + '</span>'
+      + '<span class="sm-box-rows">' + num(t.rowCount) + '</span></div>'
+      + rows + more + '</div>';
+  }).join('');
+
+  // Edges, anchored to the column row when the columns are known.
+  const parts = ['<g id="sm-edges-g">'];
+  for (const e of g.edges){
+    if (e.self) continue;
+    if (visible && (!visible.has(e.from) || !visible.has(e.to))) continue;
+    const a = smAnchor(e.from, e.fromColumn), b = smAnchor(e.to, e.toColumn);
+    if (!a || !b) continue;
+    const onPath = SM.joinResult && smEdgeOnPath(e);
+    const hot = SM.selected && (e.from === SM.selected || e.to === SM.selected);
+    const cls = 'sm-edge' + (onPath ? ' path' : (hot ? ' hot' : ''));
+    // Horizontal-first bezier: the layout is columnar, so a curve that leaves
+    // sideways reads as a relationship rather than crossing boxes.
+    const dx = Math.max(30, Math.abs(b.x - a.x) * 0.45);
+    parts.push('<path class="' + cls + '" d="M' + a.x + ',' + a.y
+      + ' C' + (a.x + dx) + ',' + a.y + ' ' + (b.x - dx) + ',' + b.y + ' ' + b.x + ',' + b.y + '"/>');
+    parts.push('<circle class="sm-edge-dot" cx="' + b.x + '" cy="' + b.y + '" r="2.2"/>');
+  }
+  parts.push('</g>');
+  svg.innerHTML = parts.join('');
+  smApplyView();
+}
+
+// Where an edge should meet a box: the row for that column if it is drawn,
+// otherwise the box's vertical centre.
+function smAnchor(key, colName){
+  const p = SM.pos[key], node = SM.graph.byKey[key];
+  if (!p || !node) return null;
+  let y = p.y + HEAD_H + 6;
+  const cols = node.columns && node.columns.length
+    ? node.columns.slice(0, MAX_ROWS).map(c => c.name)
+    : node.fkColumns.concat(node.refColumns).slice(0, MAX_ROWS);
+  const i = cols.indexOf(colName);
+  if (i >= 0) y = p.y + HEAD_H + i * ROW_H + ROW_H/2;
+  else y = p.y + boxHeight(node)/2;
+  return { x: p.x + BOX_W/2, y };
+}
+
+function smEdgeOnPath(e){
+  const t = SM.joinResult && SM.joinResult.tables;
+  if (!t) return false;
+  for (let i = 0; i < t.length - 1; i++){
+    if ((e.from === t[i] && e.to === t[i+1]) || (e.to === t[i] && e.from === t[i+1])) return true;
+  }
+  return false;
+}
+
+// Which tables the focus control leaves undimmed. null = everything.
+function smVisibleSet(){
+  if (SM.focusDepth == null || !SM.selected) return null;
+  return CygenixSchemaGraph.neighbourhood(SM.graph, [SM.selected], SM.focusDepth);
+}
+
+function smSetFocus(depth){
+  SM.focusDepth = depth;
+  smUpdateSideButtons();
+  smRenderCanvas();
+}
+
+function smSelect(key, centre){
+  if (SM.joinMode) return smJoinPick(key);
+  SM.selected = key;
+  smRenderTree();
+  smRenderCanvas();
+  smRenderInspector();
+  if (centre) smCentreOn(key);
+}
+
+function smCentreOn(key){
+  const p = SM.pos[key], wrap = $('sm-canvas-wrap');
+  if (!p || !wrap) return;
+  SM.view.x = wrap.clientWidth/2  - (p.x + BOX_W/2) * SM.view.k;
+  SM.view.y = wrap.clientHeight/2 - (p.y + 40) * SM.view.k;
+  smApplyView();
+}
+
+// ── Minimap ───────────────────────────────────────────────────────────────
+function smRenderMinimap(){
+  const mini = $('sm-mini');
+  if (!mini || !SM.graph || !SM.graph.ok) { if (mini) mini.innerHTML = ''; return; }
+  const b = smBounds(), wrap = $('sm-canvas-wrap');
+  const pad = 6, mw = mini.clientWidth - pad*2, mh = mini.clientHeight - pad*2;
+  const k = Math.min(mw / b.w, mh / b.h);
+  const html = SM.graph.tables.map(t => {
+    const p = SM.pos[t.key]; if (!p) return '';
+    return '<div class="sm-mini-box" style="left:' + (pad + (p.x - b.x)*k) + 'px;top:' + (pad + (p.y - b.y)*k)
+      + 'px;width:' + Math.max(2, BOX_W*k) + 'px;height:' + Math.max(1.5, boxHeight(t)*k) + 'px"></div>';
+  }).join('');
+  // The viewport rectangle: where the visible window sits in world space.
+  const vx = (-SM.view.x / SM.view.k - b.x) * k + pad;
+  const vy = (-SM.view.y / SM.view.k - b.y) * k + pad;
+  const vw = (wrap.clientWidth  / SM.view.k) * k;
+  const vh = (wrap.clientHeight / SM.view.k) * k;
+  mini.innerHTML = html + '<div class="sm-mini-view" style="left:' + vx + 'px;top:' + vy
+    + 'px;width:' + vw + 'px;height:' + vh + 'px"></div>';
+}
+
+// ── Pointer interaction ───────────────────────────────────────────────────
+(function wireCanvas(){
+  document.addEventListener('DOMContentLoaded', () => {
+    const vp = $('sm-viewport'), wrap = $('sm-canvas-wrap'), mini = $('sm-mini');
+    if (!vp) return;
+    let drag = null;      // dragging one box
+    let pan  = null;      // panning the canvas
+
+    vp.addEventListener('mousedown', (ev) => {
+      const head = ev.target.closest('.sm-box-head');
+      if (head){
+        const key = head.dataset.drag;
+        drag = { key, sx: ev.clientX, sy: ev.clientY, ox: SM.pos[key].x, oy: SM.pos[key].y, moved: false };
+        ev.preventDefault();
+        return;
+      }
+      pan = { sx: ev.clientX, sy: ev.clientY, ox: SM.view.x, oy: SM.view.y };
+      vp.classList.add('panning');
+    });
+
+    window.addEventListener('mousemove', (ev) => {
+      if (drag){
+        const dx = (ev.clientX - drag.sx) / SM.view.k, dy = (ev.clientY - drag.sy) / SM.view.k;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) drag.moved = true;
+        SM.pos[drag.key] = { x: drag.ox + dx, y: drag.oy + dy };
+        smRenderCanvas();
+      } else if (pan){
+        SM.view.x = pan.ox + (ev.clientX - pan.sx);
+        SM.view.y = pan.oy + (ev.clientY - pan.sy);
+        smApplyView();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (drag && !drag.moved) smSelect(drag.key);
+      drag = null; pan = null; vp.classList.remove('panning');
+    });
+
+    vp.addEventListener('click', (ev) => {
+      const box = ev.target.closest('.sm-box');
+      if (box && !ev.target.closest('.sm-box-head')) smSelect(box.dataset.key);
+    });
+
+    // Double-click isolates: the fastest way to answer "what touches this?"
+    vp.addEventListener('dblclick', (ev) => {
+      const box = ev.target.closest('.sm-box');
+      if (!box) return;
+      SM.selected = box.dataset.key;
+      SM.focusDepth = SM.focusDepth === 1 ? null : 1;
+      smUpdateSideButtons(); smRenderCanvas(); smRenderInspector();
+    });
+
+    vp.addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      const r = wrap.getBoundingClientRect();
+      smZoom(ev.deltaY < 0 ? 1.12 : 1/1.12, ev.clientX - r.left, ev.clientY - r.top);
+    }, { passive: false });
+
+    // Keyboard route to everything the mouse can do, per the a11y helper's
+    // rule that a canvas must not be drag-only.
+    vp.addEventListener('keydown', (ev) => {
+      const step = 60;
+      if (ev.key === 'ArrowLeft')  { SM.view.x += step; smApplyView(); ev.preventDefault(); }
+      if (ev.key === 'ArrowRight') { SM.view.x -= step; smApplyView(); ev.preventDefault(); }
+      if (ev.key === 'ArrowUp')    { SM.view.y += step; smApplyView(); ev.preventDefault(); }
+      if (ev.key === 'ArrowDown')  { SM.view.y -= step; smApplyView(); ev.preventDefault(); }
+      if (ev.key === '+' || ev.key === '=') { smZoom(1.2); ev.preventDefault(); }
+      if (ev.key === '-') { smZoom(1/1.2); ev.preventDefault(); }
+      if (ev.key === '0') { smFit(); ev.preventDefault(); }
+    });
+
+    if (mini) mini.addEventListener('click', (ev) => {
+      const b = smBounds(), r = mini.getBoundingClientRect(), pad = 6;
+      const k = Math.min((mini.clientWidth - pad*2)/b.w, (mini.clientHeight - pad*2)/b.h);
+      const wx = (ev.clientX - r.left - pad)/k + b.x;
+      const wy = (ev.clientY - r.top  - pad)/k + b.y;
+      SM.view.x = $('sm-canvas-wrap').clientWidth/2  - wx * SM.view.k;
+      SM.view.y = $('sm-canvas-wrap').clientHeight/2 - wy * SM.view.k;
+      smApplyView();
+    });
+
+    window.addEventListener('resize', () => { if (seTab === 'schema') smRenderCanvas(); });
+  });
+})();
+
+// ── Join-path finder ──────────────────────────────────────────────────────
+function smJoinToggle(){
+  SM.joinMode = !SM.joinMode;
+  SM.joinPick = [];
+  SM.joinResult = null;
+  $('sm-join-btn').classList.toggle('on', SM.joinMode);
+  smStatus(SM.joinMode ? 'Pick the first table…' : '');
+  smRenderCanvas();
+}
+
+function smJoinPick(key){
+  SM.joinPick.push(key);
+  if (SM.joinPick.length === 1){ smStatus('From ' + key + ' — now pick the second table'); return; }
+  const [a, b] = SM.joinPick;
+  SM.joinPick = [];
+  SM.joinMode = false;
+  $('sm-join-btn').classList.remove('on');
+  const path = CygenixSchemaGraph.joinPath(SM.graph, a, b);
+  SM.joinResult = path;
+  if (!path){
+    smStatus('No FK path between those two tables');
+    SM.selected = b;
+    smRenderCanvas(); smRenderInspector();
+    return;
+  }
+  smStatus(path.tables.length - 1 + ' join' + (path.tables.length === 2 ? '' : 's'));
+  SM.selected = b;
+  SM.inspTab = 'rels';
+  smRenderCanvas();
+  smRenderInspector();
+}
+
+// ── Inspector ─────────────────────────────────────────────────────────────
+function smInspTab(t){
+  SM.inspTab = t;
+  document.querySelectorAll('.sm-insp-tab').forEach(b => b.classList.toggle('active', b.dataset.it === t));
+  smRenderInspector();
+}
+
+async function smRenderInspector(){
+  const body = $('sm-insp-body'), title = $('sm-insp-title'), sub = $('sm-insp-sub');
+  if (!body) return;
+  const key = SM.selected;
+  const node = key && SM.graph && SM.graph.byKey[key];
+  if (!node){
+    title.textContent = 'Inspector';
+    sub.textContent = 'Pick a table';
+    body.innerHTML = '<div class="muted" style="padding:0">Select a table in the tree or the diagram.</div>';
+    return;
+  }
+  title.textContent = node.name;
+  sub.textContent = node.schema + ' · ' + num(node.rowCount) + ' rows' + (node.kind === 'view' ? ' · view' : '');
+
+  // The columns tab needs them; so does DDL. Fetch on demand.
+  if (!node.columns && (SM.inspTab === 'columns' || SM.inspTab === 'ddl')){
+    body.innerHTML = '<div class="muted" style="padding:0">Loading columns…</div>';
+    await CygenixSchemaGraph.columns(SM.side, node.schema, node.name);
+  }
+
+  if (SM.inspTab === 'columns'){
+    const cols = node.columns || [];
+    if (!cols.length){
+      body.innerHTML = '<div class="muted" style="padding:0">'
+        + esc(node.columnsError ? 'Columns unavailable: ' + node.columnsError : 'No columns.') + '</div>';
+      return;
+    }
+    body.innerHTML = cols.map(c => {
+      const pk = (node.primaryKeys || []).indexOf(c.name) >= 0;
+      const fk = node.fkColumns.indexOf(c.name) >= 0;
+      return '<div class="sm-kv"><b>' + (pk ? '🔑 ' : (fk ? '↗ ' : '')) + esc(c.name) + '</b>'
+        + '<span>' + esc(c.type) + (c.nullable ? '' : ' NOT NULL') + (c.isIdentity ? ' IDENTITY' : '') + '</span></div>';
+    }).join('');
+    return;
+  }
+
+  if (SM.inspTab === 'rels'){
+    const out = [];
+    if (SM.joinResult && SM.joinResult.tables.indexOf(key) >= 0){
+      out.push('<div style="font-size:11px;color:var(--text2);margin-bottom:0.35rem">Join path</div>');
+      out.push('<div class="sm-pre">' + esc(CygenixSchemaGraph.joinSql(SM.graph, SM.joinResult)) + '</div>');
+      out.push('<div style="height:0.7rem"></div>');
+    }
+    const outgoing = SM.graph.edges.filter(e => e.from === key);
+    const incoming = SM.graph.edges.filter(e => e.to === key && !e.self);
+    out.push('<div style="font-size:11px;color:var(--text2);margin-bottom:0.3rem">References ('
+      + outgoing.length + ')</div>');
+    out.push(outgoing.length ? outgoing.map(e =>
+      '<div class="sm-kv"><b>' + esc(e.fromColumn) + '</b><span>→ ' + esc(e.to) + '.' + esc(e.toColumn) + '</span></div>').join('')
+      : '<div class="muted" style="padding:0 0 0.4rem">None.</div>');
+    out.push('<div style="height:0.6rem"></div>');
+    out.push('<div style="font-size:11px;color:var(--text2);margin-bottom:0.3rem">Referenced by ('
+      + incoming.length + ')</div>');
+    out.push(incoming.length ? incoming.map(e =>
+      '<div class="sm-kv"><b>' + esc(e.from) + '</b><span>' + esc(e.fromColumn) + ' → ' + esc(e.toColumn) + '</span></div>').join('')
+      : '<div class="muted" style="padding:0">None.</div>');
+    body.innerHTML = out.join('');
+    return;
+  }
+
+  if (SM.inspTab === 'ddl'){
+    body.innerHTML = '<div class="sm-pre">' + esc(smDdl(node)) + '</div>';
+    return;
+  }
+
+  // Sample. Real rows only — the prototype's synthetic generator is not
+  // shipped, because a fabricated row in a schema tool is worse than none.
+  if (!CygenixSchemaGraph.hasConnection(SM.side)){
+    body.innerHTML = '<div class="muted" style="padding:0">No '
+      + (SM.side === 'src' ? 'source' : 'target') + ' connection, so there are no rows to show.</div>';
+    return;
+  }
+  body.innerHTML = '<div class="muted" style="padding:0">Reading rows…</div>';
+  const res = await CygenixSchemaGraph.sample(SM.side, node.schema, node.name);
+  if (!res){ body.innerHTML = '<div class="muted" style="padding:0">No connection.</div>'; return; }
+  if (res.error){
+    body.innerHTML = '<div class="muted" style="padding:0">Could not read rows: ' + esc(res.error) + '</div>';
+    return;
+  }
+  if (!res.rows.length){ body.innerHTML = '<div class="muted" style="padding:0">The table is empty.</div>'; return; }
+  const cols = Object.keys(res.rows[0]);
+  body.innerHTML = '<div class="sm-tablewrap"><table><thead><tr>'
+    + cols.map(c => '<th>' + esc(c) + '</th>').join('')
+    + '</tr></thead><tbody>'
+    + res.rows.map(r => '<tr>' + cols.map(c => {
+        const v = r[c];
+        const s = v == null ? 'NULL' : String(v);
+        return '<td>' + esc(s.length > 40 ? s.slice(0, 40) + '…' : s) + '</td>';
+      }).join('') + '</tr>').join('')
+    + '</tbody></table></div>';
+}
+
+function smDdl(node){
+  const q = s => '[' + String(s).replace(/]/g, ']]') + ']';
+  const cols = node.columns || [];
+  if (!cols.length) return '-- columns not loaded';
+  const lines = cols.map(c =>
+    '  ' + q(c.name) + ' ' + c.type + (c.isIdentity ? ' IDENTITY(1,1)' : '') + (c.nullable ? ' NULL' : ' NOT NULL'));
+  if ((node.primaryKeys || []).length){
+    lines.push('  CONSTRAINT ' + q('PK_' + node.name) + ' PRIMARY KEY (' + node.primaryKeys.map(q).join(', ') + ')');
+  }
+  let sql = 'CREATE TABLE ' + q(node.schema) + '.' + q(node.name) + ' (\n' + lines.join(',\n') + '\n);';
+  const fks = SM.graph.edges.filter(e => e.from === node.key);
+  if (fks.length){
+    sql += '\n\n' + fks.map(e => {
+      const [rs, rt] = e.to.split(/\.(.+)/);
+      return 'ALTER TABLE ' + q(node.schema) + '.' + q(node.name)
+        + '\n  ADD CONSTRAINT ' + q(e.name || ('FK_' + node.name + '_' + e.fromColumn))
+        + ' FOREIGN KEY (' + q(e.fromColumn) + ') REFERENCES ' + q(rs) + '.' + q(rt) + ' (' + q(e.toColumn) + ');';
+    }).join('\n');
+  }
+  return sql;
+}
+
+// ── ⌘K palette ────────────────────────────────────────────────────────────
+let _paletteItems = [], _paletteIdx = 0;
+
+function sePaletteOpen(){
+  const g = SM.graph;
+  _paletteItems = [];
+  if (g && g.ok){
+    for (const t of g.tables){
+      _paletteItems.push({ kind:'table', label:t.name, key:t.key, sub:t.schema + ' · ' + num(t.rowCount) + ' rows' });
+      for (const c of (t.columns || [])){
+        _paletteItems.push({ kind:'column', label:c.name, key:t.key, sub:t.key + ' · ' + c.type });
+      }
+    }
+  }
+  $('se-palette').classList.add('show');
+  const input = $('se-palette-input');
+  input.value = ''; _paletteIdx = 0;
+  sePaletteFilter();
+  setTimeout(() => input.focus(), 20);
+}
+
+function sePaletteClose(){ $('se-palette').classList.remove('show'); }
+
+function sePaletteFilter(){
+  const q = ($('se-palette-input').value || '').trim().toLowerCase();
+  const hits = (q ? _paletteItems.filter(i => i.label.toLowerCase().includes(q)) : _paletteItems).slice(0, 120);
+  _paletteIdx = Math.min(_paletteIdx, Math.max(0, hits.length - 1));
+  $('se-palette-list').innerHTML = hits.length ? hits.map((i, n) =>
+    '<div class="se-palette-item' + (n === _paletteIdx ? ' on' : '') + '" role="option"'
+    + ' aria-selected="' + (n === _paletteIdx) + '" data-n="' + n + '" onclick="sePaletteGo(' + n + ')">'
+    + '<span class="se-palette-kind">' + i.kind + '</span>'
+    + '<span>' + mark(i.label, q) + '</span>'
+    + '<span class="se-palette-sub">' + esc(i.sub) + '</span></div>').join('')
+    : '<div class="muted">Nothing matches. Tables and columns are indexed once the schema has loaded.</div>';
+  _paletteHits = hits;
+}
+let _paletteHits = [];
+
+function sePaletteKey(ev){
+  if (ev.key === 'Escape'){ sePaletteClose(); return; }
+  if (ev.key === 'ArrowDown'){ _paletteIdx = Math.min(_paletteIdx + 1, _paletteHits.length - 1); sePaletteFilter(); ev.preventDefault(); }
+  if (ev.key === 'ArrowUp'){ _paletteIdx = Math.max(_paletteIdx - 1, 0); sePaletteFilter(); ev.preventDefault(); }
+  if (ev.key === 'Enter'){ sePaletteGo(_paletteIdx); ev.preventDefault(); }
+}
+
+function sePaletteGo(n){
+  const it = _paletteHits[n];
+  sePaletteClose();
+  if (!it) return;
+  if (seTab !== 'schema') seSwitchTab('schema');
+  smSelect(it.key, true);
+}
+
+document.addEventListener('keydown', (ev) => {
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k'){ ev.preventDefault(); sePaletteOpen(); }
+  if (ev.key === 'Escape'){ sePaletteClose(); cvCloseDrawer(); }
+});
+$ && document.addEventListener('click', (ev) => {
+  if (ev.target && ev.target.id === 'se-palette') sePaletteClose();
+});
+
+// ═══ VIEW 2 — COVERAGE MAP ═══════════════════════════════════════════════
+// What the project's saved maps actually write, and the order the foreign
+// keys say they have to be written in.
+const CV = { maps: [], graph: null, order: null, openMapId: null };
+
+// Colour by the WORST match confidence in a map, not the average: one bad
+// guess is the thing worth seeing, and an average hides it.
+function cvConfColour(pct){
+  if (pct >= 85) return 'var(--green)';
+  if (pct >= 60) return 'var(--amber)';
+  return 'var(--red)';
+}
+function cvConfClass(pct){ return pct >= 85 ? 'hi' : (pct >= 60 ? 'mid' : 'lo'); }
+
+async function cvRender(){
+  CV.maps = CygenixSchemaGraph.savedMaps();
+  // The target schema is what the load order and the pre-flight checks are
+  // about. It may not be loadable; every renderer below copes with that.
+  CV.graph = await CygenixSchemaGraph.load('tgt');
+  const targetKeys = cvTargetKeys();
+  CV.order = CV.graph.ok ? CygenixSchemaGraph.loadOrder(CV.graph, targetKeys) : null;
+  cvRenderKpis();
+  cvRenderRibbons();
+  cvRenderWaves();
+  cvRenderChecks();
+}
+
+// Every target table any map writes, normalised to the graph's schema.table
+// keys so the load order can match them against real tables.
+function cvTargetKeys(){
+  const out = new Set();
+  for (const m of CV.maps) for (const t of m.targetTables) {
+    const k = cvNormKey(t);
+    if (!CV.graph || !CV.graph.ok || CV.graph.byKey[k]) out.add(k);
+  }
+  return [...out];
+}
+function cvNormKey(name){
+  const s = String(name || '').replace(/[\[\]]/g, '').trim();
+  return s.includes('.') ? s : 'dbo.' + s;
+}
+
+function cvRenderKpis(){
+  const host = $('cv-kpis');
+  const maps = CV.maps;
+  const mapped = maps.reduce((a, m) => a + m.mappedColumns, 0);
+  const fixed  = maps.reduce((a, m) => a + m.fixedColumns, 0);
+  const targets = new Set(); maps.forEach(m => m.targetTables.forEach(t => targets.add(cvNormKey(t))));
+  const drafts = maps.filter(m => String(m.status).toLowerCase() === 'draft').length;
+  const worst = maps.length ? Math.min(...maps.map(m => m.worstMatch)) : 100;
+  const totalTables = CV.graph && CV.graph.ok ? CV.graph.tables.length : 0;
+
+  const kpi = (n, label, note, colour) =>
+    '<div class="cv-kpi"><div class="cv-kpi-num"' + (colour ? ' style="color:' + colour + '"' : '') + '>' + n + '</div>'
+    + '<div class="cv-kpi-lab">' + esc(label) + '</div>'
+    + (note ? '<div class="cv-kpi-note">' + note + '</div>' : '') + '</div>';
+
+  host.innerHTML =
+      kpi(maps.length, 'Saved maps', esc(CygenixSchemaGraph.activeProjectName() || 'this project'))
+    + kpi(targets.size, 'Target tables written',
+        totalTables ? 'of ' + num(totalTables) + ' in the database' : 'target schema not loaded')
+    + kpi(num(mapped), 'Mapped columns', fixed ? num(fixed) + ' more are fixed values' : 'no fixed values')
+    + kpi(worst + '%', 'Worst match', worst >= 85 ? 'nothing needs review' : 'lowest confidence in any map',
+        cvConfColour(worst))
+    + kpi(drafts, 'Still draft', drafts ? 'they will run if scheduled' : 'all maps are complete',
+        drafts ? 'var(--amber)' : undefined);
+}
+
+// ── Ribbons ───────────────────────────────────────────────────────────────
+// Source tables down the left, target tables down the right, one ribbon per
+// map. A one-to-many map writes several targets, so it contributes several
+// ribbons from the same source node.
+function cvRenderRibbons(){
+  const host = $('cv-ribbons');
+  if (!CV.maps.length){
+    host.innerHTML = '<div class="se-empty"><div class="se-empty-icon">⊞</div>'
+      + '<div class="se-empty-title">No saved maps in this project yet</div>'
+      + '<div class="se-empty-body">Build one in '
+      + '<a href="/object_mapping.html">Object Mapping</a> and it will appear here with everything it writes.</div></div>';
+    return;
+  }
+
+  const links = [];
+  for (const m of CV.maps){
+    for (const t of m.targetTables){
+      links.push({ map:m, src:m.sourceTable || '(no source)', tgt:t });
+    }
+  }
+  const sources = [...new Set(links.map(l => l.src))].sort();
+  const targets = [...new Set(links.map(l => l.tgt))].sort();
+
+  const ROW = 30, PAD = 18, LABEL = 190, W = 900;
+  const h = Math.max(sources.length, targets.length) * ROW + PAD*2 + 18;
+  const sy = {}, ty = {};
+  sources.forEach((s, i) => { sy[s] = PAD + 18 + i*ROW + ROW/2; });
+  targets.forEach((t, i) => { ty[t] = PAD + 18 + i*ROW + ROW/2; });
+
+  const x1 = LABEL, x2 = W - LABEL;
+  const maxCols = Math.max(1, ...links.map(l => l.map.mappedColumns));
+
+  const ribbons = links.map((l, i) => {
+    const a = sy[l.src], b = ty[l.tgt];
+    // Thickness by mapped-column count, floored so a one-column map is still
+    // clickable rather than a hairline.
+    const th = Math.max(3, (l.map.mappedColumns / maxCols) * 22);
+    const c = cvConfColour(l.map.worstMatch);
+    const dx = (x2 - x1) * 0.45;
+    const d = 'M' + x1 + ',' + (a - th/2)
+      + ' C' + (x1+dx) + ',' + (a - th/2) + ' ' + (x2-dx) + ',' + (b - th/2) + ' ' + x2 + ',' + (b - th/2)
+      + ' L' + x2 + ',' + (b + th/2)
+      + ' C' + (x2-dx) + ',' + (b + th/2) + ' ' + (x1+dx) + ',' + (a + th/2) + ' ' + x1 + ',' + (a + th/2) + ' Z';
+    return '<g class="cv-ribbon-row" tabindex="0" role="button"'
+      + ' aria-label="' + esc(l.map.name + ': ' + l.src + ' to ' + l.tgt + ', ' + l.map.mappedColumns + ' mapped columns') + '"'
+      + ' onclick="cvOpenDrawer(\'' + esc(l.map.id) + '\')"'
+      + ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();cvOpenDrawer(\'' + esc(l.map.id) + '\')}">'
+      + '<title>' + esc(l.map.name + ' — ' + l.map.mappedColumns + ' mapped, worst match ' + l.map.worstMatch + '%') + '</title>'
+      + '<path class="cv-ribbon" d="' + d + '" fill="' + c + '" stroke="' + c + '"/></g>';
+  }).join('');
+
+  const nodes = sources.map(s =>
+      '<rect class="cv-node" x="' + (x1-6) + '" y="' + (sy[s]-9) + '" width="6" height="18" rx="2"/>'
+    + '<text class="cv-node-label" x="' + (x1-12) + '" y="' + (sy[s]+3) + '" text-anchor="end">' + esc(cvShort(s)) + '</text>')
+    .join('') + targets.map(t =>
+      '<rect class="cv-node" x="' + x2 + '" y="' + (ty[t]-9) + '" width="6" height="18" rx="2"/>'
+    + '<text class="cv-node-label" x="' + (x2+12) + '" y="' + (ty[t]+3) + '">' + esc(cvShort(t)) + '</text>')
+    .join('');
+
+  host.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + h + '" width="100%" height="' + h + '" role="img"'
+    + ' aria-label="Source to target coverage, ' + links.length + ' ribbons">'
+    + '<text class="cv-axis" x="' + (x1-12) + '" y="' + PAD + '" text-anchor="end">Source</text>'
+    + '<text class="cv-axis" x="' + (x2+12) + '" y="' + PAD + '">Target</text>'
+    + ribbons + nodes + '</svg>';
+}
+function cvShort(s){ const t = String(s || ''); return t.length > 26 ? '…' + t.slice(-25) : t; }
+
+// ── Load order ────────────────────────────────────────────────────────────
+function cvRenderWaves(){
+  const host = $('cv-waves');
+  if (!CV.graph || !CV.graph.ok){
+    host.innerHTML = '<div class="muted">' + esc(CV.graph ? CV.graph.reason : 'Target schema not loaded')
+      + ' — the load order comes from the target database\'s foreign keys, so it needs a target connection.</div>';
+    return;
+  }
+  const o = CV.order;
+  if (!o || !o.waves.length){
+    host.innerHTML = '<div class="muted">Nothing to order yet — no saved map writes a table in this database.</div>';
+    return;
+  }
+  const written = new Set(cvTargetKeys());
+  let html = '<div class="cv-waves">' + o.waves.map((w, i) =>
+    '<div class="cv-wave"><div class="cv-wave-head">Wave ' + (i+1) + ' · ' + w.length + '</div>'
+    + w.map(k => '<div class="cv-wave-item' + (written.has(k) ? '' : ' unmapped') + '" title="' + esc(k) + '">'
+        + esc(k) + '</div>').join('') + '</div>').join('') + '</div>';
+  if (o.cyclic.length){
+    // A cycle has no valid order. Reporting it beats dropping the tables and
+    // handing over a plan that fails on a constraint at run time.
+    html += '<div class="cv-check"><span class="cv-check-dot" style="background:var(--red)"></span><div>'
+      + '<b>Circular foreign keys — no load order exists for ' + o.cyclic.length + ' table'
+      + (o.cyclic.length === 1 ? '' : 's') + '</b>'
+      + '<div class="cv-check-detail">' + esc(o.cyclic.join(', ')) + '.'
+      + (o.cycles.length ? ' Cycle: ' + esc(o.cycles[0].join(' → ')) + '.' : '')
+      + ' Break it by loading one table with the constraint disabled, or by inserting the keys in a second pass.</div>'
+      + '</div></div>';
+  }
+  host.innerHTML = html;
+}
+
+// ── Pre-flight checks ─────────────────────────────────────────────────────
+function cvRenderChecks(){
+  const host = $('cv-checks');
+  const checks = [];
+  const add = (level, title, detail) => checks.push({ level, title, detail });
+
+  if (!CV.maps.length){
+    host.innerHTML = '<div class="muted">No maps to check.</div>';
+    return;
+  }
+
+  // Two maps writing the same target table. Whichever runs second appends to,
+  // or collides with, what the first wrote.
+  const byTarget = {};
+  for (const m of CV.maps) for (const t of m.targetTables){
+    (byTarget[cvNormKey(t)] = byTarget[cvNormKey(t)] || []).push(m);
+  }
+  const collisions = Object.keys(byTarget).filter(k => new Set(byTarget[k].map(m => m.id)).size > 1);
+  if (collisions.length){
+    add('warn', collisions.length + ' target table' + (collisions.length === 1 ? '' : 's') + ' written by more than one map',
+      collisions.map(k => esc(k) + ' ← ' + byTarget[k].map(m => esc(m.name)).join(', ')).join(' · ')
+      + '. Both will run; the second appends to what the first wrote.');
+  } else {
+    add('ok', 'No target table is written twice', 'Each map owns its target.');
+  }
+
+  // Fixed values. A literalValue overrides its source column — the generated
+  // SQL emits the literal and never reads the column — so it is worth showing
+  // as a distinct thing rather than counting it as mapped.
+  const fixedRows = [];
+  for (const m of CV.maps){
+    for (const c of m.columnMapping){
+      if (!c || !c.tgtCol) continue;
+      const lit = CygenixSchemaGraph._internals.literalOf(c);
+      if (lit) fixedRows.push({ map:m, col:c.tgtCol, lit, hadSrc: !!c.srcCol });
+    }
+  }
+  if (fixedRows.length){
+    add('info', fixedRows.length + ' column' + (fixedRows.length === 1 ? '' : 's') + ' set to a fixed value',
+      fixedRows.slice(0, 8).map(f => esc(f.map.name) + ' · ' + esc(f.col) + ' = ' + esc(f.lit)
+        + (f.hadSrc ? ' (overrides its source column)' : '')).join(' · ')
+      + (fixedRows.length > 8 ? ' · +' + (fixedRows.length - 8) + ' more' : ''));
+  }
+
+  // Draft maps. They are not excluded from anything — a scheduled run will
+  // execute one — so the status is worth surfacing next to the load order.
+  const drafts = CV.maps.filter(m => String(m.status).toLowerCase() === 'draft');
+  if (drafts.length){
+    add('warn', drafts.length + ' map' + (drafts.length === 1 ? ' is' : 's are') + ' still marked draft',
+      drafts.map(m => esc(m.name)).join(', ') + '. Draft is a label, not a guard — these run like any other.');
+  }
+
+  // Target tables that do not exist. A typo here fails at run time, not now.
+  if (CV.graph && CV.graph.ok){
+    const missing = [];
+    for (const m of CV.maps) for (const t of m.targetTables){
+      if (!CV.graph.byKey[cvNormKey(t)]) missing.push({ m, t });
+    }
+    if (missing.length){
+      add('error', missing.length + ' target table' + (missing.length === 1 ? '' : 's') + ' not found in the database',
+        missing.map(x => esc(x.t) + ' (' + esc(x.m.name) + ')').join(', ')
+        + '. The insert will fail when it runs.');
+    } else {
+      add('ok', 'Every target table exists', 'All mapped targets resolve against the connected database.');
+    }
+
+    // NOT NULL columns with no default that nothing writes. This is the check
+    // that turns a run-time constraint violation into something visible now.
+    const unfilled = [];
+    for (const k of cvTargetKeys()){
+      const node = CV.graph.byKey[k];
+      if (!node || !node.columns) continue;      // columns not loaded — say nothing rather than guess
+      const writes = new Set();
+      for (const m of CV.maps){
+        if (!m.targetTables.some(t => cvNormKey(t) === k)) continue;
+        m.columnMapping.forEach(c => { if (c && c.tgtCol) writes.add(String(c.tgtCol).replace(/[\[\]]/g,'')); });
+      }
+      for (const c of node.columns){
+        if (c.nullable || c.isIdentity || c.default != null) continue;
+        if (!writes.has(c.name)) unfilled.push(k + '.' + c.name);
+      }
+    }
+    if (unfilled.length){
+      add('error', unfilled.length + ' NOT NULL column' + (unfilled.length === 1 ? '' : 's') + ' nothing writes',
+        unfilled.slice(0, 10).map(esc).join(', ') + (unfilled.length > 10 ? ' …' : '')
+        + '. Each will reject the insert unless it has a default the schema does not declare.');
+    }
+  } else {
+    add('info', 'Target schema not loaded',
+      esc(CV.graph ? CV.graph.reason : '') + ' — the existence and NOT NULL checks need a target connection.');
+  }
+
+  // Maps with no mapped columns at all — usually an abandoned draft.
+  const empty = CV.maps.filter(m => m.mappedColumns === 0 && m.fixedColumns === 0);
+  if (empty.length){
+    add('warn', empty.length + ' map' + (empty.length === 1 ? '' : 's') + ' map no columns',
+      empty.map(m => esc(m.name)).join(', ') + '. They will insert nothing.');
+  }
+
+  const dot = { ok:'var(--green)', info:'var(--accent)', warn:'var(--amber)', error:'var(--red)' };
+  host.innerHTML = checks.map(c =>
+    '<div class="cv-check"><span class="cv-check-dot" style="background:' + dot[c.level] + '"></span>'
+    + '<div><b>' + esc(c.title) + '</b><div class="cv-check-detail">' + c.detail + '</div></div></div>').join('');
+}
+
+// ── Drawer: one map's columns and the SQL it generates ────────────────────
+function cvOpenDrawer(mapId){
+  const m = CV.maps.find(x => x.id === mapId);
+  if (!m) return;
+  CV.openMapId = mapId;
+  $('cv-drawer-title').textContent = m.name;
+  $('cv-drawer-sub').textContent = (m.sourceTable || '(no source)') + ' → ' + m.targetTables.join(', ')
+    + ' · ' + m.mappedColumns + ' mapped' + (m.fixedColumns ? ', ' + m.fixedColumns + ' fixed' : '');
+
+  const rows = m.columnMapping.filter(c => c && c.tgtCol).map(c => {
+    const lit = CygenixSchemaGraph._internals.literalOf(c);
+    const conf = typeof c.match === 'number' ? c.match : null;
+    // A literal overrides the source column. Showing the column name here
+    // would say the value comes from the source, which it does not.
+    const left = lit
+      ? '<span class="cv-maprow-src fixed">' + esc(lit) + '</span>'
+      : '<span class="cv-maprow-src">' + esc(c.srcCol || '—') + '</span>';
+    const badge = lit
+      ? '<span class="cv-badge fix">fixed</span>'
+      : (conf == null ? '' : '<span class="cv-badge ' + cvConfClass(conf) + '">' + conf + '%</span>');
+    return '<div class="cv-maprow">' + left
+      + '<span class="cv-maprow-arrow">→</span>'
+      + '<span class="cv-maprow-tgt">' + esc(c.tgtCol) + '</span>' + badge + '</div>';
+  }).join('');
+
+  const job = cvRawJob(m.id);
+  const sql = (job && job.insertSQL) || '';
+  $('cv-drawer-body').innerHTML =
+      '<div class="panel-title" style="margin-bottom:0.5rem">Column mapping</div>'
+    + (rows || '<div class="muted" style="padding:0">This map writes no columns.</div>')
+    + (m.srcWhere ? '<div style="margin-top:0.9rem"><div class="panel-title" style="margin-bottom:0.35rem">Source filter</div>'
+        + '<div class="sm-pre">' + esc(m.srcWhere) + '</div></div>' : '')
+    + '<div style="margin-top:0.9rem"><div class="panel-title" style="margin-bottom:0.35rem">Generated SQL</div>'
+    + (sql ? '<div class="sm-pre">' + esc(sql) + '</div>'
+           : '<div class="muted" style="padding:0">This map has no generated SQL saved. Open it in Object Mapping and regenerate.</div>')
+    + '</div>';
+
+  $('cv-scrim').classList.add('show');
+  $('cv-drawer').classList.add('show');
+}
+
+function cvCloseDrawer(){
+  const d = $('cv-drawer'); if (!d) return;
+  d.classList.remove('show');
+  $('cv-scrim').classList.remove('show');
+  CV.openMapId = null;
+}
+
+function cvRawJob(id){
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    return (Array.isArray(jobs) ? jobs : []).find(j => j && j.id === id) || null;
+  } catch { return null; }
+}
+
+// The editor loads a saved job from ?edit=<id>, which is the same route the
+// History and Load-map buttons use.
+function cvOpenInMapping(){
+  if (!CV.openMapId) return;
+  window.location.href = '/object_mapping.html?edit=' + encodeURIComponent(CV.openMapId);
+}
+
+// ── Composite job ─────────────────────────────────────────────────────────
+// The load order is only useful if something can run it, so it is emitted as
+// a composite job in the shape the Task Manager already stores.
+//
+// Step type: the runner has no 'map' branch. execSqlStep is chosen by
+// `step.type === 'sql'` (among others) and reads step.sql || step.insertSQL;
+// anything else goes to execMigrationStep, which needs Project Builder's full
+// step shape and fails with "srcTable not set on step". So each step is
+// emitted as type 'sql' carrying the map's own generated insertSQL — the path
+// the runner already executes — rather than a 'map' step it would reject.
+function cvBuildComposite(name){
+  if (!CV.order || !CV.order.waves.length) return null;
+
+  // Which maps write which target, so a wave of tables becomes a wave of maps.
+  const mapsFor = {};
+  for (const m of CV.maps) for (const t of m.targetTables){
+    (mapsFor[cvNormKey(t)] = mapsFor[cvNormKey(t)] || []).push(m);
+  }
+
+  const steps = [];
+  let order = 0;
+  CV.order.waves.forEach((wave, wi) => {
+    const seen = new Set();
+    // Tables in one wave have no dependency on each other, so their maps can
+    // run together.
+    const groupId = 'wave_' + (wi + 1);
+    for (const key of wave){
+      for (const m of (mapsFor[key] || [])){
+        if (seen.has(m.id)) continue;         // a one-to-many map writing two tables in one wave
+        seen.add(m.id);
+        const job = cvRawJob(m.id);
+        const sql = (job && job.insertSQL) || '';
+        if (!sql) continue;                   // a step with no SQL would silently do nothing
+        steps.push({
+          order: order++,
+          groupId,
+          groupName: 'Wave ' + (wi + 1),
+          groupMode: wave.length > 1 ? 'parallel' : 'sequential',
+          name: m.name,
+          type: 'sql',
+          jobType: 'sql',
+          connOn: 'target',
+          sourceJobId: m.id,
+          tgtTable: key,
+          insertSQL: sql,
+          sql,
+          status: 'pending',
+          log: '',
+        });
+      }
+    }
+  });
+  if (!steps.length) return null;
+
+  const projectId = CygenixSchemaGraph.activeProjectId();
+  const groupCount = new Set(steps.map(s => s.groupId)).size;
+  return {
+    id: 'job_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
+    name,
+    jobType: 'composite',
+    type: 'composite',
+    created: new Date().toISOString(),
+    source: '(multiple)',
+    target: '(multiple)',
+    projectId,
+    projectName: CygenixSchemaGraph.activeProjectName(),
+    childSteps: steps,
+    childStepCount: steps.length,
+    groupCount,
+  };
+}
+
+function cvCompositeName(){
+  const p = CygenixSchemaGraph.activeProjectName() || 'Project';
+  return p + ' – load order';
+}
+
+function cvExportComposite(){
+  const job = cvBuildComposite(cvCompositeName());
+  if (!job) return alert(cvCompositeWhyNot());
+  const blob = new Blob([JSON.stringify(job, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cygenix_composite_' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function cvSaveComposite(){
+  const job = cvBuildComposite(cvCompositeName());
+  if (!job) return alert(cvCompositeWhyNot());
+
+  let jobs = [];
+  try { jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]'); } catch {}
+  if (!Array.isArray(jobs)) jobs = [];
+
+  // Same courtesy as Project Builder's task save: a duplicate name makes the
+  // Task Manager dropdown ambiguous.
+  if (jobs.some(j => (j.name || '').trim().toLowerCase() === job.name.toLowerCase())){
+    if (!confirm('A job called "' + job.name + '" already exists. Save this one as well?')) return;
+  }
+  if (!confirm('Save "' + job.name + '" with ' + job.childStepCount + ' step'
+      + (job.childStepCount === 1 ? '' : 's') + ' across ' + job.groupCount + ' wave'
+      + (job.groupCount === 1 ? '' : 's') + '?\n\nIt will appear under Jobs → All Jobs and can be scheduled from the Task Manager.')) return;
+
+  jobs.unshift(job);
+  try { localStorage.setItem('cygenix_jobs', JSON.stringify(jobs)); }
+  catch (e) { return alert('Could not save: ' + (e && e.message || 'storage full')); }
+  // Push it to Cosmos the same way every other job save does, so it is on the
+  // account rather than only in this browser.
+  try { if (window.CygenixSync && CygenixSync.save) CygenixSync.save('cygenix_jobs', jobs); } catch {}
+  alert('Saved. It is under Jobs → All Jobs as "' + job.name + '".');
+}
+
+function cvCompositeWhyNot(){
+  if (!CV.maps.length) return 'There are no saved maps in this project to package.';
+  if (!CV.graph || !CV.graph.ok) return 'The load order needs the target schema, and it could not be read:\n\n' + (CV.graph ? CV.graph.reason : '');
+  if (!CV.order || !CV.order.waves.length) return 'No saved map writes a table in the connected database, so there is nothing to order.';
+  return 'None of the maps has generated SQL saved. Open each in Object Mapping and regenerate, then try again.';
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  let saved = 'schema';
+  try { saved = localStorage.getItem(TAB_KEY) || 'schema'; } catch {}
+  // Switch first so the right view is visible, then load into it.
+  seSwitchTab(saved);
+  smUpdateSideButtons();
+  if (saved === 'schema') smEnsureLoaded();
+});
+</script>
+<script src="/cookie-consent.js" defer></script>
+<script src="/cygenix-cookie-cleanup.js" defer></script>
+</body>
+</html>

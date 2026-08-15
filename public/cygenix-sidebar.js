@@ -75,7 +75,14 @@
       ]},
     ]},
     { section: 'Map & Build', group:'build', items: [
-      { key:'object-mapping',     label:'Object Mapping', href:'/object_mapping.html',     color:'var(--teal)',   icon: iconArrows() },
+      // The `object-mapping` key stays on the Mapping child, not the parent:
+      // pages mount with data-active="object-mapping" and deep links use it,
+      // so moving it to the expander would break the active highlight and
+      // every existing link.
+      { key:'objmap-group', label:'Object Mapping', icon: iconArrows(), children: [
+        { key:'object-mapping',  label:'Mapping',         href:'/object_mapping.html',  color:'var(--teal)',   icon: iconArrows() },
+        { key:'schema-explorer', label:'Schema Explorer', href:'/schema_explorer.html', color:'var(--purple)', icon: iconGraph() },
+      ]},
       { key:'sql-editor',         label:'SQL Editor',     href:'/sql-editor.html',         color:'var(--teal)',   icon: iconCode() },
       { key:'agentive-migration', label:'AI Assist',      href:'/agentive_migration.html', color:'var(--accent)', icon: iconHand(), requiresAiEnabled: true },
       { key:'coworker',           label:'AI Workspace',   href:'/coworker.html',           color:'var(--accent)', icon: svg('<path d="M2.5 3.5h11a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H6l-3 2.5V10.5H2.5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M5.5 6.4h5M5.5 8.2h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>') },
@@ -147,6 +154,10 @@
   function iconIntegrations(){ return svg('<circle cx="4" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="4" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="4" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="12" r="2" stroke="currentColor" stroke-width="1.2"/><path d="M6 4h4M6 12h4M4 6v4M12 6v4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>'); }
   function iconCalendar(){     return svg('<rect x="2" y="3" width="12" height="11" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M2 6h12M5 2v2M11 2v2" stroke="currentColor" stroke-width="1.2"/>'); }
   function iconArrows(){       return svg('<path d="M3 5h8l-2-2M13 11H5l2 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'); }
+  // Three nodes joined by two edges — a schema graph. Deliberately unlike
+  // iconArrows (the mapping arrows it sits beside) so the two children of the
+  // Object Mapping group are told apart at a glance.
+  function iconGraph(){        return svg('<circle cx="3.5" cy="4" r="1.8" stroke="currentColor" stroke-width="1.2"/><circle cx="12.5" cy="4" r="1.8" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="12" r="1.8" stroke="currentColor" stroke-width="1.2"/><path d="M4.8 5.4 6.9 10.4M11.2 5.4 9.1 10.4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconCode(){         return svg('<rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M6 7l-2 1 2 1M10 7l2 1-2 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'); }
   function iconHand(){         return svg('<path d="M7.5 8h1.5a1.3 1.3 0 0 0 0-2.6H7c-.4 0-.75.13-.93.4L2 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 12l1-.9c.2-.27.55-.4.93-.4h2.65c.73 0 1.4-.27 1.86-.8L14 6.95a1.3 1.3 0 0 0-1.8-1.9l-2.75 2.55" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1.5 8.5l4 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }
   function iconInsights(){     return svg('<circle cx="8" cy="6" r="3" stroke="currentColor" stroke-width="1.2"/><path d="M4 14c0-2 2-3 4-3s4 1 4 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'); }

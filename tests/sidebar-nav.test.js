@@ -164,5 +164,40 @@ check('Notifications is labelled plainly', notif && notif.label === 'Notificatio
     kids.includes('project-settings') && kids.includes('system-parameters'), kids.join(','));
 }
 
+// 10. Object Mapping became an expander holding Mapping and Schema Explorer.
+//     The risk of this change is the `object-mapping` key: pages mount with
+//     data-active="object-mapping" and dashboard deep links use it, so it has
+//     to stay on the leaf that opens object_mapping.html rather than moving
+//     up to the expander.
+{
+  const group = SB.__findItem('objmap-group');
+  check('Object Mapping is a group', !!group && Array.isArray(group.children));
+  const kids = ((group && group.children) || []).map(c => c.key);
+  check('with Mapping and Schema Explorer as its children',
+    JSON.stringify(kids) === JSON.stringify(['object-mapping', 'schema-explorer']), kids.join(','));
+
+  const mapping = SB.__findItem('object-mapping');
+  check('the object-mapping key still resolves, so no page loses its highlight',
+    !!mapping && mapping.href === '/object_mapping.html', mapping && mapping.href);
+  check('and it is the child, not the expander — the expander has no destination',
+    !!group && !group.href && !group.view);
+  check('Mapping is relabelled now that it sits under a group named for it',
+    mapping && mapping.label === 'Mapping', mapping && mapping.label);
+
+  const se = SB.__findItem('schema-explorer');
+  check('Schema Explorer resolves', !!se);
+  check('it points at schema_explorer.html, matching its neighbour\'s naming',
+    se && se.href === '/schema_explorer.html', se && se.href);
+  check('it has its own icon rather than reusing the mapping arrows',
+    se && mapping && se.icon !== mapping.icon);
+
+  // The section around it must be untouched.
+  const build = NAV.find(s => s.section === 'Map & Build');
+  check('Map & Build still holds the other three items in order',
+    JSON.stringify(build.items.map(i => i.key)) ===
+      JSON.stringify(['objmap-group', 'sql-editor', 'agentive-migration', 'coworker']),
+    build.items.map(i => i.key).join(','));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
