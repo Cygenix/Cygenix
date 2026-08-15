@@ -1343,6 +1343,10 @@ function addJobAsStep(jobIndex) {
     // and to reconciliation queries (which were already reading step.srcWhere
     // but never had it populated until now).
     srcWhere:        job.srcWhere || '',
+    // GROUP BY from the Object Mapping editor. Carried so runMigrationStep
+    // can refuse the row-by-row path rather than silently dropping the
+    // grouping — see the guard there.
+    srcGroupBy:      job.srcGroupBy || '',
     columnMapping:   job.columnMapping || [],
     totalRows:       job.totalRows || 0,
     jobId:           job.id,
@@ -4346,6 +4350,20 @@ async function runMigrationStep(step, srcConn, tgtConn, log, onProgress) {
   if (wh) {
     srcSelectSQL += ' WHERE ' + wh;
     add('Applying WHERE clause from job: ' + wh);
+  }
+
+  // This path reads the source a page at a time and applies each column's
+  // transform to one row in JavaScript. That has no notion of aggregation, so
+  // a map with a GROUP BY would run here as if the grouping were not there —
+  // inserting every source row instead of one row per group, silently. Refuse
+  // rather than produce wrong data; the generated SQL runs the grouping
+  // correctly when executed directly against the database.
+  const gb = (step.srcGroupBy || '').trim().replace(/^GROUP\s+BY\s+/i, '');
+  if (gb) {
+    throw new Error(
+      'This map has a GROUP BY (' + gb + '), which cannot be applied by the row-by-row runner. ' +
+      'Run its generated SQL directly against the database, or remove the GROUP BY from the map.'
+    );
   }
 
   // Get total count first so we can show progress
