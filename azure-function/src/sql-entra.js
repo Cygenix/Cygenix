@@ -211,11 +211,80 @@ async function applyEntraAuth(config, connStr) {
   return out;
 }
 
+// ── The app's own identity ────────────────────────────────────────────────
+// Inside the Azure Function App the platform provides a system-assigned
+// managed identity, and SQL_SERVER / SQL_DATABASE name the database it has
+// been granted on. Nothing else is needed: no username, no password, no
+// connection string.
+//
+// This uses tedious' 'azure-active-directory-default' type rather than
+// pre-fetching a token, because the driver then owns the token's lifetime and
+// re-acquires it when it reconnects. A token fetched once and pinned into a
+// pool config goes stale after about an hour, and the failure shows up as a
+// login error on whichever request happens to trigger a reconnect.
+function managedIdentityTarget() {
+  const server   = process.env.SQL_SERVER   || '';
+  const database = process.env.SQL_DATABASE || '';
+  return (server && database) ? { server, database } : null;
+}
+
+function managedIdentityConfig(target) {
+  const t = target || managedIdentityTarget();
+  if (!t) {
+    throw new Error(
+      'Managed-identity connection needs SQL_SERVER and SQL_DATABASE to be set. ' +
+      'They are app settings on the Azure Function App and are not available in other runtimes.'
+    );
+  }
+  return {
+    server:   t.server,
+    database: t.database,
+    port:     1433,
+    options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
+    authentication: { type: 'azure-active-directory-default' },
+  };
+}
+
+// Decide how a caller should connect, given whatever connection string it has.
+//
+//   1. The string names an Entra mode      → token, as before.
+//   2. The string carries no credentials   → the app's managed identity, using
+//      (or there is no string at all)        the string's server/database when
+//                                            it has them, otherwise the env.
+//   3. Anything else                       → untouched; SQL auth as before.
+//
+// Rule 2 is what makes an Entra-only server work without inventing a syntax:
+// a connection string with no username cannot be a SQL login, so the only
+// thing it can mean is "connect as whoever this app is".
+async function resolveSqlConfig(baseConfig, connStr) {
+  const cs = String(connStr == null ? '' : connStr).trim();
+
+  if (entraModeFrom(cs)) return applyEntraAuth(baseConfig, cs);
+
+  const hasCredentials = !!((baseConfig && baseConfig.user) || (baseConfig && baseConfig.password));
+  if (hasCredentials) return baseConfig;
+
+  const target = (baseConfig && baseConfig.server && baseConfig.database)
+    ? { server: baseConfig.server, database: baseConfig.database }
+    : managedIdentityTarget();
+
+  const mi = managedIdentityConfig(target);
+  // Preserve the caller's timeouts — the migration runner allows hours per
+  // statement and must not silently fall back to the driver default.
+  if (baseConfig && baseConfig.requestTimeout)    mi.requestTimeout    = baseConfig.requestTimeout;
+  if (baseConfig && baseConfig.connectionTimeout) mi.connectionTimeout = baseConfig.connectionTimeout;
+  if (baseConfig && baseConfig.port)              mi.port              = baseConfig.port;
+  return mi;
+}
+
 module.exports = {
   entraModeFrom,
   isEntraConn,
   applyEntraAuth,
   acquireSqlToken,
+  managedIdentityTarget,
+  managedIdentityConfig,
+  resolveSqlConfig,
   // Exported for tests.
   canonical,
 };

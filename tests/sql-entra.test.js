@@ -240,8 +240,10 @@ console.log('Azure SQL — Microsoft Entra authentication\n');
       path.join(__dirname, '..', 'azure-function', 'src', 'run-migration.js'), 'utf8');
     check('the scheduled runner imports the Entra helper',
       /require\('\.\/sql-entra'\)/.test(runMig));
-    check('openPool applies Entra auth before connecting',
-      /applyEntraAuth\(parseMssqlUrl\(connStr\), connStr\)/.test(runMig));
+    // resolveSqlConfig, not applyEntraAuth: it also covers the credential-free
+    // case, where the only possible meaning is the app's managed identity.
+    check('openPool resolves its auth before connecting',
+      /resolveSqlConfig\(parseMssqlUrl\(connStr\), connStr\)/.test(runMig));
 
     const dbc = fs.readFileSync(
       path.join(__dirname, '..', 'netlify', 'functions', 'db-connect.js'), 'utf8');

@@ -40,6 +40,7 @@ const mssql = require('mssql');
 const { Client: PgClient } = require('pg');
 const { verifyAuthHeader } = require('./lib/entra-auth');
 const { applyEntraAuth } = require('./lib/sql-entra');
+const { shouldRelay, createRelayPool } = require('./lib/azure-sql-relay');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type-formatting helpers (shared across MSSQL + Postgres schema endpoints)
@@ -146,10 +147,17 @@ async function handleMssql(action, connectionString, database, body) {
       400);
   }
 
+  // Decide the transport BEFORE trying to authenticate. A string with no
+  // credentials is the Entra-only Cygenix database, which this runtime cannot
+  // log in to at all — attempting Entra here first would fail with a
+  // credential error and never reach the relay that can actually serve it.
+  const viaRelay = shouldRelay('mssql', config);
+
   // Swap username/password for an Entra token when the string asks for it.
-  // A no-op for SQL-auth strings, so that path is unchanged.
+  // A no-op for SQL-auth strings, so that path is unchanged. Skipped entirely
+  // when relaying, since the Function App does its own authentication.
   try {
-    config = await applyEntraAuth(config, connectionString);
+    if (!viaRelay) config = await applyEntraAuth(config, connectionString);
   } catch (e) {
     return err('Entra authentication failed: ' + e.message,
       'This runtime has no managed identity, so "Active Directory Default" only works here if '
@@ -162,10 +170,18 @@ async function handleMssql(action, connectionString, database, body) {
 
   let pool;
   try {
-    // A dedicated pool, NOT mssql.connect(): the latter returns the driver's
-    // process-global pool and silently ignores a different config on a warm
-    // container — two users' requests could end up on the same connection.
-    pool = await new mssql.ConnectionPool(config).connect();
+    if (viaRelay) {
+      // No credentials in the string, so there is nothing to log in with —
+      // this is the Entra-only Cygenix database. Netlify has no managed
+      // identity, so the query is run by the Azure Function App, which does.
+      // The relay is shaped like a pool, so everything below is unchanged.
+      pool = createRelayPool({ server: config.server, database: config.database });
+    } else {
+      // A dedicated pool, NOT mssql.connect(): the latter returns the driver's
+      // process-global pool and silently ignores a different config on a warm
+      // container — two users' requests could end up on the same connection.
+      pool = await new mssql.ConnectionPool(config).connect();
+    }
   } catch (e) {
     return err('Could not connect: ' + e.message, getMssqlHint(e.message));
   }

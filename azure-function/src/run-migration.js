@@ -47,7 +47,7 @@ const sql = require('mssql');
 // Email notifications — fire-and-forget, never throws to caller.
 // See azure-function/src/notify.js.
 const { sendNotification } = require('./notify');
-const { applyEntraAuth, isEntraConn } = require('./sql-entra');
+const { resolveSqlConfig, isEntraConn } = require('./sql-entra');
 
 // ── Cosmos client (lazy singleton, matches index.js pattern) ──────────────
 let _cosmos = null;
@@ -441,11 +441,11 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
 
 async function openPool(connStr) {
   // An Entra-only Azure SQL server rejects SQL logins outright, so the
-  // username/password parseMssqlUrl produces is useless there. applyEntraAuth
-  // swaps them for an access token when the connection string asks for it, and
-  // returns the config untouched when it does not — so SQL-auth connections
-  // behave exactly as before.
-  const cfg = await applyEntraAuth(parseMssqlUrl(connStr), connStr);
+  // username/password parseMssqlUrl produces is useless there. resolveSqlConfig
+  // picks the right scheme: a string with credentials keeps them, a string with
+  // none connects as this app's managed identity, and an explicit
+  // ?authentication= mode is honoured. SQL-auth strings are unchanged.
+  const cfg = await resolveSqlConfig(parseMssqlUrl(connStr), connStr);
   const pool = new sql.ConnectionPool(cfg);
   await pool.connect();
   return pool;
