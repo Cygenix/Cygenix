@@ -729,7 +729,9 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 .ring-centre{ text-anchor:middle;dominant-baseline:central; }
 .ring-centre-num{
   font-family:var(--serif);font-size:32px;font-weight:700;
-  fill:#fff;letter-spacing:-0.02em;
+  /* Was hard-coded #fff, which is invisible against the light theme's white
+     card — the headline percentage simply wasn't there. */
+  fill:var(--text);letter-spacing:-0.02em;
 }
 .ring-centre-lbl{ font-family:var(--mono);font-size:10px;fill:var(--text3);text-transform:uppercase;letter-spacing:0.12em; }
 
@@ -4949,6 +4951,47 @@ function closeModal() { $('job-modal').classList.remove('open'); }
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function addAudit(msg) { state.auditLog.unshift({ time: new Date().toLocaleTimeString(), msg }); }
+// ── Job counting — one definition, shared by every panel ──────────────────
+// The Dashboard counted jobs three different ways on a single screen:
+//
+//   renderRing()          all jobs in storage, executionStatus || status
+//   updateStats()         all jobs in storage, status only
+//   renderProjectStatus() jobs matching projectId, executionStatus || status
+//
+// so the same job could be counted differently by two panels an inch apart.
+// A project run records its outcome on executionStatus and leaves status at
+// 'ready', which made such a job Complete in the donut but not in the stat
+// card. And trashed jobs were filtered only by the All Jobs table, so
+// deleting a job shrank the table while the donut and the totals never moved.
+//
+// These helpers are now the only way a panel counts jobs or reads a status.
+
+// Soft-deleted jobs are in the trash (restorable via restoreJob) and must not
+// appear in any total — the number on screen has to match what the user sees
+// in the jobs list.
+function liveJobs(list){
+  const arr = Array.isArray(list) ? list : safeArr('cygenix_jobs');
+  return arr.filter(j => j && !j._deleted);
+}
+
+// A job's lifecycle bucket. executionStatus is written by a project run and
+// reflects what actually happened, so it wins over the status the job was
+// saved with. The extra spellings are accepted because project bundles
+// imported through cygenix-integrations carry whatever status they were
+// exported with.
+function jobBucket(j){
+  const s = String((j && (j.executionStatus || j.status)) || '').toLowerCase();
+  if (s === 'complete' || s === 'completed' || s === 'success') return 'complete';
+  if (s === 'ready'    || s === 'sql_ready' || s === 'sql-ready') return 'ready';
+  if (s === 'failed'   || s === 'fail'      || s === 'error')     return 'failed';
+  return 'pending';
+}
+
+// A job counts as analysed once it has at least one mapped target column.
+function jobIsMapped(j){
+  return Array.isArray(j && j.columnMapping) && j.columnMapping.some(m => m && m.tgtCol);
+}
+
 function updateStats() {
   // Null-guard every DOM update — if any of these elements is missing from the
   // page (e.g. during A/B layouts or partial renders), the unguarded `.textContent`
@@ -4956,11 +4999,18 @@ function updateStats() {
   // initUserAndProject() which runs after renderDashboard(). That manifests as
   // a stuck "Loading..." user pill even though auth is working fine.
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-  set('stat-total',    state.jobs.length);
-  set('stat-analysed', state.jobs.length);
-  set('stat-done',     state.jobs.filter(j=>j.status==='complete').length);
+  const jobs = liveJobs(state.jobs);
+  set('stat-total',    jobs.length);
+  // "Analysed / Schema ready" was character-for-character the same expression
+  // as Total Jobs, so the two cards could never show different numbers. It now
+  // counts what its label claims.
+  set('stat-analysed', jobs.filter(jobIsMapped).length);
+  // "SQL Generated / Ready to run" — SQL exists once a job reaches ready, and
+  // still exists after it has run. The old test was `status === 'complete'`,
+  // which contradicted the card's own label and missed every project run.
+  set('stat-done',     jobs.filter(j => { const b = jobBucket(j); return b === 'ready' || b === 'complete'; }).length);
   set('stat-files',    state.totalFilesProcessed);
-  set('jobs-count',    state.jobs.length);
+  set('jobs-count',    jobs.length);
   renderDashboardProjects();
 }
 
@@ -5017,7 +5067,7 @@ function renderDashboardProjects(){
   }
 
   const activeId = localStorage.getItem('cygenix_active_project_id') || '';
-  const allJobs  = state.jobs || [];
+  const allJobs  = liveJobs(state.jobs || []);   // project cards must not count the trash
 
   // Inventory (artifacts) — best-effort, may not exist yet
   let inv = [];
@@ -5107,7 +5157,11 @@ function dashProjStatus(p, jobs){
   const projJobs = jobs.filter(j => j.projectId === p.id);
   let v;
   if (projJobs.length === 0) v = 'draft';
-  else if (projJobs.every(j => j.status === 'complete')) v = 'complete';
+  // Shared bucketing. This used to test `j.status === 'complete'` alone, so a
+  // project whose jobs had all been run to completion by project-builder —
+  // which records the outcome on executionStatus and leaves status at 'ready'
+  // — could never derive to 'complete'.
+  else if (projJobs.every(j => jobBucket(j) === 'complete')) v = 'complete';
   else v = 'inactive';
   return { value: v, derived: true };
 }
@@ -7491,11 +7545,15 @@ function jobsTableHTML(jobs) {
   if (!jobs.length) return '<div class="empty-state"><h3>No migration jobs yet</h3><p>Create your first SQL migration to get started.</p></div>';
 
   function jobStatusBadge(j) {
-    const s = j.executionStatus || j.status || 'ready';
-    if (s === 'complete' || s === 'success') return '<span class="badge badge-green">🟢 Complete</span>';
-    if (s === 'failed')   return '<span class="badge" style="background:var(--red-bg);color:var(--red)">🔴 Failed</span>';
-    if (s === 'running')  return '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">🟡 Running</span>';
-    if (s === 'ready' || s === 'sql_ready') return '<span class="badge badge-green">SQL Ready</span>';
+    // 'running' is a transient state with no bucket of its own — surface it
+    // before falling back to the shared classification, so the badge and the
+    // donut always tell the same story about a settled job.
+    const raw = String(j.executionStatus || j.status || '').toLowerCase();
+    if (raw === 'running') return '<span class="badge" style="background:var(--amber-bg);color:var(--amber)">🟡 Running</span>';
+    const b = jobBucket(j);
+    if (b === 'complete') return '<span class="badge badge-green">🟢 Complete</span>';
+    if (b === 'failed')   return '<span class="badge" style="background:var(--red-bg);color:var(--red)">🔴 Failed</span>';
+    if (b === 'ready')    return '<span class="badge badge-green">SQL Ready</span>';
     return '<span class="badge" style="background:var(--bg3);color:var(--text3)">⚪ Pending</span>';
   }
 
@@ -8028,18 +8086,15 @@ function renderDashboard() {
 function renderRing(){
   const host = document.getElementById('dashboard-ring-wrap');
   if (!host) return;
-  const jobs = safeArr('cygenix_jobs');
+  // Trashed jobs are excluded — the ring used to count them, so emptying the
+  // trash shrank the All Jobs table and left this chart showing the old total.
+  const jobs = liveJobs();
 
-  // Bucket jobs by status. A job's status field is loose: 'ready', 'complete',
-  // 'success', 'failed', 'running', 'pending' — map to 4 canonical buckets.
+  // Bucketing is shared with the stat cards and the Project Status panel via
+  // jobBucket(), so the same job can no longer be Complete in one panel and
+  // Pending in another.
   const buckets = { complete: 0, ready: 0, failed: 0, pending: 0 };
-  jobs.forEach(j => {
-    const s = (j.executionStatus || j.status || '').toLowerCase();
-    if (s === 'complete' || s === 'success')            buckets.complete++;
-    else if (s === 'ready' || s === 'sql_ready')        buckets.ready++;
-    else if (s === 'failed' || s === 'error')           buckets.failed++;
-    else                                                 buckets.pending++;
-  });
+  jobs.forEach(j => { buckets[jobBucket(j)]++; });
   const total = jobs.length;
 
   const segments = [
@@ -8090,7 +8145,7 @@ function renderRing(){
       <div class="ring-info-col">
         <div class="ring-info-head">Job Status Breakdown</div>
         <div class="ring-info-title">${total} total job${total === 1 ? '' : 's'}</div>
-        <div class="ring-info-sub">Live view of where every job sits in the migration lifecycle.</div>
+        <div class="ring-info-sub">Every job across all projects, excluding the trash. The Project Status panel below is scoped to the active project.</div>
         <div class="ring-legend">${legendHTML}</div>
       </div>
     </div>`;
@@ -8631,16 +8686,23 @@ function renderDbHistory(history){
     const roleClass = e.role === 'tgt' ? 'tgt' : 'src';
     const driver = e.kind === 'azure-function' ? 'Azure Fn' : (e.driver || 'sql');
     const f = friendlyFor(e);
-    // When a friendly name is known, lead with it and demote the host
-    // to secondary text. The host is still useful (debugging, sanity-
-    // checking that the right database is in use) but the friendly
-    // name is what the engineer recognises at a glance.
+    // Identity only: the saved connection's nickname and the database name.
+    //
+    // This row used to print the host and port ("86.20.94.140:1433") and the
+    // login name alongside them. dbHistory never stores the password, so this
+    // was not a password leak — but host + port + username is most of a
+    // credential, sitting on the Dashboard's landing view where it shows up
+    // in every screenshot and screen share of the project. It is also the
+    // half an attacker cannot guess. Matches the Connections view, which
+    // masks the same details behind an explicit Edit.
     const primary = f
       ? `<span class="ps-db-friendly" title="Saved connection name">${escP(f.name)}</span>`
-      : `<span class="ps-db-server" title="Server / host">${escP(e.server || '—')}</span>`;
-    const secondary = f && (e.server || e.database)
-      ? `<span class="ps-db-server-sm" title="Server / database">${escP(e.server || '—')}${e.database ? ' / ' + escP(e.database) : ''}</span>`
-      : (e.database ? `<span class="ps-db-name" title="Database">/ ${escP(e.database)}</span>` : '');
+      : `<span class="ps-db-friendly" title="Database">${escP(e.database || (e.kind === 'azure-function' ? 'Azure Function' : 'Direct connection'))}</span>`;
+    // Only add the database as secondary text when the nickname is already
+    // occupying the primary slot — otherwise it would appear twice.
+    const secondary = (f && e.database)
+      ? `<span class="ps-db-name" title="Database">${escP(e.database)}</span>`
+      : '';
     return `
       <div class="ps-db-row">
         <span class="ps-db-role ${roleClass}">${role}</span>
@@ -8649,7 +8711,6 @@ function renderDbHistory(history){
         <div class="ps-db-meta">
           <span title="Driver">${escP(driver)}</span>
           <span title="Authentication">${escP(authLabel(e.auth))}</span>
-          ${e.username ? `<span title="Username">${escP(e.username)}</span>` : ''}
           <span title="First seen on this project">since ${fmtDate(e.firstSeen)}</span>
         </div>
       </div>`;
@@ -8726,20 +8787,16 @@ function renderProjectStatus(){
   if (subEl) subEl.textContent = `Live snapshot of "${project.name || 'Untitled project'}"`;
 
   // ── Pull all per-project data ────────────────────────────────────────────
-  const allJobs   = safeArr('cygenix_jobs');
+  const allJobs   = liveJobs();          // trashed jobs must not inflate the panel
   const projJobs  = allJobs.filter(j => j.projectId === project.id);
   const inv       = safeArr('cygenix_inventory');
   const projInv   = inv.filter(a => a.projectId === project.id);
 
   // ── Job stats & failures ─────────────────────────────────────────────────
-  const failedJobs = projJobs.filter(j => {
-    const s = String(j.executionStatus || j.status || '').toLowerCase();
-    return s === 'failed' || s === 'error';
-  });
-  const completeJobs = projJobs.filter(j => {
-    const s = String(j.executionStatus || j.status || '').toLowerCase();
-    return s === 'complete' || s === 'success';
-  });
+  // Shared bucketing — this panel and the donut above it now classify a given
+  // job identically.
+  const failedJobs   = projJobs.filter(j => jobBucket(j) === 'failed');
+  const completeJobs = projJobs.filter(j => jobBucket(j) === 'complete');
 
   // ── Mapping stats ────────────────────────────────────────────────────────
   // A "map" is a job that has at least one mapped column. We also count jobs
@@ -9187,7 +9244,7 @@ async function generateProjectAiSummary(){
   if (!project){ bodyEl.textContent = 'No active project.'; return; }
 
   // Build a compact, redacted snapshot — no row data, just structure & status.
-  const allJobs  = safeArr('cygenix_jobs');
+  const allJobs  = liveJobs();           // don't describe trashed jobs to the model
   const projJobs = allJobs.filter(j => j.projectId === project.id);
   const projInv  = safeArr('cygenix_inventory').filter(a => a.projectId === project.id);
   const wasis    = safeArr('cygenix_wasis_rules').filter(r => !r.projectId || r.projectId === project.id);
@@ -9204,8 +9261,10 @@ async function generateProjectAiSummary(){
       end: project.end || '',
     },
     jobCount: projJobs.length,
+    // Bucketed, so the narrative the model writes matches the numbers the
+    // user is looking at rather than the raw status spellings.
     statusCounts: projJobs.reduce((acc,j) => {
-      const s = String(j.executionStatus || j.status || 'pending').toLowerCase();
+      const s = jobBucket(j);
       acc[s] = (acc[s] || 0) + 1;
       return acc;
     }, {}),
@@ -9339,7 +9398,16 @@ function renderAllJobs() {
   // Count display
   const countEl = document.getElementById('jobs-filter-count');
   if (countEl){
-    countEl.textContent = (filterValue === '__all') ? `${state.jobs.length} total` : `${shown.length} of ${state.jobs.length}`;
+    // Denominator counts live jobs only. It was state.jobs.length, which
+    // included the trash, so a single deleted job made an unfiltered view
+    // read "4 of 5" with nothing hidden. When the user is deliberately
+    // browsing the trash, the trash is the total.
+    const denom = _showDeletedJobs
+      ? state.jobs.filter(j => j && j._deleted).length
+      : liveJobs(state.jobs).length;
+    countEl.textContent = (filterValue === '__all' && !_showDeletedJobs)
+      ? `${denom} total`
+      : `${shown.length} of ${denom}`;
   }
 
   $('all-jobs').innerHTML = shown.length
