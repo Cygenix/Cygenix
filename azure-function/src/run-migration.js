@@ -107,6 +107,46 @@ function parseMssqlUrl(connStr) {
 const isHttpUrl   = s => /^https?:\/\//i.test(s || '');
 const isMssqlConn = s => /^mssql:\/\//i.test(s || '');
 
+// Azure Function mode: the Connections page stores the Cygenix db API's URL
+// instead of a connection string, because the browser reaches the database
+// through that API rather than directly.
+//
+// scheduled-runner accepts such a value and dispatches the run; this file used
+// to reject it outright with "Target must be a mssql:// connection", so a
+// schedule whose target was set to Azure Function mode was queued and then
+// immediately failed. That is the whole gap.
+//
+// The API it names is THIS app, and this app reaches SQL with its managed
+// identity — so the right move from inside the runner is to make that
+// connection directly rather than call ourselves over HTTP.
+//
+// WEBSITE_HOSTNAME is set by the Functions host. When it is present the URL
+// must match it, so a URL pointing at some other service fails with a clear
+// message instead of silently reading this app's database. When it is absent
+// (local runs) the URL is trusted, since Azure Function mode has never meant
+// anything but the Cygenix API.
+//
+// WEBSITE_SITE_NAME is the app's name without the regional suffix. Matching on
+// it as well means a saved URL that names the same app by a different hostname
+// — a deployment slot, or the older <app>.azurewebsites.net form — is still
+// recognised, rather than failing a run over a cosmetic difference.
+function isOwnDbApi(url) {
+  if (!isHttpUrl(url)) return false;
+  const self = String(process.env.WEBSITE_HOSTNAME  || '').trim().toLowerCase();
+  const app  = String(process.env.WEBSITE_SITE_NAME || '').trim().toLowerCase();
+  try {
+    const host  = new URL(url).hostname.toLowerCase();
+    if (!self && !app) return true;
+    if (self && host === self) return true;
+    // First label only: "cygenix-db-api-abc.uksouth-01.azurewebsites.net" and
+    // "cygenix-db-api.azurewebsites.net" both start with the site name, while
+    // "cygenix-db-api.evil.example" does not end in azurewebsites.net.
+    const label = host.split('.')[0];
+    return !!app && /\.azurewebsites\.net$/.test(host) &&
+      (label === app || label.startsWith(app + '-'));
+  } catch { return false; }
+}
+
 // Quote a possibly schema-qualified identifier: each dot-separated part is
 // wrapped in brackets with internal ] doubled — 'dbo.Users' → '[dbo].[Users]'.
 // Idempotent: parts already bracket-wrapped (e.g. '[dbo].[Users]') are
@@ -440,6 +480,16 @@ async function execMigrationPaginated(step, srcPool, tgtPool, log) {
 }
 
 async function openPool(connStr) {
+  if (isOwnDbApi(connStr)) {
+    // Same timeouts as the connection-string path: a migration statement is
+    // allowed hours, and falling back to the driver default here would kill
+    // long runs that used to work.
+    const cfg = await resolveSqlConfig(
+      { requestTimeout: 14_400_000, connectionTimeout: 30_000 }, '');
+    const pool = new sql.ConnectionPool(cfg);
+    await pool.connect();
+    return pool;
+  }
   // An Entra-only Azure SQL server rejects SQL logins outright, so the
   // username/password parseMssqlUrl produces is useless there. resolveSqlConfig
   // picks the right scheme: a string with credentials keeps them, a string with
@@ -454,6 +504,14 @@ async function openPool(connStr) {
 // ── Server-side conversion report builder (ported verbatim) ───────────────
 function parseDbConnFromMssqlUrl(connStr) {
   try {
+    // Azure Function mode resolves to this app's own database, so the report
+    // names that rather than leaving the source/target blank.
+    if (isOwnDbApi(connStr)) {
+      return {
+        server:   process.env.SQL_SERVER   || '',
+        database: process.env.SQL_DATABASE || '',
+      };
+    }
     if (!connStr || !/^mssql:\/\//i.test(connStr)) return null;
     const u = new URL(connStr);
     return {
@@ -904,8 +962,11 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   // Validate connections
   const srcConn = schedule.srcConn || '';
   const tgtConn = schedule.tgtConn || '';
-  if (!tgtConn || !isMssqlConn(tgtConn)) {
-    await markRunFailed(containers, run, 'Target must be a mssql:// connection', ctx);
+  if (!tgtConn || (!isMssqlConn(tgtConn) && !isOwnDbApi(tgtConn))) {
+    await markRunFailed(containers, run, isHttpUrl(tgtConn)
+      ? 'Target points at ' + tgtConn + ', which is not this Cygenix database API. '
+        + 'Set the target to this deployment\'s API URL, or to an mssql:// connection.'
+      : 'Target must be an mssql:// connection or the Cygenix database API URL', ctx);
     return;
   }
   const needsSrc = stepsToRun.some(s =>
@@ -913,8 +974,9 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
     s.srcTable ||
     (s.jobType && s.jobType !== 'sql' && s.jobType !== 'sql-script')
   );
-  if (needsSrc && (!srcConn || !isMssqlConn(srcConn))) {
-    await markRunFailed(containers, run, 'Source mssql:// connection required for migration steps', ctx);
+  if (needsSrc && (!srcConn || (!isMssqlConn(srcConn) && !isOwnDbApi(srcConn)))) {
+    await markRunFailed(containers, run,
+      'Migration steps need a source: an mssql:// connection or the Cygenix database API URL', ctx);
     return;
   }
 
