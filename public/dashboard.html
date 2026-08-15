@@ -19787,12 +19787,20 @@ function ta_jobLabel(j, dupes){
   return extra ? base + '  ·  ' + extra : base;
 }
 
+// Every job the picker will offer, newest first. Callers that reason about
+// the selection — the preselect and default-pick logic in the schedule modal
+// — must use this rather than reading cygenix_jobs, or they end up disagreeing
+// with what is on screen about which jobs exist.
+function ta_pickableJobs(){
+  return liveJobs().slice().sort((a, b) =>
+    String(b.created || '').localeCompare(String(a.created || '')));
+}
+
 // Jobs belonging to the active project are grouped first. Nothing is hidden —
 // scheduling a job from another project is legitimate, so the others stay
 // listed under their own heading rather than being filtered out.
 function ta_jobOptions(){
-  const jobs = liveJobs().slice().sort((a, b) =>
-    String(b.created || '').localeCompare(String(a.created || '')));
+  const jobs = ta_pickableJobs();
   if (!jobs.length) return '<option value="">No jobs saved on this browser</option>';
 
   const activeId = (localStorage.getItem('cygenix_active_project_id') || '').trim();
@@ -20043,6 +20051,10 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
 
   const jobsSel = document.getElementById('ta-sched-job');
   jobsSel.innerHTML = ta_jobOptions();
+  // The same set the picker just rendered — the preselect and default-pick
+  // logic below has to agree with what is actually on screen, so it must not
+  // read cygenix_jobs directly (that would still include trashed jobs).
+  const jobs = ta_pickableJobs();
 
   let schedResp = { schedules: [] };
   try { schedResp = await ta_sched('list-schedules', {}); } catch {}
