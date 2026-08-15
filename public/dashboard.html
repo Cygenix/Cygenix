@@ -1425,6 +1425,23 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
         </div>
       </div>
 
+      <!-- Schedules — a read-only summary of the Task Agent. Loaded lazily
+           because it needs an authenticated call to the scheduler function;
+           the rest of this view paints from localStorage and must not wait. -->
+      <div class="panel" id="dashboard-schedules-panel" style="margin-bottom:1.75rem">
+        <div class="panel-header" style="margin-bottom:0.85rem">
+          <div>
+            <div class="panel-title" style="font-size:13px">Schedules</div>
+            <div class="panel-sub" id="dashboard-schedules-sub">Loading…</div>
+          </div>
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="loadDashboardSchedules()" title="Reload schedules">↻ Refresh</button>
+            <button class="btn btn-ghost btn-sm" onclick="showView('task-agent')">Open Task Agent →</button>
+          </div>
+        </div>
+        <div id="dashboard-schedules-list"></div>
+      </div>
+
       <div id="dashboard-ring-wrap"></div>
       <div class="panel-header" style="margin-top:1.5rem">
         <div>
@@ -8106,6 +8123,112 @@ function renderDashboard() {
   updateStats();
   renderRing();
   renderProjectStatus();
+  // Schedules need a network round trip, so they fill in behind the rest
+  // rather than holding the whole view up.
+  loadDashboardSchedules();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// HOME — schedules summary
+// ══════════════════════════════════════════════════════════════════════════
+// A read-only view of the Task Agent, so the state of the automation is
+// visible on the screen everyone lands on rather than only after navigating
+// to it. Deliberately not interactive: enabling, running and editing stay on
+// the Task Agent page, which is where the confirmations and error handling
+// live. Clicking a row goes there.
+//
+// The formatters (ta_fmtDateTime, ta_runStatusChip, ta_jobNameFor) are the
+// Task Agent's own, so a trigger or a status can never read differently in
+// the two places.
+
+let _dashSchedLoading = false;
+
+async function loadDashboardSchedules(){
+  const list = document.getElementById('dashboard-schedules-list');
+  const sub  = document.getElementById('dashboard-schedules-sub');
+  if (!list) return;
+  if (_dashSchedLoading) return;          // Refresh double-click
+  _dashSchedLoading = true;
+  if (sub) sub.textContent = 'Loading…';
+  try {
+    const data = await ta_sched('list-schedules', {});
+    const schedules = data.schedules || [];
+    // Share the fetch with the Task Agent view so opening it does not
+    // immediately refetch what we already have.
+    TA.schedules = schedules;
+    renderDashboardSchedules(schedules);
+  } catch (e) {
+    // Not being able to reach the scheduler is not a broken dashboard — say
+    // what happened, keep it small, and let the rest of the page stand.
+    if (sub) sub.textContent = 'Could not load';
+    list.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.5rem 0">'
+      + 'Could not reach the scheduler: ' + escapeHtml(e && e.message || 'unknown error')
+      + ' · <a href="#" onclick="loadDashboardSchedules();return false" style="color:var(--accent)">retry</a></div>';
+  } finally {
+    _dashSchedLoading = false;
+  }
+}
+
+function renderDashboardSchedules(schedules){
+  const list = document.getElementById('dashboard-schedules-list');
+  const sub  = document.getElementById('dashboard-schedules-sub');
+  if (!list) return;
+
+  if (!schedules.length){
+    if (sub) sub.textContent = 'No schedules yet';
+    list.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.5rem 0">'
+      + 'Nothing scheduled. <a href="#" onclick="showView(\'task-agent\');return false" style="color:var(--accent)">Create one in the Task Agent</a>.</div>';
+    return;
+  }
+
+  const on  = schedules.filter(s => s.enabled).length;
+  const off = schedules.length - on;
+  // Failures are the thing worth noticing from the home screen, so they are
+  // counted in the subtitle rather than left to be spotted in the rows.
+  const failed = schedules.filter(s => s.lastRunStatus === 'failed').length;
+  if (sub){
+    sub.textContent = [
+      schedules.length + ' schedule' + (schedules.length === 1 ? '' : 's'),
+      on + ' active',
+      off + ' paused',
+    ].join(' · ') + (failed ? ' · ' + failed + ' last run failed' : '');
+  }
+
+  // Active first, then by name, so what is running is at the top.
+  const sorted = schedules.slice().sort((a, b) => {
+    if (!!b.enabled !== !!a.enabled) return b.enabled ? 1 : -1;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+
+  const rows = sorted.map(s => {
+    const trigger = s.chainAfter
+      ? '<span class="badge badge-purple" title="Fires after its parent succeeds">⛓ Chained</span>'
+      : '<span class="badge badge-blue" style="font-family:var(--mono)">' + escapeHtml(s.humanReadable || s.cron || '—') + '</span>';
+    // A paused schedule may still carry a stale nextRunAt from when it was
+    // enabled. Showing it would state a run that is not going to happen.
+    const next = (s.enabled && s.nextRunAt)
+      ? '<span style="font-family:var(--mono);font-size:11px;color:var(--text2)">' + ta_fmtDateTime(s.nextRunAt) + '</span>'
+      : '<span style="font-size:10px;color:var(--text3)">' + (s.enabled ? '—' : 'paused') + '</span>';
+    const last = s.lastRunAt
+      ? ta_runStatusChip(s.lastRunStatus) + ' <span style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-left:0.4rem">' + ta_fmtDateTime(s.lastRunAt) + '</span>'
+      : '<span style="font-size:10px;color:var(--text3)">Never run</span>';
+    return `<tr style="cursor:pointer" onclick="showView('task-agent')" title="Open in the Task Agent">
+      <td>
+        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:0.5rem;vertical-align:middle;background:${s.enabled ? 'var(--green)' : 'var(--text3)'}"
+              title="${s.enabled ? 'Active' : 'Paused'}"></span>
+        <strong style="color:var(--text)">${escapeHtml(s.name || '(unnamed)')}</strong>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;margin-left:1.05rem">${escapeHtml(ta_jobNameFor(s.jobId))}</div>
+      </td>
+      <td>${trigger}</td>
+      <td>${next}</td>
+      <td>${last}</td>
+      <td><span style="font-size:11px;color:${s.enabled ? 'var(--green)' : 'var(--text3)'}">${s.enabled ? 'Active' : 'Paused'}</span></td>
+    </tr>`;
+  }).join('');
+
+  list.innerHTML = '<table class="jobs-table"><thead><tr>'
+    + '<th>Name / Job</th><th>Trigger</th><th>Next run</th><th>Last run</th><th>Status</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -19631,7 +19754,10 @@ function ta_jobNameFor(jobId) {
   try {
     const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
     const j = jobs.find(j => j.id === jobId);
-    return j ? j.name : '(job not on this browser)';
+    // ta_jobBaseName rather than j.name: a job saved without one would
+    // otherwise render the string "undefined" here, the same way it used to
+    // in the schedule job picker.
+    return j ? ta_jobBaseName(j) : '(job not on this browser)';
   } catch { return '—'; }
 }
 
