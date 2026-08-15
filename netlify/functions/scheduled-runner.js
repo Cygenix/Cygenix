@@ -126,7 +126,9 @@ async function fireSchedule(containers, schedule, now) {
   //    the cron expression — which would otherwise re-match next year
   //    on the same day — doesn't auto-fire again. The user can re-enable
   //    manually if they want to repeat.
-  const nextRunAt = schedule.cron ? computeNextRun(schedule.cron, now) : null;
+  // The schedule's own timezone, not the runner's. Without it a cron of
+  // "0 2 * * *" on Europe/London fired at 02:00 UTC, an hour early in BST.
+  const nextRunAt = schedule.cron ? computeNextRun(schedule.cron, now, schedule.timezone) : null;
   const bumped = {
     ...schedule,
     nextRunAt,

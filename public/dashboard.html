@@ -20471,11 +20471,26 @@ function ta_renderMonthlyDom() {
 
 // The instant the one-shot fields describe, as an ISO string.
 //
-// Built as UTC from the raw field values on purpose. The backend's
-// computeNextRun matches a cron against server-local time, which on Netlify
-// is UTC — so a cron of "25 14 …" fires at 14:25 UTC. Constructing runOnceAt
-// the same way keeps the two in step; interpreting the fields as browser-local
-// would make a one-shot fire at a different moment from the cron beside it.
+// The date and time are a wall-clock reading in the timezone chosen beside
+// them, so they have to be converted through that zone. Treating them as UTC
+// put every one-shot an hour late through British Summer Time: 14:50
+// Europe/London is 13:50Z, not 14:50Z.
+//
+// Same algorithm as zonedTimeToUtc in netlify/functions/lib/cron.js, which is
+// the authority for the repeating case. Duplicated rather than shared because
+// one runs in the browser and the other in a Netlify function; keep them in
+// step if either changes.
+function ta_zoneOffsetMs(date, tz){
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit',
+  });
+  const p = {};
+  for (const part of f.formatToParts(date)) p[part.type] = part.value;
+  return Date.UTC(+p.year, +p.month - 1, +p.day, (+p.hour) % 24, +p.minute, +p.second) - date.getTime();
+}
+
 function ta_onceIso(){
   const d = (document.getElementById('ta-once-date') || {}).value || '';
   const t = (document.getElementById('ta-once-time') || {}).value || '';
@@ -20483,7 +20498,19 @@ function ta_onceIso(){
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
   const n = /^(\d{2}):(\d{2})/.exec(t);
   if (!m || !n) return null;
-  return m[1] + '-' + m[2] + '-' + m[3] + 'T' + n[1] + ':' + n[2] + ':00.000Z';
+
+  let tz = (document.getElementById('ta-once-tz') || {}).value || 'UTC';
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); }
+  catch { tz = 'UTC'; }   // unknown zone → don't throw, just don't shift
+
+  const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +n[1], +n[2], 0);
+  // Sample the offset at the answer rather than the guess, or a time within an
+  // hour of a DST boundary lands an hour out.
+  const off1 = ta_zoneOffsetMs(new Date(guess), tz);
+  let ms = guess - off1;
+  const off2 = ta_zoneOffsetMs(new Date(ms), tz);
+  if (off2 !== off1) ms = guess - off2;
+  return new Date(ms).toISOString();
 }
 
 // The year to show for a one-shot, in order of trustworthiness:
@@ -20500,7 +20527,15 @@ function ta_onceYearFor(schedule, mo, dom, h, mi){
   const stored = schedule && (schedule.runOnceAt || schedule.nextRunAt);
   if (stored){
     const d = new Date(stored);
-    if (!isNaN(d.getTime())) return d.getUTCFullYear();
+    if (!isNaN(d.getTime())){
+      // Read the year in the schedule's own zone. runOnceAt is an instant, and
+      // near midnight the UTC date can be the day — and so the year — before
+      // the local one: 1 Jan 00:30 Europe/London is 31 Dec 23:30Z.
+      const tz = (schedule && schedule.timezone) || 'UTC';
+      try {
+        return +new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric' }).format(d);
+      } catch { return d.getUTCFullYear(); }
+    }
   }
   const now = new Date();
   const candidate = new Date(now.getFullYear(), parseInt(mo,10) - 1, parseInt(dom,10),
