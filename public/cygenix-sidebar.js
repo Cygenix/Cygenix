@@ -85,10 +85,11 @@
         { key:'jobs',            label:'All Jobs', view:'jobs',                  icon: iconList() },
         { key:'project-builder', label:'Execute',  href:'/project-builder.html', color:'var(--purple)', icon: iconPlay() },
       ]},
-      { key:'plan-group', label:'Planner & Schedules', icon: iconCalendar(), children: [
-        { key:'project-plan', label:'Project Planner', href:'/project-plan.html', color:'var(--green)',  icon: iconCalendar(), badgeId:'cyg-badge-project-plan' },
-        { key:'task-agent',   label:'Schedules',       view:'task-agent',         color:'var(--yellow)', icon: iconClock() },
-      ]},
+      // Project Planner was removed along with its page. With one child left
+      // the "Planner & Schedules" expander earned nothing, so this is a plain
+      // top-level item. The key stays `task-agent` — pages set
+      // data-active="task-agent" and dashboard.html routes showView on it.
+      { key:'task-agent', label:'Task Manager', view:'task-agent', color:'var(--yellow)', icon: iconClock() },
       { key:'server-migration', label:'Server Migration', view:'server-migration', color:'var(--accent)', icon: iconServerMigration() },
     ]},
     { section: 'Validate', group:'validate', items: [
@@ -1011,123 +1012,20 @@
     wireDriveButton(aside);
     wireProjectSwitcher(aside);
     hideTopbarUserPill();
-    startBadgeUpdater();
     ensureA11y();
     // Preload the Drive overlay so the first click is instant (skip the
     // co-worker page, which ships its own native Drive).
     if (!/\/coworker\.html?$/.test(location.pathname)) ensureDriveModal();
   }
 
-  // ── Live status badges ──────────────────────────────────────────────────
-  // Project Planner badge: count of items needing attention today, minus
-  // anything the user has already "seen" (by visiting /project-plan.html).
+  // The Project Planner badge module lived here. It counted plan items due
+  // today, tracked which the user had "seen", listened on two storage keys and
+  // a custom event, and re-checked on a 60-second interval. All of it existed
+  // for one nav item, and that item and its page are gone — so it ran forever
+  // on every page to update a badge element that no longer exists.
   //
-  // Attention items:
-  //   - Calendar events (calEvents) with date === today
-  //   - Tasks with due === today AND status !== 'done'
-  //   - Overdue tasks (due < today AND status !== 'done')
-  //
-  // Dismiss behaviour:
-  //   When the user visits /project-plan.html, project-plan.html itself calls
-  //   CygenixSidebar.markProjectPlanSeen() — which snapshots the current set
-  //   of attention item IDs into localStorage['cygenix_pp_seen']. The badge
-  //   then counts only items NOT in that set, so visiting the page clears
-  //   the badge until something new appears (a new task, midnight rollover,
-  //   etc). Marking a task done or deleting an event also clears it because
-  //   it falls out of the attention set entirely.
-  //
-  // Reads localStorage['cygenix_project_plan'] (the key project-plan.html writes to).
-  const PLAN_STORAGE_KEY = 'cygenix_project_plan';
-  const SEEN_STORAGE_KEY = 'cygenix_pp_seen';
-
-  function todayIsoDate(){
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }
-
-  // Returns array of stable IDs for items currently needing attention.
-  // IDs are prefixed so task/event namespaces never collide.
-  function getAttentionItemIds(){
-    try {
-      const raw = localStorage.getItem(PLAN_STORAGE_KEY);
-      if (!raw) return [];
-      const data = JSON.parse(raw);
-      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
-      const calEvents = Array.isArray(data.calEvents) ? data.calEvents : [];
-      const today = todayIsoDate();
-      const ids = [];
-      for (const e of calEvents){
-        if (e && e.id && e.date === today) ids.push('event:' + e.id);
-      }
-      for (const t of tasks){
-        if (!t || !t.id || t.status === 'done') continue;
-        if (t.due === today) ids.push('task:' + t.id);
-        else if (t.due && t.due < today) ids.push('task:' + t.id);
-      }
-      return ids;
-    } catch { return []; }
-  }
-
-  // Read the "seen" set. Stored as { date: 'YYYY-MM-DD', ids: [...] }.
-  // The date stamp lets us auto-expire seen entries at midnight — anything
-  // marked seen yesterday is ignored today, so a task that was overdue
-  // yesterday and is *still* overdue today re-surfaces in the badge.
-  function getSeenSet(){
-    try {
-      const raw = localStorage.getItem(SEEN_STORAGE_KEY);
-      if (!raw) return new Set();
-      const data = JSON.parse(raw);
-      if (!data || data.date !== todayIsoDate()) return new Set();
-      return new Set(Array.isArray(data.ids) ? data.ids : []);
-    } catch { return new Set(); }
-  }
-
-  function refreshProjectPlanBadge(){
-    const el = document.getElementById('cyg-badge-project-plan');
-    if (!el) return;
-    const allIds = getAttentionItemIds();
-    const seen = getSeenSet();
-    const unseenCount = allIds.filter(id => !seen.has(id)).length;
-    if (unseenCount > 0){
-      el.textContent = unseenCount > 99 ? '99+' : String(unseenCount);
-      el.classList.add('show');
-      el.title = `${unseenCount} new item${unseenCount === 1 ? '' : 's'} due today or overdue`;
-    } else {
-      el.textContent = '';
-      el.classList.remove('show');
-      el.removeAttribute('title');
-    }
-  }
-
-  // Public: called by project-plan.html on load to mark all current
-  // attention items as "seen" for the rest of today.
-  function markProjectPlanSeen(){
-    try {
-      const ids = getAttentionItemIds();
-      localStorage.setItem(SEEN_STORAGE_KEY, JSON.stringify({
-        date: todayIsoDate(),
-        ids
-      }));
-    } catch {}
-    refreshProjectPlanBadge();
-  }
-
-  function startBadgeUpdater(){
-    refreshProjectPlanBadge();
-    // Refresh when the project plan key (or seen key) changes in another tab
-    window.addEventListener('storage', (ev) => {
-      if (ev.key === PLAN_STORAGE_KEY || ev.key === SEEN_STORAGE_KEY) {
-        refreshProjectPlanBadge();
-      }
-    });
-    // Refresh when the project plan page dispatches an in-tab update event
-    window.addEventListener('cygenix-plan-changed', refreshProjectPlanBadge);
-    // Periodic refresh — catches the date rolling over at midnight without a reload
-    setInterval(refreshProjectPlanBadge, 60 * 1000);
-  }
+  // localStorage['cygenix_project_plan'] is deliberately left alone: it is the
+  // user's own data, and deleting a feature is not a reason to destroy it.
 
   // Public API (useful for dashboard to call on showView)
   window.CygenixSidebar = {
@@ -1144,9 +1042,6 @@
       const toggle = el && el.querySelector('#cyg-sidebar-toggle');
       if (toggle) toggle.textContent = on ? '❯' : '❮';
     },
-    // Mark all current Project Planner attention items as "seen" for today.
-    // Called by project-plan.html on load to dismiss the sidebar badge.
-    markProjectPlanSeen,
     // Re-render after feature flags change (call this from dashboard.html
     // after refreshFeatureFlags() updates localStorage).
     refresh: () => {
@@ -1166,7 +1061,6 @@
       wireUserChip(replacement);
       wireDriveButton(replacement);
       hideTopbarUserPill();
-      refreshProjectPlanBadge();
     }
   };
 

@@ -117,11 +117,6 @@ section{margin-bottom:0.5rem}
     <a class="toc-item sub" href="#val-run">Running scripts</a>
     <a class="toc-item" href="#insights">Data insights</a>
 
-    <div class="toc-section">Plan</div>
-    <a class="toc-item" href="#project-plan">Project Planner</a>
-    <a class="toc-item sub" href="#plan-calendar">Calendar</a>
-    <a class="toc-item sub" href="#plan-tasks">Tasks</a>
-    <a class="toc-item sub" href="#plan-blockers">Blockers</a>
 
     <div class="toc-section">Configure</div>
     <a class="toc-item" href="#performance">Performance settings</a>
@@ -145,7 +140,6 @@ section{margin-bottom:0.5rem}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem">
         <div class="card"><div class="card-title">🗺 <span style="color:var(--teal)">Mapper</span></div><p>Target-driven column mapping with AI, fixed values, Was/Is rules and one-to-many support.</p></div>
         <div class="card"><div class="card-title">✅ <span style="color:var(--amber)">Validation</span></div><p>Add any table as a validation source. Pick the SQL column, report columns and run connection.</p></div>
-        <div class="card"><div class="card-title">📅 <span style="color:var(--green)">Project Planner</span></div><p>Calendar, tasks, blockers, phase tracker and activity log — driven by your completion date.</p></div>
       </div>
     </section>
 
@@ -153,7 +147,7 @@ section{margin-bottom:0.5rem}
       <h2>Typical workflow</h2>
       <p>The recommended migration sequence in Cygenix:</p>
       <div class="steps">
-        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Set up Project Settings</strong><p>Enter project name, start and completion dates, source and target systems. The completion date drives the Project Planner calendar and countdown.</p></div></div>
+        <div class="step"><div class="step-num"></div><div class="step-body"><strong>Set up Project Settings</strong><p>Enter project name, start and completion dates, source and target systems. The completion date drives the countdown in the summary stats bar.</p></div></div>
         <div class="step"><div class="step-num"></div><div class="step-body"><strong>Run pre-migration validation</strong><p>Add your validation tables in the Validation page. Run scripts against the source database to identify data quality issues before migrating.</p></div></div>
         <div class="step"><div class="step-num"></div><div class="step-body"><strong>Map tables using the Mapper</strong><p>Use Simple Map for single-table migrations or One-to-Many for complex transformations. AI maps columns automatically — override as needed, add fixed values and Was/Is rules.</p></div></div>
         <div class="step"><div class="step-num"></div><div class="step-body"><strong>Build and run a Conversion Project</strong><p>Combine multiple mapping jobs and custom SQL scripts into a sequenced project. Run in one click with live status per step.</p></div></div>
@@ -287,45 +281,6 @@ section{margin-bottom:0.5rem}
       <p>Connect to any database table and load column data into the browser for quick analysis — distinct values, value frequencies, null counts, date ranges. Useful for understanding source data before mapping.</p>
     </section>
 
-    <section id="project-plan">
-      <h2>Project Planner</h2>
-      <p>A built-in project management tool for tracking your migration. Access it from <strong>Plan → Project Planner</strong> in the sidebar. The completion date is read from Project Settings → Target completion.</p>
-
-      <h3 id="plan-calendar">Calendar</h3>
-      <p>Four views toggled at the top of the calendar panel:</p>
-      <ul>
-        <li><strong>Year</strong> — 12 mini month grids. Days with events show a teal dot. Click any day to jump to Day view.</li>
-        <li><strong>Month</strong> — full month grid. Events shown as coloured pills (up to 3 per cell, +N more). Click a cell to drill into Day view.</li>
-        <li><strong>Week</strong> — 7-column hourly grid. All-day band at top. Click any hour slot to add an event pre-filled with that date and time.</li>
-        <li><strong>Day</strong> — single column hourly view. All-day events at top.</li>
-      </ul>
-      <p>Use <strong>‹ ›</strong> to navigate and <strong>Today</strong> to jump back to now. Click <strong>+ Event</strong> to add a calendar event manually.</p>
-      <p>The calendar automatically shows events generated from your tasks (due dates and start dates) and the project completion date from Project Settings. Clicking a task-generated event opens the task edit modal.</p>
-      <p>Event types and colours:</p>
-      <table class="help-table">
-        <thead><tr><th>Type</th><th>Colour</th><th>Use for</th></tr></thead>
-        <tbody>
-          <tr><td>Task</td><td style="color:var(--accent)">■ Blue</td><td>General tasks with start/due dates</td></tr>
-          <tr><td>Deadline</td><td style="color:var(--red)">■ Red</td><td>Hard deadlines, sign-off dates</td></tr>
-          <tr><td>Milestone</td><td style="color:var(--amber)">■ Amber</td><td>Key project milestones</td></tr>
-          <tr><td>Meeting</td><td style="color:var(--purple)">■ Purple</td><td>Stakeholder meetings, reviews</td></tr>
-        </tbody>
-      </table>
-
-      <h3 id="plan-tasks">Tasks</h3>
-      <p>Click <strong>+ Add task</strong> to open the task modal (similar to an Outlook task). Fields include: name, description, phase, status, priority, start date, due date, owner/assignee and notes.</p>
-      <p>Task statuses: <span class="badge badge-blue">In progress</span> <span class="badge" style="background:rgba(22,26,32,0.06);color:var(--text3)">To do</span> <span class="badge badge-red">Blocked</span> <span class="badge badge-amber">Review</span> <span class="badge badge-green">Done</span></p>
-      <p>Overdue tasks (due date past, not done) are highlighted red. The tasks table can be filtered by status, phase and free text search.</p>
-      <p>The summary stats bar at the top shows: days remaining to completion, total tasks, completed, in progress, blocked, open blockers and overall % complete. Two progress bars show task completion and elapsed project time.</p>
-
-      <h3 id="plan-blockers">Blockers</h3>
-      <p>Click <strong>+ Add blocker</strong> to record anything blocking the migration. Fields: title, description, impact level (Low / Medium / High / Critical), raised by, owner, target resolution date and resolution notes.</p>
-      <p>Open blockers appear as red cards. Click <strong>✓ Resolve</strong> to mark a blocker resolved (it turns green). The active blocker count is shown in the summary stats.</p>
-
-      <h3>Execution phase tracker</h3>
-      <p>A visual 7-stage pipeline: Planning → Analysis → Mapping → Development → UAT → Go-live → Post-migration. The current phase is highlighted in blue; completed stages in green. Click any stage to set it as the current phase — this saves back to Project Settings and is reflected across the dashboard.</p>
-    </section>
-
     <section id="performance">
       <h2>Performance settings</h2>
       <p>Access from <strong>Configure → Performance</strong>. Settings are saved to localStorage (<code>cygenix_performance</code>) and applied across all migration operations.</p>
@@ -356,7 +311,7 @@ section{margin-bottom:0.5rem}
     <section id="project-settings">
       <h2>Project settings</h2>
       <p>Access from <strong>Configure → Project Settings</strong> (or the dashboard sidebar). Fields include: project name, type, reference number, description, analyst, PM, client, start date, <strong>target completion date</strong>, migration phase, source system, target system, estimated rows and notes.</p>
-      <div class="tip"><strong>Important:</strong> The <strong>Target completion</strong> date is used by the Project Planner calendar as the fixed end marker and drives the countdown in the summary stats bar.</div>
+      <div class="tip"><strong>Important:</strong> The <strong>Target completion</strong> date drives the countdown in the summary stats bar.</div>
     </section>
 
     <section id="conversion-project">
