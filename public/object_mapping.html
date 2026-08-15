@@ -240,6 +240,13 @@ body.cyg-collapsed{padding-left:54px}
   padding:2px 5px;font-size:12px;line-height:1;border-radius:3px;
 }
 .cond-del:hover{background:var(--bg4);color:var(--red)}
+.gb-wand{
+  display:inline-flex;align-items:center;gap:3px;margin-left:0.4rem;vertical-align:baseline;
+  background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.35);border-radius:4px;
+  padding:1px 7px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif);
+  white-space:nowrap;
+}
+.gb-wand:hover{background:rgba(107,78,142,0.22);border-color:var(--purple)}
 
 /* ── WHERE modal ── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center}
@@ -2843,6 +2850,11 @@ function renderMappingTable(){
     const matchColor = m.match==='HIGH'?'var(--green)':m.match==='MEDIUM'?'var(--amber)':m.match==='LOW'?'var(--red)':'var(--text3)';
     const hasFixed = !!(m.literalValue !== undefined && m.literalValue !== '');
     const hasMapping = !!m.srcCol || hasFixed;
+    // An aggregate such as MAX([CaseName]) lives in the same Fixed value box,
+    // but unlike a hard-coded literal it still reads the source column — so
+    // the source picker must not be struck through as though it were ignored.
+    const isAgg = hasFixed && isAggregateExpr(m.literalValue);
+    const overridesSrc = hasFixed && !isAgg;
 
     // ── Identity column handling ──────────────────────────────────────────
     // Identity rows are disabled by default — the source picker is locked
@@ -2916,7 +2928,7 @@ function renderMappingTable(){
 
     return `<tr style="${rowStyle}">
       <td>
-        <select class="map-select" ${disAttr} style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
+        <select class="map-select" ${disAttr} style="font-family:var(--mono);font-size:11px${overridesSrc?';color:var(--text3);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
           onchange="columnMapping[${i}].srcCol=this.value;columnMapping[${i}].match=this.value?'HIGH':'';renderMappingTable();renderSrcColList();tryAutoGenSQL()">
           <option value="">— none —</option>
           ${srcColOpts.replace(`value="${esc(m.srcCol)}"`,`value="${esc(m.srcCol)}" selected`)}
@@ -3414,8 +3426,11 @@ function renderClauseNotes(){
       gEl.style.color = 'var(--amber)';
       gEl.innerHTML = 'Not grouped or aggregated: '
         + '<strong>' + offenders.map(esc).join(', ') + '</strong>. '
-        + 'SQL Server will reject this. Add each to GROUP BY, or put an aggregate '
-        + 'such as <code style="font-family:var(--mono)">MAX([col])</code> in that row’s Fixed value box.';
+        + 'SQL Server will reject this.'
+        + '<button class="gb-wand" onclick="fixGroupBy()" '
+        + 'title="Wrap each of these in MAX() so the statement runs, keeping one row per group. '
+        + 'Each lands in that row’s Fixed value box, where you can edit or clear it.">'
+        + '🪄 Fix ' + offenders.length + ' column' + (offenders.length===1?'':'s') + '</button>';
     } else {
       gEl.style.display = 'block';
       gEl.style.color = 'var(--text3)';
@@ -3437,17 +3452,67 @@ function bracketPreview(){
   return groups.map(g => g.length > 1 ? '(' + g.join(' AND ') + ')' : g[0]).join(' OR ');
 }
 
+// Does this Fixed-value expression aggregate? Used in two places: a column
+// carrying an aggregate is legal under GROUP BY, and its source column is
+// still being read, so the mapping row must not strike it through the way it
+// does for a genuine hard-coded literal.
+const AGG_RE = /\b(MIN|MAX|SUM|AVG|COUNT|COUNT_BIG|STRING_AGG|CHECKSUM_AGG|VAR|VARP|STDEV|STDEVP)\s*\(/i;
+function isAggregateExpr(v){
+  return v !== undefined && v !== null && v !== '' && AGG_RE.test(String(v));
+}
+
 // Mapped target columns whose SELECT expression is a plain source column —
 // no fixed value, no aggregate — and which are not in the GROUP BY list.
 function ungroupedColumns(){
   const gb = groupByCols.map(g => groupByExpr(g).replace(/^\[|\]$/g, '').toLowerCase()).filter(Boolean);
-  const AGG = /\b(MIN|MAX|SUM|AVG|COUNT|COUNT_BIG|STRING_AGG)\s*\(/i;
   return columnMapping
     .filter(m => m && m.tgtCol && m.srcCol)
-    .filter(m => !(m.literalValue !== undefined && m.literalValue !== '' && AGG.test(m.literalValue)))
     .filter(m => !(m.literalValue !== undefined && m.literalValue !== ''))
     .filter(m => !gb.includes(String(m.srcCol).toLowerCase()))
     .map(m => m.srcCol);
+}
+
+// The SELECT expression the generator will emit for a column, so the wand
+// wraps the same thing — a joined column is referenced through its alias, and
+// MAX([col]) on an ambiguous name would not compile.
+function srcExprFor(m){
+  if (m && m.fromJoin){
+    const alias = m.alias || 's1';
+    const bare  = String(m.srcCol || '').includes('.')
+      ? String(m.srcCol).split('.').pop() : String(m.srcCol || '');
+    return alias + '.[' + bare + ']';
+  }
+  return '[' + String((m && m.srcCol) || '') + ']';
+}
+
+// ── The GROUP BY wand ─────────────────────────────────────────────────────
+// Wraps every un-grouped column in MAX() so the statement compiles.
+//
+// Why MAX and not "add them all to GROUP BY": someone who types
+// GROUP BY caseno wants one row per case. Adding the remaining columns to the
+// grouping instead would give one row per distinct combination of every
+// column — which for most tables is every row, quietly undoing the grouping
+// they asked for. MAX keeps the grouping they chose and picks a representative
+// value for the rest, the usual idiom for collapsing to one row per key.
+//
+// The result is visible and reversible: each expression lands in that row's
+// Fixed value box, where the user can change MAX to MIN, edit it, or clear it.
+function fixGroupBy(){
+  const offenders = ungroupedColumns();
+  if(!offenders.length) return;
+  const fixed = [];
+  columnMapping.forEach(m => {
+    if(!m || !m.tgtCol || !m.srcCol) return;
+    if(!offenders.includes(m.srcCol)) return;
+    m.literalValue = 'MAX(' + srcExprFor(m) + ')';
+    fixed.push(m.srcCol);
+  });
+  if(!fixed.length) return;
+  renderMappingTable();
+  syncClauses();
+  showStatus('Wrapped ' + fixed.length + ' column' + (fixed.length===1?'':'s') + ' in MAX(): '
+    + fixed.join(', ') + '. Edit or clear any of them in the Fixed value column — '
+    + 'or add them to GROUP BY instead if you want a row per distinct combination.', 'info');
 }
 
 // Rebuild both lists from a saved job. Older jobs have only the combined

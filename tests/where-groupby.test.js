@@ -41,6 +41,8 @@ function build({ columnMapping = [], srcTable = null } = {}) {
     esc: s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])),
     escAttr: s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),
     tryAutoGenSQL: () => {},
+    renderMappingTable: () => {},
+    showStatus: (m) => { sb.__status = m; },
     columnMapping,
     srcTable,
   };
@@ -168,6 +170,85 @@ check('an offending column raises the GROUP BY note',
 t.set('groupByCols', []);
 t.get('syncClauses()');
 check('clearing GROUP BY hides the note', t.els['groupby-note'].style.display === 'none');
+
+// ── The wand ─────────────────────────────────────────────────────────────
+// One click has to turn an invalid grouped statement into a valid one, and it
+// must preserve the grouping the user asked for: MAX() on the rest, not
+// "add everything to GROUP BY" (which would give a row per distinct
+// combination and quietly undo the grouping).
+const wandMap = () => ([
+  { srcCol:'id',       tgtCol:'id' },
+  { srcCol:'CaseNo',   tgtCol:'CaseNo' },
+  { srcCol:'CaseName', tgtCol:'CaseName' },
+  { srcCol:'',         tgtCol:'Tenant', literalValue:"'acme'" },
+]);
+
+t = build({ columnMapping: wandMap() });
+t.set('groupByCols', ['CaseNo']);
+t.get('syncClauses()');
+check('the wand appears in the warning when columns need fixing',
+  /gb-wand/.test(t.els['groupby-note'].innerHTML));
+check('the wand says how many it will fix',
+  /Fix 2 columns/.test(t.els['groupby-note'].innerHTML), t.els['groupby-note'].innerHTML);
+
+t.get('fixGroupBy()');
+check('the wand wraps each offending column in MAX()',
+  t.sb.columnMapping[0].literalValue === 'MAX([id])' &&
+  t.sb.columnMapping[2].literalValue === 'MAX([CaseName])',
+  JSON.stringify(t.sb.columnMapping.map(m => m.literalValue)));
+check('the wand leaves the grouped column alone',
+  t.sb.columnMapping[1].literalValue === undefined);
+check('the wand leaves an existing fixed value alone',
+  t.sb.columnMapping[3].literalValue === "'acme'");
+check('the GROUP BY itself is unchanged — the grouping the user chose is kept',
+  t.els['src-groupby'].value === '[CaseNo]');
+check('the warning clears after the wand runs',
+  t.get('ungroupedColumns()').length === 0);
+check('the note drops back to the informational message',
+  !/gb-wand/.test(t.els['groupby-note'].innerHTML) &&
+  t.els['groupby-note'].style.color === 'var(--text3)');
+check('the wand reports what it changed',
+  /MAX/.test(t.sb.__status) && /id, CaseName/.test(t.sb.__status), t.sb.__status);
+
+// Running it again must be a no-op, not a double-wrap into MAX(MAX(...)).
+const before = JSON.stringify(t.sb.columnMapping);
+t.get('fixGroupBy()');
+check('running the wand twice changes nothing',
+  JSON.stringify(t.sb.columnMapping) === before);
+
+// A joined column is referenced through its alias — MAX([col]) on an
+// ambiguous bare name would not compile.
+t = build({ columnMapping: [
+  { srcCol:'CaseNo', tgtCol:'CaseNo' },
+  { srcCol:'orders.total', tgtCol:'Total', fromJoin:'orders', alias:'s1' },
+] });
+t.set('groupByCols', ['CaseNo']);
+t.get('fixGroupBy()');
+check('a joined column is wrapped through its alias',
+  t.sb.columnMapping[1].literalValue === 'MAX(s1.[total])',
+  t.sb.columnMapping[1].literalValue);
+
+// Nothing to fix → the wand must not touch the mapping.
+t = build({ columnMapping: [{ srcCol:'CaseNo', tgtCol:'CaseNo' }] });
+t.set('groupByCols', ['CaseNo']);
+t.get('fixGroupBy()');
+check('the wand is a no-op when nothing is wrong',
+  t.sb.columnMapping[0].literalValue === undefined);
+
+// ── isAggregateExpr ──────────────────────────────────────────────────────
+// The mapping row strikes through the source column for a hard-coded value.
+// An aggregate still reads that column, so it must not be struck through.
+const isAgg = e => build().get('isAggregateExpr(' + JSON.stringify(e) + ')');
+check('MAX is recognised as an aggregate',   isAgg('MAX([a])') === true);
+check('SUM is recognised as an aggregate',   isAgg('SUM([a])') === true);
+check('COUNT is recognised as an aggregate', isAgg('COUNT(*)') === true);
+check('lower-case aggregates are recognised', isAgg('max([a])') === true);
+check('an aggregate with spacing is recognised', isAgg('MAX ( [a] )') === true);
+check('a plain literal is not an aggregate',  isAgg("'Fixed Param'") === false);
+check('a parameter token is not an aggregate', isAgg('@@date') === false);
+check('an empty value is not an aggregate',   isAgg('') === false);
+check('a column merely named MAXIMUM is not an aggregate',
+  isAgg('[MAXIMUM]') === false);
 
 // ── The mixed AND/OR note ────────────────────────────────────────────────
 // AND binds tighter than OR, so a mixed list does not read the way the rows
