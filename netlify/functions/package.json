@@ -5,6 +5,7 @@
   "private": true,
   "dependencies": {
     "@azure/cosmos": "^4.0.0",
+    "@azure/identity": "^3.4.2",
     "@netlify/blobs": "^7.3.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",
