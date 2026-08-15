@@ -39,18 +39,19 @@
   schedule = "* * * * *"
 
 # ── Caching ──────────────────────────────────────────────────────────────────
-# Shared scripts/styles are re-used across every page, so let the browser serve
-# them straight from cache during a burst of navigation instead of revalidating
-# each one. The window is short (and stale-while-revalidate refreshes in the
-# background) so a new deploy is picked up within a minute or two.
+# Shared scripts/styles are re-used across every page. max-age=300 plus a day
+# of stale-while-revalidate: dashboard alone loads ~20 scripts, and at the old
+# max-age=30 any navigation more than 30s after the last one revalidated every
+# single one. SWR serves from cache instantly and refreshes in the background,
+# so a deploy is still picked up on the first navigation after the window.
 [[headers]]
   for = "/*.js"
   [headers.values]
-    Cache-Control = "public, max-age=30, stale-while-revalidate=120"
+    Cache-Control = "public, max-age=300, stale-while-revalidate=86400"
 [[headers]]
   for = "/*.css"
   [headers.values]
-    Cache-Control = "public, max-age=30, stale-while-revalidate=120"
+    Cache-Control = "public, max-age=300, stale-while-revalidate=86400"
 # The favicon rarely changes and is requested on every page.
 [[headers]]
   for = "/favicon.svg"

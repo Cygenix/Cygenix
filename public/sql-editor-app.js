@@ -1,0 +1,4026 @@
+// sql-editor-app.js — the page logic of sql-editor.html, extracted verbatim from its inline
+// <script> blocks (in original order) so the browser can cache and
+// bytecode-cache it across navigations. Inline scripts are parser-
+// blocking and re-parsed from scratch on every reload; as an external
+// deferred file this runs identically (all blocks already executed
+// against the full DOM semantics they observe today, and defer keeps
+// document order) but is fetched once and code-cached thereafter.
+// The shared libs (connections.js, cygenix-cosmos-sync.js, …) are
+// earlier in <head> with defer, so they run first.
+
+/* ═══ block 1 — extracted from an inline <script> in sql-editor.html ═══ */
+
+// ── Sidebar width mirror ──────────────────────────────────────────────────────
+// cygenix-sidebar.js manages its own collapse state and width, but this page's
+// body padding is keyed off `body.cyg-collapsed`. Watch the sidebar's actual
+// rendered width and toggle the class to match — works regardless of whatever
+// internal state the sidebar script uses, and handles the initial load too.
+(function mirrorSidebarWidth(){
+  function findSidebarEl(){
+    // Try the mount first, then common class/id patterns the sidebar script
+    // might inject. We want the outermost sidebar element whose width actually
+    // changes between collapsed (~54px) and expanded (~230px).
+    const candidates = [
+      document.getElementById('cyg-sidebar'),
+      document.querySelector('.cyg-sidebar'),
+      document.getElementById('cyg-sidebar-mount')
+    ].filter(Boolean);
+    // Prefer the one that currently has non-zero width.
+    return candidates.find(el => el.offsetWidth > 0) || candidates[0];
+  }
+
+  function sync(width){
+    // The collapsed rail is typically ≤ 60px. Anything wider means expanded.
+    const shouldCollapse = width > 0 && width <= 80;
+    document.body.classList.toggle('cyg-collapsed', shouldCollapse);
+  }
+
+  function attach(){
+    const el = findSidebarEl();
+    if (!el) { setTimeout(attach, 50); return; }
+
+    // Initial sync — run after layout has settled
+    requestAnimationFrame(() => sync(el.offsetWidth));
+
+    if (typeof ResizeObserver !== 'undefined'){
+      const ro = new ResizeObserver(entries => {
+        for (const entry of entries) sync(entry.contentRect.width);
+      });
+      ro.observe(el);
+    } else {
+      // Legacy fallback — poll every 200ms. Cheap, and only runs if RO missing.
+      setInterval(() => sync(el.offsetWidth), 200);
+    }
+  }
+
+  // Wait for cygenix-sidebar.js to finish rendering. It's loaded synchronously
+  // above, but it may defer its DOM work to next tick.
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', attach);
+  } else {
+    attach();
+  }
+})();
+
+
+/* ═══ block 2 — extracted from an inline <script> in sql-editor.html ═══ */
+
+// ── Auth ───────────────────────────────────────────────────────────────────────
+if (!sessionStorage.getItem('cygenix_token')) window.location.href='/login.html';
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Monaco Editor bootstrap + textarea proxy shim
+// ──────────────────────────────────────────────────────────────────────────────
+// We keep the <textarea id="sql-editor"> in the DOM as a hidden proxy so all
+// existing code that reads/writes .value, selectionStart, selectionEnd keeps
+// working. A Monaco instance is the visible editor and the source of truth —
+// the proxy just forwards to it once it's ready.
+// ══════════════════════════════════════════════════════════════════════════════
+window.__cygMonaco = { editor: null, ready: false, pendingValue: '', pendingSel: null };
+
+(function setupEditorProxy(){
+  const ta = document.getElementById('sql-editor');
+  if (!ta) return;
+
+  // Capture the original descriptors from HTMLTextAreaElement.prototype so we
+  // can still use the textarea as storage until Monaco mounts.
+  const proto = HTMLTextAreaElement.prototype;
+  const origValue = Object.getOwnPropertyDescriptor(proto, 'value');
+  const origSelStart = Object.getOwnPropertyDescriptor(proto, 'selectionStart');
+  const origSelEnd   = Object.getOwnPropertyDescriptor(proto, 'selectionEnd');
+
+  // Define per-instance overrides on the textarea element only (not the prototype)
+  Object.defineProperty(ta, 'value', {
+    configurable: true,
+    get(){
+      const m = window.__cygMonaco;
+      return m.ready && m.editor ? m.editor.getValue() : (m.pendingValue || origValue.get.call(this));
+    },
+    set(v){
+      const val = v == null ? '' : String(v);
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor) {
+        const model = m.editor.getModel();
+        if (model.getValue() !== val) model.setValue(val);
+      } else {
+        m.pendingValue = val;
+        origValue.set.call(this, val);
+      }
+    }
+  });
+
+  Object.defineProperty(ta, 'selectionStart', {
+    configurable: true,
+    get(){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const sel = m.editor.getSelection();
+        return sel ? m.editor.getModel().getOffsetAt({lineNumber:sel.startLineNumber, column:sel.startColumn}) : 0;
+      }
+      return origSelStart.get.call(this);
+    },
+    set(v){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const pos = m.editor.getModel().getPositionAt(v|0);
+        const sel = m.editor.getSelection();
+        if (sel){
+          m.editor.setSelection({
+            startLineNumber: pos.lineNumber, startColumn: pos.column,
+            endLineNumber: sel.endLineNumber, endColumn: sel.endColumn
+          });
+        } else {
+          m.editor.setPosition(pos);
+        }
+      } else {
+        origSelStart.set && origSelStart.set.call(this, v);
+      }
+    }
+  });
+
+  Object.defineProperty(ta, 'selectionEnd', {
+    configurable: true,
+    get(){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const sel = m.editor.getSelection();
+        return sel ? m.editor.getModel().getOffsetAt({lineNumber:sel.endLineNumber, column:sel.endColumn}) : 0;
+      }
+      return origSelEnd.get.call(this);
+    },
+    set(v){
+      const m = window.__cygMonaco;
+      if (m.ready && m.editor){
+        const pos = m.editor.getModel().getPositionAt(v|0);
+        const sel = m.editor.getSelection();
+        if (sel){
+          m.editor.setSelection({
+            startLineNumber: sel.startLineNumber, startColumn: sel.startColumn,
+            endLineNumber: pos.lineNumber, endColumn: pos.column
+          });
+        } else {
+          m.editor.setPosition(pos);
+        }
+      } else {
+        origSelEnd.set && origSelEnd.set.call(this, v);
+      }
+    }
+  });
+
+  // setSelectionRange is used by the find bar
+  ta.setSelectionRange = function(start, end){
+    const m = window.__cygMonaco;
+    if (m.ready && m.editor){
+      const model = m.editor.getModel();
+      const p1 = model.getPositionAt(start|0);
+      const p2 = model.getPositionAt(end|0);
+      m.editor.setSelection({
+        startLineNumber:p1.lineNumber, startColumn:p1.column,
+        endLineNumber:p2.lineNumber, endColumn:p2.column
+      });
+      m.editor.revealRangeInCenterIfOutsideViewport({
+        startLineNumber:p1.lineNumber, startColumn:p1.column,
+        endLineNumber:p2.lineNumber, endColumn:p2.column
+      });
+    }
+  };
+
+  // focus() should focus Monaco, not the hidden textarea
+  const origFocus = ta.focus.bind(ta);
+  ta.focus = function(){
+    const m = window.__cygMonaco;
+    if (m.ready && m.editor) m.editor.focus();
+    else origFocus();
+  };
+})();
+
+// Load Monaco from CDN
+(function loadMonaco(){
+  const host = document.getElementById('monaco-host');
+  if (!host) return;
+
+  const loaderScript = document.createElement('script');
+  loaderScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js';
+  loaderScript.onload = function(){
+    window.require.config({ paths: { vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' } });
+    window.require(['vs/editor/editor.main'], function(){
+      initMonaco();
+    });
+  };
+  loaderScript.onerror = function(){
+    document.getElementById('monaco-loading').textContent = 'Failed to load editor — check network connection';
+  };
+  document.head.appendChild(loaderScript);
+})();
+
+function initMonaco(){
+  const host = document.getElementById('monaco-host');
+  const loading = document.getElementById('monaco-loading');
+
+  // ── Custom dark theme matching Cygenix palette ───────────────────────────────
+  monaco.editor.defineTheme('cygenix-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'keyword.sql',      foreground: '3d7eff', fontStyle: 'bold' },
+      { token: 'operator.sql',     foreground: 'a78bfa' },
+      { token: 'string.sql',       foreground: '22c97a' },
+      { token: 'number.sql',       foreground: 'f59e0b' },
+      { token: 'comment.sql',      foreground: '555a6a', fontStyle: 'italic' },
+      { token: 'predefined.sql',   foreground: '2dd4bf' },
+      { token: 'identifier.sql',   foreground: 'e8eaf0' },
+      { token: 'delimiter.sql',    foreground: '8b90a0' },
+      { token: 'delimiter.square.sql', foreground: 'a78bfa' }
+    ],
+    colors: {
+      'editor.background':              '#0d0f14',
+      'editor.foreground':              '#e8eaf0',
+      'editorLineNumber.foreground':    '#555a6a',
+      'editorLineNumber.activeForeground':'#8b90a0',
+      'editor.selectionBackground':     '#4A5BD640',
+      'editor.lineHighlightBackground': '#13161d',
+      'editorCursor.foreground':        '#4A5BD6',
+      'editorIndentGuide.background':   '#1a1e28',
+      'editorIndentGuide.activeBackground':'#4A5BD640',
+      'editorBracketMatch.background':  '#4A5BD630',
+      'editorBracketMatch.border':      '#4A5BD6',
+      'editorWidget.background':        '#13161d',
+      'editorWidget.border':            '#ffffff1f',
+      'editorSuggestWidget.background': '#13161d',
+      'editorSuggestWidget.border':     '#ffffff1f',
+      'editorSuggestWidget.selectedBackground':'#4A5BD626',
+      'editorSuggestWidget.highlightForeground':'#4A5BD6',
+      'editorHoverWidget.background':   '#13161d',
+      'editorHoverWidget.border':       '#ffffff1f',
+      'scrollbarSlider.background':     '#ffffff14',
+      'scrollbarSlider.hoverBackground':'#ffffff26',
+      'scrollbarSlider.activeBackground':'#4A5BD659'
+    }
+  });
+
+  // ── Light theme — high-contrast tokens on a white sheet (Oracle look) ────────
+  // Dark, clearly-readable identifiers (the [Bracketed] column names) with a
+  // classic, professional SQL palette. This is the default in light mode.
+  monaco.editor.defineTheme('cygenix-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [
+      { token: '',                     foreground: '1a1d21' },   // fallback: dark
+      { token: 'keyword.sql',          foreground: '0033b3', fontStyle: 'bold' },
+      { token: 'operator.sql',         foreground: '5c2699' },
+      { token: 'string.sql',           foreground: '0a7c42' },
+      { token: 'number.sql',           foreground: '9a5b00' },
+      { token: 'comment.sql',          foreground: '6e7781', fontStyle: 'italic' },
+      { token: 'predefined.sql',       foreground: '0e7490' },   // functions
+      { token: 'identifier.sql',       foreground: '1a1d21' },   // column names — dark & readable
+      { token: 'delimiter.sql',        foreground: '57606a' },
+      { token: 'delimiter.square.sql', foreground: '57606a' }    // the [ ] brackets
+    ],
+    colors: {
+      'editor.background':              '#ffffff',
+      'editor.foreground':              '#1a1d21',
+      'editorLineNumber.foreground':    '#b0b8c0',
+      'editorLineNumber.activeForeground':'#1a1d21',
+      'editor.selectionBackground':     '#4A5BD626',
+      'editor.inactiveSelectionBackground':'#4A5BD614',
+      'editor.lineHighlightBackground': '#f6f7f9',
+      'editorCursor.foreground':        '#4A5BD6',
+      'editorIndentGuide.background':   '#e6e9ec',
+      'editorIndentGuide.activeBackground':'#4A5BD655',
+      'editorBracketMatch.background':  '#4A5BD622',
+      'editorBracketMatch.border':      '#4A5BD6',
+      'editorWidget.background':        '#ffffff',
+      'editorWidget.border':            '#d0d7de',
+      'editorSuggestWidget.background': '#ffffff',
+      'editorSuggestWidget.border':     '#d0d7de',
+      'editorSuggestWidget.selectedBackground':'#4A5BD618',
+      'editorSuggestWidget.highlightForeground':'#4A5BD6',
+      'editorHoverWidget.background':   '#ffffff',
+      'editorHoverWidget.border':       '#d0d7de',
+      'scrollbarSlider.background':     '#00000020',
+      'scrollbarSlider.hoverBackground':'#00000033',
+      'scrollbarSlider.activeBackground':'#4A5BD666'
+    }
+  });
+
+  // ── Create the editor ────────────────────────────────────────────────────────
+  const ta = document.getElementById('sql-editor');
+  const initial = window.__cygMonaco.pendingValue || '';
+
+  // Match the editor theme to the app theme (light is the Oracle default).
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const editorTheme = isDark ? 'cygenix-dark' : 'cygenix-light';
+
+  const editor = monaco.editor.create(host, {
+    value: initial,
+    language: 'sql',
+    theme: editorTheme,
+    fontFamily: "'IBM Plex Mono', monospace",
+    fontSize: 13.5,
+    lineHeight: 22,
+    minimap: { enabled: false },
+    scrollBeyondLastLine: false,
+    renderLineHighlight: 'line',
+    lineNumbers: 'on',
+    folding: true,
+    wordWrap: 'off',
+    tabSize: 2,
+    insertSpaces: true,
+    automaticLayout: true,
+    suggestOnTriggerCharacters: true,
+    quickSuggestions: { other: true, comments: false, strings: false },
+    acceptSuggestionOnEnter: 'smart',
+    snippetSuggestions: 'inline',
+    formatOnPaste: false,
+    formatOnType: false,
+    bracketPairColorization: { enabled: true },
+    padding: { top: 12, bottom: 12 }
+  });
+
+  window.__cygMonaco.editor = editor;
+  window.__cygMonaco.ready  = true;
+
+  if (loading) loading.remove();
+
+  // ── Sync Monaco → existing status/unsaved hooks ──────────────────────────────
+  editor.onDidChangeModelContent(() => {
+    if (typeof updateStatus === 'function') updateStatus();
+    const savedEl = document.getElementById('status-saved');
+    if (savedEl) { savedEl.textContent='Unsaved'; savedEl.style.color='var(--amber)'; }
+    // Fire a synthetic input event so any other listeners still work
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  editor.onDidChangeCursorPosition(() => {
+    if (typeof updateStatus === 'function') updateStatus();
+  });
+  editor.onDidChangeCursorSelection(() => {
+    if (typeof updateStatus === 'function') updateStatus();
+  });
+
+  // ── Keybindings ──────────────────────────────────────────────────────────────
+  // Ctrl+Enter runs the query
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+    if (typeof runSQL === 'function') runSQL();
+  });
+  // Ctrl+S saves the script (prevent browser save) — uses smart-save so jobs
+  // save back to the job and scripts save back to the script.
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+    if (typeof saveCurrent === 'function') saveCurrent();
+    else if (typeof saveScript === 'function') saveScript();
+  });
+  // Ctrl+/ toggles line comment — use Monaco's built-in action, it handles
+  // selection & uncomment natively and works better than our textarea version
+  editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => {
+    editor.getAction('editor.action.commentLine').run();
+  });
+  // Ctrl+F — let Monaco's built-in Find widget handle it; the custom find bar
+  // still works via its buttons but Ctrl+F inside the editor is native now.
+
+  // ── SQL completion provider (keywords, functions, snippets, schema) ──────────
+  registerSqlCompletions();
+
+  // ── Set initial value if we had anything queued ──────────────────────────────
+  if (window.__cygMonaco.pendingValue && editor.getValue() !== window.__cygMonaco.pendingValue){
+    editor.setValue(window.__cygMonaco.pendingValue);
+  }
+  window.__cygMonaco.pendingValue = '';
+
+  // Focus the editor for immediate typing
+  setTimeout(() => editor.focus(), 100);
+}
+
+// ── T-SQL completion provider ───────────────────────────────────────────────────
+function registerSqlCompletions(){
+  const KEYWORDS = [
+    'SELECT','FROM','WHERE','JOIN','INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','CROSS JOIN',
+    'ON','AND','OR','NOT','IN','NOT IN','EXISTS','NOT EXISTS','BETWEEN','LIKE','IS NULL','IS NOT NULL',
+    'INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','MERGE','OUTPUT',
+    'GROUP BY','ORDER BY','HAVING','UNION','UNION ALL','INTERSECT','EXCEPT',
+    'TOP','DISTINCT','AS','WITH','CTE','OVER','PARTITION BY',
+    'CASE','WHEN','THEN','ELSE','END',
+    'BEGIN','END','IF','ELSE','WHILE','BREAK','CONTINUE','RETURN','GOTO','TRY','CATCH',
+    'DECLARE','EXEC','EXECUTE','PRINT','RAISERROR','THROW',
+    'CREATE TABLE','ALTER TABLE','DROP TABLE','TRUNCATE TABLE',
+    'CREATE INDEX','DROP INDEX','CREATE VIEW','CREATE PROCEDURE','CREATE FUNCTION',
+    'PRIMARY KEY','FOREIGN KEY','REFERENCES','CONSTRAINT','UNIQUE','CHECK','DEFAULT','IDENTITY',
+    'BEGIN TRAN','BEGIN TRANSACTION','COMMIT','ROLLBACK','SAVE TRAN',
+    'USE','GO','SCHEMA','TABLE','VIEW','INDEX','PROCEDURE','FUNCTION','TRIGGER'
+  ];
+
+  const FUNCTIONS = [
+    // Aggregates
+    {name:'COUNT',        insert:'COUNT(${1:*})',         doc:'Count of rows'},
+    {name:'SUM',          insert:'SUM(${1:column})',      doc:'Sum of values'},
+    {name:'AVG',          insert:'AVG(${1:column})',      doc:'Average of values'},
+    {name:'MIN',          insert:'MIN(${1:column})',      doc:'Minimum value'},
+    {name:'MAX',          insert:'MAX(${1:column})',      doc:'Maximum value'},
+    // String
+    {name:'LEN',          insert:'LEN(${1:expr})',        doc:'String length'},
+    {name:'LTRIM',        insert:'LTRIM(${1:expr})',      doc:'Trim left whitespace'},
+    {name:'RTRIM',        insert:'RTRIM(${1:expr})',      doc:'Trim right whitespace'},
+    {name:'TRIM',         insert:'TRIM(${1:expr})',       doc:'Trim whitespace'},
+    {name:'UPPER',        insert:'UPPER(${1:expr})',      doc:'Uppercase'},
+    {name:'LOWER',        insert:'LOWER(${1:expr})',      doc:'Lowercase'},
+    {name:'SUBSTRING',    insert:'SUBSTRING(${1:expr}, ${2:start}, ${3:length})', doc:'Extract substring'},
+    {name:'REPLACE',      insert:'REPLACE(${1:expr}, ${2:find}, ${3:replace})',   doc:'Replace text'},
+    {name:'CHARINDEX',    insert:'CHARINDEX(${1:find}, ${2:expr})', doc:'Position of substring'},
+    {name:'CONCAT',       insert:'CONCAT(${1:a}, ${2:b})', doc:'Concatenate strings'},
+    {name:'FORMAT',       insert:'FORMAT(${1:value}, ${2:\'format\'})', doc:'Format value'},
+    // Date
+    {name:'GETDATE',      insert:'GETDATE()',              doc:'Current date/time'},
+    {name:'GETUTCDATE',   insert:'GETUTCDATE()',           doc:'Current UTC date/time'},
+    {name:'SYSDATETIME',  insert:'SYSDATETIME()',          doc:'High-precision datetime'},
+    {name:'DATEADD',      insert:'DATEADD(${1:day}, ${2:1}, ${3:date})', doc:'Add to date'},
+    {name:'DATEDIFF',     insert:'DATEDIFF(${1:day}, ${2:from}, ${3:to})', doc:'Difference between dates'},
+    {name:'DATEPART',     insert:'DATEPART(${1:year}, ${2:date})', doc:'Extract part of date'},
+    {name:'YEAR',         insert:'YEAR(${1:date})',        doc:'Year from date'},
+    {name:'MONTH',        insert:'MONTH(${1:date})',       doc:'Month from date'},
+    {name:'DAY',          insert:'DAY(${1:date})',         doc:'Day from date'},
+    // Conversion
+    {name:'CAST',         insert:'CAST(${1:expr} AS ${2:type})', doc:'Type conversion'},
+    {name:'CONVERT',      insert:'CONVERT(${1:type}, ${2:expr})', doc:'Type conversion with style'},
+    {name:'TRY_CAST',     insert:'TRY_CAST(${1:expr} AS ${2:type})', doc:'Safe type conversion (null on failure)'},
+    {name:'TRY_CONVERT',  insert:'TRY_CONVERT(${1:type}, ${2:expr})', doc:'Safe convert (null on failure)'},
+    // Null handling
+    {name:'ISNULL',       insert:'ISNULL(${1:expr}, ${2:default})', doc:'Replace null with default'},
+    {name:'COALESCE',     insert:'COALESCE(${1:a}, ${2:b})', doc:'First non-null value'},
+    {name:'NULLIF',       insert:'NULLIF(${1:a}, ${2:b})', doc:'Null if equal'},
+    // Window
+    {name:'ROW_NUMBER',   insert:'ROW_NUMBER() OVER (ORDER BY ${1:col})', doc:'Sequential row number'},
+    {name:'RANK',         insert:'RANK() OVER (ORDER BY ${1:col})', doc:'Ranking with gaps'},
+    {name:'DENSE_RANK',   insert:'DENSE_RANK() OVER (ORDER BY ${1:col})', doc:'Ranking without gaps'},
+    {name:'LAG',          insert:'LAG(${1:col}, ${2:1}) OVER (ORDER BY ${3:col})', doc:'Previous row value'},
+    {name:'LEAD',         insert:'LEAD(${1:col}, ${2:1}) OVER (ORDER BY ${3:col})', doc:'Next row value'},
+    // Meta
+    {name:'OBJECT_ID',    insert:'OBJECT_ID(\'${1:name}\')', doc:'Object ID by name'},
+    {name:'DB_NAME',      insert:'DB_NAME()',              doc:'Current database name'},
+    {name:'SCHEMA_NAME',  insert:'SCHEMA_NAME()',          doc:'Current schema name'},
+    {name:'@@VERSION',    insert:'@@VERSION',              doc:'SQL Server version'},
+    {name:'@@ROWCOUNT',   insert:'@@ROWCOUNT',             doc:'Rows affected by last statement'},
+    {name:'@@IDENTITY',   insert:'@@IDENTITY',             doc:'Last identity value'}
+  ];
+
+  const SNIPPETS = [
+    {
+      name:'select-top',
+      doc:'SELECT TOP n … FROM …',
+      insert:'SELECT TOP ${1:100} *\nFROM ${2:[schema].[table]}\nWHERE ${3:1=1}'
+    },
+    {
+      name:'select-join',
+      doc:'SELECT … JOIN … ON …',
+      insert:'SELECT ${1:t1}.*, ${2:t2}.*\nFROM ${3:[schema].[table1]} ${1:t1}\nINNER JOIN ${4:[schema].[table2]} ${2:t2} ON ${1:t1}.${5:id} = ${2:t2}.${6:fk}\nWHERE ${7:1=1}'
+    },
+    {
+      name:'cte',
+      doc:'WITH … AS (…) SELECT …',
+      insert:'WITH ${1:cte_name} AS (\n  SELECT ${2:*}\n  FROM ${3:table}\n  WHERE ${4:1=1}\n)\nSELECT * FROM ${1:cte_name}'
+    },
+    {
+      name:'tran-rollback',
+      doc:'BEGIN TRAN / ROLLBACK template',
+      insert:'BEGIN TRAN;\n\n${1:-- statements}\n\nROLLBACK; -- COMMIT;'
+    },
+    {
+      name:'try-catch',
+      doc:'BEGIN TRY / BEGIN CATCH block',
+      insert:'BEGIN TRY\n  ${1:-- statements}\nEND TRY\nBEGIN CATCH\n  SELECT\n    ERROR_NUMBER()  AS ErrorNumber,\n    ERROR_MESSAGE() AS ErrorMessage,\n    ERROR_LINE()    AS ErrorLine;\nEND CATCH'
+    },
+    {
+      name:'merge',
+      doc:'MERGE into target USING source',
+      insert:'MERGE ${1:target} AS t\nUSING ${2:source} AS s\n  ON t.${3:id} = s.${3:id}\nWHEN MATCHED THEN\n  UPDATE SET t.${4:col} = s.${4:col}\nWHEN NOT MATCHED BY TARGET THEN\n  INSERT (${5:cols}) VALUES (${6:vals});'
+    },
+    {
+      name:'case',
+      doc:'CASE WHEN … THEN … END',
+      insert:'CASE\n  WHEN ${1:condition} THEN ${2:value}\n  ELSE ${3:default}\nEND'
+    },
+    {
+      name:'upsert-ifexists',
+      doc:'IF EXISTS … UPDATE ELSE INSERT',
+      insert:'IF EXISTS (SELECT 1 FROM ${1:target} WHERE ${2:id} = ${3:@id})\n  UPDATE ${1:target} SET ${4:col} = ${5:@val} WHERE ${2:id} = ${3:@id};\nELSE\n  INSERT INTO ${1:target} (${2:id}, ${4:col}) VALUES (${3:@id}, ${5:@val});'
+    }
+  ];
+
+  monaco.languages.registerCompletionItemProvider('sql', {
+    triggerCharacters: [' ', '.', '[', '@'],
+    provideCompletionItems: function(model, position){
+      const word = model.getWordUntilPosition(position);
+      const range = {
+        startLineNumber: position.lineNumber,
+        endLineNumber:   position.lineNumber,
+        startColumn:     word.startColumn,
+        endColumn:       word.endColumn
+      };
+      const lineText = model.getLineContent(position.lineNumber).slice(0, position.column - 1);
+      const suggestions = [];
+
+      // Keywords
+      KEYWORDS.forEach(kw => {
+        suggestions.push({
+          label: kw,
+          kind: monaco.languages.CompletionItemKind.Keyword,
+          insertText: kw,
+          range,
+          sortText: '1_' + kw
+        });
+      });
+
+      // Functions
+      FUNCTIONS.forEach(fn => {
+        suggestions.push({
+          label: fn.name,
+          kind: monaco.languages.CompletionItemKind.Function,
+          insertText: fn.insert,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          documentation: fn.doc,
+          detail: 'T-SQL function',
+          range,
+          sortText: '2_' + fn.name
+        });
+      });
+
+      // Snippets
+      SNIPPETS.forEach(sn => {
+        suggestions.push({
+          label: sn.name,
+          kind: monaco.languages.CompletionItemKind.Snippet,
+          insertText: sn.insert,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          documentation: sn.doc,
+          detail: 'Snippet',
+          range,
+          sortText: '0_' + sn.name
+        });
+      });
+
+      // Schema (tables & columns) from live schema cache if present
+      try {
+        const schema = window.__schemaCache || window.schemaCache || null;
+        if (schema) {
+          // Support a few shapes: { tables: [{name, schema, columns:[...]}, ...] }
+          // or flat { 'dbo.table': ['col1','col2', ...] }
+          const afterDot = /\.\s*$/.test(lineText) || /\[\s*$/.test(lineText);
+
+          const addTable = (schemaName, tableName) => {
+            const full = schemaName ? `[${schemaName}].[${tableName}]` : `[${tableName}]`;
+            suggestions.push({
+              label: tableName,
+              kind: monaco.languages.CompletionItemKind.Class,
+              insertText: full,
+              detail: schemaName ? `Table in [${schemaName}]` : 'Table',
+              range,
+              sortText: '3_' + tableName
+            });
+          };
+          const addColumn = (colName, tableName) => {
+            suggestions.push({
+              label: colName,
+              kind: monaco.languages.CompletionItemKind.Field,
+              insertText: colName,
+              detail: tableName ? `Column of ${tableName}` : 'Column',
+              range,
+              sortText: (afterDot ? '0_' : '4_') + colName
+            });
+          };
+
+          if (Array.isArray(schema.tables)) {
+            schema.tables.forEach(t => {
+              addTable(t.schema || t.schema_name || 'dbo', t.name || t.table_name);
+              (t.columns || []).forEach(c => addColumn(c.name || c, t.name));
+            });
+          } else if (typeof schema === 'object') {
+            Object.keys(schema).forEach(key => {
+              const parts = key.split('.');
+              addTable(parts.length > 1 ? parts[0] : null, parts[parts.length - 1]);
+              const cols = schema[key];
+              if (Array.isArray(cols)) cols.forEach(c => addColumn(typeof c === 'string' ? c : c.name, key));
+            });
+          }
+        }
+      } catch(e) { /* schema cache absent or malformed — fine */ }
+
+      return { suggestions };
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const SCRIPTS_KEY = 'cygenix_sql_scripts';
+let scripts = [];
+let currentScript = null;
+// When the editor content came from a specific Co-Worker Drive file (dragged
+// in, or opened via "Open from Drive…"), this holds { id, name } of that Drive
+// node. "Save as Script" then writes straight back to that same file.
+let currentDriveFile = null;
+let queryHistory = [];
+
+// API key is read from localStorage directly when needed (askClaude). The
+// top-bar input that used to live here was removed in favour of an inline
+// prompt the first time AI is invoked — the key still persists across
+// sessions under localStorage['cygenix_api_key'] like before.
+
+// ── Script library ─────────────────────────────────────────────────────────────
+// Track currently loaded job
+var currentJobId = null;
+
+// Scripts now live in the shared Co-Worker Drive (real .sql files under a
+// "SQL Editor" folder) so they're managed in one place alongside the co-worker.
+// We keep an in-memory `scripts` cache (so rendering/loadScript stay sync) and
+// a localStorage mirror as an offline/resilience fallback.
+async function loadScripts() {
+  try {
+    if (window.CygenixDrive) {
+      // One-time import of any pre-existing localStorage scripts into the Drive.
+      if (!localStorage.getItem(SCRIPTS_KEY + '_drive_migrated')) {
+        let legacy = [];
+        try { legacy = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || '[]'); } catch {}
+        for (const s of legacy) { if (s && s.id) { try { await CygenixDrive.upsertScript(s); } catch (_) {} } }
+        try { localStorage.setItem(SCRIPTS_KEY + '_drive_migrated', '1'); } catch {}
+      }
+      scripts = await CygenixDrive.listScripts();
+    } else {
+      scripts = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || '[]');
+    }
+  } catch (e) {
+    try { scripts = JSON.parse(localStorage.getItem(SCRIPTS_KEY) || '[]'); } catch { scripts = []; }
+  }
+  try { renderLibrary(); } catch (_) {}
+}
+function saveScripts() {
+  // Mirror to localStorage (fast, synchronous safety net)…
+  try { localStorage.setItem(SCRIPTS_KEY, JSON.stringify(scripts)); } catch {}
+  // …and persist to the Drive (source of truth). Fire-and-forget: the in-memory
+  // `scripts` array is already updated, and the UI renders from that.
+  if (window.CygenixDrive) { try { CygenixDrive.syncScripts(scripts.slice()).catch(() => {}); } catch (_) {} }
+}
+
+function renderScriptList() { renderLibrary(); }
+
+function newScript() {
+  const id = 'script_'+Date.now();
+  currentScript = null;     // not yet saved — saveScript() will assign on first save
+  currentJobId  = null;
+  currentDriveFile = null;  // fresh draft — not linked to any Drive file
+  document.getElementById('sql-editor').value = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+  document.getElementById('script-desc').value = '';
+  updateLineNumbers();
+  clearResults();
+  setEditorContext('draft', null, 'New script');
+  renderLibrary();
+  document.getElementById('sql-editor').focus();
+}
+
+function loadScript(id) {
+  const s = scripts.find(s=>s.id===id);
+  if (!s) return;
+  currentScript = id;
+  currentJobId  = null;
+  currentDriveFile = null;  // a saved script, not a linked Drive file
+  document.getElementById('sql-editor').value = s.sql;
+  updateLineNumbers();
+  document.getElementById('conn-select').value = s.conn||'source';
+  const descEl = document.getElementById('script-desc');
+  if (descEl) descEl.value = s.desc || '';
+  updateConnLabel();
+  updateStatus();
+  setEditorContext('script', s.id, s.name);
+  renderLibrary();
+  clearResults();
+}
+
+function saveScript() {
+  const sql  = document.getElementById('sql-editor').value.trim();
+  const name = document.getElementById('script-name').value.trim() || 'Untitled script';
+  const conn = document.getElementById('conn-select').value;
+  if (!sql) { alert('Write some SQL first.'); return; }
+
+  const desc = document.getElementById('script-desc')?.value.trim() || '';
+  const existing = currentScript ? scripts.find(s=>s.id===currentScript) : null;
+  if (existing) {
+    existing.name=name; existing.sql=sql; existing.conn=conn; existing.desc=desc; existing.updated=new Date().toISOString();
+  } else {
+    const s = {id:'script_'+Date.now(), name, sql, conn, desc, created:new Date().toISOString(), updated:new Date().toISOString()};
+    currentScript = s.id;
+    scripts.unshift(s);
+  }
+  saveScripts();
+  setEditorContext('script', currentScript, name);
+  renderLibrary();
+  setExecStatus('✓ Saved', 'var(--green)');
+  const savedEl = document.getElementById('status-saved');
+  if (savedEl) { savedEl.textContent='Saved'; savedEl.style.color='var(--green)'; }
+}
+
+async function deleteScript(id) {
+  const s = scripts.find(s=>s.id===id);
+  if (!s) return;
+  const ok = await confirmDialog({
+    title: 'Delete script?',
+    body:  'Permanently delete <b>"'+esc(s.name)+'"</b>? This cannot be undone.',
+    confirmLabel: 'Delete',
+    danger: true
+  });
+  if (!ok) return;
+  scripts = scripts.filter(s=>s.id!==id);
+  saveScripts();
+  if (currentScript === id) {
+    currentScript = null;
+    document.getElementById('sql-editor').value = '';
+    updateLineNumbers();
+    setEditorContext('draft', null, 'New script');
+    clearResults();
+  }
+  renderLibrary();
+  setExecStatus('Script deleted', 'var(--red)');
+  setTimeout(()=>setExecStatus('',''), 2000);
+}
+
+// ── Move a saved script to Migration Jobs ─────────────────────────────────────
+// Opens the group picker modal; if the user confirms the move, the script is
+// removed from the saved-scripts list (true move, not a copy).
+async function moveScriptToJob(id) {
+  const s = scripts.find(s => s.id === id);
+  if (!s) return;
+  if (!s.sql || !s.sql.trim()) { alert('This script has no SQL to move.'); return; }
+
+  const result = await promoteSQLToJob({
+    sql:  s.sql,
+    name: s.name,
+    conn: s.conn || 'source',
+    desc: s.desc || ''
+  });
+  if (!result.ok) return;  // user cancelled or an error alerted
+
+  // Remove the script from saved scripts
+  scripts = scripts.filter(x => x.id !== id);
+  saveScripts();
+  if (currentScript === id) {
+    currentScript = null;
+    document.getElementById('sql-editor').value = '';
+    updateLineNumbers();
+    const nm = document.getElementById('script-name');
+    if (nm) nm.value = 'New script';
+    clearResults();
+  }
+  renderScriptList();
+  if (typeof renderJobsList === 'function') renderJobsList();
+
+  setExecStatus('✓ Moved to ' + result.projectName + ' › ' + result.groupName + ': ' + s.name, 'var(--purple)');
+  setTimeout(() => setExecStatus('',''), 4000);
+}
+
+// ── Load SQL from file ────────────────────────────────────────────────────────
+function loadSQLFromFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const sql = e.target.result;
+    document.getElementById('sql-editor').value = sql;
+    updateLineNumbers();
+    // Use filename (without extension) as script name
+    const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g,' ');
+    document.getElementById('script-desc').value = 'Loaded from file: ' + file.name;
+    currentScript = null;
+    currentJobId  = null;
+    setEditorContext('draft', null, name);
+    updateStatus();
+    updateLineNumbers();
+    clearResults();
+    renderLibrary();
+    setExecStatus('✓ Loaded: ' + file.name + ' (' + Math.ceil(sql.length/1024) + 'KB)', 'var(--green)');
+    setTimeout(()=>setExecStatus('',''), 3000);
+  };
+  reader.onerror = function() { alert('Could not read file: ' + file.name); };
+  reader.readAsText(file, 'utf-8');
+  // Reset input so same file can be reloaded
+  input.value = '';
+}
+
+// ── Connection ─────────────────────────────────────────────────────────────────
+function getConn() {
+  const c = CygenixConnections.get();
+  const which = document.getElementById('conn-select').value;
+  if (which === 'target') return c.tgtFnUrl ? c.tgtFnUrl+(c.tgtFnKey?'?code='+encodeURIComponent(c.tgtFnKey):'') : c.tgtConnString;
+  // Source: same shape as target — Azure Function URL takes priority over
+  // connection string. Without this branch, picking Source DB while in
+  // source-Azure mode silently fell through to an empty string and every
+  // query 401'd.
+  if (c.srcFnUrl) return c.srcFnUrl + (c.srcFnKey ? '?code=' + encodeURIComponent(c.srcFnKey) : '');
+  return c.srcConnString;
+}
+
+function updateConnLabel() {
+  // Real implementation lives lower in the file (search for the second
+  // updateConnLabel definition) — that one resolves real database names
+  // for the dropdown options + status bar. Keeping a stub here so that any
+  // call site that was hit before the file finished parsing doesn't break.
+  // (Function declarations get hoisted, so in practice the second
+  // definition always wins, but the stub doesn't hurt either way.)
+  const which = document.getElementById('conn-select')?.value;
+  const sb = document.getElementById('status-conn');
+  if (sb && which) sb.textContent = 'DB: ' + (which==='target'?'Target':'Source');
+}
+
+function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
+
+async function dbCall(sql) {
+  const conn = getConn();
+  if (!conn) throw new Error('No connection configured — set in Dashboard → Configure → Connections');
+  const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
+  const body = isFn(conn) ? {action:'execute',sql} : {action:'execute',sql,connectionString:conn};
+  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
+  const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+  if (!res.ok) throw new Error(data.error||res.statusText);
+  return data;
+}
+
+// ── Run SQL ────────────────────────────────────────────────────────────────────
+function isDML(sql) {
+  // Returns true if the SQL is primarily a write operation (INSERT/UPDATE/DELETE/EXEC/MERGE)
+  const trimmed = sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim();
+  return /^\s*(INSERT|UPDATE|DELETE|MERGE|EXEC|EXECUTE|CREATE|ALTER|DROP|TRUNCATE|DECLARE|BEGIN|SET\s+\w|USE\s+\[)/i.test(trimmed);
+}
+
+// Statements that MODIFY data or schema. Narrower than isDML(), which also
+// counts DECLARE/BEGIN/SET/USE and read-only EXECs — those must not trigger
+// the source-write warning or it would fire on ordinary scripts.
+function isWriteStatement(sql) {
+  const trimmed = sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim();
+  return /^\s*(INSERT|UPDATE|DELETE|MERGE|DROP|TRUNCATE|ALTER)\b/i.test(trimmed);
+}
+
+// Track job execution — updates job record with run history for calendar
+function trackJobExecution(jobId, rowsAffected, ms, sql) {
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const idx  = jobs.findIndex(j => j.id === jobId);
+    if (idx < 0) return;
+
+    const run = {
+      ts:           new Date().toISOString(),
+      rowsAffected,
+      ms,
+      sqlPreview:   sql.trim().slice(0, 120),
+      status:       'success'
+    };
+
+    // Update job fields
+    jobs[idx].lastRun      = run.ts;
+    jobs[idx].lastRowCount = rowsAffected;
+    jobs[idx].status       = rowsAffected > 0 ? 'complete' : 'ready';
+    jobs[idx].runHistory   = [run, ...(jobs[idx].runHistory || [])].slice(0, 10); // keep last 10
+
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+    console.log('[SQL Editor] Job execution tracked:', jobId, rowsAffected, 'rows');
+  } catch(e) {
+    console.warn('[SQL Editor] Failed to track job execution:', e.message);
+  }
+}
+
+async function runSQL() {
+  const editor = document.getElementById('sql-editor');
+  const sel = editor.value.substring(editor.selectionStart, editor.selectionEnd).trim();
+  const sql = sel || editor.value.trim();
+  if (!sql) { alert('Write some SQL first.'); return; }
+
+  // Guard against writing to the SOURCE database by accident. The Run
+  // connection defaults to "Source DB", and a loaded migration script is
+  // usually a write against the TARGET — so an INSERT/UPDATE/DELETE can land
+  // on the source without any prompt. During a migration the source is the
+  // one database that must not be modified, so confirm before proceeding.
+  const connSel = document.getElementById('conn-select');
+  if (connSel && connSel.value === 'source' && isWriteStatement(sql)) {
+    const verb = (sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim().match(/^\s*(\w+)/) || [,'This'])[1].toUpperCase();
+    if (!confirm(
+      'You are about to run a ' + verb + ' against the SOURCE database.\n\n' +
+      'Migration scripts normally write to the TARGET. Running this on the source will modify your source data.\n\n' +
+      'Switch the connection dropdown to "Target DB" if that is what you meant.\n\n' +
+      'Run against the SOURCE anyway?'
+    )) {
+      setExecStatus('Cancelled — connection is set to Source DB', 'var(--amber)');
+      return;
+    }
+  }
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled=true; btn.textContent='Running…';
+  setExecStatus('Executing…', 'var(--amber)');
+
+  const t0 = Date.now();
+  try {
+    const res = await dbCall(sql);
+    const ms  = Date.now()-t0;
+    const rows = res.recordset || [];
+
+    // For DML (INSERT/UPDATE/DELETE etc.) there is no recordset — show rows affected
+    if (!rows.length && isDML(sql)) {
+      // Sum up rowsAffected — mssql returns an array for multi-statement scripts
+      const affected = Array.isArray(res.rowsAffected)
+        ? res.rowsAffected.reduce((a,b) => a + (b||0), 0)
+        : (res.rowsAffected || 0);
+      renderDMLResult(affected, ms, sql);
+      setExecStatus(`✓ ${affected.toLocaleString()} row${affected!==1?'s':''} affected · ${ms}ms`, 'var(--green)');
+      addHistory({sql, rows:affected, ms, ts:new Date().toISOString(), ok:true});
+      // Track execution on the job record for calendar history
+      if (currentJobId && isDML(sql)) trackJobExecution(currentJobId, affected, ms, sql);
+    } else {
+      renderResults(rows, ms, sql);
+      setExecStatus(`✓ ${rows.length.toLocaleString()} row${rows.length!==1?'s':''} · ${ms}ms`, 'var(--green)');
+      addHistory({sql, rows:rows.length, ms, ts:new Date().toISOString(), ok:true});
+    }
+  } catch(e) {
+    renderError(e.message);
+    setExecStatus('✕ Error', 'var(--red)');
+    addHistory({sql, rows:0, ms:Date.now()-t0, ts:new Date().toISOString(), ok:false, err:e.message});
+  } finally {
+    btn.disabled=false; btn.textContent='▶ Run';
+    // switchBottomTab, not the old switchRightTab: the rename left this call
+    // behind, and the ReferenceError it threw aborted the rest of this block —
+    // so autoExpandResultsPane() below never ran and results stayed hidden.
+    switchBottomTab('results');
+    // Auto-expand the results panel if it's collapsed, so the user sees the
+    // outcome (rows / DML message / error) without needing to drag it open.
+    autoExpandResultsPane();
+  }
+}
+
+// Opens the bottom results panel if it's currently collapsed. Keeps state
+// consistent with toggleResultsPane() by updating the chevron and flag.
+function autoExpandResultsPane() {
+  const rb  = document.getElementById('results-bottom');
+  if (!rb) return;
+  // Consider it collapsed if the state flag says so, or if its height is still
+  // the 36px header-only height we set in markup.
+  const isCollapsed = resultsCollapsed || rb.offsetHeight <= 40;
+  if (!isCollapsed) return;
+  expandResults();
+  resultsCollapsed = false;
+  const btn = document.getElementById('results-toggle');
+  if (btn) { btn.textContent = '⌃'; btn.title = 'Collapse results'; }
+}
+
+// Store last results for export/pivot
+let lastResults = { rows:[], cols:[], ms:0 };
+let resultsView = 'row'; // 'row' | 'column'
+
+function renderDMLResult(affected, ms, sql) {
+  const wrap   = document.getElementById('results-container');
+  const footer = document.getElementById('results-footer');
+  switchBottomTab('results');
+  document.getElementById('results-toolbar').style.display = 'none';
+  lastResults = {rows:[], cols:[], ms};
+
+  // Detect what kind of DML so the message is accurate
+  const verb = /^\s*INSERT/i.test(sql.trim()) ? 'inserted'
+             : /^\s*UPDATE/i.test(sql.trim()) ? 'updated'
+             : /^\s*DELETE/i.test(sql.trim()) ? 'deleted'
+             : /^\s*MERGE/i.test(sql.trim())  ? 'merged'
+             : 'affected';
+
+  wrap.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:0.5rem;padding:2rem">
+      <div style="font-size:28px">✅</div>
+      <div style="font-size:16px;font-weight:600;color:var(--green)">${affected.toLocaleString()} row${affected!==1?'s':''} ${verb}</div>
+      <div style="font-size:12px;color:var(--text3);font-family:var(--mono)">Completed in ${ms}ms</div>
+    </div>`;
+  if (footer) footer.textContent = '';
+}
+
+function renderResults(rows, ms, sql) {
+  const wrap   = document.getElementById('results-container');
+  const footer = document.getElementById('results-footer');
+  switchBottomTab('results');
+
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="results-empty" style="color:var(--text3)">✓ Query executed in ${ms}ms — no rows returned</div>`;
+    if (footer) footer.textContent = '';
+    document.getElementById('results-toolbar').style.display = 'none';
+    lastResults = {rows:[],cols:[],ms};
+    return;
+  }
+
+  const cols = Object.keys(rows[0]);
+  lastResults = {rows, cols, ms};
+  document.getElementById('results-toolbar').style.display = 'flex';
+  expandResults();
+  resultsView = 'row';
+  document.getElementById('btn-row-view').classList.add('active');
+  document.getElementById('btn-col-view').classList.remove('active');
+  drawResultsTable(rows, cols, ms);
+}
+
+function drawResultsTable(rows, cols, ms) {
+  const wrap   = document.getElementById('results-container');
+  const footer = document.getElementById('results-footer');
+  const MAX    = 1000;
+
+  if (resultsView === 'row') {
+    wrap.innerHTML = `<table class="results-table">
+      <thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.slice(0,MAX).map(r=>`<tr>${cols.map(c=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table>`;
+  } else {
+    // Pivot: columns become rows, each data row becomes a column
+    const showRows = Math.min(rows.length, 20); // limit columns in pivot
+    const headerCols = Array.from({length:showRows},(_,i)=>`Row ${i+1}`);
+    wrap.innerHTML = `<table class="pivot-table">
+      <thead><tr><th>Column</th>${headerCols.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+      <tbody>${cols.map(c=>`<tr>
+        <td>${esc(c)}</td>
+        ${rows.slice(0,showRows).map(r=>`<td title="${esc(String(r[c]??''))}">${esc(String(r[c]??''))}</td>`).join('')}
+      </tr>`).join('')}</tbody>
+    </table>${rows.length>20?`<div style="padding:0.5rem 0.75rem;font-size:10px;color:var(--text3);font-family:var(--mono)">Pivot shows first 20 rows as columns — use Row view for full dataset</div>`:''}`;
+  }
+
+  if (footer) footer.textContent = `${rows.length.toLocaleString()} row${rows.length!==1?'s':''} · ${cols.length} col${cols.length!==1?'s':''} · ${ms}ms${rows.length>MAX?' · showing first '+MAX:''}`;
+}
+
+function setResultsView(view) {
+  resultsView = view;
+  document.getElementById('btn-row-view').classList.toggle('active', view==='row');
+  document.getElementById('btn-col-view').classList.toggle('active', view==='column');
+  if (lastResults.rows.length) drawResultsTable(lastResults.rows, lastResults.cols, lastResults.ms);
+}
+
+function renderError(msg) {
+  switchBottomTab('results');
+  document.getElementById('results-container').innerHTML = `<div style="padding:1rem;font-size:12px;color:var(--red);font-family:var(--mono);line-height:1.7;white-space:pre-wrap">${esc(msg)}</div>`;
+  const footer = document.getElementById('results-footer');
+  if (footer) footer.textContent = '';
+}
+
+function clearResults() {
+  document.getElementById('results-container').innerHTML='<div class="results-empty">Run a query (Ctrl+Enter) to see results here</div>';
+  const footer = document.getElementById('results-footer');
+  if (footer) footer.textContent = '';
+  const toolbar = document.getElementById('results-toolbar');
+  if (toolbar) toolbar.style.display = 'none';
+  lastResults = {rows:[], cols:[], ms:0};
+  // Collapse panel when cleared
+  collapseResults();
+}
+
+function collapseResults() {
+  const rb = document.getElementById('results-bottom');
+  const eu = document.getElementById('editor-upper');
+  if (!rb || !eu) return;
+  // Collapsed = just the 36px tab strip. Use flex-basis so window resizes
+  // don't break the layout.
+  rb.style.flex   = '0 0 36px';
+  rb.style.height = '';   // clear any stale inline height from old code paths
+  eu.style.flex   = '1 1 auto';
+  eu.style.height = '';
+  eu.style.minHeight = '0';
+}
+
+function expandResults() {
+  const rb = document.getElementById('results-bottom');
+  const eu = document.getElementById('editor-upper');
+  if (!rb || !eu) return;
+  // Use flex-basis with a fixed pixel target. The parent .editor-pane is a
+  // flex column that fills exactly the viewport minus topbar — so as long as
+  // both children use proper flex sizing, the layout stays inside the
+  // viewport regardless of window size. The editor-upper takes everything
+  // that's left.
+  //
+  // Why not Math.round(paneH * 0.38) like the old code did? Because that
+  // computed a SNAPSHOT pixel height at the moment expand was called. If
+  // the user then resized the window, the panel kept its absolute height —
+  // potentially extending past the viewport bottom and hiding the
+  // horizontal scrollbar. flex-basis with flex-shrink:1 means the panel
+  // naturally adjusts on resize.
+  rb.style.flex   = '0 1 320px';  // base 320px, shrinks if not enough room
+  rb.style.height = '';
+  eu.style.flex   = '1 1 auto';
+  eu.style.height = '';
+  eu.style.minHeight = '80px';
+}
+
+// Watch for window resize and re-clamp the results panel. When the user
+// resizes a window smaller than the original layout, flex:0 1 320px will
+// shrink the panel naturally, but we also need to handle the case where the
+// row-drag handler left absolute pixel heights on the elements (those don't
+// participate in flex shrinking the same way). On resize, if either pane
+// has an inline pixel height, recompute proportionally.
+(function attachResizeClamp(){
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const rb = document.getElementById('results-bottom');
+      const eu = document.getElementById('editor-upper');
+      const pane = document.getElementById('editor-pane');
+      if (!rb || !eu || !pane) return;
+      // If the user has dragged the splitter (which sets inline pixel
+      // heights), recompute to keep the same RATIO with the new pane height.
+      // If they haven't (heights are empty / using flex-basis), do nothing.
+      const ruH = rb.style.height;
+      const euH = eu.style.height;
+      if (!ruH && !euH) return;  // pure flex layout — nothing to fix
+      const paneH  = pane.offsetHeight;
+      const oldTotal = parseFloat(ruH || 0) + parseFloat(euH || 0) + 5;  // +5 for handle
+      if (!oldTotal) return;
+      const ratio = parseFloat(ruH || 0) / oldTotal;
+      const newRu = Math.max(36, Math.min(paneH - 80, Math.round(paneH * ratio)));
+      const newEu = paneH - newRu - 5;
+      rb.style.height = newRu + 'px';
+      eu.style.height = newEu + 'px';
+    }, 100);
+  });
+})();
+
+// ── Bottom panel controls ─────────────────────────────────────────────────────
+function switchBottomTab(tab) {
+  document.getElementById('results-container').style.display = tab==='results' ? 'block' : 'none';
+  document.getElementById('history-container').style.display = tab==='history' ? 'block' : 'none';
+  document.getElementById('btab-results').classList.toggle('active', tab==='results');
+  document.getElementById('btab-history').classList.toggle('active', tab==='history');
+  // Only show toolbar when results tab is active AND we have data
+  const toolbar = document.getElementById('results-toolbar');
+  if (toolbar) toolbar.style.display = (tab==='results' && lastResults.rows.length) ? 'flex' : 'none';
+}
+
+let resultsCollapsed = false;
+function toggleResultsPane() {
+  const btn = document.getElementById('results-toggle');
+  resultsCollapsed = !resultsCollapsed;
+  if (resultsCollapsed) {
+    collapseResults();
+    if (btn) { btn.textContent = '⌄'; btn.title = 'Expand results'; }
+  } else {
+    expandResults();
+    if (btn) { btn.textContent = '⌃'; btn.title = 'Collapse results'; }
+  }
+}
+
+// ── History ────────────────────────────────────────────────────────────────────
+function addHistory(h) {
+  queryHistory.unshift(h);
+  if (queryHistory.length>50) queryHistory.length=50;
+  renderHistory();
+}
+function renderHistory() {
+  const el = document.getElementById('history-list');
+  if (!queryHistory.length) { el.innerHTML='<div class="results-empty">No query history yet</div>'; return; }
+  el.innerHTML = queryHistory.map((h,i)=>`
+    <div style="padding:0.5rem 0.75rem;border-bottom:0.5px solid var(--border);cursor:pointer" onclick="loadFromHistory(${i})">
+      <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px">
+        <span style="color:${h.ok?'var(--green)':'var(--red)'};font-size:10px">${h.ok?'✓':'✕'}</span>
+        <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">${new Date(h.ts).toLocaleTimeString('en-GB')}</span>
+        <span style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-left:auto">${h.ms}ms · ${h.rows} rows</span>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.sql.slice(0,80))}</div>
+    </div>`).join('');
+}
+function loadFromHistory(i) {
+  const h = queryHistory[i];
+  if (h) { document.getElementById('sql-editor').value=h.sql; updateStatus(); switchBottomTab('results'); }
+}
+
+// ── Claude AI ──────────────────────────────────────────────────────────────────
+// Schema cache — keyed by connection string to avoid re-fetching
+const _schemaCache = {};
+
+function updateSchemaStatusBar(schema, which) {
+  const bar = document.getElementById('schema-status-bar');
+  if (!bar) return;
+  if (!schema || !schema.tables) {
+    bar.style.display = 'none';
+    return;
+  }
+  const dbName = schema.database || (which === 'target' ? 'Target DB' : 'Source DB');
+  bar.textContent = '📋 ' + which + ': ' + dbName + ' · ' + schema.tables.length + ' tables loaded';
+  bar.style.display = 'block';
+}
+
+async function refreshSchemaCache() {
+  const btn = document.getElementById('schema-refresh-btn');
+  if (btn) { btn.textContent = '…'; btn.disabled = true; }
+  const obBtn = document.getElementById('ob-refresh-btn-inner') || document.querySelector('.ob-refresh-btn');
+  if (obBtn) obBtn.classList.add('spinning');
+  // Clear entire cache so both are re-fetched
+  Object.keys(_schemaCache).forEach(k => delete _schemaCache[k]);
+  const { srcSchema, tgtSchema } = await fetchBothSchemas();
+  updateSchemaStatusBar(srcSchema, tgtSchema);
+  if (btn) { btn.textContent = '↻ Schema'; btn.disabled = false; }
+  if (obBtn) obBtn.classList.remove('spinning');
+  // Re-render the object browser if it's open
+  if (typeof renderObjectBrowser === 'function') renderObjectBrowser();
+  const total = (srcSchema?.tables?.length||0) + (tgtSchema?.tables?.length||0);
+  if (total) {
+    setExecStatus('✓ Both schemas loaded: ' + total + ' tables total', 'var(--teal)');
+    setTimeout(()=>setExecStatus('',''), 3000);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// OBJECT BROWSER — schema explorer for source + target connections
+// ══════════════════════════════════════════════════════════════════════════════
+// State
+const _obState = {
+  open: false,                    // is the panel visible?
+  expandedTables: new Set(),      // table keys currently expanded (showing columns)
+  collapsedConns: new Set(),      // 'source' | 'target' connections collapsed
+  collapsedSections: new Set(),   // 'source-tables', 'source-views', etc.
+  loaded: false                   // has at least one fetch happened?
+};
+
+function toggleObjectBrowser() {
+  const panel = document.getElementById('object-browser');
+  const handle = document.getElementById('col-resize-ob');
+  const btn = document.getElementById('toggle-ob-btn');
+  if (!panel) return;
+  _obState.open = !_obState.open;
+  panel.style.display = _obState.open ? 'flex' : 'none';
+  if (handle) handle.style.display = _obState.open ? 'block' : 'none';
+  if (btn) btn.classList.toggle('active', _obState.open);
+
+  if (_obState.open) {
+    renderObjectBrowser();
+    // Auto-load schema on first open if cache is empty
+    if (!_obState.loaded && Object.keys(_schemaCache).length === 0) {
+      refreshObjectBrowser();
+    }
+  }
+}
+
+function toggleAIPanel() {
+  const panel = document.getElementById('right-pane');
+  const handle = document.getElementById('col-resize-right');
+  const btn = document.getElementById('toggle-ai-btn');
+  if (!panel) return;
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'flex';
+  if (handle) handle.style.display = isOpen ? 'none' : 'block';
+  if (btn) btn.classList.toggle('active', !isOpen);
+}
+
+async function refreshObjectBrowser() {
+  _obState.loaded = true;
+  // Re-use the existing schema-cache infrastructure. This populates both src + tgt.
+  await refreshSchemaCache();
+  // refreshSchemaCache already calls renderObjectBrowser() at the end
+}
+
+// Convert the global _schemaCache map (keyed by connection string slice) into
+// a normalised { source: schema, target: schema } object.
+function getOBSchemas() {
+  if (typeof CygenixConnections === 'undefined') return { source: null, target: null };
+  const c = CygenixConnections.get();
+  // Source cache key — derive from whichever shape the source uses (direct
+  // string or Azure Function URL). Has to match the conn string assembled
+  // inside getConn() so cache hits actually land.
+  const srcConnRaw = c.srcFnUrl
+    ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl)
+    : (c.srcConnString || '');
+  const srcKey = srcConnRaw.slice(0, 80);
+  const tgtConnRaw = c.tgtFnUrl
+    ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
+    : (c.tgtConnString || '');
+  const tgtKey = tgtConnRaw.slice(0, 80);
+  return {
+    source: srcKey ? (_schemaCache[srcKey] || null) : null,
+    target: tgtKey ? (_schemaCache[tgtKey] || null) : null
+  };
+}
+
+// The browser rebuilds one HTML string for every object of both
+
+// databases — multi-MB on a wide schema — so typing into the filter
+
+// must not run it per keystroke.
+
+let _obTimer = null;
+
+function debouncedRenderObjectBrowser(){
+
+  if (_obTimer) clearTimeout(_obTimer);
+
+  _obTimer = setTimeout(renderObjectBrowser, 150);
+
+}
+
+
+function renderObjectBrowser() {
+  const tree = document.getElementById('ob-tree');
+  if (!tree) return;
+  const { source, target } = getOBSchemas();
+  const search = (document.getElementById('ob-search')?.value || '').trim().toLowerCase();
+
+  if (!source && !target) {
+    tree.innerHTML = '<div class="ob-empty">No schema loaded yet.<br>Click ↻ above to fetch tables, views and columns from the connected databases.</div>';
+    return;
+  }
+
+  let html = '';
+  if (source) html += renderOBConnection('source', 'src', source, search);
+  if (target) html += renderOBConnection('target', 'tgt', target, search);
+  tree.innerHTML = html;
+
+  // Note: expanded items are now rendered inline by renderOBObject — no
+  // separate populate pass needed.
+}
+
+function renderOBConnection(connKind, connTag, schema, search) {
+  const collapsed = _obState.collapsedConns.has(connKind);
+  const dbName = schema.database || connKind.toUpperCase();
+  const q = search.toLowerCase();
+
+  // Per-kind matchers — name OR (for tables/views) any column name OR
+  // (for procs/funcs) any parameter name
+  const matchTable = t => !q
+    || (t.name||'').toLowerCase().includes(q)
+    || (t.schema||'').toLowerCase().includes(q)
+    || (t.columns||[]).some(c => (c.name||'').toLowerCase().includes(q));
+  const matchView = matchTable;
+  const matchProc = p => !q
+    || (p.name||'').toLowerCase().includes(q)
+    || (p.schema||'').toLowerCase().includes(q)
+    || (p.parameters||[]).some(x => (x.name||'').toLowerCase().includes(q));
+  const matchFunc = matchProc;
+
+  // Sources — newer backend returns separate arrays. Older backend stuffed
+  // everything into `tables`; if `views` is missing we fall back to splitting
+  // by `type` for backward compatibility.
+  let tables, views, procedures = [], functions = [];
+  if (Array.isArray(schema.views)) {
+    tables = (schema.tables || []).filter(matchTable);
+    views  = (schema.views  || []).filter(matchView);
+  } else {
+    tables = (schema.tables || []).filter(t => (t.type||'').toUpperCase() !== 'VIEW' && matchTable(t));
+    views  = (schema.tables || []).filter(t => (t.type||'').toUpperCase() === 'VIEW' && matchView(t));
+  }
+  if (Array.isArray(schema.procedures)) procedures = schema.procedures.filter(matchProc);
+  if (Array.isArray(schema.functions))  functions  = schema.functions.filter(matchFunc);
+
+  const sectionsHtml = ''
+    + renderOBSection(connKind, 'tables',     'Tables',     tables,     'table')
+    + renderOBSection(connKind, 'views',      'Views',      views,      'view')
+    + renderOBSection(connKind, 'procedures', 'Procedures', procedures, 'procedure')
+    + renderOBSection(connKind, 'functions',  'Functions',  functions,  'function');
+
+  const total = tables.length + views.length + procedures.length + functions.length;
+
+  return ''
+    + '<div class="ob-conn">'
+    +   '<div class="ob-conn-head '+(collapsed?'collapsed':'')+'" onclick="toggleOBConn(\''+connKind+'\')">'
+    +     '<span class="ob-chev">▼</span>'
+    +     '<span class="ob-conn-tag '+connTag+'">'+connKind+'</span>'
+    +     '<span style="color:var(--text2);font-size:11px;text-transform:none;letter-spacing:0">'+esc(dbName)+'</span>'
+    +     '<span class="ob-conn-count">'+total+'</span>'
+    +   '</div>'
+    +   (collapsed ? '' : sectionsHtml)
+    + '</div>';
+}
+
+function renderOBSection(connKind, sectionId, label, items, kind) {
+  if (!items.length) return '';
+  const key = connKind + '-' + sectionId;
+  const collapsed = _obState.collapsedSections.has(key);
+
+  let body = '';
+  if (!collapsed) {
+    body = items.map(item => renderOBObject(connKind, item, kind)).join('');
+  }
+
+  return ''
+    + '<div class="ob-section">'
+    +   '<div class="ob-section-head '+(collapsed?'collapsed':'')+'" onclick="toggleOBSection(\''+connKind+'\',\''+sectionId+'\')">'
+    +     '<span class="ob-chev">▼</span>'
+    +     '<span>'+label+'</span>'
+    +     '<span class="ob-section-count">'+items.length+'</span>'
+    +   '</div>'
+    +   body
+    + '</div>';
+}
+
+// Unified row renderer for any object kind: table | view | procedure | function
+function renderOBObject(connKind, obj, kind) {
+  const sch = obj.schema || 'dbo';
+  const name = obj.name || '(unnamed)';
+  const key = connKind + '::' + kind + '::' + sch + '::' + name;
+  const expanded = _obState.expandedTables.has(key);
+
+  // Icon + click-action vary by kind
+  const icons = { table: '⊞', view: '⊙', procedure: '▶', 'function': 'ƒ' };
+  const icon = icons[kind] || '·';
+
+  // Tooltip showing what clicking the name will insert
+  let insertHint = '';
+  let nameClickHandler = '';
+  if (kind === 'table' || kind === 'view') {
+    insertHint = `[${sch}].[${name}]`;
+    nameClickHandler = `obInsertObject('${esc(connKind)}','${esc(sch)}','${esc(name)}','${kind}')`;
+  } else if (kind === 'procedure') {
+    insertHint = `EXEC [${sch}].[${name}]` + (obj.parameters && obj.parameters.length ? '  …' : '');
+    nameClickHandler = `obInsertObject('${esc(connKind)}','${esc(sch)}','${esc(name)}','${kind}')`;
+  } else if (kind === 'function') {
+    insertHint = `[${sch}].[${name}](`;
+    nameClickHandler = `obInsertObject('${esc(connKind)}','${esc(sch)}','${esc(name)}','${kind}')`;
+  }
+
+  // Title text — extra info per kind
+  const titleExtra = (kind === 'table' && obj.rowCount) ? '\n' + obj.rowCount.toLocaleString() + ' rows'
+                  : (kind === 'function' && obj.returnType) ? '\nReturns: ' + obj.returnType
+                  : (kind === 'procedure' && obj.parameters) ? '\n' + obj.parameters.length + ' parameter' + (obj.parameters.length === 1 ? '' : 's')
+                  : '';
+
+  const detailsBlock = expanded
+    ? '<div class="ob-cols" data-cols-for="' + esc(key) + '">' + renderOBDetails(obj, kind) + '</div>'
+    : '';
+
+  // Subtitle for procs/funcs — show param count or return type inline
+  let subtitle = '';
+  if (kind === 'function' && obj.returnType) {
+    subtitle = '<span class="ob-col-type" style="margin-left:auto">→ ' + esc(obj.returnType) + '</span>';
+  } else if ((kind === 'procedure' || kind === 'function') && obj.parameters) {
+    const n = obj.parameters.length;
+    if (n > 0) subtitle = '<span class="ob-col-type" style="margin-left:auto">' + n + ' param' + (n===1?'':'s') + '</span>';
+  }
+
+  return ''
+    + '<div class="ob-table '+(expanded?'expanded':'')+'" data-key="'+esc(key)+'">'
+    +   '<span class="ob-table-icon" title="'+kind+'">'+icon+'</span>'
+    +   '<span class="ob-table-name" onclick="event.stopPropagation();'+nameClickHandler+'" title="Click to insert&#10;'+esc(insertHint)+esc(titleExtra)+'">'+esc(name)+'</span>'
+    +   subtitle
+    +   '<span class="ob-table-chev" onclick="event.stopPropagation();obToggleObject(\''+esc(key)+'\')" title="Show details">'+(expanded?'▾':'▸')+'</span>'
+    + '</div>'
+    + detailsBlock;
+}
+
+// Detail panel — columns for tables/views, parameters for procs/functions
+function renderOBDetails(obj, kind) {
+  if (kind === 'table' || kind === 'view') {
+    return renderOBColumns(obj);
+  }
+  if (kind === 'procedure' || kind === 'function') {
+    return renderOBParameters(obj, kind);
+  }
+  return '<div style="color:var(--text3);font-size:10px;padding:4px">No details</div>';
+}
+
+function renderOBColumns(table) {
+  const cols = table.columns || [];
+  if (!cols.length) return '<div style="color:var(--text3);font-size:10px;padding:4px">No columns</div>';
+  const pkSet = new Set(table.primaryKeys || []);
+  return cols.map(c => {
+    const type = c.type || '';
+    const len = c.length ? '('+c.length+')' : '';
+    const fullType = type + len;
+    const flags = [];
+    if (pkSet.has(c.name) || c.isPrimaryKey || c.isPK || c.primary) flags.push('<span class="ob-col-pk" title="Primary key">PK</span>');
+    if (c.nullable === false) flags.push('<span class="ob-col-nullable" title="NOT NULL">●</span>');
+    return ''
+      + '<div class="ob-col" onclick="obInsertColumn(\''+esc(c.name)+'\')" title="Click to insert column name&#10;'+esc(c.name)+' '+esc(fullType)+(c.nullable===false?' NOT NULL':'')+'">'
+      +   '<span class="ob-col-name">'+esc(c.name)+'</span>'
+      +   (flags.length ? flags.join('') : '')
+      +   '<span class="ob-col-type">'+esc(fullType)+'</span>'
+      + '</div>';
+  }).join('');
+}
+
+function renderOBParameters(routine, kind) {
+  const params = (routine.parameters || []).filter(p => !p.isResult); // hide function return-row entries
+  const returnInfo = kind === 'function' && routine.returnType
+    ? '<div class="ob-col" style="cursor:default;color:var(--text3)" title="Return type">'
+        + '<span class="ob-col-name" style="font-style:italic">→ returns</span>'
+        + '<span class="ob-col-type">'+esc(routine.returnType)+'</span>'
+      + '</div>'
+    : '';
+  if (!params.length) return returnInfo + '<div style="color:var(--text3);font-size:10px;padding:4px">No parameters</div>';
+
+  const paramsHtml = params.map(p => {
+    const type = p.type || '';
+    const mode = p.mode && p.mode !== 'IN' ? '<span class="ob-col-pk" title="'+esc(p.mode)+'">'+esc(p.mode)+'</span>' : '';
+    const tooltip = (p.name||'') + ' ' + type + (p.mode && p.mode !== 'IN' ? ' ('+p.mode+')' : '');
+    return ''
+      + '<div class="ob-col" onclick="obInsertParameter(\''+esc(p.name)+'\')" title="Click to insert parameter name&#10;'+esc(tooltip)+'">'
+      +   '<span class="ob-col-name">'+esc(p.name||'')+'</span>'
+      +   mode
+      +   '<span class="ob-col-type">'+esc(type)+'</span>'
+      + '</div>';
+  }).join('');
+  return paramsHtml + returnInfo;
+}
+
+// ── Object Browser interaction handlers ──────────────────────────────────────
+function toggleOBConn(connKind) {
+  if (_obState.collapsedConns.has(connKind)) _obState.collapsedConns.delete(connKind);
+  else _obState.collapsedConns.add(connKind);
+  renderObjectBrowser();
+}
+
+function toggleOBSection(connKind, sectionId) {
+  const key = connKind + '-' + sectionId;
+  if (_obState.collapsedSections.has(key)) _obState.collapsedSections.delete(key);
+  else _obState.collapsedSections.add(key);
+  renderObjectBrowser();
+}
+
+function obToggleObject(key) {
+  if (_obState.expandedTables.has(key)) _obState.expandedTables.delete(key);
+  else _obState.expandedTables.add(key);
+  renderObjectBrowser();
+}
+// Back-compat alias for any older callers
+function obToggleTable(key) { obToggleObject(key); }
+
+// Unified insertion: kind controls what gets inserted
+function obInsertObject(connKind, schemaName, name, kind) {
+  let text;
+  if (kind === 'table' || kind === 'view') {
+    text = '[' + schemaName + '].[' + name + ']';
+  } else if (kind === 'procedure') {
+    text = 'EXEC [' + schemaName + '].[' + name + '] ';
+  } else if (kind === 'function') {
+    text = '[' + schemaName + '].[' + name + '](';
+  } else {
+    text = '[' + schemaName + '].[' + name + ']';
+  }
+  obInsertAtCursor(text);
+}
+
+// Back-compat aliases
+function obInsertTable(connKind, schemaName, table) {
+  obInsertObject(connKind, schemaName, table, 'table');
+}
+
+// Insert just the column name at current cursor position
+function obInsertColumn(colName) {
+  obInsertAtCursor('[' + colName + ']');
+}
+
+// Insert a parameter name (e.g. @MyParam) at the cursor
+function obInsertParameter(paramName) {
+  // INFORMATION_SCHEMA.PARAMETERS already includes the leading '@', but be defensive
+  const text = (paramName || '').startsWith('@') ? paramName : '@' + paramName;
+  obInsertAtCursor(text);
+}
+
+// Insertion utility — uses Monaco if available, falls back to textarea
+function obInsertAtCursor(text) {
+  const m = window.__cygMonaco;
+  if (m && m.ready && m.editor) {
+    const editor = m.editor;
+    const sel = editor.getSelection();
+    editor.executeEdits('ob-insert', [{ range: sel, text, forceMoveMarkers: true }]);
+    editor.focus();
+    return;
+  }
+  // Fallback for the brief window before Monaco loads
+  const ta = document.getElementById('sql-editor');
+  if (!ta) return;
+  const start = ta.selectionStart || 0;
+  const before = ta.value.slice(0, start);
+  const after = ta.value.slice(ta.selectionEnd || start);
+  ta.value = before + text + after;
+  ta.selectionStart = ta.selectionEnd = start + text.length;
+  ta.focus();
+  if (typeof updateLineNumbers === 'function') updateLineNumbers();
+  if (typeof updateStatus === 'function') updateStatus();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+async function schemaCallForConn(connStr) {
+  // connStr is either an https:// Azure Function URL or an ADO.NET connection string
+  const url     = isFn(connStr) ? connStr : '/.netlify/functions/db-connect';
+  const payload = isFn(connStr) ? {action:'schema'} : {action:'schema', connectionString:connStr};
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000)
+  });
+  // Netlify returns 502 + errorType: Function.ResponseSizeTooLarge when the
+  // schema JSON exceeds 6 MB — typical for DBs with 9k+ tables. When that
+  // happens, fall back to the lightweight table-list-only action so the sidebar
+  // still populates and the AI at least knows the table names exist.
+  if (res.status === 502) {
+    const txt = await res.text().catch(()=>'');
+    if (/ResponseSizeTooLarge/i.test(txt)) {
+      console.warn('[schema] full schema exceeded Netlify 6MB cap — falling back to schema-tables (names only)');
+      const fallback = isFn(connStr) ? {action:'schema-tables'} : {action:'schema-tables', connectionString:connStr};
+      const res2 = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(fallback),
+        signal: AbortSignal.timeout(30000)
+      });
+      const data2 = await res2.json().catch(()=>({}));
+      if (!res2.ok) throw new Error(data2.error || res2.statusText);
+      data2._tableListOnly = true;  // flag so AI-prompt code knows columns aren't present
+      return data2;
+    }
+    throw new Error('HTTP 502 — ' + (txt.slice(0, 200) || 'unknown'));
+  }
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+async function fetchSchemaForConn(connStr, label) {
+  if (!connStr) {
+    console.log('[schema] ' + (label||'?') + ': no connection string configured');
+    return null;
+  }
+  const cacheKey = connStr.slice(0, 80);
+  if (_schemaCache[cacheKey]) {
+    console.log('[schema] ' + (label||'?') + ': cache hit, ' + (_schemaCache[cacheKey].tables?.length||0) + ' tables');
+    return _schemaCache[cacheKey];
+  }
+  try {
+    console.log('[schema] ' + (label||'?') + ': fetching via ' + (isFn(connStr)?'Azure Function':'Netlify') + '…');
+    const data = await schemaCallForConn(connStr);
+    if (data.tables && data.tables.length) {
+      _schemaCache[cacheKey] = data;
+      console.log('[schema] ' + (label||'?') + ': loaded ' + data.tables.length + ' tables, db=' + (data.database||'?'));
+      // The dropdown labels and status bar now show real DB names — refresh
+      // them as soon as we know the live name from the schema response. No-op
+      // when the helper isn't defined (early init, or the function was
+      // removed in a future refactor).
+      if (typeof refreshConnLabels === 'function') refreshConnLabels();
+      return data;
+    }
+    console.log('[schema] ' + (label||'?') + ': response had no tables', data);
+  } catch(e) {
+    console.warn('[schema] ' + (label||'?') + ': fetch failed:', e.message);
+  }
+  return null;
+}
+
+async function fetchSchemaForAI() {
+  // Fetch active connection only (used by refreshSchemaCache)
+  const conn = getConn();
+  const which = document.getElementById('conn-select').value;
+  return fetchSchemaForConn(conn, which);
+}
+
+async function fetchBothSchemas() {
+  // Always fetch BOTH source and target in parallel
+  // Use CygenixConnections directly — same as one-to-many.html
+  const c = CygenixConnections.get();
+
+  // Source: may be direct ADO.NET string or Azure Function URL
+  const srcConn = c.srcFnUrl
+    ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl)
+    : (c.srcConnString || '');
+
+  // Target: prefer Azure Function URL (with key appended), fall back to direct
+  const tgtConn = c.tgtFnUrl
+    ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl)
+    : (c.tgtConnString || '');
+
+  console.log('[schema] fetchBothSchemas — src:', srcConn ? (isFn(srcConn)?'fn-url':'direct-cs') : 'EMPTY',
+              '| tgt:', tgtConn ? (isFn(tgtConn)?'fn-url':'direct-cs') : 'EMPTY');
+
+  const [srcSchema, tgtSchema] = await Promise.all([
+    fetchSchemaForConn(srcConn, 'source'),
+    fetchSchemaForConn(tgtConn, 'target')
+  ]);
+  return { srcSchema, tgtSchema };
+}
+
+function buildSchemaContext(schema, which) {
+  if (!schema || !schema.tables || !schema.tables.length) return '';
+  const dbName = schema.database || (which === 'target' ? 'Target DB' : 'Source DB');
+  const header = which === 'target' ? 'TARGET' : 'SOURCE';
+
+  // Tables
+  const tableList = schema.tables.slice(0, 80).map(t => {
+    const cols = (t.columns || []).slice(0, 30).map(c => {
+      const flags = [c.isIdentity?'IDENTITY':null, c.nullable===false?'NOT NULL':null].filter(Boolean).join(', ');
+      return `    [${c.name}] ${c.type||''}${flags?' ('+flags+')':''}`;
+    }).join('\n');
+    return `  [${t.schema||'dbo'}].[${t.name}]${t.rowCount?' ('+t.rowCount.toLocaleString()+' rows)':''}\n${cols}`;
+  }).join('\n\n');
+  const tablesTrunc = schema.tables.length > 80 ? `\n  ... and ${schema.tables.length - 80} more tables` : '';
+
+  let context = `\n\n${header} DATABASE SCHEMA (${dbName}):\n${tableList}${tablesTrunc}`;
+
+  // Views — give the AI compact view summaries (name + columns only)
+  if (Array.isArray(schema.views) && schema.views.length) {
+    const viewList = schema.views.slice(0, 40).map(v => {
+      const cols = (v.columns || []).slice(0, 20).map(c => `    [${c.name}] ${c.type||''}`).join('\n');
+      return `  [${v.schema||'dbo'}].[${v.name}]\n${cols}`;
+    }).join('\n\n');
+    const viewsTrunc = schema.views.length > 40 ? `\n  ... and ${schema.views.length - 40} more views` : '';
+    context += `\n\n${header} VIEWS:\n${viewList}${viewsTrunc}`;
+  }
+
+  // Procedures — name + parameter signatures
+  if (Array.isArray(schema.procedures) && schema.procedures.length) {
+    const procList = schema.procedures.slice(0, 50).map(p => {
+      const params = (p.parameters || []).filter(x => !x.isResult)
+        .map(x => `${x.name||''} ${x.type||''}${x.mode && x.mode !== 'IN' ? ' '+x.mode : ''}`)
+        .join(', ');
+      return `  EXEC [${p.schema||'dbo'}].[${p.name}]${params ? ' (' + params + ')' : ''}`;
+    }).join('\n');
+    const procsTrunc = schema.procedures.length > 50 ? `\n  ... and ${schema.procedures.length - 50} more procedures` : '';
+    context += `\n\n${header} STORED PROCEDURES:\n${procList}${procsTrunc}`;
+  }
+
+  // Functions — name + params + return type
+  if (Array.isArray(schema.functions) && schema.functions.length) {
+    const funcList = schema.functions.slice(0, 50).map(f => {
+      const params = (f.parameters || []).filter(x => !x.isResult)
+        .map(x => `${x.name||''} ${x.type||''}`)
+        .join(', ');
+      return `  [${f.schema||'dbo'}].[${f.name}](${params}) RETURNS ${f.returnType||''}`;
+    }).join('\n');
+    const funcsTrunc = schema.functions.length > 50 ? `\n  ... and ${schema.functions.length - 50} more functions` : '';
+    context += `\n\n${header} FUNCTIONS:\n${funcList}${funcsTrunc}`;
+  }
+
+  return context;
+}
+
+function updateSchemaStatusBar(srcSchema, tgtSchema) {
+  const bar = document.getElementById('schema-status-bar');
+  if (!bar) return;
+  function summary(s, label) {
+    if (!s?.tables) return null;
+    const bits = [s.tables.length + ' tables'];
+    if (Array.isArray(s.views)      && s.views.length)      bits.push(s.views.length + ' views');
+    if (Array.isArray(s.procedures) && s.procedures.length) bits.push(s.procedures.length + ' procs');
+    if (Array.isArray(s.functions)  && s.functions.length)  bits.push(s.functions.length + ' funcs');
+    return label + ': ' + (s.database || 'DB') + ' · ' + bits.join(', ');
+  }
+  const parts = [summary(srcSchema, 'Source'), summary(tgtSchema, 'Target')].filter(Boolean);
+  if (parts.length) {
+    bar.textContent = '📋 ' + parts.join('   |   ');
+    bar.style.display = 'block';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function askClaude() {
+  const prompt = document.getElementById('ai-prompt').value.trim();
+  if (!prompt) return;
+
+  // Read the API key from localStorage. If it's not set, ask the user once
+  // via a browser prompt — captured and persisted, then reused for every
+  // subsequent call. This replaces the old top-bar input field.
+  let apiKey = (localStorage.getItem('cygenix_api_key') || '').trim();
+  if (!apiKey) {
+    const entered = window.prompt(
+      'Enter your Anthropic API key to use the AI assistant.\n\n' +
+      'Get one from: https://console.anthropic.com/settings/keys\n\n' +
+      'The key is stored locally in your browser and never sent anywhere ' +
+      'except directly to Anthropic.'
+    );
+    if (!entered || !entered.trim()) return;
+    apiKey = entered.trim();
+    localStorage.setItem('cygenix_api_key', apiKey);
+  }
+
+  const editor = document.getElementById('sql-editor');
+  const selected = editor.value.substring(editor.selectionStart, editor.selectionEnd).trim();
+  const currentSQL = selected || editor.value.trim();
+  const which = document.getElementById('conn-select').value;
+
+  addAIMessage(prompt, 'user');
+  document.getElementById('ai-prompt').value = '';
+  document.getElementById('ai-btn').disabled = true;
+  setExecStatus('Fetching schema…', 'var(--amber)');
+
+  // Always fetch BOTH source and target schemas in parallel
+  const { srcSchema, tgtSchema } = await fetchBothSchemas();
+  updateSchemaStatusBar(srcSchema, tgtSchema);
+
+  setExecStatus('Asking Claude…', 'var(--amber)');
+
+  // Always include both schemas — source first, then target
+  const schemaContext = buildSchemaContext(srcSchema, 'source')
+                      + buildSchemaContext(tgtSchema, 'target');
+
+  const systemPrompt = `You are a T-SQL expert helping with database migration scripts for SQL Server / Azure SQL.
+Active editor connection: ${which} database.${schemaContext}
+${currentSQL ? `\nCurrent SQL in editor:\n\`\`\`sql\n${currentSQL.slice(0,2000)}\n\`\`\`` : ''}
+
+Rules:
+- Always use the actual table and column names from the schemas above — never invent placeholder names
+- When the user mentions "source", use tables from the SOURCE DATABASE SCHEMA
+- When the user mentions "target", use tables from the TARGET DATABASE SCHEMA
+- If no schema qualifier is given, infer from context or use the active connection
+- Use [schema].[table] bracket notation
+- Write concise, practical T-SQL
+- Wrap any SQL you generate in a \`\`\`sql code block
+- If a table or column the user asks about isn't in the schema, say so clearly`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({model:'claude-sonnet-4-20250514', max_tokens:2000, system:systemPrompt, messages:[{role:'user',content:prompt}]})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || res.statusText);
+    const text = data.content?.[0]?.text || 'No response';
+    addAIMessage(text, 'assistant', true);
+  } catch(e) {
+    addAIMessage('Error: ' + e.message, 'assistant');
+  } finally {
+    document.getElementById('ai-btn').disabled = false;
+    setExecStatus('', '');
+  }
+}
+
+function addAIMessage(text, role, parseSQL=false) {
+  const msgs = document.getElementById('ai-messages');
+  const div = document.createElement('div');
+  div.className = 'ai-msg ' + role;
+
+  if (parseSQL && role==='assistant') {
+    // Extract SQL blocks and add "Apply to editor" buttons
+    let html = esc(text).replace(/```sql([\s\S]*?)```/gi, (match, sql) => {
+      const sqlId = 'sql_'+Date.now()+'_'+Math.random().toString(36).slice(2,5);
+      window['_aiSql_'+sqlId] = sql.trim();
+      return `<pre><span style="color:var(--text3);font-size:9px;text-transform:uppercase;letter-spacing:0.05em">SQL</span>\n${esc(sql.trim())}<button class="apply-btn" onclick="applySQLFromAI('${sqlId}')">↑ Apply to editor</button></pre>`;
+    });
+    // Convert newlines outside code blocks
+    html = html.replace(/(?<!<\/pre>)\n/g, '<br>');
+    div.innerHTML = html;
+  } else {
+    div.textContent = text;
+  }
+
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function applySQLFromAI(id) {
+  const sql = window['_aiSql_'+id];
+  if (sql) {
+    document.getElementById('sql-editor').value = sql;
+    updateStatus();
+    setExecStatus('SQL applied from Claude', 'var(--purple)');
+  }
+}
+
+// ── Snippets & Editor helpers ──────────────────────────────────────────────────
+function insertSnippet(text) {
+  const el = document.getElementById('sql-editor');
+  const m  = window.__cygMonaco;
+  if (m && m.ready && m.editor){
+    const editor = m.editor;
+    editor.focus();
+    // If the text contains ${1:...} style tabstops, use snippet insertion so
+    // tabstops actually work; otherwise a plain edit is fine.
+    if (/\$\{?\d/.test(text)){
+      const contrib = editor.getContribution('snippetController2');
+      if (contrib && typeof contrib.insert === 'function'){
+        contrib.insert(text);
+        return;
+      }
+    }
+    const sel = editor.getSelection();
+    editor.executeEdits('insertSnippet', [{ range: sel, text, forceMoveMarkers: true }]);
+    const model = editor.getModel();
+    const pos = model.getPositionAt(model.getOffsetAt({lineNumber:sel.startLineNumber, column:sel.startColumn}) + text.length);
+    editor.setPosition(pos);
+    updateStatus();
+    return;
+  }
+  // Fallback for the brief window before Monaco loads
+  const start = el.selectionStart;
+  const before = el.value.slice(0,start);
+  const after = el.value.slice(el.selectionEnd);
+  el.value = before + text + after;
+  updateLineNumbers();
+  el.selectionStart = el.selectionEnd = start + text.length;
+  el.focus();
+  updateStatus();
+}
+
+// ─── Linked Servers dropdown ─────────────────────────────────────────────
+// Reads applied linked-server drafts from localStorage (shared with dashboard)
+// and lets the user insert OPENQUERY or four-part-name snippets at the cursor.
+const LS_KEY_EDITOR = 'cygenix_linked_server_drafts';
+
+function getLinkedServersForEditor(){
+  try {
+    const raw = localStorage.getItem(LS_KEY_EDITOR);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    // Only show servers that have been actually applied on the target —
+    // drafts aren't queryable yet.
+    return arr.filter(d => d.applied);
+  } catch { return []; }
+}
+
+function toggleLinkedServersMenu(e){
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('ls-dropdown-menu');
+  if (!menu) return;
+  if (menu.style.display === 'block'){
+    menu.style.display = 'none';
+    return;
+  }
+  renderLinkedServersMenu();
+  menu.style.display = 'block';
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', closeLinkedServersMenuOnce, { once:true });
+  }, 0);
+}
+
+function closeLinkedServersMenuOnce(){
+  const menu = document.getElementById('ls-dropdown-menu');
+  if (menu) menu.style.display = 'none';
+}
+
+function renderLinkedServersMenu(){
+  const menu = document.getElementById('ls-dropdown-menu');
+  if (!menu) return;
+  const servers = getLinkedServersForEditor();
+
+  if (servers.length === 0){
+    menu.innerHTML = `
+      <div style="padding:0.75rem;font-size:11.5px;color:var(--text3);line-height:1.5">
+        <strong style="color:var(--text2);display:block;margin-bottom:0.35rem">No linked servers available</strong>
+        Configure one in <em>Connections → Linked servers</em>, then run setup on the target.
+        <br><br>
+        <a href="/dashboard.html#connections" style="color:var(--accent);text-decoration:none">Go to Connections →</a>
+      </div>`;
+    return;
+  }
+
+  menu.innerHTML = `
+    <div style="padding:6px 10px;border-bottom:0.5px solid var(--border);font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em">
+      Applied linked servers
+    </div>
+    ${servers.map(s => {
+      const typeLabel = s.type === 'postgres' ? 'POSTGRES' : 'MSSQL';
+      const nameEsc = editorEscHtml(s.name);
+      const remoteEsc = editorEscHtml(`${s.host}:${s.port || '?'}/${s.database || '?'}`);
+      return `
+      <div style="padding:8px 10px;border-bottom:0.5px solid var(--border)">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:6px">
+          <strong style="font-family:var(--mono);font-size:12px">${nameEsc}</strong>
+          <span style="font-family:var(--mono);font-size:9px;color:var(--text3);background:var(--bg3);padding:1px 6px;border-radius:100px">${typeLabel}</span>
+        </div>
+        <div style="font-size:10.5px;color:var(--text3);font-family:var(--mono);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${remoteEsc}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="insertLinkedServerSnippet('${s.name.replace(/'/g,"\\'")}', 'openquery')" title="Insert OPENQUERY wrapper — writes remote-dialect SQL inside the quotes">OPENQUERY</button>
+          <button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:3px 8px" onclick="insertLinkedServerSnippet('${s.name.replace(/'/g,"\\'")}', 'fourpart', '${(s.database||'').replace(/'/g,"\\'")}')" title="Insert [server].[db].[schema].[table] — T-SQL against the linked server">Four-part</button>
+        </div>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+function insertLinkedServerSnippet(serverName, kind, defaultDb){
+  let snippet = '';
+  if (kind === 'openquery'){
+    // OPENQUERY takes the REMOTE dialect inside the quotes — for Postgres
+    // that's PG syntax, for SQL Server it's T-SQL. We insert a placeholder
+    // SELECT and leave the cursor-useful positioning to the user.
+    snippet = `SELECT * FROM OPENQUERY([${serverName}], 'SELECT * FROM your_remote_table')`;
+  } else {
+    // Four-part name. Users usually know their schema/table, so we insert
+    // placeholders they can tab through.
+    snippet = `[${serverName}].[${defaultDb || 'database'}].[schema].[table]`;
+  }
+  insertSnippet(snippet);
+  closeLinkedServersMenuOnce();
+}
+
+function editorEscHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  }[c]));
+}
+
+function handleEditorKey(e) {
+  if (e.key==='Enter' && (e.ctrlKey||e.metaKey)) { e.preventDefault(); runSQL(); return; }
+  if (e.key==='Tab') { e.preventDefault(); insertSnippet('  '); return; }
+  // Mark as unsaved on any edit
+  const savedEl = document.getElementById('status-saved');
+  if (savedEl && !['Control','Meta','Alt','Shift'].includes(e.key)) {
+    savedEl.textContent='Unsaved'; savedEl.style.color='var(--amber)';
+  }
+}
+
+function formatSQL() {
+  const el = document.getElementById('sql-editor');
+  const m  = window.__cygMonaco;
+
+  // Proper T-SQL prettifier: indent clauses, uppercase keywords, align JOINs.
+  // Used whether Monaco is ready or not.
+  function prettify(sql){
+    if (!sql || !sql.trim()) return sql;
+
+    const KW = ['SELECT','FROM','WHERE','INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','CROSS JOIN','JOIN','ON','AND','OR','NOT','IN','EXISTS','BETWEEN','LIKE','IS NULL','IS NOT NULL',
+                'INSERT INTO','VALUES','UPDATE','SET','DELETE FROM','MERGE','USING','WHEN MATCHED','WHEN NOT MATCHED','THEN','ELSE','END',
+                'GROUP BY','ORDER BY','HAVING','UNION ALL','UNION','INTERSECT','EXCEPT',
+                'TOP','DISTINCT','AS','WITH','OVER','PARTITION BY','CASE','WHEN','THEN','ELSE',
+                'BEGIN','END','IF','WHILE','DECLARE','EXEC','EXECUTE','PRINT','RETURN','TRY','CATCH',
+                'CREATE TABLE','ALTER TABLE','DROP TABLE','CREATE INDEX','CREATE VIEW','CREATE PROCEDURE','CREATE FUNCTION',
+                'PRIMARY KEY','FOREIGN KEY','REFERENCES','CONSTRAINT','UNIQUE','CHECK','DEFAULT','IDENTITY',
+                'BEGIN TRAN','BEGIN TRANSACTION','COMMIT','ROLLBACK','USE','GO',
+                'ASC','DESC'];
+
+      // 1) Uppercase keywords (word-boundary, case-insensitive)
+      // Sort longest first so 'INNER JOIN' beats 'JOIN'.
+      const sorted = KW.slice().sort((a,b)=>b.length-a.length);
+      let out = sql;
+      sorted.forEach(kw => {
+        out = out.replace(new RegExp('\\b'+kw.replace(/ /g,'\\s+')+'\\b','gi'), kw);
+      });
+
+      // 2) Put major clauses on their own lines
+      const majors = ['SELECT','FROM','WHERE','GROUP BY','ORDER BY','HAVING',
+                      'INNER JOIN','LEFT JOIN','RIGHT JOIN','FULL JOIN','CROSS JOIN','JOIN',
+                      'UNION ALL','UNION','INTERSECT','EXCEPT',
+                      'INSERT INTO','VALUES','UPDATE','SET','DELETE FROM',
+                      'USING','WHEN MATCHED','WHEN NOT MATCHED'];
+      majors.forEach(kw => {
+        out = out.replace(new RegExp('\\s*\\b'+kw.replace(/ /g,'\\s+')+'\\b','g'), '\n'+kw);
+      });
+
+      // 3) Indent ON/AND/OR inside JOIN/WHERE by two spaces
+      out = out.replace(/\n(ON|AND|OR)\b/g, '\n  $1');
+
+      // 4) Split comma-separated select lists onto new lines when the SELECT
+      //    clause is long — keep things readable without over-splitting short ones.
+      out = out.replace(/SELECT\s+([^]*?)\n(FROM\b)/g, (_, cols, from) => {
+        if (cols.length < 60 || cols.includes('\n')) return 'SELECT ' + cols.trim() + '\n' + from;
+        const parts = cols.split(/,(?![^(]*\))/).map(s=>s.trim()).filter(Boolean);
+        return 'SELECT\n  ' + parts.join(',\n  ') + '\n' + from;
+      });
+
+      // 5) Collapse triple blank lines, trim leading whitespace on the whole thing
+      out = out.replace(/\n{3,}/g, '\n\n').replace(/^\s+/, '');
+      return out;
+    }
+
+  const formatted = prettify(el.value);
+  if (m.ready && m.editor) {
+    const editor = m.editor;
+    const model  = editor.getModel();
+    const sel    = editor.getSelection();
+    editor.executeEdits('format', [{
+      range: model.getFullModelRange(),
+      text: formatted,
+      forceMoveMarkers: true
+    }]);
+    if (sel) editor.setSelection(sel);
+  } else {
+    el.value = formatted;
+  }
+  updateStatus();
+}
+
+// ── Editor state ─────────────────────────────────────────────────────────────
+let wordWrapOn   = false;
+let lineNumsOn   = true;   // Monaco shows line numbers by default
+let isFullscreen = false;
+let findMatches  = [];
+let findIdx      = 0;
+
+function updateStatus() {
+  const el = document.getElementById('sql-editor');
+  const m  = window.__cygMonaco;
+  let val, lineNum, col, selLen;
+
+  if (m && m.ready && m.editor){
+    val = m.editor.getValue();
+    const pos = m.editor.getPosition();
+    lineNum = pos ? pos.lineNumber : 1;
+    col     = pos ? pos.column : 1;
+    const sel = m.editor.getSelection();
+    if (sel){
+      const model = m.editor.getModel();
+      const a = model.getOffsetAt({lineNumber:sel.startLineNumber, column:sel.startColumn});
+      const b = model.getOffsetAt({lineNumber:sel.endLineNumber, column:sel.endColumn});
+      selLen = Math.abs(b - a);
+    } else selLen = 0;
+  } else {
+    val = el.value;
+    const pos = el.selectionStart || 0;
+    const lines = val.split('\n');
+    lineNum = 1; col = 1;
+    let chars = 0;
+    for (let i=0;i<lines.length;i++){
+      if (chars+lines[i].length+1>pos){ col=pos-chars+1; break; }
+      chars+=lines[i].length+1; lineNum++;
+    }
+    selLen = (el.selectionEnd||0) - (el.selectionStart||0);
+  }
+
+  const $ = id => document.getElementById(id);
+  if ($('status-lines')) $('status-lines').textContent = 'Ln '+lineNum;
+  if ($('status-col'))   $('status-col').textContent   = 'Col '+col;
+  if ($('status-chars')) $('status-chars').textContent = val.length.toLocaleString()+' chars';
+  const selEl = $('status-sel');
+  if (selEl){
+    if (selLen>0){ selEl.textContent=selLen+' selected'; selEl.style.display='inline-flex'; }
+    else { selEl.style.display='none'; }
+  }
+  if (typeof updateLineNumbers === 'function') updateLineNumbers();
+}
+
+// ── DB name resolution ────────────────────────────────────────────────────────
+// Pulls the actual database name for the source / target connections so the
+// connection dropdown and the editor status bar show "Agentive" instead of
+// the generic "Source DB" / "Target DB" labels.
+//
+// Strategy (best-effort, three fallbacks):
+//   1. Schema cache (_schemaCache[key].database) — populated after the user
+//      opens Object Browser or runs anything that fetches schema. Most
+//      reliable because it's the live name the server actually reports.
+//   2. Parsed from the connection string (Database=Foo or Initial Catalog=Foo,
+//      or the path segment of an Azure Function URL like /Foo).
+//   3. The literal "Source DB" / "Target DB" if neither is resolvable —
+//      same as today's behaviour.
+function _parseDbNameFromConn(cs){
+  if (!cs) return '';
+  try {
+    // First try standard SQL Server connection string keys. These are
+    // unambiguous when present.
+    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i);
+    if (m) return m[1].trim();
+
+    // Path-segment fallback (e.g. mssql://user:pass@host:1433/MyDb) is ONLY
+    // valid for connection-string-shaped URLs where the path really IS the
+    // database. For Azure Function URLs the path is the route name (like
+    // /api/db) and has nothing to do with the database, which is configured
+    // via env vars on the Function App itself. Detect those and bail out
+    // rather than returning a misleading "db" label that also leaks into
+    // generated SQL comments. Schema-cache lookup still wins later once
+    // Object Browser has loaded.
+    if (/^https?:\/\//i.test(cs) && /\.azurewebsites\.net\b/i.test(cs)) return '';
+    if (/\/api\/[^/?]+(?:\?|$)/i.test(cs)) return '';
+
+    const p = cs.match(/\/([^/?]+)(?:\?|$)/i);
+    return p ? p[1].trim() : '';
+  } catch { return ''; }
+}
+
+function _resolveDbNameFor(which){
+  // First try the schema cache. Re-uses the same cache-key derivation as
+  // getOBSchemas() so the lookup hits whenever schema has been fetched.
+  if (typeof CygenixConnections !== 'undefined') {
+    try {
+      const c = CygenixConnections.get();
+      const connRaw = which === 'target'
+        ? (c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl + '?code=' + encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString || ''))
+        : (c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl + '?code=' + encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || ''));
+      const cached = (typeof _schemaCache !== 'undefined') ? _schemaCache[connRaw.slice(0,80)] : null;
+      if (cached && cached.database) return cached.database;
+      const parsed = _parseDbNameFromConn(connRaw);
+      if (parsed) return parsed;
+    } catch {}
+  }
+  return which === 'target' ? 'Target DB' : 'Source DB';
+}
+
+// Refresh the connection dropdown options + status bar with real DB names.
+// Cheap to call on every event — runs in <1ms and only writes if values
+// changed. Hook this into anything that might affect the resolved name:
+// page load, connection-changed events, schema-fetched callbacks.
+function refreshConnLabels(){
+  const sel = document.getElementById('conn-select');
+  if (!sel) return;
+  const srcName = _resolveDbNameFor('source');
+  const tgtName = _resolveDbNameFor('target');
+  const opts = sel.options;
+  if (opts && opts.length >= 2) {
+    // Append " (source)" / " (target)" suffix when the resolved name is
+    // a real DB name (not a fallback) so the user can still tell which
+    // connection is which when both happen to point at the same database.
+    const isFallback = (n, w) => n === (w==='target'?'Target DB':'Source DB');
+    const srcLabel = isFallback(srcName,'source') ? srcName : srcName + ' (source)';
+    const tgtLabel = isFallback(tgtName,'target') ? tgtName : tgtName + ' (target)';
+    if (opts[0].textContent !== srcLabel) opts[0].textContent = srcLabel;
+    if (opts[1].textContent !== tgtLabel) opts[1].textContent = tgtLabel;
+  }
+  // Status bar still uses the short "DB: Name" form.
+  const which = sel.value;
+  const lbl = document.getElementById('status-conn');
+  if (lbl) lbl.textContent = 'DB: ' + (which === 'target' ? tgtName : srcName);
+}
+
+function updateConnLabel() {
+  // Now just a thin wrapper — keep the name because the <select> markup's
+  // onchange="updateConnLabel()" still calls it, and other code paths
+  // throughout the file invoke it after switching connections.
+  refreshConnLabels();
+}
+
+// ── Line numbers ──────────────────────────────────────────────────────────────
+function updateLineNumbers() {
+  const el  = document.getElementById('sql-editor');
+  const ln  = document.getElementById('line-numbers');
+  if (!ln || !lineNumsOn) return;
+  const lines = el.value.split('\n').length;
+  ln.textContent = Array.from({length:lines},(_,i)=>i+1).join('\n');
+}
+
+function syncScroll() {
+  const el = document.getElementById('sql-editor');
+  const ln = document.getElementById('line-numbers');
+  if (ln) ln.scrollTop = el.scrollTop;
+}
+
+function toggleLineNumbers() {
+  lineNumsOn = !lineNumsOn;
+  const btn = document.getElementById('btn-lnum');
+  const m = window.__cygMonaco;
+  if (m && m.ready && m.editor) m.editor.updateOptions({ lineNumbers: lineNumsOn ? 'on' : 'off' });
+  if (btn) btn.style.color = lineNumsOn ? 'var(--accent)' : '';
+}
+
+// ── Word wrap ─────────────────────────────────────────────────────────────────
+function toggleWordWrap() {
+  wordWrapOn = !wordWrapOn;
+  const btn = document.getElementById('btn-wrap');
+  const m = window.__cygMonaco;
+  if (m && m.ready && m.editor) m.editor.updateOptions({ wordWrap: wordWrapOn ? 'on' : 'off' });
+  if (btn) btn.style.color = wordWrapOn ? 'var(--accent)' : '';
+}
+
+// ── Fullscreen ────────────────────────────────────────────────────────────────
+function toggleFullscreen() {
+  isFullscreen = !isFullscreen;
+  document.body.classList.toggle('fullscreen', isFullscreen);
+  const btn = document.getElementById('fs-btn');
+  if (btn) { btn.textContent = isFullscreen ? '⛶' : '⛶'; btn.title = isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F11)'; btn.style.color = isFullscreen ? 'var(--accent)' : ''; }
+  if (isFullscreen) {
+    // Also expand the editor pane to use full width
+    const layout = document.querySelector('.editor-layout');
+    if (layout) { const sp = layout.querySelector('.script-panel'); if (sp) sp.style.width='0'; }
+  } else {
+    const layout = document.querySelector('.editor-layout');
+    if (layout) layout.style.gridTemplateColumns = '';
+    // Clear the inline width that was set on enter so the panel returns to
+    // its CSS-driven width (or its .collapsed state if the user had it
+    // collapsed before going fullscreen).
+    const sp = document.querySelector('.script-panel');
+    if (sp) sp.style.width = '';
+  }
+  setTimeout(()=>document.getElementById('sql-editor').focus(), 50);
+}
+
+// ── Comment / uncomment selection ─────────────────────────────────────────────
+function commentSelection() {
+  const m = window.__cygMonaco;
+  if (m && m.ready && m.editor){
+    m.editor.focus();
+    m.editor.getAction('editor.action.commentLine').run();
+    return;
+  }
+  // Fallback (pre-Monaco)
+  const el    = document.getElementById('sql-editor');
+  const start = el.selectionStart;
+  const end   = el.selectionEnd;
+  const val   = el.value;
+  const lineStart = val.lastIndexOf('\n', start-1)+1;
+  const lineEnd   = val.indexOf('\n', end);
+  const section   = val.slice(lineStart, lineEnd===-1?undefined:lineEnd);
+  const lines     = section.split('\n');
+  const allCommented = lines.every(l=>l.trimStart().startsWith('--'));
+  const toggled = lines.map(l=> allCommented ? l.replace(/^(\s*)--\s?/,'$1') : '-- '+l).join('\n');
+  el.value = val.slice(0,lineStart)+toggled+(lineEnd===-1?'':val.slice(lineEnd));
+  el.selectionStart = lineStart;
+  el.selectionEnd   = lineStart+toggled.length;
+  updateStatus();
+}
+
+// ── Clear editor ──────────────────────────────────────────────────────────────
+function clearEditor() {
+  if (document.getElementById('sql-editor').value && !confirm('Clear the editor?')) return;
+  document.getElementById('sql-editor').value='';
+  updateStatus(); clearResults();
+}
+
+// ── Find & Replace ────────────────────────────────────────────────────────────
+function toggleFind() {
+  const bar = document.getElementById('find-bar');
+  const open = bar.style.display!=='none';
+  if (open) { closeFind(); } else { bar.style.display='flex'; document.getElementById('find-input').focus(); }
+}
+function closeFind() {
+  document.getElementById('find-bar').style.display='none';
+  document.getElementById('find-count').textContent='';
+  findMatches=[]; findIdx=0;
+}
+
+function findInEditor() {
+  const q = document.getElementById('find-input').value;
+  const el = document.getElementById('sql-editor');
+  findMatches=[];
+  if (!q) { document.getElementById('find-count').textContent=''; return; }
+  const text = el.value.toLowerCase();
+  const ql   = q.toLowerCase();
+  let pos=0;
+  while((pos=text.indexOf(ql,pos))!==-1){ findMatches.push(pos); pos+=ql.length; }
+  document.getElementById('find-count').textContent = findMatches.length ? (findIdx+1)+'/'+findMatches.length : '0 found';
+  if (findMatches.length) { findIdx=0; highlightFind(); }
+}
+
+function highlightFind() {
+  if (!findMatches.length) return;
+  const el  = document.getElementById('sql-editor');
+  const pos = findMatches[findIdx];
+  el.focus();
+  el.setSelectionRange(pos, pos+document.getElementById('find-input').value.length);
+  document.getElementById('find-count').textContent=(findIdx+1)+'/'+findMatches.length;
+}
+
+function findNext() { if (!findMatches.length) return; findIdx=(findIdx+1)%findMatches.length; highlightFind(); }
+function findPrev() { if (!findMatches.length) return; findIdx=(findIdx-1+findMatches.length)%findMatches.length; highlightFind(); }
+
+function replaceOne() {
+  const find = document.getElementById('find-input').value;
+  const rep  = document.getElementById('replace-input').value;
+  const el   = document.getElementById('sql-editor');
+  if (!find||!findMatches.length) return;
+  const pos = findMatches[findIdx];
+  el.value = el.value.slice(0,pos)+rep+el.value.slice(pos+find.length);
+  updateStatus(); findInEditor();
+}
+
+function replaceAll() {
+  const find = document.getElementById('find-input').value;
+  const rep  = document.getElementById('replace-input').value;
+  const el   = document.getElementById('sql-editor');
+  if (!find) return;
+  const count = (el.value.match(new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi'))||[]).length;
+  el.value = el.value.split(find).join(rep);
+  updateStatus(); findInEditor();
+  setExecStatus('Replaced '+count+' occurrence'+( count!==1?'s':''), 'var(--green)');
+}
+
+function findKey(e) {
+  if (e.key==='Enter') { e.shiftKey ? findPrev() : findNext(); e.preventDefault(); }
+  if (e.key==='Escape') closeFind();
+}
+
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  // Escape exits fullscreen
+  if (e.key==='Escape' && isFullscreen) { toggleFullscreen(); return; }
+  // F11 toggle fullscreen
+  if (e.key==='F11') { e.preventDefault(); toggleFullscreen(); return; }
+  // Ctrl+F find — trigger when Monaco is focused (its inner textarea becomes activeElement)
+  if ((e.ctrlKey||e.metaKey) && e.key==='f') {
+    const ae = document.activeElement;
+    const inEditor = ae && (ae.id==='sql-editor' || document.getElementById('monaco-host')?.contains(ae));
+    if (inEditor) { e.preventDefault(); toggleFind(); return; }
+  }
+  // Ctrl+/ comment
+  if ((e.ctrlKey||e.metaKey) && e.key==='/') { e.preventDefault(); commentSelection(); return; }
+  // Ctrl+S save
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); saveCurrent(); return; }
+});
+
+function setExecStatus(msg, color) {
+  const el = document.getElementById('exec-status');
+  el.textContent=msg; el.style.color=color;
+}
+
+// ── Save to Inventory ─────────────────────────────────────────────────────────
+function saveToInventory() {
+  const sql  = document.getElementById('sql-editor').value.trim();
+  const name = document.getElementById('script-name').value.trim() || 'SQL Script';
+  const desc = document.getElementById('script-desc').value.trim();
+  const conn = document.getElementById('conn-select').value;
+  if (!sql) { alert('Write some SQL first.'); return; }
+
+  try {
+    const inv = JSON.parse(localStorage.getItem('cygenix_inventory') || '[]');
+    const item = {
+      id:       'inv_sql_' + Date.now(),
+      type:     'sql-script',
+      name,
+      description: desc || 'SQL script from SQL Editor',
+      content:  sql,
+      conn,
+      size:     sql.length + ' chars',
+      added:    new Date().toISOString(),
+      source:   'SQL Editor',
+      tags:     ['sql', conn],
+      notes:    desc,
+    };
+    inv.unshift(item);
+    localStorage.setItem('cygenix_inventory', JSON.stringify(inv));
+    setExecStatus('✓ Saved to Inventory', 'var(--amber)');
+    setTimeout(()=>setExecStatus('',''), 3000);
+  } catch(e) { alert('Could not save to inventory: ' + e.message); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// UNIFIED LIBRARY (Scripts + Jobs)
+// ══════════════════════════════════════════════════════════════════════════════
+// State: 'all' | 'scripts' | 'jobs'
+let libFilter = 'all';
+
+function setLibFilter(f) {
+  libFilter = f;
+  // Keep the dropdown in sync (when called from rail buttons or programmatic
+  // callers like switchLibTab below).
+  const sel = document.getElementById('lib-filter-select');
+  if (sel && sel.value !== f) sel.value = f;
+  // Highlight the corresponding rail button so the collapsed-state shortcut
+  // shows which filter is currently in effect.
+  document.querySelectorAll('.rail-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.rail === f);
+  });
+  renderLibrary();
+}
+
+// Compatibility shim: old code paths call switchLibTab('jobs') after creating
+// a job, so keep the name working but redirect to the new filter.
+function switchLibTab(tab) {
+  setLibFilter(tab === 'jobs' ? 'jobs' : (tab === 'scripts' ? 'scripts' : 'all'));
+}
+
+// ── Script panel collapse / expand ─────────────────────────────────────────
+// State is persisted under localStorage['cygenix_sql_panel_collapsed'] so it
+// sticks across page loads. Default: expanded (matches existing behaviour).
+function toggleScriptPanel() {
+  const panel = document.getElementById('script-panel');
+  if (!panel) return;
+  const collapsing = !panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed', collapsing);
+  try { localStorage.setItem('cygenix_sql_panel_collapsed', collapsing ? '1' : '0'); } catch(e) {}
+  // Monaco needs to reflow its layout when the editor's flex container changes
+  // width. Fire a window resize so the editor picks up the new bounds.
+  setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch(e) {} }, 220);
+}
+
+// Expand the panel AND apply the requested filter. Used by the rail-dock
+// shortcut buttons so a collapsed-state click jumps straight to the right
+// view in one tap.
+function expandScriptPanel(filter) {
+  const panel = document.getElementById('script-panel');
+  if (panel && panel.classList.contains('collapsed')) {
+    panel.classList.remove('collapsed');
+    try { localStorage.setItem('cygenix_sql_panel_collapsed', '0'); } catch(e) {}
+    setTimeout(() => { try { window.dispatchEvent(new Event('resize')); } catch(e) {} }, 220);
+  }
+  if (filter) setLibFilter(filter);
+}
+
+// Restore collapsed state on load. Has to run after the panel exists in the
+// DOM — we call it from the same DOMContentLoaded path that wires the
+// resize handles, see the bottom of this file.
+function restoreScriptPanelState() {
+  try {
+    if (localStorage.getItem('cygenix_sql_panel_collapsed') === '1') {
+      const panel = document.getElementById('script-panel');
+      if (panel) panel.classList.add('collapsed');
+    }
+  } catch(e) {}
+  // Sync rail-button highlight to current filter even on first paint
+  document.querySelectorAll('.rail-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.rail === libFilter);
+  });
+}
+
+// Replaces the old separate renderScriptList() + renderJobsList()
+function renderLibrary() {
+  const list = document.getElementById('lib-list');
+  if (!list) return;
+
+  const search = (document.getElementById('lib-search')?.value || '').trim().toLowerCase();
+  const allScripts = (typeof scripts !== 'undefined' && Array.isArray(scripts)) ? scripts.slice() : [];
+  const allJobs    = getJobsWithSQL();
+
+  const matchScript = s => !search || (s.name||'').toLowerCase().includes(search) || (s.sql||'').toLowerCase().includes(search);
+  const matchJob    = j => !search || (j.name||'').toLowerCase().includes(search) || (j.target||'').toLowerCase().includes(search);
+
+  const showScripts = libFilter === 'all' || libFilter === 'scripts';
+  const showJobs    = libFilter === 'all' || libFilter === 'jobs';
+
+  const filteredScripts = showScripts ? allScripts.filter(matchScript) : [];
+  const filteredJobs    = showJobs    ? allJobs   .filter(matchJob)    : [];
+
+  if (filteredScripts.length === 0 && filteredJobs.length === 0) {
+    if (search) {
+      list.innerHTML = '<div class="lib-empty">No matches for <em>"'+esc(search)+'"</em></div>';
+    } else if (libFilter === 'scripts') {
+      list.innerHTML = '<div class="lib-empty">No scripts yet.<br>Write some SQL and hit Save.</div>';
+    } else if (libFilter === 'jobs') {
+      list.innerHTML = '<div class="lib-empty">No migration jobs with SQL yet.<br>Generate SQL in Simple Map first or promote a script.</div>';
+    } else {
+      list.innerHTML = '<div class="lib-empty">Library is empty.<br>Write some SQL and hit Save.</div>';
+    }
+    return;
+  }
+
+  let html = '';
+
+  if (filteredScripts.length && libFilter === 'all') html += '<div class="lib-section">Scripts</div>';
+  filteredScripts.forEach(s => { html += renderLibItem('script', s); });
+
+  if (filteredJobs.length && libFilter === 'all') html += '<div class="lib-section">Migration Jobs</div>';
+  filteredJobs.forEach(j => { html += renderLibItem('job', j); });
+
+  list.innerHTML = html;
+}
+
+function renderLibItem(kind, item) {
+  const isActive = (kind === 'script' && currentScript === item.id)
+                || (kind === 'job'    && typeof currentJobId !== 'undefined' && currentJobId === item.id);
+  const date = new Date(item.updated || item.created || Date.now()).toLocaleDateString('en-GB');
+  const conn = kind === 'script' ? (item.conn || 'source') : 'target';
+  const connLabel = kind === 'script' ? conn : (item.target ? 'target' : '—');
+
+  let actions = '';
+  if (kind === 'script') {
+    actions = ''
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();loadScript(\''+item.id+'\')"          title="Open this script in the editor">Open</button>'
+      + '<button class="lib-action-btn primary"  onclick="event.stopPropagation();moveScriptToJob(\''+item.id+'\')"   title="Promote to a Migration Job">Move to Job</button>'
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();duplicateScript(\''+item.id+'\')"   title="Duplicate this script">Duplicate</button>'
+      + '<button class="lib-action-btn danger"   onclick="event.stopPropagation();deleteScript(\''+item.id+'\')"      title="Delete">Delete</button>';
+  } else {
+    actions = ''
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();loadJobSQL(\''+item.id+'\')"        title="Open this job in the editor">Open</button>'
+      + '<button class="lib-action-btn primary"  onclick="event.stopPropagation();ejectJobToScript(\''+item.id+'\')"  title="Copy SQL out as a fresh script">Eject to Script</button>'
+      + '<button class="lib-action-btn"          onclick="event.stopPropagation();saveJobToDrive(\''+item.id+'\')"    title="Save this job&#39;s SQL to the Co-Worker Drive">To Drive</button>'
+      + '<button class="lib-action-btn danger"   onclick="event.stopPropagation();deleteJobConfirm(\''+item.id+'\')"  title="Delete">Delete</button>';
+  }
+
+  const pill = kind === 'script'
+    ? '<span class="lib-item-pill t-script">Script</span>'
+    : '<span class="lib-item-pill t-job">Job</span>';
+
+  const onClick = kind === 'script' ? "loadScript('"+item.id+"')" : "loadJobSQL('"+item.id+"')";
+
+  return ''
+    + '<div class="lib-item '+(isActive?'active':'')+'" onclick="'+onClick+'">'
+    +   '<div class="lib-item-row1">'+pill+'<div class="lib-item-name">'+esc(item.name||'(unnamed)')+'</div></div>'
+    +   '<div class="lib-item-meta">'
+    +     '<span class="lib-item-conn '+(connLabel==='source'?'conn-src':'conn-tgt')+'">'+connLabel+'</span>'
+    +     '<span>'+date+'</span>'
+    +   '</div>'
+    +   '<div class="lib-item-actions">'+actions+'</div>'
+    + '</div>';
+}
+
+// Old renderScriptList() callers now flow through renderLibrary() (see stub near top)
+
+// ──────────────────────────────────────────────────────────────────────────────
+// EDITOR CONTEXT (what's loaded — drives the topbar's badge + Save behaviour)
+// ──────────────────────────────────────────────────────────────────────────────
+// editorCtx: { type: 'draft' | 'script' | 'job', id?: string, name: string }
+let editorCtx = { type: 'draft', id: null, name: 'New script' };
+
+function setEditorContext(type, id, name) {
+  editorCtx = { type, id: id || null, name: name || (type === 'job' ? 'Job' : 'Untitled') };
+
+  // Clear the generated-job warning banner unless we're staying on the same job
+  if (type !== 'job') {
+    currentJobGenerated = false;
+    const w = document.getElementById('gen-job-warning');
+    if (w) w.remove();
+  }
+
+  const badge   = document.getElementById('ctx-badge');
+  const pill    = document.getElementById('ctx-pill');
+  const nameEl  = document.getElementById('script-name');
+  const ctxBtn  = document.getElementById('ctx-action-btn');
+  const saveBtn = document.getElementById('save-btn');
+
+  if (badge && pill) {
+    badge.classList.remove('ctx-badge-draft','ctx-badge-script','ctx-badge-job');
+    badge.classList.add('ctx-badge-' + type);
+    pill.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+  }
+  if (nameEl && nameEl.value !== editorCtx.name) nameEl.value = editorCtx.name;
+
+  // Configure Save button label/colour and the contextual action button
+  if (type === 'job') {
+    if (saveBtn) {
+      saveBtn.textContent  = '💾 Save to Job';
+      saveBtn.title        = 'Save SQL changes back to the loaded job';
+      saveBtn.className    = 'btn btn-teal btn-sm';
+    }
+    if (ctxBtn) {
+      ctxBtn.textContent   = '↗ Eject to Script';
+      ctxBtn.title         = 'Copy this SQL out as a new draft script (job stays untouched)';
+      ctxBtn.style.display = '';
+      ctxBtn.dataset.action = 'eject';
+    }
+  } else if (type === 'script') {
+    if (saveBtn) {
+      saveBtn.textContent  = '💾 Save Script';
+      saveBtn.title        = 'Save changes to this script';
+      saveBtn.className    = 'btn btn-green btn-sm';
+    }
+    if (ctxBtn) {
+      ctxBtn.textContent   = '➕ Promote to Job';
+      ctxBtn.title         = 'Move this script into a Migration Job';
+      ctxBtn.style.display = '';
+      ctxBtn.dataset.action = 'promote';
+    }
+  } else {
+    if (saveBtn) {
+      saveBtn.textContent  = '💾 Save as Script';
+      saveBtn.title        = 'Save the current SQL as a new draft script';
+      saveBtn.className    = 'btn btn-green btn-sm';
+    }
+    if (ctxBtn) {
+      ctxBtn.style.display = 'none';
+      ctxBtn.dataset.action = '';
+    }
+  }
+}
+
+// Smart Save — routes to script vs job vs Drive-file vs new-script-from-draft
+function saveCurrent() {
+  if (editorCtx.type === 'job') {
+    if (typeof saveBackToJob === 'function') saveBackToJob();
+    return;
+  }
+  // If the content was dragged in / opened from a specific Drive file, save
+  // straight back to that same file rather than creating a new script.
+  if (currentDriveFile && window.CygenixDrive) { saveBackToDriveFile(); return; }
+  // For drafts AND for editing an existing script, both go through saveScript()
+  // which already handles "create new script if currentScript is null" vs
+  // "update existing script if currentScript is set".
+  if (typeof saveScript === 'function') saveScript();
+}
+
+// Write the current editor SQL back into the linked Co-Worker Drive file,
+// updating that exact node in place (same name, same folder).
+async function saveBackToDriveFile() {
+  const sql = document.getElementById('sql-editor').value;
+  if (!sql.trim()) { alert('Write some SQL first.'); return; }
+  try {
+    const node = await CygenixDrive.get(currentDriveFile.id);
+    if (!node) {
+      // The file was moved or deleted in the Drive — fall back to a new script.
+      currentDriveFile = null;
+      if (typeof saveScript === 'function') saveScript();
+      return;
+    }
+    node.content = new Blob([sql], { type: 'text/plain' });
+    node.size = node.content.size; node.mime = 'text/plain'; node.mtime = Date.now();
+    await CygenixDrive.put(node);
+    currentDriveFile.name = node.name;
+    setExecStatus('✓ Saved to Drive: ' + node.name, 'var(--green)');
+    const savedEl = document.getElementById('status-saved');
+    if (savedEl) { savedEl.textContent = 'Saved'; savedEl.style.color = 'var(--green)'; }
+    setTimeout(() => setExecStatus('', ''), 3000);
+  } catch (e) { alert('Could not save to Drive: ' + ((e && e.message) || e)); }
+}
+
+// Promote-to-Job / Eject-to-Script depending on what's loaded
+async function contextualAction() {
+  const action = document.getElementById('ctx-action-btn')?.dataset.action;
+  if (action === 'promote') {
+    // Use the current editor content rather than the saved script — the user
+    // may have made unsaved tweaks they want to carry into the job.
+    const sql  = document.getElementById('sql-editor').value.trim();
+    const name = document.getElementById('script-name').value.trim() || 'SQL Script';
+    const conn = document.getElementById('conn-select').value;
+    const desc = document.getElementById('script-desc')?.value.trim() || '';
+    if (!sql) { alert('Write some SQL first.'); return; }
+    const result = await promoteSQLToJob({ sql, name, conn, desc });
+    if (!result.ok) return;
+    setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
+    setTimeout(() => setExecStatus('',''), 4000);
+    renderLibrary();
+  } else if (action === 'eject') {
+    if (editorCtx.id) ejectJobToScript(editorCtx.id);
+  }
+}
+
+// Eject job → fresh draft script (does NOT modify the job itself)
+function ejectJobToScript(jobId) {
+  const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+  const j = jobs.find(x => x.id === jobId);
+  if (!j) return;
+  const sql = j.insertSQL || j.migrationSQL || j.sql || '';
+  document.getElementById('sql-editor').value = sql;
+  document.getElementById('script-desc').value = 'Ejected from job: ' + (j.name||'');
+  document.getElementById('conn-select').value = j.connOn || 'target';
+  if (typeof updateConnLabel === 'function') updateConnLabel();
+  if (typeof updateLineNumbers === 'function') updateLineNumbers();
+  if (typeof updateStatus === 'function') updateStatus();
+  if (typeof currentScript !== 'undefined') currentScript = null;
+  if (typeof currentJobId !== 'undefined') currentJobId = null;
+  setEditorContext('draft', null, (j.name || 'Job') + ' (copy)');
+  setExecStatus('✓ Ejected to a new draft — Save it to keep', 'var(--purple)');
+  setTimeout(() => setExecStatus('',''), 4000);
+}
+
+// Duplicate a script
+function duplicateScript(id) {
+  const s = scripts.find(x => x.id === id);
+  if (!s) return;
+  const copy = Object.assign({}, s, {
+    id: 'script_' + Date.now(),
+    name: s.name + ' (copy)',
+    created: new Date().toISOString(),
+    updated: new Date().toISOString()
+  });
+  scripts.unshift(copy);
+  saveScripts();
+  renderLibrary();
+  setExecStatus('✓ Duplicated: ' + copy.name, 'var(--green)');
+  setTimeout(() => setExecStatus('',''), 3000);
+}
+
+// Delete-job confirmation routed through new modal
+async function deleteJobConfirm(jobId) {
+  const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+  const j = jobs.find(x => x.id === jobId);
+  if (!j) return;
+  const ok = await confirmDialog({
+    title: 'Delete job?',
+    body:  'Permanently delete the job <b>"'+esc(j.name||'(unnamed)')+'"</b> from this project? This removes it from the Migration Jobs list and from its group. The action cannot be undone.',
+    confirmLabel: 'Delete job',
+    danger: true
+  });
+  if (!ok) return;
+
+  // Remove from flat index
+  try {
+    const flat = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    localStorage.setItem('cygenix_jobs', JSON.stringify(flat.filter(x => x.id !== jobId)));
+  } catch {}
+  // Remove the matching step from any project group it lives in
+  try {
+    const projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]');
+    projects.forEach(p => {
+      (p.groups||[]).forEach(g => {
+        g.steps = (g.steps||[]).filter(st => st.jobId !== jobId);
+      });
+    });
+    localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+  } catch {}
+
+  if (typeof currentJobId !== 'undefined' && currentJobId === jobId) {
+    currentJobId = null;
+    document.getElementById('sql-editor').value = '';
+    setEditorContext('draft', null, 'New script');
+  }
+  renderLibrary();
+  setExecStatus('Job deleted', 'var(--red)');
+  setTimeout(() => setExecStatus('',''), 2500);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CONFIRM DIALOG (modal-based, replaces window.confirm)
+// ──────────────────────────────────────────────────────────────────────────────
+function confirmDialog(opts) {
+  const { title = 'Confirm', body = '', confirmLabel = 'OK', cancelLabel = 'Cancel', danger = false } = opts || {};
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+    overlay.innerHTML = ''
+      + '<div class="modal" role="dialog">'
+      +   '<div class="modal-title">' + esc(title) + '</div>'
+      +   '<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1.25rem">' + body + '</div>'
+      +   '<div class="modal-actions">'
+      +     '<button class="btn btn-ghost btn-sm" id="cd-cancel">' + esc(cancelLabel) + '</button>'
+      +     '<button class="btn ' + (danger ? 'btn-red' : 'btn-primary') + ' btn-sm" id="cd-ok">' + esc(confirmLabel) + '</button>'
+      +   '</div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    const cleanup = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = e => {
+      if (e.key === 'Escape') { cleanup(); resolve(false); }
+      if (e.key === 'Enter')  { cleanup(); resolve(true);  }
+    };
+    document.addEventListener('keydown', onKey);
+    overlay.querySelector('#cd-cancel').onclick = () => { cleanup(); resolve(false); };
+    overlay.querySelector('#cd-ok').onclick     = () => { cleanup(); resolve(true);  };
+    overlay.addEventListener('click', e => { if (e.target === overlay) { cleanup(); resolve(false); } });
+    setTimeout(() => overlay.querySelector('#cd-ok').focus(), 0);
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// FILE ▾ MENU
+// ──────────────────────────────────────────────────────────────────────────────
+function toggleFileMenu(e) {
+  if (e) e.stopPropagation();
+  const menu = document.getElementById('file-menu');
+  if (!menu) return;
+  const open = menu.style.display !== 'none';
+  menu.style.display = open ? 'none' : 'block';
+  if (!open) {
+    // Close on next outside click
+    setTimeout(() => {
+      const closer = ev => {
+        if (!menu.contains(ev.target) && ev.target.id !== 'file-menu-btn') {
+          menu.style.display = 'none';
+          document.removeEventListener('click', closer);
+        }
+      };
+      document.addEventListener('click', closer);
+    }, 0);
+  }
+}
+
+function fileMenuAction(action) {
+  document.getElementById('file-menu').style.display = 'none';
+  switch (action) {
+    case 'new':         newScript(); break;
+    case 'open':        document.getElementById('load-sql-file').click(); break;
+    case 'save':        saveCurrentToFile(); break;
+    case 'open-drive':  openFromDrive(); break;
+    case 'save-drive':  saveCurrentToDrive(); break;
+    case 'promote':     contextualPromote(); break;
+    case 'export-csv':  if (typeof exportResults === 'function') exportResults('csv');  break;
+    case 'export-xlsx': if (typeof exportResults === 'function') exportResults('xlsx'); break;
+  }
+}
+
+// "Save to file…" — exports the current editor contents as a .sql file
+function saveCurrentToFile() {
+  const sql = document.getElementById('sql-editor').value;
+  if (!sql.trim()) { alert('Nothing to save — editor is empty.'); return; }
+  const name = (document.getElementById('script-name').value.trim() || 'script')
+                 .replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,60);
+  const blob = new Blob([sql], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = name + '.sql';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setExecStatus('✓ Saved file: ' + name + '.sql', 'var(--green)');
+  setTimeout(() => setExecStatus('',''), 3000);
+}
+
+// ── Co-Worker Drive: open / save from the File menu ──────────────────────────
+// Put the current editor SQL into the Drive as a .sql file (SQL Editor folder).
+async function saveCurrentToDrive() {
+  const sql = document.getElementById('sql-editor').value;
+  if (!sql.trim()) { alert('Nothing to save — editor is empty.'); return; }
+  if (!window.CygenixDrive) { alert('The Co-Worker Drive is unavailable in this browser.'); return; }
+  const def = (document.getElementById('script-name').value.trim() || (typeof editorCtx !== 'undefined' && editorCtx.name) || 'script');
+  const name = prompt('Save to the Co-Worker Drive as:', def);
+  if (name == null) return;
+  try {
+    const fid = await CygenixDrive.scriptsFolderId();
+    await CygenixDrive.addFile(fid, CygenixDrive.safeName(name) + '.sql', new Blob([sql], { type: 'text/plain' }), 'text/plain', { meta: { source: 'sql-editor', savedAt: new Date().toISOString() } });
+    setExecStatus('✓ Saved to Drive: ' + name + '.sql', 'var(--green)'); setTimeout(() => setExecStatus('', ''), 3000);
+  } catch (e) { alert('Could not save to Drive: ' + ((e && e.message) || e)); }
+}
+
+// Browse the Drive's .sql files (scripts + jobs) and load one into the editor.
+async function openFromDrive() {
+  if (!window.CygenixDrive) { alert('The Co-Worker Drive is unavailable in this browser.'); return; }
+  let files = [];
+  try { files = await CygenixDrive.listSqlFiles(); } catch (_) {}
+  openDrivePicker(files);
+}
+
+function openDrivePicker(files) {
+  let ov = document.getElementById('drive-picker');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'drive-picker';
+  ov.style.cssText = 'position:fixed;inset:0;background:var(--modal-scrim,rgba(0,0,0,.5));z-index:3000;display:flex;align-items:center;justify-content:center;padding:1.5rem';
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  const rows = (files && files.length) ? files.map(f => {
+    const isJob = /\/Jobs\//.test(f.path);
+    const folder = f.path.replace(/\/[^/]*$/, '');
+    return '<div class="dp-row" data-id="' + f.id + '" tabindex="0" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;border-radius:8px;cursor:pointer">'
+      + '<span style="font-size:9px;font-family:var(--mono);text-transform:uppercase;background:' + (isJob ? 'rgba(74,91,214,.14)' : 'var(--bg4)') + ';color:' + (isJob ? 'var(--accent)' : 'var(--text2)') + ';padding:2px 6px;border-radius:4px">' + (isJob ? 'JOB' : 'SQL') + '</span>'
+      + '<span class="dp-name" style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(f.name) + '</span>'
+      + '<span style="font-size:11px;color:var(--text3);white-space:nowrap">' + esc(folder) + '</span></div>';
+  }).join('') : '<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive…”, or use “To Drive” on a job.</div>';
+  ov.innerHTML = '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:540px;max-height:76vh;display:flex;flex-direction:column;box-shadow:var(--shadow-strong)">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px">🗂 Open from Co-Worker Drive</b><button id="dp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+    + '<div id="dp-list" style="overflow-y:auto;padding:.5rem">' + rows + '</div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#dp-close').addEventListener('click', () => ov.remove());
+  ov.querySelectorAll('.dp-row').forEach(r => {
+    r.addEventListener('mouseenter', () => r.style.background = 'var(--hover-tint)');
+    r.addEventListener('mouseleave', () => r.style.background = '');
+    const open = async () => {
+      const id = r.dataset.id;
+      try { const sql = await CygenixDrive.readText(id); applySqlToEditor(sql, r.querySelector('.dp-name').textContent.replace(/\.sql$/i, ''), id); }
+      catch (_) { alert('Could not open that file.'); }
+      ov.remove();
+    };
+    r.addEventListener('click', open);
+    r.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
+  });
+}
+
+// Load SQL text into the editor (Monaco-aware). When `driveId` is given the
+// content is linked to that Drive file, so "Save as Script" writes back to it.
+function applySqlToEditor(sql, name, driveId) {
+  try {
+    if (window.__cygMonaco && window.__cygMonaco.editor) window.__cygMonaco.editor.setValue(sql);
+    else if (window.__cygMonaco) window.__cygMonaco.pendingValue = sql;
+  } catch (_) {}
+  const ta = document.getElementById('sql-editor'); if (ta) ta.value = sql;
+  const nm = document.getElementById('script-name'); if (nm && name) nm.value = name;
+  currentScript = null; currentJobId = null;
+  currentDriveFile = driveId ? { id: driveId, name: name || 'Drive file' } : null;
+  try { updateLineNumbers(); } catch (_) {}
+  try { setEditorContext('draft', null, name || 'From Drive'); } catch (_) {}
+  // When linked to a Drive file, make the save button say so — it saves back
+  // to that exact file rather than creating a new script.
+  if (currentDriveFile) {
+    const sb = document.getElementById('save-btn');
+    if (sb) { sb.textContent = '💾 Save to Drive'; sb.title = 'Save changes back to “' + (name || 'file') + '” in the Co-Worker Drive'; }
+  }
+  try { updateStatus(); } catch (_) {}
+  try { clearResults(); } catch (_) {}
+  try { renderLibrary(); } catch (_) {}
+  setExecStatus('✓ Opened from Drive: ' + (name || 'file'), 'var(--green)'); setTimeout(() => setExecStatus('', ''), 3000);
+}
+
+// "Promote to new job…" from the File menu — same as the contextual button,
+// but available even when in Draft mode.
+async function contextualPromote() {
+  const sql  = document.getElementById('sql-editor').value.trim();
+  const name = document.getElementById('script-name').value.trim() || 'SQL Script';
+  const conn = document.getElementById('conn-select').value;
+  const desc = document.getElementById('script-desc')?.value.trim() || '';
+  if (!sql) { alert('Write some SQL first.'); return; }
+  const result = await promoteSQLToJob({ sql, name, conn, desc });
+  if (!result.ok) return;
+  setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
+  setTimeout(() => setExecStatus('',''), 4000);
+  renderLibrary();
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+function getJobsWithSQL() {
+  try {
+    var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    return jobs.filter(function(j){ return j.insertSQL || j.migrationSQL || j.sql; });
+  } catch(e) { return []; }
+}
+
+// Save a migration job's generated SQL into the shared Co-Worker Drive
+// (under "SQL Editor › Jobs"). Non-destructive — the job itself is untouched.
+async function saveJobToDrive(id) {
+  const j = getJobsWithSQL().find(function(x){ return x.id === id; });
+  const sql = j && (j.insertSQL || j.migrationSQL || j.sql);
+  if (!sql || !sql.trim()) { alert('This job has no SQL to save yet.'); return; }
+  if (!window.CygenixDrive) { alert('The Co-Worker Drive is unavailable in this browser.'); return; }
+  try {
+    await CygenixDrive.saveJobToDrive(j.name || ('job_' + id), sql, { jobId: id, name: j.name || '', target: j.target || '' });
+    if (typeof setExecStatus === 'function') { setExecStatus('✓ Saved "' + (j.name || id) + '" to Drive (SQL Editor › Jobs)', 'var(--green)'); setTimeout(function(){ setExecStatus('',''); }, 3500); }
+  } catch (e) { alert('Could not save to Drive: ' + ((e && e.message) || e)); }
+}
+window.saveJobToDrive = saveJobToDrive;
+
+// Compatibility — legacy callers
+function renderJobsList() { renderLibrary(); }
+
+// ── Load a job's SQL into the editor ──────────────────────────────────────────
+// Track whether the currently-loaded job is "generated" (its SQL is built
+// from a column mapping or other config — editing detaches that link).
+let currentJobGenerated = false;
+
+function isGeneratedJob(job) {
+  if (!job) return false;
+  // 'sql' jobs are explicitly free-form SQL — safe to edit.
+  if (job.jobType === 'sql' || job.type === 'sql') return false;
+  // Anything with a populated columnMapping was generated from Object Mapping.
+  if (Array.isArray(job.columnMapping) && job.columnMapping.length > 0) return true;
+  // Known mapping-based job types.
+  return ['simple-map','one-to-many','composite','migration'].includes(job.jobType)
+      || ['simple-map','one-to-many','composite','migration'].includes(job.type);
+}
+
+function loadJobSQL(jobId) {
+  var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+  var job  = jobs.find(function(j){ return j.id === jobId; });
+  if (!job) { alert('Job not found.'); return; }
+
+  var sql = job.insertSQL || job.migrationSQL || job.sql || '';
+  if (!sql) { alert('This job has no generated SQL yet.'); return; }
+
+  currentJobId  = jobId;
+  currentScript = null; // decouple from saved scripts
+  currentJobGenerated = isGeneratedJob(job);
+
+  document.getElementById('sql-editor').value = sql;
+  document.getElementById('script-desc').value = 'Loaded from job: ' + (job.name||jobId);
+  document.getElementById('conn-select').value = job.connOn || 'target';
+
+  setEditorContext('job', jobId, job.name || 'Job SQL');
+  updateGeneratedJobWarning(job);
+
+  updateConnLabel();
+  updateStatus();
+  clearResults();
+  renderLibrary();
+  setExecStatus('✓ Loaded: ' + (job.name||'job'), 'var(--teal)');
+  setTimeout(function(){ setExecStatus('',''); }, 3000);
+}
+
+// Show / hide an inline warning banner above the editor for generated jobs
+function updateGeneratedJobWarning(job) {
+  var existing = document.getElementById('gen-job-warning');
+  if (existing) existing.remove();
+  if (!job || !currentJobGenerated) return;
+
+  var jobType = job.jobType || job.type || 'mapping';
+  var cols    = (job.columnMapping||[]).length;
+  var srcTgt  = (job.sourceTable||job.srcTable||'?') + ' → ' + (job.targetTable||job.tgtTable||'?');
+
+  var banner = document.createElement('div');
+  banner.id = 'gen-job-warning';
+  banner.className = 'gen-job-warning';
+  banner.innerHTML = ''
+    + '<div class="gjw-icon">⚠</div>'
+    + '<div class="gjw-body">'
+    +   '<div class="gjw-title">This SQL was generated by Object Mapping</div>'
+    +   '<div class="gjw-sub">'
+    +     '<b>'+esc(jobType)+'</b> · '+esc(srcTgt)+(cols?' · '+cols+' columns mapped':'')+'. '
+    +     'Saving here overwrites the generated SQL and detaches it from its column mapping. '
+    +     'Re-running Object Mapping later will replace your edits.'
+    +   '</div>'
+    +   '<div class="gjw-actions">'
+    +     '<button class="btn btn-ghost btn-sm" onclick="ejectJobToScript(\''+job.id+'\')">↗ Eject to Script (recommended)</button>'
+    +   '</div>'
+    + '</div>'
+    + '<button class="gjw-close" onclick="this.parentElement.remove()" title="Dismiss warning">✕</button>';
+
+  // Insert at the top of the editor pane, above the toolbar
+  var editorPane = document.getElementById('editor-pane');
+  if (editorPane) editorPane.insertBefore(banner, editorPane.firstChild);
+}
+
+// ── Save edited SQL back to the job ───────────────────────────────────────────
+// Writes to BOTH the flat `cygenix_jobs` index AND the matching step inside
+// `cygenix_projects[].groups[].steps[]` so the two stores stay in sync.
+// For "generated" jobs (mapping-based, not jobType='sql'), prompts the user
+// for explicit confirmation since saving destroys the link to the mapping.
+async function saveBackToJob() {
+  if (!currentJobId) { alert('No job loaded.'); return; }
+  var sql = document.getElementById('sql-editor').value.trim();
+  if (!sql) { alert('Editor is empty.'); return; }
+  var name = document.getElementById('script-name').value.trim();
+
+  if (currentJobGenerated) {
+    var ok = await confirmDialog({
+      title: 'Save and detach from mapping?',
+      body:  'This job\'s SQL was generated by Object Mapping from a column mapping. '
+           + 'Saving your edited SQL here will overwrite the generated version and '
+           + '<b>detach the job from its column mapping</b>.<br><br>'
+           + 'If anyone re-runs Object Mapping for this job later, your hand-written '
+           + 'SQL will be replaced.<br><br>'
+           + 'For free-form SQL it\'s usually better to use <b>Eject to Script</b> instead.',
+      confirmLabel: 'Save and detach',
+      cancelLabel:  'Cancel',
+      danger: true
+    });
+    if (!ok) return;
+  }
+
+  try {
+    // 1. Update the flat index
+    var jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    var job  = jobs.find(function(j){ return j.id === currentJobId; });
+    if (!job) { alert('Job no longer found in storage.'); return; }
+
+    if (job.insertSQL    !== undefined) job.insertSQL    = sql;
+    if (job.migrationSQL !== undefined) job.migrationSQL = sql;
+    if (job.sql          !== undefined) job.sql          = sql;
+    if (job.insertSQL === undefined && job.migrationSQL === undefined && job.sql === undefined) {
+      job.insertSQL = sql;
+    }
+    if (name) job.name = name;
+    job.sqlEditedAt   = new Date().toISOString();
+    job.sqlEditedNote = 'Edited in SQL Editor';
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+
+    // 2. Update the step inside whichever project group owns this job
+    try {
+      var projects = JSON.parse(localStorage.getItem('cygenix_projects')||'[]');
+      var changed  = false;
+      projects.forEach(function(p) {
+        (p.groups||[]).forEach(function(g) {
+          (g.steps||[]).forEach(function(st) {
+            if (st.jobId === currentJobId) {
+              if ('insertSQL' in st) st.insertSQL = sql;
+              if ('sql'       in st) st.sql       = sql;
+              if (!('insertSQL' in st) && !('sql' in st)) st.sql = sql;
+              if (name) st.name = name;
+              changed = true;
+            }
+          });
+        });
+      });
+      if (changed) localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+    } catch(_e) { /* non-fatal — the flat index was updated */ }
+
+    setEditorContext('job', currentJobId, job.name || 'Job SQL');
+    setExecStatus('✓ Saved to job: ' + (job.name||currentJobId), 'var(--green)');
+    setTimeout(function(){ setExecStatus('',''); }, 3000);
+    renderLibrary();
+  } catch(e) {
+    alert('Could not save: ' + e.message);
+  }
+}
+
+// ── Promote SQL into a project group as a job ────────────────────────────────
+// Jobs live in TWO places:
+//   1. `cygenix_jobs` (flat array, used by dashboards and cross-project views)
+//   2. As a step inside `project.groups[].steps[]` (source of truth —
+//      projects live in `cygenix_projects`)
+// Both must be written for the job to appear correctly in the Migration
+// Jobs list. Returns {ok, jobId, groupName, projectName} on success.
+async function promoteSQLToJob(opts) {
+  const { sql, name, conn, desc } = opts;
+  if (!sql || !sql.trim()) { alert('No SQL to promote.'); return { ok:false, reason:'no-sql' }; }
+
+  const activeId = localStorage.getItem('cygenix_active_project_id');
+  if (!activeId) { alert('No active project. Set an active project first.'); return { ok:false, reason:'no-project' }; }
+
+  // Load projects and find the active one
+  let projects;
+  try { projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]'); } catch { projects = []; }
+  const projIdx = projects.findIndex(p => p && p.id === activeId);
+  if (projIdx === -1) { alert('Active project not found in projects list.'); return { ok:false, reason:'project-missing' }; }
+
+  const proj = projects[projIdx];
+  proj.groups = Array.isArray(proj.groups) ? proj.groups : [];
+
+  // Ask which group to add to via a proper modal dialog
+  const pickResult = await pickGroupDialog(proj, name);
+  if (!pickResult) return { ok:false, reason:'cancelled' };
+  const { groupName: targetGroupName, jobName: chosenJobName } = pickResult;
+
+  // Resolve or create the group
+  let group = proj.groups.find(g => g && g.name === targetGroupName);
+  if (!group) {
+    group = {
+      id:            'grp_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+      name:          targetGroupName,
+      executionMode: 'sequential',
+      collapsed:     false,
+      steps:         []
+    };
+    proj.groups.push(group);
+  }
+  group.steps = Array.isArray(group.steps) ? group.steps : [];
+
+  // Build the job — shared jobId links the flat-array entry to the group step
+  const jobId   = 'job_' + Date.now();
+  const jobName = (chosenJobName || name || 'SQL Script').trim() || 'SQL Script';
+  const srcConn = conn === 'source'
+    ? (window.CygenixConnections?.srcConn || '').slice(0,50) : '';
+  const tgtConn = conn === 'target'
+    ? (window.CygenixConnections?.tgtConn || '').slice(0,50) : '';
+
+  const jobRecord = {
+    id:            jobId,
+    name:          jobName,
+    jobType:       'sql',
+    type:          'sql',
+    projectId:     proj.id,
+    groupId:       group.id,
+    source:        srcConn,
+    target:        tgtConn,
+    sql:           sql,
+    insertSQL:     sql,              // aliased — loadJobSQL accepts either field
+    connOn:        conn || 'source',
+    status:        'ready',
+    created:       new Date().toISOString(),
+    tables:        [],
+    files:         [],
+    totalRows:     0,
+    columnMapping: [],
+    wasisRules:    [],
+    warnings:      [desc ? desc : 'SQL script from SQL Editor'],
+  };
+
+  // Write flat index
+  try {
+    const flat = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    flat.unshift(jobRecord);
+    localStorage.setItem('cygenix_jobs', JSON.stringify(flat.slice(0, 200)));
+  } catch(e) { alert('Could not update jobs index: ' + e.message); return { ok:false, reason:'flat-write-failed' }; }
+
+  // Write step into the group inside the project
+  const step = {
+    jobId:     jobId,
+    name:      jobName,
+    type:      'sql',
+    jobType:   'sql',
+    sql:       sql,
+    insertSQL: sql,
+    connOn:    conn || 'source',
+    srcTable:  '',
+    tgtTable:  '',
+    status:    'ready',
+    totalRows: 0,
+    columnMapping: [],
+    warnings:  [desc ? desc : 'SQL script from SQL Editor']
+  };
+  group.steps.push(step);
+
+  try {
+    projects[projIdx] = proj;
+    localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+  } catch(e) {
+    // Roll back the flat index write so the two stay consistent
+    try {
+      const flat = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+      localStorage.setItem('cygenix_jobs', JSON.stringify(flat.filter(j => j.id !== jobId)));
+    } catch {}
+    alert('Could not update project groups: ' + e.message);
+    return { ok:false, reason:'project-write-failed' };
+  }
+
+  return { ok:true, jobId, groupName: group.name, projectName: proj.name || 'project' };
+}
+
+// ── Group picker dialog ───────────────────────────────────────────────────────
+// Returns a promise resolving to { groupName, jobName } or null if cancelled.
+// Builds a minimal modal inline so we don't pollute the HTML body with unused
+// markup. Matches the existing .modal-overlay / .modal styling conventions
+// used by the dashboard.
+function pickGroupDialog(proj, defaultJobName) {
+  return new Promise(resolve => {
+    const existingGroups = Array.isArray(proj.groups) ? proj.groups : [];
+    const NEW_GROUP_VALUE = '__new__';
+
+    // Build markup
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open';
+
+    const groupOptions = existingGroups.map(g => {
+      const esc = (g.name || '(unnamed)').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const count = Array.isArray(g.steps) ? g.steps.length : 0;
+      return `<option value="${esc}">${esc} · ${count} step${count===1?'':'s'}</option>`;
+    }).join('');
+
+    const projName = (proj.name || 'project').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const jobNameEsc = (defaultJobName || 'SQL Script').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-labelledby="mjg-title">
+        <div class="modal-title" id="mjg-title">Move to Migration Jobs</div>
+        <div class="modal-sub">Project: <span style="color:var(--text2)">${projName}</span></div>
+
+        <div class="modal-field">
+          <label class="modal-label" for="mjg-job-name">Job name</label>
+          <input id="mjg-job-name" class="form-input" type="text" value="${jobNameEsc}" autocomplete="off">
+        </div>
+
+        <div class="modal-field">
+          <label class="modal-label" for="mjg-group">Group</label>
+          <select id="mjg-group" class="modal-select">
+            ${groupOptions}
+            <option value="${NEW_GROUP_VALUE}">+ New group…</option>
+          </select>
+        </div>
+
+        <div class="modal-field" id="mjg-newgroup-wrap" style="display:${existingGroups.length ? 'none' : 'block'}">
+          <label class="modal-label" for="mjg-newgroup">New group name</label>
+          <input id="mjg-newgroup" class="form-input" type="text" value="SQL Scripts" autocomplete="off">
+        </div>
+
+        <div class="modal-actions">
+          <button id="mjg-cancel" class="btn btn-ghost btn-sm" type="button">Cancel</button>
+          <button id="mjg-confirm" class="btn btn-primary btn-sm" type="button">Move to Job</button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const groupSel     = overlay.querySelector('#mjg-group');
+    const newGroupWrap = overlay.querySelector('#mjg-newgroup-wrap');
+    const newGroupIn   = overlay.querySelector('#mjg-newgroup');
+    const jobNameIn    = overlay.querySelector('#mjg-job-name');
+    const confirmBtn   = overlay.querySelector('#mjg-confirm');
+    const cancelBtn    = overlay.querySelector('#mjg-cancel');
+
+    // Default selection: first group if any exist, otherwise the +New option
+    if (existingGroups.length) groupSel.value = existingGroups[0].name;
+    else groupSel.value = NEW_GROUP_VALUE;
+
+    // Toggle "new group" text input based on selection
+    function syncNewGroupVisibility() {
+      const showNew = groupSel.value === NEW_GROUP_VALUE;
+      newGroupWrap.style.display = showNew ? 'block' : 'none';
+      if (showNew) setTimeout(() => newGroupIn.focus(), 0);
+    }
+    groupSel.addEventListener('change', syncNewGroupVisibility);
+    syncNewGroupVisibility();
+
+    // Dismiss helpers
+    function cleanup(){ overlay.remove(); document.removeEventListener('keydown', onKey); }
+    function close(result){ cleanup(); resolve(result); }
+    function onKey(e){
+      if (e.key === 'Escape') { e.preventDefault(); close(null); }
+      if (e.key === 'Enter' && document.activeElement !== newGroupIn && document.activeElement !== jobNameIn) {
+        e.preventDefault(); submit();
+      }
+    }
+    document.addEventListener('keydown', onKey);
+
+    // Confirm/Cancel behaviour
+    function submit() {
+      let groupName = groupSel.value;
+      if (groupName === NEW_GROUP_VALUE) {
+        groupName = newGroupIn.value.trim();
+        if (!groupName) { newGroupIn.focus(); newGroupIn.style.borderColor = 'var(--red)'; return; }
+      }
+      const jobName = jobNameIn.value.trim() || (defaultJobName || 'SQL Script');
+      close({ groupName, jobName });
+    }
+    confirmBtn.addEventListener('click', submit);
+    cancelBtn.addEventListener('click', () => close(null));
+    // Click outside the modal closes it
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(null); });
+    // Pressing Enter in the text inputs also submits
+    [jobNameIn, newGroupIn].forEach(el => el.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    }));
+
+    // Focus the job-name field by default for quick confirm
+    setTimeout(() => jobNameIn.focus(), 0);
+    setTimeout(() => jobNameIn.select(), 0);
+  });
+}
+
+function addToJobs() {
+  const sql  = document.getElementById('sql-editor').value.trim();
+  const name = document.getElementById('script-name').value.trim() || 'SQL Script';
+  const conn = document.getElementById('conn-select').value;
+  const desc = document.getElementById('script-desc')?.value.trim() || '';
+  if (!sql) { alert('Write some SQL first.'); return; }
+
+  promoteSQLToJob({ sql, name, conn, desc }).then(result => {
+    if (!result.ok) return;
+    setExecStatus('✓ Added to ' + result.projectName + ' › ' + result.groupName, 'var(--green)');
+    setTimeout(() => setExecStatus('',''), 4000);
+    if (typeof renderJobsList === 'function') renderJobsList();
+  });
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────────
+// switchRightTab replaced by switchBottomTab above
+
+// ── Copy results for Excel ────────────────────────────────────────────────────
+
+// Build export shape matching the current results view.
+// Row view  → headers = column names, rows = data rows (standard).
+// Pivot view → headers = ['Column','Row 1','Row 2',...], one row per source column.
+// Returns {headers:string[], rows:Array<Array<any>>} — array-of-arrays so
+// orientation is preserved exactly when written to TSV / CSV / XLSX.
+function getExportShape() {
+  const {rows, cols} = lastResults;
+  if (resultsView === 'column') {
+    const headers = ['Column', ...rows.map((_, i) => 'Row ' + (i + 1))];
+    const outRows = cols.map(c => [c, ...rows.map(r => r[c] ?? '')]);
+    return { headers, rows: outRows, pivoted: true };
+  }
+  const outRows = rows.map(r => cols.map(c => r[c] ?? ''));
+  return { headers: cols.slice(), rows: outRows, pivoted: false };
+}
+
+function copyResultsForExcel() {
+  const {rows, cols} = lastResults;
+  if (!rows.length) { alert('No results to copy — run a query first.'); return; }
+  const {headers, rows: outRows, pivoted} = getExportShape();
+  // Tab-separated with headers — pastes perfectly into Excel
+  const escCell = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return (s.indexOf('\t') > -1 || s.indexOf('\n') > -1) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const headerLine = headers.map(escCell).join('\t');
+  const body       = outRows.map(r => r.map(escCell).join('\t')).join('\n');
+  const tsv        = headerLine + '\n' + body;
+  const successMsg = pivoted
+    ? '✓ Copied pivoted view (' + cols.length.toLocaleString() + ' rows × ' + rows.length.toLocaleString() + ' cols) — paste into Excel'
+    : '✓ Copied ' + rows.length.toLocaleString() + ' rows — paste into Excel';
+  navigator.clipboard.writeText(tsv).then(function() {
+    setExecStatus(successMsg, 'var(--green)');
+    setTimeout(function(){ setExecStatus('',''); }, 3000);
+  }).catch(function(e) {
+    // Fallback for browsers that block clipboard
+    const ta = document.createElement('textarea');
+    ta.value = tsv;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    setExecStatus(successMsg, 'var(--green)');
+    setTimeout(function(){ setExecStatus('',''); }, 3000);
+  });
+}
+
+// ── Native Ctrl+C / Cmd+C copy of selected results cells ─────────────────────
+// When the user highlights cells in either the row-view or pivot-view results
+// table and presses Ctrl+C (or right-click → Copy), the default browser copy
+// behaviour can flatten the selection into a single text blob — meaning the
+// rectangular layout is lost when pasted into Excel. This handler intercepts
+// the copy event for selections inside .results-table / .pivot-table and
+// writes a properly-shaped TSV (plus an HTML <table> mirror) to the clipboard
+// that Excel pastes back as a grid with the same row/column layout the user
+// can see on screen. Pivot-aware automatically because it reads off the DOM.
+(function _installResultsCopyInterceptor() {
+  const container = document.getElementById('results-container');
+  if (!container) return;
+
+  function tsvEscape(v) {
+    const s = (v === null || v === undefined) ? '' : String(v);
+    // RFC-4180-ish: only quote if the cell contains a tab, newline, or quote.
+    return /[\t\n"]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function htmlEscape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])
+    );
+  }
+
+  container.addEventListener('copy', function (e) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+
+    // Find the table the selection lives in. We treat both result-set tables
+    // identically — their structure is uniform <tr><td>…</td></tr>.
+    const range = sel.getRangeAt(0);
+    const startEl = range.startContainer.nodeType === 1
+                  ? range.startContainer
+                  : range.startContainer.parentElement;
+    if (!startEl) return;
+    const table = startEl.closest('table.results-table, table.pivot-table');
+    if (!table || !container.contains(table)) return;
+    // If selection is entirely inside a single cell, let the browser handle
+    // it normally — the user is copying a substring, not a grid.
+    const endEl = range.endContainer.nodeType === 1
+                ? range.endContainer
+                : range.endContainer.parentElement;
+    const startCell = startEl.closest('td, th');
+    const endCell   = endEl ? endEl.closest('td, th') : null;
+    if (startCell && endCell && startCell === endCell) return;
+
+    // Walk every cell in the table and mark which ones are inside the
+    // selection. A cell is "in" if the range intersects it. Build a bitmap of
+    // {row, col} → selected, then find the bounding rectangle.
+    const rows = Array.from(table.rows);
+    const selected = [];
+    let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+
+    for (let r = 0; r < rows.length; r++) {
+      const cells = Array.from(rows[r].cells);
+      const rowMap = [];
+      for (let c = 0; c < cells.length; c++) {
+        const cell = cells[c];
+        // intersectsNode is the right check — containsNode(cell, true) misses
+        // cells that are partially overlapped, which is what the user usually
+        // selects via drag. Wrap in try/catch defensively (some browsers
+        // throw on detached nodes, though that shouldn't happen here).
+        let hit = false;
+        try { hit = range.intersectsNode(cell); } catch (e) { hit = false; }
+        rowMap[c] = hit;
+        if (hit) {
+          if (r < minR) minR = r;
+          if (r > maxR) maxR = r;
+          if (c < minC) minC = c;
+          if (c > maxC) maxC = c;
+        }
+      }
+      selected.push(rowMap);
+    }
+
+    // No cells selected (shouldn't happen given the earlier checks) → bail.
+    if (minR === Infinity) return;
+
+    // Build TSV + HTML for the bounding rectangle. Cells inside the box but
+    // outside the user's selection come through as empty strings (blank cells
+    // in Excel) — this preserves alignment for irregular selections.
+    const tsvLines = [];
+    const htmlRows = [];
+    for (let r = minR; r <= maxR; r++) {
+      const tsvCells = [];
+      const htmlCells = [];
+      const rowEl = rows[r];
+      for (let c = minC; c <= maxC; c++) {
+        const cell = rowEl ? rowEl.cells[c] : null;
+        const isSel = selected[r] && selected[r][c];
+        // Always render as <td> so Excel pastes a uniform grid (no header
+        // row formatting differences). Plain text source is textContent —
+        // result cells don't contain nested formatting we'd want to preserve.
+        const text = (isSel && cell) ? (cell.textContent || '') : '';
+        tsvCells.push(tsvEscape(text));
+        htmlCells.push('<td>' + htmlEscape(text) + '</td>');
+      }
+      tsvLines.push(tsvCells.join('\t'));
+      htmlRows.push('<tr>' + htmlCells.join('') + '</tr>');
+    }
+    const tsv  = tsvLines.join('\n');
+    const html = '<table>' + htmlRows.join('') + '</table>';
+
+    // Write both formats. Excel + Google Sheets prefer text/html when present;
+    // plain editors fall back to text/plain. Override the default behaviour.
+    if (e.clipboardData) {
+      e.clipboardData.setData('text/plain', tsv);
+      e.clipboardData.setData('text/html',  html);
+      e.preventDefault();
+    }
+  });
+})();
+
+// ── Column drag resize ─────────────────────────────────────────────────────────
+(function() {
+  function makeColResizer(handleId, panelEl, side) {
+    const handle = document.getElementById(handleId);
+    if (!handle || !panelEl) return;
+    let dragging = false, startX = 0, startW = 0;
+    handle.addEventListener('mousedown', function(e) {
+      dragging = true;
+      startX = e.clientX;
+      startW = panelEl.offsetWidth;
+      handle.classList.add('dragging');
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!dragging) return;
+      const delta = e.clientX - startX;
+      const newW  = side === 'left'
+        ? Math.max(120, Math.min(600, startW + delta))
+        : Math.max(120, Math.min(700, startW - delta));
+      panelEl.style.width = newW + 'px';
+    });
+    document.addEventListener('mouseup', function() {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('dragging');
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    });
+    // Touch support
+    handle.addEventListener('touchstart', function(e) {
+      dragging = true;
+      startX = e.touches[0].clientX;
+      startW = panelEl.offsetWidth;
+      e.preventDefault();
+    }, {passive:false});
+    document.addEventListener('touchmove', function(e) {
+      if (!dragging) return;
+      const delta = e.touches[0].clientX - startX;
+      const newW  = side === 'left'
+        ? Math.max(120, Math.min(600, startW + delta))
+        : Math.max(120, Math.min(700, startW - delta));
+      panelEl.style.width = newW + 'px';
+    });
+    document.addEventListener('touchend', function() { dragging = false; });
+  }
+  makeColResizer('col-resize-left',  document.querySelector('.script-panel'),    'left');
+  makeColResizer('col-resize-ob',    document.getElementById('object-browser'),  'left');
+  makeColResizer('col-resize-right', document.querySelector('.right-pane'),      'right');
+
+  // Restore the persisted collapsed state for the script library panel and
+  // sync the rail-dock button highlight. Runs after the DOM is ready (we're
+  // inside a DOMContentLoaded-driven IIFE here) so #script-panel exists.
+  if (typeof restoreScriptPanelState === 'function') restoreScriptPanelState();
+
+  // Resolve and display real database names in the connection dropdown
+  // (e.g. "Agentive (source)" instead of "Source DB"). Falls back to the
+  // generic labels when the connection strings haven't been configured
+  // yet. Refreshed again automatically whenever a schema fetch completes,
+  // so the live server-reported name supersedes the parsed one.
+  if (typeof refreshConnLabels === 'function') refreshConnLabels();
+})();
+
+// ── Row drag resize ───────────────────────────────────────────────────────────
+(function() {
+  const handle = document.getElementById('resize-handle');
+  const upper  = document.getElementById('editor-upper');
+  const lower  = document.getElementById('results-bottom');
+  const pane   = document.getElementById('editor-pane');
+  if (!handle) return;
+
+  let dragging = false, startY = 0, startUpperH = 0, totalH = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startUpperH = upper.offsetHeight;
+    totalH = pane.offsetHeight;
+    handle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = e.clientY - startY;
+    const newUpperH = Math.max(80, Math.min(totalH - 80, startUpperH + delta));
+    const newLowerH = totalH - newUpperH - 5;
+    upper.style.height = newUpperH + 'px';
+    upper.style.flex = 'none';
+    lower.style.height = newLowerH + 'px';
+    lower.style.flex = 'none';
+    resultsCollapsed = false;
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+  });
+})();
+
+// ── Export results ────────────────────────────────────────────────────────────
+function exportResults(format) {
+  const {rows, cols} = lastResults;
+  if (!rows.length) { alert('No results to export — run a query first.'); return; }
+
+  const scriptName = (document.getElementById('script-name')?.value||'results').replace(/[^a-z0-9]/gi,'_');
+  const filename   = scriptName + '_' + new Date().toISOString().slice(0,10);
+  let content2, mime, ext;
+
+  if (format === 'json') {
+    // JSON ignores pivot view — structural data is meaningless when transposed
+    content2 = JSON.stringify(rows, null, 2);
+    mime = 'application/json'; ext = 'json';
+
+  } else if (format === 'tsv') {
+    const {headers, rows: outRows} = getExportShape();
+    const lines = [headers.join('\t')].concat(outRows.map(r => r.map(v => String(v??'')).join('\t')));
+    content2 = lines.join('\n');
+    mime = 'text/tab-separated-values'; ext = 'tsv';
+
+  } else if (format === 'xlsx') {
+    if (!window.XLSX) {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = () => exportResults('xlsx');
+      document.head.appendChild(s); return;
+    }
+    const {headers, rows: outRows, pivoted} = getExportShape();
+    const aoa = [headers, ...outRows];
+    const wb  = XLSX.utils.book_new();
+    const ws  = XLSX.utils.aoa_to_sheet(aoa);
+    XLSX.utils.book_append_sheet(wb, ws, pivoted ? 'Results (Pivoted)' : 'Results');
+    XLSX.writeFile(wb, filename + (pivoted ? '_pivoted' : '') + '.xlsx'); return;
+
+  } else {
+    // CSV — handle commas and quotes in values
+    const {headers, rows: outRows} = getExportShape();
+    const escape = v => { const s=String(v??''); return s.includes(',')||s.includes('"')||s.includes('\n') ? '"'+s.replace(/"/g,'""')+'"' : s; };
+    const lines  = [headers.map(escape).join(',')].concat(outRows.map(r => r.map(escape).join(',')));
+    content2 = lines.join('\n');
+    mime = 'text/csv'; ext = 'csv';
+  }
+
+  const blob = new Blob([content2], {type: mime});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = filename + '.' + ext;
+  a.click(); URL.revokeObjectURL(a.href);
+  const pivotSuffix = (resultsView === 'column' && format !== 'json') ? ' (pivoted)' : '';
+  setExecStatus('✓ Exported as ' + ext.toUpperCase() + pivotSuffix, 'var(--green)');
+  setTimeout(()=>setExecStatus('',''), 3000);
+}
+
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── One-time reconciliation of legacy job SQL fields ─────────────────────────
+// Older versions of saveBackToJob only wrote to ONE of {insertSQL, sql,
+// migrationSQL}, leaving the others stale. The project builder uses
+// `job.sql || job.insertSQL` to snapshot SQL when adding a job to a group,
+// so divergent fields meant the wrong (old) SQL got copied in.
+// This pass picks a canonical value (preferring insertSQL — the field the
+// SQL Editor has historically written to) and replicates it across the
+// other present fields. Same fix is mirrored into project group steps.
+function reconcileJobSQLFields() {
+  let fixed = 0, stepFixed = 0;
+  try {
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    let anyJobChanged = false;
+    jobs.forEach(j => {
+      const canonical = (j.insertSQL || j.sql || j.migrationSQL || '').trim();
+      if (!canonical) return;
+      if ('insertSQL'    in j && j.insertSQL    !== canonical) { j.insertSQL    = canonical; fixed++; anyJobChanged = true; }
+      if ('sql'          in j && j.sql          !== canonical) { j.sql          = canonical; fixed++; anyJobChanged = true; }
+      if ('migrationSQL' in j && j.migrationSQL && j.migrationSQL !== canonical) { j.migrationSQL = canonical; fixed++; anyJobChanged = true; }
+    });
+    if (anyJobChanged) localStorage.setItem('cygenix_jobs', JSON.stringify(jobs));
+
+    // Reconcile any group steps whose snapshot is stale relative to its job
+    const projects = JSON.parse(localStorage.getItem('cygenix_projects') || '[]');
+    let anyProjChanged = false;
+    projects.forEach(p => {
+      (p.groups || []).forEach(g => {
+        (g.steps || []).forEach(st => {
+          const j = jobs.find(x => x.id === st.jobId);
+          if (!j) return;
+          const canonical = (j.insertSQL || j.sql || j.migrationSQL || '').trim();
+          if (!canonical) return;
+          if ('insertSQL' in st && st.insertSQL !== canonical) { st.insertSQL = canonical; stepFixed++; anyProjChanged = true; }
+          if ('sql'       in st && st.sql       !== canonical) { st.sql       = canonical; stepFixed++; anyProjChanged = true; }
+        });
+      });
+    });
+    if (anyProjChanged) localStorage.setItem('cygenix_projects', JSON.stringify(projects));
+  } catch(e) { /* non-fatal — page still loads */ }
+  return { fixed, stepFixed };
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+// DCL, not top-level: the shared scripts are deferred, and the CygenixDrive
+// checks below silently skipped Drive-backed script loading when run before
+// the deferred script had executed.
+document.addEventListener('DOMContentLoaded', () => {
+reconcileJobSQLFields();
+loadScripts();
+// Mirror migration jobs into the shared Co-Worker Drive ("SQL Editor › Jobs")
+// so they can be opened from the Drive just like saved scripts.
+if (window.CygenixDrive) {
+  try {
+    CygenixDrive.syncJobs(getJobsWithSQL().map(function(j){
+      return { jobId: j.id, name: j.name || ('Job ' + j.id), sql: j.insertSQL || j.migrationSQL || j.sql, target: j.target || '' };
+    })).catch(function(){});
+  } catch (_) {}
+}
+setEditorContext('draft', null, 'New script');
+renderLibrary();
+updateConnLabel();
+updateLineNumbers();
+updateStatus();
+});
+
+// Drag a .sql file from the Co-Worker Drive overlay straight into the editor.
+// The Drive rows expose an "application/x-cygenix-drive-file" payload ({id,
+// name}); we read that file's text from the shared Drive and load it, linking
+// it so "Save as Script" writes back to the same file.
+(function wireDriveDrop() {
+  const MIME = 'application/x-cygenix-drive-file';
+  const zone = () => document.getElementById('editor-upper');
+  const hasDrivePayload = (dt) => dt && Array.from(dt.types || []).indexOf(MIME) !== -1;
+  // Listen on the DOCUMENT (capture phase) so the drop is caught wherever it
+  // lands — including on the Drive overlay, which sits above the editor. A drop
+  // only fires if dragover called preventDefault, so we do that globally for
+  // our payload. This avoids depending on the editor being the exact target or
+  // on the overlay being click-through (which breaks the native drag).
+  document.addEventListener('dragover', (e) => {
+    if (!hasDrivePayload(e.dataTransfer)) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'copy'; } catch (_) {}
+    const z = zone(); if (z) z.classList.add('drive-drop');
+  }, true);
+  document.addEventListener('dragend', () => { const z = zone(); if (z) z.classList.remove('drive-drop'); }, true);
+  document.addEventListener('drop', async (e) => {
+    if (!hasDrivePayload(e.dataTransfer)) return;
+    e.preventDefault(); e.stopPropagation();
+    const z = zone(); if (z) z.classList.remove('drive-drop');
+    let payload; try { payload = JSON.parse(e.dataTransfer.getData(MIME)); } catch (_) { return; }
+    if (!payload || !payload.id || !window.CygenixDrive) return;
+    try {
+      const sql = await CygenixDrive.readText(payload.id);
+      const name = (payload.name || 'Drive file').replace(/\.sql$/i, '');
+      applySqlToEditor(sql, name, payload.id);
+      // Close the Drive overlay so the freshly-loaded SQL is visible.
+      if (window.CygenixDriveModal && CygenixDriveModal.close) CygenixDriveModal.close();
+    } catch (_) { setExecStatus('Could not open that file', 'var(--red)'); }
+  }, true);
+})();
+
+// Check URL params — support both ?job=id (direct) and ?edit=id (from dashboard editJob)
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const jobId  = params.get('job') || params.get('edit');
+  if (jobId) {
+    switchLibTab('jobs');
+    setTimeout(function(){ loadJobSQL(jobId); }, 150);
+  }
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Open-with-SQL handler — driven by ?sql=<urlencoded>&conn=source|target&run=1
+// URL params. The dashboard's batch-import "View" button uses this to land the
+// user here with a SELECT TOP 1000 against the table they just imported,
+// already pointed at the right connection, ready (or already running).
+//
+// Lifecycle:
+//   1. Read params on script load
+//   2. Set the conn-select dropdown immediately (it's plain HTML, ready now)
+//   3. Stuff the SQL into __cygMonaco.pendingValue so Monaco picks it up on
+//      mount. If Monaco is already mounted, setValue directly.
+//   4. If ?run=1, poll for Monaco ready + connection available, then fire
+//      runSQL() exactly once.
+//
+// We also set a flag so the draft-restore code below doesn't overwrite our
+// loaded SQL with the user's previous draft.
+// ─────────────────────────────────────────────────────────────────────────────
+window.__cygOpenWithSqlActive = false;
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const sqlParam  = params.get('sql');
+  const connParam = params.get('conn');
+  const runParam  = params.get('run');
+
+  if (!sqlParam) return;
+  window.__cygOpenWithSqlActive = true;
+
+  // 1. Set connection dropdown if requested. Validate against known options
+  // before assigning so a malformed param doesn't leave the dropdown empty.
+  if (connParam === 'source' || connParam === 'target'){
+    const sel = document.getElementById('conn-select');
+    if (sel){
+      sel.value = connParam;
+      try { if (typeof updateConnLabel === 'function') updateConnLabel(); } catch {}
+    }
+  }
+
+  // 2. Load the SQL into the editor. Prefer Monaco if it's ready; otherwise
+  // leave a pending value (the editor's create-time read of pendingValue
+  // will pick it up).
+  try {
+    if (window.__cygMonaco?.ready && window.__cygMonaco.editor){
+      window.__cygMonaco.editor.setValue(sqlParam);
+    } else if (window.__cygMonaco){
+      window.__cygMonaco.pendingValue = sqlParam;
+    }
+    // Mirror to the proxy textarea so any non-Monaco code path that reads
+    // .value gets the right content (e.g. runSQL itself reads from the
+    // textarea on line 1196, which Monaco keeps in sync via setValue).
+    const ta = document.getElementById('sql-editor');
+    if (ta) ta.value = sqlParam;
+  } catch (e){
+    console.warn('[open-with-sql] Failed to load SQL into editor:', e);
+  }
+
+  // 3. Auto-run if asked. Wait for Monaco to mount (so the editor value is
+  // canonical) AND give the connection check a moment to populate. Cap at
+  // ~5s so we don't hang forever if something's wrong.
+  if (runParam === '1'){
+    let attempts = 0;
+    const tryRun = () => {
+      attempts++;
+      const ready = window.__cygMonaco?.ready === true;
+      if (!ready && attempts < 50){
+        return setTimeout(tryRun, 100);
+      }
+      if (typeof runSQL === 'function'){
+        try { runSQL(); }
+        catch (e){ console.warn('[open-with-sql] runSQL failed:', e); }
+      }
+    };
+    setTimeout(tryRun, 250);
+  }
+
+  // Clean the URL so a refresh doesn't re-run the query (and so the params
+  // don't sit there confusingly). Leaves the path + hash intact.
+  try {
+    const cleanUrl = window.location.pathname + (window.location.hash || '');
+    window.history.replaceState({}, '', cleanUrl);
+  } catch {}
+})();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SQL Editor draft persistence — keeps the user's in-progress SQL across page
+// navigations until they explicitly start a new script or load a saved one.
+//
+// Storage: localStorage['cygenix_sql_editor_draft'] — local-only, NOT synced
+// to Cosmos. Drafts may contain unfinished work, sensitive table names, or
+// pasted credentials, none of which belong in the cloud sync. The Cosmos
+// sync allowlist (cygenix-cosmos-sync.js → SYNC_KEYS) does not include this
+// key, so writes here stay on the device.
+//
+// Lifecycle:
+//   - On every input change, debounce-save current text to localStorage
+//   - On page load, if draft exists AND no script/job is being loaded by URL
+//     param, restore it into the editor
+//   - Cleared by newScript() / loadScript() / loadJobSQL() / save flows
+// ─────────────────────────────────────────────────────────────────────────────
+(function () {
+  const DRAFT_KEY = 'cygenix_sql_editor_draft';
+  const DEBOUNCE_MS = 600;
+  let _draftTimer = null;
+
+  function getEditorValue() {
+    // Prefer Monaco if mounted, fall back to the textarea proxy
+    try {
+      if (window.__cygMonaco?.ready && window.__cygMonaco.editor) {
+        return window.__cygMonaco.editor.getValue() || '';
+      }
+    } catch {}
+    const ta = document.getElementById('sql-editor');
+    return ta ? (ta.value || '') : '';
+  }
+
+  function setEditorValue(v) {
+    const ta = document.getElementById('sql-editor');
+    try {
+      if (window.__cygMonaco?.ready && window.__cygMonaco.editor) {
+        window.__cygMonaco.editor.setValue(v || '');
+      } else if (window.__cygMonaco) {
+        // Monaco not ready yet — leave a pending value for it to pick up
+        window.__cygMonaco.pendingValue = v || '';
+      }
+    } catch {}
+    if (ta) ta.value = v || '';
+    if (typeof updateLineNumbers === 'function') updateLineNumbers();
+    if (typeof updateStatus === 'function') updateStatus();
+  }
+
+  function saveDraft() {
+    try {
+      const v = getEditorValue();
+      // Don't save the placeholder "starter" template as a draft — only real
+      // user-edited content. The newScript() helper writes a known starter
+      // string; persisting that just creates noise.
+      const STARTER = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+      if (!v || v === STARTER) {
+        localStorage.removeItem(DRAFT_KEY);
+        return;
+      }
+      localStorage.setItem(DRAFT_KEY, v);
+    } catch {}
+  }
+
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+  }
+
+  function scheduleDraftSave() {
+    if (_draftTimer) clearTimeout(_draftTimer);
+    _draftTimer = setTimeout(saveDraft, DEBOUNCE_MS);
+  }
+
+  // Hook the existing textarea input event — Monaco fires a synthetic input
+  // event on the textarea on every content change, so this single listener
+  // catches both Monaco edits and direct textarea edits in the fallback case.
+  const ta = document.getElementById('sql-editor');
+  if (ta) {
+    ta.addEventListener('input', scheduleDraftSave);
+  }
+
+  // Restore a saved draft on load. Wait briefly for Monaco to be ready so
+  // setValue lands on the real editor rather than the proxy textarea (which
+  // would then get overwritten when Monaco initialises with its pendingValue).
+  // If Monaco never loads, the fallback path still works because we set
+  // ta.value too.
+  function restoreDraft() {
+    // If the dashboard sent us here with ?sql=..., that loaded SQL is the
+    // user's current intent — don't overwrite it with their previous draft.
+    if (window.__cygOpenWithSqlActive) return;
+
+    let draft = '';
+    try { draft = localStorage.getItem(DRAFT_KEY) || ''; } catch {}
+    if (!draft) return;
+
+    // Don't clobber content that's already being loaded by another flow —
+    // e.g. ?job=... URL param triggering loadJobSQL on init. If the editor
+    // already has non-starter content, leave it alone.
+    const current = getEditorValue();
+    const STARTER = '-- Write your SQL here\n\nSELECT TOP 100 * FROM ';
+    if (current && current !== STARTER && current.trim().length > 0) return;
+
+    setEditorValue(draft);
+  }
+
+  // Try restoring once Monaco is ready; if it never reports ready within
+  // 3 seconds, restore into the textarea anyway.
+  let _restoreAttempts = 0;
+  function tryRestore() {
+    if (window.__cygMonaco?.ready) {
+      restoreDraft();
+      return;
+    }
+    if (_restoreAttempts++ < 30) {
+      setTimeout(tryRestore, 100);
+    } else {
+      // Monaco didn't load — restore into the textarea fallback
+      restoreDraft();
+    }
+  }
+  // Defer slightly so any URL-param-driven loaders (loadJobSQL etc.) get a
+  // chance to populate the editor first.
+  setTimeout(tryRestore, 200);
+
+  // Clear the draft when the user explicitly starts fresh or loads a saved
+  // script/job. Wrap the existing functions rather than editing them, so the
+  // draft logic stays self-contained in this block.
+  ['newScript', 'loadScript', 'loadJobSQL'].forEach(fnName => {
+    const orig = window[fnName];
+    if (typeof orig === 'function') {
+      window[fnName] = function (...args) {
+        const r = orig.apply(this, args);
+        clearDraft();
+        return r;
+      };
+    }
+  });
+
+  // Expose a manual clear for any save flow that wants to use it
+  window.cygenixClearSqlDraft = clearDraft;
+})();
+

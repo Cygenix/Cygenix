@@ -198,15 +198,25 @@ var CygenixConnections = (function () {
   // ── Blob readers/writers ────────────────────────────────────────────────
   // These operate on the whole top-level object. Per-user slicing happens
   // in get()/save()/savedGetAll()/savedSetAll(), not here.
+  // Parsed-blob memo: get() sits on render paths and inside polling loops
+  // (agentive_migration's 4s connection watcher), and each call was a full
+  // JSON.parse of the connections blob. The memo keys on the raw string, so
+  // any write — ours via writeBlob, or another tab's via the storage event —
+  // is picked up simply because the string changed.
+  const _blobMemo = new Map();   // key → { raw, parsed }
+
   function readBlob(key) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) return {};
+      const memo = _blobMemo.get(key);
+      if (memo && memo.raw === raw) return memo.parsed;
       const parsed = JSON.parse(raw);
       // Defensive: older code may have written a flat object (not keyed by
       // uid). Treat anything that doesn't look like a uid-keyed map as
       // empty — safer than silently exposing one user's data to another.
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      _blobMemo.set(key, { raw, parsed });
       return parsed;
     } catch { return {}; }
   }
@@ -332,7 +342,10 @@ var CygenixConnections = (function () {
     migrateLegacyBlob(LS_SAVED);
     const blob = readBlob(LS_SAVED);
     const arr = blob[uid];
-    return Array.isArray(arr) ? arr : [];
+    // Copy: readBlob's result is memoised, and callers of savedGetAll
+    // (the Connections page mutates its list in place before saving) must
+    // not write into the shared parse.
+    return Array.isArray(arr) ? arr.map(x => ({ ...x })) : [];
   }
   function savedSetAll(list) {
     const uid = currentUserTag();

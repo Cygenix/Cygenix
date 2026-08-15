@@ -11,7 +11,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(__dirname + '/../public/object_mapping.html', 'utf8');
+const html = (fs.readFileSync(__dirname + '/../public/object_mapping.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/object-mapping-app.js', 'utf8'));
 const start = html.indexOf('// ── Table picker modal ─');
 const end   = html.indexOf('async function selectTable(which, value){');
 if (start < 0 || end < 0 || end < start) {

@@ -79,8 +79,17 @@
     return false;
   }
 
+  // Memoised across calls: the full scan below walks every localStorage key
+  // and JSON-parses each tenant record, and the fetch wrapper runs it on
+  // EVERY API request. The token itself only changes when MSAL writes a new
+  // one, roughly hourly — so serve the last result until 30s before its
+  // expiry and rescan then. A sign-out clears MSAL's keys, and the renewal
+  // path below overwrites the memo when it acquires a fresh token.
+  let _tokenMemo = { token: '', exp: 0 };
+
   window.getCygenixIdToken = function getCygenixIdToken() {
     const nowSec = Math.floor(Date.now() / 1000);
+    if (_tokenMemo.token && _tokenMemo.exp - 30 > nowSec) return _tokenMemo.token;
     let bestToken = '';
     let bestExp = 0;
 
@@ -146,6 +155,7 @@
       }
     }
 
+    _tokenMemo = { token: bestToken, exp: bestExp || 0 };
     return bestToken;
   };
 

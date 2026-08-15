@@ -12,7 +12,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8');
+const html = (fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8'));
 const start = html.indexOf('// ── Job counting — one definition, shared by every panel');
 const end   = html.indexOf('function updateStats()');
 if (start < 0 || end < 0 || end < start) {

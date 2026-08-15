@@ -682,7 +682,11 @@ async function smEnsureLoaded(force){
 let _redrawTimer = null;
 function smScheduleRedraw(){
   if (_redrawTimer) return;
-  _redrawTimer = setTimeout(() => { _redrawTimer = null; smRenderCanvas(); smRenderTree(); }, 120);
+  // 400ms, not 120: during the initial column stream every arriving table
+  // fires this, and each run rebuilds the whole canvas and tree. Batching
+  // at 400ms turns ~60 full redraws into a handful without the fill-in
+  // feeling laggy.
+  _redrawTimer = setTimeout(() => { _redrawTimer = null; smRenderCanvas(); smRenderTree(); }, 400);
 }
 
 function smStatus(msg){ const el = $('sm-status'); if (el) el.textContent = msg || ''; }

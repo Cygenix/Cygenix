@@ -221,7 +221,28 @@ const CygenixSync = (() => {
     } catch { return null; }
   }
 
+  // One shared GET /load per page-boot window. init() and ensureKey() both
+  // fetch the WHOLE user blob; on an object_mapping ?edit= load they used to
+  // download it twice, and the editor awaited the second copy. A 5s TTL is
+  // enough to cover a boot without ever serving genuinely stale data to a
+  // user-triggered refresh later in the session.
+  let _loadShared = null;        // { at, promise }
+  function sharedLoad() {
+    const now = Date.now();
+    if (_loadShared && now - _loadShared.at < 5000) return _loadShared.promise;
+    const promise = callApiRaw('load', 'GET');
+    _loadShared = { at: now, promise };
+    promise.then((r) => { if (r == null) _loadShared = null; },
+                 ()  => { _loadShared = null; });
+    return promise;
+  }
+
   async function callApi(action, method, body) {
+    if (action === 'load' && (method || 'GET') === 'GET' && !body) return sharedLoad();
+    return callApiRaw(action, method, body);
+  }
+
+  async function callApiRaw(action, method, body) {
     const userId = getUserId();
     if (!userId) return null;
     try {
@@ -368,6 +389,9 @@ const CygenixSync = (() => {
     return { ok: true, updatedAt: r.updatedAt };
   }
 
+  // localStorage keys written since the last successful flush.
+  const _dirtyKeys = new Set();
+
   async function save() {
     if (!getUserId()) return null;
     // v1.3 change (26-May-2026): pure local→cloud upload. No load-then-merge,
@@ -387,8 +411,17 @@ const CygenixSync = (() => {
     // delete them locally and the next save will remove them from Cosmos.
     // If you want cloud to be authoritative on a fresh page load, init()
     // now always calls forceLoad() first — see init() below.
+    // Only the keys that actually changed since the last flush. The server
+    // overwrites per present field ("merged[key] = body[key]"), so a partial
+    // payload is safe — and a one-key edit stops re-serialising and shipping
+    // all fifteen fields (jobs with generated SQL, snapshots, inventory)
+    // every three seconds while someone types. An empty dirty set — a
+    // direct save() call from the console or a restore helper — falls back
+    // to pushing everything, which was the old contract.
+    const dirty = _dirtyKeys.size ? new Set(_dirtyKeys) : null;
     const payload = {};
     for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
+      if (dirty && !dirty.has(localKey)) continue;
       try {
         const v = localStorage.getItem(localKey);
         if (v !== null) payload[cloudField] = JSON.parse(v);
@@ -396,9 +429,16 @@ const CygenixSync = (() => {
         console.warn('[CygenixSync] save: skipping unparseable', localKey, e.message);
       }
     }
-    if (!Object.keys(payload).length) return null;
+    if (!Object.keys(payload).length) { if (dirty) dirty.forEach(k => _dirtyKeys.delete(k)); return null; }
     const r = await callApi('save', 'POST', payload);
-    if (r?.saved) console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt);
+    if (r?.saved) {
+      console.log('[CygenixSync] Saved to Cosmos DB', r.updatedAt,
+        dirty ? '(' + Object.keys(payload).length + ' changed field(s))' : '(full)');
+      // Clear only what this flush carried — keys dirtied while the POST
+      // was in flight stay marked for the next one.
+      if (dirty) dirty.forEach(k => _dirtyKeys.delete(k));
+      else _dirtyKeys.clear();
+    }
     return r;
   }
 
@@ -781,18 +821,22 @@ const CygenixSync = (() => {
   localStorage.setItem = function(k, v) {
     _orig(k, v);
     if (SYNC_KEYS.includes(k) && getUserId()) {
+      _dirtyKeys.add(k);
       if (_saveTimer) clearTimeout(_saveTimer);
       _saveTimer = setTimeout(save, 3000);
     }
   };
 
-  // Init with retry — waits until user is logged in
+  // Init with retry — waits until user is logged in. The retry starts at
+  // 100ms and backs off: getUserId() reads storage synchronously, so when
+  // identity is already there (the common case) the first tick finds it and
+  // cloud data starts loading immediately instead of after a fixed delay.
   let _done = false, _retries = 0;
   async function init() {
     if (_done) return;
     const userId = getUserId();
     if (!userId) {
-      if (_retries++ < 20) setTimeout(init, 1000); // retry every second for 20s
+      if (_retries++ < 24) setTimeout(init, Math.min(100 * 2 ** Math.min(_retries, 4), 1600));
       return;
     }
     _done = true;
@@ -821,6 +865,11 @@ const CygenixSync = (() => {
     // Store current user (normalised) so future user-switch checks are stable
     localStorage.setItem('cygenix_active_user', currentUserId);
 
+    // ensureUser writes the user record; the load reads the data blob. They
+    // are independent, and each can be seconds on an Azure cold start, so
+    // paying them serially doubled the wait for first data. Start both now;
+    // the load's result is picked up below.
+    const _loadP = callApi('load', 'GET');
     await ensureUser();
 
     // ── Per-key gap-fill from cloud ────────────────────────────────────────
@@ -854,7 +903,7 @@ const CygenixSync = (() => {
     // debounced save, and immediately hard-refreshes tab A will lose the
     // unsaved edit (cloud will overwrite). That window is ~3 seconds and
     // is an acceptable cost to stop the multi-machine pollution.
-    const cloud = await callApi('load', 'GET');
+    const cloud = await _loadP;
     let n = 0;
     if (cloud && typeof cloud === 'object') {
       for (const [cloudField, localKey] of Object.entries(FIELD_MAP)) {
@@ -902,8 +951,10 @@ const CygenixSync = (() => {
     // the "page load polluted Cosmos" failure mode.
   }
 
-  // Start after a short delay to let auth complete
-  setTimeout(init, 800);
+  // Start immediately: init() polls for identity with backoff, so there is
+  // nothing a fixed head-start delay buys — it was 800ms of dead time on
+  // every page for the signed-in common case.
+  init();
 
   return {
     init, save, saveNow, load, forceLoad, ensureKey, ensureUser, ping, getSubscription, getUserId,

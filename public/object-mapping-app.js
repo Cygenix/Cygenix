@@ -1,0 +1,5470 @@
+// object-mapping-app.js — the page logic of object_mapping.html, extracted verbatim from its inline
+// <script> blocks (in original order) so the browser can cache and
+// bytecode-cache it across navigations. Inline scripts are parser-
+// blocking and re-parsed from scratch on every reload; as an external
+// deferred file this runs identically (all blocks already executed
+// against the full DOM semantics they observe today, and defer keeps
+// document order) but is fetched once and code-cached thereafter.
+// The shared libs (connections.js, cygenix-cosmos-sync.js, …) are
+// earlier in <head> with defer, so they run first.
+
+/* ═══ block 1 — extracted from an inline <script> in object_mapping.html ═══ */
+
+// ──────────────────────────────────────────────────────────────────────────
+// AUTOSAVE FETCH GUARD — must run BEFORE cygenix-cosmos-sync.js loads.
+//
+// When the dashboard's "⚡ Generate SQL — Bulk" runner opens this page in
+// a hidden iframe with ?autosave=1, we need to prevent the iframe's
+// CygenixSync.init() from pulling stale data from Cosmos and overwriting
+// localStorage. Each iframe runs init() at module load — synchronously
+// dispatched, awaiting the network GET. By the time my CygenixSync method
+// patches install, init has already grabbed its internal callApi closure.
+//
+// So we go one level deeper and patch `fetch` itself. For the Cosmos
+// data-API "load" GET (api/data/load), we return a fake "success, no
+// data" response. localStorage stays untouched and the editor proceeds
+// with whatever the parent dashboard wrote there.
+//
+// All other fetches pass through unchanged, including the Azure Function
+// schema fetches and the Cosmos save POST (which we WANT to happen so the
+// iframe's saveAsJob propagates to Cosmos as a normal write).
+// ──────────────────────────────────────────────────────────────────────────
+(function(){
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('autosave') !== '1') return;
+
+    const origFetch = window.fetch;
+    window.fetch = function(input, init){
+      try {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const method = (init && init.method) || (typeof input === 'object' && input.method) || 'GET';
+        // The Cosmos data-API exposes /api/data/load (GET) — block ONLY this.
+        // Save (POST) and all other endpoints (db-connect, schema-tables, etc.)
+        // are untouched.
+        if (/\/api\/data\/load(\?|$)/i.test(url) && /^GET$/i.test(method)){
+          window._cygenixAutosaveBlockedLoad = (window._cygenixAutosaveBlockedLoad||0) + 1;
+          // Match the shape the real endpoint returns: { success:true, data:{} }
+          // sync.js's init expects a payload it can iterate; an empty object
+          // means "nothing to apply".
+          return Promise.resolve(new Response(
+            JSON.stringify({ success: true, data: {} }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          ));
+        }
+      } catch(e) { /* fall through to real fetch */ }
+      return origFetch.apply(this, arguments);
+    };
+
+    window._cygenixAutosaveFetchGuardActive = true;
+  } catch(e){ /* never block page load over this */ }
+})();
+
+
+/* ═══ block 2 — extracted from an inline <script> in object_mapping.html ═══ */
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+if (!sessionStorage.getItem('cygenix_token')) window.location.href = '/login.html';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const WASIS_KEY = 'cygenix_wasis_rules';
+let mode = 'single'; // 'single' | 'otm'
+
+// Connection state
+let srcConn = '', tgtConn = '';
+let srcSchema = null, tgtSchema = null;
+
+// Source
+let srcTable = null;       // { name, schema, fullName, columns, rowCount }
+let srcAllTables = [];     // all tables from source schema
+
+// Target (single mode)
+let tgtTable = null;
+let tgtAllTables = [];
+let columnMapping = [];    // [{srcCol, tgtCol, transform, match}]
+
+// Target (OTM mode)
+let targetTables = [];     // [{id, fullName, schema, name, columns, pkMode, pkCol, pkVar, mappings, fks}]
+
+// SQL state
+let generatedSQL = { insert:'', schema:'', verify:'' };
+let currentSQLTab = 'sql';
+let wasisRules = [];
+let _lastTruncWarnings = [];
+
+// Edit mode
+let editJobId = null;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function $(id){ return document.getElementById(id); }
+function esc(s){ const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML; }
+function isFn(c){ return c&&(c.startsWith('https://')||c.startsWith('http://')); }
+function parseDbName(cs){
+  try {
+    // Standard SQL Server conn-string keys first — unambiguous.
+    const m = cs.match(/(?:database|initial.?catalog)\s*=\s*([^;]+)/i);
+    if (m) return m[1].trim();
+    // Path-segment fallback only works for true conn-string-shaped URLs
+    // (e.g. mssql://user:pass@host:1433/MyDb). For Azure Function URLs the
+    // path is the route name (/api/db etc.) — NOT the database. Don't
+    // return that as a DB name; bail and let callers fall back to the
+    // schema cache or to no DB-prefix in generated SQL.
+    if (/^https?:\/\//i.test(cs) && /\.azurewebsites\.net\b/i.test(cs)) return '';
+    if (/\/api\/[^/?]+(?:\?|$)/i.test(cs)) return '';
+    const p = cs.match(/\/([^/?]+)(?:\?|$)/i);
+    return p ? p[1].trim() : '';
+  } catch { return ''; }
+}
+function showStatus(msg, type='info'){
+  const el=$('status-bar');
+  el.textContent=msg; el.className='status-bar visible status-'+type;
+  if(type!=='err') setTimeout(()=>{el.className='status-bar';}, 4000);
+}
+function todayStr(){ return new Date().toLocaleDateString('en-GB'); }
+
+// ══════════════════════════════════════════════════════════════════════════
+// DDL GENERATOR — cross-dialect CREATE TABLE (Postgres ↔ SQL Server)
+// Inlined from ddl_generator.js. Unit-tested separately (63 tests). Same
+// function bodies, re-exposed on window so existing code paths and the modal
+// can call them.
+//
+// Type mappings here are opinionated and lossy by design — see warnings[] in
+// each mapper. The UI shows these warnings; users can edit the generated DDL
+// freely in the modal textarea before executing.
+// ══════════════════════════════════════════════════════════════════════════
+
+function ddlParseType(rawType) {
+  if (!rawType) return { base: '', raw: '' };
+  const raw = String(rawType).trim();
+  const m = raw.match(/^([A-Z][A-Z0-9 _]*?)(?:\(([^)]+)\))?$/i);
+  if (!m) return { base: raw.toUpperCase(), raw };
+  const base = m[1].trim().toUpperCase();
+  const params = m[2];
+  if (!params) return { base, raw };
+  const parts = params.split(',').map(p => p.trim());
+  const length = parts[0] === 'MAX' ? 'MAX' : parseInt(parts[0], 10);
+  if (parts.length === 1) return { base, length: isNaN(length) ? parts[0] : length, raw };
+  const scale = parseInt(parts[1], 10);
+  return { base, precision: isNaN(length) ? parts[0] : length, scale: isNaN(scale) ? parts[1] : scale, raw };
+}
+
+function ddlPgToMssql(parsed) {
+  const { base, length, precision, scale } = parsed;
+  const warnings = [];
+  let out;
+  switch (base) {
+    case 'SMALLINT':                  out = 'SMALLINT'; break;
+    case 'INTEGER': case 'INT':        out = 'INT'; break;
+    case 'BIGINT':                     out = 'BIGINT'; break;
+    case 'SERIAL':                     out = 'INT IDENTITY(1,1)'; warnings.push('SERIAL → INT IDENTITY — consider whether you want identity on the target'); break;
+    case 'BIGSERIAL':                  out = 'BIGINT IDENTITY(1,1)'; warnings.push('BIGSERIAL → BIGINT IDENTITY'); break;
+    case 'SMALLSERIAL':                out = 'SMALLINT IDENTITY(1,1)'; break;
+    case 'REAL':                       out = 'REAL'; break;
+    case 'DOUBLE PRECISION':           out = 'FLOAT(53)'; break;
+    case 'NUMERIC': case 'DECIMAL':
+      if (precision != null && scale != null) out = `DECIMAL(${precision},${scale})`;
+      else if (precision != null)              out = `DECIMAL(${precision})`;
+      else                                      out = 'DECIMAL(38,10)';
+      break;
+    case 'MONEY':                      out = 'MONEY'; break;
+    case 'CHARACTER VARYING': case 'VARCHAR':
+      if (length === 'MAX' || length == null) out = 'NVARCHAR(MAX)';
+      else if (length > 4000)                  out = 'NVARCHAR(MAX)';
+      else                                      out = `NVARCHAR(${length})`;
+      break;
+    case 'CHARACTER': case 'CHAR':
+      if (length == null) out = 'NCHAR(1)';
+      else if (length > 4000) { out = 'NVARCHAR(MAX)'; warnings.push(`CHAR(${length}) exceeds NCHAR max — mapped to NVARCHAR(MAX)`); }
+      else                     out = `NCHAR(${length})`;
+      break;
+    case 'TEXT':                       out = 'NVARCHAR(MAX)'; break;
+    case 'CITEXT':                     out = 'NVARCHAR(MAX)'; warnings.push('CITEXT is case-insensitive in PG; target will follow SQL Server collation — verify'); break;
+    case 'DATE':                       out = 'DATE'; break;
+    case 'TIME': case 'TIME WITHOUT TIME ZONE':     out = 'TIME(7)'; break;
+    case 'TIME WITH TIME ZONE':        out = 'TIME(7)'; warnings.push('TIME WITH TIME ZONE → TIME — timezone info is lost'); break;
+    case 'TIMESTAMP': case 'TIMESTAMP WITHOUT TIME ZONE': out = 'DATETIME2(7)'; break;
+    case 'TIMESTAMP WITH TIME ZONE': case 'TIMESTAMPTZ': out = 'DATETIMEOFFSET(7)'; break;
+    case 'INTERVAL':                   out = 'VARCHAR(100)'; warnings.push('INTERVAL has no direct SQL Server equivalent — mapped to VARCHAR(100); consider BIGINT for microseconds'); break;
+    case 'BOOLEAN': case 'BOOL':       out = 'BIT'; break;
+    case 'BYTEA':                      out = 'VARBINARY(MAX)'; break;
+    case 'JSON': case 'JSONB':         out = 'NVARCHAR(MAX)'; warnings.push(`${base} → NVARCHAR(MAX) — loses JSON indexing; SQL Server 2016+ has JSON functions on NVARCHAR`); break;
+    case 'UUID':                       out = 'UNIQUEIDENTIFIER'; break;
+    case 'XML':                        out = 'XML'; break;
+    case 'INET': case 'CIDR':          out = 'VARCHAR(43)'; warnings.push(`${base} → VARCHAR(43) — SQL Server has no network type`); break;
+    case 'MACADDR':                    out = 'VARCHAR(17)'; warnings.push('MACADDR → VARCHAR(17) — SQL Server has no MAC address type'); break;
+    case 'TSVECTOR': case 'TSQUERY':   out = 'NVARCHAR(MAX)'; warnings.push(`${base} → NVARCHAR(MAX) — SQL Server has its own Full-Text Search`); break;
+    default:
+      if (base.endsWith('[]') || /ARRAY$/i.test(base)) { out = 'NVARCHAR(MAX)'; warnings.push(`Array type "${base}" has no SQL Server equivalent — mapped to NVARCHAR(MAX)`); }
+      else if (base === 'HSTORE')                      { out = 'NVARCHAR(MAX)'; warnings.push('HSTORE → NVARCHAR(MAX) — consider JSON'); }
+      else                                              { out = 'NVARCHAR(MAX)'; warnings.push(`Unknown Postgres type "${base}" — defaulted to NVARCHAR(MAX); edit DDL if needed`); }
+  }
+  return { type: out, warnings };
+}
+
+function ddlMssqlToPg(parsed) {
+  const { base, length, precision, scale } = parsed;
+  const warnings = [];
+  let out;
+  switch (base) {
+    case 'TINYINT':                    out = 'SMALLINT'; warnings.push('TINYINT (0-255 unsigned) → SMALLINT (signed) — range differs'); break;
+    case 'SMALLINT':                   out = 'SMALLINT'; break;
+    case 'INT': case 'INTEGER':        out = 'INTEGER'; break;
+    case 'BIGINT':                     out = 'BIGINT'; break;
+    case 'BIT':                        out = 'BOOLEAN'; break;
+    case 'REAL':                       out = 'REAL'; break;
+    case 'FLOAT':                      out = 'DOUBLE PRECISION'; break;
+    case 'DECIMAL': case 'NUMERIC':
+      if (precision != null && scale != null) out = `NUMERIC(${precision},${scale})`;
+      else if (precision != null)              out = `NUMERIC(${precision})`;
+      else                                      out = 'NUMERIC(38,10)';
+      break;
+    case 'MONEY':                      out = 'MONEY'; break;
+    case 'SMALLMONEY':                 out = 'NUMERIC(10,4)'; warnings.push('SMALLMONEY → NUMERIC(10,4) — PG has no SMALLMONEY'); break;
+    case 'CHAR': case 'NCHAR':         out = length != null ? `CHAR(${length})` : 'CHAR(1)'; break;
+    case 'VARCHAR': case 'NVARCHAR':
+      if (length === 'MAX' || length == null) out = 'TEXT';
+      else                                     out = `VARCHAR(${length})`;
+      break;
+    case 'TEXT': case 'NTEXT':         out = 'TEXT'; break;
+    case 'DATE':                       out = 'DATE'; break;
+    case 'TIME':                       out = 'TIME'; break;
+    case 'DATETIME':                   out = 'TIMESTAMP'; warnings.push('DATETIME → TIMESTAMP — precision is higher on PG (microseconds vs 3.33ms)'); break;
+    case 'DATETIME2':                  out = 'TIMESTAMP'; break;
+    case 'SMALLDATETIME':              out = 'TIMESTAMP'; warnings.push('SMALLDATETIME → TIMESTAMP — range 1900-2079 is lost'); break;
+    case 'DATETIMEOFFSET':             out = 'TIMESTAMP WITH TIME ZONE'; break;
+    case 'TIMESTAMP':                  out = 'BYTEA'; warnings.push('SQL Server TIMESTAMP is a rowversion (8 bytes), NOT a timestamp — mapped to BYTEA; remove if not needed'); break;
+    case 'BINARY': case 'VARBINARY':   out = 'BYTEA'; break;
+    case 'IMAGE':                      out = 'BYTEA'; break;
+    case 'UNIQUEIDENTIFIER':           out = 'UUID'; break;
+    case 'XML':                        out = 'XML'; break;
+    case 'GEOGRAPHY': case 'GEOMETRY': out = 'TEXT'; warnings.push(`${base} → TEXT — install PostGIS and use GEOGRAPHY/GEOMETRY types instead if spatial ops are needed`); break;
+    case 'SQL_VARIANT':                out = 'TEXT'; warnings.push('SQL_VARIANT is polymorphic — collapsed to TEXT'); break;
+    case 'HIERARCHYID':                out = 'TEXT'; warnings.push('HIERARCHYID → TEXT — SQL Server-specific; consider PG ltree extension'); break;
+    default:                           out = 'TEXT'; warnings.push(`Unknown SQL Server type "${base}" — defaulted to TEXT; edit DDL if needed`);
+  }
+  return { type: out, warnings };
+}
+
+function ddlQuoteIdent(dialect, name) {
+  if (!name) return '';
+  if (dialect === 'postgres') return '"' + String(name).replace(/"/g, '""') + '"';
+  return '[' + String(name).replace(/]/g, ']]') + ']';
+}
+
+function ddlSplitQualified(fullName) {
+  const idx = fullName.indexOf('.');
+  if (idx < 0) return { schema: null, name: fullName };
+  return { schema: fullName.slice(0, idx), name: fullName.slice(idx + 1) };
+}
+
+function ddlDetectDialect(connString) {
+  if (!connString) return 'mssql';
+  const s = String(connString).trim().toLowerCase();
+  if (s.startsWith('postgres://') || s.startsWith('postgresql://')) return 'postgres';
+  return 'mssql';
+}
+
+function ddlGenerateCreateTable({ sourceDialect, targetDialect, sourceColumns, sourcePrimaryKeys, targetQualifiedName }) {
+  if (!sourceDialect || !targetDialect) throw new Error('Both sourceDialect and targetDialect are required');
+  if (!Array.isArray(sourceColumns) || sourceColumns.length === 0) throw new Error('sourceColumns must be a non-empty array');
+  if (!targetQualifiedName) throw new Error('targetQualifiedName is required');
+  const mapper =
+    sourceDialect === 'postgres' && targetDialect === 'mssql'    ? ddlPgToMssql :
+    sourceDialect === 'mssql'    && targetDialect === 'postgres' ? ddlMssqlToPg : null;
+  const warnings = [], typeMap = [], lines = [];
+  const sameDialect = sourceDialect === targetDialect;
+  for (const col of sourceColumns) {
+    const parsed = ddlParseType(col.type);
+    let tgtType;
+    if (sameDialect) tgtType = parsed.raw || parsed.base;
+    else { const r = mapper(parsed); tgtType = r.type; for (const w of r.warnings) warnings.push(`${col.name}: ${w}`); }
+    typeMap.push({ column: col.name, srcType: col.type, tgtType });
+    const nullable = col.nullable === false || col.nullable === 'NO' ? 'NOT NULL' : 'NULL';
+    lines.push(`    ${ddlQuoteIdent(targetDialect, col.name)} ${tgtType} ${nullable}`);
+    if (col.isIdentity && !/IDENTITY|GENERATED/i.test(tgtType)) warnings.push(`${col.name}: source column is identity — add identity syntax manually if needed`);
+    if (col.default != null && col.default !== '') warnings.push(`${col.name}: default "${col.default}" dropped — re-add manually (syntax differs)`);
+  }
+  if (sourcePrimaryKeys && sourcePrimaryKeys.length > 0) {
+    const pkCols = sourcePrimaryKeys.map(c => ddlQuoteIdent(targetDialect, c)).join(', ');
+    lines.push(`    PRIMARY KEY (${pkCols})`);
+  }
+  const { schema, name } = ddlSplitQualified(targetQualifiedName);
+  const qualifiedTarget = schema
+    ? `${ddlQuoteIdent(targetDialect, schema)}.${ddlQuoteIdent(targetDialect, name)}`
+    : ddlQuoteIdent(targetDialect, name);
+  return { ddl: `CREATE TABLE ${qualifiedTarget} (\n${lines.join(',\n')}\n);`, warnings, typeMap };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Modal + visibility wiring
+// ──────────────────────────────────────────────────────────────────────────
+
+// Shown when: (a) user typed a name in the create-side field that doesn't
+// match any existing table in that side's schema cache, AND (b) the OTHER
+// side has a table selected (so we have columns to base the CREATE on).
+// The hint auto-hides when any of those conditions stops being true.
+function ddlCheckCreateVisibility(createSide) {
+  // createSide = 'src' (user creating a source table) or 'tgt' (user creating a target table)
+  const input = document.getElementById(createSide + '-table-input');
+  const hint  = document.getElementById(createSide + '-create-hint');
+  if (!input || !hint) return;
+
+  const typed = (input.value || '').trim();
+  const otherSide = createSide === 'src' ? 'tgt' : 'src';
+  const otherTable = createSide === 'src' ? tgtTable : srcTable;
+  const tables = createSide === 'src' ? srcAllTables : tgtAllTables;
+
+  // Hide if nothing typed
+  if (!typed) { hint.style.display = 'none'; return; }
+  // Hide if there's no "donor" table (nothing to base columns on)
+  if (!otherTable || !otherTable.columns || otherTable.columns.length === 0) { hint.style.display = 'none'; return; }
+  // Hide if a matching table exists
+  const exists = tables.some(t => t.fullName === typed || t.name === typed);
+  if (exists) { hint.style.display = 'none'; return; }
+  hint.style.display = 'flex';
+}
+
+let _ddlCtx = null;  // {createSide, targetDialect, conn, typedName}
+
+function ddlOpenModal(createSide) {
+  // Resolve context: who's creating, from which donor, in which dialect, on which connection
+  const otherTable = createSide === 'src' ? tgtTable : srcTable;
+  if (!otherTable) {
+    showStatus('Select the other side first so we know the column structure','err');
+    return;
+  }
+  const createConn    = createSide === 'src' ? srcConn : tgtConn;
+  const donorConn     = createSide === 'src' ? tgtConn : srcConn;
+  if (!createConn)  { showStatus('No ' + createSide + ' connection configured','err'); return; }
+
+  const createDialect = ddlDetectDialect(createConn);
+  const donorDialect  = ddlDetectDialect(donorConn);
+  const typedName     = (document.getElementById(createSide + '-table-input').value || '').trim();
+  if (!typedName) { showStatus('Type a target table name first','err'); return; }
+
+  // Generate initial DDL
+  let result;
+  try {
+    result = ddlGenerateCreateTable({
+      sourceDialect: donorDialect,
+      targetDialect: createDialect,
+      sourceColumns: otherTable.columns,
+      sourcePrimaryKeys: otherTable.primaryKeys || [],
+      targetQualifiedName: typedName,
+    });
+  } catch (e) {
+    showStatus('Could not generate DDL: ' + e.message, 'err');
+    return;
+  }
+
+  _ddlCtx = { createSide, createDialect, donorDialect, conn: createConn, typedName };
+
+  // Populate modal
+  document.getElementById('ddl-modal-direction').textContent =
+    donorDialect.toUpperCase() + ' (' + otherTable.fullName + ') → ' + createDialect.toUpperCase() + ' (' + typedName + ')';
+  document.getElementById('ddl-textarea').value = result.ddl;
+  const warnList = document.getElementById('ddl-warnings-list');
+  const warnWrap = document.getElementById('ddl-warnings');
+  warnList.innerHTML = '';
+  if (result.warnings.length > 0) {
+    for (const w of result.warnings) {
+      const li = document.createElement('li');
+      li.textContent = w;
+      warnList.appendChild(li);
+    }
+    warnWrap.style.display = 'block';
+  } else {
+    warnWrap.style.display = 'none';
+  }
+  document.getElementById('ddl-result').style.display = 'none';
+  document.getElementById('ddl-run-btn').disabled = false;
+  document.getElementById('ddl-run-btn').textContent = '▶ Run';
+  document.getElementById('ddl-modal').style.display = 'flex';
+}
+
+function ddlCloseModal() {
+  document.getElementById('ddl-modal').style.display = 'none';
+  _ddlCtx = null;
+}
+
+async function ddlRun() {
+  if (!_ddlCtx) return;
+  const sql = document.getElementById('ddl-textarea').value.trim();
+  if (!sql) { ddlShowResult('DDL is empty','err'); return; }
+
+  const btn = document.getElementById('ddl-run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  ddlShowResult('Executing against ' + _ddlCtx.createSide + ' (' + _ddlCtx.createDialect + ')…', 'info');
+
+  try {
+    const res = await dbCall(_ddlCtx.conn, { action:'execute', sql });
+    if (res && res.error) {
+      ddlShowResult('🔴 ' + res.error, 'err');
+      btn.disabled = false; btn.textContent = '▶ Run';
+      return;
+    }
+    ddlShowResult('✓ Created. Refreshing schema…', 'ok');
+
+    // Refresh the relevant schema cache and auto-select the new table
+    if (_ddlCtx.createSide === 'tgt') {
+      await connectTgt();
+      const match = tgtAllTables.find(t => t.fullName === _ddlCtx.typedName || t.name === _ddlCtx.typedName.split('.').pop());
+      if (match) { selectTable('tgt', match.value); ddlShowResult('✓ Created and selected ' + match.fullName, 'ok'); }
+    } else {
+      await connectSrc();
+      const match = srcAllTables.find(t => t.fullName === _ddlCtx.typedName || t.name === _ddlCtx.typedName.split('.').pop());
+      if (match) { selectTable('src', match.value); ddlShowResult('✓ Created and selected ' + match.fullName, 'ok'); }
+    }
+    setTimeout(ddlCloseModal, 1200);
+  } catch (e) {
+    ddlShowResult('🔴 Error: ' + (e.message || String(e)), 'err');
+    btn.disabled = false; btn.textContent = '▶ Run';
+  }
+}
+
+function ddlShowResult(msg, kind) {
+  const el = document.getElementById('ddl-result');
+  if (!el) return;
+  el.style.display = 'block';
+  if (kind === 'ok')      { el.style.background = 'rgba(34,197,94,0.1)';  el.style.color = 'var(--green)'; }
+  else if (kind === 'err'){ el.style.background = 'rgba(239,68,68,0.1)';  el.style.color = 'var(--red)'; }
+  else                    { el.style.background = 'var(--bg3)';            el.style.color = 'var(--text2)'; }
+  el.textContent = msg;
+}
+
+// ── Connections (auto-load from CygenixConnections) ────────────────────────
+// DOMContentLoaded, not an immediate IIFE: the shared scripts are deferred
+// (they no longer block first paint), and deferred scripts are guaranteed to
+// have run — with globals like CygenixConnections defined — before DCL.
+document.addEventListener('DOMContentLoaded', function init(){
+  // Recent-maps grid on the empty canvas. Rendered from localStorage only, so
+  // it paints immediately — no connection or network round trip needed.
+  try { renderRecentMaps(''); } catch(e){ console.warn('[recent-maps]', e); }
+
+  const c = CygenixConnections.get();
+  // Source: same shape as target — Azure Function URL takes priority over
+  // direct connection string. Without this, source-Azure mode rendered as
+  // "not configured" even with a green Connections page.
+  srcConn = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
+  tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
+
+  const ak = localStorage.getItem('cygenix_api_key')||'';
+  if(ak) $('api-key').value = ak;
+
+  // Restore the source panel's width / collapsed state from the last visit.
+  omInitSplitter();
+
+  // Paint one empty WHERE row so the Options panel looks the same as before
+  // for a fresh map. checkEditMode overwrites both lists when loading a job.
+  renderWhereRows();
+  renderGroupByRows();
+
+  // Load wasis via shared helper (managed in Dashboard → System Parameters → Was/Is tab)
+  // The helper handles primary key + inventory fallback so this page and dashboard
+  // can never drift on where the rules live.
+  wasisRules = (typeof CygenixWasis !== 'undefined') ? CygenixWasis.getRules() : [];
+  if(!Array.isArray(wasisRules)) wasisRules = [];
+  renderWasisStatusBanner();
+
+  // Refresh wasis cache whenever the helper notifies of a change (cross-tab
+  // dashboard edits, Cosmos sync hydration, etc.)
+  if (typeof CygenixWasis !== 'undefined') {
+    CygenixWasis.subscribe(function(){
+      wasisRules = CygenixWasis.getRules();
+      renderWasisStatusBanner();
+    });
+  }
+
+  // Reflect current connection state in banner. If a connection is configured
+  // we fetch schema; if not, the connect fn sets an error banner pointing the
+  // user to Dashboard → Connections.
+  //
+  // Deferred via queueMicrotask so that module-scoped `let` bindings declared
+  // *after* this IIFE (e.g. `_paginatedSchemaSupported`) are out of their
+  // temporal dead zone by the time connectSrc/connectTgt run.
+  queueMicrotask(() => { connectSrc(); connectTgt(); });
+
+  // Check for edit mode
+  checkEditMode();
+
+  // Make the Drive the canonical home for jobs from the moment the page loads:
+  // mirror any jobs already in localStorage into "SQL Editor / Jobs" once the
+  // Drive library is ready. Deferred + best-effort so it never blocks startup.
+  setTimeout(() => { try { if (typeof mirrorJobsToDrive === 'function') mirrorJobsToDrive(); } catch (_) {} }, 1200);
+
+  // If there's no ?edit=<id> param (i.e. the user didn't arrive via Load Map),
+  // try restoring an in-progress WIP draft saved by _wipDraftSave on previous
+  // visits to this page. This is what makes the editor feel "sticky" when the
+  // user navigates to a different sidebar page and clicks back into Object
+  // Mapping mid-edit. The restore is async because schemas need to load first;
+  // it polls just like checkEditMode() does for ?edit= jobs.
+  const _hasEditParam = new URLSearchParams(location.search).get('edit') ||
+                        new URLSearchParams(location.search).get('job');
+  if(!_hasEditParam){
+    setTimeout(() => { if(typeof _wipDraftRestore==='function') _wipDraftRestore(); }, 0);
+  }
+});
+
+async function dbCall(conn, body){
+  const url = isFn(conn) ? conn : '/.netlify/functions/db-connect';
+  const payload = isFn(conn) ? body : {...body, connectionString: conn};
+  const res = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(60000)});
+  const data = await res.json().catch(()=>({error:'Non-JSON ('+res.status+')'}));
+  if(!res.ok) throw new Error(data.error||res.statusText);
+  // Application-level error: the Azure /api/db Function returns HTTP 200 with
+  // `{ success: false, error: 'Unknown action: schema-tables' }` for unknown
+  // actions. Without this check, the smart-fallback in _fetchSchemaSmart() can't
+  // see the failure and silently treats the unknown-action response as a real
+  // schema, leaving the page stuck on "0 tables". Throwing here lets the
+  // smart-fallback's catch block fall through to the legacy `schema` action.
+  if (data && data.success === false && data.error) {
+    throw new Error(data.error);
+  }
+  return data;
+}
+
+// ── Paginated schema loading ────────────────────────────────────────────────
+// Large databases (9k+ tables) produce >6 MB schema JSON which Netlify refuses
+// to deliver. We fetch a lightweight table-list first (name + rowCount only)
+// and lazy-load each table's columns/PKs/FKs when the user actually picks it.
+// See db-connect.js `schema-tables` and `schema-columns` actions.
+
+// True once we've established whether the backend supports the paginated
+// schema-tables / schema-columns actions. null = unknown yet, true/false = known.
+// If false, connectSrc/connectTgt/ensureColumns use the legacy `schema` action
+// and populate columns greedily (works for DBs <6 MB of schema JSON, i.e. most).
+let _paginatedSchemaSupported = null;
+
+// Try a paginated-schema call and detect whether the backend knows the action.
+// Returns { res, paginated } — paginated=false means the caller should use the
+// legacy flow (all columns returned up-front in res.tables).
+async function _fetchSchemaSmart(conn) {
+  // If we already know pagination isn't supported, skip straight to legacy
+  if (_paginatedSchemaSupported === false) {
+    const res = await dbCall(conn, { action:'schema' });
+    return { res, paginated: false };
+  }
+  try {
+    const res = await dbCall(conn, { action:'schema-tables' });
+    _paginatedSchemaSupported = true;
+    return { res, paginated: true };
+  } catch (e) {
+    // Backend doesn't know schema-tables yet → legacy
+    if (/Unknown action/i.test(e.message) || /schema-tables/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      const res = await dbCall(conn, { action:'schema' });
+      return { res, paginated: false };
+    }
+    throw e;
+  }
+}
+
+async function connectSrc(){
+  const c = CygenixConnections.get();
+  // Build source connection — Azure Function URL with ?code=KEY, or direct
+  // string. Same shape as the init() IIFE above.
+  srcConn = c.srcFnUrl ? (c.srcFnKey ? c.srcFnUrl+'?code='+encodeURIComponent(c.srcFnKey) : c.srcFnUrl) : (c.srcConnString || '');
+  if(!srcConn){ setBanner('src','err','Source: not configured — set in Dashboard → Connections'); return; }
+  setBanner('src','connecting','Source: connecting…');
+  try {
+    const { res, paginated } = await _fetchSchemaSmart(srcConn);
+    srcSchema = res;
+    srcAllTables = (res.tables||[]).map(t=>({
+      value: t.schema+'.'+t.name,
+      label: t.schema+'.'+t.name,
+      schema: t.schema, name: t.name,
+      fullName: t.schema+'.'+t.name,
+      rowCount: t.rowCount||0,
+      // If paginated: columns loaded lazily via ensureColumns() on table-select.
+      // If legacy: columns came with the initial response, use them directly.
+      columns: paginated ? null : (t.columns||[]),
+      primaryKeys: paginated ? null : (t.primaryKeys||[]),
+      foreignKeys: paginated ? null : (t.foreignKeys||[]),
+    }));
+    setBanner('src','ok','Source: '+(res.database||parseDbName(srcConn))+' · '+srcAllTables.length+' tables');
+    window._joinAllTables = srcAllTables;
+  } catch(e){
+    setBanner('src','err','Source: '+e.message);
+  }
+}
+
+async function connectTgt(){
+  const c = CygenixConnections.get();
+  tgtConn = c.tgtFnUrl ? (c.tgtFnKey ? c.tgtFnUrl+'?code='+encodeURIComponent(c.tgtFnKey) : c.tgtFnUrl) : (c.tgtConnString||'');
+  if(!tgtConn){ setBanner('tgt','err','Target: not configured — set in Dashboard → Connections'); return; }
+  setBanner('tgt','connecting','Target: connecting…');
+  try {
+    const { res, paginated } = await _fetchSchemaSmart(tgtConn);
+    tgtSchema = res;
+    tgtAllTables = (res.tables||[]).map(t=>({
+      value: t.schema+'.'+t.name, label: t.schema+'.'+t.name,
+      schema: t.schema, name: t.name, fullName: t.schema+'.'+t.name,
+      rowCount: t.rowCount||0,
+      columns: paginated ? null : (t.columns||[]),
+      primaryKeys: paginated ? null : (t.primaryKeys||[]),
+      foreignKeys: paginated ? null : (t.foreignKeys||[]),
+    }));
+    window._joinAllTables = window._joinAllTables || [];
+    // Fall back to a word rather than an empty string — when neither the
+    // response nor the connection string yields a database name the banner
+    // read "Target: · 7 tables", which looks like a missing value.
+    setBanner('tgt','ok','Target: '+(res.database||parseDbName(tgtConn)||'connected')+' · '+tgtAllTables.length+' tables');
+  } catch(e){
+    setBanner('tgt','err','Target: '+e.message);
+  }
+}
+
+// Lazy-load columns for a specific table. In legacy mode (backend pre-pagination)
+// this is a no-op because connectSrc/connectTgt already populated columns.
+async function ensureColumns(side, table){
+  if (!table) return table;
+  if (Array.isArray(table.columns) && table.columns.length > 0) return table;  // cached or legacy
+  if (_paginatedSchemaSupported === false) {
+    // Legacy backend: columns should already be present. If they're empty, just
+    // return the table — downstream code will treat it as having no columns
+    // rather than erroring.
+    table.columns = table.columns || [];
+    table.primaryKeys = table.primaryKeys || [];
+    table.foreignKeys = table.foreignKeys || [];
+    return table;
+  }
+  const conn = side === 'src' ? srcConn : tgtConn;
+  if (!conn) throw new Error(side + ' connection not set');
+  try {
+    const res = await dbCall(conn, { action:'schema-columns', schemaName: table.schema, tableName: table.name });
+    if (!res || !res.table) throw new Error('No column info returned for ' + table.fullName);
+    table.columns     = res.table.columns     || [];
+    table.primaryKeys = res.table.primaryKeys || [];
+    table.foreignKeys = res.table.foreignKeys || [];
+  } catch (e) {
+    // If the backend has schema-tables but not schema-columns, fall back to legacy
+    if (/Unknown action/i.test(e.message)) {
+      _paginatedSchemaSupported = false;
+      const res = await dbCall(conn, { action:'schema' });
+      const found = (res.tables||[]).find(t => t.schema === table.schema && t.name === table.name);
+      table.columns     = found?.columns     || [];
+      table.primaryKeys = found?.primaryKeys || [];
+      table.foreignKeys = found?.foreignKeys || [];
+    } else {
+      throw e;
+    }
+  }
+  return table;
+}
+
+function setBanner(side, state, text){
+  const dot=$('src-dot'); const tDot=$('tgt-dot');
+  const lbl = $(side+'-label');
+  if(lbl) lbl.textContent = text;
+  const el = side==='src'?dot:tDot;
+  if(el) el.className = 'conn-dot '+(state==='ok'?'ok':state==='connecting'?'idle':'err');
+}
+
+// ── Mode toggle ───────────────────────────────────────────────────────────────
+function setMode(m){
+  mode = m;
+  $('mode-single').classList.toggle('active', m==='single');
+  $('mode-otm').classList.toggle('active', m==='otm');
+  $('mode-single-panel').style.display = m==='single'?'':'none';
+  $('mode-otm-panel').style.display = m==='otm'?'':'none';
+  $('tx-mode-wrap').style.display = m==='otm'?'':'none';
+  $('row-limit-wrap').style.display = m==='single'?'':'none';
+  $('sql-panel').style.display = 'none';
+  // Re-apply current view so the right sub-panel is shown in the new mode
+  setView(window._viewMode || 'table');
+}
+
+// ══ VIEW TOGGLE ══════════════════════════════════════════════════════════════
+window._viewMode = 'table';  // 'table' | 'visual'
+function setView(v){
+  window._viewMode = v;
+  $('view-table').classList.toggle('active', v==='table');
+  $('view-visual').classList.toggle('active', v==='visual');
+  // Single-map panels
+  const mw = $('mapping-wrap'), vs = $('visual-single');
+  if(mode==='single'){
+    // Show the appropriate panel if we have a mapping (otherwise keep empty-state visible)
+    const hasData = !!(srcTable && tgtTable && columnMapping.length);
+    if(hasData){
+      if(v==='visual'){ mw.style.display='none'; vs.style.display='block'; renderVisualSingle(); }
+      else            { vs.style.display='none'; mw.style.display='block'; }
+    } else {
+      mw.style.display='none'; vs.style.display='none';
+    }
+  }
+  // OTM panels
+  const oc = $('otm-cards'), vo = $('visual-otm');
+  if(mode==='otm'){
+    if(targetTables.length){
+      if(v==='visual'){ oc.style.display='none'; vo.style.display='block'; renderVisualOTM(); }
+      else            { vo.style.display='none'; oc.style.display='block'; }
+    } else {
+      vo.style.display='none'; oc.style.display='block';
+    }
+  }
+}
+
+// ══ VISUAL VIEW — helpers ════════════════════════════════════════════════════
+function getAllSourceCols(){
+  if(!srcTable) return [];
+  const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+  return [
+    ...(srcTable.columns||[]).map(c=>({
+      name: typeof c==='string'?c:c.name,
+      type: typeof c==='object'?(c.type||''):'',
+      fromJoin: false
+    })),
+    ...joinCols.map(c=>({name:c.name, type:c.type||'', fromJoin:true, alias:c.alias}))
+  ];
+}
+
+function matchClass(m){
+  if(!m) return 'match-none';
+  return 'match-' + m;
+}
+
+// Escape for HTML attributes
+function escAttr(s){ return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ══ VISUAL VIEW — SINGLE-MAP ═════════════════════════════════════════════════
+function renderVisualSingle(){
+  if(!srcTable || !tgtTable) return;
+  const srcCols = getAllSourceCols();
+  const tgtCols = (tgtTable.columns||[]).filter(c=>!c.isIdentity);
+  const mappedSrcNames = new Set(columnMapping.filter(m=>m.srcCol&&m.tgtCol).map(m=>m.srcCol));
+
+  // Render source pills
+  $('vs-src-pills').innerHTML = srcCols.map(c => `
+    <div class="visual-pill ${mappedSrcNames.has(c.name)?'src-mapped':''}"
+         data-side="src" data-col="${escAttr(c.name)}"
+         draggable="true">
+      <span>${c.fromJoin?'<span style="color:var(--teal);font-size:9px">⊞ </span>':''}${escAttr(c.name)}</span>
+      <span class="vp-type">${escAttr(c.type)}</span>
+    </div>`).join('');
+
+  // Render target pills with match colour + mapped state
+  $('vs-tgt-pills').innerHTML = tgtCols.map(c => {
+    const m = columnMapping.find(x => x.tgtCol === c.name);
+    const mapped = m && m.srcCol;
+    const matchCls = matchClass(m?.match);
+    return `
+    <div class="visual-pill ${matchCls}"
+         data-side="tgt" data-col="${escAttr(c.name)}">
+      <span>
+        ${escAttr(c.name)}
+        ${mapped ? `<span style="color:var(--text3);font-size:10px"> ← ${escAttr(m.srcCol)}</span>` : ''}
+      </span>
+      <span style="display:flex;align-items:center;gap:0.3rem">
+        <span class="vp-type">${escAttr(c.type)}</span>
+        ${mapped ? `<button class="vp-remove" onclick="event.stopPropagation();unmapTgt('${escAttr(c.name)}')" title="Remove mapping">✕</button>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+
+  wireVisualPills('vs-src-pills','vs-tgt-pills', (srcName, tgtName) => {
+    mapSingleDrop(srcName, tgtName);
+  });
+  redrawVisualLines('vs-canvas','vs-lines','vs-src-pills','vs-tgt-pills', (pillEl) => {
+    // get the mapping for this target pill
+    const tgtName = pillEl.getAttribute('data-col');
+    const m = columnMapping.find(x => x.tgtCol === tgtName);
+    return m && m.srcCol ? {srcName:m.srcCol, match:m.match||''} : null;
+  });
+}
+
+function mapSingleDrop(srcName, tgtName){
+  if(!srcName || !tgtName) return;
+  let row = columnMapping.find(m => m.tgtCol === tgtName);
+  if(!row){
+    row = { srcCol:'', tgtCol:tgtName, transform:'NONE', match:'' };
+    columnMapping.push(row);
+  }
+  row.srcCol = srcName;
+  row.match  = 'HIGH';   // user-confirmed = highest confidence
+  renderVisualSingle();
+  renderMappingTable();   // keep table in sync
+  renderSrcColList();
+  tryAutoGenSQL();
+}
+
+function unmapTgt(tgtName){
+  const row = columnMapping.find(m => m.tgtCol === tgtName);
+  if(!row) return;
+  row.srcCol = '';
+  row.match  = '';
+  if(mode==='single'){
+    renderVisualSingle();
+    renderMappingTable();
+  } else {
+    renderVisualOTM();
+    renderOTMCards();
+  }
+  renderSrcColList();
+  tryAutoGenSQL();
+}
+
+// ══ VISUAL VIEW — OTM ════════════════════════════════════════════════════════
+function renderVisualOTM(){
+  if(!srcTable || !targetTables.length) return;
+  const srcCols = getAllSourceCols();
+  const allMappedSrc = new Set();
+  targetTables.forEach(tt => tt.mappings.forEach(m => { if(m.srcCol&&m.tgtCol) allMappedSrc.add(m.srcCol); }));
+
+  $('vo-src-pills').innerHTML = srcCols.map(c => `
+    <div class="visual-pill ${allMappedSrc.has(c.name)?'src-mapped':''}"
+         data-side="src" data-col="${escAttr(c.name)}"
+         draggable="true">
+      <span>${c.fromJoin?'<span style="color:var(--teal);font-size:9px">⊞ </span>':''}${escAttr(c.name)}</span>
+      <span class="vp-type">${escAttr(c.type)}</span>
+    </div>`).join('');
+
+  // Render one group per target table, each containing that table's target-col pills.
+  // Identity columns are shown but visibly dimmed and not droppable — the
+  // override flow lives in the table view (per-row "Allow override" checkbox)
+  // because drag-and-drop onto a locked identity column would be ambiguous.
+  $('vo-tgt-col').innerHTML = targetTables.map((tt,ti) => {
+    const tgtCols = (tt.columns||[]);
+    const pills = tgtCols.map(c => {
+      const m = (tt.mappings||[]).find(x => x.tgtCol === c.name);
+      const mapped = m && m.srcCol;
+      const matchCls = matchClass(m?.match);
+      const isIdent = !!c.isIdentity;
+      const overridden = !!(m && m._identityOverride);
+      const locked = isIdent && !overridden;
+      // Locked identity rows render with reduced opacity and no drop target.
+      // Overridden identity rows behave like normal target pills.
+      return `
+      <div class="visual-pill ${matchCls}"
+           ${locked ? 'data-locked="1"' : `data-side="tgt" data-tgt-idx="${ti}" data-col="${escAttr(c.name)}"`}
+           style="${locked ? 'opacity:0.45;cursor:not-allowed' : ''}"
+           title="${locked ? 'Identity column — override in the Table view to map' : ''}">
+        <span>
+          ${escAttr(c.name)}
+          ${isIdent ? `<span style="color:var(--purple);font-size:9px;margin-left:4px">${overridden?'IDENTITY (override)':'IDENTITY'}</span>` : ''}
+          ${mapped ? `<span style="color:var(--text3);font-size:10px"> ← ${escAttr(m.srcCol)}</span>` : ''}
+        </span>
+        <span style="display:flex;align-items:center;gap:0.3rem">
+          <span class="vp-type">${escAttr(c.type||'')}</span>
+          ${mapped && !locked ? `<button class="vp-remove" onclick="event.stopPropagation();unmapOTM(${ti},'${escAttr(c.name)}')" title="Remove mapping">✕</button>` : ''}
+        </span>
+      </div>`;
+    }).join('');
+    return `
+      <div class="vo-target-group">
+        <div class="vo-target-group-head">${escAttr(tt.fullName||tt.name)}</div>
+        <div class="visual-pills">${pills}</div>
+      </div>`;
+  }).join('');
+
+  // Wire drop: all source pills, any tgt pill across groups
+  wireVisualPills('vo-src-pills','vo-tgt-col', (srcName, tgtName, tgtIdx) => {
+    mapOTMDrop(srcName, parseInt(tgtIdx), tgtName);
+  }, true);
+  redrawVisualLines('vo-canvas','vo-lines','vo-src-pills','vo-tgt-col', (pillEl) => {
+    const tgtName = pillEl.getAttribute('data-col');
+    const tgtIdx  = parseInt(pillEl.getAttribute('data-tgt-idx'));
+    const tt = targetTables[tgtIdx];
+    const m = tt?.mappings.find(x => x.tgtCol === tgtName);
+    return m && m.srcCol ? {srcName:m.srcCol, match:m.match||''} : null;
+  });
+}
+
+function mapOTMDrop(srcName, tgtIdx, tgtName){
+  if(!srcName || !tgtName || isNaN(tgtIdx)) return;
+  const tt = targetTables[tgtIdx]; if(!tt) return;
+  let row = tt.mappings.find(m => m.tgtCol === tgtName);
+  if(!row){ row = { srcCol:'', tgtCol:tgtName, transform:'NONE', match:'' }; tt.mappings.push(row); }
+  row.srcCol = srcName;
+  row.match  = 'HIGH';
+  renderVisualOTM();
+  renderOTMCards();
+  renderSrcColList();
+}
+
+function unmapOTM(tgtIdx, tgtName){
+  const tt = targetTables[tgtIdx]; if(!tt) return;
+  const row = tt.mappings.find(m => m.tgtCol === tgtName);
+  if(row){ row.srcCol=''; row.match=''; }
+  renderVisualOTM();
+  renderOTMCards();
+  renderSrcColList();
+}
+
+// ══ DRAG/DROP WIRING ═════════════════════════════════════════════════════════
+function wireVisualPills(srcContainerId, tgtContainerId, onDrop, multiGroup){
+  const srcWrap = document.getElementById(srcContainerId);
+  const tgtWrap = document.getElementById(tgtContainerId);
+  if(!srcWrap || !tgtWrap) return;
+
+  let dragging = null;
+
+  srcWrap.addEventListener('dragstart', e => {
+    const pill = e.target.closest('.visual-pill');
+    if(!pill) return;
+    dragging = pill.getAttribute('data-col');
+    pill.classList.add('dragging');
+    try { e.dataTransfer.setData('text/plain', dragging); } catch {}
+    e.dataTransfer.effectAllowed = 'link';
+  });
+  srcWrap.addEventListener('dragend', e => {
+    const pill = e.target.closest('.visual-pill');
+    if(pill) pill.classList.remove('dragging');
+    dragging = null;
+  });
+
+  const targetPillSelector = '.visual-pill[data-side="tgt"]';
+  tgtWrap.addEventListener('dragover', e => {
+    const pill = e.target.closest(targetPillSelector);
+    if(!pill) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'link';
+    pill.classList.add('drag-over');
+  });
+  tgtWrap.addEventListener('dragleave', e => {
+    const pill = e.target.closest(targetPillSelector);
+    if(pill) pill.classList.remove('drag-over');
+  });
+  tgtWrap.addEventListener('drop', e => {
+    const pill = e.target.closest(targetPillSelector);
+    if(!pill) return;
+    e.preventDefault();
+    pill.classList.remove('drag-over');
+    const srcName = dragging || e.dataTransfer.getData('text/plain');
+    const tgtName = pill.getAttribute('data-col');
+    if(multiGroup){
+      const tgtIdx = pill.getAttribute('data-tgt-idx');
+      onDrop(srcName, tgtName, tgtIdx);
+    } else {
+      onDrop(srcName, tgtName);
+    }
+  });
+}
+
+// ══ CONNECTION LINES ═════════════════════════════════════════════════════════
+function redrawVisualLines(canvasId, svgId, srcPillsId, tgtPillsId, getMapping){
+  const canvas = document.getElementById(canvasId);
+  const svg    = document.getElementById(svgId);
+  const srcWrap = document.getElementById(srcPillsId);
+  const tgtWrap = document.getElementById(tgtPillsId);
+  if(!canvas || !svg || !srcWrap || !tgtWrap) return;
+
+  const cRect = canvas.getBoundingClientRect();
+  svg.setAttribute('width',  cRect.width);
+  svg.setAttribute('height', cRect.height);
+  svg.setAttribute('viewBox', `0 0 ${cRect.width} ${cRect.height}`);
+
+  const colorFor = m => {
+    if(m === 'HIGH')   return 'rgba(34,201,122,0.55)';
+    if(m === 'MEDIUM') return 'rgba(245,158,11,0.55)';
+    if(m === 'LOW')    return 'rgba(240,70,70,0.5)';
+    return 'rgba(255,255,255,0.28)';
+  };
+
+  const paths = [];
+  const tgtPills = tgtWrap.querySelectorAll('.visual-pill[data-side="tgt"]');
+  tgtPills.forEach(tp => {
+    const info = getMapping(tp);
+    if(!info) return;
+    const srcPill = srcWrap.querySelector(`.visual-pill[data-side="src"][data-col="${CSS.escape(info.srcName)}"]`);
+    if(!srcPill) return;
+
+    const sRect = srcPill.getBoundingClientRect();
+    const tRect = tp.getBoundingClientRect();
+    // Translate into SVG/canvas coords
+    const sx = sRect.right  - cRect.left;
+    const sy = sRect.top    + sRect.height/2 - cRect.top;
+    const tx = tRect.left   - cRect.left;
+    const ty = tRect.top    + tRect.height/2 - cRect.top;
+    // Bezier for a smooth curve
+    const dx = Math.max(40, (tx - sx) * 0.45);
+    const d = `M ${sx} ${sy} C ${sx+dx} ${sy}, ${tx-dx} ${ty}, ${tx} ${ty}`;
+    const tgtName = tp.getAttribute('data-col');
+    const tgtIdx  = tp.getAttribute('data-tgt-idx');
+    const onclick = tgtIdx != null
+      ? `onclick="unmapOTM(${tgtIdx},'${escAttr(tgtName)}')"`
+      : `onclick="unmapTgt('${escAttr(tgtName)}')"`;
+    paths.push(`<path d="${d}" stroke="${colorFor(info.match)}" ${onclick}><title>Click to remove mapping</title></path>`);
+  });
+  svg.innerHTML = paths.join('');
+}
+
+// Redraw lines on scroll/resize (debounced via rAF)
+let _lineRedrawPending = false;
+function scheduleLineRedraw(){
+  if(_lineRedrawPending) return;
+  _lineRedrawPending = true;
+  requestAnimationFrame(() => {
+    _lineRedrawPending = false;
+    if(window._viewMode !== 'visual') return;
+    if(mode==='single' && $('visual-single')?.style.display !== 'none') renderVisualSingle();
+    if(mode==='otm'    && $('visual-otm')?.style.display    !== 'none') renderVisualOTM();
+  });
+}
+window.addEventListener('resize', scheduleLineRedraw);
+window.addEventListener('scroll',  scheduleLineRedraw, true);
+
+// ══ FULLSCREEN TOGGLE ════════════════════════════════════════════════════════
+function toggleVisualFullscreen(viewId){
+  const el = document.getElementById(viewId);
+  if(!el) return;
+  const nowFs = el.classList.toggle('fullscreen');
+  document.body.style.overflow = nowFs ? 'hidden' : '';
+  // Update button label
+  const btn = el.querySelector('.visual-fs-btn');
+  if(btn) btn.textContent = nowFs ? '⛶ Exit fullscreen' : '⛶ Fullscreen';
+  // Lines need redrawing after layout change
+  scheduleLineRedraw();
+  setTimeout(scheduleLineRedraw, 100);  // after CSS transition settles
+}
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Escape') return;
+  const fs = document.querySelector('.visual-view.fullscreen');
+  if(fs) toggleVisualFullscreen(fs.id);
+});
+
+// ── Source panel toggle & size ────────────────────────────────────────────────
+let srcOpen = true;
+function toggleSrcPanel(){
+  srcOpen = !srcOpen;
+  const body=$('src-panel-body'), tog=$('src-panel-toggle');
+  if(body) body.style.display=srcOpen?'':'none';
+  if(tog) tog.style.transform=srcOpen?'rotate(0)':'rotate(-90deg)';
+}
+
+const colHeights={m:'220px',l:'400px',xl:'700px'};
+function setColHeight(sz){
+  const list=$('src-col-list'); if(list) list.style.maxHeight=colHeights[sz]||'220px';
+  ['m','l','xl'].forEach(s=>{ const b=$('sz-'+s); if(b){ b.className='size-btn'+(s===sz?' active':''); } });
+}
+
+// ── Searchable dropdowns ──────────────────────────────────────────────────────
+const dropData = { src:[], tgt:[], 'otm-tgt':[] };
+
+function openDrop(which){
+  const q = $(which==='src'?'src-table-input':which==='tgt'?'tgt-table-input':'otm-tgt-input')?.value||'';
+  renderDrop(which, q);
+  $(which+'-drop').style.display='block';
+}
+function filterDrop(which){
+  const inp = $(which==='src'?'src-table-input':which==='tgt'?'tgt-table-input':'otm-tgt-input');
+  renderDrop(which, inp?.value||'');
+  $(which+'-drop').style.display='block';
+}
+function renderDrop(which, q){
+  const drop = $(which+'-drop');
+  if(!drop) return;
+  const all = which==='src' ? srcAllTables : tgtAllTables;
+  if(!all.length){ drop.innerHTML='<div class="drop-empty">Connect database first</div>'; return; }
+  const hits = q ? all.filter(t=>t.label.toLowerCase().includes(q.toLowerCase())).slice(0,80) : all.slice(0,80);
+  if(!hits.length){ drop.innerHTML='<div class="drop-empty">No match for "'+esc(q)+'"</div>'; return; }
+  drop.innerHTML = hits.map(t=>`<div class="drop-item" onclick="selectTable('${which}','${t.value}')">
+    <span>${esc(t.label)}</span><span class="drop-rows">${(t.rowCount||0).toLocaleString()}</span>
+  </div>`).join('');
+  if(all.length>80) drop.innerHTML+=`<div class="drop-empty">${all.length-80} more — type to filter</div>`;
+}
+// ── Table picker modal ────────────────────────────────────────────────────
+// Typing into the inline box only ever showed a row or two: the dropdown is
+// positioned inside .panel, which sets overflow:hidden for its rounded
+// corners, so it was clipped to whatever space was left below the input. The
+// magnifier now opens the whole list in a modal with room to scroll — every
+// table, not the inline list's first 80.
+let _tpWhich = 'src';
+
+function tpTablesFor(which){
+  return (which === 'src' ? srcAllTables : tgtAllTables) || [];
+}
+
+// The table currently chosen for this side, so the picker can mark it.
+function tpCurrentValue(which){
+  if(which === 'src') return srcTable ? srcTable.value : '';
+  if(which === 'tgt') return tgtTable ? tgtTable.value : '';
+  return '';   // OTM adds tables rather than selecting one
+}
+
+function openTablePicker(which){
+  _tpWhich = which;
+  const tables = tpTablesFor(which === 'otm-tgt' ? 'tgt' : which);
+  const title = $('tbl-picker-title');
+  if(title) title.textContent = which === 'src' ? 'Source tables' : 'Target tables';
+  const filt = $('tbl-picker-filter');
+  if(filt){
+    // Carry over whatever was typed inline, so clicking the magnifier
+    // mid-search continues the search instead of restarting it.
+    const inlineId = which === 'src' ? 'src-table-input'
+                   : which === 'tgt' ? 'tgt-table-input' : 'otm-tgt-input';
+    filt.value = ($(inlineId)?.value || '').trim();
+    filt.placeholder = tables.length ? 'Filter ' + tables.length + ' tables…' : 'Filter tables…';
+  }
+  // Close the inline dropdown so it can't sit on top of the overlay.
+  ['src','tgt','otm-tgt'].forEach(w => { const d = $(w+'-drop'); if(d) d.style.display='none'; });
+  renderTablePicker();
+  $('tbl-picker-modal').classList.add('open');
+  if(filt) try { filt.focus(); filt.select(); } catch {}
+}
+
+function closeTablePicker(){
+  const m = $('tbl-picker-modal');
+  if(m) m.classList.remove('open');
+}
+
+function renderTablePicker(){
+  const list = $('tbl-picker-list');
+  const sub  = $('tbl-picker-sub');
+  if(!list) return;
+  const all = tpTablesFor(_tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich);
+  if(!all.length){
+    list.innerHTML = '<div class="drop-empty">Connect the database first — no tables loaded.</div>';
+    if(sub) sub.textContent = '';
+    return;
+  }
+  const q = ($('tbl-picker-filter')?.value || '').trim().toLowerCase();
+  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)) : all;
+  if(sub){
+    sub.textContent = q
+      ? hits.length + ' of ' + all.length + ' tables'
+      : all.length + ' table' + (all.length === 1 ? '' : 's') + ' — click one to pick it';
+  }
+  if(!hits.length){
+    list.innerHTML = '<div class="drop-empty">No table matches “' + esc(q) + '”.</div>';
+    return;
+  }
+  const current = tpCurrentValue(_tpWhich);
+  // No cap here — the point of the modal is that you can scroll the lot.
+  list.innerHTML = hits.map(t => `
+    <button type="button" class="tp-row${t.value === current ? ' current' : ''}"
+            onclick="pickTableFromPicker('${escAttr(t.value)}')">
+      <span>${tpHighlight(t.label || '', q)}</span>
+      <span class="tp-rows">${(t.rowCount || 0).toLocaleString()} rows</span>
+    </button>`).join('');
+}
+
+// Mark the matched substring so it is obvious why a row is in the list.
+function tpHighlight(label, q){
+  if(!q) return esc(label);
+  const i = label.toLowerCase().indexOf(q);
+  if(i < 0) return esc(label);
+  return esc(label.slice(0, i))
+       + '<span class="tp-mark">' + esc(label.slice(i, i + q.length)) + '</span>'
+       + esc(label.slice(i + q.length));
+}
+
+function pickTableFromPicker(value){
+  const which = _tpWhich;
+  closeTablePicker();
+  // Mirror the choice into the inline box so the two stay in step.
+  const inlineId = which === 'src' ? 'src-table-input'
+                 : which === 'tgt' ? 'tgt-table-input' : 'otm-tgt-input';
+  const t = tpTablesFor(which === 'otm-tgt' ? 'tgt' : which).find(x => x.value === value);
+  const inp = $(inlineId);
+  if(inp && t) inp.value = t.label || '';
+  selectTable(which, value);
+}
+
+// Enter picks the only remaining match — the common case after typing a few
+// letters. Escape closes.
+function tablePickerKey(e){
+  if(e.key === 'Escape'){ closeTablePicker(); return; }
+  if(e.key !== 'Enter') return;
+  const all = tpTablesFor(_tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich);
+  const q = ($('tbl-picker-filter')?.value || '').trim().toLowerCase();
+  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)) : all;
+  if(hits.length === 1) pickTableFromPicker(hits[0].value);
+}
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && $('tbl-picker-modal')?.classList.contains('open')) closeTablePicker();
+});
+
+async function selectTable(which, value){
+  const t = (which==='src'?srcAllTables:tgtAllTables).find(t=>t.value===value);
+  if(!t) return;
+  $(which+'-drop').style.display='none';
+
+  // Lazy-load columns for this table if we haven't yet. Blocks the UI briefly
+  // (typically <500ms for one table, cached thereafter). Any caller expecting
+  // t.columns to exist after selectTable() returns sees the populated version.
+  const inputId = which==='src' ? 'src-table-input'
+                : which==='tgt' ? 'tgt-table-input'
+                : 'otm-tgt-input';
+  const inputEl = $(inputId);
+  const priorPlaceholder = inputEl?.placeholder;
+  try {
+    if (inputEl) inputEl.placeholder = 'Loading columns…';
+    await ensureColumns(which === 'otm-tgt' ? 'tgt' : which, t);
+  } catch (e) {
+    showStatus('Could not load columns for ' + t.fullName + ': ' + e.message, 'err');
+    if (inputEl) inputEl.placeholder = priorPlaceholder || '';
+    return;
+  }
+  if (inputEl) inputEl.placeholder = priorPlaceholder || '';
+
+  if(which==='src'){
+    $('src-table-input').value=t.label;
+    srcTable = t;
+    window._joinBaseTable = t;
+    // Refresh join builder with tables excluding self
+    const otherTables = srcAllTables.filter(x=>x.value!==value);
+    window._joinAllTables = otherTables;
+    initJoinBuilder('join-container', otherTables, t, function(joins){
+      renderSrcColList();
+      if(mode==='otm') renderOTMCards();
+      else if(!editJobId) buildMappingIfReady();
+    });
+    $('join-panel').style.display='block';
+    $('src-col-wrap').style.display='block';
+    $('src-col-count').style.display='inline';
+    $('src-col-count').textContent=t.columns.length+' cols';
+    renderSrcColList();
+    buildMappingIfReady();
+    showStatus('Source: '+t.fullName+' · '+t.columns.length+' columns','info');
+  } else if(which==='tgt'){
+    $('tgt-table-input').value=t.label;
+    tgtTable = t;
+    $('mapping-wrap').style.display='none';
+    $('single-empty').style.display='none';
+    if(!editJobId) buildMappingIfReady();  // skip auto-map when editing a saved job
+  } else if(which==='otm-tgt'){
+    addOTMTargetFromTable(t);
+    $('otm-tgt-input').value='';
+    $(which+'-drop').style.display='none';
+  }
+}
+
+document.addEventListener('click',function(e){
+  ['src','tgt','otm-tgt'].forEach(which=>{
+    const inp=$(which==='src'?'src-table-input':which==='tgt'?'tgt-table-input':'otm-tgt-input');
+    const drop=$(which+'-drop');
+    if(drop&&inp&&!inp.contains(e.target)&&!drop.contains(e.target)) drop.style.display='none';
+  });
+  const jDrop=document.querySelector('.join-search-drop.open');
+  if(jDrop&&!jDrop.contains(e.target)) jDrop.classList.remove('open');
+});
+
+// ── Source column list ────────────────────────────────────────────────────────
+let draggingCol = null;
+function renderSrcColList(){
+  if(!srcTable) return;
+  const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+  const allCols = [...srcTable.columns.map(c=>({name:c.name,type:c.type||'',fromJoin:false})),
+                   ...joinCols.map(c=>({name:c.name,rawName:c.rawName||c.name,type:c.type||'',fromJoin:true,alias:c.alias}))];
+  const mapped = new Set([
+    ...columnMapping.filter(m=>m.tgtCol).map(m=>m.srcCol),
+    ...targetTables.flatMap(tt=>tt.mappings.filter(m=>m.tgtCol).map(m=>m.srcCol))
+  ]);
+  $('src-col-list').innerHTML = allCols.map(c=>`
+    <div class="src-col-pill ${mapped.has(c.name)?'mapped':''}"
+      draggable="true" ondragstart="draggingCol='${c.name}'"
+      onclick="quickMap('${c.name}')" title="${c.fromJoin?'From joined table':''}">
+      ${c.fromJoin?'<span style="color:var(--teal);font-size:9px">⊞</span>':''}
+      <span>${esc(c.name)}</span>
+      <span class="src-col-type">${esc(c.type||'')}</span>
+    </div>`).join('');
+}
+
+function quickMap(colName){
+  if(mode==='single'){
+    if(!columnMapping.find(m=>m.srcCol===colName)){
+      const tgtMatch = tgtTable?.columns.find(c=>c.name.toLowerCase()===colName.toLowerCase());
+      columnMapping.push({srcCol:colName, tgtCol:tgtMatch?.name||'', transform:'NONE', match:tgtMatch?'auto':''});
+      renderMappingTable();
+    }
+  } else {
+    // Add to first OTM target that has an unmatched col
+    if(targetTables.length){
+      const ti=0;
+      const tgtMatch=targetTables[ti].columns.find(c=>c.name.toLowerCase()===colName.toLowerCase());
+      if(!targetTables[ti].mappings.find(m=>m.srcCol===colName))
+        targetTables[ti].mappings.push({srcCol:colName,tgtCol:tgtMatch?.name||'',transform:'NONE'});
+      renderOTMCards();
+    }
+  }
+}
+
+// Ensure every target column appears as a row in the mapping (including
+// identity columns, which render disabled by default but are shown so users
+// can flip "Allow override" per row). Claude's API sometimes returns fewer
+// rows than the target has columns. Any returned rows are kept; missing
+// target columns are appended as unmapped. Also dedupes any duplicate tgtCol
+// entries.
+function ensureAllTargetCols(mapping, tgt){
+  if(!tgt) return mapping;
+  const tgtCols = (tgt.columns||[]);
+  const seen = new Set();
+  const deduped = [];
+  for(const m of mapping){
+    const key = (m.tgtCol||'').toLowerCase();
+    if(!key) continue;
+    if(seen.has(key)) continue;
+    // Tag identity rows so the renderer can disable them. Only set if not
+    // already explicitly set, so a deliberately overridden row that has
+    // come back from the AI / a saved job survives this normalisation.
+    const tcDef = tgtCols.find(c => c.name.toLowerCase() === key);
+    if (tcDef && tcDef.isIdentity) {
+      m._isIdentity = true;
+      if (m._identityOverride === undefined) m._identityOverride = false;
+    }
+    seen.add(key);
+    deduped.push(m);
+  }
+  // Append any target columns that didn't come back. Identity columns join
+  // the bottom of the list as disabled rows (override unchecked).
+  for(const tc of tgtCols){
+    if(!seen.has(tc.name.toLowerCase())){
+      const row = {srcCol:'', tgtCol:tc.name, transform:'NONE', match:''};
+      if (tc.isIdentity) { row._isIdentity = true; row._identityOverride = false; }
+      deduped.push(row);
+    }
+  }
+  return deduped;
+}
+
+async function buildMappingIfReady(){
+  if(!srcTable||!tgtTable) return;
+  const apiKey = ($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
+  if(apiKey) localStorage.setItem('cygenix_api_key',apiKey);
+
+  showStatus('Building column mapping…','info');
+  if(apiKey){
+    try { columnMapping = await askClaudeForMapping(srcTable, tgtTable, apiKey); }
+    catch(e) { columnMapping = autoMap(srcTable, tgtTable); }
+  } else {
+    columnMapping = autoMap(srcTable, tgtTable);
+  }
+  columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
+  renderMappingTable();
+  $('mapping-wrap').style.display='block';
+  $('single-empty').style.display='none';
+  renderSrcColList();
+  const mapped = columnMapping.filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length;
+  const total  = columnMapping.filter(m=>m.tgtCol).length;
+  $('map-stats').style.display='inline';
+  $('map-stats').textContent = mapped+' / '+total+' target cols mapped';
+  showStatus('Mapping ready — '+mapped+' of '+total+' target columns matched','info');
+}
+
+async function remapWithClaude(){
+  const apiKey = ($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
+  if(!apiKey){ alert('Enter your Anthropic API key in the options panel.'); return; }
+  if(!srcTable){ alert('Select a source table first.'); return; }
+  if(!tgtTable){ alert('Select a target table first.'); return; }
+  showStatus('Claude is re-mapping columns…','info');
+  try {
+    columnMapping = await askClaudeForMapping(srcTable, tgtTable, apiKey);
+    columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
+    renderMappingTable();
+    renderSrcColList();
+  } catch(e) { showStatus('Remap error: '+e.message,'err'); }
+}
+
+async function askClaudeForMapping(src, tgt, apiKey){
+  // Privacy: check mode + filter out excluded columns before sending schema to Claude
+  const P = window.CygenixPrivacy;
+  if (P && !P.isAIAllowed('schema')){
+    throw new Error('AI mapping is disabled by project privacy settings (mode: '+P.getMode().toUpperCase()+'). Change on the Governance page.');
+  }
+  const srcColsAll = src.columns.map(c=>typeof c==='string'?c:c.name);
+  const tgtColsAll = tgt.columns.filter(c=>!c.isIdentity);
+  const srcCols = srcColsAll.filter(name => !P?.isColumnExcluded(name));
+  const tgtCols = tgtColsAll.filter(c => !P?.isColumnExcluded(c.name)).map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
+  const srcExcluded = srcColsAll.length - srcCols.length;
+  const tgtExcluded = tgtColsAll.length - tgtCols.length;
+  const excludeNote = (srcExcluded+tgtExcluded) > 0 ? `\n(${srcExcluded+tgtExcluded} column(s) hidden by privacy exclusion list.)` : '';
+  const prompt = 'You are a data migration expert. Map source columns to target columns.\n\n'+
+    'Source table: '+src.fullName+'\nSource columns:\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
+    'Target table: '+tgt.fullName+'\nTarget columns:\n'+tgtCols.map(c=>'  '+c).join('\n')+excludeNote+'\n\n'+
+    'Return a JSON array only — ONE ENTRY PER TARGET COLUMN (not per source column).\n'+
+    'Each element: {"srcCol":"matching source col name or empty string","tgtCol":"target col name","transform":"NONE","match":"HIGH|MEDIUM|LOW|","note":"reason"}\n'+
+    'Every non-identity target column must appear exactly once. Leave srcCol empty if no match.\n'+
+    'Transforms: NONE | TRIM | UPPER | LOWER | CAST\n'+
+    'Return ONLY the JSON array, no explanation.';
+
+  // Try up to 3 times with backoff — handles transient overload errors
+  for(let attempt=1; attempt<=3; attempt++){
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4096,messages:[{role:'user',content:prompt}]})
+    });
+    const data = await res.json();
+    // Retry on overload
+    if(res.status===529 || data.error?.type==='overloaded_error'){
+      if(attempt<3){ showStatus('Claude busy — retrying ('+attempt+'/3)…','info'); await new Promise(r=>setTimeout(r,2000*attempt)); continue; }
+      throw new Error('Claude is overloaded — try again in a moment');
+    }
+    if(!res.ok) throw new Error(data.error?.message||res.statusText);
+    const raw = (data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
+    const arr = JSON.parse(raw);
+    // Log the AI access — schema only, no row data
+    P?.logAIAccess('column-mapping', {
+      sourceTable: src.fullName,
+      targetTable: tgt.fullName,
+      srcCols: srcCols.length,
+      tgtCols: tgtCols.length,
+      excludedCols: srcExcluded + tgtExcluded
+    });
+    return arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',match:m.match||'',note:m.note||''}));
+  }
+}
+
+// ── Mapping table filter + sort ───────────────────────────────────────────────
+let mapSortCol = 'tgt';   // 'src' | 'tgt' | 'match'
+let mapSortDir = 1;        // 1=asc, -1=desc
+const matchOrder = { HIGH:0, MEDIUM:1, LOW:2, '':3 };
+
+function sortMapping(col){
+  if(mapSortCol===col){ mapSortDir*=-1; } else { mapSortCol=col; mapSortDir=1; }
+  // Update header indicators
+  ['src','tgt','match'].forEach(c=>{
+    const el=$('sort-'+c); if(!el) return;
+    el.textContent = c===mapSortCol ? (mapSortDir===1?'▲':'▼') : '⇅';
+    el.style.opacity = c===mapSortCol ? '1' : '0.4';
+  });
+  columnMapping.sort((a,b)=>{
+    let av, bv;
+    if(col==='src'){ av=(a.srcCol||'').toLowerCase(); bv=(b.srcCol||'').toLowerCase(); }
+    else if(col==='tgt'){ av=(a.tgtCol||'').toLowerCase(); bv=(b.tgtCol||'').toLowerCase(); }
+    else { av=matchOrder[a.match]??3; bv=matchOrder[b.match]??3; return (av-bv)*mapSortDir; }
+    return av<bv?-mapSortDir:av>bv?mapSortDir:0;
+  });
+  renderMappingTable();
+  applyMapFilter();
+}
+
+function applyMapFilter(){
+  const q=($('map-filter')?.value||'').toLowerCase().trim();
+  const matchF=$('map-filter-match')?.value||'';
+  const rows=document.querySelectorAll('#mapping-tbody tr');
+  let visible=0;
+  rows.forEach((tr,i)=>{
+    const m=columnMapping[i];
+    if(!m){ tr.style.display='none'; return; }
+    const isUnmapped = !m.srcCol && !m.literalValue;
+    // Hide unmapped toggle
+    if(_hidingUnmapped && isUnmapped){ tr.style.display='none'; return; }
+    // Text filter: check source and target col names
+    const textOk = !q || (m.srcCol||'').toLowerCase().includes(q) || (m.tgtCol||'').toLowerCase().includes(q);
+    // Match filter
+    let matchOk = true;
+    if(matchF==='unmapped') matchOk = isUnmapped;
+    else if(matchF==='fixed') matchOk = !!(m.literalValue);
+    else if(matchF) matchOk = m.match===matchF;
+    const show = textOk && matchOk;
+    tr.style.display = show ? '' : 'none';
+    if(show) visible++;
+  });
+  const total = columnMapping.length;
+  const fc=$('map-filter-count');
+  if(fc) fc.textContent = (q||matchF||_hidingUnmapped) ? visible+' of '+total+' shown' : '';
+}
+
+// Silently persist the current columnMapping + regenerated SQL back to the
+// saved job in localStorage. Only applies when editing an existing job
+// (editJobId set); for a brand-new unsaved map there's nothing to write to yet.
+function persistMappingToSavedJob(){
+  if(!editJobId) return;
+  if(mode!=='single') return;           // OTM handled separately
+  if(!srcTable || !tgtTable) return;
+  try{
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+    const idx = jobs.findIndex(j => j.id === editJobId);
+    if(idx < 0) return;
+    const existing = jobs[idx];
+    jobs[idx] = Object.assign({}, existing, {
+      columnMapping: columnMapping.filter(m => m.tgtCol),
+      // Save srcWhere alongside the mapping so re-opening the job in the
+      // editor reads it back into the WHERE input, and so the migration
+      // runner can apply it to the source SELECT. Without this the WHERE
+      // clause is baked into insertSQL as text but lost as a structured
+      // field — invisible to the runner's paginated path.
+      srcWhere:     ($('src-where')?.value || '').trim(),
+      // The structured halves. srcWhere above stays the combined string every
+      // consumer reads; these two exist so re-opening the job restores the
+      // individual condition rows rather than one long line.
+      srcWhereConditions: (whereConds||[]).map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols:     (groupByCols||[]).slice(),
+      srcGroupBy:         ($('src-groupby')?.value || '').trim(),
+      insertSQL: generatedSQL.insert || existing.insertSQL,
+      schemaSQL: generatedSQL.schema || existing.schemaSQL,
+      verifySQL: generatedSQL.verify || existing.verifySQL,
+      warnings: _lastTruncWarnings ? _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen) : (existing.warnings||[])
+    });
+    localStorage.setItem('cygenix_jobs', JSON.stringify(jobs.slice(0,100)));
+    // Schedule an auto-version snapshot. De-bounced 3s in the parent
+    // window. If we're in an iframe, the parent's CygenixSync owns the
+    // version-create call; we hop to it via window.parent. If the parent
+    // doesn't have the function (older deployed build), fail silently —
+    // the job is already in localStorage, version-control is an add-on
+    // safety net, not the path of correctness.
+    try {
+      const fn = (window.parent && window.parent.scheduleAutoVersion) || window.scheduleAutoVersion;
+      if (typeof fn === 'function') fn(editJobId, 'mapping/SQL saved');
+    } catch {}
+  }catch(e){ /* non-fatal */ }
+}
+
+function removeUnmappedCols(){
+  const before = columnMapping.length;
+  const removed = columnMapping.filter(m => !m.srcCol && !m.literalValue);
+  if(!removed.length){ showStatus('No unused columns to remove','info'); return; }
+  _removedUnmappedCols = removed;  // stash for undo
+  columnMapping = columnMapping.filter(m => m.srcCol || m.literalValue);
+  renderMappingTable();
+  tryAutoGenSQL();
+  persistMappingToSavedJob();
+  $('undo-remove-btn').style.display = 'inline-flex';
+  const savedNote = editJobId ? ' and saved' : '';
+  showStatus('Removed '+removed.length+' unmapped row'+(removed.length===1?'':'s')+savedNote+' — click Undo to restore','info');
+}
+
+let _removedUnmappedCols = [];
+
+function undoRemoveUnmappedCols(){
+  if(!_removedUnmappedCols.length){ showStatus('Nothing to undo','info'); return; }
+  columnMapping = [...columnMapping, ..._removedUnmappedCols];
+  _removedUnmappedCols = [];
+  renderMappingTable();
+  tryAutoGenSQL();
+  persistMappingToSavedJob();
+  $('undo-remove-btn').style.display = 'none';
+  showStatus('Restored unmapped columns','info');
+}
+
+let _hidingUnmapped = false;
+
+// ── Utility: clear srcCol on rows that reference a non-existent source column
+//
+// Agentive's auto-mapper occasionally produces rows where srcCol points at a
+// column name that doesn't exist on the source table (e.g. it invented a
+// plausible-sounding name or referenced an older schema). These rows survive
+// Generate SQL but produce "Invalid column name" errors at runtime. This
+// utility scans every mapping row and clears srcCol where it can't be
+// resolved. It does NOT delete the row — the target column may still be
+// useful (e.g. you might want to map it manually, or set a literal value
+// later). Joined columns and literal-only rows are left untouched.
+function removeDeadSourceMappings(){
+  if(!srcTable){ showStatus('Load a source table first','err'); return; }
+
+  // Build set of valid source col names — include both raw table columns and
+  // any join columns currently configured.
+  const validNames = new Set();
+  for (const c of (srcTable.columns||[])){
+    validNames.add(typeof c==='string'?c:c.name);
+  }
+  try {
+    const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+    for (const c of joinCols) validNames.add(c.name);
+  } catch {}
+
+  // Scan based on current mode. Returns {rows: [{tgt, oldSrc, scope}], count}
+  function scan(){
+    const out = [];
+    if (mode === 'single'){
+      for (const m of columnMapping){
+        if (m.fromJoin) continue;  // join refs are validated by the join builder
+        if (m.literalValue) continue;
+        if (!m.srcCol) continue;   // already empty
+        if (!validNames.has(m.srcCol)){
+          out.push({ tgtCol: m.tgtCol || '(no target)', oldSrc: m.srcCol, scope: '' });
+        }
+      }
+    } else {
+      for (const tt of (targetTables||[])){
+        for (const m of (tt.mappings||[])){
+          if (m.fromJoin) continue;
+          if (m.literalValue) continue;
+          if (!m.srcCol) continue;
+          if (!validNames.has(m.srcCol)){
+            out.push({ tgtCol: m.tgtCol || '(no target)', oldSrc: m.srcCol, scope: tt.fullName||tt.name||'' });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  const dead = scan();
+  if(!dead.length){ showStatus('No dead source references found','info'); return; }
+
+  // Show the user what we're about to do, then confirm.
+  const preview = dead.slice(0, 12).map(d =>
+    `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} ← ${d.oldSrc}`
+  ).join('\n');
+  const more = dead.length > 12 ? `\n  …and ${dead.length-12} more` : '';
+  const ok = confirm(
+    `Found ${dead.length} mapping${dead.length===1?'':'s'} pointing at source columns that don't exist:\n\n` +
+    preview + more + '\n\n' +
+    'Clear the source column on these rows? (Target rows are kept so you can re-map.)'
+  );
+  if(!ok) return;
+
+  // Apply
+  let cleared = 0;
+  if (mode === 'single'){
+    for (const m of columnMapping){
+      if (m.fromJoin || m.literalValue || !m.srcCol) continue;
+      if (!validNames.has(m.srcCol)){ m.srcCol = ''; m.match = ''; cleared++; }
+    }
+    renderMappingTable();
+  } else {
+    for (const tt of (targetTables||[])){
+      for (const m of (tt.mappings||[])){
+        if (m.fromJoin || m.literalValue || !m.srcCol) continue;
+        if (!validNames.has(m.srcCol)){ m.srcCol = ''; m.match = ''; cleared++; }
+      }
+    }
+    if (typeof renderOTMCards === 'function') renderOTMCards();
+  }
+  tryAutoGenSQL();
+  if (typeof persistMappingToSavedJob === 'function') persistMappingToSavedJob();
+  showStatus('Cleared srcCol on '+cleared+' row'+(cleared===1?'':'s')+(editJobId?' and saved':''),'info');
+}
+
+// ── Utility: set transform=DATE_CAST on rows where target is a date type
+//
+// Why this exists: source columns are often NVARCHAR holding date strings,
+// or DATETIME holding values outside the target's range (the classic
+// 0001-01-01 / 9999-12-31 sentinels, or values < 1900 going into a
+// SMALLDATETIME column). A bare INSERT then fails with "out of range"
+// errors. The DATE_CAST transform wraps the source expression in
+// TRY_CONVERT (returning NULL on parse failure) and, for SMALLDATETIME,
+// clamps out-of-range values to NULL via a CASE.
+//
+// We deliberately ONLY touch rows where the *target* is a date type. We
+// don't touch rows where target is a date but the source is also already
+// the same date type with no realistic risk (e.g. both DATETIME2) — those
+// the user can opt into manually if they want defensive casting everywhere.
+function applyDateCasts(){
+  if(!srcTable){ showStatus('Load a source table first','err'); return; }
+
+  // Index of source-col types for risk-classification
+  const srcTypes = new Map();
+  for (const c of (srcTable.columns||[])){
+    if (typeof c === 'object') srcTypes.set(c.name, c.type||'');
+  }
+
+  // Returns list of candidate rows. "Risk" classification:
+  //   • char→date    : always wrap (highest risk)
+  //   • date→smaller : always wrap (range mismatch — e.g. DATETIME → SMALLDATETIME)
+  //   • date→same    : leave alone (already safe)
+  function scan(){
+    const out = [];
+    function consider(m, tgtType, scope){
+      if (!m.srcCol || m.literalValue) return;
+      if (!isDateType(tgtType)) return;
+      const srcT = srcTypes.get(m.srcCol) || '';
+      // Always wrap if source is char OR target is SMALLDATETIME (range risk)
+      // OR source isn't a date at all (covers INT/numeric edge cases).
+      const tgtUp = (tgtType||'').toUpperCase();
+      const srcIsDate = isDateType(srcT);
+      const srcIsChar = isCharType(srcT);
+      const tgtIsSmall = /^SMALLDATETIME\b/i.test(tgtUp);
+      let why = null;
+      if (srcIsChar) why = 'string → date (TRY_CONVERT)';
+      else if (!srcIsDate) why = 'non-date source → date (defensive)';
+      else if (tgtIsSmall) why = 'range clamp (SMALLDATETIME 1900-2079)';
+      // Skip same-family date→date (no real risk)
+      if (!why) return;
+      // Skip if already DATE_CAST
+      if ((m.transform||'').toUpperCase() === 'DATE_CAST') return;
+      out.push({ tgtCol: m.tgtCol, srcCol: m.srcCol, srcType: srcT||'(unknown)', tgtType: tgtType, why, scope, ref: m });
+    }
+    if (mode === 'single'){
+      for (const m of columnMapping){
+        const tgtType = (tgtTable?.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
+        consider(m, tgtType, '');
+      }
+    } else {
+      for (const tt of (targetTables||[])){
+        for (const m of (tt.mappings||[])){
+          const tgtType = (tt.columns||[]).find(c => c.name === m.tgtCol)?.type || '';
+          consider(m, tgtType, tt.fullName||tt.name||'');
+        }
+      }
+    }
+    return out;
+  }
+
+  const cands = scan();
+  if(!cands.length){ showStatus('No date columns need casting','info'); return; }
+
+  const preview = cands.slice(0, 12).map(c =>
+    `  • ${c.scope?'['+c.scope+'] ':''}${c.tgtCol} (${c.tgtType}) ← ${c.srcCol} (${c.srcType})  —  ${c.why}`
+  ).join('\n');
+  const more = cands.length > 12 ? `\n  …and ${cands.length-12} more` : '';
+  const ok = confirm(
+    `Found ${cands.length} date column${cands.length===1?'':'s'} that should be cast safely:\n\n` +
+    preview + more + '\n\n' +
+    'Apply DATE_CAST transform to these rows? Bad values will become NULL instead of erroring at insert time.'
+  );
+  if(!ok) return;
+
+  for (const c of cands){ c.ref.transform = 'DATE_CAST'; }
+
+  if (mode === 'single') renderMappingTable();
+  else if (typeof renderOTMCards === 'function') renderOTMCards();
+  tryAutoGenSQL();
+  if (typeof persistMappingToSavedJob === 'function') persistMappingToSavedJob();
+  showStatus('Applied DATE_CAST to '+cands.length+' row'+(cands.length===1?'':'s')+(editJobId?' and saved':''),'info');
+}
+
+// ── Auto-fix (Agentive) — combined defensive sweep ────────────────────────
+//
+// The Agentive auto-mapper produces a column map that's *structurally*
+// correct (column → column) but *runtime-fragile*: source values are
+// frequently NVARCHAR(MAX) holding mixed-format dates, empty strings where
+// the target expects a typed value, and occasionally invalid GUIDs. The
+// expectation for an Agentive-driven workflow is "auto-map and run" — not
+// "auto-map then chase down 30 conversion errors by hand."
+//
+// This utility does five passes in one operation, with a single combined
+// preview before applying anything:
+//
+//   1. Clean dead source refs — clear srcCol on rows pointing at
+//      non-existent source columns (Agentive sometimes invents names).
+//   2. Date casts — wrap date/datetime targets in TRY_CONVERT / range-clamp
+//      for SMALLDATETIME. (Same as the 📅 button.)
+//   3. SAFE_GUID — uniqueidentifier targets get ISNULL+TRY_CAST+NEWID()
+//      wrapping. Bad/empty GUIDs become a fresh GUID (lenient).
+//   4. SAFE_NUMERIC — int/bit/decimal/money targets get ISNULL+TRY_CAST+0
+//      wrapping when source is a char type.
+//   5. SAFE_TRUNC — char-target with smaller length than char-source gets
+//      LEFT() truncation so insert doesn't fail on overflow.
+//
+// Warnings collected during the scan (e.g. "32 rows have non-empty source
+// values that aren't valid GUIDs and will be replaced with NEWID()") are
+// surfaced in the preview so you can decide whether to bail.
+function autoFixAgentive(){
+  if(!srcTable){ showStatus('Load a source table first','err'); return; }
+
+  // -- Build lookups --
+  const validSrcNames = new Set();
+  const srcTypes = new Map();
+  for (const c of (srcTable.columns||[])){
+    const nm = typeof c==='string'?c:c.name;
+    validSrcNames.add(nm);
+    if (typeof c === 'object') srcTypes.set(nm, c.type||'');
+  }
+  try {
+    const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+    for (const c of joinCols){ validSrcNames.add(c.name); srcTypes.set(c.name, c.type||''); }
+  } catch {}
+
+  // Pick a SQL literal for an unmapped NOT NULL column. Returned value is
+  // the raw SQL text to put into m.literalValue (so the existing SELECT
+  // generator emits "<value> AS [col]" — e.g. NEWID() AS [ClientGUID]).
+  // Returns null when we don't have a safe default for that type — caller
+  // surfaces those as "skipped, please map manually".
+  function defaultLiteralForType(tgtType){
+    if (!tgtType) return null;
+    if (isGuidType(tgtType))    return { value: 'NEWID()',  kind: 'NEWID' };
+    if (isDateType(tgtType))    return { value: 'GETDATE()', kind: 'GETDATE' };
+    if (isNumericType(tgtType)) return { value: '0',         kind: '0' };
+    // Char family — empty string literal. We MUST store the SQL syntax
+    // (with the quotes), not a JS empty string — the generator concatenates
+    // literalValue directly into the SELECT.
+    if (isCharType(tgtType))    return { value: "''",        kind: "''" };
+    // Binary family — empty binary. 0x is the standard SQL empty-binary literal.
+    if (/^(BINARY|VARBINARY)\b/i.test(tgtType)) return { value: '0x', kind: '0x' };
+    // xml — empty xml document
+    if (/^XML\b/i.test(tgtType)) return { value: "''", kind: "''" };
+    return null;
+  }
+
+  // -- Plan: collect proposed changes per pass --
+  const plan = {
+    deadRefs:      [],   // {ref, scope, tgtCol, oldSrc}
+    dateCasts:     [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType, why}
+    safeGuid:      [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType}
+    safeNumeric:   [],   // {ref, scope, tgtCol, srcCol, srcType, tgtType}
+    safeTrunc:     [],   // {ref, scope, tgtCol, srcCol, srcLen, tgtLen, tgtType}
+    notNullFill:   [],   // {ref, scope, tgtCol, tgtType, literal, kind}
+    notNullSkip:   [],   // {scope, tgtCol, tgtType, reason} — informational only
+    warnings:      []    // free-text strings shown above the preview
+  };
+
+  function planForMapping(m, tgtCol, tgtType, scope, tgtDef){
+    // Pass 0: NOT NULL default-fill — only for rows that are entirely unmapped
+    // (no srcCol, no literalValue) AND target is NOT NULL AND not identity.
+    // SQL Server fills identity columns automatically, so we leave them.
+    // This pass runs FIRST so that subsequent passes (which guard on
+    // !m.literalValue) don't re-touch a row we just filled with a literal.
+    if (!m.srcCol && !m.literalValue && !m.fromJoin &&
+        tgtDef && tgtDef.nullable === false && !tgtDef.isIdentity){
+      const lit = defaultLiteralForType(tgtType);
+      if (lit){
+        plan.notNullFill.push({ ref: m, scope, tgtCol, tgtType, literal: lit.value, kind: lit.kind });
+      } else {
+        // No safe default for this type (e.g. unrecognised user-defined
+        // type, sql_variant, hierarchyid). Surface as an informational skip
+        // so the user knows we can't auto-handle it.
+        plan.notNullSkip.push({ scope, tgtCol, tgtType, reason: 'no safe default for this type' });
+      }
+      return;  // filled rows are done — don't run dead-ref/date/etc. on them
+    }
+
+    // Pass 1: dead refs (clearing wins over wrapping — no point wrapping a
+    // dead reference)
+    if (!m.fromJoin && !m.literalValue && m.srcCol && !validSrcNames.has(m.srcCol)){
+      plan.deadRefs.push({ ref: m, scope, tgtCol: m.tgtCol, oldSrc: m.srcCol });
+      return;
+    }
+    if (!m.srcCol || m.literalValue) return;
+
+    const srcType = srcTypes.get(m.srcCol) || '';
+    const srcIsChar = isCharType(srcType);
+    const srcIsDate = isDateType(srcType);
+    const tgtIsSmall = /^SMALLDATETIME\b/i.test(tgtType.toUpperCase());
+
+    // Pass 2: dates
+    if (isDateType(tgtType)){
+      const already = (m.transform||'').toUpperCase() === 'DATE_CAST';
+      if (!already){
+        let why = null;
+        if (srcIsChar) why = 'string → date (TRY_CONVERT)';
+        else if (!srcIsDate) why = 'non-date source → date (defensive)';
+        else if (tgtIsSmall) why = 'range clamp (SMALLDATETIME 1900-2079)';
+        if (why){
+          plan.dateCasts.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcType: srcType||'(?)', tgtType, why });
+        }
+      }
+      return;  // don't double-wrap a date target with SAFE_*
+    }
+
+    // Pass 3: uniqueidentifier
+    if (isGuidType(tgtType) && srcIsChar){
+      const already = (m.transform||'').toUpperCase() === 'SAFE_GUID';
+      if (!already) plan.safeGuid.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcType, tgtType });
+      return;
+    }
+
+    // Pass 4: numeric / bit
+    if (isNumericType(tgtType) && srcIsChar){
+      const already = (m.transform||'').toUpperCase() === 'SAFE_NUMERIC';
+      if (!already) plan.safeNumeric.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcType, tgtType });
+      return;
+    }
+
+    // Pass 5: char-to-char truncation. Apply ONLY if target has a fixed
+    // length AND source is wider (MAX is treated as infinity). We don't
+    // want to wrap every char→char with LEFT() — that defeats the point of
+    // varchar storage.
+    if (isCharType(tgtType) && srcIsChar){
+      const tgtLen = parseTypeLen(tgtType);
+      const srcLen = parseTypeLen(srcType);
+      if (tgtLen !== Infinity && srcLen > tgtLen){
+        const already = (m.transform||'').toUpperCase() === 'SAFE_TRUNC';
+        if (!already) plan.safeTrunc.push({ ref: m, scope, tgtCol: m.tgtCol, srcCol: m.srcCol, srcLen: (srcLen===Infinity?'MAX':srcLen), tgtLen, tgtType });
+      }
+    }
+  }
+
+  // -- Walk every mapping (single OR otm) --
+  if (mode === 'single'){
+    for (const m of columnMapping){
+      const tgtDef = (tgtTable?.columns||[]).find(c => c.name === m.tgtCol);
+      const tgtType = tgtDef?.type || '';
+      planForMapping(m, m.tgtCol, tgtType, '', tgtDef);
+    }
+  } else {
+    for (const tt of (targetTables||[])){
+      for (const m of (tt.mappings||[])){
+        const tgtDef = (tt.columns||[]).find(c => c.name === m.tgtCol);
+        const tgtType = tgtDef?.type || '';
+        planForMapping(m, m.tgtCol, tgtType, tt.fullName||tt.name||'', tgtDef);
+      }
+    }
+  }
+
+  // -- Compute the warning string for the lenient GUID policy --
+  // We can't actually inspect source row values from here (that needs a
+  // round-trip to the DB). What we CAN say is: "for any non-empty source
+  // value that isn't a valid GUID, your insert would have failed before
+  // — under SAFE_GUID it becomes a fresh GUID instead." Surface this so
+  // the user knows the policy isn't strict.
+  if (plan.safeGuid.length){
+    plan.warnings.push(
+      plan.safeGuid.length+' uniqueidentifier column'+(plan.safeGuid.length===1?'':'s')+
+      ' will be wrapped with TRY_CAST + NEWID(). Empty source values are filled with a fresh GUID. ' +
+      'Non-empty but malformed values (e.g. "abc") are ALSO replaced with a fresh GUID — you will not see those errors. ' +
+      'If FK integrity matters, fix bad source GUIDs before migrating.'
+    );
+  }
+  if (plan.safeNumeric.length){
+    plan.warnings.push(
+      plan.safeNumeric.length+' numeric column'+(plan.safeNumeric.length===1?'':'s')+
+      ' will be wrapped with TRY_CAST + 0. Empty and malformed source values both become 0.'
+    );
+  }
+  if (plan.notNullFill.length){
+    // Group by literal kind so the warning is informative without listing
+    // every single column — the per-row preview below covers detail.
+    const byKind = {};
+    for (const f of plan.notNullFill){ byKind[f.kind] = (byKind[f.kind]||0)+1; }
+    const breakdown = Object.entries(byKind).map(([k,n]) => n+'× '+k).join(', ');
+    plan.warnings.push(
+      plan.notNullFill.length+' unmapped NOT NULL column'+(plan.notNullFill.length===1?'':'s')+
+      ' will be filled with synthetic defaults ('+breakdown+'). ' +
+      'These values are FABRICATED — they have no relation to your source data. ' +
+      'If any of these columns are audit-sensitive (dates on financial/billing tables, business keys, status flags), ' +
+      'map them manually before migrating instead of accepting the default.'
+    );
+  }
+  if (plan.notNullSkip.length){
+    plan.warnings.push(
+      plan.notNullSkip.length+' unmapped NOT NULL column'+(plan.notNullSkip.length===1?'':'s')+
+      ' had no safe default for their type and will be left alone — the insert will still fail on those columns until you map them manually.'
+    );
+  }
+
+  const total = plan.deadRefs.length + plan.dateCasts.length + plan.safeGuid.length + plan.safeNumeric.length + plan.safeTrunc.length + plan.notNullFill.length;
+  if (!total){
+    showStatus('Nothing to auto-fix — mappings look clean','info');
+    return;
+  }
+
+  // -- Build preview text --
+  function block(title, rows, fmt){
+    if (!rows.length) return '';
+    const head = '═══ '+title+' ('+rows.length+') ═══';
+    const sample = rows.slice(0, 8).map(fmt).join('\n');
+    const more = rows.length > 8 ? '\n  …and '+(rows.length-8)+' more' : '';
+    return head + '\n' + sample + more;
+  }
+  const preview = [
+    plan.warnings.length ? '⚠  '+plan.warnings.join('\n⚠  ')+'\n' : '',
+    block('Clean dead source refs', plan.deadRefs,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} ← ${d.oldSrc}  (clear srcCol)`),
+    block('Fix date casts', plan.dateCasts,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}) ← ${d.srcCol} (${d.srcType})  — ${d.why}`),
+    block('Safe GUID wrap', plan.safeGuid,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (UNIQUEIDENTIFIER) ← ${d.srcCol} (${d.srcType})`),
+    block('Safe numeric wrap', plan.safeNumeric,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}) ← ${d.srcCol} (${d.srcType})`),
+    block('Safe truncation', plan.safeTrunc,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType}, len=${d.tgtLen}) ← ${d.srcCol} (len=${d.srcLen})`),
+    block('Default-fill NOT NULL unmapped', plan.notNullFill,
+      d => `  • ${d.scope?'['+d.scope+'] ':''}${d.tgtCol} (${d.tgtType})  ←  ${d.literal}  [synthetic]`)
+  ].filter(Boolean).join('\n\n');
+
+  const ok = confirm(
+    'Auto-fix will apply '+total+' change'+(total===1?'':'s')+' across this mapping:\n\n' +
+    preview + '\n\nApply all of the above?'
+  );
+  if (!ok) return;
+
+  // -- Apply --
+  let counts = { dead: 0, date: 0, guid: 0, num: 0, trunc: 0, fill: 0 };
+  for (const d of plan.deadRefs){    d.ref.srcCol = ''; d.ref.match = ''; counts.dead++; }
+  for (const d of plan.dateCasts){   d.ref.transform = 'DATE_CAST';    counts.date++; }
+  for (const d of plan.safeGuid){    d.ref.transform = 'SAFE_GUID';    counts.guid++; }
+  for (const d of plan.safeNumeric){ d.ref.transform = 'SAFE_NUMERIC'; counts.num++; }
+  for (const d of plan.safeTrunc){   d.ref.transform = 'SAFE_TRUNC';   counts.trunc++; }
+  for (const d of plan.notNullFill){
+    // Write the literal exactly as the user would have typed it in the
+    // "Fixed value" cell — the generator already knows how to emit it.
+    d.ref.literalValue = d.literal;
+    d.ref.transform    = 'LITERAL';
+    d.ref.match        = 'LITERAL';
+    counts.fill++;
+  }
+
+  if (mode === 'single') renderMappingTable();
+  else if (typeof renderOTMCards === 'function') renderOTMCards();
+  tryAutoGenSQL();
+  if (typeof persistMappingToSavedJob === 'function') persistMappingToSavedJob();
+
+  const summary = [];
+  if (counts.dead)  summary.push(counts.dead+' dead refs cleared');
+  if (counts.date)  summary.push(counts.date+' date casts applied');
+  if (counts.guid)  summary.push(counts.guid+' GUID wraps applied');
+  if (counts.num)   summary.push(counts.num+' numeric wraps applied');
+  if (counts.trunc) summary.push(counts.trunc+' truncation wraps applied');
+  if (counts.fill)  summary.push(counts.fill+' NOT NULL columns default-filled');
+  showStatus('Auto-fix: '+summary.join(' · ')+(editJobId?' and saved':''), 'info');
+}
+
+function toggleUnmappedCols(){
+  _hidingUnmapped = !_hidingUnmapped;
+  const btn = $('btn-toggle-unmapped');
+  if(btn){
+    btn.textContent = _hidingUnmapped ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.style.color = _hidingUnmapped ? 'var(--amber)' : '';
+    btn.style.borderColor = _hidingUnmapped ? 'rgba(245,158,11,0.4)' : '';
+  }
+  applyMapFilter();
+  // Keep the visual view in sync if it's visible
+  if(window._viewMode==='visual' && mode==='single' && $('visual-single')?.style.display !== 'none'){
+    renderVisualSingle();
+  }
+}
+
+function clearMapFilter(){
+  const f=$('map-filter'); if(f) f.value='';
+  const m=$('map-filter-match'); if(m) m.value='';
+  applyMapFilter();
+}
+
+function autoMap(src, tgt){
+  // Drive off TARGET columns so every target field appears in the mapping table.
+  // We now INCLUDE identity columns in the table — they show as disabled rows
+  // with an "Allow override" checkbox that, when ticked, includes them in the
+  // INSERT and turns on SET IDENTITY_INSERT for the target. By default they
+  // are unmapped and excluded from the generated SQL.
+  const srcCols = src.columns.map(c=>typeof c==='string'?{name:c,type:''}:c);
+  return tgt.columns.map(tc=>{
+    // Identity rows: don't auto-suggest a source column — let SQL Server
+    // generate the next value. The user can flip Allow override per row.
+    if (tc.isIdentity) {
+      return { srcCol:'', tgtCol:tc.name, transform:'NONE', match:'',
+               _isIdentity:true, _identityOverride:false };
+    }
+    const exact = srcCols.find(sc=>sc.name.toLowerCase()===tc.name.toLowerCase());
+    const fuzzy = !exact && srcCols.find(sc=>
+      sc.name.toLowerCase().includes(tc.name.toLowerCase())||
+      tc.name.toLowerCase().includes(sc.name.toLowerCase()));
+    const sc = exact||fuzzy||null;
+    return { srcCol:sc?.name||'', tgtCol:tc.name, transform:'NONE',
+             match:exact?'HIGH':fuzzy?'MEDIUM':sc?'LOW':'' };
+  });
+}
+
+// Parse numeric length from SQL type e.g. NVARCHAR(50)->50, NVARCHAR(MAX)->Infinity
+// Build a safe date-cast expression for the "Fix date casts" utility.
+// Strategy:
+//   • TRY_CONVERT returns NULL on parse failure instead of erroring — this
+//     is the difference between a clean migration and SQL Server bombing out
+//     mid-batch on a single bad value (the classic Agentive symptom: source
+//     is NVARCHAR with mixed-format dates or empty strings).
+//   • SMALLDATETIME has a hard range of 1900-01-01..2079-06-06 — values
+//     outside this range raise the "out of range" error even on insert.
+//     We clamp by NULLing them out so the row still loads.
+//   • Format style 121 is ODBC canonical (yyyy-mm-dd hh:mi:ss.mmm) — the
+//     least ambiguous parse path for varchar inputs that may already be
+//     ISO-ish or culture-specific.
+function buildDateCastExpr(srcExpr, tgtType, tgtNotNull){
+  const t = (tgtType||'DATETIME2').toUpperCase().split('(')[0].trim();
+  const cast = 'TRY_CONVERT('+tgtType+','+srcExpr+',121)';
+  let expr;
+  if (t === 'SMALLDATETIME'){
+    // Clamp out-of-range to NULL so the insert doesn't blow up.
+    expr = 'CASE WHEN TRY_CONVERT(DATETIME2,'+srcExpr+',121) NOT BETWEEN \'1900-01-01\' AND \'2079-06-06\' THEN NULL ELSE '+cast+' END';
+  } else {
+    expr = cast;
+  }
+  // NOT NULL target safeguard. TRY_CONVERT returns NULL on parse failure;
+  // the SMALLDATETIME clamp also produces NULL for out-of-range values.
+  // Either path will fail a NOT NULL insert. Wrap with ISNULL(..., GETDATE())
+  // so the row still loads. GETDATE() is a fabricated value — flagged in
+  // the Auto-fix preview's warning text. Caller passes tgtNotNull=true only
+  // when the target column declares NOT NULL.
+  if (tgtNotNull){
+    expr = 'ISNULL('+expr+', GETDATE())';
+  }
+  return expr;
+}
+
+// Build a safety-wrapped cast expression for the "Auto-fix (Agentive)"
+// utility. The Agentive output produces mappings where:
+//   • Source columns are typically NVARCHAR(MAX) (CSV / staging area shape).
+//   • Target columns are strongly-typed (UNIQUEIDENTIFIER, INT, DECIMAL, …).
+//   • Some source values are empty strings, NULL, or malformed.
+//
+// A bare INSERT in this shape fails with "Conversion failed" / "Cannot
+// insert NULL" / "String or binary data would be truncated". This helper
+// generates a defensive expression per kind that handles those failure
+// modes silently so the migration can complete.
+//
+//   SAFE_GUID    : ISNULL(TRY_CAST(NULLIF(LTRIM(RTRIM(src)),'') AS UNIQUEIDENTIFIER), NEWID())
+//                  — empties + bad GUIDs both become a fresh GUID (lenient).
+//   SAFE_NUMERIC : ISNULL(TRY_CAST(NULLIF(LTRIM(RTRIM(src)),'') AS <tgtType>), 0)
+//                  — empties + bad numerics become 0.
+//   SAFE_TRUNC   : LEFT(src, <tgtLen>)
+//                  — string longer than target length is truncated to fit.
+function buildSafeCastExpr(kind, srcExpr, tgtType, tgtNotNull){
+  const trimmed = 'LTRIM(RTRIM('+srcExpr+'))';
+  const nullified = 'NULLIF('+trimmed+",'')";
+  if (kind === 'SAFE_GUID'){
+    // ISNULL+NEWID() already produces non-null output. No extra guard needed.
+    return 'ISNULL(TRY_CAST('+nullified+' AS UNIQUEIDENTIFIER), NEWID())';
+  }
+  if (kind === 'SAFE_NUMERIC'){
+    // ISNULL+0 already produces non-null output. No extra guard needed.
+    const t = (tgtType||'INT').trim();
+    return 'ISNULL(TRY_CAST('+nullified+' AS '+t+'), 0)';
+  }
+  if (kind === 'SAFE_TRUNC'){
+    // Parse target length: VARCHAR(50) → 50. MAX or no-length → no-op.
+    const m = (tgtType||'').match(/\(\s*(\d+)\s*\)/);
+    if (!m) return tgtNotNull ? 'ISNULL('+srcExpr+", '')" : srcExpr;
+    const truncExpr = 'LEFT('+srcExpr+', '+m[1]+')';
+    // LEFT(NULL, n) → NULL. NOT NULL char target needs a non-null guarantee,
+    // so wrap with ISNULL(..., '') when caller flagged it.
+    return tgtNotNull ? 'ISNULL('+truncExpr+", '')" : truncExpr;
+  }
+  return srcExpr;
+}
+
+function parseTypeLen(t){ const m=(t||'').match(/\((MAX|\d+)\)/i); if(!m) return Infinity; return m[1].toUpperCase()==='MAX'?Infinity:parseInt(m[1]); }
+function isCharType(t){ return /^(N?VARCHAR|N?CHAR|TEXT|NTEXT)/i.test(t||''); }
+function isDateType(t){ return /^(DATE|TIME|DATETIME(2)?|SMALLDATETIME|DATETIMEOFFSET)\b/i.test((t||'').trim()); }
+function isGuidType(t){ return /^UNIQUEIDENTIFIER\b/i.test((t||'').trim()); }
+// Integer + decimal + money + bit families — anything where empty NVARCHAR
+// at the source causes a runtime cast error.
+function isNumericType(t){ return /^(TINYINT|SMALLINT|INT|BIGINT|BIT|DECIMAL|NUMERIC|MONEY|SMALLMONEY|FLOAT|REAL)\b/i.test((t||'').trim()); }
+
+function renderMappingTable(){
+  if(!tgtTable) return;
+  const tgtCols = tgtTable.columns||[];
+  const tbody=$('mapping-tbody'); if(!tbody) return;
+  // Include primary source cols AND any joined-table cols so users can pick either
+  const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+  const srcColEntries = [
+    ...(srcTable?.columns||[]).map(c=>({name:typeof c==='string'?c:c.name, fromJoin:false})),
+    ...joinCols.map(c=>({name:c.name, fromJoin:true, alias:c.alias}))
+  ];
+  const srcColOpts = srcColEntries.map(c =>
+    `<option value="${esc(c.name)}">${c.fromJoin?'⊞ ':''}${esc(c.name)}</option>`
+  ).join('');
+  tbody.innerHTML = columnMapping.map((m,i)=>{
+    const srcDef = (srcTable?.columns||[]).find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
+    const srcType = srcDef&&typeof srcDef==='object'?srcDef.type:'';
+    const tgtDef = tgtCols.find(c=>c.name===m.tgtCol);
+    const tgtType = tgtDef?.type||'';
+    const matchColor = m.match==='HIGH'?'var(--green)':m.match==='MEDIUM'?'var(--amber)':m.match==='LOW'?'var(--red)':'var(--text3)';
+    const hasFixed = !!(m.literalValue !== undefined && m.literalValue !== '');
+    const hasMapping = !!m.srcCol || hasFixed;
+    // An aggregate such as MAX([CaseName]) lives in the same Fixed value box,
+    // but unlike a hard-coded literal it still reads the source column — so
+    // the source picker must not be struck through as though it were ignored.
+    const isAgg = hasFixed && isAggregateExpr(m.literalValue);
+    const overridesSrc = hasFixed && !isAgg;
+
+    // ── Identity column handling ──────────────────────────────────────────
+    // Identity rows are disabled by default — the source picker is locked
+    // out and the row dims so the user knows SQL Server will generate the
+    // value. Ticking the per-row "Allow override" checkbox unlocks the
+    // source picker AND adds the column to the generated INSERT, with
+    // SET IDENTITY_INSERT ON/OFF wrapping the statement automatically.
+    const isIdentity        = !!m._isIdentity;
+    const identityOverride  = !!m._identityOverride;
+    const identityLocked    = isIdentity && !identityOverride;
+
+    // ── NOT NULL warning ──────────────────────────────────────────────────
+    // tgtDef.nullable comes through as false for NOT NULL columns. Identity
+    // columns are NOT NULL too, but SQL Server fills them — so we only
+    // surface the warning for identity rows when the user has chosen to
+    // override (i.e. they're now responsible for the value).
+    const isNotNull         = tgtDef && tgtDef.nullable === false;
+    const requiresValue     = isNotNull && (!isIdentity || identityOverride);
+    const notNullBlocking   = requiresValue && !hasMapping;
+
+    // Truncation: source char wider than target char, no transform or TRIM
+    const willTruncate = !hasFixed && m.srcCol && srcType && tgtType
+      && isCharType(srcType) && isCharType(tgtType)
+      && (m.transform==='NONE'||m.transform==='TRIM')
+      && parseTypeLen(srcType) > parseTypeLen(tgtType);
+    const truncLen = willTruncate ? parseTypeLen(tgtType) : 0;
+
+    // Row background — order of precedence: blocking error > identity locked
+    // > fixed value > truncation warning > nothing.
+    let rowStyle = '';
+    if (notNullBlocking) {
+      // Loud red so it can't be missed and matches the "blocks Generate SQL"
+      // contract.
+      rowStyle = 'background:rgba(240,70,70,0.07);box-shadow:inset 3px 0 0 var(--red)';
+    } else if (identityLocked) {
+      rowStyle = 'background:rgba(255,255,255,0.02);opacity:0.55';
+    } else if (hasFixed) {
+      rowStyle = 'background:rgba(23,130,124,0.04)';
+    } else if (willTruncate) {
+      rowStyle = 'background:rgba(245,158,11,0.04)';
+    }
+
+    // Disabled flag for inputs on locked identity rows. We allow the
+    // checkbox itself, the literal-value field (so users could provide a
+    // hard-coded id even without overriding), and the remove button —
+    // everything else is locked.
+    const disAttr = identityLocked ? 'disabled' : '';
+
+    // Identity badge + override checkbox. Sits in the target-type cell so
+    // it's right next to the column type info — minimal layout change.
+    const identityBadgeHtml = isIdentity
+      ? `<div style="margin-top:3px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+           <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(107,78,142,0.25)">IDENTITY</span>
+           <label style="font-size:10px;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px"
+                  title="Allow override for this identity column. When ticked, this column is included in the INSERT and SET IDENTITY_INSERT ON is set on the target.">
+             <input type="checkbox" ${identityOverride?'checked':''}
+                    onchange="setIdentityOverride(${i}, this.checked)"
+                    style="margin:0;cursor:pointer">
+             Allow override
+           </label>
+         </div>`
+      : '';
+
+    // NOT NULL inline blocking message — sits under the target column name
+    // so it reads as part of the row context, not floating somewhere else.
+    const notNullMsgHtml = notNullBlocking
+      ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600">⚠ NOT NULL — must be mapped or given a fixed value</div>`
+      : (isNotNull && !isIdentity
+          ? `<div style="margin-top:2px;color:var(--text3);font-size:9px;font-weight:500">NOT NULL</div>`
+          : '');
+
+    return `<tr style="${rowStyle}">
+      <td>
+        <select class="map-select" ${disAttr} style="font-family:var(--mono);font-size:11px${overridesSrc?';color:var(--text3);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
+          onchange="columnMapping[${i}].srcCol=this.value;columnMapping[${i}].match=this.value?'HIGH':'';renderMappingTable();renderSrcColList();tryAutoGenSQL()">
+          <option value="">— none —</option>
+          ${srcColOpts.replace(`value="${esc(m.srcCol)}"`,`value="${esc(m.srcCol)}" selected`)}
+        </select>
+      </td>
+      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
+      <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">
+        ${esc(m.tgtCol)}
+        ${notNullMsgHtml}
+      </td>
+      <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
+        ${esc(tgtType)}${willTruncate?`<br><span style="color:var(--amber);font-size:9px" title="Source ${esc(srcType)} wider than target — will apply LEFT(${truncLen})">⚠ LEFT(${truncLen})</span>`:''}
+        ${identityBadgeHtml}
+      </td>
+      <td><select class="map-select" ${disAttr} style="width:80px${identityLocked?';cursor:not-allowed':''}" onchange="updateTransform(${i},this.value)">
+        ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST','SAFE_GUID','SAFE_NUMERIC','SAFE_TRUNC'].map(t=>`<option ${m.transform===t?'selected':''}>${t}</option>`).join('')}
+      </select></td>
+      <td>
+        <input class="map-select" style="width:120px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
+          ${disAttr}
+          placeholder="${identityLocked?'(identity locked)':"e.g. N'Value', 0, NULL…"}"
+          value="${esc(m.literalValue||'')}"
+          oninput="columnMapping[${i}].literalValue=this.value.trim();tryAutoGenSQL()"
+          title="Fixed SQL value — overrides source column. Leave blank to use source.">
+      </td>
+      <td><span style="font-size:10px;font-weight:600;color:${matchColor}">${identityLocked?'<span style="color:var(--text3)">auto</span>':(m.match||'—')}</span></td>
+      <td><button onclick="columnMapping.splice(${i},1);renderMappingTable();renderSrcColList()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:2px 4px" title="Remove">✕</button></td>
+    </tr>`;
+  }).join('');
+  // Reset hide-unmapped toggle when mapping rebuilt
+  _hidingUnmapped = false;
+  const btn = $('btn-toggle-unmapped');
+  if(btn){ btn.textContent='👁 Hide Unmapped'; btn.style.color=''; btn.style.borderColor=''; }
+  // Re-apply any active filter after re-render
+  applyMapFilter();
+}
+
+// ── Single SQL generation ─────────────────────────────────────────────────────
+// Inline, persistent explanation of why Generate SQL produced nothing.
+// Rendered just above the SQL output box and cleared on the next successful
+// generation, so the blocked state is visible on the page rather than only in
+// a dialog the user may have dismissed or had suppressed by the browser.
+function showGenerateBlockBanner(cols){
+  const box = document.getElementById('sql-output');
+  if (!box || !box.parentNode) return;
+  let el = document.getElementById('om-generate-block');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'om-generate-block';
+    el.style.cssText = 'margin:0.75rem 0;padding:0.75rem 0.9rem;border-radius:8px;'
+      + 'border:1px solid var(--red);background:var(--red-g,rgba(192,57,43,0.10));'
+      + 'color:var(--red);font-size:12px;line-height:1.6';
+    box.parentNode.insertBefore(el, box);
+  }
+  const shown = cols.slice(0, 8).map(n => '<code>' + n + '</code>').join(', ');
+  const more  = cols.length > 8 ? ' …and ' + (cols.length - 8) + ' more' : '';
+  el.innerHTML =
+    '<b>SQL not generated — ' + cols.length + ' required column' + (cols.length===1?'':'s') + ' unmapped.</b><br>'
+    + 'These target columns are NOT NULL but have no source column and no fixed value: ' + shown + more + '.<br>'
+    + 'Map a source column or set a fixed value on each (they are outlined in red in the table above), then click Generate SQL again.';
+  el.style.display = 'block';
+  try { el.scrollIntoView({ behavior:'smooth', block:'nearest' }); } catch(_) {}
+}
+function clearGenerateBlockBanner(){
+  const el = document.getElementById('om-generate-block');
+  if (el) el.style.display = 'none';
+}
+
+function generateSingleSQL(silent){
+  clearGenerateBlockBanner();
+  if(!srcTable){ if(!silent) alert('Select a source table.'); return; }
+  if(!tgtTable){ if(!silent) alert('Select a target table.'); return; }
+  // A row is only a real mapping if it has a target column AND either a source
+  // column or a fixed literal value. Rows with just a tgtCol (empty srcCol and
+  // no literalValue) would emit garbage like "[] AS [colname]" in the SELECT.
+  //
+  // Identity columns: only included when the user has explicitly ticked
+  // "Allow override" on that row. Otherwise SQL Server generates the next
+  // value and the column doesn't appear in our INSERT at all.
+  const mapping = columnMapping.filter(m =>
+    m.tgtCol &&
+    (m.srcCol || (m.literalValue!==undefined && m.literalValue!=='')) &&
+    (!m._isIdentity || m._identityOverride)
+  );
+  if(!mapping.length){ if(!silent) alert('No columns mapped.'); return; }
+
+  // ── BLOCKING CHECK: NOT NULL columns must be mapped or fixed-valued ──
+  // Identity columns are NOT NULL by definition but SQL Server fills them,
+  // so we only require user-supplied values for non-identity NOT NULLs (and
+  // for identity rows that the user has chosen to override — at that point
+  // they own the value and SQL Server won't generate one).
+  const unmappedRequired = (tgtTable.columns||[])
+    .filter(c => c.nullable === false)
+    .filter(c => {
+      const m = columnMapping.find(x => x.tgtCol === c.name);
+      // Identity column with no override: fine, SQL Server provides value.
+      if (c.isIdentity && !(m && m._identityOverride)) return false;
+      // Otherwise: must have a source mapping or a fixed literal value.
+      const hasSrc = !!(m && m.srcCol);
+      const hasLit = !!(m && m.literalValue !== undefined && m.literalValue !== '');
+      return !(hasSrc || hasLit);
+    })
+    .map(c => c.name);
+
+  if (unmappedRequired.length) {
+    // Block generation. The mapping table itself shows red borders and
+    // inline messages on each offending row — see renderMappingTable —
+    // so the user already has visual context. We only need to surface
+    // the message here so the click on Generate SQL has a clear, single
+    // failure mode rather than silently producing partial SQL.
+    if (!silent) {
+      const list = unmappedRequired.slice(0, 8).map(n => '  • ' + n).join('\n');
+      const more = unmappedRequired.length > 8 ? `\n  …and ${unmappedRequired.length - 8} more` : '';
+      // Persistent on-screen banner as well as the dialog. A modal alone left
+      // no trace once dismissed — and browsers offer "prevent this page from
+      // creating additional dialogs" after a few, at which point the click
+      // genuinely does nothing visible and the button still looks ready.
+      showGenerateBlockBanner(unmappedRequired);
+      alert(
+        'Cannot generate SQL — ' + unmappedRequired.length +
+        ' NOT NULL target column' + (unmappedRequired.length===1?'':'s') +
+        ' have no mapping:\n\n' + list + more +
+        '\n\nMap a source column or set a fixed value on each, then try again.'
+      );
+    }
+    // Important: do NOT call showSQLOutput / clear the panel — leave any
+    // previously-generated SQL in place so it doesn't look like the user
+    // lost their work.
+    return;
+  }
+
+  const warnings = [];
+  const srcFull = '['+srcTable.schema+'].['+srcTable.name+']';
+  const tgtFull = '['+tgtTable.schema+'].['+tgtTable.name+']';
+  const tgtDB = tgtSchema?.database || parseDbName(tgtConn) || '';
+  // srcDB is only used in the human-readable comment header below — never
+  // in executable SQL. See the "Database-qualified names" comment block.
+  const srcDB = srcSchema?.database || parseDbName(srcConn) || '';
+  const identityCols = (tgtTable.columns||[]).filter(c=>c.isIdentity).map(c=>c.name);
+  const hasIdent = mapping.some(m=>identityCols.includes(m.tgtCol));
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Database-qualified names — TWO-part for executable SQL.
+  //
+  // We deliberately do NOT prefix the database name (e.g. [Agentive].[dbo].[t])
+  // on the INSERT/SELECT/FROM/COUNT clauses, even though the schema response
+  // tells us a database name. Two reasons:
+  //
+  // 1. The runner sends each SQL statement to a connection that's already
+  //    bound to a specific database. A two-part name [schema].[table]
+  //    resolves correctly against whatever DB the connection is on. A
+  //    three-part name [other_db].[schema].[table] only works if SQL Server
+  //    can reach `other_db` — which it can't across our split source/target
+  //    setup (source via direct ADO.NET, target via Azure Function).
+  //
+  // 2. The target connection routes through an Azure Function URL, and that
+  //    Function can report a placeholder/wrong database name in its schema
+  //    response (e.g. literal "db"). Hard-coding that into INSERT statements
+  //    produces invalid SQL like INSERT INTO [db].[dbo].[matters] which
+  //    SQL Server rejects with "Invalid object name 'db.dbo.matters'".
+  //
+  // The DB names ARE still surfaced in the comment header at the top of the
+  // generated script for human readability — that lives on a separate code
+  // path (search for `${srcDB?srcDB+'.':''}` in the comment block below).
+  // ─────────────────────────────────────────────────────────────────────────
+  const srcFullQ = srcFull;   // always 2-part: [schema].[table]
+  const tgtFullQ = tgtFull;   // always 2-part: [schema].[table]
+
+  // JOIN aliases
+  const activeJoins = (window._joinState||[]).filter(j=>j.table&&j.on);
+  const joinAliases = {}; activeJoins.forEach((j,i)=>{ joinAliases[j.table]='s'+(i+1); });
+
+  function rewriteOn(on){
+    const map={};
+    map[srcTable.name.toLowerCase()]=srcFullQ;
+    map[(srcTable.schema+'.'+srcTable.name).toLowerCase()]=srcFullQ;
+    activeJoins.forEach(j=>{ const a=joinAliases[j.table]; const parts=j.table.toLowerCase().split('.'); map[parts[parts.length-1]]=a; map[j.table.toLowerCase()]=a; });
+    on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,sc,tb,col)=>{ const a=map[(sc+'.'+tb).toLowerCase()]||map[tb.toLowerCase()]; return a?a+'.['+col+']':'['+sc+'].['+tb+'].['+col+']'; });
+    on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,tb,col)=>{ const a=map[tb.toLowerCase()]; return a?a+'.['+col+']':'['+tb+'].['+col+']'; });
+    return on;
+  }
+
+  const joinClauses = activeJoins.map(j=>{
+    const a=joinAliases[j.table];
+    const parts=j.table.split('.');
+    const tblRef=parts.length>1?'['+parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']':'['+j.table+']';
+    return j.type+' JOIN '+tblRef+' '+a+' ON '+rewriteOn(j.on);
+  }).join('\n');
+
+  const selectCols = mapping.map(m=>{
+    let srcExpr;
+    // If a fixed literal value is set, use it directly regardless of transform
+    if(m.literalValue !== undefined && m.literalValue !== ''){
+      return '      '+m.literalValue+' AS ['+m.tgtCol+']';
+    }
+    if(m.fromJoin){
+      const jEntry=activeJoins.find(j=>j.table===m.fromJoin||j.table.split('.').pop()===m.fromJoin?.split('.').pop());
+      const alias=jEntry?joinAliases[jEntry.table]:m.alias||'s1';
+      const colName=m.srcCol.includes('.')?m.srcCol.split('.').pop():m.srcCol;
+      srcExpr=alias+'.['+colName+']';
+    } else {
+      // Bare [colName] — the FROM clause already specifies the 3-part table reference.
+      srcExpr='['+m.srcCol+']';
+    }
+    // Look up target column def once so we can pass its NOT NULL flag into
+    // the cast builders. nullable === false is the NOT NULL signal here
+    // (matches the convention used elsewhere in this file).
+    const _tgtDef = tgtTable.columns.find(c=>c.name===m.tgtCol);
+    const _tgtType = _tgtDef?.type || '';
+    const _tgtNotNull = _tgtDef ? _tgtDef.nullable === false : false;
+    switch((m.transform||'NONE').toUpperCase()){
+      case 'TRIM': srcExpr='LTRIM(RTRIM('+srcExpr+'))'; break;
+      case 'UPPER': srcExpr='UPPER('+srcExpr+')'; break;
+      case 'LOWER': srcExpr='LOWER('+srcExpr+')'; break;
+      case 'CAST': srcExpr='CAST('+srcExpr+' AS '+(_tgtType||'NVARCHAR(255)')+')'; break;
+      case 'DATE_CAST': srcExpr=buildDateCastExpr(srcExpr, _tgtType||'DATETIME2', _tgtNotNull); break;
+      case 'SAFE_GUID':    srcExpr=buildSafeCastExpr('SAFE_GUID',    srcExpr, _tgtType||'UNIQUEIDENTIFIER', _tgtNotNull); break;
+      case 'SAFE_NUMERIC': srcExpr=buildSafeCastExpr('SAFE_NUMERIC', srcExpr, _tgtType||'INT',              _tgtNotNull); break;
+      case 'SAFE_TRUNC':   srcExpr=buildSafeCastExpr('SAFE_TRUNC',   srcExpr, _tgtType||'NVARCHAR(255)',    _tgtNotNull); break;
+    }
+    // Auto-truncate: wrap in LEFT() when source char type is wider than target
+    if((m.transform||'NONE')==='NONE'||m.transform==='TRIM'){
+      const srcDef=(srcTable?.columns||[]).find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
+      const srcT=srcDef&&typeof srcDef==='object'?srcDef.type:'';
+      const tgtDef=tgtTable.columns.find(c=>c.name===m.tgtCol);
+      const tgtT=tgtDef?.type||'';
+      if(isCharType(srcT)&&isCharType(tgtT)&&parseTypeLen(srcT)>parseTypeLen(tgtT)){
+        const lim=parseTypeLen(tgtT);
+        srcExpr='LEFT('+srcExpr+', '+lim+')';
+        warnings.push('['+m.srcCol+'] truncated to '+lim+' chars via LEFT() (src: '+srcT+', tgt: '+tgtT+')');
+      }
+    }
+    // Was/Is as CASE — delegated to shared helper so single-table and OTM
+    // apply rules identically.
+    if (typeof CygenixWasis !== 'undefined') {
+      srcExpr = CygenixWasis.wrapExpr(srcExpr, srcTable.name, m.srcCol, {
+        formatSQLVal: formatSQLVal,
+        onApplied: function(n){
+          warnings.push('Was/Is applied to ['+m.srcCol+']: '+n+' rule(s)');
+        }
+      });
+    }
+    return '      '+srcExpr+' AS ['+m.tgtCol+']';
+  }).join(',\n');
+
+  const where=($('src-where')?.value||'').trim();
+  const groupBy=($('src-groupby')?.value||'').trim();
+  const colList=mapping.map(m=>'['+m.tgtCol+']').join(', ');
+
+  // A grouped SELECT collapses source rows, so "how many rows did we read"
+  // is the number of groups, not the number of matching rows. Both verify
+  // queries below count through this subquery instead of the raw table —
+  // counting the table would report a source total the insert never produced.
+  const srcCountFrom = groupBy
+    ? `(SELECT ${groupBy} FROM ${srcFullQ}${where?' WHERE '+where:''} GROUP BY ${groupBy}) AS [g]`
+    : `${srcFullQ}${where?' WHERE '+where:''}`;
+
+  if(groupBy){
+    // Same check the Options panel shows, repeated here so it reaches the
+    // warnings list on the generated SQL and the saved job.
+    const ung = (typeof ungroupedColumns==='function') ? ungroupedColumns() : [];
+    if(ung.length) warnings.push('GROUP BY set but ['+ung.join('], [')+'] '+(ung.length===1?'is':'are')+' neither grouped nor aggregated — SQL Server will reject this statement');
+  }
+
+  // NOT NULL warnings
+  (tgtTable.columns||[]).filter(c=>!c.nullable&&!c.isIdentity).forEach(tc=>{
+    if(!mapping.find(m=>m.tgtCol===tc.name)) warnings.push('Target ['+tc.name+'] is NOT NULL but has no mapping');
+  });
+
+  // srcDB, srcFullQ, tgtFullQ already computed above before selectCols
+
+  let sql='';
+  sql+=`-- ============================================================\n`;
+  sql+=`-- Migration: ${srcDB?srcDB+'.':''}${srcTable.fullName} → ${tgtDB?tgtDB+'.':''}${tgtTable.fullName}\n`;
+  sql+=`-- Columns: ${mapping.length} mapped${wasisRules.length?' · Was/Is: '+wasisRules.length+' rules':''}\n`;
+  sql+=`-- Generated: ${new Date().toISOString()}\n`;
+  sql+=`-- ============================================================\n\n`;
+  sql+=`SET NOCOUNT ON;\n\n`;
+  if(hasIdent) sql+=`SET IDENTITY_INSERT ${tgtFullQ} ON;\n\n`;
+  sql+=`INSERT INTO ${tgtFullQ}\n    (${colList})\nSELECT\n${selectCols}\nFROM ${srcFullQ}\n`;
+  if(joinClauses) sql+=joinClauses+'\n';
+  if(where) sql+=`WHERE ${where}\n`;
+  if(groupBy) sql+=`GROUP BY ${groupBy}\n`;
+  sql+=';\n';
+  if(hasIdent) sql+=`\nSET IDENTITY_INSERT ${tgtFullQ} OFF;\n`;
+  sql+=`\n-- Verify:\nSELECT COUNT(*) AS [migrated_rows] FROM ${tgtFullQ};\n`+
+       `SELECT COUNT(*) AS [source_rows]   FROM ${srcCountFrom};`;
+
+  const schemaSQL=`SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA='${tgtTable.schema}' AND TABLE_NAME='${tgtTable.name}'\nORDER BY ORDINAL_POSITION;`;
+  const verifySQL=`SELECT '${srcDB?srcDB+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcCountFrom}\nUNION ALL\nSELECT '${tgtDB?tgtDB+'.':''}${tgtTable.fullName}', COUNT(*) FROM ${tgtFullQ};`;
+
+  // Apply system-parameter substitution (@@Token → value) to all generated SQL
+  const sub = (typeof CygenixParams !== 'undefined')
+    ? (s => CygenixParams.substituteParams(s))
+    : (s => s);
+  generatedSQL={insert:sub(sql), schema:sub(schemaSQL), verify:sub(verifySQL)};
+  showSQLOutput(generatedSQL.insert, warnings, !silent);
+  $('save-job-btn').disabled=false;
+  $('tab-schema').style.display='';
+  $('tab-verify').style.display='';
+}
+
+function updateTransform(i, val){
+  columnMapping[i].transform = val;
+  renderMappingTable();
+  tryAutoGenSQL();
+}
+
+// Toggle the per-row "Allow override" checkbox on identity columns. When the
+// user ticks it, the row becomes editable in the mapping table AND the
+// generated SQL includes the column in its INSERT (with SET IDENTITY_INSERT
+// ON/OFF wrapping the statement — that part is handled in generateSingleSQL,
+// triggered by the row carrying _isIdentity + _identityOverride together).
+// Untick to lock the column back out and let SQL Server generate values.
+function setIdentityOverride(i, on){
+  if (!columnMapping[i]) return;
+  columnMapping[i]._identityOverride = !!on;
+  // When locking the column back out we also clear any source picker /
+  // literal that the user set, otherwise the row carries stale state and
+  // tryAutoGenSQL silently includes the column. Cleared to a clean unmapped
+  // identity row (matches what autoMap produces).
+  if (!on) {
+    columnMapping[i].srcCol = '';
+    columnMapping[i].literalValue = '';
+    columnMapping[i].match = '';
+    columnMapping[i].transform = 'NONE';
+  }
+  renderMappingTable();
+  tryAutoGenSQL();
+}
+
+function tryAutoGenSQL(){
+  if(srcTable && tgtTable && columnMapping.filter(m=>m.tgtCol && (m.srcCol || (m.literalValue!==undefined && m.literalValue!==''))).length > 0){
+    try { generateSingleSQL(true); } catch(e) {}
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// LEFT COLUMN SPLITTER
+// ══════════════════════════════════════════════════════════════════════════
+// The source panel was a fixed 300px. Long schema-qualified table names got
+// clipped in the picker, the WHERE and GROUP BY rows had barely any room to
+// type in, and once the source table was chosen there was no way to give that
+// space back to the mapping grid. It now drags to resize and collapses to
+// nothing, and both are remembered.
+const OM_LEFT_W_KEY   = 'cygenix_om_left_width';
+const OM_LEFT_COL_KEY = 'cygenix_om_left_collapsed';
+const OM_LEFT_MIN = 220;   // narrower than this and the column list is unusable
+const OM_LEFT_MAX = 620;
+const OM_LEFT_DEFAULT = 300;
+
+function omClampLeft(px){
+  const n = Number(px);
+  if(!isFinite(n)) return OM_LEFT_DEFAULT;
+  return Math.max(OM_LEFT_MIN, Math.min(OM_LEFT_MAX, Math.round(n)));
+}
+
+function omApplyLeft(px, persist){
+  const grid = $('om-grid');
+  if(!grid) return;
+  const w = omClampLeft(px);
+  grid.style.setProperty('--om-left-w', w + 'px');
+  if(persist){ try { localStorage.setItem(OM_LEFT_W_KEY, String(w)); } catch {} }
+}
+
+function omSetCollapsed(on, persist){
+  const grid = $('om-grid');
+  const btn  = $('om-split-btn');
+  if(!grid) return;
+  grid.classList.toggle('left-collapsed', !!on);
+  if(btn){
+    btn.textContent = on ? '›' : '‹';
+    btn.title = on ? 'Show the source panel' : 'Collapse the source panel';
+  }
+  if(persist){ try { localStorage.setItem(OM_LEFT_COL_KEY, on ? '1' : '0'); } catch {} }
+}
+
+function omToggleLeft(){
+  const grid = $('om-grid');
+  if(!grid) return;
+  omSetCollapsed(!grid.classList.contains('left-collapsed'), true);
+}
+
+function omResetLeft(){
+  omApplyLeft(OM_LEFT_DEFAULT, true);
+  omSetCollapsed(false, true);
+}
+
+// Pointer position works for both mouse and touch, so one handler covers a
+// trackpad drag and a stylus on a tablet.
+function omPointerX(e){
+  if(e.touches && e.touches.length) return e.touches[0].clientX;
+  return e.clientX;
+}
+
+function omSplitStart(e){
+  const grid = $('om-grid');
+  const split = $('om-split');
+  if(!grid) return;
+  // Dragging out of a collapsed state should bring the panel back rather than
+  // resizing something invisible.
+  if(grid.classList.contains('left-collapsed')) omSetCollapsed(false, true);
+  e.preventDefault();
+  if(split) split.classList.add('dragging');
+  const gridLeft = grid.getBoundingClientRect().left;
+
+  const move = ev => {
+    // Width measured from the grid's left edge, so it stays correct when the
+    // page is scrolled sideways or the sidebar changes width.
+    omApplyLeft(omPointerX(ev) - gridLeft, false);
+  };
+  const up = ev => {
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', up);
+    document.removeEventListener('touchmove', move);
+    document.removeEventListener('touchend', up);
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    if(split) split.classList.remove('dragging');
+    // Persist once, at the end — not on every mousemove.
+    const cur = getComputedStyle(grid).getPropertyValue('--om-left-w');
+    omApplyLeft(parseInt(cur, 10) || OM_LEFT_DEFAULT, true);
+  };
+  // Suppress text selection and keep the resize cursor for the whole drag,
+  // including while the pointer is outside the 12px handle.
+  document.body.style.userSelect = 'none';
+  document.body.style.cursor = 'col-resize';
+  document.addEventListener('mousemove', move);
+  document.addEventListener('mouseup', up);
+  document.addEventListener('touchmove', move, { passive:false });
+  document.addEventListener('touchend', up);
+}
+
+function omInitSplitter(){
+  let w = null, c = null;
+  try {
+    w = localStorage.getItem(OM_LEFT_W_KEY);
+    c = localStorage.getItem(OM_LEFT_COL_KEY);
+  } catch {}
+  if(w) omApplyLeft(w, false);
+  omSetCollapsed(c === '1', false);
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// WHERE CONDITIONS + GROUP BY
+// ══════════════════════════════════════════════════════════════════════════
+// The Options panel used to offer a single free-text WHERE box, so anything
+// beyond one condition meant typing the ANDs by hand with no way to see, edit
+// or remove a condition on its own. Conditions are now a list.
+//
+// Design note — why the hidden #src-where survives:
+//   The combined string is still written into #src-where, and that stays the
+//   one field anything else reads. Both SQL generators on this page, the
+//   silent write-back in persistMappingToSavedJob, project-builder's
+//   row-by-row runner (which rebuilds SELECT * FROM src WHERE srcWhere), the
+//   Audit Source "excluded rows" query, the run-report tooltip and the job
+//   version-history diff all keep working untouched. The structured list is
+//   saved alongside it purely so re-opening a job restores the rows.
+//
+// GROUP BY is emitted after WHERE. It only affects generated SQL — see the
+// guard in project-builder's runner, which refuses to run a grouped step
+// through the row-by-row path because that path has no notion of aggregation.
+
+// Seeded with one empty row rather than left empty, so the list is valid
+// before anything renders — otherwise "+ Add condition" on a page that had
+// not painted yet would produce one row instead of two.
+let whereConds = [{ connector:'AND', text:'' }];
+let groupByCols = [];     // ['CaseNo', 'YEAR([Opened])', …]
+
+// Conditions are wrapped in parentheses only when there is more than one, so
+// a single-condition job generates byte-identical SQL to before this change.
+function combinedWhere(){
+  const parts = whereConds
+    .map(c => cleanCondition(c && c.text))
+    .filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  let out = '';
+  let n = 0;
+  whereConds.forEach(c => {
+    const t = cleanCondition(c && c.text);
+    if (!t) return;
+    const wrapped = '(' + t + ')';
+    out = n === 0 ? wrapped : out + ' ' + (c.connector === 'OR' ? 'OR' : 'AND') + ' ' + wrapped;
+    n++;
+  });
+  return out;
+}
+
+// Users paste conditions with the keyword or a trailing semicolon attached —
+// both would produce "WHERE WHERE x = 1". Same normalisation applyWhere has
+// always done for the AI-suggested clause.
+function cleanCondition(s){
+  return String(s == null ? '' : s).trim().replace(/^WHERE\s+/i, '').replace(/;+\s*$/, '').trim();
+}
+
+// A bare identifier is bracketed; anything else (an expression such as
+// YEAR([Opened]), or an already-bracketed name) is passed through as typed.
+function groupByExpr(raw){
+  const t = String(raw == null ? '' : raw).trim().replace(/,+\s*$/, '').trim();
+  if (!t) return '';
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(t) ? '[' + t + ']' : t;
+}
+
+function combinedGroupBy(){
+  return groupByCols.map(groupByExpr).filter(Boolean).join(', ');
+}
+
+// Push both combined strings into the hidden inputs everything else reads,
+// then regenerate. Called after every edit to either list.
+function syncClauses(){
+  const w = $('src-where');  if (w) w.value = combinedWhere();
+  const g = $('src-groupby'); if (g) g.value = combinedGroupBy();
+  renderClauseNotes();
+  tryAutoGenSQL();
+}
+
+function renderWhereRows(){
+  const host = $('where-rows');
+  if (!host) return;
+  if (!whereConds.length) whereConds = [{ connector:'AND', text:'' }];
+  host.innerHTML = whereConds.map((c, i) => `
+    <div class="cond-row">
+      ${i === 0
+        ? '<span class="cond-first">WHERE</span>'
+        : `<select class="cond-join" onchange="setWhereConn(${i},this.value)">
+             <option value="AND"${c.connector !== 'OR' ? ' selected' : ''}>AND</option>
+             <option value="OR"${c.connector === 'OR' ? ' selected' : ''}>OR</option>
+           </select>`}
+      <input class="cond-text" value="${escAttr(c.text || '')}"
+             placeholder="e.g. active = 1"
+             oninput="setWhereText(${i},this.value)">
+      <button class="cond-del" onclick="delWhereCond(${i})" title="Remove this condition">✕</button>
+    </div>`).join('');
+}
+
+function renderGroupByRows(){
+  const host = $('groupby-rows');
+  if (!host) return;
+  host.innerHTML = groupByCols.map((v, i) => `
+    <div class="cond-row">
+      <span class="cond-first">${i === 0 ? 'GROUP BY' : ','}</span>
+      <input class="cond-text" value="${escAttr(v || '')}" list="gb-col-list"
+             placeholder="column or expression"
+             oninput="setGroupBy(${i},this.value)">
+      <button class="cond-del" onclick="delGroupBy(${i})" title="Remove">✕</button>
+    </div>`).join('');
+  // Offer the source table's columns for autocomplete.
+  const dl = $('gb-col-list');
+  if (dl) {
+    dl.innerHTML = ((srcTable && srcTable.columns) || [])
+      .map(c => typeof c === 'string' ? c : c.name)
+      .filter(Boolean)
+      .map(n => '<option value="' + escAttr(n) + '">').join('');
+  }
+}
+
+function addWhereCond(){ whereConds.push({ connector:'AND', text:'' }); renderWhereRows(); syncClauses(); }
+function setWhereText(i, v){ if (whereConds[i]) { whereConds[i].text = v; syncClauses(); } }
+function setWhereConn(i, v){ if (whereConds[i]) { whereConds[i].connector = v === 'OR' ? 'OR' : 'AND'; syncClauses(); } }
+function delWhereCond(i){
+  whereConds.splice(i, 1);
+  if (!whereConds.length) whereConds = [{ connector:'AND', text:'' }];
+  renderWhereRows(); syncClauses();
+}
+
+function addGroupBy(){ groupByCols.push(''); renderGroupByRows(); syncClauses(); }
+function setGroupBy(i, v){ groupByCols[i] = v; syncClauses(); }
+function delGroupBy(i){ groupByCols.splice(i, 1); renderGroupByRows(); syncClauses(); }
+
+// Two notes, both about things that silently produce wrong results.
+function renderClauseNotes(){
+  // 1. AND binds tighter than OR. With a mixed list the user is not
+  //    necessarily getting the grouping they pictured, so show the real one.
+  const el = $('where-note');
+  if (el){
+    const used = whereConds.filter(c => cleanCondition(c && c.text));
+    const conns = used.slice(1).map(c => c.connector === 'OR' ? 'OR' : 'AND');
+    const mixed = conns.includes('AND') && conns.includes('OR');
+    if (mixed){
+      el.style.display = 'block';
+      el.innerHTML = 'Mixed AND/OR — SQL binds AND tighter than OR, so this reads as '
+        + '<code style="font-family:var(--mono);color:var(--amber)">' + esc(bracketPreview()) + '</code>. '
+        + 'Put brackets inside a condition to override it.';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  // 2. GROUP BY makes every un-grouped, un-aggregated column illegal. SQL
+  //    Server rejects the whole statement, so name the offenders here rather
+  //    than letting the run fail with "is invalid in the select list".
+  const gEl = $('groupby-note');
+  if (gEl){
+    const gb = combinedGroupBy();
+    const offenders = gb ? ungroupedColumns() : [];
+    if (!gb){
+      gEl.style.display = 'none';
+    } else if (offenders.length){
+      gEl.style.display = 'block';
+      gEl.style.color = 'var(--amber)';
+      gEl.innerHTML = 'Not grouped or aggregated: '
+        + '<strong>' + offenders.map(esc).join(', ') + '</strong>. '
+        + 'SQL Server will reject this.'
+        + '<button class="gb-wand" onclick="fixGroupBy()" '
+        + 'title="Wrap each of these in MAX() so the statement runs, keeping one row per group. '
+        + 'Each lands in that row’s Fixed value box, where you can edit or clear it.">'
+        + '🪄 Fix ' + offenders.length + ' column' + (offenders.length===1?'':'s') + '</button>';
+    } else {
+      gEl.style.display = 'block';
+      gEl.style.color = 'var(--text3)';
+      gEl.innerHTML = 'Grouping applies to the generated SQL. Steps that run row-by-row '
+        + 'through a project cannot aggregate, and will refuse to run a grouped map.';
+    }
+  }
+}
+
+// Show how SQL will actually bracket a mixed AND/OR list: AND runs collapse
+// into a single OR operand.
+function bracketPreview(){
+  const used = whereConds.filter(c => cleanCondition(c && c.text));
+  const groups = [];
+  used.forEach((c, i) => {
+    if (i === 0 || c.connector === 'OR') groups.push(['…']);
+    else groups[groups.length - 1].push('…');
+  });
+  return groups.map(g => g.length > 1 ? '(' + g.join(' AND ') + ')' : g[0]).join(' OR ');
+}
+
+// Does this Fixed-value expression aggregate? Used in two places: a column
+// carrying an aggregate is legal under GROUP BY, and its source column is
+// still being read, so the mapping row must not strike it through the way it
+// does for a genuine hard-coded literal.
+const AGG_RE = /\b(MIN|MAX|SUM|AVG|COUNT|COUNT_BIG|STRING_AGG|CHECKSUM_AGG|VAR|VARP|STDEV|STDEVP)\s*\(/i;
+function isAggregateExpr(v){
+  return v !== undefined && v !== null && v !== '' && AGG_RE.test(String(v));
+}
+
+// Mapped target columns whose SELECT expression is a plain source column —
+// no fixed value, no aggregate — and which are not in the GROUP BY list.
+function ungroupedColumns(){
+  const gb = groupByCols.map(g => groupByExpr(g).replace(/^\[|\]$/g, '').toLowerCase()).filter(Boolean);
+  return columnMapping
+    .filter(m => m && m.tgtCol && m.srcCol)
+    .filter(m => !(m.literalValue !== undefined && m.literalValue !== ''))
+    .filter(m => !gb.includes(String(m.srcCol).toLowerCase()))
+    .map(m => m.srcCol);
+}
+
+// The SELECT expression the generator will emit for a column, so the wand
+// wraps the same thing — a joined column is referenced through its alias, and
+// MAX([col]) on an ambiguous name would not compile.
+function srcExprFor(m){
+  if (m && m.fromJoin){
+    const alias = m.alias || 's1';
+    const bare  = String(m.srcCol || '').includes('.')
+      ? String(m.srcCol).split('.').pop() : String(m.srcCol || '');
+    return alias + '.[' + bare + ']';
+  }
+  return '[' + String((m && m.srcCol) || '') + ']';
+}
+
+// ── The GROUP BY wand ─────────────────────────────────────────────────────
+// Wraps every un-grouped column in MAX() so the statement compiles.
+//
+// Why MAX and not "add them all to GROUP BY": someone who types
+// GROUP BY caseno wants one row per case. Adding the remaining columns to the
+// grouping instead would give one row per distinct combination of every
+// column — which for most tables is every row, quietly undoing the grouping
+// they asked for. MAX keeps the grouping they chose and picks a representative
+// value for the rest, the usual idiom for collapsing to one row per key.
+//
+// The result is visible and reversible: each expression lands in that row's
+// Fixed value box, where the user can change MAX to MIN, edit it, or clear it.
+function fixGroupBy(){
+  const offenders = ungroupedColumns();
+  if(!offenders.length) return;
+  const fixed = [];
+  columnMapping.forEach(m => {
+    if(!m || !m.tgtCol || !m.srcCol) return;
+    if(!offenders.includes(m.srcCol)) return;
+    m.literalValue = 'MAX(' + srcExprFor(m) + ')';
+    fixed.push(m.srcCol);
+  });
+  if(!fixed.length) return;
+  renderMappingTable();
+  syncClauses();
+  showStatus('Wrapped ' + fixed.length + ' column' + (fixed.length===1?'':'s') + ' in MAX(): '
+    + fixed.join(', ') + '. Edit or clear any of them in the Fixed value column — '
+    + 'or add them to GROUP BY instead if you want a row per distinct combination.', 'info');
+}
+
+// Rebuild both lists from a saved job. Older jobs have only the combined
+// srcWhere string and no list, so it becomes a single condition — which is
+// exactly what it was.
+function loadClausesFromJob(job){
+  const list = Array.isArray(job && job.srcWhereConditions) ? job.srcWhereConditions : null;
+  if (list && list.length){
+    whereConds = list.map(c => ({
+      connector: (c && c.connector) === 'OR' ? 'OR' : 'AND',
+      text: (c && c.text) || '',
+    }));
+  } else {
+    whereConds = [{ connector:'AND', text: (job && job.srcWhere) || '' }];
+  }
+  const g = job && job.srcGroupByCols;
+  groupByCols = Array.isArray(g) ? g.slice() : [];
+  renderWhereRows();
+  renderGroupByRows();
+  // Write the combined values straight through without regenerating — the
+  // caller regenerates once its tables and mapping are in place.
+  const w = $('src-where');   if (w) w.value = combinedWhere();
+  const gv = $('src-groupby'); if (gv) gv.value = combinedGroupBy();
+  renderClauseNotes();
+}
+
+// Also add + Fixed value button to add a literal-only row
+function addLiteralRow(){
+  if(!tgtTable){ alert('Select a target table first.'); return; }
+  columnMapping.push({ srcCol:'', tgtCol:'', transform:'LITERAL', literalValue:'', match:'LITERAL' });
+  renderMappingTable();
+}
+
+function formatSQLVal(v){
+  if(v===null||v===undefined||String(v).toUpperCase()==='NULL') return 'NULL';
+  const s=String(v);
+  if(!isNaN(s)&&s.trim()!=='') return s;
+  return "'"+s.replace(/'/g,"''")+"'";
+}
+
+// ── OTM target table cards ────────────────────────────────────────────────────
+function addOTMTarget(){ openDrop('otm-tgt'); }
+
+function addOTMTargetFromTable(t){
+  if(targetTables.find(tt=>tt.fullName===t.value)){ showStatus('Table already added','err'); return; }
+  const tt={
+    id:'tt_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    fullName:t.value, schema:t.schema, name:t.name, columns:t.columns,
+    pkMode:'identity',
+    pkCol:t.columns.find(c=>c.isIdentity||c.name.toLowerCase()==='id'||c.name.toLowerCase().endsWith('_id'))?.name||t.columns[0]?.name||'',
+    pkVar:'@'+t.name.replace(/[^a-z0-9]/gi,'')+'Id',
+    mappings:[], fks:[]
+  };
+  targetTables.push(tt);
+  renderOTMCards();
+  checkOTMReady();
+}
+
+function renderOTMCards(){
+  const container=$('otm-cards');
+  const empty=$('otm-empty');
+  const count=$('tgt-count');
+  const actions=$('otm-actions');
+  if(!targetTables.length){
+    container.innerHTML=''; empty.style.display='block';
+    if(count){ count.style.display='none'; }
+    if(actions) actions.style.display='none';
+    return;
+  }
+  empty.style.display='none';
+  if(count){ count.style.display='inline'; count.textContent=targetTables.length; }
+  if(actions){ actions.style.display='flex'; }
+
+  const joinCols = (typeof getJoinColumns==='function') ? getJoinColumns() : [];
+
+  container.innerHTML = targetTables.map((tt,ti)=>{
+    const mappedCount = tt.mappings.filter(m=>m.srcCol&&m.tgtCol).length;
+    const srcOpts = [
+      ...(srcTable?.columns||[]).map(c=>({name:typeof c==='string'?c:c.name, type:typeof c==='object'?c.type:'', fromJoin:false})),
+      ...joinCols.map(c=>({name:c.name, type:c.type||'', fromJoin:true}))
+    ];
+    return `
+    <div class="tgt-card" id="tgt-card-${ti}">
+      <div class="tgt-card-head">
+        <span class="tgt-card-title">${esc(tt.fullName)}</span>
+        <span style="font-size:10px;color:var(--text3);margin-left:4px">${mappedCount} mapped</span>
+        <div style="margin-left:auto;display:flex;gap:0.4rem">
+          ${joinCols.length?`<button onclick="showOTMJoinColPicker(${ti})" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer">+ Joined col</button>`:''}
+          <button onclick="aiMapOTM(${ti})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--purple);cursor:pointer" id="ai-map-btn-${ti}">🤖 AI map</button>
+          <button onclick="moveTgt(${ti},-1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===0?'disabled':''}>↑</button>
+          <button onclick="moveTgt(${ti},1)" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:2px 4px" ${ti===targetTables.length-1?'disabled':''}>↓</button>
+          <button onclick="removeTgt(${ti})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:2px 4px">✕</button>
+        </div>
+      </div>
+      <!-- PK config -->
+      <div style="padding:0.5rem 0.875rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;border-bottom:0.5px solid var(--border);font-size:11px">
+        <label style="color:var(--text3)">PK mode:</label>
+        <select class="map-select" style="width:130px" onchange="updateTT(${ti},'pkMode',this.value)">
+          ${['identity','guid','natural'].map(m=>`<option value="${m}" ${tt.pkMode===m?'selected':''}>${m}</option>`).join('')}
+        </select>
+        <label style="color:var(--text3)">PK col:</label>
+        <select class="map-select" style="width:130px" onchange="updateTT(${ti},'pkCol',this.value)">
+          ${tt.columns.map(c=>`<option ${tt.pkCol===c.name?'selected':''}>${esc(c.name)}</option>`).join('')}
+        </select>
+        <label style="color:var(--text3)">Var:</label>
+        <input value="${esc(tt.pkVar)}" onchange="updateTT(${ti},'pkVar',this.value)" class="form-input" style="width:110px;font-size:11px;padding:2px 6px">
+      </div>
+      <!-- FK rows -->
+      ${tt.fks.map((fk,fi)=>`
+        <div class="fk-row">
+          <span style="font-size:10px">FK</span>
+          <input value="${esc(fk.myCol)}" onchange="updateFK(${ti},${fi},'myCol',this.value)" class="form-input" style="width:120px;font-size:10px;padding:2px 6px" placeholder="my col">
+          <span style="color:var(--text3)">←</span>
+          <select class="map-select" style="width:140px" onchange="updateFK(${ti},${fi},'refTableVar',this.value)">
+            ${targetTables.filter((_,j)=>j<ti).map(p=>`<option value="${esc(p.pkVar)}" ${fk.refTableVar===p.pkVar?'selected':''}>${esc(p.name+'.'+p.pkVar)}</option>`).join('')}
+          </select>
+          <button onclick="removeFK(${ti},${fi})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:12px;padding:1px 4px">✕</button>
+        </div>`).join('')}
+      <!-- Mapping rows — driven off TARGET columns -->
+      <div style="padding:0.5rem 0.875rem">
+        <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;margin-bottom:0.4rem">
+          <input placeholder="🔍 Filter…" style="flex:1;min-width:100px;max-width:180px;font-size:11px;padding:2px 6px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;color:var(--text);font-family:var(--mono);outline:none" oninput="filterOTMRows(${ti},this.value)" id="otm-filter-${ti}">
+          <button class="btn btn-ghost btn-sm" id="otm-hide-btn-${ti}" onclick="toggleOTMUnmapped(${ti})" style="font-size:10px;padding:2px 7px">👁 Hide Unmapped</button>
+        </div>
+        <div style="overflow-x:auto">
+        <table class="map-table" style="margin-bottom:0.4rem" id="otm-table-${ti}">
+          <thead><tr><th>Source col</th><th>Src type</th><th>Target col ▲</th><th>Tgt type</th><th>Transform</th><th title="Fixed SQL value — overrides source col">Fixed value</th><th></th></tr></thead>
+          <tbody id="otm-tbody-${ti}">
+          ${tt.columns.map((tc,mi)=>{
+            // Find or synthesise the mapping row for this target column. When
+            // we synthesise on the fly here the row isn't actually pushed into
+            // tt.mappings — that happens lazily in updateOTMSrcCol etc. when
+            // the user edits. To carry identity state through, we tag the
+            // synthesised object the same way ensureAllTargetCols does.
+            let m = tt.mappings.find(mp=>mp.tgtCol===tc.name);
+            if (!m) {
+              m = {srcCol:'',tgtCol:tc.name,transform:'NONE',literalValue:''};
+              if (tc.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+            } else if (tc.isIdentity && m._isIdentity === undefined) {
+              // Mapping came from older code paths that didn't tag identity —
+              // tag it now so render + generator agree.
+              m._isIdentity = true;
+              if (m._identityOverride === undefined) m._identityOverride = false;
+            }
+
+            const realMi=tt.mappings.findIndex(mp=>mp.tgtCol===tc.name);
+            const srcDef=(srcTable?.columns||[]).find(sc=>(typeof sc==='string'?sc:sc.name)===m.srcCol);
+            const srcType=srcDef&&typeof srcDef==='object'?srcDef.type:'';
+            const willTrunc=m.srcCol&&srcType&&tc.type&&isCharType(srcType)&&isCharType(tc.type)&&(m.transform||'NONE')==='NONE'&&parseTypeLen(srcType)>parseTypeLen(tc.type);
+            const truncLen=willTrunc?parseTypeLen(tc.type):0;
+            const hasFixed=!!(m.literalValue&&m.literalValue!=='');
+            const hasMapping = !!m.srcCol || hasFixed;
+
+            // ── Identity column handling ─────────────────────────────────
+            // Identity rows show greyed out by default, with an "Allow
+            // override" checkbox per row. When ticked, the row becomes
+            // editable AND the OTM generator wraps that table's INSERT in
+            // SET IDENTITY_INSERT ON/OFF and includes the identity column
+            // in the column list. Same contract as Single-map.
+            const isIdentity       = !!m._isIdentity || !!tc.isIdentity;
+            const identityOverride = !!m._identityOverride;
+            const identityLocked   = isIdentity && !identityOverride;
+
+            // ── NOT NULL warning ─────────────────────────────────────────
+            // tgtDef.nullable === false means NOT NULL. Identity columns
+            // are NOT NULL but SQL Server fills them, so we only require
+            // user-supplied values when the column is non-identity OR the
+            // user has chosen to override the identity.
+            const isNotNull       = tc.nullable === false;
+            const requiresValue   = isNotNull && (!isIdentity || identityOverride);
+            const notNullBlocking = requiresValue && !hasMapping;
+
+            // Row visual: blocking error wins, then identity locked, then
+            // fixed value, then truncation warning.
+            let rowStyle = '';
+            if (notNullBlocking) {
+              rowStyle = 'background:rgba(240,70,70,0.07);box-shadow:inset 3px 0 0 var(--red)';
+            } else if (identityLocked) {
+              rowStyle = 'background:rgba(255,255,255,0.02);opacity:0.55';
+            } else if (hasFixed) {
+              rowStyle = 'background:rgba(23,130,124,0.04)';
+            } else if (willTrunc) {
+              rowStyle = 'background:rgba(245,158,11,0.04)';
+            }
+
+            const disAttr = identityLocked ? 'disabled' : '';
+            const unmapped = !m.srcCol && !hasFixed;
+
+            const identityBadgeHtml = isIdentity
+              ? `<div style="margin-top:3px;display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                   <span style="font-size:9px;font-weight:600;letter-spacing:0.05em;color:var(--purple);background:var(--purple-bg);padding:1px 5px;border-radius:3px;border:0.5px solid rgba(107,78,142,0.25)">IDENTITY</span>
+                   <label style="font-size:10px;color:var(--text2);cursor:pointer;display:inline-flex;align-items:center;gap:3px"
+                          title="Allow override for this identity column. When ticked, this column is included in this table's INSERT and SET IDENTITY_INSERT ON wraps the statement.">
+                     <input type="checkbox" ${identityOverride?'checked':''}
+                            onchange="setOTMIdentityOverride(${ti}, '${esc(tc.name)}', this.checked)"
+                            style="margin:0;cursor:pointer">
+                     Allow override
+                   </label>
+                 </div>`
+              : '';
+
+            const notNullMsgHtml = notNullBlocking
+              ? `<div style="margin-top:3px;color:var(--red);font-size:10px;font-weight:600">⚠ NOT NULL — must be mapped or given a fixed value</div>`
+              : (isNotNull && !isIdentity
+                  ? `<div style="margin-top:2px;color:var(--text3);font-size:9px;font-weight:500">NOT NULL</div>`
+                  : '');
+
+            return `<tr data-unmapped="${unmapped}" style="${rowStyle}">
+              <td><select class="map-select" ${disAttr} style="font-family:var(--mono);font-size:11px${hasFixed?';color:var(--text3);text-decoration:line-through;font-style:italic':''}${identityLocked?';cursor:not-allowed':''}"
+                onchange="updateOTMSrcCol(${ti},'${esc(tc.name)}',this.value)">
+                <option value="">— none —</option>
+                ${srcOpts.map(sc=>`<option value="${esc(sc.name)}" ${m.srcCol===sc.name?'selected':''}>${sc.fromJoin?'⊞ ':''}${esc(sc.name)}</option>`).join('')}
+              </select></td>
+              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">${esc(srcType)}</td>
+              <td style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--text)">
+                ${esc(tc.name)}
+                ${notNullMsgHtml}
+              </td>
+              <td style="font-family:var(--mono);color:var(--text3);font-size:10px">
+                ${esc(tc.type||'')}${willTrunc?`<br><span style="color:var(--amber);font-size:9px">⚠ LEFT(${truncLen})</span>`:''}
+                ${identityBadgeHtml}
+              </td>
+              <td><select class="map-select" ${disAttr} style="width:75px${identityLocked?';cursor:not-allowed':''}" onchange="updateOTMTransform(${ti},'${esc(tc.name)}',this.value)">
+                ${['NONE','TRIM','UPPER','LOWER','CAST','DATE_CAST','SAFE_GUID','SAFE_NUMERIC','SAFE_TRUNC'].map(t=>`<option ${(m.transform||'NONE')===t?'selected':''}>${t}</option>`).join('')}
+              </select></td>
+              <td><input class="map-select" style="width:110px;color:var(--teal);font-family:var(--mono);font-size:11px${identityLocked?';cursor:not-allowed':''}"
+                ${disAttr}
+                placeholder="${identityLocked?'(identity locked)':"e.g. N'Value', NULL…"}"
+                value="${esc(m.literalValue||'')}"
+                oninput="updateOTMLiteral(${ti},'${esc(tc.name)}',this.value)"
+                title="Fixed SQL value — overrides source col. Leave blank to use source."></td>
+              <td></td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+        </div>
+        <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+          ${ti>0?`<button onclick="addFK(${ti})" class="btn btn-amber btn-sm">+ FK</button>`:''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  // Keep the visual view in sync if it's visible
+  if(window._viewMode==='visual' && mode==='otm' && $('visual-otm')?.style.display !== 'none'){
+    renderVisualOTM();
+  }
+}
+
+function moveTgt(ti,dir){
+  const j=ti+dir; if(j<0||j>=targetTables.length) return;
+  [targetTables[ti],targetTables[j]]=[targetTables[j],targetTables[ti]]; renderOTMCards();
+}
+function removeTgt(ti){ targetTables.splice(ti,1); renderOTMCards(); checkOTMReady(); }
+function updateTT(ti,k,v){ if(targetTables[ti]) targetTables[ti][k]=v; }
+function updateMapping(ti,mi,k,v){ if(targetTables[ti]?.mappings[mi]) targetTables[ti].mappings[mi][k]=v; }
+function updateFK(ti,fi,k,v){ if(targetTables[ti]?.fks[fi]) targetTables[ti].fks[fi][k]=v; }
+function addMapping(ti){ targetTables[ti].mappings.push({srcCol:'',tgtCol:'',transform:'NONE'}); renderOTMCards(); }
+function addFK(ti){ targetTables[ti].fks.push({myCol:'',refTableVar:''}); renderOTMCards(); }
+function removeMapping(ti,mi){ targetTables[ti].mappings.splice(mi,1); renderOTMCards(); renderSrcColList(); }
+function removeFK(ti,fi){ targetTables[ti].fks.splice(fi,1); renderOTMCards(); }
+
+// ── OTM per-card filter + show/hide unmapped ──────────────────────────────────
+const _otmHideUnmapped = {};
+
+function toggleOTMUnmapped(ti){
+  _otmHideUnmapped[ti] = !_otmHideUnmapped[ti];
+  const btn=document.getElementById('otm-hide-btn-'+ti);
+  if(btn){
+    btn.textContent = _otmHideUnmapped[ti] ? '👁 Show Unmapped' : '👁 Hide Unmapped';
+    btn.style.color = _otmHideUnmapped[ti] ? 'var(--amber)' : '';
+  }
+  filterOTMRows(ti, document.getElementById('otm-filter-'+ti)?.value||'');
+}
+
+function filterOTMRows(ti, q){
+  const tbody=document.getElementById('otm-tbody-'+ti); if(!tbody) return;
+  const low=(q||'').toLowerCase();
+  Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
+    const isUnmapped=tr.dataset.unmapped==='true';
+    if(_otmHideUnmapped[ti] && isUnmapped){ tr.style.display='none'; return; }
+    if(low){
+      const text=tr.textContent.toLowerCase();
+      tr.style.display=text.includes(low)?'':'none';
+    } else {
+      tr.style.display='';
+    }
+  });
+}
+
+// Update helpers that operate on tgtCol as key (target-driven mapping)
+function updateOTMSrcCol(ti, tgtCol, srcCol){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    // Preserve identity tagging when synthesising on first edit
+    const tcDef = (tt.columns||[]).find(c => c.name === tgtCol);
+    if (tcDef && tcDef.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+    tt.mappings.push(m);
+  }
+  m.srcCol=srcCol;
+  checkOTMReady();
+}
+
+function updateOTMTransform(ti, tgtCol, transform){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    const tcDef = (tt.columns||[]).find(c => c.name === tgtCol);
+    if (tcDef && tcDef.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+    tt.mappings.push(m);
+  }
+  m.transform=transform;
+  checkOTMReady();
+}
+
+function updateOTMLiteral(ti, tgtCol, val){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    const tcDef = (tt.columns||[]).find(c => c.name === tgtCol);
+    if (tcDef && tcDef.isIdentity) { m._isIdentity = true; m._identityOverride = false; }
+    tt.mappings.push(m);
+  }
+  m.literalValue=val.trim();
+  checkOTMReady();
+}
+
+// Toggle the per-row "Allow override" checkbox on identity columns in the OTM
+// editor. Mirrors setIdentityOverride for Single-map. When ON the row becomes
+// editable AND the OTM SQL generator wraps that table's INSERT in
+// SET IDENTITY_INSERT ON/OFF and includes the column in the INSERT list.
+// When OFF the column is locked again (SQL Server mints values via the
+// existing OUTPUT INSERTED dance) and any srcCol/literal is cleared.
+function setOTMIdentityOverride(ti, tgtCol, on){
+  const tt=targetTables[ti]; if(!tt) return;
+  let m=tt.mappings.find(mp=>mp.tgtCol===tgtCol);
+  if(!m){
+    m={srcCol:'',tgtCol,transform:'NONE',literalValue:''};
+    tt.mappings.push(m);
+  }
+  m._isIdentity = true;
+  m._identityOverride = !!on;
+  if (!on) {
+    m.srcCol = '';
+    m.literalValue = '';
+    m.match = '';
+    m.transform = 'NONE';
+  }
+  renderOTMCards();
+  checkOTMReady();
+}
+
+function checkOTMReady(){
+  const btn=$('otm-actions');
+  if(btn) btn.style.display=targetTables.length?'flex':'none';
+}
+
+function showOTMJoinColPicker(ti){
+  const joinCols=(typeof getJoinColumns==='function')?getJoinColumns():[];
+  const list=$('join-col-list'); if(!list) return;
+  const grouped={};
+  joinCols.forEach(c=>{ const g=c.fromJoin||'Joined'; if(!grouped[g]) grouped[g]=[]; grouped[g].push(c); });
+  list.innerHTML=Object.entries(grouped).map(([grp,cols])=>
+    `<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:4px 0 2px;font-weight:600">${esc(grp)}</div>`+
+    cols.map(c=>`<button onclick="confirmOTMJoinCol(${ti},'${esc(c.name)}','${esc(c.fromJoin||'')}');document.getElementById('join-col-modal').classList.remove('open')"
+      class="src-col-pill" style="cursor:pointer;width:100%;justify-content:flex-start">
+      ${esc(c.name)}<span class="src-col-type">${esc(c.type||'')}</span></button>`).join('')
+  ).join('');
+  $('join-col-modal').classList.add('open');
+}
+
+function confirmOTMJoinCol(ti, colName, fromTable){
+  const aliases=(typeof getJoinAliases==='function')?getJoinAliases():{};
+  const alias=aliases[fromTable]||fromTable.split('.').pop();
+  const srcCol=alias+'.'+colName;
+  if(targetTables[ti].mappings.find(m=>m.srcCol===srcCol||m.srcCol===colName)){
+    showStatus(colName+' already in mapping','err'); return;
+  }
+  targetTables[ti].mappings.push({srcCol,tgtCol:'',transform:'NONE',fromJoin:fromTable});
+  renderOTMCards();
+}
+
+// ── OTM AI mapping ────────────────────────────────────────────────────────────
+async function aiMapOTM(ti){
+  const tt=targetTables[ti]; if(!tt) return;
+  const apiKey=($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
+  if(!apiKey){ alert('Enter your Anthropic API key in the Options panel.'); return; }
+  if(!srcTable){ alert('Select a source table first.'); return; }
+
+  const btn=$('ai-map-btn-'+ti);
+  if(btn){ btn.textContent='⏳'; btn.disabled=true; }
+
+  const joinCols=(typeof getJoinColumns==='function')?getJoinColumns():[];
+  const srcCols=[...(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name), ...joinCols.map(c=>c.name)];
+  const tgtCols=tt.columns.filter(c=>!c.isIdentity).map(c=>c.name+' ('+c.type+(c.nullable?'':', NOT NULL')+')');
+
+  // Target-driven prompt — one entry per target column
+  const prompt='Map source columns to target table columns.\n\n'+
+    'Source: '+srcTable.fullName+'\n'+srcCols.map(c=>'  '+c).join('\n')+'\n\n'+
+    'Target: '+tt.fullName+'\n'+tgtCols.map(c=>'  '+c).join('\n')+'\n\n'+
+    'Return a JSON array — ONE ENTRY PER TARGET COLUMN.\n'+
+    '[{"srcCol":"matching source col or empty string","tgtCol":"target col","transform":"NONE","match":"HIGH|MEDIUM|LOW|"}]\n'+
+    'Every non-identity target column must appear. Leave srcCol empty if no match. Return ONLY JSON.';
+
+  try {
+    // Haiku with retry on overload
+    for(let attempt=1; attempt<=3; attempt++){
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:4096,messages:[{role:'user',content:prompt}]})
+      });
+      const data=await res.json();
+      if(res.status===529||data.error?.type==='overloaded_error'){
+        if(attempt<3){ showStatus('Claude busy — retrying ('+attempt+'/3)…','info'); await new Promise(r=>setTimeout(r,2000*attempt)); continue; }
+        throw new Error('Claude is overloaded — try again in a moment');
+      }
+      if(!res.ok) throw new Error(data.error?.message||res.statusText);
+      const raw=(data.content?.[0]?.text||'').trim().replace(/^```json?|```$/g,'').trim();
+      // Repair truncated JSON — find last complete object and close the array
+      let arr;
+      try { arr=JSON.parse(raw); }
+      catch {
+        const lastBrace=raw.lastIndexOf('}');
+        try { arr=JSON.parse(raw.slice(0,lastBrace+1)+']'); }
+        catch { arr=[]; }
+      }
+      // Merge AI result into mappings (target-driven)
+      const raw2 = arr.map(m=>({srcCol:m.srcCol||'',tgtCol:m.tgtCol||'',transform:m.transform||'NONE',literalValue:'',match:m.match||''}));
+      targetTables[ti].mappings = ensureAllTargetCols(raw2, targetTables[ti]);
+      renderOTMCards();
+      renderSrcColList();
+      break;
+    }
+  } catch(e){
+    showStatus('AI map error: '+e.message,'err');
+  }
+  if(btn){ btn.textContent='🤖 AI map'; btn.disabled=false; }
+}
+
+// ── OTM SQL generation ────────────────────────────────────────────────────────
+function parseTypeLen(t){ const m=(t||'').match(/\((-?\d+)/); return m?parseInt(m[1]):Infinity; }
+function isCharType(t){ return /^(N?VARCHAR|N?CHAR|TEXT|NTEXT)/i.test(t||''); }
+function safeVarName(c){ return '@src_'+c.replace(/[^a-z0-9]/gi,'_'); }
+
+function generateOTMSQL(){
+  if(!srcTable){ alert('Select a source table first.'); return; }
+  if(!targetTables.length){ alert('Add at least one target table.'); return; }
+
+  const txMode=$('tx-mode')?.value||'single';
+  const where=($('src-where')?.value||'').trim();
+  const groupBy=($('src-groupby')?.value||'').trim();
+  const srcFull='['+srcTable.schema+'].['+srcTable.name+']';
+  const srcDb = srcSchema?.database || parseDbName(srcConn) || '';
+  const tgtDb = tgtSchema?.database || parseDbName(tgtConn) || '';
+  const truncWarnings=[];
+
+  // Aliases
+  const activeJoins=(window._joinState||[]).filter(j=>j.table&&j.on);
+  const joinAliasesOTM=typeof getJoinAliases==='function'?getJoinAliases():{};
+  const joinSQL=typeof getJoinSQL==='function'?getJoinSQL():'';
+
+  // All source cols used across all target cards
+  const joinColNames=new Set((typeof getJoinColumns==='function')?getJoinColumns().map(c=>c.name):[]);
+  const srcCols=[...new Set(targetTables.flatMap(tt=>tt.mappings.filter(m=>m.srcCol).map(m=>m.srcCol)))];
+  if(!srcCols.length){ alert('Add at least one column mapping.'); return; }
+
+  // ── BLOCKING CHECK: NOT NULL columns across ALL target tables ────────────
+  // Same contract as Single-map: every NOT NULL target column must have a
+  // source mapping or a fixed literal. Identity columns are NOT NULL but
+  // SQL Server fills them, so we only require a value for an identity
+  // column when the user has ticked Allow override. FK columns are
+  // satisfied by tt.fks entries — they get filled from the parent's PK
+  // var inside the cursor loop.
+  const otmUnmapped = [];
+  targetTables.forEach(tt => {
+    const fkCols = new Set((tt.fks||[]).map(fk => (fk.myCol||'').toLowerCase()));
+    (tt.columns||[]).filter(c => c.nullable === false).forEach(tc => {
+      const m = (tt.mappings||[]).find(x => x.tgtCol === tc.name);
+      // Identity, no override: SQL Server fills it (or OUTPUT INSERTED captures
+      // the auto value). Skip the check.
+      if (tc.isIdentity && !(m && m._identityOverride)) return;
+      // FK column: satisfied by a parent PK reference, skip.
+      if (fkCols.has(tc.name.toLowerCase())) return;
+      const hasSrc = !!(m && m.srcCol);
+      const hasLit = !!(m && m.literalValue !== undefined && m.literalValue !== '');
+      if (!(hasSrc || hasLit)) {
+        otmUnmapped.push(tt.fullName + '.' + tc.name);
+      }
+    });
+  });
+  if (otmUnmapped.length) {
+    const list = otmUnmapped.slice(0, 10).map(n => '  • ' + n).join('\n');
+    const more = otmUnmapped.length > 10 ? `\n  …and ${otmUnmapped.length - 10} more` : '';
+    alert(
+      'Cannot generate SQL — ' + otmUnmapped.length +
+      ' NOT NULL target column' + (otmUnmapped.length===1?'':'s') +
+      ' have no mapping:\n\n' + list + more +
+      '\n\nMap a source column or set a fixed value on each, then try again.'
+    );
+    return;
+  }
+
+  let sql='';
+  sql+=`-- ╔══════════════════════════════════════════════════════════════════╗\n`;
+  sql+=`-- ║  Cygenix One-to-Many Migration\n`;
+  sql+=`-- ║  Source: ${srcDb?srcDb+'.':''}${srcTable.fullName}\n`;
+  sql+=`-- ║  Targets: ${targetTables.map(t=>(tgtDb?tgtDb+'.':'')+t.fullName).join(', ')}\n`;
+  sql+=`-- ║  Generated: ${new Date().toISOString().slice(0,19).replace('T',' ')}\n`;
+  sql+=`-- ╚══════════════════════════════════════════════════════════════════╝\n\n`;
+  // (Source database name kept in the header above for context, but not
+  // referenced in the executable SQL below — see two-part name explanation
+  // in generateSQL.)
+
+  // Declare PK vars
+  const parentTables=targetTables.filter((_,i)=>targetTables.some((_2,j)=>j>i&&targetTables[j].fks.some(fk=>fk.refTableVar===targetTables[i].pkVar)));
+  if(parentTables.length||targetTables.some(t=>t.pkMode==='identity'||t.pkMode==='guid')){
+    targetTables.forEach(tt=>{
+      if(tt.pkMode==='identity'||tt.pkMode==='guid'||tt.pkMode==='sequence'||tt.pkMode==='natural'){
+        const pkCol=tt.columns.find(c=>c.name===tt.pkCol);
+        const isGuid=tt.pkMode==='guid'||(pkCol?.type||'').toLowerCase().includes('uniqueidentifier');
+        sql+=`DECLARE ${tt.pkVar} ${isGuid?'UNIQUEIDENTIFIER':'INT'};\n`;
+      }
+    });
+    sql+='\n';
+  }
+
+  if(txMode==='single') sql+=`SET XACT_ABORT ON;\nBEGIN TRAN;\n\n`;
+
+  // Cursor SELECT
+  const baseSrcCols=srcCols.filter(c=>!joinColNames.has(c));
+  const joinedSrcCols=srcCols.filter(c=>joinColNames.has(c));
+  // Always 2-part for executable SQL — see the "Database-qualified names"
+  // comment in the single-map generator (generateSQL) for why.
+  const srcFullQualified = srcFull;
+
+  const selectExprs=[
+    // Bare [colName] for base table columns — FROM clause has the 3-part reference
+    ...baseSrcCols.map(c=>'['+c+']'),
+    // Joined columns keep their alias prefix: s1.[colName]
+    ...joinedSrcCols.map(c=>{ const dotIdx=c.indexOf('.'); const alias=dotIdx>-1?c.slice(0,dotIdx):''; const col=dotIdx>-1?c.slice(dotIdx+1):c; return alias?alias+'.['+col+']':'['+col+']'; })
+  ];
+
+  sql+=`DECLARE cur CURSOR FOR\n`;
+  sql+=`  SELECT ${selectExprs.join(', ')}\n`;
+  sql+=`  FROM   ${srcFullQualified}\n`;
+  if(joinSQL) sql+=joinSQL.split('\n').map(l=>'  '+l).join('\n')+'\n';
+  if(where) sql+=`  WHERE  ${where}\n`;
+  if(groupBy) sql+=`  GROUP  BY ${groupBy}\n`;
+  sql+=`  ORDER  BY (SELECT NULL);\n\n`;
+
+  sql+=`DECLARE\n`;
+  srcCols.forEach(c=>{
+    let sqlType='NVARCHAR(MAX)';
+    if(joinColNames.has(c)){
+      const allJC=(typeof getJoinColumns==='function')?getJoinColumns():[];
+      const jc=allJC.find(jc=>jc.name===c); sqlType=jc?.type||'NVARCHAR(MAX)';
+    } else {
+      const colDef=srcTable.columns.find(col=>(typeof col==='string'?col:col.name)===c);
+      sqlType=typeof colDef==='object'?colDef.type||'NVARCHAR(MAX)':'NVARCHAR(MAX)';
+    }
+    sqlType=sqlType.replace(/^(MONEY|SMALLMONEY|BIT|TINYINT|SMALLINT|INT|BIGINT|REAL|DATE|SMALLDATETIME|DATETIME|DATETIME2|UNIQUEIDENTIFIER|XML|TEXT|NTEXT|IMAGE)(\s*\([^)]*\))?/i,'$1');
+    sql+=`  ${safeVarName(c)} ${sqlType},\n`;
+  });
+  sql=sql.slice(0,-2)+';\n\n';
+
+  sql+=`OPEN cur;\nFETCH NEXT FROM cur INTO ${srcCols.map(safeVarName).join(', ')};\n\n`;
+  sql+=`WHILE @@FETCH_STATUS = 0\nBEGIN\n\n`;
+
+  // Identity table vars
+  const identityTables=targetTables.filter(t=>t.pkMode==='identity');
+  if(identityTables.length){
+    identityTables.forEach(tt=>{
+      const pkColDef=tt.columns.find(c=>c.name===tt.pkCol);
+      const idType=(pkColDef?.type||'INT').toUpperCase().includes('UNIQUEIDENTIFIER')?'UNIQUEIDENTIFIER':'INT';
+      sql=`DECLARE @tbl${tt.id.replace(/[^a-z0-9]/gi,'')} TABLE (Id ${idType});\n`+sql;
+    });
+  }
+
+  // Insert into each target
+  targetTables.forEach((tt,ti)=>{
+    const tgtFull='['+tt.schema+'].['+tt.name+']';
+    // Always 2-part for executable SQL — see the "Database-qualified names"
+    // comment in the single-map generator for why we drop the DB prefix.
+    const tgtFullQ = tgtFull;
+
+    // Identity columns are NORMALLY excluded from this table's INSERT — SQL
+    // Server fills them. But when the user has ticked "Allow override" on
+    // a row, we DO include that column and wrap the table's INSERT in
+    // SET IDENTITY_INSERT ON/OFF so SQL Server accepts the explicit value.
+    // Only counts as "overridden" if the row also has a real source/literal,
+    // otherwise the row is empty and gets filtered out below regardless.
+    const overriddenIdentityCols = new Set(
+      tt.mappings
+        .filter(m => m._isIdentity && m._identityOverride && (m.srcCol || (m.literalValue !== undefined && m.literalValue !== '')))
+        .map(m => (m.tgtCol || '').toLowerCase())
+    );
+    const isIdentityCol = (name) => {
+      const c = tt.columns.find(c => c.name === name);
+      return !!(c && c.isIdentity);
+    };
+
+    const mappedCols = tt.mappings.filter(m =>
+      m.srcCol && m.tgtCol &&
+      // Include the column if either it's not an identity column, OR it IS
+      // an identity column AND the user has overridden it.
+      (!isIdentityCol(m.tgtCol) || overriddenIdentityCols.has(m.tgtCol.toLowerCase()))
+    );
+    const fkCols=tt.fks;
+    if(!mappedCols.length&&!fkCols.length){ sql+=`  -- Table ${ti+1}: ${tt.fullName} — no mappings, skipping\n\n`; return; }
+
+    sql+=`  -- ── ${ti+1}. INSERT into ${tgtDb?tgtDb+'.':''}${tt.fullName}\n`;
+    if(txMode==='independent') sql+=`  BEGIN TRY\n  BEGIN TRAN;\n`;
+
+    // SET IDENTITY_INSERT wraps when ANY identity column on this target is
+    // being explicitly populated by the user. Applies regardless of the
+    // table's overall pkMode — even a non-identity-pk table can have
+    // additional identity columns the user wants to override.
+    const wrapIdentityInsert = overriddenIdentityCols.size > 0;
+    if (wrapIdentityInsert) {
+      sql+=`  SET IDENTITY_INSERT ${tgtFullQ} ON;\n`;
+    }
+
+    const insertCols=[...mappedCols.map(m=>'  ['+m.tgtCol+']'),...fkCols.map(fk=>'  ['+fk.myCol+']')].join(',\n');
+
+    const insertVals=[
+      ...mappedCols.map(m=>{
+        const varName=safeVarName(m.srcCol);
+        const tgtCol=tt.columns.find(c=>c.name===m.tgtCol);
+        const srcColDef=srcTable.columns.find(c=>(typeof c==='string'?c:c.name)===m.srcCol);
+        let truncLen=0;
+        if(m.transform==='NONE'&&tgtCol&&srcColDef&&isCharType(typeof srcColDef==='object'?srcColDef.type:'')&&isCharType(tgtCol.type)){
+          const sl=parseTypeLen(typeof srcColDef==='object'?srcColDef.type:''),tl=parseTypeLen(tgtCol.type);
+          if(sl>tl&&tl!==Infinity){ truncLen=tl; truncWarnings.push({srcCol:m.srcCol,tgtCol:m.tgtCol,tgtTable:tt.fullName,tgtLen:tl}); }
+        }
+        // Was/Is: wrap the source variable in a CASE WHEN when rules apply to
+        // this (srcTable, srcCol). Transforms below then act on the mapped value.
+        let baseExpr = varName;
+        if (typeof CygenixWasis !== 'undefined') {
+          baseExpr = CygenixWasis.wrapExpr(baseExpr, srcTable.name, m.srcCol, {
+            formatSQLVal: formatSQLVal,
+            indent: '      ',
+            onApplied: function(n){
+              truncWarnings.push({ srcCol:m.srcCol, tgtCol:m.tgtCol, tgtTable:tt.fullName, wasis:n });
+            }
+          });
+        }
+        // tgtCol is the target column def in scope here (looked up above).
+        // nullable === false is the NOT NULL signal — matches the rest of
+        // the file. We thread it into the cast builders so they wrap the
+        // result in an outer ISNULL when the target column rejects NULLs.
+        const _tgtNotNull = tgtCol ? tgtCol.nullable === false : false;
+        switch((m.transform||'NONE').toUpperCase()){
+          case 'TRIM': return '  TRIM('+baseExpr+')';
+          case 'UPPER': return '  UPPER('+baseExpr+')';
+          case 'LOWER': return '  LOWER('+baseExpr+')';
+          case 'CAST': return '  CAST('+baseExpr+' AS '+(tgtCol?.type||'NVARCHAR(MAX)')+')';
+          case 'DATE_CAST': return '  '+buildDateCastExpr(baseExpr, tgtCol?.type||'DATETIME2',  _tgtNotNull);
+          case 'SAFE_GUID':    return '  '+buildSafeCastExpr('SAFE_GUID',    baseExpr, tgtCol?.type||'UNIQUEIDENTIFIER', _tgtNotNull);
+          case 'SAFE_NUMERIC': return '  '+buildSafeCastExpr('SAFE_NUMERIC', baseExpr, tgtCol?.type||'INT',              _tgtNotNull);
+          case 'SAFE_TRUNC':   return '  '+buildSafeCastExpr('SAFE_TRUNC',   baseExpr, tgtCol?.type||'NVARCHAR(MAX)',    _tgtNotNull);
+          default: if(truncLen) return '  LEFT('+baseExpr+', '+truncLen+')'; return '  '+baseExpr;
+        }
+      }),
+      ...fkCols.map(fk=>`  ${fk.refTableVar}`)
+    ].join(',\n');
+
+    // Note: the pkMode === 'identity' branch still uses OUTPUT INSERTED to
+    // capture the PK value into @tbl... so child tables can FK to it. This
+    // works correctly whether the value was minted by SQL Server (default
+    // path) or supplied explicitly via the override (then OUTPUT INSERTED
+    // simply captures the value the user provided). No change needed there.
+    if(tt.pkMode==='identity'){
+      sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n`;
+      sql+=`  OUTPUT INSERTED.[${tt.pkCol}] INTO @tbl${tt.id.replace(/[^a-z0-9]/gi,'')}(Id)\n`;
+      sql+=`  VALUES (\n${insertVals}\n  );\n`;
+      sql+=`  SELECT TOP 1 ${tt.pkVar} = Id FROM @tbl${tt.id.replace(/[^a-z0-9]/gi,'')};\n`;
+    } else if(tt.pkMode==='guid'){
+      sql+=`  SET ${tt.pkVar} = NEWID();\n`;
+      sql+=`  INSERT INTO ${tgtFullQ} ([${tt.pkCol}],\n${insertCols}\n  )\n  VALUES (${tt.pkVar},\n${insertVals}\n  );\n`;
+    } else {
+      sql+=`  INSERT INTO ${tgtFullQ} (\n${insertCols}\n  )\n  VALUES (\n${insertVals}\n  );\n`;
+    }
+
+    if (wrapIdentityInsert) {
+      sql+=`  SET IDENTITY_INSERT ${tgtFullQ} OFF;\n`;
+    }
+
+    if(txMode==='independent'){
+      sql+=`  COMMIT TRAN;\n  END TRY\n  BEGIN CATCH\n    ROLLBACK TRAN;\n    PRINT 'Error in ${tgtDb?tgtDb+'.':''}${tt.fullName}: '+ERROR_MESSAGE();\n  END CATCH\n`;
+    }
+    sql+='\n';
+  });
+
+  if(truncWarnings.length){
+    let wb='-- ⚠ TRUNCATION WARNINGS:\n';
+    truncWarnings.forEach(w=>{ wb+=`--   ${w.tgtTable}.${w.tgtCol}: truncated to ${w.tgtLen}\n`; });
+    sql=wb+'\n'+sql;
+  }
+
+  sql+=`  FETCH NEXT FROM cur INTO ${srcCols.map(safeVarName).join(', ')};\nEND -- WHILE\n\n`;
+  sql+=`CLOSE cur;\nDEALLOCATE cur;\n`;
+  if(txMode==='single') sql+=`\nCOMMIT TRAN;\n`;
+
+  _lastTruncWarnings=truncWarnings;
+  // Verify SQL: keep DB names only in the display labels (the string literal
+  // in the SELECT list), but use 2-part names in the FROM clauses so the
+  // COUNT(*) actually runs. Same reasoning as the main INSERT SQL.
+  // Grouped cursors read one row per group, so count groups — see the same
+  // reasoning in generateSingleSQL.
+  const otmCountFrom = groupBy
+    ? `(SELECT ${groupBy} FROM ${srcFullQualified}${where?' WHERE '+where:''} GROUP BY ${groupBy}) AS [g]`
+    : `${srcFullQualified}${where?' WHERE '+where:''}`;
+  const verifySQL=`-- Verify row counts\nSELECT '${srcDb?srcDb+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${otmCountFrom}\n`+
+    targetTables.map(tt=>`UNION ALL\nSELECT '${tgtDb?tgtDb+'.':''}${tt.fullName}', COUNT(*) FROM [${tt.schema}].[${tt.name}]`).join('\n')+';\n';
+  // Apply system-parameter substitution (@@Token → value) to generated SQL
+  const sub = (typeof CygenixParams !== 'undefined')
+    ? (s => CygenixParams.substituteParams(s))
+    : (s => s);
+  generatedSQL={insert:sub(sql), schema:'', verify:sub(verifySQL)};
+
+  const warnings=truncWarnings.map(w=>`[${w.srcCol}] → [${w.tgtTable}.${w.tgtCol}] truncated to ${w.tgtLen} chars via LEFT()`);
+  showSQLOutput(generatedSQL.insert, warnings, true);
+  $('save-job-btn').disabled=false;
+  $('tab-schema').style.display='none';
+  $('tab-verify').style.display='none';
+}
+
+// ── SQL output panel ──────────────────────────────────────────────────────────
+function showSQLOutput(sql, warnings=[], scroll=false){
+  $('sql-panel').style.display='block';
+  $('sql-output').textContent=sql;
+  currentSQLTab='sql';
+  $('tab-sql').classList.add('active');
+  if(warnings.length){
+    $('sql-warnings').style.display='block';
+    $('sql-warnings-list').innerHTML=warnings.map(w=>`• ${w}`).join('<br>');
+  } else {
+    $('sql-warnings').style.display='none';
+  }
+  if(scroll) $('sql-panel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function showSQLTab(tab){
+  currentSQLTab=tab;
+  ['sql','schema','verify'].forEach(t=>{ $('tab-'+t)?.classList.toggle('active',t===tab); });
+  $('sql-output').textContent = tab==='sql'?generatedSQL.insert:tab==='schema'?generatedSQL.schema:generatedSQL.verify;
+}
+
+function copySQL(){
+  const txt=$('sql-output').textContent;
+  if(!txt){ alert('Generate SQL first.'); return; }
+  navigator.clipboard.writeText(txt).then(()=>showStatus('SQL copied to clipboard','info'));
+}
+
+function downloadSQL(){
+  const txt=$('sql-output').textContent;
+  if(!txt){ alert('Generate SQL first.'); return; }
+  const name=(srcTable?.name||'migration')+'_to_'+(mode==='single'?tgtTable?.name:targetTables.map(t=>t.name).join('_'))+'.sql';
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([txt],{type:'text/plain'}));
+  a.download=name; a.click();
+}
+
+// ── Co-Worker Drive: scripts save/open ────────────────────────────────────────
+// The Drive is the default home for scripts. "Save to Drive" writes the SQL that
+// is currently shown as a real .sql file under the "SQL Editor" folder; "Open
+// from Drive" browses those .sql files (scripts + job SQL) and loads one back
+// into the Generated SQL panel.
+async function saveScriptToDrive(){
+  const txt=($('sql-output')?.textContent||generatedSQL.insert||'').trim();
+  if(!txt){ alert('Generate SQL first.'); return; }
+  if(!window.CygenixDrive){ alert('The Drive is unavailable in this browser.'); return; }
+  const def=(($('job-name-input')?.value||'').trim()) ||
+    ((srcTable?.name||'migration')+'_to_'+(mode==='single'?(tgtTable?.name||'target'):targetTables.map(t=>t.name).join('_')));
+  const name=prompt('Save script to the Drive as:', def);
+  if(name==null) return;
+  try{
+    const fid=await CygenixDrive.scriptsFolderId();
+    await CygenixDrive.addFile(fid, CygenixDrive.safeName(name)+'.sql',
+      new Blob([txt],{type:'text/plain'}), 'text/plain',
+      { meta:{ source:'object-mapping', savedAt:new Date().toISOString() } });
+    showStatus('✓ Saved to Drive: '+name+'.sql','info');
+  }catch(e){ alert('Could not save to Drive: '+((e&&e.message)||e)); }
+}
+
+async function openScriptFromDrive(){
+  if(!window.CygenixDrive){ alert('The Drive is unavailable in this browser.'); return; }
+  let files=[];
+  try{ files=await CygenixDrive.listSqlFiles(); }catch(_){}
+  openDriveScriptPicker(files);
+}
+
+function openDriveScriptPicker(files){
+  const escp=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let ov=document.getElementById('drive-script-picker');
+  if(ov) ov.remove();
+  ov=document.createElement('div');
+  ov.id='drive-script-picker';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:6000;display:flex;align-items:center;justify-content:center;padding:1.5rem';
+  ov.addEventListener('click',e=>{ if(e.target===ov) ov.remove(); });
+  const rows=(files&&files.length)?files.map(f=>{
+    const isJob=/\/Jobs\//.test(f.path);
+    const folder=f.path.replace(/\/[^/]*$/,'');
+    return '<div class="dsp-row" data-id="'+f.id+'" tabindex="0" style="display:flex;align-items:center;gap:.6rem;padding:.55rem .7rem;border-radius:8px;cursor:pointer">'
+      +'<span style="font-size:9px;font-family:var(--mono);text-transform:uppercase;background:'+(isJob?'rgba(74,91,214,.14)':'var(--bg4)')+';color:'+(isJob?'var(--accent)':'var(--text2)')+';padding:2px 6px;border-radius:4px">'+(isJob?'JOB':'SQL')+'</span>'
+      +'<span class="dsp-name" style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escp(f.name)+'</span>'
+      +'<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+escp(folder)+'</span></div>';
+  }).join(''):'<div style="padding:1.6rem;text-align:center;color:var(--text3);font-size:12.5px;line-height:1.6">No .sql files in the Drive yet.<br>Save one with “Save to Drive”, or save a job.</div>';
+  ov.innerHTML='<div style="background:var(--bg2,#fff);border:1px solid var(--border2);border-radius:12px;width:100%;max-width:540px;max-height:76vh;display:flex;flex-direction:column;box-shadow:0 20px 60px -20px rgba(0,0,0,.5)">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:.9rem 1.1rem;border-bottom:1px solid var(--border)"><b style="font-size:14px">🗂 Open from Drive</b><button id="dsp-close" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;line-height:1">✕</button></div>'
+    +'<div id="dsp-list" style="overflow-y:auto;padding:.5rem">'+rows+'</div></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#dsp-close').addEventListener('click',()=>ov.remove());
+  ov.querySelectorAll('.dsp-row').forEach(r=>{
+    r.addEventListener('mouseenter',()=>r.style.background='var(--bg3)');
+    r.addEventListener('mouseleave',()=>r.style.background='');
+    const open=async()=>{
+      const id=r.dataset.id;
+      try{
+        const sql=await CygenixDrive.readText(id);
+        applyDriveScript(sql, r.querySelector('.dsp-name').textContent.replace(/\.sql$/i,''));
+      }catch(_){ alert('Could not open that file.'); }
+      ov.remove();
+    };
+    r.addEventListener('click',open);
+    r.addEventListener('keydown',e=>{ if(e.key==='Enter') open(); });
+  });
+}
+
+// Load a .sql script from the Drive into the Generated SQL panel so it can be
+// reviewed, copied, downloaded or re-saved.
+function applyDriveScript(sql, name){
+  generatedSQL={ insert:sql||'', schema:'', verify:'' };
+  $('tab-schema').style.display='none';
+  $('tab-verify').style.display='none';
+  showSQLOutput(generatedSQL.insert, [], true);
+  const sb=$('sql-save-btn'); if(sb) sb.disabled=false;
+  const tsb=$('save-job-btn'); if(tsb) tsb.disabled=false;
+  showStatus('✓ Loaded from Drive: '+(name||'script'),'info');
+}
+
+// ── Save as job ───────────────────────────────────────────────────────────────
+// Returns a unique job name. If `requested` is empty, uses `autoName`.
+// If the chosen name already exists in `jobs` (ignoring the job being edited),
+// appends " (2)", " (3)", etc.
+function uniqueJobName(requested, autoName, jobs, currentEditId){
+  const base = (requested && requested.trim()) ? requested.trim() : autoName;
+  const taken = new Set(
+    jobs.filter(j => j.id !== currentEditId).map(j => (j.name||'').trim())
+  );
+  if (!taken.has(base)) return base;
+  let i = 2;
+  while (taken.has(base+' ('+i+')')) i++;
+  return base+' ('+i+')';
+}
+
+function saveAsJob(){
+  if(!srcTable){ alert('Select a source table first.'); return; }
+  if(!generatedSQL.insert&&mode==='single'&&!columnMapping.filter(m=>m.tgtCol).length){ alert('Generate SQL first.'); return; }
+
+  const jobs=(() => { try{ return JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); }catch{return[];} })();
+  const userTyped = ($('job-name-input')?.value || '').trim();
+
+  if(mode==='single'){
+    if(!tgtTable){ alert('Select a target table first.'); return; }
+    const autoName = srcTable.name+' → '+tgtTable.name;
+    const jobName = uniqueJobName(userTyped, autoName, jobs, editJobId);
+    const newId = editJobId||'job_'+Date.now();
+    const job={
+      id: newId,
+      name: jobName,
+      jobType:'simple-map',
+      type:'migration',
+      projectId: localStorage.getItem('cygenix_active_project_id') || '',
+      source: srcTable.fullName,
+      sourceTable: srcTable.fullName,
+      target: tgtTable.fullName,
+      targetTable: tgtTable.fullName,
+      columnMapping: columnMapping.filter(m=>m.tgtCol),
+      // WHERE clause as a structured field. The generated insertSQL bakes
+      // this into a SELECT-and-INSERT text, but the runner uses its own
+      // paginated SELECT * FROM srcTable and needs srcWhere as a separate
+      // field to append. See project-builder runMigrationStep.
+      srcWhere: ($('src-where')?.value || '').trim(),
+      // Structured halves — see persistMappingToSavedJob for why both exist.
+      srcWhereConditions: whereConds.map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols:     groupByCols.slice(),
+      srcGroupBy:         ($('src-groupby')?.value || '').trim(),
+      joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
+      insertSQL: generatedSQL.insert,
+      schemaSQL: generatedSQL.schema,
+      verifySQL: generatedSQL.verify,
+      wasisRules,
+      totalRows: srcTable.rowCount||0,
+      status:'ready',
+      created: new Date().toISOString(),
+      warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
+    };
+    if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
+    else jobs.unshift(job);
+    localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
+    // Schedule auto-version snapshot in the parent (or self if not in
+    // an iframe). De-bounced + content-hashed in the parent; safe to call
+    // every save.
+    try {
+      const fn = (window.parent && window.parent.scheduleAutoVersion) || window.scheduleAutoVersion;
+      if (typeof fn === 'function') fn(newId, editJobId ? 'edited' : 'created');
+    } catch {}
+    // Track the saved job for subsequent in-editor edits (e.g. Remove unused)
+    // so they can write back to the same record instead of being lost.
+    const wasNew = !editJobId;
+    editJobId = newId;
+    if(wasNew){
+      const eb = $('edit-banner'); if(eb) eb.style.display='flex';
+      const en = $('edit-job-name'); if(en) en.textContent = jobName;
+    }
+    showStatus('✓ Saved job: '+jobName,'info');
+    $('save-job-btn').textContent='✓ Saved';
+    setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    if(wasNew && $('job-name-input')) $('job-name-input').value='';
+
+  } else {
+    // OTM
+    if(!targetTables.length){ alert('Add at least one target table.'); return; }
+    const autoName = srcTable.name+' → '+targetTables.map(t=>t.name).join(', ');
+    const jobName = uniqueJobName(userTyped, autoName, jobs, editJobId);
+    const newId = editJobId||'job_'+Date.now();
+    const job={
+      id: newId,
+      name: jobName,
+      jobType:'one-to-many',
+      type:'migration',
+      projectId: localStorage.getItem('cygenix_active_project_id') || '',
+      source: srcTable.fullName,
+      sourceTable: srcTable.fullName,
+      target: targetTables.map(t=>t.fullName).join(', '),
+      insertSQL: generatedSQL.insert,
+      // WHERE clause — saved structurally so re-opening the OTM editor
+      // restores it into the input. Note: OTM's runner pre-generates the
+      // full insertSQL as a cursor script, so the WHERE clause is baked
+      // in there too; the structured srcWhere is for the editor only.
+      srcWhere: ($('src-where')?.value || '').trim(),
+      srcWhereConditions: whereConds.map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols:     groupByCols.slice(),
+      srcGroupBy:         ($('src-groupby')?.value || '').trim(),
+      oneToManyConfig:true,
+      joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
+      tables: targetTables.map(tt=>({name:tt.fullName, pkCol:tt.pkCol, pkMode:tt.pkMode, mappings:tt.mappings, fks:tt.fks, rows:0})),
+      columnMapping:[],
+      totalRows: srcTable.rowCount||0,
+      status:'ready',
+      created: new Date().toISOString(),
+      warnings: _lastTruncWarnings.map(w=>w.tgtCol+' truncated to '+w.tgtLen)
+    };
+    if(editJobId){ const idx=jobs.findIndex(j=>j.id===editJobId); if(idx>-1){ jobs[idx]=job; } else jobs.unshift(job); }
+    else jobs.unshift(job);
+    localStorage.setItem('cygenix_jobs',JSON.stringify(jobs.slice(0,100)));
+    // Schedule auto-version snapshot (same pattern as single-map save).
+    try {
+      const fn = (window.parent && window.parent.scheduleAutoVersion) || window.scheduleAutoVersion;
+      if (typeof fn === 'function') fn(newId, editJobId ? 'OTM edited' : 'OTM created');
+    } catch {}
+    const wasNew = !editJobId;
+    editJobId = newId;
+    if(wasNew){
+      const eb = $('edit-banner'); if(eb) eb.style.display='flex';
+      const en = $('edit-job-name'); if(en) en.textContent = jobName;
+    }
+    showStatus('✓ Saved OTM job: '+jobName,'info');
+    $('save-job-btn').textContent='✓ Saved';
+    setTimeout(()=>{ $('save-job-btn').textContent='💾 Save as job'; },2000);
+    if(wasNew && $('job-name-input')) $('job-name-input').value='';
+  }
+  // Saved successfully — drop the in-progress draft. The next page load will
+  // hydrate from cygenix_jobs via ?edit= rather than from the WIP cache.
+  if(typeof _wipDraftClear==='function') _wipDraftClear();
+
+  // Auto-snapshot the just-saved job. Fire-and-forget; the backend dedupes
+  // by content hash, so calling on every save is safe and a no-op if
+  // nothing changed since the previous version. Honours the "auto-snapshot
+  // on save" pref (default on). See cygenix-history.js for the no-op fallback.
+  try {
+    const savedJobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const justSaved = savedJobs.find(j => j.id === editJobId);
+    if (justSaved && window.CygenixHistory) {
+      window.CygenixHistory.autoSnapshot(justSaved);
+    }
+  } catch (e) {
+    console.warn('Auto-snapshot skipped:', e);
+  }
+
+  // Mirror the job set into the Co-Worker Drive so it stays the canonical home
+  // for jobs (real .sql files under "SQL Editor / Jobs"). Fire-and-forget — a
+  // Drive failure never blocks a successful localStorage save.
+  mirrorJobsToDrive();
+}
+
+// Push the current jobs list into the Drive's "SQL Editor / Jobs" folder.
+// syncJobs keys files by jobId and prunes any whose job was deleted, so the
+// folder always mirrors localStorage's cygenix_jobs. Best-effort.
+function mirrorJobsToDrive(){
+  try {
+    if (!window.CygenixDrive) return;
+    const jobs = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    CygenixDrive.syncJobs(jobs.map(j => ({
+      jobId: j.id,
+      name: j.name || '',
+      sql: j.insertSQL || '',
+      target: j.target || j.targetTable || ''
+    }))).catch(() => {});
+  } catch (_) {}
+}
+
+// ── Edit mode — load saved job ────────────────────────────────────────────────
+// Async because jobs can be created server-side by the Agentive Migration
+// backend (which writes directly to the user's Cosmos `projects` document).
+// Those jobs aren't in this browser's localStorage yet — CygenixSync's
+// gap-fill on init() only fills *missing* keys, and a localStorage that
+// already has older jobs isn't "missing." We explicitly hydrate before
+// reading so the user's "Open in Object Mapping" link from Agentive
+// resolves on the first attempt instead of showing "Job not found."
+async function checkEditMode(){
+  const params=new URLSearchParams(location.search);
+  const jobId=params.get('edit')||params.get('job');
+  if(!jobId) return;
+  editJobId=jobId;
+
+  // Pull the latest jobs from Cosmos before looking up. Best-effort —
+  // ensureKey returns false on failure and we proceed with whatever's
+  // already in localStorage. ensureKey de-duplicates concurrent calls,
+  // so this is cheap if anything else on the page also asks for jobs.
+  if (typeof CygenixSync !== 'undefined' && typeof CygenixSync.ensureKey === 'function') {
+    try { await CygenixSync.ensureKey('cygenix_jobs'); } catch {}
+  }
+
+  const jobs=(() => { try{ return JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); }catch{return[];} })();
+  const job=jobs.find(j=>j.id===jobId);
+  if(!job){ showStatus('Job not found: '+jobId,'err'); return; }
+
+  $('edit-banner').style.display='flex';
+  $('edit-job-name').textContent=job.name;
+  if($('job-name-input')) $('job-name-input').value = job.name||'';
+
+  // Set mode
+  const isOTM=job.jobType==='one-to-many'||job.oneToManyConfig;
+  setMode(isOTM?'otm':'single');
+
+  // Restore wasis — jobs saved before the System Parameters → Was/Is tab
+  // existed carry their own snapshot; newer jobs rely on the global rules
+  // managed in System Parameters. If the job has a snapshot we use it here
+  // (for reproducibility of the saved job's SQL); otherwise we keep whatever
+  // was already loaded from localStorage.
+  if(job.wasisRules?.length){ wasisRules=job.wasisRules; renderWasisStatusBanner(); }
+
+  // Wait for BOTH schemas to load, then restore source + target + mapping
+  const srcFull = job.sourceTable||job.source||'';
+  const tgtFull = job.targetTable||job.target||'';
+  if(srcFull){
+    let attempts=0;
+    const tryRestore=setInterval(async ()=>{
+      attempts++;
+      const srcReady = srcAllTables.length > 0;
+      const tgtReady = !tgtFull || tgtAllTables.length > 0;
+      if(srcReady && tgtReady){
+        clearInterval(tryRestore);
+        // Select source table — awaited so columns are loaded before we move on.
+        // For large tables this network round-trip can take several seconds; the
+        // old fire-and-forget version raced with the setTimeout below and left
+        // tgtTable=null, causing renderMappingTable() to silently bail.
+        const srcT = srcAllTables.find(t=>t.value===srcFull||t.label===srcFull);
+        if(!srcT){ showStatus('Source table "'+srcFull+'" not found — reconnect source DB','err'); return; }
+        try { await selectTable('src',srcT.value); }
+        catch(e){ showStatus('Failed to load source columns for "'+srcFull+'": '+(e.message||e),'err'); return; }
+        // Select target table directly (bypass buildMappingIfReady — editJobId is set)
+        if(tgtFull && !isOTM){
+          const tgtT = tgtAllTables.find(t=>t.value===tgtFull||t.label===tgtFull);
+          if(tgtT){
+            try { await selectTable('tgt',tgtT.value); }
+            catch(e){ showStatus('Failed to load target columns for "'+tgtFull+'": '+(e.message||e),'err'); return; }
+          } else {
+            showStatus('Target table "'+tgtFull+'" not found — reconnect target DB','err');
+            return;
+          }
+        }
+        // Guard against selectTable silently failing (e.g. columns returned
+        // empty). Without this the user saw a blank editor and no message.
+        if(!srcTable){ showStatus('Source table selected but columns never loaded — try re-opening the job','err'); return; }
+        if(tgtFull && !isOTM && !tgtTable){ showStatus('Target table selected but columns never loaded — try re-opening the job','err'); return; }
+        // Columns are now loaded synchronously in state; restore immediately.
+        restoreJobMapping(job,isOTM);
+      } else if(attempts>40){
+        clearInterval(tryRestore);
+        showStatus('Schema not loaded — check connections and try again','err');
+      }
+    },500);
+  }
+}
+
+async function restoreJobMapping(job,isOTM){
+  // ── Restore WHERE clause ──────────────────────────────────────────────────
+  // Put it back in the input BEFORE we regenerate SQL — both branches below
+  // call tryAutoGenSQL / generateOTMSQL which read #src-where. Without this
+  // restore the regenerated preview would lose the WHERE on every reopen,
+  // and saveAsJob would overwrite the stored srcWhere with an empty string.
+  // job.srcWhere is the structured field; fall back to '' for legacy jobs
+  // saved before this field existed. loadClausesFromJob rebuilds the
+  // condition rows and the GROUP BY list, then writes both combined strings
+  // into the hidden inputs — a job saved before the list existed becomes a
+  // single condition holding exactly what it held before.
+  loadClausesFromJob(job);
+
+  // ── Restore JOIN state first (both modes) ─────────────────────────────────
+  if(job.joinState && Array.isArray(job.joinState) && job.joinState.length){
+    // Re-init the join builder with saved state so user can add/remove/edit joins
+    const otherTables = srcAllTables.filter(t=>!srcTable||t.value!==srcTable.value);
+    window._joinAllTables = otherTables;
+    window._joinBaseTable  = srcTable;
+    // initJoinBuilder resets _joinState to [] then we overwrite it
+    initJoinBuilder('join-container', otherTables, srcTable, function(){
+      renderSrcColList();
+      if(mode==='single') tryAutoGenSQL();
+    });
+    // Overwrite empty state with saved joins after initJoinBuilder resets it
+    window._joinState = job.joinState;
+    // Re-render so the saved joins appear in the UI
+    renderJoinBuilder('join-container', otherTables, srcTable);
+    $('join-panel').style.display = 'block';
+  }
+
+  if(isOTM){
+    // ── Restore OTM target tables ───────────────────────────────────────────
+    // Each saved target needs its columns loaded before we can add it to the
+    // OTM UI (which reads t.columns). Do them sequentially so row-counts stay
+    // ordered predictably in the cards.
+    for (const jtt of (job.tables||[])) {
+      const t = tgtAllTables.find(t=>t.value===jtt.name||t.label===jtt.name);
+      if (t && !targetTables.find(tt=>tt.fullName===t.value)) {
+        try { await ensureColumns('tgt', t); }
+        catch(e) { showStatus('Could not load columns for ' + t.fullName + ': ' + e.message, 'err'); continue; }
+        addOTMTargetFromTable(t);
+        const ti=targetTables.length-1;
+        if(jtt.pkMode) targetTables[ti].pkMode=jtt.pkMode;
+        if(jtt.pkCol)  targetTables[ti].pkCol=jtt.pkCol;
+        if(jtt.mappings) targetTables[ti].mappings = ensureAllTargetCols(jtt.mappings, targetTables[ti]);
+        if(jtt.fks)    targetTables[ti].fks=jtt.fks;
+      }
+    }
+    renderOTMCards();
+    // Regenerate SQL from restored config so it's live-editable
+    generateOTMSQL();
+  } else {
+    // ── Restore single-map ─────────────────────────────────────────────────
+    // tgtTable already selected by checkEditMode — just restore the mapping
+    if(job.columnMapping?.length){
+      columnMapping = job.columnMapping.map(m=>({...m}));
+      columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
+      $('mapping-wrap').style.display='block';
+      $('single-empty').style.display='none';
+      renderMappingTable();
+      tryAutoGenSQL();
+      setTimeout(()=>$('mapping-wrap')?.scrollIntoView({behavior:'smooth',block:'start'}),200);
+    } else {
+      showStatus('No column mapping found in this job','err');
+    }
+  }
+  showStatus('Editing: "'+job.name+'" — change anything then save','info');
+  // Snapshot the just-restored state so "Cancel edit" can tell whether the
+  // user actually changed anything. Without this we'd either nag on every
+  // cancel or silently discard real work.
+  _editLoadSig = _mapSignature();
+}
+
+// Cheap fingerprint of the current mapping. Compared against the snapshot
+// taken at load time to decide whether cancelling would discard anything.
+let _editLoadSig = null;
+function _mapSignature(){
+  try {
+    return JSON.stringify({
+      s: srcTable ? (srcTable.fullName || srcTable.name || '') : '',
+      t: tgtTable ? (tgtTable.fullName || tgtTable.name || '') : '',
+      w: ($('src-where')||{}).value || '',
+      // The condition list and GROUP BY are part of the map. Without them,
+      // adding or removing a condition would not count as an unsaved change
+      // and Cancel would discard it without asking.
+      wc: (whereConds||[]).map(c => [c.connector||'AND', c.text||'']),
+      g: (groupByCols||[]).slice(),
+      m: (columnMapping||[]).map(m => [m.srcCol||'', m.tgtCol||'', m.transform||'', m.literalValue||'']),
+      o: (targetTables||[]).map(t => [t.name||'', (t.mappings||[]).map(m => [m.srcCol||'', m.tgtCol||''])]),
+    });
+  } catch { return null; }
+}
+
+// "✕ Cancel edit" — stop editing and go back to the recent-maps picker, so
+// another map can be chosen without a page reload or a trip through Reset.
+// Previously this only detached the ?edit= link and hid the banner, leaving
+// the map on screen with no way back to the grid.
+//
+// The saved map itself is never touched — cancelling only drops edits made
+// since it was opened, so we prompt only when there actually are some.
+function cancelEdit(){
+  const changed = _editLoadSig !== null && _mapSignature() !== _editLoadSig;
+  if (changed && !confirm(
+    'Close this map and go back to your maps?\n\n' +
+    'Changes you have made since opening it will be discarded. ' +
+    'The saved map itself is not affected.'
+  )) return;
+
+  const name = ($('edit-job-name')||{}).textContent || '';
+  _editLoadSig = null;
+  // clearMapState() empties the canvas, re-renders the recent-maps grid and
+  // calls clearEditMode() — which also strips ?edit= so a refresh doesn't
+  // reopen the map we just closed.
+  clearMapState();
+  showStatus(name ? 'Closed "'+name+'" — pick another map below' : 'Pick a map below to edit','info');
+  // Bring the grid into view; on a long page the canvas can be below the fold.
+  try { $('single-empty')?.scrollIntoView({behavior:'smooth',block:'center'}); } catch(_){}
+}
+
+function clearEditMode(){
+  editJobId=null;
+  $('edit-banner').style.display='none';
+  if($('job-name-input')) $('job-name-input').value='';
+  history.replaceState({},document.title,location.pathname);
+}
+
+function resetAll(){
+  if(!confirm('Reset all mappings and start fresh?')) return;
+  srcTable=null; tgtTable=null; columnMapping=[]; targetTables=[];
+  generatedSQL={insert:'',schema:'',verify:''};
+  $('src-table-input').value=''; $('tgt-table-input').value=''; $('otm-tgt-input').value='';
+  $('src-col-wrap').style.display='none'; $('src-col-count').style.display='none';
+  $('join-panel').style.display='none'; window._joinState=[];
+  $('mapping-wrap').style.display='none'; $('single-empty').style.display='block'; if(typeof renderRecentMaps==='function') renderRecentMaps('');
+  $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
+  $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
+  clearEditMode();
+  if(typeof _wipDraftClear==='function') _wipDraftClear();
+}
+
+// Start a new map. If there's unsaved work, prompt to save/discard/cancel.
+function hasWorkInProgress(){
+  return !!(srcTable || tgtTable || (columnMapping && columnMapping.length) || (targetTables && targetTables.length));
+}
+function clearMapState(){
+  srcTable=null; tgtTable=null; columnMapping=[]; targetTables=[];
+  generatedSQL={insert:'',schema:'',verify:''};
+  $('src-table-input').value=''; $('tgt-table-input').value=''; $('otm-tgt-input').value='';
+  $('src-col-wrap').style.display='none'; $('src-col-count').style.display='none';
+  $('join-panel').style.display='none'; window._joinState=[];
+  $('mapping-wrap').style.display='none'; $('single-empty').style.display='block'; if(typeof renderRecentMaps==='function') renderRecentMaps('');
+  $('sql-panel').style.display='none'; $('save-job-btn').disabled=true;
+  $('otm-cards').innerHTML=''; $('otm-empty').style.display='block';
+  clearEditMode();
+  if(typeof _wipDraftClear==='function') _wipDraftClear();
+}
+function newMap(){
+  if(!hasWorkInProgress()){
+    // Nothing to save — just confirm intent briefly
+    clearMapState();
+    showStatus('Ready for a new map','info');
+    return;
+  }
+  const msg = editJobId
+    ? 'You are editing a saved job. Save your changes before starting a new map?'
+    : 'You have unsaved work on the current map. What would you like to do?';
+  $('new-map-modal-msg').textContent = msg;
+  $('new-map-modal').classList.add('open');
+}
+function confirmNewMap(action){
+  $('new-map-modal').classList.remove('open');
+  if(action==='save'){
+    // saveAsJob requires a generated mapping. If save-job-btn is disabled, warn.
+    if($('save-job-btn')?.disabled){
+      showStatus('Can\'t save yet — generate SQL or pick source+target first. Starting new map anyway.','info');
+      clearMapState();
+      return;
+    }
+    saveAsJob();
+    // Give save a tick to finish, then clear
+    setTimeout(clearMapState, 150);
+  } else if(action==='discard'){
+    clearMapState();
+    showStatus('Discarded — ready for a new map','info');
+  }
+  // cancel: no-op (modal already closed)
+}
+
+// ── Load map modal ───────────────────────────────────────────────────────────
+// Opens a picker listing saved jobs from localStorage. Selecting one navigates
+// to ?edit=<id> which triggers checkEditMode() → restoreJobMapping() on load.
+// If there's unsaved work, we prompt via the existing new-map flow first.
+function openLoadMapModal(){
+  if(hasWorkInProgress() && !editJobId){
+    // Pending unsaved changes — warn before navigating away
+    if(!confirm('You have unsaved work on the current map. Load a different map and discard changes?')) return;
+  }
+  // Reset filters each open so user starts clean
+  const s=$('load-map-search'); if(s) s.value='';
+  const mf=$('load-map-mode-filter'); if(mf) mf.value='';
+  populateLoadMapProjectFilter();
+  renderLoadMapList();
+  $('load-map-modal').classList.add('open');
+  setTimeout(()=>$('load-map-search')?.focus(),50);
+}
+
+function _getAllSavedJobs(){
+  try { return JSON.parse(localStorage.getItem('cygenix_jobs')||'[]'); }
+  catch { return []; }
+}
+
+// Resolve a list of projects for the filter dropdown. We don't know for sure
+// where the master project list lives in localStorage, so we try several
+// likely keys in priority order. Whichever returns a usable array wins.
+// Falls back to deriving project IDs from saved jobs so the filter still
+// works (labelled by bare ID) even if we can't find project names.
+function _getProjectList(){
+  const candidates = [
+    'cygenix_projects','cygenix_project_list','cygenix_all_projects',
+    'cygenix_project_data'
+  ];
+  for (const key of candidates){
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const val = JSON.parse(raw);
+      if (Array.isArray(val) && val.length){
+        // Normalise to {id, name}
+        return val.map(p => ({
+          id: p.id || p.projectId || p._id || p.uuid || '',
+          name: p.name || p.title || p.label || p.id || '(unnamed project)'
+        })).filter(p => p.id);
+      }
+      // Some stores keep a dict keyed by id
+      if (val && typeof val==='object'){
+        return Object.entries(val).map(([id,p])=>({
+          id,
+          name: (p && (p.name||p.title||p.label)) || id
+        })).filter(p => p.id);
+      }
+    } catch {}
+  }
+  // Fallback — infer project set from saved jobs. Uses bare IDs as names.
+  const seen = new Map();
+  _getAllSavedJobs().forEach(j => {
+    const pid = j.projectId || '';
+    if (pid && !seen.has(pid)) seen.set(pid, { id: pid, name: pid });
+  });
+  return Array.from(seen.values());
+}
+
+function populateLoadMapProjectFilter(){
+  const sel = $('load-map-project-filter');
+  if(!sel) return;
+  const activeProject = localStorage.getItem('cygenix_active_project_id') || '';
+  const projects = _getProjectList();
+  // Sort with active project first, then alphabetical
+  projects.sort((a,b) => {
+    if (a.id===activeProject) return -1;
+    if (b.id===activeProject) return 1;
+    return (a.name||'').localeCompare(b.name||'');
+  });
+  // Count jobs per project for badges
+  const jobs = _getAllSavedJobs();
+  const countFor = (pid) => jobs.filter(j => (j.projectId||'')===pid).length;
+  const noProjectCount = jobs.filter(j => !j.projectId).length;
+
+  const opts = [];
+  opts.push(`<option value="__all__">All projects (${jobs.length})</option>`);
+  if (activeProject){
+    const activeName = (projects.find(p=>p.id===activeProject)?.name) || activeProject;
+    opts.push(`<option value="${esc(activeProject)}" selected>★ ${esc(activeName)} — current (${countFor(activeProject)})</option>`);
+  }
+  projects.filter(p => p.id !== activeProject).forEach(p => {
+    opts.push(`<option value="${esc(p.id)}">${esc(p.name)} (${countFor(p.id)})</option>`);
+  });
+  if (noProjectCount){
+    opts.push(`<option value="__none__">(No project assigned) (${noProjectCount})</option>`);
+  }
+  // If there's no active project, default selection is "All projects"
+  if (!activeProject) opts[0] = `<option value="__all__" selected>All projects (${jobs.length})</option>`;
+  sel.innerHTML = opts.join('');
+}
+
+function renderLoadMapList(){
+  const list=$('load-map-list'); if(!list) return;
+  const jobs=_getAllSavedJobs();
+  const query=(($('load-map-search')?.value)||'').trim().toLowerCase();
+  const modeFilter=($('load-map-mode-filter')?.value)||'';
+  const projectFilter=($('load-map-project-filter')?.value)||'__all__';
+
+  let filtered=jobs.filter(j=>{
+    // Soft-delete: never show deleted jobs in the load-map picker. The
+    // dashboard's "Show deleted" view is the canonical place to recover
+    // them — exposing them here would let the analyst accidentally
+    // re-open a deleted job and re-save it as live, defeating the trash.
+    if (j._deleted) return false;
+    // Project filter
+    if (projectFilter==='__none__'){
+      if (j.projectId) return false;
+    } else if (projectFilter !== '__all__'){
+      if ((j.projectId||'') !== projectFilter) return false;
+    }
+    // Type filter
+    if(modeFilter){
+      const t=j.jobType || (j.oneToManyConfig?'one-to-many':'simple-map');
+      if(t!==modeFilter) return false;
+    }
+    // Text search — name, source, target
+    if(query){
+      const hay=((j.name||'')+' '+(j.source||j.sourceTable||'')+' '+(j.target||j.targetTable||'')).toLowerCase();
+      if(!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  // Sort newest-first using `created` when available, else preserve array order
+  filtered.sort((a,b)=>{
+    const ca=a.created?Date.parse(a.created):0;
+    const cb=b.created?Date.parse(b.created):0;
+    return cb-ca;
+  });
+
+  $('load-map-count').textContent = filtered.length+' of '+jobs.length+' job'+(jobs.length===1?'':'s');
+
+  if(!filtered.length){
+    list.innerHTML='<div style="padding:2rem 1rem;text-align:center;color:var(--text3);font-size:12px">'+
+      (jobs.length===0
+        ? 'No saved maps yet. Create a mapping and click 💾 Save as job.'
+        : 'No maps match your filters.')+
+      '</div>';
+    return;
+  }
+
+  // Build a lookup from projectId → display name so each row can show
+  // which project the map belongs to (useful when viewing "All projects").
+  const projects = _getProjectList();
+  const projectNameById = {};
+  projects.forEach(p => { projectNameById[p.id] = p.name; });
+
+  list.innerHTML=filtered.map(j=>{
+    const isOTM = j.jobType==='one-to-many' || j.oneToManyConfig;
+    const typeLabel = isOTM ? '⊞ One-to-many' : '◈ Single map';
+    const typeColor = isOTM ? 'var(--purple)' : 'var(--teal)';
+    const src = esc(j.source||j.sourceTable||'—');
+    const tgt = esc(j.target||j.targetTable||'—');
+    const name = esc(j.name||'(unnamed)');
+    const created = j.created ? new Date(j.created).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}) : '';
+    const cols = isOTM
+      ? ((j.tables||[]).reduce((n,t)=>n+((t.mappings||[]).filter(m=>m.tgtCol).length),0)+' cols across '+((j.tables||[]).length)+' tables')
+      : ((j.columnMapping||[]).length+' columns');
+    const isCurrent = editJobId===j.id;
+    const projLabel = j.projectId
+      ? esc(projectNameById[j.projectId] || j.projectId)
+      : '(no project)';
+    return `<div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:0.5px solid var(--border);${isCurrent?'background:rgba(74,91,214,0.06)':''}">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:3px;flex-wrap:wrap">
+          <span style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+          <span style="font-size:10px;color:${typeColor};font-weight:500;flex-shrink:0">${typeLabel}</span>
+          <span style="font-size:10px;color:var(--text3);font-weight:500;flex-shrink:0" title="Project">📁 ${projLabel}</span>
+          ${isCurrent?'<span style="font-size:10px;color:var(--accent);font-weight:500;flex-shrink:0">• currently editing</span>':''}
+        </div>
+        <div style="font-size:11px;color:var(--text2);font-family:var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${src} <span style="color:var(--text3)">→</span> ${tgt}
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:3px">
+          ${cols}${created?' · '+esc(created):''}
+        </div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="loadMapById('${esc(j.id)}')" ${isCurrent?'disabled':''} title="${isCurrent?'Already loaded':'Load this map'}">
+        ${isCurrent?'Loaded':'📂 Load'}
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="deleteSavedJob('${esc(j.id)}')" title="Delete this saved map" style="color:var(--red);border-color:rgba(240,70,70,0.3)">✕</button>
+    </div>`;
+  }).join('');
+}
+
+// ── Recent maps grid ─────────────────────────────────────────────────────────
+// Thumbnails of saved maps on the empty canvas, so reopening one is a single
+// click rather than a trip through the Load-map modal. Rendered only while
+// #single-empty is visible — once a map is loaded the grid is gone and costs
+// no screen space. The Load-map modal remains the full browser/search.
+const RM_PIN_KEY = 'cygenix_pinned_maps';
+const RM_MAX = 11;                 // + the "new map" tile fills a tidy grid
+// Curated hue pairs rather than a raw hash → any hue, which would land on
+// muddy olives and browns. Each entry is [source hue, target hue] a little
+// apart on the wheel, so every thumbnail reads as a two-tone flow.
+// Base hues sit ~45° apart so neighbouring cards never look like the same
+// colour; the target hue is +30° from the source for a two-tone flow. Yellow-
+// green (60-95°) is skipped — it goes muddy at these alphas.
+const RM_HUES = [
+  [205, 235],  // blue      → indigo
+  [250, 280],  // indigo    → violet
+  [292, 322],  // violet    → magenta
+  [334,   4],  // pink      → red
+  [ 18,  40],  // orange    → amber
+  [152, 178],  // green     → teal
+  [178, 200],  // teal      → cyan
+  [116, 146],  // lime-green→ green
+];
+// Colour is derived from the map's ID, not its position, so a map keeps the
+// same colour as the grid reorders (pinning, filtering, new saves). That is
+// what lets colour work as a recognition cue rather than decoration.
+function rmHues(id){
+  const s = String(id||'');
+  let h = 0;
+  for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
+  return RM_HUES[h % RM_HUES.length];
+}
+
+function rmPinned(){
+  try { const a = JSON.parse(localStorage.getItem(RM_PIN_KEY)||'[]'); return Array.isArray(a)?a:[]; }
+  catch { return []; }
+}
+// Delete straight from the grid. Delegates to deleteSavedJob so the Trash
+// semantics stay identical to the Load-map modal: soft-delete, recoverable
+// from the dashboard's "Show deleted", and edit mode cleared if the map being
+// removed is the one currently open.
+//
+// Skipping the prompt is safe precisely BECAUSE the delete is soft — nothing
+// is destroyed, so the worst case is a trip to Trash to restore it. Two ways
+// to skip: the persisted "Delete without confirming" toggle in the grid
+// header, or holding Shift while clicking ✕ for a one-off.
+const RM_SKIP_CONFIRM_KEY = 'cygenix_rm_skip_delete_confirm';
+function rmSkipConfirm(){
+  try { return localStorage.getItem(RM_SKIP_CONFIRM_KEY) === '1'; } catch { return false; }
+}
+function rmSetSkipConfirm(on){
+  try { localStorage.setItem(RM_SKIP_CONFIRM_KEY, on ? '1' : '0'); } catch {}
+}
+function rmDelete(ev, jobId){
+  ev.stopPropagation();            // don't open the map we're deleting
+  deleteSavedJob(jobId, rmSkipConfirm() || ev.shiftKey);
+}
+
+function rmTogglePin(ev, jobId){
+  ev.stopPropagation();            // don't open the map when pinning it
+  const set = new Set(rmPinned());
+  if (set.has(jobId)) set.delete(jobId); else set.add(jobId);
+  try { localStorage.setItem(RM_PIN_KEY, JSON.stringify([...set])); } catch {}
+  renderRecentMaps(($('rm-filter')||{}).value||'');
+}
+
+// Relative time, so "when" reads at a glance.
+function rmWhen(iso){
+  if(!iso) return '';
+  const t = Date.parse(iso); if(isNaN(t)) return '';
+  const mins = Math.floor((Date.now()-t)/60000);
+  if (mins < 1)    return 'just now';
+  if (mins < 60)   return mins+' min ago';
+  const hrs = Math.floor(mins/60);
+  if (hrs < 24)    return hrs+' hour'+(hrs===1?'':'s')+' ago';
+  const days = Math.floor(hrs/24);
+  if (days === 1)  return 'yesterday';
+  if (days < 7)    return days+' days ago';
+  return new Date(t).toLocaleDateString(undefined,{day:'numeric',month:'short'});
+}
+
+// Thumbnail: a miniature of the map's ACTUAL column links, not a stock image.
+// Rows are drawn from the real mapping (capped for legibility) and each line
+// joins the source row to the target row it feeds, so two different maps look
+// visibly different and a familiar one is recognisable at a glance.
+function rmThumb(job){
+  const isOTM = job.jobType==='one-to-many' || job.oneToManyConfig;
+  let pairs = [];
+  if (isOTM){
+    (job.tables||[]).forEach((t,ti) => {
+      (t.mappings||[]).filter(m=>m.tgtCol).forEach((m,mi) => pairs.push([mi, ti*2+mi]));
+    });
+  } else {
+    (job.columnMapping||[]).filter(m=>m.tgtCol).forEach((m,i) => pairs.push([i,i]));
+  }
+  const n = Math.max(3, Math.min(7, pairs.length || 3));
+  const lh=13, gap=4, top=14, H=top*2+n*(lh+gap);
+  const [hs, ht] = rmHues(job.id);
+  // Unique gradient ids per card — duplicated ids inside one document make
+  // every thumbnail render with the first card's gradient.
+  const uid = 'rm' + String(job.id||'x').replace(/[^a-zA-Z0-9]/g,'') ;
+  // Colours are given as HSL with alpha so they sit correctly on either the
+  // light or dark theme without needing two palettes.
+  const src  = (l,a) => `hsl(${hs} 72% ${l}% / ${a})`;
+  const tgt  = (l,a) => `hsl(${ht} 72% ${l}% / ${a})`;
+
+  const rows=[], lines=[];
+  for(let i=0;i<n;i++){
+    const y = top+i*(lh+gap);
+    // widths vary with the row index so the shape reads as "data", not bars
+    rows.push(`<rect x="14" y="${y}" width="58" height="${lh}" rx="3.5" fill="${src(55,0.16)}" stroke="${src(50,0.42)}" stroke-width="0.9"/>`);
+    rows.push(`<rect x="19" y="${y+4.5}" width="${26+((i*11)%22)}" height="4" rx="2" fill="${src(48,0.72)}"/>`);
+    rows.push(`<rect x="128" y="${y}" width="58" height="${lh}" rx="3.5" fill="${tgt(55,0.16)}" stroke="${tgt(50,0.42)}" stroke-width="0.9"/>`);
+    rows.push(`<rect x="133" y="${y+4.5}" width="${24+((i*13)%24)}" height="4" rx="2" fill="${tgt(48,0.72)}"/>`);
+  }
+  for(let i=0;i<n;i++){
+    const y1 = top+i*(lh+gap)+lh/2;
+    const j  = pairs.length ? (pairs[i % pairs.length][1] % n) : i;
+    const y2 = top+j*(lh+gap)+lh/2;
+    lines.push(`<path d="M72 ${y1} C 95 ${y1}, 105 ${y2}, 128 ${y2}" fill="none" stroke="url(#${uid}f)" stroke-width="1.6" stroke-linecap="round" opacity="0.9"/>`);
+    lines.push(`<circle cx="72" cy="${y1}" r="2.3" fill="${src(50,0.95)}"/><circle cx="128" cy="${y2}" r="2.3" fill="${tgt(50,0.95)}"/>`);
+  }
+  return `<svg viewBox="0 0 200 ${H}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <defs>
+      <!-- userSpaceOnUse, NOT the default objectBoundingBox: most links are
+           perfectly horizontal (row i → row i), giving the path a zero-height
+           bounding box, which makes a bounding-box gradient degenerate and
+           the stroke vanish entirely. Explicit user-space coords always paint. -->
+      <linearGradient id="${uid}f" gradientUnits="userSpaceOnUse" x1="72" y1="0" x2="128" y2="0">
+        <stop offset="0" stop-color="${src(52,1)}"/>
+        <stop offset="1" stop-color="${tgt(52,1)}"/>
+      </linearGradient>
+      <linearGradient id="${uid}b" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="200" y2="${H}">
+        <stop offset="0" stop-color="${src(55,0.10)}"/>
+        <stop offset="1" stop-color="${tgt(55,0.10)}"/>
+      </linearGradient>
+    </defs>
+    <rect x="0" y="0" width="200" height="${H}" fill="url(#${uid}b)"/>
+    ${rows.join('')}${lines.join('')}
+  </svg>`;
+}
+
+// The card's accent (top rule, hover ring) uses the same source hue, so the
+// tile and its thumbnail read as one object.
+function rmAccent(id){ return `hsl(${rmHues(id)[0]} 72% 50%)`; }
+
+function renderRecentMaps(filter){
+  const grid = $('rm-grid'); if(!grid) return;
+  const wrap = $('recent-maps-wrap'), none = $('recent-maps-none');
+  const allJobs = _getAllSavedJobs().filter(j => !j._deleted);
+
+  // ── Scope to the active project ────────────────────────────────────────
+  // Maps saved under a DIFFERENT project were built against that project's
+  // schema, so their source/target tables usually don't exist here — opening
+  // one from this canvas can only fail. The Load-map modal already defaults
+  // to the active project; this grid was showing everything.
+  //
+  // Maps with no projectId recorded are KEPT: they either predate the field
+  // or were saved with no project active, so hiding them would strand work
+  // with no way to reach it from the canvas.
+  const activeProjectId = (localStorage.getItem('cygenix_active_project_id')||'').trim();
+  const jobs = activeProjectId
+    ? allJobs.filter(j => !j.projectId || j.projectId === activeProjectId)
+    : allJobs;
+  const hidden = allJobs.length - jobs.length;
+
+  // Name the scope so it's obvious which project's maps these are.
+  const scopeEl = $('rm-scope');
+  if (scopeEl){
+    let pname = '';
+    if (activeProjectId){
+      try { pname = (_getProjectList().find(p => p.id === activeProjectId)||{}).name || ''; } catch {}
+    }
+    scopeEl.textContent = pname ? '· ' + pname : '';
+  }
+  const subEl = $('rm-sub');
+  if (subEl){
+    subEl.textContent = 'Pick up where you left off, or choose source and target tables above to start fresh.'
+      + (hidden ? '  ' + hidden + ' map' + (hidden===1?'':'s') + ' from other projects '
+                + (hidden===1?'is':'are') + ' hidden — use Browse all to see everything.' : '');
+  }
+
+  // Nothing to show for this project. Distinguish "you have no maps" from
+  // "your maps are all in other projects" — the second is not an empty state
+  // and telling the user it is would be misleading.
+  if (!jobs.length){
+    if (wrap) wrap.style.display='none';
+    if (none){
+      none.style.display='block';
+      none.innerHTML = allJobs.length
+        ? 'No maps saved in this project yet — select source and target tables above to build one.<br>'
+          + '<span style="color:var(--text3)">' + allJobs.length + ' map' + (allJobs.length===1?'':'s')
+          + ' exist in other projects — <span class="rm-all" onclick="openLoadMapModal()">Browse all →</span></span>'
+        : 'Select source and target tables to build the column mapping';
+    }
+    return;
+  }
+  if (wrap) wrap.style.display='';
+  if (none) none.style.display='none';
+
+  const q = String(filter||'').trim().toLowerCase();
+  const pins = new Set(rmPinned());
+  let list = jobs.filter(j => {
+    if(!q) return true;
+    return ((j.name||'')+' '+(j.source||j.sourceTable||'')+' '+(j.target||j.targetTable||''))
+      .toLowerCase().includes(q);
+  });
+  // Pinned first, then newest. Same ordering rule as the Load-map modal's sort.
+  list.sort((a,b)=>{
+    const pa=pins.has(a.id)?1:0, pb=pins.has(b.id)?1:0;
+    if(pa!==pb) return pb-pa;
+    return (b.created?Date.parse(b.created):0) - (a.created?Date.parse(a.created):0);
+  });
+  const shown = list.slice(0, RM_MAX);
+
+  const all = $('rm-browse-all');
+  // Counts the FULL set — "Browse all" opens the modal, which can reach maps
+  // in every project, not just the ones scoped into this grid.
+  if (all) all.textContent = 'Browse all ' + allJobs.length + ' →';
+  // Reflect the stored preference — the checkbox is markup, so it starts
+  // unticked on every page load until told otherwise.
+  const skipBox = $('rm-skip-confirm');
+  if (skipBox) skipBox.checked = rmSkipConfirm();
+
+  grid.innerHTML = shown.map((j, idx) => {
+    const isOTM = j.jobType==='one-to-many' || j.oneToManyConfig;
+    const accent = rmAccent(j.id);
+    const src = esc(j.source||j.sourceTable||'—');
+    const tgt = isOTM
+      ? ((j.tables||[]).length + ' target tables')
+      : esc(j.target||j.targetTable||'—');
+    // Honest counts derived from the saved mapping — no invented "validated".
+    const mapped = isOTM
+      ? (j.tables||[]).reduce((n,t)=>n+((t.mappings||[]).filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length),0)
+      : (j.columnMapping||[]).filter(m=>m.tgtCol&&(m.srcCol||m.literalValue)).length;
+    const unmapped = isOTM
+      ? (j.tables||[]).reduce((n,t)=>n+((t.mappings||[]).filter(m=>m.tgtCol&&!m.srcCol&&!m.literalValue).length),0)
+      : (j.columnMapping||[]).filter(m=>m.tgtCol&&!m.srcCol&&!m.literalValue).length;
+    const chip = unmapped
+      ? `<span class="rm-chip warn" title="${unmapped} target column(s) have no source or fixed value">${unmapped} unmapped</span>`
+      : `<span class="rm-chip">${mapped} column${mapped===1?'':'s'}</span>`;
+    const isCurrent = (typeof editJobId!=='undefined' && editJobId===j.id);
+    const pinned = pins.has(j.id);
+    return `<div class="rm-card${pinned?' pinned':''}${isCurrent?' current':''}" tabindex="0" role="button"
+         style="--rm-accent:${accent}"
+         aria-label="Open map ${esc(j.name||'unnamed')}"
+         onclick="loadMapById('${esc(j.id)}')"
+         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();loadMapById('${esc(j.id)}')}">
+      <div class="rm-pin" title="${pinned?'Unpin':'Pin to the top'}"
+           onclick="rmTogglePin(event,'${esc(j.id)}')">${pinned?'★':'☆'}</div>
+      <div class="rm-del" title="Move to Trash${rmSkipConfirm()?' (no confirmation — restore from Dashboard → Show deleted)':' · hold Shift to skip the prompt'}"
+           aria-label="Delete map ${esc(j.name||'unnamed')}"
+           onclick="rmDelete(event,'${esc(j.id)}')">✕</div>
+      <div class="rm-thumb">${rmThumb(j)}</div>
+      <div class="rm-body">
+        <div class="rm-name">${esc(j.name||'(unnamed map)')}</div>
+        <div class="rm-path">${src} → ${tgt}</div>
+        <div class="rm-foot">
+          ${chip}
+          <span class="rm-when">${isCurrent?'currently open':esc(rmWhen(j.created))}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('')
+  + (q ? '' : `<div class="rm-new" tabindex="0" role="button" onclick="rmStartNew()"
+        onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();rmStartNew()}">
+        <div><span class="plus">＋</span>Start a new map</div>
+      </div>`);
+
+  if (q && !shown.length){
+    grid.innerHTML = '<div style="grid-column:1/-1;padding:1.5rem;text-align:center;color:var(--text3);font-size:12px">'
+      + 'No recent maps match “' + esc(String(filter)) + '”.</div>';
+  }
+}
+
+// "Start a new map" from the empty canvas: the source table picker is the
+// first real step, so send the user straight there.
+function rmStartNew(){
+  const el = $('src-table-input');
+  if (el){ el.focus(); try { el.scrollIntoView({behavior:'smooth',block:'center'}); } catch(_){} }
+}
+
+function loadMapById(jobId){
+  const jobs=_getAllSavedJobs();
+  const job=jobs.find(j=>j.id===jobId);
+  if(!job){ showStatus('Map not found — it may have been deleted','err'); renderLoadMapList(); return; }
+  $('load-map-modal').classList.remove('open');
+  // Navigate with ?edit=<id> so the existing checkEditMode() restoration path runs
+  // on a clean page load. This is the same mechanism used from the Jobs dashboard.
+  const url = new URL(location.href);
+  url.searchParams.set('edit', jobId);
+  // Full reload ensures state (source/target selections, join builder, OTM cards)
+  // is rebuilt from scratch rather than layered on top of whatever's already loaded.
+  location.href = url.toString();
+}
+
+// skipConfirm: bypass the prompt (grid toggle or Shift+click). Only ever
+// skips the QUESTION — the delete itself stays soft either way.
+function deleteSavedJob(jobId, skipConfirm){
+  const jobs=_getAllSavedJobs();
+  const job=jobs.find(j=>j.id===jobId);
+  if(!job) return;
+  if(!skipConfirm && !confirm('Move saved map "'+(job.name||'(unnamed)')+'" to Trash?\n\nYou can restore it from the dashboard via "Show deleted" next to + New Migration.\n\nTip: hold Shift when clicking ✕ on a map tile to skip this prompt.')) return;
+  // Soft-delete: flag, don't remove. Mirrors the dashboard's deleteJob
+  // behaviour so both UIs are consistent. The job remains in cygenix_jobs
+  // with _deleted=true; the load-map list filters it out.
+  const idx = jobs.findIndex(j => j && j.id === jobId);
+  if (idx < 0) return;
+  jobs[idx]._deleted = true;
+  jobs[idx]._deletedAt = new Date().toISOString();
+  localStorage.setItem('cygenix_jobs',JSON.stringify(jobs));
+  // When the prompt was skipped, the status line is the only feedback the
+  // user gets — so it must say where the map went and how to get it back.
+  showStatus(skipConfirm
+    ? 'Moved to Trash: '+(job.name||'(unnamed)')+' — restore from Dashboard → Show deleted'
+    : 'Moved to Trash: '+(job.name||'(unnamed)'), 'info');
+  // Drop any pin — otherwise restoring the map later brings back a pin the
+  // user can no longer see or clear from the grid.
+  try {
+    const pins = JSON.parse(localStorage.getItem(RM_PIN_KEY)||'[]');
+    if (Array.isArray(pins) && pins.includes(jobId)){
+      localStorage.setItem(RM_PIN_KEY, JSON.stringify(pins.filter(p => p !== jobId)));
+    }
+  } catch {}
+  if(editJobId===jobId){
+    clearEditMode();
+  }
+  renderLoadMapList();
+  // Keep the empty-canvas grid in step whether the delete came from the modal
+  // or from a card's ✕.
+  if (typeof renderRecentMaps === 'function'){
+    try { renderRecentMaps((($('rm-filter')||{}).value)||''); } catch(e){}
+  }
+}
+
+// ── Wasis ─────────────────────────────────────────────────────────────────────
+// Rules are authored in Dashboard → System Parameters → Was/Is value mapping.
+// This page only READS them from localStorage and shows a status banner.
+// The SQL generator below still consumes `wasisRules` to emit CASE WHEN clauses.
+
+function renderWasisStatusBanner(){
+  const banner = $('wasis-status');
+  const textEl = $('wasis-status-text');
+  if (!banner || !textEl) return;
+  banner.style.display = 'flex';
+  if (!wasisRules.length){
+    textEl.textContent = 'No rules loaded';
+    return;
+  }
+  const tables = new Set(wasisRules.map(r => r.srcTable).filter(Boolean));
+  const fields = new Set(wasisRules.map(r => r.srcField).filter(Boolean));
+  textEl.textContent = wasisRules.length + ' rule' + (wasisRules.length===1?'':'s') +
+                       ' · ' + tables.size + ' table' + (tables.size===1?'':'s') +
+                       ' · ' + fields.size + ' field' + (fields.size===1?'':'s');
+}
+
+// Re-read rules from localStorage. Useful if the user edits them in another
+// tab (Dashboard → System Parameters) and wants to pick up the change here
+// without reloading the page.
+function reloadWasisFromStorage(){
+  try { wasisRules = JSON.parse(localStorage.getItem(WASIS_KEY)||'[]'); } catch { wasisRules=[]; }
+  if (!Array.isArray(wasisRules)) wasisRules = [];
+  renderWasisStatusBanner();
+  showStatus('✓ Was/Is reloaded: '+wasisRules.length+' rule'+(wasisRules.length===1?'':'s'), 'info');
+}
+
+// Keep this tab in sync automatically when another tab writes to the key.
+window.addEventListener('storage', e => {
+  if (e.key === WASIS_KEY){
+    try { wasisRules = JSON.parse(e.newValue || '[]'); } catch { wasisRules = []; }
+    if (!Array.isArray(wasisRules)) wasisRules = [];
+    renderWasisStatusBanner();
+  }
+});
+
+// ── WHERE modal ───────────────────────────────────────────────────────────────
+let whereApiKey='';
+function openWhereModal(){
+  if(!srcTable){ alert('Select a source table first.'); return; }
+  whereApiKey=($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
+  if(!whereApiKey){ alert('Enter your Anthropic API key in the Options panel.'); return; }
+  // Render column pills
+  const cols=(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name);
+  $('where-col-pills').innerHTML=cols.map(c=>`<button onclick="appendWherePill('${esc(c)}')" style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:100px;padding:2px 8px;font-size:11px;color:var(--text2);cursor:pointer;font-family:var(--mono)">${esc(c)}</button>`).join('');
+  $('where-chat').innerHTML='';
+  $('where-prompt').value='';
+  // Pre-fill with current WHERE
+  const cur=($('src-where')?.value||'').trim();
+  if(cur) addWhereChatMsg('Current WHERE: '+cur,'assistant');
+  $('where-modal').classList.add('open');
+}
+function closeWhereModal(){ $('where-modal').classList.remove('open'); }
+function appendWherePill(col){ const inp=$('where-prompt'); inp.value=(inp.value+' ['+col+']').trimStart(); inp.focus(); }
+async function sendWherePrompt(){
+  const q=$('where-prompt').value.trim(); if(!q) return;
+  addWhereChatMsg(q,'user');
+  $('where-prompt').value='';
+  const cols=(srcTable.columns||[]).map(c=>typeof c==='string'?c:c.name).join(', ');
+  const system='You are a T-SQL WHERE clause expert. Table: '+srcTable.fullName+'. Columns: '+cols+'. Write only the WHERE condition (no WHERE keyword). Be concise.';
+  const thinking=addWhereChatMsg('…','assistant');
+  try {
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':whereApiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:256,system,messages:[{role:'user',content:q}]})
+    });
+    const data=await res.json();
+    if(!res.ok) throw new Error(data.error?.message||res.statusText);
+    if(thinking) thinking.textContent=(data.content?.[0]?.text||'').trim();
+  } catch(e){ if(thinking) thinking.textContent='Error: '+e.message; }
+}
+function addWhereChatMsg(text, role){
+  const msgs=$('where-chat');
+  const div=document.createElement('div');
+  div.className=role==='user'?'where-msg-user':'where-msg-assistant';
+  div.textContent=text; msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; return div;
+}
+function applyWhere(){
+  // Find last assistant message as the WHERE clause
+  const msgs=$('where-chat').querySelectorAll('.where-msg-assistant');
+  if(msgs.length){
+    const w=cleanCondition(msgs[msgs.length-1].textContent);
+    if(w&&w!=='…'){
+      // Drop the suggestion into the first empty condition row, or add one.
+      // Writing straight to #src-where would be overwritten by the next
+      // syncClauses() call, since the list is now what builds that value.
+      const slot = whereConds.findIndex(c => !cleanCondition(c && c.text));
+      if(slot >= 0) whereConds[slot].text = w;
+      else whereConds.push({ connector:'AND', text:w });
+      renderWhereRows();
+      syncClauses();
+    }
+  }
+  closeWhereModal();
+}
+
+// ── JOIN builder (reused from one-to-many) ────────────────────────────────────
+window._joinState=[];
+window._joinAllTables=[];
+window._joinBaseTable=null;
+window._joinContainerId=null;
+window._onJoinChange=null;
+
+function getJoinAliases(){
+  const aliases={};
+  (window._joinState||[]).filter(j=>j.table&&j.on).forEach((j,i)=>{ aliases[j.table]='s'+(i+1); });
+  return aliases;
+}
+function getJoinSQL(){
+  const aliases=getJoinAliases();
+  return (window._joinState||[]).filter(j=>j.table&&j.on).map(j=>{
+    const a=aliases[j.table];
+    const parts=j.table.split('.');
+    const tblRef=parts.length>1?'['+parts.slice(0,-1).join('].[')+'].['+parts[parts.length-1]+']':'['+j.table+']';
+    const on=rewriteOnMapper(j.on,aliases,j.table);
+    return j.type+' JOIN '+tblRef+' '+a+' ON '+on;
+  }).join('\n');
+}
+function getJoinColumns(){
+  const aliases=getJoinAliases();
+  return (window._joinState||[]).filter(j=>j.table&&j.cols&&j.cols.length).flatMap(j=>{
+    const a=aliases[j.table];
+    return j.cols.map(c=>({name:a+'.'+c.name, rawName:c.name, alias:a, type:c.type, fromJoin:j.table}));
+  });
+}
+function rewriteOnMapper(on,aliases,curTable){
+  const src=window._joinBaseTable;
+  const map={};
+  if(src){ map[src.name.toLowerCase()]=src.fullName?'['+src.schema+'].['+src.name+']':src.name; map[(src.schema+'.'+src.name).toLowerCase()]=map[src.name.toLowerCase()]; }
+  Object.entries(aliases).forEach(([tbl,a])=>{ const parts=tbl.toLowerCase().split('.'); map[parts[parts.length-1]]=a; map[tbl.toLowerCase()]=a; });
+  on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,sc,tb,col)=>{ const alias=map[(sc+'.'+tb).toLowerCase()]||map[tb.toLowerCase()]; return alias?alias+'.['+col+']':'['+sc+'].['+tb+'].['+col+']'; });
+  on=on.replace(/\[([^\]]+)\]\.\[([^\]]+)\]/g,(_,tb,col)=>{ const alias=map[tb.toLowerCase()]; return alias?alias+'.['+col+']':'['+tb+'].['+col+']'; });
+  return on;
+}
+
+// Join table searchable dropdown
+function openJoinTableDrop(i){ filterJoinTableDrop(i,''); const d=document.getElementById('join-tbl-drop-'+i); if(d) d.style.display='block'; }
+function closeJoinTableDrop(i){ const d=document.getElementById('join-tbl-drop-'+i); if(d) d.style.display='none'; }
+function filterJoinTableDrop(i,q){
+  const drop=document.getElementById('join-tbl-drop-'+i); if(!drop) return;
+  const all=window._joinAllTables||[];
+  const low=q.toLowerCase();
+  const hits=low?all.filter(t=>t.label.toLowerCase().includes(low)).slice(0,80):all.slice(0,80);
+  if(!hits.length){ drop.innerHTML='<div style="padding:6px 10px;font-size:11px;color:var(--text3)">'+(all.length?'No match':'No tables loaded')+'</div>'; drop.style.display='block'; return; }
+  drop.innerHTML=hits.map(t=>`<div onclick="selectJoinTable(${i},'${t.value}','${t.label}')" style="padding:5px 10px;font-size:11px;cursor:pointer;font-family:var(--mono);color:var(--text);display:flex;justify-content:space-between" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">`+
+    `<span>${t.label}</span>${t.rowCount!==undefined?`<span style="font-size:10px;color:var(--text3)">${t.rowCount.toLocaleString()}</span>`:''}</div>`).join('');
+  if(all.length>80) drop.innerHTML+=`<div style="padding:4px 10px;font-size:10px;color:var(--text3)">${all.length-80} more — keep typing</div>`;
+  drop.style.display='block';
+}
+function selectJoinTable(i,value,label){
+  const inp=document.getElementById('join-tbl-inp-'+i); if(inp) inp.value=label;
+  closeJoinTableDrop(i);
+  updateJoin(i,'table',value);
+}
+
+function renderJoinBuilder(containerId,allTables,baseTable){
+  const container=document.getElementById(containerId); if(!container) return;
+  const joins=window._joinState;
+  container.innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em">Source JOINs <span style="color:var(--teal)">${joins.length?'('+joins.length+')':''}</span></div>
+      <button onclick="addJoin()" style="background:var(--teal-bg);border:0.5px solid rgba(23,130,124,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--teal);cursor:pointer;font-family:var(--serif)">+ Add JOIN</button>
+    </div>
+    ${joins.length===0?`<div style="font-size:11px;color:var(--text3)">No JOINs — using ${baseTable?baseTable.name:''} only</div>`:''}
+    ${joins.map((j,i)=>`
+      <div style="background:var(--bg3);border:0.5px solid var(--border2);border-radius:var(--r);padding:0.5rem 0.75rem;margin-bottom:0.4rem">
+        <div style="display:grid;grid-template-columns:90px 1fr 22px;gap:0.4rem;align-items:center;margin-bottom:0.4rem">
+          <select onchange="updateJoin(${i},'type',this.value)" style="background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 6px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none">
+            ${['INNER','LEFT','RIGHT','FULL OUTER'].map(t=>`<option value="${t}" ${j.type===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+          <div style="position:relative">
+            <input id="join-tbl-inp-${i}" value="${(()=>{const t=(window._joinAllTables||[]).find(t=>t.value===j.table);return t?t.label:j.table||'';})()}" placeholder="🔍 Search tables…" autocomplete="off" spellcheck="false"
+              onfocus="openJoinTableDrop(${i})" oninput="filterJoinTableDrop(${i},this.value)" onblur="setTimeout(()=>closeJoinTableDrop(${i}),180)"
+              style="width:100%;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;box-sizing:border-box">
+            <div id="join-tbl-drop-${i}" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:0 0 var(--r) var(--r);max-height:180px;overflow-y:auto;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,0.3)"></div>
+          </div>
+          <button onclick="removeJoin(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;line-height:1">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.4rem">
+          <span style="font-size:10px;color:var(--text3);flex-shrink:0">ON</span>
+          <input id="join-on-${i}" value="${j.on||''}" oninput="updateJoin(${i},'on',this.value)"
+            placeholder="e.g. [dbo].[client].[clnum] = [dbo].[matter].[mclient]"
+            class="join-on-input">
+          <button onclick="aiJoinHelp(${i})" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)" title="AI ON clause">🤖 AI</button>
+        </div>
+        ${j.table?`<div style="font-size:10px;color:var(--text3);margin-top:0.3rem;font-family:var(--mono)">${j.cols?j.cols.length+' columns available':'Loading…'}</div>`:''}
+      </div>`).join('')}`;
+}
+
+function addJoin(){ window._joinState.push({type:'INNER',table:'',on:'',cols:[],tableAlias:''}); _rerenderJoins(); }
+function removeJoin(i){ window._joinState.splice(i,1); _rerenderJoins(); if(window._onJoinChange) window._onJoinChange(window._joinState); }
+
+function updateJoin(i,key,val){
+  window._joinState[i][key]=val;
+  if(key==='table'&&val){
+    const tbl=(window._joinAllTables||[]).find(t=>t.value===val);
+    window._joinState[i].cols=tbl?(tbl.columns||[]):[];
+    window._joinState[i].tableAlias=tbl?('['+tbl.schema+'].['+tbl.name+']'):val;
+    _rerenderJoins();
+  }
+  if(key==='on'&&window._onJoinChange) window._onJoinChange(window._joinState);
+}
+
+function _rerenderJoins(){
+  renderJoinBuilder(window._joinContainerId, window._joinAllTables||[], window._joinBaseTable);
+  if(window._onJoinChange) window._onJoinChange(window._joinState);
+}
+
+function initJoinBuilder(containerId,allTables,baseTable,onJoinChange){
+  window._joinContainerId=containerId;
+  window._joinAllTables=allTables;
+  window._joinBaseTable=baseTable;
+  window._onJoinChange=onJoinChange;
+  window._joinState=[];
+  renderJoinBuilder(containerId,allTables,baseTable);
+}
+
+function showJoinColPicker(){
+  const joinCols=getJoinColumns();
+  const list=$('join-col-list'); if(!list) return;
+  const grouped={};
+  joinCols.forEach(c=>{ const g=c.fromJoin||'Joined'; if(!grouped[g]) grouped[g]=[]; grouped[g].push(c); });
+  list.innerHTML=Object.entries(grouped).map(([grp,cols])=>
+    `<div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin:6px 0 2px;font-weight:600">${esc(grp)}</div>`+
+    cols.map(c=>`<button onclick="addJoinColToMapping('${esc(c.name)}','${esc(c.fromJoin||'')}','${esc(c.type||'')}');document.getElementById('join-col-modal').classList.remove('open')"
+      class="src-col-pill" style="width:100%;justify-content:flex-start;cursor:pointer">
+      ${esc(c.name)}<span class="src-col-type">${esc(c.type||'')}</span></button>`).join('')
+  ).join('');
+  $('join-col-modal').classList.add('open');
+}
+
+function addJoinColToMapping(name,fromTable,type){
+  if(columnMapping.find(m=>m.srcCol===name)){ showStatus(name+' already in mapping','err'); return; }
+  const tgtMatch=tgtTable?.columns.find(c=>c.name.toLowerCase()===name.split('.').pop().toLowerCase());
+  columnMapping.push({srcCol:name, tgtCol:tgtMatch?.name||'', transform:'NONE', fromJoin:fromTable, match:tgtMatch?'MEDIUM':''});
+  renderMappingTable();
+  renderSrcColList();
+}
+
+function _updateJoinColBtn(){
+  const btn=$('add-join-col-btn');
+  if(btn) btn.style.display=window._joinState?.some(j=>j.table&&j.cols?.length)?'':'none';
+}
+
+// ── AI JOIN help ──────────────────────────────────────────────────────────────
+async function aiJoinHelp(i){
+  const join=window._joinState[i];
+  if(!join.table){ alert('Select a JOIN table first.'); return; }
+  const apiKey=($('api-key')?.value||localStorage.getItem('cygenix_api_key')||'').trim();
+  if(!apiKey){ alert('Enter your Anthropic API key in the Options panel.'); return; }
+  localStorage.setItem('cygenix_api_key',apiKey);
+  const base=window._joinBaseTable;
+  const baseCols=(base?.columns||[]).map(c=>typeof c==='string'?c:c.name).slice(0,30);
+  const joinCols=(join.cols||[]).map(c=>typeof c==='string'?c:c.name).slice(0,30);
+  const aiPrompt='You are a T-SQL expert. Write the ON clause for a JOIN.\n\n'+
+    'Base table: '+(base?.fullName||'source')+'\nColumns: '+baseCols.join(', ')+'\n\n'+
+    'Join table: '+join.table+'\nColumns: '+joinCols.join(', ')+'\n\n'+
+    'Write ONLY the ON condition (no ON keyword). Use [schema].[table].[column] notation.\nExample: [dbo].[client].[clnum] = [dbo].[matter].[mclient]';
+  const savedOnChange=window._onJoinChange; window._onJoinChange=null;
+  const getInput=()=>document.getElementById('join-on-'+i);
+  const input=getInput(); const oldVal=input?input.value:'';
+  if(input){ input.value='Claude is thinking…'; input.disabled=true; }
+  let text='',errMsg='';
+  try {
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:256,messages:[{role:'user',content:aiPrompt}]})
+    });
+    const data=await res.json();
+    if(!res.ok) throw new Error((data.error?.message||res.statusText)+' ('+res.status+')');
+    text=(data.content?.[0]?.text||'').trim().replace(/^ON\s+/i,'').replace(/;$/,'').trim();
+    if(!text) throw new Error('Empty response from Claude');
+  } catch(e){ errMsg=e.message; }
+  window._onJoinChange=savedOnChange;
+  if(errMsg){ window._joinState[i].on=oldVal; renderJoinBuilder(window._joinContainerId,window._joinAllTables||[],window._joinBaseTable); alert('AI JOIN error: '+errMsg); return; }
+  window._joinState[i].on=text;
+  renderJoinBuilder(window._joinContainerId,window._joinAllTables||[],window._joinBaseTable);
+  if(window._onJoinChange) window._onJoinChange(window._joinState);
+}
+
+// ══ WIP DRAFT — persistence across screen/tab switches ═══════════════════════
+// Keeps the user's in-progress map alive when they navigate to another sidebar
+// page and click back into Object Mapping. Without this, mid-edit work is
+// silently lost — module-scoped state (srcTable, columnMapping, targetTables,
+// etc.) is wiped on every page navigation because the page reloads from
+// scratch. The draft is a thin localStorage snapshot taken on a 2.5s tick and
+// on beforeunload, then re-hydrated by replaying the same selectTable /
+// renderOTMCards / restoreJobMapping paths the saved-job loader uses.
+//
+// Scoped per active project so switching projects doesn't surface a draft from
+// a different project. Cleared on Save, Reset, Discard, and successful Load
+// of a different saved job (because the draft is then redundant or stale).
+//
+// Data shape (all optional except mode + savedAt):
+//   {
+//     mode:        'single' | 'otm',
+//     savedAt:     ISO timestamp,
+//     editJobId:   string | null,
+//     jobNameInput: string,
+//     viewMode:    'table' | 'visual',
+//     srcFullName: 'schema.Table' | '',
+//     tgtFullName: 'schema.Table' | '',           // single mode only
+//     columnMapping: [...],                       // single mode only
+//     targetTables: [{name, pkCol, pkMode, mappings, fks}, ...],  // OTM only
+//     joinState:   [...] | null,
+//     wasisRules:  [...] | null,                  // snapshot if user changed
+//     generatedSQL: {insert, schema, verify}
+//   }
+(function _wipDraftModule(){
+  const PREFIX = 'cygenix_objmap_wip_';
+  const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;  // 7 days
+  const SAVE_INTERVAL_MS = 2500;
+  let _lastSerialized = '';
+  let _restoring = false;
+
+  function _projectScope(){
+    return localStorage.getItem('cygenix_active_project_id') || 'global';
+  }
+  function _key(){
+    return PREFIX + _projectScope();
+  }
+
+  function _captureDraft(){
+    if(_restoring) return null;  // don't snapshot mid-restore (partial state)
+    const hasContent = !!(srcTable || tgtTable ||
+                          (columnMapping && columnMapping.length) ||
+                          (targetTables && targetTables.length));
+    if(!hasContent) return null;
+    return {
+      mode: mode,
+      savedAt: new Date().toISOString(),
+      editJobId: editJobId || null,
+      jobNameInput: ($('job-name-input')?.value || '').trim(),
+      viewMode: window._viewMode || 'table',
+      srcFullName: srcTable?.fullName || '',
+      tgtFullName: tgtTable?.fullName || '',
+      columnMapping: (mode === 'single' && Array.isArray(columnMapping))
+                     ? columnMapping.map(m => ({...m})) : [],
+      targetTables: (mode === 'otm' && Array.isArray(targetTables))
+                    ? targetTables.map(tt => ({
+                        name: tt.fullName,
+                        pkCol: tt.pkCol,
+                        pkMode: tt.pkMode,
+                        mappings: tt.mappings ? tt.mappings.map(m => ({...m})) : [],
+                        fks: tt.fks ? tt.fks.map(f => ({...f})) : []
+                      })) : [],
+      joinState: Array.isArray(window._joinState) ? window._joinState.slice() : null,
+      wasisRules: Array.isArray(wasisRules) && wasisRules.length ? wasisRules : null,
+      // The WHERE clause was never captured here, so a crash-recovery restore
+      // silently dropped it and the regenerated SQL came back without the
+      // filter. Now that it can be several conditions plus a GROUP BY, losing
+      // it costs more, so the draft carries both lists.
+      srcWhereConditions: whereConds.map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols: groupByCols.slice(),
+      generatedSQL: {
+        insert: generatedSQL?.insert || '',
+        schema: generatedSQL?.schema || '',
+        verify: generatedSQL?.verify || ''
+      }
+    };
+  }
+
+  function _wipDraftSave(){
+    try {
+      // A backgrounded tab cannot be mid-edit; skip the capture (a deep copy
+      // of the whole column mapping plus a stringify of the generated SQL,
+      // every 2.5s) until the page is visible again.
+      if (document.hidden) return;
+      const d = _captureDraft();
+      if(!d){
+        // Empty editor — clear any stale draft so a "back to dashboard, return"
+        // round-trip on a blank page doesn't keep showing the restore banner.
+        _wipDraftClearInner();
+        return;
+      }
+      const ser = JSON.stringify(d);
+      if(ser === _lastSerialized) return;
+      _lastSerialized = ser;
+      localStorage.setItem(_key(), ser);
+    } catch(e){ /* quota or serialization failure — drop silently */ }
+  }
+
+  function _wipDraftClearInner(){
+    try {
+      localStorage.removeItem(_key());
+      _lastSerialized = '';
+    } catch(e){}
+  }
+
+  // Exposed globally so clearMapState / resetAll / saveAsJob can reach it.
+  window._wipDraftClear = _wipDraftClearInner;
+  window._wipDraftSave  = _wipDraftSave;
+
+  function _readDraft(){
+    let raw = null;
+    try { raw = localStorage.getItem(_key()); } catch(e){ return null; }
+    if(!raw) return null;
+    let d = null;
+    try { d = JSON.parse(raw); } catch(e){ _wipDraftClearInner(); return null; }
+    if(!d || typeof d !== 'object') return null;
+    if(d.savedAt){
+      const age = Date.now() - new Date(d.savedAt).getTime();
+      if(isFinite(age) && age > MAX_AGE_MS){ _wipDraftClearInner(); return null; }
+    }
+    return d;
+  }
+
+  // Restore the WIP draft. Called from init() when there's no ?edit= param.
+  // Polls until schemas are loaded (same pattern as checkEditMode) then
+  // replays selectTable / OTM-add / mapping restoration.
+  async function _wipDraftRestore(){
+    const d = _readDraft();
+    if(!d) return;
+
+    _restoring = true;
+
+    // Restore mode + view first so the right panel is visible during async load.
+    if(d.mode === 'otm') setMode('otm');
+    else                 setMode('single');
+    if(d.viewMode) setView(d.viewMode);
+
+    // Edit-job tracking — if the draft was on top of a saved job, keep that
+    // linkage so Save writes back to the same record. The banner will be
+    // restored once we surface the editing state.
+    if(d.editJobId){
+      editJobId = d.editJobId;
+      const eb = $('edit-banner');
+      const en = $('edit-job-name');
+      // Look up the saved job name (if it still exists) for the banner label
+      let label = 'Saved job';
+      try {
+        const jobs = JSON.parse(localStorage.getItem('cygenix_jobs')||'[]');
+        const j = jobs.find(x => x.id === d.editJobId);
+        if(j && j.name) label = j.name;
+      } catch(e){}
+      if(eb) eb.style.display = 'flex';
+      if(en) en.textContent = label;
+    }
+
+    if(d.jobNameInput && $('job-name-input')) $('job-name-input').value = d.jobNameInput;
+
+    // Rebuild the WHERE conditions and GROUP BY before any SQL regeneration
+    // below — the generators read the hidden inputs loadClausesFromJob fills.
+    // (The draft stores the same two keys a saved job does.)
+    loadClausesFromJob(d);
+
+    if(Array.isArray(d.wasisRules) && d.wasisRules.length){
+      wasisRules = d.wasisRules;
+      try { renderWasisStatusBanner(); } catch(e){}
+    }
+
+    if(!d.srcFullName){
+      // No table selected — nothing more to hydrate, but keep the draft so the
+      // job-name input and editJobId persist as the user keeps typing.
+      _restoring = false;
+      showStatus('Restored work-in-progress draft','info');
+      return;
+    }
+
+    // Wait for schemas to be ready, same pattern as checkEditMode().
+    let attempts = 0;
+    const tryRestore = setInterval(async () => {
+      attempts++;
+      const srcReady = srcAllTables.length > 0;
+      const tgtNeeded = !!(d.tgtFullName || (d.targetTables && d.targetTables.length));
+      const tgtReady = !tgtNeeded || tgtAllTables.length > 0;
+      if(srcReady && tgtReady){
+        clearInterval(tryRestore);
+        try {
+          const srcT = srcAllTables.find(t =>
+            t.value === d.srcFullName || t.label === d.srcFullName);
+          if(!srcT){
+            showStatus('Draft source table "'+d.srcFullName+'" no longer in schema — discarded','err');
+            _wipDraftClearInner();
+            _restoring = false;
+            return;
+          }
+          await selectTable('src', srcT.value);
+
+          // Restore JOIN state on top of the freshly initialised join builder.
+          if(Array.isArray(d.joinState) && d.joinState.length){
+            const otherTables = srcAllTables.filter(t => t.value !== srcT.value);
+            window._joinAllTables = otherTables;
+            window._joinBaseTable  = srcTable;
+            initJoinBuilder('join-container', otherTables, srcTable, function(){
+              renderSrcColList();
+              if(mode==='single') tryAutoGenSQL();
+            });
+            window._joinState = d.joinState;
+            renderJoinBuilder('join-container', otherTables, srcTable);
+            $('join-panel').style.display = 'block';
+          }
+
+          if(d.mode === 'single' && d.tgtFullName){
+            const tgtT = tgtAllTables.find(t =>
+              t.value === d.tgtFullName || t.label === d.tgtFullName);
+            if(!tgtT){
+              showStatus('Draft target table "'+d.tgtFullName+'" no longer in schema','err');
+            } else {
+              await selectTable('tgt', tgtT.value);
+              if(Array.isArray(d.columnMapping) && d.columnMapping.length){
+                columnMapping = d.columnMapping.map(m => ({...m}));
+                columnMapping = ensureAllTargetCols(columnMapping, tgtTable);
+                $('mapping-wrap').style.display = 'block';
+                $('single-empty').style.display = 'none';
+                renderMappingTable();
+                tryAutoGenSQL();
+              }
+            }
+          } else if(d.mode === 'otm' && Array.isArray(d.targetTables) && d.targetTables.length){
+            for(const stt of d.targetTables){
+              const t = tgtAllTables.find(x =>
+                x.value === stt.name || x.label === stt.name);
+              if(!t) continue;
+              if(targetTables.find(tt => tt.fullName === t.value)) continue;
+              try { await ensureColumns('tgt', t); }
+              catch(e){ continue; }
+              addOTMTargetFromTable(t);
+              const ti = targetTables.length - 1;
+              if(stt.pkMode) targetTables[ti].pkMode = stt.pkMode;
+              if(stt.pkCol)  targetTables[ti].pkCol  = stt.pkCol;
+              if(stt.mappings) targetTables[ti].mappings = ensureAllTargetCols(stt.mappings, targetTables[ti]);
+              if(stt.fks)    targetTables[ti].fks = stt.fks;
+            }
+            renderOTMCards();
+            try { generateOTMSQL(); } catch(e){}
+          }
+
+          // Re-apply view in case panel visibility changed during hydration.
+          if(d.viewMode) setView(d.viewMode);
+          showStatus('Restored work-in-progress draft — keep editing or click "New map" to discard','info');
+        } catch(err){
+          showStatus('Could not fully restore draft: '+(err.message||err),'err');
+        } finally {
+          _restoring = false;
+          // Refresh _lastSerialized so the next tick doesn't re-write an
+          // identical snapshot back to localStorage immediately.
+          try { _lastSerialized = JSON.stringify(_captureDraft() || {}); } catch(e){}
+        }
+      } else if(attempts > 40){
+        clearInterval(tryRestore);
+        _restoring = false;
+        // Keep the draft on disk — connection might be temporarily down. The
+        // next page load will retry restoration.
+      }
+    }, 500);
+  }
+  window._wipDraftRestore = _wipDraftRestore;
+
+  // Background tick — capture the current editor state every few seconds.
+  setInterval(_wipDraftSave, SAVE_INTERVAL_MS);
+
+  // Final save on page hide / navigation. Use pagehide (more reliable than
+  // beforeunload on mobile) AND beforeunload (covers desktop reload/close).
+  window.addEventListener('beforeunload', _wipDraftSave);
+  window.addEventListener('pagehide',     _wipDraftSave);
+})();
+
+// If the currently-loaded job is reverted via the History modal, reload
+// the page so checkEditMode() rebuilds the editor from the new snapshot.
+// This is the simplest correct approach — the editor has too much state
+// (joins, OTM cards, was/is rules, srcWhere) to safely patch in-place.
+window.addEventListener('cygenix:job-reverted', (e) => {
+  if (e.detail && e.detail.jobId === editJobId) {
+    const url = new URL(location.href);
+    url.searchParams.set('edit', editJobId);
+    location.href = url.toString();
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// AUTOSAVE ORCHESTRATOR — for headless invocation from the dashboard's
+// "Generate SQL — Bulk" runner.
+//
+// Activated by ?autosave=1 in the URL. Runs alongside the normal hydration
+// path (checkEditMode → connectSrc/connectTgt → restoreJobMapping →
+// tryAutoGenSQL / generateOTMSQL), polls for the resulting SQL to appear in
+// the `generatedSQL` global, then calls saveAsJob() to write it back to
+// cygenix_jobs. Finally postMessages the result to window.parent so the
+// dashboard runner can advance its queue.
+//
+// Design notes:
+//   • alert() and confirm() are suppressed during the autosave window —
+//     uniqueJobName never confirms, but saveAsJob and generateSingleSQL
+//     both have alert() calls on edge cases we want to capture as failure
+//     reasons rather than block the iframe.
+//   • showStatus(_, 'err') is monkey-patched to also record the message,
+//     so connection errors and "table not found" surface as failure text.
+//   • The watchdog timeout (75s) is shorter than the dashboard's per-job
+//     timeout (90s), so a stuck iframe still has a chance to post a clean
+//     failure message instead of being killed mid-flight.
+// ──────────────────────────────────────────────────────────────────────────
+(function(){
+  const params = new URLSearchParams(location.search);
+  if (params.get('autosave') !== '1') return;
+  const jobId = params.get('edit') || params.get('job');
+  if (!jobId) return;
+
+  let lastErrorMsg = '';
+  let suppressedAlertMsg = '';
+  let reported = false;
+
+  function report(ok, message){
+    if (reported) return;
+    reported = true;
+    try {
+      window.parent.postMessage(
+        { source: 'cygenix-autosave', jobId, ok: !!ok, message: String(message || (ok ? 'Saved' : 'Failed')) },
+        window.location.origin
+      );
+    } catch(e){ /* parent gone — nothing to do */ }
+  }
+
+  // Suppress modal alerts/confirms — record them as potential failure reasons.
+  // We intentionally do NOT wait for the user, since there is no user.
+  const _origAlert = window.alert;
+  const _origConfirm = window.confirm;
+  window.alert = function(msg){ suppressedAlertMsg = String(msg||''); };
+  // saveAsJob doesn't call confirm() directly, but other code paths might.
+  // Auto-decline is the safe default — never destructive on a no.
+  window.confirm = function(){ return false; };
+
+  // Capture the most recent error-level status as a failure reason.
+  // We wrap showStatus rather than reading the DOM so we get the original
+  // message even after the bar auto-clears. Also wrap setBanner so source/
+  // target connection errors (which use setBanner, not showStatus) surface.
+  let _origShowStatus = null;
+  let _origSetBanner = null;
+  function installStatusHook(){
+    if (typeof showStatus === 'function' && !_origShowStatus){
+      _origShowStatus = showStatus;
+      window.showStatus = function(msg, type){
+        if (type === 'err') lastErrorMsg = String(msg||'');
+        return _origShowStatus.apply(this, arguments);
+      };
+    }
+    if (typeof setBanner === 'function' && !_origSetBanner){
+      _origSetBanner = setBanner;
+      window.setBanner = function(side, state, text){
+        if (state === 'err') lastErrorMsg = String(text||'');
+        return _origSetBanner.apply(this, arguments);
+      };
+    }
+  }
+  // showStatus may not be defined yet at this point — try now and again later.
+  installStatusHook();
+
+  function shortenErr(s){
+    s = String(s||'').trim();
+    if (s.length > 220) s = s.slice(0, 217) + '…';
+    return s;
+  }
+
+  function tryFinishSave(){
+    // Need a hydrated editor: an editJobId (set by checkEditMode), a srcTable,
+    // and either a tgtTable (single-map) or one or more targetTables (OTM).
+    if (typeof editJobId === 'undefined' || editJobId !== jobId) return false;
+    if (typeof srcTable === 'undefined' || !srcTable) return false;
+
+    const isOTM = (typeof mode !== 'undefined' && mode === 'otm');
+    if (isOTM){
+      if (typeof targetTables === 'undefined' || !targetTables.length) return false;
+    } else {
+      if (typeof tgtTable === 'undefined' || !tgtTable) return false;
+    }
+
+    // SQL must have been generated by hydration's auto-call.
+    if (typeof generatedSQL === 'undefined' || !generatedSQL.insert) return false;
+
+    // All preconditions met — call the normal save path. Since editJobId is
+    // already set, this is an UPDATE on the existing job. alerts are suppressed.
+    try {
+      if (typeof saveAsJob === 'function'){
+        suppressedAlertMsg = '';
+        saveAsJob();
+        if (suppressedAlertMsg){
+          // saveAsJob bailed before writing — report the alert text as the reason.
+          report(false, 'Save bailed: ' + shortenErr(suppressedAlertMsg));
+          return true;
+        }
+        report(true, 'Saved');
+        return true;
+      }
+    } catch(e){
+      report(false, 'Save threw: ' + shortenErr(e.message || e));
+      return true;
+    }
+    return false;
+  }
+
+  // Poll until either the save finishes, an error is captured, or we time out.
+  const startedAt = Date.now();
+  const WATCHDOG_MS = 75000;
+  const POLL_MS    = 500;
+
+  const tick = setInterval(() => {
+    if (reported){ clearInterval(tick); return; }
+
+    // Make sure the status hook is installed once the script is parsed.
+    installStatusHook();
+
+    // Hard error surfaces from connectSrc/connectTgt/checkEditMode/restoreJobMapping:
+    //   • "Source: not configured…"   (setBanner)
+    //   • "Target: not configured…"   (setBanner)
+    //   • "Source: <fetch error>"     (setBanner — connection refused, auth, etc.)
+    //   • "Target: <fetch error>"     (setBanner)
+    //   • "Job not found: <id>"
+    //   • "Source table … not found — reconnect source DB"
+    //   • "Target table … not found — reconnect target DB"
+    //   • "Schema not loaded — check connections and try again"
+    //   • "Could not load columns for …"
+    // Any of these mean we'll never reach a generated-SQL state, so bail fast.
+    if (lastErrorMsg && /^Source:|^Target:|not configured|not found|Schema not loaded|Could not load|columns never loaded|Failed to load/i.test(lastErrorMsg)){
+      report(false, shortenErr(lastErrorMsg));
+      clearInterval(tick);
+      return;
+    }
+
+    if (tryFinishSave()){
+      clearInterval(tick);
+      return;
+    }
+
+    if (Date.now() - startedAt > WATCHDOG_MS){
+      const reason = lastErrorMsg
+        ? shortenErr(lastErrorMsg)
+        : 'Timed out waiting for SQL generation (schemas loading, mapping not restored, or generation failed silently)';
+      report(false, reason);
+      clearInterval(tick);
+    }
+  }, POLL_MS);
+
+  // Restore alert/confirm when the iframe is torn down (defensive — the
+  // parent destroys the iframe immediately after our postMessage, so this
+  // is mostly belt-and-braces in case the user navigates here directly
+  // with autosave=1 in the URL).
+  window.addEventListener('beforeunload', () => {
+    window.alert = _origAlert;
+    window.confirm = _origConfirm;
+  });
+})();
+
