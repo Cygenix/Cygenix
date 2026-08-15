@@ -146,20 +146,44 @@ app.http('db', {
       const action = req.params.action || body.action || '';
       ctx.log('action:', action);
 
-      ctx.log('Getting credential...');
-      const credential = new DefaultAzureCredential();
-      ctx.log('Getting token...');
-      const tokenResp = await credential.getToken('https://database.windows.net/.default');
-      ctx.log('Token acquired, connecting to SQL...');
+      // This route always connects to SQL_SERVER / SQL_DATABASE with the app's
+      // managed identity — it does not honour a caller-supplied connection
+      // string. A caller that wanted a DIFFERENT database would otherwise be
+      // handed this one's data with no indication anything was wrong, so it
+      // can name what it expects and get an error instead.
+      const wantServer   = String(body.expectServer   || '').trim().toLowerCase();
+      const wantDatabase = String(body.expectDatabase || '').trim().toLowerCase();
+      const haveServer   = String(process.env.SQL_SERVER   || '').trim().toLowerCase();
+      const haveDatabase = String(process.env.SQL_DATABASE || '').trim().toLowerCase();
+      if ((wantServer && wantServer !== haveServer) ||
+          (wantDatabase && wantDatabase !== haveDatabase)) {
+        return {
+          status: 409, headers,
+          body: JSON.stringify({
+            success: false,
+            error: 'This endpoint serves ' + haveDatabase + ' on ' + haveServer +
+                   ', not ' + (wantDatabase || '?') + ' on ' + (wantServer || '?') + '.',
+          }),
+        };
+      }
 
+      // Managed identity, with the driver owning the token's lifetime.
+      //
+      // This previously fetched a token here and pinned it into the pool
+      // config. sql.connect() caches a process-global pool that is reused
+      // across warm invocations, so that token stayed fixed for the life of
+      // the pool — and an Entra access token expires after about an hour. Any
+      // reconnect after that re-authenticated with the stale token and failed
+      // at login, on whichever request happened to trigger it.
+      // 'azure-active-directory-default' hands that job to tedious, which
+      // re-acquires on reconnect.
+      ctx.log('Connecting to SQL as the managed identity:',
+        process.env.SQL_SERVER + '/' + process.env.SQL_DATABASE);
       const pool = await sql.connect({
         server: process.env.SQL_SERVER,
         database: process.env.SQL_DATABASE,
         options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
-        authentication: {
-          type: 'azure-active-directory-access-token',
-          options: { token: tokenResp.token }
-        }
+        authentication: { type: 'azure-active-directory-default' }
       });
       ctx.log('Connected!');
 
@@ -387,7 +411,16 @@ app.http('db', {
               result = { success: false, error: 'execute called without a `sql` field in the request body' };
               break;
             }
-            const r = await pool.request().query(sqlText);
+            // Optional parameters. The Netlify relay forwards db-connect's
+            // .input() calls through here rather than inlining the values into
+            // the SQL, so a schema or table name coming from the browser stays
+            // a bound parameter the whole way down instead of being escaped by
+            // hand somewhere in the middle.
+            const rq = pool.request();
+            for (const prm of (Array.isArray(body.params) ? body.params : [])) {
+              if (prm && typeof prm.name === 'string') rq.input(prm.name, prm.value);
+            }
+            const r = await rq.query(sqlText);
             result = { success: true, rowsAffected: r.rowsAffected?.[0] || 0, recordset: r.recordset || [] };
           } catch (sqlErr) {
             // Some mssql errors carry a `precedingErrors` array with the
