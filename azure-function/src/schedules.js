@@ -179,20 +179,19 @@ function humanize(expr) {
 // ═════════════════════════════════════════════════════════════════════════════
 
 async function runSqlWithManagedIdentity(sqlText, ctx) {
-  const { DefaultAzureCredential } = require('@azure/identity');
   const sql = require('mssql');
 
-  const credential = new DefaultAzureCredential();
-  const tokenResp = await credential.getToken('https://database.windows.net/.default');
-
+  // Driver-owned auth (see index.js): no per-call credential, no pinned
+  // token, and timeouts sized for a serverless database resuming from
+  // auto-pause — a scheduled run is exactly the request most likely to find
+  // the database paused.
   const pool = await new sql.ConnectionPool({
     server: process.env.SQL_SERVER,
     database: process.env.SQL_DATABASE,
     options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
-    authentication: {
-      type: 'azure-active-directory-access-token',
-      options: { token: tokenResp.token }
-    }
+    connectionTimeout: 90000,
+    pool: { max: 10, min: 0, idleTimeoutMillis: 30000, acquireTimeoutMillis: 90000, createTimeoutMillis: 90000 },
+    authentication: { type: 'azure-active-directory-default' }
   }).connect();
 
   try {

@@ -140,7 +140,11 @@ function parseMssqlUrl(connString) {
     password: decodeURIComponent(u.password || ''),
     options: { encrypt, trustServerCertificate: trust, enableArithAbort: true },
     requestTimeout:    15000,
-    connectionTimeout: 10000
+    connectionTimeout: 90000,
+    // 90s, not 10s: an Azure SQL serverless source resuming from
+    // auto-pause takes 30-60s, and tarn's default 30s create cap
+    // must also be lifted or it silently overrides the line above.
+    pool: { max: 10, min: 0, idleTimeoutMillis: 30000, acquireTimeoutMillis: 90000, createTimeoutMillis: 90000 }
   };
 }
 
@@ -152,18 +156,17 @@ async function connectSource(srcConnStr, srcFnUrl, ctx) {
     return new sql.ConnectionPool(cfg).connect();
   }
   if (srcFnUrl) {
-    const { DefaultAzureCredential } = require('@azure/identity');
     ctx.log('[suggest-criteria] sampling via Managed Identity');
-    const credential = new DefaultAzureCredential();
-    const tokenResp  = await credential.getToken('https://database.windows.net/.default');
+    // Driver-owned auth (see index.js): no per-call credential, no pinned
+    // token, and timeouts sized for a serverless database resuming from
+    // auto-pause.
     return new sql.ConnectionPool({
       server:   process.env.SQL_SERVER,
       database: process.env.SQL_DATABASE,
       options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
-      authentication: {
-        type: 'azure-active-directory-access-token',
-        options: { token: tokenResp.token }
-      }
+      connectionTimeout: 90000,
+      pool: { max: 10, min: 0, idleTimeoutMillis: 30000, acquireTimeoutMillis: 90000, createTimeoutMillis: 90000 },
+      authentication: { type: 'azure-active-directory-default' }
     }).connect();
   }
   return null;

@@ -39,7 +39,7 @@
 const mssql = require('mssql');
 const { Client: PgClient } = require('pg');
 const { verifyAuthHeader } = require('./lib/entra-auth');
-const { applyEntraAuth } = require('./lib/sql-entra');
+const { applyEntraAuth, resolveSqlConfig, connectWithRetry } = require('./lib/sql-entra');
 const { shouldRelay, createRelayPool } = require('./lib/azure-sql-relay');
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -157,7 +157,12 @@ async function handleMssql(action, connectionString, database, body) {
   // A no-op for SQL-auth strings, so that path is unchanged. Skipped entirely
   // when relaying, since the Function App does its own authentication.
   try {
-    if (!viaRelay) config = await applyEntraAuth(config, connectionString);
+    // resolveSqlConfig rather than applyEntraAuth: same behaviour for Entra
+    // and SQL-auth strings, but a credential-less string stops falling
+    // through to tedious attempting a SQL login with an empty username
+    // ("Login failed for user ''") and instead uses the app identity when
+    // the environment provides one, or fails with an explanation.
+    if (!viaRelay) config = await resolveSqlConfig(config, connectionString);
   } catch (e) {
     return err('Entra authentication failed: ' + e.message,
       'This runtime has no managed identity, so "Active Directory Default" only works here if '
@@ -177,10 +182,14 @@ async function handleMssql(action, connectionString, database, body) {
       // The relay is shaped like a pool, so everything below is unchanged.
       pool = createRelayPool({ server: config.server, database: config.database });
     } else {
-      // A dedicated pool, NOT mssql.connect(): the latter returns the driver's
-      // process-global pool and silently ignores a different config on a warm
-      // container — two users' requests could end up on the same connection.
-      pool = await new mssql.ConnectionPool(config).connect();
+      // A dedicated pool per connection target, NOT mssql.connect(): the
+      // latter returns the driver's process-global pool and silently ignores
+      // a different config on a warm container — two users' requests could
+      // end up on the same connection. getCachedPool keys on
+      // server|database|user|auth so that isolation holds, while a warm
+      // container stops paying a full TCP+TLS+TDS handshake (300ms-1.5s to
+      // Azure SQL) on every schema click and editor run.
+      pool = await getCachedPool(config);
     }
   } catch (e) {
     return err('Could not connect: ' + e.message, getMssqlHint(e.message));
@@ -422,7 +431,18 @@ async function handleMssql(action, connectionString, database, body) {
         if (/^\s*(DROP\s+DATABASE|TRUNCATE\s+TABLE|DELETE\s+FROM\s*\w+\s*$)/i.test(sqlToRun))
           return err('Destructive statement blocked. Use explicit WHERE clauses.', null, 400);
         const r = await pool.request().query(sqlToRun);
-        result = { success: true, rowsAffected: r.rowsAffected?.[0]||0, recordset: r.recordset||[] };
+        // Unbounded SELECTs used to be buffered whole and then die at
+        // Netlify's 6MB response cap with a generic 502. Cap the rows and
+        // say the result was truncated so the editor can tell the user.
+        const MAX_ROWS = 5000;
+        const rows = r.recordset || [];
+        result = {
+          success: true,
+          rowsAffected: r.rowsAffected?.[0] || 0,
+          recordset: rows.length > MAX_ROWS ? rows.slice(0, MAX_ROWS) : rows,
+          truncated: rows.length > MAX_ROWS,
+          totalRows: rows.length,
+        };
         break;
       }
 
@@ -476,13 +496,30 @@ async function handleMssql(action, connectionString, database, body) {
       case 'rowcounts': {
         const { tables: tableNames } = body;
         if (!Array.isArray(tableNames)) return err('tables array required', null, 400);
-        const counts={};
-        for (const t of tableNames) {
-          try {
-            const safe = t.replace(/[^a-zA-Z0-9_.\[\]]/g,'');
-            const r = await pool.request().query(`SELECT COUNT(*) AS cnt FROM ${safe}`);
-            counts[t] = r.recordset[0].cnt;
-          } catch(e) { counts[t]={error:e.message}; }
+        // One metadata round-trip instead of a serial COUNT(*) scan per
+        // table: N tables used to mean N full scans, which blew Netlify's
+        // function ceiling at ~20 tables. sys.partitions row counts are the
+        // same source schema-tables already reports; they can lag a few rows
+        // behind a heavy in-flight write, which is fine for a display count.
+        const counts = {};
+        try {
+          const r = await pool.request().query(
+            'SELECT s.name AS sch, t.name AS tbl, SUM(p.rows) AS cnt ' +
+            'FROM sys.tables t ' +
+            'JOIN sys.schemas s ON s.schema_id = t.schema_id ' +
+            'JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0,1) ' +
+            'GROUP BY s.name, t.name');
+          const byKey = new Map();
+          for (const row of r.recordset) {
+            byKey.set((row.sch + '.' + row.tbl).toLowerCase(), Number(row.cnt) || 0);
+            byKey.set(row.tbl.toLowerCase(), Number(row.cnt) || 0);
+          }
+          for (const t of tableNames) {
+            const clean = String(t).replace(/[\[\]]/g, '').toLowerCase();
+            counts[t] = byKey.has(clean) ? byKey.get(clean) : { error: 'table not found' };
+          }
+        } catch (e) {
+          for (const t of tableNames) counts[t] = { error: e.message };
         }
         result = { success:true, counts };
         break;
@@ -496,9 +533,38 @@ async function handleMssql(action, connectionString, database, body) {
 
   } catch (e) {
     return err('Query error: ' + e.message, getMssqlHint(e.message));
-  } finally {
-    try { await pool.close(); } catch {}
   }
+  // No pool.close() here: real pools are cached for the warm container (see
+  // getCachedPool) and relay pools' close() is a no-op anyway. Closing per
+  // request was what made every action pay a fresh handshake.
+}
+
+// One pool per distinct connection target, held for the life of the warm
+// container. The key carries everything that decides WHO the connection is —
+// server, port, database, user, auth type — so two users' requests can never
+// share a pool, which is the reason mssql.connect()'s global pool was
+// rejected in the first place. Pools that error are dropped so the next
+// request reconnects; connects retry transient Azure errors (a serverless
+// database resuming from auto-pause takes 30-60s and answers 40613 while it
+// does).
+const _poolCache = new Map();   // key → ConnectionPool
+
+function poolCacheKey(config) {
+  return [
+    config.server, config.port || 1433, config.database,
+    config.user || '', (config.authentication && config.authentication.type) || 'sql',
+  ].join('|');
+}
+
+async function getCachedPool(config) {
+  const key = poolCacheKey(config);
+  const hit = _poolCache.get(key);
+  if (hit && hit.connected) return hit;
+  _poolCache.delete(key);
+  const pool = await connectWithRetry(mssql, config, { log: (m) => console.log('[db-connect]', m) });
+  pool.on('error', () => { _poolCache.delete(key); try { pool.close(); } catch {} });
+  _poolCache.set(key, pool);
+  return pool;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -795,13 +861,25 @@ async function handlePostgres(action, connectionString, database, body) {
       case 'rowcounts': {
         const { tables: tableNames } = body;
         if (!Array.isArray(tableNames)) return err('tables array required', null, 400);
+        // One catalog query instead of a COUNT(*) scan per table — a pg
+        // Client is a single connection, so the old loop was strictly
+        // serial. live-tuple counts come from the stats collector and can
+        // lag a vacuum behind reality, which is fine for a display count.
         const counts = {};
-        for (const t of tableNames) {
-          try {
-            const safe = t.replace(/[^a-zA-Z0-9_."]/g, '');
-            const r = await client.query(`SELECT COUNT(*)::bigint AS cnt FROM ${safe}`);
-            counts[t] = parseInt(r.rows[0].cnt);
-          } catch (e) { counts[t] = { error: e.message }; }
+        try {
+          const r = await client.query(
+            'SELECT schemaname AS sch, relname AS tbl, n_live_tup AS cnt FROM pg_stat_user_tables');
+          const byKey = new Map();
+          for (const row of r.rows) {
+            byKey.set((row.sch + '.' + row.tbl).toLowerCase(), parseInt(row.cnt) || 0);
+            byKey.set(row.tbl.toLowerCase(), parseInt(row.cnt) || 0);
+          }
+          for (const t of tableNames) {
+            const clean = String(t).replace(/"/g, '').toLowerCase();
+            counts[t] = byKey.has(clean) ? byKey.get(clean) : { error: 'table not found' };
+          }
+        } catch (e) {
+          for (const t of tableNames) counts[t] = { error: e.message };
         }
         result = { success: true, counts };
         break;

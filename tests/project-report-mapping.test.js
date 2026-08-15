@@ -11,7 +11,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(__dirname + '/../public/project-builder.html', 'utf8');
+const html = (fs.readFileSync(__dirname + '/../public/project-builder.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/project-builder-app.js', 'utf8'));
 const start = html.indexOf('  const allMappings = [];');
 const end   = html.indexOf('  // ── Aggregate Was/Is rules across all migration steps');
 if (start < 0 || end < 0 || end < start) {

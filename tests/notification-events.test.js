@@ -10,7 +10,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8');
+const html = (fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8'));
 const start = html.indexOf('// ── Which run events are allowed to notify ─');
 const end   = html.indexOf('// ── Schedule modal (create + edit) ─');
 if (start < 0 || end < 0 || end < start) {

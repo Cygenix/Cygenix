@@ -179,11 +179,18 @@ app.http('db', {
       // re-acquires on reconnect.
       ctx.log('Connecting to SQL as the managed identity:',
         process.env.SQL_SERVER + '/' + process.env.SQL_DATABASE);
+      // Timeouts sized for Azure SQL serverless: a database resuming from
+      // auto-pause takes 30-60s, and mssql's defaults (15s connect, 15s
+      // request) plus tarn's 30s pool-create cap all sit under that window —
+      // so the first request after a pause was guaranteed to time out.
       const pool = await sql.connect({
         server: process.env.SQL_SERVER,
         database: process.env.SQL_DATABASE,
         options: { encrypt: true, trustServerCertificate: false, enableArithAbort: true },
-        authentication: { type: 'azure-active-directory-default' }
+        authentication: { type: 'azure-active-directory-default' },
+        connectionTimeout: 90000,
+        requestTimeout: 120000,
+        pool: { max: 10, min: 0, idleTimeoutMillis: 30000, acquireTimeoutMillis: 90000, createTimeoutMillis: 90000 },
       });
       ctx.log('Connected!');
 
@@ -217,7 +224,12 @@ app.http('db', {
             // BASE TABLEs with row counts
             pool.request().query(`SELECT t.TABLE_SCHEMA, t.TABLE_NAME, COALESCE(p.rows,0) AS row_count FROM INFORMATION_SCHEMA.TABLES t LEFT JOIN sys.tables st ON st.name=t.TABLE_NAME AND SCHEMA_NAME(st.schema_id)=t.TABLE_SCHEMA LEFT JOIN sys.partitions p ON p.object_id=st.object_id AND p.index_id IN(0,1) WHERE t.TABLE_TYPE='BASE TABLE' ORDER BY t.TABLE_SCHEMA,t.TABLE_NAME`),
             // Columns (covers tables AND views — INFORMATION_SCHEMA.COLUMNS includes both)
-            pool.request().query(`SELECT c.TABLE_SCHEMA,c.TABLE_NAME,c.COLUMN_NAME,c.DATA_TYPE,c.CHARACTER_MAXIMUM_LENGTH,c.NUMERIC_PRECISION,c.NUMERIC_SCALE,c.IS_NULLABLE,c.ORDINAL_POSITION,COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA+'.'+c.TABLE_NAME),c.COLUMN_NAME,'IsIdentity') AS is_identity FROM INFORMATION_SCHEMA.COLUMNS c ORDER BY c.TABLE_SCHEMA,c.TABLE_NAME,c.ORDINAL_POSITION`),
+            // NB: previously used COLUMNPROPERTY(..., 'IsIdentity') per row —
+            // a scalar-function call per column, 100k+ of them on a wide
+            // schema, which pushed this past the 15s request timeout. The
+            // set-based join below is the same fix db-connect.js already
+            // carries for its schema-columns action.
+            pool.request().query(`SELECT c.TABLE_SCHEMA,c.TABLE_NAME,c.COLUMN_NAME,c.DATA_TYPE,c.CHARACTER_MAXIMUM_LENGTH,c.NUMERIC_PRECISION,c.NUMERIC_SCALE,c.IS_NULLABLE,c.ORDINAL_POSITION,CAST(COALESCE(sc.is_identity,0) AS INT) AS is_identity FROM INFORMATION_SCHEMA.COLUMNS c LEFT JOIN sys.schemas ss ON ss.name=c.TABLE_SCHEMA LEFT JOIN sys.tables so ON so.name=c.TABLE_NAME AND so.schema_id=ss.schema_id LEFT JOIN sys.columns sc ON sc.object_id=so.object_id AND sc.name=c.COLUMN_NAME ORDER BY c.TABLE_SCHEMA,c.TABLE_NAME,c.ORDINAL_POSITION`),
             // Primary keys
             pool.request().query(`SELECT tc.TABLE_SCHEMA,tc.TABLE_NAME,kcu.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu ON tc.CONSTRAINT_NAME=kcu.CONSTRAINT_NAME AND tc.TABLE_SCHEMA=kcu.TABLE_SCHEMA WHERE tc.CONSTRAINT_TYPE='PRIMARY KEY'`),
             // VIEWs (without bodies — keep payload small)
@@ -496,15 +508,29 @@ app.http('db', {
         }
         case 'rowcounts': {
           const counts={};
-          // Quote a possibly schema-qualified identifier: strip one level of
-          // existing brackets per dot-separated part, then re-wrap with
-          // internal ] doubled — only a well-formed identifier reaches SQL.
-          const quoteIdent = (name) => String(name || '').split('.').map(p => {
-            let s = String(p);
-            if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1).replace(/\]\]/g, ']');
-            return '[' + s.replace(/\]/g, ']]') + ']';
-          }).join('.');
-          for (const t of body.tables) { try { const safe=quoteIdent(t); const r=await pool.request().query(`SELECT COUNT(*) AS cnt FROM ${safe}`); counts[t]=r.recordset[0].cnt; } catch(e){counts[t]={error:e.message};} }
+          // One metadata round-trip instead of a serial COUNT(*) scan per
+          // table — N tables used to mean N full scans against a 120s request
+          // budget. sys.partitions is the same source the schema action's
+          // row_count column already uses.
+          try {
+            const r = await pool.request().query(
+              'SELECT s.name AS sch, t.name AS tbl, SUM(p.rows) AS cnt ' +
+              'FROM sys.tables t ' +
+              'JOIN sys.schemas s ON s.schema_id = t.schema_id ' +
+              'JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0,1) ' +
+              'GROUP BY s.name, t.name');
+            const byKey = new Map();
+            for (const row of r.recordset) {
+              byKey.set((row.sch + '.' + row.tbl).toLowerCase(), Number(row.cnt) || 0);
+              byKey.set(row.tbl.toLowerCase(), Number(row.cnt) || 0);
+            }
+            for (const t of body.tables) {
+              const clean = String(t).replace(/[\[\]]/g, '').toLowerCase();
+              counts[t] = byKey.has(clean) ? byKey.get(clean) : { error: 'table not found' };
+            }
+          } catch (e) {
+            for (const t of body.tables) counts[t] = { error: e.message };
+          }
           result = { success:true, counts };
           break;
         }

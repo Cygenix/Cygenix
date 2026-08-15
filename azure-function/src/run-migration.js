@@ -48,7 +48,7 @@ const sql = require('mssql');
 // See azure-function/src/notify.js.
 const { sendNotification } = require('./notify');
 const { dispatchConnectors } = require('./connectors');
-const { resolveSqlConfig, isEntraConn } = require('./sql-entra');
+const { resolveSqlConfig, isEntraConn, connectWithRetry } = require('./sql-entra');
 
 // ── Cosmos client (lazy singleton, matches index.js pattern) ──────────────
 let _cosmos = null;
@@ -102,7 +102,10 @@ function parseMssqlUrl(connStr) {
     // No 15-min cap on Flex Consumption with functionTimeout:-1, so we
     // can let a single query run for hours if it genuinely needs to.
     requestTimeout:    14_400_000,    // 4h
-    connectionTimeout: 30_000,
+    // 90s, not 30s: an Azure SQL serverless database resuming from
+    // auto-pause takes 30-60s, and a scheduled run is exactly the request
+    // most likely to find it paused.
+    connectionTimeout: 90_000,
   };
 }
 const isHttpUrl   = s => /^https?:\/\//i.test(s || '');
@@ -486,10 +489,12 @@ async function openPool(connStr) {
     // allowed hours, and falling back to the driver default here would kill
     // long runs that used to work.
     const cfg = await resolveSqlConfig(
-      { requestTimeout: 14_400_000, connectionTimeout: 30_000 }, '');
-    const pool = new sql.ConnectionPool(cfg);
-    await pool.connect();
-    return pool;
+      { requestTimeout: 14_400_000, connectionTimeout: 90_000 }, '');
+    // connectWithRetry adds tarn's pool-create caps (which would otherwise
+    // silently cut every connect off at 30s regardless of connectionTimeout)
+    // and retries the transient errors a resuming serverless database
+    // answers with — 40613 above all.
+    return connectWithRetry(sql, cfg, { log: console.log });
   }
   // An Entra-only Azure SQL server rejects SQL logins outright, so the
   // username/password parseMssqlUrl produces is useless there. resolveSqlConfig
@@ -497,9 +502,7 @@ async function openPool(connStr) {
   // none connects as this app's managed identity, and an explicit
   // ?authentication= mode is honoured. SQL-auth strings are unchanged.
   const cfg = await resolveSqlConfig(parseMssqlUrl(connStr), connStr);
-  const pool = new sql.ConnectionPool(cfg);
-  await pool.connect();
-  return pool;
+  return connectWithRetry(sql, cfg, { log: console.log });
 }
 
 // ── Server-side conversion report builder (ported verbatim) ───────────────

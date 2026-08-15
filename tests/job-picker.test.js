@@ -12,7 +12,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8');
+const html = (fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8'));
 const start = html.indexOf('// ══════════════════════════════════════════════════════════════════════════\n// TASK AGENT — job picker');
 const end   = html.indexOf('// ══════════════════════════════════════════════════════════════════════════\n// NOTIFICATIONS VIEW');
 if (start < 0 || end < 0 || end < start) {

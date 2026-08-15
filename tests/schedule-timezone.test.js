@@ -145,7 +145,7 @@ check('midnight in a zone does not become hour 24',
 // same answer as the backend's conversion, or a one-shot and the cron beside
 // it would mean different moments.
 {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8');
+  const html = (fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard.html'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, '..', 'public', 'dashboard-app.js'), 'utf8'));
   const a = html.indexOf('// ── One-shot schedules and the missing year ─');
   const b = html.indexOf('function ta_parseCronIntoUI(cronExpr, schedule) {');
   if (a < 0 || b < 0) { check('could locate ta_onceIso', false); }

@@ -13,7 +13,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const html  = fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8');
+const html  = (fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8'));
 const start = html.indexOf('// ── Server-side delivery ─');
 const end   = html.indexOf('// ── Which run events are allowed to notify ─');
 if (start < 0 || end < 0 || end < start) {

@@ -12,7 +12,7 @@
 const fs = require('fs');
 const vm = require('vm');
 
-const html = fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8');
+const html = (fs.readFileSync(__dirname + '/../public/dashboard.html', 'utf8') + '\n' + fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8'));
 
 function slice(from, to, what) {
   const a = html.indexOf(from), b = html.indexOf(to);

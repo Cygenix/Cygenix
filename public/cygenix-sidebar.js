@@ -1025,8 +1025,16 @@
     hideTopbarUserPill();
     ensureA11y();
     // Preload the Drive overlay so the first click is instant (skip the
-    // co-worker page, which ships its own native Drive).
-    if (!/\/coworker\.html?$/.test(location.pathname)) ensureDriveModal();
+    // co-worker page, which ships its own native Drive). Idle-scheduled the
+    // same way loadDriveSyncWhenIdle already is: injecting 53KB of modal at
+    // DOMContentLoaded competed with every page's first paint, and a click
+    // that beats the idle callback still works — the click path calls
+    // ensureDriveModal(cb) itself and waits for the script's load event.
+    if (!/\/coworker\.html?$/.test(location.pathname)) {
+      const warm = () => ensureDriveModal();
+      if (window.requestIdleCallback) window.requestIdleCallback(warm, { timeout: 6000 });
+      else setTimeout(warm, 2500);
+    }
   }
 
   // The Project Planner badge module lived here. It counted plan items due

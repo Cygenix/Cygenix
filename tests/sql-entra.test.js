@@ -247,8 +247,11 @@ console.log('Azure SQL — Microsoft Entra authentication\n');
 
     const dbc = fs.readFileSync(
       path.join(__dirname, '..', 'netlify', 'functions', 'db-connect.js'), 'utf8');
+    // db-connect moved from applyEntraAuth to resolveSqlConfig so a
+    // credential-less string uses the app identity (or fails with an
+    // explanation) instead of attempting a SQL login with an empty username.
     check('Connect & test applies it too, so the string can be verified in the UI',
-      /require\('\.\/lib\/sql-entra'\)/.test(dbc) && /applyEntraAuth\(config, connectionString\)/.test(dbc));
+      /require\('\.\/lib\/sql-entra'\)/.test(dbc) && /resolveSqlConfig\(config, connectionString\)/.test(dbc));
   }
 
   // @azure/identity has to be declared, not merely present transitively, or
