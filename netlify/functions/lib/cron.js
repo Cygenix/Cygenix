@@ -48,10 +48,62 @@ function parseCronField(s, min, max) {
   return [...values];
 }
 
+// ── Timezones ─────────────────────────────────────────────────────────────
+// A schedule stores the IANA zone the user picked, but nothing used to read
+// it: the cron was matched against the server's own clock, which on Netlify
+// is UTC. So "daily at 02:00, Europe/London" fired at 02:00 UTC — 03:00 in
+// London for the seven months of the year that London is on BST. Every
+// schedule was an hour out through British Summer Time, and the timezone
+// dropdown was decoration.
+//
+// Done without a dependency, using Intl. Two conversions are needed:
+// UTC instant → wall clock in a zone (to test the cron against), and wall
+// clock in a zone → UTC instant (to store as nextRunAt).
+
+// The wall-clock fields `date` shows in `tz`.
+function zonedParts(date, tz) {
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const p = {};
+  for (const part of f.formatToParts(date)) p[part.type] = part.value;
+  return {
+    year: +p.year, month: +p.month, day: +p.day,
+    // Intl can emit hour 24 for midnight under hour12:false.
+    hour: (+p.hour) % 24, minute: +p.minute, second: +p.second,
+  };
+}
+
+// How far ahead of UTC `tz` is at `date`, in milliseconds.
+function zoneOffsetMs(date, tz) {
+  const p = zonedParts(date, tz);
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - date.getTime();
+}
+
+// A wall-clock reading in `tz` → the UTC instant it refers to.
+//
+// The offset has to be sampled at the answer, not the guess, or a time within
+// an hour of a DST boundary lands an hour out. Sample at the guess, correct,
+// then re-sample and correct again if the offset moved.
+function zonedTimeToUtc({ year, month, day, hour, minute }, tz) {
+  const guess = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const off1 = zoneOffsetMs(new Date(guess), tz);
+  let ms = guess - off1;
+  const off2 = zoneOffsetMs(new Date(ms), tz);
+  if (off2 !== off1) ms = guess - off2;
+  return new Date(ms);
+}
+
 // Searches forward minute-by-minute up to 60 days. Cheap, avoids DST and
 // month-rollover edge cases. Returns an ISO string, or null if the cron is
 // malformed or no occurrence exists within 60 days.
-function computeNextRun(cronExpr, fromDate) {
+//
+// `tz` is the IANA zone the cron's fields are expressed in. Omitted (or
+// unrecognised) means UTC, which is what every schedule effectively used
+// before this argument existed.
+function computeNextRun(cronExpr, fromDate, tz) {
   try {
     const parts = String(cronExpr || '').trim().split(/\s+/);
     if (parts.length !== 5) return null;
@@ -62,19 +114,40 @@ function computeNextRun(cronExpr, fromDate) {
     const mos   = parseCronField(moStr, 1, 12);
     const dows  = parseCronField(dowStr, 0, 6);
 
-    const start = new Date(fromDate.getTime() + 60_000); // start from next minute
-    start.setSeconds(0, 0);
-    const limit = new Date(start.getTime() + 60 * 24 * 60 * 60_000);
-    for (let t = start; t < limit; t = new Date(t.getTime() + 60_000)) {
-      if (mins  && !mins.includes(t.getMinutes())) continue;
-      if (hours && !hours.includes(t.getHours())) continue;
-      if (doms  && !doms.includes(t.getDate())) continue;
-      if (mos   && !mos.includes(t.getMonth() + 1)) continue;
-      if (dows  && !dows.includes(t.getDay())) continue;
-      return t.toISOString();
+    const zone = validZone(tz) ? tz : 'UTC';
+
+    // Scan in the zone's wall clock rather than the server's. The cursor is a
+    // Date whose UTC fields hold the zone's local reading, so the getUTC*
+    // accessors below ARE the wall clock — no Intl call inside the loop,
+    // which would turn 86,400 iterations into seconds of work.
+    const from  = new Date(fromDate.getTime() + 60_000);   // start next minute
+    const p     = zonedParts(from, zone);
+    let cursor  = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, 0);
+    const limit = cursor + 60 * 24 * 60 * 60_000;
+
+    for (; cursor < limit; cursor += 60_000) {
+      const t = new Date(cursor);
+      if (mins  && !mins.includes(t.getUTCMinutes())) continue;
+      if (hours && !hours.includes(t.getUTCHours())) continue;
+      if (doms  && !doms.includes(t.getUTCDate())) continue;
+      if (mos   && !mos.includes(t.getUTCMonth() + 1)) continue;
+      if (dows  && !dows.includes(t.getUTCDay())) continue;
+      // Match found in wall-clock terms — turn it back into a real instant.
+      return zonedTimeToUtc({
+        year: t.getUTCFullYear(), month: t.getUTCMonth() + 1, day: t.getUTCDate(),
+        hour: t.getUTCHours(), minute: t.getUTCMinutes(),
+      }, zone).toISOString();
     }
     return null;
   } catch { return null; }
 }
 
-module.exports = { computeNextRun, parseCronField };
+// An unknown zone name would make every Intl call throw. Fall back to UTC
+// rather than taking the whole scheduler down over one bad row.
+function validZone(tz) {
+  if (!tz || typeof tz !== 'string') return false;
+  try { new Intl.DateTimeFormat('en-US', { timeZone: tz }); return true; }
+  catch { return false; }
+}
+
+module.exports = { computeNextRun, parseCronField, zonedTimeToUtc, zoneOffsetMs, validZone };
