@@ -170,6 +170,12 @@ body.cyg-collapsed{padding-left:54px}
 .rm-new:hover{border-color:var(--accent);color:var(--accent);background:var(--bg2)}
 .rm-new .plus{font-size:22px;display:block;margin-bottom:6px;font-weight:400}
 .panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden;margin-bottom:1rem}
+/* A panel containing a table search must not clip: .search-drop is absolutely
+   positioned inside it, so overflow:hidden cropped the results to whatever
+   room was left below the input — often one row, which made finding a table
+   by typing nearly impossible. Only panels with a search opt out; every other
+   panel keeps the clipping that rounds its corners. */
+.panel:has(.search-wrap){overflow:visible}
 .panel-head{padding:0.875rem 1.25rem;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:0.75rem}
 .panel-title{font-size:13px;font-weight:600;color:var(--text)}
 .panel-body{padding:1rem 1.25rem}
@@ -230,7 +236,29 @@ body.cyg-collapsed{padding-left:54px}
 
 /* ── Search dropdown ── */
 .search-wrap{position:relative}
-.search-drop{position:absolute;top:calc(100% + 2px);left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:220px;overflow-y:auto;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
+/* The magnifier used to be part of the input's placeholder text, so it
+   vanished the moment you typed and was never clickable. It is a real button
+   now: it opens the full table list. */
+.search-icon-btn{
+  position:absolute;left:1px;top:1px;bottom:1px;width:30px;z-index:2;
+  display:flex;align-items:center;justify-content:center;
+  background:none;border:none;border-radius:var(--r) 0 0 var(--r);
+  font-size:13px;line-height:1;cursor:pointer;color:var(--text3);
+}
+.search-icon-btn:hover{background:var(--bg3)}
+.search-wrap input.form-input{padding-left:34px}
+
+/* Table picker modal */
+.tp-row{
+  display:flex;align-items:center;gap:0.6rem;width:100%;text-align:left;
+  padding:7px 10px;border-radius:var(--r);border:0.5px solid transparent;
+  background:none;color:var(--text);font-family:var(--mono);font-size:12px;cursor:pointer;
+}
+.tp-row:hover{background:var(--bg3);border-color:var(--border2)}
+.tp-row.current{background:var(--accent-glow);border-color:rgba(74,91,214,0.35)}
+.tp-rows{margin-left:auto;font-size:10.5px;color:var(--text3);flex-shrink:0}
+.tp-mark{background:rgba(245,158,11,0.28);border-radius:2px}
+.search-drop{position:absolute;top:calc(100% + 2px);left:0;right:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);max-height:320px;overflow-y:auto;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,0.4)}
 .drop-item{padding:6px 10px;font-size:11px;font-family:var(--mono);cursor:pointer;display:flex;justify-content:space-between;align-items:center;color:var(--text)}
 .drop-item:hover,.drop-item.active{background:var(--accent-glow);color:var(--accent)}
 .drop-empty{padding:8px 10px;font-size:11px;color:var(--text3);font-style:italic}
@@ -533,7 +561,9 @@ document.addEventListener('DOMContentLoaded', function(){
         </div>
         <div class="panel-body" id="src-panel-body">
           <div class="search-wrap" style="margin-bottom:0.75rem;position:relative">
-            <input id="src-table-input" class="form-input" placeholder="🔍 Search source tables…" autocomplete="off"
+            <button type="button" class="search-icon-btn" onclick="event.stopPropagation();openTablePicker('src')"
+                    title="Browse all source tables">🔍</button>
+            <input id="src-table-input" class="form-input" placeholder="Search source tables…" autocomplete="off"
               oninput="filterDrop('src');ddlCheckCreateVisibility('src')" onfocus="openDrop('src')" onclick="event.stopPropagation()">
             <div class="search-drop" id="src-drop" style="display:none"></div>
             <!-- Create-table affordance: appears when the typed name doesn't exist in the schema cache
@@ -647,7 +677,9 @@ document.addEventListener('DOMContentLoaded', function(){
           <div class="panel-body">
             <!-- Target table picker -->
             <div class="search-wrap" style="margin-bottom:1rem;position:relative">
-              <input id="tgt-table-input" class="form-input" placeholder="🔍 Search target tables…" autocomplete="off"
+              <button type="button" class="search-icon-btn" onclick="event.stopPropagation();openTablePicker('tgt')"
+                      title="Browse all target tables">🔍</button>
+              <input id="tgt-table-input" class="form-input" placeholder="Search target tables…" autocomplete="off"
                 oninput="filterDrop('tgt');ddlCheckCreateVisibility('tgt')" onfocus="openDrop('tgt')">
               <div class="search-drop" id="tgt-drop" style="display:none"></div>
               <!-- Create-table affordance for target — appears when source is selected and typed
@@ -770,7 +802,9 @@ document.addEventListener('DOMContentLoaded', function(){
           </div>
           <div class="panel-body" style="padding-bottom:0.5rem">
             <div class="search-wrap" style="max-width:380px;margin-bottom:1rem">
-              <input id="otm-tgt-input" class="form-input" placeholder="🔍 Search target tables to add…" autocomplete="off"
+              <button type="button" class="search-icon-btn" onclick="event.stopPropagation();openTablePicker('otm-tgt')"
+                      title="Browse all target tables">🔍</button>
+              <input id="otm-tgt-input" class="form-input" placeholder="Search target tables to add…" autocomplete="off"
                 oninput="filterDrop('otm-tgt')" onfocus="openDrop('otm-tgt')">
               <div class="search-drop" id="otm-tgt-drop" style="display:none"></div>
             </div>
@@ -859,6 +893,31 @@ document.addEventListener('DOMContentLoaded', function(){
         <button class="btn btn-ghost btn-sm" onclick="closeWhereModal()">Cancel</button>
         <button class="btn btn-primary btn-sm" onclick="applyWhere()">Apply WHERE clause</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Table picker modal ══ -->
+<!-- The inline dropdown is anchored inside .panel, which sets overflow:hidden
+     for its rounded corners — so the list was clipped to whatever room was
+     left below the input, often a single row. This modal shows every table at
+     once with room to scroll, and is what the magnifier button opens. -->
+<div class="modal-overlay" id="tbl-picker-modal" onclick="if(event.target===this) closeTablePicker()">
+  <div class="modal" style="width:560px">
+    <div class="modal-head">
+      <div>
+        <div style="font-size:14px;font-weight:600" id="tbl-picker-title">Tables</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px" id="tbl-picker-sub"></div>
+      </div>
+      <button onclick="closeTablePicker()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;line-height:1">✕</button>
+    </div>
+    <div style="padding:0.875rem 1.25rem 0;flex-shrink:0">
+      <input id="tbl-picker-filter" class="form-input" style="font-family:var(--mono)"
+             placeholder="Filter tables…" autocomplete="off"
+             oninput="renderTablePicker()" onkeydown="tablePickerKey(event)">
+    </div>
+    <div class="modal-body">
+      <div id="tbl-picker-list" style="display:flex;flex-direction:column;gap:2px"></div>
     </div>
   </div>
 </div>
@@ -1950,6 +2009,119 @@ function renderDrop(which, q){
   </div>`).join('');
   if(all.length>80) drop.innerHTML+=`<div class="drop-empty">${all.length-80} more — type to filter</div>`;
 }
+// ── Table picker modal ────────────────────────────────────────────────────
+// Typing into the inline box only ever showed a row or two: the dropdown is
+// positioned inside .panel, which sets overflow:hidden for its rounded
+// corners, so it was clipped to whatever space was left below the input. The
+// magnifier now opens the whole list in a modal with room to scroll — every
+// table, not the inline list's first 80.
+let _tpWhich = 'src';
+
+function tpTablesFor(which){
+  return (which === 'src' ? srcAllTables : tgtAllTables) || [];
+}
+
+// The table currently chosen for this side, so the picker can mark it.
+function tpCurrentValue(which){
+  if(which === 'src') return srcTable ? srcTable.value : '';
+  if(which === 'tgt') return tgtTable ? tgtTable.value : '';
+  return '';   // OTM adds tables rather than selecting one
+}
+
+function openTablePicker(which){
+  _tpWhich = which;
+  const tables = tpTablesFor(which === 'otm-tgt' ? 'tgt' : which);
+  const title = $('tbl-picker-title');
+  if(title) title.textContent = which === 'src' ? 'Source tables' : 'Target tables';
+  const filt = $('tbl-picker-filter');
+  if(filt){
+    // Carry over whatever was typed inline, so clicking the magnifier
+    // mid-search continues the search instead of restarting it.
+    const inlineId = which === 'src' ? 'src-table-input'
+                   : which === 'tgt' ? 'tgt-table-input' : 'otm-tgt-input';
+    filt.value = ($(inlineId)?.value || '').trim();
+    filt.placeholder = tables.length ? 'Filter ' + tables.length + ' tables…' : 'Filter tables…';
+  }
+  // Close the inline dropdown so it can't sit on top of the overlay.
+  ['src','tgt','otm-tgt'].forEach(w => { const d = $(w+'-drop'); if(d) d.style.display='none'; });
+  renderTablePicker();
+  $('tbl-picker-modal').classList.add('open');
+  if(filt) try { filt.focus(); filt.select(); } catch {}
+}
+
+function closeTablePicker(){
+  const m = $('tbl-picker-modal');
+  if(m) m.classList.remove('open');
+}
+
+function renderTablePicker(){
+  const list = $('tbl-picker-list');
+  const sub  = $('tbl-picker-sub');
+  if(!list) return;
+  const all = tpTablesFor(_tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich);
+  if(!all.length){
+    list.innerHTML = '<div class="drop-empty">Connect the database first — no tables loaded.</div>';
+    if(sub) sub.textContent = '';
+    return;
+  }
+  const q = ($('tbl-picker-filter')?.value || '').trim().toLowerCase();
+  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)) : all;
+  if(sub){
+    sub.textContent = q
+      ? hits.length + ' of ' + all.length + ' tables'
+      : all.length + ' table' + (all.length === 1 ? '' : 's') + ' — click one to pick it';
+  }
+  if(!hits.length){
+    list.innerHTML = '<div class="drop-empty">No table matches “' + esc(q) + '”.</div>';
+    return;
+  }
+  const current = tpCurrentValue(_tpWhich);
+  // No cap here — the point of the modal is that you can scroll the lot.
+  list.innerHTML = hits.map(t => `
+    <button type="button" class="tp-row${t.value === current ? ' current' : ''}"
+            onclick="pickTableFromPicker('${escAttr(t.value)}')">
+      <span>${tpHighlight(t.label || '', q)}</span>
+      <span class="tp-rows">${(t.rowCount || 0).toLocaleString()} rows</span>
+    </button>`).join('');
+}
+
+// Mark the matched substring so it is obvious why a row is in the list.
+function tpHighlight(label, q){
+  if(!q) return esc(label);
+  const i = label.toLowerCase().indexOf(q);
+  if(i < 0) return esc(label);
+  return esc(label.slice(0, i))
+       + '<span class="tp-mark">' + esc(label.slice(i, i + q.length)) + '</span>'
+       + esc(label.slice(i + q.length));
+}
+
+function pickTableFromPicker(value){
+  const which = _tpWhich;
+  closeTablePicker();
+  // Mirror the choice into the inline box so the two stay in step.
+  const inlineId = which === 'src' ? 'src-table-input'
+                 : which === 'tgt' ? 'tgt-table-input' : 'otm-tgt-input';
+  const t = tpTablesFor(which === 'otm-tgt' ? 'tgt' : which).find(x => x.value === value);
+  const inp = $(inlineId);
+  if(inp && t) inp.value = t.label || '';
+  selectTable(which, value);
+}
+
+// Enter picks the only remaining match — the common case after typing a few
+// letters. Escape closes.
+function tablePickerKey(e){
+  if(e.key === 'Escape'){ closeTablePicker(); return; }
+  if(e.key !== 'Enter') return;
+  const all = tpTablesFor(_tpWhich === 'otm-tgt' ? 'tgt' : _tpWhich);
+  const q = ($('tbl-picker-filter')?.value || '').trim().toLowerCase();
+  const hits = q ? all.filter(t => String(t.label||'').toLowerCase().includes(q)) : all;
+  if(hits.length === 1) pickTableFromPicker(hits[0].value);
+}
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape' && $('tbl-picker-modal')?.classList.contains('open')) closeTablePicker();
+});
+
 async function selectTable(which, value){
   const t = (which==='src'?srcAllTables:tgtAllTables).find(t=>t.value===value);
   if(!t) return;
