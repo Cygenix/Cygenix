@@ -570,6 +570,32 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
 #view-connections .sconn-chip .sconn-action-btn.danger:hover{ color:var(--red); }
 #view-connections .sconn-empty{ font-size:11px;color:var(--text3);font-style:italic; }
 
+/* ─── Masked connection summary ──────────────────────────────────────
+   A configured connection is summarised rather than printed. The raw
+   string holds a password in cleartext, so it stays off screen until
+   the user asks to edit it — screen shares, screenshots and someone
+   walking past the desk all used to expose it. */
+#view-connections .conn-locked{
+  display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;
+  background:var(--bg3);border:0.5px solid var(--border2);
+  border-radius:var(--r);padding:0.6rem 0.75rem;margin-bottom:0.5rem;
+}
+#view-connections .conn-locked .conn-locked-icon{ font-size:13px;opacity:0.55;line-height:1; }
+#view-connections .conn-locked .conn-locked-main{ display:flex;flex-direction:column;gap:2px;min-width:0;flex:1; }
+#view-connections .conn-locked .conn-locked-label{
+  font-size:9px;font-weight:500;color:var(--text3);
+  text-transform:uppercase;letter-spacing:0.08em;
+}
+#view-connections .conn-locked .conn-locked-value{
+  font-family:var(--mono);font-size:12px;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+#view-connections .conn-locked .conn-locked-value.none{ color:var(--text3);font-style:italic;font-family:var(--serif); }
+#view-connections .conn-locked .conn-locked-nick{
+  font-family:var(--serif);font-size:10px;color:var(--text2);
+  background:var(--bg4);border-radius:100px;padding:1px 8px;
+}
+
 /* ─── Data import (Connections view, tabbed) ───────────────────────── */
 #view-connections .cx-tabs{ }
 #view-connections .cx-tab{
@@ -2391,8 +2417,20 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <span id="src-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
             </div>
             <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
-              <button id="src-mode-direct" class="btn btn-sm" onclick="setSrcMode('direct')" style="flex:1;justify-content:center">Direct</button>
-              <button id="src-mode-azure" class="btn btn-sm" onclick="setSrcMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+              <button id="src-mode-direct" class="btn btn-sm" onclick="connReveal('src');setSrcMode('direct')" style="flex:1;justify-content:center">Direct</button>
+              <button id="src-mode-azure" class="btn btn-sm" onclick="connReveal('src');setSrcMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+            </div>
+            <!-- Masked summary, shown instead of the fields once a connection
+                 is configured. Database name and saved nickname only — the
+                 raw string carries a password. -->
+            <div id="src-conn-locked" class="conn-locked" style="display:none">
+              <span class="conn-locked-icon">🔒</span>
+              <span class="conn-locked-main">
+                <span class="conn-locked-label" id="src-conn-locked-label">Database</span>
+                <span class="conn-locked-value" id="src-conn-locked-value"></span>
+              </span>
+              <span class="conn-locked-nick" id="src-conn-locked-nick" style="display:none"></span>
+              <button class="btn btn-ghost btn-sm" onclick="connReveal('src')" title="Show the connection details so they can be edited">✎ Edit</button>
             </div>
             <div id="src-direct-wrap">
               <label class="form-label">Connection string</label>
@@ -2408,6 +2446,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
               <button class="btn btn-ghost btn-sm" onclick="testProjConn('src')">🔌 Connect &amp; test</button>
               <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('src')" title="Save current connection under a name">💾 Save as…</button>
+              <button id="src-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('src')" title="Hide the connection details again" style="display:none">🔒 Hide</button>
             </div>
             <div id="src-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
 
@@ -2427,8 +2466,17 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
               <span id="tgt-conn-dot" style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:var(--red)"></span>
             </div>
             <div style="display:flex;gap:0.5rem;margin-bottom:0.875rem">
-              <button id="tgt-mode-direct" class="btn btn-sm" onclick="setTgtMode('direct')" style="flex:1;justify-content:center">Direct</button>
-              <button id="tgt-mode-azure" class="btn btn-sm" onclick="setTgtMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+              <button id="tgt-mode-direct" class="btn btn-sm" onclick="connReveal('tgt');setTgtMode('direct')" style="flex:1;justify-content:center">Direct</button>
+              <button id="tgt-mode-azure" class="btn btn-sm" onclick="connReveal('tgt');setTgtMode('azure')" style="flex:1;justify-content:center">Azure Function</button>
+            </div>
+            <div id="tgt-conn-locked" class="conn-locked" style="display:none">
+              <span class="conn-locked-icon">🔒</span>
+              <span class="conn-locked-main">
+                <span class="conn-locked-label" id="tgt-conn-locked-label">Database</span>
+                <span class="conn-locked-value" id="tgt-conn-locked-value"></span>
+              </span>
+              <span class="conn-locked-nick" id="tgt-conn-locked-nick" style="display:none"></span>
+              <button class="btn btn-ghost btn-sm" onclick="connReveal('tgt')" title="Show the connection details so they can be edited">✎ Edit</button>
             </div>
             <div id="tgt-direct-wrap" style="display:none">
               <label class="form-label">Connection string</label>
@@ -2444,6 +2492,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
             <div style="display:flex;gap:0.5rem;align-items:center;margin-top:0.25rem">
               <button class="btn btn-ghost btn-sm" onclick="testProjConn('tgt')">🔌 Connect &amp; test</button>
               <button class="btn btn-ghost btn-sm" onclick="sconnSaveAs('tgt')" title="Save current connection under a name">💾 Save as…</button>
+              <button id="tgt-conn-hide" class="btn btn-ghost btn-sm" onclick="connHide('tgt')" title="Hide the connection details again" style="display:none">🔒 Hide</button>
             </div>
             <div id="tgt-conn-result" style="font-size:11px;font-family:var(--mono);margin-top:0.5rem;color:var(--text3);min-height:16px"></div>
 
@@ -12761,10 +12810,115 @@ try {
   ].forEach(k => sessionStorage.removeItem(k));
 } catch {}
 
+// ── Connection masking ────────────────────────────────────────────────────
+// A connection string carries the password in cleartext
+// (mssql://user:PASSWORD@host:1433/db), and this view used to render it in a
+// plain text input the moment the page opened. Anyone glancing at the screen,
+// any screen share, and any screenshot of the Connections tab leaked the
+// database password — a stored credential exposed by simply navigating.
+//
+// So a *configured* connection is summarised instead of printed: the database
+// name and, when it matches one the user saved, its nickname. The real fields
+// only appear while the user is deliberately editing them, and they re-hide
+// on save and whenever the view is re-opened.
+//
+// Nothing about storage or transport changes — this is purely what reaches
+// the screen. An unconfigured side shows its fields as before, because there
+// is nothing to hide and a first-time user has to be able to type.
+const connRevealed = { src: false, tgt: false };
+
+// The nickname of the saved connection matching what's currently in the
+// fields, or '' when the live values don't correspond to a saved entry.
+function connNicknameFor(side){
+  let all = [];
+  try { all = (typeof sconnGetAll === 'function' ? sconnGetAll() : []) || []; } catch { return ''; }
+  const mode = side === 'src' ? srcMode : tgtMode;
+  const val  = (document.getElementById(
+    'proj-' + side + (mode === 'direct' ? '-cs' : '-fn-url'))?.value || '').trim();
+  if (!val) return '';
+  const hit = all.find(s => s && s.side === side && s.mode === mode &&
+    ((mode === 'direct' ? s.connString : s.fnUrl) || '').trim() === val);
+  return (hit && hit.name) || '';
+}
+
+// What the masked card shows. Returns null when this side has nothing
+// configured, which is what keeps the fields visible for a new user.
+function connSummaryFor(side){
+  const mode = side === 'src' ? srcMode : tgtMode;
+  const val  = (document.getElementById(
+    'proj-' + side + (mode === 'direct' ? '-cs' : '-fn-url'))?.value || '').trim();
+  if (!val) return null;
+  const nickname = connNicknameFor(side);
+  // An Azure Function URL doesn't name a database — the function decides
+  // that server-side — so there is no database name to show. The host is
+  // deliberately withheld: it identifies the backend endpoint, and the
+  // nickname is the identifier the user chose for it.
+  if (mode === 'azure') return { label: 'Connection', value: 'Azure Function', nickname };
+  const desc = parseDbConnection(val);
+  const db   = (desc && desc.database) || '';
+  return { label: 'Database', value: db, nickname };
+}
+
+// Single place that decides whether a side shows its card or its fields.
+// setSrcMode/setTgtMode delegate here rather than toggling the wraps
+// themselves, so a mode switch can't leave a connection string on screen.
+function renderConnLock(side){
+  const card = document.getElementById(side + '-conn-locked');
+  const mode = side === 'src' ? srcMode : tgtMode;
+  const summary = connSummaryFor(side);
+  const locked  = !!summary && !connRevealed[side];
+
+  const show = (id, on, disp) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = on ? (disp || 'block') : 'none';
+  };
+  show(side + '-conn-locked', locked, 'flex');
+  show(side + '-direct-wrap', !locked && mode === 'direct');
+  show(side + '-azure-wrap',  !locked && mode === 'azure');
+  // The re-hide control only makes sense once there's something to hide.
+  show(side + '-conn-hide', !locked && !!summary, 'inline-flex');
+
+  if (!locked || !card) return;
+  const put = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  put(side + '-conn-locked-label', summary.label);
+  const valEl = document.getElementById(side + '-conn-locked-value');
+  if (valEl){
+    // A direct connection string without a database segment is still a
+    // configured connection — say so rather than showing a blank row.
+    valEl.textContent = summary.value || 'Configured';
+    valEl.classList.toggle('none', !summary.value);
+  }
+  const nickEl = document.getElementById(side + '-conn-locked-nick');
+  if (nickEl){
+    nickEl.textContent = summary.nickname;
+    nickEl.style.display = summary.nickname ? 'inline-block' : 'none';
+  }
+}
+
+// Show the real fields so they can be edited, and put the cursor in the one
+// that matters. Called by the Edit button and by the mode toggles — picking
+// a different mode is itself an act of configuring.
+function connReveal(side){
+  connRevealed[side] = true;
+  renderConnLock(side);
+  const mode = side === 'src' ? srcMode : tgtMode;
+  const el = document.getElementById('proj-' + side + (mode === 'direct' ? '-cs' : '-fn-url'));
+  if (el) try { el.focus(); } catch {}
+}
+
+// Put a revealed connection back behind the summary.
+function connHide(side){
+  connRevealed[side] = false;
+  renderConnLock(side);
+}
+
+// Reachable from the inline onclick handlers in the tab markup regardless of
+// which <script> block ran first — same pattern as the connio/sconn exports.
+window.connReveal = connReveal;
+window.connHide   = connHide;
+
 function setSrcMode(mode) {
   srcMode = mode;
-  document.getElementById('src-direct-wrap').style.display = mode==='direct' ? 'block' : 'none';
-  document.getElementById('src-azure-wrap').style.display  = mode==='azure'  ? 'block' : 'none';
   const styles = (id, active) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -12774,11 +12928,10 @@ function setSrcMode(mode) {
   };
   styles('src-mode-direct', mode==='direct');
   styles('src-mode-azure',  mode==='azure');
+  renderConnLock('src');
 }
 function setTgtMode(mode) {
   tgtMode = mode;
-  document.getElementById('tgt-direct-wrap').style.display = mode==='direct' ? 'block' : 'none';
-  document.getElementById('tgt-azure-wrap').style.display  = mode==='azure'  ? 'block' : 'none';
   const styles = (id, active) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -12788,6 +12941,7 @@ function setTgtMode(mode) {
   };
   styles('tgt-mode-direct', mode==='direct');
   styles('tgt-mode-azure',  mode==='azure');
+  renderConnLock('tgt');
 }
 
 function initConnectionsView() {
@@ -12807,6 +12961,13 @@ function initConnectionsView() {
   // Render saved-connection chips for both sides
   sconnRender('src');
   sconnRender('tgt');
+  // Re-mask on every visit. Revealing is a per-visit decision, so leaving
+  // the view and coming back never leaves a password on screen — and the
+  // fields have only just been populated, so the summaries are computed
+  // from the real values rather than the empty inputs setSrcMode saw.
+  connRevealed.src = connRevealed.tgt = false;
+  renderConnLock('src');
+  renderConnLock('tgt');
 }
 
 function updateConnDots() {
@@ -12926,6 +13087,10 @@ function saveProjectConnections() {
   }
 
   updateConnDots();
+  // Editing is finished, so put both sides back behind their summaries.
+  connRevealed.src = connRevealed.tgt = false;
+  renderConnLock('src');
+  renderConnLock('tgt');
   const ind = document.getElementById('conn-save-indicator');
   if (ind) { ind.style.display = 'block'; setTimeout(() => ind.style.display = 'none', 2500); }
 }
@@ -12937,6 +13102,10 @@ function clearProjectConnections() {
     .forEach(id=>{const el=document.getElementById(id);if(el) el.value='';});
   ['src-conn-result','tgt-conn-result'].forEach(id=>{const el=document.getElementById(id);if(el) el.textContent='';});
   updateConnDots();
+  // Nothing configured now, so the summaries have nothing to summarise and
+  // the empty fields come back for re-entry.
+  renderConnLock('src');
+  renderConnLock('tgt');
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -13116,15 +13285,18 @@ try {
 } catch(e){ console.error('[init epilogue] sconn-migration:', e); }
 });
 
-// Shortened preview string for display — never shows passwords.
+// Tooltip text for a saved-connection chip.
+//
+// This used to be the connection string with the password blanked out, which
+// still put the host, port and username in a tooltip that appears on hover —
+// enough to hand someone half a credential. The chip already shows the
+// nickname the user chose, so the tooltip only adds the database name.
 function sconnPreview(entry){
-  if (entry.mode === 'azure') return (entry.fnUrl || '').replace(/^https?:\/\//, '').slice(0, 40);
-  const cs = entry.connString || '';
-  // Strip any password-ish segments from the preview
-  const sanitized = cs
-    .replace(/(password|pwd|pass)\s*=\s*[^;&\s]*/gi, '$1=***')
-    .replace(/(:\/\/[^:]+):([^@]+)@/, '$1:***@');
-  return sanitized.slice(0, 50);
+  if (entry.mode === 'azure') return 'Azure Function';
+  const desc = (typeof parseDbConnection === 'function')
+    ? parseDbConnection(entry.connString || '')
+    : null;
+  return (desc && desc.database) ? 'Database: ' + desc.database : 'Direct connection';
 }
 
 // Dialect label for the chip (pure display).
@@ -13606,6 +13778,10 @@ function sconnLoad(id){
     if (urlEl) urlEl.value = entry.fnUrl || '';
     if (keyEl) keyEl.value = entry.fnKey || '';
   }
+
+  // Refresh the masked summary — picking a chip changes which database is
+  // configured, and setSrcMode/setTgtMode ran before the fields were filled.
+  renderConnLock(side);
 
   // Flash feedback
   const resultEl = document.getElementById(side + '-conn-result');
