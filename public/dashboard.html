@@ -2218,6 +2218,8 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           is delivered to every connector you have enabled in
           <a href="#goto=integrations" onclick="showView('integrations');return false" style="color:var(--accent)">Integrations</a> —
           so an event needs both its switch here <em>and</em> a connector switched on there.
+          Runs fired by the scheduler need one more thing, because no browser is open when they happen:
+          see <strong>Scheduled runs</strong> below.
         </div>
 
         <div class="panel" style="margin-bottom:1.25rem">
@@ -2225,12 +2227,37 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
           <div id="nt-events"></div>
         </div>
 
-        <div class="panel">
+        <div class="panel" style="margin-bottom:1.25rem">
           <div class="panel-header">
             <div><div class="panel-title">Where these go</div></div>
             <button class="btn btn-sm" onclick="showView('integrations')">Manage connectors →</button>
           </div>
           <div id="nt-connectors"></div>
+        </div>
+
+        <!-- Scheduled runs happen with no browser open, so the connectors —
+             which live in this browser — cannot be reached from one. This
+             panel is the opt-in that copies them to the account so the
+             Function App can deliver instead. -->
+        <div class="panel" style="margin-bottom:1.25rem">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">Scheduled runs</div>
+              <div class="panel-sub">A run fired by the scheduler has no browser open, so it cannot use the connector settings stored in this one.</div>
+            </div>
+          </div>
+          <div id="nt-server"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">Recent notifications</div>
+              <div class="panel-sub">Every attempt the server made to notify you, delivered or not.</div>
+            </div>
+            <button class="btn btn-sm" onclick="loadNotifyLog()">↻ Refresh</button>
+          </div>
+          <div id="nt-log"><div style="font-size:12px;color:var(--text3);padding:0.75rem 0">Loading…</div></div>
         </div>
       </div>
     </div>
@@ -19976,6 +20003,211 @@ const NOTIFY_EVENT_META = [
 function initNotificationsView(){
   renderNotifyEvents();
   renderNotifyConnectors();
+  loadNotifyServer();
+  loadNotifyLog();
+}
+
+// ── Server-side delivery ──────────────────────────────────────────────────
+// The connectors live in this browser: their URLs and credentials are in
+// localStorage and emit() runs on this page. That is fine for Run now, and
+// useless for a schedule — a cron tick fires in Azure with no browser
+// anywhere, which is why scheduled runs never delivered to a connector no
+// matter what the switches above said.
+//
+// Turning this on copies the connector settings and the event switches to
+// your Cygenix account, so the Function App can deliver them itself. It is
+// opt-in because it moves an SMTP password out of this browser, and the
+// Integrations page promises credentials stay here.
+const NT = { server: null, log: null };
+
+async function loadNotifyServer(){
+  const host = document.getElementById('nt-server');
+  if (host) host.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.75rem 0">Loading…</div>';
+  try {
+    const r = await ta_sched('get-notify-settings', {});
+    NT.server = r.settings || null;
+  } catch (e) {
+    NT.server = { __error: (e && e.message) || 'could not load' };
+  }
+  renderNotifyServer();
+}
+
+function renderNotifyServer(){
+  const host = document.getElementById('nt-server');
+  if (!host) return;
+  const s = NT.server;
+
+  if (s && s.__error){
+    host.innerHTML = '<div class="in-form-note warn" style="margin-top:0.5rem">Could not read your account settings: '
+      + escIn(s.__error) + '</div>';
+    return;
+  }
+  if (!s){ host.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.75rem 0">Loading…</div>'; return; }
+
+  const I = window.CygenixIntegrations;
+  const localOn = ['webhook','smtp'].filter(id => I && I.isEnabled(id));
+  const synced  = s.updatedAt ? new Date(s.updatedAt).toLocaleString() : null;
+
+  // What the server currently holds, so "it says it's on but nothing arrives"
+  // has a visible cause rather than being a guess.
+  const serverOn = ['webhook','smtp'].filter(id => s[id] && s[id].enabled);
+
+  let detail = '';
+  if (s.serverDelivery){
+    detail = serverOn.length
+      ? '<div style="font-size:12px;color:var(--text2);margin-top:0.5rem;line-height:1.6">The server will deliver to '
+        + '<strong>' + serverOn.map(escIn).join('</strong> and <strong>') + '</strong>'
+        + (synced ? ', from settings copied ' + escIn(synced) : '') + '.</div>'
+      : '<div class="in-form-note warn" style="margin-top:0.5rem">Server delivery is on, but no connector was copied up. '
+        + 'Enable Webhook or Email (SMTP) in Integrations, then use “Copy settings to my account” below.</div>';
+    // Drift between the two copies is invisible otherwise: a user edits SMTP
+    // in Integrations and the schedule keeps using the old settings.
+    if (localOn.join() !== serverOn.join()){
+      detail += '<div class="in-form-note warn" style="margin-top:0.5rem">This browser has '
+        + (localOn.length ? '<strong>' + localOn.map(escIn).join('</strong>, <strong>') + '</strong>' : 'nothing')
+        + ' enabled, which does not match the account copy. Copy the settings up to bring them into line.</div>';
+    }
+  }
+
+  host.innerHTML = `
+    <div class="in-enable-row" style="border-top:0;padding:0.75rem 0;margin:0;align-items:flex-start">
+      <input type="checkbox" id="nt-server-on" ${s.serverDelivery ? 'checked' : ''}
+             onchange="onServerDeliveryToggle(this.checked)" style="margin-top:2px">
+      <label for="nt-server-on" style="display:block;cursor:pointer">
+        <span style="font-size:13px;color:var(--text);font-weight:500">Deliver notifications for scheduled runs</span>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.5;text-transform:none;letter-spacing:0">
+          Copies your enabled connectors and the event switches above to your Cygenix account so the
+          server can send them when a schedule fires. <strong>This includes the SMTP password and any
+          webhook secret</strong> — they leave this browser and are stored against your account.
+          Leave it off and only runs you start yourself will notify.
+        </div>
+      </label>
+    </div>
+    ${detail}
+    <div style="margin-top:0.9rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="pushNotifySettings(true)" ${s.serverDelivery ? '' : 'disabled'}>⬆ Copy settings to my account</button>
+      <span id="nt-server-result" style="font-size:11.5px;font-family:var(--mono)"></span>
+    </div>`;
+}
+
+async function onServerDeliveryToggle(on){
+  // Turning it on has to upload something, or the switch is on and the
+  // account is empty. Turning it off clears the stored credentials rather
+  // than leaving them sitting there unused.
+  await pushNotifySettings(true, on);
+}
+
+// Build the account copy from what this browser actually has. The connector
+// settings are read live rather than from a cached copy so the upload cannot
+// disagree with what Integrations shows.
+function notifySettingsPayload(serverDelivery){
+  const I = window.CygenixIntegrations;
+  const w = (I && I.getConfig('webhook')) || {};
+  const s = (I && I.getConfig('smtp'))    || {};
+  const on = !!serverDelivery;
+  return {
+    serverDelivery: on,
+    events: notifyEvents(),
+    webhook: {
+      enabled: on && !!(I && I.isEnabled('webhook')),
+      url:     on ? (w.url || '')    : '',
+      secret:  on ? (w.secret || '') : '',
+    },
+    smtp: {
+      enabled: on && !!(I && I.isEnabled('smtp')),
+      host: on ? (s.host || '') : '',
+      port: on ? String(s.port || '') : '',
+      user: on ? (s.user || '') : '',
+      pass: on ? (s.pass || '') : '',
+      from: on ? (s.from || '') : '',
+      to:   on ? (s.to   || '') : '',
+    },
+  };
+}
+
+async function pushNotifySettings(showResult, forceOn){
+  const el = showResult ? document.getElementById('nt-server-result') : null;
+  const on = (forceOn === undefined)
+    ? !!(NT.server && NT.server.serverDelivery)
+    : !!forceOn;
+  if (el){ el.textContent = '⏳ saving…'; el.style.color = 'var(--text3)'; }
+  try {
+    const r = await ta_sched('save-notify-settings', { settings: notifySettingsPayload(on) });
+    NT.server = r.settings || null;
+    renderNotifyServer();
+    const el2 = document.getElementById('nt-server-result');
+    if (el2 && showResult){
+      el2.textContent = on ? '✓ saved to your account' : '✓ removed from your account';
+      el2.style.color = 'var(--green)';
+    }
+  } catch (e) {
+    const el2 = document.getElementById('nt-server-result');
+    if (el2 && showResult){
+      el2.textContent = '✕ ' + ((e && e.message) || 'save failed');
+      el2.style.color = 'var(--red)';
+    }
+  }
+}
+
+// ── The delivery log ──────────────────────────────────────────────────────
+// Every send the server attempts is recorded, successful or not. Without
+// this, "I never got an email" has no answer short of reading Cosmos.
+async function loadNotifyLog(){
+  const host = document.getElementById('nt-log');
+  if (host) host.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.75rem 0">Loading…</div>';
+  try {
+    const r = await ta_sched('list-notifications', { limit: 25 });
+    NT.log = r;
+  } catch (e) {
+    NT.log = { error: (e && e.message) || 'could not load' };
+  }
+  renderNotifyLog();
+}
+
+const NT_CHANNEL_LABEL = { resend: 'Email', smtp: 'Email (SMTP)', webhook: 'Webhook' };
+
+function renderNotifyLog(){
+  const host = document.getElementById('nt-log');
+  if (!host) return;
+  const r = NT.log || {};
+
+  if (r.error){
+    host.innerHTML = '<div class="in-form-note warn" style="margin-top:0.5rem">Could not read the log: '
+      + escIn(r.error) + '</div>';
+    return;
+  }
+  if (r.unavailable){
+    host.innerHTML = '<div class="in-form-note warn" style="margin-top:0.5rem">' + escIn(r.unavailable) + '</div>';
+    return;
+  }
+  const rows = r.notifications || [];
+  if (!rows.length){
+    host.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:0.75rem 0">'
+      + 'Nothing yet. A row appears here each time the server tries to notify you — including when it fails.</div>';
+    return;
+  }
+
+  host.innerHTML = rows.map(n => {
+    const okStatus = n.status === 'sent';
+    const colour = okStatus ? 'var(--green)' : (n.status === 'skipped' ? 'var(--text3)' : 'var(--red)');
+    const bg     = okStatus ? 'var(--green-bg)' : 'var(--bg3)';
+    const when   = n.sentAt ? new Date(n.sentAt).toLocaleString() : '';
+    return `
+      <div style="display:flex;align-items:flex-start;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border)">
+        <span style="font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:100px;background:${bg};color:${colour};flex:none;margin-top:1px">${escIn(n.status || '?')}</span>
+        <div style="min-width:0;flex:1">
+          <div style="font-size:12.5px;color:var(--text)">
+            ${escIn(NT_CHANNEL_LABEL[n.channel] || n.channel || 'Email')}
+            ${n.to ? '<span style="color:var(--text3)"> → ' + escIn(n.to) + '</span>' : ''}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;line-height:1.5;word-break:break-word">
+            ${escIn(n.type || '')}${n.source ? ' · ' + escIn(n.source) : ''}
+            ${n.error ? '<br><span style="color:var(--red)">' + escIn(n.error) + '</span>' : ''}
+          </div>
+        </div>
+        <span style="font-size:10.5px;color:var(--text3);font-family:var(--mono);flex:none;margin-top:1px">${escIn(when)}</span>
+      </div>`;
+  }).join('');
 }
 
 function renderNotifyEvents(){
@@ -19997,6 +20229,9 @@ function renderNotifyEvents(){
 function onNotifyEventToggle(key, on){
   setNotifyEvent(key, on);
   renderNotifyConnectors();   // the "nothing is listening" warning may change
+  // Keep the account copy in step, or a switch flipped here would go on
+  // applying to Run now while scheduled runs kept the old answer.
+  if (NT.server && NT.server.serverDelivery) pushNotifySettings(false);
   if (typeof showToast === 'function'){
     const meta = NOTIFY_EVENT_META.find(e => e.key === key);
     showToast((meta ? meta.label : key) + (on ? ' notifications on' : ' notifications off'));

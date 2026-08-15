@@ -47,6 +47,7 @@ const sql = require('mssql');
 // Email notifications — fire-and-forget, never throws to caller.
 // See azure-function/src/notify.js.
 const { sendNotification } = require('./notify');
+const { dispatchConnectors } = require('./connectors');
 const { resolveSqlConfig, isEntraConn } = require('./sql-entra');
 
 // ── Cosmos client (lazy singleton, matches index.js pattern) ──────────────
@@ -838,12 +839,16 @@ async function markRunFailed(containers, run, errorMessage, ctx) {
   // we have, falling back to run.userId as recipient.
   try {
     let scheduleName = '';
+    let projectName  = '';
     let overrideTo   = null;
     try {
       const { resource: sched } = await containers.schedules
         .item(run.scheduleId, run.userId).read();
       if (sched) {
         scheduleName = sched.name || '';
+        // Not every schedule carries one — the project name lives on the
+        // pinned snapshot, which this path may have failed before reaching.
+        projectName  = sched.projectName || '';
         overrideTo   = sched.notifyTo || null;
       }
     } catch {}
@@ -852,6 +857,19 @@ async function markRunFailed(containers, run, errorMessage, ctx) {
       errorMessage,
       runId: run.id,
       overrideTo,
+    }, ctx);
+    // The connectors the user configured on Settings → Notifications. This
+    // path is reached by the validation failures too, which are exactly the
+    // ones a user is otherwise never told about — the run simply appears in
+    // the history already failed.
+    await dispatchConnectors(run.userId, 'failed', {
+      project: projectName,
+      job:     scheduleName,
+      status:  'failed',
+      rows:    0,
+      steps:   0,
+      runId:   run.id,
+      message: errorMessage,
     }, ctx);
   } catch (e) {
     ctx.log('[notify] markRunFailed notify threw:', e.message);
@@ -991,6 +1009,19 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   run.runnerHost = 'azure-function';
   try { await containers.runs.item(run.id, run.scheduleId).replace(run); } catch {}
 
+  // "Run started" — off by default, and dispatchConnectors checks the switch.
+  // Sent before the first statement so a long migration announces itself
+  // rather than going quiet for an hour.
+  const notifyCtx = { project: snap.projectName || '', job: schedule.name || '' };
+  // dispatchConnectors is written not to throw, but this sits in front of the
+  // first statement of a migration: a bug in notification code must not be
+  // able to stop a run that would otherwise have succeeded.
+  try {
+    await dispatchConnectors(userId, 'started', {
+      ...notifyCtx, status: 'started', rows: 0, steps: stepsToRun.length, runId,
+    }, ctx);
+  } catch (e) { ctx.log('[connectors] started dispatch threw:', e.message); }
+
   // Execute steps
   const stepResults = [];
   let totalRows = 0;
@@ -1129,6 +1160,21 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   } catch (e) {
     ctx.log('[notify] executeRun notify threw:', e.message);
   }
+
+  // And the connectors, which until now only a browser watching a Run-now
+  // could reach. Separate from the email above on purpose: the email always
+  // goes to the schedule owner, while these honour the event switches on
+  // Settings → Notifications.
+  try {
+    await dispatchConnectors(userId, finalStatus === 'success' ? 'completed' : 'failed', {
+      ...notifyCtx,
+      status:  finalStatus,
+      rows:    totalRows,
+      steps:   stepResults.length,
+      runId,
+      message: finalStatus === 'success' ? '' : (firstFailure || 'unknown error'),
+    }, ctx);
+  } catch (e) { ctx.log('[connectors] terminal dispatch threw:', e.message); }
 }
 
 // ── HTTP route registration (v4 model) ────────────────────────────────────

@@ -35,21 +35,6 @@
 
 const { app } = require('@azure/functions');
 
-// ── Cosmos client (lazy singleton, matches index.js / run-migration.js) ───
-let _cosmos = null;
-function getCosmosContainer(containerName) {
-  if (!_cosmos) {
-    const { CosmosClient } = require('@azure/cosmos');
-    _cosmos = new CosmosClient({
-      endpoint: process.env.COSMOS_ENDPOINT,
-      key:      process.env.COSMOS_KEY,
-    });
-  }
-  return _cosmos
-    .database(process.env.COSMOS_DATABASE || 'cygenix')
-    .container(containerName);
-}
-
 // ── CORS / response helpers (match index.js style) ────────────────────────
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -163,25 +148,11 @@ function isEmail(s) {
 }
 
 // ── Audit-log writer ──────────────────────────────────────────────────────
-async function logNotification({ userId, type, to, subject, status, resendId, error }, ctx) {
-  try {
-    const doc = {
-      id: `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-      userId,
-      type,
-      to,
-      subject,
-      status,                        // 'sent' | 'failed' | 'skipped'
-      resendId: resendId || null,
-      error:    error    || null,
-      sentAt:   new Date().toISOString(),
-    };
-    await getCosmosContainer('notifications').items.create(doc);
-  } catch (e) {
-    // Audit-log failure must never break the caller. Log and move on.
-    ctx && ctx.log && ctx.log('[notify] audit write failed:', e.message);
-  }
-}
+// Shared with connectors.js, which logs its webhook and SMTP deliveries to
+// the same container. It lives in notify-log.js because this file registers
+// an HTTP route at import time, and a caller that only wants to write a log
+// row should not have to load the Functions host to do it.
+const { logNotification } = require('./notify-log');
 
 // ── Core sender ───────────────────────────────────────────────────────────
 // Returns { ok: true, resendId } on success, { ok: false, error } on
