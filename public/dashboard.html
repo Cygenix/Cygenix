@@ -20212,7 +20212,7 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
         // "31 13 18 5 *" is a Once IF it was created as one, otherwise
         // it's an annual recurring (which the parser can't represent and
         // would fall back to 'cron' for). The flag disambiguates.
-        let mode = ta_parseCronIntoUI(s.cron || '');
+        let mode = ta_parseCronIntoUI(s.cron || '', s);
         if (s.oneShot && mode === 'cron') mode = 'once';
         if (s.oneShot === false && mode === 'once') mode = 'cron'; // ambiguous → safe path
         modeSel.value = mode;
@@ -20461,7 +20461,54 @@ function ta_renderMonthlyDom() {
 
 // Best-effort parse an existing cron string back into the friendly UI.
 // Returns the mode it resolved to (or 'cron' if we can't simplify).
-function ta_parseCronIntoUI(cronExpr) {
+// ── One-shot schedules and the missing year ───────────────────────────────
+// A cron expression has five fields and none of them is a year, so
+// "25 14 15 8 *" means 14:25 on 15 August in EVERY year. That is right for a
+// repeating schedule and wrong for a one-shot, which is a single instant.
+//
+// The year is therefore stored separately, as runOnceAt, and these two
+// helpers are the only places that write and read it.
+
+// The instant the one-shot fields describe, as an ISO string.
+//
+// Built as UTC from the raw field values on purpose. The backend's
+// computeNextRun matches a cron against server-local time, which on Netlify
+// is UTC — so a cron of "25 14 …" fires at 14:25 UTC. Constructing runOnceAt
+// the same way keeps the two in step; interpreting the fields as browser-local
+// would make a one-shot fire at a different moment from the cron beside it.
+function ta_onceIso(){
+  const d = (document.getElementById('ta-once-date') || {}).value || '';
+  const t = (document.getElementById('ta-once-time') || {}).value || '';
+  if (!d || !t) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+  const n = /^(\d{2}):(\d{2})/.exec(t);
+  if (!m || !n) return null;
+  return m[1] + '-' + m[2] + '-' + m[3] + 'T' + n[1] + ':' + n[2] + ':00.000Z';
+}
+
+// The year to show for a one-shot, in order of trustworthiness:
+//
+//   1. runOnceAt        — what the user actually saved. Authoritative.
+//   2. nextRunAt        — schedules saved before runOnceAt existed still have
+//                         the instant the backend computed at save time.
+//   3. the old guess    — nothing stored, so fall back to "this year, or next
+//                         if that date has already passed". Only reachable for
+//                         a legacy schedule whose nextRunAt has been cleared,
+//                         which is exactly the case that used to be wrong; it
+//                         is now the last resort rather than the only rule.
+function ta_onceYearFor(schedule, mo, dom, h, mi){
+  const stored = schedule && (schedule.runOnceAt || schedule.nextRunAt);
+  if (stored){
+    const d = new Date(stored);
+    if (!isNaN(d.getTime())) return d.getUTCFullYear();
+  }
+  const now = new Date();
+  const candidate = new Date(now.getFullYear(), parseInt(mo,10) - 1, parseInt(dom,10),
+                             parseInt(h,10), parseInt(mi,10));
+  return candidate >= now ? now.getFullYear() : now.getFullYear() + 1;
+}
+
+function ta_parseCronIntoUI(cronExpr, schedule) {
   if (!cronExpr || typeof cronExpr !== 'string') return 'daily';
   const parts = cronExpr.trim().split(/\s+/);
   if (parts.length !== 5) return 'cron';
@@ -20477,16 +20524,15 @@ function ta_parseCronIntoUI(cronExpr) {
   // ONCE: specific minute/hour/dom/month, dow wildcard
   if (/^\d+$/.test(mi) && /^\d+$/.test(h) && /^\d+$/.test(dom) && /^\d+$/.test(mo) && dow === '*') {
     setTime('once', mi, h);
-    // Date field needs a year — guess the next year in which this date hasn't
-    // yet passed, so re-opening an old schedule doesn't show a date in the past.
-    const now = new Date();
-    const yGuess = (() => {
-      const candidate = new Date(now.getFullYear(), parseInt(mo,10) - 1, parseInt(dom,10),
-                                 parseInt(h,10), parseInt(mi,10));
-      return candidate >= now ? now.getFullYear() : now.getFullYear() + 1;
-    })();
+    // The year comes from the schedule's stored runOnceAt, never from the
+    // cron — a cron has no year field. This used to guess "the next year in
+    // which this date has not passed", so re-opening a one-shot after its
+    // moment silently showed the year after the one the user saved. Saving
+    // from that screen then wrote a nextRunAt more than 60 days out, which
+    // computeNextRun returns null for, and the schedule could never fire.
+    const y = ta_onceYearFor(schedule, mo, dom, h, mi);
     document.getElementById('ta-once-date').value =
-      yGuess + '-' + pad(mo) + '-' + pad(dom);
+      y + '-' + pad(mo) + '-' + pad(dom);
     return 'once';
   }
 
@@ -20654,13 +20700,22 @@ async function ta_saveSchedule() {
   let timezone   = null;
   let chainAfter = null;
   let oneShot    = false;
+  // A cron expression has no year field. For a repeating schedule that is
+  // exactly right, but a one-shot is a single instant and the year matters —
+  // without it, "15 Aug 14:25" is ambiguous the moment that date passes, and
+  // both the editor and the backend have to guess. runOnceAt records the
+  // instant so nothing has to.
+  let runOnceAt  = null;
 
   if (mode === 'chain') {
     chainAfter = document.getElementById('ta-sched-chain').value;
   } else {
     cron     = document.getElementById('ta-sched-cron').value.trim();
     timezone = document.getElementById('ta-sched-tz').value;
-    if (mode === 'once') oneShot = true;
+    if (mode === 'once') {
+      oneShot   = true;
+      runOnceAt = ta_onceIso();
+    }
   }
 
   if (!name) return alert('Name is required');
@@ -20682,10 +20737,11 @@ async function ta_saveSchedule() {
     // cron parser would just never match it and the schedule would sit
     // idle forever. The check uses the user's local clock; close enough
     // to the user's chosen timezone for a soft warning.
-    const dateStr = document.getElementById('ta-once-date').value;
-    const timeStr = document.getElementById('ta-once-time').value;
-    if (dateStr && timeStr) {
-      const target = new Date(dateStr + 'T' + timeStr);
+    // Checked against the same instant that gets stored, so the warning and
+    // the saved nextRunAt can never disagree about whether it is in the past.
+    const iso = ta_onceIso();
+    if (iso) {
+      const target = new Date(iso);
       if (!isNaN(target.getTime()) && target.getTime() < Date.now() - 60_000) {
         if (!confirm('The date/time you picked is in the past. Save anyway? The schedule won\'t fire until you edit it to a future time.')) return;
       }
@@ -20717,11 +20773,11 @@ async function ta_saveSchedule() {
     if (TA.editingScheduleId) {
       await ta_sched('update-schedule', {
         id: TA.editingScheduleId,
-        patch: { name, jobVersionId, cron, timezone, chainAfter, oneShot, enabled, srcConn, tgtConn },
+        patch: { name, jobVersionId, cron, timezone, chainAfter, oneShot, runOnceAt, enabled, srcConn, tgtConn },
       });
     } else {
       await ta_sched('create-schedule', {
-        name, jobId, jobVersionId, cron, timezone, chainAfter, oneShot, enabled, srcConn, tgtConn,
+        name, jobId, jobVersionId, cron, timezone, chainAfter, oneShot, runOnceAt, enabled, srcConn, tgtConn,
       });
     }
     ta_closeScheduleModal();
