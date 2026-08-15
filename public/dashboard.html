@@ -2190,6 +2190,34 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
     </div>
     <!-- END INTEGRATIONS -->
 
+    <!-- NOTIFICATIONS VIEW -->
+    <!-- Controls WHICH run events notify. WHO receives them is Integrations —
+         both switches must be on for anything to be delivered. -->
+    <div id="view-notifications" class="view">
+      <div style="max-width:820px">
+        <h2 style="font-size:20px;font-weight:600;margin-bottom:0.4rem">🔔 Notifications</h2>
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.65;margin-bottom:1.5rem">
+          Choose which events on <strong>Schedules → Task Agent</strong> send a notification. Each event
+          is delivered to every connector you have enabled in
+          <a href="#goto=integrations" onclick="showView('integrations');return false" style="color:var(--accent)">Integrations</a> —
+          so an event needs both its switch here <em>and</em> a connector switched on there.
+        </div>
+
+        <div class="panel" style="margin-bottom:1.25rem">
+          <div class="panel-header"><div class="panel-title">Run events</div></div>
+          <div id="nt-events"></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <div><div class="panel-title">Where these go</div></div>
+            <button class="btn btn-sm" onclick="showView('integrations')">Manage connectors →</button>
+          </div>
+          <div id="nt-connectors"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- SYSTEM PARAMETERS VIEW -->
     <div id="view-system-parameters" class="view">
       <div class="sp-head">
@@ -4004,6 +4032,7 @@ function showView(v) {
   if (v === 'backup')             { showView('project-settings'); return; }
   if (v === 'privacy-security')  initPrivacySecurityView();
   if (v === 'integrations')      initIntegrationsView();
+  if (v === 'notifications')     initNotificationsView();
   if (v === 'system-parameters') initSystemParametersView();
   if (v === 'report-settings')   renderReportSettings();
   if (v === 'task-agent')        ta_init();
@@ -19634,6 +19663,10 @@ async function ta_runNow(id, btn) {
     // get-run every 3 seconds until status flips to success/failed or 15
     // minutes elapse (matching the background function's hard cap).
     const queued = await ta_sched('run-now', { id });
+    // Dispatched here rather than before the call: until the backend has
+    // accepted the run there is nothing to announce, and a failed queueing
+    // would otherwise send a "started" for a run that never began.
+    notifyRunStarted(id, queued && queued.runId);
     if (queued.status !== 'queued' || !queued.runId) {
       // Belt-and-braces: support a future synchronous path returning final
       // status directly, so this code doesn't fight a later refactor.
@@ -19701,20 +19734,177 @@ async function ta_runNow(id, btn) {
 // server that refuses the login, or a webhook URL that has gone dead, must not
 // turn a successful migration into a visible failure. Failures are logged by
 // emit() and surface in the connector's own Test button.
+// ══════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS VIEW — Settings → Notifications
+// ══════════════════════════════════════════════════════════════════════════
+// Two independent switches govern delivery, and the page says so rather than
+// letting a user turn an event on and wonder why nothing arrives:
+//
+//   1. the event, here          — which run outcomes are worth a message
+//   2. the connector, in Integrations — where those messages go
+//
+// The connector list below is read-only and reflects Integrations, so this
+// page can show whether anything would actually receive an event.
+
+const NOTIFY_EVENT_META = [
+  { key:'started',   label:'Run started',
+    event:'cygenix.migration.started',
+    detail:'Sent as soon as the backend accepts a run. Useful for long migrations; doubles the number of messages.' },
+  { key:'completed', label:'Run completed',
+    event:'cygenix.migration.success',
+    detail:'Sent when a run finishes successfully. Carries the row count and the number of steps.' },
+  { key:'failed',    label:'Run failed',
+    event:'cygenix.migration.failed',
+    detail:'Sent when a run ends in failure. Carries the error message from the run.' },
+];
+
+function initNotificationsView(){
+  renderNotifyEvents();
+  renderNotifyConnectors();
+}
+
+function renderNotifyEvents(){
+  const host = document.getElementById('nt-events');
+  if (!host) return;
+  const on = notifyEvents();
+  host.innerHTML = NOTIFY_EVENT_META.map(e => `
+    <div class="in-enable-row" style="border-top:0.5px solid var(--border);padding:0.75rem 0;margin:0;align-items:flex-start">
+      <input type="checkbox" id="nt-ev-${escIn(e.key)}" ${on[e.key] ? 'checked' : ''}
+             onchange="onNotifyEventToggle('${escIn(e.key)}', this.checked)" style="margin-top:2px">
+      <label for="nt-ev-${escIn(e.key)}" style="display:block;cursor:pointer">
+        <span style="font-size:13px;color:var(--text);font-weight:500">${escIn(e.label)}</span>
+        <span style="font-family:var(--mono);font-size:10px;color:var(--text3);margin-left:0.5rem">${escIn(e.event)}</span>
+        <div style="font-size:11.5px;color:var(--text3);margin-top:2px;line-height:1.5;text-transform:none;letter-spacing:0">${escIn(e.detail)}</div>
+      </label>
+    </div>`).join('');
+}
+
+function onNotifyEventToggle(key, on){
+  setNotifyEvent(key, on);
+  renderNotifyConnectors();   // the "nothing is listening" warning may change
+  if (typeof showToast === 'function'){
+    const meta = NOTIFY_EVENT_META.find(e => e.key === key);
+    showToast((meta ? meta.label : key) + (on ? ' notifications on' : ' notifications off'));
+  }
+}
+
+// Read-only mirror of Integrations, so this page can answer "will anything
+// actually receive this?" without the user having to go and look.
+function renderNotifyConnectors(){
+  const host = document.getElementById('nt-connectors');
+  if (!host) return;
+  const I = window.CygenixIntegrations;
+  if (!I){ host.innerHTML = '<div style="font-size:12px;color:var(--text3)">Integrations unavailable.</div>'; return; }
+
+  // Only connectors that emit() actually dispatches to — listing the export
+  // and import connectors here would imply they receive events, which they
+  // do not.
+  const receivers = ['webhook', 'smtp']
+    .map(id => I.getConnector(id))
+    .filter(Boolean)
+    .map(c => ({ ...c, enabled: I.isEnabled(c.id) }));
+
+  const anyEvent = NOTIFY_EVENT_META.some(e => notifyEvents()[e.key]);
+  const anyConn  = receivers.some(c => c.enabled);
+
+  const rows = receivers.map(c => `
+    <div style="display:flex;align-items:center;gap:0.6rem;padding:0.6rem 0;border-top:0.5px solid var(--border)">
+      <span style="font-size:16px">${c.icon}</span>
+      <span style="font-size:12.5px;color:var(--text)">${escIn(c.name)}</span>
+      <span style="margin-left:auto;font-size:10px;font-family:var(--mono);padding:2px 8px;border-radius:100px;${
+        c.enabled ? 'background:var(--green-bg);color:var(--green)' : 'background:var(--bg3);color:var(--text3)'
+      }">${c.enabled ? '● receiving' : 'off'}</span>
+      <button class="btn btn-sm" onclick="showView('integrations')">Configure</button>
+    </div>`).join('');
+
+  // Say plainly when a switch is on but nothing can act on it — that gap is
+  // otherwise silent, and looks like the feature is broken.
+  let warn = '';
+  if (anyEvent && !anyConn){
+    warn = `<div class="in-form-note warn" style="margin-top:0.75rem">
+      Events are switched on above, but no connector is enabled — nothing will be delivered.
+      Enable Webhook or Email (SMTP) in Integrations.</div>`;
+  } else if (!anyEvent && anyConn){
+    warn = `<div class="in-form-note warn" style="margin-top:0.75rem">
+      A connector is enabled, but every event above is switched off — nothing will be sent.</div>`;
+  }
+
+  const testBtn = anyConn
+    ? `<div style="margin-top:0.9rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">
+         <button class="btn btn-sm" onclick="sendTestNotification()">🧪 Send a test event</button>
+         <span style="font-size:11px;color:var(--text3)">Delivers a sample "completed" event to every enabled connector.</span>
+         <span id="nt-test-result" style="font-size:11.5px;font-family:var(--mono)"></span>
+       </div>` : '';
+
+  host.innerHTML = rows + warn + testBtn;
+}
+
+// Ignores the event switches on purpose: this proves the connectors work,
+// which is a different question from whether a given event is switched on.
+async function sendTestNotification(){
+  const el = document.getElementById('nt-test-result');
+  if (el){ el.textContent = '⏳ sending…'; el.style.color = 'var(--text3)'; }
+  try {
+    const results = await window.CygenixIntegrations.emit('cygenix.migration.success', {
+      status: 'success', project: 'Test', job: 'Test notification',
+      rows: 0, steps: 0, message: 'This is a test event from Settings → Notifications.',
+    });
+    if (!el) return;
+    if (!results.length){ el.textContent = '✕ no connector enabled'; el.style.color = 'var(--amber)'; return; }
+    const bad = results.filter(r => !r.ok);
+    if (bad.length){
+      el.textContent = '✕ ' + bad.map(r => r.id + ': ' + r.message).join(' · ');
+      el.style.color = 'var(--red)';
+    } else {
+      el.textContent = '✓ delivered to ' + results.map(r => r.id).join(', ');
+      el.style.color = 'var(--green)';
+    }
+  } catch (e) {
+    if (el){ el.textContent = '✕ ' + (e && e.message || 'failed'); el.style.color = 'var(--red)'; }
+  }
+}
+
+// ── Which run events are allowed to notify ────────────────────────────────
+// Settings → Notifications writes this. Two switches have to be on for
+// anything to be delivered: the event here, and the connector itself in
+// Integrations. Keeping them separate means "stop emailing me about starts"
+// does not require turning the whole connector off.
+//
+// Defaults deliberately mirror what the app did before this page existed:
+// completed and failed on, started off. Turning `started` on doubles the
+// message volume, so it is opt-in.
+const NOTIFY_EVENTS_KEY = 'cygenix_notify_events';
+const NOTIFY_EVENT_DEFAULTS = { started: false, completed: true, failed: true };
+
+function notifyEvents(){
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(NOTIFY_EVENTS_KEY) || '{}') || {}; } catch {}
+  // Spread over the defaults rather than replacing them, so a key added in a
+  // later release is on/off by its default rather than undefined.
+  return { ...NOTIFY_EVENT_DEFAULTS, ...saved };
+}
+
+function setNotifyEvent(key, on){
+  const next = { ...notifyEvents(), [key]: !!on };
+  try { localStorage.setItem(NOTIFY_EVENTS_KEY, JSON.stringify(next)); } catch {}
+  return next;
+}
+
+// Map a run to its event key. 'started' is dispatched separately at kick-off.
+function runEventKey(status){
+  return status === 'success' ? 'completed' : 'failed';
+}
+
 function notifyIntegrations(finalRun, scheduleId){
   try {
     if (!window.CygenixIntegrations || typeof window.CygenixIntegrations.emit !== 'function') return;
-    const sched = (TA.schedules || []).find(s => s.id === scheduleId);
-    const projects = safeArr('cygenix_projects');
-    const activeId = localStorage.getItem('cygenix_active_project_id') || '';
-    const project  = projects.find(p => p.id === activeId);
+    const key = runEventKey(finalRun.status);
+    if (!notifyEvents()[key]) return;      // event switched off in Settings
     const ok = finalRun.status === 'success';
     window.CygenixIntegrations.emit(
       ok ? 'cygenix.migration.success' : 'cygenix.migration.failed',
-      {
+      { ...notifyContext(scheduleId),
         status:  finalRun.status,
-        project: project ? (project.name || '') : '',
-        job:     sched ? (sched.name || '') : '',
         rows:    finalRun.rowsAffected || 0,
         steps:   (finalRun.stepResults || []).length,
         runId:   finalRun.id || '',
@@ -19724,6 +19914,33 @@ function notifyIntegrations(finalRun, scheduleId){
   } catch (e) {
     console.warn('[integrations] emit skipped:', e && e.message);
   }
+}
+
+// Fired when a run is handed to the backend, before it finishes. Useful as a
+// "long job has begun" ping; off by default because it doubles the volume.
+function notifyRunStarted(scheduleId, runId){
+  try {
+    if (!window.CygenixIntegrations || typeof window.CygenixIntegrations.emit !== 'function') return;
+    if (!notifyEvents().started) return;
+    window.CygenixIntegrations.emit('cygenix.migration.started',
+      { ...notifyContext(scheduleId), status:'started', runId: runId || '' }
+    ).catch(e => console.warn('[integrations] emit failed:', e && e.message));
+  } catch (e) {
+    console.warn('[integrations] emit skipped:', e && e.message);
+  }
+}
+
+// The project/job labels every event carries, so a recipient can tell which
+// migration a message is about without opening the app.
+function notifyContext(scheduleId){
+  const sched = (TA.schedules || []).find(s => s.id === scheduleId);
+  const projects = safeArr('cygenix_projects');
+  const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+  const project  = projects.find(p => p.id === activeId);
+  return {
+    project: project ? (project.name || '') : '',
+    job:     sched ? (sched.name || '') : '',
+  };
 }
 
 // ── Schedule modal (create + edit) ──────────────────────────────────────

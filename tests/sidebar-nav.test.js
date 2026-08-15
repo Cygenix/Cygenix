@@ -130,5 +130,20 @@ NAV[runIdx].items.forEach(it => { runKeys.push(it.key); (it.children||[]).forEac
 check('Run group holds jobs + execute + planner + schedules',
   ['jobs','project-builder','project-plan','task-agent'].every(k => runKeys.includes(k)));
 
+// 8. Notifications sits under Settings and points at the dashboard view that
+//    controls which run events fire.
+const notif = SB.__findItem('notifications');
+check('Notifications exists in the nav', !!notif);
+check('Notifications opens a dashboard view, not a separate page',
+  notif && notif.view === 'notifications' && !notif.href);
+check('Notifications is labelled plainly', notif && notif.label === 'Notifications');
+{
+  const settings = SB.__findItem('settings-group');
+  const kids = (settings && settings.children || []).map(c => c.key);
+  check('Notifications is a child of Settings', kids.includes('notifications'), kids.join(','));
+  check('the existing Settings children are still there',
+    kids.includes('project-settings') && kids.includes('system-parameters'), kids.join(','));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
