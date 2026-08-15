@@ -229,11 +229,19 @@ console.log('Azure SQL — managed identity and the Netlify relay\n');
     const dbc = fs.readFileSync(
       path.join(__dirname, '..', 'netlify', 'functions', 'db-connect.js'), 'utf8');
     check('db-connect chooses the transport before authenticating',
-      dbc.indexOf('const viaRelay = shouldRelay') < dbc.indexOf('if (!viaRelay) config = await applyEntraAuth'));
+      dbc.indexOf('const viaRelay = shouldRelay') < dbc.indexOf('if (!viaRelay) config = await resolveSqlConfig'));
     check('db-connect uses the relay pool when relaying',
       /if \(viaRelay\) \{[\s\S]{0,400}createRelayPool/.test(dbc));
+    // The direct path now goes through a keyed warm-container cache with
+    // transient-error retry, but the isolation invariant is the same: never
+    // mssql.connect()'s process-global pool, and the cache key must carry
+    // server, database, user and auth type so tenants cannot share a pool.
     check('the direct pool is still there for every other server',
-      /new mssql\.ConnectionPool\(config\)\.connect\(\)/.test(dbc));
+      /getCachedPool\(config\)/.test(dbc) && /connectWithRetry\(mssql, config/.test(dbc));
+    check('and its cache key isolates tenants (server, db, user, auth type)',
+      /config\.server, config\.port \|\| 1433, config\.database,[\s\S]{0,120}config\.user \|\| '', \(config\.authentication && config\.authentication\.type\) \|\| 'sql'/.test(dbc));
+    check('db-connect never touches the process-global pool',
+      !/mssql\.connect\(/.test(dbc.split('\n').filter(l => !l.trim().startsWith('//')).join('\n')));
 
     const idx = fs.readFileSync(
       path.join(__dirname, '..', 'azure-function', 'src', 'index.js'), 'utf8');

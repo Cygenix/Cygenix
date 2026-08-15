@@ -38,7 +38,7 @@ require.cache[identityPath].exports = {
   DefaultAzureCredential: class { async getToken() { return { token: 'TOK' }; } },
   ClientSecretCredential: class { async getToken() { return { token: 'TOK' }; } },
 };
-const { resolveSqlConfig } = require(
+const { resolveSqlConfig, connectWithRetry } = require(
   path.join(__dirname, '..', 'netlify', 'functions', 'lib', 'sql-entra.js'));
 
 const RM_PATH = path.join(__dirname, '..', 'azure-function', 'src', 'run-migration.js');
@@ -67,6 +67,7 @@ const ctx = vm.createContext({
   process, URL, console, Array, JSON, Error,
   // Injected for openPool.
   resolveSqlConfig,
+  connectWithRetry: (sqlMod, cfg, opts) => connectWithRetry(sqlMod, cfg, opts),
   parseMssqlUrl: null,
   sql: null,
   // Injected for the validation blocks.
@@ -202,7 +203,7 @@ console.log('Scheduled runs — Azure Function mode targets\n');
       // A migration statement is allowed hours. Dropping back to the driver
       // default here would kill long runs that used to work.
       check('and the long-running-migration timeouts preserved',
-        cfg.requestTimeout === 14_400_000 && cfg.connectionTimeout === 30_000,
+        cfg.requestTimeout === 14_400_000 && cfg.connectionTimeout === 90_000,
         cfg.requestTimeout + '/' + cfg.connectionTimeout);
 
       // The mssql:// path is untouched.

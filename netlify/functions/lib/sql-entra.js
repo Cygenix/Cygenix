@@ -119,6 +119,26 @@ function isEntraConn(connStr) {
 // than handing tedious a credential type — matches how the rest of the Azure
 // Function App already connects, and keeps one code path for both modes.
 async function acquireSqlToken(desc) {
+  const credential = cachedCredential(desc);
+
+  const res = await credential.getToken('https://database.windows.net/.default');
+  if (!res || !res.token) {
+    throw new Error('Entra returned no access token for the database scope.');
+  }
+  return res.token;
+}
+
+// One credential instance per distinct identity, held for the life of the
+// process. @azure/identity caches tokens per credential INSTANCE, so a fresh
+// credential per request re-runs the whole acquisition — and for
+// DefaultAzureCredential that means walking the probe chain (including a
+// managed-identity IMDS probe that, on Netlify, has nothing to answer it and
+// must time out) before every single query.
+const _credCache = new Map();
+function cachedCredential(desc) {
+  const key = [desc.mode, desc.tenantId || '', desc.clientId || ''].join('|');
+  if (_credCache.has(key)) return _credCache.get(key);
+
   let identity;
   try {
     identity = require('@azure/identity');
@@ -155,12 +175,8 @@ async function acquireSqlToken(desc) {
       ? new identity.DefaultAzureCredential({ managedIdentityClientId: desc.clientId })
       : new identity.DefaultAzureCredential();
   }
-
-  const res = await credential.getToken('https://database.windows.net/.default');
-  if (!res || !res.token) {
-    throw new Error('Entra returned no access token for the database scope.');
-  }
-  return res.token;
+  _credCache.set(key, credential);
+  return credential;
 }
 
 // Turn a SQL-auth mssql config into an Entra one, if the string asks for it.
@@ -270,11 +286,103 @@ async function resolveSqlConfig(baseConfig, connStr) {
 
   const mi = managedIdentityConfig(target);
   // Preserve the caller's timeouts — the migration runner allows hours per
-  // statement and must not silently fall back to the driver default.
-  if (baseConfig && baseConfig.requestTimeout)    mi.requestTimeout    = baseConfig.requestTimeout;
-  if (baseConfig && baseConfig.connectionTimeout) mi.connectionTimeout = baseConfig.connectionTimeout;
-  if (baseConfig && baseConfig.port)              mi.port              = baseConfig.port;
-  return mi;
+  // statement and must not silently fall back to the driver default. Both
+  // conventions count: mssql's top-level keys and tedious' options.*, which
+  // is where db-connect.js writes them. Merging options (rather than letting
+  // managedIdentityConfig's hardcoded block replace the caller's) is what
+  // carries the options-convention values through.
+  const base = baseConfig || {};
+  mi.options = { ...(base.options || {}), ...mi.options };
+  const reqT  = base.requestTimeout    ?? (base.options && base.options.requestTimeout);
+  const connT = base.connectionTimeout ?? (base.options && base.options.connectTimeout);
+  if (reqT)  mi.requestTimeout    = reqT;
+  if (connT) mi.connectionTimeout = connT;
+  if (base.pool) mi.pool = base.pool;
+  if (base.port) mi.port = base.port;
+  return withSqlResilience(mi);
+}
+
+
+// ── Resilient connections ─────────────────────────────────────────────────
+// Azure SQL serverless auto-pauses when idle and takes 30-60 seconds to
+// resume; during the resume, connects either hang or fail with 40613. Three
+// separate knobs must ALL outlast that window, or the first request after a
+// pause times out no matter what the other two say:
+//
+//   connectionTimeout          mssql default 15s
+//   pool.createTimeoutMillis   tarn default 30s -- silently caps every
+//                              connect even when connectionTimeout is higher
+//   pool.acquireTimeoutMillis  tarn default 30s
+//
+// And because a resume can outlast even a generous single attempt, transient
+// failures need a retry: a single-shot connect against a resuming database
+// fails 100% of the time however long it waits.
+const SQL_CONNECT_TIMEOUT = 90000;
+const SQL_REQUEST_TIMEOUT = 120000;
+
+// Fill in the timeouts a config does not set, without overriding ones it
+// does. Two conventions exist in this codebase: mssql's top-level keys and
+// tedious' options.connectTimeout / options.requestTimeout. The driver reads
+// options.* first (mssql/lib/tedious/connection-pool.js maps top-level keys
+// into options only when options has none), so an explicit value in either
+// place is honoured here the same way the driver would honour it.
+function withSqlResilience(config) {
+  const c = { ...(config || {}) };
+  const opts = c.options || {};
+  if (opts.connectTimeout == null && c.connectionTimeout == null) c.connectionTimeout = SQL_CONNECT_TIMEOUT;
+  if (opts.requestTimeout == null && c.requestTimeout == null)    c.requestTimeout    = SQL_REQUEST_TIMEOUT;
+  c.pool = {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000,
+    acquireTimeoutMillis: SQL_CONNECT_TIMEOUT,
+    createTimeoutMillis:  SQL_CONNECT_TIMEOUT,
+    ...(c.pool || {}),
+  };
+  return c;
+}
+
+// The errors worth retrying: Azure's documented transient codes (40613 is
+// the serverless-resume one) plus the socket-level ways the same conditions
+// present. Anything else -- bad login, bad database name -- fails fast.
+const TRANSIENT_SQL_NUMBERS = new Set([40613, 40197, 40501, 40540, 10928, 10929, 49918, 49919, 49920, 4060, 233, 64]);
+const TRANSIENT_SQL_CODES   = new Set(['ETIMEOUT', 'ESOCKET', 'ECONNRESET', 'ECONNCLOSED', 'ECONNREFUSED']);
+
+function isTransientSqlError(e) {
+  if (!e) return false;
+  const n = e.number ?? (e.originalError && e.originalError.info && e.originalError.info.number);
+  if (TRANSIENT_SQL_NUMBERS.has(n)) return true;
+  if (TRANSIENT_SQL_CODES.has(e.code)) return true;
+  // AggregateError from a pool that collected several attempts.
+  if (Array.isArray(e.errors)) return e.errors.some(isTransientSqlError);
+  return false;
+}
+
+// Open a pool, retrying transient failures with exponential backoff. Takes
+// the mssql module as an argument so this file stays dependency-free for the
+// callers that only need the identity helpers.
+//
+// The pool object is recreated per attempt: a ConnectionPool whose connect()
+// rejected is done for, and tarn can leave a half-open socket behind unless
+// close() is called, which matters under exactly the burst of failures a
+// resume produces.
+async function connectWithRetry(mssql, config, { attempts = 4, log } = {}) {
+  const cfg = withSqlResilience(config);
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    const pool = new mssql.ConnectionPool(cfg);
+    try {
+      return await pool.connect();
+    } catch (e) {
+      lastErr = e;
+      try { await pool.close(); } catch {}
+      if (!isTransientSqlError(e) || i === attempts - 1) throw e;
+      const delay = Math.min(1000 * 2 ** i, 8000) + Math.floor(Math.random() * 500);
+      if (log) log('SQL connect attempt ' + (i + 1) + ' failed transiently (' + (e.number || e.code || e.message) + '); retrying in ' + delay + 'ms');
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
 }
 
 module.exports = {
@@ -285,6 +393,11 @@ module.exports = {
   managedIdentityTarget,
   managedIdentityConfig,
   resolveSqlConfig,
+  withSqlResilience,
+  isTransientSqlError,
+  connectWithRetry,
+  SQL_CONNECT_TIMEOUT,
+  SQL_REQUEST_TIMEOUT,
   // Exported for tests.
   canonical,
 };

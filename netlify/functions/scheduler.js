@@ -140,7 +140,7 @@ async function listSchedules(userId, _body, containers) {
          + "AND (NOT IS_DEFINED(c.docType) OR c.docType = 'schedule') "
          + 'ORDER BY c._ts DESC',
     parameters: [{ name: '@u', value: userId }],
-  }).fetchAll();
+  }, { partitionKey: userId }).fetchAll();
   return { schedules: resources };
 }
 
@@ -486,13 +486,19 @@ async function getRun(userId, body, containers) {
 async function versionList(userId, body, containers) {
   const { jobId } = body || {};
   if (!jobId) return { __err: 'jobId required' };
+  // Project the list fields and bound it: each version document carries a
+  // full job snapshot (every step's insertSQL and column mapping), so
+  // SELECT * on a job with hundreds of saved versions shipped megabytes to
+  // render a list that shows five fields. versionGet fetches the snapshot
+  // when one is actually opened.
   const { resources } = await containers.job_versions.items.query({
-    query: 'SELECT * FROM c WHERE c.jobId = @j AND c.userId = @u ORDER BY c.version DESC',
+    query: 'SELECT TOP 100 c.id, c.jobId, c.userId, c.version, c.label, c.note, c.createdAt, c.hash '
+         + 'FROM c WHERE c.jobId = @j AND c.userId = @u ORDER BY c.version DESC',
     parameters: [
       { name: '@j', value: jobId },
       { name: '@u', value: userId },
     ],
-  }).fetchAll();
+  }, { partitionKey: jobId }).fetchAll();
   return { versions: resources };
 }
 
@@ -533,7 +539,7 @@ async function versionCreate(userId, body, containers) {
       { name: '@j', value: jobId },
       { name: '@u', value: userId },
     ],
-  }).fetchAll();
+  }, { partitionKey: jobId }).fetchAll();
   if (latest.length) {
     const prev = latest[0];
     const prevHash = hashSnapshot(prev.snapshot);
@@ -583,7 +589,7 @@ async function versionDelete(userId, body, containers) {
       { name: '@u', value: userId },
       { name: '@v', value: id },
     ],
-  }).fetchAll();
+  }, { partitionKey: userId }).fetchAll();
   if (pinned.length) {
     return {
       __err: 'Cannot delete: this version is pinned by ' + pinned.length + ' schedule(s): '

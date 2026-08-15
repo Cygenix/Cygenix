@@ -211,7 +211,7 @@ async function fireSchedule(containers, schedule, now) {
   //    not the actual work to finish.
   try {
     const ctl = new AbortController();
-    const to  = setTimeout(() => ctl.abort(), 8_000);
+    const to  = setTimeout(() => ctl.abort(), 4_000);
     const res = await fetch(bgUrl, {
       method: 'POST',
       headers: {
@@ -291,18 +291,23 @@ exports.handler = async () => {
     return { statusCode: 200, body: JSON.stringify({ ticked: true, fired: 0, durationMs: Date.now() - startedAt }) };
   }
 
-  // 2. Fire each in sequence. We deliberately serialise rather than
-  //    Promise.all so a slow dispatch doesn't crowd out the others, and
-  //    so log output stays readable in Netlify's Functions log.
+  // 2. Fire in bounded batches of five. Fully serial dispatch had a failure
+  //    mode worse than noisy logs: each dispatch can wait up to its abort
+  //    deadline, so four slow ones exceeded Netlify's function ceiling, the
+  //    lambda was killed mid-loop — and because nextRunAt is bumped BEFORE
+  //    dispatch, the schedules never reached that tick were silently
+  //    skipped, not retried. Batching caps wall-clock at ceil(n/5) deadlines
+  //    while still not letting one flood drown the container.
   const outcomes = [];
-  for (const schedule of dueSchedules) {
-    try {
-      const out = await fireSchedule(containers, schedule, now);
-      outcomes.push({ scheduleId: schedule.id, name: schedule.name, ...out });
-    } catch (e) {
-      console.error('[scheduled-runner] fireSchedule error for', schedule.id, e.message);
-      outcomes.push({ scheduleId: schedule.id, name: schedule.name, fired: false, reason: 'exception: ' + e.message });
-    }
+  for (let i = 0; i < dueSchedules.length; i += 5) {
+    const batch = dueSchedules.slice(i, i + 5);
+    outcomes.push(...await Promise.all(batch.map(schedule =>
+      fireSchedule(containers, schedule, now)
+        .then(out => ({ scheduleId: schedule.id, name: schedule.name, ...out }))
+        .catch(e => {
+          console.error('[scheduled-runner] fireSchedule error for', schedule.id, e.message);
+          return { scheduleId: schedule.id, name: schedule.name, fired: false, reason: 'exception: ' + e.message };
+        }))));
   }
 
   const firedCount = outcomes.filter(o => o.fired).length;
