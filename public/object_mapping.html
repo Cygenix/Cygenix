@@ -219,6 +219,28 @@ body.cyg-collapsed{padding-left:54px}
 /* ── Join builder ── */
 .join-on-input{flex:1;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;color:var(--teal);font-family:var(--mono);outline:none}
 
+/* ── WHERE / GROUP BY condition rows ── */
+.cond-row{display:flex;align-items:center;gap:0.3rem;margin-bottom:0.3rem}
+.cond-join{
+  flex:0 0 62px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:4px;
+  padding:4px 4px;font-size:10px;font-family:var(--mono);color:var(--accent);
+  outline:none;cursor:pointer;text-align:center;
+}
+.cond-first{
+  flex:0 0 62px;font-size:10px;font-family:var(--mono);color:var(--text3);
+  text-align:center;letter-spacing:0.04em;
+}
+.cond-text{
+  flex:1;min-width:0;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;
+  padding:5px 8px;font-size:11px;color:var(--text);font-family:var(--mono);outline:none;
+}
+.cond-text:focus{border-color:var(--accent)}
+.cond-del{
+  flex:0 0 auto;background:none;border:none;color:var(--text3);cursor:pointer;
+  padding:2px 5px;font-size:12px;line-height:1;border-radius:3px;
+}
+.cond-del:hover{background:var(--bg4);color:var(--red)}
+
 /* ── WHERE modal ── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
@@ -503,13 +525,30 @@ document.addEventListener('DOMContentLoaded', function(){
               <option value="independent">Independent — each table commits separately</option>
             </select>
           </div>
-          <!-- WHERE clause -->
+          <!-- WHERE conditions — a repeatable list joined by AND/OR.
+               #src-where below holds the single combined string. Everything
+               that consumes a WHERE clause reads that one field: both SQL
+               generators here, project-builder's row-by-row runner, the run
+               report tooltip and job version history. The list is an editor
+               over it, so nothing downstream had to change. -->
           <div>
             <label class="form-label" style="display:flex;align-items:center;justify-content:space-between">
-              WHERE clause (optional)
+              WHERE conditions (optional)
               <button onclick="openWhereModal()" style="background:var(--purple-bg);border:0.5px solid rgba(107,78,142,0.3);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--purple);cursor:pointer;font-family:var(--serif)">🤖 AI help</button>
             </label>
-            <input id="src-where" class="form-input" style="font-family:var(--mono)" placeholder="e.g. active = 1 AND status = 'O'">
+            <div id="where-rows"></div>
+            <button class="btn btn-ghost btn-sm" onclick="addWhereCond()" style="width:100%;margin-top:0.3rem;justify-content:center">+ Add condition</button>
+            <div id="where-note" style="display:none;font-size:10px;color:var(--text3);margin-top:0.35rem;line-height:1.45"></div>
+            <input id="src-where" type="hidden">
+          </div>
+          <!-- GROUP BY — repeatable list of columns or expressions. -->
+          <div>
+            <label class="form-label">GROUP BY (optional)</label>
+            <div id="groupby-rows"></div>
+            <button class="btn btn-ghost btn-sm" onclick="addGroupBy()" style="width:100%;margin-top:0.3rem;justify-content:center">+ Add GROUP BY column</button>
+            <div id="groupby-note" style="display:none;font-size:10px;margin-top:0.35rem;line-height:1.45"></div>
+            <datalist id="src-col-list"></datalist>
+            <input id="src-groupby" type="hidden">
           </div>
           <!-- Row limit (single mode) -->
           <div id="row-limit-wrap" style="display:none">
@@ -1237,6 +1276,11 @@ document.addEventListener('DOMContentLoaded', function init(){
 
   const ak = localStorage.getItem('cygenix_api_key')||'';
   if(ak) $('api-key').value = ak;
+
+  // Paint one empty WHERE row so the Options panel looks the same as before
+  // for a fresh map. checkEditMode overwrites both lists when loading a job.
+  renderWhereRows();
+  renderGroupByRows();
 
   // Load wasis via shared helper (managed in Dashboard → System Parameters → Was/Is tab)
   // The helper handles primary key + inventory fallback so this page and dashboard
@@ -2143,6 +2187,12 @@ function persistMappingToSavedJob(){
       // clause is baked into insertSQL as text but lost as a structured
       // field — invisible to the runner's paginated path.
       srcWhere:     ($('src-where')?.value || '').trim(),
+      // The structured halves. srcWhere above stays the combined string every
+      // consumer reads; these two exist so re-opening the job restores the
+      // individual condition rows rather than one long line.
+      srcWhereConditions: (whereConds||[]).map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols:     (groupByCols||[]).slice(),
+      srcGroupBy:         ($('src-groupby')?.value || '').trim(),
       insertSQL: generatedSQL.insert || existing.insertSQL,
       schemaSQL: generatedSQL.schema || existing.schemaSQL,
       verifySQL: generatedSQL.verify || existing.verifySQL,
@@ -3113,7 +3163,23 @@ function generateSingleSQL(silent){
   }).join(',\n');
 
   const where=($('src-where')?.value||'').trim();
+  const groupBy=($('src-groupby')?.value||'').trim();
   const colList=mapping.map(m=>'['+m.tgtCol+']').join(', ');
+
+  // A grouped SELECT collapses source rows, so "how many rows did we read"
+  // is the number of groups, not the number of matching rows. Both verify
+  // queries below count through this subquery instead of the raw table —
+  // counting the table would report a source total the insert never produced.
+  const srcCountFrom = groupBy
+    ? `(SELECT ${groupBy} FROM ${srcFullQ}${where?' WHERE '+where:''} GROUP BY ${groupBy}) AS [g]`
+    : `${srcFullQ}${where?' WHERE '+where:''}`;
+
+  if(groupBy){
+    // Same check the Options panel shows, repeated here so it reaches the
+    // warnings list on the generated SQL and the saved job.
+    const ung = (typeof ungroupedColumns==='function') ? ungroupedColumns() : [];
+    if(ung.length) warnings.push('GROUP BY set but ['+ung.join('], [')+'] '+(ung.length===1?'is':'are')+' neither grouped nor aggregated — SQL Server will reject this statement');
+  }
 
   // NOT NULL warnings
   (tgtTable.columns||[]).filter(c=>!c.nullable&&!c.isIdentity).forEach(tc=>{
@@ -3133,13 +3199,14 @@ function generateSingleSQL(silent){
   sql+=`INSERT INTO ${tgtFullQ}\n    (${colList})\nSELECT\n${selectCols}\nFROM ${srcFullQ}\n`;
   if(joinClauses) sql+=joinClauses+'\n';
   if(where) sql+=`WHERE ${where}\n`;
+  if(groupBy) sql+=`GROUP BY ${groupBy}\n`;
   sql+=';\n';
   if(hasIdent) sql+=`\nSET IDENTITY_INSERT ${tgtFullQ} OFF;\n`;
   sql+=`\n-- Verify:\nSELECT COUNT(*) AS [migrated_rows] FROM ${tgtFullQ};\n`+
-       `SELECT COUNT(*) AS [source_rows]   FROM ${srcFullQ}${where?' WHERE '+where:''};`;
+       `SELECT COUNT(*) AS [source_rows]   FROM ${srcCountFrom};`;
 
   const schemaSQL=`SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_SCHEMA='${tgtTable.schema}' AND TABLE_NAME='${tgtTable.name}'\nORDER BY ORDINAL_POSITION;`;
-  const verifySQL=`SELECT '${srcDB?srcDB+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFullQ}${where?' WHERE '+where:''}\nUNION ALL\nSELECT '${tgtDB?tgtDB+'.':''}${tgtTable.fullName}', COUNT(*) FROM ${tgtFullQ};`;
+  const verifySQL=`SELECT '${srcDB?srcDB+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcCountFrom}\nUNION ALL\nSELECT '${tgtDB?tgtDB+'.':''}${tgtTable.fullName}', COUNT(*) FROM ${tgtFullQ};`;
 
   // Apply system-parameter substitution (@@Token → value) to all generated SQL
   const sub = (typeof CygenixParams !== 'undefined')
@@ -3185,6 +3252,226 @@ function tryAutoGenSQL(){
   if(srcTable && tgtTable && columnMapping.filter(m=>m.tgtCol && (m.srcCol || (m.literalValue!==undefined && m.literalValue!==''))).length > 0){
     try { generateSingleSQL(true); } catch(e) {}
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// WHERE CONDITIONS + GROUP BY
+// ══════════════════════════════════════════════════════════════════════════
+// The Options panel used to offer a single free-text WHERE box, so anything
+// beyond one condition meant typing the ANDs by hand with no way to see, edit
+// or remove a condition on its own. Conditions are now a list.
+//
+// Design note — why the hidden #src-where survives:
+//   The combined string is still written into #src-where, and that stays the
+//   one field anything else reads. Both SQL generators on this page, the
+//   silent write-back in persistMappingToSavedJob, project-builder's
+//   row-by-row runner (which rebuilds SELECT * FROM src WHERE srcWhere), the
+//   Audit Source "excluded rows" query, the run-report tooltip and the job
+//   version-history diff all keep working untouched. The structured list is
+//   saved alongside it purely so re-opening a job restores the rows.
+//
+// GROUP BY is emitted after WHERE. It only affects generated SQL — see the
+// guard in project-builder's runner, which refuses to run a grouped step
+// through the row-by-row path because that path has no notion of aggregation.
+
+// Seeded with one empty row rather than left empty, so the list is valid
+// before anything renders — otherwise "+ Add condition" on a page that had
+// not painted yet would produce one row instead of two.
+let whereConds = [{ connector:'AND', text:'' }];
+let groupByCols = [];     // ['CaseNo', 'YEAR([Opened])', …]
+
+// Conditions are wrapped in parentheses only when there is more than one, so
+// a single-condition job generates byte-identical SQL to before this change.
+function combinedWhere(){
+  const parts = whereConds
+    .map(c => cleanCondition(c && c.text))
+    .filter(Boolean);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  let out = '';
+  let n = 0;
+  whereConds.forEach(c => {
+    const t = cleanCondition(c && c.text);
+    if (!t) return;
+    const wrapped = '(' + t + ')';
+    out = n === 0 ? wrapped : out + ' ' + (c.connector === 'OR' ? 'OR' : 'AND') + ' ' + wrapped;
+    n++;
+  });
+  return out;
+}
+
+// Users paste conditions with the keyword or a trailing semicolon attached —
+// both would produce "WHERE WHERE x = 1". Same normalisation applyWhere has
+// always done for the AI-suggested clause.
+function cleanCondition(s){
+  return String(s == null ? '' : s).trim().replace(/^WHERE\s+/i, '').replace(/;+\s*$/, '').trim();
+}
+
+// A bare identifier is bracketed; anything else (an expression such as
+// YEAR([Opened]), or an already-bracketed name) is passed through as typed.
+function groupByExpr(raw){
+  const t = String(raw == null ? '' : raw).trim().replace(/,+\s*$/, '').trim();
+  if (!t) return '';
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(t) ? '[' + t + ']' : t;
+}
+
+function combinedGroupBy(){
+  return groupByCols.map(groupByExpr).filter(Boolean).join(', ');
+}
+
+// Push both combined strings into the hidden inputs everything else reads,
+// then regenerate. Called after every edit to either list.
+function syncClauses(){
+  const w = $('src-where');  if (w) w.value = combinedWhere();
+  const g = $('src-groupby'); if (g) g.value = combinedGroupBy();
+  renderClauseNotes();
+  tryAutoGenSQL();
+}
+
+function renderWhereRows(){
+  const host = $('where-rows');
+  if (!host) return;
+  if (!whereConds.length) whereConds = [{ connector:'AND', text:'' }];
+  host.innerHTML = whereConds.map((c, i) => `
+    <div class="cond-row">
+      ${i === 0
+        ? '<span class="cond-first">WHERE</span>'
+        : `<select class="cond-join" onchange="setWhereConn(${i},this.value)">
+             <option value="AND"${c.connector !== 'OR' ? ' selected' : ''}>AND</option>
+             <option value="OR"${c.connector === 'OR' ? ' selected' : ''}>OR</option>
+           </select>`}
+      <input class="cond-text" value="${escAttr(c.text || '')}"
+             placeholder="e.g. active = 1"
+             oninput="setWhereText(${i},this.value)">
+      <button class="cond-del" onclick="delWhereCond(${i})" title="Remove this condition">✕</button>
+    </div>`).join('');
+}
+
+function renderGroupByRows(){
+  const host = $('groupby-rows');
+  if (!host) return;
+  host.innerHTML = groupByCols.map((v, i) => `
+    <div class="cond-row">
+      <span class="cond-first">${i === 0 ? 'GROUP BY' : ','}</span>
+      <input class="cond-text" value="${escAttr(v || '')}" list="src-col-list"
+             placeholder="column or expression"
+             oninput="setGroupBy(${i},this.value)">
+      <button class="cond-del" onclick="delGroupBy(${i})" title="Remove">✕</button>
+    </div>`).join('');
+  // Offer the source table's columns for autocomplete.
+  const dl = $('src-col-list');
+  if (dl) {
+    dl.innerHTML = ((srcTable && srcTable.columns) || [])
+      .map(c => typeof c === 'string' ? c : c.name)
+      .filter(Boolean)
+      .map(n => '<option value="' + escAttr(n) + '">').join('');
+  }
+}
+
+function addWhereCond(){ whereConds.push({ connector:'AND', text:'' }); renderWhereRows(); syncClauses(); }
+function setWhereText(i, v){ if (whereConds[i]) { whereConds[i].text = v; syncClauses(); } }
+function setWhereConn(i, v){ if (whereConds[i]) { whereConds[i].connector = v === 'OR' ? 'OR' : 'AND'; syncClauses(); } }
+function delWhereCond(i){
+  whereConds.splice(i, 1);
+  if (!whereConds.length) whereConds = [{ connector:'AND', text:'' }];
+  renderWhereRows(); syncClauses();
+}
+
+function addGroupBy(){ groupByCols.push(''); renderGroupByRows(); syncClauses(); }
+function setGroupBy(i, v){ groupByCols[i] = v; syncClauses(); }
+function delGroupBy(i){ groupByCols.splice(i, 1); renderGroupByRows(); syncClauses(); }
+
+// Two notes, both about things that silently produce wrong results.
+function renderClauseNotes(){
+  // 1. AND binds tighter than OR. With a mixed list the user is not
+  //    necessarily getting the grouping they pictured, so show the real one.
+  const el = $('where-note');
+  if (el){
+    const used = whereConds.filter(c => cleanCondition(c && c.text));
+    const conns = used.slice(1).map(c => c.connector === 'OR' ? 'OR' : 'AND');
+    const mixed = conns.includes('AND') && conns.includes('OR');
+    if (mixed){
+      el.style.display = 'block';
+      el.innerHTML = 'Mixed AND/OR — SQL binds AND tighter than OR, so this reads as '
+        + '<code style="font-family:var(--mono);color:var(--amber)">' + esc(bracketPreview()) + '</code>. '
+        + 'Put brackets inside a condition to override it.';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  // 2. GROUP BY makes every un-grouped, un-aggregated column illegal. SQL
+  //    Server rejects the whole statement, so name the offenders here rather
+  //    than letting the run fail with "is invalid in the select list".
+  const gEl = $('groupby-note');
+  if (gEl){
+    const gb = combinedGroupBy();
+    const offenders = gb ? ungroupedColumns() : [];
+    if (!gb){
+      gEl.style.display = 'none';
+    } else if (offenders.length){
+      gEl.style.display = 'block';
+      gEl.style.color = 'var(--amber)';
+      gEl.innerHTML = 'Not grouped or aggregated: '
+        + '<strong>' + offenders.map(esc).join(', ') + '</strong>. '
+        + 'SQL Server will reject this. Add each to GROUP BY, or put an aggregate '
+        + 'such as <code style="font-family:var(--mono)">MAX([col])</code> in that row’s Fixed value box.';
+    } else {
+      gEl.style.display = 'block';
+      gEl.style.color = 'var(--text3)';
+      gEl.innerHTML = 'Grouping applies to the generated SQL. Steps that run row-by-row '
+        + 'through a project cannot aggregate, and will refuse to run a grouped map.';
+    }
+  }
+}
+
+// Show how SQL will actually bracket a mixed AND/OR list: AND runs collapse
+// into a single OR operand.
+function bracketPreview(){
+  const used = whereConds.filter(c => cleanCondition(c && c.text));
+  const groups = [];
+  used.forEach((c, i) => {
+    if (i === 0 || c.connector === 'OR') groups.push(['…']);
+    else groups[groups.length - 1].push('…');
+  });
+  return groups.map(g => g.length > 1 ? '(' + g.join(' AND ') + ')' : g[0]).join(' OR ');
+}
+
+// Mapped target columns whose SELECT expression is a plain source column —
+// no fixed value, no aggregate — and which are not in the GROUP BY list.
+function ungroupedColumns(){
+  const gb = groupByCols.map(g => groupByExpr(g).replace(/^\[|\]$/g, '').toLowerCase()).filter(Boolean);
+  const AGG = /\b(MIN|MAX|SUM|AVG|COUNT|COUNT_BIG|STRING_AGG)\s*\(/i;
+  return columnMapping
+    .filter(m => m && m.tgtCol && m.srcCol)
+    .filter(m => !(m.literalValue !== undefined && m.literalValue !== '' && AGG.test(m.literalValue)))
+    .filter(m => !(m.literalValue !== undefined && m.literalValue !== ''))
+    .filter(m => !gb.includes(String(m.srcCol).toLowerCase()))
+    .map(m => m.srcCol);
+}
+
+// Rebuild both lists from a saved job. Older jobs have only the combined
+// srcWhere string and no list, so it becomes a single condition — which is
+// exactly what it was.
+function loadClausesFromJob(job){
+  const list = Array.isArray(job && job.srcWhereConditions) ? job.srcWhereConditions : null;
+  if (list && list.length){
+    whereConds = list.map(c => ({
+      connector: (c && c.connector) === 'OR' ? 'OR' : 'AND',
+      text: (c && c.text) || '',
+    }));
+  } else {
+    whereConds = [{ connector:'AND', text: (job && job.srcWhere) || '' }];
+  }
+  const g = job && job.srcGroupByCols;
+  groupByCols = Array.isArray(g) ? g.slice() : [];
+  renderWhereRows();
+  renderGroupByRows();
+  // Write the combined values straight through without regenerating — the
+  // caller regenerates once its tables and mapping are in place.
+  const w = $('src-where');   if (w) w.value = combinedWhere();
+  const gv = $('src-groupby'); if (gv) gv.value = combinedGroupBy();
+  renderClauseNotes();
 }
 
 // Also add + Fixed value button to add a literal-only row
@@ -3616,6 +3903,7 @@ function generateOTMSQL(){
 
   const txMode=$('tx-mode')?.value||'single';
   const where=($('src-where')?.value||'').trim();
+  const groupBy=($('src-groupby')?.value||'').trim();
   const srcFull='['+srcTable.schema+'].['+srcTable.name+']';
   const srcDb = srcSchema?.database || parseDbName(srcConn) || '';
   const tgtDb = tgtSchema?.database || parseDbName(tgtConn) || '';
@@ -3712,6 +4000,7 @@ function generateOTMSQL(){
   sql+=`  FROM   ${srcFullQualified}\n`;
   if(joinSQL) sql+=joinSQL.split('\n').map(l=>'  '+l).join('\n')+'\n';
   if(where) sql+=`  WHERE  ${where}\n`;
+  if(groupBy) sql+=`  GROUP  BY ${groupBy}\n`;
   sql+=`  ORDER  BY (SELECT NULL);\n\n`;
 
   sql+=`DECLARE\n`;
@@ -3871,7 +4160,12 @@ function generateOTMSQL(){
   // Verify SQL: keep DB names only in the display labels (the string literal
   // in the SELECT list), but use 2-part names in the FROM clauses so the
   // COUNT(*) actually runs. Same reasoning as the main INSERT SQL.
-  const verifySQL=`-- Verify row counts\nSELECT '${srcDb?srcDb+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${srcFullQualified}${where?' WHERE '+where:''}\n`+
+  // Grouped cursors read one row per group, so count groups — see the same
+  // reasoning in generateSingleSQL.
+  const otmCountFrom = groupBy
+    ? `(SELECT ${groupBy} FROM ${srcFullQualified}${where?' WHERE '+where:''} GROUP BY ${groupBy}) AS [g]`
+    : `${srcFullQualified}${where?' WHERE '+where:''}`;
+  const verifySQL=`-- Verify row counts\nSELECT '${srcDb?srcDb+'.':''}${srcTable.fullName}' AS [Table], COUNT(*) AS [Rows] FROM ${otmCountFrom}\n`+
     targetTables.map(tt=>`UNION ALL\nSELECT '${tgtDb?tgtDb+'.':''}${tt.fullName}', COUNT(*) FROM [${tt.schema}].[${tt.name}]`).join('\n')+';\n';
   // Apply system-parameter substitution (@@Token → value) to generated SQL
   const sub = (typeof CygenixParams !== 'undefined')
@@ -4043,6 +4337,10 @@ function saveAsJob(){
       // paginated SELECT * FROM srcTable and needs srcWhere as a separate
       // field to append. See project-builder runMigrationStep.
       srcWhere: ($('src-where')?.value || '').trim(),
+      // Structured halves — see persistMappingToSavedJob for why both exist.
+      srcWhereConditions: whereConds.map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols:     groupByCols.slice(),
+      srcGroupBy:         ($('src-groupby')?.value || '').trim(),
       joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
       insertSQL: generatedSQL.insert,
       schemaSQL: generatedSQL.schema,
@@ -4097,6 +4395,9 @@ function saveAsJob(){
       // full insertSQL as a cursor script, so the WHERE clause is baked
       // in there too; the structured srcWhere is for the editor only.
       srcWhere: ($('src-where')?.value || '').trim(),
+      srcWhereConditions: whereConds.map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols:     groupByCols.slice(),
+      srcGroupBy:         ($('src-groupby')?.value || '').trim(),
       oneToManyConfig:true,
       joinState: (window._joinState||[]).filter(j=>j.table&&j.on),
       tables: targetTables.map(tt=>({name:tt.fullName, pkCol:tt.pkCol, pkMode:tt.pkMode, mappings:tt.mappings, fks:tt.fks, rows:0})),
@@ -4257,8 +4558,11 @@ async function restoreJobMapping(job,isOTM){
   // restore the regenerated preview would lose the WHERE on every reopen,
   // and saveAsJob would overwrite the stored srcWhere with an empty string.
   // job.srcWhere is the structured field; fall back to '' for legacy jobs
-  // saved before this field existed.
-  if($('src-where')) $('src-where').value = job.srcWhere || '';
+  // saved before this field existed. loadClausesFromJob rebuilds the
+  // condition rows and the GROUP BY list, then writes both combined strings
+  // into the hidden inputs — a job saved before the list existed becomes a
+  // single condition holding exactly what it held before.
+  loadClausesFromJob(job);
 
   // ── Restore JOIN state first (both modes) ─────────────────────────────────
   if(job.joinState && Array.isArray(job.joinState) && job.joinState.length){
@@ -4330,6 +4634,11 @@ function _mapSignature(){
       s: srcTable ? (srcTable.fullName || srcTable.name || '') : '',
       t: tgtTable ? (tgtTable.fullName || tgtTable.name || '') : '',
       w: ($('src-where')||{}).value || '',
+      // The condition list and GROUP BY are part of the map. Without them,
+      // adding or removing a condition would not count as an unsaved change
+      // and Cancel would discard it without asking.
+      wc: (whereConds||[]).map(c => [c.connector||'AND', c.text||'']),
+      g: (groupByCols||[]).slice(),
       m: (columnMapping||[]).map(m => [m.srcCol||'', m.tgtCol||'', m.transform||'', m.literalValue||'']),
       o: (targetTables||[]).map(t => [t.name||'', (t.mappings||[]).map(m => [m.srcCol||'', m.tgtCol||''])]),
     });
@@ -5041,7 +5350,19 @@ function addWhereChatMsg(text, role){
 function applyWhere(){
   // Find last assistant message as the WHERE clause
   const msgs=$('where-chat').querySelectorAll('.where-msg-assistant');
-  if(msgs.length){ const w=msgs[msgs.length-1].textContent.trim().replace(/^WHERE\s+/i,'').replace(/;$/,''); if(w&&w!=='…') $('src-where').value=w; }
+  if(msgs.length){
+    const w=cleanCondition(msgs[msgs.length-1].textContent);
+    if(w&&w!=='…'){
+      // Drop the suggestion into the first empty condition row, or add one.
+      // Writing straight to #src-where would be overwritten by the next
+      // syncClauses() call, since the list is now what builds that value.
+      const slot = whereConds.findIndex(c => !cleanCondition(c && c.text));
+      if(slot >= 0) whereConds[slot].text = w;
+      else whereConds.push({ connector:'AND', text:w });
+      renderWhereRows();
+      syncClauses();
+    }
+  }
   closeWhereModal();
 }
 
@@ -5298,6 +5619,12 @@ async function aiJoinHelp(i){
                       })) : [],
       joinState: Array.isArray(window._joinState) ? window._joinState.slice() : null,
       wasisRules: Array.isArray(wasisRules) && wasisRules.length ? wasisRules : null,
+      // The WHERE clause was never captured here, so a crash-recovery restore
+      // silently dropped it and the regenerated SQL came back without the
+      // filter. Now that it can be several conditions plus a GROUP BY, losing
+      // it costs more, so the draft carries both lists.
+      srcWhereConditions: whereConds.map(c => ({ connector:c.connector==='OR'?'OR':'AND', text:c.text||'' })),
+      srcGroupByCols: groupByCols.slice(),
       generatedSQL: {
         insert: generatedSQL?.insert || '',
         schema: generatedSQL?.schema || '',
@@ -5380,6 +5707,11 @@ async function aiJoinHelp(i){
     }
 
     if(d.jobNameInput && $('job-name-input')) $('job-name-input').value = d.jobNameInput;
+
+    // Rebuild the WHERE conditions and GROUP BY before any SQL regeneration
+    // below — the generators read the hidden inputs loadClausesFromJob fills.
+    // (The draft stores the same two keys a saved job does.)
+    loadClausesFromJob(d);
 
     if(Array.isArray(d.wasisRules) && d.wasisRules.length){
       wasisRules = d.wasisRules;

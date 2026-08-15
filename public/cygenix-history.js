@@ -389,6 +389,12 @@
     ['columnMapping',   'Mapping'],
     ['tables',          'OTM tables'],
     ['srcWhere',        'WHERE clause'],
+    // srcGroupBy is the combined string, the counterpart of srcWhere.
+    // srcWhereConditions/srcGroupByCols are the editor's structured halves and
+    // are deliberately NOT tracked: they always change together with the
+    // combined strings above, so listing them would report every clause edit
+    // three times in the version diff.
+    ['srcGroupBy',      'GROUP BY'],
     ['joinState',       'Joins'],
     ['wasisRules',      'Was/is rules'],
     ['insertSQL',       'Insert SQL'],

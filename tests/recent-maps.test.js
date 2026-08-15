@@ -339,6 +339,12 @@ check('map names are HTML-escaped', !gridHtml().includes('<img src=x'));
       srcTable: { fullName: 'dbo.CUST' }, tgtTable: { fullName: 'dbo.contacts' },
       columnMapping: [{ srcCol:'id', tgtCol:'contact_id' }],
       targetTables: [],
+      // The Options panel's WHERE conditions and GROUP BY are part of the map,
+      // so _mapSignature reads them. Without them in the sandbox it throws and
+      // its try/catch returns null, which reads as "nothing changed" and every
+      // assertion below passes for the wrong reason.
+      whereConds: [{ connector:'AND', text:'' }],
+      groupByCols: [],
       $: (id) => ({ id, value:'', textContent: id==='edit-job-name' ? 'Customer master' : '',
                     scrollIntoView(){} }),
       confirm: () => { confirms++; return answer; },
@@ -383,6 +389,22 @@ check('map names are HTML-escaped', !gridHtml().includes('<img src=x'));
     cs.$ = (id) => ({ id, value: id==='src-where' ? "active = 1" : '',
                       textContent: id==='edit-job-name' ? 'Customer master' : '', scrollIntoView(){} });
     check('changing the WHERE clause is detected', cs._mapSignature() !== sig0);
+
+    // Adding, editing or removing a condition has to count as a change too —
+    // otherwise Cancel would silently discard it.
+    cs.$ = (id) => ({ id, value:'', textContent: id==='edit-job-name' ? 'Customer master' : '',
+                      scrollIntoView(){} });
+    const sig1 = snapshot();
+    cs.whereConds.push({ connector:'AND', text:'status = 2' });
+    check('adding a WHERE condition is detected', cs._mapSignature() !== sig1);
+
+    const sig2 = snapshot();
+    cs.whereConds[1].connector = 'OR';
+    check('switching a condition from AND to OR is detected', cs._mapSignature() !== sig2);
+
+    const sig3 = snapshot();
+    cs.groupByCols.push('CaseNo');
+    check('adding a GROUP BY column is detected', cs._mapSignature() !== sig3);
   }
 }
 
