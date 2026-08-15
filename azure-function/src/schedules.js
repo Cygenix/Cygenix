@@ -376,7 +376,11 @@ app.http('schedules', {
         // ── LIST-SCHEDULES ─────────────────────────────────────────────────
         case 'list-schedules': {
           const q = {
-            query: 'SELECT * FROM c WHERE c.userId = @uid ORDER BY c.createdAt DESC',
+            // The notification-settings document shares this container and
+            // partition key; without the filter it would list as a schedule.
+            query: 'SELECT * FROM c WHERE c.userId = @uid '
+                 + "AND (NOT IS_DEFINED(c.docType) OR c.docType = 'schedule') "
+                 + 'ORDER BY c.createdAt DESC',
             parameters: [{ name: '@uid', value: userId }]
           };
           const { resources } = await getCosmosContainer('schedules').items

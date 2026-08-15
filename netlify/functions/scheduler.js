@@ -24,6 +24,9 @@
 //   get-run                { id, scheduleId }                 { run }
 //   version-list           { jobId }                          { versions: [...] }
 //   version-create         { jobId, snapshot, label, note }   { id, version, created }
+//   get-notify-settings    {}                                 { settings }
+//   save-notify-settings   { settings: { ... } }              { settings }
+//   list-notifications     { limit? }                         { notifications: [...] }
 //
 // ── Cosmos containers ──────────────────────────────────────────────────────
 //   schedules     — partition key /userId   — TTL: none
@@ -62,6 +65,9 @@ function getContainers() {
     schedules:    db.container('schedules'),
     runs:         db.container('runs'),
     job_versions: db.container('job_versions'),
+    // Written by the Function App (notify-log.js); read here so Settings →
+    // Notifications can show what was actually delivered.
+    notifications: db.container('notifications'),
   };
   return _containers;
 }
@@ -126,10 +132,175 @@ function humaniseCron(cronExpr) {
 
 async function listSchedules(userId, _body, containers) {
   const { resources } = await containers.schedules.items.query({
-    query: 'SELECT * FROM c WHERE c.userId = @u ORDER BY c._ts DESC',
+    // The notification-settings document shares this container and this
+    // partition key (see NOTIFY_SETTINGS_ID below), so it has to be filtered
+    // out here or it shows up as a nameless schedule in the Task Manager.
+    // Schedules written before the discriminator existed have no docType.
+    query: 'SELECT * FROM c WHERE c.userId = @u '
+         + "AND (NOT IS_DEFINED(c.docType) OR c.docType = 'schedule') "
+         + 'ORDER BY c._ts DESC',
     parameters: [{ name: '@u', value: userId }],
   }).fetchAll();
   return { schedules: resources };
+}
+
+// ── Notification settings ──────────────────────────────────────────────────
+// Where the Webhook and Email (SMTP) connector settings live once a user asks
+// for them to be delivered server-side.
+//
+// Until now those settings existed only in localStorage, which is why a
+// scheduled run could never deliver to them: the cron tick runs in Azure with
+// no browser to read. Moving them to Cosmos is what makes server-side
+// delivery possible — and is also why it is opt-in, because it means an SMTP
+// password leaves the browser, which the Integrations page otherwise promises
+// it will not do.
+//
+// The document lives in the `schedules` container, which is already
+// partitioned by /userId. scheduler.js does not create containers on demand
+// (see the header), so a dedicated container would mean nothing worked until
+// someone provisioned it by hand.
+const NOTIFY_SETTINGS_ID   = 'notify-settings';
+const NOTIFY_SETTINGS_TYPE = 'notify-settings';
+
+const NOTIFY_EVENT_DEFAULTS = { started: false, completed: true, failed: true };
+
+function emptyNotifySettings(userId) {
+  return {
+    id:       NOTIFY_SETTINGS_ID,
+    docType:  NOTIFY_SETTINGS_TYPE,
+    userId,
+    serverDelivery: false,
+    events:  { ...NOTIFY_EVENT_DEFAULTS },
+    webhook: { enabled: false, url: '', secret: '' },
+    smtp:    { enabled: false, host: '', port: '', user: '', pass: '', from: '', to: '' },
+    updatedAt: null,
+  };
+}
+
+// Secrets go up but never come back down. The browser has its own copy in
+// localStorage; echoing the stored SMTP password to every page load would put
+// it in memory, in logs, and in anything that inspects the response, for no
+// benefit. The `*Set` flags let the UI show "a password is stored" without
+// handling the password.
+function maskNotifySettings(doc) {
+  const d = doc || {};
+  const webhook = { ...(d.webhook || {}) };
+  const smtp    = { ...(d.smtp    || {}) };
+  const secretSet = !!webhook.secret;
+  const passSet   = !!smtp.pass;
+  delete webhook.secret;
+  delete smtp.pass;
+  return {
+    serverDelivery: !!d.serverDelivery,
+    events:  { ...NOTIFY_EVENT_DEFAULTS, ...(d.events || {}) },
+    webhook: { enabled: false, url: '', ...webhook, secretSet },
+    smtp:    { enabled: false, host: '', port: '', user: '', from: '', to: '', ...smtp, passSet },
+    updatedAt: d.updatedAt || null,
+  };
+}
+
+async function getNotifySettings(userId, _body, containers) {
+  try {
+    const { resource } = await containers.schedules.item(NOTIFY_SETTINGS_ID, userId).read();
+    if (!resource || resource.docType !== NOTIFY_SETTINGS_TYPE) {
+      return { settings: maskNotifySettings(emptyNotifySettings(userId)) };
+    }
+    return { settings: maskNotifySettings(resource) };
+  } catch (e) {
+    // Never configured is the common case, not an error.
+    if (isMissingResource(e)) return { settings: maskNotifySettings(emptyNotifySettings(userId)) };
+    throw e;
+  }
+}
+
+// A string field the client may omit. Omitting is "leave as it was"; sending
+// an empty string is "clear it". Those are different intents and the mask
+// above means the client legitimately cannot send the secrets back.
+function pick(next, prev, key) {
+  return (next && Object.prototype.hasOwnProperty.call(next, key))
+    ? String(next[key] == null ? '' : next[key])
+    : String(prev == null ? '' : prev);
+}
+
+async function saveNotifySettings(userId, body, containers) {
+  const patch = (body && body.settings) || {};
+
+  let existing = emptyNotifySettings(userId);
+  try {
+    const { resource } = await containers.schedules.item(NOTIFY_SETTINGS_ID, userId).read();
+    if (resource && resource.docType === NOTIFY_SETTINGS_TYPE) existing = resource;
+  } catch (e) {
+    if (!isMissingResource(e)) throw e;
+  }
+
+  const w = patch.webhook || {};
+  const s = patch.smtp    || {};
+
+  const doc = {
+    ...emptyNotifySettings(userId),
+    serverDelivery: 'serverDelivery' in patch ? !!patch.serverDelivery : !!existing.serverDelivery,
+    events: { ...NOTIFY_EVENT_DEFAULTS, ...(existing.events || {}), ...(patch.events || {}) },
+    webhook: {
+      enabled: 'enabled' in w ? !!w.enabled : !!(existing.webhook || {}).enabled,
+      url:     pick(w, (existing.webhook || {}).url, 'url'),
+      secret:  pick(w, (existing.webhook || {}).secret, 'secret'),
+    },
+    smtp: {
+      enabled: 'enabled' in s ? !!s.enabled : !!(existing.smtp || {}).enabled,
+      host: pick(s, (existing.smtp || {}).host, 'host'),
+      port: pick(s, (existing.smtp || {}).port, 'port'),
+      user: pick(s, (existing.smtp || {}).user, 'user'),
+      pass: pick(s, (existing.smtp || {}).pass, 'pass'),
+      from: pick(s, (existing.smtp || {}).from, 'from'),
+      to:   pick(s, (existing.smtp || {}).to,   'to'),
+    },
+    updatedAt: nowIso(),
+  };
+
+  const { resource } = await containers.schedules.items.upsert(doc);
+  return { settings: maskNotifySettings(resource || doc) };
+}
+
+// ── Notification log ───────────────────────────────────────────────────────
+// Every send attempt — the built-in email and each connector delivery — is
+// written to the `notifications` container by the Function App. Reading it
+// back is what turns "I never got an email" from a support conversation into
+// something the user can answer for themselves.
+async function listNotifications(userId, body, containers) {
+  const lim = Math.min(parseInt((body || {}).limit, 10) || 25, 100);
+  try {
+    const { resources } = await containers.notifications.items.query({
+      query: 'SELECT TOP @l * FROM c WHERE c.userId = @u ORDER BY c.sentAt DESC',
+      parameters: [{ name: '@l', value: lim }, { name: '@u', value: userId }],
+    }, { maxItemCount: lim }).fetchAll();
+    return {
+      notifications: (resources || []).map(r => ({
+        id:      r.id,
+        type:    r.type,
+        // Rows written before connectors existed were all Resend emails.
+        channel: r.channel || 'resend',
+        to:      r.to      || '',
+        subject: r.subject || '',
+        status:  r.status  || '',
+        error:   r.error   || '',
+        source:  r.source  || '',
+        runId:   r.runId   || '',
+        sentAt:  r.sentAt  || '',
+      })),
+    };
+  } catch (e) {
+    // The container is created by whoever provisioned the others. Saying so
+    // beats a 500 that reads like the feature is broken.
+    if (isMissingResource(e)) {
+      return {
+        notifications: [],
+        unavailable: 'The notifications container does not exist in this Cosmos database yet. '
+                   + 'Create a container named "notifications" partitioned by /userId; '
+                   + 'until then nothing can be logged.',
+      };
+    }
+    throw e;
+  }
 }
 
 // When does this schedule next fire?
@@ -657,6 +828,9 @@ exports.handler = async (event) => {
     'version-create':  versionCreate,
     'version-delete':  versionDelete,
     'run-now':         runNow,
+    'get-notify-settings':  getNotifySettings,
+    'save-notify-settings': saveNotifySettings,
+    'list-notifications':   listNotifications,
   };
   const fn = handlers[action];
   if (!fn) return errorResponse(400, `Unknown action: ${action}`);
@@ -687,3 +861,11 @@ exports.handler = async (event) => {
 // production — but the one-shot next-run rule is the thing that decides
 // whether a schedule can fire at all, and it needs asserting directly.
 module.exports.oneShotNextRun = oneShotNextRun;
+// Likewise for the notification settings: they carry an SMTP password, and
+// the rules about what is echoed back and what survives a partial save are
+// the security surface of this feature.
+module.exports.maskNotifySettings = maskNotifySettings;
+module.exports.getNotifySettings  = getNotifySettings;
+module.exports.saveNotifySettings = saveNotifySettings;
+module.exports.listNotifications  = listNotifications;
+module.exports.listSchedules      = listSchedules;
