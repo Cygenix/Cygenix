@@ -175,6 +175,120 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     vm.runInContext('cvCompositeWhyNot()', sb));
 }
 
+// ── Exclusion rules ────────────────────────────────────────────────────────
+// The predicate that decides what the diagram draws. Extracted from the page
+// and run against a stub SM, so the rules under test are the shipped ones.
+{
+  const fStart = html.indexOf('const RULE_MODES = {');
+  const fEnd   = html.indexOf('const BOX_W =');
+  if (fStart < 0 || fEnd < 0 || fEnd < fStart) {
+    console.log('  FAIL  could not locate the filter block'); fail++;
+  } else {
+    const T = (name, extra) => Object.assign({
+      key: 'dbo.' + name, schema: 'dbo', name, kind: 'table',
+      rowCount: 10, fkColumns: [], refColumns: [],
+    }, extra || {});
+    const TABLES = [
+      T('Customer'),
+      T('Customer_draft',    { rowCount: 0 }),
+      T('Customer_template', { rowCount: 0 }),
+      T('CftSearchResultEntityOrg', { rowCount: 0 }),
+      T('Orders',   { fkColumns: ['CustomerId'] }),
+      T('Loner',    { rowCount: 5 }),
+      T('vw_Sales', { kind: 'view' }),
+      T('NoCount',  { rowCount: undefined }),
+    ];
+
+    const mk = (filters) => {
+      const sb = { JSON, Math, Object, Array, Set, String, RegExp, console: { warn(){}, error(){} } };
+      sb.SM = { side: 'tgt', filters: Object.assign(
+        { hideEmpty:false, hideViews:false, hideIsolated:false, rules: [] }, filters),
+        graph: { ok: true, tables: TABLES } };
+      vm.createContext(sb);
+      vm.runInContext(html.slice(fStart, fEnd), sb);
+      return sb;
+    };
+    const names = (filters) => vm.runInContext('smTables().map(t => t.name)', mk(filters));
+
+    check('with no rules every table is drawn', names({}).length === TABLES.length);
+
+    check('"ends with" hides the generated twins',
+      JSON.stringify(names({ rules: [{ mode:'ends', text:'_draft', on:true }] }))
+        === JSON.stringify(TABLES.filter(t => t.name !== 'Customer_draft').map(t => t.name)));
+
+    check('rules are case-insensitive, because table names are not typed carefully',
+      !names({ rules: [{ mode:'ends', text:'_DRAFT', on:true }] }).includes('Customer_draft'));
+
+    check('"starts with" matches the front only',
+      !names({ rules: [{ mode:'starts', text:'Cft', on:true }] }).includes('CftSearchResultEntityOrg')
+      && names({ rules: [{ mode:'starts', text:'Cft', on:true }] }).includes('Customer'));
+
+    check('"contains" matches anywhere',
+      !names({ rules: [{ mode:'contains', text:'Search', on:true }] }).includes('CftSearchResultEntityOrg'));
+
+    check('"is exactly" hides one table, not its siblings',
+      (() => { const n = names({ rules: [{ mode:'equals', text:'Customer', on:true }] });
+               return !n.includes('Customer') && n.includes('Customer_draft'); })());
+
+    check('rules are OR-ed, so two rules hide both sets',
+      (() => { const n = names({ rules: [{ mode:'ends', text:'_draft', on:true },
+                                         { mode:'ends', text:'_template', on:true }] });
+               return !n.includes('Customer_draft') && !n.includes('Customer_template')
+                      && n.includes('Customer'); })());
+
+    check('an unticked rule does nothing',
+      names({ rules: [{ mode:'ends', text:'_draft', on:false }] }).includes('Customer_draft'));
+    check('an empty rule does nothing, so a half-typed one hides nothing',
+      names({ rules: [{ mode:'ends', text:'', on:true }] }).length === TABLES.length);
+    check('whitespace-only text is treated as empty',
+      names({ rules: [{ mode:'ends', text:'   ', on:true }] }).length === TABLES.length);
+
+    // A regex box is typed one character at a time, so it is invalid most of
+    // the time it is being used. It must never throw or hide everything.
+    check('an invalid regex is ignored rather than thrown',
+      names({ rules: [{ mode:'regex', text:'Cft([', on:true }] }).length === TABLES.length);
+    check('and it is reported as bad so the box can be marked',
+      vm.runInContext('smCompileRules()[0].bad === true',
+        mk({ rules: [{ mode:'regex', text:'Cft([', on:true }] })));
+    check('a valid regex filters',
+      !names({ rules: [{ mode:'regex', text:'^Cft', on:true }] }).includes('CftSearchResultEntityOrg'));
+
+    check('hide empty removes zero-row tables', !names({ hideEmpty:true }).includes('Customer_draft'));
+    check('and keeps tables that have rows',   names({ hideEmpty:true }).includes('Customer'));
+    // An absent row count is not evidence of emptiness.
+    check('a table with no row count survives hide-empty',
+      names({ hideEmpty:true }).includes('NoCount'));
+
+    check('hide views removes views only',
+      (() => { const n = names({ hideViews:true });
+               return !n.includes('vw_Sales') && n.includes('Customer'); })());
+
+    check('hide unrelated removes tables with no foreign key either way',
+      (() => { const n = names({ hideIsolated:true });
+               return !n.includes('Loner') && n.includes('Orders'); })());
+
+    check('the hidden count is what the badge shows',
+      vm.runInContext('smHiddenCount()', mk({ rules: [{ mode:'ends', text:'_draft', on:true }] })) === 1);
+    check('no filter means nothing is reported as active',
+      vm.runInContext('smFiltersActive()', mk({})) === false);
+    check('an enabled rule with text is reported as active',
+      vm.runInContext('smFiltersActive()', mk({ rules: [{ mode:'ends', text:'_x', on:true }] })) === true);
+    check('an enabled rule with no text is not',
+      vm.runInContext('smFiltersActive()', mk({ rules: [{ mode:'ends', text:'', on:true }] })) === false);
+
+    // Dragging a box re-renders on every mousemove and each render asks for
+    // the filtered list several times.
+    check('the filtered list is memoised, not recomputed per call',
+      vm.runInContext('smTables() === smTables()', mk({ rules: [{ mode:'ends', text:'_draft', on:true }] })));
+    check('and the key set comes from the same cache',
+      vm.runInContext('smVisibleKeys().has("dbo.Customer") && !smVisibleKeys().has("dbo.Customer_draft")',
+        mk({ rules: [{ mode:'ends', text:'_draft', on:true }] })));
+    check('the cache follows a filter change rather than going stale',
+      vm.runInContext('const a = smTables().length; SM.filters.hideEmpty = true; a - smTables().length',
+        mk({})) === 3);
+  }
+}
+
 // ── Normalisation and thresholds ───────────────────────────────────────────
 {
   const sb = build({});
@@ -207,6 +321,44 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('the source/target toggle exists and defaults to target',
     /sm-side-tgt/.test(html) && /side:\s*'tgt'/.test(html));
   check('there is a visible reload for the cached schema', /Reload schema/.test(html));
+
+  // Screen space.
+  check('the diagram can go full screen', /id="sm-fs-btn"/.test(html) && /requestFullscreen/.test(html));
+  check('and the canvas keeps its own background there, since the browser paints black behind it',
+    /:fullscreen\{[^}]*background:var\(--bg\)/.test(html));
+  check('leaving full screen re-measures rather than keeping the old zoom',
+    /function smOnFullscreenChange\(\)[\s\S]{0,900}smFit\(\)/.test(html)
+    && /addEventListener\('fullscreenchange', smOnFullscreenChange\)/.test(html));
+  check('either side panel folds away to give the diagram the width',
+    /no-tree/.test(html) && /no-inspector/.test(html) && /panel-fold/.test(html));
+  check('the fold survives a reload', /cygenix_schemaexp_panels/.test(html));
+  // Compared inside the markup — the same class names appear earlier in the
+  // stylesheet, where the order means nothing.
+  const body = html.slice(html.indexOf('<body>'));
+  check('the tab bar shares the header row rather than taking a line of its own',
+    body.indexOf('mode-bar') > body.indexOf('se-title')
+    && body.indexOf('mode-bar') < body.indexOf('se-head-actions'));
+
+  // Exclusion rules.
+  check('there is a filter control with the rule modes the brief asked for',
+    /id="sm-filters-btn"/.test(html)
+    && ['contains','starts','ends','equals','regex','schema'].every(m => new RegExp("\\b" + m + ":\\s*\\{").test(html)));
+  check('rules survive a reload', /cygenix_schemaexp_filters/.test(html));
+  check('there is always a way back to every table', /Show all/.test(html));
+  check('the panel is anchored under the toolbar, which wraps at narrow widths',
+    /bar\.offsetHeight/.test(html));
+
+  // The load order is a migration plan. Hiding tables from a plan makes it
+  // wrong, not tidier — so the coverage view must not read the filter state.
+  // Anchored on the JS banner, not the CSS one of the same name, which comes
+  // first in the file and would drag the whole schema-map module into the slice.
+  const coverage = html.slice(html.indexOf('// ═══ VIEW 2 — COVERAGE MAP'), html.indexOf('// ── Boot ─'));
+  check('the coverage view ignores the diagram filters',
+    !/smTables\(|SM\.filters|smHidden\(/.test(coverage));
+
+  // Every fallback-prone glyph was replaced after one rendered as a box.
+  check('no toolbar glyph falls back to a missing-character box',
+    !/[\u26C3\u26F6\u25E7\u25E8]/.test(html));
 
   // The prototypes shipped their own dark palette. This page must use the
   // app's variables, so a theme change does not leave one page behind.

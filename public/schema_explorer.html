@@ -67,16 +67,20 @@
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
 body.cyg-collapsed{padding-left:54px}
-.page{padding:1.5rem 2rem;max-width:100%}
+.page{padding:1rem 1.25rem;max-width:100%}
 
 /* ── Header ── */
-.se-head{display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
-.se-title{font-size:20px;font-weight:600;margin-bottom:0.25rem}
-.se-sub{font-size:12.5px;color:var(--text2);line-height:1.6}
+.se-head{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:0.7rem}
+.se-title{font-size:18px;font-weight:600;margin-bottom:0.15rem}
+.se-sub{font-size:12px;color:var(--text2);line-height:1.5}
+/* The subtitle is orientation, not instruction. Once the diagram is on
+   screen it is just height, so it goes at the narrow widths where the
+   canvas needs that height most. */
+@media(max-width:1400px){.se-sub{display:none}}
 .se-head-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
 
 /* ── Tab bar — same control as Object Mapping's mode switch ── */
-.mode-bar{display:flex;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;margin-bottom:1rem;max-width:420px}
+.mode-bar{display:flex;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;max-width:340px;flex:none}
 .mode-btn{flex:1;text-align:center;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
 .mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
 
@@ -101,11 +105,15 @@ body.cyg-collapsed{padding-left:54px}
 .se-empty-body a{color:var(--accent);text-decoration:none}
 
 /* ══ VIEW 1 — SCHEMA MAP ═════════════════════════════════════════════ */
-.sm-grid{display:grid;grid-template-columns:260px 1fr 300px;gap:0.75rem;align-items:start}
-.sm-grid.no-inspector{grid-template-columns:260px 1fr}
-@media(max-width:1100px){.sm-grid,.sm-grid.no-inspector{grid-template-columns:1fr}}
+.sm-grid{display:grid;grid-template-columns:250px minmax(0,1fr) 290px;gap:0.6rem;align-items:start}
+.sm-grid.no-tree{grid-template-columns:minmax(0,1fr) 290px}
+.sm-grid.no-inspector{grid-template-columns:250px minmax(0,1fr)}
+.sm-grid.no-tree.no-inspector{grid-template-columns:minmax(0,1fr)}
+.sm-grid.no-tree>.sm-tree,.sm-grid.no-inspector>.sm-insp{display:none}
+@media(max-width:1100px){.sm-grid,.sm-grid.no-tree,.sm-grid.no-inspector{grid-template-columns:minmax(0,1fr)}}
 
-.sm-tree{max-height:calc(100vh - 250px);overflow:auto}
+.sm-tree{max-height:calc(100vh - 132px);overflow:auto;display:flex;flex-direction:column}
+.sm-tree-scroll{overflow:auto;flex:1;min-height:0}
 .sm-filter{width:100%;padding:6px 9px;background:var(--bg3);border:0.5px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--serif);font-size:12px}
 .sm-filter:focus{outline:none;border-color:var(--accent)}
 .sm-schema{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;padding:0.5rem 0.9rem 0.25rem}
@@ -119,8 +127,17 @@ body.cyg-collapsed{padding-left:54px}
 
 /* The ERD. Boxes are positioned HTML inside a transformed layer so text stays
    crisp and selectable; edges are SVG underneath the same transform. */
-.sm-canvas-wrap{position:relative;height:calc(100vh - 250px);min-height:420px;overflow:hidden;background:var(--bg);border-radius:var(--r)}
-.sm-toolbar{position:absolute;top:8px;left:8px;right:8px;z-index:6;display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;pointer-events:none}
+.sm-canvas-wrap{position:relative;height:calc(100vh - 132px);min-height:420px;overflow:hidden;background:var(--bg);border-radius:var(--r)}
+/* Full screen: the element keeps its own background, because the browser
+   paints black behind a fullscreen element and the page's is not inherited. */
+.sm-canvas-wrap:fullscreen{height:100vh;width:100vw;border-radius:0;background:var(--bg)}
+.sm-canvas-wrap:-webkit-full-screen{height:100vh;width:100vw;border-radius:0;background:var(--bg)}
+.sm-toolbar{position:absolute;top:8px;left:8px;right:8px;z-index:6;display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap;pointer-events:none}
+.sm-toolbar-sep{width:1px;height:16px;background:var(--border2);flex:none;margin:0 2px}
+.panel-fold{border:0.5px solid var(--border2);background:var(--bg3);color:var(--text3);cursor:pointer;
+  border-radius:5px;font-size:13px;line-height:1;padding:3px 7px;flex:none;font-family:var(--serif)}
+.panel-fold:hover{color:var(--accent);border-color:rgba(74,91,214,0.35)}
+.sm-tree .panel-fold{margin-left:auto}
 .sm-toolbar>*{pointer-events:auto}
 .sm-viewport{position:absolute;inset:0;cursor:grab}
 .sm-viewport.panning{cursor:grabbing}
@@ -150,7 +167,7 @@ body.cyg-collapsed{padding-left:54px}
 .sm-mini-box{position:absolute;background:var(--text3);border-radius:1px}
 .sm-mini-view{position:absolute;border:1px solid var(--accent);background:var(--accent-glow);pointer-events:none}
 
-.sm-insp{max-height:calc(100vh - 250px);overflow:auto}
+.sm-insp{max-height:calc(100vh - 132px);overflow:auto}
 .sm-insp-tabs{display:flex;gap:0.2rem;padding:0.5rem 0.6rem 0;border-bottom:0.5px solid var(--border);flex-wrap:wrap}
 .sm-insp-tab{font-size:11px;padding:4px 8px;border-radius:5px 5px 0 0;cursor:pointer;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
 .sm-insp-tab.active{color:var(--accent);background:var(--bg3)}
@@ -163,6 +180,37 @@ body.cyg-collapsed{padding-left:54px}
 .sm-tablewrap table{border-collapse:collapse;font-family:var(--mono);font-size:10px;width:100%}
 .sm-tablewrap th{position:sticky;top:0;background:var(--bg3);color:var(--text2);text-align:left;padding:4px 6px;font-weight:500;white-space:nowrap;border-bottom:0.5px solid var(--border)}
 .sm-tablewrap td{padding:3px 6px;color:var(--text3);white-space:nowrap;border-bottom:0.5px solid var(--border)}
+
+/* ── Exclusion rules ──────────────────────────────────────────────────
+   A schema with thousands of tables is unreadable whatever the layout
+   does, and most of what makes it unreadable is generated noise —
+   _draft/_template twins, empty staging tables. These rules take them out
+   of the diagram rather than trying to draw them smaller. */
+.sm-filters{position:absolute;top:44px;left:8px;z-index:8;width:330px;max-width:calc(100% - 16px);
+  background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--r);
+  box-shadow:0 12px 34px rgba(0,0,0,0.4);display:none}
+.sm-filters.show{display:block}
+.sm-filters-head{display:flex;align-items:center;gap:0.5rem;padding:0.6rem 0.8rem;border-bottom:0.5px solid var(--border)}
+.sm-filters-body{padding:0.6rem 0.8rem;max-height:min(60vh,460px);overflow:auto}
+.sm-filters-foot{display:flex;gap:0.4rem;align-items:center;padding:0.55rem 0.8rem;border-top:0.5px solid var(--border);flex-wrap:wrap}
+.sm-toggle{display:flex;align-items:center;gap:0.5rem;padding:4px 0;font-size:12px;color:var(--text2);cursor:pointer}
+.sm-toggle input{accent-color:var(--accent);cursor:pointer;flex:none}
+.sm-toggle span{line-height:1.4}
+.sm-toggle small{display:block;color:var(--text3);font-size:10.5px}
+.sm-rule{display:flex;gap:0.35rem;align-items:center;padding:3px 0}
+.sm-rule select,.sm-rule input[type=text]{background:var(--bg3);border:0.5px solid var(--border2);border-radius:5px;
+  color:var(--text);font-family:var(--serif);font-size:11.5px;padding:4px 6px;min-width:0}
+.sm-rule select{flex:none;width:104px}
+.sm-rule input[type=text]{flex:1;font-family:var(--mono)}
+.sm-rule select:focus,.sm-rule input:focus{outline:none;border-color:var(--accent)}
+.sm-rule input.bad{border-color:var(--red)}
+.sm-rule-del{border:none;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;padding:0 3px;flex:none}
+.sm-rule-del:hover{color:var(--red)}
+.sm-filters-count{font-size:11px;font-family:var(--mono);color:var(--text3);margin-left:auto}
+.sm-filters-warn{font-size:10.5px;color:var(--amber);padding:0.25rem 0 0;line-height:1.45}
+.sm-section{font-size:10px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin:0.6rem 0 0.2rem}
+.sm-section:first-child{margin-top:0}
+.btn-badge{display:inline-block;min-width:15px;padding:0 4px;margin-left:4px;border-radius:100px;background:var(--accent);color:#fff;font-size:9px;font-family:var(--mono);line-height:14px;text-align:center}
 
 /* ⌘K palette */
 .se-palette{position:fixed;inset:0;background:rgba(0,0,0,0.55);display:none;align-items:flex-start;justify-content:center;z-index:900;padding-top:12vh}
@@ -241,17 +289,18 @@ body.cyg-collapsed{padding-left:54px}
       <div class="se-title">🗺 Schema Explorer</div>
       <div class="se-sub">Explore the target schema and see what your saved maps actually cover.</div>
     </div>
+
+    <div class="mode-bar" role="tablist" aria-label="Schema Explorer views">
+      <button class="mode-btn active" id="se-tab-schema" role="tab" aria-selected="true"
+              aria-controls="se-view-schema" onclick="seSwitchTab('schema')">◈ Schema map</button>
+      <button class="mode-btn" id="se-tab-coverage" role="tab" aria-selected="false"
+              aria-controls="se-view-coverage" onclick="seSwitchTab('coverage')">⊞ Coverage map</button>
+    </div>
+
     <div class="se-head-actions">
       <button class="btn" id="se-reload" onclick="seReloadSchema()" title="Schema queries are slow on wide databases, so the result is cached. This refetches it.">↻ Reload schema</button>
       <button class="btn" onclick="sePaletteOpen()" title="Search every table and column">🔍 Search <span style="font-family:var(--mono);opacity:0.6">⌘K</span></button>
     </div>
-  </div>
-
-  <div class="mode-bar" role="tablist" aria-label="Schema Explorer views">
-    <button class="mode-btn active" id="se-tab-schema" role="tab" aria-selected="true"
-            aria-controls="se-view-schema" onclick="seSwitchTab('schema')">◈ Schema map</button>
-    <button class="mode-btn" id="se-tab-coverage" role="tab" aria-selected="false"
-            aria-controls="se-view-coverage" onclick="seSwitchTab('coverage')">⊞ Coverage map</button>
   </div>
 
   <!-- ══ VIEW 1 — SCHEMA MAP ══════════════════════════════════════════ -->
@@ -261,8 +310,11 @@ body.cyg-collapsed{padding-left:54px}
         <div class="panel-header" style="gap:0.4rem">
           <input class="sm-filter" id="sm-filter" type="text" placeholder="Filter tables and columns…"
                  aria-label="Filter tables and columns" oninput="smRenderTree()">
+          <button class="panel-fold" onclick="smTogglePanel('tree')"
+                  title="Hide the table list and give the diagram the width"
+                  aria-label="Hide the table list">‹</button>
         </div>
-        <div id="sm-tree-body"></div>
+        <div class="sm-tree-scroll" id="sm-tree-body"></div>
       </div>
 
       <div class="panel" style="padding:0">
@@ -270,18 +322,56 @@ body.cyg-collapsed{padding-left:54px}
           <div class="sm-toolbar">
             <button class="btn" id="sm-side-tgt" onclick="smSetSide('tgt')">Target</button>
             <button class="btn" id="sm-side-src" onclick="smSetSide('src')">Source</button>
-            <span style="width:8px"></span>
+            <span class="sm-toolbar-sep"></span>
             <button class="btn" onclick="smZoom(1.2)" aria-label="Zoom in">+</button>
             <button class="btn" onclick="smZoom(1/1.2)" aria-label="Zoom out">−</button>
             <button class="btn" onclick="smFit()">Fit</button>
             <button class="btn" onclick="smAutoLayout(true)">Auto-layout</button>
-            <span style="width:8px"></span>
+            <span class="sm-toolbar-sep"></span>
             <button class="btn" id="sm-focus-0" onclick="smSetFocus(null)">All</button>
             <button class="btn" id="sm-focus-1" onclick="smSetFocus(1)">1 hop</button>
             <button class="btn" id="sm-focus-2" onclick="smSetFocus(2)">2 hops</button>
-            <span style="width:8px"></span>
+            <span class="sm-toolbar-sep"></span>
             <button class="btn" id="sm-join-btn" onclick="smJoinToggle()" title="Pick two tables and get the shortest join path">⤳ Join path</button>
+            <button class="btn" id="sm-filters-btn" onclick="smFiltersToggle()" aria-expanded="false"
+                    aria-controls="sm-filters" title="Hide tables you do not want on the diagram">Filters</button>
+            <span class="sm-toolbar-sep"></span>
+            <button class="btn" id="sm-tree-btn" onclick="smTogglePanel('tree')"
+                    title="Bring the table list back" style="display:none">Show list</button>
+            <button class="btn" id="sm-insp-btn" onclick="smTogglePanel('insp')"
+                    title="Bring the inspector back" style="display:none">Show inspector</button>
+            <button class="btn" id="sm-fs-btn" onclick="smFullscreen()"
+                    title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
             <span id="sm-status" style="font-size:11px;color:var(--text3);font-family:var(--mono)"></span>
+          </div>
+
+          <!-- Exclusion rules. Deliberately scoped to the diagram and its table
+               list: the Coverage map's load order is a migration plan, and
+               hiding tables from a plan would make it wrong rather than tidier. -->
+          <div class="sm-filters" id="sm-filters" role="dialog" aria-label="Exclusion rules">
+            <div class="sm-filters-head">
+              <div class="panel-title">Exclude tables</div>
+              <span class="sm-filters-count" id="sm-filters-count"></span>
+              <button class="btn" onclick="smFiltersToggle()" aria-label="Close">✕</button>
+            </div>
+            <div class="sm-filters-body">
+              <div class="sm-section">Quick</div>
+              <label class="sm-toggle"><input type="checkbox" id="sm-f-empty" onchange="smFiltersRead()">
+                <span>Hide empty tables<small>Row counts come from the index statistics, so they are approximate.</small></span></label>
+              <label class="sm-toggle"><input type="checkbox" id="sm-f-views" onchange="smFiltersRead()">
+                <span>Hide views</span></label>
+              <label class="sm-toggle"><input type="checkbox" id="sm-f-isolated" onchange="smFiltersRead()">
+                <span>Hide unrelated tables<small>No foreign key in or out, so nothing joins them.</small></span></label>
+
+              <div class="sm-section">By name</div>
+              <div id="sm-rules"></div>
+              <button class="btn" style="margin-top:0.4rem" onclick="smRuleAdd()">+ Add rule</button>
+              <div class="sm-filters-warn" id="sm-filters-warn"></div>
+            </div>
+            <div class="sm-filters-foot">
+              <button class="btn" onclick="smFiltersClear()">Show all</button>
+              <button class="btn" onclick="smRulePreset()" title="Hide the _draft and _template twins">Preset: drafts &amp; templates</button>
+            </div>
           </div>
           <div class="sm-viewport" id="sm-viewport" tabindex="0" role="application"
                aria-label="Schema diagram. Use the toolbar buttons to zoom, fit and lay out; use the tree or search to select a table.">
@@ -294,7 +384,13 @@ body.cyg-collapsed{padding-left:54px}
       </div>
 
       <div class="panel sm-insp" id="sm-insp">
-        <div class="panel-header"><div><div class="panel-title" id="sm-insp-title">Inspector</div><div class="panel-sub" id="sm-insp-sub">Pick a table</div></div></div>
+        <div class="panel-header">
+          <button class="panel-fold" onclick="smTogglePanel('insp')"
+                  title="Hide the inspector and give the diagram the width"
+                  aria-label="Hide the inspector">›</button>
+          <div style="min-width:0"><div class="panel-title" id="sm-insp-title">Inspector</div>
+          <div class="panel-sub" id="sm-insp-sub">Pick a table</div></div>
+        </div>
         <div class="sm-insp-tabs" role="tablist" aria-label="Table detail">
           <button class="sm-insp-tab active" data-it="columns" onclick="smInspTab('columns')" role="tab">Columns</button>
           <button class="sm-insp-tab" data-it="sample" onclick="smInspTab('sample')" role="tab">Sample</button>
@@ -437,7 +533,109 @@ const SM = {
   joinMode: false,
   joinPick: [],
   joinResult: null,
+  panels: { tree: true, insp: true },
+  // Exclusion rules. Applied to the diagram and its table list only — see the
+  // note on the markup for why the Coverage map does not honour them.
+  filters: { hideEmpty:false, hideViews:false, hideIsolated:false, rules: [] },
 };
+
+const FILTER_KEY = 'cygenix_schemaexp_filters';
+const PANEL_KEY  = 'cygenix_schemaexp_panels';
+
+function smLoadPrefs(){
+  try {
+    const f = JSON.parse(localStorage.getItem(FILTER_KEY) || 'null');
+    if (f && typeof f === 'object'){
+      SM.filters.hideEmpty    = !!f.hideEmpty;
+      SM.filters.hideViews    = !!f.hideViews;
+      SM.filters.hideIsolated = !!f.hideIsolated;
+      SM.filters.rules = Array.isArray(f.rules)
+        ? f.rules.filter(r => r && typeof r === 'object')
+                 .map(r => ({ mode: RULE_MODES[r.mode] ? r.mode : 'contains',
+                              text: String(r.text || ''), on: r.on !== false }))
+        : [];
+    }
+  } catch {}
+  try {
+    const p = JSON.parse(localStorage.getItem(PANEL_KEY) || 'null');
+    if (p && typeof p === 'object'){ SM.panels.tree = p.tree !== false; SM.panels.insp = p.insp !== false; }
+  } catch {}
+}
+function smSavePrefs(){
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify(SM.filters)); } catch {}
+  try { localStorage.setItem(PANEL_KEY, JSON.stringify(SM.panels)); } catch {}
+}
+
+const RULE_MODES = {
+  contains:   { label:'contains',    test:(n,t) => n.includes(t) },
+  starts:     { label:'starts with', test:(n,t) => n.startsWith(t) },
+  ends:       { label:'ends with',   test:(n,t) => n.endsWith(t) },
+  equals:     { label:'is exactly',  test:(n,t) => n === t },
+  regex:      { label:'matches',     test:(n,t,re) => !!re && re.test(n) },
+  schema:     { label:'in schema',   test:(n,t,re,tbl) => tbl.schema.toLowerCase() === t },
+};
+
+// Compiled once per render rather than per table — a regex rule against a few
+// thousand tables is otherwise a few thousand RegExp constructions.
+function smCompileRules(){
+  return SM.filters.rules.map(r => {
+    const text = String(r.text || '').trim();
+    if (!r.on || !text) return null;
+    let re = null, bad = false;
+    if (r.mode === 'regex'){
+      try { re = new RegExp(text, 'i'); } catch { bad = true; }
+    }
+    return bad ? { bad:true } : { mode:r.mode, text:text.toLowerCase(), re };
+  });
+}
+
+// True when a table is excluded. Rules are OR'd: any match hides it, which is
+// how "exclude" reads in every other tool that has this control.
+function smHidden(t, rules){
+  // Only a row count we actually have can make a table empty. An unknown one
+  // is not evidence of emptiness, and hiding on it would lose real tables.
+  if (SM.filters.hideEmpty && typeof t.rowCount === 'number' && t.rowCount === 0) return true;
+  if (SM.filters.hideViews && t.kind === 'view') return true;
+  if (SM.filters.hideIsolated && !t.fkColumns.length && !t.refColumns.length) return true;
+  const name = t.name.toLowerCase();
+  for (const r of rules){
+    if (!r || r.bad) continue;
+    const m = RULE_MODES[r.mode];
+    if (m && m.test(name, r.text, r.re, t)) return true;
+  }
+  return false;
+}
+
+// The tables the diagram, the tree, the layout and the palette all work from.
+//
+// Memoised on the filter state: dragging a box re-renders on every mousemove,
+// and each render asks for this several times. Re-testing a few thousand
+// tables against a rule list that many times a second is the difference
+// between a drag that tracks the cursor and one that does not.
+let _filterCache = null;
+function smTables(){
+  const g = SM.graph;
+  if (!g || !g.ok) return [];
+  const sig = JSON.stringify(SM.filters) + '|' + SM.side + '|' + g.tables.length;
+  if (_filterCache && _filterCache.sig === sig) return _filterCache.tables;
+  const rules = smCompileRules();
+  const tables = g.tables.filter(t => !smHidden(t, rules));
+  _filterCache = { sig, tables, keys: new Set(tables.map(t => t.key)) };
+  return tables;
+}
+function smVisibleKeys(){
+  smTables();
+  return _filterCache ? _filterCache.keys : new Set();
+}
+function smHiddenCount(){
+  const g = SM.graph;
+  if (!g || !g.ok) return 0;
+  return g.tables.length - smTables().length;
+}
+function smFiltersActive(){
+  return SM.filters.hideEmpty || SM.filters.hideViews || SM.filters.hideIsolated
+      || SM.filters.rules.some(r => r.on !== false && String(r.text || '').trim());
+}
 
 const BOX_W = 210, ROW_H = 15, HEAD_H = 25, MAX_ROWS = 9;
 
@@ -458,6 +656,7 @@ async function smEnsureLoaded(force){
     SM.graph = { ok:false, reason:(e && e.message) || 'Could not load', tables:[], edges:[], byKey:{}, adj:{} };
   }
   SM.loading = false;
+  _filterCache = null;
   SM.pos = {};
   SM.selected = null;
   SM.joinResult = null;
@@ -467,6 +666,7 @@ async function smEnsureLoaded(force){
   smRenderCanvas();
   smRenderInspector();
   smUpdateSideButtons();
+  smFiltersWrite();
   // Columns make the boxes real: the FK anchors and the DDL tab both need
   // them. Fetched in the background, bounded, redrawing as they land.
   if (SM.graph.ok && SM.graph.tables.length){
@@ -511,7 +711,8 @@ function smRenderTree(){
   }
   const q = ($('sm-filter').value || '').trim();
   const bySchema = {};
-  for (const t of g.tables){
+  const shown = smTables();
+  for (const t of shown){
     // Match on the table name OR any of its columns — a user hunting for
     // "postcode" should find the table that has one.
     const tableHit = !q || t.name.toLowerCase().includes(q.toLowerCase());
@@ -519,12 +720,19 @@ function smRenderTree(){
     if (q && !tableHit && !colHits.length) continue;
     (bySchema[t.schema] = bySchema[t.schema] || []).push({ t, colHits });
   }
+  const hidden = smHiddenCount();
+  const note = hidden
+    ? '<div class="sm-schema" style="color:var(--amber)">' + num(hidden)
+      + ' table' + (hidden === 1 ? '' : 's') + ' hidden by filters</div>'
+    : '';
   const schemas = Object.keys(bySchema).sort();
   if (!schemas.length){
-    host.innerHTML = '<div class="muted">Nothing matches “' + esc(q) + '”.</div>';
+    host.innerHTML = note + '<div class="muted">'
+      + (q ? 'Nothing matches “' + esc(q) + '”.'
+           : 'Every table is hidden by the current filters.') + '</div>';
     return;
   }
-  host.innerHTML = schemas.map(s => {
+  host.innerHTML = note + schemas.map(s => {
     const rows = bySchema[s].map(({ t, colHits }) => {
       const sel = SM.selected === t.key ? ' on' : '';
       return '<div class="sm-tnode' + sel + '" tabindex="0" role="button"'
@@ -550,9 +758,13 @@ function smRenderTree(){
 function smAutoLayout(animate){
   const g = SM.graph;
   if (!g || !g.ok) return;
-  const order = CygenixSchemaGraph.loadOrder(g);
-  const layers = order.waves.slice();
-  if (order.cyclic.length) layers.push(order.cyclic);   // cycles get their own column
+  const keys = smVisibleKeys();
+  const order = CygenixSchemaGraph.loadOrder(g, [...keys]);
+  const layers = order.waves.map(w => w.filter(k => keys.has(k))).filter(w => w.length);
+  if (order.cyclic.length){
+    const c = order.cyclic.filter(k => keys.has(k));
+    if (c.length) layers.push(c);                       // cycles get their own column
+  }
 
   const COL_W = BOX_W + 90, GAP_Y = 22;
   let x = 0;
@@ -569,7 +781,7 @@ function smAutoLayout(animate){
   // Anything the sort never reached (it should not happen, but an empty
   // adjacency would) still needs somewhere to be.
   let stray = 0;
-  for (const t of g.tables){
+  for (const t of smTables()){
     if (!SM.pos[t.key]){ SM.pos[t.key] = { x, y: stray }; stray += boxHeight(t) + GAP_Y; }
   }
   if (animate){ smFit(); }
@@ -580,7 +792,8 @@ let _fitted = false;
 function smFitIfUnplaced(){ if (!_fitted && SM.graph && SM.graph.ok){ smFit(); _fitted = true; } }
 
 function smBounds(){
-  const keys = Object.keys(SM.pos);
+  const shown = smVisibleKeys();
+  const keys = Object.keys(SM.pos).filter(k => shown.has(k));
   if (!keys.length) return { x:0, y:0, w:1, h:1 };
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const k of keys){
@@ -599,8 +812,10 @@ function smFit(){
   const pad = 50;
   const k = Math.min((wrap.clientWidth - pad*2) / b.w, (wrap.clientHeight - pad*2) / b.h, 1.4);
   SM.view.k = Math.max(0.08, k);
-  SM.view.x = pad - b.x * SM.view.k + Math.max(0, (wrap.clientWidth - pad*2 - b.w*SM.view.k)/2);
-  SM.view.y = pad - b.y * SM.view.k;
+  // Centre on both axes. A filtered schema is usually a short wide chain, and
+  // pinning it to the top left it sitting in a quarter of the canvas.
+  SM.view.x = pad - b.x * SM.view.k + Math.max(0, (wrap.clientWidth  - pad*2 - b.w * SM.view.k) / 2);
+  SM.view.y = pad - b.y * SM.view.k + Math.max(0, (wrap.clientHeight - pad*2 - b.h * SM.view.k) / 2);
   smApplyView();
 }
 
@@ -631,28 +846,37 @@ function smRenderCanvas(){
   const layer = $('sm-layer'), svg = $('sm-edges'), empty = $('sm-empty');
   if (!layer || !svg) return;
   const g = SM.graph;
+  const tables = g && g.ok ? smTables() : [];
 
-  if (!g || !g.ok || !g.tables.length){
+  if (!g || !g.ok || !tables.length){
     layer.innerHTML = ''; svg.innerHTML = '';
     empty.style.display = 'flex';
-    const why = g && g.reason ? esc(g.reason) : 'No tables to draw.';
     const noConn = !g || !g.ok;
+    const filteredOut = !noConn && g.tables.length && !tables.length;
+    const why = filteredOut
+      ? 'All ' + num(g.tables.length) + ' tables are excluded by the current filters.'
+      : (g && g.reason ? esc(g.reason) : 'No tables to draw.');
     empty.innerHTML = '<div class="se-empty-icon">🗺</div>'
-      + '<div class="se-empty-title">' + (noConn ? 'No schema to explore yet' : 'This database has no tables') + '</div>'
+      + '<div class="se-empty-title">'
+      + (noConn ? 'No schema to explore yet'
+        : filteredOut ? 'Everything is filtered out' : 'This database has no tables') + '</div>'
       + '<div class="se-empty-body">' + why
       + (noConn ? '<br><a href="/dashboard.html#goto=connections">Configure a connection</a> and come back.' : '')
+      + (filteredOut ? '<br><button class="btn" style="margin-top:0.6rem" onclick="smFiltersClear()">Show all tables</button>' : '')
       + '</div>';
+    smUpdateFilterBadge();
     return;
   }
   empty.style.display = 'none';
 
-  const visible = smVisibleSet();
+  const shownKeys = new Set(tables.map(t => t.key));
+  const visible = smVisibleSet(shownKeys);
   const wrap = $('sm-canvas-wrap');
   svg.setAttribute('width', wrap.clientWidth);
   svg.setAttribute('height', wrap.clientHeight);
 
   // Boxes
-  layer.innerHTML = g.tables.map(t => {
+  layer.innerHTML = tables.map(t => {
     const p = SM.pos[t.key] || { x:0, y:0 };
     const dim = visible && !visible.has(t.key) ? ' dim' : '';
     const sel = SM.selected === t.key ? ' sel' : '';
@@ -686,6 +910,8 @@ function smRenderCanvas(){
   const parts = ['<g id="sm-edges-g">'];
   for (const e of g.edges){
     if (e.self) continue;
+    // An edge to a table the filters removed has nothing to point at.
+    if (!shownKeys.has(e.from) || !shownKeys.has(e.to)) continue;
     if (visible && (!visible.has(e.from) || !visible.has(e.to))) continue;
     const a = smAnchor(e.from, e.fromColumn), b = smAnchor(e.to, e.toColumn);
     if (!a || !b) continue;
@@ -702,6 +928,7 @@ function smRenderCanvas(){
   parts.push('</g>');
   svg.innerHTML = parts.join('');
   smApplyView();
+  smUpdateFilterBadge();
 }
 
 // Where an edge should meet a box: the row for that column if it is drawn,
@@ -729,9 +956,15 @@ function smEdgeOnPath(e){
 }
 
 // Which tables the focus control leaves undimmed. null = everything.
-function smVisibleSet(){
+function smVisibleSet(shownKeys){
   if (SM.focusDepth == null || !SM.selected) return null;
-  return CygenixSchemaGraph.neighbourhood(SM.graph, [SM.selected], SM.focusDepth);
+  const n = CygenixSchemaGraph.neighbourhood(SM.graph, [SM.selected], SM.focusDepth);
+  // The neighbourhood walks the whole graph, so it can reach through a table
+  // the filters removed. Intersect, or focus would undim something not drawn.
+  if (!shownKeys) return n;
+  const out = new Set();
+  for (const k of n) if (shownKeys.has(k)) out.add(k);
+  return out;
 }
 
 function smSetFocus(depth){
@@ -760,11 +993,17 @@ function smCentreOn(key){
 // ── Minimap ───────────────────────────────────────────────────────────────
 function smRenderMinimap(){
   const mini = $('sm-mini');
-  if (!mini || !SM.graph || !SM.graph.ok) { if (mini) mini.innerHTML = ''; return; }
+  if (!mini || !SM.graph || !SM.graph.ok) { if (mini) { mini.innerHTML = ''; mini.style.display = 'none'; } return; }
   const b = smBounds(), wrap = $('sm-canvas-wrap');
+  // A minimap of something already fully on screen is a bright empty box in
+  // the corner. Show it only when there is off-screen diagram to navigate to.
+  const fitsW = b.w * SM.view.k <= wrap.clientWidth  - 4;
+  const fitsH = b.h * SM.view.k <= wrap.clientHeight - 4;
+  if (fitsW && fitsH){ mini.style.display = 'none'; mini.innerHTML = ''; return; }
+  mini.style.display = '';
   const pad = 6, mw = mini.clientWidth - pad*2, mh = mini.clientHeight - pad*2;
   const k = Math.min(mw / b.w, mh / b.h);
-  const html = SM.graph.tables.map(t => {
+  const html = smTables().map(t => {
     const p = SM.pos[t.key]; if (!p) return '';
     return '<div class="sm-mini-box" style="left:' + (pad + (p.x - b.x)*k) + 'px;top:' + (pad + (p.y - b.y)*k)
       + 'px;width:' + Math.max(2, BOX_W*k) + 'px;height:' + Math.max(1.5, boxHeight(t)*k) + 'px"></div>';
@@ -847,6 +1086,7 @@ function smRenderMinimap(){
       if (ev.key === '+' || ev.key === '=') { smZoom(1.2); ev.preventDefault(); }
       if (ev.key === '-') { smZoom(1/1.2); ev.preventDefault(); }
       if (ev.key === '0') { smFit(); ev.preventDefault(); }
+      if (ev.key.toLowerCase() === 'f') { smFullscreen(); ev.preventDefault(); }
     });
 
     if (mini) mini.addEventListener('click', (ev) => {
@@ -862,6 +1102,195 @@ function smRenderMinimap(){
     window.addEventListener('resize', () => { if (seTab === 'schema') smRenderCanvas(); });
   });
 })();
+
+// ── Side panels and full screen ───────────────────────────────────────────
+// A wide schema needs width more than it needs a table list, so either side
+// folds away and the choice is remembered.
+function smTogglePanel(which){
+  SM.panels[which] = !SM.panels[which];
+  smApplyPanels();
+  smSavePrefs();
+  // The canvas changed width, so the edge layer has to be re-measured.
+  requestAnimationFrame(() => { smRenderCanvas(); });
+}
+
+function smApplyPanels(){
+  const grid = $('sm-grid');
+  if (!grid) return;
+  grid.classList.toggle('no-tree', !SM.panels.tree);
+  grid.classList.toggle('no-inspector', !SM.panels.insp);
+  // Folding is done from the panel; only the way back needs toolbar space,
+  // and only while there is something to come back to.
+  const tb = $('sm-tree-btn'), ib = $('sm-insp-btn');
+  if (tb) tb.style.display = SM.panels.tree ? 'none' : '';
+  if (ib) ib.style.display = SM.panels.insp ? 'none' : '';
+}
+
+function smFullscreen(){
+  const el = $('sm-canvas-wrap');
+  if (!el) return;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fsEl){
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    return;
+  }
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req){ smStatus('This browser will not go full screen'); return; }
+  // Safari's returns undefined rather than a promise, so guard the catch.
+  const r = req.call(el);
+  if (r && r.catch) r.catch(e => smStatus('Full screen refused: ' + (e && e.message || '')));
+}
+
+function smOnFullscreenChange(){
+  const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const btn = $('sm-fs-btn');
+  if (btn){
+    btn.textContent = on ? '⤢ Exit full screen' : '⤢ Full screen';
+    btn.classList.toggle('on', on);
+  }
+  // The viewport is a different size now; re-measure, then refit so the whole
+  // diagram uses the space rather than staying at the old zoom in a corner.
+  requestAnimationFrame(() => { smRenderCanvas(); smFit(); });
+}
+document.addEventListener('fullscreenchange', smOnFullscreenChange);
+document.addEventListener('webkitfullscreenchange', smOnFullscreenChange);
+
+// ── Exclusion rules ───────────────────────────────────────────────────────
+function smFiltersToggle(){
+  const el = $('sm-filters'), btn = $('sm-filters-btn'), bar = document.querySelector('.sm-toolbar');
+  if (!el) return;
+  const show = !el.classList.contains('show');
+  // The toolbar wraps to two or three rows at narrow widths, so a fixed offset
+  // puts the panel on top of the buttons — including the one that closes it.
+  // Anchor it under whatever height the toolbar actually is.
+  if (show && bar) el.style.top = (bar.offsetHeight + 12) + 'px';
+  el.classList.toggle('show', show);
+  btn.setAttribute('aria-expanded', String(show));
+  if (show){ smFiltersWrite(); }
+}
+
+// State → controls.
+function smFiltersWrite(){
+  $('sm-f-empty').checked    = SM.filters.hideEmpty;
+  $('sm-f-views').checked    = SM.filters.hideViews;
+  $('sm-f-isolated').checked = SM.filters.hideIsolated;
+  smRulesRender();
+  smUpdateFilterBadge();
+}
+
+function smRulesRender(){
+  const host = $('sm-rules');
+  if (!host) return;
+  if (!SM.filters.rules.length){
+    host.innerHTML = '<div class="muted" style="padding:0.2rem 0;font-size:11.5px">'
+      + 'No name rules. Add one to hide, say, every table ending <span style="font-family:var(--mono)">_draft</span>.</div>';
+    return;
+  }
+  const opts = Object.keys(RULE_MODES).map(k =>
+    '<option value="' + k + '">' + esc(RULE_MODES[k].label) + '</option>').join('');
+  host.innerHTML = SM.filters.rules.map((r, i) =>
+    '<div class="sm-rule">'
+    + '<input type="checkbox" ' + (r.on !== false ? 'checked' : '')
+    + ' onchange="smRuleSet(' + i + ',\'on\',this.checked)" aria-label="Enable this rule">'
+    + '<select onchange="smRuleSet(' + i + ',\'mode\',this.value)" aria-label="Match type">'
+    + opts.replace('value="' + r.mode + '"', 'value="' + r.mode + '" selected') + '</select>'
+    + '<input type="text" value="' + esc(r.text) + '" placeholder="text…" aria-label="Match text"'
+    + ' oninput="smRuleSet(' + i + ',\'text\',this.value)">'
+    + '<button class="sm-rule-del" onclick="smRuleDel(' + i + ')" aria-label="Remove rule">✕</button>'
+    + '</div>').join('');
+}
+
+function smRuleAdd(){
+  SM.filters.rules.push({ mode:'contains', text:'', on:true });
+  smRulesRender();
+  // Focus the box that was just added, so the rule can be typed straight away.
+  const inputs = $('sm-rules').querySelectorAll('input[type=text]');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function smRuleDel(i){
+  SM.filters.rules.splice(i, 1);
+  smRulesRender();
+  smFiltersApply();
+}
+
+function smRuleSet(i, field, value){
+  const r = SM.filters.rules[i];
+  if (!r) return;
+  r[field] = value;
+  if (field === 'mode') smRulesRender();
+  smFiltersApply();
+}
+
+function smRulePreset(){
+  // The generated twins that make a schema like this unreadable. Only added if
+  // they are not already there, so pressing it twice does nothing.
+  const want = [{ mode:'ends', text:'_draft' }, { mode:'ends', text:'_template' }];
+  for (const w of want){
+    if (!SM.filters.rules.some(r => r.mode === w.mode && r.text.toLowerCase() === w.text)){
+      SM.filters.rules.push({ mode:w.mode, text:w.text, on:true });
+    }
+  }
+  smRulesRender();
+  smFiltersApply();
+}
+
+function smFiltersClear(){
+  SM.filters = { hideEmpty:false, hideViews:false, hideIsolated:false, rules: [] };
+  smFiltersWrite();
+  smFiltersApply();
+}
+
+// Controls → state, for the three checkboxes.
+function smFiltersRead(){
+  SM.filters.hideEmpty    = $('sm-f-empty').checked;
+  SM.filters.hideViews    = $('sm-f-views').checked;
+  SM.filters.hideIsolated = $('sm-f-isolated').checked;
+  smFiltersApply();
+}
+
+// Re-laying out is the point of filtering — the survivors should close up
+// rather than keep the gaps where the hidden tables were. Debounced, because
+// this fires on every keystroke in a rule box and the layout walks the graph.
+let _filterTimer = null;
+function smFiltersApply(){
+  smSavePrefs();
+  smUpdateFilterBadge();
+  if (_filterTimer) clearTimeout(_filterTimer);
+  _filterTimer = setTimeout(() => {
+    _filterTimer = null;
+    // A selection the filters just removed would leave the inspector
+    // describing something not on screen.
+    if (SM.selected && !smVisibleKeys().has(SM.selected)){
+      SM.selected = null;
+      SM.joinResult = null;
+      smRenderInspector();
+    }
+    smAutoLayout(false);
+    smFit();
+    smRenderTree();
+  }, 180);
+}
+
+function smUpdateFilterBadge(){
+  const btn = $('sm-filters-btn'), count = $('sm-filters-count'), warn = $('sm-filters-warn');
+  const g = SM.graph;
+  const total = g && g.ok ? g.tables.length : 0;
+  const hidden = smHiddenCount();
+  if (btn){
+    btn.innerHTML = 'Filters' + (hidden ? '<span class="btn-badge">' + num(hidden) + '</span>' : '');
+    btn.classList.toggle('on', smFiltersActive());
+  }
+  if (count) count.textContent = total ? num(total - hidden) + ' of ' + num(total) + ' shown' : '';
+  if (warn){
+    const bad = smCompileRules().some(r => r && r.bad);
+    warn.textContent = bad ? 'One rule is not a valid regular expression, so it is being ignored.' : '';
+  }
+  // Mark the offending box rather than only saying so in words.
+  const boxes = $('sm-rules') ? $('sm-rules').querySelectorAll('input[type=text]') : [];
+  const compiled = smCompileRules();
+  boxes.forEach((el, i) => el.classList.toggle('bad', !!(compiled[i] && compiled[i].bad)));
+}
 
 // ── Join-path finder ──────────────────────────────────────────────────────
 function smJoinToggle(){
@@ -1023,7 +1452,7 @@ function sePaletteOpen(){
   const g = SM.graph;
   _paletteItems = [];
   if (g && g.ok){
-    for (const t of g.tables){
+    for (const t of smTables()){
       _paletteItems.push({ kind:'table', label:t.name, key:t.key, sub:t.schema + ' · ' + num(t.rowCount) + ' rows' });
       for (const c of (t.columns || [])){
         _paletteItems.push({ kind:'column', label:c.name, key:t.key, sub:t.key + ' · ' + c.type });
@@ -1049,7 +1478,10 @@ function sePaletteFilter(){
     + '<span class="se-palette-kind">' + i.kind + '</span>'
     + '<span>' + mark(i.label, q) + '</span>'
     + '<span class="se-palette-sub">' + esc(i.sub) + '</span></div>').join('')
-    : '<div class="muted">Nothing matches. Tables and columns are indexed once the schema has loaded.</div>';
+    : '<div class="muted">Nothing matches.'
+      + (smHiddenCount() ? ' ' + num(smHiddenCount()) + ' table'
+          + (smHiddenCount() === 1 ? ' is' : 's are') + ' hidden by your filters.'
+        : ' Tables and columns are indexed once the schema has loaded.') + '</div>';
   _paletteHits = hits;
 }
 let _paletteHits = [];
@@ -1071,7 +1503,24 @@ function sePaletteGo(n){
 
 document.addEventListener('keydown', (ev) => {
   if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k'){ ev.preventDefault(); sePaletteOpen(); }
-  if (ev.key === 'Escape'){ sePaletteClose(); cvCloseDrawer(); }
+  if (ev.key === 'Escape'){
+    sePaletteClose();
+    cvCloseDrawer();
+    const f = $('sm-filters');
+    if (f && f.classList.contains('show')) smFiltersToggle();
+  }
+  // F for full screen, but not while typing into a filter or rule box.
+  const typing = ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
+  if (!typing && !ev.metaKey && !ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === 'f'
+      && seTab === 'schema'){ ev.preventDefault(); smFullscreen(); }
+});
+
+// A click anywhere else closes the rules panel, the way a popover should.
+document.addEventListener('mousedown', (ev) => {
+  const f = $('sm-filters');
+  if (!f || !f.classList.contains('show')) return;
+  if (f.contains(ev.target) || (ev.target.closest && ev.target.closest('#sm-filters-btn'))) return;
+  smFiltersToggle();
 });
 $ && document.addEventListener('click', (ev) => {
   if (ev.target && ev.target.id === 'se-palette') sePaletteClose();
@@ -1537,7 +1986,13 @@ function cvCompositeWhyNot(){
 document.addEventListener('DOMContentLoaded', () => {
   let saved = 'schema';
   try { saved = localStorage.getItem(TAB_KEY) || 'schema'; } catch {}
-  // Switch first so the right view is visible, then load into it.
+  // Preferences first: seSwitchTab starts the schema load, and a load that
+  // begins before the saved filters are in hand lays out every table and then
+  // has nothing to tell it to lay them out again.
+  smLoadPrefs();
+  smApplyPanels();
+  smFiltersWrite();
+  // Then switch, so the right view is visible before it loads into it.
   seSwitchTab(saved);
   smUpdateSideButtons();
   if (saved === 'schema') smEnsureLoaded();
