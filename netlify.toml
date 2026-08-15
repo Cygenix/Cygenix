@@ -8,6 +8,13 @@
 [[edge_functions]]
   path = "/api/coworker"
   function = "coworker"
+# Project Planner was removed. A bookmark or an old link should land
+# somewhere useful rather than on a 404.
+[[redirects]]
+  from = "/project-plan.html"
+  to = "/dashboard.html"
+  status = 301
+
 [[redirects]]
   from = "/api/health"
   to = "/.netlify/functions/health"

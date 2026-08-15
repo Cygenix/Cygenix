@@ -39,10 +39,10 @@ const NAV = SB.__nav, ACCT = SB.__accountNav;
 
 // 1. Every key that existed before the restructure must still resolve —
 //    pages mount with these in data-active, and dashboard code targets them.
-//    'supported' is deliberately absent: the Supported Formats menu option
-//    was removed on request.
+//    'supported' and 'project-plan' are deliberately absent: the Supported
+//    Formats menu option and the Project Planner were removed on request.
 const LEGACY_KEYS = ['dashboard','search','project-settings','connections','performance',
-  'system-parameters','privacy-security','integrations','project-plan','object-mapping',
+  'system-parameters','privacy-security','integrations','object-mapping',
   'sql-editor','agentive-migration','coworker','data-quality','insights','data-cleansing',
   'validation','jobs','project-builder','server-migration','inventory','task-agent',
   'report-builder','reports','project-summary-document','audit','diagnostics',
@@ -127,8 +127,27 @@ function allNavKeys(){
 const runIdx = NAV.findIndex(s => s.section === 'Run');
 const runKeys = [];
 NAV[runIdx].items.forEach(it => { runKeys.push(it.key); (it.children||[]).forEach(c => runKeys.push(c.key)); });
-check('Run group holds jobs + execute + planner + schedules',
-  ['jobs','project-builder','project-plan','task-agent'].every(k => runKeys.includes(k)));
+check('Run group holds jobs + execute + task manager',
+  ['jobs','project-builder','task-agent'].every(k => runKeys.includes(k)), runKeys.join(','));
+
+// 9. Project Planner is gone: the item, its page, and the nav group that
+//    existed only to hold it alongside Schedules.
+check('Project Planner is gone from the nav', !SB.__findItem('project-plan'));
+check('the Planner & Schedules group is gone with it', !SB.__findItem('plan-group'));
+{
+  const ta = SB.__findItem('task-agent');
+  check('the remaining item is renamed Task Manager',
+    ta && ta.label === 'Task Manager', ta && ta.label);
+  check('it keeps the task-agent key that pages and showView target',
+    ta && ta.view === 'task-agent' && !ta.href);
+  // A single-child expander is worse than a plain item, so it was flattened.
+  check('Task Manager is a top-level item, not the sole child of a group',
+    NAV[runIdx].items.some(i => i.key === 'task-agent'),
+    NAV[runIdx].items.map(i => i.key).join(','));
+}
+check('nothing still links to the deleted planner page',
+  !allNavKeys().includes('project-plan') &&
+  !JSON.stringify(NAV).includes('project-plan.html'));
 
 // 8. Notifications sits under Settings and points at the dashboard view that
 //    controls which run events fire.
