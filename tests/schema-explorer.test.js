@@ -195,7 +195,9 @@ console.log('Schema Explorer — coverage view and page wiring\n');
       T('CftSearchResultEntityOrg', { rowCount: 0 }),
       T('Orders',   { fkColumns: ['CustomerId'] }),
       T('Loner',    { rowCount: 5 }),
-      T('vw_Sales', { kind: 'view' }),
+      // Views arrive from the server with rowCount 0 always — counting a view
+      // means scanning it — so a realistic view fixture carries the zero.
+      T('vw_Sales', { kind: 'view', rowCount: 0 }),
       T('NoCount',  { rowCount: undefined }),
     ];
 
@@ -258,6 +260,10 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     // An absent row count is not evidence of emptiness.
     check('a table with no row count survives hide-empty',
       names({ hideEmpty:true }).includes('NoCount'));
+    // A view's zero is a placeholder, not a fact — hide-empty must not become
+    // a silent hide-all-views.
+    check('a view survives hide-empty, because its count is never real',
+      names({ hideEmpty:true }).includes('vw_Sales'));
 
     check('hide views removes views only',
       (() => { const n = names({ hideViews:true });

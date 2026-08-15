@@ -594,7 +594,11 @@ function smCompileRules(){
 function smHidden(t, rules){
   // Only a row count we actually have can make a table empty. An unknown one
   // is not evidence of emptiness, and hiding on it would lose real tables.
-  if (SM.filters.hideEmpty && typeof t.rowCount === 'number' && t.rowCount === 0) return true;
+  // Views are exempt: the server always reports 0 for a view because counting
+  // one means scanning it, so a view's zero is a placeholder, not a fact —
+  // hiding on it would make "Hide empty tables" quietly hide every view.
+  if (SM.filters.hideEmpty && t.kind !== 'view'
+      && typeof t.rowCount === 'number' && t.rowCount === 0) return true;
   if (SM.filters.hideViews && t.kind === 'view') return true;
   if (SM.filters.hideIsolated && !t.fkColumns.length && !t.refColumns.length) return true;
   const name = t.name.toLowerCase();
@@ -735,15 +739,19 @@ function smRenderTree(){
   host.innerHTML = note + schemas.map(s => {
     const rows = bySchema[s].map(({ t, colHits }) => {
       const sel = SM.selected === t.key ? ' on' : '';
-      return '<div class="sm-tnode' + sel + '" tabindex="0" role="button"'
-        + ' onclick="smSelect(\'' + esc(t.key) + '\',true)"'
-        + ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();smSelect(\'' + esc(t.key) + '\',true)}">'
+      // The key travels as a data attribute, not inside an inline JS string —
+      // a quote in a table name would end the string early there, breaking the
+      // click and letting the rest of the name run as script.
+      return '<div class="sm-tnode' + sel + '" tabindex="0" role="button" data-key="' + esc(t.key) + '"'
+        + ' onclick="smSelect(this.dataset.key,true)"'
+        + ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();smSelect(this.dataset.key,true)}">'
         + '<span class="sm-box-swatch" style="background:' + schemaColour(t.schema) + '"></span>'
         + '<span>' + mark(t.name, q) + '</span>'
         + '<span class="sm-tnode-rows">' + num(t.rowCount) + '</span></div>'
         + colHits.slice(0, 8).map(c =>
-            '<div class="sm-cnode" tabindex="0" role="button" onclick="smSelect(\'' + esc(t.key) + '\',true)"'
-            + ' onkeydown="if(event.key===\'Enter\'){smSelect(\'' + esc(t.key) + '\',true)}">'
+            '<div class="sm-cnode" tabindex="0" role="button" data-key="' + esc(t.key) + '"'
+            + ' onclick="smSelect(this.dataset.key,true)"'
+            + ' onkeydown="if(event.key===\'Enter\'){smSelect(this.dataset.key,true)}">'
             + mark(c.name, q) + '</div>').join('');
     }).join('');
     return '<div class="sm-schema">' + esc(s) + '</div>' + rows;
@@ -758,13 +766,11 @@ function smRenderTree(){
 function smAutoLayout(animate){
   const g = SM.graph;
   if (!g || !g.ok) return;
-  const keys = smVisibleKeys();
-  const order = CygenixSchemaGraph.loadOrder(g, [...keys]);
-  const layers = order.waves.map(w => w.filter(k => keys.has(k))).filter(w => w.length);
-  if (order.cyclic.length){
-    const c = order.cyclic.filter(k => keys.has(k));
-    if (c.length) layers.push(c);                       // cycles get their own column
-  }
+  // loadOrder only ever places the keys it is given, so the waves and the
+  // cycle set are already restricted to the visible tables.
+  const order = CygenixSchemaGraph.loadOrder(g, [...smVisibleKeys()]);
+  const layers = order.waves.slice();
+  if (order.cyclic.length) layers.push(order.cyclic);   // cycles get their own column
 
   const COL_W = BOX_W + 90, GAP_Y = 22;
   let x = 0;
@@ -1086,7 +1092,8 @@ function smRenderMinimap(){
       if (ev.key === '+' || ev.key === '=') { smZoom(1.2); ev.preventDefault(); }
       if (ev.key === '-') { smZoom(1/1.2); ev.preventDefault(); }
       if (ev.key === '0') { smFit(); ev.preventDefault(); }
-      if (ev.key.toLowerCase() === 'f') { smFullscreen(); ev.preventDefault(); }
+      // F is handled by the document-level listener, which this event bubbles
+      // to — a second binding here would toggle full screen twice per press.
     });
 
     if (mini) mini.addEventListener('click', (ev) => {
@@ -1266,6 +1273,12 @@ function smFiltersApply(){
       SM.joinResult = null;
       smRenderInspector();
     }
+    // A join path with a hidden table on it would draw as disconnected
+    // fragments — the edges into the hidden hop are no longer on screen.
+    if (SM.joinResult && SM.joinResult.tables
+        && !SM.joinResult.tables.every(k => smVisibleKeys().has(k))){
+      SM.joinResult = null;
+    }
     smAutoLayout(false);
     smFit();
     smRenderTree();
@@ -1282,13 +1295,13 @@ function smUpdateFilterBadge(){
     btn.classList.toggle('on', smFiltersActive());
   }
   if (count) count.textContent = total ? num(total - hidden) + ' of ' + num(total) + ' shown' : '';
+  const compiled = smCompileRules();
   if (warn){
-    const bad = smCompileRules().some(r => r && r.bad);
+    const bad = compiled.some(r => r && r.bad);
     warn.textContent = bad ? 'One rule is not a valid regular expression, so it is being ignored.' : '';
   }
   // Mark the offending box rather than only saying so in words.
   const boxes = $('sm-rules') ? $('sm-rules').querySelectorAll('input[type=text]') : [];
-  const compiled = smCompileRules();
   boxes.forEach((el, i) => el.classList.toggle('bad', !!(compiled[i] && compiled[i].bad)));
 }
 
@@ -1317,7 +1330,12 @@ function smJoinPick(key){
     smRenderCanvas(); smRenderInspector();
     return;
   }
-  smStatus(path.tables.length - 1 + ' join' + (path.tables.length === 2 ? '' : 's'));
+  // The finder walks the whole graph, so a path can route through a table the
+  // filters removed — those hops cannot be drawn, so say so rather than show
+  // a highlight with silent gaps in it.
+  const hiddenHops = path.tables.filter(k => !smVisibleKeys().has(k)).length;
+  smStatus(path.tables.length - 1 + ' join' + (path.tables.length === 2 ? '' : 's')
+    + (hiddenHops ? ' — ' + hiddenHops + ' on the path hidden by filters' : ''));
   SM.selected = b;
   SM.inspTab = 'rels';
   smRenderCanvas();
