@@ -19735,6 +19735,87 @@ async function ta_runNow(id, btn) {
 // turn a successful migration into a visible failure. Failures are logged by
 // emit() and surface in the connector's own Test button.
 // ══════════════════════════════════════════════════════════════════════════
+// TASK AGENT — job picker
+// ══════════════════════════════════════════════════════════════════════════
+// The picker used to render every entry in cygenix_jobs as its bare name.
+// Three things made that unusable:
+//
+//   1. Trashed jobs were listed. Soft-deleted jobs are hidden everywhere else
+//      and cannot sensibly be scheduled.
+//   2. Jobs saved by the Connect flow are named after the PROJECT, not the
+//      table pair — so a dozen conversion runs under "Demo" produced a dozen
+//      entries all reading "Demo". They are distinct jobs, not duplicates,
+//      but nothing on screen said which was which.
+//   3. A job with no name at all rendered the string "undefined".
+//
+// Names are left alone; the label is what changes. A name that is already
+// unique is shown as-is, and only a name shared with another job gains the
+// route and date that tell them apart — so clean lists stay clean.
+
+// Names used by more than one job, lower-cased. Only these need qualifying.
+function ta_duplicateJobNames(jobs){
+  const seen = new Map();
+  jobs.forEach(j => {
+    const k = ta_jobBaseName(j).toLowerCase();
+    seen.set(k, (seen.get(k) || 0) + 1);
+  });
+  const dupes = new Set();
+  seen.forEach((n, k) => { if (n > 1) dupes.add(k); });
+  return dupes;
+}
+
+function ta_jobBaseName(j){
+  const n = String((j && j.name) || '').trim();
+  if (n) return n;
+  // No name — fall back to something that identifies it rather than printing
+  // "undefined", which is what the old picker did.
+  const route = [j && (j.sourceTable || j.source), j && (j.targetTable || j.target)]
+    .filter(Boolean).join(' → ');
+  return route || 'Untitled job';
+}
+
+function ta_jobLabel(j, dupes){
+  const base = ta_jobBaseName(j);
+  if (!dupes.has(base.toLowerCase())) return base;
+  const route = [j.sourceTable || j.source, j.targetTable || j.target].filter(Boolean).join(' → ');
+  let when = '';
+  if (j.created){
+    const d = new Date(j.created);
+    if (!isNaN(d)) when = d.toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+  }
+  const extra = [route, when].filter(Boolean).join(' · ');
+  return extra ? base + '  ·  ' + extra : base;
+}
+
+// Jobs belonging to the active project are grouped first. Nothing is hidden —
+// scheduling a job from another project is legitimate, so the others stay
+// listed under their own heading rather than being filtered out.
+function ta_jobOptions(){
+  const jobs = liveJobs().slice().sort((a, b) =>
+    String(b.created || '').localeCompare(String(a.created || '')));
+  if (!jobs.length) return '<option value="">No jobs saved on this browser</option>';
+
+  const activeId = (localStorage.getItem('cygenix_active_project_id') || '').trim();
+  const projects = safeArr('cygenix_projects');
+  const active   = projects.find(p => p.id === activeId);
+  const dupes    = ta_duplicateJobNames(jobs);
+  const opt = j => '<option value="' + escapeAttr(j.id) + '">' + escapeHtml(ta_jobLabel(j, dupes)) + '</option>';
+
+  if (!activeId) return jobs.map(opt).join('');
+
+  // A job with no projectId predates the field or was saved by a flow that
+  // never set it; treat it as belonging to whatever is active rather than
+  // stranding it under "Other projects".
+  const mine   = jobs.filter(j => !j.projectId || j.projectId === activeId);
+  const others = jobs.filter(j => j.projectId && j.projectId !== activeId);
+  if (!others.length) return mine.map(opt).join('');
+
+  const label = (active && active.name) ? active.name : 'This project';
+  return '<optgroup label="' + escapeAttr(label) + '">' + mine.map(opt).join('') + '</optgroup>' +
+         '<optgroup label="Other projects">' + others.map(opt).join('') + '</optgroup>';
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 // NOTIFICATIONS VIEW — Settings → Notifications
 // ══════════════════════════════════════════════════════════════════════════
 // Two independent switches govern delivery, and the page says so rather than
@@ -19961,10 +20042,7 @@ async function ta_openScheduleModal(existingId, preselectJobId) {
   ta_renderMonthlyDom();
 
   const jobsSel = document.getElementById('ta-sched-job');
-  const jobs = safeArr('cygenix_jobs');
-  jobsSel.innerHTML = jobs.length
-    ? jobs.map(j => '<option value="' + escapeAttr(j.id) + '">' + escapeHtml(j.name) + '</option>').join('')
-    : '<option value="">No jobs saved on this browser</option>';
+  jobsSel.innerHTML = ta_jobOptions();
 
   let schedResp = { schedules: [] };
   try { schedResp = await ta_sched('list-schedules', {}); } catch {}
