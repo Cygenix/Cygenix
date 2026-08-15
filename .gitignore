@@ -5,6 +5,10 @@
 
 # Dependencies
 node_modules/
+# This repo has never tracked a lockfile — Netlify's build runs a plain
+# `npm install`. Committing one now would change how every dependency
+# resolves on every build, so keep it out until that is a deliberate call.
+package-lock.json
 
 # Local dev
 .netlify/

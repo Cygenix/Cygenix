@@ -53,6 +53,28 @@
       configFields: []
     },
     {
+      // Unlike every other connector here, SMTP cannot run in the browser:
+      // there are no raw sockets in a page and an SMTP server is not an HTTP
+      // endpoint, so fetch cannot reach one. Sending goes through
+      // /.netlify/functions/send-email, which opens the socket server-side.
+      // The settings still live only in localStorage — see the note in the
+      // config dialog about what that means for the password.
+      id: 'smtp',
+      name: 'Email (SMTP)',
+      description: 'Email notifications on migration completion.',
+      category: 'notifications',
+      icon: '📧',
+      status: 'available',
+      configFields: [
+        { key: 'host', label: 'SMTP host',   type: 'text',     placeholder: 'smtp.office365.com' },
+        { key: 'port', label: 'Port',        type: 'text',     placeholder: '587' },
+        { key: 'user', label: 'Username',    type: 'text',     placeholder: 'you@example.com' },
+        { key: 'pass', label: 'Password / app password', type: 'password', placeholder: '••••••••' },
+        { key: 'from', label: 'From address (defaults to the username)', type: 'text', placeholder: 'cygenix@example.com' },
+        { key: 'to',   label: 'Send notifications to', type: 'text', placeholder: 'team@example.com, ops@example.com' },
+      ]
+    },
+    {
       id: 'csv-jobs',
       name: 'Jobs CSV export',
       description: 'Export the jobs library as a CSV file, suitable for spreadsheet review or hand-off.',
@@ -73,7 +95,6 @@
     { id: 'jira',      name: 'Jira',               description: 'File issues automatically on migration failure.',category: 'workflow',     icon: '🎯', status: 'coming-soon' },
     { id: 'azdo',      name: 'Azure DevOps',       description: 'Create work items for failed validations.',     category: 'workflow',     icon: '🔷', status: 'coming-soon' },
     { id: 'github',    name: 'GitHub',             description: 'Commit generated SQL scripts to a repository.',  category: 'workflow',     icon: '🐙', status: 'coming-soon' },
-    { id: 'smtp',      name: 'Email (SMTP)',       description: 'Email notifications on migration completion.',  category: 'notifications', icon: '📧', status: 'coming-soon' },
     { id: 's3',        name: 'AWS S3',             description: 'Upload conversion reports to S3 buckets.',     category: 'storage',       icon: '🪣', status: 'coming-soon' },
     { id: 'blob',      name: 'Azure Blob Storage', description: 'Archive migration bundles to Azure Blob.',     category: 'storage',       icon: '📦', status: 'coming-soon' },
     { id: 'sharepoint',name: 'SharePoint',         description: 'Push reports to a SharePoint document library.',category: 'storage',      icon: '📁', status: 'coming-soon' },
@@ -137,6 +158,108 @@
       return { ok: res.ok, message: res.ok ? 'delivered' : 'HTTP '+res.status };
     } catch(e){
       return { ok:false, message: e.message || 'network error' };
+    }
+  }
+
+  // ─── Email (SMTP) ────────────────────────────────────────────────────────
+  // Everything below posts to /.netlify/functions/send-email. The page's
+  // fetch wrapper (cygenix-auth-token.js) attaches the Entra bearer token to
+  // same-origin /.netlify/functions/* calls, so no auth handling is needed
+  // here — the same as any other Cygenix API call from the browser.
+
+  function smtpMissing(cfg){
+    if (!cfg) return 'SMTP settings not configured';
+    if (!cfg.host) return 'SMTP host not set';
+    if (!cfg.port) return 'SMTP port not set';
+    if (!cfg.user) return 'SMTP username not set';
+    if (!cfg.pass) return 'SMTP password not set';
+    return null;
+  }
+
+  // Shape the stored config into the payload the function expects. Kept in one
+  // place so verify and send can never disagree about what was sent.
+  function smtpPayload(cfg, extra){
+    return {
+      smtp: {
+        host: (cfg.host||'').trim(),
+        port: Number(String(cfg.port||'').trim()),
+        user: (cfg.user||'').trim(),
+        pass: cfg.pass || '',
+      },
+      from: (cfg.from||'').trim() || (cfg.user||'').trim(),
+      to:   (cfg.to  ||'').trim(),
+      ...(extra||{})
+    };
+  }
+
+  async function smtpCall(action, cfg, extra){
+    const res  = await fetch('/.netlify/functions/send-email', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ action, ...smtpPayload(cfg, extra) })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    return data;
+  }
+
+  // Test does two things in order, because they fail for different reasons and
+  // the user needs to know which: verify proves the host, port, and login are
+  // right; the test message proves the From address is one the server will
+  // actually accept (relay and sender-policy rejections only surface on send).
+  async function testSmtp(cfg){
+    const missing = smtpMissing(cfg);
+    if (missing) return { ok:false, message: missing };
+    try {
+      await smtpCall('verify', cfg);
+    } catch(e){
+      return { ok:false, message:'Could not connect or sign in: ' + (e.message || 'failed') };
+    }
+    if (!(cfg.to||'').trim()){
+      return { ok:true, message:'Connected and signed in. Add a recipient to send a test message.' };
+    }
+    try {
+      const r = await smtpCall('send', cfg, {
+        subject: 'Cygenix test message',
+        text: 'This is a test from Cygenix.\n\nReceiving it means your SMTP settings work and migration '
+            + 'notifications will reach this address.\n'
+      });
+      if (r.rejected) return { ok:false, message:'Server accepted the connection but rejected ' + r.rejected + ' recipient(s).' };
+      return { ok:true, message:'Connected, signed in, and test message sent to ' + cfg.to };
+    } catch(e){
+      return { ok:false, message:'Signed in, but sending failed: ' + (e.message || 'failed') };
+    }
+  }
+
+  // Turn an emitted event into something worth reading in an inbox. The
+  // payload shape is whatever emit() was handed, so every field is optional.
+  function smtpFormat(payload){
+    const p = payload || {};
+    const ev = p.event || 'cygenix.event';
+    const bits = [];
+    if (p.project) bits.push('Project: ' + p.project);
+    if (p.job)     bits.push('Job: ' + p.job);
+    if (p.status)  bits.push('Status: ' + p.status);
+    if (p.rows != null)  bits.push('Rows: ' + p.rows);
+    if (p.message) bits.push('', p.message);
+    const subject = 'Cygenix · ' + ev + (p.status ? ' · ' + p.status : '');
+    const text = [ev, 'Sent: ' + (p.sentAt || new Date().toISOString()), '']
+      .concat(bits.length ? bits : ['No further detail was supplied with this event.'])
+      .join('\n');
+    return { subject, text };
+  }
+
+  async function runSmtp(cfg, payload){
+    const missing = smtpMissing(cfg);
+    if (missing) return { ok:false, message: missing };
+    if (!(cfg.to||'').trim()) return { ok:false, message:'No recipient set' };
+    try {
+      const { subject, text } = smtpFormat(payload);
+      const r = await smtpCall('send', cfg, { subject, text });
+      if (r.rejected) return { ok:false, message: r.rejected + ' recipient(s) rejected' };
+      return { ok:true, message:'sent to ' + cfg.to };
+    } catch(e){
+      return { ok:false, message: e.message || 'send failed' };
     }
   }
 
@@ -255,6 +378,7 @@
     if (c.status !== 'available') return { ok:false, message:'Connector not yet implemented' };
     const cfg = getConfig(id) || {};
     if (id === 'webhook')     return testWebhook(cfg);
+    if (id === 'smtp')        return testSmtp(cfg);
     // Most connectors have no meaningful test (export/import need user action)
     return { ok:true, message:'No test available — use Run instead.' };
   }
@@ -266,6 +390,7 @@
     const cfg = getConfig(id) || {};
     switch (id){
       case 'webhook':      return runWebhook(cfg, payload || {event:'cygenix.manual.trigger', sentAt:new Date().toISOString()});
+      case 'smtp':         return runSmtp(cfg, payload || {event:'cygenix.manual.trigger', sentAt:new Date().toISOString()});
       case 'json-export':  return runJsonExport();
       case 'json-import':  return runJsonImport(payload?.bundle, payload?.mode || 'new');
       case 'csv-jobs':     return runCsvJobs();
@@ -273,14 +398,33 @@
     }
   }
 
-  // Layer 2 stub: broadcast an event to all enabled subscribers.
-  // Today this only calls webhook if enabled; future connectors plug in here.
+  // Broadcast an event to every enabled subscriber.
+  //
+  // This had no callers until now: the "Enabled" checkbox and the "● on" badge
+  // were purely decorative, and Webhook only ever fired when someone clicked
+  // Test. dashboard.html now calls emit() when a migration run reaches a
+  // terminal state, so enabling a connector finally does what it says.
+  //
+  // Delivery is best-effort and must never break the run that triggered it —
+  // a refused mail server or a dead webhook URL is not a migration failure.
+  // Each connector is therefore isolated, and the results are returned for
+  // logging rather than thrown.
   async function emit(event, payload){
     const out = { event, sentAt: new Date().toISOString(), ...payload };
-    const results = [];
-    if (isEnabled('webhook')){
-      results.push({ id:'webhook', ...(await runWebhook(getConfig('webhook'), out)) });
-    }
+    const targets = [
+      ['webhook', runWebhook],
+      ['smtp',    runSmtp],
+    ];
+    const results = await Promise.all(
+      targets
+        .filter(([id]) => isEnabled(id))
+        .map(async ([id, fn]) => {
+          try { return { id, ...(await fn(getConfig(id), out)) }; }
+          catch(e){ return { id, ok:false, message: e && e.message || 'failed' }; }
+        })
+    );
+    results.filter(r => !r.ok).forEach(r =>
+      console.warn('[integrations] ' + r.id + ' notification failed: ' + r.message));
     return results;
   }
 

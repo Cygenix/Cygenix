@@ -2166,7 +2166,7 @@ body.cyg-collapsed .app{width:calc(100vw - 54px)}
       <div class="in-head">
         <div class="in-title">🔌 Integrations</div>
         <div class="in-sub">
-          Connect Cygenix to external tools — import/export project bundles, post webhooks on migration events, and more. Credentials are stored in your browser (localStorage) and are not sent to Cygenix servers.
+          Connect Cygenix to external tools — import/export project bundles, post webhooks on migration events, email notifications, and more. Settings are stored in your browser (localStorage), never on Cygenix servers. One exception: Email (SMTP) cannot run in a browser, so its credentials are relayed to Cygenix over HTTPS at the moment a message is sent — used to open the connection, then discarded. Each connector says what it does with your details.
         </div>
       </div>
 
@@ -17696,6 +17696,26 @@ function openIntegrationModal(id){
     `;
     primaryBtn = `<button class="btn btn-primary btn-sm" onclick="testIntegration('${id}')">🧪 Test webhook</button>`;
 
+  } else if (id === 'smtp'){
+    body = configFieldsHTML + `
+      <div class="in-form-note warn">
+        <strong>Where these credentials go:</strong> a browser cannot speak SMTP, so unlike every other
+        connector here this one needs a server. Your settings are stored only in this browser, but the
+        host, username and password are sent to Cygenix over HTTPS each time a message goes out, and used
+        to open the connection. They are never written to disk or logged on our side. Use an app password
+        rather than your main account password where your provider offers one.
+      </div>
+      <div class="in-form-note">
+        Common ports: <strong>587</strong> (STARTTLS, most providers) · <strong>465</strong> (SSL) ·
+        <strong>25</strong> or <strong>2525</strong>. Several recipients can be comma-separated.
+      </div>
+      <div class="in-enable-row">
+        <input type="checkbox" id="in-enable-toggle" ${cfg.enabled?'checked':''}>
+        <label for="in-enable-toggle">Enabled — email me when a migration run finishes</label>
+      </div>
+    `;
+    primaryBtn = `<button class="btn btn-primary btn-sm" onclick="testIntegration('${id}')">🧪 Test &amp; send</button>`;
+
   } else if (id === 'json-export'){
     body = `
       <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:0.5rem">
@@ -19662,11 +19682,47 @@ async function ta_runNow(id, btn) {
     } else {
       alert('Run failed:\n\n' + (finalRun.errorMessage || 'unknown error') + '\n\nSee Run history for step-level detail.');
     }
+    // Notify the enabled integrations. Until now nothing in the app called
+    // emit(), so the "Enabled" checkbox on a connector controlled nothing and
+    // Webhook only ever fired from its own Test button. This is the terminal
+    // state of a run — the event those connectors were built to carry.
+    if (finalRun) notifyIntegrations(finalRun, id);
     ta_loadSchedules();
   } catch (e) {
     alert('Run failed: ' + e.message);
   } finally {
     btn.disabled = false; btn.innerHTML = orig;
+  }
+}
+
+// Fire-and-forget dispatch of a finished run to every enabled connector.
+//
+// Deliberately not awaited by the caller and never allowed to throw: a mail
+// server that refuses the login, or a webhook URL that has gone dead, must not
+// turn a successful migration into a visible failure. Failures are logged by
+// emit() and surface in the connector's own Test button.
+function notifyIntegrations(finalRun, scheduleId){
+  try {
+    if (!window.CygenixIntegrations || typeof window.CygenixIntegrations.emit !== 'function') return;
+    const sched = (TA.schedules || []).find(s => s.id === scheduleId);
+    const projects = safeArr('cygenix_projects');
+    const activeId = localStorage.getItem('cygenix_active_project_id') || '';
+    const project  = projects.find(p => p.id === activeId);
+    const ok = finalRun.status === 'success';
+    window.CygenixIntegrations.emit(
+      ok ? 'cygenix.migration.success' : 'cygenix.migration.failed',
+      {
+        status:  finalRun.status,
+        project: project ? (project.name || '') : '',
+        job:     sched ? (sched.name || '') : '',
+        rows:    finalRun.rowsAffected || 0,
+        steps:   (finalRun.stepResults || []).length,
+        runId:   finalRun.id || '',
+        message: ok ? '' : (finalRun.errorMessage || 'unknown error'),
+      }
+    ).catch(e => console.warn('[integrations] emit failed:', e && e.message));
+  } catch (e) {
+    console.warn('[integrations] emit skipped:', e && e.message);
   }
 }
 

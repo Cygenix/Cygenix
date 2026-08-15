@@ -8,12 +8,16 @@
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0",
     "mssql": "^10.0.4",
+    "nodemailer": "^7.0.9",
     "pg": "^8.11.3"
   },
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
-    "test": "node tests/drive-sync.test.js && node tests/sidebar-nav.test.js && node tests/recent-maps.test.js && node tests/report-mapping.test.js && node tests/project-report-mapping.test.js && node tests/connection-masking.test.js && node tests/job-counts.test.js && node tests/where-groupby.test.js && node tests/left-splitter.test.js && node tests/table-picker.test.js"
+    "test": "node tests/drive-sync.test.js && node tests/sidebar-nav.test.js && node tests/recent-maps.test.js && node tests/report-mapping.test.js && node tests/project-report-mapping.test.js && node tests/connection-masking.test.js && node tests/job-counts.test.js && node tests/where-groupby.test.js && node tests/left-splitter.test.js && node tests/table-picker.test.js && node tests/email-smtp.test.js"
+  },
+  "devDependencies": {
+    "smtp-server": "^3.19.3"
   }
 }
