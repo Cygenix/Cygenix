@@ -257,7 +257,13 @@ body.cyg-collapsed{padding-left:54px}
 .da-tile .n{font-size:11px;color:var(--text2);margin-top:4px;line-height:1.4}
 .da-tile .n b{color:var(--text);font-weight:600}
 
-.da-body{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:0.6rem;height:calc(100vh - 268px);min-height:380px}
+.da-view{display:flex;flex-direction:column;height:calc(100vh - 118px);min-height:480px}
+.da-hd,.da-tiles{flex:none}
+.da-body{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:0.6rem;flex:1;min-height:0}
+/* Full screen: the panel keeps its own background — the browser paints
+   black behind a fullscreen element and the page's is not inherited. */
+.da-panel:fullscreen{background:var(--bg2);border-radius:0;height:100vh;width:100vw}
+.da-panel:-webkit-full-screen{background:var(--bg2);border-radius:0;height:100vh;width:100vw}
 @media(max-width:1100px){.da-body{grid-template-columns:minmax(0,1fr)}.da-rail-panel{display:none}}
 .da-panel{display:flex;flex-direction:column;min-height:0;min-width:0}
 .da-crumb{display:flex;align-items:center;gap:5px;font-size:12px;min-width:0}
@@ -499,7 +505,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
   </div>
 
   <!-- ══ VIEW 1.5 — DATA MAP (Data Atlas) ═════════════════════════════ -->
-  <div id="se-view-atlas" role="tabpanel" aria-labelledby="se-tab-atlas" style="display:none">
+  <div id="se-view-atlas" class="da-view" role="tabpanel" aria-labelledby="se-tab-atlas" style="display:none">
     <div class="da-hd">
       <span class="da-sub" id="da-src-label"></span>
       <span style="flex:1"></span>
@@ -517,6 +523,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
         <button data-da-view="map" aria-pressed="true">Map</button>
         <button data-da-view="table" aria-pressed="false">Table</button>
       </div>
+      <button class="btn" id="da-filters-btn" onclick="daToggleSchemaFilters()" aria-pressed="false">Schema map filters</button>
     </div>
 
     <div class="da-tiles" id="da-tiles"></div>
@@ -533,6 +540,7 @@ table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
             <button data-da-lens="sensitivity" aria-pressed="false">Sensitivity</button>
             <button data-da-lens="status" aria-pressed="false">Migration</button>
           </div>
+          <button class="btn" id="da-fs-btn" onclick="daFullscreen()" title="Full screen (F, or Esc to leave)">⤢ Full screen</button>
         </div>
         <div class="da-mapwrap" id="da-mapwrap">
           <canvas id="da-map" role="img"
@@ -1330,8 +1338,19 @@ function smOnFullscreenChange(){
   // diagram uses the space rather than staying at the old zoom in a corner.
   requestAnimationFrame(() => { smRenderCanvas(); smFit(); });
 }
-document.addEventListener('fullscreenchange', smOnFullscreenChange);
-document.addEventListener('webkitfullscreenchange', smOnFullscreenChange);
+// One listener routes by which element actually went (or left) full screen —
+// re-fitting the schema canvas while it is hidden behind another tab would
+// measure a 0×0 box and wreck its zoom state.
+let _lastFsEl = null;
+function seOnFullscreenChange(){
+  const now = document.fullscreenElement || document.webkitFullscreenElement;
+  const subject = now || _lastFsEl;
+  _lastFsEl = now;
+  if (subject && subject.classList && subject.classList.contains('da-panel')) daOnFullscreenChange();
+  else smOnFullscreenChange();
+}
+document.addEventListener('fullscreenchange', seOnFullscreenChange);
+document.addEventListener('webkitfullscreenchange', seOnFullscreenChange);
 
 // ── Exclusion rules ───────────────────────────────────────────────────────
 function smFiltersToggle(){
@@ -1709,8 +1728,10 @@ document.addEventListener('keydown', (ev) => {
   }
   // F for full screen, but not while typing into a filter or rule box.
   const typing = ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
-  if (!typing && !ev.metaKey && !ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === 'f'
-      && seTab === 'schema'){ ev.preventDefault(); smFullscreen(); }
+  if (!typing && !ev.metaKey && !ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === 'f'){
+    if (seTab === 'schema'){ ev.preventDefault(); smFullscreen(); }
+    else if (seTab === 'atlas'){ ev.preventDefault(); daFullscreen(); }
+  }
 });
 
 // A click anywhere else closes the rules panel, the way a popover should.
@@ -1759,7 +1780,13 @@ const DA = {
   graphOk: false,
   reason: '',
   database: '',
+  graphRef: null,
+  // Reuse the Schema map's exclusion rules here. Only meaningful when both
+  // views look at the same database — the rules were written against that
+  // schema's names and row counts.
+  useSchemaFilters: false,
 };
+try { DA.useSchemaFilters = localStorage.getItem('cygenix_schemaexp_atlas_smfilters') === '1'; } catch {}
 
 // Data colours resolved once from the :root tokens, so the canvas and every
 // generated swatch stay on the page palette (no hex leaves the token block).
@@ -1939,6 +1966,7 @@ async function daLoad(){
   catch (e) { g = { ok:false, reason:(e && e.message) || 'Could not load', tables:[] }; }
   DA.loading = false;
   DA.loaded = DA.side;
+  DA.graphRef = g.ok ? g : null;
   DA.graphOk = !!g.ok;
   DA.reason = g.reason || '';
   DA.database = g.database || '';
@@ -2008,7 +2036,74 @@ function daMatches(t){
   if (!DA.q) return true;
   return (t.schema + '.' + t.name).toLowerCase().includes(DA.q.toLowerCase());
 }
-function daVisible(){ return DA.tables.filter(t => !daIsOff(daCatOf(t))); }
+let _daFilterMemo = null;
+function daFilterKeys(){
+  if (!DA.useSchemaFilters || DA.side !== SM.side || !DA.graphRef) return null;
+  const sig = JSON.stringify(SM.filters) + '|' + DA.side + '|' + DA.graphRef.tables.length;
+  if (_daFilterMemo && _daFilterMemo.sig === sig) return _daFilterMemo.keys;
+  const rules = smCompileRules();
+  const keys = new Set();
+  for (const t of DA.graphRef.tables) if (!smHidden(t, rules)) keys.add(t.key);
+  _daFilterMemo = { sig, keys };
+  return keys;
+}
+function daVisible(){
+  const fk = daFilterKeys();
+  return DA.tables.filter(t => !daIsOff(daCatOf(t)) && (!fk || fk.has(t.key)));
+}
+function daToggleSchemaFilters(){
+  DA.useSchemaFilters = !DA.useSchemaFilters;
+  try { localStorage.setItem('cygenix_schemaexp_atlas_smfilters', DA.useSchemaFilters ? '1' : '0'); } catch {}
+  DA.drill = null; DA.sel = null;
+  daRefresh(true);
+}
+// Button state: pressed while active, disabled with an explanation when the
+// two views are looking at different databases.
+function daUpdateFilterButton(){
+  const btn = $('da-filters-btn');
+  if (!btn) return;
+  const sameSide = DA.side === SM.side;
+  const active = DA.useSchemaFilters && sameSide;
+  const fk = daFilterKeys();
+  const hidden = fk ? DA.tables.filter(t => !fk.has(t.key)).length : 0;
+  btn.disabled = !sameSide;
+  btn.classList.toggle('on', active);
+  btn.setAttribute('aria-pressed', String(active));
+  btn.innerHTML = 'Schema map filters'
+    + (active && hidden ? '<span class="btn-badge">' + daInt(hidden) + '</span>' : '');
+  btn.title = !sameSide
+    ? 'The Schema map is showing the ' + (SM.side === 'src' ? 'source' : 'target')
+      + ' database and this view the ' + (DA.side === 'src' ? 'source' : 'target')
+      + ' — its filters only apply when both look at the same one.'
+    : (DA.useSchemaFilters
+        ? 'Stop applying the Schema map\'s exclusion rules here'
+        : 'Hide the same tables the Schema map\'s Filters panel hides');
+}
+
+// ── Full screen, same pattern as the Schema map's canvas. ──
+function daFullscreen(){
+  const el = document.querySelector('.da-panel');
+  if (!el) return;
+  const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fsEl){
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    return;
+  }
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!req) return;
+  const r = req.call(el);
+  if (r && r.catch) r.catch(() => {});
+}
+function daOnFullscreenChange(){
+  const on = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const btn = $('da-fs-btn');
+  if (btn){
+    btn.textContent = on ? '⤢ Exit full screen' : '⤢ Full screen';
+    btn.classList.toggle('on', on);
+  }
+  // The canvas is a different size now — re-measure and redraw.
+  requestAnimationFrame(() => { if (DA.view === 'map') daResize(); });
+}
 
 // ── Squarified treemap ────────────────────────────────────────────────────
 function daSquarify(items, rect){
@@ -2610,10 +2705,12 @@ function daRefresh(structural){
     $('da-tiles').innerHTML = ''; $('da-legend').innerHTML = ''; $('da-crumb').innerHTML = '';
     $('da-map-meta').textContent = ''; $('da-rail').innerHTML = '<div class="muted">Nothing loaded.</div>';
     $('da-src-label').textContent = '';
+    daUpdateFilterButton();
     daCells = []; daDraw();
     return;
   }
   empty.style.display = 'none';
+  daUpdateFilterButton();
   daBuildCells();
   daRenderTiles(); daRenderLegend(); daRenderChrome(); daRenderRail();
   if (DA.view === 'table') daRenderTable();
