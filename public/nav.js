@@ -93,7 +93,7 @@
     const moreCollapsed = '';
     const mappingOpen = 'open';
     const mappingCollapsed = '';
-    const analysisOpen = ['insights.html','validation.html'].includes(page) ? 'open' : 'open';
+    const analysisOpen = ['validation.html'].includes(page) ? 'open' : 'open';
     const analysisCollapsed = '';
     const reportsOpen = ['issues.html'].includes(page) ? 'open' : 'open';
     const reportsCollapsed = '';
@@ -164,10 +164,6 @@
     <span class="cyg-chev">▶</span>
   </div>
   <div class="cyg-sub ${analysisCollapsed}" id="cyg-sub-analysis" style="max-height:${analysisOpen?'160px':'0'}">
-    <a class="${isActive('insights.html')}" href="/insights.html">
-      <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="4" r="2.5" stroke="currentColor" stroke-width="1.2"/><path d="M3 14c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-      Data Insights
-    </a>
     <a class="${isActive('validation.html')}" href="/validation.html">
       <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.2"/><path d="M8 5v3.5L10 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
       Validation
