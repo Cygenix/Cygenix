@@ -5502,7 +5502,7 @@ function renderProjectStatus(){
 // { action:'list' } response. Share one in-flight promise with a 30s TTL so
 // a burst of view switches costs one request; anything that mutates reports
 // (save/delete) calls invalidateReportsList() to force the next read fresh.
-let _reportsListShared = null;   // { at, promise }
+var _reportsListShared;          // { at, promise } — var: callers may boot above this line
 function fetchReportsList() {
   const now = Date.now();
   if (_reportsListShared && now - _reportsListShared.at < 30000) return _reportsListShared.promise;
@@ -6847,7 +6847,7 @@ async function _prefetchReportsForSearch() {
 
 // Search re-ran in full on every keystroke; 150ms of quiet first.
 
-let _globalSearchTimer = null;
+var _globalSearchTimer;
 
 function debouncedGlobalSearch(){
 

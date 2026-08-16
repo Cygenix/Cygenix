@@ -136,5 +136,27 @@ check('the old status-only test really did undercount project runs',
   oldStatDone === 10 && count('complete') === 11,
   'old=' + oldStatDone + ' new=' + count('complete'));
 
+
+// ── Regression: the jobs-list TDZ crash ─────────────────────────────────────
+// renderJobs() is called by boot code that executes above the parse-memo
+// declaration (loadProject). Declared with `let`, the memo was in the
+// temporal dead zone for those calls and every boot painted "Error reading
+// jobs: Cannot access '_jobsParseMemo' before initialization" instead of the
+// user's jobs. The memo (and the sibling debounce timers added in the same
+// commit) must be hoisting-safe: `var` plus a guard that treats undefined as
+// a cold cache.
+{
+  const pb = fs.readFileSync(__dirname + '/../public/project-builder-app.js', 'utf8');
+  check('the jobs parse memo is hoisting-safe (var, not let)',
+    /var _jobsParseMemo;/.test(pb) && !/let _jobsParseMemo/.test(pb));
+  check('and readJobsCached guards the cold cache',
+    /if \(_jobsParseMemo && _jobsParseMemo\.raw === raw\)/.test(pb));
+  check('the debounce timer too', /var _renderJobsTimer;/.test(pb));
+  const dash = fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8');
+  check('dashboard shared-reports state is hoisting-safe', /var _reportsListShared;/.test(dash));
+  const sqe = fs.readFileSync(__dirname + '/../public/sql-editor-app.js', 'utf8');
+  check('sql-editor browser debounce timer too', /var _obTimer;/.test(sqe));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
