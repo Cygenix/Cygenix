@@ -16016,7 +16016,8 @@ async function ta_runNow(id, btn) {
       if (queued.status === 'success') {
         if (typeof showToast === 'function') showToast('Run succeeded — ' + (queued.rowsAffected || 0) + ' rows affected');
       } else if (queued.status === 'failed') {
-        alert('Run failed:\n\n' + (queued.errorMessage || 'unknown error'));
+        alert('Run failed:\n\n' + (queued.errorMessage || 'unknown error')
+          + (queued.targetSummary ? '\n\nTarget it actually ran against:\n' + queued.targetSummary : ''));
       }
       ta_loadSchedules();
       return;
@@ -16056,7 +16057,10 @@ async function ta_runNow(id, btn) {
       const stepCount = (finalRun.stepResults || []).length;
       if (typeof showToast === 'function') showToast('Run succeeded — ' + rows.toLocaleString() + ' rows across ' + stepCount + ' step' + (stepCount === 1 ? '' : 's'));
     } else {
-      alert('Run failed:\n\n' + (finalRun.errorMessage || 'unknown error') + '\n\nSee Run history for step-level detail.');
+      alert('Run failed:\n\n' + (finalRun.errorMessage || 'unknown error')
+        + (finalRun.targetSummary ? '\n\nTarget it actually ran against:\n' + finalRun.targetSummary
+            + '\n\nA schedule uses the connection stored when it was created, which may differ from Connections.' : '')
+        + '\n\nSee Run history for step-level detail.');
     }
     // Notify the enabled integrations. Until now nothing in the app called
     // emit(), so the "Enabled" checkbox on a connector controlled nothing and

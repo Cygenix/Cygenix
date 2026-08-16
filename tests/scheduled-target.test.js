@@ -242,6 +242,43 @@ console.log('Scheduled runs — Azure Function mode targets\n');
       await rejection(() => ctx.checkTarget(OWN_API)) === null);
   });
 
-  console.log(`\n${pass} passed, ${fail} failed`);
+  
+// ── Why a schedule can fail where Execute passes ────────────────────────────
+// A scheduled run resolves connections from the SCHEDULE's stored snapshot;
+// the Execute page uses whatever Connections currently holds. The two can
+// reach different databases — or the same one as a login with a different
+// default schema — and an unqualified name then fails with "Invalid object
+// name 'x'" on the schedule while passing in the browser. Nothing in the run
+// record distinguished those cases, so the runner now reports what it
+// actually connected to.
+{
+  const rm = fs.readFileSync(__dirname + '/../azure-function/src/run-migration.js', 'utf8');
+
+  check('the runner asks each pool what it actually reached',
+    /function poolContext\(pool\)/.test(rm)
+    && /DB_NAME\(\) AS db/.test(rm) && /SUSER_SNAME\(\) AS login/.test(rm)
+    && /SCHEMA_NAME\(\) AS dflt/.test(rm));
+  check('and reports the default schema when it is not dbo — the silent cause',
+    /defaultSchema && c\.defaultSchema !== 'dbo'/.test(rm));
+  check('the context is cached, so it costs one round trip per pool',
+    /pool\.__cygCtx !== undefined\) return pool\.__cygCtx/.test(rm));
+  check('diagnostics can never fail a run',
+    /pool\.__cygCtx = null;\s*\/\/ never let diagnostics fail a run/.test(rm));
+
+  check('a failing SQL step names the database in the error itself',
+    /e\.message = String\(e\.message \|\| e\)[\s\S]{0,140}describeContext\(cx\)/.test(rm));
+  check('the resolved target is stamped on the run before any step executes',
+    rm.indexOf('await recordEndpoints();') < rm.indexOf('for (let i = 0; i < stepsToRun.length'));
+  check('and stored on the run record for Run history',
+    /run\.targetSummary = describeContext\(t\)/.test(rm));
+
+  const dash = fs.readFileSync(__dirname + '/../public/dashboard-app.js', 'utf8');
+  check('the failure alert shows which target the run reached',
+    /Target it actually ran against/.test(dash));
+  check('and explains that a schedule uses its stored connection',
+    /stored when it was created, which may differ from Connections/.test(dash));
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

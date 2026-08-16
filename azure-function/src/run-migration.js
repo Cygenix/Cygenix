@@ -308,14 +308,58 @@ function sameConnDirective(a, b) {
       && a.config.database === b.config.database;
 }
 
+// What a pool is ACTUALLY connected to. A scheduled run resolves its
+// connections from the schedule's stored snapshot, while the Execute page
+// uses whatever Connections currently holds — so the two can quietly reach
+// different databases, or the same database as a login with a different
+// default schema. Either turns an unqualified name into "Invalid object
+// name 'x'" on the schedule while the same job passes in the browser, with
+// nothing in the run record to tell the two apart.
+//
+// Asked once per pool and cached on it, so it costs one round trip per run.
+async function poolContext(pool) {
+  if (!pool) return null;
+  if (pool.__cygCtx !== undefined) return pool.__cygCtx;
+  try {
+    const r = await pool.request().query(
+      'SELECT DB_NAME() AS db, SUSER_SNAME() AS login, ' +
+      'SCHEMA_NAME() AS dflt, CAST(SERVERPROPERTY(\'ServerName\') AS NVARCHAR(256)) AS srv');
+    const row = (r.recordset && r.recordset[0]) || {};
+    pool.__cygCtx = {
+      database: row.db || '', login: row.login || '',
+      defaultSchema: row.dflt || '', server: row.srv || '',
+    };
+  } catch (_) {
+    pool.__cygCtx = null;               // never let diagnostics fail a run
+  }
+  return pool.__cygCtx;
+}
+function describeContext(c) {
+  if (!c) return '';
+  return (c.database || '?') + ' on ' + (c.server || '?')
+    + ' as ' + (c.login || '?')
+    + (c.defaultSchema && c.defaultSchema !== 'dbo' ? ' (default schema ' + c.defaultSchema + ')' : '');
+}
+
 // ── Step executors ────────────────────────────────────────────────────────
 async function execSqlStep(step, ensureSrcPool, ensureTgtPool, log) {
   const stepSql = (step.sql || step.insertSQL || '').trim();
   if (!stepSql) return { status: 'skipped', reason: 'no sql', rowsAffected: 0, log: [] };
   const connOn = step.connOn === 'source' ? 'source' : 'target';
   const pool = connOn === 'source' ? await ensureSrcPool() : await ensureTgtPool();
-  log.push('Executing raw SQL on ' + connOn + ' (' + stepSql.length.toLocaleString() + ' chars)');
-  const r = await pool.request().query(stepSql);
+  const cx = await poolContext(pool);
+  log.push('Executing raw SQL on ' + connOn + ' — ' + (describeContext(cx) || 'connection details unavailable')
+    + ' (' + stepSql.length.toLocaleString() + ' chars)');
+  let r;
+  try {
+    r = await pool.request().query(stepSql);
+  } catch (e) {
+    // "Invalid object name 'x'" is unanswerable without knowing where the
+    // statement ran. Name the database in the error itself, not just the log.
+    e.message = String(e.message || e)
+      + (cx ? ' [' + connOn + ': ' + describeContext(cx) + ']' : '');
+    throw e;
+  }
   const rows = Array.isArray(r.rowsAffected) ? r.rowsAffected.reduce((a, b) => a + (b || 0), 0) : (r.rowsAffected || 0);
   log.push('Done. rowsAffected=' + rows.toLocaleString());
   return { status: 'success', rowsAffected: rows, connOn, log };
@@ -1006,6 +1050,18 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   const ensureSrc = async () => srcPool || (srcPool = await openPool(srcConn));
   const ensureTgt = async () => tgtPool || (tgtPool = await openPool(tgtConn));
 
+  // Stamp what this run actually connected to onto the run record, so a
+  // failure can be compared against what the Execute page uses without
+  // re-running anything. Best-effort: diagnostics never fail a run.
+  const recordEndpoints = async () => {
+    try {
+      const t = await poolContext(await ensureTgt());
+      run.targetContext = t || null;
+      run.targetSummary = describeContext(t);
+      try { await containers.runs.item(run.id, run.scheduleId).replace(run); } catch (_) {}
+    } catch (_) {}
+  };
+
   // Mark run as 'running' and flag which host is executing it
   run.status = 'running';
   run.runnerStartedAt = new Date().toISOString();
@@ -1029,6 +1085,9 @@ async function executeRun({ runId, scheduleId, userId }, ctx) {
   const stepResults = [];
   let totalRows = 0;
   let firstFailure = null;
+  // Stamp the resolved target onto the run before anything executes, so even
+  // a first-step failure records where it was pointed.
+  await recordEndpoints();
   try {
     for (let i = 0; i < stepsToRun.length; i++) {
       const step = stepsToRun[i];
