@@ -696,15 +696,21 @@ function jobScopeLabel(){
 // Typing in the filter re-parsed cygenix_jobs (a multi-MB blob once jobs
 // carry generated SQL) and rebuilt the list per keystroke. Debounce the
 // keystroke path; the parse is also memoised on the raw string below.
-let _renderJobsTimer = null;
+// var, not let: renderJobs() is called by boot code that executes ABOVE
+// this line (loadProject at ~283), and a `let` here left readJobsCached in
+// the temporal dead zone for those calls — "Cannot access '_jobsParseMemo'
+// before initialization", which renderJobs' catch painted into the jobs
+// panel as "Error reading jobs". var hoists as undefined and the guards
+// below treat undefined as a cold cache.
+var _renderJobsTimer;
 function debouncedRenderJobs(){
   if (_renderJobsTimer) clearTimeout(_renderJobsTimer);
   _renderJobsTimer = setTimeout(renderJobs, 150);
 }
-let _jobsParseMemo = { raw: null, jobs: [] };
+var _jobsParseMemo;
 function readJobsCached() {
   const raw = localStorage.getItem('cygenix_jobs') || '[]';
-  if (_jobsParseMemo.raw === raw) return _jobsParseMemo.jobs;
+  if (_jobsParseMemo && _jobsParseMemo.raw === raw) return _jobsParseMemo.jobs;
   const jobs = JSON.parse(raw);
   _jobsParseMemo = { raw, jobs };
   return jobs;

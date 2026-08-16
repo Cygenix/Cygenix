@@ -1295,7 +1295,7 @@ function getOBSchemas() {
 
 // must not run it per keystroke.
 
-let _obTimer = null;
+var _obTimer;
 
 function debouncedRenderObjectBrowser(){
 
