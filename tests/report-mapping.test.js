@@ -151,5 +151,55 @@ rows = build({ columnMapping: [{ srcCol:'', tgtCol:'x', literalValue:"'new'", fi
 check('literalValue takes precedence over the legacy field',
   rows[0].logic === "'new'", rows[0].logic);
 
+
+// ── Source filter (WHERE) in the conversion report ──────────────────────────
+// A migration with a WHERE clause loads fewer rows than the source table
+// holds. That is expected, but the report only carried the clause in a hover
+// tooltip — invisible on paper and in the Excel export, so a client reading
+// the report saw an unexplained shortfall.
+{
+  const rpt = fs.readFileSync(__dirname + '/../public/report.html', 'utf8');
+
+  check('the step row shows the filter instead of hiding it in a tooltip',
+    /const whereTxt = String\(s\.srcWhere \|\| ''\)/.test(rpt)
+    && /route\+whereHtml/.test(rpt));
+  check('only migration steps with a clause show one',
+    /s\.type === 'migration' && whereTxt/.test(rpt));
+  check('a leading WHERE keyword is not doubled up',
+    (rpt.match(/replace\(\/\^WHERE\\s\+\/i, ''\)/g) || []).length >= 2);
+  check('the clause is escaped — it is user SQL, full of < > and quotes',
+    /const escSql = \(t\) =>[\s\S]{0,160}&amp;/.test(rpt)
+    && /escSql\(whereTxt\)/.test(rpt));
+
+  check('a summary note explains the shortfall before the numbers',
+    /steps-filter-note/.test(rpt) && /applied a source filter/.test(rpt)
+    && /never selected for migration/.test(rpt));
+  check('the note sits above the table, not after it',
+    /const stepsTable = document\.querySelector\('#steps-section table'\)/.test(rpt));
+  check('the note escapes the clause too',
+    /const escN = \(t\) =>[\s\S]{0,160}&amp;/.test(rpt) && /escN\(String\(x\.srcWhere\)/.test(rpt));
+  check('the note is rebuilt, not duplicated, on re-render',
+    /const prev = document\.getElementById\('steps-filter-note'\);\s*if \(prev\) prev\.remove\(\);/.test(rpt));
+  check('and it pluralises on the step total, not the filtered count',
+    /migCount === 1 \? '' : 's'/.test(rpt));
+
+  // Excel: the filter belongs on the same row as the count it explains.
+  check('the Excel export gains a Source filter column',
+    /'Source filter \(WHERE\)'/.test(rpt));
+  check('with a value in every row',
+    /String\(s\.srcWhere \|\| ''\)\.trim\(\)\.replace\(\/\^WHERE/.test(rpt));
+  check('and the header style range widened for the extra column',
+    /styleRange\(wsLog, 0, 0, 0, 13, STYLE\.tableHeader\)/.test(rpt));
+  check('and a column width for it',
+    /\{wch:46\},\s*\/\/ Source filter \(WHERE\)/.test(rpt));
+
+  // Both report builders must supply the field the renderer now displays.
+  const rm = fs.readFileSync(__dirname + '/../azure-function/src/run-migration.js', 'utf8');
+  check('the scheduled-run report carries srcWhere per step',
+    /srcWhere:\s+step\.srcWhere \|\| ''/.test(rm));
+  const pb = fs.readFileSync(__dirname + '/../public/project-builder-app.js', 'utf8');
+  check('and so does the in-browser report', /srcWhere:\s+job\.srcWhere \|\| ''/.test(pb));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
