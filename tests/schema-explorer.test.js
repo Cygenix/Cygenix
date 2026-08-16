@@ -352,7 +352,24 @@ console.log('Schema Explorer — coverage view and page wiring\n');
     /:fullscreen\{[^}]*background:var\(--bg\)/.test(html));
   check('leaving full screen re-measures rather than keeping the old zoom',
     /function smOnFullscreenChange\(\)[\s\S]{0,900}smFit\(\)/.test(html)
-    && /addEventListener\('fullscreenchange', smOnFullscreenChange\)/.test(html));
+    && /addEventListener\('fullscreenchange', seOnFullscreenChange\)/.test(html));
+  // The router keeps the two canvases apart: refitting the schema canvas
+  // while the atlas panel owns the screen would measure a hidden 0×0 box.
+  check('fullscreen changes route to whichever view owns the element',
+    /contains\('da-panel'\)\) daOnFullscreenChange\(\);/.test(html)
+    && /else smOnFullscreenChange\(\);/.test(html));
+  check('the atlas has its own full screen control',
+    /id="da-fs-btn"/.test(html) && /function daFullscreen\(\)/.test(html));
+  check('and the atlas view flexes to the viewport instead of a fixed offset',
+    /\.da-view\{display:flex;flex-direction:column;height:calc\(100vh/.test(html)
+    && /\.da-body\{[^}]*flex:1;min-height:0\}/.test(html));
+  // The filter bridge reuses the Schema map's own predicate, and only when
+  // both views look at the same database.
+  check('the atlas can apply the Schema map filters via the same predicate',
+    /id="da-filters-btn"/.test(html) && /smCompileRules\(\)/.test(html.slice(html.indexOf('VIEW 1.5')))
+    && /smHidden\(t, rules\)/.test(html.slice(html.indexOf('VIEW 1.5'), html.indexOf('// ═══ VIEW 2'))));
+  check('and refuses when the sides differ',
+    /DA\.side !== SM\.side \|\| !DA\.graphRef\) return null;/.test(html));
   check('either side panel folds away to give the diagram the width',
     /no-tree/.test(html) && /no-inspector/.test(html) && /panel-fold/.test(html));
   check('the fold survives a reload', /cygenix_schemaexp_panels/.test(html));
