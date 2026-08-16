@@ -315,12 +315,12 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('the page mounts the sidebar under the new nav key',
     /data-active="schema-explorer"/.test(html));
   check('it loads the shared schema module rather than fetching its own',
-    /src="\/cygenix-schema-graph\.js"/.test(html));
-  check('it inherits the auth gate', /src="\/auth-gate\.js"/.test(html));
-  check('and the token script', /src="\/cygenix-auth-token\.js"/.test(html));
-  check('and connections, for the source and target strings', /src="\/connections\.js"/.test(html));
-  check('and the project context', /src="\/cygenix-cosmos-sync\.js"/.test(html));
-  check('and cookie consent', /src="\/cookie-consent\.js"/.test(html));
+    /src="\/cygenix-schema-graph\.js(\?v=[a-f0-9]+)?"/.test(html));
+  check('it inherits the auth gate', /src="\/auth-gate\.js(\?v=[a-f0-9]+)?"/.test(html));
+  check('and the token script', /src="\/cygenix-auth-token\.js(\?v=[a-f0-9]+)?"/.test(html));
+  check('and connections, for the source and target strings', /src="\/connections\.js(\?v=[a-f0-9]+)?"/.test(html));
+  check('and the project context', /src="\/cygenix-cosmos-sync\.js(\?v=[a-f0-9]+)?"/.test(html));
+  check('and cookie consent', /src="\/cookie-consent\.js(\?v=[a-f0-9]+)?"/.test(html));
 
   check('all three tabs are present',
     /se-tab-schema/.test(html) && /se-tab-atlas/.test(html) && /se-tab-coverage/.test(html));

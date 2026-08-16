@@ -1,7 +1,11 @@
 [build]
   publish = "public"
   functions = "netlify/functions"
-  command = "npm install"
+  # stamp-assets rewrites every local <script src> to carry a content hash,
+  # so a deployed change is fetched immediately instead of sitting behind a
+  # cached copy of the same URL. Running it at build time means a deploy can
+  # never ship stamps that disagree with the files.
+  command = "npm install && node scripts/stamp-assets.js"
 [[edge_functions]]
   path = "/api/analyse"
   function = "analyse"
@@ -39,19 +43,23 @@
   schedule = "* * * * *"
 
 # ── Caching ──────────────────────────────────────────────────────────────────
-# Shared scripts/styles are re-used across every page. max-age=300 plus a day
-# of stale-while-revalidate: dashboard alone loads ~20 scripts, and at the old
-# max-age=30 any navigation more than 30s after the last one revalidated every
-# single one. SWR serves from cache instantly and refreshes in the background,
-# so a deploy is still picked up on the first navigation after the window.
+# Scripts referenced from HTML carry ?v=<content hash> (scripts/stamp-assets.js),
+# so a changed file always has a changed URL: these numbers only ever apply to a
+# file that has NOT changed, and a new build is fetched the moment the
+# always-revalidated HTML points somewhere new.
+#
+# The window still stays modest because scripts injected at RUNTIME by other
+# scripts (the sidebar's lazy Drive modal) have no tag to stamp and rely on
+# these headers alone. A day of stale-while-revalidate meant a fix in one of
+# those could take a day to arrive; ten minutes bounds it.
 [[headers]]
   for = "/*.js"
   [headers.values]
-    Cache-Control = "public, max-age=300, stale-while-revalidate=86400"
+    Cache-Control = "public, max-age=300, stale-while-revalidate=600"
 [[headers]]
   for = "/*.css"
   [headers.values]
-    Cache-Control = "public, max-age=300, stale-while-revalidate=86400"
+    Cache-Control = "public, max-age=300, stale-while-revalidate=600"
 # The favicon rarely changes and is requested on every page.
 [[headers]]
   for = "/favicon.svg"
