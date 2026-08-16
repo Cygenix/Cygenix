@@ -63,6 +63,15 @@
   --teal:#17827C;--teal-bg:rgba(23,130,124,0.1);
   --purple:#6B4E8E;--purple-bg:rgba(107,78,142,0.1);
   --serif:'IBM Plex Sans','Helvetica Neue',Arial,sans-serif;--mono:'IBM Plex Mono',monospace;
+  /* Data Atlas palette — categorical hues validated all-pairs for normal
+     vision and protanopia/deuteranopia/tritanopia; the blue ramp is the
+     sensitivity ordinal; status colours are reserved for migration state
+     and never reused as series colours. Resolved into JS once at boot. */
+  --da-s1:#2a78d6;--da-s2:#1baf7a;--da-s3:#eda100;--da-s4:#e87ba4;
+  --da-s5:#008300;--da-s6:#4a3aa7;--da-s7:#c2185b;--da-s0:#98a0ab;
+  --da-q1:#86b6ef;--da-q2:#5598e7;--da-q3:#2a78d6;--da-q4:#184f95;
+  --da-ok:#0ca30c;--da-warn:#fab219;--da-serious:#ec835a;--da-crit:#d03b3b;
+  --da-ink:#14181E;
   --r:10px;--r-lg:14px;
 }
 body{font-family:var(--serif);background:var(--bg);color:var(--text);min-height:100vh;-webkit-font-smoothing:antialiased;padding-left:230px;transition:padding-left 0.2s ease}
@@ -80,8 +89,8 @@ body.cyg-collapsed{padding-left:54px}
 .se-head-actions{margin-left:auto;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap}
 
 /* ── Tab bar — same control as Object Mapping's mode switch ── */
-.mode-bar{display:flex;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;max-width:340px;flex:none}
-.mode-btn{flex:1;text-align:center;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
+.mode-bar{display:flex;gap:0.25rem;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:3px;max-width:520px;flex:none}
+.mode-btn{flex:1;text-align:center;white-space:nowrap;padding:0.4rem 1rem;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;color:var(--text3);border:none;background:transparent;font-family:var(--serif)}
 .mode-btn.active{background:var(--bg2);color:var(--accent);border:0.5px solid rgba(74,91,214,0.25)}
 
 .btn{font-size:11.5px;padding:5px 11px;border-radius:6px;cursor:pointer;border:0.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-family:var(--serif);white-space:nowrap}
@@ -224,6 +233,91 @@ body.cyg-collapsed{padding-left:54px}
 .se-palette-kind{font-size:9px;font-family:var(--mono);color:var(--text3);text-transform:uppercase;letter-spacing:0.05em}
 .se-palette-sub{margin-left:auto;font-size:10px;font-family:var(--mono);color:var(--text3)}
 
+/* ══ VIEW 1.5 — DATA MAP (Data Atlas) ════════════════════════════════ */
+/* Chrome uses the app tokens; data colours are the --da-* tokens defined
+   in :root (ahead of the --r:10px marker, like the rest of the palette). */
+.da-hd{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.7rem}
+.da-sub{color:var(--text2);font-size:11.5px;font-family:var(--mono)}
+.da-field{position:relative}
+.da-field input{width:200px;padding:6px 10px 6px 28px;border-radius:8px;border:0.5px solid var(--border2);
+  background:var(--bg2);font-family:var(--serif);font-size:12px;color:var(--text);outline:none}
+.da-field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+.da-field .da-ic{position:absolute;left:9px;top:50%;transform:translateY(-50%);opacity:.5;font-size:11px}
+.da-seg{display:inline-flex;background:var(--bg3);border:0.5px solid var(--border2);border-radius:8px;padding:2px;gap:2px}
+.da-seg button{background:none;border:0;padding:5px 10px;border-radius:6px;cursor:pointer;
+  color:var(--text2);font-size:11.5px;font-weight:500;white-space:nowrap;font-family:var(--serif)}
+.da-seg button:hover{color:var(--text)}
+.da-seg button[aria-pressed="true"]{background:var(--bg2);color:var(--accent);font-weight:600}
+
+.da-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0.6rem;margin-bottom:0.7rem}
+.da-tile{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.85rem;min-width:0}
+.da-tile .k{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);font-weight:600}
+.da-tile .v{font-size:21px;font-weight:600;letter-spacing:-.02em;margin-top:4px;line-height:1.05}
+.da-tile .v small{font-size:12px;font-weight:500;color:var(--text2);margin-left:2px}
+.da-tile .n{font-size:11px;color:var(--text2);margin-top:4px;line-height:1.4}
+.da-tile .n b{color:var(--text);font-weight:600}
+
+.da-body{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:0.6rem;height:calc(100vh - 268px);min-height:380px}
+@media(max-width:1100px){.da-body{grid-template-columns:minmax(0,1fr)}.da-rail-panel{display:none}}
+.da-panel{display:flex;flex-direction:column;min-height:0;min-width:0}
+.da-crumb{display:flex;align-items:center;gap:5px;font-size:12px;min-width:0}
+.da-crumb button{background:none;border:0;padding:2px 6px;border-radius:5px;cursor:pointer;color:var(--accent);font-weight:600;font-family:var(--serif);font-size:12px}
+.da-crumb button:hover{background:var(--accent-glow)}
+.da-crumb .sep{opacity:.4}
+.da-crumb .cur{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.da-meta{font-size:11px;color:var(--text3);font-family:var(--mono)}
+
+.da-mapwrap{position:relative;flex:1;min-height:0;padding:6px}
+#da-map{display:block;width:100%;height:100%;border-radius:8px;cursor:pointer}
+.da-tip{position:absolute;pointer-events:none;z-index:20;background:var(--bg4);color:var(--text);
+  border:0.5px solid var(--border2);border-radius:9px;padding:8px 10px;font-size:11.5px;line-height:1.5;
+  max-width:270px;box-shadow:0 10px 30px rgba(0,0,0,0.45);opacity:0;transition:opacity .1s;white-space:nowrap}
+.da-tip.on{opacity:1}
+.da-tip .tt{font-weight:600;font-size:12px;margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.da-tip .r{display:flex;justify-content:space-between;gap:16px;color:var(--text2)}
+.da-tip .r b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.da-tip .hint{margin-top:6px;padding-top:6px;border-top:0.5px solid var(--border2);color:var(--text2);font-size:10.5px;white-space:normal}
+.da-dot{width:9px;height:9px;border-radius:2.5px;display:inline-block;flex:none}
+
+.da-legend{display:flex;flex-wrap:wrap;gap:5px;padding:7px 10px;border-top:0.5px solid var(--border);align-items:center}
+.da-lg{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:3px 9px 3px 7px;
+  border-radius:20px;border:0.5px solid var(--border2);background:var(--bg2);cursor:pointer;color:var(--text2);font-family:var(--serif)}
+.da-lg:hover{background:var(--bg3)}
+.da-lg[aria-pressed="false"]{opacity:.38}
+.da-lg .c{font-variant-numeric:tabular-nums;color:var(--text3);font-size:10.5px}
+.da-lg-note{border:0;color:var(--text3);cursor:default;font-size:10.5px;margin-left:auto}
+
+.da-rail{overflow-y:auto;padding:0.75rem;display:flex;flex-direction:column;gap:0.9rem;flex:1;min-height:0}
+.da-rail-panel{display:flex;flex-direction:column;min-height:0}
+.da-sect .st{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);font-weight:600;margin-bottom:7px}
+.da-kv{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:11.5px;border-bottom:1px dashed var(--border)}
+.da-kv:last-child{border-bottom:0}
+.da-kv .k{color:var(--text2)}
+.da-kv .v{font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.da-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:20px;border:0.5px solid var(--border2);color:var(--text2)}
+.da-name{font-family:var(--mono);font-size:12.5px;font-weight:600;word-break:break-all;line-height:1.35}
+.da-schema{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text3)}
+.da-bar{height:8px;border-radius:4px;background:var(--bg3);overflow:hidden;display:flex;gap:2px}
+.da-bar i{display:block;height:100%}
+.da-rowlist{display:flex;flex-direction:column;gap:1px}
+.da-rw{display:grid;grid-template-columns:12px minmax(0,1fr) auto;gap:8px;align-items:center;
+  padding:4px 6px;border-radius:6px;cursor:pointer;font-size:11px}
+.da-rw:hover{background:var(--bg3)}
+.da-rw .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:10.5px}
+.da-rw .vl{font-variant-numeric:tabular-nums;color:var(--text2);font-weight:600}
+.da-pareto{width:100%;height:92px;display:block}
+
+.da-tblwrap{flex:1;overflow:auto}
+table.da-dv{width:100%;border-collapse:collapse;font-size:11.5px}
+table.da-dv th{position:sticky;top:0;background:var(--bg3);text-align:left;padding:7px 9px;z-index:2;
+  border-bottom:0.5px solid var(--border2);font-size:10px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--text2);font-weight:600;cursor:pointer;white-space:nowrap}
+table.da-dv th:hover{color:var(--text)}
+table.da-dv td{padding:6px 9px;border-bottom:0.5px solid var(--border);color:var(--text2)}
+table.da-dv td.num{text-align:right;font-variant-numeric:tabular-nums}
+table.da-dv tbody tr:hover{background:var(--bg3)}
+table.da-dv td.nm{font-family:var(--mono);font-size:11px;color:var(--text)}
+
 /* ══ VIEW 2 — COVERAGE MAP ═══════════════════════════════════════════ */
 .cv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0.7rem;margin-bottom:1rem}
 .cv-kpi{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r);padding:0.8rem 0.95rem}
@@ -293,6 +387,8 @@ body.cyg-collapsed{padding-left:54px}
     <div class="mode-bar" role="tablist" aria-label="Schema Explorer views">
       <button class="mode-btn active" id="se-tab-schema" role="tab" aria-selected="true"
               aria-controls="se-view-schema" onclick="seSwitchTab('schema')">◈ Schema map</button>
+      <button class="mode-btn" id="se-tab-atlas" role="tab" aria-selected="false"
+              aria-controls="se-view-atlas" onclick="seSwitchTab('atlas')">▣ Data map</button>
       <button class="mode-btn" id="se-tab-coverage" role="tab" aria-selected="false"
               aria-controls="se-view-coverage" onclick="seSwitchTab('coverage')">⊞ Coverage map</button>
     </div>
@@ -402,6 +498,74 @@ body.cyg-collapsed{padding-left:54px}
     </div>
   </div>
 
+  <!-- ══ VIEW 1.5 — DATA MAP (Data Atlas) ═════════════════════════════ -->
+  <div id="se-view-atlas" role="tabpanel" aria-labelledby="se-tab-atlas" style="display:none">
+    <div class="da-hd">
+      <span class="da-sub" id="da-src-label"></span>
+      <span style="flex:1"></span>
+      <div class="da-field"><span class="da-ic">🔍</span>
+        <input id="da-q" type="search" placeholder="Find a table…" aria-label="Find a table"></div>
+      <div class="da-seg" role="group" aria-label="Database side">
+        <button data-da-side="src" aria-pressed="true">Source</button>
+        <button data-da-side="tgt" aria-pressed="false">Target</button>
+      </div>
+      <div class="da-seg" role="group" aria-label="Measure">
+        <button data-da-measure="rows" aria-pressed="true">Rows</button>
+        <button data-da-measure="bytes" aria-pressed="false">Est. volume</button>
+      </div>
+      <div class="da-seg" role="group" aria-label="View">
+        <button data-da-view="map" aria-pressed="true">Map</button>
+        <button data-da-view="table" aria-pressed="false">Table</button>
+      </div>
+    </div>
+
+    <div class="da-tiles" id="da-tiles"></div>
+
+    <div class="da-body">
+      <section class="panel da-panel" aria-label="Treemap">
+        <div class="panel-header" style="flex-wrap:wrap;gap:0.5rem">
+          <div class="da-crumb" id="da-crumb"></div>
+          <span style="flex:1"></span>
+          <span class="da-meta" id="da-map-meta"></span>
+          <div class="da-seg" role="group" aria-label="Colour by">
+            <button data-da-lens="domain" aria-pressed="true">Domain</button>
+            <button data-da-lens="content" aria-pressed="false">Content</button>
+            <button data-da-lens="sensitivity" aria-pressed="false">Sensitivity</button>
+            <button data-da-lens="status" aria-pressed="false">Migration</button>
+          </div>
+        </div>
+        <div class="da-mapwrap" id="da-mapwrap">
+          <canvas id="da-map" role="img"
+            aria-label="Treemap of the database, sized by row count or estimated volume and coloured by the selected lens. The same data is available as a sortable table from the View control."></canvas>
+          <div class="da-tip" id="da-tip"></div>
+        </div>
+        <div class="da-tblwrap" id="da-tblwrap" style="display:none">
+          <table class="da-dv" id="da-dv">
+            <thead><tr>
+              <th data-da-sort="name">Table</th><th data-da-sort="schema">Schema</th>
+              <th data-da-sort="domain">Domain</th><th data-da-sort="content">Content</th>
+              <th data-da-sort="sens">Sensitivity</th><th data-da-sort="status">Migration</th>
+              <th data-da-sort="rows" class="num">Rows</th><th data-da-sort="bytes" class="num">Est. volume</th>
+              <th data-da-sort="share" class="num">% of rows</th>
+            </tr></thead>
+            <tbody id="da-dvb"></tbody>
+          </table>
+        </div>
+        <div class="da-legend" id="da-legend"></div>
+        <div id="da-empty" class="se-empty" style="display:none"></div>
+      </section>
+
+      <aside class="panel da-rail-panel" aria-label="Detail">
+        <div class="panel-header">
+          <span class="panel-title" id="da-rail-title">Estate concentration</span>
+          <span style="flex:1"></span>
+          <button class="btn" id="da-clear-sel" onclick="daClearSel()" style="display:none">Clear</button>
+        </div>
+        <div class="da-rail" id="da-rail"></div>
+      </aside>
+    </div>
+  </div>
+
   <!-- ══ VIEW 2 — COVERAGE MAP ════════════════════════════════════════ -->
   <div id="se-view-coverage" role="tabpanel" aria-labelledby="se-tab-coverage" style="display:none">
     <div id="cv-kpis" class="cv-kpis"></div>
@@ -506,17 +670,19 @@ const schemaColour = (() => {
 const TAB_KEY = 'cygenix_schemaexp_tab';
 let seTab = 'schema';
 
+const SE_TABS = ['schema', 'atlas', 'coverage'];
 function seSwitchTab(tab){
-  seTab = (tab === 'coverage') ? 'coverage' : 'schema';
+  seTab = SE_TABS.includes(tab) ? tab : 'schema';
   try { localStorage.setItem(TAB_KEY, seTab); } catch {}
-  const onSchema = seTab === 'schema';
-  $('se-view-schema').style.display   = onSchema ? '' : 'none';
-  $('se-view-coverage').style.display = onSchema ? 'none' : '';
-  $('se-tab-schema').classList.toggle('active', onSchema);
-  $('se-tab-coverage').classList.toggle('active', !onSchema);
-  $('se-tab-schema').setAttribute('aria-selected', String(onSchema));
-  $('se-tab-coverage').setAttribute('aria-selected', String(!onSchema));
-  if (onSchema) { smEnsureLoaded(); smFitIfUnplaced(); }
+  for (const k of SE_TABS){
+    const on = seTab === k;
+    $('se-view-' + k).style.display = on ? '' : 'none';
+    const btn = $('se-tab-' + k);
+    btn.classList.toggle('active', on);
+    btn.setAttribute('aria-selected', String(on));
+  }
+  if (seTab === 'schema'){ smEnsureLoaded(); smFitIfUnplaced(); }
+  else if (seTab === 'atlas') daEnsure();
   else cvRender();
 }
 
@@ -705,6 +871,7 @@ function smUpdateSideButtons(){
 
 function seReloadSchema(){
   if (seTab === 'schema') smEnsureLoaded(true);
+  else if (seTab === 'atlas'){ CygenixSchemaGraph.reload(DA.side).then(() => { DA.loaded = null; daEnsure(); }); }
   else { CygenixSchemaGraph.reload(SM.side).then(() => cvRender()); }
 }
 
@@ -1524,7 +1691,16 @@ function sePaletteGo(n){
 }
 
 document.addEventListener('keydown', (ev) => {
-  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k'){ ev.preventDefault(); sePaletteOpen(); }
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'k'){
+    ev.preventDefault();
+    if (seTab === 'atlas'){ const q = $('da-q'); if (q){ q.focus(); q.select(); return; } }
+    sePaletteOpen();
+    return;
+  }
+  if (ev.key === 'Escape' && seTab === 'atlas' && !$('se-palette').classList.contains('show')){
+    if (DA.sel){ daClearSel(); return; }
+    if (DA.drill){ DA.drill = null; daRefresh(true); return; }
+  }
   if (ev.key === 'Escape'){
     sePaletteClose();
     cvCloseDrawer();
@@ -1547,6 +1723,902 @@ document.addEventListener('mousedown', (ev) => {
 $ && document.addEventListener('click', (ev) => {
   if (ev.target && ev.target.id === 'se-palette') sePaletteClose();
 });
+
+// ═══ VIEW 1.5 — DATA MAP (Data Atlas) ════════════════════════════════════
+// A zoomable nested treemap of the connected database: every rectangle is a
+// table, its area is its row count (or estimated volume), its colour is the
+// selected lens. Reads the same CygenixSchemaGraph the other two views use,
+// so the schema is fetched once for the whole page.
+//
+// Where the demo prototype invented an estate, this builds one from what is
+// actually known:
+//   rows       sys.partitions counts the schema listing already carries
+//   volume     estimated from rows × row width (real column widths once the
+//              columns for the biggest tables stream in; a flat estimate
+//              before that) — always labelled "Est."
+//   Migration  derived from THIS project's saved maps: which tables a map
+//              reads (source side) or writes (target side), and whether
+//              that map is complete or still draft
+//   Domain / Content / Sensitivity
+//              name-pattern heuristics, declared as such in the legend.
+// The prototype's null-density and last-written fields have no source in
+// the schema actions, so they are omitted rather than invented.
+
+const DA = {
+  side: 'src',            // the atlas is about where the data LIVES
+  measure: 'rows',
+  lens: 'domain',
+  view: 'map',
+  drill: null,
+  sel: null,
+  q: '',
+  off: {},
+  tables: [],
+  loaded: null,           // side the current estate was built from
+  loading: false,
+  graphOk: false,
+  reason: '',
+  database: '',
+};
+
+// Data colours resolved once from the :root tokens, so the canvas and every
+// generated swatch stay on the page palette (no hex leaves the token block).
+let DAC = null;
+function daColors(){
+  if (DAC) return DAC;
+  const css = getComputedStyle(document.documentElement);
+  const v = (n) => css.getPropertyValue(n).trim();
+  DAC = {
+    s1:v('--da-s1'), s2:v('--da-s2'), s3:v('--da-s3'), s4:v('--da-s4'),
+    s5:v('--da-s5'), s6:v('--da-s6'), s7:v('--da-s7'), s0:v('--da-s0'),
+    q1:v('--da-q1'), q2:v('--da-q2'), q3:v('--da-q3'), q4:v('--da-q4'),
+    ok:v('--da-ok'), warn:v('--da-warn'), serious:v('--da-serious'), crit:v('--da-crit'),
+    inkDark:v('--da-ink'), frame:'rgba(255,255,255,0.05)',
+  };
+  return DAC;
+}
+
+// Lenses: fixed, ordered category lists. Categorical colours carry identity;
+// the sensitivity ramp is one hue (darker = more sensitive); status colours
+// are reserved and always ship with an icon, never colour alone.
+let DA_LENS = null;
+function daLens(){
+  if (DA_LENS) return DA_LENS;
+  const c = daColors();
+  DA_LENS = {
+    domain:{label:'Domain',key:'domain',cats:[
+      {id:'fin', name:'Finance & AR',       c:c.s1},
+      {id:'tb',  name:'Time & billing',     c:c.s2},
+      {id:'mat', name:'Matters & clients',  c:c.s3},
+      {id:'doc', name:'Documents & content',c:c.s4},
+      {id:'hr',  name:'People & HR',        c:c.s5},
+      {id:'ref', name:'Reference & lookup', c:c.s6},
+      {id:'sys', name:'System & audit',     c:c.s7},
+      {id:'oth', name:'Other',              c:c.s0}]},
+    content:{label:'Content type',key:'content',cats:[
+      {id:'txn',  name:'Transactional',    c:c.s1},
+      {id:'refd', name:'Reference data',   c:c.s2},
+      {id:'log',  name:'Audit / log',      c:c.s3},
+      {id:'blob', name:'Documents / blobs',c:c.s6},
+      {id:'none', name:'Empty',            c:c.s0}]},
+    sensitivity:{label:'Sensitivity',key:'sens',ordinal:true,cats:[
+      {id:'pub',  name:'Public',          c:c.q1},
+      {id:'int',  name:'Internal',        c:c.q2},
+      {id:'conf', name:'Confidential',    c:c.q3},
+      {id:'pii',  name:'PII / financial', c:c.q4}]},
+    status:{label:'Migration',key:'status',status:true,cats:[
+      {id:'val',  name:'Mapped',     c:c.ok,      icon:'✓'},
+      {id:'part', name:'Draft map',  c:c.warn,    icon:'!'},
+      {id:'un',   name:'Unmapped',   c:c.crit,    icon:'✕'},
+      {id:'exc',  name:'Empty',      c:c.s0,      icon:'–'}]},
+  };
+  DA_CAT = {};
+  Object.keys(DA_LENS).forEach(k => DA_LENS[k].cats.forEach(cat => { DA_CAT[k + ':' + cat.id] = cat; }));
+  return DA_LENS;
+}
+let DA_CAT = {};
+
+// ── Classification heuristics ─────────────────────────────────────────────
+// Name-pattern rules for a legal-practice estate (the shape this product
+// migrates). Anything unmatched lands in "Other" rather than being guessed.
+const DA_DOMAIN_RULES = [
+  ['fin', /^(AR|AP|GL|Bank|Chq|Cash|Trust|Invoice|Payment|Receipt|Disb|Journal|Ledger|Tax|VAT|Credit|WriteOff|Alloc|Remit|Escrow|Budget|Currency)/i],
+  ['tb',  /^(Time|Work|Proforma|Bill|WIP|Rate|Narrative|TimeCard|Fee|Charge|Estimate|Retainer|Phase)/i],
+  ['mat', /^(Matter|Client|Contact|Party|Engagement|Conflict|Opportunity|Arrangement|AreaOfLaw|Relationship|Prospect|Intake|Pitch|Address|Case|CM)/i],
+  ['doc', /^(Document|DocVersion|Attachment|Template|Email|Note|Letter|Report|Form|Image|Scan|Precedent|Bundle|Exhibit)|Doc(ument)?s?$/i],
+  ['hr',  /^(Timekeeper|Employee|Staff|Department|Office|Team|Salary|Absence|Holiday|Grade|Appraisal|Training|Secondment|Payroll)/i],
+  ['ref', /(^(Country|Language|Title|Status|Unit|Region|Category|Class|Code|Level|Group|Format|Method|Reason|Source|Band))|(List|Type|Code|Lookup|Xref|Ref)$/i],
+  ['sys', /^(Audit|Change|Sync|Job|Queue|Error|Session|Permission|Login|Trace|Lock|Config|Feature|Schedule|Migration|Purge|Replication|Event)|(Log|Trail)$/i],
+];
+function daDomainOf(name, schema){
+  if (/^(audit|log)$/i.test(schema)) return 'sys';
+  for (const [id, re] of DA_DOMAIN_RULES) if (re.test(name)) return id;
+  return 'oth';
+}
+function daContentOf(name, rows, kind, types){
+  if (!(rows > 0)) return 'none';
+  if (types && types.blobc > 0) return 'blob';
+  if (/(List|Type|Code|Lookup|Xref)$/i.test(name) || /^(Country|Currency|Language|Title|Region)/i.test(name)) return 'refd';
+  if (/(Log|Trail|Audit|History|Archive)$/i.test(name) || /^Audit/i.test(name)) return 'log';
+  if (/Document|Attachment|Blob|Image|Scan|Content|File/i.test(name)) return 'blob';
+  return 'txn';
+}
+function daSensOf(name, domain){
+  if (/Salary|Payroll|Employee|Staff|Absence|Appraisal|NI|Pension/i.test(name)) return 'pii';
+  if (domain === 'hr' || domain === 'fin') return 'pii';
+  if (/Client|Matter|Contact|Party|Person|Address|Email|Phone|Bank/i.test(name)) return 'conf';
+  if (domain === 'ref') return 'pub';
+  if (domain === 'doc') return 'conf';
+  return 'int';
+}
+// Migration status from this project's real maps. On the source side a table
+// counts as mapped when a saved map reads it; on the target side when one
+// writes it. A draft map is shown as exactly that, not as done.
+function daStatusOf(key, name, rows, mapsIndex){
+  if (!(rows > 0)) return 'exc';
+  const hit = mapsIndex[key.toLowerCase()] || mapsIndex[name.toLowerCase()];
+  if (!hit) return 'un';
+  return hit === 'complete' ? 'val' : 'part';
+}
+function daMapsIndex(side){
+  const idx = {};
+  const norm = (s) => String(s || '').replace(/[\[\]]/g, '').trim().toLowerCase();
+  for (const m of CygenixSchemaGraph.savedMaps()){
+    const names = side === 'src'
+      ? [m.sourceTable]
+      : (m.targetTables || []);
+    const rank = String(m.status).toLowerCase() === 'draft' ? 'draft' : 'complete';
+    for (const cand of names){
+      const c = norm(cand);
+      if (!c) continue;
+      // 'complete' wins over 'draft' when two maps touch the same table.
+      if (idx[c] !== 'complete') idx[c] = rank;
+      const bare = c.includes('.') ? c.split('.').pop() : c;
+      if (idx[bare] !== 'complete') idx[bare] = rank;
+    }
+  }
+  return idx;
+}
+
+// Column-type classification for the width estimate and the detail rail.
+function daTypesOf(columns){
+  const t = { text:0, num:0, date:0, bool:0, blobc:0, other:0 };
+  let width = 38;                       // row header overhead
+  for (const c of (columns || [])){
+    const ty = String(c.type || '').toLowerCase();
+    if (/char|text|xml|uniqueiden/.test(ty)) { t.text++; width += /max\)|text/.test(ty) ? 120 : 40; }
+    else if (/int|decimal|numeric|float|real|money|bigint|smallint|tinyint/.test(ty)) { t.num++; width += 8; }
+    else if (/date|time/.test(ty)) { t.date++; width += 8; }
+    else if (/bit/.test(ty)) { t.bool++; width += 1; }
+    else if (/binary|image|blob|filestream/.test(ty)) { t.blobc++; width += 400; }
+    else { t.other++; width += 16; }
+  }
+  return { types: t, width };
+}
+
+// ── Build the estate from the loaded graph ────────────────────────────────
+const DA_FLAT_ROW_WIDTH = 170;          // before real columns arrive
+function daBuildTables(graph){
+  const mapsIndex = daMapsIndex(DA.side);
+  return graph.tables.map(node => {
+    const rows = typeof node.rowCount === 'number' ? node.rowCount : 0;
+    const known = node.columns && node.columns.length ? daTypesOf(node.columns) : null;
+    const cols = known ? node.columns.length : null;
+    const bytes = rows * (known ? known.width : DA_FLAT_ROW_WIDTH);
+    const domain = daDomainOf(node.name, node.schema);
+    return {
+      key: node.key, name: node.name, schema: node.schema, kind: node.kind,
+      rows, bytes, cols,
+      types: known ? known.types : null,
+      domain,
+      content: daContentOf(node.name, rows, node.kind, known && known.types),
+      sens: daSensOf(node.name, domain),
+      status: daStatusOf(node.key, node.name, rows, mapsIndex),
+    };
+  });
+}
+
+let _daEnsured = false;
+function daEnsure(){
+  daLens();
+  if (!_daEnsured){
+    _daEnsured = true;
+    daWireCanvas();
+  }
+  if (DA.loaded !== DA.side) daLoad();
+  else { daResize(); }
+}
+
+async function daLoad(){
+  if (DA.loading) return;
+  DA.loading = true;
+  const empty = $('da-empty');
+  empty.style.display = 'none';
+  let g;
+  try { g = await CygenixSchemaGraph.load(DA.side); }
+  catch (e) { g = { ok:false, reason:(e && e.message) || 'Could not load', tables:[] }; }
+  DA.loading = false;
+  DA.loaded = DA.side;
+  DA.graphOk = !!g.ok;
+  DA.reason = g.reason || '';
+  DA.database = g.database || '';
+  DA.tables = g.ok ? daBuildTables(g) : [];
+  DA.drill = null; DA.sel = null; DA.off = {};
+  daRefresh(true);
+  // Real column widths for the tables that dominate the picture. Each
+  // arrival refines that table's volume estimate; redraws are batched.
+  if (g.ok && DA.tables.length){
+    const top = DA.tables.slice().sort((a, b) => b.rows - a.rows).slice(0, 80).map(t => t.key);
+    CygenixSchemaGraph.columnsFor(DA.side, top, () => daScheduleRefine());
+  }
+}
+
+let _daRefineTimer = null;
+function daScheduleRefine(){
+  if (_daRefineTimer) return;
+  _daRefineTimer = setTimeout(() => {
+    _daRefineTimer = null;
+    daRefineFromGraph();
+  }, 400);
+}
+// Fold newly-arrived columns into the existing estate without rebuilding it
+// (a rebuild would drop drill/selection state mid-exploration).
+async function daRefineFromGraph(){
+  const g = await CygenixSchemaGraph.load(DA.side);
+  if (!g.ok) return;
+  let changed = false;
+  for (const t of DA.tables){
+    if (t.cols !== null) continue;
+    const node = g.byKey[t.key];
+    if (!node || !node.columns || !node.columns.length) continue;
+    const known = daTypesOf(node.columns);
+    t.cols = node.columns.length;
+    t.types = known.types;
+    t.bytes = t.rows * known.width;
+    if (t.types.blobc > 0 && t.content === 'txn') t.content = 'blob';
+    changed = true;
+  }
+  if (changed) daRefresh(false);
+}
+
+// ── Formatting ────────────────────────────────────────────────────────────
+function daInt(n){ return (n || 0).toLocaleString('en-GB'); }
+function daRows(n){
+  if (n >= 1e9) return (n / 1e9).toFixed(n < 1e10 ? 2 : 1) + 'bn';
+  if (n >= 1e6) return (n / 1e6).toFixed(n < 1e7 ? 1 : 0) + 'm';
+  if (n >= 1e3) return (n / 1e3).toFixed(n < 1e4 ? 1 : 0) + 'k';
+  return String(n);
+}
+function daBytes(b){
+  if (b >= 1e12) return (b / 1e12).toFixed(2) + ' TB';
+  if (b >= 1e9)  return (b / 1e9).toFixed(b < 1e10 ? 2 : 1) + ' GB';
+  if (b >= 1e6)  return (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
+  if (b >= 1e3)  return Math.round(b / 1e3) + ' KB';
+  return b + ' B';
+}
+function daM(v){ return DA.measure === 'rows' ? daRows(v) : daBytes(v); }
+function daVal(t){ return DA.measure === 'rows' ? t.rows : t.bytes; }
+function daPct(x){ return x < 1 ? x.toFixed(1) + '%' : Math.round(x) + '%'; }
+
+function daActiveCats(){ return daLens()[DA.lens].cats; }
+function daCatOf(t){ return t[daLens()[DA.lens].key]; }
+function daCatDef(id){ return DA_CAT[DA.lens + ':' + id]; }
+function daIsOff(id){ return !!DA.off[DA.lens + ':' + id]; }
+function daMatches(t){
+  if (!DA.q) return true;
+  return (t.schema + '.' + t.name).toLowerCase().includes(DA.q.toLowerCase());
+}
+function daVisible(){ return DA.tables.filter(t => !daIsOff(daCatOf(t))); }
+
+// ── Squarified treemap ────────────────────────────────────────────────────
+function daSquarify(items, rect){
+  const out = [];
+  let { x, y, w, h } = rect;
+  let total = 0;
+  for (const it of items) total += it.v;
+  if (total <= 0 || w <= 0 || h <= 0) return out;
+  const scale = (w * h) / total;
+  let idx = 0;
+  function worst(row, len, sum){
+    let mx = 0, mn = Infinity;
+    for (const r of row){ const a = r.v * scale; if (a > mx) mx = a; if (a < mn) mn = a; }
+    const s2 = sum * scale, l2 = len * len;
+    return Math.max(l2 * mx / (s2 * s2), s2 * s2 / (l2 * mn));
+  }
+  while (idx < items.length){
+    const vertical = w < h, len = vertical ? w : h;
+    const row = []; let sum = 0;
+    while (idx < items.length){
+      const it = items[idx];
+      const cur = row.length ? worst(row, len, sum) : Infinity;
+      row.push(it); sum += it.v;
+      if (row.length > 1 && worst(row, len, sum) > cur){ row.pop(); sum -= it.v; break; }
+      idx++;
+    }
+    if (!row.length) break;
+    const thick = (sum * scale) / len;
+    let off = vertical ? x : y;
+    for (const r of row){
+      const side = (r.v * scale) / (thick || 1);
+      if (vertical) out.push({ d:r, x:off, y, w:side, h:thick });
+      else          out.push({ d:r, x, y:off, w:thick, h:side });
+      off += side;
+    }
+    if (vertical){ y += thick; h -= thick; } else { x += thick; w -= thick; }
+    if (w <= 0.5 || h <= 0.5) break;
+  }
+  return out;
+}
+
+let daCells = [], daAnim = null, daW = 0, daH = 0, daDPR = 1, daHover = -1;
+
+// Mix a colour toward white: keeps hue identity, grades magnitude.
+function daMixw(col, f){
+  let r, g, b;
+  if (col.charAt(0) === '#'){ r = parseInt(col.slice(1,3),16); g = parseInt(col.slice(3,5),16); b = parseInt(col.slice(5,7),16); }
+  else { const m = col.match(/\d+/g) || [0,0,0]; r = +m[0]; g = +m[1]; b = +m[2]; }
+  const m2 = (c) => Math.round(c + (255 - c) * f);
+  return 'rgb(' + m2(r) + ',' + m2(g) + ',' + m2(b) + ')';
+}
+function daLum(col){
+  let r, g, b;
+  if (col.charAt(0) === '#'){ r = parseInt(col.slice(1,3),16); g = parseInt(col.slice(3,5),16); b = parseInt(col.slice(5,7),16); }
+  else { const m = col.match(/\d+/g) || [0,0,0]; r = +m[0]; g = +m[1]; b = +m[2]; }
+  const f = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+// White or near-black ink, whichever clears the higher contrast on this fill.
+function daInk(c){
+  const L = daLum(c);
+  const white = 1.05 / (L + 0.05);
+  const dark  = (L + 0.05) / (daLum(daColors().inkDark) + 0.05);
+  return white >= dark ? 'rgb(255,255,255)' : daColors().inkDark;
+}
+function daRR(c, x, y, w, h, r){
+  r = Math.min(r, w / 2, h / 2);
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+
+function daBuildCells(){
+  const list = daVisible();
+  if (DA.drill){
+    const cat = daCatDef(DA.drill);
+    const items = list.filter(t => daCatOf(t) === DA.drill)
+      .map(t => ({ v: daVal(t), t, leaf: true, label: t.name, sub: t.schema }))
+      .filter(o => o.v > 0)
+      .sort((a, b) => b.v - a.v);
+    const mx = items.length ? items[0].v : 1;
+    const amp = daLens()[DA.lens].ordinal ? 0 : 0.46;
+    items.forEach(o => { o.c = daMixw(cat.c, amp * Math.pow(1 - o.v / mx, 0.75)); });
+    daCells = daSquarify(items, { x:0, y:0, w:daW, h:daH });
+    return;
+  }
+  // Nested: group containers first, then their member tables inside.
+  const g = {};
+  list.forEach(t => {
+    const c = daCatOf(t);
+    (g[c] = g[c] || { v:0, n:0, items:[] });
+    g[c].v += daVal(t); g[c].n++; g[c].items.push(t);
+  });
+  const groups = daActiveCats().filter(c => g[c.id] && g[c.id].v > 0)
+    .map(c => ({ v:g[c.id].v, cat:c, n:g[c.id].n, c:c.c, label:c.name, group:true }));
+  groups.sort((a, b) => b.v - a.v);
+  const frames = daSquarify(groups, { x:0, y:0, w:daW, h:daH });
+  const out = [];
+  frames.forEach(f => {
+    const hdr = (f.h > 66 && f.w > 108) ? 25 : 0;
+    out.push({ d:{ group:true, cat:f.d.cat, n:f.d.n, v:f.d.v, c:f.d.c, label:f.d.label, hdr }, x:f.x, y:f.y, w:f.w, h:f.h, frame:true });
+    const inner = { x:f.x + 3, y:f.y + hdr + (hdr ? 1 : 3), w:f.w - 6, h:f.h - hdr - (hdr ? 4 : 6) };
+    if (inner.w < 14 || inner.h < 14) return;
+    const kids = g[f.d.cat.id].items
+      .map(t => ({ v: daVal(t), t, leaf:true, label:t.name, sub:t.schema }))
+      .filter(o => o.v > 0).sort((a, b) => b.v - a.v);
+    // Cells below ~26px² are noise — pool them into one honest remainder.
+    const area = inner.w * inner.h, gv = f.d.v || 1;
+    const keep = []; let rest = 0;
+    for (const k of kids){
+      if (k.v / gv * area > 26 && keep.length < 160) keep.push(k); else rest += k.v;
+    }
+    const hidden = kids.length - keep.length;
+    if (rest > 0 && keep.length) keep.push({ v:rest, rest:true, hidden, label:hidden + ' smaller tables', cat:f.d.cat });
+    const mx = keep.length ? keep[0].v : 1;
+    const amp = daLens()[DA.lens].ordinal ? 0 : 0.42;
+    keep.forEach(o => { o.c = o.rest ? daMixw(f.d.cat.c, amp ? 0.66 : 0.30)
+                            : daMixw(f.d.cat.c, amp * Math.pow(1 - o.v / mx, 0.75)); });
+    daSquarify(keep, inner).forEach(c => out.push(c));
+  });
+  daCells = out;
+}
+
+function daDraw(){
+  const canvas = $('da-map');
+  if (!canvas) return;
+  const ctx2 = canvas.getContext('2d');
+  ctx2.setTransform(daDPR, 0, 0, daDPR, 0, 0);
+  ctx2.clearRect(0, 0, daW, daH);
+  const t = daAnim ? daAnim.t : 1, z = daAnim ? daAnim.from : null;
+  let base = 1;
+  if (z && t < 1){
+    const e = 1 - Math.pow(1 - t, 3);
+    ctx2.translate(z.x * (1 - e), z.y * (1 - e));
+    ctx2.scale((z.w / daW) + (1 - z.w / daW) * e, (z.h / daH) + (1 - z.h / daH) * e);
+    base = Math.min(1, 0.2 + e * 1.15);
+  }
+  const G = 2;                          // 2px surface gap between fills
+  const ink = daColors().inkDark;
+  for (let i = 0; i < daCells.length; i++){
+    const c = daCells[i], d = c.d;
+    if (c.frame){
+      const fx = c.x + 1, fy = c.y + 1, fw = Math.max(0, c.w - 2), fh = Math.max(0, c.h - 2);
+      if (fw <= 0 || fh <= 0) continue;
+      ctx2.globalAlpha = base;
+      ctx2.fillStyle = daColors().frame;
+      daRR(ctx2, fx, fy, fw, fh, 7); ctx2.fill();
+      if (d.hdr){
+        ctx2.save(); daRR(ctx2, fx, fy, fw, fh, 7); ctx2.clip();
+        ctx2.fillStyle = d.c; ctx2.fillRect(fx, fy, fw, d.hdr);
+        ctx2.fillStyle = daInk(d.c);
+        ctx2.textBaseline = 'middle';
+        ctx2.font = '600 12.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+        ctx2.fillText(d.label, fx + 9, fy + d.hdr / 2 + 0.5);
+        const lw = ctx2.measureText(d.label).width;
+        ctx2.globalAlpha = base * 0.8;
+        ctx2.font = '500 11px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+        const meta = daM(d.v) + '  ·  ' + daInt(d.n) + ' table' + (d.n === 1 ? '' : 's');
+        if (fw - lw - 24 > ctx2.measureText(meta).width) ctx2.fillText(meta, fx + lw + 18, fy + d.hdr / 2 + 0.5);
+        ctx2.restore();
+      }
+      ctx2.globalAlpha = 1;
+      continue;
+    }
+    const x = c.x + G / 2, y = c.y + G / 2, w = Math.max(0, c.w - G), h = Math.max(0, c.h - G);
+    if (w <= 0 || h <= 0) continue;
+    const dim = DA.q && d.t && !daMatches(d.t);
+    const hot = i === daHover;
+    ctx2.globalAlpha = base * (dim ? 0.12 : 1);
+    ctx2.fillStyle = d.c;
+    daRR(ctx2, x, y, w, h, Math.min(4, w / 3, h / 3)); ctx2.fill();
+    if (d.rest){
+      ctx2.strokeStyle = 'rgba(255,255,255,.25)'; ctx2.lineWidth = 1;
+      ctx2.setLineDash([3, 3]); ctx2.stroke(); ctx2.setLineDash([]);
+    }
+    if (d.t && DA.sel === d.t){
+      ctx2.strokeStyle = 'rgb(255,255,255)'; ctx2.lineWidth = 2.5; ctx2.stroke();
+      ctx2.strokeStyle = ink; ctx2.lineWidth = 1;
+      daRR(ctx2, x + 2, y + 2, Math.max(0, w - 4), Math.max(0, h - 4), 3); ctx2.stroke();
+    }
+    else if (hot){ ctx2.strokeStyle = 'rgb(255,255,255)'; ctx2.lineWidth = 2; ctx2.stroke(); }
+    else if (DA.q && d.t && !dim){ ctx2.strokeStyle = 'rgb(255,255,255)'; ctx2.lineWidth = 1.5; ctx2.stroke(); }
+    ctx2.globalAlpha = base;
+
+    if (w > 52 && h > 24 && !dim){
+      ctx2.fillStyle = daInk(d.c);
+      ctx2.save(); daRR(ctx2, x, y, w, h, 4); ctx2.clip();
+      ctx2.textBaseline = 'top';
+      ctx2.font = '600 11.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+      const maxw = w - 14;
+      let lines = [d.label];
+      if (ctx2.measureText(d.label).width > maxw){
+        if (h > 52){
+          let best = null;
+          for (let s2 = Math.floor(d.label.length * 0.3); s2 < d.label.length; s2++){
+            if (ctx2.measureText(d.label.slice(0, s2)).width > maxw){ best = s2 - 1; break; }
+          }
+          if (best){                     // prefer a camelCase seam for the wrap
+            for (let b2 = best; b2 > Math.max(2, best - 6); b2--){
+              if (/[A-Z]/.test(d.label.charAt(b2))){ best = b2; break; }
+            }
+          }
+          if (best && best > 2){
+            let l2 = d.label.slice(best);
+            while (l2.length > 2 && ctx2.measureText(l2 + '…').width > maxw) l2 = l2.slice(0, -1);
+            lines = [d.label.slice(0, best), l2.length < d.label.length - best ? l2 + '…' : l2];
+          }
+        }
+        if (lines.length === 1){
+          let lab = d.label;
+          while (lab.length > 3 && ctx2.measureText(lab + '…').width > maxw) lab = lab.slice(0, -1);
+          lines = [lab + '…'];
+        }
+      }
+      for (let li = 0; li < lines.length; li++) ctx2.fillText(lines[li], x + 7, y + 6 + li * 14);
+      if (h > 40 + (lines.length - 1) * 14 && !d.rest){
+        ctx2.globalAlpha = base * 0.76;
+        ctx2.font = '500 10.5px "IBM Plex Sans","Helvetica Neue",Arial,sans-serif';
+        ctx2.fillText(daM(d.v), x + 7, y + 22 + (lines.length - 1) * 14);
+        ctx2.globalAlpha = base;
+      }
+      ctx2.restore();
+    }
+  }
+  ctx2.globalAlpha = 1;
+}
+
+function daTick(){
+  if (!daAnim) return;
+  daAnim.t = Math.min(1, (performance.now() - daAnim.t0) / daAnim.dur);
+  daDraw();
+  if (daAnim.t < 1) requestAnimationFrame(daTick); else daAnim = null;
+}
+function daZoomFrom(rect){ daAnim = { from:rect, t:0, t0:performance.now(), dur:380 }; requestAnimationFrame(daTick); }
+
+function daResize(){
+  const wrap = $('da-mapwrap'), canvas = $('da-map');
+  if (!wrap || !canvas) return;
+  const r = wrap.getBoundingClientRect();
+  if (r.width < 20 || r.height < 20) return;      // hidden tab — nothing to size against
+  daDPR = Math.min(2, window.devicePixelRatio || 1);
+  daW = Math.max(10, r.width - 12); daH = Math.max(10, r.height - 12);
+  canvas.width = daW * daDPR; canvas.height = daH * daDPR;
+  canvas.style.width = daW + 'px'; canvas.style.height = daH + 'px';
+  daBuildCells(); daDraw();
+}
+function daHit(mx, my){
+  for (let i = daCells.length - 1; i >= 0; i--){
+    const c = daCells[i];
+    if (mx >= c.x && mx <= c.x + c.w && my >= c.y && my <= c.y + c.h) return i;
+  }
+  return -1;
+}
+
+// ── Hover, tooltip, click ─────────────────────────────────────────────────
+function daWireCanvas(){
+  const canvas = $('da-map'), tip = $('da-tip'), wrap = $('da-mapwrap');
+  if (!canvas) return;
+
+  canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const i = daHit(e.clientX - r.left, e.clientY - r.top);
+    if (i !== daHover){ daHover = i; if (!daAnim) daDraw(); }
+    if (i < 0){ tip.classList.remove('on'); canvas.style.cursor = 'default'; return; }
+    canvas.style.cursor = 'pointer';
+    const d = daCells[i].d;
+    let html;
+    const dot = (c) => '<span class="da-dot" style="background:' + c + '"></span>';
+    if (d.rest){
+      html = '<div class="tt">' + dot(d.c) + daInt(d.hidden) + ' smaller tables</div>'
+        + '<div class="r"><span>Combined</span><b>' + daM(d.v) + '</b></div>'
+        + '<div class="r"><span>Share</span><b>' + daPct(d.v / daTotal() * 100) + '</b></div>'
+        + '<div class="hint">Too small to draw at this scale — click to open the group</div>';
+    } else if (d.leaf){
+      const t = d.t, share = daVal(t) / daTotal() * 100;
+      html = '<div class="tt">' + dot(d.c) + esc(t.name) + '</div>'
+        + '<div class="r"><span>Schema</span><b>' + esc(t.schema) + '</b></div>'
+        + '<div class="r"><span>Rows</span><b>' + daInt(t.rows) + '</b></div>'
+        + '<div class="r"><span>Est. volume</span><b>' + daBytes(t.bytes) + '</b></div>'
+        + (t.cols !== null ? '<div class="r"><span>Columns</span><b>' + t.cols + '</b></div>' : '')
+        + '<div class="r"><span>Share of estate</span><b>' + daPct(share) + '</b></div>'
+        + '<div class="hint">' + esc(DA_CAT['domain:' + t.domain].name) + ' · '
+        + esc(DA_CAT['content:' + t.content].name) + ' · ' + esc(DA_CAT['sensitivity:' + t.sens].name)
+        + ' · ' + esc(DA_CAT['status:' + t.status].name) + '</div>';
+    } else {
+      html = '<div class="tt">' + dot(d.c) + esc(d.label) + '</div>'
+        + '<div class="r"><span>' + (DA.measure === 'rows' ? 'Rows' : 'Est. volume') + '</span><b>' + daM(d.v) + '</b></div>'
+        + '<div class="r"><span>Tables</span><b>' + daInt(d.n) + '</b></div>'
+        + '<div class="r"><span>Share</span><b>' + daPct(d.v / daTotal() * 100) + '</b></div>'
+        + '<div class="hint">Click to open this group</div>';
+    }
+    tip.innerHTML = html; tip.classList.add('on');
+    const tw = tip.offsetWidth, th = tip.offsetHeight, wr = wrap.getBoundingClientRect();
+    let lx = e.clientX - wr.left + 14, ly = e.clientY - wr.top + 14;
+    if (lx + tw > wr.width - 6) lx = e.clientX - wr.left - tw - 14;
+    if (ly + th > wr.height - 6) ly = e.clientY - wr.top - th - 14;
+    tip.style.left = Math.max(6, lx) + 'px'; tip.style.top = Math.max(6, ly) + 'px';
+  });
+  canvas.addEventListener('mouseleave', () => { daHover = -1; tip.classList.remove('on'); daDraw(); });
+  canvas.addEventListener('click', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const i = daHit(e.clientX - r.left, e.clientY - r.top);
+    if (i < 0) return;
+    const c = daCells[i], d = c.d;
+    if (d.leaf){ DA.sel = d.t; daRenderRail(); daDraw(); return; }
+    if (d.rest || d.group){
+      const from = { x:c.x, y:c.y, w:c.w, h:c.h };
+      DA.drill = d.cat.id; DA.sel = null;
+      tip.classList.remove('on'); daHover = -1;
+      daBuildCells(); daRenderChrome(); daRenderRail(); daZoomFrom(from);
+    }
+  });
+  if (window.ResizeObserver){
+    new ResizeObserver(() => { if (seTab === 'atlas' && DA.view === 'map') daResize(); }).observe(wrap);
+  } else {
+    window.addEventListener('resize', () => { if (seTab === 'atlas') daResize(); });
+  }
+  // Search dims rather than filters, so a match keeps its context.
+  let qTimer = null;
+  $('da-q').addEventListener('input', (e) => {
+    clearTimeout(qTimer);
+    const v = e.target.value;
+    qTimer = setTimeout(() => {
+      DA.q = v.trim();
+      if (DA.view === 'table') daRenderTable(); else daDraw();
+      if (DA.q){
+        const hits = daVisible().filter(daMatches);
+        $('da-map-meta').textContent = daInt(hits.length) + ' match' + (hits.length === 1 ? '' : 'es');
+      } else daRenderChrome();
+    }, 110);
+  });
+  // Segmented controls + legend + rail rows, delegated within the atlas view.
+  $('se-view-atlas').addEventListener('click', (e) => {
+    const b = e.target.closest('button,[data-da-tbl]');
+    if (!b) return;
+    const press = () => { [...b.parentNode.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); };
+    if (b.dataset.daSide){ press(); DA.side = b.dataset.daSide; daLoad(); }
+    else if (b.dataset.daMeasure){ press(); DA.measure = b.dataset.daMeasure; daRefresh(true); }
+    else if (b.dataset.daLens){ press(); DA.lens = b.dataset.daLens; DA.drill = null; DA.sel = null; DA.off = {}; daRefresh(true); }
+    else if (b.dataset.daView){
+      press(); DA.view = b.dataset.daView;
+      $('da-mapwrap').style.display = DA.view === 'map' ? '' : 'none';
+      $('da-tblwrap').style.display = DA.view === 'table' ? '' : 'none';
+      if (DA.view === 'table') daRenderTable(); else daResize();
+    }
+    else if (b.dataset.daUp){ DA.drill = null; DA.sel = null; daRefresh(true); }
+    else if (b.classList.contains('da-lg') && b.dataset.daCat){
+      const k = DA.lens + ':' + b.dataset.daCat;
+      if (DA.off[k]) delete DA.off[k]; else DA.off[k] = 1;
+      DA.sel = null; daRefresh(true);
+    }
+    else if (b.dataset.daTbl){
+      const t = DA.tables.find(o => (o.schema + '.' + o.name) === b.dataset.daTbl);
+      if (t){ DA.sel = t; daRenderRail(); if (DA.view === 'map') daDraw(); }
+    }
+    else if (b.dataset.daSort){
+      if (daSortKey === b.dataset.daSort) daSortDir = -daSortDir;
+      else { daSortKey = b.dataset.daSort; daSortDir = -1; }
+      daRenderTable();
+    }
+  });
+}
+
+function daClearSel(){ DA.sel = null; daRenderRail(); daDraw(); }
+
+// ── Aggregates ────────────────────────────────────────────────────────────
+let _daTot = {};
+function daTotal(){
+  const k = DA.measure + '|' + DA.lens + '|' + JSON.stringify(DA.off);
+  if (_daTot[k] !== undefined) return _daTot[k];
+  let s = 0; daVisible().forEach(t => { s += daVal(t); });
+  return (_daTot[k] = s || 1);
+}
+function daConcentration(scope){
+  const v = (scope || daVisible()).map(daVal).sort((a, b) => b - a);
+  let tot = 0; for (const x of v) tot += x;
+  let run = 0, n = 0;
+  for (const x of v){ run += x; n++; if (run >= tot * 0.95) break; }
+  return { n, of: v.length, curve: v, tot };
+}
+
+// ── Tiles ─────────────────────────────────────────────────────────────────
+function daRenderTiles(){
+  const list = daVisible();
+  let rows = 0, bytes = 0, dead = 0, deadBytes = 0, big = null;
+  const schemas = {};
+  list.forEach(t => {
+    rows += t.rows; bytes += t.bytes; schemas[t.schema] = 1;
+    if (t.rows === 0){ dead++; deadBytes += t.bytes; }
+    if (!big || t.rows > big.rows) big = t;
+  });
+  const con = daConcentration();
+  const tile = (k, v, n) => '<div class="da-tile"><div class="k">' + k + '</div><div class="v">' + v + '</div><div class="n">' + n + '</div></div>';
+  $('da-tiles').innerHTML = !list.length ? '' : [
+    tile('Rows in scope', daRows(rows),
+      'across <b>' + daInt(list.length) + '</b> tables in ' + Object.keys(schemas).length + ' schema' + (Object.keys(schemas).length === 1 ? '' : 's')),
+    tile('Estimated volume', daBytes(bytes).replace(/ (\w+)$/, '<small>$1</small>'),
+      big ? 'largest object <b>' + esc(big.name) + '</b> at ' + daBytes(big.bytes) : ''),
+    tile('The 95% core', daInt(con.n) + '<small>tables</small>',
+      'hold 95% of all ' + (DA.measure === 'rows' ? 'rows' : 'volume') + ' — <b>' + daPct(con.n / Math.max(1, con.of) * 100) + '</b> of the estate'),
+    tile('Empty tables', daInt(dead) + '<small>tables</small>',
+      dead ? 'no rows at all — likely out of scope' : 'every table holds data'),
+  ].join('');
+  $('da-src-label').textContent = DA.graphOk
+    ? (DA.database ? DA.database + ' · ' : '') + (DA.side === 'src' ? 'source' : 'target') + ' · ' + daInt(DA.tables.length) + ' tables'
+    : '';
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────
+function daRenderLegend(){
+  const L = daLens()[DA.lens], g = {};
+  DA.tables.forEach(t => { const c = t[L.key]; g[c] = (g[c] || 0) + daVal(t); });
+  $('da-legend').innerHTML = L.cats.map(c => {
+    const on = !daIsOff(c.id);
+    return '<button class="da-lg" data-da-cat="' + c.id + '" aria-pressed="' + on + '">'
+      + '<span class="da-dot" style="background:' + c.c + '"></span>'
+      + (c.icon ? '<span aria-hidden="true">' + c.icon + '</span> ' : '') + esc(c.name)
+      + ' <span class="c">' + daM(g[c.id] || 0) + '</span></button>';
+  }).join('')
+  + '<span class="da-lg da-lg-note">'
+  + (DA.lens === 'sensitivity' ? 'Darker = more sensitive · name-pattern estimate'
+    : DA.lens === 'status' ? 'From this project\'s saved maps'
+    : DA.lens === 'domain' || DA.lens === 'content' ? 'Name-pattern estimate · click a swatch to filter'
+    : 'Click a swatch to filter') + '</span>';
+}
+
+// ── Breadcrumb / meta ─────────────────────────────────────────────────────
+function daRenderChrome(){
+  const c = $('da-crumb');
+  if (DA.drill){
+    const d = daCatDef(DA.drill);
+    c.innerHTML = '<button data-da-up="1">Estate</button><span class="sep">/</span>'
+      + '<span class="da-dot" style="background:' + d.c + '"></span>'
+      + '<span class="cur">' + esc(d.name) + '</span>';
+  } else c.innerHTML = '<span class="cur">Whole estate</span>';
+  let n = 0; for (const cell of daCells) if (cell.d.leaf) n++;
+  $('da-map-meta').textContent = DA.drill
+    ? daInt(n) + ' of ' + daInt(daVisible().filter(t => daCatOf(t) === DA.drill).length) + ' tables hold rows · shade tracks size'
+    : 'sized by ' + (DA.measure === 'rows' ? 'row count' : 'estimated volume');
+}
+
+// ── Right rail ────────────────────────────────────────────────────────────
+function daParetoSVG(scope){
+  const c = daColors();
+  const con = daConcentration(scope), v = con.curve, tot = con.tot || 1, W2 = 288, H2 = 80;
+  const pts = [];
+  const step = Math.max(1, Math.floor(v.length / 400));
+  let acc = 0, count = 0;
+  for (let i = 0; i < v.length; i++){
+    acc += v[i]; count++;
+    if (i % step === 0 || i === v.length - 1) pts.push([count / v.length * W2, H2 - (acc / tot) * H2]);
+  }
+  if (!pts.length) return '';
+  const d = 'M0,' + H2 + ' L' + pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L');
+  const x95 = con.n / Math.max(1, v.length) * W2;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+  return '<svg class="da-pareto" viewBox="0 0 ' + W2 + ' ' + H2 + '" preserveAspectRatio="none" role="img"'
+    + ' aria-label="Cumulative share curve: ' + con.n + ' of ' + v.length + ' tables hold 95% of the estate">'
+    + '<path d="' + d + ' L' + W2 + ',' + H2 + ' Z" fill="' + accent + '" fill-opacity="0.12"/>'
+    + '<path d="' + d + '" fill="none" stroke="' + accent + '" stroke-width="2" stroke-linejoin="round"/>'
+    + '<line x1="' + x95.toFixed(1) + '" y1="0" x2="' + x95.toFixed(1) + '" y2="' + H2 + '" stroke="' + c.crit + '" stroke-width="1.5" stroke-dasharray="4 3"/>'
+    + '</svg>'
+    + '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:3px">'
+    + '<span>0</span><span style="color:' + c.crit + ';font-weight:600">' + daInt(con.n) + ' tables = 95%</span>'
+    + '<span>' + daInt(v.length) + ' tables</span></div>';
+}
+
+function daCompositionBar(lensKey){
+  const L = daLens()[lensKey], g = {}; let tot = 0;
+  daVisible().forEach(t => { const c = t[L.key]; g[c] = (g[c] || 0) + daVal(t); tot += daVal(t); });
+  if (!tot) return '';
+  const seg = L.cats.map(c => {
+    const v = g[c.id] || 0; if (!v) return '';
+    return '<i style="background:' + c.c + ';width:' + (v / tot * 100).toFixed(2) + '%" title="' + esc(c.name) + ' ' + daPct(v / tot * 100) + '"></i>';
+  }).join('');
+  const top = L.cats.map(c => ({ c, v: g[c.id] || 0 })).sort((a, b) => b.v - a.v).slice(0, 3);
+  return '<div class="da-bar">' + seg + '</div><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">'
+    + top.filter(o => o.v > 0).map(o => '<span style="font-size:10.5px;color:var(--text2);display:inline-flex;align-items:center;gap:5px">'
+      + '<span class="da-dot" style="background:' + o.c.c + '"></span>' + esc(o.c.name) + ' <b>' + daPct(o.v / tot * 100) + '</b></span>').join('') + '</div>';
+}
+
+function daKV(k, v){ return '<div class="da-kv"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+function daTopList(list, n){
+  return list.slice().sort((a, b) => daVal(b) - daVal(a)).slice(0, n).map(t =>
+    '<div class="da-rw" role="button" tabindex="0" data-da-tbl="' + esc(t.schema + '.' + t.name) + '">'
+    + '<span class="da-dot" style="background:' + daCatDef(daCatOf(t)).c + '"></span>'
+    + '<span class="nm" title="' + esc(t.schema + '.' + t.name) + '">' + esc(t.name) + '</span>'
+    + '<span class="vl">' + daM(daVal(t)) + '</span></div>').join('');
+}
+
+async function daRenderRail(){
+  const r = $('da-rail');
+  $('da-clear-sel').style.display = DA.sel ? '' : 'none';
+  if (DA.sel){
+    const t = DA.sel, share = daVal(t) / daTotal() * 100;
+    $('da-rail-title').textContent = 'Table detail';
+    const chips = ['domain','content','sensitivity','status'].map(k => {
+      const c = DA_CAT[k + ':' + t[daLens()[k].key]];
+      return '<span class="da-chip"><span class="da-dot" style="background:' + c.c + '"></span>'
+        + (c.icon ? c.icon + ' ' : '') + esc(c.name) + '</span>';
+    }).join('');
+    let typesHtml = '<div class="muted" style="padding:0;font-size:11px">Loading columns…</div>';
+    r.innerHTML =
+      '<div class="da-sect"><div class="da-schema">' + esc(t.schema) + '</div><div class="da-name">' + esc(t.name) + '</div>'
+      + '<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:5px">' + chips + '</div></div>'
+      + '<div class="da-sect">'
+      + daKV('Rows', daInt(t.rows)) + daKV('Est. volume', daBytes(t.bytes))
+      + (t.cols !== null ? daKV('Columns', t.cols) : '')
+      + daKV('Share of estate', daPct(share))
+      + (t.rows && t.cols !== null ? daKV('Est. row width', daBytes(Math.round(t.bytes / t.rows))) : '')
+      + '</div>'
+      + '<div class="da-sect" id="da-typesect">' + (t.types ? '' : typesHtml) + '</div>'
+      + '<div class="da-sect"><div class="st">Peers in ' + esc(DA_CAT['domain:' + t.domain].name) + '</div>'
+      + '<div class="da-rowlist">' + daTopList(DA.tables.filter(o => o.domain === t.domain && o !== t), 6) + '</div></div>';
+    // Columns on demand for the type breakdown, through the shared cache.
+    if (!t.types){
+      await CygenixSchemaGraph.columns(DA.side, t.schema, t.name);
+      await daRefineFromGraph();
+      if (DA.sel !== t) return;
+    }
+    const sect = $('da-typesect');
+    if (sect && t.types){
+      const c = daColors();
+      const parts = [['text',c.s1,'Text'],['num',c.s2,'Numeric'],['date',c.s3,'Date/time'],['bool',c.s6,'Flag'],['blobc',c.s7,'Binary/blob']]
+        .filter(x => t.types[x[0]] > 0);
+      sect.innerHTML = '<div class="st">Column types (' + t.cols + ')</div>'
+        + '<div class="da-bar">' + parts.map(x => '<i style="background:' + x[1] + ';width:' + (t.types[x[0]] / t.cols * 100).toFixed(1) + '%"></i>').join('') + '</div>'
+        + '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px">' + parts.map(x =>
+          '<span style="font-size:10.5px;color:var(--text2);display:inline-flex;align-items:center;gap:5px">'
+          + '<span class="da-dot" style="background:' + x[1] + '"></span>' + x[2] + ' <b>' + t.types[x[0]] + '</b></span>').join('') + '</div>';
+    } else if (sect){
+      sect.innerHTML = '<div class="muted" style="padding:0;font-size:11px">Columns unavailable.</div>';
+    }
+    return;
+  }
+  $('da-rail-title').textContent = DA.drill ? daCatDef(DA.drill).name : 'Estate concentration';
+  const scope = DA.drill ? daVisible().filter(t => daCatOf(t) === DA.drill) : daVisible();
+  if (!scope.length){ r.innerHTML = '<div class="muted">Nothing in scope.</div>'; return; }
+  const con = daConcentration(scope);
+  r.innerHTML =
+    '<div class="da-sect"><div class="st">Cumulative share of ' + (DA.measure === 'rows' ? 'rows' : 'volume') + '</div>'
+    + daParetoSVG(scope)
+    + '<div style="font-size:11px;color:var(--text2);margin-top:6px;line-height:1.5">'
+    + '<b style="color:var(--text)">' + daInt(con.n) + ' of ' + daInt(con.of) + ' tables</b> ('
+    + daPct(con.n / Math.max(1, con.of) * 100) + ') carry 95% of ' + (DA.drill ? 'this group' : 'the estate')
+    + '. The other ' + daInt(con.of - con.n) + ' are the long tail — cheap to move, expensive to think about.</div></div>'
+    + '<div class="da-sect"><div class="st">Composition by ' + daLens()[DA.lens].label.toLowerCase() + '</div>'
+    + daCompositionBar(DA.lens) + '</div>'
+    + '<div class="da-sect"><div class="st">Heaviest tables' + (DA.drill ? ' in group' : '') + '</div>'
+    + '<div class="da-rowlist">' + daTopList(scope, 12) + '</div></div>';
+}
+
+// ── Table view ────────────────────────────────────────────────────────────
+let daSortKey = 'rows', daSortDir = -1;
+function daRenderTable(){
+  const list = daVisible().filter(daMatches).slice();
+  const tot = daTotal();
+  const catName = (lens, id) => DA_CAT[lens + ':' + id].name;
+  list.sort((a, b) => {
+    let A, B;
+    if (daSortKey === 'share' || daSortKey === 'rows'){ A = a.rows; B = b.rows; }
+    else if (daSortKey === 'bytes'){ A = a.bytes; B = b.bytes; }
+    else if (daSortKey === 'name'){ A = a.name.toLowerCase(); B = b.name.toLowerCase(); }
+    else if (daSortKey === 'domain'){ A = catName('domain', a.domain); B = catName('domain', b.domain); }
+    else if (daSortKey === 'content'){ A = catName('content', a.content); B = catName('content', b.content); }
+    else if (daSortKey === 'sens'){ A = catName('sensitivity', a.sens); B = catName('sensitivity', b.sens); }
+    else if (daSortKey === 'status'){ A = catName('status', a.status); B = catName('status', b.status); }
+    else { A = a.schema; B = b.schema; }
+    const cmp = A < B ? -1 : A > B ? 1 : 0;
+    return cmp * (daSortDir < 0 ? -1 : 1);
+  });
+  const cell = (lens, id) => {
+    const c = DA_CAT[lens + ':' + id];
+    return '<td><span style="display:inline-flex;align-items:center;gap:6px">'
+      + '<span class="da-dot" style="background:' + c.c + '"></span>'
+      + (c.icon ? c.icon + ' ' : '') + esc(c.name) + '</span></td>';
+  };
+  $('da-dvb').innerHTML = list.slice(0, 300).map(t =>
+    '<tr data-da-tbl="' + esc(t.schema + '.' + t.name) + '" style="cursor:pointer">'
+    + '<td class="nm">' + esc(t.name) + '</td><td>' + esc(t.schema) + '</td>'
+    + cell('domain', t.domain) + cell('content', t.content) + cell('sensitivity', t.sens) + cell('status', t.status)
+    + '<td class="num">' + daInt(t.rows) + '</td><td class="num">' + daBytes(t.bytes) + '</td>'
+    + '<td class="num">' + daPct(daVal(t) / tot * 100) + '</td></tr>').join('')
+  + (list.length > 300 ? '<tr><td colspan="9" style="color:var(--text3);padding:10px">'
+      + daInt(list.length - 300) + ' further rows — narrow with search or the legend filters.</td></tr>' : '');
+}
+
+// ── Refresh + empty state ─────────────────────────────────────────────────
+function daRefresh(structural){
+  _daTot = {};
+  const empty = $('da-empty');
+  if (!DA.graphOk || !DA.tables.length){
+    const noConn = !DA.graphOk;
+    empty.style.display = '';
+    empty.innerHTML = '<div class="se-empty-icon">▦</div>'
+      + '<div class="se-empty-title">' + (noConn ? 'No ' + (DA.side === 'src' ? 'source' : 'target') + ' schema to map yet' : 'This database has no tables') + '</div>'
+      + '<div class="se-empty-body">' + esc(DA.reason || '')
+      + (noConn ? '<br><a href="/dashboard.html#goto=connections">Configure a connection</a> and come back.' : '') + '</div>';
+    $('da-tiles').innerHTML = ''; $('da-legend').innerHTML = ''; $('da-crumb').innerHTML = '';
+    $('da-map-meta').textContent = ''; $('da-rail').innerHTML = '<div class="muted">Nothing loaded.</div>';
+    $('da-src-label').textContent = '';
+    daCells = []; daDraw();
+    return;
+  }
+  empty.style.display = 'none';
+  daBuildCells();
+  daRenderTiles(); daRenderLegend(); daRenderChrome(); daRenderRail();
+  if (DA.view === 'table') daRenderTable();
+  if (structural) daResize(); else daDraw();
+}
 
 // ═══ VIEW 2 — COVERAGE MAP ═══════════════════════════════════════════════
 // What the project's saved maps actually write, and the order the foreign

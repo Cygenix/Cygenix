@@ -322,7 +322,25 @@ console.log('Schema Explorer — coverage view and page wiring\n');
   check('and the project context', /src="\/cygenix-cosmos-sync\.js"/.test(html));
   check('and cookie consent', /src="\/cookie-consent\.js"/.test(html));
 
-  check('both tabs are present', /se-tab-schema/.test(html) && /se-tab-coverage/.test(html));
+  check('all three tabs are present',
+    /se-tab-schema/.test(html) && /se-tab-atlas/.test(html) && /se-tab-coverage/.test(html));
+  // The atlas module must sit OUTSIDE the coverage slice this file extracts,
+  // or the vm run above would have pulled canvas code into the sandbox.
+  check('the atlas module precedes the coverage module',
+    html.indexOf('VIEW 1.5 — DATA MAP') > 0
+    && html.indexOf('// ═══ VIEW 1.5') < html.indexOf('// ═══ VIEW 2 — COVERAGE MAP'));
+  check('atlas data colours are tokens ahead of the palette marker',
+    html.indexOf('--da-s1:') < html.indexOf('--r:10px')
+    && /v\('--da-s1'\)/.test(html) && /getPropertyValue\(n\)/.test(html));
+  check('the atlas defaults to the source side, where the data lives',
+    /side: 'src',\s*\/\/ the atlas is about where the data LIVES/.test(html));
+  check('migration status comes from saved maps, not invention',
+    /daMapsIndex/.test(html) && /CygenixSchemaGraph\.savedMaps\(\)/.test(html));
+  check('the heuristic lenses declare themselves in the legend',
+    /Name-pattern estimate/.test(html));
+  check('volume is always labelled an estimate', /Est\. volume/.test(html));
+  check('the prototype fields with no real source were dropped, not faked',
+    !/null density/i.test(html) && !/Last written/.test(html.slice(html.indexOf('VIEW 1.5'), html.indexOf('// ═══ VIEW 2'))));
   check('the tab choice persists under its own key', /cygenix_schemaexp_tab/.test(html));
   check('the source/target toggle exists and defaults to target',
     /sm-side-tgt/.test(html) && /side:\s*'tgt'/.test(html));
