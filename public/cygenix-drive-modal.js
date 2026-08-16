@@ -657,14 +657,18 @@
     if (!fsSupported()) { toast('Folder sync needs a Chromium browser (Chrome or Edge)'); return; }
     try {
       const h = await window.showDirectoryPicker({ mode: 'readwrite', id: 'cygenix-drive-sync' });
-      mapHandle = h; try { await idbSet('driveMapDir', h); } catch (_) {}
+      mapHandle = h;
+      try { await idbSet('driveMapDir', h); } catch (_) {}
+      // A fresh mapping starts with no memory: the first sync merges both
+      // sides and deletes nothing, whatever folder was mapped before.
+      try { await idbDel('driveMapManifest'); } catch (_) {}
       renderMapBanner(); toast('Mapped to ' + h.name);
-      if (confirm('Sync now?\n\nThis merges files both ways between the Drive and “' + h.name + '” — newest version wins. Nothing is deleted on either side.')) await syncNow();
+      if (confirm('Sync now?\n\nThis merges files both ways between the Drive and “' + h.name + '” — newest version wins.\n\nYour PC is the master copy: deleting a file in this folder deletes it from the Drive on the next sync, while a file deleted in the Drive is restored from this folder.')) await syncNow();
     } catch (e) { if (e && e.name !== 'AbortError') toast('Could not open that folder'); }
   }
   async function unmap() {
     mapHandle = null; mapMeta = { lastSync: 0 };
-    try { await idbDel('driveMapDir'); await idbDel('driveMapMeta'); } catch (_) {}
+    try { await idbDel('driveMapDir'); await idbDel('driveMapMeta'); await idbDel('driveMapManifest'); } catch (_) {}
     renderMapBanner(); toast('Folder unmapped (files kept on both sides)');
   }
   async function walkDisk(dirHandle, prefix, out) {
@@ -678,8 +682,39 @@
   async function buildIndex() {
     const all = await dall(); const byId = {}; all.forEach(n => byId[n.id] = n);
     const pathOf = n => { const parts = [n.name]; let p = n.parentId, g = 0; while (p && byId[p] && g++ < 50) { parts.unshift(byId[p].name); p = byId[p].parentId; } return parts.join('/'); };
-    const filesByPath = new Map(); all.forEach(n => { if (n.kind === 'file') filesByPath.set(pathOf(n), n); });
-    return { filesByPath };
+    const filesByPath = new Map(), foldersByPath = new Map();
+    all.forEach(n => { if (n.kind === 'file') filesByPath.set(pathOf(n), n); else foldersByPath.set(pathOf(n), n); });
+    return { filesByPath, foldersByPath };
+  }
+
+  // ── Deletion planning ─────────────────────────────────────────────────────
+  // The two merge loops in syncNow cannot tell "deleted on the PC" from
+  // "never copied to the PC": both look like a file the Drive has and the
+  // disk lacks, and the old behaviour restored it to disk every time — so
+  // nothing could ever be deleted. The manifest is the missing memory: the
+  // set of paths (with the Drive's mtime) both sides held when the last sync
+  // finished. A manifest path the Drive still has but the disk no longer
+  // does was deleted on the PC — and the PC is the master for deletions, so
+  // it is deleted from the Drive rather than restored to the disk.
+  //
+  // One guard: a Drive copy MODIFIED since the last sync beats the deletion
+  // (the edit would be lost forever; a restored file is merely annoying).
+  //
+  // Deliberately one-way. A file deleted in the Drive that still exists in
+  // the mapped folder is restored FROM the PC — the folder is the master
+  // copy. To remove something everywhere, delete it on the PC and sync.
+  //
+  // Pure function (maps in, list out) so the tests can run it directly.
+  function planLocalDeletions(manifestFiles, driveMtimeByPath, diskPaths, tol) {
+    const out = [];
+    if (!manifestFiles) return out;                 // first sync: merge only
+    for (const path of Object.keys(manifestFiles)) {
+      if (diskPaths.has(path)) continue;            // still on the PC
+      if (!driveMtimeByPath.has(path)) continue;    // already gone from the Drive
+      if ((driveMtimeByPath.get(path) || 0) > (manifestFiles[path] || 0) + tol) continue;
+      out.push(path);
+    }
+    return out;
   }
   async function syncNow() {
     if (!mapHandle) { toast('No folder mapped'); return; }
@@ -690,7 +725,38 @@
       const disk = { folders: [], files: [] }; await walkDisk(mapHandle, '', disk);
       const diskByPath = new Map(); disk.files.forEach(f => diskByPath.set(f.path, f));
       let idx = await buildIndex();
-      let pulled = 0, pushed = 0, updated = 0; const TOL = 1500;
+      let pulled = 0, pushed = 0, updated = 0, removed = 0; const TOL = 1500;
+
+      // Deletions first, so the push loop below cannot restore to the disk
+      // what the PC just deleted.
+      const manifest = await idbGet('driveMapManifest').catch(() => null);
+      if (manifest && manifest.files) {
+        const driveMtimes = new Map();
+        for (const [path, dn] of idx.filesByPath) driveMtimes.set(path, dn.mtime || 0);
+        const doomed = planLocalDeletions(manifest.files, driveMtimes, new Set(diskByPath.keys()), TOL);
+        for (const path of doomed) {
+          const dn = idx.filesByPath.get(path);
+          if (dn) { await driveRemove(dn.id); removed++; }
+        }
+        // Folders the PC deleted: remove their Drive counterparts once empty.
+        // Only folders the DISK held at last sync qualify (see the manifest
+        // write below), so an empty folder created in the Drive UI and never
+        // synced to disk is left alone. Deepest first, so nested empties
+        // collapse in one pass.
+        if (removed || (manifest.folders || []).length) {
+          if (removed) idx = await buildIndex();
+          const diskFolders = new Set(disk.folders);
+          const gone = (manifest.folders || []).filter(f => !diskFolders.has(f))
+            .sort((a, b) => b.split('/').length - a.split('/').length);
+          for (const fpath of gone) {
+            const fn = idx.foldersByPath.get(fpath);
+            if (!fn) continue;
+            const kids = await dchildren(fn.id);
+            if (!kids.length) { await ddel(fn.id); removed++; idx.foldersByPath.delete(fpath); }
+          }
+        }
+        if (removed) idx = await buildIndex();
+      }
       for (const df of disk.files) {
         const dn = idx.filesByPath.get(df.path);
         if (!dn) { const segs = df.path.split('/'); const fname = segs.pop(); const folderId = segs.length ? await driveEnsureFolderPath('', segs) : ''; await driveAddFile(folderId, fname, df.file, df.file.type, df.lastModified); pulled++; }
@@ -709,8 +775,27 @@
         }
       }
       mapMeta = { lastSync: Date.now() }; try { await idbSet('driveMapMeta', mapMeta); } catch (_) {}
+      // Record what this sync leaves in place — next sync's memory of "was
+      // here". Files: the Drive's final state (a superset of the disk after
+      // the merge). Folders: only paths that exist on the DISK now (walked at
+      // start, plus any directory the push loop just created), so Drive-only
+      // folders can never be mistaken for PC deletions later.
+      try {
+        const finalIdx = await buildIndex();
+        const mf = { files: {}, folders: [] };
+        for (const [path, dn] of finalIdx.filesByPath) mf.files[path] = dn.mtime || 0;
+        const diskFolderSet = new Set(disk.folders);
+        for (const [path] of finalIdx.filesByPath) {
+          const segs = path.split('/'); segs.pop();
+          for (let i = 1; i <= segs.length; i++) diskFolderSet.add(segs.slice(0, i).join('/'));
+        }
+        mf.folders = [...diskFolderSet];
+        await idbSet('driveMapManifest', mf);
+      } catch (_) {}
       renderMapBanner(); renderDrive();
-      toast('Synced · ' + pulled + ' in, ' + pushed + ' out' + (updated ? (', ' + updated + ' updated') : ''));
+      toast('Synced · ' + pulled + ' in, ' + pushed + ' out'
+        + (updated ? (', ' + updated + ' updated') : '')
+        + (removed ? (', ' + removed + ' removed — deleted on your PC') : ''));
     } catch (e) { toast('Sync failed: ' + ((e && e.message) || 'error')); }
     finally { syncing = false; }
   }

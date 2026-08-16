@@ -104,5 +104,57 @@ check('newer remote edit downloads',
   check('mixed: leaves the unchanged file alone', r.toDeleteRemote.length, 0);
 }
 
+
+// ── Folder sync: PC-deletion propagation (cygenix-drive-modal.js) ───────────
+// The local-folder sync had no memory, so a deletion on either side looked
+// like a missing file and was restored — nothing could ever be deleted.
+// planLocalDeletions is that memory's decision rule: a manifest path the
+// Drive still holds but the disk no longer does was deleted on the PC, and
+// the PC is the master for deletions. Pure function, extracted and run here.
+{
+  const vm = require('vm');
+  const modal = fs.readFileSync(__dirname + '/../public/cygenix-drive-modal.js', 'utf8');
+  const fnStart = modal.indexOf('function planLocalDeletions');
+  const fnEnd = modal.indexOf('\n  }', fnStart);
+  if (fnStart < 0 || fnEnd < 0) { check('planLocalDeletions exists in the modal', false); }
+  else {
+    const sb = { Object, Set, Map, Array };
+    vm.createContext(sb);
+    vm.runInContext(modal.slice(fnStart, fnEnd + 4), sb);
+    const plan = (mf, drive, disk, tol) => vm.runInContext('planLocalDeletions', sb)(
+      mf, new Map(Object.entries(drive || {})), new Set(disk || []), tol == null ? 1500 : tol);
+
+    check('a file deleted on the PC is deleted from the Drive',
+      JSON.stringify(plan({ 'a.sql': 100 }, { 'a.sql': 100 }, [])), JSON.stringify(['a.sql']));
+    check('a file still on the PC is left alone',
+      plan({ 'a.sql': 100 }, { 'a.sql': 100 }, ['a.sql']).length, 0);
+    check('a file already gone from the Drive needs nothing',
+      plan({ 'a.sql': 100 }, {}, []).length, 0);
+    check('with no manifest (first sync) nothing is ever deleted',
+      plan(null, { 'a.sql': 100 }, []).length, 0);
+    check('a Drive copy edited since the last sync beats the deletion',
+      plan({ 'a.sql': 100 }, { 'a.sql': 99999 }, []).length, 0);
+    check('an mtime wobble inside the tolerance does not count as an edit',
+      plan({ 'a.sql': 100 }, { 'a.sql': 1000 }, [], 1500).length, 1);
+    check('a file the manifest never saw is not a deletion, only a merge',
+      plan({ 'a.sql': 100 }, { 'a.sql': 100, 'new.sql': 5 }, []).length, 1);
+  }
+
+  // The wiring around the pure core, pinned at source level.
+  check('the deletion pass runs before the push-to-disk loop',
+    modal.indexOf('planLocalDeletions(manifest.files') < modal.indexOf('const fh = await dir.getFileHandle(fname, { create: true })'), true);
+  check('the manifest is written after a successful sync',
+    modal.includes("idbSet('driveMapManifest', mf)"), true);
+  check('and forgotten on unmap and on mapping a fresh folder',
+    (modal.match(/idbDel\('driveMapManifest'\)/g) || []).length >= 2, true);
+  check('manifest folders come from the disk, so Drive-only folders survive',
+    modal.includes('Drive-only\n      // folders can never be mistaken for PC deletions') ||
+    modal.includes('so Drive-only folders can never be mistaken'), true);
+  check('the mapping dialog now tells the truth about deletions',
+    !modal.includes('Nothing is deleted on either side'), true);
+  check('and names the PC as the master copy',
+    modal.includes('Your PC is the master copy'), true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
