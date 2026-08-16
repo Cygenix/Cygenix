@@ -924,10 +924,55 @@ function renderReport(d) {
       } catch { return '—'; }
     };
 
+    // A note above the table when any step filtered its source. Without it a
+    // reader comparing "source rows" against "loaded" sees an unexplained
+    // shortfall; this says up front that some of it was deliberate, and the
+    // per-row WHERE below says exactly where.
+    const filtered = d.steps.filter(x => x.type === 'migration' && String(x.srcWhere || '').trim());
+    // Above the table: a reader should meet the caveat before the numbers,
+    // not after them.
+    const stepsTable = document.querySelector('#steps-section table');
+    const logsHost = stepsTable || document.getElementById('steps-logs');
+    if (logsHost) {
+      const prev = document.getElementById('steps-filter-note');
+      if (prev) prev.remove();
+      if (filtered.length) {
+        const escN = (t) => String(t == null ? '' : t)
+          .replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const note = document.createElement('div');
+        note.id = 'steps-filter-note';
+        note.style.cssText = 'margin:0 0 0.6rem;padding:0.5rem 0.7rem;border-left:3px solid #b8860b;'
+          + 'background:rgba(245,158,11,0.08);font-size:11.5px;line-height:1.5;color:#555a6a';
+        const migCount = d.steps.filter(x => x.type === 'migration').length;
+        note.innerHTML = '<b>' + filtered.length + ' of ' + migCount
+          + ' migration step' + (migCount === 1 ? '' : 's') + ' applied a source filter.</b> '
+          + 'Rows excluded by these WHERE clauses were never selected for migration, so a lower loaded '
+          + 'count against the source table is expected and accounted for:'
+          + '<ul style="margin:0.35rem 0 0;padding-left:1.1rem">'
+          + filtered.map(x => '<li style="font-family:monospace;font-size:10.5px">'
+              + escN(x.srcTable || '?') + ' — WHERE '
+              + escN(String(x.srcWhere).trim().replace(/^WHERE\s+/i, '')) + '</li>').join('')
+          + '</ul>';
+        logsHost.parentNode.insertBefore(note, logsHost);
+      }
+    }
+
     stepsBody.innerHTML = d.steps.map((s, i) => {
       const statusColor = s.status==='passed'?'#22c97a':s.status==='failed'?'#f04646':s.status==='skipped'?'#f59e0b':'#555a6a';
       const typeLabel   = s.type==='migration'?'Migration':'SQL script';
       const route       = s.type==='migration' ? (s.srcTable||'?')+' → '+(s.tgtTable||'?') : (s.connOn==='source'?'Source DB':'Target DB');
+      // The source filter, shown rather than hidden in a tooltip: when the
+      // loaded count is lower than the source table holds, this is the
+      // reason, and a report handed to a client has to say so on its face.
+      // Escaped — a WHERE clause is user-authored SQL and routinely contains
+      // <, > and quotes.
+      const escSql = (t) => String(t == null ? '' : t)
+        .replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const whereTxt = String(s.srcWhere || '').trim().replace(/^WHERE\s+/i, '');
+      const whereHtml = (s.type === 'migration' && whereTxt)
+        ? '<div style="font-size:10px;color:#b8860b;margin-top:3px;white-space:normal;word-break:break-word">'
+          + '<span style="color:#8b90a0">WHERE </span>' + escSql(whereTxt) + '</div>'
+        : '';
       // Row breakdown cell.
       //   • Headline: rows loaded into the target (the historic
       //     "Rows inserted" value).
@@ -991,7 +1036,7 @@ function renderReport(d) {
         '<td style="color:#555a6a">'+(i+1)+'</td>' +
         '<td style="font-weight:600">'+(s.name||s.type)+'</td>' +
         '<td style="color:#8b90a0;font-size:11px">'+(typeLabel)+'</td>' +
-        '<td style="font-family:monospace;font-size:11px;color:#8b90a0">'+route+'</td>' +
+        '<td style="font-family:monospace;font-size:11px;color:#8b90a0">'+route+whereHtml+'</td>' +
         '<td style="text-align:right;font-family:monospace"' + tooltip + '>' +
           '<div>' + (loaded||s.rowsAffected||0).toLocaleString() + '</div>' +
           breakdownHtml +
@@ -3004,6 +3049,7 @@ function doExport() {
       // Throughput in rows/sec — derived, helpful for benchmarking the
       // same step across different runs over time.
       const logData = [['Step', 'Type', 'Status', 'Loaded', 'Failed', 'Excluded',
+                        'Source filter (WHERE)',
                         'Started', 'Ended', 'Duration (s)', 'Throughput (rows/sec)',
                         'Run ID', 'Staging Table', 'Log']];
       d.steps.forEach((s,i) => {
@@ -3034,6 +3080,9 @@ function doExport() {
           loaded,
           failed,
           excluded,
+          // The filter that explains a low Loaded count, in the same row as
+          // the count itself so a pivot or a filtered view keeps them together.
+          String(s.srcWhere || '').trim().replace(/^WHERE\s+/i, ''),
           startedCell,
           finishedCell,
           durationSec,
@@ -3049,12 +3098,15 @@ function doExport() {
       wsLog['!cols'] = [
         {wch:35}, {wch:14}, {wch:14},          // Step, Type, Status
         {wch:11}, {wch:11}, {wch:18},          // Loaded, Failed, Excluded
+        {wch:46},                              // Source filter (WHERE)
         {wch:20}, {wch:20}, {wch:14},          // Started, Ended, Duration
         {wch:20},                              // Throughput
         {wch:28}, {wch:32}, {wch:80}           // Run ID, Staging Table, Log
       ];
       wsLog['!rows'] = logData.map((_, i) => i === 0 ? { hpt: 24 } : { hpt: 18 });
-      styleRange(wsLog, 0, 0, 0, 12, STYLE.tableHeader);
+      // 13 = last column index; the filter column shifted everything after
+      // Excluded one to the right.
+      styleRange(wsLog, 0, 0, 0, 13, STYLE.tableHeader);
       if (logData.length > 1) {
         styleRange(wsLog, 1, logData.length-1, 0, 1, STYLE.value);
         // Status column with per-row styling
