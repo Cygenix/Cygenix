@@ -281,6 +281,7 @@ function hydrateProjectIntoUI(){
   document.getElementById('proj-tgt-conn').value = globalTgtConn() || '';
   renderSteps();
   renderJobs();
+  refreshTaskStaleness();
   // Surface any cross-project pollution: steps in this project's groups whose
   // underlying job records actually belong to a different project. Runs every
   // time we hydrate so switching projects re-evaluates the warning.
@@ -544,7 +545,102 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') rerenderConnectionsFromGlobal();
 });
 
-function markDirty() { isDirty = true; document.getElementById('dirty-badge').style.display='inline'; }
+function markDirty() {
+  isDirty = true;
+  const b = document.getElementById('dirty-badge');
+  if (b) b.style.display = 'inline';
+  refreshTaskStaleness();
+}
+
+// ── Leaving with unsaved changes ──────────────────────────────────────────
+// isDirty was already checked when switching project or opening a job for
+// editing, but nothing guarded the ordinary ways out — a sidebar link, the
+// back button, closing the tab. Those lost the group layout, ordering and
+// SQL steps silently, since only Save writes them to storage.
+window.addEventListener('beforeunload', (e) => {
+  if (!isDirty) return;
+  // The browser shows its own wording; returnValue just has to be set. Any
+  // navigation we control asks properly (see the capture-phase handler).
+  e.preventDefault();
+  e.returnValue = '';
+  return '';
+});
+
+// In-app links get a real question instead of the browser's generic one, and
+// the chance to save on the way out. Capture phase so it runs before the
+// sidebar's own click handling.
+document.addEventListener('click', (e) => {
+  if (!isDirty) return;
+  const a = e.target.closest && e.target.closest('a[href]');
+  if (!a) return;
+  const href = a.getAttribute('href') || '';
+  if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+  if (a.target && a.target !== '_self') return;
+  // Same-origin only; an external link is the browser's business.
+  let dest;
+  try { dest = new URL(href, window.location.href); } catch { return; }
+  if (dest.origin !== window.location.origin) return;
+  if (dest.pathname === window.location.pathname && dest.search === window.location.search) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  const ans = confirm('You have unsaved changes to this migration.\n\n'
+    + 'Click OK to save and continue, or Cancel to stay on this page.');
+  if (!ans) return;                       // stay put, nothing lost
+  try { saveProject(); } catch (_) {}
+  window.location.href = dest.href;
+}, true);
+
+// ── "Create task" staleness ───────────────────────────────────────────────
+// A composite task is a SNAPSHOT of the steps taken when it was created. Edit
+// the jobs afterwards and the saved task still runs the old set — silently,
+// because nothing linked the two. We fingerprint the steps at creation time
+// and compare on every edit; when they diverge the Create task button pulses,
+// meaning "the task you generated no longer matches these jobs".
+//
+// Keyed per project, so switching projects shows that project's state.
+const TASK_SIG_KEY = 'cygenix_pb_task_sig';
+
+// What actually changes a run: which jobs, in which groups, in what order,
+// and each group's mode. Renaming the project is not a reason to regenerate.
+function currentTaskSignature() {
+  try {
+    const groups = (project && project.groups) || [];
+    return JSON.stringify(groups.map(g => ({
+      m: g.mode || 'sequential',
+      s: (g.steps || []).map(st => [st.jobId || st.id || '', st.jobType || st.type || '', st.name || ''].join('|'),
+      ),
+    })));
+  } catch (_) { return ''; }
+}
+function readTaskSigs() {
+  try { return JSON.parse(localStorage.getItem(TASK_SIG_KEY) || '{}') || {}; } catch (_) { return {}; }
+}
+function rememberTaskSignature() {
+  if (!project || !project.id) return;
+  const all = readTaskSigs();
+  all[project.id] = currentTaskSignature();
+  try { localStorage.setItem(TASK_SIG_KEY, JSON.stringify(all)); } catch (_) {}
+  refreshTaskStaleness();
+}
+// Stale only when a task exists for this project AND the steps have moved on.
+// Without that first condition the button would nag before there is anything
+// to regenerate.
+function isTaskStale() {
+  if (!project || !project.id) return false;
+  const known = readTaskSigs()[project.id];
+  if (known === undefined) return false;
+  return known !== currentTaskSignature();
+}
+function refreshTaskStaleness() {
+  const btn = document.getElementById('create-task-btn');
+  if (!btn) return;
+  const stale = isTaskStale();
+  btn.classList.toggle('needs-regen', stale);
+  btn.title = stale
+    ? 'These jobs have changed since you last created a task — regenerate it so the scheduled run matches.'
+    : 'Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule.';
+}
 
 function saveProject() {
   // Connection fields are no longer persisted per-project — they always reflect
@@ -5301,6 +5397,7 @@ function confirmCreateTask(){
   // Refresh the sidebar so the new composite job is visible straight away
   if (typeof renderJobs === 'function') { try { renderJobs(); } catch {} }
 
+  rememberTaskSignature();
   showToast('Task packaged — open Task Agent → + New schedule to schedule it');
 }
 

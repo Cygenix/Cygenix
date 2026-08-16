@@ -211,6 +211,28 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 .step-card.disabled{opacity:0.45}
 .step-card.disabled .step-name,.step-card.disabled .step-meta{text-decoration:line-through;text-decoration-color:var(--text3)}
 .group-card.all-disabled .group-header{opacity:0.7}
+
+/* "Create task" when the saved task no longer matches the jobs on screen.
+   Amber = needs attention, consistent with the dirty badge. The pulse is
+   slow and low-contrast: a reminder, not an alarm. */
+@keyframes cygRegenPulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.00); border-color: var(--amber); }
+  50%     { box-shadow: 0 0 0 4px rgba(245,158,11,0.22); border-color: var(--amber); }
+}
+#create-task-btn.needs-regen {
+  border-color: var(--amber);
+  color: var(--amber);
+  animation: cygRegenPulse 1.8s ease-in-out infinite;
+}
+#create-task-btn.needs-regen::after {
+  content: '•';
+  margin-left: 0.35rem;
+  color: var(--amber);
+  font-weight: 700;
+}
+@media (prefers-reduced-motion: reduce) {
+  #create-task-btn.needs-regen { animation: none; box-shadow: 0 0 0 3px rgba(245,158,11,0.20); }
+}
 </style>
 <script src="/connections.js?v=d199ff3358" defer></script>
 </head>
@@ -272,7 +294,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
       <div style="display:flex;gap:0.75rem;align-items:center;flex-shrink:0">
         <span id="dirty-badge" style="font-size:11px;color:var(--text3);display:none">Unsaved</span>
         <button class="btn btn-ghost btn-sm" onclick="saveProject()">💾 Save</button>
-        <button class="btn btn-ghost btn-sm" onclick="openCreateTaskModal()" title="Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule.">📦 Create task</button>
+        <button class="btn btn-ghost btn-sm" id="create-task-btn" onclick="openCreateTaskModal()" title="Package selected jobs as a single composite job. Then schedule it from Dashboard → Task Agent → + New schedule.">📦 Create task</button>
         <!-- Staging mode toggle.
              • Unchecked (default) = Incremental: each Run appends rows to staging
                with a fresh dm_run_id. Only rows in 'pending' state are loaded to
@@ -534,6 +556,6 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
   </div>
 </div>
 
-<script src="/project-builder-app.js?v=2684402ca5" defer></script>
+<script src="/project-builder-app.js?v=59938c18f6" defer></script>
 </body>
 </html>
