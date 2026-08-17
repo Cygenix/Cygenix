@@ -4378,9 +4378,41 @@ function renderDashboard() {
   updateStats();
   renderRing();
   renderProjectStatus();
+  renderCutoverConfidence();
   // Schedules need a network round trip, so they fill in behind the rest
   // rather than holding the whole view up.
   loadDashboardSchedules();
+}
+
+// ── Cutover Confidence ───────────────────────────────────────────────────────
+// One honest number for the programme director: mapping confidence, the
+// latest Preflight forecast (Execute page → 🛫 Preflight) and delivery
+// state, rolled up by cygenix-preflight.js. Components without data are
+// excluded and named, never faked; no data at all shows as no data.
+function renderCutoverConfidence() {
+  const val = $('stat-confidence'), sub = $('stat-confidence-sub');
+  if (!val || typeof CygenixPreflight === 'undefined') return;
+  let preflight = null;
+  try { preflight = CygenixPreflight.pfLoad(localStorage.getItem('cygenix_active_project_id') || 'default'); } catch {}
+  const c = CygenixPreflight.pfConfidence({ jobs: state.jobs || [], preflight });
+  const COLOR = { green: 'var(--green)', amber: 'var(--amber)', red: 'var(--red)', 'no-data': 'var(--text3)' };
+  const LABEL = { green: 'Ready', amber: 'Caution', red: 'Not ready', 'no-data': 'No signals yet' };
+  val.textContent = c.score === null ? '—' : c.score;
+  val.style.color = COLOR[c.grade];
+  sub.textContent = LABEL[c.grade];
+  const detail = $('confidence-detail');
+  if (detail) {
+    detail.innerHTML = c.parts.map(p =>
+      '<div style="display:flex;justify-content:space-between;gap:1rem;padding:4px 0;border-bottom:0.5px solid var(--border);font-size:12px">'
+      + '<span>' + escHtml(p.label) + ' <span style="color:var(--text3)">· ' + escHtml(p.note) + '</span></span>'
+      + '<b style="font-family:var(--mono)">' + (p.hasData ? p.score : '—') + '</b></div>').join('')
+      + '<div style="font-size:11px;color:var(--text3);padding-top:6px">Weighted over components with data. '
+      + 'Run 🛫 Preflight on the Execute page to feed the risk component.</div>';
+  }
+}
+function toggleConfidenceDetail() {
+  const d = $('confidence-detail');
+  if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
 }
 
 // ══════════════════════════════════════════════════════════════════════════

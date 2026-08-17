@@ -203,6 +203,34 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
 .add-group-btn{margin-top:0.5rem;padding:0.6rem;background:var(--bg2);border:1px dashed var(--border2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.15s}
 .add-group-btn:hover{border-color:var(--accent);color:var(--accent)}
 
+/* ── Preflight report ─────────────────────────────────────────────────────── */
+.pf-panel{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--r-lg);padding:1rem 1.15rem;margin-bottom:1rem}
+.pf-banner{display:flex;align-items:center;gap:0.7rem;padding:0.7rem 0.9rem;border-radius:var(--r);font-size:13px;font-weight:600;border:0.5px solid;margin-bottom:0.85rem}
+.pf-banner.green{background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.35)}
+.pf-banner.amber{background:var(--amber-bg);color:var(--amber);border-color:rgba(245,166,35,0.35)}
+.pf-banner.red{background:var(--red-bg);color:var(--red);border-color:rgba(240,70,70,0.35)}
+.pf-banner.unknown{background:var(--bg3);color:var(--text2);border-color:var(--border2)}
+.pf-banner .sub{font-weight:400;font-size:12px;opacity:0.9}
+.pf-job{border:0.5px solid var(--border);border-radius:var(--r);padding:0.7rem 0.85rem;margin-bottom:0.6rem}
+.pf-job-head{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
+.pf-pill{display:inline-flex;padding:2px 10px;border-radius:100px;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:0.05em;border:0.5px solid}
+.pf-pill.green{background:var(--green-bg);color:var(--green);border-color:rgba(34,201,122,0.4)}
+.pf-pill.amber{background:var(--amber-bg);color:var(--amber);border-color:rgba(245,166,35,0.4)}
+.pf-pill.red{background:var(--red-bg);color:var(--red);border-color:rgba(240,70,70,0.4)}
+.pf-pill.unknown{background:var(--bg3);color:var(--text2);border-color:var(--border2)}
+.pf-job-name{font-weight:600;font-size:13px}
+.pf-job-meta{font-family:var(--mono);font-size:11px;color:var(--text3);margin-left:auto}
+.pf-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:0.55rem}
+.pf-table th{font-size:9.5px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;text-align:left;font-family:var(--mono);padding:4px 8px;border-bottom:0.5px solid var(--border2)}
+.pf-table td{padding:5px 8px;border-bottom:0.5px solid var(--border);vertical-align:top}
+.pf-table tr:last-child td{border-bottom:none}
+.pf-proj{font-family:var(--mono);font-weight:600}
+.pf-proj.red{color:var(--red)}.pf-proj.amber{color:var(--amber)}
+.pf-ex{font-family:var(--mono);font-size:10.5px;color:var(--text3);word-break:break-all}
+.pf-why{font-size:11px;color:var(--text3)}
+.pf-progress{font-size:12.5px;color:var(--text2)}
+.pf-footnote{font-size:11px;color:var(--text3);margin-top:0.5rem}
+
 /* ── Run selection (checkboxes) ──────────────────────────────────────────── */
 .plan-select-bar{display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.75rem;margin-bottom:0.5rem;background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);font-size:12px;color:var(--text2)}
 .plan-select-bar .sel-count{font-family:var(--mono);font-size:11px;color:var(--text3);margin-left:auto}
@@ -339,6 +367,14 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
                toggled. -->
           <span id="staging-audit-warning" style="display:none;color:var(--amber);font-size:13px;cursor:help" title=""></span>
         </label>
+        <!-- Preflight Simulator: read-only forecast of the selected steps —
+             samples real source rows against the real target schema and
+             projects what will reject (truncation, overflow, bad dates,
+             NOT NULL, FK orphans) before anything runs. -->
+        <button class="btn btn-ghost btn-sm" id="preflight-btn" onclick="runPreflight()"
+                title="Simulate the selected jobs on a sample of real data: projected failures by column, the values that will reject, and an estimated runtime — without writing a row.">
+          🛫 Preflight
+        </button>
         <button class="btn btn-green" id="run-btn" onclick="runProject()">▶ Run selected</button>
         <button class="btn btn-ghost btn-sm" id="stop-btn" onclick="stopProject()" style="display:none;color:var(--red)">⏹ Stop</button>
         <!-- Top-level rollback: undoes the most recent run by deleting
@@ -356,6 +392,11 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
     </div>
 
     <div class="main-body">
+
+      <!-- Preflight report — filled by renderPreflightReport(). Hidden until
+           a preflight has run; persists per project so the last forecast is
+           still visible after a reload. -->
+      <div id="preflight-report" style="display:none"></div>
 
       <!-- Connections — read-only mirror of Dashboard > Connections globals.
            Single source of truth. Users change them on the Connections page;
@@ -556,6 +597,7 @@ textarea.form-input{resize:vertical;line-height:1.6;font-family:var(--mono);font
   </div>
 </div>
 
-<script src="/project-builder-app.js?v=59938c18f6" defer></script>
+<script src="/cygenix-preflight.js?v=e7ffb9d93b" defer></script>
+<script src="/project-builder-app.js?v=a840f62dce" defer></script>
 </body>
 </html>
