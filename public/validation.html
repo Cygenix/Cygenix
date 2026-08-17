@@ -51,6 +51,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/connections.js?v=d199ff3358" defer></script>
 <script src="/cygenix-cosmos-sync.js?v=b630d7ef70" defer></script>
+<script src="/cygenix-nl-recon.js?v=cee1f799aa" defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -198,6 +199,34 @@ select.form-input option{background:var(--bg3)}
       <button class="btn" onclick="cloudSaveNow()" title="Push validation tables to Cosmos now (otherwise auto-saves ~3s after each edit)">💾 Save to cloud</button>
       <button class="btn btn-primary" onclick="openAddSource()">+ Add validation table</button>
     </div>
+  </div>
+
+  <!-- RECONCILIATION TESTS — PLAIN ENGLISH -->
+  <!-- Describe a check in words; cygenix-nl-recon.js turns it into a
+       source/target query pair from the matching job's column mapping,
+       runs both sides read-only, and drills the differences. -->
+  <div class="panel" id="nl-recon-panel" style="margin-bottom:1.25rem">
+    <div class="panel-head">
+      <div>
+        <div class="panel-title">💬 Reconciliation tests — plain English</div>
+        <div style="font-size:11.5px;color:var(--text2);margin-top:2px;max-width:82ch">
+          Describe a check in words and it becomes a source/target query pair built from the migration job's own
+          column mapping — with a pass/fail and a drillable list of exactly what differs. Try
+          <i>"no customer lost their opening balance"</i>, <i>"row counts match"</i>,
+          <i>"invoice totals match within 0.5%"</i>, <i>"no duplicates on invoice number"</i>,
+          <i>"every order exists in the target"</i>. Read-only on both databases.
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="nl-runall-btn" onclick="nlRunAll()" style="display:none">▶ Run all</button>
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.7rem">
+      <input id="nl-phrase" class="form-input" style="flex:1;font-size:12.5px"
+             placeholder='Describe a check… e.g. "no customer lost their opening balance"'
+             onkeydown="if(event.key==='Enter')nlAddCheck()">
+      <button class="btn btn-primary btn-sm" onclick="nlAddCheck()">＋ Add check</button>
+    </div>
+    <div id="nl-parse-error" style="display:none;margin-top:0.5rem;font-size:12px;color:var(--amber)"></div>
+    <div id="nl-checks" style="margin-top:0.75rem"></div>
   </div>
 
   <!-- VALIDATION SOURCES LIST -->
@@ -1201,6 +1230,123 @@ document.addEventListener('click',e=>{
     rebuildScriptList();
   });
 })();
+
+// ═══ Reconciliation tests — plain English ═══════════════════════════════════
+// Thin UI over CygenixNLRecon: parse the phrase against the project's jobs,
+// show the interpretation, run the generated pair, drill the deltas. Checks
+// persist per project in localStorage so the suite is re-runnable after
+// every load.
+
+const NL_STORE = 'cygenix_recon_tests';
+function nlProjectId(){ try { return localStorage.getItem('cygenix_active_project_id') || 'default'; } catch { return 'default'; } }
+function nlJobs(){
+  try {
+    const all = JSON.parse(localStorage.getItem('cygenix_jobs') || '[]');
+    const pid = nlProjectId();
+    const mine = all.filter(j => !j.projectId || j.projectId === pid);
+    return (mine.length ? mine : all).filter(j => j.sourceTable && j.targetTable && (j.columnMapping || []).length);
+  } catch { return []; }
+}
+function nlLoad(){
+  try { return (JSON.parse(localStorage.getItem(NL_STORE) || '{}')[nlProjectId()]) || []; } catch { return []; }
+}
+function nlSave(list){
+  try {
+    const all = JSON.parse(localStorage.getItem(NL_STORE) || '{}');
+    all[nlProjectId()] = list;
+    localStorage.setItem(NL_STORE, JSON.stringify(all));
+  } catch {}
+}
+
+function nlAddCheck(){
+  const inp = $('nl-phrase'), errEl = $('nl-parse-error');
+  const phrase = (inp.value || '').trim();
+  if (!phrase) return;
+  if (typeof CygenixNLRecon === 'undefined') { errEl.style.display=''; errEl.textContent = 'Module not loaded — refresh the page.'; return; }
+  const jobs = nlJobs();
+  if (!jobs.length) { errEl.style.display=''; errEl.textContent = 'No migration jobs with column mappings found — build a job in Object Mapping first; checks are generated from its source→target mapping.'; return; }
+  const r = CygenixNLRecon.nrParse(phrase, jobs);
+  if (!r.ok) { errEl.style.display=''; errEl.textContent = r.error + '. ' + (r.hint || ''); return; }
+  errEl.style.display = 'none';
+  const list = nlLoad();
+  list.push({ id: 'nlr_' + Date.now(), phrase, spec: r.spec, last: null });
+  nlSave(list);
+  inp.value = '';
+  nlRenderChecks();
+}
+
+function nlDelete(id){
+  nlSave(nlLoad().filter(c => c.id !== id));
+  nlRenderChecks();
+}
+
+async function nlRunOne(id){
+  const list = nlLoad();
+  const c = list.find(x => x.id === id);
+  if (!c) return;
+  const srcConn = getProjectConn('src'), tgtConn = getProjectConn('tgt');
+  if (!srcConn || !tgtConn) { alert('Configure source and target connections first (Dashboard → Connections).'); return; }
+  const btn = document.getElementById('nl-run-' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    c.last = await CygenixNLRecon.nrRun(c.spec, { srcConn, tgtConn, dbCall });
+  } catch (e) {
+    c.last = { pass: false, error: e.message, headline: '⚠ ' + e.message, deltas: [], ranAt: new Date().toISOString() };
+  }
+  nlSave(list);
+  nlRenderChecks();
+}
+
+async function nlRunAll(){
+  for (const c of nlLoad()) await nlRunOne(c.id);
+}
+
+function nlChip(last){
+  if (!last) return '<span style="font-size:10px;font-weight:600;color:var(--text3)">not run</span>';
+  if (last.error) return '<span style="font-size:10px;font-weight:700;color:var(--amber)">ERROR</span>';
+  return last.pass
+    ? '<span style="font-size:10px;font-weight:700;color:var(--green)">PASS</span>'
+    : '<span style="font-size:10px;font-weight:700;color:var(--red)">FAIL</span>';
+}
+
+function nlRenderChecks(){
+  const list = nlLoad();
+  $('nl-runall-btn').style.display = list.length ? '' : 'none';
+  $('nl-checks').innerHTML = list.map(c => {
+    const d = c.last;
+    const drill = (d && d.deltas && d.deltas.length)
+      ? '<div style="overflow-x:auto;margin-top:0.4rem"><table class="val-table" style="font-size:11px"><thead><tr>'
+        + '<th>Key</th><th>Source</th><th>Target</th><th></th></tr></thead><tbody>'
+        + d.deltas.slice(0, 50).map(x => '<tr>'
+          + '<td style="font-family:var(--mono)">' + esc(x.key) + '</td>'
+          + '<td style="font-family:var(--mono)">' + (x.src === null || x.src === undefined ? '—' : esc(String(x.src))) + '</td>'
+          + '<td style="font-family:var(--mono)">' + (x.tgt === null || x.tgt === undefined ? '—' : esc(String(x.tgt))) + '</td>'
+          + '<td style="color:var(--red)">' + esc(x.note || '') + '</td></tr>').join('')
+        + '</tbody></table>'
+        + (d.deltaCount > 50 ? '<div style="font-size:10px;color:var(--text3);margin-top:3px">' + d.deltaCount + ' differences in total — first 50 shown</div>' : '')
+        + '</div>'
+      : '';
+    const sqlBlock = (d && d.sql)
+      ? '<details style="margin-top:0.35rem"><summary style="font-size:10px;color:var(--text3);cursor:pointer">Generated SQL</summary>'
+        + '<pre style="font-size:10px;color:var(--text2);white-space:pre-wrap;margin:0.3rem 0 0">-- source\n' + esc(d.sql.srcSql)
+        + (d.sql.tgtSql ? '\n-- target\n' + esc(d.sql.tgtSql) : '\n-- target: existence probe built from sampled source keys') + '</pre></details>'
+      : '';
+    return '<div style="border:0.5px solid var(--border);border-radius:var(--r);padding:0.6rem 0.8rem;margin-bottom:0.5rem">'
+      + '<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap">'
+      + nlChip(d)
+      + '<span style="font-size:12.5px;font-weight:600">“' + esc(c.phrase) + '”</span>'
+      + '<span style="font-size:11px;color:var(--text3)">' + esc(CygenixNLRecon.nrDescribe(c.spec)) + '</span>'
+      + '<span style="margin-left:auto;display:flex;gap:0.35rem">'
+      + '<button class="btn btn-ghost btn-sm" id="nl-run-' + c.id + '" onclick="nlRunOne(\'' + c.id + '\')">▶ Run</button>'
+      + '<button class="btn btn-ghost btn-sm" onclick="nlDelete(\'' + c.id + '\')" title="Remove check">✕</button>'
+      + '</span></div>'
+      + (d ? '<div style="font-size:12px;margin-top:0.35rem;color:' + (d.pass ? 'var(--green)' : 'var(--red)') + '">' + esc(d.headline || '') + '</div>' : '')
+      + drill + sqlBlock
+      + '</div>';
+  }).join('') || '<div style="font-size:12px;color:var(--text3)">No checks yet — describe one above.</div>';
+}
+
+document.addEventListener('DOMContentLoaded', nlRenderChecks);
 </script>
 </body>
 </html>
