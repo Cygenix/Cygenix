@@ -39,15 +39,15 @@ const NAV = SB.__nav, ACCT = SB.__accountNav;
 
 // 1. Every key that existed before the restructure must still resolve —
 //    pages mount with these in data-active, and dashboard code targets them.
-//    'supported', 'project-plan' and 'insights' are deliberately absent: the
-//    Supported Formats menu option, the Project Planner and Data Insights
-//    were removed on request (the last superseded by the Schema Explorer's
-//    Data map).
+//    'supported', 'project-plan', 'insights' and 'project-summary-document'
+//    are deliberately absent: the Supported Formats menu option, the Project
+//    Planner, Data Insights (superseded by the Schema Explorer's Data map)
+//    and Project Summary were removed on request.
 const LEGACY_KEYS = ['dashboard','search','project-settings','connections','performance',
   'system-parameters','privacy-security','integrations','object-mapping',
   'sql-editor','agentive-migration','coworker','data-quality','data-cleansing',
   'validation','jobs','project-builder','server-migration','inventory','task-agent',
-  'report-builder','reports','project-summary-document','audit','diagnostics',
+  'report-builder','reports','audit','diagnostics',
   'help','accessibility'];
 const missing = LEGACY_KEYS.filter(k => !SB.__findItem(k));
 check('every pre-redesign key still resolves (' + LEGACY_KEYS.length + ')', missing.length === 0,
