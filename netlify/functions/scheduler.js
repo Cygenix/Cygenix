@@ -47,6 +47,8 @@
 
 const { CosmosClient } = require('@azure/cosmos');
 const { verifyAuthHeader } = require('./lib/entra-auth');
+const { can } = require('./lib/rbac');
+const { orgStore, resolveActor, appendAudit, classificationFor } = require('./lib/org-store');
 
 // ── Cosmos client (lazy, module-scoped so it's reused across invocations) ──
 let _cosmosClient = null;
@@ -799,9 +801,9 @@ exports.handler = async (event) => {
   // Identity from a VERIFIED Entra token only. The old x-user-id header was
   // client-supplied and let anyone read another user's schedules — which
   // include stored connection strings — by guessing their email.
-  let userId;
+  let userId, authed;
   try {
-    const authed = await verifyAuthHeader(event);
+    authed = await verifyAuthHeader(event);
     userId = authed.email;
     if (!userId) throw new Error('Token contains no email claim');
   } catch (e) {
@@ -818,9 +820,57 @@ exports.handler = async (event) => {
   const action = body.action || (event.queryStringParameters && event.queryStringParameters.action);
   if (!action) return errorResponse(400, 'action required');
 
+
   let containers;
   try { containers = getContainers(); }
   catch (e) { return errorResponse(500, e.message); }
+
+  // ── RBAC (spec 6.3) ──────────────────────────────────────────────────────
+  // An Engineer may author a schedule but never enable one; run-now is
+  // execution and inherits the target's environment rules — the target is
+  // classified from the schedule's stored connection, defaulting to PROD
+  // when unclassified. Denials and Production-touching allows are audited.
+  const gatedAction =
+    action === 'run-now' ? 'run.execute'
+    : ((action === 'toggle-enabled' && body.enabled !== false) ||
+       (action === 'create-schedule' && body.enabled !== false)) ? 'schedule.enable'
+    : null;
+  if (gatedAction) {
+    try {
+      const store = orgStore();
+      const actor = await resolveActor(store, authed, authed);
+      // Resolve the target connection: on the request for create, on the
+      // stored schedule row for toggle/run-now.
+      let tgt = body.tgtConn || '';
+      if (!tgt && body.id) {
+        try {
+          const { resource } = await containers.schedules.item(body.id, userId).read();
+          tgt = (resource && resource.tgtConn) || '';
+        } catch { /* handler will 404 with its own message */ }
+      }
+      let environment = 'PROD';                       // unparseable → the safe default
+      try {
+        const u = new URL(tgt);
+        environment = await classificationFor(store, u.hostname, (u.pathname || '').replace(/^\//, ''));
+      } catch { if (!tgt) environment = 'DEV'; }      // no target at all (profile builds) — role split still applies
+      const decision = can(actor, gatedAction, { environment, mutating: gatedAction === 'run.execute' });
+      const auditBase = {
+        actorOid: actor.oid, actorEmail: actor.email, effectiveRoles: actor.roles,
+        action: gatedAction, resourceType: 'schedule', resourceId: body.id || null,
+        environment, detail: { schedulerAction: action },
+      };
+      if (!decision.allow) {
+        await appendAudit(store, { ...auditBase, outcome: 'denied', severity: decision.severity,
+          detail: { ...auditBase.detail, reason: decision.reason } });
+        return errorResponse(403, 'Not permitted: ' + decision.reason);
+      }
+      if (environment === 'PROD' || environment === 'STAGING') {
+        await appendAudit(store, { ...auditBase, outcome: 'allowed', severity: decision.severity });
+      }
+    } catch (e) {
+      return errorResponse(e.statusCode || 503, 'Authorisation unavailable: ' + e.message);
+    }
+  }
 
   const handlers = {
     'list-schedules':  listSchedules,

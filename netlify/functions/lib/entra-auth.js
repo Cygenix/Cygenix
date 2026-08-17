@@ -90,6 +90,12 @@ async function verifyAuthHeader(event) {
     name: decoded.name || '',
     oid:  decoded.oid  || decoded.sub || '',
     sub:  decoded.sub  || '',
+    // App roles from the VERIFIED payload only (spec §9.5: never from a
+    // decoded copy the client holds). Empty until the app registration
+    // defines Cygenix.* app roles; the RBAC layer unions these with the
+    // server-side assignment store either way.
+    roles: Array.isArray(decoded.roles) ? decoded.roles : [],
+    tid:   decoded.tid || '',
   };
 }
 
